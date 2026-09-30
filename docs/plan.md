@@ -13,7 +13,7 @@ Versions checked 2026-09-30: Go 1.27.1, Nomad 2.0.7, Traefik v3.7.
 | --- | --- | --- |
 | 0.1 | Repo basics: `go.mod` (`module github.com/cosmic-chimps/caravana`, `go 1.27`), empty `cmd/caravana`, `.gitignore`, `LICENSE` (AGPL-3.0), GitHub Actions CI, first commit | CI is green: build, vet, test, `gofmt -l`, `CGO_ENABLED=0 GOOS=linux GOARCH=arm64` build |
 | 0.2 | Constitution: `/speckit-constitution`. It **owns the rules**: vision principles, hard constraints, design rules, API rules. Then trim CLAUDE.md to state, commands and working notes, with a link to the constitution. | No placeholders left; no rule written in two places |
-| 0.3 | Local Nomad lab (see below). Plain scripts, not a Spec Kit feature. | `limactl start deploy/dev/lab.yaml` brings it up; the hand-written whoami job answers through Traefik at `https://whoami.localhost` |
+| 0.3 | Local Nomad lab (see below and `deploy/dev/README.md`). Plain scripts, not a Spec Kit feature. | Done 2026-09-30: `deploy/dev/lab.sh up` brings it up; `lab.sh check` deploys whoami by hand and it answers through Traefik at `https://whoami.localhost:8443` |
 
 `scratchpad/` has its own `go.mod`, so it's a separate module and root `go build ./...` ignores
 it until feature 001 deletes it.
@@ -27,13 +27,25 @@ contains:
 - Nomad 2.0.7 as a **single-node server + client under systemd**, with a persistent data dir and
   **ACLs on**. It's close to production and a rehearsal for the installer (012). Caravana uses
   `NOMAD_TOKEN`; Traefik gets its own read-only token.
-- Traefik v3 as a Nomad job with the Nomad provider, on host ports 80/443 (fall back to 8080/8443
-  if Lima can't forward privileged ports). Self-signed cert locally (`curl -k`). Real
-  Let's Encrypt needs a public VM and a domain, which is feature 005.
+- Traefik v3 as a Nomad system job with the Nomad provider. It authenticates with a workload
+  identity token scoped by an ACL policy, so there's no static token. It listens on 80/443 in
+  the VM, which the Mac sees as 8080/8443: macOS only lets root bind low ports on `127.0.0.1`.
+  Self-signed cert locally (`curl -k`). Real Let's Encrypt needs a public VM and a domain,
+  which is feature 005.
 
 Lima forwards the VM's ports to `localhost`, so the Caravana binary runs on the Mac against
-`NOMAD_ADDR=http://127.0.0.1:4646`. Everything lives in `deploy/dev/`; `limactl delete` plus
-`limactl start` rebuilds the lab from scratch.
+`NOMAD_ADDR=http://127.0.0.1:4646` (`eval "$(deploy/dev/lab.sh env)"`). `lab.sh delete` plus
+`lab.sh up` rebuilds the lab from scratch in about two minutes.
+
+Learned while building the lab, for the installer (012) and later features:
+- ARM VMs often report no CPU clock speed. Nomad then sees 0 MHz and places nothing, so the
+  installer must detect `cpu.totalcompute = 0` and set `client.cpu_total_compute`.
+- Generate the ACL bootstrap token first and pass it to `nomad acl bootstrap <file>`, so it's
+  saved before Nomad accepts it.
+- Nomad 2.0.1+ warns about services without `shutdown_delay`. The translator sets one (5s) so
+  Traefik drops a route before its container stops.
+- Locally, routers use `tls=true` with Traefik's default cert. With Let's Encrypt they add a
+  `certresolver`. The translator needs this as an option, not a hard-coded value.
 
 The hand-written `whoami` job from the 0.3 gate becomes the golden file for feature 001, so the
 translator is tested against a job we know really runs. 0.3 and 001 can run in parallel.

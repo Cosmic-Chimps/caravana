@@ -1,0 +1,65 @@
+{
+  "Job": {
+    "ID": "whoami",
+    "Name": "whoami",
+    "Type": "service",
+    "Datacenters": ["*"],
+    "Meta": {
+      "caravana.app": "whoami",
+      "caravana.deployment": "lab-manual"
+    },
+    "Update": {
+      "MaxParallel": 1,
+      "HealthCheck": "checks",
+      "MinHealthyTime": 10000000000,
+      "HealthyDeadline": 180000000000,
+      "ProgressDeadline": 600000000000,
+      "AutoRevert": true
+    },
+    "TaskGroups": [
+      {
+        "Name": "web",
+        "Count": 2,
+        "ShutdownDelay": 5000000000,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "DynamicPorts": [{ "Label": "http", "To": 80 }]
+          }
+        ],
+        "Services": [
+          {
+            "Name": "whoami-web",
+            "PortLabel": "http",
+            "Provider": "nomad",
+            "Tags": [
+              "traefik.enable=true",
+              "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)",
+              "traefik.http.routers.whoami-web.entrypoints=websecure",
+              "traefik.http.routers.whoami-web.tls=true"
+            ],
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "http",
+                "Path": "/",
+                "Interval": 10000000000,
+                "Timeout": 2000000000
+              }
+            ]
+          }
+        ],
+        "Tasks": [
+          {
+            "Name": "web",
+            "Driver": "docker",
+            "Config": {
+              "image": "traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+            },
+            "Resources": { "CPU": 100, "MemoryMB": 64 }
+          }
+        ]
+      }
+    ]
+  }
+}

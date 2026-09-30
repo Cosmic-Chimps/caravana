@@ -1,0 +1,54 @@
+# Lima VM for the Caravana local lab: Ubuntu LTS (arm64 on Apple Silicon) with Docker, the CNI
+# plugins and a single-node Nomad (server + client, ACLs on). Traefik is added by lab.sh.
+#
+# Don't start this file directly; use `deploy/dev/lab.sh up`.
+
+minimumLimaVersion: 2.0.0
+
+base:
+- template:_images/ubuntu-lts
+- template:_default/mounts   # your home folder, read-only, at the same path inside the VM
+
+cpus: 2
+memory: 2GiB   # the vision's smallest target VM
+disk: 20GiB
+
+# Docker (installed by setup.sh) brings its own containerd.
+containerd:
+  system: false
+  user: false
+
+provision:
+# Written before the scripts below run. Changing nomad.hcl needs `lab.sh delete` + `lab.sh up`.
+- mode: data
+  path: /etc/nomad.d/nomad.hcl
+  file: nomad.hcl
+  permissions: 644
+# Runs as root on every boot; idempotent. A prototype of the one-command installer (plan 012).
+- mode: system
+  file: setup.sh
+
+probes:
+- mode: readiness
+  description: Nomad is running with ACLs bootstrapped
+  script: |
+    #!/bin/bash
+    set -eu
+    # Probes run as the normal VM user, so check a world-readable marker, not the root-only token.
+    if ! timeout 300s bash -c "until test -e /run/caravana-lab.ready; do sleep 3; done"; then
+      echo >&2 "Nomad did not finish bootstrapping"
+      exit 1
+    fi
+  hint: |
+    Check the setup log inside the VM: `limactl shell caravana-lab sudo cat /var/log/cloud-init-output.log`
+
+# macOS only lets root bind ports below 1024 on 127.0.0.1, so 80/443 land on 8080/8443.
+portForwards:
+- guestPort: 80
+  hostPort: 8080
+- guestPort: 443
+  hostPort: 8443
+- guestPort: 8081    # Traefik dashboard
+- guestPort: 4646    # Nomad API and UI
+- guestPortRange: [20000, 32000]   # Nomad dynamic ports: reach apps through Traefik instead
+  ignore: true

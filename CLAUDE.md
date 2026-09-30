@@ -18,8 +18,8 @@ Rules live only in the constitution. Don't restate them here; amend it with `/sp
 
 ## Where we are
 
-Phase 0 (groundwork). Done: 0.1 repo basics (go.mod, license, CI), 0.2 constitution. Next: the
-0.3 local lab and feature 001 (app model + translator), which can run in parallel.
+Phase 0 (groundwork) is done: repo + CI, constitution, local Nomad lab. Next: feature 001
+(app model + translator), whose golden file target is the hand-written `deploy/dev/whoami.json`.
 
 The only product code is a proof-of-concept sketch in `scratchpad/`. It's a separate Go module,
 so the root build ignores it. It doesn't build on its own: three packages share one folder, and
@@ -28,8 +28,9 @@ where it disagrees with the constitution, the constitution wins. Feature 001 mov
 `internal/` and deletes it.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
-→ `/speckit-implement`), one feature per git branch. There is no local Nomad yet. The lab is a
-Lima Linux VM set up in `deploy/dev/` (plan item 0.3), because Nomad bridge networking needs Linux.
+→ `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
+(`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
+`https://<name>.localhost:8443`.
 
 ## Current phase: 1 — Engine (single node)
 
@@ -62,6 +63,13 @@ go vet ./...
 go tool staticcheck ./...                                     # pinned in go.mod as a tool
 gofmt -l .                                                    # must print nothing
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...          # proves the no-CGO cross-compile
+```
+
+```bash
+deploy/dev/lab.sh up               # start (or create) the local Nomad lab
+deploy/dev/lab.sh check            # deploy whoami.json by hand and call it over HTTPS
+eval "$(deploy/dev/lab.sh env)"    # NOMAD_ADDR + NOMAD_TOKEN for Caravana on the Mac
+deploy/dev/lab.sh shell            # inside the VM: sudo lab-nomad <cmd> (management token)
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.
