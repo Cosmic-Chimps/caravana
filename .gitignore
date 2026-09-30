@@ -1,0 +1,46 @@
+# Build output
+/caravana
+/bin/
+/dist/
+*.exe
+
+# Go test and profiling output
+*.test
+*.out
+*.prof
+coverage.html
+
+# Local Go workspace (single-module repo; don't share workspace overrides)
+go.work
+go.work.sum
+
+# Local data: SQLite databases the control plane creates while developing
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Secrets and certificates (Traefik ACME state, mkcert certs, env files)
+.env
+.env.*
+!.env.example
+acme.json
+*.pem
+*.key
+
+# Local Nomad lab state (if a data dir is ever pointed inside the repo)
+/deploy/dev/.data/
+
+# Claude Code: personal settings stay local; shared .claude/ files are committed
+.claude/settings.local.json
+
+# Spec Kit helper scripts
+__pycache__/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
