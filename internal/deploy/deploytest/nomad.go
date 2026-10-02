@@ -4,6 +4,8 @@
 //
 // Rollouts are scripted: Script(version, states...) makes each deployments
 // request for that job version return the next state, the last one repeating.
+// Like Nomad, registering a newer version cancels every older rollout that
+// hasn't ended.
 package deploytest
 
 import (
@@ -234,6 +236,7 @@ func (n *Nomad) register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	j := n.store(req.Job)
+	n.cancelOlder(*j.ID, *j.Version)
 	n.registrations++
 	n.writeJSON(w, api.JobRegisterResponse{
 		EvalID:         fmt.Sprintf("eval-%d", n.index),
@@ -271,6 +274,32 @@ func (n *Nomad) versions(w http.ResponseWriter, id string) {
 		resp.Versions = append(resp.Versions, versions[i])
 	}
 	n.writeJSON(w, resp)
+}
+
+// cancelOlder does what Nomad does when a newer job version registers: every
+// older version's rollout that hasn't ended is cancelled. Versions that never
+// had a rollout keep having none. n.mu must be held.
+func (n *Nomad) cancelOlder(jobID string, newest uint64) {
+	for v := uint64(0); v < newest; v++ {
+		states, ok := n.scripts[jobID][v]
+		if !ok {
+			states = n.defaultStates
+		}
+		if len(states) == 0 {
+			continue
+		}
+		switch states[0].Status {
+		case api.DeploymentStatusSuccessful, api.DeploymentStatusFailed, api.DeploymentStatusCancelled:
+			continue
+		}
+		if n.scripts[jobID] == nil {
+			n.scripts[jobID] = map[uint64][]api.Deployment{}
+		}
+		n.scripts[jobID][v] = []api.Deployment{{
+			Status:            api.DeploymentStatusCancelled,
+			StatusDescription: "Cancelled due to newer version of job",
+		}}
+	}
 }
 
 // deployments returns one deployment per registered version that has

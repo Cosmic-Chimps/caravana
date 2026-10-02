@@ -57,6 +57,8 @@ type testEnv struct {
 	Logs     *syncBuffer
 	Registry *registrytest.Server
 	Nomad    *deploytest.Nomad
+	Service  *service.Service
+	log      *slog.Logger
 }
 
 // newTestEnv starts the API on a fresh store. The fake registry knows
@@ -82,6 +84,7 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 	d.Timing = deploy.Timing{PollGap: time.Millisecond, BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,
 		VersionRetries: []time.Duration{time.Millisecond}}
 	svc := service.New(st, d, log)
+	e.Service, e.log = svc, log
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)

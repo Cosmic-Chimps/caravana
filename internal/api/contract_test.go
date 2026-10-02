@@ -148,6 +148,10 @@ func TestContractBodies(t *testing.T) {
 			"Deployment":     deployment(func(d map[string]any) { d["status"] = "done" }),
 			"DeploymentList": map[string]any{"deployments": []any{deployment(func(d map[string]any) { d["digests"] = map[string]any{"web": "nginx:latest"} })}},
 			"AppRecord":      map[string]any{"app": map[string]any{}, "createdAt": "x"},
+			"WebhookToken": map[string]any{"token": "ghp_" + strings.Repeat("a", 44), "path": "/v1/webhooks/whoami",
+				"createdAt": "2026-10-02T10:00:00Z"}, // not a cvwh_ token
+			"WebhookResult": map[string]any{"changed": true}, // no deployment
+			"WebhookStatus": map[string]any{"enabled": true, "token": "cvwh_x"},
 		} {
 			if err := doc.Components.Schemas[schema].Value.VisitJSON(body); err == nil {
 				t.Errorf("schema %s accepted %v", schema, body)
@@ -168,6 +172,16 @@ func TestContractBodies(t *testing.T) {
 		checkSchema(t, doc, raw, "DeploymentList")
 		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami", "", "")
 		checkSchema(t, doc, raw, "AppRecord")
+	})
+	t.Run("webhook token, status, result and 401", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		tok := withWebhook(t, e) // checks WebhookToken
+		_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/webhook", "", "")
+		checkSchema(t, doc, raw, "WebhookStatus")
+		_, _, raw = hook(t, e.URL, "whoami", tok, "", "", "")
+		checkSchema(t, doc, raw, "WebhookResult")
+		_, _, raw = hook(t, e.URL, "whoami", "", "", "", "")
+		checkSchema(t, doc, raw, "Error")
 	})
 	t.Run("deploy errors", func(t *testing.T) {
 		e := newTestEnv(t, "")

@@ -64,11 +64,13 @@ func TestLab(t *testing.T) {
 	_, _, _ = nomad.Jobs().Deregister("whoami", true, nil)
 
 	// Caravana itself, in-process.
-	addr := freeAddr(t)
+	addr, hookAddr := freeAddr(t), freeAddr(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	var stderr bytes.Buffer
 	exit := make(chan int, 1)
-	go func() { exit <- run(ctx, []string{"-listen", addr, "-data-dir", t.TempDir()}, os.Getenv, &stderr) }()
+	go func() {
+		exit <- run(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, os.Getenv, &stderr)
+	}()
 	t.Cleanup(func() {
 		cancel()
 		if code := <-exit; code != 0 {
@@ -121,9 +123,82 @@ func TestLab(t *testing.T) {
 	if took := time.Since(start); took > 10*time.Second {
 		t.Errorf("deploy answered after %v, want under 10s", took)
 	}
-	if final := waitFinal(t, first.ID, 3*time.Minute); final.Status != "healthy" {
-		t.Fatalf("first deploy ended %s: %s", final.Status, final.Error)
+
+	// Feature 004 / FR-016: while that first rollout is still running (no
+	// healthy deployment yet), a webhook call through the webhook-only
+	// listener redeploys, and its deployment wins.
+	hookBase := "http://" + hookAddr
+	resp, err := http.Post(base+"/v1/apps/whoami/webhook", "", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	var created struct{ Token string }
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	// callHook calls the webhook without a token.
+	callHook := func(t *testing.T) (int, bool, labDeployment) {
+		t.Helper()
+		resp, err := http.Post(hookBase+"/v1/webhooks/whoami", "application/json",
+			strings.NewReader(`{"push_data":{"tag":"latest"}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Changed    bool
+			Deployment labDeployment
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out.Changed, out.Deployment
+	}
+	// With the token in the header; the query form is covered offline.
+	hookReq := func(t *testing.T) (int, bool, labDeployment) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, hookBase+"/v1/webhooks/whoami", strings.NewReader(`{"push_data":{"tag":"latest"}}`))
+		req.Header.Set("Authorization", "Bearer "+created.Token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Changed    bool
+			Deployment labDeployment
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out.Changed, out.Deployment
+	}
+	if code, _, _ := callHook(t); code != http.StatusUnauthorized {
+		t.Errorf("webhook without a token = %d, want 401", code)
+	}
+	start = time.Now()
+	code, changed, hooked := hookReq(t)
+	if code != http.StatusAccepted || !changed {
+		t.Fatalf("webhook during the first rollout = %d (changed %v), want 202 changed", code, changed)
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Errorf("webhook answered after %v, want under 10s", took)
+	}
+	if final := waitFinal(t, hooked.ID, 3*time.Minute); final.Status != "healthy" {
+		t.Fatalf("webhook deploy ended %s: %s", final.Status, final.Error)
+	}
+	if final := waitFinal(t, first.ID, time.Minute); final.Status != "superseded" {
+		t.Errorf("the first API deploy ended %s, want superseded by the webhook's", final.Status)
+	}
+	jobBefore, _, _ := nomad.Jobs().Info("whoami", nil)
+	if code, changed, live := hookReq(t); code != http.StatusOK || changed || live.ID != hooked.ID {
+		t.Errorf("second webhook = %d (changed %v, deployment %s), want 200 unchanged with %s", code, changed, live.ID, hooked.ID)
+	}
+	if jobAfter, _, _ := nomad.Jobs().Info("whoami", nil); jobBefore != nil && jobAfter != nil && *jobAfter.Version != *jobBefore.Version {
+		t.Errorf("an unchanged webhook moved the job version from %d to %d", *jobBefore.Version, *jobAfter.Version)
+	}
+	if resp, err := http.Get(hookBase + "/v1/health"); err == nil {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("health on the webhook listener = %d, want 404", resp.StatusCode)
+		}
+	}
+	first = hooked // the live deployment from here on
 	if err := callWhoami(); err != nil {
 		t.Errorf("https://whoami.localhost:8443: %v", err)
 	}

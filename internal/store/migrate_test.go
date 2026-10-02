@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -25,11 +26,12 @@ func TestOpen(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	if got := versions(t, s); len(got) != 1 || got[0] != 1 {
-		t.Errorf("applied versions = %v, want [1]", got)
+	want := embeddedVersions(t)
+	if got := versions(t, s); !slices.Equal(got, want) {
+		t.Errorf("applied versions = %v, want %v", got, want)
 	}
-	if n := s.MigrationsApplied(); n != 1 {
-		t.Errorf("MigrationsApplied() = %d on a new store, want 1", n)
+	if n := s.MigrationsApplied(); n != len(want) {
+		t.Errorf("MigrationsApplied() = %d on a new store, want %d", n, len(want))
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -53,8 +55,8 @@ func TestMigrate(t *testing.T) {
 	t.Run("embedded migrations apply once", func(t *testing.T) {
 		db := testDB(t, t.TempDir())
 		fsys := testMigrations(t)
-		if n, err := migrate(ctx, db, fsys); err != nil || n != 1 {
-			t.Fatalf("first migrate = %d, %v; want 1, nil", n, err)
+		if n, err := migrate(ctx, db, fsys); err != nil || n != len(embeddedVersions(t)) {
+			t.Fatalf("first migrate = %d, %v; want %d, nil", n, err, len(embeddedVersions(t)))
 		}
 		if n, err := migrate(ctx, db, fsys); err != nil || n != 0 {
 			t.Fatalf("second migrate = %d, %v; want 0, nil", n, err)
@@ -151,6 +153,24 @@ func testMigrations(t *testing.T) fs.FS {
 		t.Fatalf("migrations: %v", err)
 	}
 	return fsys
+}
+
+// embeddedVersions returns the versions of the migrations compiled into the
+// binary, in order: 1, 2, … with no gaps.
+func embeddedVersions(t *testing.T) []int {
+	t.Helper()
+	known, err := readMigrations(testMigrations(t))
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+	var out []int
+	for i, m := range known {
+		if m.version != i+1 {
+			t.Fatalf("migration %s has version %d, want %d (no gaps)", m.file, m.version, i+1)
+		}
+		out = append(out, m.version)
+	}
+	return out
 }
 
 // versions returns the applied migration versions in order.

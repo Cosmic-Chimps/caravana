@@ -21,6 +21,7 @@ const (
 	codeRegistryUnavailable  = "registry_unavailable"
 	codeNomadUnavailable     = "nomad_unavailable"
 	codeNomadRejected        = "nomad_rejected"
+	codeUnauthorized         = "unauthorized"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with
@@ -30,9 +31,11 @@ const (
 type Error struct {
 	Status   int    `json:"-"`
 	Location string `json:"-"`
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Field    string `json:"field,omitempty"`
+	// Authenticate, when set, is sent as the WWW-Authenticate header.
+	Authenticate string `json:"-"`
+	Code         string `json:"code"`
+	Message      string `json:"message"`
+	Field        string `json:"field,omitempty"`
 }
 
 // Error makes *Error satisfy the error interface, so handlers can return it.
@@ -56,6 +59,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, e *Error) {
 	if e.Location != "" {
 		w.Header().Set("Location", e.Location)
+	}
+	if e.Authenticate != "" {
+		w.Header().Set("WWW-Authenticate", e.Authenticate)
 	}
 	writeJSON(w, e.Status, struct {
 		Error *Error `json:"error"`

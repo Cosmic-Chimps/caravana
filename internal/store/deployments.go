@@ -190,6 +190,21 @@ func (s *Store) ListUnfinishedDeployments(ctx context.Context) ([]DeploymentReco
 	return out, nil
 }
 
+// LatestHealthyDeployment returns appID's newest healthy deployment: what
+// Nomad is running for it. ErrNotFound when it has none.
+func (s *Store) LatestHealthyDeployment(ctx context.Context, appID string) (DeploymentRecord, error) {
+	recs, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? AND status = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+		appID, string(StatusHealthy))
+	if err != nil {
+		return DeploymentRecord{}, fmt.Errorf("latest healthy deployment of %q: %w", appID, err)
+	}
+	if len(recs) == 0 {
+		return DeploymentRecord{}, fmt.Errorf("latest healthy deployment of %q: %w", appID, ErrNotFound)
+	}
+	return recs[0], nil
+}
+
 // queryDeployments runs a query returning deploymentColumns rows.
 func (s *Store) queryDeployments(ctx context.Context, query string, args ...any) ([]DeploymentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)

@@ -41,7 +41,16 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy},
 		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment},
+		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken},
+		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook},
+		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken},
+		s.webhookRoute(),
 	}
+}
+
+// webhookRoute is the one route the webhook-only listener serves.
+func (s *server) webhookRoute() route {
+	return route{http.MethodPost, "/v1/webhooks/{id}", s.callWebhook}
 }
 
 // New returns the API's HTTP handler. Apps and deployments go through svc,
@@ -49,8 +58,22 @@ func (s *server) routes() []route {
 // pinged by the health check.
 func New(svc *service.Service, st *store.Store, log *slog.Logger) http.Handler {
 	s := &server{svc: svc, store: st, log: log}
+	return s.handler(s.routes())
+}
+
+// NewWebhook returns the handler for the webhook-only listener: only
+// POST /v1/webhooks/{id}, with the same JSON errors and request logging as
+// New. Every other path answers 404, so this listener can be exposed while
+// the rest of the API stays private (research R7).
+func NewWebhook(svc *service.Service, log *slog.Logger) http.Handler {
+	s := &server{svc: svc, log: log}
+	return s.handler([]route{s.webhookRoute()})
+}
+
+// handler builds the HTTP handler for a route table.
+func (s *server) handler(routes []route) http.Handler {
 	mux := http.NewServeMux()
-	for _, rt := range s.routes() {
+	for _, rt := range routes {
 		mux.Handle(rt.method+" "+rt.path, s.handle(rt.handle))
 	}
 	return s.logRequests(s.jsonOnly(mux))
@@ -137,6 +160,8 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return apiErr
 	case errors.As(err, &fieldErr):
 		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: fieldErr.Field, Message: fieldErr.Message}
+	case errors.Is(err, service.ErrUnauthorized):
+		return &Error{Status: http.StatusUnauthorized, Code: codeUnauthorized, Message: err.Error(), Authenticate: "Bearer"}
 	case errors.Is(err, store.ErrNotFound):
 		return &Error{Status: http.StatusNotFound, Code: codeNotFound, Message: err.Error()}
 	case errors.As(err, &imageErr) && errors.Is(err, deploy.ErrImageNotFound):

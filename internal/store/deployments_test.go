@@ -278,3 +278,39 @@ func TestTransitions(t *testing.T) {
 		}
 	}
 }
+
+func TestLatestHealthyDeployment(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithApp(t)
+	if _, err := s.LatestHealthyDeployment(ctx, "whoami"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("with no deployments = %v, want ErrNotFound", err)
+	}
+
+	// end creates a deployment and moves it to a final status.
+	end := func(id string, final Status) {
+		t.Helper()
+		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: StatusRunning}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: final}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	end("failed", StatusFailed)
+	if _, err := s.LatestHealthyDeployment(ctx, "whoami"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("with only a failed deployment = %v, want ErrNotFound", err)
+	}
+	end("h1", StatusHealthy)
+	end("reverted", StatusReverted)
+	end("superseded", StatusSuperseded)
+	if got, err := s.LatestHealthyDeployment(ctx, "whoami"); err != nil || got.Deployment.ID != "h1" {
+		t.Errorf("= %s, %v; want h1", got.Deployment.ID, err)
+	}
+	end("h2", StatusHealthy)
+	if got, err := s.LatestHealthyDeployment(ctx, "whoami"); err != nil || got.Deployment.ID != "h2" {
+		t.Errorf("= %s, %v; want h2, the newest healthy one", got.Deployment.ID, err)
+	}
+}

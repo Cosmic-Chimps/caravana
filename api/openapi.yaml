@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.2.0
+  version: 0.3.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -16,7 +16,8 @@ info:
     `"1m30s"`, in requests and responses.
 
     There is no authentication yet (it arrives in a later version); by default the server
-    listens on 127.0.0.1 only.
+    listens on 127.0.0.1 only. The one exception is `POST /v1/webhooks/{id}`, which needs the
+    app's webhook token and is also served, alone, on the optional webhook-only listener.
   license:
     name: AGPL-3.0-only
     identifier: AGPL-3.0-only
@@ -176,6 +177,109 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/apps/{id}/webhook:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: createWebhookToken
+      summary: Create or rotate the app's webhook token.
+      description: |
+        Returns a new token, shown only in this response; any earlier token of this app stops
+        working at once. `path` is the webhook path with the token in its query string, ready to
+        append to the public base URL of the webhook listener.
+      tags: [webhooks]
+      responses:
+        "201":
+          description: The new token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookToken"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: getWebhook
+      summary: Tell whether the app has a webhook token, never the token itself.
+      tags: [webhooks]
+      responses:
+        "200":
+          description: The webhook status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteWebhookToken
+      summary: Turn the app's webhook off.
+      description: Deletes the token, if any. The webhook then refuses every call for this app.
+      tags: [webhooks]
+      responses:
+        "204":
+          description: The app has no webhook token now.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/webhooks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: callWebhook
+      summary: Redeploy the stored app, if its images changed.
+      description: |
+        Authorized by the app's webhook token, in the `token` query parameter or an
+        `Authorization: Bearer` header (both present must be equal). Every image is resolved
+        again: when every digest equals the app's latest healthy deployment and the stored app
+        hasn't changed since, nothing is deployed (200, `changed: false`). Otherwise the stored
+        app is redeployed exactly like an empty-body `deployApp`, with trigger `webhook` (202).
+
+        Any request body is accepted and ignored (up to 1 MiB), whatever its content type.
+        Every authorization failure, including an unknown app, gets the same 401.
+      tags: [webhooks]
+      security:
+        - webhookBearer: []
+        - webhookQuery: []
+      requestBody:
+        required: false
+        content:
+          "*/*":
+            schema: {}
+      responses:
+        "200":
+          description: Nothing changed; the app's live (latest healthy) deployment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResult"
+        "202":
+          description: Nomad accepted the redeploy; follow the Location on the main API.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
 components:
   parameters:
     AppID:
@@ -189,6 +293,17 @@ components:
       examples:
         whoami:
           value: whoami
+
+  securitySchemes:
+    webhookBearer:
+      type: http
+      scheme: bearer
+      description: "The app's webhook token as `Authorization: Bearer cvwh_…`."
+    webhookQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: "The app's webhook token as `?token=cvwh_…`, for senders that only take a URL."
 
   headers:
     DeploymentLocation:
@@ -386,6 +501,43 @@ components:
           items:
             $ref: "#/components/schemas/Deployment"
 
+    WebhookToken:
+      type: object
+      additionalProperties: false
+      required: [token, path, createdAt]
+      properties:
+        token:
+          type: string
+          pattern: "^cvwh_[A-Za-z0-9_-]{43}$"
+          description: "Shown only here. Store it in the sender (registry, CI secret)."
+        path:
+          type: string
+          description: The webhook path with the token, e.g. `/v1/webhooks/whoami?token=cvwh_…`.
+        createdAt: {type: string, format: date-time}
+
+    WebhookStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+          description: When the current token was created. Absent when `enabled` is false.
+
+    WebhookResult:
+      type: object
+      additionalProperties: false
+      required: [changed, deployment]
+      properties:
+        changed:
+          type: boolean
+          description: "True when the call started a deployment; false when nothing changed."
+        deployment:
+          $ref: "#/components/schemas/Deployment"
+
     Warning:
       type: object
       additionalProperties: false
@@ -415,7 +567,7 @@ components:
                 `unsupported_media_type`, `body_too_large`, `not_found`,
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
-                `nomad_rejected`.
+                `nomad_rejected`, `unauthorized`.
               examples: [invalid_field]
             message:
               type: string
@@ -497,6 +649,19 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: |
+        `unauthorized`: the webhook token is missing or wrong, or the app has none, or there is
+        no such app. All of these get the same answer.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Internal:
       description: An unexpected server error. Details are in the server log.
       content:
@@ -511,3 +676,5 @@ tags:
     description: Stored app definitions.
   - name: deployments
     description: Deploying apps and following their rollouts.
+  - name: webhooks
+    description: Webhook tokens, and the webhook that redeploys an app.

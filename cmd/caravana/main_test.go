@@ -83,3 +83,59 @@ func TestRunBadConfig(t *testing.T) {
 		t.Errorf("stderr does not name the setting:\n%s", stderr.String())
 	}
 }
+
+// TestRunWebhookListener starts both listeners: the main one answers health,
+// the webhook-only one answers 404 for it. Both stop on cancel.
+func TestRunWebhookListener(t *testing.T) {
+	addr, hookAddr := freeAddr(t), freeAddr(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var stderr bytes.Buffer
+	exit := make(chan int, 1)
+	go func() {
+		exit <- run(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, noEnv, &stderr)
+	}()
+
+	status := func(url string) int {
+		resp, err := http.Get(url)
+		if err != nil {
+			return 0
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for status("http://"+addr+"/v1/health") != http.StatusOK || status("http://"+hookAddr+"/v1/health") == 0 {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatalf("listeners not up after 2s; stderr:\n%s", stderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := status("http://" + hookAddr + "/v1/health"); got != http.StatusNotFound {
+		t.Errorf("health on the webhook listener = %d, want 404", got)
+	}
+
+	cancel()
+	select {
+	case code := <-exit:
+		if code != 0 {
+			t.Errorf("exit code = %d, want 0; stderr:\n%s", code, stderr.String())
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("run did not return after cancel")
+	}
+	if status("http://"+hookAddr+"/v1/health") != 0 {
+		t.Error("the webhook listener still answers after shutdown")
+	}
+}
+
+func TestRunWebhookListenerSameAsMain(t *testing.T) {
+	var stderr bytes.Buffer
+	addr := freeAddr(t)
+	code := run(context.Background(), []string{"-listen", addr, "-webhook-listen", addr, "-data-dir", t.TempDir()}, noEnv, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "CARAVANA_WEBHOOK_LISTEN") {
+		t.Errorf("exit %d, stderr %s; want 1 naming CARAVANA_WEBHOOK_LISTEN", code, stderr.String())
+	}
+}

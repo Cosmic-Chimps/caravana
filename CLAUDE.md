@@ -31,7 +31,12 @@ saves and deploys an app (empty body: redeploy the stored one), plus reads for t
 deployments. `internal/registry` pins tags to digests (Docker Hub and GHCR, anonymous),
 `internal/deploy` registers the job and follows the Nomad rollout, `internal/service` holds the
 flow (per-app ordering, newest deploy wins, resume after restart). Test fakes: `registrytest`
-and `deploytest`. Next: feature 004 (webhook redeploy).
+and `deploytest`. Deploys are blue/green (canaries hidden from Traefik until promoted). Feature
+004 is implemented on branch `004-webhook-redeploy` (stacked on 003): per-app webhook tokens
+(`cvwh_…`, shown once, stored as a SHA-256 hash), `POST /v1/webhooks/{id}` (token in `?token=` or
+`Authorization: Bearer`; skips when no image changed), and an optional webhook-only listener
+(`CARAVANA_WEBHOOK_LISTEN`) that serves nothing else. Next: feature 005 (real HTTPS and the
+auto-revert proof on a VM).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -70,6 +75,7 @@ go tool staticcheck ./...                                     # pinned in go.mod
 gofmt -l .                                                    # must print nothing
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...          # proves the no-CGO cross-compile
 go run ./cmd/caravana                                         # 127.0.0.1:7070, data in ./data
+go run ./cmd/caravana -webhook-listen 127.0.0.1:7071          # plus the webhook-only listener
 curl -s localhost:7070/v1/health
 ```
 

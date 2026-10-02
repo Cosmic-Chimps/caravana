@@ -78,39 +78,64 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		return 1
 	}
 
-	srv := &http.Server{
-		Addr:              cfg.Listen,
-		Handler:           api.New(svc, st, log),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+	servers := []*http.Server{newServer(cfg.Listen, api.New(svc, st, log))}
+	if cfg.WebhookListen != "" {
+		// The webhook-only listener: just POST /v1/webhooks/{id}, so it can be
+		// exposed while the API above stays private.
+		servers = append(servers, newServer(cfg.WebhookListen, api.NewWebhook(svc, log)))
 	}
 
-	// ListenAndServe blocks, so it runs in its own goroutine and reports how
-	// it ended on a channel.
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- srv.ListenAndServe() }()
-	log.Info("listening", "addr", cfg.Listen)
+	// ListenAndServe blocks, so each server runs in its own goroutine and
+	// reports how it ended on a shared channel.
+	serveErr := make(chan error, len(servers))
+	for _, s := range servers {
+		go func() { serveErr <- s.ListenAndServe() }()
+		log.Info("listening", "addr", s.Addr)
+	}
 
 	select {
 	case err := <-serveErr:
 		log.Error("server stopped", "error", err)
+		shutdownAll(servers)
 		return 1
 	case <-ctx.Done():
 	}
 
 	log.Info("shutting down", "timeout", shutdownTimeout.String())
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	if err := shutdownAll(servers); err != nil {
 		log.Error("shutdown did not finish in time; open requests were cut off", "error", err)
 		return 1
 	}
-	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
-		log.Error("server stopped", "error", err)
-		return 1
+	for range servers {
+		if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server stopped", "error", err)
+			return 1
+		}
 	}
 	log.Info("stopped")
 	return 0
+}
+
+// newServer is an HTTP server with Caravana's timeouts.
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+}
+
+// shutdownAll stops every server, letting open requests finish within one
+// shared timeout.
+func shutdownAll(servers []*http.Server) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	var errs []error
+	for _, s := range servers {
+		errs = append(errs, s.Shutdown(ctx))
+	}
+	return errors.Join(errs...)
 }
