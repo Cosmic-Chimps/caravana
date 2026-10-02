@@ -22,7 +22,7 @@ deploy/dev/          local Nomad lab (Lima VM, Nomad and Traefik config)
 ```
 
 - **A folder is a package.** All `.go` files in one folder must share one `package` name. (This is
-  why `scratchpad/` doesn't build: three packages in one folder.) Roughly: folder = namespace + project.
+  why the first proof-of-concept sketch didn't build: three packages in one folder.) Roughly: folder = namespace + project.
 - **`internal/`** can only be imported by code in this module. It's like `internal` in C#, but
   enforced by the compiler for the whole folder tree.
 - **`cmd/<name>/`** holds each binary's `main` package. Keep it thin: wiring only.
@@ -41,7 +41,7 @@ deploy/dev/          local Nomad lab (Lima VM, Nomad and Traefik config)
 | DI container | Constructor functions `NewDeployer(store, nomad)` called by hand in `main`. No container. |
 | `CancellationToken` | `ctx context.Context`, always the first parameter of anything doing I/O |
 | `async`/`await`, `Task` | Plain blocking calls; start a goroutine (`go f()`) only when you really need concurrency |
-| `null` | Zero values (`""`, `0`, `nil`). Use a pointer only when "not set" must differ from zero. The Nomad API uses pointers everywhere, hence the `ptr(v)` helper. |
+| `null` | Zero values (`""`, `0`, `nil`). Use a pointer only when "not set" must differ from zero. The Nomad API uses pointers everywhere; since Go 1.26, `new(expr)` builds one from a value: `new(2)`, `new("service")`. |
 | Generic collections, LINQ | Slices, maps and `for` loops; the `slices` and `maps` packages for common helpers |
 | xUnit `[Theory]` | Table-driven tests: a slice of cases and `t.Run(tc.name, ...)` |
 | NuGet | Go modules: `go get pkg@version`, `go mod tidy` |

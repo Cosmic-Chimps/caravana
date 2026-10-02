@@ -8,6 +8,7 @@ Needs: `brew install lima`.
 ```bash
 deploy/dev/lab.sh up        # first run creates the VM (a few minutes), later runs just start it
 deploy/dev/lab.sh check     # deploys whoami.json by hand and calls https://whoami.localhost:8443
+deploy/dev/lab.sh check internal/nomadjob/testdata/whoami.golden.json   # same, with the translator's output
 eval "$(deploy/dev/lab.sh env)"   # NOMAD_ADDR + NOMAD_TOKEN for tools on the Mac
 deploy/dev/lab.sh stop | delete | shell
 ```

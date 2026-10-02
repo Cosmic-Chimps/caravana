@@ -2,7 +2,8 @@
 # Local Nomad lab for Caravana, in a Lima VM.
 #
 #   deploy/dev/lab.sh up       create or start the VM, run Traefik, write deploy/dev/.data/env
-#   deploy/dev/lab.sh check    deploy whoami by hand and call it over HTTPS (the 0.3 gate)
+#   deploy/dev/lab.sh check [job.json]
+#                              deploy whoami (default: deploy/dev/whoami.json) and call it over HTTPS
 #   deploy/dev/lab.sh env      print NOMAD_ADDR/NOMAD_TOKEN exports: eval "$(deploy/dev/lab.sh env)"
 #   deploy/dev/lab.sh shell    open a shell in the VM (use `sudo lab-nomad ...` there)
 #   deploy/dev/lab.sh stop     stop the VM, keeping its state
@@ -51,7 +52,11 @@ EOF
 }
 
 cmd_check() {
-  vm_nomad job run -json "$DIR/whoami.json"
+  local job="${1:-$DIR/whoami.json}"
+  [ -f "$job" ] || { echo "no such job file: $job" >&2; return 1; }
+  # The VM mounts the repo at the same absolute path, so pass an absolute one.
+  job="$(cd "$(dirname "$job")" && pwd)/$(basename "$job")"
+  vm_nomad job run -json "$job"
   echo "Waiting for Traefik to route whoami.localhost..."
   for _ in $(seq 1 30); do # about a minute
     if curl -fsk https://whoami.localhost:8443/; then
@@ -66,7 +71,10 @@ cmd_check() {
 
 case "${1:-}" in
   up) cmd_up ;;
-  check) cmd_check ;;
+  check)
+    shift
+    cmd_check "$@"
+    ;;
   env) cat "$DATA/env" ;;
   shell) limactl shell "$NAME" ;;
   stop) limactl stop "$NAME" ;;

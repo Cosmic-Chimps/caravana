@@ -1,0 +1,208 @@
+{
+  "Job": {
+    "Region": null,
+    "Namespace": null,
+    "ID": "whoami",
+    "Name": "whoami",
+    "Type": "service",
+    "Priority": null,
+    "AllAtOnce": null,
+    "Datacenters": [
+      "*"
+    ],
+    "NodePool": null,
+    "Constraints": null,
+    "Affinities": null,
+    "TaskGroups": [
+      {
+        "Name": "web",
+        "Count": 2,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "web",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "image": "traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 500,
+              "Cores": null,
+              "MemoryMB": 256,
+              "MemoryMaxMB": null,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": null,
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": null,
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": [
+              {
+                "Label": "http",
+                "Value": 0,
+                "To": 80,
+                "HostNetwork": "",
+                "IgnoreCollision": false
+              }
+            ],
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": [
+          {
+            "Name": "whoami-web",
+            "Tags": [
+              "traefik.enable=true",
+              "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)",
+              "traefik.http.routers.whoami-web.entrypoints=websecure",
+              "traefik.http.routers.whoami-web.tls=true"
+            ],
+            "CanaryTags": null,
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "",
+            "Address": "",
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "http",
+                "Command": "",
+                "Args": null,
+                "Path": "/",
+                "Protocol": "",
+                "PortLabel": "",
+                "Expose": false,
+                "AddressMode": "",
+                "Advertise": "",
+                "Interval": 30000000000,
+                "Timeout": 5000000000,
+                "InitialStatus": "",
+                "Notes": "",
+                "TLSServerName": "",
+                "TLSSkipVerify": false,
+                "Header": null,
+                "Method": "",
+                "CheckRestart": null,
+                "GRPCService": "",
+                "GRPCUseTLS": false,
+                "TaskName": "",
+                "SuccessBeforePassing": 0,
+                "FailuresBeforeCritical": 0,
+                "FailuresBeforeWarning": 0,
+                "Body": "",
+                "OnUpdate": ""
+              }
+            ],
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          }
+        ],
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      }
+    ],
+    "Update": {
+      "Stagger": null,
+      "MaxParallel": 1,
+      "HealthCheck": "checks",
+      "MinHealthyTime": 10000000000,
+      "HealthyDeadline": 180000000000,
+      "ProgressDeadline": 600000000000,
+      "Canary": null,
+      "AutoRevert": true,
+      "AutoPromote": null
+    },
+    "Multiregion": null,
+    "Spreads": null,
+    "Periodic": null,
+    "ParameterizedJob": null,
+    "Reschedule": null,
+    "Migrate": null,
+    "Meta": {
+      "caravana.app": "whoami",
+      "caravana.deployment": "lab-manual"
+    },
+    "UI": null,
+    "Stop": null,
+    "ParentID": null,
+    "Dispatched": false,
+    "DispatchIdempotencyToken": null,
+    "Payload": null,
+    "ConsulNamespace": null,
+    "VaultNamespace": null,
+    "NomadTokenID": null,
+    "Status": null,
+    "StatusDescription": null,
+    "Stable": null,
+    "Version": null,
+    "SubmitTime": null,
+    "CreateIndex": null,
+    "ModifyIndex": null,
+    "JobModifyIndex": null,
+    "VersionTag": null
+  }
+}

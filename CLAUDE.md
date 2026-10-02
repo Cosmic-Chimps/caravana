@@ -18,14 +18,11 @@ Rules live only in the constitution. Don't restate them here; amend it with `/sp
 
 ## Where we are
 
-Phase 0 (groundwork) is done: repo + CI, constitution, local Nomad lab. Next: feature 001
-(app model + translator), whose golden file target is the hand-written `deploy/dev/whoami.json`.
-
-The only product code is a proof-of-concept sketch in `scratchpad/`. It's a separate Go module,
-so the root build ignores it. It doesn't build on its own: three packages share one folder, and
-the imports use the old path `github.com/you/nomadpaas`. Use it as reference, not as precedent;
-where it disagrees with the constitution, the constitution wins. Feature 001 moves it into
-`internal/` and deletes it.
+Phase 0 (groundwork) is done: repo + CI, constitution, local Nomad lab. Feature 001 is
+implemented on branch `001-app-model-translator`: the app model in `internal/app` and the pure
+translator in `internal/nomadjob`, whose whoami output matches the hand-written
+`deploy/dev/whoami.json` and deploys in the lab (`lab.sh check <job.json>`). The `scratchpad/`
+sketch is gone. Next: feature 002 (control plane skeleton + API contract).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -79,5 +76,5 @@ Run them before saying a change is done.
 
 The maintainer comes from C#/.NET and is learning Go. When introducing a Go idiom that differs
 from C# (interfaces satisfied implicitly, error returns instead of exceptions, goroutines and
-channels, pointer helpers like `ptr[T]`), add a one-line explanation in your summary. Prefer
+channels, `new(expr)` for pointer fields), add a one-line explanation in your summary. Prefer
 clear, plain Go over clever Go.
