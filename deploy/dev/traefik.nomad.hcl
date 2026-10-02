@@ -36,6 +36,9 @@ job "traefik" {
           "--providers.nomad.exposedByDefault=false",
           "--providers.nomad.endpoint.address=http://127.0.0.1:4646",
           "--providers.nomad.endpoint.token=${NOMAD_TOKEN}",
+          # Follow Nomad's event stream instead of polling every 15 s, so a route is
+          # dropped within the translator's 5 s shutdown_delay when an allocation stops.
+          "--providers.nomad.watch=true",
           "--log.level=INFO",
         ]
       }

@@ -72,7 +72,17 @@
         "Disconnect": null,
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
-        "Update": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 2,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
         "Migrate": null,
         "Networks": [
           {
@@ -107,7 +117,9 @@
               "traefik.http.routers.whoami-web.tls=true",
               "traefik.http.routers.whoami-web.tls.certresolver=letsencrypt"
             ],
-            "CanaryTags": null,
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
             "EnableTagOverride": false,
             "PortLabel": "http",
             "AddressMode": "",
@@ -175,7 +187,7 @@
       "ProgressDeadline": 600000000000,
       "Canary": null,
       "AutoRevert": true,
-      "AutoPromote": null
+      "AutoPromote": true
     },
     "Multiregion": null,
     "Spreads": null,

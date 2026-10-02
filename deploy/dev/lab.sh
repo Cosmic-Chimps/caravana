@@ -45,7 +45,7 @@ cmd_up() {
 
 Lab is up.
   Nomad UI:          http://127.0.0.1:4646/ui   (token: NOMAD_TOKEN in deploy/dev/.data/env)
-  Traefik dashboard: http://127.0.0.1:8081/dashboard/
+  Traefik dashboard: http://127.0.0.1:8088/dashboard/
   Apps:              https://<host>.localhost:8443 (self-signed cert)
 Next: deploy/dev/lab.sh check
 EOF

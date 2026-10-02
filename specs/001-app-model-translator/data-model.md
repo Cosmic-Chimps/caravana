@@ -127,11 +127,11 @@ Per-installation values, supplied by the control plane's config (feature 002), n
 | `App.Name` (or `ID`) | `Name` |
 | (constant) | `Type: "service"`, `Datacenters: ["*"]` |
 | `App.ID`, `Deployment.ID` | `Meta{"caravana.app", "caravana.deployment"}` |
-| (constant) | `Update{MaxParallel 1, HealthCheck "checks", MinHealthyTime 10s, HealthyDeadline 3m, ProgressDeadline 10m, AutoRevert true}` |
-| `Service` | `TaskGroups[i]{Name, Count, ShutdownDelay 5s, Networks, Services, Tasks}` |
+| (constant) | `Update{MaxParallel 1, HealthCheck "checks", MinHealthyTime 10s, HealthyDeadline 3m, ProgressDeadline 10m, AutoRevert true, AutoPromote true}` (blue/green: changed in feature 003, see its research R15) |
+| `Service` | `TaskGroups[i]{Name, Count, Update{Canary = Count}, ShutdownDelay 5s, Networks, Services, Tasks}` |
 | `Replicas` | `Count` (nil → 1) |
 | `Ports` | `Networks[0]{Mode "bridge", DynamicPorts[{Label, To}]}`; empty `DynamicPorts` for workers |
-| `Domains` / internal ports | `Services[0]{Name "<appID>-<service>", PortLabel, Provider "nomad", Tags}` |
+| `Domains` / internal ports | `Services[0]{Name "<appID>-<service>", PortLabel, Provider "nomad", Tags}`; with domains also `CanaryTags ["caravana.canary=true"]` |
 | `Health` | `Services[0].Checks[0]{Name "health", Type http/tcp, Path, PortLabel only if ≠ registration port, Interval, Timeout}` |
 | `Name`, digest, `Command`, `Args` | `Tasks[0]{Name, Driver "docker", Config{image, command?, args?}}` |
 | `Env` | `Tasks[0].Env` (nil when empty) |

@@ -49,6 +49,7 @@ portForwards:
 - guestPort: 443
   hostPort: 8443
 - guestPort: 8081    # Traefik dashboard
+  hostPort: 8088
 - guestPort: 4646    # Nomad API and UI
 - guestPortRange: [20000, 32000]   # Nomad dynamic ports: reach apps through Traefik instead
   ignore: true

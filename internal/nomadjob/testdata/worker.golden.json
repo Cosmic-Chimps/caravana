@@ -80,7 +80,17 @@
         "Disconnect": null,
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
-        "Update": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
         "Migrate": null,
         "Networks": [
           {
@@ -116,7 +126,7 @@
       "ProgressDeadline": 600000000000,
       "Canary": null,
       "AutoRevert": true,
-      "AutoPromote": null
+      "AutoPromote": true
     },
     "Multiregion": null,
     "Spreads": null,

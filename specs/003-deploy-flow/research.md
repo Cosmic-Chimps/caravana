@@ -283,3 +283,34 @@ from feature 001), Nomad 2.0.7 in the lab.
 - **`Location` on errors**: every error raised after the deployment record exists carries
   `Location: /v1/apps/{id}/deployments/{deploymentId}` (FR-022a). The error body shape doesn't
   change.
+
+## R15. Blue/green rollouts with canaries (found by the lab test)
+
+- **Finding**: the first full lab run showed a broken deploy taking whoami down for its whole
+  10-minute rollout (1184 of 1193 requests failed). Feature 001's update strategy was a plain
+  rolling update: with one replica, Nomad stopped the only healthy allocation as soon as it
+  placed the new one. Nomad also doesn't fail a deployment at the 3-minute healthy deadline; it
+  keeps rescheduling the unhealthy allocation until the 10-minute progress deadline.
+- **Decision**: the translator now makes every deploy blue/green. Each task group gets
+  `Update{Canary: Count}` (Nomad merges it with the job's update block) and the job's update
+  block gets `AutoPromote: true`. Services with domains get `CanaryTags:
+  ["caravana.canary=true"]`: no `traefik.enable` tag, so Traefik (which Caravana runs with
+  `exposedByDefault=false`) never routes to an unpromoted canary. A first try with
+  `traefik.enable=false` hid the canaries too, but the lab showed Traefik dropping the whole
+  whoami router for about a second whenever the canaries changed, presumably because Nomad's
+  merged service tags then held both `traefik.enable=true` and `=false`. Without the tag: 0 failed
+  requests in four measured handovers. Once
+  every canary is healthy, Nomad promotes them (their registrations switch to the normal tags)
+  and stops the old allocations after their 5 s shutdown delay. A deploy that never gets
+  healthy fails at the progress deadline, Nomad drops the canaries and reverts the job, and
+  the old allocations serve throughout.
+- **Traefik must follow Nomad's event stream** (`--providers.nomad.watch=true`, now in
+  `deploy/dev/traefik.nomad.hcl`). With the default 15 s polling, Traefik kept routing to
+  deregistered allocations for up to 15 s, longer than the 5 s `shutdown_delay`, which gave
+  about 4 s of 502s at each promotion. Watch mode needs only the `read-job` policy Traefik
+  already has. Feature 012's installer must set both `watch=true` and `exposedByDefault=false`.
+- **Cost**: during a deploy each service briefly runs twice its replicas, so a node needs room
+  for both versions at once. Acceptable on Phase 1's single node; feature 012's sizing advice
+  should mention it.
+- **Unchanged**: deployment descriptions (R8) and the statuses Caravana records; the golden
+  files and `deploy/dev/whoami.json` change by exactly these three fields.

@@ -39,8 +39,13 @@ type Result struct {
 	Warnings []app.Warning
 }
 
-// Update strategy: one allocation at a time, healthy by its checks, and an
-// automatic revert to the last good version when a deploy fails.
+// Update strategy: blue/green with canaries. Each deploy starts a full set of
+// new allocations (one canary per replica) next to the running ones. Traefik
+// doesn't route to canaries (see canaryTags), so the old version keeps
+// serving every request until the new one is healthy by its checks; then
+// Nomad promotes it automatically and stops the old allocations. A deploy
+// that never gets healthy is reverted to the last good version, and the old
+// allocations never stopped serving.
 const (
 	minHealthyTime   = 10 * time.Second
 	healthyDeadline  = 3 * time.Minute
@@ -175,6 +180,7 @@ func job(a app.App, d app.Deployment, s Settings) *api.Job {
 			HealthyDeadline:  new(healthyDeadline),
 			ProgressDeadline: new(progressDeadline),
 			AutoRevert:       new(true),
+			AutoPromote:      new(true),
 		},
 	}
 	for _, svc := range a.Services {
@@ -196,8 +202,12 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 	}
 
 	tg := &api.TaskGroup{
-		Name:          new(svc.Name),
-		Count:         new(count),
+		Name:  new(svc.Name),
+		Count: new(count),
+		// One canary per replica: the whole new version runs beside the old
+		// one before any old allocation stops. Nomad merges this with the
+		// job's update block.
+		Update:        &api.UpdateStrategy{Canary: new(count)},
 		ShutdownDelay: new(shutdownDelay),
 		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports}},
 		Tasks:         []*api.Task{task(svc, image, s)},
@@ -228,6 +238,7 @@ func registration(a app.App, svc app.Service, s Settings) *api.Service {
 	if len(svc.Domains) > 0 {
 		reg.PortLabel = svc.Domains[0].Port
 		reg.Tags = routerTags(name, svc.Domains, s)
+		reg.CanaryTags = canaryTags
 	}
 	reg.Checks = []api.ServiceCheck{healthCheck(*svc.Health, checkPort, reg.PortLabel)}
 	return reg
@@ -245,6 +256,18 @@ func healthPort(svc app.Service) string {
 		return svc.Ports[0].Name
 	}
 }
+
+// canaryTags replace a service's tags while its allocation is an unpromoted
+// canary, so Traefik doesn't send it traffic before it is healthy. Nomad uses
+// the normal tags when CanaryTags is empty, so this must not be empty.
+//
+// It deliberately has no traefik.enable tag: Caravana's Traefik runs with
+// exposedByDefault=false, so a registration without traefik.enable=true is
+// never routed. A "traefik.enable=false" here would sit next to the live
+// instances' "traefik.enable=true" in Nomad's merged service tags, and the lab
+// showed Traefik then drops the whole router for about a second whenever the
+// canaries change.
+var canaryTags = []string{"caravana.canary=true"}
 
 // routerTags builds one Traefik router for all of a service's domains, with
 // TLS always on. Without a certificate resolver, Traefik serves its default

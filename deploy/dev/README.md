@@ -16,7 +16,7 @@ deploy/dev/lab.sh stop | delete | shell
 | Where | What |
 | --- | --- |
 | http://127.0.0.1:4646/ui | Nomad UI; sign in with `NOMAD_TOKEN` from `deploy/dev/.data/env` |
-| http://127.0.0.1:8081/dashboard/ | Traefik dashboard |
+| http://127.0.0.1:8088/dashboard/ | Traefik dashboard (8081 inside the VM) |
 | https://&lt;name&gt;.localhost:8443 | Apps routed by Traefik (self-signed cert, so `curl -k`) |
 
 Ports 80/443 inside the VM appear as 8080/8443 on the Mac, because macOS only lets root bind
