@@ -35,3 +35,7 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
+
+// Unwrap lets http.ResponseController reach the real ResponseWriter, so a
+// handler can change its own write deadline.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }

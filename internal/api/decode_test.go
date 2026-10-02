@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type decodeTarget struct {
@@ -102,5 +103,69 @@ func TestPointerToField(t *testing.T) {
 				t.Errorf("pointerToField(%q) = %q, want %q", tc.pointer, got, tc.want)
 			}
 		})
+	}
+}
+
+// durationTarget mirrors app.HealthCheck's duration fields.
+type durationTarget struct {
+	Health struct {
+		Path     string        `json:"path,omitempty"`
+		Interval time.Duration `json:"interval,omitempty"`
+		Timeout  time.Duration `json:"timeout,omitempty"`
+	} `json:"health"`
+}
+
+func TestDecodeDurations(t *testing.T) {
+	tests := []struct {
+		name         string
+		body         string
+		wantInterval time.Duration
+		wantField    string // set when decoding must fail
+		wantMessage  string
+	}{
+		{name: "seconds", body: `{"health":{"interval":"10s"}}`, wantInterval: 10 * time.Second},
+		{name: "minutes and seconds", body: `{"health":{"interval":"1m30s"}}`, wantInterval: 90 * time.Second},
+		{name: "omitted", body: `{"health":{}}`},
+		{name: "number", body: `{"health":{"interval":10}}`, wantField: "health.interval", wantMessage: `must be a duration string such as "10s"`},
+		{name: "not a duration", body: `{"health":{"timeout":"ten"}}`, wantField: "health.timeout", wantMessage: `"ten" is not a duration`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "/v1/test", strings.NewReader(tc.body))
+			r.Header.Set("Content-Type", "application/json")
+			var v durationTarget
+			err := decodeJSON(r, &v)
+			if tc.wantField == "" {
+				if err != nil {
+					t.Fatalf("decodeJSON() = %v", err)
+				}
+				if v.Health.Interval != tc.wantInterval {
+					t.Errorf("interval = %v, want %v", v.Health.Interval, tc.wantInterval)
+				}
+				return
+			}
+			var e *Error
+			if !errors.As(err, &e) {
+				t.Fatalf("decodeJSON() = %v, want *Error", err)
+			}
+			if e.Status != 400 || e.Code != codeInvalidField || e.Field != tc.wantField || !strings.Contains(e.Message, tc.wantMessage) {
+				t.Errorf("got %d %q %q %q; want 400 %q %q containing %q",
+					e.Status, e.Code, e.Field, e.Message, codeInvalidField, tc.wantField, tc.wantMessage)
+			}
+		})
+	}
+}
+
+func TestEncodeDurations(t *testing.T) {
+	var v durationTarget
+	v.Health.Path = "/"
+	v.Health.Interval = 90 * time.Second
+	var buf strings.Builder
+	if err := encodeJSON(&buf, v); err != nil {
+		t.Fatalf("encodeJSON: %v", err)
+	}
+	// The zero timeout is left out, so an unset field reads back unset.
+	if want := `{"health":{"path":"/","interval":"1m30s"}}` + "\n"; buf.String() != want {
+		t.Errorf("encodeJSON = %q, want %q", buf.String(), want)
 	}
 }

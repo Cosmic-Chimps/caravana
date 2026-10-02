@@ -189,6 +189,18 @@ func TestValidate(t *testing.T) {
 			tc.mutate(&a, &d)
 
 			err := Validate(a, d)
+
+			// ValidateApp reports the same first error for every app-level
+			// problem, and none for a deployment problem.
+			appErr := ValidateApp(a)
+			if strings.HasPrefix(tc.wantField, "deployment.") || tc.wantField == "" {
+				if appErr != nil {
+					t.Errorf("ValidateApp() = %v, want nil", appErr)
+				}
+			} else if appErr == nil || appErr.Error() != err.Error() {
+				t.Errorf("ValidateApp() = %v, want the same error as Validate: %v", appErr, err)
+			}
+
 			if tc.wantField == "" {
 				if err != nil {
 					t.Fatalf("Validate() = %v, want nil", err)

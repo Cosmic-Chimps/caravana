@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,10 +88,10 @@ func TestDeployments(t *testing.T) {
 		if _, err := s.UpdateDeployment(ctx, "nope", DeploymentUpdate{Status: StatusRunning}); !errors.Is(err, ErrNotFound) {
 			t.Errorf("UpdateDeployment(nope) = %v, want ErrNotFound", err)
 		}
-		if _, err := s.ListDeployments(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		if _, err := s.ListDeployments(ctx, "nope", 0); !errors.Is(err, ErrNotFound) {
 			t.Errorf("ListDeployments(nope) = %v, want ErrNotFound", err)
 		}
-		list, err := s.ListDeployments(ctx, "whoami")
+		list, err := s.ListDeployments(ctx, "whoami", 0)
 		if err != nil || len(list) != 0 {
 			t.Errorf("ListDeployments(whoami) = %v, %v; want empty", list, err)
 		}
@@ -123,6 +124,15 @@ func TestDeployments(t *testing.T) {
 			t.Errorf("warnings = %v, want %v kept", withVersion.Warnings, warnings)
 		}
 
+		digests := map[string]string{"web": "traefik/whoami@sha256:" + strings.Repeat("b", 64)}
+		withDigests, err := s.UpdateDeployment(ctx, "d1", DeploymentUpdate{Status: StatusRunning, Digests: digests})
+		if err != nil {
+			t.Fatalf("running -> running with digests: %v", err)
+		}
+		if !reflect.DeepEqual(withDigests.Deployment.Digests, digests) || *withDigests.JobVersion != 3 {
+			t.Errorf("digests = %v, version %v; want the new digests and version 3 kept", withDigests.Deployment.Digests, withDigests.JobVersion)
+		}
+
 		reverted, err := s.UpdateDeployment(ctx, "d1", DeploymentUpdate{Status: StatusReverted, Error: "health check failed"})
 		if err != nil {
 			t.Fatalf("running -> reverted: %v", err)
@@ -134,20 +144,82 @@ func TestDeployments(t *testing.T) {
 		if !reflect.DeepEqual(got, reverted) || got.Status != StatusReverted || got.Error != "health check failed" || *got.JobVersion != 3 {
 			t.Errorf("stored = %+v, want reverted with the error and job version 3", got)
 		}
+		if !reflect.DeepEqual(got.Deployment.Digests, digests) {
+			t.Errorf("digests = %v, want %v kept", got.Deployment.Digests, digests)
+		}
 	})
+
+	t.Run("list with a limit", func(t *testing.T) {
+		s := storeWithApp(t)
+		for _, id := range []string{"d1", "d2", "d3"} {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+				t.Fatalf("create %s: %v", id, err)
+			}
+		}
+		for _, tc := range []struct {
+			limit int
+			want  []string
+		}{
+			{1, []string{"d3"}},
+			{2, []string{"d3", "d2"}},
+			{5, []string{"d3", "d2", "d1"}},
+			{0, []string{"d3", "d2", "d1"}},
+			{-1, []string{"d3", "d2", "d1"}},
+		} {
+			list, err := s.ListDeployments(ctx, "whoami", tc.limit)
+			if err != nil {
+				t.Fatalf("ListDeployments(limit %d): %v", tc.limit, err)
+			}
+			if got := deploymentIDs(list); !slices.Equal(got, tc.want) {
+				t.Errorf("limit %d: %v, want %v", tc.limit, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("unfinished", func(t *testing.T) {
+		s := storeWithApp(t)
+		final := map[string]Status{"healthy": StatusHealthy, "failed": StatusFailed, "reverted": StatusReverted, "superseded": StatusSuperseded}
+		for _, id := range []string{"pending", "running", "healthy", "failed", "reverted", "superseded"} {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+				t.Fatalf("create %s: %v", id, err)
+			}
+			if id == "pending" {
+				continue
+			}
+			if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: StatusRunning}); err != nil {
+				t.Fatalf("%s -> running: %v", id, err)
+			}
+			if st, ok := final[id]; ok {
+				if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: st}); err != nil {
+					t.Fatalf("%s -> %s: %v", id, st, err)
+				}
+			}
+		}
+		list, err := s.ListUnfinishedDeployments(ctx)
+		if err != nil {
+			t.Fatalf("ListUnfinishedDeployments: %v", err)
+		}
+		if got := deploymentIDs(list); !slices.Equal(got, []string{"pending", "running"}) {
+			t.Errorf("unfinished = %v, want [pending running] (oldest first)", got)
+		}
+	})
+}
+
+func deploymentIDs(list []DeploymentRecord) []string {
+	var ids []string
+	for _, d := range list {
+		ids = append(ids, d.Deployment.ID)
+	}
+	return ids
 }
 
 func assertListOrder(t *testing.T, s *Store, want ...string) {
 	t.Helper()
-	list, err := s.ListDeployments(context.Background(), "whoami")
+	list, err := s.ListDeployments(context.Background(), "whoami", 0)
 	if err != nil {
 		t.Fatalf("ListDeployments: %v", err)
 	}
-	var got []string
-	for _, d := range list {
-		got = append(got, d.Deployment.ID)
-	}
-	if !slices.Equal(got, want) {
+	if got := deploymentIDs(list); !slices.Equal(got, want) {
 		t.Errorf("order = %v, want %v", got, want)
 	}
 }

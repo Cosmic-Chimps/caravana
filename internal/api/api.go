@@ -12,6 +12,8 @@ import (
 	"path"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -27,19 +29,26 @@ type route struct {
 }
 
 type server struct {
-	store *store.Store
+	svc   *service.Service
+	store *store.Store // for the health check only; everything else goes through svc
 	log   *slog.Logger
 }
 
 func (s *server) routes() []route {
 	return []route{
 		{http.MethodGet, "/v1/health", s.health},
+		{http.MethodGet, "/v1/apps/{id}", s.getApp},
+		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy},
+		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment},
 	}
 }
 
-// New returns the API's HTTP handler.
-func New(st *store.Store, log *slog.Logger) http.Handler {
-	s := &server{store: st, log: log}
+// New returns the API's HTTP handler. Apps and deployments go through svc,
+// the same layer the UI and the webhook use (constitution V); st is only
+// pinged by the health check.
+func New(svc *service.Service, st *store.Store, log *slog.Logger) http.Handler {
+	s := &server{svc: svc, store: st, log: log}
 	mux := http.NewServeMux()
 	for _, rt := range s.routes() {
 		mux.Handle(rt.method+" "+rt.path, s.handle(rt.handle))
@@ -107,11 +116,22 @@ func (s *server) handle(h handlerFunc) http.HandlerFunc {
 	}
 }
 
-// toAPIError maps any error to the *Error the client sees. Unexpected errors
+// toAPIError maps any error to the *Error the client sees. A failed deploy
+// also points at the deployment record it left (FR-022a). Unexpected errors
 // are logged and hidden behind a generic message.
 func (s *server) toAPIError(r *http.Request, err error) *Error {
+	e := s.mapError(r, err)
+	var deployErr *service.DeployError
+	if errors.As(err, &deployErr) {
+		e.Location = deploymentPath(deployErr.AppID, deployErr.DeploymentID)
+	}
+	return e
+}
+
+func (s *server) mapError(r *http.Request, err error) *Error {
 	var apiErr *Error
 	var fieldErr *app.FieldError
+	var imageErr *deploy.ImageError
 	switch {
 	case errors.As(err, &apiErr):
 		return apiErr
@@ -119,6 +139,16 @@ func (s *server) toAPIError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: fieldErr.Field, Message: fieldErr.Message}
 	case errors.Is(err, store.ErrNotFound):
 		return &Error{Status: http.StatusNotFound, Code: codeNotFound, Message: err.Error()}
+	case errors.As(err, &imageErr) && errors.Is(err, deploy.ErrImageNotFound):
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeImageNotFound, Field: imageErr.Field, Message: err.Error()}
+	case errors.As(err, &imageErr):
+		return &Error{Status: http.StatusBadGateway, Code: codeRegistryUnavailable, Field: imageErr.Field, Message: err.Error()}
+	case errors.Is(err, deploy.ErrJobConflict):
+		return &Error{Status: http.StatusConflict, Code: codeJobConflict, Message: err.Error()}
+	case errors.Is(err, deploy.ErrNomadRejected):
+		return &Error{Status: http.StatusBadGateway, Code: codeNomadRejected, Message: err.Error()}
+	case errors.Is(err, deploy.ErrNomadUnavailable):
+		return &Error{Status: http.StatusBadGateway, Code: codeNomadUnavailable, Message: err.Error()}
 	default:
 		s.log.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", err)
 		return internalError()

@@ -8,7 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
+	"net/url"
 	"strconv"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -24,7 +26,33 @@ type Config struct {
 	DataDir string
 	// Settings are passed to the Nomad job translator.
 	Settings nomadjob.Settings
+	// NomadAddr is the Nomad HTTP API, e.g. "http://127.0.0.1:4646".
+	NomadAddr string
+	// NomadToken is the Nomad ACL token. It comes from the environment only:
+	// a flag would show it in the process list.
+	NomadToken Secret
 }
+
+// Secret is a string that never prints. Formatting it with fmt or logging it
+// with slog gives "[redacted]"; Reveal returns the value for the one place
+// that needs it.
+type Secret string
+
+const redacted = "[redacted]"
+
+func (Secret) String() string   { return redacted }
+func (Secret) GoString() string { return redacted }
+
+// LogValue makes slog log "[redacted]" instead of the value. slog checks for
+// this method (the slog.LogValuer interface) on every value it logs.
+func (Secret) LogValue() slog.Value { return slog.StringValue(redacted) }
+
+// MarshalJSON covers the case LogValue can't: slog's JSON handler encodes a
+// struct that contains a Secret with encoding/json, field by field.
+func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+
+// Reveal returns the secret's value.
+func (s Secret) Reveal() string { return string(s) }
 
 // setting describes one setting's environment variable and flag.
 type setting struct {
@@ -40,6 +68,9 @@ var (
 	certResolverSetting = setting{"CARAVANA_CERT_RESOLVER", "cert-resolver"}
 	cpuSetting          = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
 	memorySetting       = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
+	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
+	nomadAddrSetting = setting{"NOMAD_ADDR", "nomad-addr"}
+	nomadTokenEnv    = "NOMAD_TOKEN"
 )
 
 // translatorSettings maps nomadjob's field names to our settings, so its
@@ -69,14 +100,17 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	certResolver := fs.String(certResolverSetting.flag, envOr(certResolverSetting, ""), "Traefik certificate resolver; empty means Traefik's default certificate")
 	cpu := fs.String(cpuSetting.flag, envOr(cpuSetting, "100"), "default CPU per service, in MHz")
 	memory := fs.String(memorySetting.flag, envOr(memorySetting, "64"), "default memory per service, in MB")
+	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
 	if err := fs.Parse(args); err != nil {
 		return Config{}, fmt.Errorf("command line: %w", err)
 	}
 
 	c := Config{
-		Listen:   *listen,
-		DataDir:  *dataDir,
-		Settings: nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver},
+		Listen:     *listen,
+		DataDir:    *dataDir,
+		Settings:   nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver},
+		NomadAddr:  *nomadAddr,
+		NomadToken: Secret(getenv(nomadTokenEnv)),
 	}
 
 	var err error
@@ -91,6 +125,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	}
 	if c.DataDir == "" {
 		return Config{}, fmt.Errorf("%s: is required", dataDirSetting)
+	}
+	if err := checkNomadAddr(c.NomadAddr); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", nomadAddrSetting, err)
 	}
 	if err := c.Settings.Validate(); err != nil {
 		var fe *app.FieldError
@@ -120,6 +157,14 @@ func checkListen(addr string) error {
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
 		return fmt.Errorf("port %q must be between 1 and 65535", port)
+	}
+	return nil
+}
+
+func checkNomadAddr(addr string) error {
+	u, err := url.Parse(addr)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%q must be an http:// or https:// URL with a host, e.g. http://127.0.0.1:4646", addr)
 	}
 	return nil
 }

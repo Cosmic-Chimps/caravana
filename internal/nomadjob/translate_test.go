@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +205,9 @@ func TestTranslateErrors(t *testing.T) {
 			a.Services[0].Health.Timeout = 3 * time.Second
 		}, "services[0].health.timeout"},
 
+		{"app rules run", func(a *app.App, d *app.Deployment, s *Settings) {
+			a.Services[0].Image = ""
+		}, "services[0].image"},
 		{"model rules run", func(a *app.App, d *app.Deployment, s *Settings) {
 			d.Digests["web"] = "traefik/whoami:latest"
 		}, "deployment.digests[web]"},
@@ -231,6 +235,17 @@ func TestTranslateErrors(t *testing.T) {
 			}
 			if res.Job != nil {
 				t.Errorf("got a job together with an error")
+			}
+
+			// Check reports the same error for everything that doesn't
+			// need the deployment, and nothing for deployment problems.
+			checkErr := Check(a, s)
+			if strings.HasPrefix(tc.wantField, "deployment.") {
+				if checkErr != nil {
+					t.Errorf("Check() = %v, want nil", checkErr)
+				}
+			} else if checkErr == nil || checkErr.Error() != err.Error() {
+				t.Errorf("Check() = %v, want the same error as Translate: %v", checkErr, err)
 			}
 		})
 	}

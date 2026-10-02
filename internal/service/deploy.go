@@ -1,0 +1,259 @@
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/store"
+)
+
+// appState orders the deploys of one app (research R9). mu is held from
+// image resolution through registration, so two deploys of the same app
+// never interleave. latest is the most recently requested deployment.
+type appState struct {
+	mu     sync.Mutex
+	latest string
+}
+
+// Deploy validates the app, saves it and deploys it. It returns as soon as
+// Nomad has accepted the job; a watcher records how the rollout ends.
+//
+// Validation errors are *app.FieldError, and nothing is saved. Once the
+// deployment record exists, errors are *DeployError and the record says
+// failed.
+func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	if err := s.deployer.Validate(a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	if _, err := s.store.SaveApp(ctx, a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	return s.deploy(ctx, a, trigger)
+}
+
+// Redeploy deploys the stored app again, exactly as Deploy would. An unknown
+// app is store.ErrNotFound. Feature 004's webhook calls it.
+func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigger) (store.DeploymentRecord, error) {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	// The settings may have changed since the app was saved.
+	if err := s.deployer.Validate(rec.App); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	return s.deploy(ctx, rec.App, trigger)
+}
+
+func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}}
+	rec, err := s.store.CreateDeployment(ctx, a.ID, dep)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	state := s.markLatest(a.ID, dep.ID)
+
+	// From here on the deploy finishes even if the client goes away:
+	// WithoutCancel keeps the request's values but drops its cancellation.
+	ctx = context.WithoutCancel(ctx)
+
+	// sync.Mutex isn't first-come, first-served: a newer deploy may get the
+	// lock before an older one. The latest check below is what keeps an
+	// older deploy from ever registering after a newer one.
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	// The budget starts once the lock is held, so waiting behind another
+	// deploy of the same app doesn't eat into it (research R11).
+	ctx, cancel := context.WithTimeout(ctx, s.budget)
+	defer cancel()
+
+	digests, warnings, err := s.deployer.Resolve(ctx, a)
+	if err != nil {
+		return s.fail(rec, err)
+	}
+	if latest := s.latestOf(a.ID); latest != dep.ID {
+		msg := fmt.Sprintf("replaced by deployment %s before it was registered", latest)
+		if upd, err := s.write(dep.ID, store.DeploymentUpdate{Status: store.StatusSuperseded, Error: msg}); err == nil {
+			rec = upd
+		} else {
+			s.log.Error("record superseded deployment", "deployment", dep.ID, "error", err)
+		}
+		return rec, nil
+	}
+
+	dep.Digests = digests
+	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID))
+	if err != nil {
+		return s.fail(rec, err)
+	}
+
+	// Nomad has accepted the job: from now on nothing is returned as an
+	// error. A failed write is logged, and the watcher brings the record up
+	// to date (research R6).
+	warnings = append(warnings, reg.Warnings...)
+	if warnings == nil {
+		warnings = []app.Warning{}
+	}
+	running := store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: reg.JobVersion, Digests: digests, Warnings: warnings}
+	// One try only: the watcher retries this write, and the client
+	// shouldn't wait on a struggling store.
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 5*time.Second)
+	upd, err := s.store.UpdateDeployment(writeCtx, dep.ID, running)
+	cancelWrite()
+	if err == nil {
+		rec = upd
+	} else {
+		s.log.Error("record running deployment; the watcher will retry", "deployment", dep.ID, "error", err)
+		rec.Status, rec.JobVersion, rec.Deployment.Digests, rec.Warnings = store.StatusRunning, reg.JobVersion, digests, warnings
+	}
+	s.startWatcher(a.ID, dep.ID, reg.JobVersion, running)
+	return rec, nil
+}
+
+// fail records a deploy that failed before Nomad accepted the job and
+// returns the error for the client.
+func (s *Service) fail(rec store.DeploymentRecord, cause error) (store.DeploymentRecord, error) {
+	id := rec.Deployment.ID
+	if upd, err := s.write(id, store.DeploymentUpdate{Status: store.StatusFailed, Error: cause.Error()}); err == nil {
+		rec = upd
+	} else {
+		s.log.Error("record failed deployment", "deployment", id, "error", err)
+	}
+	return rec, &DeployError{AppID: rec.AppID, DeploymentID: id, Err: cause}
+}
+
+// startWatcher follows the rollout in the background and records how it
+// ends. running is the update that marks the record running; the watcher
+// writes it again first, in case the deploy's own write failed.
+func (s *Service) startWatcher(appID, deploymentID string, version *uint64, running store.DeploymentUpdate) {
+	ctx := s.background()
+	s.watchers.Add(1)
+	go func() {
+		defer s.watchers.Done()
+		s.follow(ctx, appID, deploymentID, version, running)
+	}()
+}
+
+// follow makes sure the record is running with its job version, waits for
+// the rollout to end and records the outcome. If ctx ends first (shutdown),
+// the record stays running and the next start resumes it.
+func (s *Service) follow(ctx context.Context, appID, deploymentID string, version *uint64, running store.DeploymentUpdate) {
+	if version == nil {
+		v, found := s.findVersion(ctx, appID, deploymentID)
+		if !found {
+			if ctx.Err() == nil {
+				s.finish(deploymentID, store.StatusFailed, "Nomad accepted the job, but has no job version for this deployment")
+			}
+			return
+		}
+		version = &v
+	}
+	running.JobVersion = version
+	if _, err := s.update(ctx, deploymentID, running); err != nil {
+		if !errors.Is(err, store.ErrInvalidTransition) {
+			s.log.Error("record running deployment", "deployment", deploymentID, "error", err)
+			return
+		}
+		// Already final (a restart raced us): nothing left to follow.
+		return
+	}
+
+	out, err := s.deployer.Watch(ctx, appID, *version)
+	if err != nil {
+		return // shutdown
+	}
+	status := map[deploy.Result]store.Status{
+		deploy.OutcomeHealthy:    store.StatusHealthy,
+		deploy.OutcomeFailed:     store.StatusFailed,
+		deploy.OutcomeReverted:   store.StatusReverted,
+		deploy.OutcomeSuperseded: store.StatusSuperseded,
+	}[out.Result]
+	msg := out.Message
+	if status == store.StatusHealthy {
+		msg = "" // error holds why it didn't work; a healthy rollout has none
+	}
+	s.finish(deploymentID, status, msg)
+}
+
+// findVersion asks Nomad for the job version carrying deploymentID until it
+// answers (it retries while Nomad is unreachable). found is false when Nomad
+// answers that no version has it, or ctx ends.
+func (s *Service) findVersion(ctx context.Context, appID, deploymentID string) (uint64, bool) {
+	gap := s.retryGap
+	for {
+		v, found, err := s.deployer.FindVersion(ctx, appID, deploymentID)
+		if err == nil {
+			return v, found
+		}
+		s.log.Warn("look up job version; retrying", "deployment", deploymentID, "error", err)
+		select {
+		case <-time.After(gap):
+			gap = min(2*gap, 30*time.Second)
+		case <-ctx.Done():
+			return 0, false
+		}
+	}
+}
+
+// finish records a final status, even during shutdown.
+func (s *Service) finish(deploymentID string, status store.Status, msg string) {
+	if _, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); err != nil {
+		s.log.Error("record deployment outcome", "deployment", deploymentID, "status", status, "error", err)
+	}
+}
+
+// write records a deployment change whatever the request or shutdown is
+// doing, with its own short deadline, so an outcome already known is never
+// lost.
+func (s *Service) write(id string, u store.DeploymentUpdate) (store.DeploymentRecord, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.update(ctx, id, u)
+}
+
+// owns reports whether deploymentID is a deployment of appID this Caravana
+// recorded: the test for "is this Nomad job ours" (research R7).
+func (s *Service) owns(appID string) func(context.Context, string) (bool, error) {
+	return func(ctx context.Context, deploymentID string) (bool, error) {
+		rec, err := s.store.GetDeployment(ctx, deploymentID)
+		if errors.Is(err, store.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return rec.AppID == appID, nil
+	}
+}
+
+// markLatest records deploymentID as appID's newest deploy and returns the
+// app's state.
+func (s *Service) markLatest(appID, deploymentID string) *appState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.apps[appID]
+	if st == nil {
+		st = &appState{}
+		s.apps[appID] = st
+	}
+	st.latest = deploymentID
+	return st
+}
+
+func (s *Service) latestOf(appID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.apps[appID].latest
+}
+
+// newDeploymentID returns 26 random lowercase base32 characters.
+func newDeploymentID() string {
+	return strings.ToLower(rand.Text())
+}

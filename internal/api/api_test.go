@@ -13,8 +13,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
+	"github.com/cosmic-chimps/caravana/internal/registry"
+	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -39,22 +46,64 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// newTestServer starts the API on a fresh store and returns its base URL, the
-// store, and the captured log output.
-func newTestServer(t *testing.T) (string, *store.Store, *syncBuffer) {
+// whoamiDigest is the digest part of apptest.WhoamiDigest.
+const whoamiDigest = "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+
+// testEnv is the API wired to a real store and service, with a fake
+// registry and a fake Nomad behind it.
+type testEnv struct {
+	URL      string
+	Store    *store.Store
+	Logs     *syncBuffer
+	Registry *registrytest.Server
+	Nomad    *deploytest.Nomad
+}
+
+// newTestEnv starts the API on a fresh store. The fake registry knows
+// traefik/whoami:latest and the fake Nomad's rollouts succeed. nomadToken is
+// the token Caravana sends to Nomad.
+func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 	t.Helper()
 	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	logs := newSyncBuffer()
-	log := slog.New(slog.NewJSONHandler(logs, nil))
-	srv := httptest.NewServer(New(st, log))
+	e := &testEnv{Store: st, Logs: newSyncBuffer(), Registry: registrytest.New(t), Nomad: deploytest.New(t)}
+	e.Registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
+	e.Nomad.Succeed()
+
+	log := slog.New(slog.NewJSONHandler(e.Logs, nil))
+	client, err := deploy.NewNomadClient(e.Nomad.Addr(), nomadToken)
+	if err != nil {
+		t.Fatalf("nomad client: %v", err)
+	}
+	d := deploy.New(client, &registry.Client{Endpoints: e.Registry.Endpoints()},
+		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64})
+	d.Timing = deploy.Timing{PollGap: time.Millisecond, BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,
+		VersionRetries: []time.Duration{time.Millisecond}}
+	svc := service.New(st, d, log)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+
+	srv := httptest.NewServer(New(svc, st, log))
+	e.URL = srv.URL
 	t.Cleanup(func() {
 		srv.Close()
+		cancel()
+		svc.Wait()
 		st.Close()
 	})
-	return srv.URL, st, logs
+	return e
+}
+
+// newTestServer starts the API on a fresh store and returns its base URL, the
+// store, and the captured log output.
+func newTestServer(t *testing.T) (string, *store.Store, *syncBuffer) {
+	t.Helper()
+	e := newTestEnv(t, "")
+	return e.URL, e.Store, e.Logs
 }
 
 // errorBody is the standard error response, decoded.

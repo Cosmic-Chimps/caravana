@@ -73,20 +73,35 @@ var traefikNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // invalid input it returns a *app.FieldError naming the field, and no job.
 //
 // Checks run in this order and stop at the first problem: the settings, the
-// model's rules (app.Validate), then Nomad's limits with defaults applied.
+// model's rules (app.ValidateApp), Nomad's limits with defaults applied, then
+// the deployment's rules (app.Validate).
 func Translate(a app.App, d app.Deployment, s Settings) (Result, error) {
-	if err := s.Validate(); err != nil {
+	if err := Check(a, s); err != nil {
 		return Result{}, err
 	}
 	if err := app.Validate(a, d); err != nil {
 		return Result{}, err
 	}
+	return Result{Job: job(a, d, s)}, nil
+}
+
+// Check runs every rule Translate runs that doesn't need a deployment: the
+// settings, the app's own rules and Nomad's limits. The deploy flow calls it
+// before saving an app, so input Nomad would refuse never gets that far. Like
+// Translate, it is pure.
+func Check(a app.App, s Settings) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	if err := app.ValidateApp(a); err != nil {
+		return err
+	}
 	for i, svc := range a.Services {
 		if err := checkNomadLimits(i, svc, s); err != nil {
-			return Result{}, err
+			return err
 		}
 	}
-	return Result{Job: job(a, d, s)}, nil
+	return nil
 }
 
 // Validate checks the settings with the same rules Translate applies, and

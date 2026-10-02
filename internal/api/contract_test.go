@@ -91,6 +91,24 @@ func TestDiffRoutes(t *testing.T) {
 	}
 }
 
+// checkSchema fails the test when raw, a JSON body, doesn't match the named
+// schema in the contract. Every API test that reads a body can use it
+// (FR-005).
+func checkSchema(t *testing.T, doc *openapi3.T, raw []byte, schema string) {
+	t.Helper()
+	var body any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	ref := doc.Components.Schemas[schema]
+	if ref == nil {
+		t.Fatalf("schema %s not in the contract", schema)
+	}
+	if err := ref.Value.VisitJSON(body); err != nil {
+		t.Errorf("body %s does not match schema %s: %v", raw, schema, err)
+	}
+}
+
 // TestContractBodies checks that what the server really sends matches the
 // schemas in the contract.
 func TestContractBodies(t *testing.T) {
@@ -101,17 +119,7 @@ func TestContractBodies(t *testing.T) {
 		t.Helper()
 		defer resp.Body.Close()
 		raw, _ := io.ReadAll(resp.Body)
-		var body any
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("decode %s: %v", raw, err)
-		}
-		ref := doc.Components.Schemas[schema]
-		if ref == nil {
-			t.Fatalf("schema %s not in the contract", schema)
-		}
-		if err := ref.Value.VisitJSON(body); err != nil {
-			t.Errorf("body %s does not match schema %s: %v", raw, schema, err)
-		}
+		checkSchema(t, doc, raw, schema)
 	}
 	get := func(t *testing.T, method, path string) *http.Response {
 		t.Helper()
@@ -125,9 +133,21 @@ func TestContractBodies(t *testing.T) {
 
 	// Prove the schema check can fail, so the passing cases mean something.
 	t.Run("schemas reject wrong bodies", func(t *testing.T) {
+		deployment := func(change func(d map[string]any)) map[string]any {
+			d := map[string]any{"id": "d1", "appId": "whoami", "trigger": "manual", "status": "running",
+				"digests": map[string]any{"web": "traefik/whoami@" + whoamiDigest}, "warnings": []any{},
+				"createdAt": "2026-10-02T10:00:00Z", "updatedAt": "2026-10-02T10:00:00Z"}
+			change(d)
+			return d
+		}
 		for schema, body := range map[string]any{
 			"Health": map[string]any{"status": "fine"},
 			"Error":  map[string]any{"error": map[string]any{"code": "x"}}, // no message
+			"App": map[string]any{"source": map[string]any{"kind": "image"}, "services": []any{map[string]any{
+				"name": "web", "image": "nginx", "health": map[string]any{"interval": 10.0}}}}, // numeric duration
+			"Deployment":     deployment(func(d map[string]any) { d["status"] = "done" }),
+			"DeploymentList": map[string]any{"deployments": []any{deployment(func(d map[string]any) { d["digests"] = map[string]any{"web": "nginx:latest"} })}},
+			"AppRecord":      map[string]any{"app": map[string]any{}, "createdAt": "x"},
 		} {
 			if err := doc.Components.Schemas[schema].Value.VisitJSON(body); err == nil {
 				t.Errorf("schema %s accepted %v", schema, body)
@@ -138,6 +158,24 @@ func TestContractBodies(t *testing.T) {
 	t.Run("404", func(t *testing.T) { check(t, get(t, "GET", "/v1/nope"), "Error") })
 	t.Run("405", func(t *testing.T) { check(t, get(t, "DELETE", "/v1/health"), "Error") })
 	t.Run("unclean path", func(t *testing.T) { check(t, get(t, "GET", "//v1/health"), "Error") })
+	t.Run("deploy 202, get deployment, list, get app", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		_, header, raw := call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json", whoamiBody)
+		checkSchema(t, doc, raw, "Deployment")
+		_, _, raw = call(t, http.MethodGet, e.URL+header.Get("Location"), "", "")
+		checkSchema(t, doc, raw, "Deployment")
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments", "", "")
+		checkSchema(t, doc, raw, "DeploymentList")
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami", "", "")
+		checkSchema(t, doc, raw, "AppRecord")
+	})
+	t.Run("deploy errors", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		for _, body := range []string{withImage("traefik/whoami:nope"), withImage("quay.io/x/y:1"), "{}"} {
+			_, _, raw := call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json", body)
+			checkSchema(t, doc, raw, "Error")
+		}
+	})
 	t.Run("health 503", func(t *testing.T) {
 		st.Close()
 		check(t, get(t, "GET", "/v1/health"), "Error")

@@ -46,10 +46,11 @@ type DeploymentRecord struct {
 
 // DeploymentUpdate changes a deployment. Zero values keep what's stored.
 type DeploymentUpdate struct {
-	Status     Status        // required
-	JobVersion *uint64       // nil keeps the stored value
-	Warnings   []app.Warning // nil keeps the stored value
-	Error      string        // "" keeps the stored value
+	Status     Status            // required
+	JobVersion *uint64           // nil keeps the stored value
+	Digests    map[string]string // nil keeps the stored value
+	Warnings   []app.Warning     // nil keeps the stored value
+	Error      string            // "" keeps the stored value
 }
 
 // CreateDeployment records a new, pending deployment of an existing app.
@@ -98,7 +99,7 @@ func (s *Store) GetDeployment(ctx context.Context, id string) (DeploymentRecord,
 }
 
 // UpdateDeployment changes a deployment's status and, optionally, its job
-// version, warnings and error. A status change the lifecycle doesn't allow
+// version, digests, warnings and error. A status change the lifecycle doesn't allow
 // returns ErrInvalidTransition and changes nothing.
 func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpdate) (DeploymentRecord, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -121,6 +122,10 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 	if u.JobVersion != nil {
 		jobVersion = u.JobVersion
 	}
+	digests := cur.Deployment.Digests
+	if u.Digests != nil {
+		digests = u.Digests
+	}
 	warnings := cur.Warnings
 	if u.Warnings != nil {
 		warnings = u.Warnings
@@ -129,6 +134,10 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 	if u.Error != "" {
 		errText = u.Error
 	}
+	digestsJSON, err := json.Marshal(digests)
+	if err != nil {
+		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
+	}
 	warningsJSON, err := json.Marshal(warnings)
 	if err != nil {
 		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
@@ -136,9 +145,9 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE deployments
-		SET status = ?, job_version = ?, warnings = ?, error = ?, updated_at = ?
+		SET status = ?, job_version = ?, digests = ?, warnings = ?, error = ?, updated_at = ?
 		WHERE id = ?`,
-		string(u.Status), jobVersion, string(warningsJSON), errText, formatTime(s.now()), id); err != nil {
+		string(u.Status), jobVersion, string(digestsJSON), string(warningsJSON), errText, formatTime(s.now()), id); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -147,19 +156,45 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 	return s.GetDeployment(ctx, id)
 }
 
-// ListDeployments returns an app's deployments, newest first. An unknown app
-// is ErrNotFound; an app without deployments gives an empty list.
-func (s *Store) ListDeployments(ctx context.Context, appID string) ([]DeploymentRecord, error) {
+// ListDeployments returns an app's newest deployments, newest first: at most
+// limit of them, or all of them when limit is 0 or less. An unknown app is
+// ErrNotFound; an app without deployments gives an empty list.
+func (s *Store) ListDeployments(ctx context.Context, appID string, limit int) ([]DeploymentRecord, error) {
 	if ok, err := exists(ctx, s.db, "SELECT 1 FROM apps WHERE id = ?", appID); err != nil {
 		return nil, fmt.Errorf("list deployments of %q: %w", appID, err)
 	} else if !ok {
 		return nil, fmt.Errorf("list deployments: app %q: %w", appID, ErrNotFound)
 	}
+	if limit <= 0 {
+		limit = -1 // SQLite: no limit
+	}
 	// rowid breaks ties between deployments created in the same instant.
-	rows, err := s.db.QueryContext(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? ORDER BY created_at DESC, rowid DESC", appID)
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+		appID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list deployments of %q: %w", appID, err)
+	}
+	return out, nil
+}
+
+// ListUnfinishedDeployments returns every deployment still pending or
+// running, oldest first. On startup the deploy flow picks them up again.
+func (s *Store) ListUnfinishedDeployments(ctx context.Context) ([]DeploymentRecord, error) {
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM deployments WHERE status IN (?, ?) ORDER BY created_at, rowid",
+		string(StatusPending), string(StatusRunning))
+	if err != nil {
+		return nil, fmt.Errorf("list unfinished deployments: %w", err)
+	}
+	return out, nil
+}
+
+// queryDeployments runs a query returning deploymentColumns rows.
+func (s *Store) queryDeployments(ctx context.Context, query string, args ...any) ([]DeploymentRecord, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -167,7 +202,7 @@ func (s *Store) ListDeployments(ctx context.Context, appID string) ([]Deployment
 	for rows.Next() {
 		rec, err := scanDeployment(rows)
 		if err != nil {
-			return nil, fmt.Errorf("list deployments of %q: %w", appID, err)
+			return nil, err
 		}
 		out = append(out, rec)
 	}

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -17,15 +16,23 @@ const (
 	codeMethodNotAllowed     = "method_not_allowed"
 	codeInternal             = "internal"
 	codeUnavailable          = "unavailable"
+	codeImageNotFound        = "image_not_found"
+	codeJobConflict          = "job_conflict"
+	codeRegistryUnavailable  = "registry_unavailable"
+	codeNomadUnavailable     = "nomad_unavailable"
+	codeNomadRejected        = "nomad_rejected"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with
 // Status as the HTTP status. Field names the one request field at fault.
+// Location, when set, is sent as the Location header: the deployment record
+// a failed deploy left behind.
 type Error struct {
-	Status  int    `json:"-"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Field   string `json:"field,omitempty"`
+	Status   int    `json:"-"`
+	Location string `json:"-"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Field    string `json:"field,omitempty"`
 }
 
 // Error makes *Error satisfy the error interface, so handlers can return it.
@@ -42,11 +49,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	// The status is already sent, so an encoding error can't be reported to
 	// the client; our response types always encode.
-	_ = json.NewEncoder(w).Encode(v)
+	_ = encodeJSON(w, v)
 }
 
 // writeError writes e as the standard error body.
 func writeError(w http.ResponseWriter, e *Error) {
+	if e.Location != "" {
+		w.Header().Set("Location", e.Location)
+	}
 	writeJSON(w, e.Status, struct {
 		Error *Error `json:"error"`
 	}{e})

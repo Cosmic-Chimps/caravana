@@ -25,8 +25,13 @@ translator in `internal/nomadjob`, whose whoami output matches the hand-written
 sketch is gone. Feature 002 is implemented on branch `002-control-plane-skeleton` (stacked on
 001): config from env and flags (`internal/config`), the HTTP API with `GET /v1/health` and the
 shared JSON/error plumbing (`internal/api`), the SQLite store with embedded migrations
-(`internal/store`), and `api/openapi.yaml`, kept in sync with the routes by a test. Next:
-feature 003 (deploy flow).
+(`internal/store`), and `api/openapi.yaml`, kept in sync with the routes by a test. Feature 003
+is implemented on branch `003-deploy-flow` (stacked on 002): `POST /v1/apps/{id}/deployments`
+saves and deploys an app (empty body: redeploy the stored one), plus reads for the app and its
+deployments. `internal/registry` pins tags to digests (Docker Hub and GHCR, anonymous),
+`internal/deploy` registers the job and follows the Nomad rollout, `internal/service` holds the
+flow (per-app ordering, newest deploy wins, resume after restart). Test fakes: `registrytest`
+and `deploytest`. Next: feature 004 (webhook redeploy).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -66,6 +71,11 @@ gofmt -l .                                                    # must print nothi
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...          # proves the no-CGO cross-compile
 go run ./cmd/caravana                                         # 127.0.0.1:7070, data in ./data
 curl -s localhost:7070/v1/health
+```
+
+```bash
+eval "$(deploy/dev/lab.sh env)"                               # Caravana reads NOMAD_ADDR / NOMAD_TOKEN
+CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 20m   # opt-in end-to-end test (~12 min)
 ```
 
 ```bash

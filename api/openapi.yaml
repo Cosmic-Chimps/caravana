@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.1.0
+  version: 0.2.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -9,7 +9,11 @@ info:
 
     Every error is `{"error": {"code", "message", "field"}}` with the matching 4xx or 5xx
     status, including 404 for unknown paths and 405 for wrong methods. The API never answers
-    a request with a redirect.
+    a request with a redirect. An error raised after a deployment record exists also carries a
+    `Location` header pointing at that record.
+
+    Durations (`health.interval`, `health.timeout`) are Go duration strings such as `"10s"` or
+    `"1m30s"`, in requests and responses.
 
     There is no authentication yet (it arrives in a later version); by default the server
     listens on 127.0.0.1 only.
@@ -35,7 +39,164 @@ paths:
                 $ref: "#/components/schemas/Health"
         "503":
           $ref: "#/components/responses/Unavailable"
+
+  /v1/apps/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: getApp
+      summary: Read an app as it was last sent.
+      tags: [apps]
+      responses:
+        "200":
+          description: The stored app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/deployments:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: deployApp
+      summary: Save an app and deploy it, or redeploy the stored app.
+      description: |
+        With a body, the app is validated, saved (replacing the stored app with the same ID)
+        and deployed. With an empty body, the stored app is deployed again.
+
+        Every image tag is resolved to a digest, the app becomes a new Nomad job version, and
+        the response comes back as soon as Nomad has accepted it. Follow the rollout by
+        reading the deployment at the `Location` header until its status is final
+        (`healthy`, `failed`, `reverted` or `superseded`).
+
+        The same body sent twice leaves the stored app unchanged and creates a new deployment
+        and a new job version. When two deploys of one app overlap, the one requested last
+        wins and the others end `superseded`.
+      tags: [deployments]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/App"
+      responses:
+        "202":
+          description: |
+            Nomad accepted the job and the rollout continues in the background. A deploy that
+            a newer request replaced before it reached Nomad also answers 202, with status
+            `superseded` and no `jobVersion`. Rarely, Nomad has accepted the job but its
+            version isn't known yet; `jobVersion` is then absent and appears on the deployment
+            shortly after.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Empty body, and no app with this ID is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    get:
+      operationId: listDeployments
+      summary: List an app's deployments, newest first.
+      tags: [deployments]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: How many deployments to return, newest first.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The app's newest deployments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/deployments/{deploymentId}:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: getDeployment
+      summary: Read one deployment of an app.
+      tags: [deployments]
+      responses:
+        "200":
+          description: The deployment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "404":
+          description: No such app, or no such deployment of this app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
 components:
+  parameters:
+    AppID:
+      name: id
+      in: path
+      required: true
+      description: The app ID, a lowercase DNS label. It is also the Nomad job ID.
+      schema:
+        type: string
+        pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+      examples:
+        whoami:
+          value: whoami
+
+  headers:
+    DeploymentLocation:
+      description: The deployment's URL, `/v1/apps/{id}/deployments/{deploymentId}`.
+      schema:
+        type: string
+        examples: ["/v1/apps/whoami/deployments/k3v7q2x9m4n8p6r5t1w3y7z2ab"]
+
   schemas:
     Health:
       type: object
@@ -45,6 +206,197 @@ components:
         status:
           type: string
           const: ok
+
+    App:
+      type: object
+      additionalProperties: false
+      description: |
+        One project to deploy. It becomes one Nomad job; each service becomes one task group
+        with one task. Images may use tags: they're resolved to digests on every deploy.
+      required: [source, services]
+      properties:
+        id:
+          type: string
+          description: Optional in a request (taken from the path); if present, must equal it.
+          pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        name:
+          type: string
+          description: Display name and Nomad job name. Empty means the ID.
+        source:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [image]
+        services:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Service"
+      examples:
+        - id: whoami
+          source: {kind: image}
+          services:
+            - name: web
+              image: traefik/whoami:latest
+              ports: [{name: http, containerPort: 80}]
+              domains: [{host: whoami.localhost, port: http}]
+              health: {path: /, interval: 10s, timeout: 2s}
+
+    Service:
+      type: object
+      additionalProperties: false
+      required: [name, image]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        image:
+          type: string
+          description: |
+            A Docker Hub or GHCR image: `traefik/whoami:latest`, `nginx`,
+            `ghcr.io/owner/repo:tag`, or a reference pinned by digest. No tag means `latest`.
+        command:
+          type: string
+        args:
+          type: array
+          items: {type: string}
+        env:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name: {type: string, minLength: 1}
+              value: {type: string}
+        ports:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, containerPort]
+            properties:
+              name:
+                type: string
+                pattern: "^[a-z][a-z0-9_]{0,62}$"
+              containerPort:
+                type: integer
+                minimum: 1
+                maximum: 65535
+        domains:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [host, port]
+            properties:
+              host: {type: string}
+              port:
+                type: string
+                description: The name of a port declared on this service.
+        replicas:
+          type: integer
+          minimum: 1
+          description: Leave it out for 1.
+        resources:
+          type: object
+          additionalProperties: false
+          properties:
+            cpuMHz: {type: integer, minimum: 0}
+            memoryMB: {type: integer, minimum: 0}
+        health:
+          type: object
+          additionalProperties: false
+          description: Required when the service has ports, not allowed when it has none.
+          properties:
+            path:
+              type: string
+              description: Makes it an HTTP check on this path. Empty means a TCP check.
+            port:
+              type: string
+            interval:
+              $ref: "#/components/schemas/Duration"
+            timeout:
+              $ref: "#/components/schemas/Duration"
+
+    Duration:
+      type: string
+      description: A Go duration string, e.g. `"10s"` or `"1m30s"`.
+      pattern: "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+      examples: ["10s"]
+
+    AppRecord:
+      type: object
+      additionalProperties: false
+      required: [app, createdAt, updatedAt]
+      properties:
+        app:
+          $ref: "#/components/schemas/App"
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    Deployment:
+      type: object
+      additionalProperties: false
+      required: [id, appId, trigger, status, digests, warnings, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        appId:
+          type: string
+        trigger:
+          type: string
+          enum: [manual, webhook]
+        status:
+          type: string
+          enum: [pending, running, healthy, failed, reverted, superseded]
+          description: |
+            `healthy`, `failed`, `reverted` (failed, and Nomad rolled back to the previous
+            version) and `superseded` (a newer deploy replaced it) are final.
+        jobVersion:
+          type: integer
+          minimum: 0
+          description: The Nomad job version. Absent until Nomad accepts the job.
+        digests:
+          type: object
+          description: Each service's image as deployed, pinned by digest.
+          additionalProperties:
+            type: string
+            pattern: "@sha256:[a-f0-9]{64}$"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+        error:
+          type: string
+          description: Why it failed, reverted or was superseded. Absent otherwise.
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    DeploymentList:
+      type: object
+      additionalProperties: false
+      required: [deployments]
+      properties:
+        deployments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deployment"
+
+    Warning:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: The input field the warning is about; empty when it isn't about one.
+        message:
+          type: string
+
     Error:
       type: object
       additionalProperties: false
@@ -61,7 +413,9 @@ components:
                 Stable, machine-readable error code. Clients must accept codes they don't
                 know. Current codes: `bad_request`, `invalid_field`, `unknown_field`,
                 `unsupported_media_type`, `body_too_large`, `not_found`,
-                `method_not_allowed`, `internal`, `unavailable`.
+                `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
+                `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
+                `nomad_rejected`.
               examples: [invalid_field]
             message:
               type: string
@@ -72,6 +426,7 @@ components:
                 The one request field at fault, as a path like
                 `services[0].domains[1].port`. Absent when no single field is at fault.
               examples: ["services[0].domains[1].port"]
+
   responses:
     Unavailable:
       description: The server can't reach its store.
@@ -79,6 +434,80 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: |
+        The request is invalid (`bad_request`, `invalid_field`, `unknown_field`); `field`
+        names the field at fault. Nothing was saved or recorded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No app with this ID is stored.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BodyTooLarge:
+      description: The request body is larger than 1 MiB.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: The body isn't `application/json` in UTF-8.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    JobConflict:
+      description: |
+        `job_conflict`: Nomad already runs a job with this app's ID that Caravana didn't
+        create, or the job changed while deploying. Nothing was registered; the deployment
+        record (see `Location`) is `failed`.
+      headers:
+        Location:
+          $ref: "#/components/headers/DeploymentLocation"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ImageNotFound:
+      description: |
+        `image_not_found`: the registry has no such image or tag, or it's private (registry
+        credentials aren't supported yet). `field` is the service's `image`. Nothing was
+        registered; the deployment record (see `Location`) is `failed`.
+      headers:
+        Location:
+          $ref: "#/components/headers/DeploymentLocation"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadGateway:
+      description: |
+        The registry or Nomad couldn't be used: `registry_unavailable` (unreachable, erroring
+        or rate-limiting; `field` is the service's `image`), `nomad_unavailable` (unreachable
+        or the token was refused) or `nomad_rejected` (the message is what Nomad said). The
+        deployment record (see `Location`) is `failed`.
+      headers:
+        Location:
+          $ref: "#/components/headers/DeploymentLocation"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Internal:
+      description: An unexpected server error. Details are in the server log.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
 tags:
   - name: system
     description: Server health.
+  - name: apps
+    description: Stored app definitions.
+  - name: deployments
+    description: Deploying apps and following their rollouts.

@@ -114,7 +114,9 @@ Git sources + builds as Nomad batch jobs, app templates, teams and roles, manage
 
 ## Open decisions (settle them in the feature spec that needs them)
 
-1. **Digest resolution**: `github.com/google/go-containerregistry` (well known, one dependency) vs. our own small registry v2 client. Needed for 003.
+1. **Digest resolution**: settled in feature 003: our own small registry v2 client in
+   `internal/registry`. go-containerregistry pulls in docker/cli, the moby client, oauth2 and
+   cobra for one `HEAD` request (specs/003-deploy-flow/research.md R1).
 2. **Tool pinning**: `staticcheck` through Go's `tool` directive in `go.mod`. Needed for 0.1.
 3. **UI live updates**: SSE vs. HTMX polling. Needed for 007.
 

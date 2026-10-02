@@ -48,6 +48,16 @@ const (
 // Rules that depend on Nomad (minimum resources and check durations) live in
 // package nomadjob, not here.
 func Validate(a App, d Deployment) error {
+	if err := ValidateApp(a); err != nil {
+		return err
+	}
+	return validateDeployment(a, d)
+}
+
+// ValidateApp checks an App on its own: steps 1 and 2 of Validate's order.
+// The deploy flow uses it before any image is resolved, when there is no
+// deployment yet.
+func ValidateApp(a App) error {
 	if !labelRE.MatchString(a.ID) {
 		return NewFieldError("id", "%q is not a lowercase DNS label (a-z, 0-9 and '-', at most 63 characters)", a.ID)
 	}
@@ -68,7 +78,7 @@ func Validate(a App, d Deployment) error {
 			return err
 		}
 	}
-	return validateDeployment(a, d)
+	return nil
 }
 
 // validateService checks one service. names and hosts collect what earlier

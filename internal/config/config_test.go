@@ -1,6 +1,9 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -23,6 +26,7 @@ func TestLoad(t *testing.T) {
 			DefaultCPUMHz:   100,
 			DefaultMemoryMB: 64,
 		},
+		NomadAddr: "http://127.0.0.1:4646",
 	}
 
 	tests := []struct {
@@ -67,6 +71,25 @@ func TestLoad(t *testing.T) {
 		{name: "entrypoint list", env: map[string]string{"CARAVANA_TRAEFIK_ENTRYPOINT": "a,b"}, wantErr: []string{"CARAVANA_TRAEFIK_ENTRYPOINT", "-traefik-entrypoint"}},
 		{name: "cert resolver with space", env: map[string]string{"CARAVANA_CERT_RESOLVER": "le tls"}, wantErr: []string{"CARAVANA_CERT_RESOLVER", "-cert-resolver"}},
 		{name: "unknown flag", args: []string{"-nope"}, wantErr: []string{"-nope"}},
+
+		{
+			name: "nomad from env",
+			env:  map[string]string{"NOMAD_ADDR": "https://nomad.example:4646", "NOMAD_TOKEN": "tok"},
+			want: func(c *Config) {
+				c.NomadAddr = "https://nomad.example:4646"
+				c.NomadToken = "tok"
+			},
+		},
+		{
+			name: "nomad addr flag beats env",
+			args: []string{"-nomad-addr", "http://10.0.0.5:4646"},
+			env:  map[string]string{"NOMAD_ADDR": "http://127.0.0.1:1"},
+			want: func(c *Config) { c.NomadAddr = "http://10.0.0.5:4646" },
+		},
+		{name: "no token flag", args: []string{"-nomad-token", "x"}, wantErr: []string{"-nomad-token"}},
+		{name: "nomad addr without scheme", env: map[string]string{"NOMAD_ADDR": "127.0.0.1:4646"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
+		{name: "nomad addr ftp", args: []string{"-nomad-addr", "ftp://x"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
+		{name: "nomad addr without host", args: []string{"-nomad-addr", "http://"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
 	}
 
 	for _, tc := range tests {
@@ -116,5 +139,34 @@ func TestLoopback(t *testing.T) {
 				t.Errorf("Loopback() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestTokenNeverPrints formats and logs a config every usual way and checks
+// the token appears in none of them (spec FR-021, SC-009).
+func TestTokenNeverPrints(t *testing.T) {
+	const token = "s3cr3t-token"
+	c, err := Load(nil, env(map[string]string{"NOMAD_TOKEN": token}))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.NomadToken.Reveal() != token {
+		t.Fatalf("Reveal() = %q, want the token", c.NomadToken.Reveal())
+	}
+
+	var logs bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&logs, nil))
+	log.Info("config", "config", c, "token", c.NomadToken)
+	log.Info("config", slog.Any("config", c))
+
+	outputs := []string{
+		fmt.Sprintf("%v", c), fmt.Sprintf("%+v", c), fmt.Sprintf("%#v", c),
+		fmt.Sprint(c.NomadToken), fmt.Sprintf("%s %q", c.NomadToken, c.NomadToken),
+		logs.String(),
+	}
+	for _, out := range outputs {
+		if strings.Contains(out, token) {
+			t.Errorf("token printed: %s", out)
+		}
 	}
 }

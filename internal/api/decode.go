@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -23,7 +24,8 @@ const maxBodyBytes = 1 << 20 // 1 MiB
 //     are rejected.
 //
 // It uses encoding/json/v2, whose errors carry the full path of the field at
-// fault (e.g. /services/0/ports/0/bogus).
+// fault (e.g. /services/0/ports/0/bogus), with the options in json.go:
+// durations are strings such as "10s".
 func decodeJSON(r *http.Request, v any) error {
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
@@ -49,12 +51,16 @@ func decodeJSON(r *http.Request, v any) error {
 		return &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "request body is required"}
 	}
 
-	err = json.Unmarshal(body, v, json.RejectUnknownMembers(true))
+	err = json.Unmarshal(body, v, decodeOptions)
 	if err == nil {
 		return nil
 	}
 	var se *json.SemanticError
+	var de *durationError
 	switch {
+	case errors.As(err, &se) && errors.As(err, &de):
+		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: pointerToField(se.JSONPointer),
+			Message: de.msg}
 	case errors.As(err, &se) && errors.Is(err, json.ErrUnknownName):
 		field := pointerToField(se.JSONPointer)
 		return &Error{Status: http.StatusBadRequest, Code: codeUnknownField, Field: field,
@@ -65,6 +71,25 @@ func decodeJSON(r *http.Request, v any) error {
 	default:
 		return &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "request body is not valid JSON"}
 	}
+}
+
+// decodeOptionalJSON is decodeJSON for endpoints whose body may be left out.
+// An empty body reports present = false, whatever its Content-Type; any other
+// body follows decodeJSON's rules.
+func decodeOptionalJSON(r *http.Request, v any) (present bool, err error) {
+	var first [1]byte
+	n, err := io.ReadFull(r.Body, first[:])
+	if n == 0 {
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, &Error{Status: http.StatusBadRequest, Code: codeBadRequest, Message: "could not read the request body"}
+		}
+		return false, nil
+	}
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(first[:n]), r.Body), r.Body}
+	return true, decodeJSON(r, v)
 }
 
 // pointerToField turns a JSON pointer like /services/0/ports/0/name into the

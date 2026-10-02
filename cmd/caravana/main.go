@@ -1,7 +1,7 @@
 // Command caravana is the Caravana control plane: HTTP API, web UI and deploy engine.
 //
-// main only wires things together: config, store, HTTP server. Behavior lives
-// in the internal packages.
+// main only wires things together: config, store, the deploy engine and the
+// HTTP server. Behavior lives in the internal packages.
 package main
 
 import (
@@ -17,6 +17,9 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/api"
 	"github.com/cosmic-chimps/caravana/internal/config"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/registry"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -42,7 +45,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		log.Error("invalid configuration", "error", err)
 		return 1
 	}
-	log.Info("starting", "listen", cfg.Listen, "dataDir", cfg.DataDir)
+	// Never log cfg.NomadToken: it prints as [redacted] anyway.
+	log.Info("starting", "listen", cfg.Listen, "dataDir", cfg.DataDir, "nomadAddr", cfg.NomadAddr)
 	if !cfg.Loopback() {
 		log.Warn("listening on a non-loopback address; the API has no authentication yet", "listen", cfg.Listen)
 	}
@@ -55,9 +59,28 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	defer st.Close()
 	log.Info("store ready", "dataDir", cfg.DataDir, "migrationsApplied", st.MigrationsApplied())
 
+	nomad, err := deploy.NewNomadClient(cfg.NomadAddr, cfg.NomadToken.Reveal())
+	if err != nil {
+		log.Error("nomad client", "error", err)
+		return 1
+	}
+	svc := service.New(st, deploy.New(nomad, &registry.Client{}, cfg.Settings), log)
+	// Rollout watchers live until bgCtx is cancelled. Deferred calls run
+	// last-in, first-out, so on the way out the HTTP server has already shut
+	// down, then the watchers stop and are waited for, then the store closes.
+	bgCtx, stopWatchers := context.WithCancel(context.Background())
+	defer func() {
+		stopWatchers()
+		svc.Wait()
+	}()
+	if err := svc.Start(bgCtx); err != nil {
+		log.Error("start deploy service", "error", err)
+		return 1
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.New(st, log),
+		Handler:           api.New(svc, st, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
