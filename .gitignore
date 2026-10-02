@@ -36,6 +36,9 @@ acme.json
 # Claude Code: personal settings stay local; shared .claude/ files are committed
 .claude/settings.local.json
 
+# Serena (personal coding-agent tool): per-developer config and cache
+.serena/
+
 # Spec Kit helper scripts
 __pycache__/
 
