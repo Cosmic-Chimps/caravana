@@ -17,7 +17,9 @@ There is a missing middle between "one server with Docker" and "Kubernetes":
 ## Who it's for
 
 Indie hackers and small SaaS teams on budget VMs; agencies hosting many client projects; small
-platform teams who found Kubernetes too heavy; Nomad users who lost Waypoint.
+platform teams who found Kubernetes too heavy; Nomad users who lost Waypoint; AI builders who
+want to run inference (Ollama, vLLM, diffusion models) on their own GPU servers instead of
+renting per-second GPUs.
 Not (yet) for: service mesh, multi-region failover, compliance-first teams.
 
 ## Principles
@@ -35,7 +37,12 @@ Not (yet) for: service mesh, multi-region failover, compliance-first teams.
 
 - A real scheduler: bin-packing, constraints, spreading replicas, node drain.
 - Light enough for the smallest (including ARM) VMs.
-- Schedules more than containers: workers, cron, builds on the same engine.
+- Schedules more than containers: workers, cron, builds, and plain binaries (a Go or Rust
+  release artifact, no image needed) on the same engine. Binaries run under Nomad's isolated
+  `exec` driver, never `raw_exec`, which has no isolation and runs as root.
+- GPUs are a scheduling resource, not a DevOps project. With NVIDIA's device plugin on a node,
+  an app asks for "1 GPU with at least 24 GB" and Nomad places it on a node that has one. Swarm
+  handles GPUs poorly; Kubernetes needs the NVIDIA operator plus taints and tolerations.
 - Digest-pinned, health-checked deploys with automatic rollback.
 - Cross-provider clusters over a WireGuard mesh.
 - No lock-in: export any app as a plain Nomad job; uninstall us and workloads keep running.
@@ -47,7 +54,20 @@ Not (yet) for: service mesh, multi-region failover, compliance-first teams.
 | 1 · Engine (now) | Image deploys, webhook redeploys, digest pinning, Traefik + HTTPS, single node | whoami live by webhook |
 | 2 · Compose | Compose translator, env and secrets, databases + backups, HTMX UI | A real compose app runs |
 | 3 · Cluster | Add node over SSH, WireGuard mesh, placement and drain, cluster-wide routing | 3 nodes, survive 1 loss |
-| 4 · Platform | Git sources + builds, templates, teams and roles, managed Cloud tier | — |
+| 3.5 · GPU + binaries | GPU nodes (driver + NVIDIA device plugin at node bootstrap), GPU requests in the app model, binary sources (`exec` driver + artifact download), AI templates (Ollama, vLLM, ComfyUI) | An Ollama template serves a model on a GPU node; a plain binary app deploys and rolls back |
+| 4 · Platform | Git sources + builds, more templates, teams and roles, managed Cloud tier | — |
+
+## Why Nomad (for the "but who uses it?" question)
+
+- Roblox chose Nomad over Kubernetes, DC/OS and Swarm. Its 2021 case study describes 11,000+
+  nodes in 20 clusters across bare metal and cloud, including GPU and Windows workloads.
+- Cloudflare runs services on Nomad across its edge network.
+- Nomad schedules containers, binaries, VMs and GPUs with one scheduler, in one binary.
+
+Where the AI angle doesn't make us unique: dstack, SkyPilot and GPUStack already orchestrate
+GPUs on your own servers. They're built for ML teams running training and inference. Our angle
+is one PaaS where the web app, its database, its workers and its model server deploy the same
+way, on the same small cluster.
 
 ## Business model
 

@@ -91,6 +91,22 @@ backup that restores.
 Add a node over SSH, WireGuard mesh, Nomad TLS (Bella PKI or self-generated), placement and
 drain in the UI, cluster-wide routing. **Gate:** 3 nodes that survive the loss of 1.
 
+## Phase 3.5: GPU + binaries
+
+- GPU nodes: node bootstrap installs the NVIDIA driver, the container toolkit and Nomad's NVIDIA
+  device plugin (not part of the Nomad download), then checks that the GPU fingerprint shows up.
+- App model: a GPU request per service (count, vendor, minimum memory) becomes a Nomad `device`
+  block. No GPU node that fits means a clear error, not a job stuck pending.
+- Binary sources: a release artifact URL plus checksum becomes a Nomad `artifact` + `exec` task.
+  `raw_exec` is never enabled.
+- Templates: Ollama, vLLM and ComfyUI with a GPU request and a model cache on a host volume.
+
+Needs a real GPU box to test (a rented GPU VM by the hour is enough). Nothing in Phases 1–3
+changes for this. The pure translator only gains new fields.
+
+**Gate:** an Ollama template serves a model on a GPU node, and a plain binary app deploys and
+rolls back.
+
 ## Phase 4: Platform
 
 Git sources + builds as Nomad batch jobs, app templates, teams and roles, managed Cloud tier
