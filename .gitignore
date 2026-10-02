@@ -15,6 +15,7 @@ go.work
 go.work.sum
 
 # Local data: SQLite databases the control plane creates while developing
+/data/
 *.db
 *.db-journal
 *.db-wal

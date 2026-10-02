@@ -8,45 +8,23 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 )
 
 // Run `go test ./internal/nomadjob -update` to rewrite the golden files, then
 // review the diff before committing.
 var update = flag.Bool("update", false, "rewrite golden files")
 
-const whoamiDigest = "traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+// whoamiApp and whoamiDeployment are the equivalent of deploy/dev/whoami.json.
+func whoamiApp() app.App { return apptest.Whoami().App }
 
-// whoamiApp is the app equivalent of deploy/dev/whoami.json.
-func whoamiApp() app.App {
-	return app.App{
-		ID:     "whoami",
-		Name:   "whoami",
-		Source: app.Source{Kind: app.SourceImage},
-		Services: []app.Service{{
-			Name:     "web",
-			Image:    "traefik/whoami:latest",
-			Ports:    []app.Port{{Name: "http", ContainerPort: 80}},
-			Domains:  []app.Domain{{Host: "whoami.localhost", Port: "http"}},
-			Replicas: new(2),
-			Health:   &app.HealthCheck{Path: "/"},
-		}},
-	}
-}
-
-func whoamiDeployment() app.Deployment {
-	return app.Deployment{
-		ID:      "lab-manual",
-		Trigger: app.TriggerManual,
-		Digests: map[string]string{"web": whoamiDigest},
-	}
-}
+func whoamiDeployment() app.Deployment { return apptest.Whoami().Deployment }
 
 // labSettings matches the local Nomad lab: no Let's Encrypt, Traefik's
 // default certificate.
@@ -76,105 +54,17 @@ type goldenCase struct {
 	settings   Settings
 }
 
-// digest returns a valid pinned reference for repo, with a fixed fake hash.
-func digest(repo string, hex byte) string {
-	return repo + "@sha256:" + strings.Repeat(string(hex), 64)
-}
-
-func deployment(digests map[string]string) app.Deployment {
-	return app.Deployment{ID: "d1", Trigger: app.TriggerWebhook, Digests: digests}
-}
-
-func imageApp(id string, services ...app.Service) app.App {
-	return app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: services}
-}
-
-// blogWeb has only what's required: the replica count, resources and check
-// timing all come from defaults, and the check is TCP.
-func blogWeb() app.Service {
-	return app.Service{
-		Name:    "web",
-		Image:   "ghcr.io/acme/blog:main",
-		Ports:   []app.Port{{Name: "http", ContainerPort: 8080}},
-		Domains: []app.Domain{{Host: "blog.example.com", Port: "http"}},
-		Health:  &app.HealthCheck{},
-	}
-}
-
-// jobsWorker has no ports, so it gets no service registration and no check.
-func jobsWorker() app.Service {
-	return app.Service{
-		Name:    "worker",
-		Image:   "ghcr.io/acme/jobs:main",
-		Command: "/app/worker",
-		Args:    []string{"--queue", "default"},
-		Env: []app.EnvVar{
-			{Name: "QUEUE_URL", Value: "redis://queue:6379"},
-			{Name: "LOG_LEVEL", Value: "info"},
-		},
-	}
-}
-
+// goldenCases is every apptest shape with the lab settings, plus the whoami
+// app with a Let's Encrypt resolver.
 func goldenCases() []goldenCase {
+	var cases []goldenCase
+	for _, c := range apptest.Cases() {
+		cases = append(cases, goldenCase{name: c.Name, app: c.App, deployment: c.Deployment, settings: labSettings()})
+	}
 	letsEncrypt := labSettings()
 	letsEncrypt.CertResolver = "letsencrypt"
-
-	customResources := whoamiApp()
-	customResources.Services[0].Resources = app.Resources{CPUMHz: 500, MemoryMB: 256}
-	customResources.Services[0].Health = &app.HealthCheck{Path: "/", Interval: 30 * time.Second, Timeout: 5 * time.Second}
-
-	return []goldenCase{
-		{name: "whoami", app: whoamiApp(), deployment: whoamiDeployment(), settings: labSettings()},
-		{
-			name:       "minimal-web",
-			app:        imageApp("blog", blogWeb()),
-			deployment: deployment(map[string]string{"web": digest("ghcr.io/acme/blog", 'b')}),
-			settings:   labSettings(),
-		},
-		{
-			name: "multi-domain",
-			app: imageApp("shop", app.Service{
-				Name:  "web",
-				Image: "ghcr.io/acme/shop:main",
-				Ports: []app.Port{{Name: "http", ContainerPort: 3000}, {Name: "metrics", ContainerPort: 9100}},
-				Domains: []app.Domain{
-					{Host: "shop.example.com", Port: "http"},
-					{Host: "www.shop.example.com", Port: "http"},
-				},
-				Health: &app.HealthCheck{Path: "/healthz", Port: "metrics"},
-			}),
-			deployment: deployment(map[string]string{"web": digest("ghcr.io/acme/shop", 'c')}),
-			settings:   labSettings(),
-		},
-		{
-			name:       "worker",
-			app:        imageApp("jobs", jobsWorker()),
-			deployment: deployment(map[string]string{"worker": digest("ghcr.io/acme/jobs", 'd')}),
-			settings:   labSettings(),
-		},
-		{
-			name: "internal-service",
-			app: imageApp("api", app.Service{
-				Name:   "grpc",
-				Image:  "ghcr.io/acme/api:main",
-				Ports:  []app.Port{{Name: "grpc", ContainerPort: 50051}},
-				Health: &app.HealthCheck{},
-			}),
-			deployment: deployment(map[string]string{"grpc": digest("ghcr.io/acme/api", 'e')}),
-			settings:   labSettings(),
-		},
-		{name: "letsencrypt", app: whoamiApp(), deployment: whoamiDeployment(), settings: letsEncrypt},
-		{name: "custom-resources", app: customResources, deployment: whoamiDeployment(), settings: labSettings()},
-		{
-			name: "multi-service",
-			app:  imageApp("blog", blogWeb(), jobsWorker()),
-			deployment: deployment(map[string]string{
-				"web":    digest("ghcr.io/acme/blog", 'b'),
-				"worker": digest("ghcr.io/acme/jobs", 'd'),
-			}),
-			settings: labSettings(),
-		},
-	}
+	w := apptest.Whoami()
+	return append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 }
 
 func TestTranslate(t *testing.T) {

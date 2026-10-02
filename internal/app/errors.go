@@ -6,8 +6,8 @@ import "fmt"
 // field, as a path like "services[0].domains[1].port", so the API can return
 // it and the user knows what to fix.
 type FieldError struct {
-	Field   string
-	Message string
+	Field   string `json:"field"`
+	Message string `json:"message"`
 }
 
 // Error makes *FieldError satisfy the error interface.
@@ -23,6 +23,6 @@ func NewFieldError(field, format string, args ...any) *FieldError {
 // Warning is about input that is supported but changed in meaning. Nothing in
 // Phase 1 produces one: every field is either honored exactly or rejected.
 type Warning struct {
-	Field   string
-	Message string
+	Field   string `json:"field"`
+	Message string `json:"message"`
 }

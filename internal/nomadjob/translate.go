@@ -75,7 +75,7 @@ var traefikNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Checks run in this order and stop at the first problem: the settings, the
 // model's rules (app.Validate), then Nomad's limits with defaults applied.
 func Translate(a app.App, d app.Deployment, s Settings) (Result, error) {
-	if err := validateSettings(s); err != nil {
+	if err := s.Validate(); err != nil {
 		return Result{}, err
 	}
 	if err := app.Validate(a, d); err != nil {
@@ -89,7 +89,10 @@ func Translate(a app.App, d app.Deployment, s Settings) (Result, error) {
 	return Result{Job: job(a, d, s)}, nil
 }
 
-func validateSettings(s Settings) error {
+// Validate checks the settings with the same rules Translate applies, and
+// returns a *app.FieldError naming the setting (e.g. "settings.entrypoint").
+// The control plane's config uses it at startup.
+func (s Settings) Validate() error {
 	if !traefikNameRE.MatchString(s.Entrypoint) {
 		return app.NewFieldError("settings.entrypoint", "%q must be a Traefik entrypoint name (letters, digits, '-', '_')", s.Entrypoint)
 	}
@@ -107,7 +110,7 @@ func validateSettings(s Settings) error {
 
 // checkNomadLimits checks what Nomad would reject at registration. CPU needs
 // no check: app.Validate rejects negatives and 0 means the default, which
-// validateSettings already checked.
+// Settings.Validate already checked.
 func checkNomadLimits(i int, svc app.Service, s Settings) error {
 	field := fmt.Sprintf("services[%d]", i)
 

@@ -1,0 +1,86 @@
+# Initial content of api/openapi.yaml for feature 002. The implementation copies this file to
+# api/openapi.yaml; from then on, api/openapi.yaml is the source of truth.
+openapi: 3.1.0
+info:
+  title: Caravana API
+  version: 0.1.0
+  summary: Self-hosted PaaS on HashiCorp Nomad.
+  description: |
+    Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
+    parameters such as `charset=UTF-8`. Unknown body fields are rejected.
+
+    Every error is `{"error": {"code", "message", "field"}}` with the matching 4xx or 5xx
+    status, including 404 for unknown paths and 405 for wrong methods. The API never answers
+    a request with a redirect.
+
+    There is no authentication yet (it arrives in a later version); by default the server
+    listens on 127.0.0.1 only.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+servers:
+  - url: http://127.0.0.1:7070
+    description: Local default
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Report whether the server and its store are up.
+      description: Unauthenticated, now and later. Meant for load balancers and install scripts.
+      tags: [system]
+      responses:
+        "200":
+          description: The server is up and its store is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Stable, machine-readable error code. Clients must accept codes they don't
+                know. Current codes: `bad_request`, `invalid_field`, `unknown_field`,
+                `unsupported_media_type`, `body_too_large`, `not_found`,
+                `method_not_allowed`, `internal`, `unavailable`.
+              examples: [invalid_field]
+            message:
+              type: string
+              description: Human-readable explanation. Not meant to be parsed.
+            field:
+              type: string
+              description: |
+                The one request field at fault, as a path like
+                `services[0].domains[1].port`. Absent when no single field is at fault.
+              examples: ["services[0].domains[1].port"]
+  responses:
+    Unavailable:
+      description: The server can't reach its store.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+tags:
+  - name: system
+    description: Server health.

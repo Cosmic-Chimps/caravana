@@ -4,6 +4,10 @@
 // normalized into an App. Everything downstream (Nomad translation, routing,
 // deploys) only sees this model. After validation, nothing reads Source: it
 // records where the app came from, not how to run it.
+//
+// The json tags are both the stored document format and the API's field
+// names, and match the field paths in FieldError. Renaming one is a schema
+// change.
 package app
 
 import "time"
@@ -12,13 +16,13 @@ import "time"
 type App struct {
 	// ID is a stable DNS label, e.g. "blog". It is the Nomad job ID and the
 	// <app> part of every service and router name.
-	ID string
+	ID string `json:"id"`
 	// Name is the display name and the Nomad job name. Empty means ID.
-	Name string
+	Name string `json:"name,omitempty"`
 	// Source says where the app came from. Only SourceImage is supported.
-	Source Source
+	Source Source `json:"source"`
 	// Services run in this order, one task group each. At least one.
-	Services []Service
+	Services []Service `json:"services"`
 }
 
 // SourceKind is the kind of input an App was built from.
@@ -30,62 +34,62 @@ const SourceImage SourceKind = "image"
 // Source records where an App came from. The image itself lives on each
 // Service.
 type Source struct {
-	Kind SourceKind
+	Kind SourceKind `json:"kind"`
 }
 
 // Service is one runnable container. It becomes one Nomad task group with one
 // Docker task, so each service scales on its own.
 type Service struct {
 	// Name is a DNS label, unique within the app.
-	Name string
+	Name string `json:"name"`
 	// Image is the reference the user wrote, e.g. "traefik/whoami:latest".
 	// It is never put in the job: the deployment's resolved digest is.
-	Image string
+	Image string `json:"image"`
 	// Command overrides the image's default command. Empty keeps it.
-	Command string
+	Command string `json:"command,omitempty"`
 	// Args are passed to the container, with or without Command.
-	Args []string
+	Args []string `json:"args,omitempty"`
 	// Env holds plain, non-secret config. Names must be unique.
-	Env []EnvVar
+	Env []EnvVar `json:"env,omitempty"`
 	// Ports are the container ports the service listens on.
-	Ports []Port
+	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's
 	// domains must use the same port.
-	Domains []Domain
+	Domains []Domain `json:"domains,omitempty"`
 	// Replicas is how many copies run. nil means 1; a set value must be at
 	// least 1.
-	Replicas *int
+	Replicas *int `json:"replicas,omitempty"`
 	// Resources are the CPU and memory the service reserves. Zero fields use
 	// the environment's defaults.
-	Resources Resources
+	Resources Resources `json:"resources,omitzero"`
 	// Health is the health check. Required when the service has ports, not
 	// allowed when it has none. nil means no check.
-	Health *HealthCheck
+	Health *HealthCheck `json:"health,omitempty"`
 }
 
 // EnvVar is one plain environment variable. Secrets come with a later feature.
 type EnvVar struct {
 	// Name must be non-empty and contain neither "=" nor a NUL byte.
-	Name string
+	Name string `json:"name"`
 	// Value can be any text.
-	Value string
+	Value string `json:"value"`
 }
 
 // Port is a named container port. Nomad maps a dynamic host port to it.
 type Port struct {
 	// Name is the port label, e.g. "http": a lowercase letter, then lowercase
 	// letters, digits or underscores.
-	Name string
+	Name string `json:"name"`
 	// ContainerPort is the port inside the container, 1 to 65535.
-	ContainerPort int
+	ContainerPort int `json:"containerPort"`
 }
 
 // Domain is a public hostname routed over HTTPS to one port of a service.
 type Domain struct {
 	// Host is a lowercase hostname, unique across the whole app.
-	Host string
+	Host string `json:"host"`
 	// Port is the Name of a Port declared on the same service.
-	Port string
+	Port string `json:"port"`
 }
 
 // HealthCheck tells Nomad how to decide that a service is healthy. Deploys wait
@@ -93,21 +97,21 @@ type Domain struct {
 type HealthCheck struct {
 	// Path makes it an HTTP check on that path, which must start with "/".
 	// Empty means a TCP check.
-	Path string
+	Path string `json:"path,omitempty"`
 	// Port is the Name of the port to check. Empty means the domains' port or,
 	// without domains, the service's only port.
-	Port string
+	Port string `json:"port,omitempty"`
 	// Interval is the time between checks. Zero means 10s.
-	Interval time.Duration
+	Interval time.Duration `json:"interval,omitempty"`
 	// Timeout is how long one check may take. Zero means 2s. It must be
 	// shorter than Interval.
-	Timeout time.Duration
+	Timeout time.Duration `json:"timeout,omitempty"`
 }
 
 // Resources are what a service reserves on its node.
 type Resources struct {
 	// CPUMHz is the CPU share in MHz. Zero means the environment default.
-	CPUMHz int
+	CPUMHz int `json:"cpuMHz,omitempty"`
 	// MemoryMB is the memory limit in MB. Zero means the environment default.
-	MemoryMB int
+	MemoryMB int `json:"memoryMB,omitempty"`
 }

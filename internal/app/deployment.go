@@ -18,10 +18,10 @@ const (
 type Deployment struct {
 	// ID is unique per deploy. It goes into the job's meta, which makes every
 	// deploy a new job version even when nothing else changed.
-	ID string
+	ID string `json:"id"`
 	// Trigger is TriggerManual or TriggerWebhook.
-	Trigger Trigger
+	Trigger Trigger `json:"trigger"`
 	// Digests maps each service name to its resolved image, in the form
 	// "repo@sha256:<64 hex>". Exactly one entry per service.
-	Digests map[string]string
+	Digests map[string]string `json:"digests"`
 }

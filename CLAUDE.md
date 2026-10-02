@@ -22,7 +22,11 @@ Phase 0 (groundwork) is done: repo + CI, constitution, local Nomad lab. Feature 
 implemented on branch `001-app-model-translator`: the app model in `internal/app` and the pure
 translator in `internal/nomadjob`, whose whoami output matches the hand-written
 `deploy/dev/whoami.json` and deploys in the lab (`lab.sh check <job.json>`). The `scratchpad/`
-sketch is gone. Next: feature 002 (control plane skeleton + API contract).
+sketch is gone. Feature 002 is implemented on branch `002-control-plane-skeleton` (stacked on
+001): config from env and flags (`internal/config`), the HTTP API with `GET /v1/health` and the
+shared JSON/error plumbing (`internal/api`), the SQLite store with embedded migrations
+(`internal/store`), and `api/openapi.yaml`, kept in sync with the routes by a test. Next:
+feature 003 (deploy flow).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -60,6 +64,8 @@ go vet ./...
 go tool staticcheck ./...                                     # pinned in go.mod as a tool
 gofmt -l .                                                    # must print nothing
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...          # proves the no-CGO cross-compile
+go run ./cmd/caravana                                         # 127.0.0.1:7070, data in ./data
+curl -s localhost:7070/v1/health
 ```
 
 ```bash
