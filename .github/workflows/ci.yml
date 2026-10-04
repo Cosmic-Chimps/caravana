@@ -29,6 +29,10 @@ jobs:
       - run: go tool staticcheck ./...
       - run: go test -race ./...
 
+      # Lab and VM scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest) checks them.
+      - name: shellcheck
+        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh
+
       - name: cross-compile (no CGO)
         env:
           CGO_ENABLED: "0"

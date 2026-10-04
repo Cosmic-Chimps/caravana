@@ -7,7 +7,8 @@ set -eux -o pipefail
 NOMAD_VERSION=2.0.7
 CNI_VERSION=1.9.1
 ARCH="$(dpkg --print-architecture)" # arm64 or amd64, same names Nomad and CNI use
-STATE=/var/lib/caravana-lab
+# Where the bootstrap token and other host state live. The VM host (deploy/vm) uses its own.
+STATE="${CARAVANA_STATE_DIR:-/var/lib/caravana-lab}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -75,16 +76,26 @@ OOMScoreAdjust=-1000
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable nomad
-systemctl restart nomad
+# Restart Nomad only when its binary, unit or config changed since the last run, so running this
+# script again (or on every boot) leaves a running Nomad alone.
+mkdir -p "$STATE"
+chmod 700 "$STATE"
+nomad_sum="$(cat /usr/local/bin/nomad /etc/systemd/system/nomad.service /etc/nomad.d/*.hcl | sha256sum)"
+if [ "$(cat "$STATE/nomad.sum" 2>/dev/null)" != "$nomad_sum" ] || ! systemctl is-active --quiet nomad; then
+  systemctl enable nomad
+  systemctl restart nomad
+  echo "$nomad_sum" >"$STATE/nomad.sum"
+  echo "changed: nomad"
+else
+  systemctl enable --now nomad
+fi
 
 # Wait until the server has elected itself leader.
+# shellcheck disable=SC2016 # single quotes on purpose: the inner bash expands it, on each try
 timeout 120s bash -c 'until [ -n "$(curl -fsS http://127.0.0.1:4646/v1/status/leader 2>/dev/null | tr -d "\"")" ]; do sleep 2; done'
 
 # Bootstrap ACLs once. The management token stays root-only inside the VM; lab.sh copies it to
 # the gitignored deploy/dev/.data/env on the Mac.
-mkdir -p "$STATE"
-chmod 700 "$STATE"
 # We generate the token ourselves and hand it to Nomad, so it's on disk before Nomad accepts it.
 if [ ! -s "$STATE/bootstrap.token" ]; then
   (umask 077 && cat /proc/sys/kernel/random/uuid >"$STATE/bootstrap.token.tmp")

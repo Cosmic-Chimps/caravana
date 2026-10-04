@@ -1,0 +1,31 @@
+{
+  "workflow": "speckit",
+  "specName": "Real HTTPS and Auto-Revert on a Cheap VM",
+  "branch": "005-vm-https-proof",
+  "currentStep": "tasks",
+  "status": "ready-to-implement",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-02T20:03:04.246Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-02T20:21:24.530Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-02T20:45:06.454Z"
+    }
+  ],
+  "telemetryInstanceId": "2a2a20b6-6f05-4524-acf0-77caea31dd64"
+}

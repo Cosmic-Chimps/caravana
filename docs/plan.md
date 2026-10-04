@@ -63,6 +63,11 @@ translator is tested against a job we know really runs. 0.3 and 001 can run in p
 **Phase 1 gate:** `traefik/whoami` is deployed by a webhook, is reachable over real HTTPS on the
 VM, and a broken deploy auto-reverts.
 
+**Status (2026-10-04):** 001–005 are implemented. The gate passes in the local lab (`TestLab`:
+webhook deploy, HTTPS through Traefik, a broken deploy reverted by Nomad with no failed requests).
+The VM side is built (`deploy/vm/`, `host.sh prove`) but not run yet: the gate closes when
+`host.sh prove` prints `GATE PASSED` on a real VM with production certificates.
+
 ## Phase 2: Compose + UI (the "Dokploy for Nomad" experience)
 
 | # | Feature | Notes |

@@ -35,8 +35,14 @@ and `deploytest`. Deploys are blue/green (canaries hidden from Traefik until pro
 004 is implemented on branch `004-webhook-redeploy` (stacked on 003): per-app webhook tokens
 (`cvwh_…`, shown once, stored as a SHA-256 hash), `POST /v1/webhooks/{id}` (token in `?token=` or
 `Authorization: Bearer`; skips when no image changed), and an optional webhook-only listener
-(`CARAVANA_WEBHOOK_LISTEN`) that serves nothing else. Next: feature 005 (real HTTPS and the
-auto-revert proof on a VM).
+(`CARAVANA_WEBHOOK_LISTEN`) that serves nothing else. Feature 005 is implemented on branch
+`005-vm-https-proof` (stacked on 004): `deploy/vm/host.sh` turns a VM you own into a public
+Caravana host over SSH (Let's Encrypt via Traefik, only 22/80/443 open, Nomad and the API on
+loopback, app ports on the private `caravana0` interface, Caravana under systemd with a scoped
+Nomad token). The gate checks live in `runGate` (`cmd/caravana/gate_test.go`): `TestLab` runs
+them in the lab, `TestGate` (via `host.sh prove`) runs them plus the public-only checks against
+the VM. Next: run `host.sh up` and `host.sh prove` on a real VM to close the Phase 1 gate
+(tasks T012 and T018), then Phase 2, starting with 006.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -89,6 +95,14 @@ deploy/dev/lab.sh up               # start (or create) the local Nomad lab
 deploy/dev/lab.sh check            # deploy whoami.json by hand and call it over HTTPS
 eval "$(deploy/dev/lab.sh env)"    # NOMAD_ADDR + NOMAD_TOKEN for Caravana on the Mac
 deploy/dev/lab.sh shell            # inside the VM: sudo lab-nomad <cmd> (management token)
+```
+
+```bash
+deploy/vm/host.sh up               # set up or update the public VM (settings in deploy/vm/host.env)
+deploy/vm/host.sh prove            # the Phase 1 gate against the VM (~12 min), ends GATE PASSED/FAILED
+deploy/vm/host.sh tunnel           # private access to the VM's API, Nomad and Traefik dashboard
+eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN, CARAVANA_URL through the tunnel
+shellcheck deploy/dev/*.sh deploy/vm/*.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.

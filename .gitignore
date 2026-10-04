@@ -33,6 +33,7 @@ acme.json
 
 # Local Nomad lab state (if a data dir is ever pointed inside the repo)
 /deploy/dev/.data/
+/deploy/vm/host.env
 
 # Claude Code: personal settings stay local; shared .claude/ files are committed
 .claude/settings.local.json
