@@ -49,3 +49,6 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# Claude Design handoff: local reference only (its sample data has real names and domains)
+/design/

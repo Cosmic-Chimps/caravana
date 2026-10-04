@@ -87,7 +87,8 @@ own when it fails. The console reports what Nomad really did, translated into pl
   - Talk to the user in the second person ("needs you"). caravana is third person.
   - Calm, factual and short. Sentence case. No exclamation marks, no emoji.
 - **Binding visual reference:** the Claude Design handoff "caravana console", Handoff 2,
-  2026-10-04 (`design/console/`). It's high fidelity, with final copy.
+  2026-10-04 (`design/console/`, kept local and gitignored because its sample data has real
+  names and domains). It's high fidelity, with final copy.
   DESIGN.md will record it. An earlier light "field notebook" direction was rejected.
 - **Originality:** no code, UI, copy, names or branding taken from Dokploy, Coolify or other PaaS
   projects (constitution, Development Workflow). It must not look like Dokploy.
