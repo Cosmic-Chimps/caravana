@@ -32,13 +32,14 @@ import (
 
 // gateTarget is where the gate runs.
 type gateTarget struct {
-	API     string       // Caravana's API, e.g. http://127.0.0.1:17070
-	Webhook string       // the webhook base URL: the webhook-only listener, or the public webhook host
-	AppHost string       // the app's host name, e.g. whoami.localhost
-	AppURL  string       // the app's URL, e.g. https://whoami.localhost:8443/
-	App     *http.Client // how to call the app (the lab's skips certificate checks)
-	Nomad   *api.Client
-	Public  *publicTarget // nil in the lab: the public-only steps are skipped
+	API      string       // Caravana's API, e.g. http://127.0.0.1:17070
+	APIToken string       // an API token of the admin: every API route but health and the webhook needs one
+	Webhook  string       // the webhook base URL: the webhook-only listener, or the public webhook host
+	AppHost  string       // the app's host name, e.g. whoami.localhost
+	AppURL   string       // the app's URL, e.g. https://whoami.localhost:8443/
+	App      *http.Client // how to call the app (the lab's skips certificate checks)
+	Nomad    *api.Client
+	Public   *publicTarget // nil in the lab: the public-only steps are skipped
 }
 
 // publicTarget is what only a real host has.
@@ -87,6 +88,7 @@ func runGate(t *testing.T, target gateTarget) {
 		publicOnly bool
 		run        func(t *testing.T)
 	}{
+		{"api-needs-token", false, g.apiNeedsToken},
 		{"clean", false, g.clean},
 		{"deploy", false, g.deploy},
 		{"webhook-redeploy", false, g.webhookRedeploy},
@@ -106,6 +108,36 @@ func runGate(t *testing.T, target gateTarget) {
 		if !t.Run(s.name, s.run) {
 			return // later steps build on this one
 		}
+	}
+}
+
+// apiNeedsToken: the API is closed (feature 006). A protected route without a
+// token, or with a made-up one, is 401; the health check needs none; and the
+// gate's own token works, so every later step can use it.
+func (g *gate) apiNeedsToken(t *testing.T) {
+	status := func(path, authorization string) int {
+		req, _ := http.NewRequest(http.MethodGet, g.target.API+path, nil)
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := status("/v1/apps/whoami", ""); got != http.StatusUnauthorized {
+		t.Errorf("GET /v1/apps/whoami without a token = %d, want 401", got)
+	}
+	if got := status("/v1/apps/whoami", "Bearer cvat_"+strings.Repeat("A", 43)); got != http.StatusUnauthorized {
+		t.Errorf("GET /v1/apps/whoami with a made-up token = %d, want 401", got)
+	}
+	if got := status("/v1/health", ""); got != http.StatusOK {
+		t.Errorf("GET /v1/health without a token = %d, want 200", got)
+	}
+	if got := status("/v1/tokens", "Bearer "+g.target.APIToken); got != http.StatusOK {
+		t.Fatalf("GET /v1/tokens with the gate's token = %d, want 200 (is GATE_API_TOKEN a live token?)", got)
 	}
 }
 
@@ -134,10 +166,7 @@ func (g *gate) deploy(t *testing.T) {
 // webhookRedeploy: while the first rollout still runs (no healthy deployment
 // yet), the webhook redeploys, and its deployment wins (feature 004, FR-016).
 func (g *gate) webhookRedeploy(t *testing.T) {
-	resp, err := http.Post(g.target.API+"/v1/apps/whoami/webhook", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := g.api(t, http.MethodPost, "/v1/apps/whoami/webhook", "", "")
 	var created struct{ Token string }
 	_ = json.NewDecoder(resp.Body).Decode(&created)
 	resp.Body.Close()
@@ -359,15 +388,37 @@ func (g *gate) portsClosed(t *testing.T) {
 func (g *gate) deployApp(t *testing.T, image string, port int) (int, gateDeployment, []byte) {
 	t.Helper()
 	body := fmt.Sprintf(gateApp, image, g.run, port, g.target.AppHost)
-	resp, err := http.Post(g.target.API+"/v1/apps/whoami/deployments", "application/json; charset=UTF-8", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := g.api(t, http.MethodPost, "/v1/apps/whoami/deployments", "application/json; charset=UTF-8", body)
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	var d gateDeployment
 	_ = json.Unmarshal(raw, &d)
 	return resp.StatusCode, d, raw
+}
+
+// apiRequest calls Caravana's API with the gate's API token. Every API call
+// goes through here; the webhook calls (hook, webhookOnly) carry their own
+// token instead and don't.
+func (g *gate) apiRequest(method, path, contentType, body string) (*http.Response, error) {
+	req, err := http.NewRequest(method, g.target.API+path, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	req.Header.Set("Authorization", "Bearer "+g.target.APIToken)
+	return http.DefaultClient.Do(req)
+}
+
+// api is apiRequest that fails the test when the request can't be sent.
+func (g *gate) api(t *testing.T, method, path, contentType, body string) *http.Response {
+	t.Helper()
+	resp, err := g.apiRequest(method, path, contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
 }
 
 // hook calls the webhook for whoami with token in the Authorization header
@@ -398,7 +449,7 @@ func (g *gate) waitFinal(t *testing.T, id string, within time.Duration) gateDepl
 	t.Helper()
 	var d gateDeployment
 	if !waitUntil(within, func() bool {
-		resp, err := http.Get(g.target.API + "/v1/apps/whoami/deployments/" + id)
+		resp, err := g.apiRequest(http.MethodGet, "/v1/apps/whoami/deployments/"+id, "", "")
 		if err != nil {
 			return false
 		}
@@ -488,12 +539,13 @@ func TestGate(t *testing.T) {
 		app.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} // staging CA only
 	}
 	runGate(t, gateTarget{
-		API:     need("GATE_API"),
-		Webhook: need("GATE_WEBHOOK"),
-		AppHost: host,
-		AppURL:  "https://" + host + "/",
-		App:     app,
-		Nomad:   nomad,
-		Public:  &publicTarget{IP: need("GATE_PUBLIC_IP"), Staging: staging},
+		API:      need("GATE_API"),
+		APIToken: need("GATE_API_TOKEN"),
+		Webhook:  need("GATE_WEBHOOK"),
+		AppHost:  host,
+		AppURL:   "https://" + host + "/",
+		App:      app,
+		Nomad:    nomad,
+		Public:   &publicTarget{IP: need("GATE_PUBLIC_IP"), Staging: staging},
 	})
 }

@@ -24,9 +24,20 @@ cp deploy/vm/host.env.example deploy/vm/host.env    # gitignored; fill it in
 deploy/vm/host.sh up       # set up or update the host; a second run prints an empty "changed:"
 deploy/vm/host.sh tunnel   # private access: API :17070, Nomad :14646, Traefik dashboard :18081
 eval "$(deploy/vm/host.sh env)"            # NOMAD_ADDR, NOMAD_TOKEN, CARAVANA_URL for the tunnel
+deploy/vm/host.sh admin init --email you@example.com   # once per host: the one admin (asks for a password)
+deploy/vm/host.sh admin status | reset-password | create-token --name ci | revoke-token --name ci
 deploy/vm/host.sh prove    # the Phase 1 gate, ~12 minutes; prints PASS/FAIL per step
 deploy/vm/host.sh ssh      # a shell on the host; `host.sh ssh sudo lab-nomad status` runs Nomad's CLI
 ```
+
+`admin` runs `caravana admin <command>` on the host over SSH as the `caravana` user, on the
+service's data directory; it works while Caravana runs. Every API route except `/v1/health` and
+the webhook call needs an API token or a signed-in session, so create the admin once, right
+after the first `up`: `host.sh admin init --email you@example.com`. Then sign in at `/login`
+through the tunnel (`http://127.0.0.1:17070/login`), or make a token with
+`host.sh admin create-token --name laptop` (printed once). `prove` needs that admin: it stops
+and tells you if there is none, makes its own token `gate-<time>`, and revokes it when the run
+ends.
 
 `up` builds Caravana for the host's architecture, copies it with the files here, and runs
 `setup.sh` on the host, which reuses the lab's `deploy/dev/setup.sh` for Docker, CNI and Nomad.

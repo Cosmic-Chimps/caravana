@@ -18,6 +18,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
@@ -49,15 +50,47 @@ func (b *syncBuffer) String() string {
 // whoamiDigest is the digest part of apptest.WhoamiDigest.
 const whoamiDigest = "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
 
+// fakeClock is the clock the test Auth uses; tests move it by hand.
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+const (
+	testAdminEmail    = "admin@example.com"
+	testAdminPassword = "correct horse battery"
+)
+
 // testEnv is the API wired to a real store and service, with a fake
 // registry and a fake Nomad behind it.
+//
+// The API is served twice. URL has a tiny wrapper that adds the admin's API
+// token to requests that carry no Authorization header, so tests of apps and
+// deployments call http.Get(e.URL+...) unchanged. RawURL has no wrapper,
+// for tests of authentication itself.
 type testEnv struct {
 	URL      string
+	RawURL   string
 	Store    *store.Store
 	Logs     *syncBuffer
 	Registry *registrytest.Server
 	Nomad    *deploytest.Nomad
 	Service  *service.Service
+	Auth     *service.Auth
+	Clock    *fakeClock
+	Token    string // an active API token of the admin
 	log      *slog.Logger
 }
 
@@ -85,15 +118,36 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 		VersionRetries: []time.Duration{time.Millisecond}}
 	svc := service.New(st, d, log)
 	e.Service, e.log = svc, log
+
+	e.Clock = &fakeClock{t: time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)}
+	e.Auth = service.NewAuth(st, log, service.AuthOptions{Now: e.Clock.Now, PasswordIterations: 1000})
+	if err := e.Auth.InitAdmin(context.Background(), testAdminEmail, testAdminPassword); err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	created, err := e.Auth.CreateAPIToken(context.Background(), "tests", nil)
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	e.Token = created.Token
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)
 	}
 
-	srv := httptest.NewServer(New(svc, st, log))
-	e.URL = srv.URL
+	// As in production, the request log wraps the API from outside.
+	api := httpx.LogRequests(log, New(Deps{Service: svc, Auth: e.Auth, Store: st, Log: log}))
+	raw := httptest.NewServer(api)
+	withToken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Webhook calls carry their own token, in the query or the header.
+		if r.Header.Get("Authorization") == "" && !strings.HasPrefix(r.URL.Path, "/v1/webhooks/") {
+			r.Header.Set("Authorization", "Bearer "+e.Token)
+		}
+		api.ServeHTTP(w, r)
+	}))
+	e.RawURL, e.URL = raw.URL, withToken.URL
 	t.Cleanup(func() {
-		srv.Close()
+		raw.Close()
+		withToken.Close()
 		cancel()
 		svc.Wait()
 		st.Close()

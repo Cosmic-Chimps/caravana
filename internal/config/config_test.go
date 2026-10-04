@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
@@ -92,6 +95,15 @@ func TestLoad(t *testing.T) {
 			env: map[string]string{"CARAVANA_WEBHOOK_LISTEN": "127.0.0.1:7071"}, want: func(c *Config) { c.WebhookListen = "127.0.0.1:7072" }},
 		{name: "webhook listener invalid", args: []string{"-webhook-listen", "nope"}, wantErr: []string{"CARAVANA_WEBHOOK_LISTEN", "-webhook-listen"}},
 		{name: "webhook listener same as main", args: []string{"-webhook-listen", "127.0.0.1:7070"}, wantErr: []string{"CARAVANA_WEBHOOK_LISTEN", "main listen address"}},
+		{name: "trusted proxies from env", env: map[string]string{"CARAVANA_TRUSTED_PROXIES": "10.0.0.5, 172.18.0.0/16"},
+			want: func(c *Config) {
+				c.TrustedProxies = httpx.Proxies{netip.MustParsePrefix("10.0.0.5/32"), netip.MustParsePrefix("172.18.0.0/16")}
+			}},
+		{name: "trusted proxies flag beats env", args: []string{"-trusted-proxies", "::1"},
+			env:  map[string]string{"CARAVANA_TRUSTED_PROXIES": "10.0.0.5"},
+			want: func(c *Config) { c.TrustedProxies = httpx.Proxies{netip.MustParsePrefix("::1/128")} }},
+		{name: "trusted proxies bad entry", env: map[string]string{"CARAVANA_TRUSTED_PROXIES": "10.0.0.5,traefik"},
+			wantErr: []string{"CARAVANA_TRUSTED_PROXIES / -trusted-proxies", `"traefik"`}},
 		{name: "no token flag", args: []string{"-nomad-token", "x"}, wantErr: []string{"-nomad-token"}},
 		{name: "nomad addr without scheme", env: map[string]string{"NOMAD_ADDR": "127.0.0.1:4646"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
 		{name: "nomad addr ftp", args: []string{"-nomad-addr", "ftp://x"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
@@ -119,30 +131,8 @@ func TestLoad(t *testing.T) {
 			if tc.want != nil {
 				tc.want(&want)
 			}
-			if got != want {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("Load() = %+v, want %+v", got, want)
-			}
-		})
-	}
-}
-
-func TestLoopback(t *testing.T) {
-	tests := []struct {
-		listen string
-		want   bool
-	}{
-		{"127.0.0.1:7070", true},
-		{"localhost:7070", true},
-		{"[::1]:7070", true},
-		{":7070", false},
-		{"0.0.0.0:7070", false},
-		{"192.168.1.10:7070", false},
-		{"example.com:7070", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.listen, func(t *testing.T) {
-			if got := (Config{Listen: tc.listen}).Loopback(); got != tc.want {
-				t.Errorf("Loopback() = %v, want %v", got, tc.want)
 			}
 		})
 	}

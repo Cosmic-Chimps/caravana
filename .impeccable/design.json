@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-04T16:36:42+00:00",
+  "generatedAt": "2026-10-04T19:36:53+00:00",
   "title": "Design System: caravana console",
   "extensions": {
     "colorMeta": {
@@ -461,33 +461,46 @@
       },
       {
         "name": "ping",
-        "value": "cv-ping: box-shadow 0 0 0 0 → 0 0 0 6px, Signal Blue 60% → 0",
-        "purpose": "The top-bar live dot, once per event. Never on a loop."
+        "value": "cv-ping 1.4s, one iteration: box-shadow 0 0 0 0 → 0 0 0 6px, Signal Blue 60% → 0",
+        "purpose": "The top-bar live dot, once per event. Never on a loop (the handoff looped it; the shipped theme does not)."
       },
       {
         "name": "reduced-motion",
-        "value": "prefers-reduced-motion: reduce disables all animation and transitions",
-        "purpose": "Accessibility."
+        "value": "@media (prefers-reduced-motion: reduce) { animation: none; transition: none } on every element",
+        "purpose": "Shipped at the end of theme.css. Accessibility."
       }
     ],
-    "breakpoints": []
+    "breakpoints": [
+      {
+        "name": "touch",
+        "value": "(pointer: coarse): buttons and fields are at least 44px tall"
+      },
+      {
+        "name": "column-login",
+        "value": "max-width 380px, centered, 24px side gutters"
+      },
+      {
+        "name": "column-account",
+        "value": "max-width 720px, centered, 24px side gutters"
+      }
+    ]
   },
   "components": [
     {
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The page's one main action. Lit, not colored.",
-      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg>Deploy</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.955 0.004 255);color:oklch(0.165 0.006 255);border:1px solid oklch(0.955 0.004 255);} .ds-btn-primary:hover{background:oklch(0.88 0.006 255);border-color:oklch(0.88 0.006 255);} .ds-btn-primary:active{transform:translateY(0.5px);} .ds-btn-primary:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+      "description": "Shipped (cv-btn cv-btn-primary). The page's one main action. Lit, not colored.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Change password</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap;font:500 14px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1),color 120ms cubic-bezier(0.2,0.7,0.2,1);}.ds-btn:active{transform:translateY(0.5px);}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}.ds-btn-primary{background:oklch(0.955 0.004 255);color:oklch(0.165 0.006 255);border-color:oklch(0.955 0.004 255);}.ds-btn-primary:hover{background:oklch(0.88 0.006 255);border-color:oklch(0.88 0.006 255);}"
     },
     {
       "name": "Secondary Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "The default button for every other action.",
-      "html": "<button class=\"ds-btn-secondary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/></svg>Revert to v22</button>",
-      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.225 0.008 255);color:oklch(0.955 0.004 255);border:1px solid oklch(0.340 0.010 255);} .ds-btn-secondary:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);} .ds-btn-secondary:active{transform:translateY(0.5px);} .ds-btn-secondary:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+      "description": "Shipped (cv-btn cv-btn-secondary). Sign out, Create token.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">Create token</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap;font:500 14px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1),color 120ms cubic-bezier(0.2,0.7,0.2,1);}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}.ds-btn-secondary{background:oklch(0.225 0.008 255);color:oklch(0.955 0.004 255);border-color:oklch(0.340 0.010 255);}.ds-btn-secondary:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);}"
     },
     {
       "name": "Ghost Button",
@@ -501,31 +514,31 @@
       "name": "Danger Button",
       "kind": "button",
       "refersTo": "button-danger",
-      "description": "Destructive actions; always confirmed in a modal.",
-      "html": "<button class=\"ds-btn-danger\">Delete app</button>",
-      "css": ".ds-btn-danger{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);border:1px solid oklch(0.46 0.10 40);} .ds-btn-danger:hover{background:oklch(0.31 0.07 40);border-color:oklch(0.68 0.17 40);} .ds-btn-danger:active{transform:translateY(0.5px);} .ds-btn-danger:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+      "description": "Shipped (cv-btn cv-btn-sm cv-btn-danger). Revoke, in a token row.",
+      "html": "<button class=\"ds-btn ds-btn-danger\">Revoke</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap;font:500 14px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1),color 120ms cubic-bezier(0.2,0.7,0.2,1); height:28px;padding:0 10px;font-size:13px;}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}.ds-btn-danger{background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);border-color:oklch(0.46 0.10 40);}.ds-btn-danger:hover{background:oklch(0.31 0.07 40);border-color:oklch(0.68 0.17 40);}"
     },
     {
       "name": "Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "Labeled field; mono for values, suffix inside the field, hint below.",
-      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Memory</span><span class=\"ds-input\"><input value=\"512\" aria-label=\"Memory\"><span class=\"ds-input-suffix\">MB</span></span><span class=\"ds-field-hint\">Peak in the last 7 days: 410 MB</span></label>",
-      "css": ".ds-field{display:flex;flex-direction:column;gap:8px;width:280px;} .ds-field-label{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:500;line-height:1;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);} .ds-input{display:flex;align-items:center;height:36px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;transition:border-color 120ms;} .ds-input:focus-within{border-color:oklch(0.440 0.012 255);box-shadow:0 0 0 2px oklch(0.76 0.12 245 / 0.55);} .ds-input input{flex:1;min-width:0;height:100%;padding:0 12px;background:transparent;border:0;outline:none;color:oklch(0.955 0.004 255);font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12.5px;} .ds-input-suffix{padding:0 12px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);} .ds-field-hint{font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13px;color:oklch(0.680 0.010 255);}"
+      "description": "Shipped (cv-field). Mono value, 36px; 42px on the sign-in page. Label above in Label style, hint below; an error turns the border Fault Ember Edge.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-label\">New password</span><input class=\"ds-input\" type=\"password\" value=\"hunter2hunter2\"><span class=\"ds-hint\">At least 12 characters.</span></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:8px;width:280px;}.ds-label{font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);}.ds-input{height:36px;padding:0 12px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;color:oklch(0.955 0.004 255);font:400 14px/1 'IBM Plex Mono',ui-monospace,monospace;transition:border-color 120ms cubic-bezier(0.2,0.7,0.2,1);}.ds-input:hover{border-color:oklch(0.440 0.012 255);}.ds-input:focus{outline:2px solid oklch(0.76 0.12 245 / 0.55);border-color:oklch(0.440 0.012 255);}.ds-hint{font:400 12px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.680 0.010 255);}"
     },
     {
       "name": "Status Pills",
       "kind": "chip",
       "refersTo": "status-pill-healthy",
-      "description": "Status as shape plus color. One pill per status.",
-      "html": "<span class=\"ds-pills\"><span class=\"ds-pill ds-healthy\"><i class=\"ds-mark\"></i>healthy</span><span class=\"ds-pill ds-rolling\"><i class=\"ds-mark\"></i>v24 · 1/2</span><span class=\"ds-pill ds-warning\"><i class=\"ds-mark\"></i>restarting</span><span class=\"ds-pill ds-failed\"><i class=\"ds-mark\"></i>oom-killed</span><span class=\"ds-pill ds-idle\"><i class=\"ds-mark\"></i>stopped</span></span>",
-      "css": ".ds-pills{display:flex;flex-wrap:wrap;gap:8px;} .ds-pill{display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;} .ds-mark{display:inline-block;width:8px;height:8px;flex-shrink:0;} .ds-healthy{background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);color:oklch(0.76 0.12 245);} .ds-healthy .ds-mark{border-radius:50%;background:oklch(0.76 0.12 245);} .ds-rolling{background:oklch(0.28 0.045 300);border-color:oklch(0.46 0.07 300);color:oklch(0.84 0.09 300);} .ds-rolling .ds-mark{border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);} .ds-warning{background:oklch(0.29 0.05 88);border-color:oklch(0.50 0.08 88);color:oklch(0.90 0.13 88);} .ds-warning .ds-mark{width:6.2px;height:6.2px;margin:0.9px;transform:rotate(45deg);background:oklch(0.90 0.13 88);} .ds-failed{background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);color:oklch(0.68 0.17 40);} .ds-failed .ds-mark{border-radius:1px;background:oklch(0.68 0.17 40);} .ds-idle{background:oklch(0.225 0.008 255);border-color:oklch(0.340 0.010 255);color:oklch(0.680 0.010 255);} .ds-idle .ds-mark{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}"
+      "description": "Shipped (cv-pill + cv-mark). Healthy, failed and idle in the token list; the mark is drawn in CSS, first, then a mono word.",
+      "html": "<span class=\"ds-pill ds-pill-healthy\"><span class=\"ds-mark ds-mark-healthy\"></span>active</span> <span class=\"ds-pill ds-pill-idle\"><span class=\"ds-mark ds-mark-idle\"></span>expired</span> <span class=\"ds-pill ds-pill-failed\"><span class=\"ds-mark ds-mark-failed\"></span>revoked</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;white-space:nowrap;}.ds-pill-healthy{color:oklch(0.76 0.12 245);background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);}.ds-pill-idle{color:oklch(0.680 0.010 255);background:oklch(0.225 0.008 255);border-color:oklch(0.340 0.010 255);}.ds-pill-failed{color:oklch(0.68 0.17 40);background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);}.ds-mark{display:inline-block;width:8px;height:8px;flex:none;box-sizing:border-box;}.ds-mark-healthy{border-radius:50%;background:oklch(0.76 0.12 245);}.ds-mark-idle{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}.ds-mark-failed{border-radius:1px;background:oklch(0.68 0.17 40);}"
     },
     {
       "name": "Intent Tabs",
       "kind": "nav",
       "refersTo": "tab",
-      "description": "App page tabs by intent; a status mark rides on a tab that needs attention.",
+      "description": "Not built yet (007). App page tabs by intent; a status mark rides on a tab that needs attention.",
       "html": "<nav class=\"ds-tabs\" role=\"tablist\"><button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\">Running <span class=\"ds-tab-count\">2</span></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Ship <i class=\"ds-tab-mark\"></i></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Configure</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Logs</button></nav>",
       "css": ".ds-tabs{display:flex;gap:26px;border-bottom:1px solid oklch(0.275 0.009 255);} .ds-tab{display:inline-flex;align-items:center;gap:9px;height:46px;padding:0;margin-bottom:-1px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;color:oklch(0.680 0.010 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13.5px;font-weight:500;transition:color 120ms;} .ds-tab:hover{color:oklch(0.810 0.008 255);} .ds-tab[aria-selected=true]{color:oklch(0.955 0.004 255);border-bottom-color:oklch(0.955 0.004 255);} .ds-tab:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-tab-count{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:oklch(0.680 0.010 255);} .ds-tab-mark{width:8px;height:8px;border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);}"
     },
@@ -533,7 +546,7 @@
       "name": "Needs-you Panel",
       "kind": "card",
       "refersTo": "panel",
-      "description": "Signature: a problem as one sentence, raw facts in mono, one fix.",
+      "description": "Not built yet (007). Signature: a problem as one sentence, raw facts in mono, one fix.",
       "html": "<section class=\"ds-section\"><header class=\"ds-section-head\"><span class=\"ds-label\">Needs you</span><span class=\"ds-meta\">1 item</span></header><div class=\"ds-panel\"><div class=\"ds-needs\"><i class=\"ds-needs-mark\"></i><div class=\"ds-needs-text\"><p>api restarted 3 times in the last hour: it runs out of memory at 512 MB.</p><p class=\"ds-needs-detail\">alloc e4d1 · hel-1 · exit 137 · 4 min ago</p></div><button class=\"ds-needs-fix\">Raise to 1 GB</button></div><div class=\"ds-row\"><span class=\"ds-row-name\">whoami</span><span class=\"ds-row-meta\">v12 · 2 copies · healthy</span></div></div></section>",
       "css": ".ds-section{width:560px;} .ds-section-head{display:flex;align-items:baseline;gap:16px;min-height:28px;margin-bottom:8px;} .ds-label{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:500;line-height:1;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);} .ds-meta{font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;color:oklch(0.810 0.008 255);} .ds-panel{background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;} .ds-needs{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:start;padding:14px 16px;} .ds-needs-mark{width:6.2px;height:6.2px;margin:6px 0.9px;transform:rotate(45deg);background:oklch(0.90 0.13 88);} .ds-needs-text p{margin:0;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.35;color:oklch(0.955 0.004 255);} .ds-needs-text .ds-needs-detail{margin-top:6px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);} .ds-needs-fix{height:28px;padding:0 10px;border-radius:4px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);color:oklch(0.955 0.004 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background 120ms,border-color 120ms;} .ds-needs-fix:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);} .ds-needs-fix:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-row{display:grid;grid-template-columns:1fr auto;align-items:center;min-height:46px;padding:0 16px;border-top:1px solid oklch(0.275 0.009 255);transition:background 120ms;} .ds-row:hover{background:oklch(0.225 0.008 255);} .ds-row-name{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:13px;color:oklch(0.955 0.004 255);} .ds-row-meta{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);}"
     },
@@ -541,9 +554,33 @@
       "name": "Meter",
       "kind": "custom",
       "refersTo": "panel",
-      "description": "Live usage (solid, status-colored) over what copies reserved (hatched).",
+      "description": "Not built yet (007). Live usage (solid, status-colored) over what copies reserved (hatched).",
       "html": "<div class=\"ds-meter\"><span class=\"ds-meter-label\">mem</span><span class=\"ds-meter-track\"><span class=\"ds-meter-reserved\" style=\"width:70%\"></span><span class=\"ds-meter-used\" style=\"width:62%\"></span></span><span class=\"ds-meter-readout\">5.0/8G</span></div>",
       "css": ".ds-meter{display:grid;grid-template-columns:36px 240px auto;align-items:center;gap:10px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;} .ds-meter-label{color:oklch(0.680 0.010 255);text-transform:uppercase;letter-spacing:0.06em;} .ds-meter-track{position:relative;height:6px;background:oklch(0.260 0.009 255);border-radius:1px;overflow:hidden;} .ds-meter-reserved{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(90deg,oklch(0.440 0.012 255) 0 1px,transparent 1px 3px);} .ds-meter-used{position:absolute;inset:0 auto 0 0;background:oklch(0.76 0.12 245);transition:width 180ms cubic-bezier(0.2,0.7,0.2,1);} .ds-meter-readout{color:oklch(0.810 0.008 255);font-variant-numeric:tabular-nums;}"
+    },
+    {
+      "name": "Notice",
+      "kind": "custom",
+      "refersTo": "notice",
+      "description": "Shipped (cv-notice). The mark first, then one plain sentence; role=alert for a refusal, role=status for a calm fact. No fill, no colored border.",
+      "html": "<div class=\"ds-notice\" role=\"alert\"><span class=\"ds-mark ds-mark-warning\"></span><span>That email and password don't match. 4 tries left before a 15-minute wait.</span></div>",
+      "css": ".ds-notice{display:flex;gap:10px;align-items:baseline;max-width:340px;font:400 13px/1.45 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;color:oklch(0.955 0.004 255);}.ds-notice>span:last-child{text-wrap:balance;}.ds-mark{display:inline-block;flex:none;box-sizing:border-box;}.ds-mark-warning{width:6.24px;height:6.24px;margin:0.88px;transform:rotate(45deg);background:oklch(0.90 0.13 88);position:relative;top:0.05em;}"
+    },
+    {
+      "name": "Command Block",
+      "kind": "custom",
+      "refersTo": "command-block",
+      "description": "Shipped (cv-cmd). A command to copy, in its own block; one click selects it whole. Never run into a sentence.",
+      "html": "<code class=\"ds-cmd\">caravana admin reset-password</code>",
+      "css": ".ds-cmd{display:block;padding:8px 12px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;font:400 13px/1.45 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.955 0.004 255);user-select:all;white-space:pre-wrap;overflow-wrap:anywhere;}"
+    },
+    {
+      "name": "Token Row",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Shipped (cv-token-row inside cv-panel). Name and muted facts on the left; the status pill and the action in fixed columns so they line up row to row.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-row\"><div><div class=\"ds-name\">ci-github</div><div class=\"ds-facts\">created 2 minutes ago &nbsp; used never &nbsp; expires never</div></div><span class=\"ds-pill ds-pill-healthy\"><span class=\"ds-mark ds-mark-healthy\"></span>active</span><button class=\"ds-btn-danger\">Revoke</button></div></div>",
+      "css": ".ds-panel{width:520px;background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;}.ds-row{display:grid;grid-template-columns:minmax(0,1fr) 5.75rem 4.75rem;column-gap:12px;align-items:center;padding:12px;}.ds-row:hover{background:oklch(0.225 0.008 255);}.ds-name{font:400 13px/1.35 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;color:oklch(0.955 0.004 255);}.ds-facts{margin-top:6px;font:400 12px/1.35 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;color:oklch(0.680 0.010 255);}.ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;}.ds-pill-healthy{color:oklch(0.76 0.12 245);background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);}.ds-mark{display:inline-block;width:8px;height:8px;border-radius:50%;background:oklch(0.76 0.12 245);}.ds-btn-danger{height:28px;padding:0 10px;border-radius:4px;border:1px solid oklch(0.46 0.10 40);background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);font:500 13px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;}"
     }
   ],
   "narrative": {
@@ -606,7 +643,8 @@
       "Do keep the main action neutral: a Readout White fill, at most one per view.",
       "Do sort lists failed → warning → rolling → healthy → idle.",
       "Do explain a problem in a sentence plus one fix button.",
-      "Do take every color from the theme tokens. If a color is missing, add a token instead of writing a raw oklch value in a component."
+      "Do take every color from the theme tokens. If a color is missing, add a token instead of writing a raw oklch value in a component.",
+      "Do put every command to copy in its own cv-cmd block, and every error under its field with the field autofocused."
     ],
     "donts": [
       "Don't use the status hues for decoration, links, tabs or the main action.",
@@ -620,7 +658,9 @@
       "Don't put a label above a page headline or a panel title. The mono label is a section's own heading, never a kicker.",
       "Don't use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a separator. Icons are Lucide line icons, and only in buttons and toolbars.",
       "Don't draw a logo mark. The wordmark is the word \"caravana\" in Plex Mono 600.",
-      "Don't make it look like Dokploy, a gradient \"AI dashboard\", or a Grafana wall of charts."
+      "Don't make it look like Dokploy, a gradient \"AI dashboard\", or a Grafana wall of charts.",
+      "Don't run a command into a sentence, or let a long one break at a hyphen mid-line.",
+      "Don't show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS."
     ]
   }
 }

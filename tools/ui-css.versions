@@ -1,0 +1,18 @@
+# Pinned inputs for tools/ui-css.sh: exact versions and SHA-256 sums.
+# The script verifies every sum before it runs or reads a downloaded file.
+# Shell syntax, read with `source`: keep it to NAME=value lines.
+#
+# To update: change a version, download the files, compute the sums with
+# `shasum -a 256`, compare them with the release's own sha256sums.txt, then
+# run `tools/ui-css.sh build` and commit the new internal/ui/static/app.css.
+
+# Tailwind CSS v4 standalone CLI (https://github.com/tailwindlabs/tailwindcss/releases).
+TAILWIND_VERSION=v4.3.3
+TAILWIND_SHA256_DARWIN_ARM64=cdf646702987a743464dff4d9c60fd4480d1c1e73dd819a9a67f1078815dce9d
+TAILWIND_SHA256_LINUX_X64=dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f5367360babc313a
+TAILWIND_SHA256_LINUX_ARM64=55fd0b241214eff3de1e8ee4f22796662f2d2e7a49bcfca7477cfd0bac398195
+
+# daisyUI 5 plugin files for the standalone CLI (https://github.com/saadeghi/daisyui/releases).
+DAISYUI_VERSION=v5.7.47
+DAISYUI_SHA256_PLUGIN=85819d3fe86a852237b439b13f481481aac58e562ac47694cd11c3038e994f2a
+DAISYUI_SHA256_THEME=d92d2f488933dab757f046e81ebd4986e51e9423307798dc3545d09a15542c89

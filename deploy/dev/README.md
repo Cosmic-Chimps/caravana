@@ -13,6 +13,21 @@ eval "$(deploy/dev/lab.sh env)"   # NOMAD_ADDR + NOMAD_TOKEN for tools on the Ma
 deploy/dev/lab.sh stop | delete | shell
 ```
 
+## Caravana's own admin and token
+
+The API refuses requests without credentials (feature 006), so after `lab.sh up`, with Caravana
+running on the Mac (`go run ./cmd/caravana`), create the admin once and a token for `curl`:
+
+```bash
+go run ./cmd/caravana admin init --email you@example.com     # asks for a password (12+ characters)
+TOKEN="$(go run ./cmd/caravana admin create-token --name local)"
+curl -s -H "Authorization: Bearer $TOKEN" localhost:7070/v1/tokens
+```
+
+The CLI works while the server runs. In a browser, sign in at <http://127.0.0.1:7070/login>.
+Caravana's data (`./data` by default) is separate from the lab's, so `lab.sh delete` doesn't
+touch the admin.
+
 | Where | What |
 | --- | --- |
 | http://127.0.0.1:4646/ui | Nomad UI; sign in with `NOMAD_TOKEN` from `deploy/dev/.data/env` |

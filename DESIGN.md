@@ -130,6 +130,22 @@ components:
     rounded: "{rounded.sm}"
     padding: "0 12px"
     height: "36px"
+  input-sign-in:
+    backgroundColor: "{colors.panel-face}"
+    textColor: "{colors.readout-white}"
+    typography: "{typography.data}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "42px"
+  command-block:
+    backgroundColor: "{colors.raised-control}"
+    textColor: "{colors.readout-white}"
+    typography: "{typography.data}"
+    rounded: "{rounded.sm}"
+    padding: "8px 12px"
+  notice:
+    textColor: "{colors.readout-white}"
+    typography: "{typography.body}"
   panel:
     backgroundColor: "{colors.panel-face}"
     rounded: "{rounded.md}"
@@ -155,6 +171,11 @@ components:
     textColor: "{colors.fault-ember}"
     rounded: "{rounded.xs}"
     height: "22px"
+  status-pill-idle:
+    backgroundColor: "{colors.raised-control}"
+    textColor: "{colors.label-text}"
+    rounded: "{rounded.xs}"
+    height: "22px"
   tab:
     textColor: "{colors.label-text}"
     height: "46px"
@@ -164,9 +185,13 @@ components:
 
 # Design System: caravana console
 
-<!-- Source: the Claude Design handoff "caravana console", Handoff 2, 2026-10-04 (local only, in
-the gitignored design/console/). No console code exists yet; re-run /impeccable document after
-007 ships so this file describes the built CSS, not just the handoff. -->
+<!-- Source: the shipped CSS of feature 006 (internal/ui/style/theme.css and input.css, built into
+internal/ui/static/app.css by tools/ui-css.sh) and the two pages it styles, /login and /account.
+It started from the Claude Design handoff "caravana console", Handoff 2, 2026-10-04 (local only,
+in the gitignored design/console/), and keeps the handoff's tokens 1:1. Two handoff values changed
+when it was built: the label is 12px, not 11px, and the live-dot ping runs once, not forever.
+Components below that the console (007) hasn't built yet say so. Re-run /impeccable document after
+007 ships. -->
 
 ## Overview
 
@@ -287,11 +312,20 @@ in place never shifts its neighbors.
 - **Overview pages:** a main column plus a 400px right rail (needs you, activity, capacity).
 - **App pages:** four tabs by intent (Running, Ship, Configure, Logs). Raw and advanced settings
   sit behind an explicit "Advanced settings" boundary.
-- **Login:** the only page without the shell. A centered 380px column on the bare ground.
+- **Login:** the only page without the shell. A centered 380px column on the bare ground, shipped
+  with 006: wordmark, the host in mono, "Sign in", two 42px fields, one primary button, and the
+  reset command in its own block under it.
+- **Account (006):** until 007 moves it into the shell as Settings, a centered 720px column on the
+  bare ground: wordmark and "Sign out" on one line, the headline sentence, then one labeled section
+  per job (Password, API tokens), each a flat panel.
 - **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is about
   12px, gaps inside a grid 8–10px.
-- **Narrow screens:** the handoff is desktop-only and has no breakpoints. How the sidebar and
-  grid rows collapse on a phone is still open, to be settled in 007.
+- **Narrow screens:** the handoff is desktop-only. The 006 pages settle what they need: both are
+  single columns that keep their 24px side gutters down to 390px; the login column stays 380px
+  wide at most; a token row keeps its status pill and action in two fixed columns on the right
+  while its name and facts wrap on the left. On touch screens (`pointer: coarse`) every button
+  and field is at least 44px tall. How the sidebar and the grid rows of the console collapse on a
+  phone is still open, to be settled in 007.
 
 ### Named Rules
 **The Problems-First Rule.** Every list sorts by status: failed, warning, rolling, healthy, idle.
@@ -335,16 +369,22 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   full Fault Ember on hover. Destructive actions confirm in a modal.
 - **States:** transitions are 120ms on `cubic-bezier(0.2, 0.7, 0.2, 1)`. Pressing nudges the
   button down 0.5px, with no scale. Focus is a 2px Signal Blue ring at 55%, offset 2px.
+- **Shipped as:** `cv-btn` with `cv-btn-primary`, `-secondary`, `-danger`, and the sizes `cv-btn-sm`
+  (28px) and `cv-btn-lg` (42px, the sign-in button). Ghost and icon buttons arrive with 007.
 - **Labels:** a verb that names the outcome ("Revert to v22", "Raise to 2 GB"). An optional
   16px Lucide icon at 1.5px stroke sits before the label.
 - **Icon button:** a square ghost button (28px), always with `aria-label` and `title`.
 
 ### Status pill and mark
-- **Mark:** an 8px shape. Healthy is a filled circle, rolling a circle with its left half filled,
-  warning a rotated square, failed a square, idle an empty ring.
+- **Mark:** an 8px shape drawn in CSS, not a font glyph, so it never depends on which font loaded
+  (`cv-mark-healthy`, `-rolling`, `-warning`, `-failed`, `-idle`). Healthy is a filled circle,
+  rolling a circle with its left half filled (the one hard-stop gradient in the system), warning a
+  rotated square, failed a square, idle an empty ring. Marks are `aria-hidden`; the word beside
+  them carries the meaning for a screen reader.
 - **Pill:** 22px tall, 2px corners, the status ground and edge, the status color as text, in Data
-  mono at 12px, with the mark first. A "quiet" variant drops the tinted ground inside dense
-  tables.
+  mono at 12px, with the mark first (`cv-pill-healthy`, `-warning`, `-failed`, `-idle`; rolling
+  arrives with 007). An "idle" pill uses Raised Control and Label Text. A "quiet" variant drops the
+  tinted ground inside dense tables (007).
 
 ### Panels
 - **Corner Style:** 6px.
@@ -354,13 +394,36 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
 
 ### Inputs / Fields
 - **Style:** Raised Control fill, Control Edge border, 4px corners, Readout White text (mono at
-  12.5px for values), 12px side padding, 36px tall. The label sits above in Label style. A prefix
-  or suffix (`https://`, `MB`) sits inside the field in Label Text.
+  14px for values), 12px side padding, 36px tall (`cv-field`). The sign-in page uses a 42px field on
+  Panel Face (`cv-field-lg`). The label sits above in Label style. A prefix or suffix (`https://`,
+  `MB`) sits inside the field in Label Text.
 - **Focus:** the border moves to Strong Edge and the 2px Signal Blue ring appears around it.
-- **Hint / Error:** a hint below in Label Text. An error below in Fault Ember with the failed
-  mark, written as a sentence about what's wrong ("DNS doesn't point here yet").
+- **Hint / Error:** a hint below in Label Text (`cv-data-muted`). An error below in Fault Ember with
+  the failed mark first, written as a sentence about what's wrong ("The new password must be at
+  least 12 characters."). The field's border turns Fault Ember Edge (`aria-invalid="true"`), the
+  error is announced (`role="alert"`), and the field is autofocused so the page lands on it.
+- **Date:** the same field, its value in mono and centered in the box, in the dark color scheme.
 - **Switch:** the only fully rounded control. Readout White track when on, label to the right,
-  hint underneath.
+  hint underneath. Not built yet (007).
+
+### Notice
+One line of status, in the voice of the screen: the mark first, then a plain sentence in Readout
+White (`cv-notice`), balanced so no word is left alone on a line. A refusal is `role="alert"`; a
+calm fact ("Your session ended. Sign in again.", "Password changed.") is `role="status"`. It never
+has a solid fill and never a colored border.
+
+### Command block
+A command someone has to copy gets its own block (`cv-cmd`): Raised Control fill, Control Edge
+border, 4px corners, Data mono 13px, selected whole with one click, wrapping only when it must. It
+is never run into a sentence, where it would break across lines. A quiet variant (`cv-cmd-quiet`)
+drops the fill and uses Label Text for secondary examples such as a `curl` line.
+
+### Token row
+The shipped list row (`cv-token-row`): a grid of three columns inside a Panel. The name in Data
+mono with its facts under it in muted mono ("created 2 minutes ago", "used never", "expires never";
+for an expired or revoked token the last fact is "expired …" or "revoked …"), then the status pill,
+then the action. The pill and the action sit in fixed columns, so they line up from row to row.
+Times are relative, with the exact time in the `title`. Only an active row has "Revoke".
 
 ### Navigation
 - **Sidebar:** grouped links in Body, 34px tall with 4px corners. The active link sits on Raised
@@ -391,7 +454,10 @@ sentence explaining the revert, plus a "Revert to" button on older healthy versi
 ### Live updates
 When a server-sent event changes a value, that value's background flashes Signal Blue at 16%
 once and fades over 700ms. New feed rows drop in 3px over 180ms. The live dot in the top bar
-pings once per event. Reduced-motion settings turn all of it off.
+pings once per event (`--animate-ping-live` runs a single iteration; the handoff's looping
+version was a bug). Reduced-motion settings turn all of it off: the stylesheet ends with a
+`prefers-reduced-motion: reduce` rule that removes every animation and transition. The 006 pages
+animate nothing but the 120ms hover and focus transitions.
 
 **The One Tick Rule.** Motion only answers an event, and only once. No looping animation, no
 pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
@@ -408,6 +474,8 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Do** keep the main action neutral: a Readout White fill, at most one per view.
 - **Do** sort lists failed → warning → rolling → healthy → idle.
 - **Do** explain a problem in a sentence plus one fix button.
+- **Do** put every command to copy in its own `cv-cmd` block, and every error under its field with
+  the field autofocused.
 - **Do** take every color from the theme tokens. If a color is missing, add a token instead of
   writing a raw oklch value in a component.
 
@@ -427,4 +495,6 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Don't** use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a
   separator. Icons are Lucide line icons, and only in buttons and toolbars.
 - **Don't** draw a logo mark. The wordmark is the word "caravana" in Plex Mono 600.
+- **Don't** run a command into a sentence, or let a long one break at a hyphen mid-line.
+- **Don't** show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS.
 - **Don't** make it look like Dokploy, a gradient "AI dashboard", or a Grafana wall of charts.

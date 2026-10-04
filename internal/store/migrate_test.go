@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestOpen(t *testing.T) {
@@ -190,4 +192,80 @@ func versions(t *testing.T, s *Store) []int {
 		out = append(out, v)
 	}
 	return out
+}
+
+func TestOpenShared(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("works while another Store holds the lock", func(t *testing.T) {
+		dir := t.TempDir()
+		server, err := Open(ctx, dir)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer server.Close()
+
+		cli, err := OpenShared(ctx, dir)
+		if err != nil {
+			t.Fatalf("OpenShared while locked: %v", err)
+		}
+		defer cli.Close()
+
+		now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
+		if err := cli.CreateAdmin(ctx, AdminRecord{Email: "a@example.com", PasswordHash: "h", CreatedAt: now, PasswordChangedAt: now}); err != nil {
+			t.Fatalf("CreateAdmin through the shared store: %v", err)
+		}
+		if got, err := server.GetAdmin(ctx); err != nil || got.Email != "a@example.com" {
+			t.Errorf("server sees admin %+v, %v; want the CLI's", got, err)
+		}
+		if err := server.CreateAPIToken(ctx, APITokenRecord{ID: "id1", Name: "n", Hash: "h", CreatedAt: now}, now); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := cli.ListAPITokens(ctx); err != nil || len(got) != 1 {
+			t.Errorf("shared store lists %d tokens, %v; want the server's 1", len(got), err)
+		}
+	})
+
+	t.Run("a database one migration behind", func(t *testing.T) {
+		dir := t.TempDir()
+		s, err := Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := embeddedVersions(t)[len(embeddedVersions(t))-1]
+		if _, err := s.db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version = ?", last); err != nil {
+			t.Fatal(err)
+		}
+		s.Close()
+
+		_, err = OpenShared(ctx, dir)
+		if !errors.Is(err, ErrSchemaMismatch) {
+			t.Fatalf("OpenShared = %v, want ErrSchemaMismatch", err)
+		}
+		want := fmt.Sprintf("migration %d", last-1)
+		if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), fmt.Sprintf("%d", last)) {
+			t.Errorf("error %q should name both versions (%d and %d)", err, last-1, last)
+		}
+	})
+
+	t.Run("a database from a newer caravana", func(t *testing.T) {
+		dir := t.TempDir()
+		s, err := Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO schema_migrations (version, name, applied_at) VALUES (999, 'future', 'x')"); err != nil {
+			t.Fatal(err)
+		}
+		s.Close()
+		if _, err := OpenShared(ctx, dir); !errors.Is(err, ErrSchemaMismatch) {
+			t.Fatalf("OpenShared = %v, want ErrSchemaMismatch", err)
+		}
+	})
+
+	t.Run("no database", func(t *testing.T) {
+		if _, err := OpenShared(ctx, t.TempDir()); err == nil {
+			t.Fatal("OpenShared on an empty directory succeeded, want an error")
+		}
+	})
 }

@@ -1,0 +1,99 @@
+{{define "content"}}
+<main class="mx-auto w-full max-w-[720px] px-6 pt-10 pb-16 flex flex-col gap-7">
+  <header class="flex items-center justify-between gap-4">
+    <span class="cv-wordmark">caravana</span>
+    <form method="post" action="/logout">
+      <button type="submit" class="cv-btn cv-btn-secondary">Sign out</button>
+    </form>
+  </header>
+
+  <h1 class="text-3xl font-normal text-fg-1 [overflow-wrap:anywhere]">Signed in as <span class="font-mono">{{.Email}}</span>.</h1>
+
+  {{with .NewToken}}
+  <section aria-labelledby="new-token" class="flex flex-col gap-2">
+    <h2 id="new-token" class="cv-label">New token</h2>
+    <div class="cv-panel p-4 flex flex-col gap-3" role="status">
+      <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
+      <code class="cv-cmd">{{.Value}}</code>
+      <p class="text-sm text-fg-3">Use it like this:</p>
+      <code class="cv-cmd cv-cmd-quiet">curl \
+  -H "Authorization: Bearer {{.Value}}" \
+  {{$.Origin}}/v1/tokens</code>
+    </div>
+  </section>
+  {{end}}
+
+  <section aria-labelledby="password" class="flex flex-col gap-2">
+    <h2 id="password" class="cv-label">Password</h2>
+    <form method="post" action="/account/password" class="cv-panel p-4 flex flex-col gap-4">
+      {{if .PasswordChanged}}
+      <div role="status" class="cv-notice">
+        <span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>
+        <span>Password changed. Other browsers were signed out.</span>
+      </div>
+      {{end}}
+      <label class="flex flex-col gap-2">
+        <span class="cv-label">Current password</span>
+        <input class="cv-field" type="password" name="currentPassword" autocomplete="current-password" required{{if .CurrentErr}} autofocus aria-invalid="true" aria-describedby="current-error"{{end}}>
+        {{with .CurrentErr}}<span id="current-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+      </label>
+      <label class="flex flex-col gap-2">
+        <span class="cv-label">New password</span>
+        <input class="cv-field" type="password" name="newPassword" autocomplete="new-password" minlength="12" required{{if .NewErr}} autofocus aria-invalid="true" aria-describedby="new-error"{{else}} aria-describedby="new-hint"{{end}}>
+        {{with .NewErr}}<span id="new-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="new-hint" class="cv-data-muted">At least 12 characters.</span>{{end}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-primary">Change password</button></div>
+    </form>
+  </section>
+
+  <section aria-labelledby="tokens" class="flex flex-col gap-2">
+    <h2 id="tokens" class="cv-label">API tokens</h2>
+    <div class="cv-panel">
+      {{range .Tokens}}
+      <div class="cv-row cv-token-row">
+        <div class="min-w-0">
+          <div class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Name}}</div>
+          <dl class="cv-data-muted mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
+            <div class="flex gap-1.5"><dt>created</dt><dd title="{{.Created.Exact}}">{{.Created.Text}}</dd></div>
+            <div class="flex gap-1.5"><dt>used</dt><dd{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}>{{.LastUsed.Text}}</dd></div>
+            {{if eq .State "revoked"}}<div class="flex gap-1.5"><dt>revoked</dt><dd title="{{.Revoked.Exact}}">{{.Revoked.Text}}</dd></div>
+            {{else if eq .State "expired"}}<div class="flex gap-1.5"><dt>expired</dt><dd title="{{.Expires.Exact}}">{{.Expires.Text}}</dd></div>
+            {{else}}<div class="flex gap-1.5"><dt>expires</dt><dd{{if .Expires.Exact}} title="{{.Expires.Exact}}"{{end}}>{{.Expires.Text}}</dd></div>{{end}}
+          </dl>
+        </div>
+        <div>
+          {{if eq .State "active"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>active</span>
+          {{else if eq .State "expired"}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span>expired</span>
+          {{else}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>revoked</span>{{end}}
+        </div>
+        <div>
+          {{if eq .State "active"}}
+          <form method="post" action="/account/tokens/{{.ID}}/revoke">
+            <button type="submit" class="cv-btn cv-btn-sm cv-btn-danger" aria-label="Revoke token {{.Name}}">Revoke</button>
+          </form>
+          {{end}}
+        </div>
+      </div>
+      {{else}}
+      <p class="px-3 py-4 text-sm leading-normal text-fg-3">No API tokens yet. Create one below, or on the host with <code class="cv-data">caravana admin create-token --name ci</code>.</p>
+      {{end}}
+
+      <form method="post" action="/account/tokens" class="cv-row flex flex-col gap-4 p-4">
+        <div class="flex flex-wrap gap-4">
+          <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+            <span class="cv-label">Name</span>
+            <input class="cv-field" type="text" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="name-error"{{else}} aria-describedby="name-hint"{{end}}>
+            {{with .NameErr}}<span id="name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="name-hint" class="cv-data-muted">Where it is used, e.g. ci-github.</span>{{end}}
+          </label>
+          <label class="flex flex-col gap-2">
+            <span class="cv-label">Expires (optional)</span>
+            <input class="cv-field" type="date" name="expires" value="{{.TokenExpires}}"{{if .ExpiresErr}} autofocus aria-invalid="true" aria-describedby="expires-error"{{else}} aria-describedby="expires-hint"{{end}}>
+            {{with .ExpiresErr}}<span id="expires-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="expires-hint" class="cv-data-muted">End of that day, UTC.</span>{{end}}
+          </label>
+        </div>
+        <div><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></div>
+      </form>
+    </div>
+  </section>
+</main>
+{{end}}

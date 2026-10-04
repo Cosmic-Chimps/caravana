@@ -3,16 +3,43 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func noEnv(string) string { return "" }
+
+// syncBuffer is a bytes.Buffer safe for the server's goroutines to write while
+// the test reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// runServer is run with no input and its output thrown away: the server
+// tests only look at stderr (its log) and the exit code.
+func runServer(ctx context.Context, args []string, getenv func(string) string, stderr io.Writer) int {
+	return run(ctx, args, getenv, strings.NewReader(""), io.Discard, stderr)
+}
 
 // freeAddr returns a loopback address with a port nothing is using right now.
 func freeAddr(t *testing.T) string {
@@ -32,9 +59,9 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var stderr bytes.Buffer
+	var stderr syncBuffer
 	exit := make(chan int, 1)
-	go func() { exit <- run(ctx, []string{"-listen", addr, "-data-dir", dir}, noEnv, &stderr) }()
+	go func() { exit <- runServer(ctx, []string{"-listen", addr, "-data-dir", dir}, noEnv, &stderr) }()
 
 	// SC-001: healthy within 2 seconds.
 	deadline := time.Now().Add(2 * time.Second)
@@ -51,6 +78,42 @@ func TestRun(t *testing.T) {
 			t.Fatalf("not healthy after 2s (last error %v); stderr:\n%s", err, stderr.String())
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The API is closed: health is public, everything else needs a token.
+	resp, err := http.Get("http://" + addr + "/v1/apps/x")
+	if err != nil {
+		t.Fatalf("GET /v1/apps/x: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("GET /v1/apps/x without a token = %d, want 401", resp.StatusCode)
+	}
+	// The pages are on the same listener: /login answers (with no admin yet,
+	// it shows the host command), and "/" goes to the account page.
+	resp, err = http.Get("http://" + addr + "/login")
+	if err != nil {
+		t.Fatalf("GET /login: %v", err)
+	}
+	loginPage, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(loginPage), "caravana admin init") {
+		t.Errorf("GET /login = %d, want 200 with the host command; body:\n%s", resp.StatusCode, loginPage)
+	}
+	// The API still never redirects, even for paths a mux would clean.
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for _, p := range []string{"//v1/health", "/v1/../v1/health", "/v1/health/"} {
+		resp, err := noRedirect.Get("http://" + addr + p)
+		if err != nil {
+			t.Fatalf("GET %s: %v", p, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound || resp.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("GET %s = %d %q, want a JSON 404 (no redirect)", p, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+	}
+	if !strings.Contains(stderr.String(), "caravana admin init") {
+		t.Errorf("the log does not tell the owner to run caravana admin init:\n%s", stderr.String())
 	}
 
 	cancel()
@@ -75,7 +138,7 @@ func TestRunBadConfig(t *testing.T) {
 		}
 		return ""
 	}
-	code := run(context.Background(), []string{"-data-dir", t.TempDir()}, getenv, &stderr)
+	code := runServer(context.Background(), []string{"-data-dir", t.TempDir()}, getenv, &stderr)
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
@@ -94,7 +157,7 @@ func TestRunWebhookListener(t *testing.T) {
 	var stderr bytes.Buffer
 	exit := make(chan int, 1)
 	go func() {
-		exit <- run(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, noEnv, &stderr)
+		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, noEnv, &stderr)
 	}()
 
 	status := func(url string) int {
@@ -116,6 +179,20 @@ func TestRunWebhookListener(t *testing.T) {
 	if got := status("http://" + hookAddr + "/v1/health"); got != http.StatusNotFound {
 		t.Errorf("health on the webhook listener = %d, want 404", got)
 	}
+	// The webhook-only listener serves no pages and no styles (FR-026): JSON 404s.
+	for _, p := range []string{"/login", "/account", "/static/app.css", "/"} {
+		resp, err := http.Get("http://" + hookAddr + p)
+		if err != nil {
+			t.Fatalf("GET %s on the webhook listener: %v", p, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound || resp.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("GET %s on the webhook listener = %d %q, want a JSON 404", p, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+	}
+	if got := status("http://" + addr + "/login"); got != http.StatusOK {
+		t.Errorf("/login on the main listener = %d, want 200", got)
+	}
 
 	cancel()
 	select {
@@ -134,7 +211,7 @@ func TestRunWebhookListener(t *testing.T) {
 func TestRunWebhookListenerSameAsMain(t *testing.T) {
 	var stderr bytes.Buffer
 	addr := freeAddr(t)
-	code := run(context.Background(), []string{"-listen", addr, "-webhook-listen", addr, "-data-dir", t.TempDir()}, noEnv, &stderr)
+	code := runServer(context.Background(), []string{"-listen", addr, "-webhook-listen", addr, "-data-dir", t.TempDir()}, noEnv, &stderr)
 	if code != 1 || !strings.Contains(stderr.String(), "CARAVANA_WEBHOOK_LISTEN") {
 		t.Errorf("exit %d, stderr %s; want 1 naming CARAVANA_WEBHOOK_LISTEN", code, stderr.String())
 	}

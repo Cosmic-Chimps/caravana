@@ -14,13 +14,14 @@ import (
 	"strconv"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
 // Config is everything the control plane needs to start.
 type Config struct {
-	// Listen is the HTTP address, host:port. Loopback by default: the API has
-	// no authentication yet.
+	// Listen is the HTTP address, host:port, for the API and the pages.
+	// Loopback by default.
 	Listen string
 	// DataDir holds the SQLite store and its lock file.
 	DataDir string
@@ -32,6 +33,9 @@ type Config struct {
 	// nothing but POST /v1/webhooks/{id}, so it can be exposed while the rest of
 	// the API stays on Listen. Empty means off.
 	WebhookListen string
+	// TrustedProxies are the proxies (Traefik) whose X-Forwarded-For and
+	// X-Forwarded-Proto headers Caravana believes. Empty by default: nobody.
+	TrustedProxies httpx.Proxies
 	// NomadToken is the Nomad ACL token. It comes from the environment only:
 	// a flag would show it in the process list.
 	NomadToken Secret
@@ -73,9 +77,10 @@ var (
 	cpuSetting          = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
 	memorySetting       = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
-	webhookListenSetting = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
-	nomadAddrSetting     = setting{"NOMAD_ADDR", "nomad-addr"}
-	nomadTokenEnv        = "NOMAD_TOKEN"
+	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
+	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
+	trustedProxiesSetting = setting{"CARAVANA_TRUSTED_PROXIES", "trusted-proxies"}
+	nomadTokenEnv         = "NOMAD_TOKEN"
 )
 
 // translatorSettings maps nomadjob's field names to our settings, so its
@@ -106,6 +111,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	cpu := fs.String(cpuSetting.flag, envOr(cpuSetting, "100"), "default CPU per service, in MHz")
 	memory := fs.String(memorySetting.flag, envOr(memorySetting, "64"), "default memory per service, in MB")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
+	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
 	if err := fs.Parse(args); err != nil {
 		return Config{}, fmt.Errorf("command line: %w", err)
@@ -137,6 +143,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		if c.WebhookListen == c.Listen {
 			return Config{}, fmt.Errorf("%s: %q is also the main listen address; use another port", webhookListenSetting, c.WebhookListen)
 		}
+	}
+	if c.TrustedProxies, err = httpx.ParseProxies(*trustedProxies); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", trustedProxiesSetting, err)
 	}
 	if c.DataDir == "" {
 		return Config{}, fmt.Errorf("%s: is required", dataDirSetting)
@@ -182,18 +191,4 @@ func checkNomadAddr(addr string) error {
 		return fmt.Errorf("%q must be an http:// or https:// URL with a host, e.g. http://127.0.0.1:4646", addr)
 	}
 	return nil
-}
-
-// Loopback reports whether Listen only accepts connections from this
-// machine. An empty host (":7070") means every interface.
-func (c Config) Loopback() bool {
-	host, _, err := net.SplitHostPort(c.Listen)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }

@@ -22,6 +22,8 @@ const (
 	codeNomadUnavailable     = "nomad_unavailable"
 	codeNomadRejected        = "nomad_rejected"
 	codeUnauthorized         = "unauthorized"
+	codeCrossOrigin          = "cross_origin"
+	codeTokenNameTaken       = "token_name_taken"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

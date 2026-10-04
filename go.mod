@@ -7,6 +7,7 @@ tool honnef.co/go/tools/cmd/staticcheck
 require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/hashicorp/nomad/api v0.0.0-20260917172403-9dcbdc5e64ec
+	golang.org/x/term v0.46.0
 	modernc.org/sqlite v1.60.1
 )
 

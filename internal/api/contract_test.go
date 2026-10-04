@@ -53,6 +53,43 @@ func TestContractMatchesRoutes(t *testing.T) {
 	}
 }
 
+// TestContractSecurityMatchesRoutes fails when a route's public flag and its
+// operation's security disagree: a route is public exactly when the operation
+// opts out of authentication (an empty security list) or asks only for a
+// credential that isn't an API token or session (the webhook's own token).
+func TestContractSecurityMatchesRoutes(t *testing.T) {
+	doc := loadContract(t)
+	for _, rt := range (&server{}).routes() {
+		item := doc.Paths.Value(rt.path)
+		if item == nil || item.GetOperation(rt.method) == nil {
+			continue // TestContractMatchesRoutes reports it
+		}
+		if got := operationIsPublic(item.GetOperation(rt.method)); got != rt.public {
+			t.Errorf("%s %s: route public = %v, but its contract security says public = %v",
+				rt.method, rt.path, rt.public, got)
+		}
+	}
+}
+
+// operationIsPublic reads an operation's security override. No override means
+// the document's global security applies, which is the API token or session.
+func operationIsPublic(op *openapi3.Operation) bool {
+	if op.Security == nil {
+		return false
+	}
+	if len(*op.Security) == 0 {
+		return true
+	}
+	for _, requirement := range *op.Security {
+		for scheme := range requirement {
+			if scheme == "apiToken" || scheme == "session" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // diffRoutes lists every "METHOD path" that only one side has.
 func diffRoutes(contract, router []string) []string {
 	var problems []string
@@ -161,6 +198,11 @@ func TestContractBodies(t *testing.T) {
 	t.Run("health 200", func(t *testing.T) { check(t, get(t, "GET", "/v1/health"), "Health") })
 	t.Run("404", func(t *testing.T) { check(t, get(t, "GET", "/v1/nope"), "Error") })
 	t.Run("405", func(t *testing.T) { check(t, get(t, "DELETE", "/v1/health"), "Error") })
+	t.Run("401 without credentials", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		_, _, raw := call(t, http.MethodGet, e.RawURL+"/v1/apps/whoami", "", "")
+		checkSchema(t, doc, raw, "Error")
+	})
 	t.Run("unclean path", func(t *testing.T) { check(t, get(t, "GET", "//v1/health"), "Error") })
 	t.Run("deploy 202, get deployment, list, get app", func(t *testing.T) {
 		e := newTestEnv(t, "")

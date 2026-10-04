@@ -31,7 +31,11 @@ jobs:
 
       # Lab and VM scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest) checks them.
       - name: shellcheck
-        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh
+        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh tools/*.sh
+
+      # The committed stylesheet must match its sources (the pinned Tailwind CLI, checksum-verified).
+      - name: stylesheet is up to date
+        run: tools/ui-css.sh check
 
       - name: cross-compile (no CGO)
         env:

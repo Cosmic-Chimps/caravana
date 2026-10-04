@@ -13,6 +13,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -26,57 +27,85 @@ type handlerFunc func(w http.ResponseWriter, r *http.Request) error
 type route struct {
 	method, path string
 	handle       handlerFunc
+	// public routes skip authentication: the health check, which answers
+	// load balancers, and the webhook call, which has its own token.
+	public bool
 }
 
 type server struct {
-	svc   *service.Service
-	store *store.Store // for the health check only; everything else goes through svc
-	log   *slog.Logger
+	svc     *service.Service
+	auth    *service.Auth
+	store   *store.Store // for the health check only; everything else goes through svc
+	proxies httpx.Proxies
+	csrf    *http.CrossOriginProtection // for requests authenticated by a session cookie
+	log     *slog.Logger
 }
 
 func (s *server) routes() []route {
 	return []route{
-		{http.MethodGet, "/v1/health", s.health},
-		{http.MethodGet, "/v1/apps/{id}", s.getApp},
-		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy},
-		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments},
-		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment},
-		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken},
-		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook},
-		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken},
+		{http.MethodGet, "/v1/health", s.health, true},
+		{http.MethodGet, "/v1/apps/{id}", s.getApp, false},
+		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false},
+		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false},
+		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false},
+		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false},
+		{http.MethodPut, "/v1/account/password", s.changePassword, false},
+		{http.MethodPost, "/v1/tokens", s.createToken, false},
+		{http.MethodGet, "/v1/tokens", s.listTokens, false},
+		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false},
 		s.webhookRoute(),
 	}
 }
 
 // webhookRoute is the one route the webhook-only listener serves.
 func (s *server) webhookRoute() route {
-	return route{http.MethodPost, "/v1/webhooks/{id}", s.callWebhook}
+	return route{http.MethodPost, "/v1/webhooks/{id}", s.callWebhook, true}
 }
 
-// New returns the API's HTTP handler. Apps and deployments go through svc,
-// the same layer the UI and the webhook use (constitution V); st is only
-// pinged by the health check.
-func New(svc *service.Service, st *store.Store, log *slog.Logger) http.Handler {
-	s := &server{svc: svc, store: st, log: log}
+// Deps is what the API needs: both services (apps and deployments, then the
+// admin, tokens and sessions), the store for the health check, and the
+// trusted proxies that decide which forwarded headers to believe.
+type Deps struct {
+	Service *service.Service
+	Auth    *service.Auth
+	Store   *store.Store // only pinged by the health check
+	Proxies httpx.Proxies
+	Log     *slog.Logger
+}
+
+// New returns the API's HTTP handler. Everything goes through the service
+// layer, the same one the UI and the webhook use (constitution V). Every
+// route except the public ones needs credentials. It doesn't log requests:
+// whoever mounts it wraps it in httpx.LogRequests, so pages and API share one
+// request log.
+func New(d Deps) http.Handler {
+	s := &server{svc: d.Service, auth: d.Auth, store: d.Store, proxies: d.Proxies, log: d.Log,
+		csrf: http.NewCrossOriginProtection()}
 	return s.handler(s.routes())
 }
 
 // NewWebhook returns the handler for the webhook-only listener: only
-// POST /v1/webhooks/{id}, with the same JSON errors and request logging as
-// New. Every other path answers 404, so this listener can be exposed while
+// POST /v1/webhooks/{id}, with the same JSON errors as New and its own request
+// log. Every other path answers 404, so this listener can be exposed while
 // the rest of the API stays private (research R7).
 func NewWebhook(svc *service.Service, log *slog.Logger) http.Handler {
 	s := &server{svc: svc, log: log}
-	return s.handler([]route{s.webhookRoute()})
+	return httpx.LogRequests(log, s.handler([]route{s.webhookRoute()}))
 }
 
 // handler builds the HTTP handler for a route table.
 func (s *server) handler(routes []route) http.Handler {
 	mux := http.NewServeMux()
 	for _, rt := range routes {
-		mux.Handle(rt.method+" "+rt.path, s.handle(rt.handle))
+		h := rt.handle
+		if !rt.public {
+			h = s.authenticate(h)
+		}
+		mux.Handle(rt.method+" "+rt.path, s.handle(h))
 	}
-	return s.logRequests(s.jsonOnly(mux))
+	return s.jsonOnly(mux)
 }
 
 // jsonOnly sits in front of the mux so the API never answers with a redirect
@@ -160,8 +189,12 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return apiErr
 	case errors.As(err, &fieldErr):
 		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: fieldErr.Field, Message: fieldErr.Message}
-	case errors.Is(err, service.ErrUnauthorized):
+	case errors.Is(err, service.ErrUnauthorized), errors.Is(err, service.ErrNotAuthenticated):
 		return &Error{Status: http.StatusUnauthorized, Code: codeUnauthorized, Message: err.Error(), Authenticate: "Bearer"}
+	case errors.Is(err, service.ErrWrongPassword):
+		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "currentPassword", Message: err.Error()}
+	case errors.Is(err, service.ErrTokenNameTaken):
+		return &Error{Status: http.StatusConflict, Code: codeTokenNameTaken, Field: "name", Message: err.Error()}
 	case errors.Is(err, store.ErrNotFound):
 		return &Error{Status: http.StatusNotFound, Code: codeNotFound, Message: err.Error()}
 	case errors.As(err, &imageErr) && errors.Is(err, deploy.ErrImageNotFound):

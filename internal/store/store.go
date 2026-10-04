@@ -30,6 +30,7 @@ var (
 	ErrSchemaTooNew      = errors.New("document schema is newer than this Caravana")
 	ErrStoreTooNew       = errors.New("store was migrated by a newer Caravana")
 	ErrLocked            = errors.New("data directory is in use by another Caravana process")
+	ErrSchemaMismatch    = errors.New("store schema differs from this caravana's")
 )
 
 const (
@@ -81,10 +82,65 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 	return s, nil
 }
 
+// OpenShared opens a store that another process (the running server) holds
+// the lock for, for the admin CLI: it takes no lock and applies no migrations.
+// It fails with ErrSchemaMismatch unless the database is at exactly this
+// binary's latest migration, and refuses a data directory with no database.
+func OpenShared(ctx context.Context, dataDir string) (*Store, error) {
+	path := filepath.Join(dataDir, dbFile)
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("no caravana database in %q (has the server run here yet?): %w", dataDir, err)
+	}
+	db, err := openDB(path)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{db: db, now: time.Now}
+	if err := s.checkSchema(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// checkSchema returns ErrSchemaMismatch unless the applied migrations are
+// exactly the embedded ones.
+func (s *Store) checkSchema(ctx context.Context) error {
+	fsys, err := fs.Sub(migrationsFS, "migrations")
+	if err != nil {
+		return err
+	}
+	known, err := readMigrations(fsys)
+	if err != nil {
+		return err
+	}
+	applied, err := appliedVersions(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	newest := known[len(known)-1].version
+	match := len(applied) == len(known)
+	for _, m := range known {
+		match = match && applied[m.version]
+	}
+	if !match {
+		have := 0
+		for v := range applied {
+			have = max(have, v)
+		}
+		return fmt.Errorf("%w: the database is at migration %d, this binary at %d; stop caravana or run the same version",
+			ErrSchemaMismatch, have, newest)
+	}
+	return nil
+}
+
 // openDB opens the SQLite file with the settings Caravana relies on.
 func openDB(path string) (*sql.DB, error) {
+	// _txlock=immediate: a transaction takes the write lock when it begins,
+	// so busy_timeout covers it. A deferred one that reads first can fail at
+	// once with "database is locked" when the CLI writes at the same moment.
 	dsn := "file:" + path +
-		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open store %q: %w", path, err)

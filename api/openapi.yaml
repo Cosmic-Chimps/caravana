@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.3.0
+  version: 0.4.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -15,15 +15,27 @@ info:
     Durations (`health.interval`, `health.timeout`) are Go duration strings such as `"10s"` or
     `"1m30s"`, in requests and responses.
 
-    There is no authentication yet (it arrives in a later version); by default the server
-    listens on 127.0.0.1 only. The one exception is `POST /v1/webhooks/{id}`, which needs the
-    app's webhook token and is also served, alone, on the optional webhook-only listener.
+    Every endpoint needs authentication except `GET /v1/health` and `POST /v1/webhooks/{id}`.
+    Clients send an API token as `Authorization: Bearer cvat_…`; the admin creates tokens on the
+    host (`caravana admin create-token`), on the web account page, or with `createToken`. A
+    browser signed in to the web UI may use its session cookie instead; then every
+    state-changing request must come from caravana's own pages, or it gets 403
+    `cross_origin`. A request without valid credentials gets 401 `unauthorized`, the same for
+    every reason (missing, malformed, wrong, expired or revoked token, no admin yet), and is
+    never redirected.
+
+    `POST /v1/webhooks/{id}` needs the app's webhook token instead, and is also served, alone,
+    on the optional webhook-only listener. Webhook tokens and API tokens never stand in for
+    each other.
   license:
     name: AGPL-3.0-only
     identifier: AGPL-3.0-only
 servers:
   - url: http://127.0.0.1:7070
     description: Local default
+security:
+  - apiToken: []
+  - session: []
 paths:
   /v1/health:
     get:
@@ -31,6 +43,7 @@ paths:
       summary: Report whether the server and its store are up.
       description: Unauthenticated, now and later. Meant for load balancers and install scripts.
       tags: [system]
+      security: []
       responses:
         "200":
           description: The server is up and its store is reachable.
@@ -55,6 +68,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AppRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -102,6 +117,10 @@ paths:
                 $ref: "#/components/schemas/Deployment"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
         "404":
           description: Empty body, and no app with this ID is stored.
           content:
@@ -143,6 +162,8 @@ paths:
                 $ref: "#/components/schemas/DeploymentList"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -168,6 +189,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Deployment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           description: No such app, or no such deployment of this app.
           content:
@@ -195,6 +218,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebhookToken"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -210,6 +237,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WebhookStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -222,6 +251,10 @@ paths:
       responses:
         "204":
           description: The app has no webhook token now.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -280,6 +313,117 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/account/password:
+    put:
+      operationId: changePassword
+      summary: Change the admin's password.
+      description: |
+        Needs the current password. Every session ends except the one making the request, if
+        it was made with a session. API tokens keep working. The web account page and
+        `caravana admin reset-password` on the host use the same service call.
+      tags: [account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: The password is changed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/tokens:
+    post:
+      operationId: createToken
+      summary: Create an API token.
+      description: |
+        Returns a new token, shown only in this response. It grants the whole API, as the
+        admin, until it is revoked or its `expiresAt` passes. `name` must be unique among the
+        tokens that are still active.
+      tags: [tokens]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: The new token.
+          headers:
+            Location:
+              description: The token's URL, `/v1/tokens/{tokenId}`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/TokenNameTaken"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listTokens
+      summary: List API tokens, never their values.
+      description: Every token, newest first, including expired and revoked ones.
+      tags: [tokens]
+      responses:
+        "200":
+          description: The tokens.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/tokens/{tokenId}:
+    parameters:
+      - $ref: "#/components/parameters/TokenID"
+    delete:
+      operationId: revokeToken
+      summary: Revoke an API token.
+      description: |
+        The token is refused from now on. It stays in the list as `revoked`. Revoking a token
+        that is already revoked changes nothing. A request may revoke the token it is using.
+      tags: [tokens]
+      responses:
+        "204":
+          description: The token is revoked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
 components:
   parameters:
     AppID:
@@ -293,8 +437,27 @@ components:
       examples:
         whoami:
           value: whoami
+    TokenID:
+      name: tokenId
+      in: path
+      required: true
+      description: The token's ID, as `listTokens` returns it. Not the token itself.
+      schema:
+        type: string
+        pattern: "^[a-z2-7]{26}$"
 
   securitySchemes:
+    apiToken:
+      type: http
+      scheme: bearer
+      description: "An API token as `Authorization: Bearer cvat_…`."
+    session:
+      type: apiKey
+      in: cookie
+      name: caravana_session
+      description: |
+        The web UI's session, set by signing in at `/login`. Over HTTPS the cookie is named
+        `__Host-caravana_session`. State-changing requests must come from caravana's own pages.
     webhookBearer:
       type: http
       scheme: bearer
@@ -567,7 +730,7 @@ components:
                 `unsupported_media_type`, `body_too_large`, `not_found`,
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
-                `nomad_rejected`, `unauthorized`.
+                `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`.
               examples: [invalid_field]
             message:
               type: string
@@ -578,6 +741,90 @@ components:
                 The one request field at fault, as a path like
                 `services[0].domains[1].port`. Absent when no single field is at fault.
               examples: ["services[0].domains[1].port"]
+
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          writeOnly: true
+          description: A wrong one gets 400 `invalid_field` with `field` `currentPassword`.
+        newPassword:
+          type: string
+          writeOnly: true
+          minLength: 12
+          description: At least 12 characters. A shorter one gets 400 `invalid_field`.
+
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          description: A label for the token, such as where it is used.
+          examples: [ci-github]
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the token stops working. Must be in the future. Absent means never.
+
+    TokenInfo:
+      type: object
+      # No `additionalProperties: false` here: CreatedToken extends this schema with
+      # `token`, and a closed base would reject it.
+      required: [id, name, createdAt, state]
+      properties:
+        id:
+          type: string
+          description: The token's ID, used to revoke it. Not the token itself.
+          examples: ["p4nzr2t6v3x7z5bqd7f4h6j3kq"]
+        name:
+          type: string
+          examples: [ci-github]
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+          description: Absent until first used. Updated at most once a minute.
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum: [active, expired, revoked]
+
+    CreatedToken:
+      allOf:
+        - $ref: "#/components/schemas/TokenInfo"
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              description: The token, shown only in this response.
+              pattern: "^cvat_[A-Za-z0-9_-]{43}$"
+
+    TokenList:
+      type: object
+      additionalProperties: false
+      required: [tokens]
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenInfo"
 
   responses:
     Unavailable:
@@ -651,13 +898,29 @@ components:
             $ref: "#/components/schemas/Error"
     Unauthorized:
       description: |
-        `unauthorized`: the webhook token is missing or wrong, or the app has none, or there is
-        no such app. All of these get the same answer.
+        `unauthorized`. On API routes: no valid API token or session (missing, malformed,
+        wrong, expired or revoked, or no admin exists yet). On the webhook: the webhook token is
+        missing or wrong, or the app has none, or there is no such app. Every reason gets the
+        same answer.
       headers:
         WWW-Authenticate:
           schema:
             type: string
             const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CrossOrigin:
+      description: |
+        `cross_origin`: a state-changing request authenticated by the session cookie came from
+        another site. Nothing was changed. Requests with an API token never get this.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TokenNameTaken:
+      description: "`token_name_taken`: an active token already has this name. `field` is `name`."
       content:
         application/json:
           schema:
@@ -678,3 +941,7 @@ tags:
     description: Deploying apps and following their rollouts.
   - name: webhooks
     description: Webhook tokens, and the webhook that redeploys an app.
+  - name: tokens
+    description: API tokens for clients (CI, scripts, the Aspire integration).
+  - name: account
+    description: The one admin account.

@@ -1,0 +1,21 @@
+/* The stylesheet entry point. tools/ui-css.sh turns this into
+   internal/ui/static/app.css with the Tailwind CSS v4 standalone CLI and the
+   daisyUI 5 plugin (versions and checksums in tools/ui-css.versions).
+
+   Fonts, self-hosted so the pages ask nothing of other hosts: IBM Plex Sans
+   1.1.0 and IBM Plex Mono 2.5.0 (IBM/plex releases @ibm/plex-sans@1.1.0 and
+   @ibm/plex-mono@2.5.0), the Latin-1 woff2 subsets, SIL Open Font License
+   (static/fonts/OFL.txt). */
+
+@import "tailwindcss" source(none);
+@import "./theme.css";
+
+/* Classes come from the templates only, never from the downloaded plugin files. */
+@source "../templates";
+
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/IBMPlexSans-Regular-Latin1.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/IBMPlexSans-Medium-Latin1.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/IBMPlexSans-SemiBold-Latin1.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/IBMPlexMono-Regular-Latin1.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/IBMPlexMono-Medium-Latin1.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/IBMPlexMono-SemiBold-Latin1.woff2") format("woff2"); }

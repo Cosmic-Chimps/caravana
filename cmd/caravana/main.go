@@ -12,15 +12,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/api"
 	"github.com/cosmic-chimps/caravana/internal/config"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/ui"
 )
 
 // shutdownTimeout is how long in-flight requests get to finish on SIGINT or
@@ -31,13 +35,18 @@ func main() {
 	// ctx is cancelled on Ctrl-C or SIGTERM, which starts a clean shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	os.Exit(run(ctx, os.Args[1:], os.Getenv, os.Stderr))
+	os.Exit(run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run starts the control plane and blocks until ctx is cancelled or the
-// server fails. It returns the process exit code. Taking its inputs as
-// arguments lets tests run it in-process.
-func run(ctx context.Context, args []string, getenv func(string) string, stderr io.Writer) int {
+// server fails. It returns the process exit code. `caravana admin ...` is the
+// host CLI instead (admin.go). Taking its inputs as arguments lets tests run
+// it in-process.
+func run(ctx context.Context, args []string, getenv func(string) string,
+	stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "admin" {
+		return runAdmin(ctx, args[1:], getenv, stdin, stdout, stderr)
+	}
 	log := slog.New(slog.NewJSONHandler(stderr, nil))
 
 	cfg, err := config.Load(args, getenv)
@@ -47,9 +56,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	}
 	// Never log cfg.NomadToken: it prints as [redacted] anyway.
 	log.Info("starting", "listen", cfg.Listen, "dataDir", cfg.DataDir, "nomadAddr", cfg.NomadAddr)
-	if !cfg.Loopback() {
-		log.Warn("listening on a non-loopback address; the API has no authentication yet", "listen", cfg.Listen)
-	}
 
 	st, err := store.Open(ctx, cfg.DataDir)
 	if err != nil {
@@ -65,6 +71,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		return 1
 	}
 	svc := service.New(st, deploy.New(nomad, &registry.Client{}, cfg.Settings), log)
+	auth := service.NewAuth(st, log, service.AuthOptions{})
+	if _, err := auth.AdminEmail(ctx); errors.Is(err, service.ErrNoAdmin) {
+		log.Warn("no admin yet: every API route refuses requests until one exists. On this host, run: caravana admin init --email <email>")
+	} else if err != nil {
+		log.Error("read admin", "error", err)
+		return 1
+	}
 	// Rollout watchers live until bgCtx is cancelled. Deferred calls run
 	// last-in, first-out, so on the way out the HTTP server has already shut
 	// down, then the watchers stop and are waited for, then the store closes.
@@ -78,7 +91,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		return 1
 	}
 
-	servers := []*http.Server{newServer(cfg.Listen, api.New(svc, st, log))}
+	pages, err := ui.New(ui.Deps{Auth: auth, Proxies: cfg.TrustedProxies, Log: log})
+	if err != nil {
+		log.Error("web pages", "error", err)
+		return 1
+	}
+	apiHandler := api.New(api.Deps{Service: svc, Auth: auth, Store: st, Proxies: cfg.TrustedProxies, Log: log})
+	servers := []*http.Server{newServer(cfg.Listen, httpx.LogRequests(log, root(apiHandler, pages)))}
 	if cfg.WebhookListen != "" {
 		// The webhook-only listener: just POST /v1/webhooks/{id}, so it can be
 		// exposed while the API above stays private.
@@ -114,6 +133,19 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	}
 	log.Info("stopped")
 	return 0
+}
+
+// root sends /v1 to the API and everything else to the pages. It decides on
+// the cleaned path, not by a ServeMux: a mux would redirect "//v1/health" to
+// "/v1/health", and the API never redirects (it answers those with a JSON 404).
+func root(apiHandler, pages http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := path.Clean(r.URL.Path); p == "/v1" || strings.HasPrefix(p, "/v1/") {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		pages.ServeHTTP(w, r)
+	})
 }
 
 // newServer is an HTTP server with Caravana's timeouts.

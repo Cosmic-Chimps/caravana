@@ -1,0 +1,45 @@
+{{define "content"}}
+<main class="min-h-screen grid place-items-center px-6 py-12">
+  <div class="w-full max-w-[380px] flex flex-col gap-7">
+    <div class="flex flex-col gap-3.5">
+      <span class="cv-wordmark">caravana</span>
+      <span class="cv-data-muted">{{.Host}}</span>
+    </div>
+
+    <h1 class="text-2xl font-medium text-fg-1">Sign in</h1>
+
+    {{if .NoAdmin}}
+    <div class="flex flex-col gap-3">
+      <div role="status" class="cv-notice">
+        <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
+        <span>This caravana has no admin yet. On the host, run:</span>
+      </div>
+      <code class="cv-cmd">caravana admin init --email you@example.com</code>
+    </div>
+    {{else}}
+    <form method="post" action="/login" class="flex flex-col gap-4">
+      <input type="hidden" name="next" value="{{.Next}}">
+      <label class="flex flex-col gap-2">
+        <span class="cv-label">Email</span>
+        <input class="cv-field cv-field-lg" type="email" name="email" value="{{.Email}}" autocomplete="username" autocapitalize="off" spellcheck="false" required{{if not .Email}} autofocus{{end}}>
+      </label>
+      <label class="flex flex-col gap-2">
+        <span class="cv-label">Password</span>
+        <input class="cv-field cv-field-lg" type="password" name="password" autocomplete="current-password" required{{if .Email}} autofocus{{end}}>
+      </label>
+      {{with .Notice}}
+      <div {{if eq .Kind "idle"}}role="status"{{else}}role="alert"{{end}} class="cv-notice">
+        <span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>
+        <span>{{.Text}}</span>
+      </div>
+      {{end}}
+      <button type="submit" class="cv-btn cv-btn-lg cv-btn-primary">Sign in</button>
+    </form>
+    <div class="flex flex-col gap-2.5">
+      <p class="text-sm leading-normal text-fg-3">Forgot your password? Reset it on the host:</p>
+      <code class="cv-cmd">caravana admin reset-password</code>
+    </div>
+    {{end}}
+  </div>
+</main>
+{{end}}
