@@ -41,27 +41,35 @@ Caravana host over SSH (Let's Encrypt via Traefik, only 22/80/443 open, Nomad an
 loopback, app ports on the private `caravana0` interface, Caravana under systemd with a scoped
 Nomad token). The gate checks live in `runGate` (`cmd/caravana/gate_test.go`): `TestLab` runs
 them in the lab, `TestGate` (via `host.sh prove`) runs them plus the public-only checks against
-the VM. The Phase 1 gate passed on 2026-10-04 (`host.sh prove` on an EC2 instance). Next:
-Phase 2, starting with 006.
+the VM. The Phase 1 gate passed on 2026-10-04 (`host.sh prove` on an EC2 instance). Branches
+001–005 are stacked and not yet merged into `main`. Next: Phase 2, starting with 006.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
 `https://<name>.localhost:8443`.
 
-## Current phase: 1 — Engine (single node)
+## Current phase: 2 — Compose + UI (single node)
 
-Scope right now, nothing beyond it unless asked:
-- Deploy a prebuilt Docker image as a Nomad job
-- Webhook endpoint that triggers a redeploy
-- Resolve image tag → digest on every deploy; each deploy = new Nomad job version
-- Routing + HTTPS through Traefik (Nomad provider), single node
-- The deploy and webhook endpoints are described in `api/openapi.yaml` from the first commit
+Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the order of
+`docs/plan.md`, nothing beyond it unless asked:
+- 006 Minimal auth: one admin login for the UI, API tokens for clients (before anything is public)
+- 007 HTMX UI v1: app list and detail, deploy button, deployment history with live status, logs
+  from Nomad allocations. It calls only `internal/service`. Open decision: SSE vs. HTMX polling.
+  The maintainer has a visual design made in Claude Design to share when 007 starts.
+- 008 Secrets: `secrets.Provider`, Nomad Variables, declarative replace on every deploy
+- 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
+  host volumes
+- 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to
+  S3-compatible storage
+- 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
+- 012 One-command install (`deploy/vm/` is its rehearsal)
 
-Gate to finish Phase 1: `traefik/whoami` deployed via webhook, reachable over HTTPS, and a
-failed deploy auto-reverts.
+Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume
+and a backup that restores.
 
-Out of scope for now: compose translation, git builds, multi-node, WireGuard, UI polish, auth/RBAC.
+Out of scope for now: git builds, multi-node, WireGuard, teams and roles, Aspire/Bella Baxter
+(Phase 2.5), GPUs and binaries.
 
 ## Architecture
 
