@@ -41,8 +41,8 @@ Caravana host over SSH (Let's Encrypt via Traefik, only 22/80/443 open, Nomad an
 loopback, app ports on the private `caravana0` interface, Caravana under systemd with a scoped
 Nomad token). The gate checks live in `runGate` (`cmd/caravana/gate_test.go`): `TestLab` runs
 them in the lab, `TestGate` (via `host.sh prove`) runs them plus the public-only checks against
-the VM. Next: run `host.sh up` and `host.sh prove` on a real VM to close the Phase 1 gate
-(tasks T012 and T018), then Phase 2, starting with 006.
+the VM. The Phase 1 gate passed on 2026-10-04 (`host.sh prove` on an EC2 instance). Next:
+Phase 2, starting with 006.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

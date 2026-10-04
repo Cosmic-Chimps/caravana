@@ -57,6 +57,9 @@ scripts, host configuration and one refactor of the lab test.
   from the Mac, expecting a refusal or timeout (spec FR-013, SC-004). If Nomad 2.0.7 turns out
   to bind differently with a dummy interface, the fallback is a named `host_network` on the same
   address; both keep the rest of this plan unchanged.
+- **On the real host (2026-10-04)**: the dummy interface worked as designed on Nomad 2.0.7, so no
+  fallback was needed. `prove`'s `ports-closed` step found whoami's allocation port, Nomad, the
+  API, the webhook listener and the dashboard all closed from outside.
 
 ## R5. Let's Encrypt with HTTP-01
 
@@ -75,6 +78,11 @@ scripts, host configuration and one refactor of the lab test.
   `tls.certresolver=letsencrypt` (feature 001's setting); nothing else changes in Caravana.
 - **Access log**: not enabled (Traefik's default), so no request URL with `?token=` is ever
   written (spec FR-009). The VM job says so in a comment, so nobody turns it on casually.
+- **On the real host (2026-10-04)**: switching from staging to production left the webhook host
+  on its staging certificate, because Traefik keeps serving a stored certificate that is still
+  valid, whichever CA issued it. Setup now records the CA in `/var/lib/caravana-host/acme-ca`
+  and, when it changes, stops Traefik, deletes `acme.json` and starts it again
+  (`changed: certificates`).
 
 ## R6. The static webhook route (clarification Q1)
 
@@ -123,6 +131,9 @@ scripts, host configuration and one refactor of the lab test.
 - **Proof of idempotency** (spec SC-005): `host.sh up` prints a summary line "changed: <list>",
   empty on a second run; the quickstart checks it, and the Traefik job's version is compared
   before and after.
+- **On the real host (2026-10-04)**: the first `up` on a fresh EC2 instance (Ubuntu 24.04)
+  changed everything and the second printed an empty `changed:`. After a reboot the webhook
+  answered 401 again with no manual step.
 
 ## R9. CPU total on ARM VMs
 

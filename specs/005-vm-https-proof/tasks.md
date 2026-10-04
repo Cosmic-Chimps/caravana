@@ -119,7 +119,7 @@ quickstart §6's port scan and reboot.
   the binary and `deploy/vm/*`, `deploy/dev/setup.sh`, `deploy/dev/traefik-policy.hcl` to a
   temp directory on the host; run `sudo env … bash setup.sh` there; print its `changed:` line and
   the public URLs; clean up the temp directory.
-- [ ] T012 [US1] Maintainer, on their VM (quickstart §2–§3, §6): `host.sh up` succeeds; a second
+- [x] T012 [US1] Maintainer, on their VM (quickstart §2–§3, §6): `host.sh up` succeeds; a second
   `up` prints an empty `changed:`; `nmap -Pn -p- <ip>` shows only 22, 80, 443; after `sudo
   reboot` every service is back. Record anything that needed changing in research.md R4/R8.
 
@@ -175,7 +175,7 @@ a trusted certificate; `curl https://hooks.<domain>/v1/health` → 404.
   TestGate -v -count=1 -timeout 20m`, and turn `--- PASS/FAIL: TestGate/<step>` lines into
   `PASS <step>` / `FAIL <step>: <first error line>`, ending with `GATE PASSED` or `GATE FAILED`
   and the matching exit code.
-- [ ] T018 [US3] Maintainer, on their VM with `CARAVANA_ACME_STAGING=0` (quickstart §5): `host.sh
+- [x] T018 [US3] Maintainer, on their VM with `CARAVANA_ACME_STAGING=0` (quickstart §5): `host.sh
   prove` prints `GATE PASSED`. That closes the Phase 1 gate.
 
 **Checkpoint**: the gate is proven on a real host.

@@ -63,10 +63,12 @@ translator is tested against a job we know really runs. 0.3 and 001 can run in p
 **Phase 1 gate:** `traefik/whoami` is deployed by a webhook, is reachable over real HTTPS on the
 VM, and a broken deploy auto-reverts.
 
-**Status (2026-10-04):** 001–005 are implemented. The gate passes in the local lab (`TestLab`:
-webhook deploy, HTTPS through Traefik, a broken deploy reverted by Nomad with no failed requests).
-The VM side is built (`deploy/vm/`, `host.sh prove`) but not run yet: the gate closes when
-`host.sh prove` prints `GATE PASSED` on a real VM with production certificates.
+**Status: passed 2026-10-04.** `deploy/vm/host.sh prove` printed `GATE PASSED` on an EC2
+instance (Ubuntu 24.04, sslip.io names, Let's Encrypt production certificates): whoami deployed
+and redeployed by webhook, a publicly trusted certificate, HTTP redirected to HTTPS, the webhook
+host serving only the webhook, a broken deploy reverted by Nomad with no failed requests, and
+every port but 22, 80 and 443 closed from outside. The same checks pass in the local lab
+(`TestLab`).
 
 ## Phase 2: Compose + UI (the "Dokploy for Nomad" experience)
 
