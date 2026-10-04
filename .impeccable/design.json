@@ -1,0 +1,626 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T16:36:42+00:00",
+  "title": "Design System: caravana console",
+  "extensions": {
+    "colorMeta": {
+      "unlit-panel": {
+        "role": "neutral",
+        "displayName": "Unlit Panel",
+        "canonical": "oklch(0.165 0.006 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "panel-face": {
+        "role": "neutral",
+        "displayName": "Panel Face",
+        "canonical": "oklch(0.195 0.007 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "raised-control": {
+        "role": "neutral",
+        "displayName": "Raised Control",
+        "canonical": "oklch(0.225 0.008 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "lit-control": {
+        "role": "neutral",
+        "displayName": "Lit Control",
+        "canonical": "oklch(0.260 0.009 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.275 0.009 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "control-edge": {
+        "role": "neutral",
+        "displayName": "Control Edge",
+        "canonical": "oklch(0.340 0.010 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "strong-edge": {
+        "role": "neutral",
+        "displayName": "Strong Edge",
+        "canonical": "oklch(0.440 0.012 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "readout-white": {
+        "role": "primary",
+        "displayName": "Readout White",
+        "canonical": "oklch(0.955 0.004 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "body-text": {
+        "role": "neutral",
+        "displayName": "Body Text",
+        "canonical": "oklch(0.810 0.008 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "label-text": {
+        "role": "neutral",
+        "displayName": "Label Text",
+        "canonical": "oklch(0.680 0.010 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "dim-mark": {
+        "role": "neutral",
+        "displayName": "Dim Mark",
+        "canonical": "oklch(0.500 0.010 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "signal-blue": {
+        "role": "status",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(0.76 0.12 245)",
+        "tonalRamp": [
+          "oklch(0.15 0.120 245)",
+          "oklch(0.27 0.120 245)",
+          "oklch(0.39 0.120 245)",
+          "oklch(0.51 0.120 245)",
+          "oklch(0.63 0.120 245)",
+          "oklch(0.75 0.120 245)",
+          "oklch(0.86 0.120 245)",
+          "oklch(0.95 0.120 245)"
+        ]
+      },
+      "signal-blue-ground": {
+        "role": "status",
+        "displayName": "Signal Blue Ground",
+        "canonical": "oklch(0.27 0.05 245)",
+        "tonalRamp": [
+          "oklch(0.15 0.050 245)",
+          "oklch(0.27 0.050 245)",
+          "oklch(0.39 0.050 245)",
+          "oklch(0.51 0.050 245)",
+          "oklch(0.63 0.050 245)",
+          "oklch(0.75 0.050 245)",
+          "oklch(0.86 0.050 245)",
+          "oklch(0.95 0.050 245)"
+        ]
+      },
+      "signal-blue-edge": {
+        "role": "status",
+        "displayName": "Signal Blue Edge",
+        "canonical": "oklch(0.44 0.08 245)",
+        "tonalRamp": [
+          "oklch(0.15 0.080 245)",
+          "oklch(0.27 0.080 245)",
+          "oklch(0.39 0.080 245)",
+          "oklch(0.51 0.080 245)",
+          "oklch(0.63 0.080 245)",
+          "oklch(0.75 0.080 245)",
+          "oklch(0.86 0.080 245)",
+          "oklch(0.95 0.080 245)"
+        ]
+      },
+      "transit-lilac": {
+        "role": "status",
+        "displayName": "Transit Lilac",
+        "canonical": "oklch(0.84 0.09 300)",
+        "tonalRamp": [
+          "oklch(0.15 0.090 300)",
+          "oklch(0.27 0.090 300)",
+          "oklch(0.39 0.090 300)",
+          "oklch(0.51 0.090 300)",
+          "oklch(0.63 0.090 300)",
+          "oklch(0.75 0.090 300)",
+          "oklch(0.86 0.090 300)",
+          "oklch(0.95 0.090 300)"
+        ]
+      },
+      "transit-lilac-ground": {
+        "role": "status",
+        "displayName": "Transit Lilac Ground",
+        "canonical": "oklch(0.28 0.045 300)",
+        "tonalRamp": [
+          "oklch(0.15 0.045 300)",
+          "oklch(0.27 0.045 300)",
+          "oklch(0.39 0.045 300)",
+          "oklch(0.51 0.045 300)",
+          "oklch(0.63 0.045 300)",
+          "oklch(0.75 0.045 300)",
+          "oklch(0.86 0.045 300)",
+          "oklch(0.95 0.045 300)"
+        ]
+      },
+      "transit-lilac-edge": {
+        "role": "status",
+        "displayName": "Transit Lilac Edge",
+        "canonical": "oklch(0.46 0.07 300)",
+        "tonalRamp": [
+          "oklch(0.15 0.070 300)",
+          "oklch(0.27 0.070 300)",
+          "oklch(0.39 0.070 300)",
+          "oklch(0.51 0.070 300)",
+          "oklch(0.63 0.070 300)",
+          "oklch(0.75 0.070 300)",
+          "oklch(0.86 0.070 300)",
+          "oklch(0.95 0.070 300)"
+        ]
+      },
+      "caution-amber": {
+        "role": "status",
+        "displayName": "Caution Amber",
+        "canonical": "oklch(0.90 0.13 88)",
+        "tonalRamp": [
+          "oklch(0.15 0.130 88)",
+          "oklch(0.27 0.130 88)",
+          "oklch(0.39 0.130 88)",
+          "oklch(0.51 0.130 88)",
+          "oklch(0.63 0.130 88)",
+          "oklch(0.75 0.130 88)",
+          "oklch(0.86 0.130 88)",
+          "oklch(0.95 0.130 88)"
+        ]
+      },
+      "caution-amber-ground": {
+        "role": "status",
+        "displayName": "Caution Amber Ground",
+        "canonical": "oklch(0.29 0.05 88)",
+        "tonalRamp": [
+          "oklch(0.15 0.050 88)",
+          "oklch(0.27 0.050 88)",
+          "oklch(0.39 0.050 88)",
+          "oklch(0.51 0.050 88)",
+          "oklch(0.63 0.050 88)",
+          "oklch(0.75 0.050 88)",
+          "oklch(0.86 0.050 88)",
+          "oklch(0.95 0.050 88)"
+        ]
+      },
+      "caution-amber-edge": {
+        "role": "status",
+        "displayName": "Caution Amber Edge",
+        "canonical": "oklch(0.50 0.08 88)",
+        "tonalRamp": [
+          "oklch(0.15 0.080 88)",
+          "oklch(0.27 0.080 88)",
+          "oklch(0.39 0.080 88)",
+          "oklch(0.51 0.080 88)",
+          "oklch(0.63 0.080 88)",
+          "oklch(0.75 0.080 88)",
+          "oklch(0.86 0.080 88)",
+          "oklch(0.95 0.080 88)"
+        ]
+      },
+      "fault-ember": {
+        "role": "status",
+        "displayName": "Fault Ember",
+        "canonical": "oklch(0.68 0.17 40)",
+        "tonalRamp": [
+          "oklch(0.15 0.170 40)",
+          "oklch(0.27 0.170 40)",
+          "oklch(0.39 0.170 40)",
+          "oklch(0.51 0.170 40)",
+          "oklch(0.63 0.170 40)",
+          "oklch(0.75 0.170 40)",
+          "oklch(0.86 0.170 40)",
+          "oklch(0.95 0.170 40)"
+        ]
+      },
+      "fault-ember-ground": {
+        "role": "status",
+        "displayName": "Fault Ember Ground",
+        "canonical": "oklch(0.27 0.06 40)",
+        "tonalRamp": [
+          "oklch(0.15 0.060 40)",
+          "oklch(0.27 0.060 40)",
+          "oklch(0.39 0.060 40)",
+          "oklch(0.51 0.060 40)",
+          "oklch(0.63 0.060 40)",
+          "oklch(0.75 0.060 40)",
+          "oklch(0.86 0.060 40)",
+          "oklch(0.95 0.060 40)"
+        ]
+      },
+      "fault-ember-edge": {
+        "role": "status",
+        "displayName": "Fault Ember Edge",
+        "canonical": "oklch(0.46 0.10 40)",
+        "tonalRamp": [
+          "oklch(0.15 0.100 40)",
+          "oklch(0.27 0.100 40)",
+          "oklch(0.39 0.100 40)",
+          "oklch(0.51 0.100 40)",
+          "oklch(0.63 0.100 40)",
+          "oklch(0.75 0.100 40)",
+          "oklch(0.86 0.100 40)",
+          "oklch(0.95 0.100 40)"
+        ]
+      },
+      "primary-press": {
+        "role": "primary",
+        "displayName": "Primary Press",
+        "canonical": "oklch(0.88 0.006 255)",
+        "tonalRamp": [
+          "oklch(0.165 0.006 255)",
+          "oklch(0.195 0.007 255)",
+          "oklch(0.225 0.008 255)",
+          "oklch(0.260 0.009 255)",
+          "oklch(0.440 0.012 255)",
+          "oklch(0.500 0.010 255)",
+          "oklch(0.680 0.010 255)",
+          "oklch(0.810 0.008 255)",
+          "oklch(0.955 0.004 255)"
+        ]
+      },
+      "danger-press": {
+        "role": "status",
+        "displayName": "Danger Press",
+        "canonical": "oklch(0.31 0.07 40)",
+        "tonalRamp": [
+          "oklch(0.15 0.070 40)",
+          "oklch(0.27 0.070 40)",
+          "oklch(0.39 0.070 40)",
+          "oklch(0.51 0.070 40)",
+          "oklch(0.63 0.070 40)",
+          "oklch(0.75 0.070 40)",
+          "oklch(0.86 0.070 40)",
+          "oklch(0.95 0.070 40)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The page h1, written as one sentence about the present."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel and drawer titles."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "The one-line description under the headline."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All UI text, buttons and tab labels."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase mono section heads and field labels."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Names, versions, ids, hosts, numbers and times, with tabular figures."
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "A live value in a metric tile."
+      },
+      "wordmark": {
+        "displayName": "Wordmark",
+        "purpose": "The word 'caravana' in lowercase. There is no logo mark."
+      }
+    },
+    "shadows": [
+      {
+        "name": "overlay",
+        "value": "0 12px 32px oklch(0 0 0 / 0.45), 0 0 0 1px oklch(0.340 0.010 255)",
+        "purpose": "Dropdowns, the org switcher, drawers and modals. Nothing else casts a shadow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-cv",
+        "value": "cubic-bezier(0.2, 0.7, 0.2, 1)",
+        "purpose": "The one easing curve for every transition."
+      },
+      {
+        "name": "dur-fast",
+        "value": "120ms",
+        "purpose": "Hover and color changes on controls and rows."
+      },
+      {
+        "name": "dur-panel",
+        "value": "180ms",
+        "purpose": "Meter width changes and feed rows dropping in."
+      },
+      {
+        "name": "tick",
+        "value": "cv-tick 700ms: background oklch(0.76 0.12 245 / 0.16) to transparent",
+        "purpose": "A value changed by a server-sent event flashes once."
+      },
+      {
+        "name": "in",
+        "value": "cv-in 180ms: opacity 0 and translateY(-3px) to none",
+        "purpose": "A new row in a live feed drops in."
+      },
+      {
+        "name": "ping",
+        "value": "cv-ping: box-shadow 0 0 0 0 → 0 0 0 6px, Signal Blue 60% → 0",
+        "purpose": "The top-bar live dot, once per event. Never on a loop."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce disables all animation and transitions",
+        "purpose": "Accessibility."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The page's one main action. Lit, not colored.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg>Deploy</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.955 0.004 255);color:oklch(0.165 0.006 255);border:1px solid oklch(0.955 0.004 255);} .ds-btn-primary:hover{background:oklch(0.88 0.006 255);border-color:oklch(0.88 0.006 255);} .ds-btn-primary:active{transform:translateY(0.5px);} .ds-btn-primary:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The default button for every other action.",
+      "html": "<button class=\"ds-btn-secondary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/><path d=\"M3 3v5h5\"/></svg>Revert to v22</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.225 0.008 255);color:oklch(0.955 0.004 255);border:1px solid oklch(0.340 0.010 255);} .ds-btn-secondary:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);} .ds-btn-secondary:active{transform:translateY(0.5px);} .ds-btn-secondary:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Inline and toolbar actions like 'Why?'.",
+      "html": "<button class=\"ds-btn-ghost\">Why?</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);height:28px;padding:0 10px;font-size:13px;background:transparent;color:oklch(0.810 0.008 255);border:1px solid transparent;} .ds-btn-ghost:hover{background:oklch(0.260 0.009 255);color:oklch(0.955 0.004 255);} .ds-btn-ghost:active{transform:translateY(0.5px);} .ds-btn-ghost:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive actions; always confirmed in a modal.",
+      "html": "<button class=\"ds-btn-danger\">Delete app</button>",
+      "css": ".ds-btn-danger{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);border:1px solid oklch(0.46 0.10 40);} .ds-btn-danger:hover{background:oklch(0.31 0.07 40);border-color:oklch(0.68 0.17 40);} .ds-btn-danger:active{transform:translateY(0.5px);} .ds-btn-danger:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled field; mono for values, suffix inside the field, hint below.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Memory</span><span class=\"ds-input\"><input value=\"512\" aria-label=\"Memory\"><span class=\"ds-input-suffix\">MB</span></span><span class=\"ds-field-hint\">Peak in the last 7 days: 410 MB</span></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:8px;width:280px;} .ds-field-label{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:500;line-height:1;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);} .ds-input{display:flex;align-items:center;height:36px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;transition:border-color 120ms;} .ds-input:focus-within{border-color:oklch(0.440 0.012 255);box-shadow:0 0 0 2px oklch(0.76 0.12 245 / 0.55);} .ds-input input{flex:1;min-width:0;height:100%;padding:0 12px;background:transparent;border:0;outline:none;color:oklch(0.955 0.004 255);font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12.5px;} .ds-input-suffix{padding:0 12px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);} .ds-field-hint{font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13px;color:oklch(0.680 0.010 255);}"
+    },
+    {
+      "name": "Status Pills",
+      "kind": "chip",
+      "refersTo": "status-pill-healthy",
+      "description": "Status as shape plus color. One pill per status.",
+      "html": "<span class=\"ds-pills\"><span class=\"ds-pill ds-healthy\"><i class=\"ds-mark\"></i>healthy</span><span class=\"ds-pill ds-rolling\"><i class=\"ds-mark\"></i>v24 · 1/2</span><span class=\"ds-pill ds-warning\"><i class=\"ds-mark\"></i>restarting</span><span class=\"ds-pill ds-failed\"><i class=\"ds-mark\"></i>oom-killed</span><span class=\"ds-pill ds-idle\"><i class=\"ds-mark\"></i>stopped</span></span>",
+      "css": ".ds-pills{display:flex;flex-wrap:wrap;gap:8px;} .ds-pill{display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;} .ds-mark{display:inline-block;width:8px;height:8px;flex-shrink:0;} .ds-healthy{background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);color:oklch(0.76 0.12 245);} .ds-healthy .ds-mark{border-radius:50%;background:oklch(0.76 0.12 245);} .ds-rolling{background:oklch(0.28 0.045 300);border-color:oklch(0.46 0.07 300);color:oklch(0.84 0.09 300);} .ds-rolling .ds-mark{border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);} .ds-warning{background:oklch(0.29 0.05 88);border-color:oklch(0.50 0.08 88);color:oklch(0.90 0.13 88);} .ds-warning .ds-mark{width:6.2px;height:6.2px;margin:0.9px;transform:rotate(45deg);background:oklch(0.90 0.13 88);} .ds-failed{background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);color:oklch(0.68 0.17 40);} .ds-failed .ds-mark{border-radius:1px;background:oklch(0.68 0.17 40);} .ds-idle{background:oklch(0.225 0.008 255);border-color:oklch(0.340 0.010 255);color:oklch(0.680 0.010 255);} .ds-idle .ds-mark{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}"
+    },
+    {
+      "name": "Intent Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "App page tabs by intent; a status mark rides on a tab that needs attention.",
+      "html": "<nav class=\"ds-tabs\" role=\"tablist\"><button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\">Running <span class=\"ds-tab-count\">2</span></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Ship <i class=\"ds-tab-mark\"></i></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Configure</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Logs</button></nav>",
+      "css": ".ds-tabs{display:flex;gap:26px;border-bottom:1px solid oklch(0.275 0.009 255);} .ds-tab{display:inline-flex;align-items:center;gap:9px;height:46px;padding:0;margin-bottom:-1px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;color:oklch(0.680 0.010 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13.5px;font-weight:500;transition:color 120ms;} .ds-tab:hover{color:oklch(0.810 0.008 255);} .ds-tab[aria-selected=true]{color:oklch(0.955 0.004 255);border-bottom-color:oklch(0.955 0.004 255);} .ds-tab:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-tab-count{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:oklch(0.680 0.010 255);} .ds-tab-mark{width:8px;height:8px;border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);}"
+    },
+    {
+      "name": "Needs-you Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Signature: a problem as one sentence, raw facts in mono, one fix.",
+      "html": "<section class=\"ds-section\"><header class=\"ds-section-head\"><span class=\"ds-label\">Needs you</span><span class=\"ds-meta\">1 item</span></header><div class=\"ds-panel\"><div class=\"ds-needs\"><i class=\"ds-needs-mark\"></i><div class=\"ds-needs-text\"><p>api restarted 3 times in the last hour: it runs out of memory at 512 MB.</p><p class=\"ds-needs-detail\">alloc e4d1 · hel-1 · exit 137 · 4 min ago</p></div><button class=\"ds-needs-fix\">Raise to 1 GB</button></div><div class=\"ds-row\"><span class=\"ds-row-name\">whoami</span><span class=\"ds-row-meta\">v12 · 2 copies · healthy</span></div></div></section>",
+      "css": ".ds-section{width:560px;} .ds-section-head{display:flex;align-items:baseline;gap:16px;min-height:28px;margin-bottom:8px;} .ds-label{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:500;line-height:1;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);} .ds-meta{font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;color:oklch(0.810 0.008 255);} .ds-panel{background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;} .ds-needs{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:start;padding:14px 16px;} .ds-needs-mark{width:6.2px;height:6.2px;margin:6px 0.9px;transform:rotate(45deg);background:oklch(0.90 0.13 88);} .ds-needs-text p{margin:0;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.35;color:oklch(0.955 0.004 255);} .ds-needs-text .ds-needs-detail{margin-top:6px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);} .ds-needs-fix{height:28px;padding:0 10px;border-radius:4px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);color:oklch(0.955 0.004 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background 120ms,border-color 120ms;} .ds-needs-fix:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);} .ds-needs-fix:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-row{display:grid;grid-template-columns:1fr auto;align-items:center;min-height:46px;padding:0 16px;border-top:1px solid oklch(0.275 0.009 255);transition:background 120ms;} .ds-row:hover{background:oklch(0.225 0.008 255);} .ds-row-name{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:13px;color:oklch(0.955 0.004 255);} .ds-row-meta{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);}"
+    },
+    {
+      "name": "Meter",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Live usage (solid, status-colored) over what copies reserved (hatched).",
+      "html": "<div class=\"ds-meter\"><span class=\"ds-meter-label\">mem</span><span class=\"ds-meter-track\"><span class=\"ds-meter-reserved\" style=\"width:70%\"></span><span class=\"ds-meter-used\" style=\"width:62%\"></span></span><span class=\"ds-meter-readout\">5.0/8G</span></div>",
+      "css": ".ds-meter{display:grid;grid-template-columns:36px 240px auto;align-items:center;gap:10px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;} .ds-meter-label{color:oklch(0.680 0.010 255);text-transform:uppercase;letter-spacing:0.06em;} .ds-meter-track{position:relative;height:6px;background:oklch(0.260 0.009 255);border-radius:1px;overflow:hidden;} .ds-meter-reserved{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(90deg,oklch(0.440 0.012 255) 0 1px,transparent 1px 3px);} .ds-meter-used{position:absolute;inset:0 auto 0 0;background:oklch(0.76 0.12 245);transition:width 180ms cubic-bezier(0.2,0.7,0.2,1);} .ds-meter-readout{color:oklch(0.810 0.008 255);font-variant-numeric:tabular-nums;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Instrument Panel",
+    "overview": "The console is an instrument panel for a small fleet of apps on one or a few VMs. When things are fine it stays quiet, almost dull: one cool neutral ramp, hairline panels, mono readouts that don't move. When something needs a human, that one thing lights up in a color it doesn't share with anything else, with a shape you can read without seeing color, and a plain sentence next to it. Every surface is either a readout or a control, and nothing is decoration.\n\nThe density belongs to a tool someone glances at between other work. Rows sit tight, panels are flat, numbers sit in mono so they line up and so it's obvious they're real values, not prose. The voice of the screen is a single headline sentence about the present. The raw Nomad truth sits underneath it in small mono detail lines, there for anyone who wants it.\n\nConfirmed rejections from the handoff: not a Dokploy look-alike, not a gradient \"AI dashboard\", not a Grafana wall of charts. An earlier light \"field notebook\" direction was tried and turned down. The information architecture survived, the look didn't.",
+    "keyCharacteristics": [
+      "Dark, cool neutral ground (hue 255, chroma ≤ 0.012), with depth from lightness steps, never shadow.",
+      "Status is the only color, and every status pairs a shape with its color.",
+      "IBM Plex Sans for sentences, IBM Plex Mono for anything Nomad-real.",
+      "Flat hairline panels, small radii, no gradients.",
+      "Motion only when an event arrives, and only once."
+    ],
+    "rules": [
+      {
+        "name": "The Shape-and-Color Rule",
+        "body": "Status is never color alone. Every status shows its mark next to its color: ● healthy, ◐ rolling, ◆ warning, ■ failed, ○ idle. Hide the color and the status must still read.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status-Only Color Rule",
+        "body": "The four status hues mean status and nothing else. Buttons, links, tabs and decoration stay neutral. When a screen is fully healthy, the only color on it is Signal Blue on the status marks.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat Ground Rule",
+        "body": "No gradients anywhere. The one exception is the diagonal hatch in a meter, which marks what copies have reserved.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono-Is-Real Rule",
+        "body": "If Nomad or the user's config produced it (`whoami`, `v24`, `hel-1`, `sha256:9f1c…`, `512 MB`, `14:02:11`), it's set in mono. If caravana is explaining something, it's sans. Never mix the two inside one token.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every value that updates live uses tabular figures, so a number changing in place never shifts its neighbors.",
+        "section": "typography"
+      },
+      {
+        "name": "The Problems-First Rule",
+        "body": "Every list sorts by status: failed, warning, rolling, healthy, idle. What needs a human is always at the top.",
+        "section": "layout"
+      },
+      {
+        "name": "The Overlays-Only Shadow Rule",
+        "body": "A shadow means \"this is floating above the page\". Panels, cards, buttons and inputs never get one. Translucency and blur aren't used, except for the faint warning tint inside an inline prerequisite.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Tick Rule",
+        "body": "Motion only answers an event, and only once. No looping animation, no pulsing, no skeleton shimmer. A spinner only where a real wait is happening.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do pair every status color with its mark (● ◐ ◆ ■ ○).",
+      "Do set every name, version, id, number and time in IBM Plex Mono with tabular figures.",
+      "Do open every overview with the headline sentence (30px, weight 400), with raw data in mono underneath.",
+      "Do build depth only from the four ink steps and the hairlines. Hover lifts a surface one step.",
+      "Do keep the main action neutral: a Readout White fill, at most one per view.",
+      "Do sort lists failed → warning → rolling → healthy → idle.",
+      "Do explain a problem in a sentence plus one fix button.",
+      "Do take every color from the theme tokens. If a color is missing, add a token instead of writing a raw oklch value in a component."
+    ],
+    "donts": [
+      "Don't use the status hues for decoration, links, tabs or the main action.",
+      "Don't show status as a colored dot or color alone, and don't rely on telling red from green.",
+      "Don't add drop shadows to panels, cards, buttons or inputs. Shadows are for overlays only.",
+      "Don't use gradients, texture, imagery or illustration. The meter hatch is the only pattern.",
+      "Don't add a colored left-border accent to panels, rows or banners.",
+      "Don't round anything fully except the switch, the account avatar and the circular status marks.",
+      "Don't use daisyUI's solid `alert-*` fills for problems. Use a panel with a mark, a sentence and an action.",
+      "Don't loop any animation, including the live dot.",
+      "Don't put a label above a page headline or a panel title. The mono label is a section's own heading, never a kicker.",
+      "Don't use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a separator. Icons are Lucide line icons, and only in buttons and toolbars.",
+      "Don't draw a logo mark. The wordmark is the word \"caravana\" in Plex Mono 600.",
+      "Don't make it look like Dokploy, a gradient \"AI dashboard\", or a Grafana wall of charts."
+    ]
+  }
+}
