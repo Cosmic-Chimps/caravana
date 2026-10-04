@@ -98,6 +98,18 @@ acme_ca="$LE_PRODUCTION"
 [ "$CARAVANA_ACME_STAGING" = "1" ] && acme_ca="$LE_STAGING"
 traefik_version() { nomad_cli job inspect -t '{{.Version}}' traefik 2>/dev/null || echo none; }
 v_before="$(traefik_version)"
+# Traefik keeps serving any stored certificate that is still valid, whichever CA issued it, so
+# switching between staging and production starts from an empty store. Traefik is stopped
+# first: it holds the certificates in memory and would write them back.
+if [ "$(cat "$STATE/acme-ca" 2>/dev/null)" != "$acme_ca" ]; then
+  if [ -f "$STATE/traefik/acme.json" ]; then
+    nomad_cli job stop -detach traefik >/dev/null 2>&1 || true
+    timeout 60s bash -c 'while docker ps --format "{{.Image}}" | grep -q "^traefik:"; do sleep 1; done'
+    rm -f "$STATE/traefik/acme.json"
+    changed+=(certificates)
+  fi
+  echo "$acme_ca" >"$STATE/acme-ca"
+fi
 nomad_cli job run -detach \
   -var "webhook_host=$CARAVANA_DOMAIN_WEBHOOK" \
   -var "acme_email=$CARAVANA_ACME_EMAIL" \

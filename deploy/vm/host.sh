@@ -122,10 +122,12 @@ EOF
 
 cmd_prove() {
   load_env
-  local sock ip token
-  sock="$(mktemp -u "${TMPDIR:-/tmp}/caravana-prove.XXXXXX")"
-  ssh -f -N -M -S "$sock" -o ExitOnForwardFailure=yes "${FORWARDS[@]}" "$CARAVANA_HOST"
-  trap 'ssh -S "$sock" -O exit "$CARAVANA_HOST" 2>/dev/null || true' EXIT
+  local ip token
+  # Global, not local: the EXIT trap runs after this function has returned, when its locals
+  # are gone, and an empty socket path would leave the tunnel running.
+  PROVE_SOCK="$(mktemp -u "${TMPDIR:-/tmp}/caravana-prove.XXXXXX")"
+  ssh -f -N -M -S "$PROVE_SOCK" -o ExitOnForwardFailure=yes "${FORWARDS[@]}" "$CARAVANA_HOST"
+  trap 'ssh -S "$PROVE_SOCK" -O exit "$CARAVANA_HOST" 2>/dev/null || true' EXIT
   ip="$(host_ip)"
   token="$(management_token)"
 

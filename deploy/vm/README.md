@@ -56,6 +56,9 @@ Caravana runs as the `caravana` user under systemd (`/etc/caravana/caravana.env`
 browsers don't trust. Use it while iterating; `prove` then reports the `https-trusted` step as
 "staging certificate" and the gate fails on purpose. Set it to `0` and run `up` again to prove
 the gate with real certificates (Traefik keeps them in `/var/lib/caravana-host/traefik`).
+Switching either way makes `up` stop Traefik and delete its stored certificates (`changed:`
+lists `certificates`), because Traefik would otherwise keep serving the old CA's certificates
+until they expire.
 
 ## Troubleshooting
 
