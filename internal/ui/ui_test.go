@@ -3,7 +3,9 @@ package ui
 import (
 	"bytes"
 	"context"
+	"html"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -223,11 +225,11 @@ func TestLoginPageWithoutAdmin(t *testing.T) {
 func TestSignIn(t *testing.T) {
 	e := newUIEnv(t, true, "")
 
-	t.Run("sets the cookie and goes to /account", func(t *testing.T) {
+	t.Run("sets the cookie and goes to /apps", func(t *testing.T) {
 		resp, _ := e.do(t, request{method: http.MethodPost, path: "/login",
 			form: url.Values{"email": {testEmail}, "password": {testPassword}}})
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account" {
-			t.Fatalf("sign-in = %d to %q, want 303 to /account", resp.StatusCode, location(t, resp))
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps" {
+			t.Fatalf("sign-in = %d to %q, want 303 to /apps", resp.StatusCode, location(t, resp))
 		}
 		cookies := resp.Cookies()
 		if len(cookies) != 1 {
@@ -249,12 +251,12 @@ func TestSignIn(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe next values land on /account", func(t *testing.T) {
+	t.Run("unsafe next values land on /apps", func(t *testing.T) {
 		for _, next := range []string{"//evil.example", `/\evil`, "https://evil.example", "/v1/apps", "/v1", "javascript:alert(1)", "evil", "/login", "/x\r\nSet-Cookie: a=b"} {
 			resp, _ := e.do(t, request{method: http.MethodPost, path: "/login",
 				form: url.Values{"email": {testEmail}, "password": {testPassword}, "next": {next}}})
-			if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account" {
-				t.Errorf("next %q: redirect %d to %q, want 303 to /account", next, resp.StatusCode, location(t, resp))
+			if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps" {
+				t.Errorf("next %q: redirect %d to %q, want 303 to /apps", next, resp.StatusCode, location(t, resp))
 			}
 		}
 	})
@@ -308,27 +310,31 @@ func TestSignInFailure(t *testing.T) {
 func TestAccountNeedsASession(t *testing.T) {
 	e := newUIEnv(t, true, "")
 
-	resp, _ := e.do(t, request{path: "/account"})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/login?next=%2Faccount" {
-		t.Errorf("GET /account without a session = %d to %q, want 303 to /login?next=%%2Faccount", resp.StatusCode, location(t, resp))
+	resp, _ := e.do(t, request{path: "/settings"})
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/login?next=%2Fsettings" {
+		t.Errorf("GET /settings without a session = %d to %q, want 303 to /login?next=%%2Fsettings", resp.StatusCode, location(t, resp))
 	}
 
 	c := e.signIn(t, nil)
-	resp, body := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
+	resp, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Signed in as") || !strings.Contains(body, testEmail) {
-		t.Errorf("GET /account with a session = %d:\n%s", resp.StatusCode, body)
+		t.Errorf("GET /settings with a session = %d:\n%s", resp.StatusCode, body)
 	}
 
-	// Signed in already: /login goes on to /account.
+	// Signed in already: /login goes on to /apps.
 	resp, _ = e.do(t, request{path: "/login", cookies: []*http.Cookie{c}})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account" {
-		t.Errorf("GET /login while signed in = %d to %q, want 303 to /account", resp.StatusCode, location(t, resp))
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps" {
+		t.Errorf("GET /login while signed in = %d to %q, want 303 to /apps", resp.StatusCode, location(t, resp))
 	}
 
-	// "/" goes to /account.
+	// "/" goes to /apps for a signed-in admin, and to sign-in for anyone else.
+	resp, _ = e.do(t, request{path: "/", cookies: []*http.Cookie{c}})
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps" {
+		t.Errorf("GET / while signed in = %d to %q, want 303 to /apps", resp.StatusCode, location(t, resp))
+	}
 	resp, _ = e.do(t, request{path: "/"})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account" {
-		t.Errorf("GET / = %d to %q, want 303 to /account", resp.StatusCode, location(t, resp))
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/login" {
+		t.Errorf("GET / without a session = %d to %q, want 303 to /login", resp.StatusCode, location(t, resp))
 	}
 }
 
@@ -337,8 +343,8 @@ func TestSessionExpiry(t *testing.T) {
 	c := e.signIn(t, nil)
 
 	e.Clock.Advance(13 * time.Hour) // idle for more than 12 hours
-	resp, _ := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
-	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login?next=%2Faccount") {
+	resp, _ := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login?next=%2Fsettings") {
 		t.Fatalf("an idle session = %d to %q, want 303 to /login", resp.StatusCode, location(t, resp))
 	}
 	// The sign-in page says the session ended.
@@ -349,7 +355,7 @@ func TestSessionExpiry(t *testing.T) {
 
 	// A form posted with an ended session doesn't come back to the form's URL,
 	// which is no page to land on.
-	resp, _ = e.do(t, request{method: http.MethodPost, path: "/account/password", cookies: []*http.Cookie{c},
+	resp, _ = e.do(t, request{method: http.MethodPost, path: "/settings/password", cookies: []*http.Cookie{c},
 		form: url.Values{"current": {"x"}, "new": {"y"}}})
 	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/login?expired=1" {
 		t.Errorf("a POST with an idle session = %d to %q, want 303 to /login?expired=1", resp.StatusCode, location(t, resp))
@@ -375,7 +381,7 @@ func TestSignOut(t *testing.T) {
 	}
 
 	// Replaying the old cookie gets nowhere: the session ended on the server.
-	resp, _ = e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
+	resp, _ = e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login") {
 		t.Errorf("the old cookie after sign-out = %d to %q, want a redirect to /login", resp.StatusCode, location(t, resp))
 	}
@@ -413,8 +419,8 @@ func TestCrossSiteRequestsAreRefused(t *testing.T) {
 			if resp.StatusCode != http.StatusForbidden {
 				t.Errorf("%s: %d, want 403", name, resp.StatusCode)
 			}
-			if resp, _ := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}}); resp.StatusCode != http.StatusOK {
-				t.Errorf("%s: the session ended anyway (GET /account = %d)", name, resp.StatusCode)
+			if resp, _ := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}}); resp.StatusCode != http.StatusOK {
+				t.Errorf("%s: the session ended anyway (GET /settings = %d)", name, resp.StatusCode)
 			}
 		}
 	})
@@ -438,20 +444,58 @@ func TestCrossSiteRequestsAreRefused(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	e := newUIEnv(t, true, "")
-	c := e.signIn(t, nil)
-	for _, r := range []request{
-		{path: "/login"}, {path: "/account", cookies: []*http.Cookie{c}}, {path: "/account"},
-		{path: "/nope"}, {path: "/static/app.css"},
-		{method: http.MethodPost, path: "/login", headers: map[string]string{"Sec-Fetch-Site": "cross-site"}},
-	} {
-		resp, _ := e.do(t, r)
-		h := resp.Header
+	e := newConsoleEnv(t)
+	e.seedStandard(t)
+	c := []*http.Cookie{e.Cookie}
+	cross := map[string]string{"Sec-Fetch-Site": "cross-site"}
+	reqs := []request{
+		{path: "/login"}, {path: "/settings"}, {path: "/nope"}, {path: "/static/app.css"},
+		{method: http.MethodPost, path: "/login", headers: cross},
+		// Every console page and part, signed in and not, and the answers to refused posts.
+		{path: "/"}, {path: "/apps"}, {path: "/apps/new"}, {path: "/apps/whoami"}, {path: "/apps/whoami/deployments"},
+		{path: "/apps/whoami/configure"}, {path: "/apps/whoami/logs"}, {path: "/apps/nope"}, {path: "/account"},
+		{path: "/parts/apps"}, {path: "/parts/activity"}, {path: "/parts/apps/whoami/header"},
+		{path: "/parts/apps/whoami/copies"}, {path: "/parts/apps/whoami/deployments"},
+		{path: "/live"}, {path: "/live/apps/whoami"},
+		{method: http.MethodPost, path: "/apps", headers: cross}, {method: http.MethodPost, path: "/apps/whoami/deploy", headers: cross},
+		{method: http.MethodPost, path: "/apps/whoami/webhook", headers: cross},
+		{method: http.MethodPost, path: "/apps/whoami/delete", headers: cross},
+	}
+	for _, p := range []string{"/apps", "/apps/new", "/apps/whoami", "/apps/whoami/logs", "/settings", "/parts/apps", "/live"} {
+		reqs = append(reqs, request{path: p, cookies: c})
+	}
+	// The scripts and every other embedded file get the policy too.
+	_ = fs.WalkDir(staticFS, "static", func(name string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			reqs = append(reqs, request{path: "/" + name})
+		}
+		return nil
+	})
+	for _, r := range reqs {
+		var h http.Header
+		if strings.HasPrefix(r.path, "/live") && r.cookies != nil {
+			// A stream with a session stays open: read its headers and hang up.
+			req, _ := http.NewRequest(http.MethodGet, e.URL+r.path, nil)
+			req.AddCookie(r.cookies[0])
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("GET %s: %v", r.path, err)
+			}
+			resp.Body.Close()
+			h = resp.Header
+		} else {
+			resp, _ := e.do(t, r)
+			h = resp.Header
+		}
 		csp := h.Get("Content-Security-Policy")
 		for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "form-action 'self'", "base-uri 'none'"} {
 			if !strings.Contains(csp, want) {
 				t.Errorf("%s %s: Content-Security-Policy %q lacks %q", r.method, r.path, csp, want)
 			}
+		}
+		// The policy is the 006 one, unchanged: nothing is loosened for htmx (research R3).
+		if strings.Contains(csp, "unsafe") || strings.Contains(csp, "nonce") || strings.Contains(csp, "*") {
+			t.Errorf("%s %s: Content-Security-Policy %q was loosened", r.method, r.path, csp)
 		}
 		if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Referrer-Policy") != "same-origin" {
 			t.Errorf("%s %s: X-Content-Type-Options %q, Referrer-Policy %q", r.method, r.path,
@@ -460,9 +504,61 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 
 	// Pages with a session in them are never cached.
-	resp, _ := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
-	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
-		t.Errorf("Cache-Control on /account = %q, want no-store", got)
+	for _, path := range []string{"/settings", "/apps", "/apps/whoami", "/parts/apps"} {
+		resp, _ := e.get(t, path)
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("Cache-Control on %s = %q, want no-store", path, got)
+		}
+	}
+}
+
+// The templates follow the rules of research R3, so the policy never needs
+// loosening: no inline handlers or scripts, no style attributes or blocks.
+func TestTemplatesFollowThePolicy(t *testing.T) {
+	banned := []struct {
+		re   *regexp.Regexp
+		what string
+	}{
+		{regexp.MustCompile(`(?i)\bhx-on\b|\bhx-on[:-]`), "an hx-on attribute"},
+		{regexp.MustCompile(`(?i)\sstyle\s*=`), "a style attribute"},
+		{regexp.MustCompile(`(?i)<style\b`), "a <style> block"},
+		{regexp.MustCompile(`(?i)<script\b[^>]*>`), "an inline script"}, // the ones with src are allowed below
+		{regexp.MustCompile(`(?i)\son[a-z]+\s*=`), "an inline event handler"},
+		{regexp.MustCompile(`(?i)javascript:`), "a javascript: URL"},
+		{regexp.MustCompile(`hx-trigger="[^"]*[\[{]`), "an hx-trigger filter, which needs eval"},
+		{regexp.MustCompile(`hx-vals="[^"]*js:`), "a js: value in hx-vals"},
+	}
+	files, err := fs.Glob(templatesFS, "templates/*.html")
+	if err != nil || len(files) < 8 {
+		t.Fatalf("found %d templates (%v)", len(files), err)
+	}
+	for _, f := range files {
+		raw, err := fs.ReadFile(templatesFS, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Template comments may mention the rules; they never reach a page.
+		src := regexp.MustCompile(`(?s)\{\{/\*.*?\*/\}\}`).ReplaceAllString(string(raw), "")
+		for _, b := range banned {
+			for _, m := range b.re.FindAllString(src, -1) {
+				if b.what == "an inline script" && strings.Contains(m, ` src="{{asset "js/`) && strings.Contains(m, " defer") {
+					continue
+				}
+				t.Errorf("%s has %s: %s", f, b.what, m)
+			}
+		}
+	}
+
+	// The scan can fail: it catches each rule in a sample.
+	for _, bad := range []string{`<a hx-on:click="x()">`, `<p style="color:red">`, `<style>a{}</style>`, `<script>x()</script>`,
+		`<a onclick="x()">`, `<a href="javascript:x()">`, `<div hx-trigger="click[ctrlKey]">`} {
+		hit := false
+		for _, b := range banned {
+			hit = hit || b.re.MatchString(bad)
+		}
+		if !hit {
+			t.Errorf("the scan doesn't catch %s", bad)
+		}
 	}
 }
 
@@ -666,16 +762,16 @@ func TestChangePasswordPage(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c, other := e.signIn(t, nil), e.signIn(t, nil)
 
-		resp, _ := e.post(t, c, "/account/password", url.Values{"currentPassword": {testPassword}, "newPassword": {newPassword}})
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account?password=changed" {
-			t.Fatalf("POST = %d to %q, want 303 to /account?password=changed", resp.StatusCode, location(t, resp))
+		resp, _ := e.post(t, c, "/settings/password", url.Values{"currentPassword": {testPassword}, "newPassword": {newPassword}})
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings?password=changed" {
+			t.Fatalf("POST = %d to %q, want 303 to /settings?password=changed", resp.StatusCode, location(t, resp))
 		}
 		resp, body := e.do(t, request{path: location(t, resp), cookies: []*http.Cookie{c}})
 		if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Password changed. Other browsers were signed out.") ||
 			!strings.Contains(body, "cv-mark-healthy") {
 			t.Errorf("the confirmation is missing:\n%s", body)
 		}
-		if resp, _ := e.do(t, request{path: "/account", cookies: []*http.Cookie{other}}); resp.StatusCode != http.StatusSeeOther {
+		if resp, _ := e.do(t, request{path: "/settings", cookies: []*http.Cookie{other}}); resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("another browser's session survived: %d", resp.StatusCode)
 		}
 		if _, err := e.Auth.SignIn(ctx, testEmail, newPassword, "203.0.113.9"); err != nil {
@@ -693,7 +789,7 @@ func TestChangePasswordPage(t *testing.T) {
 			"wrong current": {url.Values{"currentPassword": {"not the password"}, "newPassword": {newPassword}}, "That isn&#39;t the current password."},
 			"short new":     {url.Values{"currentPassword": {testPassword}, "newPassword": {"short"}}, "The new password must be at least 12 characters."},
 		} {
-			resp, body := e.post(t, c, "/account/password", tc.form)
+			resp, body := e.post(t, c, "/settings/password", tc.form)
 			if resp.StatusCode != http.StatusOK || !strings.Contains(body, tc.want) || !strings.Contains(body, `role="alert"`) ||
 				!strings.Contains(body, `aria-invalid="true"`) || !strings.Contains(body, "cv-mark-failed") {
 				t.Errorf("%s: %d, want %q as an announced error on the field:\n%s", name, resp.StatusCode, tc.want, body)
@@ -718,9 +814,9 @@ func TestTokensOnThePage(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
 
-		resp, body := e.post(t, c, "/account/tokens", url.Values{"name": {"ci-github"}})
+		resp, body := e.post(t, c, "/settings/tokens", url.Values{"name": {"ci-github"}})
 		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("POST /account/tokens = %d, want 200 (no redirect)", resp.StatusCode)
+			t.Fatalf("POST /settings/tokens = %d, want 200 (no redirect)", resp.StatusCode)
 		}
 		token := tokenInPage.FindString(body)
 		if token == "" || !strings.Contains(body, "It won't be shown again.") {
@@ -733,7 +829,7 @@ func TestTokensOnThePage(t *testing.T) {
 			t.Errorf("the token shown does not work: %v", err)
 		}
 
-		_, body = e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
+		_, body = e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 		if tokenInPage.MatchString(body) || strings.Contains(body, "be shown again") {
 			t.Errorf("a reload shows the token again:\n%s", body)
 		}
@@ -758,7 +854,7 @@ func TestTokensOnThePage(t *testing.T) {
 		}
 		e.Clock.Advance(2 * time.Hour)
 
-		_, body := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
+		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 		for _, want := range []string{
 			"cv-pill-healthy", "cv-mark-healthy", ">active<",
 			"cv-pill-idle", "cv-mark-idle", ">expired<",
@@ -780,19 +876,19 @@ func TestTokensOnThePage(t *testing.T) {
 		c := e.signIn(t, nil)
 		created, _ := e.Auth.CreateAPIToken(ctx, "victim", nil)
 
-		resp, _ := e.post(t, c, "/account/tokens/"+created.Info.ID+"/revoke", url.Values{})
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/account" {
-			t.Fatalf("revoke = %d to %q, want 303 to /account", resp.StatusCode, location(t, resp))
+		resp, _ := e.post(t, c, "/settings/tokens/"+created.Info.ID+"/revoke", url.Values{})
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings" {
+			t.Fatalf("revoke = %d to %q, want 303 to /settings", resp.StatusCode, location(t, resp))
 		}
 		if err := e.Auth.CheckAPIToken(ctx, created.Token); err == nil {
 			t.Error("the revoked token still works")
 		}
-		_, body := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
+		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 		if !strings.Contains(body, "cv-pill-failed") || strings.Contains(body, ">Revoke<") {
 			t.Errorf("the row does not show revoked:\n%s", body)
 		}
 		// An unknown ID is not an error page: the list is simply unchanged.
-		resp, _ = e.post(t, c, "/account/tokens/p4nzr2t6v3x7z5bqd7f4h6j3kq/revoke", url.Values{})
+		resp, _ = e.post(t, c, "/settings/tokens/p4nzr2t6v3x7z5bqd7f4h6j3kq/revoke", url.Values{})
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("revoking an unknown ID = %d, want 303", resp.StatusCode)
 		}
@@ -815,7 +911,7 @@ func TestTokensOnThePage(t *testing.T) {
 			"past expiry": {url.Values{"name": {"x"}, "expires": {yesterday}}, "The expiry must be in the future."},
 			"not a date":  {url.Values{"name": {"x"}, "expires": {"tomorrow"}}, "The expiry must be a date."},
 		} {
-			resp, body := e.post(t, c, "/account/tokens", tc.form)
+			resp, body := e.post(t, c, "/settings/tokens", tc.form)
 			if resp.StatusCode != http.StatusOK || !strings.Contains(body, tc.want) || !strings.Contains(body, `role="alert"`) {
 				t.Errorf("%s: %d, want %q:\n%s", name, resp.StatusCode, tc.want, body)
 			}
@@ -824,7 +920,7 @@ func TestTokensOnThePage(t *testing.T) {
 			}
 		}
 		// The name stays in the field after a refusal.
-		_, body := e.post(t, c, "/account/tokens", url.Values{"name": {"taken"}})
+		_, body := e.post(t, c, "/settings/tokens", url.Values{"name": {"taken"}})
 		if !strings.Contains(body, `value="taken"`) {
 			t.Errorf("the refused name was not kept:\n%s", body)
 		}
@@ -834,7 +930,7 @@ func TestTokensOnThePage(t *testing.T) {
 		e := newUIEnv(t, true, "")
 		c := e.signIn(t, nil)
 		day := e.Clock.Now().Add(48 * time.Hour).Format("2006-01-02")
-		if resp, body := e.post(t, c, "/account/tokens", url.Values{"name": {"dated"}, "expires": {day}}); resp.StatusCode != http.StatusOK || !tokenInPage.MatchString(body) {
+		if resp, body := e.post(t, c, "/settings/tokens", url.Values{"name": {"dated"}, "expires": {day}}); resp.StatusCode != http.StatusOK || !tokenInPage.MatchString(body) {
 			t.Fatalf("create with an expiry = %d:\n%s", resp.StatusCode, body)
 		}
 		infos, _ := e.Auth.ListAPITokens(ctx)
@@ -845,12 +941,113 @@ func TestTokensOnThePage(t *testing.T) {
 	})
 }
 
+// US7: the 006 account page now lives in the shell as Settings.
+func TestSettingsPage(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("the old /account address is a permanent redirect to /settings", func(t *testing.T) {
+		e := newUIEnv(t, true, "")
+		c := e.signIn(t, nil)
+		for name, cookies := range map[string][]*http.Cookie{"signed in": {c}, "signed out": nil} {
+			resp, _ := e.do(t, request{path: "/account", cookies: cookies})
+			if resp.StatusCode != http.StatusMovedPermanently || location(t, resp) != "/settings" {
+				t.Errorf("%s: GET /account = %d to %q, want 301 to /settings", name, resp.StatusCode, location(t, resp))
+			}
+		}
+	})
+
+	t.Run("it sits in the shell with Settings marked current", func(t *testing.T) {
+		e := newUIEnv(t, true, "")
+		c := e.signIn(t, nil)
+		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+		for _, want := range []string{
+			`<a href="/settings" class="cv-nav-link" aria-current="page">Settings</a>`,
+			`<a href="/apps" class="cv-nav-link">Apps</a>`, // not current
+			`class="cv-shell"`,
+			`aria-current="page">Settings</span>`, // the breadcrumb
+			`action="/logout"`,                    // Sign out stays in the sidebar's account row
+			"Signed in as",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the page lacks %q:\n%s", want, body)
+			}
+		}
+		if strings.Contains(body, "sse-connect") {
+			t.Error("Settings opens a live stream")
+		}
+	})
+
+	t.Run("nothing still points at /account", func(t *testing.T) {
+		e := newUIEnv(t, true, "")
+		c := e.signIn(t, nil)
+		for name, body := range map[string]string{
+			"settings":  func() string { _, b := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}}); return b }(),
+			"not found": func() string { _, b := e.do(t, request{path: "/nope"}); return b }(),
+		} {
+			if strings.Contains(body, `"/account`) {
+				t.Errorf("%s page still links to /account", name)
+			}
+		}
+	})
+
+	t.Run("revoke sits behind a confirmation", func(t *testing.T) {
+		e := newUIEnv(t, true, "")
+		c := e.signIn(t, nil)
+		created, err := e.Auth.CreateAPIToken(ctx, "victim", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+		form := `<form method="post" action="/settings/tokens/` + created.Info.ID + `/revoke"`
+		i := strings.Index(body, form)
+		if i < 0 {
+			t.Fatalf("no revoke form:\n%s", body)
+		}
+		if open, closed := strings.LastIndex(body[:i], "<details"), strings.LastIndex(body[:i], "</details>"); open < 0 || open < closed {
+			t.Error("the revoke form isn't inside a <details>")
+		}
+		if regexp.MustCompile(`<details[^>]* open`).MatchString(body) {
+			t.Error("a confirmation starts open")
+		}
+		if got := text(body); !strings.Contains(got, "can't be used again") {
+			t.Errorf("the confirmation doesn't say what happens:\n%s", got)
+		}
+		// The summary is the one "Revoke" button, with the token's name for screen readers.
+		if !strings.Contains(body, `aria-label="Revoke token victim"`) {
+			t.Errorf("the revoke control doesn't name its token:\n%s", body)
+		}
+	})
+
+	t.Run("the new token has a copy button, hidden until script reveals it", func(t *testing.T) {
+		e := newUIEnv(t, true, "")
+		c := e.signIn(t, nil)
+		_, body := e.post(t, c, "/settings/tokens", url.Values{"name": {"ci"}})
+		m := regexp.MustCompile(`<button[^>]*data-copy="([^"]+)"[^>]*>`).FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no copy button on the new token panel:\n%s", body)
+		}
+		if !strings.Contains(m[0], " hidden") {
+			t.Errorf("the copy button %q works only with script, so it must start hidden", m[0])
+		}
+		// It copies the token itself, which sits in the element it names.
+		if !regexp.MustCompile(`<code[^>]*id="` + m[1] + `"[^>]*>cvat_`).MatchString(body) {
+			t.Errorf("the copy button names #%s, which isn't the token:\n%s", m[1], body)
+		}
+	})
+}
+
 func TestAccountFormsWorkWithoutJavaScript(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	c := e.signIn(t, nil)
-	_, body := e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
-	if strings.Contains(strings.ToLower(body), "<script") || strings.Contains(strings.ToLower(body), " onclick=") {
-		t.Errorf("the account page needs JavaScript:\n%s", body)
+	_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+	// Scripts only enhance (the shared ones, from /static/js); no inline script, no onclick.
+	for _, tag := range regexp.MustCompile(`(?i)<script\b[^>]*>`).FindAllString(body, -1) {
+		if !strings.Contains(tag, ` src="/static/js/`) {
+			t.Errorf("the account page has an inline script: %s", tag)
+		}
+	}
+	if strings.Contains(strings.ToLower(body), " onclick=") {
+		t.Errorf("the account page has an onclick handler:\n%s", body)
 	}
 	// Every form is a plain post to a path this server serves.
 	forms := regexp.MustCompile(`<form method="post" action="([^"]+)"`).FindAllStringSubmatch(body, -1)
@@ -864,6 +1061,169 @@ func TestAccountFormsWorkWithoutJavaScript(t *testing.T) {
 	}
 }
 
+// plainForm is a <form> as a browser without script would send it: the method,
+// the action and the value of every named field, as it stands in the markup.
+type plainForm struct {
+	Method, Action string
+	Values         url.Values
+	Disabled       []string // fields or buttons the markup itself disables
+	HTMX           bool     // has hx-post, which only enhances the plain post
+}
+
+// formsIn reads the forms of a page like a browser would fill them in: each
+// named input with its value, a submit button's own name and value excluded.
+func formsIn(body string) []plainForm {
+	var forms []plainForm
+	for _, m := range regexp.MustCompile(`(?s)<form\b([^>]*)>(.*?)</form>`).FindAllStringSubmatch(body, -1) {
+		attr := func(tag, name string) string {
+			v := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
+			if v == nil {
+				return ""
+			}
+			return html.UnescapeString(v[1])
+		}
+		f := plainForm{Method: strings.ToLower(attr(m[1], "method")), Action: attr(m[1], "action"), Values: url.Values{}, HTMX: strings.Contains(m[1], "hx-post")}
+		for _, in := range regexp.MustCompile(`(?i)<(?:input|button)\b[^>]*>`).FindAllString(m[2], -1) {
+			if regexp.MustCompile(`\sdisabled\b`).MatchString(in) {
+				f.Disabled = append(f.Disabled, in)
+			}
+			if name := attr(in, "name"); name != "" && attr(in, "type") != "submit" {
+				f.Values.Set(name, attr(in, "value"))
+			}
+		}
+		forms = append(forms, f)
+	}
+	return forms
+}
+
+// formWith finds the form on a page whose action is action.
+func formWith(t *testing.T, body, action string) plainForm {
+	t.Helper()
+	for _, f := range formsIn(body) {
+		if f.Action == action {
+			return f
+		}
+	}
+	t.Fatalf("no form posts to %s in:\n%s", action, body)
+	return plainForm{}
+}
+
+// submit sends the form as a browser does without script: urlencoded, the
+// markup's own values with these overrides, and the headers of a same-site
+// click (Sec-Fetch-Site, no HX-Request).
+func (e *consoleEnv) submit(t *testing.T, f plainForm, set url.Values) (*http.Response, string) {
+	t.Helper()
+	if f.Method != "post" {
+		t.Fatalf("form %s is a %q, want post", f.Action, f.Method)
+	}
+	if len(f.Disabled) > 0 {
+		t.Errorf("form %s has controls that are disabled without script: %v", f.Action, f.Disabled)
+	}
+	form := url.Values{}
+	for k, v := range f.Values {
+		form[k] = v
+	}
+	for k, v := range set {
+		form[k] = v
+	}
+	return e.do(t, request{method: http.MethodPost, path: f.Action, form: form, cookies: []*http.Cookie{e.Cookie},
+		headers: map[string]string{"Sec-Fetch-Site": "same-origin"}})
+}
+
+// Every form of the console is a plain post: the page's own markup is enough to
+// create an app, deploy, make and revoke a webhook token, delete an app and
+// change the Settings, with no script and with nothing but same-site headers.
+func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
+	e := newConsoleEnv(t)
+	ctx := context.Background()
+
+	t.Run("New app", func(t *testing.T) {
+		_, page := e.get(t, "/apps/new")
+		f := formWith(t, page, "/apps")
+		if !f.HTMX {
+			t.Error("the New app form doesn't post in place when script runs")
+		}
+		resp, body := e.submit(t, f, url.Values{"name": {"plain"}, "image": {"traefik/whoami:latest"}, "port": {"80"}, "domain": {"plain.example.com"}})
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/deployments" {
+			t.Fatalf("POST /apps = %d to %q, want 303 to /apps/plain/deployments:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+		if _, err := e.Store.GetApp(ctx, "plain"); err != nil {
+			t.Errorf("the app wasn't stored: %v", err)
+		}
+		// A refusal is the page again, with the error where a reader finds it.
+		resp, body = e.submit(t, f, url.Values{"name": {"plain"}, "image": {"traefik/whoami:latest"}})
+		if resp.StatusCode != http.StatusConflict && resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `role="alert"`) {
+			t.Errorf("a second app named plain = %d, want the form again with an alert:\n%s", resp.StatusCode, body)
+		}
+	})
+
+	t.Run("Deploy", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/deployments")
+		f := formWith(t, page, "/apps/plain/deploy")
+		resp, body := e.submit(t, f, nil)
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/deployments" {
+			t.Fatalf("POST deploy = %d to %q, want 303 to the Deployments tab:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+	})
+
+	t.Run("Webhook", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/configure")
+		resp, body := e.submit(t, formWith(t, page, "/apps/plain/webhook"), nil)
+		if resp.StatusCode != http.StatusOK || !regexp.MustCompile(`cvwh_[A-Za-z0-9_-]+`).MatchString(body) {
+			t.Fatalf("POST webhook = %d, want 200 with the token shown once:\n%s", resp.StatusCode, body)
+		}
+		_, page = e.get(t, "/apps/plain/configure")
+		if regexp.MustCompile(`cvwh_`).MatchString(page) {
+			t.Error("the token is shown again on a later visit")
+		}
+		resp, body = e.submit(t, formWith(t, page, "/apps/plain/webhook/revoke"), nil)
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/configure" {
+			t.Fatalf("POST revoke = %d to %q, want 303 to the Configure tab:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+	})
+
+	t.Run("Settings", func(t *testing.T) {
+		_, page := e.get(t, "/settings")
+		resp, body := e.submit(t, formWith(t, page, "/settings/tokens"), url.Values{"name": {"plain-ci"}})
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, "cvat_") {
+			t.Fatalf("POST /settings/tokens = %d, want 200 with the token:\n%s", resp.StatusCode, body)
+		}
+		_, page = e.get(t, "/settings")
+		var revoke plainForm
+		for _, f := range formsIn(page) {
+			if strings.HasSuffix(f.Action, "/revoke") {
+				revoke = f
+			}
+		}
+		if revoke.Action == "" {
+			t.Fatalf("no revoke form for the new token:\n%s", page)
+		}
+		if resp, body := e.submit(t, revoke, nil); resp.StatusCode >= 400 {
+			t.Errorf("POST %s = %d:\n%s", revoke.Action, resp.StatusCode, body)
+		}
+		resp, body = e.submit(t, formWith(t, page, "/settings/password"), url.Values{"currentPassword": {testPassword}, "newPassword": {"another long password"}})
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings?password=changed" {
+			t.Errorf("POST /settings/password = %d to %q, want 303 to /settings?password=changed:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/configure")
+		f := formWith(t, page, "/apps/plain/delete")
+		resp, body := e.submit(t, f, url.Values{"confirm": {"nope"}})
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("POST delete with the wrong name = %d, want 422:\n%s", resp.StatusCode, body)
+		}
+		resp, body = e.submit(t, f, url.Values{"confirm": {"plain"}})
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps?deleted=plain" {
+			t.Fatalf("POST delete = %d to %q, want 303 to /apps?deleted=plain:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+		if _, err := e.Store.GetApp(ctx, "plain"); err == nil {
+			t.Error("the app is still stored")
+		}
+	})
+}
+
 func TestAccountPostsAreProtected(t *testing.T) {
 	ctx := context.Background()
 	e := newUIEnv(t, true, "")
@@ -872,9 +1232,9 @@ func TestAccountPostsAreProtected(t *testing.T) {
 
 	cross := map[string]string{"Sec-Fetch-Site": "cross-site"}
 	for path, form := range map[string]url.Values{
-		"/account/password": {"currentPassword": {testPassword}, "newPassword": {"a brand new password"}},
-		"/account/tokens":   {"name": {"forged"}},
-		"/account/tokens/" + victim.Info.ID + "/revoke": {},
+		"/settings/password": {"currentPassword": {testPassword}, "newPassword": {"a brand new password"}},
+		"/settings/tokens":   {"name": {"forged"}},
+		"/settings/tokens/" + victim.Info.ID + "/revoke": {},
 	} {
 		resp, body := e.do(t, request{method: http.MethodPost, path: path, form: form, headers: cross, cookies: []*http.Cookie{c}})
 		if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "refused") {
@@ -894,7 +1254,7 @@ func TestAccountPostsAreProtected(t *testing.T) {
 	}
 
 	// Without a session the posts go to /login, whoever sends them.
-	for _, path := range []string{"/account/password", "/account/tokens", "/account/tokens/x/revoke"} {
+	for _, path := range []string{"/settings/password", "/settings/tokens", "/settings/tokens/x/revoke"} {
 		resp, _ := e.do(t, request{method: http.MethodPost, path: path, form: url.Values{},
 			headers: map[string]string{"Sec-Fetch-Site": "same-origin"}})
 		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login") {
@@ -936,31 +1296,60 @@ func pagesToCheck(t *testing.T) map[string]string {
 	c := e.signIn(t, nil)
 	_, pages["login"] = e.do(t, request{path: "/login"})
 	_, pages["login, failed"] = e.failSignIn(t, nil)
-	_, pages["account"] = e.do(t, request{path: "/account", cookies: []*http.Cookie{c}})
-	_, pages["account, new token"] = e.post(t, c, "/account/tokens", url.Values{"name": {"ci"}})
-	_, pages["account, errors"] = e.post(t, c, "/account/password", url.Values{"currentPassword": {"x"}, "newPassword": {"y"}})
+	_, pages["account"] = e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+	_, pages["account, new token"] = e.post(t, c, "/settings/tokens", url.Values{"name": {"ci"}})
+	_, pages["account, errors"] = e.post(t, c, "/settings/password", url.Values{"currentPassword": {"x"}, "newPassword": {"y"}})
 	_, pages["not found"] = e.do(t, request{path: "/nope"})
 	_, pages["refused"] = e.do(t, request{method: http.MethodPost, path: "/login", headers: map[string]string{"Sec-Fetch-Site": "cross-site"}})
 
 	noAdmin := newUIEnv(t, false, "")
 	_, pages["login, no admin"] = noAdmin.do(t, request{path: "/login"})
+
+	// Every console page and part, with no app and with four, and the pages the forms answer with.
+	empty := newConsoleEnv(t)
+	for name, body := range consolePages(t, empty) {
+		pages["empty: "+name] = body
+	}
+	console, _ := populatedConsole(t)
+	for name, body := range consolePages(t, console, "whoami", "blog", "api", "shop") {
+		pages[name] = body
+	}
+	for name, body := range formPages(t, console, "shop") {
+		pages[name] = body
+	}
 	for name, body := range pages {
-		if !strings.Contains(body, "<html") {
+		if !isPart(name) && !strings.Contains(body, "<html") {
 			t.Fatalf("page %q did not render:\n%s", name, body)
 		}
 	}
 	return pages
 }
 
+// isPart says whether a page of pagesToCheck is a fragment of /parts/…, which has
+// no document around it.
+func isPart(name string) bool {
+	return strings.Contains(name, "/parts/")
+}
+
 func TestPagesAskNothingOfOtherHosts(t *testing.T) {
 	remote := regexp.MustCompile(`(?i)\b(?:href|src|action|srcset|poster|data)\s*=\s*["']?\s*(?:https?:)?//`)
-	elements := regexp.MustCompile(`(?i)<(script|iframe|img|object|embed|video|audio|source|form[^>]*\saction="https?:)`)
+	elements := regexp.MustCompile(`(?i)<(iframe|img|object|embed|video|audio|source|form[^>]*\saction="https?:)`)
+	scripts := regexp.MustCompile(`(?i)<script\b[^>]*>`)
+	anchors := regexp.MustCompile(`(?i)<a\b[^>]*>`)
 	for name, body := range pagesToCheck(t) {
+		// An app's address is a link the admin may follow; it loads nothing.
+		body = anchors.ReplaceAllString(body, "<a>")
 		if remote.MatchString(body) {
 			t.Errorf("page %q references another host:\n%s", name, remote.FindString(body))
 		}
 		if m := elements.FindString(body); m != "" {
-			t.Errorf("page %q has %q: pages ship no scripts, frames or images", name, m)
+			t.Errorf("page %q has %q: pages ship no frames or images", name, m)
+		}
+		// The only scripts are the console's own, from this server, deferred.
+		for _, tag := range scripts.FindAllString(body, -1) {
+			if !strings.Contains(tag, `src="/static/js/`) || !strings.Contains(tag, " defer") {
+				t.Errorf("page %q has an unexpected script: %s", name, tag)
+			}
 		}
 		if strings.Contains(strings.ToLower(body), "<link") {
 			// The one stylesheet, from this server.
@@ -991,6 +1380,9 @@ func TestPagesAreAccessible(t *testing.T) {
 	label := regexp.MustCompile(`(?s)<label[^>]*>.*?</label>`)
 	input := regexp.MustCompile(`(?i)<input\b[^>]*>`)
 	for name, body := range pagesToCheck(t) {
+		if isPart(name) {
+			continue
+		}
 		// Every visible input sits inside a <label> (hidden inputs have none).
 		labelled := strings.Join(label.FindAllString(body, -1), "\n")
 		for _, in := range input.FindAllString(body, -1) {
@@ -1014,7 +1406,12 @@ func TestPagesAreAccessible(t *testing.T) {
 		for _, m := range regexp.MustCompile(`class="cv-(?:error|notice)[^"]*"`).FindAllStringIndex(body, -1) {
 			start := strings.LastIndex(body[:m[0]], "<")
 			tag := body[start:m[1]]
-			if !strings.Contains(tag, `role="alert"`) && !strings.Contains(tag, `role="status"`) {
+			if strings.Contains(tag, `role="alert"`) || strings.Contains(tag, `role="status"`) {
+				continue
+			}
+			// A form announces its first error and links the others to their fields, so a
+			// reader hears them when the field is focused.
+			if id := regexp.MustCompile(`\bid="([^"]+)"`).FindStringSubmatch(tag); id == nil || !strings.Contains(body, `aria-describedby="`+id[1]+`"`) {
 				t.Errorf("page %q has a message that isn't announced: %s", name, tag)
 			}
 		}
@@ -1022,6 +1419,40 @@ func TestPagesAreAccessible(t *testing.T) {
 			if !strings.Contains(m, `aria-hidden="true"`) {
 				t.Errorf("page %q has a status mark readers would hear: %s", name, m)
 			}
+		}
+	}
+
+	// The console: where you are is marked, status has words, live regions are announced (R19, FR-029).
+	pill := regexp.MustCompile(`<span class="cv-pill[^"]*"><span class="cv-mark[^"]*"[^>]*></span>([^<]*)</span>`)
+	for name, body := range pagesToCheck(t) {
+		for _, m := range pill.FindAllStringSubmatch(body, -1) {
+			if strings.TrimSpace(m[1]) == "" {
+				t.Errorf("page %q has a status with a mark and no word: %s", name, m[0])
+			}
+		}
+		if n := strings.Count(body, `class="cv-pill`) - len(pill.FindAllString(body, -1)); n != 0 {
+			t.Errorf("page %q has %d status pills that aren't a mark followed by a word", name, n)
+		}
+		if strings.Contains(body, "data-live-indicator") && !strings.Contains(body, `id="live" role="status" aria-live="polite"`) {
+			t.Errorf("page %q has a live indicator that isn't announced politely", name)
+		}
+		if strings.Contains(body, `class="cv-tabs"`) {
+			nav := body[strings.Index(body, `class="cv-tabs"`):]
+			nav = nav[:strings.Index(nav, "</nav>")]
+			if got := strings.Count(nav, `aria-current="page"`); got != 1 {
+				t.Errorf("page %q marks %d tabs as the current one, want 1", name, got)
+			}
+		}
+		if strings.Contains(body, `class="cv-nav"`) && !isPart(name) {
+			nav := body[strings.Index(body, `class="cv-nav"`):]
+			nav = nav[:strings.Index(nav, "</nav>")]
+			if got := strings.Count(nav, `aria-current="page"`); got > 1 {
+				t.Errorf("page %q marks %d main links as the current one", name, got)
+			}
+		}
+		// The newest deployment and the copies are announced when they change.
+		if strings.Contains(body, `hx-get="/parts/apps/shop/deployments`) && !regexp.MustCompile(`hx-get="/parts/apps/shop/deployments[^>]*aria-live="polite"`).MatchString(body) {
+			t.Errorf("page %q: the deployment history isn't an aria-live region", name)
 		}
 	}
 
@@ -1033,6 +1464,24 @@ func TestPagesAreAccessible(t *testing.T) {
 	}
 }
 
+// An app's name set in mono inside a .cv-label (the delete confirmation: "Type blog to confirm")
+// must not be uppercased: the form compares what is typed with the name, exactly.
+func TestStylesheetKeepsTheNameInALabel(t *testing.T) {
+	e := newUIEnv(t, true, "")
+	_, css := e.do(t, request{path: "/static/app.css"})
+	rule := regexp.MustCompile(`\.cv-label \.cv-inline-mono\s*\{([^}]*)\}`).FindStringSubmatch(css)
+	if rule == nil {
+		t.Fatal("app.css has no rule for a name inside a label (.cv-label .cv-inline-mono)")
+	}
+	if !strings.Contains(strings.ReplaceAll(rule[1], " ", ""), "text-transform:none") {
+		t.Errorf(".cv-label .cv-inline-mono = {%s}, want text-transform: none", rule[1])
+	}
+	// The label itself still uppercases everything else in it.
+	if label := regexp.MustCompile(`\.cv-label\s*\{([^}]*)\}`).FindStringSubmatch(css); label == nil || !strings.Contains(strings.ReplaceAll(label[1], " ", ""), "text-transform:uppercase") {
+		t.Error("the label no longer uppercases; this test would be checking nothing")
+	}
+}
+
 func TestStylesheetKeepsTheDesignRules(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	_, css := e.do(t, request{path: "/static/app.css"})
@@ -1041,6 +1490,9 @@ func TestStylesheetKeepsTheDesignRules(t *testing.T) {
 		"tabular-nums",           // DESIGN.md, The Tabular Rule
 		"font-display:swap",
 		"IBM Plex Sans", "IBM Plex Mono",
+		// Narrow screens (R19): the tables stack by their own width, the sidebar becomes the
+		// menu under 900px, and standing-alone links are 44px targets on touch screens.
+		"@container (max-width:719.98px)", "container-type:inline-size", "(max-width:899.98px)", "(pointer:coarse)",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("app.css lacks %q", want)

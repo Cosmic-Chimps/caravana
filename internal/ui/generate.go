@@ -1,5 +1,5 @@
-// Package ui serves Caravana's web pages: sign-in, and the account page that
-// 006 starts with. The console (007) grows here.
+// Package ui serves Caravana's web pages: sign-in, the console (apps, an app's
+// tabs, New app) and Settings.
 //
 // The stylesheet static/app.css is generated from style/ and committed, so
 // go build never needs the style tool. To regenerate it after changing the

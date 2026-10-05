@@ -1,0 +1,26 @@
+{{/* Pieces every page shares. The data each takes is in internal/ui/shell.go
+     (statusView, emptyView) and settings.go (when). */}}
+
+{{/* status-mark: the shape alone. Takes the kind: healthy, rolling, warning, failed or idle. */}}
+{{define "status-mark"}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}
+
+{{/* status-pill: mark, then the word, on the status's tinted ground. Takes a statusView. */}}
+{{define "status-pill"}}<span class="cv-pill cv-pill-{{.Kind}}"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}
+
+{{/* status-quiet: the same without the tinted ground, for dense tables. Takes a statusView. */}}
+{{define "status-quiet"}}<span class="cv-pill cv-pill-{{.Kind}} cv-pill-quiet"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}
+
+{{/* sentence: prose with its names and versions set in mono. Takes a sentence (a list of parts, see view.go). */}}
+{{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+
+{{/* time: a relative phrase ("5 minutes ago") with the exact time on hover. Takes a when. */}}
+{{define "time"}}<time class="cv-data"{{with .ISO}} datetime="{{.}}"{{end}}{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}
+
+{{/* empty: what is missing, what to do about it, and the one action that does it. Takes an emptyView. */}}
+{{define "empty"}}
+<div class="cv-empty">
+  <p class="cv-empty-title">{{.Title}}</p>
+  {{with .Text}}<p class="cv-empty-text">{{.}}</p>{{end}}
+  {{if .ActionHref}}<a href="{{.ActionHref}}" class="cv-btn cv-btn-primary">{{.ActionLabel}}</a>{{end}}
+</div>
+{{end}}

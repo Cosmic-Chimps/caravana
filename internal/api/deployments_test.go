@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
+	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // whoamiBody is the whoami app as a client sends it, without an id.
@@ -62,6 +65,18 @@ type deployment struct {
 	Digests    map[string]string `json:"digests"`
 	Warnings   []app.Warning     `json:"warnings"`
 	Error      string            `json:"error"`
+	Progress   *progress         `json:"progress"`
+}
+
+// progress is the Progress schema, decoded.
+type progress struct {
+	Wanted         int    `json:"wanted"`
+	Placed         int    `json:"placed"`
+	Healthy        int    `json:"healthy"`
+	Unhealthy      int    `json:"unhealthy"`
+	CanariesWanted int    `json:"canariesWanted"`
+	Promoted       bool   `json:"promoted"`
+	Description    string `json:"description"`
 }
 
 func decodeAs[T any](t *testing.T, raw []byte) T {
@@ -349,4 +364,193 @@ func TestListDeployments(t *testing.T) {
 	if status, _, _ := call(t, http.MethodGet, e.URL+"/v1/apps/ghost/deployments", "", ""); status != http.StatusNotFound {
 		t.Errorf("unknown app: status %d, want 404", status)
 	}
+}
+
+// US1: the Apps page's activity feed.
+func TestListRecentDeployments(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEnv(t, "")
+	for _, id := range []string{"whoami", "blog"} {
+		a := apptest.Whoami().App
+		a.ID = id
+		if _, err := e.Store.SaveApp(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 25 {
+		d := apptest.Whoami().Deployment
+		d.ID = fmt.Sprintf("d%02d", i)
+		appID := []string{"whoami", "blog"}[i%2]
+		if _, err := e.Store.CreateDeployment(ctx, appID, d); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond) // distinct creation times keep "newest" unambiguous
+	}
+
+	list := func(t *testing.T, path string) []deployment {
+		t.Helper()
+		status, _, raw := call(t, http.MethodGet, e.URL+path, "", "")
+		if status != http.StatusOK {
+			t.Fatalf("GET %s = %d %s", path, status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "DeploymentList")
+		return decodeAs[struct {
+			Deployments []deployment `json:"deployments"`
+		}](t, raw).Deployments
+	}
+
+	if got := list(t, "/v1/deployments"); len(got) != 20 || got[0].ID != "d24" || got[1].ID != "d23" || got[19].ID != "d05" {
+		t.Errorf("default list = %d items from %s, want the newest 20 from d24 (across apps)", len(got), got[0].ID)
+	}
+	if got := list(t, "/v1/deployments"); got[0].AppID != "whoami" || got[1].AppID != "blog" {
+		t.Errorf("app IDs = %s, %s; want whoami, blog (both apps are mixed in)", got[0].AppID, got[1].AppID)
+	}
+	if got := list(t, "/v1/deployments?limit=3"); len(got) != 3 || got[2].ID != "d22" {
+		t.Errorf("limit=3 = %d items, want d24..d22", len(got))
+	}
+	if got := list(t, "/v1/deployments?limit=100"); len(got) != 25 {
+		t.Errorf("limit=100 = %d items, want 25", len(got))
+	}
+
+	for _, q := range []string{"0", "101", "abc", "-1"} {
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/deployments?limit="+q, "", "")
+		got := decodeAs[errorBody](t, raw).Error
+		if status != http.StatusBadRequest || got.Code != codeInvalidField || got.Field != "limit" {
+			t.Errorf("limit=%s: %d %+v, want 400 invalid_field on limit", q, status, got)
+		}
+	}
+
+	t.Run("401 without credentials", func(t *testing.T) {
+		status, _, raw := call(t, http.MethodGet, e.RawURL+"/v1/deployments", "", "")
+		if status != http.StatusUnauthorized {
+			t.Errorf("GET /v1/deployments without credentials = %d %s, want 401", status, raw)
+		}
+	})
+
+	t.Run("empty store gives an empty list", func(t *testing.T) {
+		other := newTestEnv(t, "")
+		_, _, raw := call(t, http.MethodGet, other.URL+"/v1/deployments", "", "")
+		checkSchema(t, loadContract(t), raw, "DeploymentList")
+		if got := decodeAs[struct {
+			Deployments []deployment `json:"deployments"`
+		}](t, raw).Deployments; got == nil || len(got) != 0 {
+			t.Errorf("deployments = %#v, want an empty list", got)
+		}
+	})
+}
+
+// US2: rollout progress on the Deployment schema.
+func TestDeploymentProgress(t *testing.T) {
+	ctx := context.Background()
+	rolling := deploytest.Rolling("Deployment is running", map[string]api.DeploymentState{
+		"web": {DesiredTotal: 2, DesiredCanaries: 2, PlacedAllocs: 2, HealthyAllocs: 1},
+	})
+
+	t.Run("a deployment started through the API is manual, and its running state shows progress", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		e.Nomad.Script("whoami", 0, rolling)
+		d := deployOK(t, e, "whoami", whoamiBody)
+		if d.Trigger != "manual" {
+			t.Errorf("trigger = %q, want manual", d.Trigger)
+		}
+
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments/"+d.ID, "", "")
+		if status != http.StatusOK {
+			t.Fatalf("GET deployment = %d %s", status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "Deployment")
+		got := decodeAs[deployment](t, raw)
+		want := progress{Wanted: 2, Placed: 2, Healthy: 1, CanariesWanted: 2, Description: "Deployment is running"}
+		if got.Status != "running" || got.Progress == nil || *got.Progress != want {
+			t.Errorf("deployment = %s with progress %+v, want running with %+v", got.Status, got.Progress, want)
+		}
+	})
+
+	t.Run("never on a final deployment", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		d := deployOK(t, e, "whoami", whoamiBody)
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments/"+d.ID, "", "")
+			got := decodeAs[deployment](t, raw)
+			if got.Status == "healthy" {
+				if strings.Contains(string(raw), `"progress"`) {
+					t.Errorf("a healthy deployment has progress: %s", raw)
+				}
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("deployment still %s after 5s", got.Status)
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	})
+
+	t.Run("listDeployments adds it to the newest running deployment only", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App); err != nil {
+			t.Fatal(err)
+		}
+		job := func() *api.Job { return &api.Job{ID: new("whoami")} }
+		e.Nomad.AddForeignJob(job())
+		e.Nomad.AddForeignJob(job())
+		e.Nomad.Script("whoami", 0, rolling)
+		e.Nomad.Script("whoami", 1, rolling)
+
+		for _, d := range []struct {
+			id      string
+			version uint64
+			status  store.Status
+		}{{"d1", 0, store.StatusRunning}, {"d2", 0, store.StatusHealthy}, {"d3", 1, store.StatusRunning}, {"d4", 1, store.StatusRunning}} {
+			dep := apptest.Whoami().Deployment
+			dep.ID = d.id
+			if _, err := e.Store.CreateDeployment(ctx, "whoami", dep); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.Store.UpdateDeployment(ctx, d.id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: new(d.version)}); err != nil {
+				t.Fatal(err)
+			}
+			if d.status != store.StatusRunning {
+				if _, err := e.Store.UpdateDeployment(ctx, d.id, store.DeploymentUpdate{Status: d.status}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments", "", "")
+		if status != http.StatusOK {
+			t.Fatalf("list = %d %s", status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "DeploymentList")
+		list := decodeAs[struct {
+			Deployments []deployment `json:"deployments"`
+		}](t, raw).Deployments
+		has := map[string]bool{}
+		for _, d := range list {
+			has[d.ID] = d.Progress != nil
+		}
+		if want := map[string]bool{"d4": true, "d3": false, "d2": false, "d1": false}; !reflect.DeepEqual(has, want) {
+			t.Errorf("progress by deployment = %v, want only the newest running one (d4): %v", has, want)
+		}
+
+		// The cross-app feed never carries it.
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/deployments", "", "")
+		if strings.Contains(string(raw), `"progress"`) {
+			t.Errorf("GET /v1/deployments has progress: %s", raw)
+		}
+	})
+
+	t.Run("Nomad down: the deployment is still answered, without progress", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		e.Nomad.Script("whoami", 0, rolling)
+		d := deployOK(t, e, "whoami", whoamiBody)
+		e.Nomad.Down()
+		for _, path := range []string{"/v1/apps/whoami/deployments/" + d.ID, "/v1/apps/whoami/deployments"} {
+			status, _, raw := call(t, http.MethodGet, e.URL+path, "", "")
+			if status != http.StatusOK || strings.Contains(string(raw), `"progress"`) {
+				t.Errorf("GET %s with Nomad down = %d %s; want 200 without progress", path, status, raw)
+			}
+		}
+	})
 }

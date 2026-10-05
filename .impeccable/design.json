@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-04T19:36:53+00:00",
+  "generatedAt": "2026-10-04T23:00:00+00:00",
   "title": "Design System: caravana console",
   "extensions": {
     "colorMeta": {
@@ -419,7 +419,7 @@
       },
       "metric": {
         "displayName": "Metric",
-        "purpose": "A live value in a metric tile."
+        "purpose": "The app page's name, 24px mono. No metric tile is built."
       },
       "wordmark": {
         "displayName": "Wordmark",
@@ -430,7 +430,7 @@
       {
         "name": "overlay",
         "value": "0 12px 32px oklch(0 0 0 / 0.45), 0 0 0 1px oklch(0.340 0.010 255)",
-        "purpose": "Dropdowns, the org switcher, drawers and modals. Nothing else casts a shadow."
+        "purpose": "The Menu panel under 900px and the Revoke confirmation under a token row. Nothing else casts a shadow."
       }
     ],
     "motion": [
@@ -447,22 +447,22 @@
       {
         "name": "dur-panel",
         "value": "180ms",
-        "purpose": "Meter width changes and feed rows dropping in."
+        "purpose": "Defined in the theme (the --animate-in length); no 007 surface uses it yet."
       },
       {
         "name": "tick",
         "value": "cv-tick 700ms: background oklch(0.76 0.12 245 / 0.16) to transparent",
-        "purpose": "A value changed by a server-sent event flashes once."
+        "purpose": "Defined in the theme; no 007 surface applies it yet."
       },
       {
         "name": "in",
         "value": "cv-in 180ms: opacity 0 and translateY(-3px) to none",
-        "purpose": "A new row in a live feed drops in."
+        "purpose": "Defined in the theme; no 007 surface applies it yet."
       },
       {
         "name": "ping",
         "value": "cv-ping 1.4s, one iteration: box-shadow 0 0 0 0 → 0 0 0 6px, Signal Blue 60% → 0",
-        "purpose": "The top-bar live dot, once per event. Never on a loop (the handoff looped it; the shipped theme does not)."
+        "purpose": "The live indicator's disc, once when the stream opens. Never on a loop."
       },
       {
         "name": "reduced-motion",
@@ -472,16 +472,40 @@
     ],
     "breakpoints": [
       {
+        "name": "shell",
+        "value": "max-width 900px: sidebar becomes a top bar with a Menu disclosure; breadcrumbs hide; gutters 16px"
+      },
+      {
+        "name": "rail",
+        "value": "max-width 1452px: the 400px Activity rail drops below the main column"
+      },
+      {
+        "name": "stack-apps",
+        "value": "container max-width 720px: Apps table rows stack, per-cell data-label"
+      },
+      {
+        "name": "stack-copies",
+        "value": "container max-width 660px: copies table rows stack, per-cell data-label"
+      },
+      {
+        "name": "phone",
+        "value": "max-width 640px: 24px headline, stacked definition rows and deployment meta"
+      },
+      {
+        "name": "live-text",
+        "value": "max-width 480px: the live indicator shows its mark only; words for screen readers"
+      },
+      {
         "name": "touch",
-        "value": "(pointer: coarse): buttons and fields are at least 44px tall"
+        "value": "(pointer: coarse): buttons and fields at least 44px tall; standalone links and sidebar links 44px"
       },
       {
         "name": "column-login",
         "value": "max-width 380px, centered, 24px side gutters"
       },
       {
-        "name": "column-account",
-        "value": "max-width 720px, centered, 24px side gutters"
+        "name": "column-page",
+        "value": "max-width 1440px, 26px gutters; Settings is left-aligned at this width"
       }
     ]
   },
@@ -490,25 +514,17 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Shipped (cv-btn cv-btn-primary). The page's one main action. Lit, not colored.",
-      "html": "<button class=\"ds-btn ds-btn-primary\">Change password</button>",
+      "description": "Shipped (cv-btn cv-btn-primary). The view's one main action. Lit, not colored. The top bar's Deploy yields to the form's own on the Deployments tab.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Deploy</button>",
       "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap;font:500 14px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1),color 120ms cubic-bezier(0.2,0.7,0.2,1);}.ds-btn:active{transform:translateY(0.5px);}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}.ds-btn-primary{background:oklch(0.955 0.004 255);color:oklch(0.165 0.006 255);border-color:oklch(0.955 0.004 255);}.ds-btn-primary:hover{background:oklch(0.88 0.006 255);border-color:oklch(0.88 0.006 255);}"
     },
     {
       "name": "Secondary Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "Shipped (cv-btn cv-btn-secondary). Sign out, Create token.",
+      "description": "Shipped (cv-btn cv-btn-secondary). Sign out, Create token, Apply, Show older, Deploy again.",
       "html": "<button class=\"ds-btn ds-btn-secondary\">Create token</button>",
       "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:4px;cursor:pointer;white-space:nowrap;font:500 14px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1),color 120ms cubic-bezier(0.2,0.7,0.2,1);}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}.ds-btn-secondary{background:oklch(0.225 0.008 255);color:oklch(0.955 0.004 255);border-color:oklch(0.340 0.010 255);}.ds-btn-secondary:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);}"
-    },
-    {
-      "name": "Ghost Button",
-      "kind": "button",
-      "refersTo": "button-ghost",
-      "description": "Inline and toolbar actions like 'Why?'.",
-      "html": "<button class=\"ds-btn-ghost\">Why?</button>",
-      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:4px;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms cubic-bezier(0.2,0.7,0.2,1);height:28px;padding:0 10px;font-size:13px;background:transparent;color:oklch(0.810 0.008 255);border:1px solid transparent;} .ds-btn-ghost:hover{background:oklch(0.260 0.009 255);color:oklch(0.955 0.004 255);} .ds-btn-ghost:active{transform:translateY(0.5px);} .ds-btn-ghost:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
     },
     {
       "name": "Danger Button",
@@ -530,33 +546,25 @@
       "name": "Status Pills",
       "kind": "chip",
       "refersTo": "status-pill-healthy",
-      "description": "Shipped (cv-pill + cv-mark). Healthy, failed and idle in the token list; the mark is drawn in CSS, first, then a mono word.",
-      "html": "<span class=\"ds-pill ds-pill-healthy\"><span class=\"ds-mark ds-mark-healthy\"></span>active</span> <span class=\"ds-pill ds-pill-idle\"><span class=\"ds-mark ds-mark-idle\"></span>expired</span> <span class=\"ds-pill ds-pill-failed\"><span class=\"ds-mark ds-mark-failed\"></span>revoked</span>",
-      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;white-space:nowrap;}.ds-pill-healthy{color:oklch(0.76 0.12 245);background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);}.ds-pill-idle{color:oklch(0.680 0.010 255);background:oklch(0.225 0.008 255);border-color:oklch(0.340 0.010 255);}.ds-pill-failed{color:oklch(0.68 0.17 40);background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);}.ds-mark{display:inline-block;width:8px;height:8px;flex:none;box-sizing:border-box;}.ds-mark-healthy{border-radius:50%;background:oklch(0.76 0.12 245);}.ds-mark-idle{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}.ds-mark-failed{border-radius:1px;background:oklch(0.68 0.17 40);}"
+      "description": "Shipped (cv-pill + cv-mark). Healthy, rolling, warning, failed and idle; the mark is drawn in CSS, first, then a mono word. The quiet variant drops the ground inside tables.",
+      "html": "<span class=\"ds-pill ds-pill-healthy\"><span class=\"ds-mark ds-mark-healthy\"></span>healthy</span> <span class=\"ds-pill ds-pill-rolling\"><span class=\"ds-mark ds-mark-rolling\"></span>rolling out</span> <span class=\"ds-pill ds-pill-failed\"><span class=\"ds-mark ds-mark-failed\"></span>failed</span> <span class=\"ds-pill ds-pill-quiet\"><span class=\"ds-mark ds-mark-idle\"></span>idle</span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;white-space:nowrap;}.ds-pill-healthy{color:oklch(0.76 0.12 245);background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);}.ds-pill-idle{color:oklch(0.680 0.010 255);background:oklch(0.225 0.008 255);border-color:oklch(0.340 0.010 255);}.ds-pill-failed{color:oklch(0.68 0.17 40);background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);}.ds-mark{display:inline-block;width:8px;height:8px;flex:none;box-sizing:border-box;}.ds-mark-healthy{border-radius:50%;background:oklch(0.76 0.12 245);}.ds-mark-idle{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}.ds-mark-failed{border-radius:1px;background:oklch(0.68 0.17 40);}.ds-pill-rolling{color:oklch(0.84 0.09 300);background:oklch(0.28 0.045 300);border-color:oklch(0.46 0.07 300);}.ds-mark-rolling{border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);}.ds-pill-quiet{background:transparent;border-color:transparent;padding:0;color:oklch(0.680 0.010 255);}"
     },
     {
       "name": "Intent Tabs",
       "kind": "nav",
       "refersTo": "tab",
-      "description": "Not built yet (007). App page tabs by intent; a status mark rides on a tab that needs attention.",
-      "html": "<nav class=\"ds-tabs\" role=\"tablist\"><button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\">Running <span class=\"ds-tab-count\">2</span></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Ship <i class=\"ds-tab-mark\"></i></button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Configure</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Logs</button></nav>",
-      "css": ".ds-tabs{display:flex;gap:26px;border-bottom:1px solid oklch(0.275 0.009 255);} .ds-tab{display:inline-flex;align-items:center;gap:9px;height:46px;padding:0;margin-bottom:-1px;background:none;border:0;border-bottom:2px solid transparent;cursor:pointer;color:oklch(0.680 0.010 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13.5px;font-weight:500;transition:color 120ms;} .ds-tab:hover{color:oklch(0.810 0.008 255);} .ds-tab[aria-selected=true]{color:oklch(0.955 0.004 255);border-bottom-color:oklch(0.955 0.004 255);} .ds-tab:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-tab-count{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:400;color:oklch(0.680 0.010 255);} .ds-tab-mark{width:8px;height:8px;border-radius:50%;border:1.5px solid oklch(0.84 0.09 300);background:linear-gradient(90deg,oklch(0.84 0.09 300) 50%,transparent 50%);}"
+      "description": "Shipped (cv-tabs). Four links by intent: Running, Deployments, Configure, Logs. The current one is Readout White with a 2px underline; a mono count may follow a label.",
+      "html": "<nav class=\"ds-tabs\" aria-label=\"App sections\"><a class=\"ds-tab\" aria-current=\"page\" href=\"#\">Running <span class=\"ds-tab-count\">2</span></a><a class=\"ds-tab\" href=\"#\">Deployments</a><a class=\"ds-tab\" href=\"#\">Configure</a><a class=\"ds-tab\" href=\"#\">Logs</a></nav>",
+      "css": ".ds-tabs{display:flex;gap:26px;border-bottom:1px solid oklch(0.275 0.009 255);overflow-x:auto;} .ds-tab{display:inline-flex;align-items:center;gap:8px;height:46px;margin-bottom:-1px;border-bottom:2px solid transparent;color:oklch(0.680 0.010 255);font:500 13.5px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;text-decoration:none;white-space:nowrap;transition:color 120ms cubic-bezier(0.2,0.7,0.2,1);} .ds-tab:hover{color:oklch(0.810 0.008 255);} .ds-tab[aria-current=page]{color:oklch(0.955 0.004 255);border-bottom-color:oklch(0.955 0.004 255);} .ds-tab:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-tab-count{font:400 12px/1 'IBM Plex Mono',ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;color:oklch(0.680 0.010 255);}"
     },
     {
-      "name": "Needs-you Panel",
-      "kind": "card",
-      "refersTo": "panel",
-      "description": "Not built yet (007). Signature: a problem as one sentence, raw facts in mono, one fix.",
-      "html": "<section class=\"ds-section\"><header class=\"ds-section-head\"><span class=\"ds-label\">Needs you</span><span class=\"ds-meta\">1 item</span></header><div class=\"ds-panel\"><div class=\"ds-needs\"><i class=\"ds-needs-mark\"></i><div class=\"ds-needs-text\"><p>api restarted 3 times in the last hour: it runs out of memory at 512 MB.</p><p class=\"ds-needs-detail\">alloc e4d1 · hel-1 · exit 137 · 4 min ago</p></div><button class=\"ds-needs-fix\">Raise to 1 GB</button></div><div class=\"ds-row\"><span class=\"ds-row-name\">whoami</span><span class=\"ds-row-meta\">v12 · 2 copies · healthy</span></div></div></section>",
-      "css": ".ds-section{width:560px;} .ds-section-head{display:flex;align-items:baseline;gap:16px;min-height:28px;margin-bottom:8px;} .ds-label{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;font-weight:500;line-height:1;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);} .ds-meta{font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;color:oklch(0.810 0.008 255);} .ds-panel{background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;} .ds-needs{display:grid;grid-template-columns:8px 1fr auto;gap:12px;align-items:start;padding:14px 16px;} .ds-needs-mark{width:6.2px;height:6.2px;margin:6px 0.9px;transform:rotate(45deg);background:oklch(0.90 0.13 88);} .ds-needs-text p{margin:0;font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.35;color:oklch(0.955 0.004 255);} .ds-needs-text .ds-needs-detail{margin-top:6px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);} .ds-needs-fix{height:28px;padding:0 10px;border-radius:4px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);color:oklch(0.955 0.004 255);font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:background 120ms,border-color 120ms;} .ds-needs-fix:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);} .ds-needs-fix:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;} .ds-row{display:grid;grid-template-columns:1fr auto;align-items:center;min-height:46px;padding:0 16px;border-top:1px solid oklch(0.275 0.009 255);transition:background 120ms;} .ds-row:hover{background:oklch(0.225 0.008 255);} .ds-row-name{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:13px;color:oklch(0.955 0.004 255);} .ds-row-meta{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;color:oklch(0.680 0.010 255);}"
-    },
-    {
-      "name": "Meter",
+      "name": "Live Indicator",
       "kind": "custom",
-      "refersTo": "panel",
-      "description": "Not built yet (007). Live usage (solid, status-colored) over what copies reserved (hatched).",
-      "html": "<div class=\"ds-meter\"><span class=\"ds-meter-label\">mem</span><span class=\"ds-meter-track\"><span class=\"ds-meter-reserved\" style=\"width:70%\"></span><span class=\"ds-meter-used\" style=\"width:62%\"></span></span><span class=\"ds-meter-readout\">5.0/8G</span></div>",
-      "css": ".ds-meter{display:grid;grid-template-columns:36px 240px auto;align-items:center;gap:10px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:12px;} .ds-meter-label{color:oklch(0.680 0.010 255);text-transform:uppercase;letter-spacing:0.06em;} .ds-meter-track{position:relative;height:6px;background:oklch(0.260 0.009 255);border-radius:1px;overflow:hidden;} .ds-meter-reserved{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(90deg,oklch(0.440 0.012 255) 0 1px,transparent 1px 3px);} .ds-meter-used{position:absolute;inset:0 auto 0 0;background:oklch(0.76 0.12 245);transition:width 180ms cubic-bezier(0.2,0.7,0.2,1);} .ds-meter-readout{color:oklch(0.810 0.008 255);font-variant-numeric:tabular-nums;}"
+      "refersTo": "status-pill-healthy",
+      "description": "Shipped (cv-live). The top bar's readout of the event stream: Live (disc), Reconnecting… (tilted square), Signed out (ring), each with its words; hidden until the stream has a state.",
+      "html": "<span class=\"ds-live\"><span class=\"ds-live-mark ds-live-on\"></span>Live</span> <span class=\"ds-live\"><span class=\"ds-live-mark ds-live-re\"></span>Reconnecting…</span> <span class=\"ds-live\"><span class=\"ds-live-mark ds-live-out\"></span>Signed out. <a href=\"#\">Sign in again.</a></span>",
+      "css": ".ds-live{display:inline-flex;align-items:center;gap:8px;margin-right:20px;font:400 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.680 0.010 255);white-space:nowrap;}.ds-live a{color:oklch(0.955 0.004 255);}.ds-live-mark{display:inline-block;width:8px;height:8px;flex:none;box-sizing:border-box;}.ds-live-on{border-radius:50%;background:oklch(0.76 0.12 245);}.ds-live-re{width:6.24px;height:6.24px;margin:0.88px;transform:rotate(45deg);background:oklch(0.90 0.13 88);}.ds-live-out{border-radius:50%;border:1.5px solid oklch(0.680 0.010 255);}"
     },
     {
       "name": "Notice",
@@ -565,6 +573,30 @@
       "description": "Shipped (cv-notice). The mark first, then one plain sentence; role=alert for a refusal, role=status for a calm fact. No fill, no colored border.",
       "html": "<div class=\"ds-notice\" role=\"alert\"><span class=\"ds-mark ds-mark-warning\"></span><span>That email and password don't match. 4 tries left before a 15-minute wait.</span></div>",
       "css": ".ds-notice{display:flex;gap:10px;align-items:baseline;max-width:340px;font:400 13px/1.45 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;color:oklch(0.955 0.004 255);}.ds-notice>span:last-child{text-wrap:balance;}.ds-mark{display:inline-block;flex:none;box-sizing:border-box;}.ds-mark-warning{width:6.24px;height:6.24px;margin:0.88px;transform:rotate(45deg);background:oklch(0.90 0.13 88);position:relative;top:0.05em;}"
+    },
+    {
+      "name": "Deployment Entry",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Shipped (cv-deploy). One per deployment: version, pill and when, then one sentence, the raw error in mono, and at most one action. The failed-deploy treatment.",
+      "html": "<div class=\"ds-panel\"><article class=\"ds-deploy\"><div class=\"ds-head\"><span class=\"ds-data ds-strong\">v8</span><span class=\"ds-pill ds-pill-failed\"><span class=\"ds-mark\"></span>reverted</span><span class=\"ds-meta\">console · 4 minutes ago · 1 min 30 s</span></div><p class=\"ds-sentence\"><span class=\"ds-mono\">v8</span> failed its health checks. Nomad rolled back to <span class=\"ds-mono\">v7</span>, which is serving.</p><p class=\"ds-detail\">deadline exceeded: 0 of 1 allocations healthy</p><p><a class=\"ds-btn\" href=\"#\">Deploy again</a></p></article></div>",
+      "css": ".ds-panel{width:520px;background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;}.ds-deploy{display:flex;flex-direction:column;gap:8px;padding:14px 16px;}.ds-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;}.ds-data{font:400 13px/1.35 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;}.ds-strong{color:oklch(0.955 0.004 255);}.ds-meta{margin-left:auto;font:400 12px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.680 0.010 255);}.ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;}.ds-pill-failed{color:oklch(0.68 0.17 40);background:oklch(0.27 0.06 40);border-color:oklch(0.46 0.10 40);}.ds-mark{width:8px;height:8px;border-radius:1px;background:oklch(0.68 0.17 40);}.ds-sentence{margin:0;font:400 14px/1.45 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;color:oklch(0.955 0.004 255);}.ds-mono{font:400 0.9em 'IBM Plex Mono',ui-monospace,monospace;}.ds-detail{margin:0;font:400 12px/1.35 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.680 0.010 255);}.ds-btn{display:inline-flex;align-items:center;height:28px;padding:0 10px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;color:oklch(0.955 0.004 255);font:500 13px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;text-decoration:none;transition:background 120ms,border-color 120ms;}.ds-btn:hover{background:oklch(0.260 0.009 255);border-color:oklch(0.440 0.012 255);}.ds-btn:focus-visible{outline:2px solid oklch(0.76 0.12 245 / 0.55);outline-offset:2px;}"
+    },
+    {
+      "name": "Confirmation",
+      "kind": "custom",
+      "refersTo": "confirm-body",
+      "description": "Shipped (cv-confirm). A <details> under its button: a sentence about the consequence and one button. Delete app asks for the app's name first.",
+      "html": "<details class=\"ds-confirm\" open><summary class=\"ds-btn ds-btn-danger\">Delete app…</summary><form class=\"ds-body\"><p>The app, its history and its webhook token are removed. The running job is stopped.</p><label class=\"ds-field\"><span class=\"ds-label\">Type <span class=\"ds-name\">blog</span> to confirm</span><input class=\"ds-input\" type=\"text\"></label><button type=\"button\" class=\"ds-btn ds-btn-danger\" disabled>Delete blog</button></form></details>",
+      "css": ".ds-confirm>summary{display:inline-flex;list-style:none;cursor:pointer;}.ds-confirm>summary::-webkit-details-marker{display:none;}.ds-btn{display:inline-flex;align-items:center;height:28px;padding:0 10px;border:1px solid transparent;border-radius:4px;font:500 13px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;}.ds-btn-danger{background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);border-color:oklch(0.46 0.10 40);}.ds-btn-danger:disabled{opacity:0.5;}.ds-body{display:flex;flex-direction:column;gap:14px;max-width:520px;margin-top:12px;padding:14px 16px;background:oklch(0.225 0.008 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;font:400 14px/1.5 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;color:oklch(0.955 0.004 255);}.ds-body p{margin:0;}.ds-field{display:flex;flex-direction:column;gap:8px;}.ds-label{font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.680 0.010 255);}.ds-name{text-transform:none;letter-spacing:normal;font-size:1em;}.ds-input{height:36px;padding:0 12px;background:oklch(0.195 0.007 255);border:1px solid oklch(0.340 0.010 255);border-radius:4px;color:oklch(0.955 0.004 255);font:400 14px/1 'IBM Plex Mono',ui-monospace,monospace;}"
+    },
+    {
+      "name": "Log View",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Shipped (cv-log). Mono lines: the copy's short id, a 'stderr' tag (stdout is blank), the text. Pause with a counter, Wrap lines, newest 5,000 lines kept.",
+      "html": "<div class=\"ds-panel\"><p class=\"ds-note\">Paused. 12 new lines.</p><div class=\"ds-lines\"><div class=\"ds-line\"><span class=\"ds-dim\">e4d1a9c2</span><span class=\"ds-dim\"></span><span>listening on :8080</span></div><div class=\"ds-line\"><span class=\"ds-dim\">e4d1a9c2</span><span class=\"ds-dim\">stderr</span><span>warn: slow request /health</span></div></div></div>",
+      "css": ".ds-panel{width:520px;background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;}.ds-note{margin:0;padding:8px 16px;border-bottom:1px solid oklch(0.275 0.009 255);font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:oklch(0.680 0.010 255);}.ds-lines{padding:8px 0;font:400 12.5px/1.6 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;}.ds-line{display:grid;grid-template-columns:5.5rem 3.25rem auto;column-gap:10px;padding:0 16px;color:oklch(0.955 0.004 255);white-space:pre;}.ds-line:hover{background:oklch(0.225 0.008 255);}.ds-dim{color:oklch(0.680 0.010 255);}"
     },
     {
       "name": "Command Block",
@@ -578,7 +610,7 @@
       "name": "Token Row",
       "kind": "card",
       "refersTo": "panel",
-      "description": "Shipped (cv-token-row inside cv-panel). Name and muted facts on the left; the status pill and the action in fixed columns so they line up row to row.",
+      "description": "Shipped (cv-token-row inside cv-panel). Name and muted facts on the left; the status pill and the action in fixed columns so they line up row to row. Revoke opens a confirmation under the row.",
       "html": "<div class=\"ds-panel\"><div class=\"ds-row\"><div><div class=\"ds-name\">ci-github</div><div class=\"ds-facts\">created 2 minutes ago &nbsp; used never &nbsp; expires never</div></div><span class=\"ds-pill ds-pill-healthy\"><span class=\"ds-mark ds-mark-healthy\"></span>active</span><button class=\"ds-btn-danger\">Revoke</button></div></div>",
       "css": ".ds-panel{width:520px;background:oklch(0.195 0.007 255);border:1px solid oklch(0.275 0.009 255);border-radius:6px;overflow:hidden;}.ds-row{display:grid;grid-template-columns:minmax(0,1fr) 5.75rem 4.75rem;column-gap:12px;align-items:center;padding:12px;}.ds-row:hover{background:oklch(0.225 0.008 255);}.ds-name{font:400 13px/1.35 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;color:oklch(0.955 0.004 255);}.ds-facts{margin-top:6px;font:400 12px/1.35 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;color:oklch(0.680 0.010 255);}.ds-pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:2px;border:1px solid;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;}.ds-pill-healthy{color:oklch(0.76 0.12 245);background:oklch(0.27 0.05 245);border-color:oklch(0.44 0.08 245);}.ds-mark{display:inline-block;width:8px;height:8px;border-radius:50%;background:oklch(0.76 0.12 245);}.ds-btn-danger{height:28px;padding:0 10px;border-radius:4px;border:1px solid oklch(0.46 0.10 40);background:oklch(0.27 0.06 40);color:oklch(0.68 0.17 40);font:500 13px/1 'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;}"
     }
@@ -606,12 +638,12 @@
       },
       {
         "name": "The Flat Ground Rule",
-        "body": "No gradients anywhere. The one exception is the diagonal hatch in a meter, which marks what copies have reserved.",
+        "body": "No gradients anywhere. The one exception is the hard-stop half fill of the rolling mark, which is a shape, not a blend.",
         "section": "colors"
       },
       {
         "name": "The Mono-Is-Real Rule",
-        "body": "If Nomad or the user's config produced it (`whoami`, `v24`, `hel-1`, `sha256:9f1c…`, `512 MB`, `14:02:11`), it's set in mono. If caravana is explaining something, it's sans. Never mix the two inside one token.",
+        "body": "If Nomad or the user's config produced it (`whoami`, `v24`, `node-1`, `sha256:9f1c…`, `512 MB`, `14:02:11`), it's set in mono. If caravana is explaining something, it's sans. Never mix the two inside one token.",
         "section": "typography"
       },
       {
@@ -636,31 +668,35 @@
       }
     ],
     "dos": [
-      "Do pair every status color with its mark (● ◐ ◆ ■ ○).",
-      "Do set every name, version, id, number and time in IBM Plex Mono with tabular figures.",
-      "Do open every overview with the headline sentence (30px, weight 400), with raw data in mono underneath.",
-      "Do build depth only from the four ink steps and the hairlines. Hover lifts a surface one step.",
-      "Do keep the main action neutral: a Readout White fill, at most one per view.",
-      "Do sort lists failed → warning → rolling → healthy → idle.",
-      "Do explain a problem in a sentence plus one fix button.",
-      "Do take every color from the theme tokens. If a color is missing, add a token instead of writing a raw oklch value in a component.",
-      "Do put every command to copy in its own cv-cmd block, and every error under its field with the field autofocused."
+      "**Do** pair every status color with its mark (● ◐ ◆ ■ ○).",
+      "**Do** set every name, version, id, number and time in IBM Plex Mono with tabular figures.",
+      "**Do** open every overview with the headline sentence (30px, weight 400), with raw data in mono underneath.",
+      "**Do** build depth only from the four ink steps and the hairlines. Hover lifts a surface one step.",
+      "**Do** keep the main action neutral: a Readout White fill, at most one per view.",
+      "**Do** sort lists failed → warning → rolling → healthy → idle.",
+      "**Do** explain a problem in a sentence plus one fix button, and put the raw Nomad error under it in muted mono.",
+      "**Do** give each view one primary button; the top bar's Deploy yields to the form's own on the Deployments tab.",
+      "**Do** confirm a consequence in a `<details>` disclosure under its button, and make Delete app ask for the app's name.",
+      "**Do** label stacked-row facts with their column's name (`data-label`) and give every standalone link and control a 44px target on touch screens.",
+      "**Do** tag a stderr line with the word \"stderr\" and keep stdout lines unmarked; set a log line as text, never markup.",
+      "**Do** put every command to copy in its own `cv-cmd` block, and every error under its field with the field autofocused.",
+      "**Do** take every color from the theme tokens. If a color is missing, add a token instead of writing a raw oklch value in a component."
     ],
     "donts": [
-      "Don't use the status hues for decoration, links, tabs or the main action.",
-      "Don't show status as a colored dot or color alone, and don't rely on telling red from green.",
-      "Don't add drop shadows to panels, cards, buttons or inputs. Shadows are for overlays only.",
-      "Don't use gradients, texture, imagery or illustration. The meter hatch is the only pattern.",
-      "Don't add a colored left-border accent to panels, rows or banners.",
-      "Don't round anything fully except the switch, the account avatar and the circular status marks.",
-      "Don't use daisyUI's solid `alert-*` fills for problems. Use a panel with a mark, a sentence and an action.",
-      "Don't loop any animation, including the live dot.",
-      "Don't put a label above a page headline or a panel title. The mono label is a section's own heading, never a kicker.",
-      "Don't use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a separator. Icons are Lucide line icons, and only in buttons and toolbars.",
-      "Don't draw a logo mark. The wordmark is the word \"caravana\" in Plex Mono 600.",
-      "Don't make it look like Dokploy, a gradient \"AI dashboard\", or a Grafana wall of charts.",
-      "Don't run a command into a sentence, or let a long one break at a hyphen mid-line.",
-      "Don't show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS."
+      "**Don't** use the status hues for decoration, links, tabs or the main action.",
+      "**Don't** show status as a colored dot or color alone, and don't rely on telling red from green.",
+      "**Don't** add drop shadows to panels, cards, buttons or inputs. Shadows are for overlays only.",
+      "**Don't** use gradients, texture, imagery or illustration. The rolling mark's half fill is the only pattern.",
+      "**Don't** add a colored left-border accent to panels, rows, banners or log lines. (The delete panel's full Fault Ember Edge outline is a border, not an accent.)",
+      "**Don't** round anything fully except the circular status marks and the live indicator's disc and ring.",
+      "**Don't** use daisyUI's solid `alert-*` fills for problems. Use a panel with a mark, a sentence and an action.",
+      "**Don't** loop any animation, including the live dot.",
+      "**Don't** put a label above a page headline or a panel title. The mono label is a section's own heading, never a kicker.",
+      "**Don't** use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a separator. Icons are Lucide line icons, and only in buttons and toolbars.",
+      "**Don't** draw a logo mark. The wordmark is the word \"caravana\" in Plex Mono 600.",
+      "**Don't** run a command into a sentence, or let a long one break at a hyphen mid-line.",
+      "**Don't** show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS.",
+      "**Don't** make it look like Dokploy, a gradient \"AI dashboard\", or a Grafana wall of charts."
     ]
   }
 }

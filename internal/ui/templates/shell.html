@@ -1,0 +1,68 @@
+{{/* The console's frame: a sidebar on wide screens, and under 900 px a top bar
+     whose "Menu" disclosure holds the same links. A page fills "content" (the
+     page itself) and may fill "action" (the one primary action, in the top
+     bar). pageData.Shell says who is signed in and where we are. */}}
+
+{{define "action"}}{{end}}
+
+{{define "shell-nav"}}
+<nav aria-label="Main" class="cv-nav">
+  <a href="/apps" class="cv-nav-link"{{if eq .Current "apps"}} aria-current="page"{{end}}>Apps</a>
+  <a href="/settings" class="cv-nav-link"{{if eq .Current "settings"}} aria-current="page"{{end}}>Settings</a>
+</nav>
+{{end}}
+
+{{define "shell-account"}}
+<div class="cv-account">
+  <span class="cv-account-who">
+    <span class="cv-label">Signed in</span>
+    <span class="cv-data text-fg-1 truncate" title="{{.Email}}">{{.Email}}</span>
+  </span>
+  <form method="post" action="/logout">
+    <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Sign out</button>
+  </form>
+</div>
+{{end}}
+
+{{define "shell-brand"}}
+<div class="cv-brand">
+  <a href="/apps" class="cv-wordmark">caravana</a>
+  <span class="cv-data-muted truncate" title="{{.Host}}">{{.Host}}</span>
+</div>
+{{end}}
+
+{{define "shell"}}
+<a href="#main" class="cv-skip">Skip to the page</a>
+<div class="cv-shell">
+  <aside class="cv-side">
+    {{template "shell-brand" .Shell}}
+    {{template "shell-nav" .Shell}}
+    {{template "shell-account" .Shell}}
+  </aside>
+  <div class="cv-frame">
+    <header class="cv-top">
+      <a href="/apps" class="cv-wordmark cv-top-brand">caravana</a>
+      <details class="cv-menu">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Menu</summary>
+        <div class="cv-menu-panel">
+          {{template "shell-brand" .Shell}}
+          {{template "shell-nav" .Shell}}
+          {{template "shell-account" .Shell}}
+        </div>
+      </details>
+      <nav aria-label="Breadcrumb" class="cv-crumbs">
+        <ol>
+          {{range $i, $c := .Shell.Crumbs}}
+          <li>{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">›</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}"{{if $c.Mono}} class="cv-data"{{end}}>{{$c.Label}}</a>{{else}}<span class="{{if $c.Mono}}cv-data text-fg-1{{else}}text-fg-1{{end}}" aria-current="page">{{$c.Label}}</span>{{end}}</li>
+          {{end}}
+        </ol>
+      </nav>
+      {{if .LiveURL}}<span id="live" role="status" aria-live="polite" data-live-indicator class="cv-live"><span class="cv-live-mark" aria-hidden="true"></span><span class="cv-live-text" data-live-text></span></span>{{end}}
+      <div class="cv-top-action">{{template "action" .}}</div>
+    </header>
+    <main id="main" class="cv-page">
+      {{template "content" .}}
+    </main>
+  </div>
+</div>
+{{end}}

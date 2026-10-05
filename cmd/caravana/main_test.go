@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 )
 
 func noEnv(string) string { return "" }
@@ -90,7 +92,7 @@ func TestRun(t *testing.T) {
 		t.Errorf("GET /v1/apps/x without a token = %d, want 401", resp.StatusCode)
 	}
 	// The pages are on the same listener: /login answers (with no admin yet,
-	// it shows the host command), and "/" goes to the account page.
+	// it shows the host command), and "/" goes to Apps.
 	resp, err = http.Get("http://" + addr + "/login")
 	if err != nil {
 		t.Fatalf("GET /login: %v", err)
@@ -180,7 +182,7 @@ func TestRunWebhookListener(t *testing.T) {
 		t.Errorf("health on the webhook listener = %d, want 404", got)
 	}
 	// The webhook-only listener serves no pages and no styles (FR-026): JSON 404s.
-	for _, p := range []string{"/login", "/account", "/static/app.css", "/"} {
+	for _, p := range []string{"/login", "/settings", "/static/app.css", "/"} {
 		resp, err := http.Get("http://" + hookAddr + p)
 		if err != nil {
 			t.Fatalf("GET %s on the webhook listener: %v", p, err)
@@ -214,5 +216,56 @@ func TestRunWebhookListenerSameAsMain(t *testing.T) {
 	code := runServer(context.Background(), []string{"-listen", addr, "-webhook-listen", addr, "-data-dir", t.TempDir()}, noEnv, &stderr)
 	if code != 1 || !strings.Contains(stderr.String(), "CARAVANA_WEBHOOK_LISTEN") {
 		t.Errorf("exit %d, stderr %s; want 1 naming CARAVANA_WEBHOOK_LISTEN", code, stderr.String())
+	}
+}
+
+// An open event stream must not make shutdown wait for the full timeout:
+// http.Server.Shutdown doesn't interrupt active requests, so the servers'
+// request contexts come from one context that shutdownAll cancels first
+// (research R12). The handler here is what every /live route does: stream
+// until the request's context ends.
+func TestShutdownEndsOpenStreams(t *testing.T) {
+	streamCtx, endStreams := context.WithCancel(context.Background())
+	defer endStreams()
+	addr := freeAddr(t)
+	srv := newServer(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := httpx.Stream(w); err != nil {
+			return
+		}
+		<-r.Context().Done()
+	}), streamCtx)
+	served := make(chan error, 1)
+	go func() { served <- srv.ListenAndServe() }()
+
+	var resp *http.Response
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var err error
+		if resp, err = http.Get("http://" + addr + "/live"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GET /live: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("GET /live = %d %q, want an open event stream", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+
+	start := time.Now()
+	if err := shutdownAll(endStreams, []*http.Server{srv}); err != nil {
+		t.Fatalf("shutdownAll: %v (the stream held it for %v)", err, time.Since(start))
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("shutdown took %v with a stream open, want well under the %v timeout", took, shutdownTimeout)
+	}
+	if err := <-served; err != http.ErrServerClosed {
+		t.Errorf("ListenAndServe = %v, want ErrServerClosed", err)
+	}
+	// The client sees the stream end rather than hang.
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Logf("reading the ended stream: %v", err) // a reset is as good as a clean close
 	}
 }

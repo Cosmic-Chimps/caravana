@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -91,17 +92,22 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		return 1
 	}
 
-	pages, err := ui.New(ui.Deps{Auth: auth, Proxies: cfg.TrustedProxies, Log: log})
+	pages, err := ui.New(ui.Deps{Auth: auth, Service: svc, Proxies: cfg.TrustedProxies, Log: log})
 	if err != nil {
 		log.Error("web pages", "error", err)
 		return 1
 	}
 	apiHandler := api.New(api.Deps{Service: svc, Auth: auth, Store: st, Proxies: cfg.TrustedProxies, Log: log})
-	servers := []*http.Server{newServer(cfg.Listen, httpx.LogRequests(log, root(apiHandler, pages)))}
+	// streamCtx is the parent of every request's context. shutdownAll cancels
+	// it first, which ends the open live streams; Shutdown alone waits for
+	// active requests, and a stream never finishes by itself.
+	streamCtx, endStreams := context.WithCancel(context.Background())
+	defer endStreams()
+	servers := []*http.Server{newServer(cfg.Listen, httpx.LogRequests(log, root(apiHandler, pages)), streamCtx)}
 	if cfg.WebhookListen != "" {
 		// The webhook-only listener: just POST /v1/webhooks/{id}, so it can be
 		// exposed while the API above stays private.
-		servers = append(servers, newServer(cfg.WebhookListen, api.NewWebhook(svc, log)))
+		servers = append(servers, newServer(cfg.WebhookListen, api.NewWebhook(svc, log), streamCtx))
 	}
 
 	// ListenAndServe blocks, so each server runs in its own goroutine and
@@ -115,13 +121,13 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	select {
 	case err := <-serveErr:
 		log.Error("server stopped", "error", err)
-		shutdownAll(servers)
+		shutdownAll(endStreams, servers)
 		return 1
 	case <-ctx.Done():
 	}
 
 	log.Info("shutting down", "timeout", shutdownTimeout.String())
-	if err := shutdownAll(servers); err != nil {
+	if err := shutdownAll(endStreams, servers); err != nil {
 		log.Error("shutdown did not finish in time; open requests were cut off", "error", err)
 		return 1
 	}
@@ -148,11 +154,13 @@ func root(apiHandler, pages http.Handler) http.Handler {
 	})
 }
 
-// newServer is an HTTP server with Caravana's timeouts.
-func newServer(addr string, h http.Handler) *http.Server {
+// newServer is an HTTP server with Caravana's timeouts. Every request's
+// context is derived from base, so cancelling base cancels all of them.
+func newServer(addr string, h http.Handler, base context.Context) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           h,
+		BaseContext:       func(net.Listener) context.Context { return base },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -161,8 +169,11 @@ func newServer(addr string, h http.Handler) *http.Server {
 }
 
 // shutdownAll stops every server, letting open requests finish within one
-// shared timeout.
-func shutdownAll(servers []*http.Server) error {
+// shared timeout. endStreams runs first: it cancels the context the servers'
+// requests derive from, so event streams end now instead of holding Shutdown
+// until the timeout.
+func shutdownAll(endStreams context.CancelFunc, servers []*http.Server) error {
+	endStreams()
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	var errs []error

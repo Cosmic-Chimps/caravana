@@ -176,22 +176,40 @@ components:
     textColor: "{colors.label-text}"
     rounded: "{rounded.xs}"
     height: "22px"
+  status-pill-quiet:
+    backgroundColor: "transparent"
+    typography: "{typography.data}"
+    padding: "0"
+    height: "22px"
   tab:
     textColor: "{colors.label-text}"
     height: "46px"
   tab-active:
     textColor: "{colors.readout-white}"
+  sidebar:
+    backgroundColor: "{colors.panel-face}"
+    width: "248px"
+  top-bar:
+    backgroundColor: "{colors.unlit-panel}"
+    height: "52px"
+  confirm-body:
+    backgroundColor: "{colors.raised-control}"
+    textColor: "{colors.readout-white}"
+    typography: "{typography.body}"
+    rounded: "{rounded.sm}"
+    padding: "14px 16px"
 ---
 
 # Design System: caravana console
 
-<!-- Source: the shipped CSS of feature 006 (internal/ui/style/theme.css and input.css, built into
-internal/ui/static/app.css by tools/ui-css.sh) and the two pages it styles, /login and /account.
-It started from the Claude Design handoff "caravana console", Handoff 2, 2026-10-04 (local only,
-in the gitignored design/console/), and keeps the handoff's tokens 1:1. Two handoff values changed
-when it was built: the label is 12px, not 11px, and the live-dot ping runs once, not forever.
-Components below that the console (007) hasn't built yet say so. Re-run /impeccable document after
-007 ships. -->
+<!-- Source: the shipped CSS of features 006 and 007 (internal/ui/style/theme.css and input.css,
+built into internal/ui/static/app.css by tools/ui-css.sh), the templates in internal/ui/templates
+and internal/ui/static/js/console.js. It started from the Claude Design handoff "caravana console",
+Handoff 2, 2026-10-04 (local only, in the gitignored design/console/), and keeps the handoff's
+tokens 1:1. Two handoff values changed when it was built: the label is 12px, not 11px, and the
+live-dot ping runs once, not forever. Pages built: /login, /settings, /apps, /apps/new and the four
+tabs of /apps/{id}. The handoff's Developer/Operator switch, org and project levels, capacity meters,
+the Switch control and the activity feed's drop-in are not built, so they are not recorded here. -->
 
 ## Overview
 
@@ -230,7 +248,7 @@ alone.
 
 ### Neutral
 - **Unlit Panel** (oklch 0.165 0.006 255): the page ground, behind everything.
-- **Panel Face** (oklch 0.195 0.007 255): panels, the sidebar, drawers.
+- **Panel Face** (oklch 0.195 0.007 255): panels, the sidebar, the Menu panel.
 - **Raised Control** (oklch 0.225 0.008 255): inputs, chips, secondary buttons, table headers,
   row hover inside a panel.
 - **Lit Control** (oklch 0.260 0.009 255): hover on raised controls, selected rows, ghost-button
@@ -251,8 +269,8 @@ in grayscale and for people with color vision deficiency.
   live-tick flash (at 16%). Healthy is blue, not green.
 - **Transit Lilac** (oklch 0.84 0.09 300), rolling ◐: a deploy in progress, a copy starting or
   draining.
-- **Caution Amber** (oklch 0.90 0.13 88), warning ◆: a human should look soon. Also the meter
-  fill above 75%.
+- **Caution Amber** (oklch 0.90 0.13 88), warning ◆: a human should look soon: a restarted copy's count, a deploy
+  warning, the Reconnecting indicator.
 - **Fault Ember** (oklch 0.68 0.17 40), failed ■: something is broken or was reverted. It's an
   orange-red, deliberately not a pure red.
 
@@ -265,8 +283,8 @@ still read.
 tabs and decoration stay neutral. When a screen is fully healthy, the only color on it is Signal
 Blue on the status marks.
 
-**The Flat Ground Rule.** No gradients anywhere. The one exception is the diagonal hatch in a
-meter, which marks what copies have reserved.
+**The Flat Ground Rule.** No gradients anywhere. The one exception is the hard-stop half fill of the
+rolling mark, which is a shape, not a blend.
 
 ## Typography
 
@@ -277,20 +295,24 @@ meter, which marks what copies have reserved.
 Sans is how caravana talks; mono is what Nomad reported.
 
 ### Hierarchy
-- **Headline** (400, 30px, 1.2): the page h1, written as the sentence about the present ("3 apps
-  healthy, 1 rollout in progress."). It's regular weight. The size carries it, not boldness.
+- **Headline** (400, 30px, 1.2; 24px under 640px): the page h1, written as the sentence about the
+  present ("1 app needs you: whoami has a failed deploy. 2 apps healthy."). It's regular weight.
+  The size carries it, not boldness.
 - **Lede** (400, 15px, 1.5): the one-line description under the headline, in Body Text.
-- **Title** (500, 18px, 1.35): panel and drawer titles.
+- **Title** (500, 18px, 1.35): panel titles.
 - **Body** (400, 14px, 1.35): all UI text, buttons, tab labels.
-- **Label** (500, 12px mono, 0.06em, uppercase): section heads like "CLUSTER" and "NEEDS YOU",
-  and field labels above inputs.
+- **Label** (500, 12px mono, 0.06em, uppercase): section heads like "COPIES" and "DEPLOY", and
+  field labels above inputs. A name inside a label ("Type blog to confirm") drops the uppercase so a
+  case-sensitive match can be read.
 - **Data** (400, 13px mono, tabular figures): names, versions, digests, ids, ports, hosts,
-  durations, timestamps, every number in a table.
-- **Metric** (500, 24px mono, tabular figures): a live value in a metric tile.
+  durations, timestamps, every number in a table. A name set inside a sentence is mono at 0.9em
+  (`cv-inline-mono`). The log text alone is 12.5px mono, line height 1.6, to sit tighter than Data.
+- **Metric** (500, 24px mono, tabular figures): the app page's name (`cv-apptitle`, 24px, line 1.15).
+  No metric tile is built.
 - **Wordmark** (600, 20px mono, -0.01em): the word "caravana", lowercase. There's no logo mark.
 
 ### Named Rules
-**The Mono-Is-Real Rule.** If Nomad or the user's config produced it (`whoami`, `v24`, `hel-1`,
+**The Mono-Is-Real Rule.** If Nomad or the user's config produced it (`whoami`, `v24`, `node-1`,
 `sha256:9f1c…`, `512 MB`, `14:02:11`), it's set in mono. If caravana is explaining something,
 it's sans. Never mix the two inside one token.
 
@@ -299,33 +321,57 @@ in place never shifts its neighbors.
 
 ## Layout
 
-- **Shell:** a fixed left sidebar (248px) holds the org name, the Developer/Operator switch,
-  grouped navigation, settings and the account row. A sticky top bar (52px) holds the
-  breadcrumbs (org › project › environment › page), a live clock with the live dot, and the
-  page's main action.
-- **Content:** a centered column, max 1440px, with 26px side gutters and about 36–40px of top
-  padding. It's a vertical stack: page header, then sections 28px apart.
-- **Page header:** the headline and lede on the left, the primary action aligned right.
-- **Sections:** a section head (label, a muted meta line in Body, an action on the right) over a
-  panel. Rows inside panels are CSS grid with 1px dividers between them, 46–52px tall for list
-  rows and 36px for dense table rows.
-- **Overview pages:** a main column plus a 400px right rail (needs you, activity, capacity).
-- **App pages:** four tabs by intent (Running, Ship, Configure, Logs). Raw and advanced settings
-  sit behind an explicit "Advanced settings" boundary.
-- **Login:** the only page without the shell. A centered 380px column on the bare ground, shipped
-  with 006: wordmark, the host in mono, "Sign in", two 42px fields, one primary button, and the
-  reset command in its own block under it.
-- **Account (006):** until 007 moves it into the shell as Settings, a centered 720px column on the
-  bare ground: wordmark and "Sign out" on one line, the headline sentence, then one labeled section
-  per job (Password, API tokens), each a flat panel.
-- **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is about
-  12px, gaps inside a grid 8–10px.
-- **Narrow screens:** the handoff is desktop-only. The 006 pages settle what they need: both are
-  single columns that keep their 24px side gutters down to 390px; the login column stays 380px
-  wide at most; a token row keeps its status pill and action in two fixed columns on the right
-  while its name and facts wrap on the left. On touch screens (`pointer: coarse`) every button
-  and field is at least 44px tall. How the sidebar and the grid rows of the console collapse on a
-  phone is still open, to be settled in 007.
+- **Shell:** a fixed left sidebar (248px) with the wordmark and the host in mono on top, the two
+  links (Apps, Settings) and, at the foot, the signed-in email in mono with a Sign out button. A
+  sticky top bar (52px, Unlit Panel, a Hairline under it) holds the breadcrumbs on the left (Apps ›
+  whoami › Configure), then the live indicator, then the primary-action slot at the right edge. The
+  slot is empty, and takes no room, when the page has no action. A skip link to the page sits above
+  all of it.
+- **Content:** a centered column, max 1440px, with 26px side gutters, 36px top and 60px bottom
+  padding. It's a vertical stack, sections 28px apart.
+- **Page header:** the headline and its lede, stacked, 900px wide at most. An app's header is
+  different: its name (24px mono), the status pill and the addresses on one wrapping line, then the
+  summary sentence, then the tabs.
+- **Sections:** a mono label as the section's own heading over a panel. Rows inside panels are CSS
+  grid with 1px dividers between them, 46-50px tall for list rows and 36px for table heads.
+- **Apps page:** a main column plus a 400px right rail holding Activity (one deployment per row, the
+  whole row a link to its app). What needs a human is said in the headline, not in a rail panel.
+  The rail drops below the main column under 1452px, when the column beside it would be under 720px.
+- **App pages:** four tabs by intent, in this order: Running, Deployments, Configure, Logs. The tab
+  is named "Deployments", never "Ship". Running is the app's own page (the copies in a live
+  table), Deployments holds the deploy form and the history, Configure the stored definition, the
+  webhook and Delete app, Logs the output of the copies. Each tab is its own URL.
+- **Login:** the only page without the shell. A centered 380px column on the bare ground: wordmark,
+  the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
+  own block under it.
+- **Settings:** inside the shell like every other page, left-aligned at the shared content width,
+  not a centered column and not a narrower one: the headline ("Signed in as <email>."), then one
+  labeled section per job (Password, API tokens), each a flat panel.
+- **The page's one primary action:** each view shows one primary (Readout White) button. An app's
+  tabs share one rule: the top bar's primary is "Deploy" on Running, Configure and Logs; on
+  Deployments the form's own "Deploy" button is the primary and the top bar shows none. The Apps
+  page's top bar has "New app" only while the list isn't empty; an empty list puts its one primary
+  inside the empty panel. Everything else on a page is secondary, danger or ghost-weight.
+- **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is 14-16px,
+  gaps inside a grid 8-16px.
+- **Narrow screens:**
+  - Under 900px the sidebar goes. The top bar shows the wordmark and a "Menu" disclosure (a
+    secondary small button) that opens a panel with the same brand, links and account row; the
+    breadcrumbs hide and the gutters become 16px. Beside the 248px sidebar a 900px screen would
+    leave only 600px for the page, so the switch is made before that.
+  - A table stacks its rows by its own width, with a container query, not by the screen: the Apps
+    table under 720px, the copies table under 660px. The column heads go; the name and the status
+    stay on the first line, and each other fact keeps its column's name in small mono above its
+    value (`data-label`).
+  - Under 640px definition rows stack (label over value) and a deployment's time and trigger drop
+    under its head. Under 480px the live indicator keeps its mark and hands its words to screen
+    readers only.
+  - On touch screens (`pointer: coarse`) every button and field is at least 44px tall, and so are
+    the links that stand alone (an address, an app's name, the wordmark, the skip link, the sidebar
+    links). A link inside a sentence keeps the line's height.
+  - Tabs scroll sideways if they don't fit. The 006 pages' rules still hold: the login column stays
+    380px at most, and a token row keeps its status pill and action in two fixed columns while its
+    name and facts wrap.
 
 ### Named Rules
 **The Problems-First Rule.** Every list sorts by status: failed, warning, rolling, healthy, idle.
@@ -335,11 +381,14 @@ What needs a human is always at the top.
 
 Flat. Depth comes from four lightness steps (Unlit Panel → Panel Face → Raised Control → Lit
 Control) and three border weights, never from shadow. Hovering a surface lifts it one step and
-moves its border up to Strong Edge.
+moves its border up to Strong Edge. A toggle that is on (Pause, Wrap lines) is the one pressed
+state: Lit Control ground, a brighter edge and a 2px Readout White bar inside its bottom edge. That
+bar is a mark, like the underline of an active tab, not depth.
 
 ### Shadow Vocabulary
 - **Overlay** (`box-shadow: 0 12px 32px oklch(0 0 0 / 0.45), 0 0 0 1px oklch(0.340 0.010 255)`):
-  dropdowns, the org switcher, drawers, modals. Nothing else.
+  the Menu panel under 900px and the Revoke confirmation that opens under a token row. Nothing
+  else.
 
 ### Named Rules
 **The Overlays-Only Shadow Rule.** A shadow means "this is floating above the page". Panels,
@@ -348,13 +397,13 @@ warning tint inside an inline prerequisite.
 
 ## Shapes
 
-Small, square-ish corners that read as machined, not soft: 2px for chips, pills and meters, 4px
-for buttons and inputs, 6px for panels, drawers and modals. Nothing is fully rounded except the
-switch track, the account avatar and the healthy/rolling/idle status marks. Borders are always 1px hairlines.
+Small, square-ish corners that read as machined, not soft: 2px for pills, 4px
+for buttons, inputs, confirmations and command blocks, 6px for panels and the Menu panel. Nothing is fully rounded except the
+healthy, rolling and idle status marks and the live indicator's disc and ring. Borders are always 1px hairlines.
 
 ## Components
 
-Precise and unadorned: controls feel like labeled switches on a panel, not soft app buttons.
+Precise and unadorned: controls feel like labeled switches on a panel, not soft app buttons. A disclosure under a button opens in the page, not over it.
 
 ### Buttons
 - **Shape:** gently squared (4px). Heights 28 / 36 / 44px (sm / md / lg), text 13 / 14 / 15px,
@@ -366,25 +415,34 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
 - **Ghost:** no fill, Body Text. Hover adds a Lit Control fill and Readout White text. For "Why?"
   and inline toolbar actions.
 - **Danger:** Fault Ember text on its tinted ground with the Fault Ember edge. The border goes
-  full Fault Ember on hover. Destructive actions confirm in a modal.
+  full Fault Ember on hover. Destructive actions confirm in a `<details>` disclosure under their button (see
+  Confirmation), never in a modal.
 - **States:** transitions are 120ms on `cubic-bezier(0.2, 0.7, 0.2, 1)`. Pressing nudges the
   button down 0.5px, with no scale. Focus is a 2px Signal Blue ring at 55%, offset 2px.
 - **Shipped as:** `cv-btn` with `cv-btn-primary`, `-secondary`, `-danger`, and the sizes `cv-btn-sm`
-  (28px) and `cv-btn-lg` (42px, the sign-in button). Ghost and icon buttons arrive with 007.
+  (28px) and `cv-btn-lg` (42px, the sign-in button). A link that does a button's job (Deploy, Show
+  older, Deploy again) is an `<a>` with the same classes. A `<summary>` that opens a confirmation
+  wears them too. There are no ghost or icon buttons in the build, and no icons at all.
+- **Toggle:** a secondary button with `aria-pressed`; on, it shows the pressed state described
+  under Elevation & Depth. Its label changes with the state only for Pause / Resume.
 - **Labels:** a verb that names the outcome ("Revert to v22", "Raise to 2 GB"). An optional
-  16px Lucide icon at 1.5px stroke sits before the label.
-- **Icon button:** a square ghost button (28px), always with `aria-label` and `title`.
+  16px Lucide icon at 1.5px stroke may sit before the label (none ships yet).
 
 ### Status pill and mark
+- **Marks in the build:** ● healthy, ◐ rolling (a ring with its left half filled: a deploy copy
+  starting, a rollout's progress line), ◆ warning, ■ failed, ○ idle. Also used bare, without a pill,
+  before a sentence (a progress line, a warning, an error under a field).
 - **Mark:** an 8px shape drawn in CSS, not a font glyph, so it never depends on which font loaded
   (`cv-mark-healthy`, `-rolling`, `-warning`, `-failed`, `-idle`). Healthy is a filled circle,
   rolling a circle with its left half filled (the one hard-stop gradient in the system), warning a
   rotated square, failed a square, idle an empty ring. Marks are `aria-hidden`; the word beside
   them carries the meaning for a screen reader.
 - **Pill:** 22px tall, 2px corners, the status ground and edge, the status color as text, in Data
-  mono at 12px, with the mark first (`cv-pill-healthy`, `-warning`, `-failed`, `-idle`; rolling
-  arrives with 007). An "idle" pill uses Raised Control and Label Text. A "quiet" variant drops the
-  tinted ground inside dense tables (007).
+  mono at 12px, with the mark first (`cv-pill-healthy`, `-warning`, `-failed`, `-idle`; rolling is
+  there too, `cv-pill-rolling`). An "idle" pill uses Raised Control and Label Text. The quiet variant
+  (`cv-pill-quiet`) drops the tinted ground, edge and padding inside the Apps, copies and Activity
+  tables; the mark and the word stay. The words are the status's own: healthy, failed, reverted,
+  not running. A reverted deployment wears the failed look.
 
 ### Panels
 - **Corner Style:** 6px.
@@ -403,8 +461,8 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   least 12 characters."). The field's border turns Fault Ember Edge (`aria-invalid="true"`), the
   error is announced (`role="alert"`), and the field is autofocused so the page lands on it.
 - **Date:** the same field, its value in mono and centered in the box, in the dark color scheme.
-- **Switch:** the only fully rounded control. Readout White track when on, label to the right,
-  hint underneath. Not built yet (007).
+- **Select:** the same field with a native menu in the dark color scheme (`cv-select`), 11rem at
+  least, label above. Used for the Logs toolbar (Copy, Stream).
 
 ### Notice
 One line of status, in the voice of the screen: the mark first, then a plain sentence in Readout
@@ -423,41 +481,114 @@ The shipped list row (`cv-token-row`): a grid of three columns inside a Panel. T
 mono with its facts under it in muted mono ("created 2 minutes ago", "used never", "expires never";
 for an expired or revoked token the last fact is "expired …" or "revoked …"), then the status pill,
 then the action. The pill and the action sit in fixed columns, so they line up from row to row.
-Times are relative, with the exact time in the `title`. Only an active row has "Revoke".
+Times are relative, with the exact time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
 
 ### Navigation
-- **Sidebar:** grouped links in Body, 34px tall with 4px corners. The active link sits on Raised
-  Control in Readout White, others in Body Text. Group names are Label style. A small Developer/Operator segmented switch
-  sits at the top.
-- **Tabs:** by intent, usually four. 46px tall, 26px apart, sans 500 at 13.5px, over a Hairline
-  rule. Inactive tabs use Label Text, turn Body Text on hover, and the active tab is Readout White
-  with a 2px Readout White underline. A count in mono can follow the label, and a status mark can
-  ride on a tab when something there needs attention.
-- **Breadcrumbs:** in the top bar, segments in mono where they're literal names, separated by ›.
+- **Sidebar:** two links in Body, 34px tall with 4px corners. The current page sits on Raised Control
+  in Readout White with a 2px Readout White bar at its left edge (a bar, not a hue); the other
+  link is Body Text. The brand block above shows the host in mono; the account row below shows
+  "Signed in" in Label, the email in mono and a Sign out button.
+- **Menu (under 900px):** a `<details>` whose summary is a small secondary button, opening a panel
+  of the same three blocks on Panel Face with 6px corners and the overlay shadow, 360px at most.
+- **Tabs:** four, by intent. They are links to their own pages, 46px tall, 26px apart, sans 500 at
+  13.5px, over a Hairline rule. Inactive tabs use Label Text, turn Body Text on hover, and the
+  current one (`aria-current="page"`) is Readout White with a 2px Readout White underline. A mono
+  count may follow a label.
+- **Breadcrumbs:** in the top bar, segments in mono where they're literal names (an app's id),
+  separated by ›, the last one current and cut with an ellipsis if long.
 
-### Meter
-A thin 6px bar on Lit Control with 1px corners and a mono uppercase label to its left. The solid
-fill is live usage, in the status color: Signal Blue normally, Caution Amber from 75%, Fault Ember
-from 90%. A band of fine vertical Strong Edge lines behind it is what copies have reserved, and a
-dashed line marks the limit. The fill width animates over 180ms.
+### Live indicator
+The top bar's readout of the page's event stream (`cv-live`). It is hidden until the script knows
+the stream's state, and each state has its own shape and words, so none depends on color:
+- **Live:** the 8px healthy disc and the word "Live". The disc pings once when the stream opens.
+- **Reconnecting:** the tilted warning square and "Reconnecting…". The browser retries by itself.
+- **Signed out:** the idle ring and "Signed out. Sign in again.", the second sentence a link back to
+  the page the admin was on.
+It sits in Data mono at 12px in Label Text; under 480px only the mark shows, with the words kept for
+screen readers. It is a polite `role="status"`.
 
-### Needs-you item and problem banner
-A panel with the status mark, one plain sentence (what happened, what caravana did), a Data mono
-detail line underneath with the raw Nomad facts and time, and exactly one action button that
-fixes it. It never uses a solid colored alert fill.
+### Empty state
+A list with nothing in it (`cv-empty`) says what is missing in a 15px sentence, one line in Label
+Text on what to do, and the one primary button that does it. It never shows a column of "none".
 
-### Ledger row (deployment history)
-One row per version, newest first. The version (`v24`) and time in mono, the trigger in sans,
-the changes in mono diffs (`9f1c2a → 4e0a77`). A failed version carries the failed pill and a
-sentence explaining the revert, plus a "Revert to" button on older healthy versions.
+### Table and rows
+The Apps table, the copies table and the history are grid rows inside a panel with 1px dividers and
+a Raised Control head of 36px in Label style (the history has no head). Names, versions, times and
+counts are Data mono. A cell of several lines (images, addresses) puts each on its own line, cut with
+an ellipsis and with the full value in the `title`. A copy that restarted shows its count in Caution
+Amber; the number is there either way. Stacking is described under Layout.
+
+### Deployment entry (history)
+One entry per deployment, newest first, in a panel row. The head line: the version in mono, the
+status pill, then at the right the trigger, time and duration in muted mono. Under it, in order:
+- one sentence in Readout White, 14px, with names and versions in mono ("v8 failed its health
+  checks. Nomad rolled back to v7, which is serving.");
+- the rollout's progress with the rolling mark, while it runs;
+- the raw Nomad error in muted mono, set apart;
+- at most one action button (a secondary small button);
+- deploy warnings, each with the warning mark, the field in mono, then what changed in meaning;
+- the images as deployed, pinned digests in muted mono, the full value in the `title`.
+A "Show older" secondary button ends the list when there is more.
+
+### Failed-deploy treatment
+A deploy that didn't hold is said once, in a sentence, and fixed with one action, never in an alert
+box. Wherever it appears it is the same:
+- the Apps headline names the app first: "1 app needs you: whoami has a failed deploy." An app with
+  healthy copies and a failed newest deploy still counts. A reverted deploy doesn't (what runs is
+  what was running), but its pill still reads "reverted" in the failed look;
+- the app's list row and its page header carry the failed pill, and the row sorts above healthy
+  ones (The Problems-First Rule);
+- on Running, an app with no copies says "No copies are running." and, under it, "v8 failed: see
+  Deployments." with the link;
+- on Deployments the entry carries the sentence, the raw error and the one action on the newest
+  entry only: "Deploy again", or "Change the image" when the image wasn't found. The action links to
+  the deploy form above it.
+
+### Log view
+The Logs tab: a toolbar, then a panel of mono lines.
+- **Toolbar:** two labeled selects (Copy, Stream) and an Apply secondary button, a plain GET form
+  that works without script. At the right, two toggles that exist only with script: Pause and Wrap
+  lines.
+- **A line:** a 3-column grid of Data-like mono at 12.5px: the copy's short id (8 characters, Label
+  Text, full id in the `title`), the stream tag, and the text in Readout White. A stderr line carries
+  the word "stderr" in its tag column; a stdout line leaves that column empty. The tag is a word in
+  the line's own column, not a color. A line is always set as text, never markup.
+- **Text:** keeps its spaces and doesn't wrap, so the list scrolls sideways; Wrap lines lets it
+  wrap. The list is 70vh tall at most and scrolls; it follows new lines only while the reader is
+  within 24px of the bottom.
+- **Pause:** the button becomes "Resume" and a note at the top of the panel counts what arrived:
+  "Paused. 12 new lines." The lines are held and drawn on Resume.
+- **Cap:** the list keeps the newest 5,000 lines; when older ones go, a note says "Older lines were
+  dropped."
+- **Empty:** "No output yet. New lines appear here."
+
+### Confirmation
+A consequence is confirmed in the page, under its button, with a `<details>` disclosure (`cv-confirm`),
+so it works without script. The summary is the button; the body opens below it on Raised Control:
+- the body is 520px at most, 4px corners, a Control Edge border, 14px 16px padding, a plain sentence in
+  Readout White about what happens, then one button;
+- **Replace token** and **Revoke token** say that the current token stops working at once. Revoke's
+  confirming button is danger; so is Revoke in a token row, where the body opens as an overlay under
+  the row's right edge so the three columns keep their widths;
+- **Delete app** sits last and apart, in a panel with a Fault Ember Edge border, as a danger small
+  button. Its body says what goes with the app, asks for the name ("Type blog to confirm"), and its
+  "Delete blog" button is disabled until the field holds exactly that name, case and all. The server
+  checks the name again. After a refusal the disclosure opens by itself with the error under the
+  field.
+
+### Configure definition
+The stored definition is facts, not a form: one panel per service, its name in mono, then rows of a
+11rem Label column and mono values (several values wrap side by side). Facts nobody set go in one
+muted line at the foot ("Using defaults: …") rather than one "none" each. No environment value is
+ever shown.
 
 ### Live updates
-When a server-sent event changes a value, that value's background flashes Signal Blue at 16%
-once and fades over 700ms. New feed rows drop in 3px over 180ms. The live dot in the top bar
-pings once per event (`--animate-ping-live` runs a single iteration; the handoff's looping
-version was a bug). Reduced-motion settings turn all of it off: the stylesheet ends with a
-`prefers-reduced-motion: reduce` rule that removes every animation and transition. The 006 pages
-animate nothing but the 120ms hover and focus transitions.
+Regions that change (the apps table, copies, history, activity) refresh in place from the page's
+event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is
+the live disc's single ping when the stream opens, the 120ms hover and focus transitions and the
+button press. The theme also defines a 700ms tick flash and a 180ms drop-in, but no 007 surface
+applies them yet. Reduced-motion settings turn all of it off: the stylesheet ends with a
+`prefers-reduced-motion: reduce` rule that removes every animation and transition.
 
 **The One Tick Rule.** Motion only answers an event, and only once. No looping animation, no
 pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
@@ -473,7 +604,16 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
   step.
 - **Do** keep the main action neutral: a Readout White fill, at most one per view.
 - **Do** sort lists failed → warning → rolling → healthy → idle.
-- **Do** explain a problem in a sentence plus one fix button.
+- **Do** explain a problem in a sentence plus one fix button, and put the raw Nomad error under it in
+  muted mono.
+- **Do** give each view one primary button; the top bar's Deploy yields to the form's own on the
+  Deployments tab.
+- **Do** confirm a consequence in a `<details>` disclosure under its button, and make Delete app ask
+  for the app's name.
+- **Do** label stacked-row facts with their column's name (`data-label`) and give every standalone
+  link and control a 44px target on touch screens.
+- **Do** tag a stderr line with the word "stderr" and keep stdout lines unmarked; set a log line as
+  text, never markup.
 - **Do** put every command to copy in its own `cv-cmd` block, and every error under its field with
   the field autofocused.
 - **Do** take every color from the theme tokens. If a color is missing, add a token instead of
@@ -483,10 +623,10 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Don't** use the status hues for decoration, links, tabs or the main action.
 - **Don't** show status as a colored dot or color alone, and don't rely on telling red from green.
 - **Don't** add drop shadows to panels, cards, buttons or inputs. Shadows are for overlays only.
-- **Don't** use gradients, texture, imagery or illustration. The meter hatch is the only pattern.
-- **Don't** add a colored left-border accent to panels, rows or banners.
-- **Don't** round anything fully except the switch, the account avatar and the circular status
-  marks.
+- **Don't** use gradients, texture, imagery or illustration. The rolling mark's half fill is the only pattern.
+- **Don't** add a colored left-border accent to panels, rows, banners or log lines. (The delete panel's full Fault Ember Edge outline is a border, not an accent.)
+- **Don't** round anything fully except the circular status marks and the live indicator's disc
+  and ring.
 - **Don't** use daisyUI's solid `alert-*` fills for problems. Use a panel with a mark, a sentence
   and an action.
 - **Don't** loop any animation, including the live dot.

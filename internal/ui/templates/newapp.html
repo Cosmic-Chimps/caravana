@@ -1,0 +1,60 @@
+{{/* The New app page (/apps/new): one plain form that posts to /apps. htmx posts
+     it in place (hx-post), so a refusal swaps the form for the same form with
+     its errors; without script the browser posts it and gets the page back.
+     "newapp-form" is also what an htmx post's answer is. Takes a newAppForm. */}}
+
+{{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}
+
+{{define "newapp-form"}}
+<form method="post" action="/apps" hx-post="/apps" hx-target="this" hx-swap="outerHTML" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+  {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .SavedID}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.}}</span> was saved, but its first deploy didn't start. Change what is wrong on its <a href="/apps/{{.}}/deployments">Deployments tab</a> and deploy again.</span></div>{{end}}
+
+  <label class="flex flex-col gap-2" for="name">
+    <span class="cv-label">Name</span>
+    <input class="cv-field" id="name" type="text" name="name" value="{{.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="31" required{{if .Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if eq .Focus "name"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Lowercase letters, digits and dashes. It names the app and its job.</span>
+    {{template "field-error" .Name}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="image">
+    <span class="cv-label">Image</span>
+    <input class="cv-field" id="image" type="text" name="image" value="{{.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Focus "image"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span></span>
+    {{template "field-error" .Image}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="port">
+    <span class="cv-label">Container port</span>
+    <input class="cv-field" id="port" type="text" inputmode="numeric" name="port" value="{{.Port.Value}}" autocomplete="off" spellcheck="false"{{if .Port.Error}} aria-invalid="true" aria-describedby="port-error"{{end}}{{if eq .Focus "port"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Optional. Without a port this runs as a worker: no address, no health check.</span>
+    {{template "field-error" .Port}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="domain">
+    <span class="cv-label">Domain</span>
+    <input class="cv-field" id="domain" type="text" name="domain" value="{{.Domain.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Domain.Error}} aria-invalid="true" aria-describedby="domain-error"{{end}}{{if eq .Focus "domain"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Optional. Needs a port. HTTPS is set up for it.</span>
+    {{template "field-error" .Domain}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="healthPath">
+    <span class="cv-label">Health check path</span>
+    <input class="cv-field" id="healthPath" type="text" name="healthPath" value="{{.Health.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Health.Error}} aria-invalid="true" aria-describedby="healthPath-error"{{end}}{{if eq .Focus "healthPath"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Used with a port. Leave it empty for a TCP check instead of an HTTP one.</span>
+    {{template "field-error" .Health}}
+  </label>
+
+  <div><button type="submit" class="cv-btn cv-btn-primary">Create and deploy</button></div>
+</form>
+{{end}}
+
+{{define "content"}}
+<section class="cv-main cv-narrow">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">New app</h1>
+    <p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it.</p>
+  </header>
+  {{template "newapp-form" .Form}}
+</section>
+{{end}}

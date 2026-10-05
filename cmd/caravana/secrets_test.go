@@ -171,17 +171,17 @@ func TestNoSecretReachesLogsOrResponses(t *testing.T) {
 	secrets["session"] = session
 	cookie := map[string]string{"Cookie": "caravana_session=" + session}
 
-	call("account page", http.MethodGet, "/account", cookie, nil, "")
-	_, raw = call("ui create token", http.MethodPost, "/account/tokens", cookie, url.Values{"name": {"made-by-ui"}}, "", "API token 3")
+	call("account page", http.MethodGet, "/settings", cookie, nil, "")
+	_, raw = call("ui create token", http.MethodPost, "/settings/tokens", cookie, url.Values{"name": {"made-by-ui"}}, "", "API token 3")
 	secrets["API token 3"] = regexp.MustCompile(`cvat_[A-Za-z0-9_-]{43}`).FindString(raw)
-	call("account with the token listed", http.MethodGet, "/account", cookie, nil, "")
-	call("ui wrong current password", http.MethodPost, "/account/password", cookie,
+	call("account with the token listed", http.MethodGet, "/settings", cookie, nil, "")
+	call("ui wrong current password", http.MethodPost, "/settings/password", cookie,
 		url.Values{"currentPassword": {wrongPass}, "newPassword": {newPassword}}, "")
 	call("api with the session cookie", http.MethodGet, "/v1/tokens", cookie, nil, "")
-	call("ui change password", http.MethodPost, "/account/password", cookie,
+	call("ui change password", http.MethodPost, "/settings/password", cookie,
 		url.Values{"currentPassword": {password}, "newPassword": {newPassword}}, "")
 	call("ui sign out", http.MethodPost, "/logout", cookie, nil, "")
-	call("account page after sign-out", http.MethodGet, "/account", cookie, nil, "")
+	call("account page after sign-out", http.MethodGet, "/settings", cookie, nil, "")
 
 	cli("reset-password", "a-reset-password-that-is-long\n", "reset-password")
 	record("cli reset-password", out.String()+errOut.String())

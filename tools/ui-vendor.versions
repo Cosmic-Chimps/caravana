@@ -1,0 +1,14 @@
+# Pinned browser files for tools/ui-vendor.sh. One line per file, fields
+# separated by spaces: name version tarball-URL path-inside-the-tarball sha256.
+#
+# `name` is the file's name under internal/ui/static/js/. The SHA-256 is of the
+# extracted file, so `check` can verify what is committed without the network.
+# Lines starting with # and blank lines are ignored.
+#
+# To update: change the version and URL, run `tools/ui-vendor.sh fetch` (it
+# prints the new sum and refuses to write the file), put the sum here, run
+# `fetch` again, and commit the new file. Compare the sum with the registry's
+# own tarball checksum (`npm view <package>@<version> dist.shasum`) first.
+
+htmx.min.js 2.0.11 https://registry.npmjs.org/htmx.org/-/htmx.org-2.0.11.tgz package/dist/htmx.min.js d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717
+sse.min.js 2.2.4 https://registry.npmjs.org/htmx-ext-sse/-/htmx-ext-sse-2.2.4.tgz package/dist/sse.min.js 98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136

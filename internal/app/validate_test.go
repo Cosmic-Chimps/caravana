@@ -58,6 +58,8 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Command = ""
 			a.Services[1].Args = []string{"--once"}
 		}, ""},
+		{"valid webhook trigger", func(a *App, d *Deployment) { d.Trigger = TriggerWebhook }, ""},
+		{"valid console trigger", func(a *App, d *Deployment) { d.Trigger = TriggerConsole }, ""},
 		{"valid replicas", func(a *App, d *Deployment) { a.Services[0].Replicas = new(3) }, ""},
 		{"valid empty name", func(a *App, d *Deployment) { a.Name = "" }, ""},
 		{"valid TCP check on only port", func(a *App, d *Deployment) {

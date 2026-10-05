@@ -233,8 +233,8 @@ func validateDeployment(a App, d Deployment) error {
 	if d.ID == "" {
 		return NewFieldError("deployment.id", "is required")
 	}
-	if d.Trigger != TriggerManual && d.Trigger != TriggerWebhook {
-		return NewFieldError("deployment.trigger", "%q is not %q or %q", d.Trigger, TriggerManual, TriggerWebhook)
+	if d.Trigger != TriggerManual && d.Trigger != TriggerWebhook && d.Trigger != TriggerConsole {
+		return NewFieldError("deployment.trigger", "%q is not %q, %q or %q", d.Trigger, TriggerManual, TriggerWebhook, TriggerConsole)
 	}
 
 	services := map[string]bool{}

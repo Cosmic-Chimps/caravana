@@ -31,6 +31,9 @@ type Service struct {
 	// them finish on shutdown (like awaiting background Tasks in C#).
 	watchers sync.WaitGroup
 
+	changes   changeHub     // live notices for open pages, see changes.go
+	watchIdle time.Duration // how long the copies watcher outlives its last subscriber
+
 	budget   time.Duration // for one deploy's registry and Nomad work
 	retryGap time.Duration // between retries of a store write
 }
@@ -48,13 +51,14 @@ func (e *DeployError) Unwrap() error { return e.Err }
 // New returns a Service. Call Start before deploying.
 func New(st *store.Store, d *deploy.Deployer, log *slog.Logger) *Service {
 	return &Service{
-		store:    st,
-		deployer: d,
-		log:      log,
-		apps:     map[string]*appState{},
-		bg:       context.Background(),
-		budget:   25 * time.Second,
-		retryGap: time.Second,
+		store:     st,
+		deployer:  d,
+		log:       log,
+		apps:      map[string]*appState{},
+		bg:        context.Background(),
+		watchIdle: defaultWatchIdle,
+		budget:    25 * time.Second,
+		retryGap:  time.Second,
 	}
 }
 
@@ -111,7 +115,11 @@ func (s *Service) background() context.Context {
 func (s *Service) update(ctx context.Context, id string, u store.DeploymentUpdate) (store.DeploymentRecord, error) {
 	for {
 		rec, err := s.store.UpdateDeployment(ctx, id, u)
-		if err == nil || errors.Is(err, store.ErrInvalidTransition) || errors.Is(err, store.ErrNotFound) {
+		if err == nil {
+			s.deploymentChanged(rec.AppID)
+			return rec, nil
+		}
+		if errors.Is(err, store.ErrInvalidTransition) || errors.Is(err, store.ErrNotFound) {
 			return rec, err
 		}
 		s.log.Warn("deployment update failed; retrying", "deployment", id, "status", u.Status, "error", err)

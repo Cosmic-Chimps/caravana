@@ -24,6 +24,7 @@ const (
 	codeUnauthorized         = "unauthorized"
 	codeCrossOrigin          = "cross_origin"
 	codeTokenNameTaken       = "token_name_taken"
+	codeAppExists            = "app_exists"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

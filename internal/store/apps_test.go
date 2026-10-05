@@ -114,3 +114,185 @@ func TestAppsErrors(t *testing.T) {
 		t.Errorf("GetApp with a newer document = %v, want ErrSchemaTooNew", err)
 	}
 }
+
+func TestListApps(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	empty, err := s.ListApps(ctx)
+	if err != nil {
+		t.Fatalf("ListApps on an empty store: %v", err)
+	}
+	if empty == nil || len(empty) != 0 {
+		t.Errorf("ListApps on an empty store = %#v, want an empty, non-nil slice", empty)
+	}
+
+	// Saved out of order: the list comes back by ID.
+	for _, id := range []string{"whoami", "blog", "shop"} {
+		a := apptest.Whoami().App
+		a.ID = id
+		if _, err := s.SaveApp(ctx, a); err != nil {
+			t.Fatalf("SaveApp %s: %v", id, err)
+		}
+	}
+	got, err := s.ListApps(ctx)
+	if err != nil {
+		t.Fatalf("ListApps: %v", err)
+	}
+	var ids []string
+	for _, rec := range got {
+		ids = append(ids, rec.App.ID)
+	}
+	if want := []string{"blog", "shop", "whoami"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("ListApps IDs = %v, want %v", ids, want)
+	}
+
+	// Each record is the same one GetApp returns.
+	for _, rec := range got {
+		one, err := s.GetApp(ctx, rec.App.ID)
+		if err != nil || !reflect.DeepEqual(one, rec) {
+			t.Errorf("ListApps record %q = %+v, GetApp = %+v, %v; want equal", rec.App.ID, rec, one, err)
+		}
+	}
+
+	// A document from a newer Caravana is an error naming the app, like GetApp.
+	if _, err := s.db.ExecContext(ctx, "UPDATE apps SET schema_version = 2 WHERE id = 'blog'"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if _, err := s.ListApps(ctx); !errors.Is(err, ErrSchemaTooNew) {
+		t.Errorf("ListApps with a newer document = %v, want ErrSchemaTooNew", err)
+	}
+}
+
+func TestInsertApp(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	a := apptest.Whoami().App
+
+	rec, err := s.InsertApp(ctx, a)
+	if err != nil {
+		t.Fatalf("InsertApp: %v", err)
+	}
+	if !reflect.DeepEqual(rec.App, a) || !rec.CreatedAt.Equal(rec.UpdatedAt) {
+		t.Errorf("InsertApp = %+v, want the app as sent, created and updated together", rec)
+	}
+
+	// The same ID again is refused, and the stored app stays as it was.
+	other := apptest.Whoami().App
+	other.Services[0].Replicas = new(5)
+	if _, err := s.InsertApp(ctx, other); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("second InsertApp = %v, want ErrAlreadyExists", err)
+	}
+	got, err := s.GetApp(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetApp: %v", err)
+	}
+	if !reflect.DeepEqual(got, rec) {
+		t.Errorf("the stored app changed\n got: %+v\nwant: %+v", got, rec)
+	}
+
+	if _, err := s.InsertApp(ctx, app.App{}); err == nil {
+		t.Error("InsertApp without an ID did not fail")
+	}
+}
+
+func TestDeleteApp(t *testing.T) {
+	ctx := context.Background()
+	count := func(t *testing.T, s *Store, query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := s.db.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		return n
+	}
+
+	t.Run("removes the token, the deployments and the app", func(t *testing.T) {
+		s := storeWithApps(t)
+		for _, id := range []string{"d1", "d2"} {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id)); err != nil {
+				t.Fatalf("CreateDeployment: %v", err)
+			}
+		}
+		if _, err := s.SetWebhookToken(ctx, "blog", "aa"); err != nil {
+			t.Fatalf("SetWebhookToken: %v", err)
+		}
+
+		if err := s.DeleteApp(ctx, "blog"); err != nil {
+			t.Fatalf("DeleteApp: %v", err)
+		}
+		if _, err := s.GetApp(ctx, "blog"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("GetApp after delete = %v, want ErrNotFound", err)
+		}
+		for _, table := range []string{"deployments", "webhook_tokens"} {
+			if n := count(t, s, "SELECT count(*) FROM "+table+" WHERE app_id = 'blog'"); n != 0 {
+				t.Errorf("%s still has %d rows of the app", table, n)
+			}
+		}
+		if _, err := s.GetDeployment(ctx, "d1"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("GetDeployment after delete = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("an app with nothing else attached is deleted too", func(t *testing.T) {
+		s := storeWithApps(t)
+		if err := s.DeleteApp(ctx, "shop"); err != nil {
+			t.Fatalf("DeleteApp: %v", err)
+		}
+		if n := count(t, s, "SELECT count(*) FROM apps"); n != 2 {
+			t.Errorf("apps left = %d, want 2", n)
+		}
+	})
+
+	t.Run("an unknown ID is ErrNotFound and nothing changes", func(t *testing.T) {
+		s := storeWithApps(t)
+		if _, err := s.CreateDeployment(ctx, "shop", newDeployment("d1")); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DeleteApp(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("DeleteApp(nope) = %v, want ErrNotFound", err)
+		}
+		if n := count(t, s, "SELECT count(*) FROM apps"); n != 3 {
+			t.Errorf("apps = %d, want 3", n)
+		}
+		if n := count(t, s, "SELECT count(*) FROM deployments"); n != 1 {
+			t.Errorf("deployments = %d, want 1", n)
+		}
+	})
+
+	t.Run("another app's rows are untouched", func(t *testing.T) {
+		s := storeWithApps(t)
+		for _, id := range []string{"blog", "shop"} {
+			if _, err := s.CreateDeployment(ctx, id, newDeployment("d-"+id)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SetWebhookToken(ctx, id, "bb"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.DeleteApp(ctx, "blog"); err != nil {
+			t.Fatalf("DeleteApp: %v", err)
+		}
+		if _, err := s.GetApp(ctx, "shop"); err != nil {
+			t.Errorf("GetApp(shop) = %v", err)
+		}
+		if _, err := s.GetDeployment(ctx, "d-shop"); err != nil {
+			t.Errorf("GetDeployment(d-shop) = %v", err)
+		}
+		if _, err := s.GetWebhookToken(ctx, "shop"); err != nil {
+			t.Errorf("GetWebhookToken(shop) = %v", err)
+		}
+	})
+
+	t.Run("the ID can be stored again", func(t *testing.T) {
+		s := storeWithApps(t)
+		if err := s.DeleteApp(ctx, "blog"); err != nil {
+			t.Fatal(err)
+		}
+		a := apptest.Whoami().App
+		a.ID = "blog"
+		if _, err := s.InsertApp(ctx, a); err != nil {
+			t.Errorf("InsertApp after delete = %v", err)
+		}
+	})
+}

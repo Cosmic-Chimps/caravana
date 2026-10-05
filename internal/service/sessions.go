@@ -123,24 +123,43 @@ func (a *Auth) SignOut(ctx context.Context, sessionValue string) error {
 // absolute expiry and not idle for 12 hours. Anything else is
 // ErrNotAuthenticated. A use is recorded at most once a minute.
 func (a *Auth) CheckSession(ctx context.Context, sessionValue string) error {
-	if sessionValue == "" {
-		return ErrNotAuthenticated
-	}
-	id := hashToken(sessionValue)
-	rec, err := a.store.GetSession(ctx, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return ErrNotAuthenticated
-	} else if err != nil {
-		return fmt.Errorf("check session: %w", err) // the store failed: a 500, not a 401
+	id, rec, err := a.liveSession(ctx, sessionValue)
+	if err != nil {
+		return err
 	}
 	now := a.now().UTC()
-	if !now.Before(rec.ExpiresAt) || !now.Before(rec.LastSeenAt.Add(sessionIdle)) {
-		return ErrNotAuthenticated
-	}
 	if now.Sub(rec.LastSeenAt) >= touchEvery {
 		if err := a.store.TouchSession(ctx, id, now); err != nil {
 			a.log.Warn("could not record session use", "error", err)
 		}
 	}
 	return nil
+}
+
+// CheckSessionQuiet is CheckSession without renewing the session's idle time.
+// Live streams use it: an open page that nobody touches must not keep a
+// session alive forever (research R11).
+func (a *Auth) CheckSessionQuiet(ctx context.Context, sessionValue string) error {
+	_, _, err := a.liveSession(ctx, sessionValue)
+	return err
+}
+
+// liveSession finds the session and checks both expiry rules. It records
+// nothing. The returned id is the stored key (the SHA-256 of the value).
+func (a *Auth) liveSession(ctx context.Context, sessionValue string) (string, store.SessionRecord, error) {
+	if sessionValue == "" {
+		return "", store.SessionRecord{}, ErrNotAuthenticated
+	}
+	id := hashToken(sessionValue)
+	rec, err := a.store.GetSession(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", store.SessionRecord{}, ErrNotAuthenticated
+	} else if err != nil {
+		return "", store.SessionRecord{}, fmt.Errorf("check session: %w", err) // the store failed: a 500, not a 401
+	}
+	now := a.now().UTC()
+	if !now.Before(rec.ExpiresAt) || !now.Before(rec.LastSeenAt.Add(sessionIdle)) {
+		return "", store.SessionRecord{}, ErrNotAuthenticated
+	}
+	return id, rec, nil
 }

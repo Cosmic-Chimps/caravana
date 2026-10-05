@@ -3,10 +3,12 @@ package app
 // Trigger says what started a deployment.
 type Trigger string
 
-// The triggers Phase 1 knows.
+// The triggers Caravana knows: the API, a webhook, and the web console.
 const (
 	TriggerManual  Trigger = "manual"
 	TriggerWebhook Trigger = "webhook"
+	// TriggerConsole is a deploy started from the web console.
+	TriggerConsole Trigger = "console"
 )
 
 // Deployment is one go-live event for an App. Image tags are resolved to
@@ -19,7 +21,7 @@ type Deployment struct {
 	// ID is unique per deploy. It goes into the job's meta, which makes every
 	// deploy a new job version even when nothing else changed.
 	ID string `json:"id"`
-	// Trigger is TriggerManual or TriggerWebhook.
+	// Trigger is TriggerManual, TriggerWebhook or TriggerConsole.
 	Trigger Trigger `json:"trigger"`
 	// Digests maps each service name to its resolved image, in the form
 	// "repo@sha256:<64 hex>". Exactly one entry per service.

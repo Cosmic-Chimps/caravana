@@ -17,10 +17,12 @@ func (s *Service) resume(ctx context.Context) error {
 	}
 	for _, rec := range unfinished {
 		s.log.Info("resuming deployment", "app", rec.AppID, "deployment", rec.Deployment.ID, "status", rec.Status)
+		// The app's own watch context, so deleting the app stops this one too.
+		watch := s.watchContext(rec.AppID)
 		s.watchers.Add(1)
 		go func() {
 			defer s.watchers.Done()
-			s.settle(ctx, rec)
+			s.settle(watch, rec)
 		}()
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -33,6 +34,42 @@ type deploymentJSON struct {
 	Error      string            `json:"error,omitempty"`
 	CreatedAt  time.Time         `json:"createdAt"`
 	UpdatedAt  time.Time         `json:"updatedAt"`
+	// Progress is only set while the deployment runs, and only by the reads
+	// that look it up (getDeployment, and the newest running one in listDeployments).
+	Progress *progressJSON `json:"progress,omitempty"`
+}
+
+// progressJSON is a rollout's progress as the API shows it (schema Progress).
+type progressJSON struct {
+	Wanted         int    `json:"wanted"`
+	Placed         int    `json:"placed"`
+	Healthy        int    `json:"healthy"`
+	Unhealthy      int    `json:"unhealthy"`
+	CanariesWanted int    `json:"canariesWanted"`
+	Promoted       bool   `json:"promoted"`
+	Description    string `json:"description,omitempty"`
+}
+
+func toProgressJSON(p service.Progress) *progressJSON {
+	return &progressJSON{Wanted: p.Wanted, Placed: p.Placed, Healthy: p.Healthy, Unhealthy: p.Unhealthy,
+		CanariesWanted: p.CanariesWanted, Promoted: p.Promoted, Description: p.Description}
+}
+
+// withProgress adds the rollout's progress to a running deployment. Progress
+// is a bonus: when Nomad can't be read the deployment is still answered, so
+// the failure is logged and the field left out.
+func (s *server) withProgress(r *http.Request, rec store.DeploymentRecord, d *deploymentJSON) {
+	if rec.Status != store.StatusRunning {
+		return
+	}
+	p, err := s.svc.Progress(r.Context(), rec)
+	if err != nil {
+		s.log.Warn("can't read rollout progress; answering without it", "deployment", rec.Deployment.ID, "error", err)
+		return
+	}
+	if p != nil {
+		d.Progress = toProgressJSON(*p)
+	}
 }
 
 func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
@@ -100,28 +137,72 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// listLimit reads the optional ?limit= of a list route: 1 to maxListLimit,
+// defaultListLimit when absent.
+func listLimit(r *http.Request) (int, error) {
+	v := r.URL.Query().Get("limit")
+	if v == "" {
+		return defaultListLimit, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > maxListLimit {
+		return 0, &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "limit",
+			Message: fmt.Sprintf("must be a whole number from 1 to %d, got %q", maxListLimit, v)}
+	}
+	return n, nil
+}
+
+// deploymentList is the DeploymentList schema.
+func deploymentList(recs []store.DeploymentRecord) []deploymentJSON {
+	list := make([]deploymentJSON, 0, len(recs))
+	for _, rec := range recs {
+		list = append(list, toDeploymentJSON(rec))
+	}
+	return list
+}
+
+// writeDeploymentList answers with the DeploymentList schema.
+func writeDeploymentList(w http.ResponseWriter, list []deploymentJSON) {
+	writeJSON(w, http.StatusOK, struct {
+		Deployments []deploymentJSON `json:"deployments"`
+	}{Deployments: list})
+}
+
 // listDeployments answers GET /v1/apps/{id}/deployments?limit=.
 func (s *server) listDeployments(w http.ResponseWriter, r *http.Request) error {
-	limit := defaultListLimit
-	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > maxListLimit {
-			return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "limit",
-				Message: fmt.Sprintf("must be a whole number from 1 to %d, got %q", maxListLimit, v)}
-		}
-		limit = n
+	limit, err := listLimit(r)
+	if err != nil {
+		return err
 	}
 	recs, err := s.svc.ListDeployments(r.Context(), r.PathValue("id"), limit)
 	if err != nil {
 		return err
 	}
-	out := struct {
-		Deployments []deploymentJSON `json:"deployments"`
-	}{Deployments: make([]deploymentJSON, 0, len(recs))}
-	for _, rec := range recs {
-		out.Deployments = append(out.Deployments, toDeploymentJSON(rec))
+	list := deploymentList(recs)
+	// Only the newest running deployment: older ones that still say running
+	// are about to be superseded, and each lookup is a Nomad request.
+	for i, rec := range recs {
+		if rec.Status == store.StatusRunning {
+			s.withProgress(r, rec, &list[i])
+			break
+		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeDeploymentList(w, list)
+	return nil
+}
+
+// listRecentDeployments answers GET /v1/deployments?limit=: the newest
+// deployments across all apps.
+func (s *server) listRecentDeployments(w http.ResponseWriter, r *http.Request) error {
+	limit, err := listLimit(r)
+	if err != nil {
+		return err
+	}
+	recs, err := s.svc.RecentDeployments(r.Context(), limit)
+	if err != nil {
+		return err
+	}
+	writeDeploymentList(w, deploymentList(recs))
 	return nil
 }
 
@@ -131,6 +212,8 @@ func (s *server) getDeployment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, toDeploymentJSON(rec))
+	d := toDeploymentJSON(rec)
+	s.withProgress(r, rec, &d)
+	writeJSON(w, http.StatusOK, d)
 	return nil
 }

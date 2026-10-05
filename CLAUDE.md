@@ -51,15 +51,28 @@ expiry, shown once, SHA-256 stored) or a signed-in session (server-side, 12 h id
 per address (5 per 15 minutes, IPv6 per /64, stored, `CARAVANA_TRUSTED_PROXIES` says whose
 `X-Forwarded-*` to believe). Auth is `service.Auth` (PBKDF2 passwords, no secret key, nothing in
 Nomad Variables); `internal/httpx` has the client address, cookie and request-log helpers;
-`internal/ui` serves `/login`, `/account` (password, API tokens) and `/static` on the main
+`internal/ui` serves `/login`, the settings page (password, API tokens) and `/static` on the main
 listener, never on the webhook-only one. The stylesheet is generated, not hand-written:
 `tools/ui-css.sh build|check` runs the pinned Tailwind v4 standalone CLI with daisyUI 5 over
 `internal/ui/style/` and the templates into the committed `internal/ui/static/app.css` (CI runs
 `check`); styles follow `DESIGN.md`. The gate has a first step `api-needs-token`; `host.sh admin`
 runs the CLI on the VM and `prove` makes and revokes its own token. For local work:
 `go run ./cmd/caravana`, then `go run ./cmd/caravana admin init --email you@example.com`, then
-sign in at `http://127.0.0.1:7070/login`. Branches 001–006 are stacked and not yet merged into
-`main`. Next: 007.
+sign in at `http://127.0.0.1:7070/login`. Features 001–006 are merged into `main`. Feature 007 is
+implemented on branch `007-htmx-ui-v1`: the web console, `internal/ui` calling only
+`internal/service`. Pages: Apps (list, headline, activity), New app, and per app Running,
+Deployments (deploy form, history with rollout progress), Configure (definition, webhook token,
+delete) and Logs; `/settings` is the old `/account` (which redirects). Live updates are
+server-sent events carrying only notices ("deployments changed"); the page refetches that region
+from a `/parts/...` route, so everything also works as plain HTML and forms without JavaScript.
+htmx and its SSE extension are vendored, not fetched at run time: `tools/ui-vendor.sh fetch`
+downloads the pinned versions (`tools/ui-vendor.versions`) and verifies their checksums,
+`tools/ui-vendor.sh check` verifies the committed files offline (CI runs it). The API gained
+`listApps`, `createApp`, `deleteApp`, `listRecentDeployments`, `listCopies` and `getLogs`
+(`api/openapi.yaml` 0.5.0), and Caravana's scoped Nomad policy gained `read-logs`. `TestLab` runs
+the console steps (`cmd/caravana/console_lab_test.go`; `TestConsoleLab` runs only those, in about
+a minute) before the gate steps, and the gate has a step `console-reads` that catches a missing
+`read-logs`. For local work the console is at `http://127.0.0.1:7070/`. Next: 008.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -73,8 +86,8 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 006 Minimal auth: one admin login for the UI, API tokens for clients (before anything is public)
   (done, branch `006-minimal-auth`)
 - 007 HTMX UI v1: app list and detail, deploy button, deployment history with live status, logs
-  from Nomad allocations. It calls only `internal/service`. Open decision: SSE vs. HTMX polling.
-  The maintainer has a visual design made in Claude Design to share when 007 starts.
+  from Nomad allocations. It calls only `internal/service`. Live updates are SSE (decided).
+  (done, branch `007-htmx-ui-v1`)
 - 008 Secrets: `secrets.Provider`, Nomad Variables, declarative replace on every deploy
 - 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
   host volumes
@@ -118,11 +131,15 @@ TOKEN="$(go run ./cmd/caravana admin create-token --name local)"   # an API toke
 curl -s -H "Authorization: Bearer $TOKEN" localhost:7070/v1/tokens
 tools/ui-css.sh build              # regenerate internal/ui/static/app.css after changing internal/ui/style or templates
 tools/ui-css.sh check              # fails if the committed app.css is out of date (CI runs it)
+tools/ui-vendor.sh fetch           # re-download the pinned htmx + SSE extension into internal/ui/static/js (after bumping tools/ui-vendor.versions)
+tools/ui-vendor.sh check           # fails if the committed scripts don't match their pinned checksums (CI runs it)
+open http://127.0.0.1:7070/        # the console, after `go run ./cmd/caravana` and `admin init`; sign in
 ```
 
 ```bash
 eval "$(deploy/dev/lab.sh env)"                               # Caravana reads NOMAD_ADDR / NOMAD_TOKEN
-CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 20m   # opt-in end-to-end test (~12 min)
+CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 20m   # opt-in end-to-end test: console steps, then the gate (~12 min)
+CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab -v   # only the console steps (~1 min)
 ```
 
 ```bash

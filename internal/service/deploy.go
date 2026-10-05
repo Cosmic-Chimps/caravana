@@ -16,10 +16,22 @@ import (
 
 // appState orders the deploys of one app (research R9). mu is held from
 // image resolution through registration, so two deploys of the same app
-// never interleave. latest is the most recently requested deployment.
+// never interleave (DeleteApp takes it too). The other fields belong to
+// Service.mu, except deleted, which belongs to mu.
 type appState struct {
-	mu     sync.Mutex
-	latest string
+	mu sync.Mutex
+	// deleted is set by DeleteApp while it holds mu. A deploy that was waiting
+	// for mu sees it and gives up, instead of registering a job for an app that
+	// is gone.
+	deleted bool
+
+	latest string // the most recently requested deployment
+
+	// watch is the context of the app's rollout watchers: a child of the
+	// process context, created with the first watcher. stopWatchers ends it,
+	// which is how DeleteApp stops them all (research R16).
+	watch        context.Context
+	stopWatchers context.CancelFunc
 }
 
 // Deploy validates the app, saves it and deploys it. It returns as soon as
@@ -35,6 +47,7 @@ func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	if _, err := s.store.SaveApp(ctx, a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	s.appChanged(a.ID)
 	return s.deploy(ctx, a, trigger)
 }
 
@@ -58,6 +71,7 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	s.deploymentChanged(a.ID)
 	state := s.markLatest(a.ID, dep.ID)
 
 	// From here on the deploy finishes even if the client goes away:
@@ -69,6 +83,10 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	// older deploy from ever registering after a newer one.
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	if state.deleted {
+		// DeleteApp ran while this deploy waited, and erased its record with the app.
+		return store.DeploymentRecord{}, fmt.Errorf("app %q was deleted: %w", a.ID, store.ErrNotFound)
+	}
 	// The budget starts once the lock is held, so waiting behind another
 	// deploy of the same app doesn't eat into it (research R11).
 	ctx, cancel := context.WithTimeout(ctx, s.budget)
@@ -109,6 +127,7 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	cancelWrite()
 	if err == nil {
 		rec = upd
+		s.deploymentChanged(a.ID)
 	} else {
 		s.log.Error("record running deployment; the watcher will retry", "deployment", dep.ID, "error", err)
 		rec.Status, rec.JobVersion, rec.Deployment.Digests, rec.Warnings = store.StatusRunning, reg.JobVersion, digests, warnings
@@ -133,7 +152,7 @@ func (s *Service) fail(rec store.DeploymentRecord, cause error) (store.Deploymen
 // ends. running is the update that marks the record running; the watcher
 // writes it again first, in case the deploy's own write failed.
 func (s *Service) startWatcher(appID, deploymentID string, version *uint64, running store.DeploymentUpdate) {
-	ctx := s.background()
+	ctx := s.watchContext(appID)
 	s.watchers.Add(1)
 	go func() {
 		defer s.watchers.Done()
@@ -204,7 +223,10 @@ func (s *Service) findVersion(ctx context.Context, appID, deploymentID string) (
 
 // finish records a final status, even during shutdown.
 func (s *Service) finish(deploymentID string, status store.Status, msg string) {
-	if _, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); err != nil {
+	if _, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); errors.Is(err, store.ErrNotFound) {
+		// The app was deleted while its rollout ended: nothing is left to record.
+		s.log.Info("deployment gone before its outcome was recorded", "deployment", deploymentID, "status", status)
+	} else if err != nil {
 		s.log.Error("record deployment outcome", "deployment", deploymentID, "status", status, "error", err)
 	}
 }
@@ -233,24 +255,54 @@ func (s *Service) owns(appID string) func(context.Context, string) (bool, error)
 	}
 }
 
-// markLatest records deploymentID as appID's newest deploy and returns the
-// app's state.
-func (s *Service) markLatest(appID, deploymentID string) *appState {
+// stateOf returns appID's state, creating it on first use.
+func (s *Service) stateOf(appID string) *appState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.stateLocked(appID)
+}
+
+// stateLocked is stateOf for a caller that holds s.mu.
+func (s *Service) stateLocked(appID string) *appState {
 	st := s.apps[appID]
 	if st == nil {
 		st = &appState{}
 		s.apps[appID] = st
 	}
+	return st
+}
+
+// markLatest records deploymentID as appID's newest deploy and returns the
+// app's state.
+func (s *Service) markLatest(appID, deploymentID string) *appState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.stateLocked(appID)
 	st.latest = deploymentID
 	return st
 }
 
+// latestOf is the newest deployment requested for appID, or "" when the app
+// has no state (it was deleted).
 func (s *Service) latestOf(appID string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.apps[appID].latest
+	if st := s.apps[appID]; st != nil {
+		return st.latest
+	}
+	return ""
+}
+
+// watchContext is the context appID's rollout watchers run under. It lives
+// as long as the process, or until DeleteApp stops the app's watchers.
+func (s *Service) watchContext(appID string) context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.stateLocked(appID)
+	if st.watch == nil {
+		st.watch, st.stopWatchers = context.WithCancel(s.bg)
+	}
+	return st.watch
 }
 
 // newDeploymentID returns 26 random lowercase base32 characters.

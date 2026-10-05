@@ -125,7 +125,10 @@ Git sources + builds as Nomad batch jobs, app templates, teams and roles, manage
    `internal/registry`. go-containerregistry pulls in docker/cli, the moby client, oauth2 and
    cobra for one `HEAD` request (specs/003-deploy-flow/research.md R1).
 2. **Tool pinning**: `staticcheck` through Go's `tool` directive in `go.mod`. Needed for 0.1.
-3. **UI live updates**: SSE vs. HTMX polling. Needed for 007.
+3. **UI live updates**: settled in feature 007: server-sent events, with the htmx SSE extension
+   vendored (no CDN, no Node). One stream per open page carries small notices ("deployments
+   changed"); the page refetches that region, so the pages stay plain HTML and work without
+   JavaScript (specs/007-htmx-ui-v1/research.md R1).
 
 Decided 2026-09-30: Lima lab; Nomad under systemd with ACLs in the lab; AGPL-3.0; CI from 0.1;
 the constitution owns the rules and CLAUDE.md links to it.

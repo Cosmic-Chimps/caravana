@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.4.0
+  version: 0.5.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -54,6 +54,95 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /v1/apps:
+    get:
+      operationId: listApps
+      summary: List every app with its current status, by ID.
+      tags: [apps]
+      responses:
+        "200":
+          description: |
+            All apps. When Nomad can't be read, each status is `unknown` and the stored
+            data is still returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSummaryList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createApp
+      summary: Create a new app and start its first deployment.
+      description: |
+        Like `deployApp` with a body, but never replaces a stored app: an existing ID is
+        `409 app_exists` and nothing changes. Follow the rollout at `Location`.
+      tags: [apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/App"
+      responses:
+        "202":
+          description: Saved; Nomad accepted the job.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          description: |
+            `app_exists` (`field: "id"`): an app with this ID is stored. Or `job_conflict`,
+            as for `deployApp`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/deployments:
+    get:
+      operationId: listRecentDeployments
+      summary: List the newest deployments across all apps.
+      tags: [deployments]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        "200":
+          description: The newest deployments, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -74,6 +163,126 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteApp
+      summary: Delete an app for good.
+      description: |
+        Stops and purges the app's Nomad job, then erases the app, its deployments and its
+        webhook token. If Nomad can't stop the job, nothing is erased and the call can be made
+        again. Not reversible; the ID can be used for a new app afterwards.
+      tags: [apps]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/copies:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: listCopies
+      summary: List the app's copies (Nomad allocations).
+      description: |
+        Every copy that hasn't ended, plus the ended copies of the app's latest job version
+        that Nomad still keeps. Ordered by service, then job version (newest first), then start
+        time.
+      tags: [apps]
+      responses:
+        "200":
+          description: The app's copies; empty when it has none.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopyList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/logs:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: getLogs
+      summary: Read the app's recent output, or follow it.
+      description: |
+        Without `follow`, returns up to `lines` recent lines as JSON, oldest first. With
+        `follow=true`, answers `text/event-stream`: the same recent lines as `log` events, then
+        each new line as it is written, a comment line every 20 seconds while idle, until the
+        client disconnects or its credentials end (then an `ended` event, and the stream
+        closes). Errors found before the stream starts are JSON as usual. Following doesn't
+        renew a browser session.
+
+        Nomad's lines carry no time, so the recent lines are ordered per copy, copies in the
+        order they started, each copy's `stdout` before its `stderr`. Followed lines are
+        interleaved as they arrive and carry `time`. Output is plain text: show it as text,
+        never as markup.
+      tags: [apps]
+      parameters:
+        - name: copy
+          in: query
+          description: One copy's ID, from `listCopies`. Absent means every listed copy.
+          schema:
+            type: string
+        - name: stream
+          in: query
+          schema:
+            type: string
+            enum: [stdout, stderr, both]
+            default: both
+        - name: lines
+          in: query
+          description: How many recent lines to start with.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+        - name: follow
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Recent output as JSON, or, with `follow=true`, as an event stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogLines"
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  `event: log` with `data:` one `LogLine` as JSON; `event: ended` with no data
+                  when the stream ends because its credentials ended.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such app, or `copy` isn't one of its copies.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
 
   /v1/apps/{id}/deployments:
     parameters:
@@ -616,6 +825,117 @@ components:
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
 
+    AppSummary:
+      type: object
+      additionalProperties: false
+      required: [app, createdAt, updatedAt, status]
+      properties:
+        app:
+          $ref: "#/components/schemas/App"
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        status:
+          $ref: "#/components/schemas/AppStatus"
+        lastDeployment:
+          $ref: "#/components/schemas/Deployment"
+
+    AppSummaryList:
+      type: object
+      additionalProperties: false
+      required: [apps]
+      properties:
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppSummary"
+
+    AppStatus:
+      type: object
+      additionalProperties: false
+      required: [state, wantedCopies, healthyCopies]
+      properties:
+        state:
+          type: string
+          enum: [rolling_out, healthy, degraded, not_running, unknown]
+        wantedCopies: {type: integer, minimum: 0}
+        healthyCopies: {type: integer, minimum: 0}
+        liveVersion:
+          type: integer
+          minimum: 0
+          description: The job version the healthy copies run. Absent when no copy is healthy.
+
+    Copy:
+      type: object
+      additionalProperties: false
+      required: [id, service, node, version, status, restarts]
+      properties:
+        id:
+          type: string
+          description: The Nomad allocation ID.
+        service:
+          type: string
+        node:
+          type: string
+          description: The name of the node the copy runs on.
+        version:
+          type: integer
+          minimum: 0
+          description: The job version the copy runs.
+        status:
+          type: string
+          enum: [starting, healthy, unhealthy, stopped, failed]
+        restarts:
+          type: integer
+          minimum: 0
+        startedAt:
+          type: string
+          format: date-time
+          description: When the copy's first task started. Absent until one has.
+        description:
+          type: string
+          description: Nomad's own description of the copy's state, e.g. `Tasks are running`.
+
+    CopyList:
+      type: object
+      additionalProperties: false
+      required: [copies]
+      properties:
+        copies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Copy"
+
+    LogLine:
+      type: object
+      additionalProperties: false
+      required: [copy, service, stream, text]
+      properties:
+        copy:
+          type: string
+          description: The ID of the copy that wrote it.
+        service:
+          type: string
+        stream:
+          type: string
+          enum: [stdout, stderr]
+        text:
+          type: string
+          description: One line without its newline. Plain text; invalid UTF-8 is replaced and a line over 64 KiB is cut.
+        time:
+          type: string
+          format: date-time
+          description: When Caravana received the line. Only on followed lines; the recent lines have none.
+
+    LogLines:
+      type: object
+      additionalProperties: false
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLine"
+
     Deployment:
       type: object
       additionalProperties: false
@@ -627,7 +947,7 @@ components:
           type: string
         trigger:
           type: string
-          enum: [manual, webhook]
+          enum: [manual, webhook, console]
         status:
           type: string
           enum: [pending, running, healthy, failed, reverted, superseded]
@@ -653,6 +973,33 @@ components:
           description: Why it failed, reverted or was superseded. Absent otherwise.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        progress:
+          $ref: "#/components/schemas/Progress"
+
+    Progress:
+      type: object
+      additionalProperties: false
+      description: |
+        How far a rollout has got, summed over the app's services. Only on a deployment that is
+        `running`, and only from `getDeployment` and, for the newest running one, from
+        `listDeployments`. Absent when Nomad has no rollout for the deployment yet or can't be
+        read.
+      required: [wanted, placed, healthy, unhealthy, canariesWanted, promoted]
+      properties:
+        wanted: {type: integer, minimum: 0, description: New copies the rollout wants in all.}
+        placed: {type: integer, minimum: 0, description: New copies Nomad has placed.}
+        healthy: {type: integer, minimum: 0, description: New copies that passed their health checks.}
+        unhealthy: {type: integer, minimum: 0, description: New copies that failed their health checks.}
+        canariesWanted:
+          type: integer
+          minimum: 0
+          description: Copies that wait for promotion before the old ones are replaced (blue/green).
+        promoted:
+          type: boolean
+          description: Every service that waits for promotion has been promoted.
+        description:
+          type: string
+          description: Nomad's own status description of the rollout.
 
     DeploymentList:
       type: object
@@ -730,7 +1077,7 @@ components:
                 `unsupported_media_type`, `body_too_large`, `not_found`,
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
-                `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`.
+                `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`.
               examples: [invalid_field]
             message:
               type: string
@@ -892,6 +1239,14 @@ components:
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NomadUnavailable:
+      description: |
+        Nomad couldn't be used: `nomad_unavailable` (unreachable, or the token was refused) or
+        `nomad_rejected` (the message is what Nomad said). Nothing was changed.
       content:
         application/json:
           schema:

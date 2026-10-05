@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -91,10 +92,21 @@ type Deployer struct {
 	Timing Timing
 }
 
+// clientConnTimeout is how long the Nomad client library tries a node's own
+// address, before it goes through the server instead (log reads, research
+// R10). It is the library's default; it is set here so that a change in the
+// library doesn't slow every log read down when the node isn't reachable.
+const clientConnTimeout = time.Second
+
+// setConnTimeout sets the library's one package-wide setting, once, before
+// the first client exists, so nothing reads it while it is written.
+var setConnTimeout sync.Once
+
 // NewNomadClient builds the Nomad API client. It makes no request, so it
 // works while Nomad is down. Other NOMAD_* variables (TLS, namespace, region)
 // are read by the Nomad client itself.
 func NewNomadClient(addr, token string) (*api.Client, error) {
+	setConnTimeout.Do(func() { api.ClientConnTimeout = clientConnTimeout })
 	cfg := api.DefaultConfig()
 	cfg.Address = addr
 	cfg.SecretID = token

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -30,6 +31,10 @@ type route struct {
 	// public routes skip authentication: the health check, which answers
 	// load balancers, and the webhook call, which has its own token.
 	public bool
+	// quiet routes check a browser session without renewing its idle time:
+	// they serve streams that stay open for as long as someone watches, and a
+	// forgotten tab must not keep a session alive for ever (research R11).
+	quiet bool
 }
 
 type server struct {
@@ -39,29 +44,39 @@ type server struct {
 	proxies httpx.Proxies
 	csrf    *http.CrossOriginProtection // for requests authenticated by a session cookie
 	log     *slog.Logger
+
+	// The timings of event streams; zero means the defaults (20 s and 30 s).
+	// Tests set short ones.
+	keepalive, recheck time.Duration
 }
 
 func (s *server) routes() []route {
 	return []route{
-		{http.MethodGet, "/v1/health", s.health, true},
-		{http.MethodGet, "/v1/apps/{id}", s.getApp, false},
-		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false},
-		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false},
-		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false},
-		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false},
-		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false},
-		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false},
-		{http.MethodPut, "/v1/account/password", s.changePassword, false},
-		{http.MethodPost, "/v1/tokens", s.createToken, false},
-		{http.MethodGet, "/v1/tokens", s.listTokens, false},
-		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false},
+		{http.MethodGet, "/v1/health", s.health, true, false},
+		{http.MethodGet, "/v1/apps", s.listApps, false, false},
+		{http.MethodPost, "/v1/apps", s.createApp, false, false},
+		{http.MethodGet, "/v1/deployments", s.listRecentDeployments, false, false},
+		{http.MethodGet, "/v1/apps/{id}", s.getApp, false, false},
+		{http.MethodDelete, "/v1/apps/{id}", s.deleteApp, false, false},
+		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
+		{http.MethodGet, "/v1/apps/{id}/logs", s.getLogs, false, true},
+		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false, false},
+		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
+		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
+		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
+		{http.MethodPut, "/v1/account/password", s.changePassword, false, false},
+		{http.MethodPost, "/v1/tokens", s.createToken, false, false},
+		{http.MethodGet, "/v1/tokens", s.listTokens, false, false},
+		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false, false},
 		s.webhookRoute(),
 	}
 }
 
 // webhookRoute is the one route the webhook-only listener serves.
 func (s *server) webhookRoute() route {
-	return route{http.MethodPost, "/v1/webhooks/{id}", s.callWebhook, true}
+	return route{http.MethodPost, "/v1/webhooks/{id}", s.callWebhook, true, false}
 }
 
 // Deps is what the API needs: both services (apps and deployments, then the
@@ -81,9 +96,14 @@ type Deps struct {
 // whoever mounts it wraps it in httpx.LogRequests, so pages and API share one
 // request log.
 func New(d Deps) http.Handler {
-	s := &server{svc: d.Service, auth: d.Auth, store: d.Store, proxies: d.Proxies, log: d.Log,
-		csrf: http.NewCrossOriginProtection()}
+	s := newServer(d)
 	return s.handler(s.routes())
+}
+
+// newServer builds the server's state. Tests use it to change the timings.
+func newServer(d Deps) *server {
+	return &server{svc: d.Service, auth: d.Auth, store: d.Store, proxies: d.Proxies, log: d.Log,
+		csrf: http.NewCrossOriginProtection()}
 }
 
 // NewWebhook returns the handler for the webhook-only listener: only
@@ -101,7 +121,7 @@ func (s *server) handler(routes []route) http.Handler {
 	for _, rt := range routes {
 		h := rt.handle
 		if !rt.public {
-			h = s.authenticate(h)
+			h = s.authenticate(h, rt.quiet)
 		}
 		mux.Handle(rt.method+" "+rt.path, s.handle(h))
 	}
@@ -193,6 +213,8 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusUnauthorized, Code: codeUnauthorized, Message: err.Error(), Authenticate: "Bearer"}
 	case errors.Is(err, service.ErrWrongPassword):
 		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "currentPassword", Message: err.Error()}
+	case errors.Is(err, service.ErrAppExists):
+		return &Error{Status: http.StatusConflict, Code: codeAppExists, Field: "id", Message: err.Error()}
 	case errors.Is(err, service.ErrTokenNameTaken):
 		return &Error{Status: http.StatusConflict, Code: codeTokenNameTaken, Field: "name", Message: err.Error()}
 	case errors.Is(err, store.ErrNotFound):

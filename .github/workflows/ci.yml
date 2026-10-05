@@ -37,6 +37,10 @@ jobs:
       - name: stylesheet is up to date
         run: tools/ui-css.sh check
 
+      # The vendored htmx files must match the checksums pinned in tools/ui-vendor.versions.
+      - name: vendored scripts match their pins
+        run: tools/ui-vendor.sh check
+
       - name: cross-compile (no CGO)
         env:
           CGO_ENABLED: "0"

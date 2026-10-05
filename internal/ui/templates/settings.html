@@ -1,20 +1,18 @@
+{{/* Settings (/settings): the 006 account page, inside the shell. Password, then API
+     tokens. Every form is a plain post; revoking asks first, in a <details>. */}}
 {{define "content"}}
-<main class="mx-auto w-full max-w-[720px] px-6 pt-10 pb-16 flex flex-col gap-7">
-  <header class="flex items-center justify-between gap-4">
-    <span class="cv-wordmark">caravana</span>
-    <form method="post" action="/logout">
-      <button type="submit" class="cv-btn cv-btn-secondary">Sign out</button>
-    </form>
+<div class="flex flex-col gap-7">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Signed in as <span class="font-mono">{{.Email}}</span>.</h1>
   </header>
-
-  <h1 class="text-3xl font-normal text-fg-1 [overflow-wrap:anywhere]">Signed in as <span class="font-mono">{{.Email}}</span>.</h1>
 
   {{with .NewToken}}
   <section aria-labelledby="new-token" class="flex flex-col gap-2">
     <h2 id="new-token" class="cv-label">New token</h2>
     <div class="cv-panel p-4 flex flex-col gap-3" role="status">
       <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
-      <code class="cv-cmd">{{.Value}}</code>
+      <code class="cv-cmd" id="new-token-value">{{.Value}}</code>
+      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="new-token-value" hidden>Copy token</button></div>
       <p class="text-sm text-fg-3">Use it like this:</p>
       <code class="cv-cmd cv-cmd-quiet">curl \
   -H "Authorization: Bearer {{.Value}}" \
@@ -25,7 +23,7 @@
 
   <section aria-labelledby="password" class="flex flex-col gap-2">
     <h2 id="password" class="cv-label">Password</h2>
-    <form method="post" action="/account/password" class="cv-panel p-4 flex flex-col gap-4">
+    <form method="post" action="/settings/password" class="cv-panel p-4 flex flex-col gap-4">
       {{if .PasswordChanged}}
       <div role="status" class="cv-notice">
         <span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>
@@ -68,9 +66,13 @@
         </div>
         <div>
           {{if eq .State "active"}}
-          <form method="post" action="/account/tokens/{{.ID}}/revoke">
-            <button type="submit" class="cv-btn cv-btn-sm cv-btn-danger" aria-label="Revoke token {{.Name}}">Revoke</button>
-          </form>
+          <details class="cv-confirm cv-confirm-row">
+            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Revoke token {{.Name}}">Revoke</summary>
+            <form method="post" action="/settings/tokens/{{.ID}}/revoke" class="cv-confirm-body">
+              <p>This token can't be used again. Anything that still uses it will be refused.</p>
+              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Revoke token</button></div>
+            </form>
+          </details>
           {{end}}
         </div>
       </div>
@@ -78,7 +80,7 @@
       <p class="px-3 py-4 text-sm leading-normal text-fg-3">No API tokens yet. Create one below, or on the host with <code class="cv-data">caravana admin create-token --name ci</code>.</p>
       {{end}}
 
-      <form method="post" action="/account/tokens" class="cv-row flex flex-col gap-4 p-4">
+      <form method="post" action="/settings/tokens" class="cv-row flex flex-col gap-4 p-4">
         <div class="flex flex-wrap gap-4">
           <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
             <span class="cv-label">Name</span>
@@ -95,5 +97,5 @@
       </form>
     </div>
   </section>
-</main>
+</div>
 {{end}}

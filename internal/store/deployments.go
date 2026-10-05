@@ -178,6 +178,80 @@ func (s *Store) ListDeployments(ctx context.Context, appID string, limit int) ([
 	return out, nil
 }
 
+// ListDeploymentsBefore returns an app's deployments created before the given
+// time, newest first, at most limit of them: the next page after one that
+// ended at before. A limit below 1 returns none (the caller validates it, and
+// "everything" would be a surprise). An unknown app is ErrNotFound.
+func (s *Store) ListDeploymentsBefore(ctx context.Context, appID string, before time.Time, limit int) ([]DeploymentRecord, error) {
+	if ok, err := exists(ctx, s.db, "SELECT 1 FROM apps WHERE id = ?", appID); err != nil {
+		return nil, fmt.Errorf("list deployments of %q before %s: %w", appID, formatTime(before), err)
+	} else if !ok {
+		return nil, fmt.Errorf("list deployments: app %q: %w", appID, ErrNotFound)
+	}
+	if limit < 1 {
+		return []DeploymentRecord{}, nil
+	}
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? AND created_at < ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+		appID, formatTime(before), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list deployments of %q before %s: %w", appID, formatTime(before), err)
+	}
+	if out == nil {
+		out = []DeploymentRecord{}
+	}
+	return out, nil
+}
+
+// LatestDeployments returns each app's newest deployment, keyed by app ID.
+// Apps without deployments have no entry. Deployments created in the same
+// instant are ordered by ID, so the answer never depends on row order. It is
+// one query, so the Apps page costs one read however many apps there are.
+func (s *Store) LatestDeployments(ctx context.Context) (map[string]DeploymentRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+deploymentColumns+` FROM (
+			SELECT `+deploymentColumns+`,
+				ROW_NUMBER() OVER (PARTITION BY app_id ORDER BY created_at DESC, id) AS n
+			FROM deployments
+		) WHERE n = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("latest deployments: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]DeploymentRecord{}
+	for rows.Next() {
+		rec, err := scanDeployment(rows)
+		if err != nil {
+			return nil, fmt.Errorf("latest deployments: %w", err)
+		}
+		out[rec.AppID] = rec
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("latest deployments: %w", err)
+	}
+	return out, nil
+}
+
+// ListRecentDeployments returns the newest deployments across all apps,
+// newest first, at most limit of them. A limit below 1 returns none: callers
+// validate it, and "no limit" across every app would be a surprise. The
+// deployments_by_time index serves the ordering.
+func (s *Store) ListRecentDeployments(ctx context.Context, limit int) ([]DeploymentRecord, error) {
+	if limit < 1 {
+		return []DeploymentRecord{}, nil
+	}
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM deployments ORDER BY created_at DESC, id LIMIT ?", limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent deployments: %w", err)
+	}
+	if out == nil {
+		out = []DeploymentRecord{}
+	}
+	return out, nil
+}
+
 // ListUnfinishedDeployments returns every deployment still pending or
 // running, oldest first. On startup the deploy flow picks them up again.
 func (s *Store) ListUnfinishedDeployments(ctx context.Context) ([]DeploymentRecord, error) {

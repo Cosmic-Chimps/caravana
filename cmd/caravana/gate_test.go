@@ -93,6 +93,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"deploy", false, g.deploy},
 		{"webhook-redeploy", false, g.webhookRedeploy},
 		{"webhook-unchanged", false, g.webhookUnchanged},
+		{"console-reads", false, g.consoleReads},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},
@@ -215,6 +216,63 @@ func (g *gate) webhookUnchanged(t *testing.T) {
 	after, _, _ := g.target.Nomad.Jobs().Info("whoami", nil)
 	if before != nil && after != nil && *after.Version != *before.Version {
 		t.Errorf("an unchanged webhook moved the job version from %d to %d", *before.Version, *after.Version)
+	}
+}
+
+// consoleReads: what the console reads from Nomad works with the token
+// Caravana really runs with (feature 007): the app list has whoami, its copies
+// include a healthy one, and its logs answer 200. The logs read needs the
+// read-logs capability in deploy/vm/caravana-policy.hcl, so a policy without
+// it fails here and not in front of a user.
+func (g *gate) consoleReads(t *testing.T) {
+	var list struct {
+		Apps []struct {
+			App struct {
+				ID string `json:"id"`
+			} `json:"app"`
+		} `json:"apps"`
+	}
+	g.getJSON(t, "/v1/apps", &list)
+	found := false
+	for _, a := range list.Apps {
+		found = found || a.App.ID == "whoami"
+	}
+	if !found {
+		t.Errorf("GET /v1/apps doesn't list whoami: %+v", list.Apps)
+	}
+
+	var copies struct {
+		Copies []struct {
+			Status string `json:"status"`
+		} `json:"copies"`
+	}
+	g.getJSON(t, "/v1/apps/whoami/copies", &copies)
+	healthy := false
+	for _, c := range copies.Copies {
+		healthy = healthy || c.Status == "healthy"
+	}
+	if !healthy {
+		t.Errorf("GET /v1/apps/whoami/copies has no healthy copy: %+v", copies.Copies)
+	}
+
+	resp := g.api(t, http.MethodGet, "/v1/apps/whoami/logs?lines=10", "", "")
+	defer resp.Body.Close()
+	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /v1/apps/whoami/logs?lines=10 = %d, want 200 (does Caravana's Nomad policy have read-logs?): %s", resp.StatusCode, raw)
+	}
+}
+
+// getJSON reads a JSON answer of the API; anything but 200 fails the step.
+func (g *gate) getJSON(t *testing.T, path string, into any) {
+	t.Helper()
+	resp := g.api(t, http.MethodGet, path, "", "")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET %s = %d, want 200: %s", path, resp.StatusCode, raw)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
+		t.Fatalf("GET %s: %v", path, err)
 	}
 }
 

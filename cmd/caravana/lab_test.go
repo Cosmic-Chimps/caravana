@@ -7,9 +7,11 @@ package main
 //	eval "$(deploy/dev/lab.sh env)"
 //	CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 20m
 //
-// It runs the gate steps in gate_test.go. It takes about 12 minutes: the
-// broken deploy only fails at Nomad's progress deadline (10 minutes),
-// because Nomad keeps rescheduling the unhealthy allocation until then.
+// It runs the console steps (console_lab_test.go), then the gate steps in
+// gate_test.go. It takes about 12 minutes: the broken deploy only fails at
+// Nomad's progress deadline (10 minutes), because Nomad keeps rescheduling
+// the unhealthy allocation until then. TestConsoleLab runs the console steps
+// alone, in a minute or two.
 
 import (
 	"bytes"
@@ -22,10 +24,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/nomad/api"
+
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 )
 
-func TestLab(t *testing.T) {
+// labEnv is Caravana running in-process next to the lab.
+type labEnv struct {
+	target gateTarget // what the gate steps need
+	nomad  *api.Client
+}
+
+// startLab skips unless CARAVANA_LAB=1, then starts Caravana in-process with
+// the webhook-only listener, makes the admin and an API token, and returns
+// where everything is.
+func startLab(t *testing.T) labEnv {
+	t.Helper()
 	if os.Getenv("CARAVANA_LAB") != "1" {
 		t.Skip("set CARAVANA_LAB=1 (and NOMAD_ADDR/NOMAD_TOKEN from deploy/dev/lab.sh env) to run against the lab")
 	}
@@ -54,16 +68,42 @@ func TestLab(t *testing.T) {
 	})
 	waitHealthy(t, "http://"+addr)
 
-	runGate(t, gateTarget{
-		API:      "http://" + addr,
-		APIToken: labAPIToken(t, ctx, dataDir),
-		Webhook:  "http://" + hookAddr,
-		AppHost:  "whoami.localhost",
-		AppURL:   "https://whoami.localhost:8443/",
-		App:      labClient,
-		Nomad:    nomad,
-	})
+	return labEnv{
+		nomad: nomad,
+		target: gateTarget{
+			API:      "http://" + addr,
+			APIToken: labAPIToken(t, ctx, dataDir),
+			Webhook:  "http://" + hookAddr,
+			AppHost:  "whoami.localhost",
+			AppURL:   "https://whoami.localhost:8443/",
+			App:      labClient,
+			Nomad:    nomad,
+		},
+	}
 }
+
+// TestLab runs the console steps (console_lab_test.go), then the gate steps,
+// against the lab.
+func TestLab(t *testing.T) {
+	env := startLab(t)
+	if !t.Run("console", func(t *testing.T) { runConsole(t, env.target, labEmail, labPassword) }) {
+		return // the gate starts from a clean whoami; a broken console is worth knowing first
+	}
+	runGate(t, env.target)
+}
+
+// TestConsoleLab runs only the console steps, which take a minute or two
+// instead of TestLab's twelve.
+func TestConsoleLab(t *testing.T) {
+	env := startLab(t)
+	runConsole(t, env.target, labEmail, labPassword)
+}
+
+// The admin the lab test creates, as the owner would on the host.
+const (
+	labEmail    = "lab@example.com"
+	labPassword = "a lab password, long enough"
+)
 
 // labAPIToken does what the owner does on the host, in-process and while the
 // server holds the data directory (which exercises the CLI's shared open):
@@ -74,8 +114,8 @@ func labAPIToken(t *testing.T, ctx context.Context, dataDir string) string {
 	var out, errOut bytes.Buffer
 	args := func(command ...string) []string { return append(command, "-data-dir", dataDir) }
 
-	code := runAdmin(ctx, args("init", "--email", "lab@example.com"), os.Getenv,
-		strings.NewReader("a lab password, long enough\n"), &out, &errOut)
+	code := runAdmin(ctx, args("init", "--email", labEmail), os.Getenv,
+		strings.NewReader(labPassword+"\n"), &out, &errOut)
 	if code != 0 {
 		t.Fatalf("caravana admin init exited %d: %s", code, errOut.String())
 	}

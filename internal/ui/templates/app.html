@@ -1,0 +1,273 @@
+{{/* An app's page (/apps/{id}): the header region, and below it the tab's own
+     content (each tab adds its define here as its story lands). */}}
+
+{{define "action"}}{{if .DeployHref}}<a href="{{.DeployHref}}" class="cv-btn cv-btn-primary cv-btn-sm">Deploy</a>{{end}}{{end}}
+
+{{define "app-header"}}
+{{if .Gone}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">{{template "sentence" .Gone}}</h1>
+  <p><a href="/apps">Back to Apps</a></p>
+</header>
+{{else}}
+<header class="cv-apphead">
+  <div class="cv-apphead-top">
+    <h1 class="cv-apptitle">{{.ID}}</h1>
+    {{template "status-pill" .Status}}
+    {{range .Domains}}<a href="{{.URL}}" class="cv-data">{{.Host}}</a>{{end}}
+  </div>
+  <p class="cv-lede">{{template "sentence" .Summary}}</p>
+  {{with .NomadError}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+  {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}<a href="{{.Href}}" class="cv-tab"{{if .Current}} aria-current="page"{{end}}>{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
+</header>
+{{end}}
+{{end}}
+
+{{define "content"}}
+{{if .Gone}}
+<section class="cv-main">{{template "app-header" .}}</section>
+{{else}}
+<section class="cv-main" aria-label="App" hx-get="{{.HeaderHref}}" hx-trigger="sse:app, sse:deleted, sse:sync" hx-swap="innerHTML">{{template "app-header" .}}</section>
+{{with .Running}}{{template "running" .}}{{end}}
+{{with .Deployments}}{{template "deployments" .}}{{end}}
+{{with .Configure}}{{template "configure" .}}{{end}}
+{{with .Logs}}{{template "logs" .}}{{end}}
+{{end}}
+{{end}}
+
+{{/* The Running tab: the app's copies in a live region. Takes a copiesRegion. */}}
+{{define "running"}}
+<section aria-labelledby="copies-title" class="flex flex-col gap-2">
+  <h2 id="copies-title" class="cv-label">Copies</h2>
+  <div class="cv-panel" hx-get="{{.RefreshHref}}" hx-trigger="sse:copies, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "copies-region" .}}</div>
+</section>
+{{end}}
+
+{{/* copies-region: the table of copies, or why there are none. The page draws it inside
+     its live panel and /parts/apps/{id}/copies draws it alone. Takes a copiesRegion. */}}
+{{define "copies-region"}}
+{{if .Gone}}
+<p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Gone}}</p>
+{{else if .Notice}}
+<p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Notice}}</p>
+{{else if .Rows}}
+<div class="cv-copies" role="table" aria-label="Copies">
+  <div class="cv-copies-head cv-label" role="row">
+    <span role="columnheader" class="cv-k-id">Copy</span>
+    <span role="columnheader" class="cv-k-service">Service</span>
+    <span role="columnheader" class="cv-k-status">Status</span>
+    <span role="columnheader" class="cv-k-version">Version</span>
+    <span role="columnheader" class="cv-k-restarts">Restarts</span>
+    <span role="columnheader" class="cv-k-up">Up for</span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-row cv-copies-row" role="row">
+    <div role="cell" class="cv-k-id"><span class="cv-data text-fg-1" title="{{.ID}}">{{.Short}}</span></div>
+    <div role="cell" class="cv-k-service" data-label="Service"><span class="cv-data">{{.Service}}</span></div>
+    <div role="cell" class="cv-k-status">{{template "status-quiet" .Status}}</div>
+    <div role="cell" class="cv-k-version" data-label="Version"><span class="cv-data text-fg-1">{{.Version}}</span></div>
+    <div role="cell" class="cv-k-restarts" data-label="Restarts"{{if gt .Restarts 0}} title="Restarted {{.Restarts}} time{{if ne .Restarts 1}}s{{end}}"{{end}}><span class="cv-data{{if gt .Restarts 0}} cv-restarts-warn{{end}}">{{.Restarts}}</span></div>
+    <div role="cell" class="cv-k-up" data-label="Up for"><span class="cv-data{{if eq .UpFor "not running"}}-muted{{end}}">{{.UpFor}}</span></div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-empty">
+  <p class="cv-empty-title">No copies are running.</p>
+  {{with .Failure}}<p class="cv-empty-text">{{template "sentence" .}}<a href="{{$.DeploymentsHref}}">Deployments</a>.</p>{{end}}
+</div>
+{{end}}
+{{end}}
+
+{{/* The Deployments tab: the deploy form (outside any live region, so what is
+     being typed is never replaced), and the history in a live region. The form
+     is a plain post: without script the page still works, and a reload shows
+     what changed. */}}
+{{define "deployments"}}
+<section id="deploy" aria-labelledby="deploy-title" class="flex flex-col gap-2">
+  <h2 id="deploy-title" class="cv-label">Deploy</h2>
+  <form method="post" action="{{.Form.Action}}" class="cv-panel p-4 flex flex-col gap-4">
+    {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    {{range .Form.Fields}}
+    {{$id := .ID}}
+    <label class="flex flex-col gap-2" for="{{$id}}">
+      <span class="cv-label">{{.Label}}</span>
+      <input class="cv-field" id="{{$id}}" type="text" name="{{.Name}}" value="{{.Value}}" autocomplete="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
+      {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+    </label>
+    {{end}}
+    <p class="text-sm text-fg-3">Keep the image to deploy it again and pick up a new push to the same tag, or change the tag.</p>
+    <div><button type="submit" class="cv-btn cv-btn-primary">Deploy</button></div>
+  </form>
+</section>
+<section aria-labelledby="history-title" class="flex flex-col gap-2">
+  <h2 id="history-title" class="cv-label">Deployments</h2>
+  <div class="cv-panel" hx-get="{{.History.RefreshHref}}" hx-trigger="sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "deployments-region" .History}}</div>
+</section>
+{{end}}
+
+{{/* deployments-region: the history, newest first. The page draws it inside its
+     live panel and /parts/apps/{id}/deployments draws it alone. Takes a historyRegion. */}}
+{{define "deployments-region"}}
+{{if .Gone}}
+<p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Gone}}</p>
+{{else}}
+{{range .Entries}}
+<article id="deployment-{{.ID}}" class="cv-row cv-deploy">
+  <div class="cv-deploy-head">
+    <span class="cv-deploy-version">{{with .Version}}<span class="cv-data text-fg-1">{{.}}</span>{{else}}<span class="cv-data-muted">no version</span>{{end}}</span>
+    {{template "status-pill" .Status}}
+    <span class="cv-deploy-meta cv-data-muted">{{.Trigger}} · {{template "time" .Started}} · {{.Timing}}</span>
+  </div>
+  <p class="cv-deploy-sentence">{{template "sentence" .Sentence}}</p>
+  {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
+  {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+  {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
+  {{with .Warnings}}
+  <ul class="cv-deploy-warnings" aria-label="Warnings">
+    {{range .}}<li><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-data text-fg-1">{{.Field}}</span> {{.Message}}</span></li>{{end}}
+  </ul>
+  {{end}}
+  {{with .Digests}}
+  <ul class="cv-deploy-digests" aria-label="Images as deployed">
+    {{range .}}<li class="cv-data" title="{{.Full}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Short}}</li>{{end}}
+  </ul>
+  {{end}}
+</article>
+{{else}}
+{{template "empty" .Empty}}
+{{end}}
+{{with .OlderHref}}<div class="cv-deploy-more"><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Show older</a></div>{{end}}
+{{end}}
+{{end}}
+
+{{/* The Logs tab: the toolbar (a GET form, so it works without script), then the
+     panel. The tail is drawn on the server; console.js takes over with the
+     stream's "log" events, clearing the list on "logs-reset". Everything in a
+     line is text: html/template escapes it here, textContent there. Takes a logsTab. */}}
+{{define "logs"}}
+<section aria-labelledby="logs-title" class="flex flex-col gap-2">
+  <h2 id="logs-title" class="sr-only">Logs</h2>
+  {{with .Form}}
+  <div class="cv-logbar">
+    <form method="get" action="{{.Action}}" class="cv-logform">
+      <label class="cv-logpick">
+        <span class="cv-label">Copy</span>
+        <select class="cv-field cv-select" name="copy">{{range .Copies}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+      </label>
+      <label class="cv-logpick">
+        <span class="cv-label">Stream</span>
+        <select class="cv-field cv-select" name="stream">{{range .Streams}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+      </label>
+      <button type="submit" class="cv-btn cv-btn-secondary">Apply</button>
+    </form>
+    <div class="cv-logtools" data-log-tools hidden>
+      <button type="button" class="cv-btn cv-btn-secondary" data-log-pause aria-pressed="false">Pause</button>
+      <button type="button" class="cv-btn cv-btn-secondary" data-log-wrap aria-pressed="false">Wrap lines</button>
+    </div>
+  </div>
+  {{end}}
+  {{if .Notice}}
+  <div class="cv-panel"><p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Notice}}</p></div>
+  {{else if .HasTail}}
+  <div class="cv-panel cv-log" data-log>
+    <p class="cv-log-note" role="status" aria-live="polite" data-log-status hidden></p>
+    <p class="cv-log-note" data-log-dropped hidden>Older lines were dropped.</p>
+    <div class="cv-log-lines" data-log-list tabindex="0" role="log" aria-live="off" aria-label="Output of the app's copies">{{range .Lines}}<div class="cv-log-line"><span class="cv-log-copy cv-data" title="{{.CopyID}}">{{.Short}}</span>{{if .Stderr}}<span class="cv-log-stream">stderr</span>{{else}}<span class="cv-log-stream" aria-hidden="true"></span>{{end}}<span class="cv-log-text">{{.Text}}</span></div>{{end}}</div>
+    <p class="cv-log-empty" data-log-empty{{if .Lines}} hidden{{end}}>No output yet. New lines appear here.</p>
+    <div sse-swap="log,logs-reset" hx-swap="none" data-log-sink></div>
+  </div>
+  <noscript><p class="cv-hint cv-data-muted">Following needs JavaScript. Reload the page to see newer lines.</p></noscript>
+  {{end}}
+</section>
+{{end}}
+
+{{/* The Configure tab: the stored definition as facts (nothing to edit, and never an
+     environment value), the webhook, and, last and apart, Delete app. Everything is a
+     plain form post; the confirmations are <details>, so they work without script.
+     Takes a configureTab. */}}
+{{define "configure"}}
+<section aria-labelledby="definition-title" class="flex flex-col gap-2">
+  <h2 id="definition-title" class="cv-label">Definition</h2>
+  <div class="flex flex-col gap-3">
+    {{range .Panels}}
+    <div class="cv-panel cv-def">
+      <h3 class="cv-data text-fg-1">{{.Title}}</h3>
+      <dl class="cv-def-rows">
+        {{range .Rows}}
+        <div class="cv-def-row">
+          <dt class="cv-label">{{.Label}}</dt>
+          <dd>
+            <ul class="cv-def-values">{{range .Values}}
+              <li class="cv-data text-fg-1">{{.}}</li>{{end}}
+            </ul>
+            {{with .Note}}<p class="cv-hint cv-data-muted">{{.}}</p>{{end}}
+          </dd>
+        </div>
+        {{end}}
+      </dl>
+      {{with .Defaults}}<p class="cv-def-defaults cv-hint cv-data-muted">Using defaults: {{range $i, $n := .}}{{if $i}}, {{end}}{{$n}}{{end}}.</p>{{end}}
+    </div>
+    {{end}}
+  </div>
+  <p class="text-sm text-fg-3">{{template "sentence" .APIHint}}</p>
+</section>
+
+<section aria-labelledby="webhook-title" class="flex flex-col gap-2">
+  <h2 id="webhook-title" class="cv-label">Webhook</h2>
+  <div class="cv-panel p-4 flex flex-col gap-4">
+    {{with .Webhook.URL}}
+    <div class="flex flex-col gap-3" role="status">
+      <p class="text-base text-fg-1">Copy it now. It won't be shown again.</p>
+      <code class="cv-cmd" id="webhook-url">{{.}}</code>
+      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="webhook-url" hidden>Copy</button></div>
+    </div>
+    {{end}}
+    {{if .Webhook.Enabled}}
+    <p class="text-base text-fg-1">Token created {{template "time" .Webhook.Created}}.</p>
+    <p class="text-sm text-fg-3">A registry or CI posts to the webhook address to redeploy this app when its image has changed.</p>
+    <div class="cv-actions">
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Replace token</summary>
+        <form method="post" action="/apps/{{.Delete.ID}}/webhook" class="cv-confirm-body">
+          <p>The current token stops working at once. The new address is shown once.</p>
+          <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Replace token</button></div>
+        </form>
+      </details>
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Revoke token</summary>
+        <form method="post" action="/apps/{{.Delete.ID}}/webhook/revoke" class="cv-confirm-body">
+          <p>The current token stops working at once. The webhook refuses every call until you create a new token.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Revoke token</button></div>
+        </form>
+      </details>
+    </div>
+    {{else}}
+    <p class="text-base text-fg-1">No webhook token.</p>
+    <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
+    <form method="post" action="/apps/{{.Delete.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></form>
+    {{end}}
+  </div>
+</section>
+
+<section aria-labelledby="delete-title" class="cv-danger flex flex-col gap-2">
+  <h2 id="delete-title" class="cv-label">Delete app</h2>
+  <div class="cv-panel cv-danger-panel p-4">
+    <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
+      <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
+      {{with .Delete}}
+      <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
+        {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+        <p>{{template "sentence" .Goes}}</p>
+        <label class="flex flex-col gap-2" for="delete-confirm">
+          <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
+          <input class="cv-field" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+          {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
+      </form>
+      {{end}}
+    </details>
+  </div>
+</section>
+{{end}}

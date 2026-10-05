@@ -39,7 +39,7 @@ func (s *server) showLogin(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, "check session", err)
 		return
 	} else if state == validSession {
-		http.Redirect(w, r, "/account", http.StatusSeeOther)
+		http.Redirect(w, r, "/apps", http.StatusSeeOther)
 		return
 	}
 
@@ -77,7 +77,7 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		httpx.SetSessionCookie(w, session.Value, session.ExpiresAt, s.proxies.HTTPS(r))
 		if next == "" {
-			next = "/account"
+			next = "/apps"
 		}
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return

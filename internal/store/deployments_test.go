@@ -314,3 +314,168 @@ func TestLatestHealthyDeployment(t *testing.T) {
 		t.Errorf("= %s, %v; want h2, the newest healthy one", got.Deployment.ID, err)
 	}
 }
+
+// storeWithApps is a test store holding three apps (blog, shop, whoami) and
+// no deployments.
+func storeWithApps(t *testing.T) *Store {
+	t.Helper()
+	s := openTestStore(t)
+	for _, id := range []string{"blog", "shop", "whoami"} {
+		a := apptest.Whoami().App
+		a.ID = id
+		if _, err := s.SaveApp(context.Background(), a); err != nil {
+			t.Fatalf("SaveApp %s: %v", id, err)
+		}
+	}
+	return s
+}
+
+func TestLatestDeployments(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("empty", func(t *testing.T) {
+		s := storeWithApps(t)
+		got, err := s.LatestDeployments(ctx)
+		if err != nil || got == nil || len(got) != 0 {
+			t.Errorf("LatestDeployments with no deployments = %#v, %v; want an empty, non-nil map", got, err)
+		}
+	})
+
+	t.Run("newest of each app", func(t *testing.T) {
+		s := storeWithApps(t)
+		// Interleaved: the clock moves a second per write.
+		for _, d := range []struct{ app, id string }{
+			{"blog", "b1"}, {"whoami", "w1"}, {"blog", "b2"}, {"whoami", "w2"}, {"blog", "b3"},
+		} {
+			if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id)); err != nil {
+				t.Fatalf("create %s: %v", d.id, err)
+			}
+		}
+		got, err := s.LatestDeployments(ctx)
+		if err != nil {
+			t.Fatalf("LatestDeployments: %v", err)
+		}
+		if len(got) != 2 || got["blog"].Deployment.ID != "b3" || got["whoami"].Deployment.ID != "w2" {
+			t.Errorf("LatestDeployments = %v, want blog b3 and whoami w2 (shop has none)", got)
+		}
+		if _, ok := got["shop"]; ok {
+			t.Error("an app without deployments is in the map")
+		}
+		want, err := s.GetDeployment(ctx, "b3")
+		if err != nil || !reflect.DeepEqual(got["blog"], want) {
+			t.Errorf("record = %+v, want the stored b3 %+v (%v)", got["blog"], want, err)
+		}
+	})
+
+	t.Run("ties are broken by ID", func(t *testing.T) {
+		s := storeWithApps(t)
+		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+		s.now = func() time.Time { return fixed }
+		for _, id := range []string{"c", "a", "b"} {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id)); err != nil {
+				t.Fatalf("create %s: %v", id, err)
+			}
+		}
+		got, err := s.LatestDeployments(ctx)
+		if err != nil {
+			t.Fatalf("LatestDeployments: %v", err)
+		}
+		if got["blog"].Deployment.ID != "a" {
+			t.Errorf("latest of a tie = %q, want %q (lowest ID, whatever the insertion order)", got["blog"].Deployment.ID, "a")
+		}
+	})
+}
+
+func TestListRecentDeployments(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithApps(t)
+
+	empty, err := s.ListRecentDeployments(ctx, 10)
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Errorf("ListRecentDeployments with none = %#v, %v; want an empty, non-nil slice", empty, err)
+	}
+
+	for _, d := range []struct{ app, id string }{
+		{"blog", "d1"}, {"whoami", "d2"}, {"blog", "d3"}, {"shop", "d4"}, {"whoami", "d5"},
+	} {
+		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id)); err != nil {
+			t.Fatalf("create %s: %v", d.id, err)
+		}
+	}
+	for _, tc := range []struct {
+		limit int
+		want  []string
+	}{
+		{1, []string{"d5"}},
+		{3, []string{"d5", "d4", "d3"}},
+		{5, []string{"d5", "d4", "d3", "d2", "d1"}},
+		{50, []string{"d5", "d4", "d3", "d2", "d1"}},
+	} {
+		list, err := s.ListRecentDeployments(ctx, tc.limit)
+		if err != nil {
+			t.Fatalf("ListRecentDeployments(%d): %v", tc.limit, err)
+		}
+		if got := deploymentIDs(list); !slices.Equal(got, tc.want) {
+			t.Errorf("limit %d: %v, want %v (newest first, across apps)", tc.limit, got, tc.want)
+		}
+	}
+	list, _ := s.ListRecentDeployments(ctx, 2)
+	if list[0].AppID != "whoami" || list[1].AppID != "shop" {
+		t.Errorf("app IDs = %q, %q; want whoami, shop", list[0].AppID, list[1].AppID)
+	}
+
+	// A limit below 1 is the caller's mistake, not "no limit": the API
+	// validates it, and the store returns nothing rather than everything.
+	if got, err := s.ListRecentDeployments(ctx, 0); err != nil || len(got) != 0 {
+		t.Errorf("ListRecentDeployments(0) = %v, %v; want nothing", got, err)
+	}
+}
+
+func TestListDeploymentsBefore(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithApps(t)
+	created := map[string]time.Time{}
+	for _, d := range []struct{ app, id string }{
+		{"whoami", "d1"}, {"blog", "b1"}, {"whoami", "d2"}, {"whoami", "d3"}, {"whoami", "d4"},
+	} {
+		rec, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id))
+		if err != nil {
+			t.Fatalf("create %s: %v", d.id, err)
+		}
+		created[d.id] = rec.CreatedAt
+	}
+
+	for _, tc := range []struct {
+		name   string
+		before time.Time
+		limit  int
+		want   []string
+	}{
+		{"older than the newest", created["d4"], 10, []string{"d3", "d2", "d1"}},
+		{"limited", created["d4"], 2, []string{"d3", "d2"}},
+		{"the cursor itself is excluded", created["d2"], 10, []string{"d1"}},
+		{"nothing is older than the oldest", created["d1"], 10, nil},
+		{"another app's deployments never appear", created["d3"], 10, []string{"d2", "d1"}},
+		{"after everything gives everything", created["d4"].Add(time.Hour), 10, []string{"d4", "d3", "d2", "d1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			list, err := s.ListDeploymentsBefore(ctx, "whoami", tc.before, tc.limit)
+			if err != nil {
+				t.Fatalf("ListDeploymentsBefore: %v", err)
+			}
+			if list == nil {
+				t.Error("got a nil slice, want an empty one so callers can range over it")
+			}
+			if got := deploymentIDs(list); !slices.Equal(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	if _, err := s.ListDeploymentsBefore(ctx, "ghost", created["d4"], 10); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown app = %v, want ErrNotFound", err)
+	}
+	if got, err := s.ListDeploymentsBefore(ctx, "whoami", created["d4"], 0); err != nil || len(got) != 0 {
+		t.Errorf("limit 0 = %v, %v; want nothing (the caller's mistake, never everything)", got, err)
+	}
+}

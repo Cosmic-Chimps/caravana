@@ -1,0 +1,66 @@
+{{/* The Apps page (/apps): the headline and the table in one live region, the
+     activity rail in another. Each region is a define that the page draws
+     and /parts/... draws alone, so a refresh and a load can't differ. */}}
+
+{{define "action"}}{{if and .NewApp .Rows}}<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>{{end}}{{end}}
+
+{{define "apps-region"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  <p class="cv-lede">Every app on this caravana, live.</p>
+</header>
+{{if .Rows}}
+<div class="cv-panel cv-apps" role="table" aria-label="Apps">
+  <div class="cv-apps-head cv-label" role="row">
+    <span role="columnheader" class="cv-c-status">Status</span>
+    <span role="columnheader" class="cv-c-name">App</span>
+    <span role="columnheader" class="cv-c-version">Version</span>
+    <span role="columnheader" class="cv-c-image">Image</span>
+    <span role="columnheader" class="cv-c-deploy">Last deploy</span>
+    <span role="columnheader" class="cv-c-addr">Address</span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-row cv-apps-row" role="row">
+    <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}}</div>
+    <div role="cell" class="cv-c-name"><a href="{{.Href}}" class="cv-app-name">{{.ID}}</a></div>
+    <div role="cell" class="cv-c-version" data-label="Version">{{if .Version}}<span class="cv-data text-fg-1">{{.Version}}</span>{{else}}<span class="cv-data-muted">none</span>{{end}}</div>
+    <div role="cell" class="cv-c-image cv-lines" data-label="Image">{{range .Images}}<span class="cv-data" title="{{.Image}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Image}}</span>{{end}}</div>
+    <div role="cell" class="cv-c-deploy cv-lines" data-label="Last deploy">{{with .Deploy}}{{template "time" .When}}{{if .Outcome}}<a href="{{.Href}}" class="cv-outcome">{{if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}{{.Outcome}}</a>{{end}}{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</div>
+    <div role="cell" class="cv-c-addr cv-lines" data-label="Address">{{range .Domains}}<a href="{{.URL}}" class="cv-data">{{.Host}}</a>{{else}}<span class="cv-data-muted">no address</span>{{end}}</div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel">{{template "empty" .Empty}}</div>
+{{end}}
+{{end}}
+
+{{define "activity-region"}}
+{{range .Activity}}
+<div class="cv-row">
+  <a href="{{.Href}}" class="cv-feed-link">
+    <span class="cv-feed-main"><span class="cv-app-name">{{.App}}</span>{{with .Version}} <span class="cv-data">{{.}}</span>{{end}}</span>
+    {{template "status-quiet" .Outcome}}
+    <span class="cv-feed-meta cv-data-muted">{{.Trigger}} · {{template "time" .When}}</span>
+  </a>
+</div>
+{{else}}
+<p class="px-4 py-4 text-sm text-fg-3">Nothing has been deployed yet.</p>
+{{end}}
+{{end}}
+
+{{define "content"}}
+{{with .Deleted}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
+  <span><span class="cv-data text-fg-1">{{.}}</span> was deleted.</span>
+</div>
+{{end}}
+<div class="cv-split">
+  <section class="cv-main" aria-label="Apps" hx-get="/parts/apps" hx-trigger="sse:apps, sse:sync" hx-swap="innerHTML">{{template "apps-region" .}}</section>
+  <aside class="cv-rail" aria-labelledby="activity-title">
+    <h2 id="activity-title" class="cv-label">Activity</h2>
+    <div class="cv-panel" hx-get="/parts/activity" hx-trigger="sse:activity, sse:sync" hx-swap="innerHTML">{{template "activity-region" .}}</div>
+  </aside>
+</div>
+{{end}}

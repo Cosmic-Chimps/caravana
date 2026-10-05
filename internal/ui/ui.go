@@ -37,9 +37,14 @@ func init() {
 
 // Deps is what the pages need.
 type Deps struct {
-	Auth    *service.Auth
+	Auth *service.Auth
+	// Service is what the console pages call; the pages never reach past it
+	// (constitution V). The sign-in and Settings pages need only Auth.
+	Service *service.Service
 	Proxies httpx.Proxies
 	Log     *slog.Logger
+	// Host is the host name shown in the sidebar; "" means the request's Host.
+	Host string
 	// Now is the clock for the relative times on the pages; nil means
 	// time.Now. Tests give it the same fake clock as the Auth.
 	Now func() time.Time
@@ -48,15 +53,28 @@ type Deps struct {
 type server struct {
 	now     func() time.Time
 	auth    *service.Auth
+	svc     *service.Service
+	host    string
 	proxies httpx.Proxies
 	log     *slog.Logger
 	pages   map[string]*template.Template
 	static  fs.FS
-	cssHash string // content hash of app.css, the ?v= cache-buster
+	assets  map[string]string // file under static/ -> content hash, the ?v= cache-buster
 	csrf    *http.CrossOriginProtection
+	live    liveSettings // timings and notice source of the /live streams, see live.go
+
+	// newApp says whether the pages offer "New app". Tests turn it off to
+	// check the pages without the action; newServer turns it on.
+	newApp bool
+	// tabs are the app page's tabs built so far, in order (see app.go).
+	tabs []tabSpec
+	// deployPage is how many deployments the Deployments tab shows before
+	// "Show older"; tests make it small.
+	deployPage int
 }
 
-// New serves /login, /logout, /account, / (a redirect) and /static/….
+// New serves /login, /logout, the console pages (/apps…, /settings), the
+// parts and live streams they use, / (a redirect) and /static/….
 //
 // Every state-changing request passes http.CrossOriginProtection first: it
 // refuses a request the browser marks as coming from another site, by the
@@ -64,7 +82,18 @@ type server struct {
 // ASP.NET's antiforgery tokens; here the browser itself vouches, so no token
 // has to be threaded through every form.)
 func New(d Deps) (http.Handler, error) {
-	s := &server{auth: d.Auth, proxies: d.Proxies, log: d.Log, now: d.Now, csrf: http.NewCrossOriginProtection()}
+	s, err := newServer(d)
+	if err != nil {
+		return nil, err
+	}
+	return s.routes(), nil
+}
+
+// newServer builds the server's state: assets with their hashes and the
+// parsed templates. Tests use it to reach the server itself.
+func newServer(d Deps) (*server, error) {
+	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, proxies: d.Proxies, log: d.Log, now: d.Now,
+		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -74,40 +103,131 @@ func New(d Deps) (http.Handler, error) {
 		return nil, err
 	}
 	s.static = noDirs{sub}
-	css, err := fs.ReadFile(sub, "app.css")
-	if err != nil {
-		return nil, fmt.Errorf("read app.css: %w", err)
-	}
-	sum := sha256.Sum256(css)
-	s.cssHash = hex.EncodeToString(sum[:])[:12]
-
-	if s.pages, err = parseTemplates(); err != nil {
+	if s.assets, err = hashAssets(sub); err != nil {
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/account", http.StatusSeeOther)
-	})
-	mux.HandleFunc("GET /login", s.showLogin)
-	mux.HandleFunc("POST /login", s.protected(s.signIn))
-	mux.HandleFunc("POST /logout", s.protected(s.signOut))
-	mux.HandleFunc("GET /account", s.requireSession(s.showAccount))
-	mux.HandleFunc("POST /account/password", s.protected(s.requireSession(s.changePassword)))
-	mux.HandleFunc("POST /account/tokens", s.protected(s.requireSession(s.createToken)))
-	mux.HandleFunc("POST /account/tokens/{id}/revoke", s.protected(s.requireSession(s.revokeToken)))
-	mux.Handle("GET /static/", http.StripPrefix("/static/", s.serveStatic()))
-	mux.HandleFunc("/", s.notFound)
-	return s.securityHeaders(mux), nil
+	if s.pages, err = s.parseTemplates(pageNames...); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
-// parseTemplates builds one template set per page: the shared base, plus the
-// page's own "content". html/template escapes every value for where it lands
-// (HTML text, attribute, URL), like Razor's @.
-func parseTemplates() (map[string]*template.Template, error) {
+// route is one page, part, stream or action the console serves: the method and
+// the path pattern (Go 1.22 style, "{id}" is a path value), and its handler.
+type route struct {
+	method, path string
+	handler      http.HandlerFunc
+}
+
+// routeTable lists everything the console serves, except the 404 page. The
+// server registers exactly this list, and Routes exports its method and path,
+// so the list a test checks against the API can't drift from what is served.
+func (s *server) routeTable() []route {
+	return []route{
+		{"GET", "/{$}", s.home},
+		{"GET", "/login", s.showLogin},
+		{"POST", "/login", s.protected(s.signIn)},
+		{"POST", "/logout", s.protected(s.signOut)},
+		{"GET", "/apps", s.requireSession(s.showApps)},
+		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
+		{"POST", "/apps", s.protected(s.requireSession(s.createApp))},
+		{"GET", "/apps/{id}", s.requireSession(s.showApp)},
+		{"GET", "/apps/{id}/deployments", s.requireSession(s.showDeployments)},
+		{"GET", "/apps/{id}/configure", s.requireSession(s.showConfigure)},
+		{"GET", "/apps/{id}/logs", s.requireSession(s.showLogs)},
+		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
+		{"POST", "/apps/{id}/webhook", s.protected(s.requireSession(s.createWebhook))},
+		{"POST", "/apps/{id}/webhook/revoke", s.protected(s.requireSession(s.revokeWebhook))},
+		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
+		{"GET", "/parts/apps", s.requirePart(s.partApps)},
+		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
+		{"GET", "/parts/apps/{id}/header", s.requirePart(s.partAppHeader)},
+		{"GET", "/parts/apps/{id}/copies", s.requirePart(s.partCopies)},
+		{"GET", "/parts/apps/{id}/deployments", s.requirePart(s.partDeployments)},
+		{"GET", "/live", s.liveApps},
+		{"GET", "/live/apps/{id}", s.liveApp},
+		{"GET", "/settings", s.requireSession(s.showSettings)},
+		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
+		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
+		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
+		{"GET", "/account", s.showAccount},
+		{"GET", "/static/", http.StripPrefix("/static/", s.serveStatic()).ServeHTTP},
+	}
+}
+
+// Route is a console route as other packages may see it: "GET /apps/{id}".
+type Route struct{ Method, Path string }
+
+// Routes lists the console's routes. A test in internal/api walks it to check
+// that everything the console reads or changes has a twin in the API contract.
+func Routes() []Route {
+	var out []Route
+	for _, rt := range (&server{}).routeTable() {
+		out = append(out, Route{Method: rt.method, Path: rt.path})
+	}
+	return out
+}
+
+// routes is the server's handler, with the security headers around it.
+func (s *server) routes() http.Handler {
+	mux := http.NewServeMux()
+	for _, rt := range s.routeTable() {
+		mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
+	}
+	mux.HandleFunc("/", s.notFound)
+	return s.securityHeaders(mux)
+}
+
+// hashAssets gives every file under static/ (stylesheet, scripts, fonts) a
+// content hash: the first 12 hex digits of its SHA-256. The templates link
+// files as /static/<name>?v=<hash>, so a new build has new URLs and the old
+// ones can be cached for a year.
+func hashAssets(static fs.FS) (map[string]string, error) {
+	assets := map[string]string{}
+	err := fs.WalkDir(static, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		content, err := fs.ReadFile(static, name)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(content)
+		assets[name] = hex.EncodeToString(sum[:])[:12]
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("hash static files: %w", err)
+	}
+	return assets, nil
+}
+
+// asset is the template function {{asset "js/htmx.min.js"}}: the file's URL
+// with its content hash. A name that isn't embedded is an error, so a typo
+// fails the page's tests instead of shipping a dead link.
+func (s *server) asset(name string) (string, error) {
+	hash, ok := s.assets[name]
+	if !ok {
+		return "", fmt.Errorf("no static file %q", name)
+	}
+	return "/static/" + name + "?v=" + hash, nil
+}
+
+// pageNames are the pages with a template set of their own, each built from
+// the shared files plus templates/<name>.html.
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"}
+
+// parseTemplates builds one template set per page: the document (base), the
+// shell (sidebar and top bar), the shared parts, and the page's own
+// "content". Later files override same-named defines of earlier ones, which
+// is how a page fills the shell's "action" slot. html/template escapes every
+// value for where it lands (HTML text, attribute, URL), like Razor's @.
+func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"login", "account", "message"} {
-		t, err := template.New("base.html").ParseFS(templatesFS, "templates/base.html", "templates/"+name+".html")
+	for _, name := range names {
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset}).ParseFS(templatesFS,
+			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}
@@ -116,14 +236,18 @@ func parseTemplates() (map[string]*template.Template, error) {
 	return pages, nil
 }
 
-// pageData is what every page shows: its title and the stylesheet's URL.
+// pageData is what every page shows. Shell is set for the console's pages
+// (shell.html draws the sidebar and top bar around them) and nil for the
+// sign-in page and plain messages. LiveURL is the server-sent events stream
+// the page opens ("" for none); it makes the top bar's live indicator appear.
 type pageData struct {
-	Title string
-	CSS   string
+	Title   string
+	Shell   *shellView
+	LiveURL string
 }
 
 func (s *server) page(title string) pageData {
-	return pageData{Title: title, CSS: "/static/app.css?v=" + s.cssHash}
+	return pageData{Title: title}
 }
 
 // render writes a page. Rendering to a buffer first means a template error
@@ -141,6 +265,31 @@ func (s *server) render(w http.ResponseWriter, status int, name string, data any
 	_, _ = w.Write(buf.Bytes())
 }
 
+// renderPart writes one named piece of a page's template set (a region's
+// fragment), with no document around it. It is the same define the full page
+// draws, so a refreshed region and a loaded page can't differ. A failure
+// answers 500, which htmx doesn't swap in, so the old content stays.
+func (s *server) renderPart(w http.ResponseWriter, page, name string, data any) {
+	var buf bytes.Buffer
+	if err := s.pages[page].ExecuteTemplate(&buf, name, data); err != nil {
+		s.log.Error("render part", "page", page, "part", name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(buf.Bytes())
+}
+
+// origin is scheme://host of the request, for addresses a page shows that
+// someone will paste elsewhere (the webhook URL, the curl example).
+func (s *server) origin(r *http.Request) string {
+	if s.proxies.HTTPS(r) {
+		return "https://" + r.Host
+	}
+	return "http://" + r.Host
+}
+
 // messageData is the plain page for refusals and errors.
 type messageData struct {
 	pageData
@@ -153,7 +302,7 @@ func (s *server) message(w http.ResponseWriter, status int, title, heading, text
 }
 
 func (s *server) notFound(w http.ResponseWriter, r *http.Request) {
-	s.message(w, http.StatusNotFound, "Not found", "That page doesn't exist.", "Check the address, or go back to the account page.")
+	s.message(w, http.StatusNotFound, "Not found", "That page doesn't exist.", "Check the address, or go back to Apps.")
 }
 
 func (s *server) serverError(w http.ResponseWriter, what string, err error) {
@@ -190,13 +339,15 @@ func (n noDirs) Open(name string) (fs.File, error) {
 	return f, nil
 }
 
-// serveStatic serves the embedded stylesheet and fonts. The stylesheet is
-// addressed with its content hash (?v=…), so it can be cached for a year: a
-// new build has a new URL. The fonts' names change if the fonts do.
+// serveStatic serves the embedded stylesheet, scripts and fonts. A file
+// requested with its current content hash (?v=…) is cached for a year: a new
+// build has a new hash, so a new URL. The fonts' names change if the fonts do.
+// Anything else (no hash, or an old one) is revalidated.
 func (s *server) serveStatic() http.Handler {
 	files := http.FileServerFS(s.static)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path.Ext(r.URL.Path) == ".woff2" || (r.URL.Path == "app.css" && r.URL.Query().Get("v") != "") {
+		v := r.URL.Query().Get("v")
+		if path.Ext(r.URL.Path) == ".woff2" || (v != "" && s.assets[r.URL.Path] == v) {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
@@ -275,6 +426,66 @@ func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 			return
 		}
 		next(w, r, value)
+	}
+}
+
+// requirePart is requireSession for the fragments htmx fetches into a page.
+// Redirecting would swap the sign-in page into a region, so a part answers
+// 401 with an empty body and an HX-Redirect header, which makes htmx send the
+// whole browser to /login, remembering the page it was on (HX-Current-URL).
+func (s *server) requirePart(next sessionHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		value, state, err := s.current(r)
+		if err != nil {
+			s.log.Error("check session", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if state != validSession {
+			var params []string
+			if here := currentPath(r); here != "" {
+				params = append(params, "next="+url.QueryEscape(here))
+			}
+			if state == endedSession {
+				params = append(params, "expired=1")
+			}
+			to := "/login"
+			if len(params) > 0 {
+				to += "?" + strings.Join(params, "&")
+			}
+			w.Header().Set("HX-Redirect", to)
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		next(w, r, value)
+	}
+}
+
+// currentPath is the path of the page an htmx request came from (the
+// HX-Current-URL header), if it is one the admin may be sent back to.
+func currentPath(r *http.Request) string {
+	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	if err != nil || u.Path == "" {
+		return ""
+	}
+	return safeNext(u.Path)
+}
+
+// home answers GET /: a signed-in admin lands on the apps, anyone else signs
+// in first (and lands there afterwards: the sign-in default is /apps).
+func (s *server) home(w http.ResponseWriter, r *http.Request) {
+	_, state, err := s.current(r)
+	switch {
+	case err != nil:
+		s.serverError(w, "check session", err)
+	case state == validSession:
+		http.Redirect(w, r, "/apps", http.StatusSeeOther)
+	case state == endedSession:
+		http.Redirect(w, r, "/login?expired=1", http.StatusSeeOther)
+	default:
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
 }
 
