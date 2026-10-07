@@ -3,7 +3,7 @@
   "specName": "Compose translator",
   "branch": "009-compose-translator",
   "currentStep": "implement",
-  "status": "implementing",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -273,6 +273,29 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T13:24:23.191Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T024",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:40:58.177Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T026",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:40:58.418Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:40:58.468Z"
     }
   ],
   "telemetryInstanceId": "8f592a85-bd54-40e8-8541-40080b34c064",
@@ -391,6 +414,21 @@
       "decision": "JSON overlay next to the file; two operations deployCompose and previewCompose",
       "why": "file stays portable; generated clients",
       "rejected": "x-caravana extension; oneOf on deployApp"
+    },
+    {
+      "decision": "Names sidecar only for apps with 2+ services, one with ports; the template includes the service itself",
+      "why": "Compose resolves a service own name; single-service apps need nothing",
+      "rejected": "a sidecar in every group"
+    },
+    {
+      "decision": "Volume groups set Canary 0 and AutoPromote false",
+      "why": "Nomad refuses auto-promote without canaries; single-writer volumes cannot hold a canary",
+      "rejected": "canaries on multi-writer volumes"
+    },
+    {
+      "decision": "Volumes row shown only when a service has volumes",
+      "why": "no volumes is not a default, so it must not appear on the Using defaults line",
+      "rejected": "an always-present row"
     }
   ],
   "step_summaries": {
@@ -400,9 +438,12 @@
     },
     "tasks": {
       "summary": "26 tasks: setup, foundational wave, 3 parallel phases (compose, nomadjob, volumes), integration, polish"
+    },
+    "implement": {
+      "summary": "Compose files deploy as apps: allowlist translator, services by name, named volumes as host volumes, API 0.7.0"
     }
   },
-  "currentTask": "T025",
+  "currentTask": "T026",
   "task_summaries": {
     "T002": {
       "status": "DONE",
@@ -588,6 +629,47 @@
         "CLAUDE.md",
         "docs/plan.md"
       ]
+    },
+    "T024": {
+      "status": "DONE",
+      "did": "gate step compose-app: names across a redeploy, volume data kept, volume deleted; passed in the lab",
+      "files": [
+        "cmd/caravana/gate_test.go"
+      ]
+    },
+    "T026": {
+      "status": "DONE",
+      "did": "CI checks pass; TestLab passed in 792s incl. compose-app",
+      "files": [
+        "-"
+      ]
     }
-  }
+  },
+  "verified": [
+    {
+      "what": "TestLab (console steps then gate, incl. compose-app)",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 30m",
+      "result": "PASS in 792s"
+    },
+    {
+      "what": "go test -race, vet, staticcheck, gofmt, tidy, cross-compiles, ui checks, shellcheck",
+      "command": "see CLAUDE.md commands",
+      "result": "all clean"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "The three parallel workers stopped at the session limit; Phases 3 and 5 were finished inline, Phase 4 from the worker partial work",
+      "step": "implement"
+    },
+    {
+      "note": "Alloc-IP name resolution works on one node; Phase 3 (multi-node) needs routes over WireGuard or a switch to host ports",
+      "step": "implement"
+    },
+    {
+      "note": "The scoped policy rules (host-volume-create/delete, host_volume *_*) are only proven by host.sh prove on a real VM; the lab uses a management token",
+      "step": "implement"
+    }
+  ],
+  "last_action": "26/26 tasks done; race suite and TestLab pass"
 }

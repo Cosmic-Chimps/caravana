@@ -85,7 +85,7 @@ Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 - [x] **T021** [US1] API tests against the contract: 202, preview 200 with no secret values, error fields as Compose paths, nothing saved on refusal · internal/api/compose_test.go
 - [x] **T022** [US1] `api/openapi.yaml` 0.7.0: two operations, `ComposeRequest`, `ComposeOverlay`, `ComposePreview`, `Volume`, source kind `compose` · api/openapi.yaml
 - [x] **T023** [US4] Policy: `host-volume-create`, `host-volume-delete`, `host_volume "*_*" { policy = "write" }` · deploy/vm/caravana-policy.hcl
-- [ ] **T024** [US3] Gate step `compose-app`: a two-service Compose app (`store` serves a file from its volume, `web` fetches `http://store:8080/` by name), checked by exec; redeploy; still reached by name and data kept; delete; volume gone · cmd/caravana/gate_test.go
+- [x] **T024** [US3] Gate step `compose-app`: a two-service Compose app (`store` serves a file from its volume, `web` fetches `http://store:8080/` by name), checked by exec; redeploy; still reached by name and data kept; delete; volume gone · cmd/caravana/gate_test.go
 
 **Checkpoint**: the Phase 2 gate shape works: a multi-service Compose app with a volume.
 
@@ -94,7 +94,7 @@ Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 Files: `CLAUDE.md`, `docs/plan.md`
 
 - [x] **T025** [P] Update where we are · CLAUDE.md, docs/plan.md
-- [ ] **T026** Validate against the Success Criteria: `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `go test -race ./...`, `gofmt -l .`, `go mod tidy -diff`, the linux/arm64 and amd64 cross-compiles, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck, `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab`
+- [x] **T026** Validate against the Success Criteria: `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `go test -race ./...`, `gofmt -l .`, `go mod tidy -diff`, the linux/arm64 and amd64 cross-compiles, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck, `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab`
 
 ## Dependencies & Execution Order
 
