@@ -80,7 +80,6 @@ func TestValidate(t *testing.T) {
 		{"name with NUL", func(a *App, d *Deployment) { a.Name = "bad\x00name" }, "name"},
 		{"name with newline", func(a *App, d *Deployment) { a.Name = "line\nbreak" }, "name"},
 		{"source kind empty", func(a *App, d *Deployment) { a.Source.Kind = "" }, "source.kind"},
-		{"source kind compose", func(a *App, d *Deployment) { a.Source.Kind = "compose" }, "source.kind"},
 		{"no services", func(a *App, d *Deployment) { a.Services = nil }, "services"},
 
 		// Service name and image.
@@ -129,6 +128,29 @@ func TestValidate(t *testing.T) {
 		}, "services[0].secrets[0].name"},
 		{"secret value with NUL", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("a\x00b")}} }, "services[0].secrets[0].value"},
 		{"secret value not UTF-8", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("\xff")}} }, "services[0].secrets[0].value"},
+
+		// Source kinds and volumes.
+		{"valid compose source", func(a *App, d *Deployment) { a.Source.Kind = SourceCompose }, ""},
+		{"unknown source", func(a *App, d *Deployment) { a.Source.Kind = "git" }, "source.kind"},
+		{"valid volumes", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "db_data-1", Path: "/var/lib/data"}, {Name: "cache", Path: "/cache", ReadOnly: true}}
+		}, ""},
+		{"volume name uppercase", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "Data", Path: "/d"}} }, "services[1].volumes[0].name"},
+		{"volume name with a dot", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "a.b", Path: "/d"}} }, "services[1].volumes[0].name"},
+		{"volume path relative", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "data"}} }, "services[1].volumes[0].path"},
+		{"volume path root", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "/"}} }, "services[1].volumes[0].path"},
+		{"volume path not clean", func(a *App, d *Deployment) { a.Services[1].Volumes = []Volume{{Name: "d", Path: "/a/../b"}} }, "services[1].volumes[0].path"},
+		{"volume path twice", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "a", Path: "/d"}, {Name: "b", Path: "/d"}}
+		}, "services[1].volumes[1].path"},
+		{"volume in two services", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "shared", Path: "/d"}}
+			a.Services[1].Volumes = []Volume{{Name: "shared", Path: "/d"}}
+		}, "services[1].volumes[0].name"},
+		{"volume with two copies", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "d", Path: "/d"}}
+			a.Services[1].Replicas = new(2)
+		}, "services[1].replicas"},
 
 		// Ports.
 		{"port name empty", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "" }, "services[0].ports[0].name"},

@@ -11,7 +11,7 @@ Tests are required (constitution VIII).
 
 ## Phase 1: Setup
 
-- [ ] **T001** Add `github.com/compose-spec/compose-go/v2` v2.16.1, tidy, and prove the no-CGO cross-compile · go.mod, go.sum
+- [x] **T001** Add `github.com/compose-spec/compose-go/v2` v2.16.1, tidy, and prove the no-CGO cross-compile · go.mod, go.sum
 
 ## Phase 2: Foundational (blocks every story)
 
@@ -21,9 +21,9 @@ Files: `internal/app/app.go`, `internal/app/validate.go`, `internal/app/validate
 
 **Wave 1 — independent (different files):**
 
-- [ ] **T002** [P] Add `SourceCompose`, `Volume{Name, Path, ReadOnly}`, `Service.Volumes`; accept both source kinds; volume rules (name, absolute path, one service per volume, one copy) with table tests · internal/app/app.go, internal/app/validate.go, internal/app/validate_test.go
-- [ ] **T003** [P] Add `nomadjob.VolumeName(appID, volume)` = `<app>_<volume>` · internal/nomadjob/volume.go
-- [ ] **T004** [P] Add `Settings.NamesImage` (must be pinned by digest), config `CARAVANA_NAMES_IMAGE` / `-names-image` defaulting to `busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e`, with tests · internal/nomadjob/translate.go (Settings and Settings.Validate only), internal/config/config.go, internal/config/config_test.go
+- [x] **T002** [P] Add `SourceCompose`, `Volume{Name, Path, ReadOnly}`, `Service.Volumes`; accept both source kinds; volume rules (name, absolute path, one service per volume, one copy) with table tests · internal/app/app.go, internal/app/validate.go, internal/app/validate_test.go
+- [x] **T003** [P] Add `nomadjob.VolumeName(appID, volume)` = `<app>_<volume>` · internal/nomadjob/volume.go
+- [x] **T004** [P] Add `Settings.NamesImage` (must be pinned by digest), config `CARAVANA_NAMES_IMAGE` / `-names-image` defaulting to `busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e`, with tests · internal/nomadjob/translate.go (Settings and Settings.Validate only), internal/config/config.go, internal/config/config_test.go
 
 ## Phase 3: User Stories 1 + 2 - Compose file → app model, refuse and warn (P1) 🎯 MVP
 

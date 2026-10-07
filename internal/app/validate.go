@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +26,10 @@ var (
 	// container through an env file, whose parser accepts only these keys.
 	secretNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+	// volumeNameRE has no uppercase and no "." so that "<app>_<volume>" is a
+	// valid Nomad volume name, and the first "_" in it always ends the app ID.
+	volumeNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
 	// digestRE is an image reference pinned by digest and without a tag:
 	// an optional registry host (and port), a lowercase path, @sha256: and
 	// 64 lowercase hex characters.
@@ -46,7 +51,7 @@ const (
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
 //  2. each service in order: name, image, replicas, resources, env, secrets,
-//     ports, domains, health
+//     ports, domains, health, then volumes
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
 //
@@ -69,8 +74,8 @@ func ValidateApp(a App) error {
 	if strings.ContainsFunc(a.Name, unicode.IsControl) {
 		return NewFieldError("name", "must not contain control characters")
 	}
-	if a.Source.Kind != SourceImage {
-		return NewFieldError("source.kind", "%q is not supported; only %q is", a.Source.Kind, SourceImage)
+	if a.Source.Kind != SourceImage && a.Source.Kind != SourceCompose {
+		return NewFieldError("source.kind", "%q is not supported; only %q and %q are", a.Source.Kind, SourceImage, SourceCompose)
 	}
 	if len(a.Services) == 0 {
 		return NewFieldError("services", "an app needs at least one service")
@@ -78,10 +83,38 @@ func ValidateApp(a App) error {
 
 	names := map[string]bool{}
 	hosts := map[string]bool{} // across the whole app: one host, one router
+	volumes := map[string]bool{} // across the whole app: one volume, one service
 	for i, svc := range a.Services {
 		if err := validateService(a.ID, i, svc, names, hosts); err != nil {
 			return err
 		}
+		if err := validateVolumes(fmt.Sprintf("services[%d]", i), svc, volumes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateVolumes checks a service's volumes. used collects the names
+// earlier services mount: each volume belongs to one service.
+func validateVolumes(field string, svc Service, used map[string]bool) error {
+	paths := map[string]bool{}
+	for j, v := range svc.Volumes {
+		f := fmt.Sprintf("%s.volumes[%d]", field, j)
+		switch {
+		case !volumeNameRE.MatchString(v.Name):
+			return NewFieldError(f+".name", "%q must be lowercase letters, digits, '-' and '_', starting with a letter or digit, at most 63 characters", v.Name)
+		case used[v.Name]:
+			return NewFieldError(f+".name", "volume %q is already mounted by another service; each volume belongs to one service", v.Name)
+		case !path.IsAbs(v.Path) || path.Clean(v.Path) != v.Path || v.Path == "/":
+			return NewFieldError(f+".path", "%q must be a clean absolute path, not /", v.Path)
+		case paths[v.Path]:
+			return NewFieldError(f+".path", "%q is mounted twice", v.Path)
+		}
+		used[v.Name], paths[v.Path] = true, true
+	}
+	if len(svc.Volumes) > 0 && svc.Replicas != nil && *svc.Replicas > 1 {
+		return NewFieldError(field+".replicas", "a service with a volume runs one copy, got %d", *svc.Replicas)
 	}
 	return nil
 }

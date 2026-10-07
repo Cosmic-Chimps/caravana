@@ -28,8 +28,15 @@ type App struct {
 // SourceKind is the kind of input an App was built from.
 type SourceKind string
 
-// SourceImage is an app built from prebuilt container images, one per service.
-const SourceImage SourceKind = "image"
+// Source kinds. Both describe services by prebuilt images; the kind only
+// records which input the app was normalized from.
+const (
+	// SourceImage is an app described in Caravana's own model, one image per
+	// service.
+	SourceImage SourceKind = "image"
+	// SourceCompose is an app normalized from a Docker Compose file.
+	SourceCompose SourceKind = "compose"
+)
 
 // Source records where an App came from. The image itself lives on each
 // Service.
@@ -55,6 +62,10 @@ type Service struct {
 	// live in the secret store, never in the stored app or the Nomad job.
 	// Each deploy replaces the whole list; a name left out is removed.
 	Secrets []Secret `json:"secrets,omitempty"`
+	// Volumes are directories that keep their data across deploys, each
+	// mounted by this service only. A service with a volume runs one copy,
+	// and its deploys replace the copy instead of running two at once.
+	Volumes []Volume `json:"volumes,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's
@@ -88,6 +99,19 @@ type Secret struct {
 	// Value is the new value: UTF-8 text without a NUL byte. nil keeps the
 	// value the secret has now. It is never stored and never returned.
 	Value *string `json:"value,omitempty"`
+}
+
+// Volume is a named directory of the app on one node, mounted into one
+// service. It is created on the first deploy that names it and deleted with
+// the app.
+type Volume struct {
+	// Name is lowercase letters, digits, "-" and "_", starting with a letter
+	// or digit, and unique across the app.
+	Name string `json:"name"`
+	// Path is where the service sees it: an absolute path, not "/".
+	Path string `json:"path"`
+	// ReadOnly mounts it read-only.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 // WithoutSecretValues returns a copy of a whose secrets have names only, the

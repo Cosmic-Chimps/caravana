@@ -29,6 +29,25 @@ type Settings struct {
 	DefaultCPUMHz int
 	// DefaultMemoryMB is used for services that don't set their own memory.
 	DefaultMemoryMB int
+	// NamesImage is the image of the sidecar that lets the services of an app
+	// reach each other by name. It must be pinned by digest. Empty means
+	// DefaultNamesImage.
+	NamesImage string
+}
+
+// DefaultNamesImage is busybox 1.37, pinned by digest (an index, so it runs
+// on amd64 and arm64).
+const DefaultNamesImage = "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+
+// pinnedImageRE is an image reference pinned by digest, without a tag.
+var pinnedImageRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._/:-]*@sha256:[a-f0-9]{64}$`)
+
+// namesImage is the sidecar image these settings use.
+func (s Settings) namesImage() string {
+	if s.NamesImage == "" {
+		return DefaultNamesImage
+	}
+	return s.NamesImage
 }
 
 // Result is a translated job, ready to register.
@@ -124,6 +143,9 @@ func (s Settings) Validate() error {
 	}
 	if s.DefaultMemoryMB < minMemoryMB {
 		return app.NewFieldError("settings.defaultMemoryMB", "must be at least %d, got %d", minMemoryMB, s.DefaultMemoryMB)
+	}
+	if s.NamesImage != "" && !pinnedImageRE.MatchString(s.NamesImage) {
+		return app.NewFieldError("settings.namesImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.NamesImage)
 	}
 	return nil
 }

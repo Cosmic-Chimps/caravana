@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Compose translator",
   "branch": "009-compose-translator",
-  "currentStep": "tasks",
-  "status": "ready-to-implement",
+  "currentStep": "implement",
+  "status": "implementing",
   "history": [
     {
       "step": "specify",
@@ -74,6 +74,45 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T05:20:11.943Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T05:20:20.697Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:21:25.838Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:21:26.090Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:22:14.309Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:22:14.483Z"
     }
   ],
   "telemetryInstanceId": "8f592a85-bd54-40e8-8541-40080b34c064",
@@ -201,6 +240,42 @@
     },
     "tasks": {
       "summary": "26 tasks: setup, foundational wave, 3 parallel phases (compose, nomadjob, volumes), integration, polish"
+    }
+  },
+  "currentTask": "T001",
+  "task_summaries": {
+    "T002": {
+      "status": "DONE",
+      "did": "SourceCompose, Volume and Service.Volumes, volume rules with table tests",
+      "files": [
+        "internal/app/app.go",
+        "internal/app/validate.go",
+        "internal/app/validate_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "nomadjob.VolumeName and VolumePrefix",
+      "files": [
+        "internal/nomadjob/volume.go"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "Settings.NamesImage (empty = pinned busybox), CARAVANA_NAMES_IMAGE, tests",
+      "files": [
+        "internal/nomadjob/translate.go",
+        "internal/config/config.go",
+        "internal/config/config_test.go"
+      ]
+    },
+    "T001": {
+      "status": "DONE",
+      "did": "compose-go v2.16.1 added (tidied once imported)",
+      "files": [
+        "go.mod",
+        "go.sum"
+      ]
     }
   }
 }
