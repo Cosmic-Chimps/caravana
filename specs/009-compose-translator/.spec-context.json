@@ -1,0 +1,105 @@
+{
+  "workflow": "companion",
+  "specName": "Compose translator",
+  "branch": "009-compose-translator",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T04:59:22.527Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:04:17.404Z"
+    },
+    {
+      "step": "clarify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:04:31.069Z"
+    }
+  ],
+  "telemetryInstanceId": "8f592a85-bd54-40e8-8541-40080b34c064",
+  "unattended": true,
+  "coverage": {
+    "FR-001": {
+      "title": "Deploy an app from a Compose file plus overlay through the API"
+    },
+    "FR-002": {
+      "title": "Preview a Compose file without saving or deploying"
+    },
+    "FR-003": {
+      "title": "Compose normalizes into app.App; nothing reads the file after"
+    },
+    "FR-004": {
+      "title": "Every field honored, warned or refused, naming the field"
+    },
+    "FR-005": {
+      "title": "Refused input fails before anything is saved or deployed"
+    },
+    "FR-006": {
+      "title": "Field paths are Compose or overlay paths"
+    },
+    "FR-007": {
+      "title": "Variables only from file defaults; unset refused"
+    },
+    "FR-008": {
+      "title": "Overlay gives domains, health and secrets per service"
+    },
+    "FR-009": {
+      "title": "Ported service without overlay health gets TCP; replaced healthcheck warns"
+    },
+    "FR-010": {
+      "title": "Services reach each other by Compose name, also after redeploys"
+    },
+    "FR-011": {
+      "title": "Named volumes become durable app volumes; other volume kinds refused"
+    },
+    "FR-012": {
+      "title": "A service with a volume runs one copy, replaced on deploy"
+    },
+    "FR-013": {
+      "title": "Deleting an app deletes its volumes; confirmation names them"
+    },
+    "FR-014": {
+      "title": "App source records Compose"
+    },
+    "FR-015": {
+      "title": "Scoped policy allows volumes; gate step for compose"
+    },
+    "FR-016": {
+      "title": "openapi.yaml changes in the same change"
+    }
+  },
+  "size": "oversized",
+  "classification": {
+    "projectedFiles": 30,
+    "projectedTasks": 32,
+    "scopeSignal": "larger",
+    "verdict": "oversized"
+  },
+  "expectations": [
+    "console form for Compose (later)",
+    "git builds (Phase 4)",
+    "multi-node volume placement (Phase 3)",
+    "backups (010)",
+    "storing the original compose file"
+  ],
+  "context": [
+    "area: internal/app (Source kinds, validate.go:72 guard)",
+    "area: internal/api deploy decoding (decode.go, deployments.go)",
+    "area: internal/service/deploy.go (warnings into the deployment record)",
+    "area: internal/nomadjob translate (groups, update strategy, templates)",
+    "area: deploy/dev and deploy/vm Nomad client config (no host volumes in lab)",
+    "research: compose-go v2.16.1 WithSupportedAttributes allowlist, LoadWithContext from bytes"
+  ],
+  "intent": "Deploy a Docker Compose file as a Caravana app: loud errors, warnings for changed meaning, services by name, named volumes as host volumes"
+}
