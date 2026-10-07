@@ -96,6 +96,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"webhook-unchanged", false, g.webhookUnchanged},
 		{"console-reads", false, g.consoleReads},
 		{"secrets-render", false, g.secretsRender},
+		{"compose-app", false, g.composeAppStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},
@@ -337,8 +338,21 @@ func (g *gate) secretsRender(t *testing.T) {
 // token can; Caravana's can't).
 func (g *gate) execEnv(t *testing.T, appID, task, name, deploymentID string) string {
 	t.Helper()
+	out, err := g.exec(t, appID, task, deploymentID, "printenv", name)
+	if err != nil {
+		t.Fatalf("exec printenv %s: %v", name, err)
+	}
+	return out
+}
+
+// exec runs a command inside a running copy of appID's service (its task
+// group and task share the service's name) that belongs to the deployment's
+// job version, with Nomad's exec (the gate's token can; Caravana's can't).
+// It answers the trimmed output, or an error with the exit code and stderr.
+func (g *gate) exec(t *testing.T, appID, service, deploymentID string, cmd ...string) (string, error) {
+	t.Helper()
 	var alloc *api.Allocation
-	waitFor(t, "a running copy of "+appID, time.Minute, func() bool {
+	waitFor(t, "a running copy of "+appID+"/"+service, time.Minute, func() bool {
 		stubs, _, err := g.target.Nomad.Jobs().Allocations(appID, false, nil)
 		if err != nil {
 			return false
@@ -348,7 +362,7 @@ func (g *gate) execEnv(t *testing.T, appID, task, name, deploymentID string) str
 			return false
 		}
 		for _, s := range stubs {
-			if s.ClientStatus == "running" && s.JobVersion == *job.Version {
+			if s.ClientStatus == "running" && s.JobVersion == *job.Version && s.TaskGroup == service {
 				alloc, _, err = g.target.Nomad.Allocations().Info(s.ID, nil)
 				return err == nil
 			}
@@ -358,12 +372,89 @@ func (g *gate) execEnv(t *testing.T, appID, task, name, deploymentID string) str
 	var out, errOut strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	code, err := g.target.Nomad.Allocations().Exec(ctx, alloc, task, false, []string{"printenv", name},
+	code, err := g.target.Nomad.Allocations().Exec(ctx, alloc, service, false, cmd,
 		strings.NewReader(""), &out, &errOut, nil, nil)
-	if err != nil || code != 0 {
-		t.Fatalf("exec printenv %s: exit %d, %v: %s", name, code, err, errOut.String())
+	if err == nil && code != 0 {
+		err = fmt.Errorf("exit %d: %s", code, strings.TrimSpace(errOut.String()))
 	}
-	return strings.TrimSuffix(out.String(), "\n")
+	return strings.TrimSuffix(out.String(), "\n"), err
+}
+
+// composeApp is a two-service Compose file (feature 009). store writes a
+// random value into its volume on its first start only and serves it on
+// 8080; web only sleeps. "$$" is Compose's escape for a literal "$".
+const composeApp = `services:
+  store:
+    image: busybox:1.37
+    command: ["sh", "-c", "mkdir -p /data/www; [ -f /data/www/index.html ] || cat /proc/sys/kernel/random/uuid > /data/www/index.html; exec httpd -f -p 8080 -h /data/www"]
+    ports: ["8080"]
+    volumes: ["store-data:/data"]
+  web:
+    image: busybox:1.37
+    command: ["sh", "-c", "trap 'exit 0' TERM; while :; do sleep 3600 & wait $$!; done"]
+    depends_on: [store]
+volumes:
+  store-data: {}
+`
+
+// composeAppStep: a Compose app deploys (feature 009) with the token Caravana
+// really runs with: web reaches store by its Compose name on its container
+// port, a redeploy keeps store's volume data and web still reaches it by
+// name, and deleting the app deletes the volume. The volume needs the
+// host-volume rules in deploy/vm/caravana-policy.hcl, so a policy without
+// them fails here.
+func (g *gate) composeAppStep(t *testing.T) {
+	const appID = "gate-compose"
+	resp := g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "") // a leftover from an aborted run, if any
+	resp.Body.Close()
+
+	body, _ := json.Marshal(map[string]string{"compose": composeApp})
+	deploy := func(path, body string) gateDeployment {
+		t.Helper()
+		resp := g.api(t, http.MethodPost, path, "application/json", body)
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var d gateDeployment
+		if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
+			t.Fatalf("POST %s: %d %s", path, resp.StatusCode, raw)
+		}
+		if final := g.waitFinalOf(t, appID, d.ID, 4*time.Minute); final.Status != "healthy" {
+			t.Fatalf("deploy %s ended %s: %s", appID, final.Status, final.Error)
+		}
+		return d
+	}
+	// readByName fetches store's page from inside web, by name, retrying while
+	// web's names catch up with a new copy of store (within seconds).
+	readByName := func(d gateDeployment) string {
+		t.Helper()
+		var got string
+		var lastErr error
+		if !waitUntil(time.Minute, func() bool {
+			got, lastErr = g.exec(t, appID, "web", d.ID, "wget", "-qO-", "-T", "5", "http://store:8080/")
+			return lastErr == nil && got != ""
+		}) {
+			t.Fatalf("web can't reach http://store:8080/ by name: %v", lastErr)
+		}
+		return got
+	}
+
+	first := deploy("/v1/apps/"+appID+"/compose", string(body))
+	before := readByName(first)
+
+	again := deploy("/v1/apps/"+appID+"/deployments", "") // stops store, then starts it on the same volume
+	if after := readByName(again); after != before {
+		t.Errorf("after a redeploy store serves %q, want %q: its volume lost its data, or web reaches the old copy", after, before)
+	}
+
+	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+	}
+	left, _, err := g.target.Nomad.HostVolumes().List(&api.HostVolumeListRequest{}, &api.QueryOptions{Prefix: appID + "_"})
+	if err != nil || len(left) != 0 {
+		t.Errorf("host volumes left after delete: %d (%v)", len(left), err)
+	}
 }
 
 // getJSON reads a JSON answer of the API; anything but 200 fails the step.

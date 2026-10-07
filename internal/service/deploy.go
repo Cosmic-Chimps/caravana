@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,10 +42,21 @@ type appState struct {
 // deployment record exists, errors are *DeployError and the record says
 // failed.
 func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.saveAndDeploy(ctx, a, trigger, nil)
+}
+
+// saveAndDeploy is Deploy with warnings from the input (a Compose file) to
+// record with the deployment.
+func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trigger, warnings []app.Warning) (store.DeploymentRecord, error) {
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	if err := s.checkSecrets(ctx, a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
+		warnings = append(warnings, unmountedVolumes(old.App, a)...)
+	} else if !errors.Is(err, store.ErrNotFound) {
 		return store.DeploymentRecord{}, err
 	}
 	// Only names are stored: the values go to the secret store, in deploy.
@@ -52,7 +64,29 @@ func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
-	return s.deploy(ctx, a, trigger)
+	return s.deployWarned(ctx, a, trigger, warnings)
+}
+
+// unmountedVolumes warns about each volume the stored app has and the new
+// one no longer mounts: its data stays, out of reach, until the app is
+// deleted (or the volume is mounted again).
+func unmountedVolumes(old, next app.App) []app.Warning {
+	mounted := map[string]bool{}
+	for _, svc := range next.Services {
+		for _, v := range svc.Volumes {
+			mounted[v.Name] = true
+		}
+	}
+	var out []app.Warning
+	for _, svc := range old.Services {
+		for _, v := range svc.Volumes {
+			if !mounted[v.Name] {
+				out = append(out, app.Warning{Message: fmt.Sprintf(
+					"volume %q is no longer mounted; its data stays until the app is deleted or a service mounts it again", v.Name)})
+			}
+		}
+	}
+	return out
 }
 
 // Redeploy deploys the stored app again, exactly as Deploy would. An unknown
@@ -69,7 +103,14 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	return s.deploy(ctx, rec.App, trigger)
 }
 
+// deploy runs one deploy of a.
 func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.deployWarned(ctx, a, trigger, nil)
+}
+
+// deployWarned is deploy with warnings about how a was made (a Compose
+// file's changed meanings); they come first in the record.
+func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, input []app.Warning) (store.DeploymentRecord, error) {
 	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}}
 	rec, err := s.store.CreateDeployment(ctx, a.ID, dep)
 	if err != nil {
@@ -132,7 +173,7 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	// Nomad has accepted the job: from now on nothing is returned as an
 	// error. A failed write is logged, and the watcher brings the record up
 	// to date (research R6).
-	warnings = append(warnings, reg.Warnings...)
+	warnings = append(append(slices.Clone(input), warnings...), reg.Warnings...)
 	if warnings == nil {
 		warnings = []app.Warning{}
 	}

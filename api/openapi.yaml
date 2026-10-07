@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.6.0
+  version: 0.7.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -287,6 +287,95 @@ paths:
           $ref: "#/components/responses/Internal"
         "502":
           $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/compose:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: deployCompose
+      summary: Save an app from a Compose file and deploy it.
+      description: |
+        The Compose file is turned into an app (source kind `compose`) and deployed exactly
+        like `deployApp` does with a body: saved under this ID, replacing the stored app, and
+        rolled out. The file itself isn't stored; redeploys use the stored app.
+
+        Every attribute of the file is honored, honored with a warning in the deployment's
+        `warnings`, or refused with 400 naming it in `field` as a path in the file
+        (`services.web.build`). `x-` extensions are ignored. Variables (`${NAME}`) take only the
+        file's own defaults. What Compose has no words for (public domains, a health check
+        Nomad can run, secret values) goes in `services`, next to the file.
+      tags: [deployments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComposeRequest"
+      responses:
+        "202":
+          description: Nomad accepted the job; follow it like any deployment.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/JobConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/compose/preview:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: previewCompose
+      summary: Show the app a Compose file becomes, without saving or deploying it.
+      description: |
+        Takes the same body as `deployCompose` and answers with the app it would deploy and the
+        warnings it would carry. Nothing is saved, deployed or asked of Nomad. Secrets list
+        names only.
+      tags: [deployments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComposeRequest"
+      responses:
+        "200":
+          description: The app and its warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComposePreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /v1/apps/{id}/deployments:
     parameters:
@@ -720,7 +809,10 @@ components:
           properties:
             kind:
               type: string
-              enum: [image]
+              enum: [image, compose]
+              description: |
+                Which input the app came from. `compose` is set by `deployCompose`; both kinds
+                deploy the same way.
         services:
           type: array
           minItems: 1
@@ -772,6 +864,15 @@ components:
             app's secrets hold at most 61440 bytes in total.
           items:
             $ref: "#/components/schemas/Secret"
+        volumes:
+          type: array
+          description: |
+            Directories that keep their data across deploys, each mounted by this service only.
+            A service with a volume runs one copy (`replicas` absent or 1), and its deploys stop
+            the old copy before starting the new one. A volume is created on the first deploy
+            that names it and deleted with the app.
+          items:
+            $ref: "#/components/schemas/Volume"
         ports:
           type: array
           items:
@@ -821,6 +922,103 @@ components:
               $ref: "#/components/schemas/Duration"
             timeout:
               $ref: "#/components/schemas/Duration"
+
+    Volume:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9_-]{0,62}$"
+          description: Unique across the app.
+        path:
+          type: string
+          description: Where the service sees it. An absolute, clean path, not `/`.
+          examples: ["/var/lib/postgresql/data"]
+        readOnly:
+          type: boolean
+
+    ComposeRequest:
+      type: object
+      additionalProperties: false
+      required: [compose]
+      properties:
+        compose:
+          type: string
+          maxLength: 524288
+          description: The Compose file, as `docker compose up` would read it.
+        name:
+          type: string
+          description: Display name of the app. Empty means the ID.
+        services:
+          type: object
+          description: What Compose has no words for, per service of the file (by its name).
+          additionalProperties:
+            $ref: "#/components/schemas/ComposeOverlay"
+      examples:
+        - compose: |
+            services:
+              web:
+                image: traefik/whoami
+                ports: ["80"]
+          services:
+            web:
+              domains: [{host: whoami.localhost}]
+
+    ComposeOverlay:
+      type: object
+      additionalProperties: false
+      properties:
+        domains:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [host]
+            properties:
+              host: {type: string}
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: The container port the domain routes to. Optional when the service has one port.
+        health:
+          type: object
+          additionalProperties: false
+          description: |
+            The check Nomad runs. Without it, a service with ports is checked over TCP on its
+            first port.
+          properties:
+            path:
+              type: string
+              description: Makes it an HTTP check on this path. Empty means a TCP check.
+            port:
+              type: integer
+              minimum: 1
+              maximum: 65535
+              description: The container port to check. Optional when the service has one port.
+            interval:
+              $ref: "#/components/schemas/Duration"
+            timeout:
+              $ref: "#/components/schemas/Duration"
+        secrets:
+          type: array
+          description: The service's secrets, with the meaning `Service.secrets` has.
+          items:
+            $ref: "#/components/schemas/Secret"
+
+    ComposePreview:
+      type: object
+      additionalProperties: false
+      required: [app, warnings]
+      properties:
+        app:
+          $ref: "#/components/schemas/App"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
 
     Secret:
       type: object

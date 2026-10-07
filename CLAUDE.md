@@ -86,7 +86,21 @@ template is `noop`, so values reach copies only through a rollout. Configure has
 section (set, remove, each a deploy); the API is `deployApp` with `secrets`
 (`api/openapi.yaml` 0.6.0, new code `secret_store_unavailable`). The scoped policy gained
 `variables` on `nomad/jobs/*` (run `host.sh up` on an existing host), and the gate has a step
-`secrets-render`. Next: 009.
+`secrets-render`. Feature 009 is implemented on branch `009-compose-translator` (stacked on 008):
+`POST /v1/apps/{id}/compose` deploys an app from a Compose file plus a JSON overlay (per service:
+domains, health, secrets) and `POST /v1/apps/{id}/compose/preview` shows the app it becomes
+(`api/openapi.yaml` 0.7.0). `internal/compose` is the only importer of `compose-go` and is pure:
+it loads from bytes with no disk and no OS environment, variables only take the file's defaults,
+and an allowlist of Compose attribute paths (`fields.go`) decides what is honored, warned
+(`depends_on`, a `healthcheck` command, published ports, ...) or refused, naming the path
+(`services.web.build`). Two capabilities came with it for every input: services of a
+multi-service app reach each other by name (each group gets a `names` prestart sidecar, busybox
+pinned by digest via `CARAVANA_NAMES_IMAGE`, that rewrites the group's `/etc/hosts` from the
+`<app>-<service>-internal` alloc-address registrations, skipping canaries), and `Service.Volumes`
+become Nomad dynamic host volumes `<app>_<volume>` (`mkdir` plugin), created by
+`deploy.EnsureVolumes` before register and deleted with the app; a group with a volume runs one
+copy and deploys stop-then-start. The scoped policy gained `host-volume-create/-delete` and
+`host_volume "*_*"`, and the gate has a step `compose-app`. Next: 010.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -105,7 +119,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 008 Secrets: `secrets.Provider`, Nomad Variables, declarative replace on every deploy
   (done, branch `008-secrets`)
 - 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
-  host volumes
+  host volumes (done, branch `009-compose-translator`)
 - 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to
   S3-compatible storage
 - 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec

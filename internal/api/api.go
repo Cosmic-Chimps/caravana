@@ -62,6 +62,8 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
 		{http.MethodGet, "/v1/apps/{id}/logs", s.getLogs, false, true},
 		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false, false},
+		{http.MethodPost, "/v1/apps/{id}/compose", s.deployCompose, false, false},
+		{http.MethodPost, "/v1/apps/{id}/compose/preview", s.previewCompose, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false, false},
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},

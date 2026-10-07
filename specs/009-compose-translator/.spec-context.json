@@ -113,6 +113,166 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T05:22:14.483Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T023",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:24:34.537Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:13:50.390Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:13:50.596Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:13:50.885Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:18:32.885Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:18:33.076Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:18:33.253Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:18:33.452Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:18:33.645Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:21:39.858Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:21:40.026Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:21:40.210Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T016",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:21:40.409Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T017",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:22:59.149Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T018",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:15.030Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T019",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:15.200Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T020",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:15.379Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T021",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:15.564Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T022",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:15.751Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T025",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T13:24:23.191Z"
     }
   ],
   "telemetryInstanceId": "8f592a85-bd54-40e8-8541-40080b34c064",
@@ -242,7 +402,7 @@
       "summary": "26 tasks: setup, foundational wave, 3 parallel phases (compose, nomadjob, volumes), integration, polish"
     }
   },
-  "currentTask": "T001",
+  "currentTask": "T025",
   "task_summaries": {
     "T002": {
       "status": "DONE",
@@ -275,6 +435,158 @@
       "files": [
         "go.mod",
         "go.sum"
+      ]
+    },
+    "T023": {
+      "status": "DONE",
+      "did": "policy: host-volume-create/-delete, host_volume *_* write",
+      "files": [
+        "deploy/vm/caravana-policy.hcl"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "names sidecar and internal alloc-mode registrations; length rule",
+      "files": [
+        "internal/nomadjob/names.go",
+        "internal/nomadjob/translate.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "volume requests, task mounts, canary 0 for groups with a volume",
+      "files": [
+        "internal/nomadjob/translate.go"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "volumes fixture, regenerated goldens (multi-service, secrets), focused tests",
+      "files": [
+        "internal/nomadjob/translate_test.go",
+        "internal/nomadjob/testdata",
+        "internal/app/apptest/fixtures.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "load from bytes, variable lookup refusing unset names, logrus silenced",
+      "files": [
+        "internal/compose/compose.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "allowlist of supported paths, hints for common refusals, project warnings",
+      "files": [
+        "internal/compose/fields.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "service mapping: command, env, ports, volumes, resources, overlay, warnings",
+      "files": [
+        "internal/compose/service.go"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "golden fixtures web-worker and web-db with overlays",
+      "files": [
+        "internal/compose/compose_test.go",
+        "internal/compose/testdata"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "refusal table (30 cases), warnings, variables never from the host env",
+      "files": [
+        "internal/compose/compose_test.go"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "fake Nomad host volumes: create pending->ready, get, list by prefix, delete refused while in use",
+      "files": [
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "EnsureVolumes (create, wait ready) called by Register; DeleteVolumes with in-use retry; Timing.VolumeDeleteWait",
+      "files": [
+        "internal/deploy/volumes.go",
+        "internal/deploy/register.go",
+        "internal/deploy/deploy.go"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "volume tests: create once, errors, foreign job creates none, delete with in-use retry",
+      "files": [
+        "internal/deploy/volumes_test.go"
+      ]
+    },
+    "T016": {
+      "status": "DONE",
+      "did": "DeleteApp deletes volumes after purge; unmounted-volume warning; tests",
+      "files": [
+        "internal/service/apps.go",
+        "internal/service/deploy.go",
+        "internal/service/volumes_test.go"
+      ]
+    },
+    "T017": {
+      "status": "DONE",
+      "did": "Configure: Volumes row only when present; delete sentence names volumes; test",
+      "files": [
+        "internal/ui/configure.go",
+        "internal/ui/configure_test.go"
+      ]
+    },
+    "T018": {
+      "status": "DONE",
+      "did": "DeployCompose, PreviewCompose; deploy carries input warnings; unmounted-volume warning",
+      "files": [
+        "internal/service/compose.go",
+        "internal/service/deploy.go"
+      ]
+    },
+    "T019": {
+      "status": "DONE",
+      "did": "service tests: deploy, refused saves nothing, preview changes nothing",
+      "files": [
+        "internal/service/compose_test.go"
+      ]
+    },
+    "T020": {
+      "status": "DONE",
+      "did": "deployCompose and previewCompose handlers and routes",
+      "files": [
+        "internal/api/compose.go",
+        "internal/api/api.go"
+      ]
+    },
+    "T021": {
+      "status": "DONE",
+      "did": "API tests against the contract: 202 with warnings, preview never echoes values, error paths, nothing saved",
+      "files": [
+        "internal/api/compose_test.go"
+      ]
+    },
+    "T022": {
+      "status": "DONE",
+      "did": "openapi 0.7.0: two operations, ComposeRequest/Overlay/Preview, Volume, source kind compose",
+      "files": [
+        "api/openapi.yaml"
+      ]
+    },
+    "T025": {
+      "status": "DONE",
+      "did": "CLAUDE.md where-we-are and phase list, docs/plan.md 009 row",
+      "files": [
+        "CLAUDE.md",
+        "docs/plan.md"
       ]
     }
   }

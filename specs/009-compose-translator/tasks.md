@@ -35,14 +35,14 @@ everything outside the allowlist by its Compose path.
 
 ### Tests
 
-- [ ] **T005** [P] [US1] Fixture tests: a two-service file plus overlay gives the golden app model; ports, expose, command, env, replicas, resources, TCP default health, overlay domains/health/secrets, named volumes · internal/compose/compose_test.go, internal/compose/testdata/
-- [ ] **T006** [P] [US2] Table tests: each refused attribute fails on its path (build, entrypoint, env_file, secrets, bind mount, tmpfs, privileged, profiles, include, unknown key, udp port, env without value, unset variable, overlay for an unknown service); each warned attribute warns on its path · internal/compose/compose_test.go
+- [x] **T005** [P] [US1] Fixture tests: a two-service file plus overlay gives the golden app model; ports, expose, command, env, replicas, resources, TCP default health, overlay domains/health/secrets, named volumes · internal/compose/compose_test.go, internal/compose/testdata/
+- [x] **T006** [P] [US2] Table tests: each refused attribute fails on its path (build, entrypoint, env_file, secrets, bind mount, tmpfs, privileged, profiles, include, unknown key, udp port, env without value, unset variable, overlay for an unknown service); each warned attribute warns on its path · internal/compose/compose_test.go
 
 ### Implementation
 
-- [ ] **T007** [US1] Loading from bytes with the options of research R1, the variable lookup that refuses unset names, logrus silenced · internal/compose/compose.go
-- [ ] **T008** [US2] The allowlist and the warned attributes with their messages (research R2) · internal/compose/fields.go
-- [ ] **T009** [US1] One `ServiceConfig` plus overlay → `app.Service` (ports and labels, health, volumes, resources), deterministic order (services sorted by name) · internal/compose/service.go
+- [x] **T007** [US1] Loading from bytes with the options of research R1, the variable lookup that refuses unset names, logrus silenced · internal/compose/compose.go
+- [x] **T008** [US2] The allowlist and the warned attributes with their messages (research R2) · internal/compose/fields.go
+- [x] **T009** [US1] One `ServiceConfig` plus overlay → `app.Service` (ports and labels, health, volumes, resources), deterministic order (services sorted by name) · internal/compose/service.go
 
 **Checkpoint**: `go test ./internal/compose` proves the translation without Nomad.
 
@@ -51,9 +51,9 @@ everything outside the allowlist by its Compose path.
 Files: `internal/nomadjob/translate.go` (except Settings), `internal/nomadjob/translate_test.go`,
 `internal/nomadjob/testdata/`, `internal/app/apptest/fixtures.go`
 
-- [ ] **T010** [US3] Multi-service apps: `<app>-<service>-internal` alloc-mode registration with canary tags; `names` prestart sidecar with the hosts template and script (research R3); the length rule in `Check` · internal/nomadjob/translate.go
-- [ ] **T011** [US4] Volumes: group volume requests (`VolumeName`, single-node-single-writer, file-system), task mounts, `Canary: 0` for groups with a volume · internal/nomadjob/translate.go
-- [ ] **T012** [US3] Golden cases: multi-service gains the sidecar; new `volumes` fixture; tests that a single-service app has no sidecar and the template skips canaries · internal/nomadjob/translate_test.go, internal/nomadjob/testdata/, internal/app/apptest/fixtures.go
+- [x] **T010** [US3] Multi-service apps: `<app>-<service>-internal` alloc-mode registration with canary tags; `names` prestart sidecar with the hosts template and script (research R3); the length rule in `Check` · internal/nomadjob/translate.go
+- [x] **T011** [US4] Volumes: group volume requests (`VolumeName`, single-node-single-writer, file-system), task mounts, `Canary: 0` for groups with a volume · internal/nomadjob/translate.go
+- [x] **T012** [US3] Golden cases: multi-service gains the sidecar; new `volumes` fixture; tests that a single-service app has no sidecar and the template skips canaries · internal/nomadjob/translate_test.go, internal/nomadjob/testdata/, internal/app/apptest/fixtures.go
 
 **Checkpoint**: golden jobs show the sidecar, the internal registration and the volume.
 
@@ -64,11 +64,11 @@ Files: `internal/deploy/volumes.go`, `internal/deploy/volumes_test.go`,
 `internal/deploy/deploytest/nomad_test.go`, `internal/service/apps.go`,
 `internal/service/volumes_test.go`, `internal/ui/configure.go`, `internal/ui/configure_test.go`
 
-- [ ] **T013** [US4] Fake Nomad: `PUT /v1/volume/host/create` (pending, then ready), `GET /v1/volume/host/{id}`, `GET /v1/volumes?type=host&prefix=`, `DELETE /v1/volume/host/{id}` (refused while the job's allocations exist) · internal/deploy/deploytest/nomad.go, internal/deploy/deploytest/nomad_test.go
-- [ ] **T014** [US4] `EnsureVolumes` (create the missing ones, wait for ready) called by `Register`; `DeleteVolumes` (by prefix, retrying "in use" up to 60 s); errors as `ErrNomadUnavailable`/`ErrNomadRejected` · internal/deploy/volumes.go, internal/deploy/register.go
-- [ ] **T015** [US4] Tests for both against the fake · internal/deploy/volumes_test.go
-- [ ] **T016** [US5] `DeleteApp` deletes the volumes after the purge, before the secrets; tests · internal/service/apps.go, internal/service/volumes_test.go
-- [ ] **T017** [US5] Configure: a Volumes row per service, source "compose", and the delete sentence names each volume and says its data is erased; tests · internal/ui/configure.go, internal/ui/configure_test.go
+- [x] **T013** [US4] Fake Nomad: `PUT /v1/volume/host/create` (pending, then ready), `GET /v1/volume/host/{id}`, `GET /v1/volumes?type=host&prefix=`, `DELETE /v1/volume/host/{id}` (refused while the job's allocations exist) · internal/deploy/deploytest/nomad.go, internal/deploy/deploytest/nomad_test.go
+- [x] **T014** [US4] `EnsureVolumes` (create the missing ones, wait for ready) called by `Register`; `DeleteVolumes` (by prefix, retrying "in use" up to 60 s); errors as `ErrNomadUnavailable`/`ErrNomadRejected` · internal/deploy/volumes.go, internal/deploy/register.go
+- [x] **T015** [US4] Tests for both against the fake · internal/deploy/volumes_test.go
+- [x] **T016** [US5] `DeleteApp` deletes the volumes after the purge, before the secrets; tests · internal/service/apps.go, internal/service/volumes_test.go
+- [x] **T017** [US5] Configure: a Volumes row per service, source "compose", and the delete sentence names each volume and says its data is erased; tests · internal/ui/configure.go, internal/ui/configure_test.go
 
 **Checkpoint**: volumes are created before the first deploy and gone after delete.
 
@@ -79,12 +79,12 @@ Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 `internal/api/api.go`, `api/openapi.yaml`, `deploy/vm/caravana-policy.hcl`,
 `cmd/caravana/gate_test.go`
 
-- [ ] **T018** [US1] `DeployCompose` and `PreviewCompose`; `deploy` takes extra warnings (stored with the record); warning for a volume no longer mounted · internal/service/compose.go, internal/service/deploy.go
-- [ ] **T019** [US1] Service tests: deploy, preview saves nothing, warnings reach the record, refused file saves nothing · internal/service/compose_test.go
-- [ ] **T020** [US1] `POST /v1/apps/{id}/compose` and `/compose/preview` handlers, routes · internal/api/compose.go, internal/api/api.go
-- [ ] **T021** [US1] API tests against the contract: 202, preview 200 with no secret values, error fields as Compose paths, nothing saved on refusal · internal/api/compose_test.go
-- [ ] **T022** [US1] `api/openapi.yaml` 0.7.0: two operations, `ComposeRequest`, `ComposeOverlay`, `ComposePreview`, `Volume`, source kind `compose` · api/openapi.yaml
-- [ ] **T023** [US4] Policy: `host-volume-create`, `host-volume-delete`, `host_volume "*_*" { policy = "write" }` · deploy/vm/caravana-policy.hcl
+- [x] **T018** [US1] `DeployCompose` and `PreviewCompose`; `deploy` takes extra warnings (stored with the record); warning for a volume no longer mounted · internal/service/compose.go, internal/service/deploy.go
+- [x] **T019** [US1] Service tests: deploy, preview saves nothing, warnings reach the record, refused file saves nothing · internal/service/compose_test.go
+- [x] **T020** [US1] `POST /v1/apps/{id}/compose` and `/compose/preview` handlers, routes · internal/api/compose.go, internal/api/api.go
+- [x] **T021** [US1] API tests against the contract: 202, preview 200 with no secret values, error fields as Compose paths, nothing saved on refusal · internal/api/compose_test.go
+- [x] **T022** [US1] `api/openapi.yaml` 0.7.0: two operations, `ComposeRequest`, `ComposeOverlay`, `ComposePreview`, `Volume`, source kind `compose` · api/openapi.yaml
+- [x] **T023** [US4] Policy: `host-volume-create`, `host-volume-delete`, `host_volume "*_*" { policy = "write" }` · deploy/vm/caravana-policy.hcl
 - [ ] **T024** [US3] Gate step `compose-app`: a two-service Compose app (`store` serves a file from its volume, `web` fetches `http://store:8080/` by name), checked by exec; redeploy; still reached by name and data kept; delete; volume gone · cmd/caravana/gate_test.go
 
 **Checkpoint**: the Phase 2 gate shape works: a multi-service Compose app with a volume.
@@ -93,7 +93,7 @@ Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 
 Files: `CLAUDE.md`, `docs/plan.md`
 
-- [ ] **T025** [P] Update where we are · CLAUDE.md, docs/plan.md
+- [x] **T025** [P] Update where we are · CLAUDE.md, docs/plan.md
 - [ ] **T026** Validate against the Success Criteria: `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `go test -race ./...`, `gofmt -l .`, `go mod tidy -diff`, the linux/arm64 and amd64 cross-compiles, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck, `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab`
 
 ## Dependencies & Execution Order
