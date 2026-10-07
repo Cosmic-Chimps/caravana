@@ -26,6 +26,8 @@ const (
 	codeTokenNameTaken       = "token_name_taken"
 	codeAppExists            = "app_exists"
 	codeSecretStoreUnavail   = "secret_store_unavailable"
+	codeBackupRunning        = "backup_running"
+	codeNoBackupDestination  = "no_backup_destination"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

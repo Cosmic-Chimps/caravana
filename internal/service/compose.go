@@ -17,7 +17,8 @@ func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.R
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	return s.saveAndDeploy(ctx, a, trigger, warnings)
+	rec, err := s.saveAndDeploy(ctx, a, trigger, warnings)
+	return rec, compose.InFile(err, a)
 }
 
 // PreviewCompose answers what DeployCompose would deploy: the app, with

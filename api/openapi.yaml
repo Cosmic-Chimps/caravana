@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.7.0
+  version: 0.8.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -376,6 +376,157 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/Internal"
+
+  /v1/backups/destination:
+    get:
+      operationId: getBackupDestination
+      summary: Read where backups go, without the secret key.
+      tags: [backups]
+      responses:
+        "200":
+          description: The destination.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDestination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: setBackupDestination
+      summary: Set where backups go.
+      description: |
+        One S3-compatible bucket for the installation. Leave `secretAccessKey` out to keep the
+        one set before; it is required the first time and never returned. Every backup
+        schedule uses the new destination from its next run, without a deploy.
+      tags: [backups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupDestinationRequest"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDestination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/backups:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: listBackups
+      summary: List an app's backups still in the destination, and its recent restores.
+      tags: [backups]
+      responses:
+        "200":
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createBackup
+      summary: Back up one service now.
+      description: |
+        Starts a backup of a service with a backup policy. It runs in the background: list the
+        backups to follow it. 409 `backup_running` while a backup or restore of that service
+        runs; 409 `no_backup_destination` when none is set.
+      tags: [backups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [service]
+              properties:
+                service: {type: string}
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Backup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BackupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/backups/{backupId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: backupId
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: restoreBackup
+      summary: Load a backup into its running database.
+      description: |
+        Replaces what the service's database holds with the backup (`pg_restore --clean`).
+        Clients connected meanwhile may see errors. It runs in the background: list the backups
+        to follow the restore. One restore per service at a time.
+      tags: [backups]
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restore"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BackupConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /v1/apps/{id}/deployments:
     parameters:
@@ -873,6 +1024,8 @@ components:
             that names it and deleted with the app.
           items:
             $ref: "#/components/schemas/Volume"
+        backup:
+          $ref: "#/components/schemas/BackupPolicy"
         ports:
           type: array
           items:
@@ -1007,6 +1160,100 @@ components:
           description: The service's secrets, with the meaning `Service.secrets` has.
           items:
             $ref: "#/components/schemas/Secret"
+        backup:
+          $ref: "#/components/schemas/BackupPolicy"
+
+    BackupPolicy:
+      type: object
+      additionalProperties: false
+      required: [engine]
+      description: |
+        Makes the service a database Caravana backs up to the backup destination. The service
+        needs ports and `POSTGRES_PASSWORD` in its env or secrets.
+      properties:
+        engine:
+          type: string
+          enum: [postgres]
+        schedule:
+          type: string
+          description: Five-field cron, in UTC. Leave it out for `0 3 * * *`.
+        keep:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: How many backups stay. Leave it out for 7.
+
+    BackupDestination:
+      type: object
+      additionalProperties: false
+      required: [endpoint, region, bucket, prefix, accessKeyId, updatedAt]
+      properties:
+        endpoint: {type: string, examples: ["https://s3.eu-west-1.amazonaws.com"]}
+        region: {type: string}
+        bucket: {type: string}
+        prefix: {type: string}
+        accessKeyId: {type: string}
+        updatedAt: {type: string, format: date-time}
+
+    BackupDestinationRequest:
+      type: object
+      additionalProperties: false
+      required: [endpoint, region, bucket, accessKeyId]
+      properties:
+        endpoint: {type: string}
+        region: {type: string}
+        bucket: {type: string}
+        prefix: {type: string}
+        accessKeyId: {type: string}
+        secretAccessKey:
+          type: string
+          writeOnly: true
+
+    Backup:
+      type: object
+      additionalProperties: false
+      required: [id, service, status, bytes, startedAt]
+      properties:
+        id: {type: string, examples: ["db-1791386036"]}
+        service: {type: string}
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        bytes: {type: integer}
+        message:
+          type: string
+          description: Why it failed, as the dump or the upload said.
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+
+    Restore:
+      type: object
+      additionalProperties: false
+      required: [id, service, backupId, status, createdAt]
+      properties:
+        id: {type: string}
+        service: {type: string}
+        backupId: {type: string}
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        message: {type: string}
+        createdAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+
+    BackupList:
+      type: object
+      additionalProperties: false
+      required: [backups, restores]
+      properties:
+        backups:
+          type: array
+          items:
+            $ref: "#/components/schemas/Backup"
+        restores:
+          type: array
+          items:
+            $ref: "#/components/schemas/Restore"
 
     ComposePreview:
       type: object
@@ -1305,7 +1552,7 @@ components:
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
-                `secret_store_unavailable`.
+                `secret_store_unavailable`, `backup_running`, `no_backup_destination`.
               examples: [invalid_field]
             message:
               type: string
@@ -1430,6 +1677,14 @@ components:
             $ref: "#/components/schemas/Error"
     UnsupportedMediaType:
       description: The body isn't `application/json` in UTF-8.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BackupConflict:
+      description: |
+        `backup_running`: a backup or restore of this service is running; try again when it
+        ends. `no_backup_destination`: no backup destination is set.
       content:
         application/json:
           schema:

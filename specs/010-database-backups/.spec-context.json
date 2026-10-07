@@ -209,6 +209,30 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:44:53.850Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T017",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:48:58.342Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T018",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:48:58.514Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T019",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:48:58.651Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -310,7 +334,7 @@
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
     }
   },
-  "currentTask": "T016",
+  "currentTask": "T019",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -472,6 +496,45 @@
         "internal/service/service.go",
         "internal/service/apps.go",
         "internal/service/backups_test.go"
+      ]
+    },
+    "T017": {
+      "status": "DONE",
+      "did": "API: five backup operations, error codes, openapi 0.8.0, tests (no secret in any answer)",
+      "files": [
+        "internal/api/backups.go",
+        "internal/api/api.go",
+        "internal/api/errors.go",
+        "api/openapi.yaml",
+        "internal/api/backups_test.go",
+        "internal/compose/compose.go",
+        "internal/service/compose.go"
+      ]
+    },
+    "T018": {
+      "status": "DONE",
+      "did": "API: five backup operations, error codes, openapi 0.8.0, tests (no secret in any answer)",
+      "files": [
+        "internal/api/backups.go",
+        "internal/api/api.go",
+        "internal/api/errors.go",
+        "api/openapi.yaml",
+        "internal/api/backups_test.go",
+        "internal/compose/compose.go",
+        "internal/service/compose.go"
+      ]
+    },
+    "T019": {
+      "status": "DONE",
+      "did": "API: five backup operations, error codes, openapi 0.8.0, tests (no secret in any answer)",
+      "files": [
+        "internal/api/backups.go",
+        "internal/api/api.go",
+        "internal/api/errors.go",
+        "api/openapi.yaml",
+        "internal/api/backups_test.go",
+        "internal/compose/compose.go",
+        "internal/service/compose.go"
       ]
     }
   }

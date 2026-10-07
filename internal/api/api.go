@@ -64,6 +64,11 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false, false},
 		{http.MethodPost, "/v1/apps/{id}/compose", s.deployCompose, false, false},
 		{http.MethodPost, "/v1/apps/{id}/compose/preview", s.previewCompose, false, false},
+		{http.MethodGet, "/v1/backups/destination", s.getBackupDestination, false, false},
+		{http.MethodPut, "/v1/backups/destination", s.setBackupDestination, false, false},
+		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
+		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
+		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false, false},
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
@@ -207,6 +212,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 	var apiErr *Error
 	var fieldErr *app.FieldError
 	var imageErr *deploy.ImageError
+	if e := backupError(err); e != nil {
+		return e
+	}
 	switch {
 	case errors.As(err, &apiErr):
 		return apiErr

@@ -191,6 +191,18 @@ func substitute(unset *[]string) func(string, template.Mapping) (string, error) 
 	}
 }
 
+// InFile rewrites the field of a model error about a, an app Translate made,
+// to its path in the file: "services[1].backup" becomes "services.db.backup".
+// Other errors are returned as they are. The deploy flow uses it for what it
+// refuses after translation.
+func InFile(err error, a app.App) error {
+	names := make([]string, len(a.Services))
+	for i, svc := range a.Services {
+		names[i] = svc.Name
+	}
+	return inFile(err, names)
+}
+
 // inFile rewrites a model error's field ("services[1].volumes[0].name") to
 // the service's path in the file ("services.db.volumes[0].name"). names are
 // the services in the app's order.
