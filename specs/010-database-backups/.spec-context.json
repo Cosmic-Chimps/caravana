@@ -1,0 +1,101 @@
+{
+  "workflow": "companion",
+  "specName": "Database backups",
+  "branch": "010-databases-backups",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T15:07:34.049Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:08:43.746Z"
+    },
+    {
+      "step": "clarify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:08:43.982Z"
+    }
+  ],
+  "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
+  "unattended": true,
+  "coverage": {
+    "FR-001": {
+      "title": "Set, read, change one backup destination"
+    },
+    "FR-002": {
+      "title": "Service declares Postgres backup policy in model and overlay"
+    },
+    "FR-003": {
+      "title": "Scheduled dumps stored one object per backup"
+    },
+    "FR-004": {
+      "title": "Retention deletes beyond keep"
+    },
+    "FR-005": {
+      "title": "List backups with time, size, status"
+    },
+    "FR-006": {
+      "title": "Back up now"
+    },
+    "FR-007": {
+      "title": "Restore with typed confirmation, one at a time"
+    },
+    "FR-008": {
+      "title": "Restore status running then succeeded/failed"
+    },
+    "FR-009": {
+      "title": "Credentials never shown, logged or in jobs"
+    },
+    "FR-010": {
+      "title": "Deploy refused when backups cannot work"
+    },
+    "FR-011": {
+      "title": "App delete removes schedules, keeps backups"
+    },
+    "FR-012": {
+      "title": "Destination change applies without deploy"
+    },
+    "FR-013": {
+      "title": "Console: destination in Settings, backups on the app page"
+    },
+    "FR-014": {
+      "title": "Scoped policy and gate step"
+    },
+    "FR-015": {
+      "title": "openapi same change"
+    }
+  },
+  "size": "oversized",
+  "classification": {
+    "projectedFiles": 28,
+    "projectedTasks": 26,
+    "scopeSignal": "none",
+    "verdict": "oversized"
+  },
+  "expectations": [
+    "MySQL/MariaDB and Redis engines (follow-up)",
+    "per-app destinations",
+    "restore into a new database",
+    "deleting backups from the bucket on app delete"
+  ],
+  "context": [
+    "area: internal/app Service (new Backup policy)",
+    "area: internal/deploy (periodic batch jobs, restore jobs, Nomad Variables for job credentials)",
+    "area: internal/service (destination settings, backup records, restore flow)",
+    "area: internal/ui (Settings destination, app page backups)",
+    "constraint: constitution VII credentials in Nomad Variables, never logged",
+    "constraint: constitution II one app one job (backup jobs are auxiliary, see plan)"
+  ],
+  "intent": "Scheduled Postgres backups to S3-compatible storage, listed in Caravana, restorable into the running database"
+}
