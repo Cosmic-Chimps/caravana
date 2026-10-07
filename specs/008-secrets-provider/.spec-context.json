@@ -1,0 +1,223 @@
+{
+  "workflow": "companion",
+  "specName": "Secrets",
+  "branch": "008-secrets",
+  "currentStep": "tasks",
+  "status": "ready-to-implement",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T03:57:05.555Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:01:16.943Z"
+    },
+    {
+      "step": "clarify",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:01:45.500Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T04:01:54.382Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:08:04.159Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:08:40.353Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:08:51.323Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T04:08:57.308Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:09:56.504Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:09:57.284Z"
+    }
+  ],
+  "telemetryInstanceId": "2a6dd396-91e1-4ac5-ac8b-e7468af24e59",
+  "unattended": true,
+  "coverage": {
+    "FR-001": {
+      "title": "Deploy accepts per-service secrets, each a value or keep",
+      "tasks": "T001,T002,T014"
+    },
+    "FR-002": {
+      "title": "A deploy with a definition replaces each service secret set as a whole",
+      "tasks": "T002,T006,T014,T011"
+    },
+    "FR-003": {
+      "title": "Body-less redeploys, console Deploy and webhook keep secrets",
+      "tasks": "T001,T014,T018"
+    },
+    "FR-004": {
+      "title": "Copies get their own secrets as env, byte-exact",
+      "tasks": "T007,T017"
+    },
+    "FR-005": {
+      "title": "Secret values never in responses, pages, events, logs, errors, records, DB or job",
+      "tasks": "T001,T014,T012,T020"
+    },
+    "FR-006": {
+      "title": "Reading an app returns secret names",
+      "tasks": "T001,T012"
+    },
+    "FR-007": {
+      "title": "Secret names and values follow the rules",
+      "tasks": "T004"
+    },
+    "FR-008": {
+      "title": "Keep without stored value, or a missing stored value, fails naming the secret",
+      "tasks": "T002,T013,T018"
+    },
+    "FR-009": {
+      "title": "Values live only in Nomad Variables under nomad/jobs/<app-id>",
+      "tasks": "T006"
+    },
+    "FR-010": {
+      "title": "Store changes never restart or change running copies",
+      "tasks": "T007,T025"
+    },
+    "FR-011": {
+      "title": "Unreachable store fails the deploy early with its own error code",
+      "tasks": "T009,T014,T011"
+    },
+    "FR-012": {
+      "title": "Superseded or pre-registration-failed deploys leave the store as it was",
+      "tasks": "T014,T011"
+    },
+    "FR-013": {
+      "title": "Failed or reverted deploys restore the running version secrets, across restarts",
+      "tasks": "T005,T006,T013,T025"
+    },
+    "FR-014": {
+      "title": "Deleting an app or a service deletes its secrets",
+      "tasks": "T006,T026,T027"
+    },
+    "FR-015": {
+      "title": "Configure lists names and sets or removes one secret via a deploy",
+      "tasks": "T021,T022,T023,T024"
+    },
+    "FR-016": {
+      "title": "Console value fields start empty, never echoed, no autofill",
+      "tasks": "T022,T023,T020"
+    },
+    "FR-017": {
+      "title": "secrets.Provider seam, whole sets, distinct unreachable, not Nomad-shaped",
+      "tasks": "T002"
+    },
+    "FR-018": {
+      "title": "A test store exists and service tests use it",
+      "tasks": "T005,T008"
+    },
+    "FR-019": {
+      "title": "Scoped policy allows the variables rules; a gate step checks it",
+      "tasks": "T016,T017"
+    },
+    "FR-020": {
+      "title": "openapi.yaml changes in the same change",
+      "tasks": "T015"
+    }
+  },
+  "size": "normal",
+  "classification": {
+    "projectedFiles": 20,
+    "projectedTasks": 25,
+    "scopeSignal": "none",
+    "verdict": "normal"
+  },
+  "expectations": [
+    "Bella Baxter provider (feature 014)",
+    "Vault",
+    "rollback to past secret values (011)",
+    "per-secret last-set times in the console"
+  ],
+  "context": [
+    "area: internal/app (Service.Env model)",
+    "area: internal/service/deploy.go (Deploy saves the definition, then resolve, register, watch)",
+    "area: internal/nomadjob translate (env map)",
+    "area: deploy/vm/caravana-policy.hcl (scoped token)",
+    "area: internal/ui/configure.go",
+    "constraint: constitution III declarative replace",
+    "constraint: constitution VII secrets in Nomad Variables, never logged"
+  ],
+  "intent": "Per-service write-only secrets stored in Nomad Variables behind secrets.Provider, replaced declaratively on every deploy",
+  "decisions": [
+    {
+      "decision": "One Nomad Variable per service at nomad/jobs/<app>/<service>",
+      "why": "Nomad implicit task access is exact paths; the group path isolates each service with no extra ACL",
+      "rejected": "one variable at nomad/jobs/<app> readable by every task"
+    },
+    {
+      "decision": "Env template with toJSON values, change_mode noop",
+      "why": "go-envparse double quotes take exactly JSON escapes; noop keeps values out of running copies",
+      "rejected": "values in job Env; change_mode restart"
+    },
+    {
+      "decision": "Kept copy of replaced sets at nomad/jobs/<app>/caravana/previous, owned by deployment ID",
+      "why": "restores the running version secrets on failure, survives restarts, never in SQLite",
+      "rejected": "no restore; per-deployment copies"
+    },
+    {
+      "decision": "Secret {name, value?}: no value means keep; stored definition has names only",
+      "why": "a read app redeploys as keep-everything; one fewer field",
+      "rejected": "keep:true flag; separate secrets endpoint"
+    },
+    {
+      "decision": "Nomad provider lives in internal/deploy, interface in internal/secrets",
+      "why": "constitution VI keeps Nomad code in deploy and nomadjob",
+      "rejected": "Nomad code inside internal/secrets"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Per-service secrets in Nomad Variables behind secrets.Provider, with a kept copy for restore",
+      "key_finding": "Nomad workload identity reads only exact paths, and go-envparse accepts JSON string escapes"
+    },
+    "tasks": {
+      "summary": "29 tasks: foundational in 3 waves, then 5 story phases and polish"
+    }
+  },
+  "approach": "Secrets are per-service {name, value?} on app.Service; values are stripped before saving. The service builds full sets and hands them to secrets.Provider (deploy.Variables writes nomad/jobs/<app>/<service>, keeps the replaced sets for Restore/Commit by deployment). The translator adds an env template with toJSON values and change_mode noop."
+}
