@@ -66,6 +66,9 @@ type Service struct {
 	// mounted by this service only. A service with a volume runs one copy,
 	// and its deploys replace the copy instead of running two at once.
 	Volumes []Volume `json:"volumes,omitempty"`
+	// Backup makes the service a database Caravana backs up on a schedule to
+	// the installation's backup destination. nil means no backups.
+	Backup *Backup `json:"backup,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's
@@ -112,6 +115,45 @@ type Volume struct {
 	Path string `json:"path"`
 	// ReadOnly mounts it read-only.
 	ReadOnly bool `json:"readOnly,omitempty"`
+}
+
+// BackupPostgres is the only backup engine so far: pg_dump and pg_restore,
+// with the credentials the official postgres image reads (POSTGRES_USER,
+// POSTGRES_PASSWORD, POSTGRES_DB) from the service's env or secrets.
+const BackupPostgres = "postgres"
+
+// Backup is a service's backup policy.
+type Backup struct {
+	// Engine is the database the service runs: "postgres".
+	Engine string `json:"engine"`
+	// Schedule is a five-field cron expression, in UTC. Empty means every day
+	// at 03:00 (DefaultBackupSchedule).
+	Schedule string `json:"schedule,omitempty"`
+	// Keep is how many backups stay in the destination, 1 to 100. Zero means
+	// DefaultBackupKeep.
+	Keep int `json:"keep,omitempty"`
+}
+
+// Defaults of a backup policy.
+const (
+	DefaultBackupSchedule = "0 3 * * *"
+	DefaultBackupKeep     = 7
+)
+
+// ScheduleOrDefault is the cron expression the backup runs on.
+func (b Backup) ScheduleOrDefault() string {
+	if b.Schedule == "" {
+		return DefaultBackupSchedule
+	}
+	return b.Schedule
+}
+
+// KeepOrDefault is how many backups stay.
+func (b Backup) KeepOrDefault() int {
+	if b.Keep == 0 {
+		return DefaultBackupKeep
+	}
+	return b.Keep
 }
 
 // WithoutSecretValues returns a copy of a whose secrets have names only, the

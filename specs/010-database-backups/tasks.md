@@ -24,16 +24,16 @@ Files: `internal/app/app.go`, `internal/app/validate.go`, `internal/app/validate
 
 **Wave 1 — independent (different files):**
 
-- [ ] **T001** [P] `Service.Backup{Engine, Schedule, Keep}` with rules (engine, keep, schedule fields, ports, POSTGRES_PASSWORD present) and tests · internal/app/app.go, internal/app/validate.go, internal/app/validate_test.go
-- [ ] **T002** [P] Store: migration 0005 (destination, backups, restores), CRUD, rows deleted with the app, tests · internal/store/migrations/0005_backups.sql, internal/store/backups.go, internal/store/backups_test.go, internal/store/apps.go
-- [ ] **T003** [P] `Settings.BackupImage` (pinned rclone) and `CARAVANA_BACKUP_IMAGE` · internal/nomadjob/translate.go, internal/config/config.go
+- [x] **T001** [P] `Service.Backup{Engine, Schedule, Keep}` with rules (engine, keep, schedule fields, ports, POSTGRES_PASSWORD present) and tests · internal/app/app.go, internal/app/validate.go, internal/app/validate_test.go
+- [x] **T002** [P] Store: migration 0005 (destination, backups, restores), CRUD, rows deleted with the app, tests · internal/store/migrations/0005_backups.sql, internal/store/backups.go, internal/store/backups_test.go, internal/store/apps.go
+- [x] **T003** [P] `Settings.BackupImage` (pinned rclone) and `CARAVANA_BACKUP_IMAGE` · internal/nomadjob/translate.go, internal/config/config.go
 
 **⟶ Wait for Wave 1 to finish, then:**
 
 **Wave 2 — independent (different files):**
 
-- [ ] **T004** [P] `nomadjob.BackupJobID`, `RestoreJobID`, `BackupJob`, `RestoreJob` (research R2, R6), golden files and tests · internal/nomadjob/backup.go, internal/nomadjob/backup_test.go, internal/nomadjob/testdata/
-- [ ] **T005** [P] Compose overlay `backup` · internal/compose/compose.go, internal/compose/service.go, internal/compose/compose_test.go
+- [x] **T004** [P] `nomadjob.BackupJobID`, `RestoreJobID`, `BackupJob`, `RestoreJob` (research R2, R6), golden files and tests · internal/nomadjob/backup.go, internal/nomadjob/backup_test.go, internal/nomadjob/testdata/
+- [x] **T005** [P] Compose overlay `backup` · internal/compose/compose.go, internal/compose/service.go, internal/compose/compose_test.go
 
 ## Phase 3: User Stories 1 + 3 - Destination and scheduled backups (P1) 🎯 MVP
 

@@ -49,6 +49,9 @@ type Overlay struct {
 	Health *Health `json:"health,omitempty"`
 	// Secrets are the service's secrets, as in app.Service.
 	Secrets []app.Secret `json:"secrets,omitempty"`
+	// Backup makes the service a database Caravana backs up, as in
+	// app.Service.
+	Backup *app.Backup `json:"backup,omitempty"`
 }
 
 // Domain routes Host to one container port of the service.

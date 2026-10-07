@@ -33,6 +33,21 @@ type Settings struct {
 	// reach each other by name. It must be pinned by digest. Empty means
 	// DefaultNamesImage.
 	NamesImage string
+	// BackupImage is the image that uploads and downloads backups (rclone).
+	// It must be pinned by digest. Empty means DefaultBackupImage.
+	BackupImage string
+}
+
+// DefaultBackupImage is rclone 1.71, pinned by digest (an index, so it runs
+// on amd64 and arm64).
+const DefaultBackupImage = "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+
+// backupImage is the backup tool image these settings use.
+func (s Settings) backupImage() string {
+	if s.BackupImage == "" {
+		return DefaultBackupImage
+	}
+	return s.BackupImage
 }
 
 // DefaultNamesImage is busybox 1.37, pinned by digest (an index, so it runs
@@ -146,6 +161,9 @@ func (s Settings) Validate() error {
 	}
 	if s.NamesImage != "" && !pinnedImageRE.MatchString(s.NamesImage) {
 		return app.NewFieldError("settings.namesImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.NamesImage)
+	}
+	if s.BackupImage != "" && !pinnedImageRE.MatchString(s.BackupImage) {
+		return app.NewFieldError("settings.backupImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.BackupImage)
 	}
 	return nil
 }

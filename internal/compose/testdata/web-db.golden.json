@@ -20,6 +20,10 @@
             "path": "/var/lib/postgresql/data"
           }
         ],
+        "backup": {
+          "engine": "postgres",
+          "keep": 3
+        },
         "ports": [
           {
             "name": "p5432",

@@ -91,6 +91,38 @@ func ValidateApp(a App) error {
 		if err := validateVolumes(fmt.Sprintf("services[%d]", i), svc, volumes); err != nil {
 			return err
 		}
+		if err := validateBackup(fmt.Sprintf("services[%d].backup", i), svc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBackup checks a service's backup policy. What needs the
+// installation (a destination) is checked by the deploy flow.
+func validateBackup(field string, svc Service) error {
+	b := svc.Backup
+	if b == nil {
+		return nil
+	}
+	if b.Engine != BackupPostgres {
+		return NewFieldError(field+".engine", "%q is not supported; only %q is", b.Engine, BackupPostgres)
+	}
+	if b.Keep < 0 || b.Keep > 100 {
+		return NewFieldError(field+".keep", "must be between 1 and 100 (leave it out for %d), got %d", DefaultBackupKeep, b.Keep)
+	}
+	if b.Schedule != "" {
+		if fields := strings.Fields(b.Schedule); len(fields) != 5 || strings.ContainsFunc(b.Schedule, unicode.IsControl) {
+			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", b.Schedule, DefaultBackupSchedule)
+		}
+	}
+	if len(svc.Ports) == 0 {
+		return NewFieldError(field, "the backup reaches the database over its port, and the service has none")
+	}
+	has := slices.ContainsFunc(svc.Env, func(e EnvVar) bool { return e.Name == "POSTGRES_PASSWORD" }) ||
+		slices.ContainsFunc(svc.Secrets, func(s Secret) bool { return s.Name == "POSTGRES_PASSWORD" })
+	if !has {
+		return NewFieldError(field, "the backup logs in with POSTGRES_PASSWORD; set it in the service's environment or secrets")
 	}
 	return nil
 }

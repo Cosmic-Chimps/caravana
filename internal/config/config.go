@@ -77,6 +77,7 @@ var (
 	cpuSetting          = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
 	memorySetting       = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
 	namesImageSetting   = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
+	backupImageSetting  = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -92,6 +93,7 @@ var translatorSettings = map[string]setting{
 	"settings.defaultCPUMHz":   cpuSetting,
 	"settings.defaultMemoryMB": memorySetting,
 	"settings.namesImage":      namesImageSetting,
+	"settings.backupImage":     backupImageSetting,
 }
 
 // Load reads the configuration. args are the command-line arguments without
@@ -113,6 +115,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	cpu := fs.String(cpuSetting.flag, envOr(cpuSetting, "100"), "default CPU per service, in MHz")
 	memory := fs.String(memorySetting.flag, envOr(memorySetting, "64"), "default memory per service, in MB")
 	namesImage := fs.String(namesImageSetting.flag, envOr(namesImageSetting, ""), "image of the sidecar that lets an app's services reach each other by name, pinned by digest; empty means the built-in busybox")
+	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -123,7 +126,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	c := Config{
 		Listen:        *listen,
 		DataDir:       *dataDir,
-		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage},
+		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage, BackupImage: *backupImage},
 		NomadAddr:     *nomadAddr,
 		WebhookListen: *webhookListen,
 		NomadToken:    Secret(getenv(nomadTokenEnv)),

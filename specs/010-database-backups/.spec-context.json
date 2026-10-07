@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Database backups",
   "branch": "010-databases-backups",
-  "currentStep": "tasks",
-  "status": "ready-to-implement",
+  "currentStep": "implement",
+  "status": "implementing",
   "history": [
     {
       "step": "specify",
@@ -74,6 +74,53 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:33:12.101Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T15:33:12.405Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:33:53.175Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:35:21.721Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:35:21.904Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:37:06.217Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:37:06.385Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -173,6 +220,54 @@
     "plan": {
       "summary": "Backups as periodic batch jobs with rclone, runs recorded by a watcher, restore as a batch job",
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
+    }
+  },
+  "currentTask": "T005",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "Service.Backup policy with rules and tests",
+      "files": [
+        "internal/app/app.go",
+        "internal/app/validate.go",
+        "internal/app/validate_test.go"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "migration 0005, destination/backups/restores store, rows deleted with the app, tests",
+      "files": [
+        "internal/store/migrations/0005_backups.sql",
+        "internal/store/backups.go",
+        "internal/store/backups_test.go",
+        "internal/store/apps.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "Settings.BackupImage (pinned rclone), CARAVANA_BACKUP_IMAGE",
+      "files": [
+        "internal/nomadjob/translate.go",
+        "internal/config/config.go"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "BackupJob, RestoreJob, job IDs, variable path, golden files and tests",
+      "files": [
+        "internal/nomadjob/backup.go",
+        "internal/nomadjob/backup_test.go",
+        "internal/nomadjob/testdata"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "Compose overlay backup, fixture updated",
+      "files": [
+        "internal/compose/compose.go",
+        "internal/compose/service.go",
+        "internal/compose/testdata"
+      ]
     }
   }
 }

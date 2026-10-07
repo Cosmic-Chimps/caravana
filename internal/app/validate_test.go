@@ -152,6 +152,33 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Replicas = new(2)
 		}, "services[1].replicas"},
 
+		// Backups (web has a port; the worker has none).
+		{"valid backup with a password in env", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Schedule: "*/15 * * * *", Keep: 3}
+		}, ""},
+		{"valid backup with a password secret", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "POSTGRES_PASSWORD"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres}
+		}, ""},
+		{"backup engine mysql", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: "mysql"}
+		}, "services[0].backup.engine"},
+		{"backup keep too many", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Keep: 101}
+		}, "services[0].backup.keep"},
+		{"backup schedule not cron", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Schedule: "daily"}
+		}, "services[0].backup.schedule"},
+		{"backup without ports", func(a *App, d *Deployment) {
+			a.Services[1].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[1].Backup = &Backup{Engine: BackupPostgres}
+		}, "services[1].backup"},
+		{"backup without a password", func(a *App, d *Deployment) { a.Services[0].Backup = &Backup{Engine: BackupPostgres} }, "services[0].backup"},
+
 		// Ports.
 		{"port name empty", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "" }, "services[0].ports[0].name"},
 		{"port name uppercase", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "HTTP" }, "services[0].ports[0].name"},

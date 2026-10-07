@@ -173,6 +173,8 @@ func (s *Store) DeleteApp(ctx context.Context, id string) error {
 	for _, query := range []string{
 		"DELETE FROM webhook_tokens WHERE app_id = ?",
 		"DELETE FROM deployments WHERE app_id = ?",
+		"DELETE FROM backups WHERE app_id = ?",
+		"DELETE FROM restores WHERE app_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, query, id); err != nil {
 			return fmt.Errorf("delete app %q: %w", id, err)
