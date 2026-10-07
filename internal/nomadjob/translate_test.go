@@ -250,3 +250,37 @@ func TestTranslateErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestSecretsStayOutOfTheJob checks that a job names each service's variable
+// and holds none of the values, and that a service without secrets gets no
+// template.
+func TestSecretsStayOutOfTheJob(t *testing.T) {
+	marker := "s3cr3t-marker"
+	a := apptest.Whoami().App
+	a.Services[0].Secrets = []app.Secret{{Name: "API_KEY", Value: new(marker)}}
+	d := apptest.Whoami().Deployment
+
+	res, err := Translate(a, d, labSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(res.Job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(marker)) {
+		t.Fatal("the job holds a secret value")
+	}
+	tmpls := res.Job.TaskGroups[0].Tasks[0].Templates
+	if len(tmpls) != 1 || !strings.Contains(*tmpls[0].EmbeddedTmpl, `"nomad/jobs/whoami/web"`) || *tmpls[0].ChangeMode != "noop" {
+		t.Errorf("templates = %+v, want one noop template reading nomad/jobs/whoami/web", tmpls)
+	}
+
+	plain, err := Translate(apptest.Whoami().App, d, labSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(plain.Job.TaskGroups[0].Tasks[0].Templates); n != 0 {
+		t.Errorf("a service without secrets got %d templates", n)
+	}
+}

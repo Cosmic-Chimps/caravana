@@ -46,10 +46,14 @@ var consoleParity = map[string]parity{
 	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
 
 	// What the console changes.
-	"POST /apps":                             {ops: []string{"createApp"}},
-	"POST /apps/{id}/deploy":                 {ops: []string{"deployApp"}},
-	"POST /apps/{id}/webhook":                {ops: []string{"createWebhookToken"}},
-	"POST /apps/{id}/webhook/revoke":         {ops: []string{"deleteWebhookToken"}},
+	"POST /apps":                     {ops: []string{"createApp"}},
+	"POST /apps/{id}/deploy":         {ops: []string{"deployApp"}},
+	"POST /apps/{id}/webhook":        {ops: []string{"createWebhookToken"}},
+	"POST /apps/{id}/webhook/revoke": {ops: []string{"deleteWebhookToken"}},
+	// Setting or removing one secret is a deploy of the app with its secrets
+	// listed, the others without a value (keep).
+	"POST /apps/{id}/secrets":                {ops: []string{"deployApp"}},
+	"POST /apps/{id}/secrets/remove":         {ops: []string{"deployApp"}},
 	"POST /apps/{id}/delete":                 {ops: []string{"deleteApp"}},
 	"POST /settings/password":                {ops: []string{"changePassword"}},
 	"POST /settings/tokens":                  {ops: []string{"createToken"}},

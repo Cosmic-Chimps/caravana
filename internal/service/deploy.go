@@ -44,7 +44,11 @@ func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	if _, err := s.store.SaveApp(ctx, a); err != nil {
+	if err := s.checkSecrets(ctx, a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	// Only names are stored: the values go to the secret store, in deploy.
+	if _, err := s.store.SaveApp(ctx, a.WithoutSecretValues()); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
@@ -106,9 +110,22 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 		return rec, nil
 	}
 
+	// The secrets go live before Nomad gets the job, and only for the newest
+	// deploy (the check above): the new copies read them when they start.
+	// Running copies keep the env they started with.
+	sets, err := s.buildSecrets(ctx, a)
+	if err != nil {
+		return s.fail(rec, err)
+	}
+	if err := s.secrets.Replace(ctx, a.ID, dep.ID, sets); err != nil {
+		s.restoreSecrets(a.ID, dep.ID) // Replace may have written some of them
+		return s.fail(rec, err)
+	}
+
 	dep.Digests = digests
 	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID))
 	if err != nil {
+		s.restoreSecrets(a.ID, dep.ID)
 		return s.fail(rec, err)
 	}
 
@@ -168,7 +185,7 @@ func (s *Service) follow(ctx context.Context, appID, deploymentID string, versio
 		v, found := s.findVersion(ctx, appID, deploymentID)
 		if !found {
 			if ctx.Err() == nil {
-				s.finish(deploymentID, store.StatusFailed, "Nomad accepted the job, but has no job version for this deployment")
+				s.finish(appID, deploymentID, store.StatusFailed, "Nomad accepted the job, but has no job version for this deployment")
 			}
 			return
 		}
@@ -198,7 +215,7 @@ func (s *Service) follow(ctx context.Context, appID, deploymentID string, versio
 	if status == store.StatusHealthy {
 		msg = "" // error holds why it didn't work; a healthy rollout has none
 	}
-	s.finish(deploymentID, status, msg)
+	s.finish(appID, deploymentID, status, msg)
 }
 
 // findVersion asks Nomad for the job version carrying deploymentID until it
@@ -221,14 +238,20 @@ func (s *Service) findVersion(ctx context.Context, appID, deploymentID string) (
 	}
 }
 
-// finish records a final status, even during shutdown.
-func (s *Service) finish(deploymentID string, status store.Status, msg string) {
+// finish records a final status, even during shutdown, then settles the
+// deployment's secrets. Settling is safe to repeat, so it runs even when the
+// record couldn't be written (the next start resumes the deployment and
+// settles it again).
+func (s *Service) finish(appID, deploymentID string, status store.Status, msg string) {
 	if _, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); errors.Is(err, store.ErrNotFound) {
-		// The app was deleted while its rollout ended: nothing is left to record.
+		// The app was deleted while its rollout ended: nothing is left to
+		// record, and its secrets went with it.
 		s.log.Info("deployment gone before its outcome was recorded", "deployment", deploymentID, "status", status)
+		return
 	} else if err != nil {
 		s.log.Error("record deployment outcome", "deployment", deploymentID, "status", status, "error", err)
 	}
+	s.settleSecrets(appID, deploymentID, status)
 }
 
 // write records a deployment change whatever the request or shutdown is

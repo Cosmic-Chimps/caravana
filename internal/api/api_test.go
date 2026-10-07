@@ -116,7 +116,7 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64})
 	d.Timing = deploy.Timing{PollGap: time.Millisecond, BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,
 		VersionRetries: []time.Duration{time.Millisecond}}
-	svc := service.New(st, d, log)
+	svc := service.New(st, d, deploy.NewVariables(client), log)
 	e.Service, e.log = svc, log
 
 	e.Clock = &fakeClock{t: time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)}

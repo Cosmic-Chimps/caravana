@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -21,6 +22,7 @@ import (
 type Service struct {
 	store    *store.Store
 	deployer *deploy.Deployer
+	secrets  secrets.Provider
 	log      *slog.Logger
 
 	mu   sync.Mutex
@@ -48,11 +50,13 @@ type DeployError struct {
 func (e *DeployError) Error() string { return e.Err.Error() }
 func (e *DeployError) Unwrap() error { return e.Err }
 
-// New returns a Service. Call Start before deploying.
-func New(st *store.Store, d *deploy.Deployer, log *slog.Logger) *Service {
+// New returns a Service. sec holds the apps' secret values (deploy.Variables
+// in production). Call Start before deploying.
+func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Logger) *Service {
 	return &Service{
 		store:     st,
 		deployer:  d,
+		secrets:   sec,
 		log:       log,
 		apps:      map[string]*appState{},
 		bg:        context.Background(),

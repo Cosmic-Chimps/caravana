@@ -12,6 +12,7 @@ package main
 // and the first failed step stops the rest.
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -94,6 +95,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"webhook-redeploy", false, g.webhookRedeploy},
 		{"webhook-unchanged", false, g.webhookUnchanged},
 		{"console-reads", false, g.consoleReads},
+		{"secrets-render", false, g.secretsRender},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},
@@ -260,6 +262,108 @@ func (g *gate) consoleReads(t *testing.T) {
 	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /v1/apps/whoami/logs?lines=10 = %d, want 200 (does Caravana's Nomad policy have read-logs?): %s", resp.StatusCode, raw)
 	}
+}
+
+// secretsApp is a busybox worker that only sleeps, with one secret. busybox,
+// because whoami has no shell to print its environment with.
+const secretsApp = `{
+  "source": {"kind": "image"},
+  "services": [{
+    "name": "worker",
+    "image": "busybox:1.37",
+    "command": "sh",
+    "args": ["-c", "exec sleep 86400"],
+    "secrets": [{"name": "GATE_SECRET", "value": %s}]
+  }]
+}`
+
+// secretsRender: a secret reaches the container byte for byte, through the
+// Nomad Variables store and the env template, with the token Caravana really
+// runs with (feature 008). A redeploy without a body keeps it, and deleting
+// the app removes it from Nomad. The store needs the variables rule in
+// deploy/vm/caravana-policy.hcl, so a policy without it fails here.
+func (g *gate) secretsRender(t *testing.T) {
+	const appID = "gate-secrets"
+	value := "line one\nsay \"hi\" = $HOME {{ .x }} é \\ " + g.run
+	quoted, _ := json.Marshal(value)
+	resp := g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "") // a leftover from an aborted run, if any
+	resp.Body.Close()
+
+	deployAndRead := func(body string) {
+		t.Helper()
+		resp := g.api(t, http.MethodPost, "/v1/apps/"+appID+"/deployments", "application/json", body)
+		var d gateDeployment
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
+			t.Fatalf("deploy %s: %d %s", appID, resp.StatusCode, raw)
+		}
+		final := g.waitFinalOf(t, appID, d.ID, 3*time.Minute)
+		if final.Status != "healthy" {
+			t.Fatalf("deploy %s ended %s: %s", appID, final.Status, final.Error)
+		}
+		if got := g.execEnv(t, appID, "worker", "GATE_SECRET", d.ID); got != value {
+			t.Fatalf("the container sees GATE_SECRET = %q, want %q", got, value)
+		}
+	}
+	deployAndRead(fmt.Sprintf(secretsApp, quoted))
+	deployAndRead("") // a redeploy keeps the value
+
+	var rec struct {
+		App struct {
+			Services []struct {
+				Secrets []map[string]any `json:"secrets"`
+			} `json:"services"`
+		} `json:"app"`
+	}
+	g.getJSON(t, "/v1/apps/"+appID, &rec)
+	if s := rec.App.Services[0].Secrets; len(s) != 1 || s[0]["name"] != "GATE_SECRET" || s[0]["value"] != nil {
+		t.Errorf("GET /v1/apps/%s secrets = %v, want the name only", appID, s)
+	}
+
+	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+	}
+	left, _, err := g.target.Nomad.Variables().PrefixList("nomad/jobs/"+appID+"/", nil)
+	if err != nil || len(left) != 0 {
+		t.Errorf("variables left after delete: %d (%v)", len(left), err)
+	}
+}
+
+// execEnv prints one env var inside a running copy of appID's service that
+// belongs to the deployment's job version, with Nomad's exec (the gate's
+// token can; Caravana's can't).
+func (g *gate) execEnv(t *testing.T, appID, task, name, deploymentID string) string {
+	t.Helper()
+	var alloc *api.Allocation
+	waitFor(t, "a running copy of "+appID, time.Minute, func() bool {
+		stubs, _, err := g.target.Nomad.Jobs().Allocations(appID, false, nil)
+		if err != nil {
+			return false
+		}
+		job, _, err := g.target.Nomad.Jobs().Info(appID, nil)
+		if err != nil || job.Meta["caravana.deployment"] != deploymentID {
+			return false
+		}
+		for _, s := range stubs {
+			if s.ClientStatus == "running" && s.JobVersion == *job.Version {
+				alloc, _, err = g.target.Nomad.Allocations().Info(s.ID, nil)
+				return err == nil
+			}
+		}
+		return false
+	})
+	var out, errOut strings.Builder
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	code, err := g.target.Nomad.Allocations().Exec(ctx, alloc, task, false, []string{"printenv", name},
+		strings.NewReader(""), &out, &errOut, nil, nil)
+	if err != nil || code != 0 {
+		t.Fatalf("exec printenv %s: exit %d, %v: %s", name, code, err, errOut.String())
+	}
+	return strings.TrimSuffix(out.String(), "\n")
 }
 
 // getJSON reads a JSON answer of the API; anything but 200 fails the step.
@@ -502,12 +606,18 @@ func (g *gate) hook(t *testing.T, token string) (int, bool, gateDeployment) {
 	return resp.StatusCode, out.Changed, out.Deployment
 }
 
-// waitFinal polls a deployment until it has a final status.
+// waitFinal polls a deployment of whoami until it has a final status.
 func (g *gate) waitFinal(t *testing.T, id string, within time.Duration) gateDeployment {
+	t.Helper()
+	return g.waitFinalOf(t, "whoami", id, within)
+}
+
+// waitFinalOf polls a deployment of appID until it has a final status.
+func (g *gate) waitFinalOf(t *testing.T, appID, id string, within time.Duration) gateDeployment {
 	t.Helper()
 	var d gateDeployment
 	if !waitUntil(within, func() bool {
-		resp, err := g.apiRequest(http.MethodGet, "/v1/apps/whoami/deployments/"+id, "", "")
+		resp, err := g.apiRequest(http.MethodGet, "/v1/apps/"+appID+"/deployments/"+id, "", "")
 		if err != nil {
 			return false
 		}

@@ -87,8 +87,44 @@ func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 type configureTab struct {
 	Panels  []defPanel
 	APIHint sentence
+	Secrets secretsView
 	Webhook webhookView
 	Delete  deleteView
+}
+
+// secretsView is the Secrets section: each service's secret names, and the
+// one form that sets a secret. No value is ever in it (FR-016).
+type secretsView struct {
+	Services []secretService
+	Many     bool // more than one service: the form asks which
+	Form     secretForm
+}
+
+// secretService is one service's secret names, in their stored order.
+type secretService struct {
+	Name  string
+	Names []string
+}
+
+// secretForm is what the set form shows after a refusal: the service and
+// name typed (never the value), and what was wrong.
+type secretForm struct {
+	Service, Name         string
+	NameError, ValueError sentence
+	Notice                sentence
+}
+
+// secretsOf lays out the stored app's secret names for the Secrets section.
+func secretsOf(a app.App, form secretForm) secretsView {
+	v := secretsView{Many: len(a.Services) > 1, Form: form}
+	for _, svc := range a.Services {
+		s := secretService{Name: svc.Name}
+		for _, sec := range svc.Secrets {
+			s.Names = append(s.Names, sec.Name)
+		}
+		v.Services = append(v.Services, s)
+	}
+	return v
 }
 
 // definitionOf lays the stored app out as panels: the app, then one per

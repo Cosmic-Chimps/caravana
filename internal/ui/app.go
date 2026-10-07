@@ -14,6 +14,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -647,6 +648,7 @@ type configureExtras struct {
 	WebhookURL   string
 	DeleteError  sentence
 	DeleteNotice sentence
+	Secret       secretForm
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -684,6 +686,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	tab := &configureTab{
 		Panels:  definitionOf(sum.App),
 		APIHint: sentence{plain("Editing here comes later. Until then, change these through the API: "), mono("POST /v1/apps/" + id + "/deployments"), plain(".")},
+		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
@@ -757,7 +760,81 @@ func (s *server) deleteApp(w http.ResponseWriter, r *http.Request, session strin
 		s.log.Warn("can't delete app: Nomad didn't stop its job", "app", id, "error", err)
 		s.configurePage(w, r, http.StatusBadGateway, id, configureExtras{
 			DeleteNotice: sentence{plain("Nomad couldn't be reached right now, so nothing was deleted. The app is still here.")}})
+	case errors.Is(err, secrets.ErrUnavailable):
+		s.log.Warn("can't delete app: the secret store refused", "app", id, "error", err)
+		s.configurePage(w, r, http.StatusBadGateway, id, configureExtras{
+			DeleteNotice: sentence{plain("The app's job is stopped, but its secrets couldn't be deleted, so the app is still here. Try again.")}})
 	default:
 		s.serverError(w, "delete app", err)
 	}
+}
+
+// setSecret answers POST /apps/{id}/secrets: it sets one secret of one
+// service and deploys, keeping the others (service.SetSecret). Success goes
+// to Deployments, where the rollout shows. A refusal draws Configure again
+// with the service and name filled back in, never the value.
+func (s *server) setSecret(w http.ResponseWriter, r *http.Request, session string) {
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	form := secretForm{Service: r.PostForm.Get("service"), Name: strings.TrimSpace(r.PostForm.Get("name"))}
+	// A textarea sends its line breaks as CRLF; secrets (keys, certificates)
+	// expect LF.
+	value := strings.ReplaceAll(r.PostForm.Get("value"), "\r\n", "\n")
+	_, err := s.svc.SetSecret(r.Context(), id, form.Service, form.Name, value, app.TriggerConsole)
+	s.afterSecretChange(w, r, id, form, err)
+}
+
+// removeSecret answers POST /apps/{id}/secrets/remove: it deploys without
+// one secret, keeping the others (service.RemoveSecret).
+func (s *server) removeSecret(w http.ResponseWriter, r *http.Request, session string) {
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	_, err := s.svc.RemoveSecret(r.Context(), id, r.PostForm.Get("service"), r.PostForm.Get("name"), app.TriggerConsole)
+	s.afterSecretChange(w, r, id, secretForm{}, err)
+}
+
+// secretValueField matches an error about a secret's value, or about a
+// service's secrets as a whole (their size).
+var secretValueField = regexp.MustCompile(`^services\[\d+\]\.secrets(\[\d+\]\.value)?$`)
+
+// afterSecretChange answers a set or remove: Deployments on success, else
+// Configure with what went wrong.
+func (s *server) afterSecretChange(w http.ResponseWriter, r *http.Request, id string, form secretForm, err error) {
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments", http.StatusSeeOther)
+		return
+	}
+	var fieldErr *app.FieldError
+	status := http.StatusUnprocessableEntity
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+		return
+	case errors.As(err, &fieldErr):
+		switch {
+		case fieldErr.Field == "name" || strings.HasSuffix(fieldErr.Field, ".name"):
+			form.NameError = sentence{plain(fieldErr.Message)}
+		case secretValueField.MatchString(fieldErr.Field):
+			form.ValueError = sentence{plain(fieldErr.Message)}
+		default:
+			form.Notice = sentence{plain("caravana can't deploy this app: "), mono(fieldErr.Field), plain(" " + fieldErr.Message)}
+		}
+	case errors.Is(err, secrets.ErrUnavailable) && !errors.Is(err, deploy.ErrNomadUnavailable):
+		status = http.StatusBadGateway
+		form.Notice = sentence{plain("The secret store refused the change, so nothing was deployed. The running copies keep their secrets.")}
+		s.log.Warn("can't change a secret: the secret store refused", "app", id, "error", err)
+	default:
+		var notice sentence
+		var ok bool
+		if status, notice, ok = refuseDeploy(&deployForm{}, err); !ok {
+			s.serverError(w, "change a secret", err)
+			return
+		}
+		form.Notice = notice
+	}
+	s.configurePage(w, r, status, id, configureExtras{Secret: form})
 }

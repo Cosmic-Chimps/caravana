@@ -139,6 +139,8 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/webhook", s.protected(s.requireSession(s.createWebhook))},
 		{"POST", "/apps/{id}/webhook/revoke", s.protected(s.requireSession(s.revokeWebhook))},
+		{"POST", "/apps/{id}/secrets", s.protected(s.requireSession(s.setSecret))},
+		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},

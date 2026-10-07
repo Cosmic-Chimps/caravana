@@ -14,6 +14,8 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
+	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -22,12 +24,14 @@ const (
 	movedDigest  = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
 
-// env is a service wired to a real store, a fake registry and a fake Nomad.
+// env is a service wired to a real store, a fake registry, a fake Nomad and
+// an in-memory secret store.
 type env struct {
 	svc      *Service
 	store    *store.Store
 	registry *registrytest.Server
 	nomad    *deploytest.Nomad
+	secrets  *secretstest.Store
 }
 
 // newEnv opens a store in a temp dir and starts a service on it. The fake
@@ -39,10 +43,10 @@ func newEnv(t *testing.T) *env {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t)}
+	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
 	e.registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.nomad.Succeed()
-	e.svc = startService(t, st, e.registry, e.nomad)
+	e.svc = startService(t, st, e.registry, e.nomad, e.secrets)
 	return e
 }
 
@@ -69,9 +73,9 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 
 // startService builds and starts a service; the test's cleanup stops it and
 // waits for its watchers.
-func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad *deploytest.Nomad) *Service {
+func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad *deploytest.Nomad, sec secrets.Provider) *Service {
 	t.Helper()
-	svc := New(st, newDeployer(t, reg, nomad), discardLogger())
+	svc := New(st, newDeployer(t, reg, nomad), sec, discardLogger())
 	svc.retryGap = 5 * time.Millisecond
 	svc.watchIdle = 10 * time.Millisecond
 

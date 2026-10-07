@@ -210,7 +210,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 		Update:        &api.UpdateStrategy{Canary: new(count)},
 		ShutdownDelay: new(shutdownDelay),
 		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports}},
-		Tasks:         []*api.Task{task(svc, image, s)},
+		Tasks:         []*api.Task{task(a.ID, svc, image, s)},
 	}
 	if reg := registration(a, svc, s); reg != nil {
 		tg.Services = []*api.Service{reg}
@@ -310,7 +310,30 @@ func healthCheck(h app.HealthCheck, checkPort, servicePort string) api.ServiceCh
 	return check
 }
 
-func task(svc app.Service, image string, s Settings) *api.Task {
+// SecretsPath is the Nomad Variable that holds a service's secrets. It is the
+// path Nomad lets that service's tasks read without any ACL policy
+// (nomad/jobs/<job>/<group>), so a service sees its own secrets and no other.
+func SecretsPath(appID, service string) string {
+	return "nomad/jobs/" + appID + "/" + service
+}
+
+// secretsTemplate renders a service's secrets into the env file Nomad reads
+// for the task. Each value is JSON-encoded: Nomad's env-file parser accepts
+// exactly JSON's escapes in double quotes, so any UTF-8 value arrives byte
+// for byte (research R2). "noop" means a changed variable never touches a
+// running copy: new values reach copies only through a deploy's rollout.
+func secretsTemplate(appID, service string) *api.Template {
+	tmpl := `{{ with nomadVar "` + SecretsPath(appID, service) + `" }}` +
+		`{{ range .Tuples }}{{ .K }}={{ printf "%s" .V | toJSON }}` + "\n" + `{{ end }}{{ end }}`
+	return &api.Template{
+		EmbeddedTmpl: new(tmpl),
+		DestPath:     new("secrets/caravana.env"),
+		Envvars:      new(true),
+		ChangeMode:   new("noop"),
+	}
+}
+
+func task(appID string, svc app.Service, image string, s Settings) *api.Task {
 	config := map[string]any{"image": image}
 	if svc.Command != "" {
 		config["command"] = svc.Command
@@ -327,7 +350,7 @@ func task(svc app.Service, image string, s Settings) *api.Task {
 		}
 	}
 
-	return &api.Task{
+	t := &api.Task{
 		Name:   svc.Name,
 		Driver: "docker",
 		Config: config,
@@ -337,6 +360,11 @@ func task(svc app.Service, image string, s Settings) *api.Task {
 			MemoryMB: new(orDefault(svc.Resources.MemoryMB, s.DefaultMemoryMB)),
 		},
 	}
+	// The job names the variable, never a value: values stay in the store.
+	if len(svc.Secrets) > 0 {
+		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name)}
+	}
+	return t
 }
 
 // orDefault returns v, or def when v is the zero value.

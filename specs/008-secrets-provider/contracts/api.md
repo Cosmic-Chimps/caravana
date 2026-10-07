@@ -52,6 +52,10 @@ Remove `API_KEY`: `"secrets": [{"name": "DATABASE_URL"}]`.
 | Bad name, duplicate, NUL or invalid UTF-8 value | 400 | `invalid_field` | `services[i].secrets[j].name` / `.value` |
 | Keep with no stored value | 400 | `invalid_field` | `services[i].secrets[j].value` |
 | Over 60 KiB in total | 400 | `invalid_field` | `services[i].secrets` |
-| Store unreachable or refusing the token | 502 | `secret_store_unavailable` | none |
+| Store refusing (token policy without `variables`, a set Nomad won't take) | 502 | `secret_store_unavailable` | none |
+| Nomad unreachable (the built-in store is Nomad) | 502 | `nomad_unavailable` | none |
 
-`secret_store_unavailable` joins the list of current codes in `Error.code`.
+`secret_store_unavailable` joins the list of current codes in `Error.code`. The definition's
+secrets are checked against the store before anything is saved, so these errors carry no
+`Location` when the app has secrets. An app without secrets still needs the store (secrets from
+an earlier deploy may have to go), and fails after its deployment record exists.

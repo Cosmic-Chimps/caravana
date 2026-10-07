@@ -183,7 +183,7 @@
 {{end}}
 
 {{/* The Configure tab: the stored definition as facts (nothing to edit, and never an
-     environment value), the webhook, and, last and apart, Delete app. Everything is a
+     environment value), the secrets, the webhook, and, last and apart, Delete app. Everything is a
      plain form post; the confirmations are <details>, so they work without script.
      Takes a configureTab. */}}
 {{define "configure"}}
@@ -211,6 +211,64 @@
     {{end}}
   </div>
   <p class="text-sm text-fg-3">{{template "sentence" .APIHint}}</p>
+</section>
+
+{{/* Secrets: names only. Setting or removing one is a deploy; a value is never in the page,
+     not even after a refused save. */}}
+<section aria-labelledby="secrets-title" class="flex flex-col gap-2">
+  <h2 id="secrets-title" class="cv-label">Secrets</h2>
+  <div class="cv-panel p-4 flex flex-col gap-4">
+    {{with .Secrets.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    {{range $svc := .Secrets.Services}}
+    <div class="flex flex-col gap-2">
+      {{if $.Secrets.Many}}<h3 class="cv-label">{{$svc.Name}}</h3>{{end}}
+      {{if $svc.Names}}
+      <ul class="flex flex-col gap-2">
+        {{range $svc.Names}}
+        <li class="flex flex-wrap items-start justify-between gap-2">
+          <span class="cv-data text-fg-1">{{.}}</span>
+          <details class="cv-confirm">
+            <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
+            <form method="post" action="/apps/{{$.Delete.ID}}/secrets/remove" class="cv-confirm-body">
+              <input type="hidden" name="service" value="{{$svc.Name}}">
+              <input type="hidden" name="name" value="{{.}}">
+              <p>This deploys the app without <span class="cv-inline-mono">{{.}}</span>. Running copies keep it until the new ones are healthy.</p>
+              <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
+            </form>
+          </details>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="text-sm text-fg-3">No secrets{{if $.Secrets.Many}} for {{$svc.Name}}{{end}}.</p>
+      {{end}}
+    </div>
+    {{end}}
+    {{with .Secrets.Form}}
+    <form method="post" action="/apps/{{$.Delete.ID}}/secrets" class="flex flex-col gap-3" autocomplete="off">
+      {{if $.Secrets.Many}}
+      <label class="flex flex-col gap-2" for="secret-service">
+        <span class="cv-label">Service</span>
+        <select class="cv-field" id="secret-service" name="service">
+          {{range $.Secrets.Services}}<option value="{{.Name}}"{{if eq .Name $.Secrets.Form.Service}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </label>
+      {{else}}{{range $.Secrets.Services}}<input type="hidden" name="service" value="{{.Name}}">{{end}}{{end}}
+      <label class="flex flex-col gap-2" for="secret-name">
+        <span class="cv-label">Name</span>
+        <input class="cv-field" id="secret-name" type="text" name="name" value="{{.Name}}" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .NameError}} aria-invalid="true" aria-describedby="secret-name-error"{{end}}>
+        {{with .NameError}}<span id="secret-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+      </label>
+      <label class="flex flex-col gap-2" for="secret-value">
+        <span class="cv-label">Value</span>
+        <textarea class="cv-field cv-field-area" id="secret-value" name="value" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .ValueError}} aria-invalid="true" aria-describedby="secret-value-error"{{end}}></textarea>
+        {{with .ValueError}}<span id="secret-value-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+      </label>
+      <p class="text-sm text-fg-3">Setting a secret, or giving one a new value, deploys the app. Values can't be read back.</p>
+      <div><button type="submit" class="cv-btn cv-btn-primary">Set and deploy</button></div>
+    </form>
+    {{end}}
+  </div>
 </section>
 
 <section aria-labelledby="webhook-title" class="flex flex-col gap-2">

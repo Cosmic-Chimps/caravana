@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Patterns are compiled once, when the program starts. MustCompile panics on
@@ -19,6 +20,10 @@ var (
 	// portNameRE avoids "-", because Nomad exposes ports as env vars named
 	// NOMAD_PORT_<label>.
 	portNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+
+	// secretNameRE is stricter than a plain env name: secrets reach the
+	// container through an env file, whose parser accepts only these keys.
+	secretNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 	// digestRE is an image reference pinned by digest and without a tag:
 	// an optional registry host (and port), a lowercase path, @sha256: and
@@ -40,8 +45,8 @@ const (
 //
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
-//  2. each service in order: name, image, replicas, resources, env, ports,
-//     domains, health
+//  2. each service in order: name, image, replicas, resources, env, secrets,
+//     ports, domains, health
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
 //
@@ -114,7 +119,11 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return NewFieldError(field+".resources.memoryMB", "must not be negative")
 	}
 
-	if err := validateEnv(field, svc.Env); err != nil {
+	envNames, err := validateEnv(field, svc.Env)
+	if err != nil {
+		return err
+	}
+	if err := validateSecrets(field, svc.Secrets, envNames); err != nil {
 		return err
 	}
 	ports, err := validatePorts(field, svc.Ports)
@@ -127,19 +136,48 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	return validateHealth(field, svc, ports)
 }
 
-func validateEnv(field string, env []EnvVar) error {
+// validateEnv checks the plain env and returns the names it sets.
+func validateEnv(field string, env []EnvVar) (map[string]bool, error) {
 	seen := map[string]bool{}
 	for j, e := range env {
 		f := fmt.Sprintf("%s.env[%d].name", field, j)
 		switch {
 		case e.Name == "":
-			return NewFieldError(f, "is required")
+			return nil, NewFieldError(f, "is required")
 		case strings.ContainsAny(e.Name, "=\x00"):
-			return NewFieldError(f, "%q must not contain '=' or a NUL byte", e.Name)
+			return nil, NewFieldError(f, "%q must not contain '=' or a NUL byte", e.Name)
 		case seen[e.Name]:
-			return NewFieldError(f, "%q is set twice", e.Name)
+			return nil, NewFieldError(f, "%q is set twice", e.Name)
 		}
 		seen[e.Name] = true
+	}
+	return seen, nil
+}
+
+// validateSecrets checks the secrets' names against each other and the plain
+// env, and their values. Messages never include a value.
+func validateSecrets(field string, secrets []Secret, envNames map[string]bool) error {
+	seen := map[string]bool{}
+	for j, s := range secrets {
+		f := fmt.Sprintf("%s.secrets[%d]", field, j)
+		switch {
+		case !secretNameRE.MatchString(s.Name):
+			return NewFieldError(f+".name", "%q must be letters, digits and '_', not starting with a digit", s.Name)
+		case seen[s.Name]:
+			return NewFieldError(f+".name", "%q is set twice", s.Name)
+		case envNames[s.Name]:
+			return NewFieldError(f+".name", "%q is also a plain env var of this service", s.Name)
+		}
+		seen[s.Name] = true
+		if s.Value == nil {
+			continue
+		}
+		if !utf8.ValidString(*s.Value) {
+			return NewFieldError(f+".value", "must be UTF-8 text")
+		}
+		if strings.ContainsRune(*s.Value, 0) {
+			return NewFieldError(f+".value", "must not contain a NUL byte")
+		}
 	}
 	return nil
 }

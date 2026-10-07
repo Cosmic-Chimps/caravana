@@ -181,6 +181,8 @@
   .cv-field:hover { border-color: var(--color-line-3); }
   .cv-field:focus { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
   .cv-field-lg { height: 42px; }
+  /* A multi-line field (a secret's value): grows with its content, the same mono readout. */
+  .cv-field-area { height: auto; min-height: 72px; padding: 8px 12px; line-height: 1.45; resize: vertical; }
   .cv-field[aria-invalid="true"] { border-color: var(--color-failed-line); }
   /* The date field: its value is a mono readout like every other field, centered in the box. */
   .cv-field[type="date"] { display: flex; align-items: center; min-width: 10.5rem; color-scheme: dark; }

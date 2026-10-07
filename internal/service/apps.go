@@ -238,8 +238,9 @@ func (s *Service) Copies(ctx context.Context, appID string) ([]Copy, error) {
 }
 
 // DeleteApp erases an app for good (research R16): its Nomad job is stopped
-// and purged, then the webhook token, the deployments and the app leave the
-// store. Nomad goes first, so a Nomad failure leaves everything as it was, and
+// and purged, its secrets are deleted, then the webhook token, the
+// deployments and the app leave the store. Nomad goes first, so a Nomad or
+// secret store failure leaves the app in place, and
 // the same call can simply be made again; a job Nomad no longer has counts as
 // purged. An unknown app is store.ErrNotFound.
 //
@@ -262,6 +263,11 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 
 	if err := s.deployer.Purge(ctx, id, s.owns(id)); err != nil {
 		return fmt.Errorf("delete app %q: %w", id, err)
+	}
+	// The secrets go before the app's record, so a failure here keeps the app
+	// and the delete can be tried again (the purge above is safe to repeat).
+	if err := s.secrets.Delete(ctx, id); err != nil {
+		return fmt.Errorf("delete the secrets of app %q: %w", id, err)
 	}
 
 	// Nomad let go of the job: from here on the delete finishes even if the

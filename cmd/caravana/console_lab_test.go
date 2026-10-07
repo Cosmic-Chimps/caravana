@@ -83,6 +83,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-healthy", c.healthy},
 		{"console-reads", c.reads},
 		{"console-deploy-changed", c.deployChanged},
+		{"console-secrets", c.secrets},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -204,6 +205,37 @@ func (c *console) deployChanged(t *testing.T) {
 		t.Errorf("stored app = %+v, want the image traefik/whoami:v1.10", stored.App.Services)
 	}
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
+}
+
+// secrets: setting a secret from Configure is a deploy that ends healthy with
+// the value in Nomad Variables and only the name on the page; removing it is
+// another deploy, and the variable is gone (feature 008).
+func (c *console) secrets(t *testing.T) {
+	value := "console " + c.g.run
+	path := "nomad/jobs/whoami/whoami"
+	change := func(route string, form url.Values) {
+		t.Helper()
+		c.prev = c.summary(t).LastDeployment.ID
+		resp, body := c.post(t, route, form)
+		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps/whoami/deployments" {
+			t.Fatalf("POST %s = %d → %q: %s", route, resp.StatusCode, resp.Header.Get("Location"), body)
+		}
+		c.waitDeployment(t, 3*time.Minute, c.prev)
+	}
+
+	change("/apps/whoami/secrets", url.Values{"service": {"whoami"}, "name": {"CONSOLE_SECRET"}, "value": {value}})
+	v, _, err := c.g.target.Nomad.Variables().Read(path, nil)
+	if err != nil || v.Items["CONSOLE_SECRET"] != value {
+		t.Fatalf("Nomad variable %s = %v, %v; want CONSOLE_SECRET set", path, v, err)
+	}
+	if _, body := c.get(t, "/apps/whoami/configure"); !strings.Contains(body, "CONSOLE_SECRET") || strings.Contains(body, value) {
+		t.Errorf("Configure should list CONSOLE_SECRET and never its value")
+	}
+
+	change("/apps/whoami/secrets/remove", url.Values{"service": {"whoami"}, "name": {"CONSOLE_SECRET"}})
+	if _, _, err := c.g.target.Nomad.Variables().Read(path, nil); err == nil {
+		t.Errorf("Nomad variable %s is still there after the secret was removed", path)
+	}
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends

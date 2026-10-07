@@ -70,7 +70,7 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 		BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,
 		VersionRetries: []time.Duration{time.Millisecond, time.Millisecond},
 	}
-	svc := service.New(st, deployer, log)
+	svc := service.New(st, deployer, deploy.NewVariables(client), log)
 	svcCtx, stop := context.WithCancel(ctx)
 	if err := svc.Start(svcCtx); err != nil {
 		t.Fatalf("start service: %v", err)

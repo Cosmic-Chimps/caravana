@@ -51,6 +51,10 @@ type Service struct {
 	Args []string `json:"args,omitempty"`
 	// Env holds plain, non-secret config. Names must be unique.
 	Env []EnvVar `json:"env,omitempty"`
+	// Secrets are environment variables whose values are write-only: they
+	// live in the secret store, never in the stored app or the Nomad job.
+	// Each deploy replaces the whole list; a name left out is removed.
+	Secrets []Secret `json:"secrets,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's
@@ -67,12 +71,41 @@ type Service struct {
 	Health *HealthCheck `json:"health,omitempty"`
 }
 
-// EnvVar is one plain environment variable. Secrets come with a later feature.
+// EnvVar is one plain environment variable. Values that must stay hidden go
+// in Service.Secrets instead.
 type EnvVar struct {
 	// Name must be non-empty and contain neither "=" nor a NUL byte.
 	Name string `json:"name"`
 	// Value can be any text.
 	Value string `json:"value"`
+}
+
+// Secret is one secret environment variable of a service.
+type Secret struct {
+	// Name is letters, digits and "_", not starting with a digit, and unique
+	// across the service's secrets and env.
+	Name string `json:"name"`
+	// Value is the new value: UTF-8 text without a NUL byte. nil keeps the
+	// value the secret has now. It is never stored and never returned.
+	Value *string `json:"value,omitempty"`
+}
+
+// WithoutSecretValues returns a copy of a whose secrets have names only, the
+// form Caravana stores and shows. Deployed again, it keeps every value.
+func (a App) WithoutSecretValues() App {
+	services := make([]Service, len(a.Services))
+	for i, svc := range a.Services {
+		if len(svc.Secrets) > 0 {
+			names := make([]Secret, len(svc.Secrets))
+			for j, s := range svc.Secrets {
+				names[j] = Secret{Name: s.Name}
+			}
+			svc.Secrets = names
+		}
+		services[i] = svc
+	}
+	a.Services = services
+	return a
 }
 
 // Port is a named container port. Nomad maps a dynamic host port to it.

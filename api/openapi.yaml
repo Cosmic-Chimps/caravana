@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.5.0
+  version: 0.6.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -14,6 +14,10 @@ info:
 
     Durations (`health.interval`, `health.timeout`) are Go duration strings such as `"10s"` or
     `"1m30s"`, in requests and responses.
+
+    Secret values (`services[].secrets[].value`) are write-only. They are kept in the cluster's
+    secret store, never in an app read back, a deployment or the Nomad job. A store that can't
+    be written fails the deploy with 502 `secret_store_unavailable` before Nomad gets the job.
 
     Every endpoint needs authentication except `GET /v1/health` and `POST /v1/webhooks/{id}`.
     Clients send an API token as `Authorization: Bearer cvat_…`; the admin creates tokens on the
@@ -167,9 +171,9 @@ paths:
       operationId: deleteApp
       summary: Delete an app for good.
       description: |
-        Stops and purges the app's Nomad job, then erases the app, its deployments and its
-        webhook token. If Nomad can't stop the job, nothing is erased and the call can be made
-        again. Not reversible; the ID can be used for a new app afterwards.
+        Stops and purges the app's Nomad job, deletes its secrets, then erases the app, its
+        deployments and its webhook token. If Nomad can't stop the job or the secrets can't be
+        deleted, the app is kept and the call can be made again. Not reversible; the ID can be used for a new app afterwards.
       tags: [apps]
       responses:
         "204":
@@ -759,6 +763,15 @@ components:
             properties:
               name: {type: string, minLength: 1}
               value: {type: string}
+        secrets:
+          type: array
+          description: |
+            The service's secrets, as environment variables. Each deploy replaces the whole
+            list: a name you leave out is removed. Send `value` to set a secret; leave it out to
+            keep the value it has now. Values are write-only: responses list names only. An
+            app's secrets hold at most 61440 bytes in total.
+          items:
+            $ref: "#/components/schemas/Secret"
         ports:
           type: array
           items:
@@ -808,6 +821,22 @@ components:
               $ref: "#/components/schemas/Duration"
             timeout:
               $ref: "#/components/schemas/Duration"
+
+    Secret:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z_][A-Za-z0-9_]*$"
+          description: Unique across the service's secrets and env.
+        value:
+          type: string
+          writeOnly: true
+          description: |
+            UTF-8 text without NUL. Leave it out to keep the value the secret has now. Never
+            returned.
 
     Duration:
       type: string
@@ -1077,7 +1106,8 @@ components:
                 `unsupported_media_type`, `body_too_large`, `not_found`,
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
-                `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`.
+                `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
+                `secret_store_unavailable`.
               examples: [invalid_field]
             message:
               type: string

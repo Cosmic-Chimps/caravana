@@ -149,7 +149,7 @@ func loggedEnv(t *testing.T) (*env, *lockedBuffer) {
 	t.Helper()
 	e := newEnv(t)
 	buf := &lockedBuffer{}
-	svc := New(e.store, newDeployer(t, e.registry, e.nomad), slog.New(slog.NewTextHandler(buf, nil)))
+	svc := New(e.store, newDeployer(t, e.registry, e.nomad), e.secrets, slog.New(slog.NewTextHandler(buf, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)

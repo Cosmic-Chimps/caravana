@@ -53,6 +53,12 @@ func Cases() []Case {
 	customResources.App.Services[0].Resources = app.Resources{CPUMHz: 500, MemoryMB: 256}
 	customResources.App.Services[0].Health = &app.HealthCheck{Path: "/", Interval: 30 * time.Second, Timeout: 5 * time.Second}
 
+	// withSecrets has a web service with secrets (one kept, one set) and a
+	// worker with secrets of its own, beside its plain env.
+	secretWeb, secretWorker := blogWeb(), jobsWorker()
+	secretWeb.Secrets = []app.Secret{{Name: "DATABASE_URL"}, {Name: "API_KEY", Value: new("k1")}}
+	secretWorker.Secrets = []app.Secret{{Name: "DATABASE_URL", Value: new("postgres://worker")}}
+
 	return []Case{
 		Whoami(),
 		{
@@ -93,6 +99,14 @@ func Cases() []Case {
 		{
 			Name: "multi-service",
 			App:  imageApp("blog", blogWeb(), jobsWorker()),
+			Deployment: deployment(map[string]string{
+				"web":    digest("ghcr.io/acme/blog", 'b'),
+				"worker": digest("ghcr.io/acme/jobs", 'd'),
+			}),
+		},
+		{
+			Name: "secrets",
+			App:  imageApp("blog", secretWeb, secretWorker),
 			Deployment: deployment(map[string]string{
 				"web":    digest("ghcr.io/acme/blog", 'b'),
 				"worker": digest("ghcr.io/acme/jobs", 'd'),

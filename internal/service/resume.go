@@ -48,7 +48,7 @@ func (s *Service) settle(ctx context.Context, rec store.DeploymentRecord) {
 		if rec.Status == store.StatusRunning {
 			msg = "Nomad has no job version for this deployment"
 		}
-		s.finish(id, store.StatusFailed, msg)
+		s.finish(rec.AppID, id, store.StatusFailed, msg)
 		return
 	}
 	s.follow(ctx, rec.AppID, id, &v, running)

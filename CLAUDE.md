@@ -72,7 +72,21 @@ downloads the pinned versions (`tools/ui-vendor.versions`) and verifies their ch
 (`api/openapi.yaml` 0.5.0), and Caravana's scoped Nomad policy gained `read-logs`. `TestLab` runs
 the console steps (`cmd/caravana/console_lab_test.go`; `TestConsoleLab` runs only those, in about
 a minute) before the gate steps, and the gate has a step `console-reads` that catches a missing
-`read-logs`. For local work the console is at `http://127.0.0.1:7070/`. Next: 008.
+`read-logs`. For local work the console is at `http://127.0.0.1:7070/`. Feature 007 is merged
+into `main`. Feature 008 is implemented on branch `008-secrets`: each service has `secrets`
+(`{name, value?}`; no value means keep the current one), values are write-only and live only in
+Nomad Variables at `nomad/jobs/<app>/<service>`, which only that service's tasks can read, and
+the stored app, responses, logs and the Nomad job hold names only. `internal/secrets` is the
+seam (`Provider`, `Sets`, `Build`, `ErrUnavailable`; `secretstest` has the in-memory store and
+the shared contract suite `TestProvider`); the Nomad store is `deploy.Variables`. A deploy
+replaces the sets just before `Register`; the replaced sets are kept at
+`nomad/jobs/<app>/caravana/previous`, owned by the deployment, and once it ends they are
+dropped (healthy) or put back (failed, reverted), also across restarts. The task's env
+template is `noop`, so values reach copies only through a rollout. Configure has a Secrets
+section (set, remove, each a deploy); the API is `deployApp` with `secrets`
+(`api/openapi.yaml` 0.6.0, new code `secret_store_unavailable`). The scoped policy gained
+`variables` on `nomad/jobs/*` (run `host.sh up` on an existing host), and the gate has a step
+`secrets-render`. Next: 009.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -89,6 +103,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
   from Nomad allocations. It calls only `internal/service`. Live updates are SSE (decided).
   (done, branch `007-htmx-ui-v1`)
 - 008 Secrets: `secrets.Provider`, Nomad Variables, declarative replace on every deploy
+  (done, branch `008-secrets`)
 - 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
   host volumes
 - 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to

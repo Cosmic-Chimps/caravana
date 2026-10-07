@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Secrets",
   "branch": "008-secrets",
-  "currentStep": "tasks",
-  "status": "ready-to-implement",
+  "currentStep": "implement",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -74,6 +74,252 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T04:09:57.284Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T04:10:05.187Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:10:19.045Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:11:02.299Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:11:50.860Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:13:03.130Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:13:58.898Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:15:37.185Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:15:37.340Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:16:47.986Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:17:22.008Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:17:22.159Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:19:32.979Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:19:33.136Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:19:33.280Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:22:42.265Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:22:42.402Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T016",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:24:28.318Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T017",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:24:28.472Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T018",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:25:00.445Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T021",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:25:32.801Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T019",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:25:32.961Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T020",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:29:39.675Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T022",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:29:39.848Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T023",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:29:40.007Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T024",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:29:57.925Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T025",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:31:01.492Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T026",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:31:58.450Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T027",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:31:58.596Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T028",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:32:15.325Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T029",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:46:07.991Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T04:46:08.027Z"
     }
   ],
   "telemetryInstanceId": "2a6dd396-91e1-4ac5-ac8b-e7468af24e59",
@@ -208,6 +454,16 @@
       "decision": "Nomad provider lives in internal/deploy, interface in internal/secrets",
       "why": "constitution VI keeps Nomad code in deploy and nomadjob",
       "rejected": "Nomad code inside internal/secrets"
+    },
+    {
+      "decision": "Nomad unreachable during a secrets call is both ErrUnavailable and ErrNomadUnavailable",
+      "why": "the API keeps answering nomad_unavailable for a down Nomad, even for apps without secrets",
+      "rejected": "a new code for every Nomad outage"
+    },
+    {
+      "decision": "checkSecrets builds the sets before saving whenever the app has secrets",
+      "why": "a bad keep, an oversized set or an unreachable store saves nothing",
+      "rejected": "checking only keeps"
     }
   ],
   "step_summaries": {
@@ -217,7 +473,294 @@
     },
     "tasks": {
       "summary": "29 tasks: foundational in 3 waves, then 5 story phases and polish"
+    },
+    "implement": {
+      "summary": "Per-service write-only secrets in Nomad Variables behind secrets.Provider, console Secrets section, API 0.6.0, gate step"
     }
   },
-  "approach": "Secrets are per-service {name, value?} on app.Service; values are stripped before saving. The service builds full sets and hands them to secrets.Provider (deploy.Variables writes nomad/jobs/<app>/<service>, keeps the replaced sets for Restore/Commit by deployment). The translator adds an env template with toJSON values and change_mode noop."
+  "approach": "Secrets are per-service {name, value?} on app.Service; values are stripped before saving. The service builds full sets and hands them to secrets.Provider (deploy.Variables writes nomad/jobs/<app>/<service>, keeps the replaced sets for Restore/Commit by deployment). The translator adds an env template with toJSON values and change_mode noop.",
+  "currentTask": "T029",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "Secret type, Service.Secrets, App.WithoutSecretValues",
+      "files": [
+        "internal/app/app.go"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "secrets package: Sets, ErrUnavailable, Provider, Build, Equal, tests",
+      "files": [
+        "internal/secrets/secrets.go",
+        "internal/secrets/secrets_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "fake Nomad variables endpoints with Nomad's path, empty and size rules",
+      "files": [
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "secret name, uniqueness, UTF-8 and NUL rules; errors never show values",
+      "files": [
+        "internal/app/validate.go",
+        "internal/app/validate_test.go"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "in-memory secretstest.Store plus a shared Provider contract suite",
+      "files": [
+        "internal/secrets/secretstest/store.go",
+        "internal/secrets/secretstest/contract.go",
+        "internal/secrets/secretstest/store_test.go"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "deploy.Variables: per-service variables, kept copy with owner, ErrUnavailable errors; passes the shared contract",
+      "files": [
+        "internal/deploy/secrets.go",
+        "internal/deploy/secrets_test.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "env template with toJSON values and noop, SecretsPath, golden secrets case, no values in the job",
+      "files": [
+        "internal/nomadjob/translate.go",
+        "internal/nomadjob/translate_test.go",
+        "internal/nomadjob/testdata/secrets.golden.json",
+        "internal/app/apptest/fixtures.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "service.New takes a secrets.Provider; service tests use secretstest, api and ui tests use deploy.Variables on the fake Nomad",
+      "files": [
+        "internal/service/service.go",
+        "internal/service/helpers_test.go",
+        "internal/service/resume_test.go",
+        "internal/service/apps_test.go",
+        "internal/api/api_test.go",
+        "internal/ui/apps_test.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "secrets.ErrUnavailable maps to 502 secret_store_unavailable",
+      "files": [
+        "internal/api/api.go",
+        "internal/api/errors.go"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "main wires deploy.NewVariables into service.New",
+      "files": [
+        "cmd/caravana/main.go"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "buildSecrets, checkKeeps, restoreSecrets, settleSecrets with per-attempt lock and retry",
+      "files": [
+        "internal/service/secrets.go"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "Deploy saves names only after a keep check; deploy replaces secrets after the latest check, restores on Register failure; finish settles",
+      "files": [
+        "internal/service/deploy.go",
+        "internal/service/resume.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "service tests: set/replace/remove, per service, keep without value, unavailable, register failure, superseded",
+      "files": [
+        "internal/service/secrets_test.go"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "API tests: marker never leaves the store, names-only reads, keep round-trip, error fields and secret_store_unavailable",
+      "files": [
+        "internal/api/secrets_test.go",
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "openapi 0.6.0: Service.secrets, Secret schema, secret_store_unavailable",
+      "files": [
+        "api/openapi.yaml"
+      ]
+    },
+    "T016": {
+      "status": "DONE",
+      "did": "scoped policy gains variables read/write/destroy/list on nomad/jobs/*",
+      "files": [
+        "deploy/vm/caravana-policy.hcl"
+      ]
+    },
+    "T017": {
+      "status": "DONE",
+      "did": "gate step secrets-render: busybox with a tricky secret, read back by exec, kept by a redeploy, gone after delete",
+      "files": [
+        "cmd/caravana/gate_test.go"
+      ]
+    },
+    "T018": {
+      "status": "DONE",
+      "did": "redeploy and 10 webhook redeploys keep values; a value gone from the store fails naming the field",
+      "files": [
+        "internal/service/secrets_redeploy_test.go"
+      ]
+    },
+    "T021": {
+      "status": "DONE",
+      "did": "SetSecret and RemoveSecret as Deploys of the stored app with one change",
+      "files": [
+        "internal/service/secretedit.go"
+      ]
+    },
+    "T019": {
+      "status": "DONE",
+      "did": "tests for SetSecret/RemoveSecret: others kept, console trigger, unknown app/service/secret, bad name",
+      "files": [
+        "internal/service/secretedit_test.go"
+      ]
+    },
+    "T020": {
+      "status": "DONE",
+      "did": "UI tests: names listed, no value in page or after refusals, set/remove redirect, field errors, store refusal",
+      "files": [
+        "internal/ui/secrets_test.go"
+      ]
+    },
+    "T022": {
+      "status": "DONE",
+      "did": "secrets panel data, setSecret/removeSecret handlers (CRLF to LF, errors on fields), routes, API parity entries",
+      "files": [
+        "internal/ui/configure.go",
+        "internal/ui/app.go",
+        "internal/ui/ui.go",
+        "internal/api/parity_test.go"
+      ]
+    },
+    "T023": {
+      "status": "DONE",
+      "did": "Secrets section on Configure, cv-field-area, stylesheet regenerated",
+      "files": [
+        "internal/ui/templates/app.html",
+        "internal/ui/style/theme.css",
+        "internal/ui/static/app.css"
+      ]
+    },
+    "T024": {
+      "status": "DONE",
+      "did": "console lab step: set a secret from Configure, check Nomad Variables and the page, remove it",
+      "files": [
+        "cmd/caravana/console_lab_test.go"
+      ]
+    },
+    "T025": {
+      "status": "DONE",
+      "did": "restore tests: failed rollout, restart mid-rollout, newer deploy takes the copy over; noop template",
+      "files": [
+        "internal/service/secrets_restore_test.go"
+      ]
+    },
+    "T026": {
+      "status": "DONE",
+      "did": "DeleteApp deletes secrets after the purge, before the store row; console says so when the store refuses",
+      "files": [
+        "internal/service/apps.go",
+        "internal/ui/app.go"
+      ]
+    },
+    "T027": {
+      "status": "DONE",
+      "did": "delete tests: live and kept secrets gone, new app clean, unreachable store keeps the app and the retry works",
+      "files": [
+        "internal/service/secrets_delete_test.go"
+      ]
+    },
+    "T028": {
+      "status": "DONE",
+      "did": "CLAUDE.md where-we-are and phase list, docs/plan.md 008 row",
+      "files": [
+        "CLAUDE.md",
+        "docs/plan.md"
+      ]
+    },
+    "T029": {
+      "status": "DONE",
+      "did": "all CI checks pass; TestLab (console + gate incl. console-secrets and secrets-render) passed in 740s",
+      "files": [
+        "-"
+      ]
+    }
+  },
+  "verified": [
+    {
+      "what": "vet and staticcheck",
+      "command": "go vet ./... && go tool staticcheck ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.1,
+      "result": "no output"
+    },
+    {
+      "what": "unit tests with the race detector",
+      "command": "go test -race ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.3,
+      "result": "ok  \tgithub.com/cosmic-chimps/caravana/internal/service\t(cached) · ok  \tgithub.com/cosmic-chimps/caravana/internal/store\t(cached) · ok  \tgithub.com/cosmic-chimps/caravana/internal/ui\t(cached)"
+    },
+    {
+      "what": "no-CGO cross-compile linux arm64 and amd64",
+      "command": "CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./... && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 2.8,
+      "result": "no output"
+    },
+    {
+      "what": "gofmt, tidy, UI assets",
+      "command": "test -z \"\" && go mod tidy -diff && tools/ui-css.sh check && tools/ui-vendor.sh check",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.0,
+      "result": "internal/ui/static/js vendored files match tools/ui-vendor.versions · \u001b[3m\u001b[1m\u001b[34m≈\u001b[39m\u001b[22m\u001b[23m tailwindcss \u001b[34mv4.3.3\u001b[39m · Done in \u001b[34m105ms\u001b[39m"
+    },
+    {
+      "what": "TestLab in the local Nomad lab (console steps then gate, incl. console-secrets and secrets-render)",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 25m",
+      "result": "PASS in 740s"
+    },
+    {
+      "what": "shellcheck",
+      "command": "docker run koalaman/shellcheck deploy/dev/lab.sh deploy/vm/*.sh tools/*.sh",
+      "result": "clean"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "simplified: if the process stops while a Restore keeps failing, the failed deploy values stay live until the app next deploys (settleSecrets)",
+      "step": "implement"
+    },
+    {
+      "note": "the lab runs with a management token, so only host.sh prove on a real VM proves the scoped variables rule in caravana-policy.hcl",
+      "step": "implement"
+    }
+  ],
+  "last_action": "29/29 tasks done; go test -race and TestLab pass"
 }

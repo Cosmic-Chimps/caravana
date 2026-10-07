@@ -108,6 +108,28 @@ func TestValidate(t *testing.T) {
 			a.Services[0].Env = []EnvVar{{Name: "A", Value: "1"}, {Name: "A", Value: "2"}}
 		}, "services[0].env[1].name"},
 
+		// Secrets.
+		{"valid secrets, kept and set", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "DATABASE_URL"}, {Name: "_api_key2", Value: new("line\n\"q\" $X {{y}} é")}}
+		}, ""},
+		{"valid empty secret value", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("")}} }, ""},
+		{"valid same secret name in two services", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A"}}
+			a.Services[1].Secrets = []Secret{{Name: "A"}}
+		}, ""},
+		{"secret name empty", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: ""}} }, "services[0].secrets[0].name"},
+		{"secret name starts with a digit", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "1A"}} }, "services[0].secrets[0].name"},
+		{"secret name with a dot", func(a *App, d *Deployment) { a.Services[1].Secrets = []Secret{{Name: "A.B"}} }, "services[1].secrets[0].name"},
+		{"secret name duplicate", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A"}, {Name: "A", Value: new("x")}}
+		}, "services[0].secrets[1].name"},
+		{"secret name also in env", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "PORT", Value: "80"}}
+			a.Services[0].Secrets = []Secret{{Name: "PORT", Value: new("x")}}
+		}, "services[0].secrets[0].name"},
+		{"secret value with NUL", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("a\x00b")}} }, "services[0].secrets[0].value"},
+		{"secret value not UTF-8", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("\xff")}} }, "services[0].secrets[0].value"},
+
 		// Ports.
 		{"port name empty", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "" }, "services[0].ports[0].name"},
 		{"port name uppercase", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "HTTP" }, "services[0].ports[0].name"},
@@ -221,5 +243,34 @@ func TestValidate(t *testing.T) {
 				t.Errorf("Message is empty for %q", fe.Field)
 			}
 		})
+	}
+}
+
+func TestSecretErrorsHideValues(t *testing.T) {
+	marker := "s3cr3t-marker"
+	for _, v := range []string{marker + "\x00", marker + "\xff"} {
+		a := validApp()
+		a.Services[0].Secrets = []Secret{{Name: "A", Value: new(v)}}
+		err := ValidateApp(a)
+		if err == nil || strings.Contains(err.Error(), marker) {
+			t.Errorf("ValidateApp = %v, want an error without the value", err)
+		}
+	}
+}
+
+func TestWithoutSecretValues(t *testing.T) {
+	a := validApp()
+	a.Services[0].Secrets = []Secret{{Name: "A", Value: new("one")}, {Name: "B"}}
+	got := a.WithoutSecretValues()
+	if len(got.Services[0].Secrets) != 2 || got.Services[0].Secrets[0].Name != "A" {
+		t.Fatalf("names = %+v, want A and B", got.Services[0].Secrets)
+	}
+	for _, s := range got.Services[0].Secrets {
+		if s.Value != nil {
+			t.Errorf("secret %s kept its value", s.Name)
+		}
+	}
+	if v := a.Services[0].Secrets[0].Value; v == nil || *v != "one" {
+		t.Error("WithoutSecretValues changed the original app")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -229,6 +230,8 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusBadGateway, Code: codeNomadRejected, Message: err.Error()}
 	case errors.Is(err, deploy.ErrNomadUnavailable):
 		return &Error{Status: http.StatusBadGateway, Code: codeNomadUnavailable, Message: err.Error()}
+	case errors.Is(err, secrets.ErrUnavailable):
+		return &Error{Status: http.StatusBadGateway, Code: codeSecretStoreUnavail, Message: err.Error()}
 	default:
 		s.log.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", err)
 		return internalError()

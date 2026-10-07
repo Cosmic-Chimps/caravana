@@ -18,14 +18,22 @@
 // fake answers GET /v1/client/fs/logs/{id} the way a Nomad client does: a stream
 // of JSON frames, each carrying a chunk of the file and the offset after it,
 // with "{}" heartbeats while following.
+//
+// Variables (secrets) are kept in memory: GET, PUT and DELETE /v1/var/{path}
+// and GET /v1/vars?prefix=. Like Nomad, the fake refuses a variable with no
+// items, one over 64 KiB, or a path Nomad wouldn't accept. Variable(path) and
+// SetVariable(path, items) let tests read and change them directly.
 package deploytest
 
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +75,9 @@ type Nomad struct {
 	logFrameSize int // 0 = one frame per read
 	logRequests  []LogRequest
 	logOpen      int // follow streams still connected
+
+	vars       map[string]map[string]string // variable items, by path
+	varsStatus int                          // non-zero: every variables request answers it
 }
 
 // logKey names one output file: a copy's stdout or stderr.
@@ -93,6 +104,8 @@ func New(t testing.TB) *Nomad {
 
 		logs:       map[logKey][]byte{},
 		logChanged: make(chan struct{}),
+
+		vars: map[string]map[string]string{},
 	}
 	n.srv = httptest.NewServer(http.HandlerFunc(n.serve))
 	t.Cleanup(n.srv.Close)
@@ -244,7 +257,17 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	n.mu.Lock()
+	varsStatus := n.varsStatus
+	n.mu.Unlock()
+	isVars := strings.HasPrefix(r.URL.Path, "/v1/var/") || r.URL.Path == "/v1/vars"
 	switch {
+	case isVars && varsStatus != 0:
+		http.Error(w, "Permission denied", varsStatus)
+	case strings.HasPrefix(r.URL.Path, "/v1/var/"):
+		n.variable(w, r, strings.TrimPrefix(r.URL.Path, "/v1/var/"))
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/vars":
+		n.listVariables(w, r.URL.Query().Get("prefix"))
 	case r.Method == http.MethodPut && r.URL.Path == "/v1/jobs":
 		n.register(w, r)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/job/"):
@@ -644,6 +667,112 @@ func (n *Nomad) allocation(w http.ResponseWriter, id string) {
 		}
 	}
 	http.Error(w, "alloc not found", http.StatusNotFound)
+}
+
+// variablePathRE is Nomad's rule for a variable path (nomad/structs).
+var variablePathRE = regexp.MustCompile(`^[a-zA-Z0-9-_~/]{1,128}$`)
+
+// maxVariableSize is Nomad's cap on a variable's keys plus values.
+const maxVariableSize = 64 * 1024
+
+// Variable returns a copy of the items at path, or nil when there is no
+// variable there.
+func (n *Nomad) Variable(path string) map[string]string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return maps.Clone(n.vars[path])
+}
+
+// SetVariable stores items at path, as if written outside Caravana; nil
+// items delete it.
+func (n *Nomad) SetVariable(path string, items map[string]string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if items == nil {
+		delete(n.vars, path)
+		return
+	}
+	n.vars[path] = maps.Clone(items)
+}
+
+// FailVariables makes every variables request answer status (0 undoes it),
+// as Nomad does when the token's policy has no variables rules (403).
+func (n *Nomad) FailVariables(status int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.varsStatus = status
+}
+
+// VariablePaths returns every variable path, sorted.
+func (n *Nomad) VariablePaths() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return slices.Sorted(maps.Keys(n.vars))
+}
+
+// variable answers GET, PUT and DELETE /v1/var/{path}.
+func (n *Nomad) variable(w http.ResponseWriter, r *http.Request, path string) {
+	if !variablePathRE.MatchString(path) {
+		http.Error(w, fmt.Sprintf("invalid path %q", path), http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		items, ok := n.vars[path]
+		if !ok {
+			http.Error(w, "variable not found", http.StatusNotFound)
+			return
+		}
+		n.writeJSON(w, &api.Variable{Namespace: "default", Path: path, Items: maps.Clone(items)})
+	case http.MethodPut:
+		var v api.Variable
+		if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+			http.Error(w, "bad variable", http.StatusBadRequest)
+			return
+		}
+		if len(v.Items) == 0 {
+			http.Error(w, "empty variables are invalid", http.StatusBadRequest)
+			return
+		}
+		size := 0
+		for k, val := range v.Items {
+			size += len(k) + len(val)
+		}
+		if size > maxVariableSize {
+			http.Error(w, "variables are limited to 64KiB in total size", http.StatusBadRequest)
+			return
+		}
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		n.index++
+		n.vars[path] = maps.Clone(v.Items)
+		n.writeJSON(w, &api.Variable{Namespace: "default", Path: path, Items: v.Items})
+	case http.MethodDelete:
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		n.index++
+		delete(n.vars, path)
+		w.Header().Set("X-Nomad-Index", strconv.FormatUint(n.index, 10))
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// listVariables answers GET /v1/vars?prefix=: the metadata of every variable
+// whose path starts with prefix, sorted by path.
+func (n *Nomad) listVariables(w http.ResponseWriter, prefix string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := []*api.VariableMetadata{}
+	for _, path := range slices.Sorted(maps.Keys(n.vars)) {
+		if strings.HasPrefix(path, prefix) {
+			out = append(out, &api.VariableMetadata{Namespace: "default", Path: path})
+		}
+	}
+	n.writeJSON(w, out)
 }
 
 // wakeLogs releases every followed log stream so it looks again. n.mu must be

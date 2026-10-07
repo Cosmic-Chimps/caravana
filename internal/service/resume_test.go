@@ -10,6 +10,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
+	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -51,7 +52,7 @@ func TestResume(t *testing.T) {
 
 	t.Run("running is watched again", func(t *testing.T) {
 		st, nomad, id := leftover(t, store.StatusRunning, new(uint64(0)), true)
-		startService(t, st, reg(t), nomad)
+		startService(t, st, reg(t), nomad, secretstest.New())
 		if final := waitFinal(t, st, id); final.Status != store.StatusHealthy {
 			t.Errorf("final = %s, want healthy", final.Status)
 		}
@@ -59,7 +60,7 @@ func TestResume(t *testing.T) {
 
 	t.Run("pending that reached Nomad", func(t *testing.T) {
 		st, nomad, id := leftover(t, store.StatusPending, nil, true)
-		startService(t, st, reg(t), nomad)
+		startService(t, st, reg(t), nomad, secretstest.New())
 		final := waitFinal(t, st, id)
 		if final.Status != store.StatusHealthy || final.JobVersion == nil || *final.JobVersion != 0 {
 			t.Errorf("final = %s v%v, want healthy at version 0", final.Status, final.JobVersion)
@@ -68,7 +69,7 @@ func TestResume(t *testing.T) {
 
 	t.Run("pending that never reached Nomad", func(t *testing.T) {
 		st, nomad, id := leftover(t, store.StatusPending, nil, false)
-		startService(t, st, reg(t), nomad)
+		startService(t, st, reg(t), nomad, secretstest.New())
 		final := waitFinal(t, st, id)
 		if final.Status != store.StatusFailed || final.Error != "Caravana stopped before registering this deployment" {
 			t.Errorf("final = %s %q, want failed: stopped before registering", final.Status, final.Error)
@@ -79,7 +80,7 @@ func TestResume(t *testing.T) {
 		st, nomad, id := leftover(t, store.StatusRunning, new(uint64(0)), true)
 		nomad.Down()
 		start := time.Now()
-		startService(t, st, reg(t), nomad)
+		startService(t, st, reg(t), nomad, secretstest.New())
 		if time.Since(start) > time.Second {
 			t.Errorf("Start took %v; it must not wait on Nomad", time.Since(start))
 		}
@@ -96,7 +97,7 @@ func TestResume(t *testing.T) {
 	t.Run("shutdown leaves it running", func(t *testing.T) {
 		st, nomad, id := leftover(t, store.StatusRunning, new(uint64(0)), true)
 		nomad.Default() // no rollout ever appears
-		svc := New(st, newDeployer(t, reg(t), nomad), discardLogger())
+		svc := New(st, newDeployer(t, reg(t), nomad), secretstest.New(), discardLogger())
 		ctx, cancel := context.WithCancel(context.Background())
 		if err := svc.Start(ctx); err != nil {
 			t.Fatal(err)
