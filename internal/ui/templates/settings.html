@@ -97,5 +97,47 @@
       </form>
     </div>
   </section>
+
+  {{/* Backup destination (feature 010): one S3-compatible bucket for every database. The
+       secret key is never shown; an empty field keeps the saved one. */}}
+  <section aria-labelledby="backups" class="flex flex-col gap-2">
+    <h2 id="backups" class="cv-label">Backup destination</h2>
+    {{with .Dest}}
+    <form method="post" action="/settings/backups" class="cv-panel p-4 flex flex-col gap-4" autocomplete="off">
+      {{if .Saved}}
+      <div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved. Every database's next backup goes here.</span></div>
+      {{end}}
+      {{if and .Err (not .Field)}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></div>{{end}}
+      <p class="text-sm text-fg-3">An S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, or one you run. Databases with a backup policy are dumped there on their schedule.</p>
+      <div class="flex flex-wrap gap-4">
+        {{template "dest-field" (destField . "endpoint" "Endpoint" .Endpoint "https://s3.eu-west-1.amazonaws.com")}}
+        {{template "dest-field" (destField . "region" "Region" .Region "us-east-1")}}
+      </div>
+      <div class="flex flex-wrap gap-4">
+        {{template "dest-field" (destField . "bucket" "Bucket" .Bucket "")}}
+        {{template "dest-field" (destField . "prefix" "Prefix (optional)" .Prefix "caravana")}}
+      </div>
+      <div class="flex flex-wrap gap-4">
+        {{template "dest-field" (destField . "accessKeyId" "Access key ID" .AccessKeyID "")}}
+        <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+          <span class="cv-label">Secret access key</span>
+          <input class="cv-field" type="password" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secret-error"{{end}}>
+          {{if eq .Field "secretAccessKey"}}<span id="dest-secret-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></span>
+          {{else if .HasSecret}}<span class="cv-data-muted">Saved. Leave it empty to keep it.</span>{{end}}
+        </label>
+      </div>
+      <div><button type="submit" class="cv-btn cv-btn-secondary">Save destination</button></div>
+    </form>
+    {{end}}
+  </section>
 </div>
+{{end}}
+
+{{/* One text field of the destination form. Takes a destFieldView. */}}
+{{define "dest-field"}}
+<label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+  <span class="cv-label">{{.Label}}</span>
+  <input class="cv-field" type="text" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
+  {{with .Err}}<span id="dest-{{$.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+</label>
 {{end}}

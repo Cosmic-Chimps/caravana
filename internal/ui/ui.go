@@ -139,6 +139,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/webhook", s.protected(s.requireSession(s.createWebhook))},
 		{"POST", "/apps/{id}/webhook/revoke", s.protected(s.requireSession(s.revokeWebhook))},
+		{"GET", "/apps/{id}/backups", s.requireSession(s.showBackups)},
+		{"POST", "/apps/{id}/backups", s.protected(s.requireSession(s.backUpNow))},
+		{"POST", "/apps/{id}/backups/{backupId}/restore", s.protected(s.requireSession(s.restoreBackup))},
 		{"POST", "/apps/{id}/secrets", s.protected(s.requireSession(s.setSecret))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
@@ -153,6 +156,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
+		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
 		{"GET", "/account", s.showAccount},
 		{"GET", "/static/", http.StripPrefix("/static/", s.serveStatic()).ServeHTTP},
 	}
@@ -228,7 +232,7 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset}).ParseFS(templatesFS,
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "destField": destField}).ParseFS(templatesFS,
 			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)

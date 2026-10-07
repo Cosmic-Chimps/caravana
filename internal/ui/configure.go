@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -313,6 +314,9 @@ func whatGoes(a app.App, sum service.AppSummary, deployments int, hasToken bool)
 			s = append(s, mono(v))
 		}
 		s = append(s, plain(" and the data in "+them+" are erased."))
+	}
+	if slices.ContainsFunc(a.Services, func(svc app.Service) bool { return svc.Backup != nil }) {
+		s = append(s, plain(" Its backups stay in the backup destination."))
 	}
 	return append(s, plain(" This can't be undone."))
 }

@@ -32,7 +32,94 @@
 {{with .Deployments}}{{template "deployments" .}}{{end}}
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Logs}}{{template "logs" .}}{{end}}
+{{with .Backups}}{{template "backups" .}}{{end}}
 {{end}}
+{{end}}
+
+{{/* The Backups tab (feature 010). Takes a backupsTab. */}}
+{{define "backups"}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<section aria-labelledby="databases-title" class="flex flex-col gap-2">
+  <h2 id="databases-title" class="cv-label">Databases</h2>
+  <div class="cv-panel p-4 flex flex-col gap-4">
+    {{if not .Destination}}<p class="text-base text-fg-1">No backup destination is set. <a href="/settings#backups">Set one in Settings</a> before backups can run.</p>{{end}}
+    {{range .Services}}
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <div class="cv-data text-fg-1">{{.Name}}</div>
+        <p class="cv-data-muted">PostgreSQL, on <span class="cv-inline-mono">{{.Schedule}}</span> (UTC), keeping the last {{.Keep}}.</p>
+      </div>
+      {{if $.Destination}}
+      <form method="post" action="/apps/{{$.ID}}/backups">
+        <input type="hidden" name="service" value="{{.Name}}">
+        <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Back up now</button>
+      </form>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="text-base text-fg-1">No service of this app is backed up.</p>
+    <p class="text-sm text-fg-3">Give a PostgreSQL service a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span>), through the API or the Compose request.</p>
+    {{end}}
+  </div>
+</section>
+
+<section aria-labelledby="backups-title" class="flex flex-col gap-2">
+  <h2 id="backups-title" class="cv-label">Backups</h2>
+  <div class="cv-panel">
+    {{range .Backups}}
+    <div class="cv-row flex flex-col gap-2 p-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          {{if eq .Status "succeeded"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>succeeded</span>
+          {{else if eq .Status "failed"}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>failed</span>
+          {{else}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span>running</span>{{end}}
+          <span class="cv-data text-fg-1">{{.Service}}</span>
+          <span class="cv-data-muted">{{template "time" .Started}}</span>
+          {{with .Size}}<span class="cv-data-muted">{{.}}</span>{{end}}
+        </div>
+        {{if .CanRestore}}
+        <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>
+          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore…</summary>
+          <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/restore" class="cv-confirm-body">
+            <p>This replaces everything <span class="cv-inline-mono">{{.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>
+            <label class="flex flex-col gap-2">
+              <span class="cv-label">Type <span class="cv-inline-mono">{{.Service}}</span> to confirm</span>
+              <input class="cv-field" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if eq $.ConfirmErr .ID}} autofocus aria-invalid="true"{{end}}>
+              {{if eq $.ConfirmErr .ID}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>Type {{.Service}} to confirm.</span></span>{{end}}
+            </label>
+            <div><button type="submit" class="cv-btn cv-btn-danger">Restore {{.Service}}</button></div>
+          </form>
+        </details>
+        {{end}}
+      </div>
+      {{with .Message}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+    </div>
+    {{else}}
+    <p class="px-3 py-4 text-sm text-fg-3">No backups yet.</p>
+    {{end}}
+  </div>
+</section>
+
+{{with .Restores}}
+<section aria-labelledby="restores-title" class="flex flex-col gap-2">
+  <h2 id="restores-title" class="cv-label">Restores</h2>
+  <div class="cv-panel">
+    {{range .}}
+    <div class="cv-row flex flex-col gap-1 p-3">
+      <div class="flex flex-wrap items-center gap-3">
+        {{if eq .Status "succeeded"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>restored</span>
+        {{else if eq .Status "failed"}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>failed</span>
+        {{else}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span>restoring</span>{{end}}
+        <span class="cv-data text-fg-1">{{.Service}}</span>
+        <span class="cv-data-muted">from {{.BackupID}}, {{template "time" .Created}}</span>
+      </div>
+      {{with .Message}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+<p class="text-sm text-fg-3"><a href="/apps/{{.ID}}/backups">Refresh</a> to follow a backup or a restore.</p>
 {{end}}
 
 {{/* The Running tab: the app's copies in a live region. Takes a copiesRegion. */}}

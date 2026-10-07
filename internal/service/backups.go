@@ -172,9 +172,13 @@ func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string
 // ListBackups returns an app's backups still in the destination and its
 // restores, newest first. An unknown app is store.ErrNotFound.
 func (s *Service) ListBackups(ctx context.Context, appID string) ([]store.BackupRecord, []store.RestoreRecord, error) {
-	if _, err := s.store.GetApp(ctx, appID); err != nil {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
 		return nil, nil, err
 	}
+	// Record what Nomad knows first, so a read is never a watcher pass behind.
+	s.recordApp(ctx, rec.App)
+	s.recordRestores(ctx)
 	all, err := s.store.ListBackups(ctx, appID, 0)
 	if err != nil {
 		return nil, nil, err
@@ -347,49 +351,59 @@ func (s *Service) recordBackups(ctx context.Context) {
 		return
 	}
 	for _, rec := range apps {
-		changed := false
-		for _, svc := range rec.App.Services {
-			if svc.Backup == nil {
-				continue
-			}
-			runs, err := s.deployer.BackupRuns(ctx, rec.App.ID, svc.Name)
-			if err != nil {
-				s.log.Warn("record backups: read runs", "app", rec.App.ID, "service", svc.Name, "error", err)
-				continue
-			}
-			known, err := s.store.ListBackups(ctx, rec.App.ID, 0)
-			if err != nil {
-				s.log.Warn("record backups: read records", "app", rec.App.ID, "error", err)
-				continue
-			}
-			final := map[string]bool{}
-			for _, k := range known {
-				final[k.ID] = k.Status != store.BackupRunning
-			}
-			for _, run := range runs {
-				r := runRecord(rec.App.ID, svc.Name, run)
-				if final[r.ID] {
-					continue
-				}
-				if err := s.store.SaveBackup(ctx, r); err != nil {
-					s.log.Warn("record backups: save", "app", rec.App.ID, "backup", r.ID, "error", err)
-					continue
-				}
-				changed = true
-				var expired []string
-				for _, f := range run.Expired {
-					expired = append(expired, svc.Name+"-"+strings.TrimSuffix(f, ".dump"))
-				}
-				if err := s.store.ExpireBackups(ctx, rec.App.ID, expired); err != nil {
-					s.log.Warn("record backups: expire", "app", rec.App.ID, "error", err)
-				}
-			}
+		s.recordApp(ctx, rec.App)
+	}
+	s.recordRestores(ctx)
+}
+
+// recordApp records the runs of a's backed-up services that Nomad knows and
+// the store doesn't have as final yet.
+func (s *Service) recordApp(ctx context.Context, a app.App) {
+	changed := false
+	for _, svc := range a.Services {
+		if svc.Backup == nil {
+			continue
 		}
-		if changed {
-			s.backupsChanged(rec.App.ID)
+		runs, err := s.deployer.BackupRuns(ctx, a.ID, svc.Name)
+		if err != nil {
+			s.log.Warn("record backups: read runs", "app", a.ID, "service", svc.Name, "error", err)
+			continue
+		}
+		known, err := s.store.ListBackups(ctx, a.ID, 0)
+		if err != nil {
+			s.log.Warn("record backups: read records", "app", a.ID, "error", err)
+			continue
+		}
+		final := map[string]bool{}
+		for _, k := range known {
+			final[k.ID] = k.Status != store.BackupRunning
+		}
+		for _, run := range runs {
+			r := runRecord(a.ID, svc.Name, run)
+			if final[r.ID] {
+				continue
+			}
+			if err := s.store.SaveBackup(ctx, r); err != nil {
+				s.log.Warn("record backups: save", "app", a.ID, "backup", r.ID, "error", err)
+				continue
+			}
+			changed = true
+			var expired []string
+			for _, f := range run.Expired {
+				expired = append(expired, svc.Name+"-"+strings.TrimSuffix(f, ".dump"))
+			}
+			if err := s.store.ExpireBackups(ctx, a.ID, expired); err != nil {
+				s.log.Warn("record backups: expire", "app", a.ID, "error", err)
+			}
 		}
 	}
+	if changed {
+		s.backupsChanged(a.ID)
+	}
+}
 
+// recordRestores records the end of every restore Nomad has finished.
+func (s *Service) recordRestores(ctx context.Context) {
 	running, err := s.store.RunningRestores(ctx)
 	if err != nil {
 		s.log.Warn("record restores", "error", err)

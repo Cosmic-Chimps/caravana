@@ -233,6 +233,22 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:48:58.651Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T020",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T16:04:58.009Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T021",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T16:04:58.246Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -334,7 +350,7 @@
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
     }
   },
-  "currentTask": "T019",
+  "currentTask": "T021",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -535,6 +551,29 @@
         "internal/api/backups_test.go",
         "internal/compose/compose.go",
         "internal/service/compose.go"
+      ]
+    },
+    "T020": {
+      "status": "DONE",
+      "did": "Settings: backup destination section, secret never shown, field errors",
+      "files": [
+        "internal/ui/settings.go",
+        "internal/ui/templates/settings.html",
+        "internal/ui/ui.go"
+      ]
+    },
+    "T021": {
+      "status": "DONE",
+      "did": "Backups tab: databases, back up now, backups, typed restore, restores; delete sentence; parity; tests; ListBackups records first",
+      "files": [
+        "internal/ui/backups.go",
+        "internal/ui/app.go",
+        "internal/ui/configure.go",
+        "internal/ui/templates/app.html",
+        "internal/ui/backups_test.go",
+        "internal/api/parity_test.go",
+        "internal/service/backups.go",
+        "internal/ui/static/app.css"
       ]
     }
   }

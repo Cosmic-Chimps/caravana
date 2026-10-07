@@ -52,12 +52,17 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/webhook/revoke": {ops: []string{"deleteWebhookToken"}},
 	// Setting or removing one secret is a deploy of the app with its secrets
 	// listed, the others without a value (keep).
-	"POST /apps/{id}/secrets":                {ops: []string{"deployApp"}},
-	"POST /apps/{id}/secrets/remove":         {ops: []string{"deployApp"}},
-	"POST /apps/{id}/delete":                 {ops: []string{"deleteApp"}},
-	"POST /settings/password":                {ops: []string{"changePassword"}},
-	"POST /settings/tokens":                  {ops: []string{"createToken"}},
-	"POST /settings/tokens/{tokenId}/revoke": {ops: []string{"revokeToken"}},
+	"POST /apps/{id}/secrets":        {ops: []string{"deployApp"}},
+	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
+	// Backups (feature 010).
+	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "getBackupDestination"}},
+	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},
+	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
+	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},
+	"POST /apps/{id}/delete":                     {ops: []string{"deleteApp"}},
+	"POST /settings/password":                    {ops: []string{"changePassword"}},
+	"POST /settings/tokens":                      {ops: []string{"createToken"}},
+	"POST /settings/tokens/{tokenId}/revoke":     {ops: []string{"revokeToken"}},
 }
 
 // TestConsoleParity fails when the console has a route the table doesn't know

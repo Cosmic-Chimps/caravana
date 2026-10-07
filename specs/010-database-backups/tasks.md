@@ -72,8 +72,8 @@ Files: `internal/api/backups.go`, `internal/api/backups_test.go`, `internal/api/
 - [x] **T017** [US1] API: five operations, error codes `backup_running`, `no_backup_destination` · internal/api/backups.go, internal/api/api.go, internal/api/errors.go
 - [x] **T018** [US1] `api/openapi.yaml` 0.8.0 · api/openapi.yaml
 - [x] **T019** [US1] API tests (contract schemas, no secret in any answer) · internal/api/backups_test.go
-- [ ] **T020** [US3] Console Settings: Backup destination section · internal/ui/settings.go, internal/ui/templates/settings.html
-- [ ] **T021** [US1] Console app page: Backups tab (list, back up now, restore with typed name), delete sentence says backups stay; parity entries; tests · internal/ui/backups.go, internal/ui/app.go, internal/ui/configure.go, internal/ui/ui.go, internal/ui/templates/app.html, internal/ui/backups_test.go, internal/api/parity_test.go
+- [x] **T020** [US3] Console Settings: Backup destination section · internal/ui/settings.go, internal/ui/templates/settings.html
+- [x] **T021** [US1] Console app page: Backups tab (list, back up now, restore with typed name), delete sentence says backups stay; parity entries; tests · internal/ui/backups.go, internal/ui/app.go, internal/ui/configure.go, internal/ui/ui.go, internal/ui/templates/app.html, internal/ui/backups_test.go, internal/api/parity_test.go
 
 ## Phase 6: Gate and polish
 

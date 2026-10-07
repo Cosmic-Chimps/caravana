@@ -35,6 +35,7 @@ var builtTabs = []tabSpec{
 	{Key: "deployments", Label: "Deployments", Path: "/deployments"},
 	{Key: "configure", Label: "Configure", Path: "/configure"},
 	{Key: "logs", Label: "Logs", Path: "/logs"},
+	{Key: "backups", Label: "Backups", Path: "/backups"},
 }
 
 // tabLink is a tab as the header draws it.
@@ -69,6 +70,7 @@ type appPage struct {
 	Deployments *deploymentsTab
 	Configure   *configureTab
 	Logs        *logsTab
+	Backups     *backupsTab
 }
 
 // hasTab says whether the named tab's page exists yet.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -44,12 +45,77 @@ type settingsData struct {
 	NameErr         *fieldError
 	ExpiresErr      *fieldError
 	NewToken        *newToken
+	Dest            destinationForm
+}
+
+// destinationForm is the backup destination section: the saved destination
+// (or what was typed, after a refusal), never the secret key.
+type destinationForm struct {
+	Endpoint, Region, Bucket, Prefix, AccessKeyID string
+	HasSecret                                     bool // a secret key is kept: the field may stay empty
+	Saved                                         bool
+	Field                                         string // the field at fault, after a refusal
+	Err                                           *fieldError
+}
+
+// destFieldView is one text field of the destination form.
+type destFieldView struct {
+	Name, Label, Value, Placeholder, Err string
+}
+
+// destField is the template function that builds one: name is the input's
+// name, which is also the field a refusal names.
+func destField(f destinationForm, name, label, value, placeholder string) destFieldView {
+	v := destFieldView{Name: name, Label: label, Value: value, Placeholder: placeholder}
+	if f.Field == name && f.Err != nil {
+		v.Err = f.Err.Text
+	}
+	return v
 }
 
 // showSettings answers GET /settings: the 006 account page, inside the console's shell.
 func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session string) {
 	data := settingsData{PasswordChanged: r.URL.Query().Get("password") == "changed"}
+	data.Dest.Saved = r.URL.Query().Get("backups") == "saved"
 	s.renderSettings(w, r, data)
+}
+
+// setBackupDestination answers POST /settings/backups (feature 010). An
+// empty secret key keeps the one saved before. A refusal draws the page
+// again with what was typed, except the secret key.
+func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, session string) {
+	if !s.readForm(w, r) {
+		return
+	}
+	in := service.DestinationInput{
+		Endpoint: strings.TrimSpace(r.PostFormValue("endpoint")), Region: strings.TrimSpace(r.PostFormValue("region")),
+		Bucket: strings.TrimSpace(r.PostFormValue("bucket")), Prefix: strings.TrimSpace(r.PostFormValue("prefix")),
+		AccessKeyID: strings.TrimSpace(r.PostFormValue("accessKeyId")),
+	}
+	if v := r.PostFormValue("secretAccessKey"); v != "" {
+		in.SecretAccessKey = &v
+	}
+	_, err := s.svc.SetBackupDestination(r.Context(), in)
+	if err == nil {
+		http.Redirect(w, r, "/settings?backups=saved#backups", http.StatusSeeOther)
+		return
+	}
+	form := destinationForm{Endpoint: in.Endpoint, Region: in.Region, Bucket: in.Bucket, Prefix: in.Prefix, AccessKeyID: in.AccessKeyID}
+	if _, err := s.svc.GetBackupDestination(r.Context()); err == nil {
+		form.HasSecret = true
+	}
+	var fieldErr *app.FieldError
+	switch {
+	case errors.As(err, &fieldErr):
+		form.Field, form.Err = fieldErr.Field, &fieldError{Text: fieldErr.Message}
+	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
+		s.log.Warn("can't save the backup destination", "error", err)
+		form.Err = &fieldError{Text: "Nomad couldn't keep the secret key, so nothing was saved: " + err.Error()}
+	default:
+		s.serverError(w, "set backup destination", err)
+		return
+	}
+	s.renderSettings(w, r, settingsData{Dest: form})
 }
 
 // renderSettings fills in what every Settings response shows (who, and the
@@ -74,6 +140,18 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data set
 	data.pageData = head
 	data.Email = email
 	data.Origin = s.origin(r)
+	// Some tests serve the account pages without a deploy service.
+	if data.Dest.Err == nil && s.svc != nil {
+		d, err := s.svc.GetBackupDestination(r.Context())
+		switch {
+		case err == nil:
+			data.Dest = destinationForm{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
+				AccessKeyID: d.AccessKeyID, HasSecret: true, Saved: data.Dest.Saved}
+		case !errors.Is(err, store.ErrNotFound):
+			s.serverError(w, "read backup destination", err)
+			return
+		}
+	}
 	data.Tokens = make([]tokenRow, 0, len(infos))
 	for _, i := range infos {
 		data.Tokens = append(data.Tokens, tokenRow{
