@@ -3,7 +3,7 @@
   "specName": "Database backups",
   "branch": "010-databases-backups",
   "currentStep": "implement",
-  "status": "implementing",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -265,6 +265,21 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T16:06:07.000Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T024",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T18:36:42.313Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T18:36:42.339Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -358,15 +373,28 @@
       "decision": "Postgres only",
       "why": "gate database; dump/restore over the network",
       "rejected": "MySQL and Redis in the same feature"
+    },
+    {
+      "decision": "Backups tab on every app, explaining how to add a policy when none",
+      "why": "tabs are the same for every app; empty state teaches the feature",
+      "rejected": "a tab shown only for backed-up apps"
+    },
+    {
+      "decision": "ListBackups records Nomad runs before answering",
+      "why": "a read is never a watcher pass behind",
+      "rejected": "waiting for the 15 s watcher"
     }
   ],
   "step_summaries": {
     "plan": {
       "summary": "Backups as periodic batch jobs with rclone, runs recorded by a watcher, restore as a batch job",
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
+    },
+    "implement": {
+      "summary": "Scheduled PostgreSQL backups to S3-compatible storage with retention, back up now and restore, in API and console"
     }
   },
-  "currentTask": "T023",
+  "currentTask": "T024",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -605,6 +633,41 @@
       "files": [
         "cmd/caravana/gate_test.go"
       ]
+    },
+    "T024": {
+      "status": "DONE",
+      "did": "docs; CI checks pass; TestLab passed in 856s incl. backup-restore",
+      "files": [
+        "CLAUDE.md",
+        "docs/plan.md"
+      ]
     }
-  }
+  },
+  "verified": [
+    {
+      "what": "TestLab (console then gate, incl. backup-restore: A, backup, B, restore, A)",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 30m",
+      "result": "PASS in 856s"
+    },
+    {
+      "what": "build, vet, staticcheck, go test -race, gofmt, tidy, cross-compiles, ui checks, shellcheck",
+      "command": "see CLAUDE.md",
+      "result": "all clean"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "simplified: runs started and garbage-collected by Nomad (about 4 h) while Caravana is down are not listed; their dumps are still in the bucket",
+      "step": "implement"
+    },
+    {
+      "note": "PostgreSQL only; MySQL/MariaDB and Redis are a follow-up",
+      "step": "implement"
+    },
+    {
+      "note": "The scoped policy (variables caravana/*, periodic force under submit-job) is proven only by host.sh prove on a real VM",
+      "step": "implement"
+    }
+  ],
+  "last_action": "24/24 tasks done; race suite and TestLab pass"
 }
