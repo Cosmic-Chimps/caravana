@@ -54,6 +54,9 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trig
 	if err := s.checkSecrets(ctx, a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	if err := s.checkBackups(ctx, a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		warnings = append(warnings, unmountedVolumes(old.App, a)...)
 	} else if !errors.Is(err, store.ErrNotFound) {
@@ -174,6 +177,9 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	// error. A failed write is logged, and the watcher brings the record up
 	// to date (research R6).
 	warnings = append(append(slices.Clone(input), warnings...), reg.Warnings...)
+	// The backup jobs follow the app's definition, with the image and the
+	// secrets of this deploy. The app runs either way; a failure is a warning.
+	warnings = append(warnings, s.syncBackups(ctx, a, digests, sets)...)
 	if warnings == nil {
 		warnings = []app.Warning{}
 	}

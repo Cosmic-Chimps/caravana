@@ -153,6 +153,62 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:40:53.189Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.156Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.270Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.415Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.524Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.632Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.737Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T016",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:44:53.850Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -254,7 +310,7 @@
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
     }
   },
-  "currentTask": "T014",
+  "currentTask": "T016",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -339,6 +395,83 @@
         "internal/deploy/restore.go",
         "internal/deploy/backups_test.go",
         "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
+      ]
+    },
+    "T016": {
+      "status": "DONE",
+      "did": "service: destination, deploy sync, watcher, back up now, restore, delete; tests",
+      "files": [
+        "internal/service/backups.go",
+        "internal/service/deploy.go",
+        "internal/service/service.go",
+        "internal/service/apps.go",
+        "internal/service/backups_test.go"
       ]
     }
   }

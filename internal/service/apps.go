@@ -267,6 +267,11 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	// The volumes go once the job is gone (Nomad refuses while a copy uses
 	// one), and before the app's record, so a failure keeps the app and the
 	// delete can be tried again.
+	// Its other jobs (backup schedules, their runs, restores) go too. Its
+	// backups stay in the destination: they exist to outlive mistakes.
+	if err := s.deployer.DeleteAppJobs(ctx, id); err != nil {
+		return fmt.Errorf("delete the backup jobs of app %q: %w", id, err)
+	}
 	if err := s.deployer.DeleteVolumes(ctx, id); err != nil {
 		return fmt.Errorf("delete the volumes of app %q: %w", id, err)
 	}

@@ -47,6 +47,28 @@ type BackupRun struct {
 	Message string   // why it failed
 }
 
+// destinationSecretPath is where the destination's secret key is kept: the
+// control plane's own secrets live in Nomad Variables (constitution VII).
+const destinationSecretPath = "caravana/backup-destination"
+
+// BackupSecret returns the destination's secret key, or "" when none is
+// kept.
+func (d *Deployer) BackupSecret(ctx context.Context) (string, error) {
+	v, _, err := d.nomad.Variables().Read(destinationSecretPath, (&api.QueryOptions{}).WithContext(ctx))
+	if errors.Is(err, api.ErrVariablePathNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", d.volumeError("read the backup destination's secret", err)
+	}
+	return v.Items["secretAccessKey"], nil
+}
+
+// SaveBackupSecret keeps the destination's secret key.
+func (d *Deployer) SaveBackupSecret(ctx context.Context, secret string) error {
+	return d.writeVariable(ctx, destinationSecretPath, map[string]string{"secretAccessKey": secret})
+}
+
 // destinationItems are the variable items that point rclone at dest, for
 // the dumps of one service.
 func destinationItems(appID, service string, dest BackupDestination) map[string]string {

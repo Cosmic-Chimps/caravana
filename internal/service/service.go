@@ -32,12 +32,16 @@ type Service struct {
 	// watchers counts the goroutines following rollouts, so Wait can let
 	// them finish on shutdown (like awaiting background Tasks in C#).
 	watchers sync.WaitGroup
+	// backupWatcher is the one goroutine recording backup runs. It lives as
+	// long as Start's context, apart from the rollout watchers.
+	backupWatcher sync.WaitGroup
 
 	changes   changeHub     // live notices for open pages, see changes.go
 	watchIdle time.Duration // how long the copies watcher outlives its last subscriber
 
-	budget   time.Duration // for one deploy's registry and Nomad work
-	retryGap time.Duration // between retries of a store write
+	budget     time.Duration // for one deploy's registry and Nomad work
+	retryGap   time.Duration // between retries of a store write
+	backupPoll time.Duration // between two passes of the backup watcher
 }
 
 // DeployError is returned by Deploy and Redeploy once a deployment record
@@ -54,15 +58,16 @@ func (e *DeployError) Unwrap() error { return e.Err }
 // in production). Call Start before deploying.
 func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Logger) *Service {
 	return &Service{
-		store:     st,
-		deployer:  d,
-		secrets:   sec,
-		log:       log,
-		apps:      map[string]*appState{},
-		bg:        context.Background(),
-		watchIdle: defaultWatchIdle,
-		budget:    25 * time.Second,
-		retryGap:  time.Second,
+		store:      st,
+		deployer:   d,
+		secrets:    sec,
+		log:        log,
+		apps:       map[string]*appState{},
+		bg:         context.Background(),
+		watchIdle:  defaultWatchIdle,
+		budget:     25 * time.Second,
+		retryGap:   time.Second,
+		backupPoll: 15 * time.Second,
 	}
 }
 
@@ -74,13 +79,22 @@ func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	s.bg = ctx
 	s.mu.Unlock()
-	return s.resume(ctx)
+	if err := s.resume(ctx); err != nil {
+		return err
+	}
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.watchBackups(ctx, s.backupPoll)
+	}()
+	return nil
 }
 
 // Wait blocks until every watcher has returned. Call it after cancelling
 // Start's context.
 func (s *Service) Wait() {
 	s.watchers.Wait()
+	s.backupWatcher.Wait()
 }
 
 // GetApp returns the stored app, or store.ErrNotFound.

@@ -45,11 +45,11 @@ Files: `internal/deploy/backups.go`, `internal/deploy/backups_test.go`,
 - [x] **T006** [US1] Fake Nomad: `GET /v1/jobs?prefix=`, periodic force creating `<job>/periodic-<n>` children, escaped job IDs in `/v1/job/...` paths, `GET /v1/evaluation/{id}` · internal/deploy/deploytest/nomad.go
 - [x] **T007** [US1] `deploy`: SyncBackups (variables + periodic jobs, remove unwanted), SetBackupDestination (rewrite every backup variable), ForceBackup, BackupRuns (children with outcome, size, key, message from logs), DeleteAppJobs (prefix purge + variables) · internal/deploy/backups.go
 - [x] **T008** [US1] Tests for those against the fake · internal/deploy/backups_test.go
-- [ ] **T009** [US3] Service: Get/SetBackupDestination (plain fields in the store, secret in `caravana/backup-destination`, rewrite variables) · internal/service/backups.go
-- [ ] **T010** [US1] Deploy: refuse backups without a destination; after Register, sync backup jobs with credentials from env and secret sets; warning when the sync fails · internal/service/deploy.go
-- [ ] **T011** [US1] Watcher (every 15 s): record runs, mark expired, from Start; BackUpNow refusing a running one; ListBackups · internal/service/backups.go, internal/service/service.go
-- [ ] **T012** [US1] DeleteApp: delete the app's other jobs and their variables after the purge · internal/service/apps.go
-- [ ] **T013** [US1] Service tests: destination round trip without the secret, deploy registers the job, refusals, back up now, a run recorded as succeeded and failed, retention, delete · internal/service/backups_test.go
+- [x] **T009** [US3] Service: Get/SetBackupDestination (plain fields in the store, secret in `caravana/backup-destination`, rewrite variables) · internal/service/backups.go
+- [x] **T010** [US1] Deploy: refuse backups without a destination; after Register, sync backup jobs with credentials from env and secret sets; warning when the sync fails · internal/service/deploy.go
+- [x] **T011** [US1] Watcher (every 15 s): record runs, mark expired, from Start; BackUpNow refusing a running one; ListBackups · internal/service/backups.go, internal/service/service.go
+- [x] **T012** [US1] DeleteApp: delete the app's other jobs and their variables after the purge · internal/service/apps.go
+- [x] **T013** [US1] Service tests: destination round trip without the secret, deploy registers the job, refusals, back up now, a run recorded as succeeded and failed, retention, delete · internal/service/backups_test.go
 
 ## Phase 4: User Story 2 - Restore (P1)
 
@@ -57,8 +57,8 @@ Files: `internal/service/restore.go`, `internal/service/restore_test.go`,
 `internal/deploy/restore.go`
 
 - [x] **T014** [US2] `deploy.Restore` (purge old, copy variable, register), `RestoreStatus` (dead → outcome, pending too long → failed) · internal/deploy/restore.go
-- [ ] **T015** [US2] Service Restore (one at a time), watcher records restores · internal/service/restore.go
-- [ ] **T016** [US2] Tests · internal/service/restore_test.go
+- [x] **T015** [US2] Service Restore (one at a time), watcher records restores · internal/service/restore.go
+- [x] **T016** [US2] Tests · internal/service/restore_test.go
 
 ## Phase 5: API and console
 

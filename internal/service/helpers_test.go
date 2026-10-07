@@ -78,6 +78,7 @@ func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad
 	svc := New(st, newDeployer(t, reg, nomad), sec, discardLogger())
 	svc.retryGap = 5 * time.Millisecond
 	svc.watchIdle = 10 * time.Millisecond
+	svc.backupPoll = 10 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
