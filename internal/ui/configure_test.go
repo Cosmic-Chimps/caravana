@@ -111,6 +111,27 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 	}
 }
 
+// US4, US5 (feature 009): a Compose app's volumes are listed, and the delete
+// section says they go, with their data.
+func TestConfigureShowsVolumes(t *testing.T) {
+	e := newConsoleEnv(t)
+	a := shopApp()
+	a.Source.Kind = app.SourceCompose
+	a.Services[1].Volumes = []app.Volume{{Name: "db-data", Path: "/var/lib/postgresql/data"}, {Name: "seed", Path: "/seed", ReadOnly: true}}
+	e.seed(t, a)
+	_, body := e.get(t, "/apps/shop/configure")
+	got := text(body)
+	for _, want := range []string{
+		"Source compose",
+		"Volumes db-data → /var/lib/postgresql/data seed → /seed (read-only) Kept across deploys, erased with the app.",
+		"Its volumes db-data and seed and the data in them are erased.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the tab lacks %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestConfigureHealthCheckWords(t *testing.T) {
 	tests := []struct {
 		name   string

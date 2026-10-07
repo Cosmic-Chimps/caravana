@@ -61,6 +61,9 @@ type Timing struct {
 	// VersionRetries are the waits between tries to read back the job
 	// version after registering. Default 0.5 s, then 1 s.
 	VersionRetries []time.Duration
+	// VolumeDeleteWait bounds retrying a volume delete that Nomad refuses
+	// because a stopping copy still uses it. Default 60 s.
+	VolumeDeleteWait time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -75,6 +78,9 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.BackoffMax == 0 {
 		t.BackoffMax = 30 * time.Second
+	}
+	if t.VolumeDeleteWait == 0 {
+		t.VolumeDeleteWait = time.Minute
 	}
 	if t.VersionRetries == nil {
 		t.VersionRetries = []time.Duration{500 * time.Millisecond, time.Second}

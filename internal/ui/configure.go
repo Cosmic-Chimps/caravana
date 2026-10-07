@@ -173,7 +173,21 @@ func serviceRows(svc app.Service) []defRow {
 	if len(env) > 0 {
 		envRow.Note = "Values aren't shown."
 	}
-	return append(rows, envRow)
+	rows = append(rows, envRow)
+	// No volumes isn't a default, so a service without any has no row and
+	// isn't named on the "Using defaults" line either.
+	if len(svc.Volumes) == 0 {
+		return rows
+	}
+	var volumes []string
+	for _, v := range svc.Volumes {
+		s := v.Name + " → " + v.Path
+		if v.ReadOnly {
+			s += " (read-only)"
+		}
+		volumes = append(volumes, s)
+	}
+	return append(rows, defRow{Label: "Volumes", Values: volumes, Note: "Kept across deploys, erased with the app."})
 }
 
 // nonEmpty is a one-value list, or none for "": a fact with no values goes
@@ -274,6 +288,31 @@ func whatGoes(a app.App, sum service.AppSummary, deployments int, hasToken bool)
 			be = "is"
 		}
 		s = append(s, plain(" Its "+strings.Join(erased, " and its ")+" "+be+" erased."))
+	}
+
+	var volumes []string
+	for _, svc := range a.Services {
+		for _, v := range svc.Volumes {
+			volumes = append(volumes, v.Name)
+		}
+	}
+	if len(volumes) > 0 {
+		word, them := "volume", "it"
+		if len(volumes) > 1 {
+			word, them = "volumes", "them"
+		}
+		s = append(s, plain(" Its "+word+" "))
+		for i, v := range volumes {
+			switch {
+			case i == 0:
+			case i == len(volumes)-1:
+				s = append(s, plain(" and "))
+			default:
+				s = append(s, plain(", "))
+			}
+			s = append(s, mono(v))
+		}
+		s = append(s, plain(" and the data in "+them+" are erased."))
 	}
 	return append(s, plain(" This can't be undone."))
 }

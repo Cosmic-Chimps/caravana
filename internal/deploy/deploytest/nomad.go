@@ -23,6 +23,13 @@
 // and GET /v1/vars?prefix=. Like Nomad, the fake refuses a variable with no
 // items, one over 64 KiB, or a path Nomad wouldn't accept. Variable(path) and
 // SetVariable(path, items) let tests read and change them directly.
+//
+// Dynamic host volumes are kept in memory too: PUT /v1/volume/host/create,
+// GET and DELETE /v1/volume/host/{id}, GET /v1/volumes?type=host&prefix=. A
+// new volume is "pending" and becomes "ready" the second time it is read, as
+// a real one is after a few seconds. Like Nomad, a name can't be created
+// twice, and a volume can't be deleted while copies of a job that mounts it
+// exist. HostVolumes() names them for tests.
 package deploytest
 
 import (
@@ -78,6 +85,15 @@ type Nomad struct {
 
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
+
+	volumes      map[string]*hostVolume // by ID
+	volumeStatus int                    // non-zero: every host volume request answers it
+}
+
+// hostVolume is one dynamic host volume and how often it was read.
+type hostVolume struct {
+	vol   api.HostVolume
+	reads int
 }
 
 // logKey names one output file: a copy's stdout or stderr.
@@ -105,7 +121,8 @@ func New(t testing.TB) *Nomad {
 		logs:       map[logKey][]byte{},
 		logChanged: make(chan struct{}),
 
-		vars: map[string]map[string]string{},
+		vars:    map[string]map[string]string{},
+		volumes: map[string]*hostVolume{},
 	}
 	n.srv = httptest.NewServer(http.HandlerFunc(n.serve))
 	t.Cleanup(n.srv.Close)
@@ -264,6 +281,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isVars && varsStatus != 0:
 		http.Error(w, "Permission denied", varsStatus)
+	case strings.HasPrefix(r.URL.Path, "/v1/volume/host/") || r.URL.Path == "/v1/volumes":
+		n.hostVolume(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/var/"):
 		n.variable(w, r, strings.TrimPrefix(r.URL.Path, "/v1/var/"))
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/vars":
@@ -693,6 +712,107 @@ func (n *Nomad) SetVariable(path string, items map[string]string) {
 		return
 	}
 	n.vars[path] = maps.Clone(items)
+}
+
+// HostVolumes returns the names of the host volumes, sorted.
+func (n *Nomad) HostVolumes() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var names []string
+	for _, v := range n.volumes {
+		names = append(names, v.vol.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// FailVolumes makes every host volume request answer status (0 undoes it).
+func (n *Nomad) FailVolumes(status int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.volumeStatus = status
+}
+
+// hostVolume answers the host volume endpoints.
+func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.volumeStatus != 0 {
+		http.Error(w, "Permission denied", n.volumeStatus)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/v1/volume/host/")
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/volumes":
+		out := []*api.HostVolumeStub{}
+		for _, id := range slices.Sorted(maps.Keys(n.volumes)) {
+			v := n.volumes[id].vol
+			if strings.HasPrefix(v.Name, r.URL.Query().Get("prefix")) {
+				out = append(out, &api.HostVolumeStub{Namespace: v.Namespace, ID: v.ID, Name: v.Name, PluginID: v.PluginID, NodeID: v.NodeID, State: v.State})
+			}
+		}
+		n.writeJSON(w, out)
+	case r.Method == http.MethodPut && id == "create":
+		var req api.HostVolumeCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Volume == nil || req.Volume.Name == "" {
+			http.Error(w, "bad host volume request", http.StatusBadRequest)
+			return
+		}
+		for _, v := range n.volumes {
+			if v.vol.Name == req.Volume.Name {
+				http.Error(w, fmt.Sprintf("could not place volume %q: no node meets constraints: 1 nodes had existing volume", v.vol.Name), http.StatusInternalServerError)
+				return
+			}
+		}
+		n.index++
+		v := *req.Volume
+		v.ID = fmt.Sprintf("vol-%d", n.index)
+		v.NodeID, v.HostPath, v.State = "node-1", "/opt/nomad/data/host_volumes/"+v.ID, api.HostVolumeStatePending
+		n.volumes[v.ID] = &hostVolume{vol: v}
+		n.writeJSON(w, api.HostVolumeCreateResponse{Volume: &v})
+	case r.Method == http.MethodGet:
+		hv, ok := n.volumes[id]
+		if !ok {
+			http.Error(w, "volume not found", http.StatusNotFound)
+			return
+		}
+		if hv.reads++; hv.reads > 1 {
+			hv.vol.State = api.HostVolumeStateReady
+		}
+		v := hv.vol
+		n.writeJSON(w, &v)
+	case r.Method == http.MethodDelete:
+		hv, ok := n.volumes[id]
+		if !ok {
+			http.Error(w, "volume not found", http.StatusNotFound)
+			return
+		}
+		if job := n.jobMounting(hv.vol.Name); job != "" && len(n.allocs[job]) > 0 {
+			http.Error(w, fmt.Sprintf("volume %s in use by allocations: [%s]", id, n.allocs[job][0].ID), http.StatusBadRequest)
+			return
+		}
+		n.index++
+		delete(n.volumes, id)
+		n.writeJSON(w, struct{}{})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// jobMounting is the job whose latest version mounts the host volume name,
+// or "". n.mu must be held.
+func (n *Nomad) jobMounting(name string) string {
+	for id, versions := range n.jobs {
+		job := versions[len(versions)-1]
+		for _, tg := range job.TaskGroups {
+			for _, v := range tg.Volumes {
+				if v != nil && v.Source == name {
+					return id
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // FailVariables makes every variables request answer status (0 undoes it),

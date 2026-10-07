@@ -64,6 +64,12 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 		}
 	}
 
+	// After the ownership check, so a conflict creates nothing; before the
+	// job, so Nomad can place the copies on the node that has the volumes.
+	if err := d.EnsureVolumes(ctx, a); err != nil {
+		return Registered{}, err
+	}
+
 	resp, _, err := d.nomad.Jobs().RegisterOpts(res.Job,
 		&api.RegisterOptions{EnforceIndex: true, ModifyIndex: modifyIndex},
 		(&api.WriteOptions{}).WithContext(ctx))
