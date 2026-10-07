@@ -1,0 +1,9 @@
+{
+  "name": "Blog",
+  "services": {
+    "web": {
+      "domains": [{"host": "blog.example.com"}],
+      "health": {"path": "/"}
+    }
+  }
+}

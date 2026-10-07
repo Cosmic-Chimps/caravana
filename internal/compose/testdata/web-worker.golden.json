@@ -1,0 +1,49 @@
+{
+  "app": {
+    "id": "web-worker",
+    "name": "Blog",
+    "source": {
+      "kind": "compose"
+    },
+    "services": [
+      {
+        "name": "web",
+        "image": "traefik/whoami:latest",
+        "ports": [
+          {
+            "name": "p80",
+            "containerPort": 80
+          }
+        ],
+        "domains": [
+          {
+            "host": "blog.example.com",
+            "port": "p80"
+          }
+        ],
+        "health": {
+          "path": "/"
+        }
+      },
+      {
+        "name": "worker",
+        "image": "busybox:1.37",
+        "command": "sleep",
+        "args": [
+          "3600"
+        ],
+        "env": [
+          {
+            "name": "LOG_LEVEL",
+            "value": "info"
+          },
+          {
+            "name": "QUEUE",
+            "value": "jobs"
+          }
+        ]
+      }
+    ]
+  },
+  "warnings": null
+}

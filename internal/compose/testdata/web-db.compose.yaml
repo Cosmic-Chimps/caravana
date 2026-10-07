@@ -1,0 +1,39 @@
+# A web app and its database on a volume, as people write them for
+# docker compose: published ports, depends_on with a condition, a command
+# healthcheck, resource limits. Each of those is honored with a warning.
+name: shop
+services:
+  web:
+    image: ghcr.io/acme/shop:2.1
+    ports:
+      - "8080:3000"
+      - name: metrics
+        target: 9100
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+  db:
+    image: postgres:17
+    expose: ["5432"]
+    environment:
+      POSTGRES_PASSWORD: example
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+    container_name: shop-db
+volumes:
+  db-data:

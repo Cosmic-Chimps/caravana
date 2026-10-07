@@ -1,0 +1,104 @@
+{
+  "app": {
+    "id": "web-db",
+    "source": {
+      "kind": "compose"
+    },
+    "services": [
+      {
+        "name": "db",
+        "image": "postgres:17",
+        "env": [
+          {
+            "name": "POSTGRES_PASSWORD",
+            "value": "example"
+          }
+        ],
+        "volumes": [
+          {
+            "name": "db-data",
+            "path": "/var/lib/postgresql/data"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p5432",
+            "containerPort": 5432
+          }
+        ],
+        "health": {}
+      },
+      {
+        "name": "web",
+        "image": "ghcr.io/acme/shop:2.1",
+        "env": [
+          {
+            "name": "DATABASE_HOST",
+            "value": "db"
+          },
+          {
+            "name": "DATABASE_PORT",
+            "value": "5432"
+          }
+        ],
+        "secrets": [
+          {
+            "name": "API_KEY",
+            "value": "k1"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p3000",
+            "containerPort": 3000
+          },
+          {
+            "name": "metrics",
+            "containerPort": 9100
+          }
+        ],
+        "domains": [
+          {
+            "host": "shop.example.com",
+            "port": "p3000"
+          }
+        ],
+        "replicas": 2,
+        "resources": {
+          "cpuMHz": 500,
+          "memoryMB": 256
+        },
+        "health": {
+          "path": "/healthz",
+          "port": "p3000"
+        }
+      }
+    ]
+  },
+  "warnings": [
+    {
+      "field": "services.db.container_name",
+      "message": "is ignored: Nomad names containers"
+    },
+    {
+      "field": "services.db.healthcheck",
+      "message": "is replaced by a TCP check on port 5432: Nomad's checks are HTTP or TCP and can't run commands; send health in the request for an HTTP check"
+    },
+    {
+      "field": "services.web.depends_on",
+      "message": "services start together: Nomad restarts a service that fails until what it needs answers"
+    },
+    {
+      "field": "services.web.deploy.resources.limits.cpus",
+      "message": "0.5 CPU becomes 500 MHz: Nomad shares CPU by MHz, not by cores"
+    },
+    {
+      "field": "services.web.labels",
+      "message": "aren't applied: routing comes from the request's domains"
+    },
+    {
+      "field": "services.web.ports[0]",
+      "message": "the host port isn't opened: other services reach port 3000 by this service's name, and the internet through the request's domains"
+    }
+  ]
+}

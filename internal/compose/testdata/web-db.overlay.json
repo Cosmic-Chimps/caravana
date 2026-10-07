@@ -1,0 +1,9 @@
+{
+  "services": {
+    "web": {
+      "domains": [{"host": "shop.example.com", "port": 3000}],
+      "health": {"path": "/healthz", "port": 3000},
+      "secrets": [{"name": "API_KEY", "value": "k1"}]
+    }
+  }
+}

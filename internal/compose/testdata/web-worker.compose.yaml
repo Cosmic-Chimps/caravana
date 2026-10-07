@@ -1,0 +1,11 @@
+# A web service routed by domain and a worker without ports.
+services:
+  web:
+    image: traefik/whoami:latest
+    ports: ["80"]
+  worker:
+    image: busybox:1.37
+    command: sleep 3600
+    environment:
+      QUEUE: jobs
+      LOG_LEVEL: ${LOG_LEVEL:-info}
