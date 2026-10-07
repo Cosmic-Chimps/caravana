@@ -55,3 +55,6 @@ __pycache__/
 
 # The style tool's download cache (tools/ui-css.sh)
 /.cache/
+
+/.private/
+.headroom*
