@@ -81,9 +81,14 @@ every port but 22, 80 and 443 closed from outside. The same checks pass in the l
 | 010 | **Databases + backups** | Postgres/MySQL/Redis as regular apps pinned to a node with a host volume. Backups as Nomad periodic batch jobs to S3-compatible storage. |
 | 011 | **Rollback + export** | Redeploy any past version from the UI or API; export any app as a plain Nomad jobspec. |
 | 012 | **One-command install** | A fresh VM becomes Docker + Nomad (ACLs on) + Traefik + Caravana. Caravana runs as a systemd service, not as a Nomad job, so a cold start never waits on anything. |
+| 012.5 | **Console v2** | What the design handoff has that no feature above brings: edit the definition in the console (image, env, domains, copies), paste a Compose file on New app, CPU and memory per copy (Nomad's allocation stats), and a "needs you" list (failed deploys, unhealthy copies, failed backups). |
 
 **Phase 2 gate:** a real multi-service compose app runs, with a database on a host volume and a
-backup that restores.
+backup that restores. 008–012 are the MVP: after 012, someone else can install and use it.
+
+**Working rule from 008 on:** each feature ships its console part with it, not later (backups
+on the app page in 010, "redeploy this version" in 011). Constitution V already makes the API
+and the console share the service layer; this keeps the console from falling behind.
 
 ## Phase 2.5: Aspire + Bella Baxter
 
@@ -99,6 +104,11 @@ Add a node over SSH, WireGuard mesh, Nomad TLS (Bella PKI or self-generated), pl
 drain in the UI, cluster-wide routing. **Gate:** 3 nodes that survive the loss of 1.
 
 ## Phase 3.5: GPU + binaries
+
+**On demand:** not part of the MVP, and built when users ask for it. Phase 3 comes first: it
+proves the core promise (one VM to twenty). Consul Connect versus native discovery over
+WireGuard is decided at the start of Phase 3; Nomad namespaces per organization or project are
+planned for Phase 4 (teams), so app IDs only need to be unique within one.
 
 - GPU nodes: node bootstrap installs the NVIDIA driver, the container toolkit and Nomad's NVIDIA
   device plugin (not part of the Nomad download), then checks that the GPU fingerprint shows up.
