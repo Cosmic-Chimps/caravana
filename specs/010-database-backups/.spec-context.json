@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Database backups",
   "branch": "010-databases-backups",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "tasks",
+  "status": "ready-to-implement",
   "history": [
     {
       "step": "specify",
@@ -25,6 +25,55 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:08:43.982Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T15:08:44.241Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:32:40.060Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:32:40.544Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:32:41.070Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T15:32:41.216Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:33:11.920Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:33:12.101Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -97,5 +146,33 @@
     "constraint: constitution VII credentials in Nomad Variables, never logged",
     "constraint: constitution II one app one job (backup jobs are auxiliary, see plan)"
   ],
-  "intent": "Scheduled Postgres backups to S3-compatible storage, listed in Caravana, restorable into the running database"
+  "intent": "Scheduled Postgres backups to S3-compatible storage, listed in Caravana, restorable into the running database",
+  "decisions": [
+    {
+      "decision": "Periodic batch job <app>_<service>_backup: pg_dump prestart + rclone upload with retention",
+      "why": "lab-proven; Nomad schedules periodic work only as its own job type",
+      "rejected": "dumps from the control plane; cron in the DB container"
+    },
+    {
+      "decision": "Runs recorded in SQLite by a watcher from Nomad periodic children",
+      "why": "no S3 client or network path from Caravana to the bucket",
+      "rejected": "listing the bucket with an S3 client"
+    },
+    {
+      "decision": "Credentials in the job own Nomad Variable, written by Caravana",
+      "why": "a job can only read its own path; reading another hangs",
+      "rejected": "one shared variable"
+    },
+    {
+      "decision": "Postgres only",
+      "why": "gate database; dump/restore over the network",
+      "rejected": "MySQL and Redis in the same feature"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Backups as periodic batch jobs with rclone, runs recorded by a watcher, restore as a batch job",
+      "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
+    }
+  }
 }
