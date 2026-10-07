@@ -125,7 +125,7 @@ func Check(a app.App, s Settings) error {
 			return err
 		}
 	}
-	return nil
+	return checkNames(a)
 }
 
 // Validate checks the settings with the same rules Translate applies, and
@@ -232,12 +232,46 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 		Update:        &api.UpdateStrategy{Canary: new(count)},
 		ShutdownDelay: new(shutdownDelay),
 		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports}},
-		Tasks:         []*api.Task{task(a.ID, svc, image, s)},
+		// The service's own task is always the first.
+		Tasks: []*api.Task{task(a.ID, svc, image, s)},
+	}
+	if len(svc.Volumes) > 0 {
+		tg.Volumes = volumeRequests(a.ID, svc.Volumes)
+		// A canary can't be placed on a single-writer volume the old copy
+		// still holds, so these groups stop the old copy, then start the new
+		// one. Still health-checked and reverted like any other deploy. A
+		// group without canaries can't auto-promote (Nomad refuses the job),
+		// so this also turns off the job's AutoPromote for this group.
+		tg.Update = &api.UpdateStrategy{Canary: new(0), AutoPromote: new(false)}
 	}
 	if reg := registration(a, svc, s); reg != nil {
 		tg.Services = []*api.Service{reg}
 	}
+	if sharesNames(a) {
+		if len(svc.Ports) > 0 {
+			tg.Services = append(tg.Services, internalRegistration(a.ID, svc))
+		}
+		tg.Tasks = append(tg.Tasks, namesTask(a, s))
+	}
 	return tg
+}
+
+// volumeRequests asks Nomad for each of a service's volumes, keyed by the
+// volume's name, which the task's mounts refer to. Each is the app's dynamic
+// host volume, held by one allocation at a time.
+func volumeRequests(appID string, volumes []app.Volume) map[string]*api.VolumeRequest {
+	reqs := make(map[string]*api.VolumeRequest, len(volumes))
+	for _, v := range volumes {
+		reqs[v.Name] = &api.VolumeRequest{
+			Name:           v.Name,
+			Type:           "host",
+			Source:         VolumeName(appID, v.Name),
+			ReadOnly:       v.ReadOnly,
+			AccessMode:     "single-node-single-writer",
+			AttachmentMode: "file-system",
+		}
+	}
+	return reqs
 }
 
 // registration registers the service with Nomad's own service discovery, so
@@ -289,7 +323,10 @@ func healthPort(svc app.Service) string {
 // instances' "traefik.enable=true" in Nomad's merged service tags, and the lab
 // showed Traefik then drops the whole router for about a second whenever the
 // canaries change.
-var canaryTags = []string{"caravana.canary=true"}
+var canaryTags = []string{canaryTag}
+
+// canaryTag marks a registration of an unpromoted canary.
+const canaryTag = "caravana.canary=true"
 
 // routerTags builds one Traefik router for all of a service's domains, with
 // TLS always on. Without a certificate resolver, Traefik serves its default
@@ -385,6 +422,13 @@ func task(appID string, svc app.Service, image string, s Settings) *api.Task {
 	// The job names the variable, never a value: values stay in the store.
 	if len(svc.Secrets) > 0 {
 		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name)}
+	}
+	for _, v := range svc.Volumes {
+		t.VolumeMounts = append(t.VolumeMounts, &api.VolumeMount{
+			Volume:      new(v.Name),
+			Destination: new(v.Path),
+			ReadOnly:    new(v.ReadOnly),
+		})
 	}
 	return t
 }

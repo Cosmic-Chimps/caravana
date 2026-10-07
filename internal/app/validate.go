@@ -82,7 +82,7 @@ func ValidateApp(a App) error {
 	}
 
 	names := map[string]bool{}
-	hosts := map[string]bool{} // across the whole app: one host, one router
+	hosts := map[string]bool{}   // across the whole app: one host, one router
 	volumes := map[string]bool{} // across the whole app: one volume, one service
 	for i, svc := range a.Services {
 		if err := validateService(a.ID, i, svc, names, hosts); err != nil {

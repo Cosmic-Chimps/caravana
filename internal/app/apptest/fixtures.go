@@ -105,6 +105,23 @@ func Cases() []Case {
 			}),
 		},
 		{
+			// A web service and a database on a volume: the database's
+			// group deploys stop-then-start, and the two reach each other
+			// by name.
+			Name: "volumes",
+			App: imageApp("shop", blogWeb(), app.Service{
+				Name:    "db",
+				Image:   "postgres:17",
+				Ports:   []app.Port{{Name: "pg", ContainerPort: 5432}},
+				Health:  &app.HealthCheck{},
+				Volumes: []app.Volume{{Name: "db-data", Path: "/var/lib/postgresql/data"}},
+			}),
+			Deployment: deployment(map[string]string{
+				"web": digest("ghcr.io/acme/blog", 'b'),
+				"db":  digest("postgres", 'f'),
+			}),
+		},
+		{
 			Name: "secrets",
 			App:  imageApp("blog", secretWeb, secretWorker),
 			Deployment: deployment(map[string]string{

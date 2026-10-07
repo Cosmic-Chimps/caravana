@@ -284,3 +284,92 @@ func TestSecretsStayOutOfTheJob(t *testing.T) {
 		t.Errorf("a service without secrets got %d templates", n)
 	}
 }
+
+// TestServicesByName checks who gets the names sidecar and the internal
+// registrations (research R3).
+func TestServicesByName(t *testing.T) {
+	single := apptest.Whoami()
+	res, err := Translate(single.App, single.Deployment, labSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tg := res.Job.TaskGroups[0]; len(tg.Tasks) != 1 || len(tg.Services) != 1 {
+		t.Errorf("a single-service app got %d tasks and %d registrations, want 1 and 1", len(tg.Tasks), len(tg.Services))
+	}
+
+	var vols apptest.Case
+	for _, c := range apptest.Cases() {
+		if c.Name == "volumes" {
+			vols = c
+		}
+	}
+	res, err = Translate(vols.App, vols.Deployment, labSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range res.Job.TaskGroups {
+		if len(tg.Tasks) != 2 || tg.Tasks[0].Name != *tg.Name || tg.Tasks[1].Name != "names" {
+			t.Fatalf("group %s tasks = %d, want its own task first, then names", *tg.Name, len(tg.Tasks))
+		}
+		names := tg.Tasks[1]
+		if names.Lifecycle == nil || names.Lifecycle.Hook != "prestart" || !names.Lifecycle.Sidecar {
+			t.Errorf("group %s: names isn't a prestart sidecar", *tg.Name)
+		}
+		if names.Config["image"] != DefaultNamesImage {
+			t.Errorf("group %s: names image = %v", *tg.Name, names.Config["image"])
+		}
+		tmpl := *names.Templates[0].EmbeddedTmpl
+		for _, want := range []string{`nomadService "shop-web-internal"`, `nomadService "shop-db-internal"`, `contains "caravana.canary=true"`, " db\n", " web\n"} {
+			if !strings.Contains(tmpl, want) {
+				t.Errorf("group %s: the names template lacks %q", *tg.Name, want)
+			}
+		}
+		internal := tg.Services[1]
+		if internal.AddressMode != "alloc" || internal.Provider != "nomad" || len(internal.Checks) != 0 || len(internal.CanaryTags) == 0 {
+			t.Errorf("group %s: internal registration = %+v", *tg.Name, internal)
+		}
+	}
+
+	t.Run("a name too long for the internal registration", func(t *testing.T) {
+		a := vols.App
+		a.Services = append([]app.Service(nil), a.Services...)
+		a.Services[1].Name = strings.Repeat("d", 50)
+		d := vols.Deployment
+		d.Digests = map[string]string{"web": d.Digests["web"], a.Services[1].Name: d.Digests["db"]}
+		_, err := Translate(a, d, labSettings())
+		var fe *app.FieldError
+		if !errors.As(err, &fe) || fe.Field != "services[1].name" {
+			t.Errorf("Translate = %v, want a field error on services[1].name", err)
+		}
+	})
+}
+
+// TestVolumeGroupsReplaceTheirCopy checks a group with a volume: no canary,
+// the volume request, and the mount (research R5).
+func TestVolumeGroupsReplaceTheirCopy(t *testing.T) {
+	var vols apptest.Case
+	for _, c := range apptest.Cases() {
+		if c.Name == "volumes" {
+			vols = c
+		}
+	}
+	res, err := Translate(vols.App, vols.Deployment, labSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, db := res.Job.TaskGroups[0], res.Job.TaskGroups[1]
+	if *web.Update.Canary != 1 {
+		t.Errorf("web canary = %d, want 1: only groups with a volume give up canaries", *web.Update.Canary)
+	}
+	if *db.Update.Canary != 0 {
+		t.Errorf("db canary = %d, want 0", *db.Update.Canary)
+	}
+	v := db.Volumes["db-data"]
+	if v == nil || v.Source != "shop_db-data" || v.Type != "host" || v.AccessMode != "single-node-single-writer" {
+		t.Errorf("db volume = %+v, want the host volume shop_db-data, single writer", v)
+	}
+	m := db.Tasks[0].VolumeMounts
+	if len(m) != 1 || *m[0].Volume != "db-data" || *m[0].Destination != "/var/lib/postgresql/data" {
+		t.Errorf("db mounts = %+v", m)
+	}
+}
