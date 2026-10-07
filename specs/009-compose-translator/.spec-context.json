@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Compose translator",
   "branch": "009-compose-translator",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "tasks",
+  "status": "ready-to-implement",
   "history": [
     {
       "step": "specify",
@@ -25,58 +25,123 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T05:04:31.069Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T05:04:38.724Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:18:46.023Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:19:15.391Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:19:15.763Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-07T05:20:11.000Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:20:11.246Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T05:20:11.943Z"
     }
   ],
   "telemetryInstanceId": "8f592a85-bd54-40e8-8541-40080b34c064",
   "unattended": true,
   "coverage": {
     "FR-001": {
-      "title": "Deploy an app from a Compose file plus overlay through the API"
+      "title": "Deploy from Compose plus overlay",
+      "tasks": "T018,T020,T021"
     },
     "FR-002": {
-      "title": "Preview a Compose file without saving or deploying"
+      "title": "Preview",
+      "tasks": "T018,T020,T021"
     },
     "FR-003": {
-      "title": "Compose normalizes into app.App; nothing reads the file after"
+      "title": "Normalizes into app.App",
+      "tasks": "T002,T007,T009"
     },
     "FR-004": {
-      "title": "Every field honored, warned or refused, naming the field"
+      "title": "Every field honored, warned or refused",
+      "tasks": "T006,T008"
     },
     "FR-005": {
-      "title": "Refused input fails before anything is saved or deployed"
+      "title": "Refused before anything is saved",
+      "tasks": "T019,T021"
     },
     "FR-006": {
-      "title": "Field paths are Compose or overlay paths"
+      "title": "Compose and overlay paths",
+      "tasks": "T006,T021"
     },
     "FR-007": {
-      "title": "Variables only from file defaults; unset refused"
+      "title": "Variables only from defaults",
+      "tasks": "T007,T006"
     },
     "FR-008": {
-      "title": "Overlay gives domains, health and secrets per service"
+      "title": "Overlay domains, health, secrets",
+      "tasks": "T009,T005"
     },
     "FR-009": {
-      "title": "Ported service without overlay health gets TCP; replaced healthcheck warns"
+      "title": "TCP default health with warning",
+      "tasks": "T009,T008"
     },
     "FR-010": {
-      "title": "Services reach each other by Compose name, also after redeploys"
+      "title": "Services by name across redeploys",
+      "tasks": "T010,T012,T024"
     },
     "FR-011": {
-      "title": "Named volumes become durable app volumes; other volume kinds refused"
+      "title": "Named volumes only",
+      "tasks": "T002,T009,T011,T014"
     },
     "FR-012": {
-      "title": "A service with a volume runs one copy, replaced on deploy"
+      "title": "One copy, stop-then-start",
+      "tasks": "T002,T011"
     },
     "FR-013": {
-      "title": "Deleting an app deletes its volumes; confirmation names them"
+      "title": "Delete removes volumes, confirmation names them",
+      "tasks": "T016,T017"
     },
     "FR-014": {
-      "title": "App source records Compose"
+      "title": "Source records compose",
+      "tasks": "T002,T017"
     },
     "FR-015": {
-      "title": "Scoped policy allows volumes; gate step for compose"
+      "title": "Scoped policy and gate step",
+      "tasks": "T023,T024"
     },
     "FR-016": {
-      "title": "openapi.yaml changes in the same change"
+      "title": "openapi same change",
+      "tasks": "T022"
     }
   },
   "size": "oversized",
@@ -101,5 +166,41 @@
     "area: deploy/dev and deploy/vm Nomad client config (no host volumes in lab)",
     "research: compose-go v2.16.1 WithSupportedAttributes allowlist, LoadWithContext from bytes"
   ],
-  "intent": "Deploy a Docker Compose file as a Caravana app: loud errors, warnings for changed meaning, services by name, named volumes as host volumes"
+  "intent": "Deploy a Docker Compose file as a Caravana app: loud errors, warnings for changed meaning, services by name, named volumes as host volumes",
+  "decisions": [
+    {
+      "decision": "compose-go v2 with WithSupportedAttributes allowlist",
+      "why": "official parser; fails closed with attribute paths",
+      "rejected": "hand-written YAML decoding"
+    },
+    {
+      "decision": "Names sidecar per group rewriting /etc/hosts from alloc-mode registrations",
+      "why": "only lab-proven way to resolve service names across redeploys without Consul",
+      "rejected": "extra_hosts (stale after first redeploy), env-only discovery"
+    },
+    {
+      "decision": "Named volumes as Nomad dynamic host volumes <app>_<volume>, created by deploy before Register",
+      "why": "no client restarts; lab-proven persistence",
+      "rejected": "static host_volume blocks"
+    },
+    {
+      "decision": "Groups with a volume: canary 0, one copy",
+      "why": "single-writer volume cannot hold a canary",
+      "rejected": "multi-writer volumes"
+    },
+    {
+      "decision": "JSON overlay next to the file; two operations deployCompose and previewCompose",
+      "why": "file stays portable; generated clients",
+      "rejected": "x-caravana extension; oneOf on deployApp"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Plan: compose package + model volumes + names sidecar + dynamic host volumes + 2 API ops",
+      "key_finding": "Nomad writes the alloc hosts file once; a sidecar must rewrite it in place"
+    },
+    "tasks": {
+      "summary": "26 tasks: setup, foundational wave, 3 parallel phases (compose, nomadjob, volumes), integration, polish"
+    }
+  }
 }
