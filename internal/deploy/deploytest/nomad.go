@@ -38,6 +38,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -83,6 +84,7 @@ type Nomad struct {
 	logRequests  []LogRequest
 	logOpen      int // follow streams still connected
 
+	evals      []string                     // job ID of each eval forcePeriodic made, by index
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
 
@@ -297,9 +299,17 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.allocations(w, r, "")
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/allocation/"):
 		n.allocation(w, strings.TrimPrefix(r.URL.Path, "/v1/allocation/"))
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs":
+		n.listJobs(w, r.URL.Query().Get("prefix"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/evaluation/"):
+		n.evaluation(w, strings.TrimPrefix(r.URL.Path, "/v1/evaluation/"))
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasSuffix(r.URL.Path, "/periodic/force"):
+		id, _ := jobPath(r)
+		n.forcePeriodic(w, strings.TrimSuffix(id, "/periodic/force"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/job/"):
-		rest := strings.TrimPrefix(r.URL.Path, "/v1/job/")
-		id, sub, _ := strings.Cut(rest, "/")
+		// Job IDs of periodic runs contain "/", which the client sends
+		// escaped: split on the escaped path, then unescape the ID.
+		id, sub := jobPath(r)
 		switch sub {
 		case "":
 			n.info(w, id)
@@ -712,6 +722,142 @@ func (n *Nomad) SetVariable(path string, items map[string]string) {
 		return
 	}
 	n.vars[path] = maps.Clone(items)
+}
+
+// jobPath splits /v1/job/<id>/<sub> on the escaped path, so an ID with "/"
+// in it (a periodic run) stays whole.
+func jobPath(r *http.Request) (id, sub string) {
+	rest := strings.TrimPrefix(r.URL.EscapedPath(), "/v1/job/")
+	rawID, sub, _ := strings.Cut(rest, "/")
+	id, err := url.PathUnescape(rawID)
+	if err != nil {
+		id = rawID
+	}
+	if strings.HasSuffix(r.URL.Path, "/periodic/force") {
+		return id + "/periodic/force", ""
+	}
+	return id, sub
+}
+
+// runClock is the time of the next periodic run the fake makes: each force
+// takes the next second, so two forces never share a run (the real Nomad
+// would, within one second; the service refuses that case).
+var runClock = time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC).Unix()
+
+// listJobs answers GET /v1/jobs?prefix=: the latest version of each job whose
+// ID starts with prefix.
+func (n *Nomad) listJobs(w http.ResponseWriter, prefix string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := []*api.JobListStub{}
+	for _, id := range slices.Sorted(maps.Keys(n.jobs)) {
+		if !strings.HasPrefix(id, prefix) {
+			continue
+		}
+		j := n.jobs[id][len(n.jobs[id])-1]
+		stub := &api.JobListStub{ID: id, Name: id, Status: "running", Periodic: j.Periodic != nil}
+		if j.ParentID != nil {
+			stub.ParentID = *j.ParentID
+		}
+		if j.Status != nil {
+			stub.Status = *j.Status
+		}
+		if j.Type != nil {
+			stub.Type = *j.Type
+		}
+		out = append(out, stub)
+	}
+	n.writeJSON(w, out)
+}
+
+// forcePeriodic answers PUT /v1/job/<id>/periodic/force: a new run
+// "<id>/periodic-<unix seconds>", running, with one pending copy.
+func (n *Nomad) forcePeriodic(w http.ResponseWriter, id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	versions := n.jobs[id]
+	if len(versions) == 0 || versions[len(versions)-1].Periodic == nil {
+		http.Error(w, "job not found or not periodic", http.StatusNotFound)
+		return
+	}
+	runClock++
+	child := *versions[len(versions)-1]
+	child.ID = new(fmt.Sprintf("%s/periodic-%d", id, runClock))
+	child.ParentID = new(id)
+	child.Periodic = nil
+	child.Status = new("running")
+	n.store(&child)
+	n.allocs[*child.ID] = []*api.AllocationListStub{{ID: *child.ID + "-alloc", JobID: *child.ID, Namespace: "default",
+		TaskGroup: "backup", ClientStatus: "pending"}}
+	n.allocIndex++
+	n.wake()
+	n.evals = append(n.evals, *child.ID)
+	n.writeJSON(w, struct{ EvalID string }{fmt.Sprintf("eval-%d", len(n.evals)-1)})
+}
+
+// evaluation answers GET /v1/evaluation/<id> for the evals forcePeriodic made.
+func (n *Nomad) evaluation(w http.ResponseWriter, id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var i int
+	if _, err := fmt.Sscanf(id, "eval-%d", &i); err != nil || i < 0 || i >= len(n.evals) {
+		http.Error(w, "eval not found", http.StatusNotFound)
+		return
+	}
+	n.writeJSON(w, &api.Evaluation{ID: id, JobID: n.evals[i], Status: "complete"})
+}
+
+// Runs returns the IDs of jobID's periodic runs, oldest first.
+func (n *Nomad) Runs(jobID string) []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var out []string
+	for _, id := range slices.Sorted(maps.Keys(n.jobs)) {
+		if strings.HasPrefix(id, jobID+"/periodic-") {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// FinishRun ends a batch job (a periodic run or a restore): the job is dead
+// and its copy complete (ok) or failed (failedTask marked failed), with
+// stdout and stderr as its output, so the outcome reads as Nomad's would.
+func (n *Nomad) FinishRun(jobID string, ok bool, failedTask, stdout, stderr string) {
+	n.mu.Lock()
+	versions := n.jobs[jobID]
+	if len(versions) == 0 {
+		n.mu.Unlock()
+		panic("deploytest: FinishRun of an unknown job " + jobID)
+	}
+	versions[len(versions)-1].Status = new("dead")
+	allocID := jobID + "-alloc"
+	tasks := versions[len(versions)-1].TaskGroups[0].Tasks
+	states := map[string]*api.TaskState{}
+	for _, t := range tasks {
+		st := &api.TaskState{State: "dead", Failed: !ok && t.Name == failedTask}
+		if st.Failed {
+			st.Events = []*api.TaskEvent{{Type: "Terminated", DisplayMessage: "Exit Code: 1, Exit Message: \"Docker container exited with non-zero exit code: 1\""}}
+		}
+		states[t.Name] = st
+	}
+	status := "complete"
+	if !ok {
+		status = "failed"
+	}
+	n.allocs[jobID] = []*api.AllocationListStub{{ID: allocID, JobID: jobID, Namespace: "default",
+		TaskGroup: *versions[len(versions)-1].TaskGroups[0].Name, ClientStatus: status, TaskStates: states}}
+	n.allocIndex++
+	n.wake()
+	n.mu.Unlock()
+	// The fake keeps output per copy, not per task: enough for a reader that
+	// asks for one task's stdout or stderr.
+	if stdout != "" {
+		n.WriteLog(allocID, "stdout", stdout)
+	}
+	if stderr != "" {
+		n.WriteLog(allocID, "stderr", stderr)
+	}
 }
 
 // HostVolumes returns the names of the host volumes, sorted.

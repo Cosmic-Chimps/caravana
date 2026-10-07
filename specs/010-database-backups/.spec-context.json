@@ -121,6 +121,38 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T15:37:06.385Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:40:52.795Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:40:52.918Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:40:53.056Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T15:40:53.189Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -222,7 +254,7 @@
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
     }
   },
-  "currentTask": "T005",
+  "currentTask": "T014",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -267,6 +299,46 @@
         "internal/compose/compose.go",
         "internal/compose/service.go",
         "internal/compose/testdata"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "fake periodic runs; deploy SyncBackups/SetBackupDestination/ForceBackup/BackupRuns/DeleteAppJobs; Restore/RestoreStatus; tests",
+      "files": [
+        "internal/deploy/backups.go",
+        "internal/deploy/restore.go",
+        "internal/deploy/backups_test.go",
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "fake periodic runs; deploy SyncBackups/SetBackupDestination/ForceBackup/BackupRuns/DeleteAppJobs; Restore/RestoreStatus; tests",
+      "files": [
+        "internal/deploy/backups.go",
+        "internal/deploy/restore.go",
+        "internal/deploy/backups_test.go",
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "fake periodic runs; deploy SyncBackups/SetBackupDestination/ForceBackup/BackupRuns/DeleteAppJobs; Restore/RestoreStatus; tests",
+      "files": [
+        "internal/deploy/backups.go",
+        "internal/deploy/restore.go",
+        "internal/deploy/backups_test.go",
+        "internal/deploy/deploytest/nomad.go"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "fake periodic runs; deploy SyncBackups/SetBackupDestination/ForceBackup/BackupRuns/DeleteAppJobs; Restore/RestoreStatus; tests",
+      "files": [
+        "internal/deploy/backups.go",
+        "internal/deploy/restore.go",
+        "internal/deploy/backups_test.go",
+        "internal/deploy/deploytest/nomad.go"
       ]
     }
   }

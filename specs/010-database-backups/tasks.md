@@ -42,9 +42,9 @@ Files: `internal/deploy/backups.go`, `internal/deploy/backups_test.go`,
 `internal/service/backups_test.go`, `internal/service/deploy.go`, `internal/service/service.go`,
 `internal/service/apps.go`
 
-- [ ] **T006** [US1] Fake Nomad: `GET /v1/jobs?prefix=`, periodic force creating `<job>/periodic-<n>` children, escaped job IDs in `/v1/job/...` paths, `GET /v1/evaluation/{id}` · internal/deploy/deploytest/nomad.go
-- [ ] **T007** [US1] `deploy`: SyncBackups (variables + periodic jobs, remove unwanted), SetBackupDestination (rewrite every backup variable), ForceBackup, BackupRuns (children with outcome, size, key, message from logs), DeleteAppJobs (prefix purge + variables) · internal/deploy/backups.go
-- [ ] **T008** [US1] Tests for those against the fake · internal/deploy/backups_test.go
+- [x] **T006** [US1] Fake Nomad: `GET /v1/jobs?prefix=`, periodic force creating `<job>/periodic-<n>` children, escaped job IDs in `/v1/job/...` paths, `GET /v1/evaluation/{id}` · internal/deploy/deploytest/nomad.go
+- [x] **T007** [US1] `deploy`: SyncBackups (variables + periodic jobs, remove unwanted), SetBackupDestination (rewrite every backup variable), ForceBackup, BackupRuns (children with outcome, size, key, message from logs), DeleteAppJobs (prefix purge + variables) · internal/deploy/backups.go
+- [x] **T008** [US1] Tests for those against the fake · internal/deploy/backups_test.go
 - [ ] **T009** [US3] Service: Get/SetBackupDestination (plain fields in the store, secret in `caravana/backup-destination`, rewrite variables) · internal/service/backups.go
 - [ ] **T010** [US1] Deploy: refuse backups without a destination; after Register, sync backup jobs with credentials from env and secret sets; warning when the sync fails · internal/service/deploy.go
 - [ ] **T011** [US1] Watcher (every 15 s): record runs, mark expired, from Start; BackUpNow refusing a running one; ListBackups · internal/service/backups.go, internal/service/service.go
@@ -56,7 +56,7 @@ Files: `internal/deploy/backups.go`, `internal/deploy/backups_test.go`,
 Files: `internal/service/restore.go`, `internal/service/restore_test.go`,
 `internal/deploy/restore.go`
 
-- [ ] **T014** [US2] `deploy.Restore` (purge old, copy variable, register), `RestoreStatus` (dead → outcome, pending too long → failed) · internal/deploy/restore.go
+- [x] **T014** [US2] `deploy.Restore` (purge old, copy variable, register), `RestoreStatus` (dead → outcome, pending too long → failed) · internal/deploy/restore.go
 - [ ] **T015** [US2] Service Restore (one at a time), watcher records restores · internal/service/restore.go
 - [ ] **T016** [US2] Tests · internal/service/restore_test.go
 
