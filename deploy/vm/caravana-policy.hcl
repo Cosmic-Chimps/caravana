@@ -18,6 +18,11 @@ namespace "default" {
     path "nomad/jobs/*" {
       capabilities = ["read", "write", "destroy", "list"]
     }
+    # The backup destination's secret key (feature 010). Backup jobs read their own copy under
+    # nomad/jobs/<app>_<service>_backup; submit-job also covers forcing a backup run.
+    path "caravana/*" {
+      capabilities = ["read", "write", "destroy", "list"]
+    }
   }
 }
 

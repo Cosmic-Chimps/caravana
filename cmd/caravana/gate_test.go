@@ -29,6 +29,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
 // gateTarget is where the gate runs.
@@ -97,6 +98,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"console-reads", false, g.consoleReads},
 		{"secrets-render", false, g.secretsRender},
 		{"compose-app", false, g.composeAppStep},
+		{"backup-restore", false, g.backupRestoreStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},
@@ -378,6 +380,185 @@ func (g *gate) exec(t *testing.T, appID, service, deploymentID string, cmd ...st
 		err = fmt.Errorf("exit %d: %s", code, strings.TrimSpace(errOut.String()))
 	}
 	return strings.TrimSuffix(out.String(), "\n"), err
+}
+
+// gateS3Job is the S3-compatible bucket the backup step writes to: rclone
+// serving a directory on the node, on static port 9000, run with the gate's
+// own token (it isn't an app; Caravana never sees it as one). Only the
+// node's address reaches it, and the step purges it at the end.
+func gateS3Job(secret string) *api.Job {
+	return &api.Job{
+		ID: new("gate-s3"), Name: new("gate-s3"), Type: new("service"), Datacenters: []string{"*"},
+		TaskGroups: []*api.TaskGroup{{
+			Name:     new("s3"),
+			Networks: []*api.NetworkResource{{Mode: "bridge", ReservedPorts: []api.Port{{Label: "s3", Value: 9000, To: 9000}}}},
+			Tasks: []*api.Task{{
+				Name: "s3", Driver: "docker",
+				Config: map[string]any{
+					// The image Caravana's backup jobs use, so the node pulls it once.
+					"image":      nomadjob.DefaultBackupImage,
+					"entrypoint": []string{"/bin/sh", "-c"},
+					"args":       []string{"mkdir -p /data/backups && exec rclone serve s3 /data --addr :9000 --auth-key GATEKEY," + secret},
+				},
+				Resources: &api.Resources{CPU: new(100), MemoryMB: new(128)},
+			}},
+		}},
+	}
+}
+
+// gateDBCompose is a Compose file with one backed-up PostgreSQL service on
+// a volume. The password is plain env: it is a throwaway database.
+const gateDBCompose = `services:
+  db:
+    image: postgres:17
+    ports: ["5432"]
+    environment:
+      POSTGRES_PASSWORD: gate-password
+    volumes: ["db-data:/var/lib/postgresql/data"]
+volumes:
+  db-data: {}
+`
+
+// backupRestoreStep: the Phase 2 gate's "a backup that restores" (feature
+// 010), with the token Caravana really runs with. Row A is written, backed up
+// to the bucket, changed to B, and the backup restored: A is read back.
+func (g *gate) backupRestoreStep(t *testing.T) {
+	const appID = "gate-db"
+	nomad := g.target.Nomad
+	resp := g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "") // a leftover from an aborted run, if any
+	resp.Body.Close()
+
+	// The bucket.
+	secret := "gate-" + g.run
+	if _, _, err := nomad.Jobs().Register(gateS3Job(secret), nil); err != nil {
+		t.Fatalf("register the S3 bucket job: %v", err)
+	}
+	t.Cleanup(func() { _, _, _ = nomad.Jobs().Deregister("gate-s3", true, nil) })
+	nodes, _, err := nomad.Nodes().List(nil)
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("list nodes: %v", err)
+	}
+	node, _, err := nomad.Nodes().Info(nodes[0].ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeIP := node.Attributes["unique.network.ip-address"]
+	waitFor(t, "the S3 bucket to listen", 2*time.Minute, func() bool {
+		allocs, _, err := nomad.Jobs().Allocations("gate-s3", false, nil)
+		if err != nil {
+			return false
+		}
+		for _, a := range allocs {
+			if a.ClientStatus == "running" {
+				full, _, err := nomad.Allocations().Info(a.ID, nil)
+				if err != nil {
+					return false
+				}
+				code, err := nomad.Allocations().Exec(context.Background(), full, "s3", false, []string{"nc", "-z", "127.0.0.1", "9000"},
+					strings.NewReader(""), io.Discard, io.Discard, nil, nil)
+				return err == nil && code == 0
+			}
+		}
+		return false
+	})
+
+	dest, _ := json.Marshal(map[string]string{"endpoint": "http://" + nodeIP + ":9000", "region": "us-east-1", "bucket": "backups",
+		"prefix": "gate", "accessKeyId": "GATEKEY", "secretAccessKey": secret})
+	resp = g.api(t, http.MethodPut, "/v1/backups/destination", "application/json", string(dest))
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || strings.Contains(string(raw), secret) {
+		t.Fatalf("PUT destination: %d %s", resp.StatusCode, raw)
+	}
+
+	// The database.
+	body, _ := json.Marshal(map[string]any{"compose": gateDBCompose,
+		"services": map[string]any{"db": map[string]any{"backup": map[string]any{"engine": "postgres", "keep": 2}}}})
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/compose", "application/json", string(body))
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var d gateDeployment
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
+		t.Fatalf("deploy %s: %d %s", appID, resp.StatusCode, raw)
+	}
+	if final := g.waitFinalOf(t, appID, d.ID, 4*time.Minute); final.Status != "healthy" {
+		t.Fatalf("deploy %s ended %s: %s", appID, final.Status, final.Error)
+	}
+	psql := func(sql string) string {
+		t.Helper()
+		var out string
+		var lastErr error
+		if !waitUntil(time.Minute, func() bool {
+			out, lastErr = g.exec(t, appID, "db", d.ID, "psql", "-U", "postgres", "-tAc", sql)
+			return lastErr == nil
+		}) {
+			t.Fatalf("psql %q: %v", sql, lastErr)
+		}
+		return strings.TrimSpace(out)
+	}
+	psql("create table gate(v text); insert into gate values ('A')")
+
+	// Back up, change, restore.
+	type listing struct {
+		Backups []struct {
+			ID, Status, Message string
+		} `json:"backups"`
+		Restores []struct {
+			Status, Message string
+		} `json:"restores"`
+	}
+	list := func() listing {
+		t.Helper()
+		var l listing
+		g.getJSON(t, "/v1/apps/"+appID+"/backups", &l)
+		return l
+	}
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/backups", "application/json", `{"service": "db"}`)
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("back up now: %d %s", resp.StatusCode, raw)
+	}
+	var backupID string
+	waitFor(t, "the backup to succeed", 3*time.Minute, func() bool {
+		for _, b := range list().Backups {
+			switch b.Status {
+			case "succeeded":
+				backupID = b.ID
+				return true
+			case "failed":
+				t.Fatalf("the backup failed: %s", b.Message)
+			}
+		}
+		return false
+	})
+
+	psql("update gate set v = 'B'")
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/backups/"+backupID+"/restore", "application/json", "")
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("restore: %d %s", resp.StatusCode, raw)
+	}
+	waitFor(t, "the restore to succeed", 3*time.Minute, func() bool {
+		r := list().Restores
+		if len(r) > 0 && r[0].Status == "failed" {
+			t.Fatalf("the restore failed: %s", r[0].Message)
+		}
+		return len(r) > 0 && r[0].Status == "succeeded"
+	})
+	if got := psql("select v from gate"); got != "A" {
+		t.Fatalf("after the restore the row is %q, want A", got)
+	}
+
+	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+	}
+	if left, _, err := nomad.Jobs().List(&api.QueryOptions{Prefix: appID + "_"}); err != nil || len(left) != 0 {
+		t.Errorf("backup jobs left after delete: %d (%v)", len(left), err)
+	}
 }
 
 // composeApp is a two-service Compose file (feature 009). store writes a

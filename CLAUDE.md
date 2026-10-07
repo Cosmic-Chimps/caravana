@@ -100,7 +100,19 @@ pinned by digest via `CARAVANA_NAMES_IMAGE`, that rewrites the group's `/etc/hos
 become Nomad dynamic host volumes `<app>_<volume>` (`mkdir` plugin), created by
 `deploy.EnsureVolumes` before register and deleted with the app; a group with a volume runs one
 copy and deploys stop-then-start. The scoped policy gained `host-volume-create/-delete` and
-`host_volume "*_*"`, and the gate has a step `compose-app`. Next: 010.
+`host_volume "*_*"`, and the gate has a step `compose-app`. Feature 010 is implemented on branch
+`010-databases-backups` (stacked on 009): a service with `backup: {engine: postgres, schedule?,
+keep?}` gets a Nomad periodic batch job `<app>_<service>_backup` (pg_dump with the service's
+pinned image, then rclone uploads to the installation's S3-compatible destination and deletes
+dumps beyond `keep`); `<app>_<service>_restore` is a one-off batch job running `pg_restore
+--clean`. Job shapes are pure in `nomadjob/backup.go`; `deploy/backups.go` writes each job's own
+Nomad Variable (credentials from the service's `POSTGRES_*` env or secrets, plus
+`RCLONE_CONFIG_DEST_*`), registers the jobs and reads the runs' outcome from their output; a
+watcher in `service/backups.go` records runs and restores in SQLite (`0005_backups.sql`). The
+destination's secret key is in the Nomad Variable `caravana/backup-destination`. API: destination
+GET/PUT, list, back up now, restore (`api/openapi.yaml` 0.8.0); console: Settings › Backup
+destination and a Backups tab. The policy gained variables `caravana/*`, and the gate has a step
+`backup-restore` (A, back up, B, restore, A) against an `rclone serve s3` bucket job. Next: 011.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -121,7 +133,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
   host volumes (done, branch `009-compose-translator`)
 - 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to
-  S3-compatible storage
+  S3-compatible storage (done for PostgreSQL, branch `010-databases-backups`)
 - 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
 - 012 One-command install (`deploy/vm/` is its rehearsal)
 

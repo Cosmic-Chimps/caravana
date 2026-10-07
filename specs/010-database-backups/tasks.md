@@ -79,8 +79,8 @@ Files: `internal/api/backups.go`, `internal/api/backups_test.go`, `internal/api/
 
 Files: `deploy/vm/caravana-policy.hcl`, `cmd/caravana/gate_test.go`, `CLAUDE.md`, `docs/plan.md`
 
-- [ ] **T022** Policy: variables `caravana/*` · deploy/vm/caravana-policy.hcl
-- [ ] **T023** Gate step `backup-restore` (research R9) · cmd/caravana/gate_test.go
+- [x] **T022** Policy: variables `caravana/*` · deploy/vm/caravana-policy.hcl
+- [x] **T023** Gate step `backup-restore` (research R9) · cmd/caravana/gate_test.go
 - [ ] **T024** Docs, then validate: build, vet, staticcheck, race tests, gofmt, tidy, cross-compiles, ui checks, shellcheck, TestLab · CLAUDE.md, docs/plan.md
 
 ## Dependencies & Execution Order

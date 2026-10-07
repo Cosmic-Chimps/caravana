@@ -249,6 +249,22 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-07T16:04:58.246Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T022",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T16:05:06.496Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T023",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-07T16:06:07.000Z"
     }
   ],
   "telemetryInstanceId": "f2cfbfca-92a5-43cf-9fe3-c7f90faf26e8",
@@ -350,7 +366,7 @@
       "key_finding": "Restart/reschedule attempts must be 0 or a failed dump blocks the schedule; same-second forces collide"
     }
   },
-  "currentTask": "T021",
+  "currentTask": "T023",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -574,6 +590,20 @@
         "internal/api/parity_test.go",
         "internal/service/backups.go",
         "internal/ui/static/app.css"
+      ]
+    },
+    "T022": {
+      "status": "DONE",
+      "did": "policy: variables caravana/*",
+      "files": [
+        "deploy/vm/caravana-policy.hcl"
+      ]
+    },
+    "T023": {
+      "status": "DONE",
+      "did": "gate step backup-restore: rclone S3 bucket, postgres, A→backup→B→restore→A",
+      "files": [
+        "cmd/caravana/gate_test.go"
       ]
     }
   }
