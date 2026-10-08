@@ -327,6 +327,12 @@ type historyEntry struct {
 	Action   *actionLink // the one fix a failed newest deployment offers; nil for the rest
 	Warnings []app.Warning
 	Digests  []digestView
+	// Source is the deployment this one redeployed; nil for the others.
+	Source *sourceLink
+	// Redeploy offers this version again: healthy deployments with a
+	// recorded definition only. ExportHref downloads its jobspec.
+	Redeploy   *redeployView
+	ExportHref string
 }
 
 // historyRegion is what the "deployments" region draws: the history, newest
@@ -377,6 +383,11 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 	if err != nil {
 		return historyRegion{}, err
 	}
+	// The stored app says which secrets a redeploy of a past version removes.
+	current, err := s.svc.GetApp(ctx, appID)
+	if err != nil {
+		return historyRegion{}, err
+	}
 	facts := deployFactsOf(recs, first)
 	more := len(recs) > limit
 	if more {
@@ -390,7 +401,9 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 	}
 	now := s.now()
 	for i, rec := range recs {
-		region.Entries = append(region.Entries, s.historyEntry(ctx, now, rec, facts[i]))
+		e := s.historyEntry(ctx, now, rec, facts[i])
+		addVersionActions(&e, rec, current.App)
+		region.Entries = append(region.Entries, e)
 	}
 	if more {
 		region.OlderHref = "/apps/" + appID + "/deployments?before=" +
@@ -466,9 +479,22 @@ func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) 
 
 // deploymentsPage draws the Deployments tab with the given status and form
 // (a refused post draws it again with the typed values and the errors).
-func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm) {
+// refused, when set, is a refused redeploy of a past version, shown in its
+// entry.
+func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy) {
 	id := sum.App.ID
 	history, err := s.loadHistory(r, id)
+	if err == nil && refused != nil {
+		shown := false
+		for i, e := range history.Entries {
+			if e.ID == refused.ID && e.Redeploy != nil {
+				history.Entries[i].Redeploy.Error, shown = refused.Why, true
+			}
+		}
+		if !shown { // that entry offers no redeploy, or is on another page
+			form.Notice = refused.Why
+		}
+	}
 	switch {
 	case errors.Is(err, errBadCursor):
 		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
@@ -502,7 +528,7 @@ func (s *server) showDeployments(w http.ResponseWriter, r *http.Request, session
 	case err != nil:
 		s.serverError(w, "read app", err)
 	default:
-		s.deploymentsPage(w, r, http.StatusOK, sum, deployFormOf(sum.App))
+		s.deploymentsPage(w, r, http.StatusOK, sum, deployFormOf(sum.App), nil)
 	}
 }
 
@@ -591,7 +617,7 @@ func (s *server) deployApp(w http.ResponseWriter, r *http.Request, session strin
 	if fresh, err := s.svc.AppSummary(ctx, id); err == nil {
 		sum = fresh
 	}
-	s.deploymentsPage(w, r, status, sum, form)
+	s.deploymentsPage(w, r, status, sum, form, nil)
 }
 
 // refuseDeploy says what a failed deploy looks like on the page: an error on
@@ -690,6 +716,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		APIHint: sentence{plain("Editing here comes later. Until then, change these through the API: "), mono("POST /v1/apps/" + id + "/deployments"), plain(".")},
 		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
+		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
 	}

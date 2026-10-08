@@ -9,6 +9,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // This file is what the Configure tab shows: the stored definition as plain
@@ -90,7 +91,30 @@ type configureTab struct {
 	APIHint sentence
 	Secrets secretsView
 	Webhook webhookView
+	Export  exportView
 	Delete  deleteView
+}
+
+// exportView is the Export section: a download of the live version's
+// jobspec, or why there is none yet.
+type exportView struct {
+	Href string
+	Note string
+}
+
+// exportOf finds the live version, the newest healthy deployment, among an
+// app's deployments (newest first).
+func exportOf(appID string, deployments []store.DeploymentRecord) exportView {
+	for _, d := range deployments {
+		if d.Status != store.StatusHealthy {
+			continue
+		}
+		if d.Definition == nil {
+			return exportView{Note: "The live version was deployed before caravana saved what each deployment deployed. Deploy the app again to export it."}
+		}
+		return exportView{Href: "/apps/" + appID + "/jobspec"}
+	}
+	return exportView{Note: "Nothing to export yet: the app has no healthy deployment."}
 }
 
 // secretsView is the Secrets section: each service's secret names, and the

@@ -32,8 +32,13 @@ type deploymentJSON struct {
 	Digests    map[string]string `json:"digests"`
 	Warnings   []app.Warning     `json:"warnings"`
 	Error      string            `json:"error,omitempty"`
-	CreatedAt  time.Time         `json:"createdAt"`
-	UpdatedAt  time.Time         `json:"updatedAt"`
+	// Source is the deployment this one redeployed.
+	Source string `json:"source,omitempty"`
+	// DefinitionRecorded says whether it can be redeployed (when healthy) and
+	// exported: deployments from before feature 011 can't.
+	DefinitionRecorded bool      `json:"definitionRecorded"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
@@ -82,9 +87,11 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 		Digests:    rec.Deployment.Digests,
 		Warnings:   rec.Warnings,
 		Error:      rec.Error,
+		Source:     rec.Source,
 		CreatedAt:  rec.CreatedAt,
 		UpdatedAt:  rec.UpdatedAt,
 	}
+	d.DefinitionRecorded = rec.Definition != nil
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}

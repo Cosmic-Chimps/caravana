@@ -102,6 +102,9 @@ type seedDeploy struct {
 	Version uint64 // the Nomad job version; 0 means it never got one
 	Error   string
 	Warns   []app.Warning
+	// Definition is what it deployed; nil records none, as before feature 011.
+	Definition *app.App
+	Source     string
 }
 
 // seed stores the app and its deployments, oldest first, each ending in its status.
@@ -116,7 +119,7 @@ func (e *consoleEnv) seed(t *testing.T, a app.App, ds ...seedDeploy) {
 		digests[svc.Name] = "traefik/whoami@" + sampleDigest
 	}
 	for _, d := range ds {
-		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests}); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests}, d.Definition, d.Source); err != nil {
 			t.Fatalf("CreateDeployment(%s): %v", d.ID, err)
 		}
 		if d.Version != 0 {

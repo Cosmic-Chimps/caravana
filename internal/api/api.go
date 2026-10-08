@@ -71,6 +71,9 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false, false},
+		{http.MethodPost, "/v1/apps/{id}/deployments/{deploymentId}/redeploy", s.redeployDeployment, false, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/jobspec", s.exportDeployment, false, false},
+		{http.MethodGet, "/v1/apps/{id}/jobspec", s.exportApp, false, false},
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
 		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
@@ -213,6 +216,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 	var fieldErr *app.FieldError
 	var imageErr *deploy.ImageError
 	if e := backupError(err); e != nil {
+		return e
+	}
+	if e := versionError(err); e != nil {
 		return e
 	}
 	switch {

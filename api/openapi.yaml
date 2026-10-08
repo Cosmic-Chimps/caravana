@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.8.0
+  version: 0.9.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -646,6 +646,134 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: No such app, or no such deployment of this app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/deployments/{deploymentId}/redeploy:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      operationId: redeployDeployment
+      summary: Deploy a past healthy version of the app again.
+      description: |
+        Deploys what that deployment deployed: its app definition, with each service's image
+        pinned by the same digest (tags are not resolved again). The definition becomes the
+        stored app, and the new deployment's `source` names the one it came from. It is a new
+        deployment and a new Nomad job version, followed like any other (see `deployApp`).
+
+        Secret values are not versioned: the version's secrets keep their current values. A
+        secret it uses that has no value now is refused (400 `invalid_field` on
+        `services[i].secrets[j].value`). Secrets the stored app has and the version doesn't are
+        deleted, with a warning each. A later `deployApp` with an empty body, or a webhook,
+        resolves the tags again.
+      tags: [deployments]
+      responses:
+        "202":
+          description: Nomad accepted the job; the rollout continues in the background.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: No such app, or no such deployment of this app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `deployment_not_healthy`: only a healthy deployment can be redeployed.
+            `definition_not_recorded`: the deployment is from before Caravana saved what each
+            deployment deployed. `job_conflict`: as for `deployApp`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/deployments/{deploymentId}/jobspec:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: exportDeployment
+      summary: Export one deployment of the app as a Nomad jobspec.
+      description: |
+        The Nomad job Caravana registered for that deployment, as HCL, after a comment saying
+        what it needs from the cluster (Traefik routing, host volumes, the Nomad Variables
+        holding the secrets). It never holds a secret value. `nomad job run` runs it without
+        Caravana.
+      tags: [deployments]
+      responses:
+        "200":
+          $ref: "#/components/responses/Jobspec"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such app, or no such deployment of this app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`definition_not_recorded`: the deployment is from before Caravana saved what each deployment deployed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/jobspec:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: exportApp
+      summary: Export the app's live version as a Nomad jobspec.
+      description: |
+        Like `exportDeployment`, for the app's newest healthy deployment.
+      tags: [apps]
+      responses:
+        "200":
+          $ref: "#/components/responses/Jobspec"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            `no_live_deployment`: the app has no healthy deployment yet.
+            `definition_not_recorded`: its live deployment is from before Caravana saved what
+            each deployment deployed.
           content:
             application/json:
               schema:
@@ -1413,7 +1541,7 @@ components:
     Deployment:
       type: object
       additionalProperties: false
-      required: [id, appId, trigger, status, digests, warnings, createdAt, updatedAt]
+      required: [id, appId, trigger, status, digests, warnings, definitionRecorded, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1445,6 +1573,14 @@ components:
         error:
           type: string
           description: Why it failed, reverted or was superseded. Absent otherwise.
+        source:
+          type: string
+          description: The deployment this one redeployed (`redeployDeployment`). Absent otherwise.
+        definitionRecorded:
+          type: boolean
+          description: |
+            Whether Caravana saved what this deployment deployed. Only then can it be exported,
+            and redeployed once healthy. False for deployments from before version 0.9.0.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         progress:
@@ -1552,7 +1688,8 @@ components:
                 `method_not_allowed`, `internal`, `unavailable`, `image_not_found`,
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
-                `secret_store_unavailable`, `backup_running`, `no_backup_destination`.
+                `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
+                `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`.
               examples: [invalid_field]
             message:
               type: string
@@ -1649,6 +1786,17 @@ components:
             $ref: "#/components/schemas/TokenInfo"
 
   responses:
+    Jobspec:
+      description: |
+        The jobspec, as a download named `<app>.nomad.hcl`. Errors are JSON, as everywhere.
+      headers:
+        Content-Disposition:
+          description: '`attachment; filename="<app>.nomad.hcl"`'
+          schema: {type: string}
+      content:
+        text/plain:
+          schema:
+            type: string
     Unavailable:
       description: The server can't reach its store.
       content:

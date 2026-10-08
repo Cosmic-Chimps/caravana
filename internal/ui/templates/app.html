@@ -210,6 +210,27 @@
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
+  {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
+  {{if or .Redeploy .ExportHref}}
+  <div class="cv-actions">
+    {{with .Redeploy}}
+    <details class="cv-confirm"{{if .Error}} open{{end}}>
+      <summary class="cv-btn cv-btn-secondary cv-btn-sm">Redeploy this version</summary>
+      <form method="post" action="{{.Action}}" class="cv-confirm-body">
+        {{with .Error}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+        <p>This deploys this version again: the images below, pinned as they were, and its settings. The app's definition becomes this one.</p>
+        {{with .Removed}}
+        <p>Secrets keep their current values. These ones aren't in this version, so their values are deleted:</p>
+        <ul class="cv-deploy-warnings">{{range .}}<li><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></li>{{end}}</ul>
+        {{end}}
+        <p class="text-sm text-fg-3">A later redeploy, or a webhook, looks the image tags up again.</p>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Redeploy</button></div>
+      </form>
+    </details>
+    {{end}}
+    {{with .ExportHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" download>Export jobspec</a>{{end}}
+  </div>
+  {{end}}
   {{with .Warnings}}
   <ul class="cv-deploy-warnings" aria-label="Warnings">
     {{range .}}<li><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-data text-fg-1">{{.Field}}</span> {{.Message}}</span></li>{{end}}
@@ -392,6 +413,15 @@
     <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
     <form method="post" action="/apps/{{.Delete.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></form>
     {{end}}
+  </div>
+</section>
+
+<section aria-labelledby="export-title" class="flex flex-col gap-2">
+  <h2 id="export-title" class="cv-label">Export</h2>
+  <div class="cv-panel p-4 flex flex-col gap-4">
+    <p class="text-sm text-fg-3">The live version as a plain Nomad jobspec. <span class="cv-inline-mono">nomad job run</span> runs it without caravana. It names the secrets it needs but never holds their values.</p>
+    {{with .Export.Href}}<div><a href="{{.}}" class="cv-btn cv-btn-secondary" download>Export jobspec</a></div>{{end}}
+    {{with .Export.Note}}<p class="text-base text-fg-1">{{.}}</p>{{end}}
   </div>
 </section>
 
