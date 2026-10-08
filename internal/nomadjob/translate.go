@@ -1,5 +1,6 @@
 // Package nomadjob turns an app.App into a Nomad job, using the official
-// Nomad API types. Jobs are submitted as JSON, so no HCL is ever written.
+// Nomad API types. Jobs are submitted as JSON; HCL is written only to export
+// an app as a jobspec (HCL).
 //
 // Translate is pure: no I/O, no clock, no randomness. The same input always
 // gives the same job, which golden-file tests check byte for byte. This is
