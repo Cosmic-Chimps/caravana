@@ -1,0 +1,104 @@
+{
+  "workflow": "companion",
+  "specName": "Rollback and export",
+  "branch": "011-rollback-export",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-08T20:09:26.292Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-08T20:11:39.856Z"
+    }
+  ],
+  "last_action": "living specs evaluated — skipped (not configured)",
+  "telemetryInstanceId": "2f61103c-963c-467a-985b-54fc8f967022",
+  "coverage": {
+    "FR-001": {
+      "title": "Every deployment records its full definition"
+    },
+    "FR-002": {
+      "title": "Redeploy an earlier healthy deployment from API and history"
+    },
+    "FR-003": {
+      "title": "Redeploy uses recorded digests, new job version"
+    },
+    "FR-004": {
+      "title": "Redeploy recorded with its source deployment"
+    },
+    "FR-005": {
+      "title": "Stored definition becomes the redeployed one"
+    },
+    "FR-006": {
+      "title": "Refused when a used secret has no value, naming it"
+    },
+    "FR-007": {
+      "title": "Refused when an image digest is gone, naming the service"
+    },
+    "FR-008": {
+      "title": "Validated like any deploy"
+    },
+    "FR-009": {
+      "title": "Removed secrets listed in confirmation and warnings"
+    },
+    "FR-010": {
+      "title": "Refused for not healthy or no recorded definition"
+    },
+    "FR-011": {
+      "title": "Export live version as HCL from API and Configure"
+    },
+    "FR-012": {
+      "title": "Export any past deployment with a definition"
+    },
+    "FR-013": {
+      "title": "Export parses to the registered job, plan shows no change"
+    },
+    "FR-014": {
+      "title": "Leading comment lists cluster prerequisites"
+    },
+    "FR-015": {
+      "title": "No secret value or token in the export"
+    },
+    "FR-016": {
+      "title": "Export refused without a healthy deployment or definition"
+    },
+    "FR-017": {
+      "title": "openapi in the same change"
+    }
+  },
+  "size": "oversized",
+  "classification": {
+    "projectedFiles": 22,
+    "projectedTasks": 18,
+    "scopeSignal": "none",
+    "verdict": "oversized"
+  },
+  "expectations": [
+    "backfilling definitions for deployments recorded before 011",
+    "redeploying failed, reverted or superseded deployments",
+    "versioned secret values",
+    "exporting backup jobs",
+    "a JSON export format"
+  ],
+  "context": [
+    "area: internal/store (deployments gain definition + source)",
+    "area: internal/service (redeploy a past version, export)",
+    "area: internal/nomadjob (HCL rendering of the translated job)",
+    "area: internal/registry (digest still exists)",
+    "area: internal/api + api/openapi.yaml",
+    "area: internal/ui (Deployments history action, Configure export)",
+    "constraint: constitution III every deploy a new job version, digests pinned",
+    "constraint: constitution VI HCL generated only by export",
+    "constraint: constitution VII no secret values in exports"
+  ],
+  "intent": "Redeploy any earlier healthy version with its pinned digests, and export any app as a plain Nomad HCL jobspec"
+}

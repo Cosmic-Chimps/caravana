@@ -1,3 +1,1 @@
-{
-  "feature_directory": "specs/010-database-backups"
-}
+{"feature_directory": "specs/011-rollback-export"}
