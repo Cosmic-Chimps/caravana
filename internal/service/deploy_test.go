@@ -287,3 +287,110 @@ func TestDeployFailures(t *testing.T) {
 		}
 	})
 }
+
+// Feature 011: every deployment records what it deployed, secret values
+// left out.
+func TestDeployRecordsDefinition(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	a := whoami()
+	a.Services[0].Secrets = []app.Secret{set("TOKEN", marker)}
+
+	rec, err := e.svc.Deploy(ctx, a, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy() = %v", err)
+	}
+	want := a.WithoutSecretValues()
+	if !reflect.DeepEqual(rec.Definition, &want) || rec.Source != "" {
+		t.Errorf("record: Definition = %+v, Source = %q; want the app without values and no source", rec.Definition, rec.Source)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+}
+
+// Feature 011: a pinned deploy uses its digests as they are, even when the
+// tag has moved since, and names its source.
+func TestDeployPinned(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	e.registry.AddIndex("traefik/whoami", "latest", movedDigest) // the tag moved
+
+	pin := &pinned{digests: map[string]string{"web": apptest.WhoamiDigest}, source: "dep-past"}
+	rec, err := e.svc.saveAndDeploy(ctx, whoami(), app.TriggerManual, nil, pin)
+	if err != nil {
+		t.Fatalf("saveAndDeploy() = %v", err)
+	}
+	if got := rec.Deployment.Digests["web"]; got != apptest.WhoamiDigest {
+		t.Errorf("digest = %q, want the pinned %q", got, apptest.WhoamiDigest)
+	}
+	if rec.Source != "dep-past" {
+		t.Errorf("Source = %q, want dep-past", rec.Source)
+	}
+	if final := waitFinal(t, e.store, rec.Deployment.ID); final.Status != store.StatusHealthy {
+		t.Errorf("final = %s, want healthy", final.Status)
+	}
+	if image := e.nomad.Job("whoami").TaskGroups[0].Tasks[0].Config["image"]; image != apptest.WhoamiDigest {
+		t.Errorf("Nomad's image = %v, want the pinned digest", image)
+	}
+}
+
+// Feature 011: a deploy that drops a secret says its value is deleted.
+func TestDeployWarnsRemovedSecrets(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	a := whoami()
+	a.Services[0].Secrets = []app.Secret{set("TOKEN", "one"), set("KEEP", "two")}
+	first, err := e.svc.Deploy(ctx, a, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy() = %v", err)
+	}
+	waitFinal(t, e.store, first.Deployment.ID)
+
+	a.Services[0].Secrets = []app.Secret{{Name: "KEEP"}}
+	rec, err := e.svc.Deploy(ctx, a, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy() = %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+	if len(rec.Warnings) != 1 || !strings.Contains(rec.Warnings[0].Message, `secret "TOKEN"`) {
+		t.Errorf("warnings = %+v, want one naming TOKEN", rec.Warnings)
+	}
+}
+
+func TestRemovedSecrets(t *testing.T) {
+	svc := func(name string, secrets ...string) app.Service {
+		s := app.Service{Name: name}
+		for _, n := range secrets {
+			s.Secrets = append(s.Secrets, app.Secret{Name: n})
+		}
+		return s
+	}
+	tests := []struct {
+		name      string
+		old, next []app.Service
+		want      []string
+	}{
+		{"same", []app.Service{svc("web", "A")}, []app.Service{svc("web", "A")}, nil},
+		{"one dropped", []app.Service{svc("web", "A", "B")}, []app.Service{svc("web", "B")}, []string{`"web"`, `"A"`}},
+		{"service gone", []app.Service{svc("web"), svc("db", "P")}, []app.Service{svc("web")}, []string{`"db"`, `"P"`}},
+		{"moved to another service", []app.Service{svc("web", "A")}, []app.Service{svc("api", "A")}, []string{`"web"`, `"A"`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RemovedSecrets(app.App{Services: tt.old}, app.App{Services: tt.next})
+			if len(tt.want) == 0 {
+				if len(got) != 0 {
+					t.Errorf("got %+v, want none", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("got %+v, want one warning", got)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(got[0].Message, w) {
+					t.Errorf("%q doesn't name %s", got[0].Message, w)
+				}
+			}
+		})
+	}
+}

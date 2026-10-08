@@ -96,10 +96,21 @@ func (s *Server) AddBadDigestHeader(repo, tag string) {
 	s.add(repo, tag, manifest{mediaType: MediaTypeManifest, digest: "md5:abc", body: []byte(`{}`)})
 }
 
+// add serves m for repo:tag and, as a real registry does, for
+// repo@<its digest>.
 func (s *Server) add(repo, tag string, m manifest) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.manifests[key{repo, tag}] = m
+	s.manifests[key{repo, m.digest}] = m
+}
+
+// Delete stops serving repo:ref, a tag or a digest, as if it were deleted
+// from the registry.
+func (s *Server) Delete(repo, ref string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.manifests, key{repo, ref})
 }
 
 // Fail makes every manifest request for repo:tag answer status.

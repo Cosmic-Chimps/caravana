@@ -320,7 +320,7 @@ func TestListDeployments(t *testing.T) {
 	for i := range 25 {
 		d := apptest.Whoami().Deployment
 		d.ID = fmt.Sprintf("d%02d", i)
-		if _, err := e.Store.CreateDeployment(ctx, "whoami", d); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, "whoami", d, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -381,7 +381,7 @@ func TestListRecentDeployments(t *testing.T) {
 		d := apptest.Whoami().Deployment
 		d.ID = fmt.Sprintf("d%02d", i)
 		appID := []string{"whoami", "blog"}[i%2]
-		if _, err := e.Store.CreateDeployment(ctx, appID, d); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, appID, d, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond) // distinct creation times keep "newest" unambiguous
@@ -504,7 +504,7 @@ func TestDeploymentProgress(t *testing.T) {
 		}{{"d1", 0, store.StatusRunning}, {"d2", 0, store.StatusHealthy}, {"d3", 1, store.StatusRunning}, {"d4", 1, store.StatusRunning}} {
 			dep := apptest.Whoami().Deployment
 			dep.ID = d.id
-			if _, err := e.Store.CreateDeployment(ctx, "whoami", dep); err != nil {
+			if _, err := e.Store.CreateDeployment(ctx, "whoami", dep, nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := e.Store.UpdateDeployment(ctx, d.id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: new(d.version)}); err != nil {

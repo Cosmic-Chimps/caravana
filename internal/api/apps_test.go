@@ -94,7 +94,7 @@ func seedHealthy(t *testing.T, e *testEnv, id string, replicas int, version uint
 	}
 	d := apptest.Whoami().Deployment
 	d.ID = id + "-d1"
-	if _, err := e.Store.CreateDeployment(ctx, id, d); err != nil {
+	if _, err := e.Store.CreateDeployment(ctx, id, d, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Store.UpdateDeployment(ctx, d.ID, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: &version}); err != nil {

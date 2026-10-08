@@ -148,3 +148,52 @@ func TestResolve(t *testing.T) {
 		}
 	})
 }
+
+func TestCheckDigests(t *testing.T) {
+	ctx := context.Background()
+	const shopDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	twoServices := func() app.App {
+		a := whoami()
+		a.Services = append(a.Services, app.Service{Name: "worker", Image: "ghcr.io/acme/jobs:main"})
+		return a
+	}
+	digests := map[string]string{"web": apptest.WhoamiDigest, "worker": "ghcr.io/acme/jobs@" + shopDigest}
+
+	t.Run("all still there", func(t *testing.T) {
+		d, reg, _ := newTestDeployer(t)
+		reg.AddIndex("traefik/whoami", "latest", whoamiDigest)
+		reg.AddManifest("acme/jobs", "main", shopDigest)
+		if err := d.CheckDigests(ctx, twoServices(), digests); err != nil {
+			t.Errorf("CheckDigests() = %v, want nil", err)
+		}
+	})
+
+	t.Run("one deleted", func(t *testing.T) {
+		d, reg, _ := newTestDeployer(t)
+		reg.AddIndex("traefik/whoami", "latest", whoamiDigest)
+		err := d.CheckDigests(ctx, twoServices(), digests)
+		var ie *ImageError
+		if !errors.As(err, &ie) || ie.Field != "services[1].image" || ie.Image != digests["worker"] {
+			t.Fatalf("CheckDigests() = %v, want an *ImageError on services[1].image", err)
+		}
+		if !errors.Is(err, ErrImageNotFound) {
+			t.Errorf("error %v should match ErrImageNotFound", err)
+		}
+	})
+
+	t.Run("registry failing", func(t *testing.T) {
+		d, reg, _ := newTestDeployer(t)
+		reg.Fail("traefik/whoami", whoamiDigest, 503)
+		if err := d.CheckDigests(ctx, whoami(), digests); !errors.Is(err, ErrRegistryUnavailable) {
+			t.Errorf("CheckDigests() = %v, want ErrRegistryUnavailable", err)
+		}
+	})
+
+	t.Run("no digest recorded for a service", func(t *testing.T) {
+		d, _, _ := newTestDeployer(t)
+		var fe *app.FieldError
+		if err := d.CheckDigests(ctx, whoami(), map[string]string{}); !errors.As(err, &fe) || fe.Field != "services[0].image" {
+			t.Errorf("CheckDigests() = %v, want a field error on services[0].image", err)
+		}
+	})
+}

@@ -29,7 +29,7 @@ func leftover(t *testing.T, status store.Status, version *uint64, inNomad bool) 
 		t.Fatal(err)
 	}
 	id := "leftover"
-	if _, err := st.CreateDeployment(ctx, "whoami", app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}); err != nil {
+	if _, err := st.CreateDeployment(ctx, "whoami", app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if status == store.StatusRunning {

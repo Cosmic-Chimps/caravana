@@ -164,7 +164,7 @@ func finalDeployment(t *testing.T, st *store.Store, appID, id string, status sto
 	t.Helper()
 	ctx := context.Background()
 	d := app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}
-	if _, err := st.CreateDeployment(ctx, appID, d); err != nil {
+	if _, err := st.CreateDeployment(ctx, appID, d, nil, ""); err != nil {
 		t.Fatalf("CreateDeployment: %v", err)
 	}
 	if _, err := st.UpdateDeployment(ctx, id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: &version}); err != nil {

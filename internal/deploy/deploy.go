@@ -176,3 +176,29 @@ func (d *Deployer) Resolve(ctx context.Context, a app.App) (map[string]string, [
 	}
 	return digests, warnings, nil
 }
+
+// CheckDigests checks that every service's pinned image in digests (service
+// name → "repo@sha256:…", as Resolve returns them) is still in its
+// registry, in service order. The first image that is gone or can't be
+// checked is an *ImageError on that service's image field.
+func (d *Deployer) CheckDigests(ctx context.Context, a app.App, digests map[string]string) error {
+	timing := d.Timing.withDefaults()
+	for i, svc := range a.Services {
+		field := fmt.Sprintf("services[%d].image", i)
+		ref, err := registry.Parse(digests[svc.Name])
+		if err != nil || ref.Digest == "" {
+			return app.NewFieldError(field, "no pinned image recorded for service %q", svc.Name)
+		}
+		imageCtx, cancel := context.WithTimeout(ctx, timing.ImageTimeout)
+		err = d.registry.Exists(imageCtx, ref)
+		cancel()
+		if err != nil {
+			kind := ErrRegistryUnavailable
+			if errors.Is(err, registry.ErrNotFound) {
+				kind = ErrImageNotFound
+			}
+			return &ImageError{Field: field, Image: digests[svc.Name], Err: err, kind: kind}
+		}
+	}
+	return nil
+}

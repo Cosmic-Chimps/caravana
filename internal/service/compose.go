@@ -17,7 +17,7 @@ func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.R
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	rec, err := s.saveAndDeploy(ctx, a, trigger, warnings)
+	rec, err := s.saveAndDeploy(ctx, a, trigger, warnings, nil)
 	return rec, compose.InFile(err, a)
 }
 

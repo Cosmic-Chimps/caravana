@@ -42,12 +42,19 @@ type appState struct {
 // deployment record exists, errors are *DeployError and the record says
 // failed.
 func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.saveAndDeploy(ctx, a, trigger, nil)
+	return s.saveAndDeploy(ctx, a, trigger, nil, nil)
+}
+
+// pinned is a redeploy of a past deployment: its digests are used as they
+// are, without resolving the tags again, and the new record names it.
+type pinned struct {
+	digests map[string]string
+	source  string // the past deployment's ID
 }
 
 // saveAndDeploy is Deploy with warnings from the input (a Compose file) to
-// record with the deployment.
-func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trigger, warnings []app.Warning) (store.DeploymentRecord, error) {
+// record with the deployment, and pin set for a redeploy of a past one.
+func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trigger, warnings []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -59,6 +66,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trig
 	}
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		warnings = append(warnings, unmountedVolumes(old.App, a)...)
+		warnings = append(warnings, RemovedSecrets(old.App, a)...)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return store.DeploymentRecord{}, err
 	}
@@ -67,7 +75,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trig
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
-	return s.deployWarned(ctx, a, trigger, warnings)
+	return s.deployWarned(ctx, a, trigger, warnings, pin)
 }
 
 // unmountedVolumes warns about each volume the stored app has and the new
@@ -92,6 +100,27 @@ func unmountedVolumes(old, next app.App) []app.Warning {
 	return out
 }
 
+// RemovedSecrets warns about each secret the stored app has and the new one
+// doesn't: a deploy replaces the secrets whole, so its value is deleted.
+func RemovedSecrets(old, next app.App) []app.Warning {
+	kept := map[string]bool{}
+	for _, svc := range next.Services {
+		for _, sec := range svc.Secrets {
+			kept[svc.Name+"/"+sec.Name] = true
+		}
+	}
+	var out []app.Warning
+	for _, svc := range old.Services {
+		for _, sec := range svc.Secrets {
+			if !kept[svc.Name+"/"+sec.Name] {
+				out = append(out, app.Warning{Message: fmt.Sprintf(
+					"service %q no longer has secret %q; its value is deleted", svc.Name, sec.Name)})
+			}
+		}
+	}
+	return out
+}
+
 // Redeploy deploys the stored app again, exactly as Deploy would. An unknown
 // app is store.ErrNotFound. Feature 004's webhook calls it.
 func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigger) (store.DeploymentRecord, error) {
@@ -108,14 +137,19 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 
 // deploy runs one deploy of a.
 func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.deployWarned(ctx, a, trigger, nil)
+	return s.deployWarned(ctx, a, trigger, nil, nil)
 }
 
 // deployWarned is deploy with warnings about how a was made (a Compose
-// file's changed meanings); they come first in the record.
-func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, input []app.Warning) (store.DeploymentRecord, error) {
+// file's changed meanings), which come first in the record, and pin set for
+// a redeploy of a past deployment.
+func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, input []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
 	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}}
-	rec, err := s.store.CreateDeployment(ctx, a.ID, dep)
+	source := ""
+	if pin != nil {
+		source = pin.source
+	}
+	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, source)
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -140,8 +174,13 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	ctx, cancel := context.WithTimeout(ctx, s.budget)
 	defer cancel()
 
-	digests, warnings, err := s.deployer.Resolve(ctx, a)
-	if err != nil {
+	var (
+		digests  map[string]string
+		warnings []app.Warning
+	)
+	if pin != nil {
+		digests = pin.digests
+	} else if digests, warnings, err = s.deployer.Resolve(ctx, a); err != nil {
 		return s.fail(rec, err)
 	}
 	if latest := s.latestOf(a.ID); latest != dep.ID {

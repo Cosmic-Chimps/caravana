@@ -34,11 +34,11 @@ func TestDeployments(t *testing.T) {
 
 	t.Run("create", func(t *testing.T) {
 		s := storeWithApp(t)
-		if _, err := s.CreateDeployment(ctx, "nope", newDeployment("d1")); !errors.Is(err, ErrNotFound) {
+		if _, err := s.CreateDeployment(ctx, "nope", newDeployment("d1"), nil, ""); !errors.Is(err, ErrNotFound) {
 			t.Errorf("create for an unknown app = %v, want ErrNotFound", err)
 		}
 
-		rec, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"))
+		rec, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, "")
 		if err != nil {
 			t.Fatalf("CreateDeployment: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestDeployments(t *testing.T) {
 			t.Errorf("GetDeployment = %+v, %v; want %+v", got, err, rec)
 		}
 
-		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1")); !errors.Is(err, ErrAlreadyExists) {
+		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, ""); !errors.Is(err, ErrAlreadyExists) {
 			t.Errorf("duplicate create = %v, want ErrAlreadyExists", err)
 		}
 	})
@@ -61,7 +61,7 @@ func TestDeployments(t *testing.T) {
 	t.Run("list newest first", func(t *testing.T) {
 		s := storeWithApp(t)
 		for _, id := range []string{"d1", "d2", "d3"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -73,7 +73,7 @@ func TestDeployments(t *testing.T) {
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 		s.now = func() time.Time { return fixed }
 		for _, id := range []string{"a", "c", "b"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -99,7 +99,7 @@ func TestDeployments(t *testing.T) {
 
 	t.Run("update", func(t *testing.T) {
 		s := storeWithApp(t)
-		created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"))
+		created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, "")
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
@@ -152,7 +152,7 @@ func TestDeployments(t *testing.T) {
 	t.Run("list with a limit", func(t *testing.T) {
 		s := storeWithApp(t)
 		for _, id := range []string{"d1", "d2", "d3"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -180,7 +180,7 @@ func TestDeployments(t *testing.T) {
 		s := storeWithApp(t)
 		final := map[string]Status{"healthy": StatusHealthy, "failed": StatusFailed, "reverted": StatusReverted, "superseded": StatusSuperseded}
 		for _, id := range []string{"pending", "running", "healthy", "failed", "reverted", "superseded"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 			if id == "pending" {
@@ -251,7 +251,7 @@ func TestTransitions(t *testing.T) {
 		for _, to := range append(all, "bogus") {
 			t.Run(string(from)+"->"+string(to), func(t *testing.T) {
 				s := storeWithApp(t)
-				if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1")); err != nil {
+				if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, ""); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				for _, step := range pathTo[from] {
@@ -289,7 +289,7 @@ func TestLatestHealthyDeployment(t *testing.T) {
 	// end creates a deployment and moves it to a final status.
 	end := func(id string, final Status) {
 		t.Helper()
-		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id)); err != nil {
+		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: StatusRunning}); err != nil {
@@ -347,7 +347,7 @@ func TestLatestDeployments(t *testing.T) {
 		for _, d := range []struct{ app, id string }{
 			{"blog", "b1"}, {"whoami", "w1"}, {"blog", "b2"}, {"whoami", "w2"}, {"blog", "b3"},
 		} {
-			if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", d.id, err)
 			}
 		}
@@ -372,7 +372,7 @@ func TestLatestDeployments(t *testing.T) {
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 		s.now = func() time.Time { return fixed }
 		for _, id := range []string{"c", "a", "b"} {
-			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -398,7 +398,7 @@ func TestListRecentDeployments(t *testing.T) {
 	for _, d := range []struct{ app, id string }{
 		{"blog", "d1"}, {"whoami", "d2"}, {"blog", "d3"}, {"shop", "d4"}, {"whoami", "d5"},
 	} {
-		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id)); err != nil {
+		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, ""); err != nil {
 			t.Fatalf("create %s: %v", d.id, err)
 		}
 	}
@@ -438,7 +438,7 @@ func TestListDeploymentsBefore(t *testing.T) {
 	for _, d := range []struct{ app, id string }{
 		{"whoami", "d1"}, {"blog", "b1"}, {"whoami", "d2"}, {"whoami", "d3"}, {"whoami", "d4"},
 	} {
-		rec, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id))
+		rec, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, "")
 		if err != nil {
 			t.Fatalf("create %s: %v", d.id, err)
 		}
@@ -478,4 +478,67 @@ func TestListDeploymentsBefore(t *testing.T) {
 	if got, err := s.ListDeploymentsBefore(ctx, "whoami", created["d4"], 0); err != nil || len(got) != 0 {
 		t.Errorf("limit 0 = %v, %v; want nothing (the caller's mistake, never everything)", got, err)
 	}
+}
+
+func TestDeploymentDefinition(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithApp(t)
+
+	def := apptest.Whoami().App
+	def.Services[0].Env = []app.EnvVar{{Name: "MODE", Value: "a"}}
+	def.Services[0].Secrets = []app.Secret{{Name: "TOKEN", Value: new("s3cret")}}
+
+	created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d2"), &def, "d1")
+	if err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+	old, err := s.CreateDeployment(ctx, "whoami", newDeployment("d0"), nil, "")
+	if err != nil {
+		t.Fatalf("CreateDeployment: %v", err)
+	}
+
+	t.Run("round trip without secret values", func(t *testing.T) {
+		got, err := s.GetDeployment(ctx, "d2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := def.WithoutSecretValues()
+		if !reflect.DeepEqual(got.Definition, &want) || !reflect.DeepEqual(created.Definition, &want) {
+			t.Errorf("Definition = %+v, want %+v", got.Definition, want)
+		}
+		if got.Source != "d1" {
+			t.Errorf("Source = %q, want d1", got.Source)
+		}
+		if got.Definition.Services[0].Secrets[0].Value != nil {
+			t.Error("a secret value was stored")
+		}
+	})
+
+	t.Run("none recorded", func(t *testing.T) {
+		if old.Definition != nil || old.Source != "" {
+			t.Errorf("Definition = %v, Source = %q, want nil and empty", old.Definition, old.Source)
+		}
+	})
+
+	t.Run("updates keep them", func(t *testing.T) {
+		upd, err := s.UpdateDeployment(ctx, "d2", DeploymentUpdate{Status: StatusRunning, JobVersion: new(uint64(3))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if upd.Definition == nil || upd.Source != "d1" {
+			t.Errorf("after update: Definition = %v, Source = %q", upd.Definition, upd.Source)
+		}
+	})
+
+	t.Run("listed", func(t *testing.T) {
+		recs, err := s.ListDeployments(ctx, "whoami", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range recs {
+			if r.Deployment.ID == "d2" && (r.Definition == nil || r.Source != "d1") {
+				t.Errorf("listed d2 lost its definition or source")
+			}
+		}
+	})
 }

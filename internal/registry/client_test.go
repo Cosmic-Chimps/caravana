@@ -179,3 +179,45 @@ func TestResolveErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestExists(t *testing.T) {
+	ctx := context.Background()
+	fake := registrytest.New(t)
+	fake.AddIndex("traefik/whoami", "latest", testDigest)
+	fake.AddManifest("acme/shop", "main", otherDigest)
+	fake.Delete("acme/shop", otherDigest)
+	fake.AddIndex("acme/flaky", "v1", testDigest)
+	fake.Fail("acme/flaky", testDigest, http.StatusServiceUnavailable)
+
+	tests := []struct {
+		name, image string
+		want        error
+	}{
+		{"pinned image still there", "traefik/whoami@" + testDigest, nil},
+		{"pinned image deleted", "ghcr.io/acme/shop@" + otherDigest, ErrNotFound},
+		{"never pushed", "traefik/whoami@" + otherDigest, ErrNotFound},
+		{"registry down", "acme/flaky@" + testDigest, ErrUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := newClient(fake).Exists(ctx, mustParse(t, tt.image))
+			if !errors.Is(err, tt.want) || (tt.want == nil) != (err == nil) {
+				t.Errorf("Exists(%s) = %v, want %v", tt.image, err, tt.want)
+			}
+		})
+	}
+
+	t.Run("token handshake", func(t *testing.T) {
+		fake.RequireToken(true)
+		defer fake.RequireToken(false)
+		if err := newClient(fake).Exists(ctx, mustParse(t, "traefik/whoami@"+testDigest)); err != nil {
+			t.Errorf("Exists = %v, want nil", err)
+		}
+	})
+
+	t.Run("a tag is not a digest", func(t *testing.T) {
+		if err := newClient(fake).Exists(ctx, mustParse(t, "traefik/whoami:latest")); err == nil {
+			t.Error("Exists of a tag = nil, want an error")
+		}
+	})
+}

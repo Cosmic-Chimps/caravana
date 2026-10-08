@@ -61,15 +61,29 @@ func (c *Client) Resolve(ctx context.Context, ref Reference) (string, error) {
 	if ref.Digest != "" {
 		return ref.Pinned(ref.Digest), nil
 	}
-	digest, err := c.resolve(ctx, ref)
+	digest, err := c.resolve(ctx, ref, ref.Tag)
 	if err != nil {
 		return "", fmt.Errorf("%s: %s: %w", ref.Registry, ref, err)
 	}
 	return ref.Pinned(digest), nil
 }
 
-// resolve asks for the tag's digest, retrying network errors and 5xx.
-func (c *Client) resolve(ctx context.Context, ref Reference) (string, error) {
+// Exists checks that the registry still has ref's digest: an image pinned
+// earlier may have been deleted since. A ref without a digest is an error.
+// The answer is nil, or an error wrapping ErrNotFound or ErrUnavailable.
+func (c *Client) Exists(ctx context.Context, ref Reference) error {
+	if ref.Digest == "" {
+		return fmt.Errorf("%s: %s: no digest to check", ref.Registry, ref)
+	}
+	if _, err := c.resolve(ctx, ref, ref.Digest); err != nil {
+		return fmt.Errorf("%s: %s: %w", ref.Registry, ref, err)
+	}
+	return nil
+}
+
+// resolve asks for the digest of the manifest named by reference (a tag or a
+// digest), retrying network errors and 5xx.
+func (c *Client) resolve(ctx context.Context, ref Reference, reference string) (string, error) {
 	delays := c.retryDelays
 	if delays == nil {
 		delays = []time.Duration{500 * time.Millisecond, time.Second}
@@ -78,7 +92,7 @@ func (c *Client) resolve(ctx context.Context, ref Reference) (string, error) {
 	if e, ok := c.Endpoints[ref.Registry]; ok {
 		base = e
 	}
-	manifestURL := base + "/v2/" + ref.Repository + "/manifests/" + url.PathEscape(ref.Tag)
+	manifestURL := base + "/v2/" + ref.Repository + "/manifests/" + url.PathEscape(reference)
 
 	for attempt := 0; ; attempt++ {
 		digest, retry, err := c.try(ctx, ref, manifestURL)
