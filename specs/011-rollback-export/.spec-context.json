@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Rollback and export",
   "branch": "011-rollback-export",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planning",
   "history": [
     {
       "step": "specify",
@@ -18,6 +18,27 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-08T20:11:39.856Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-08T20:19:07.996Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:24:47.295Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:25:31.708Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
@@ -100,5 +121,49 @@
     "constraint: constitution VI HCL generated only by export",
     "constraint: constitution VII no secret values in exports"
   ],
-  "intent": "Redeploy any earlier healthy version with its pinned digests, and export any app as a plain Nomad HCL jobspec"
+  "intent": "Redeploy any earlier healthy version with its pinned digests, and export any app as a plain Nomad HCL jobspec",
+  "decisions": [
+    {
+      "decision": "Record the app definition and source on each deployment row (migration 0006)",
+      "why": "digests are already per deployment; only the definition is missing",
+      "rejected": "Nomad job revert; a separate definitions table"
+    },
+    {
+      "decision": "Redeploy runs saveAndDeploy with pinned digests and a source",
+      "why": "one deploy path, every deploy rule applies",
+      "rejected": "a new trigger value rollback"
+    },
+    {
+      "decision": "Registry HEAD of each digest before anything changes",
+      "why": "Resolve returns digest refs without asking the registry",
+      "rejected": "letting Nomad fail the pull later"
+    },
+    {
+      "decision": "Warn on removed secrets for every deploy, and show them in the console confirmation",
+      "why": "any deploy that drops a secret deletes its value",
+      "rejected": "a rollback-only rule"
+    },
+    {
+      "decision": "Hand-written HCL writer in nomadjob with golden files and a field-coverage test",
+      "why": "small subset, no new module",
+      "rejected": "hclwrite + go-cty; rendering Nomad stored job"
+    },
+    {
+      "decision": "Export = Translate(definition, deployment, current settings) + header",
+      "why": "pure, no Nomad access, no policy change",
+      "rejected": "reading the job from Nomad"
+    },
+    {
+      "decision": "Gate step parses the export with Nomad and plans it: diff None",
+      "why": "proves FR-013/SC-003 for real",
+      "rejected": "golden files alone"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Definition per deployment, redeploy through saveAndDeploy with pinned digests, export via a pure HCL writer",
+      "key_finding": "Deployments store only digests today, and registry.Resolve never checks a digest exists"
+    }
+  },
+  "approach": "Every deployment records its definition. Redeploying a healthy past deployment saves that definition and runs the normal deploy with its digests pinned, after a registry existence check. Export renders Translate's job as HCL with a hand-written pure writer and a header listing cluster prerequisites."
 }
