@@ -100,7 +100,8 @@ pinned by digest via `CARAVANA_NAMES_IMAGE`, that rewrites the group's `/etc/hos
 become Nomad dynamic host volumes `<app>_<volume>` (`mkdir` plugin), created by
 `deploy.EnsureVolumes` before register and deleted with the app; a group with a volume runs one
 copy and deploys stop-then-start. The scoped policy gained `host-volume-create/-delete` and
-`host_volume "*_*"`, and the gate has a step `compose-app`. Feature 010 is implemented on branch
+`host_volume "*"` write with `"traefik-acme"` deny (Nomad allows no `_` in these names), and the
+gate has a step `compose-app`. Feature 010 is implemented on branch
 `010-databases-backups` (stacked on 009): a service with `backup: {engine: postgres, schedule?,
 keep?}` gets a Nomad periodic batch job `<app>_<service>_backup` (pg_dump with the service's
 pinned image, then rclone uploads to the installation's S3-compatible destination and deletes
@@ -112,7 +113,9 @@ watcher in `service/backups.go` records runs and restores in SQLite (`0005_backu
 destination's secret key is in the Nomad Variable `caravana/backup-destination`. API: destination
 GET/PUT, list, back up now, restore (`api/openapi.yaml` 0.8.0); console: Settings › Backup
 destination and a Backups tab. The policy gained variables `caravana/*`, and the gate has a step
-`backup-restore` (A, back up, B, restore, A) against an `rclone serve s3` bucket job. Next: 011.
+`backup-restore` (A, back up, B, restore, A) against an `rclone serve s3` bucket job. `TestLab`
+gives the in-process Caravana a token made from `deploy/vm/caravana-policy.hcl` (applied on every
+run), not the lab's management token, so a missing capability fails in the lab. Next: 011.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

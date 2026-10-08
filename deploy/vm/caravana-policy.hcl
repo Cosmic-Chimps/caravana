@@ -7,9 +7,10 @@
 # nomad/jobs/<app>/, which only that service's tasks can read.
 # The host volume capabilities are the apps' volumes (feature 009): Caravana creates a dynamic host
 # volume "<app>_<volume>" before the first deploy that names it and deletes it with the app
-# (host-volume-create also allows reading them). The host_volume rule lets Caravana's jobs mount
-# those volumes, and only those: their names always contain "_", which the host's own volumes
-# (traefik-acme) don't.
+# (host-volume-create also allows reading them). The host_volume rules let Caravana's jobs mount
+# those volumes and not the host's own traefik-acme (Traefik's certificates and keys). Nomad
+# accepts only letters, digits, "-" and "*" in these names, so a rule can't match "_"; an exact
+# name wins over a glob, so the deny holds.
 # setup.sh applies it on every run, so `host.sh up` brings an existing host up to date.
 namespace "default" {
   capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete"]
@@ -26,6 +27,10 @@ namespace "default" {
   }
 }
 
-host_volume "*_*" {
+host_volume "*" {
   policy = "write"
+}
+
+host_volume "traefik-acme" {
+  policy = "deny"
 }

@@ -52,13 +52,22 @@ func startLab(t *testing.T) labEnv {
 		t.Fatal(err)
 	}
 
-	// Caravana itself, in-process, with the webhook-only listener.
+	// Caravana itself, in-process, with the webhook-only listener. It gets the
+	// scoped token, as on the host; the test's own client keeps the lab's
+	// management token for its checks.
+	scoped := labCaravanaToken(t, nomad)
+	getenv := func(key string) string {
+		if key == "NOMAD_TOKEN" {
+			return scoped
+		}
+		return os.Getenv(key)
+	}
 	addr, hookAddr, dataDir := freeAddr(t), freeAddr(t), t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	var stderr bytes.Buffer
 	exit := make(chan int, 1)
 	go func() {
-		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", dataDir}, os.Getenv, &stderr)
+		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", dataDir}, getenv, &stderr)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -97,6 +106,37 @@ func TestLab(t *testing.T) {
 func TestConsoleLab(t *testing.T) {
 	env := startLab(t)
 	runConsole(t, env.target, labEmail, labPassword)
+}
+
+// labCaravanaToken does what deploy/vm/setup.sh does on the host: it applies
+// the policy in deploy/vm/caravana-policy.hcl as "caravana" and makes a client
+// token with only that policy, deleted when the test ends. Every lab run thus
+// checks the current policy file, so a missing capability fails here and not
+// first on a real host.
+func labCaravanaToken(t *testing.T, nomad *api.Client) string {
+	t.Helper()
+	rules, err := os.ReadFile("../../deploy/vm/caravana-policy.hcl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := &api.ACLPolicy{
+		Name:        "caravana",
+		Description: "Caravana registers jobs and follows deployments",
+		Rules:       string(rules),
+	}
+	if _, err := nomad.ACLPolicies().Upsert(policy, nil); err != nil {
+		t.Fatalf("apply the caravana policy (does NOMAD_TOKEN hold the lab's management token?): %v", err)
+	}
+	token, _, err := nomad.ACLTokens().Create(&api.ACLToken{
+		Name:     "caravana-lab-test",
+		Type:     "client",
+		Policies: []string{"caravana"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("create the scoped token: %v", err)
+	}
+	t.Cleanup(func() { _, _ = nomad.ACLTokens().Delete(token.AccessorID, nil) })
+	return token.SecretID
 }
 
 // The admin the lab test creates, as the owner would on the host.
