@@ -210,7 +210,7 @@ func TestDeleteApp(t *testing.T) {
 	t.Run("removes the token, the deployments and the app", func(t *testing.T) {
 		s := storeWithApps(t)
 		for _, id := range []string{"d1", "d2"} {
-			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, ""); err != nil {
 				t.Fatalf("CreateDeployment: %v", err)
 			}
 		}
@@ -246,7 +246,7 @@ func TestDeleteApp(t *testing.T) {
 
 	t.Run("an unknown ID is ErrNotFound and nothing changes", func(t *testing.T) {
 		s := storeWithApps(t)
-		if _, err := s.CreateDeployment(ctx, "shop", newDeployment("d1")); err != nil {
+		if _, err := s.CreateDeployment(ctx, "shop", newDeployment("d1"), nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.DeleteApp(ctx, "nope"); !errors.Is(err, ErrNotFound) {
@@ -263,7 +263,7 @@ func TestDeleteApp(t *testing.T) {
 	t.Run("another app's rows are untouched", func(t *testing.T) {
 		s := storeWithApps(t)
 		for _, id := range []string{"blog", "shop"} {
-			if _, err := s.CreateDeployment(ctx, id, newDeployment("d-"+id)); err != nil {
+			if _, err := s.CreateDeployment(ctx, id, newDeployment("d-"+id), nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.SetWebhookToken(ctx, id, "bb"); err != nil {
@@ -295,4 +295,18 @@ func TestDeleteApp(t *testing.T) {
 			t.Errorf("InsertApp after delete = %v", err)
 		}
 	})
+}
+
+func TestFormatTimeSorts(t *testing.T) {
+	base := time.Date(2026, 10, 8, 12, 0, 5, 0, time.UTC)
+	earlier, later := base.Add(761200*time.Microsecond), base.Add(761230*time.Microsecond)
+	if formatTime(earlier) >= formatTime(later) {
+		t.Errorf("%s sorts after %s", formatTime(earlier), formatTime(later))
+	}
+	if got, err := parseTime(formatTime(earlier)); err != nil || !got.Equal(earlier) {
+		t.Errorf("round trip = %v, %v", got, err)
+	}
+	if got, err := parseTime("2026-10-08T12:00:05.7612Z"); err != nil || !got.Equal(earlier) {
+		t.Errorf("an older trimmed time = %v, %v", got, err)
+	}
 }

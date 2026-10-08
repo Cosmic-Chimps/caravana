@@ -148,8 +148,12 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 	return rec, nil
 }
 
-// Times are stored as RFC 3339 text in UTC, which sorts correctly as text.
-func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+// Times are stored as RFC 3339 text in UTC with all nine fraction digits, so
+// they sort correctly as text. (RFC3339Nano drops trailing zeros, which made
+// ".7612Z" sort after ".76123Z"; rows written that way still parse.)
+func formatTime(t time.Time) string { return t.UTC().Format(storedTime) }
+
+const storedTime = "2006-01-02T15:04:05.000000000Z07:00"
 
 func parseTime(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, s)
