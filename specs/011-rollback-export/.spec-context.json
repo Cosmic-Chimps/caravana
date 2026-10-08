@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Rollback and export",
   "branch": "011-rollback-export",
-  "currentStep": "plan",
-  "status": "planning",
+  "currentStep": "tasks",
+  "status": "tasking",
   "history": [
     {
       "step": "specify",
@@ -39,61 +39,99 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-08T20:25:31.708Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:25:32.867Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-08T20:28:59.341Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:29:58.359Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
   "telemetryInstanceId": "2f61103c-963c-467a-985b-54fc8f967022",
   "coverage": {
     "FR-001": {
-      "title": "Every deployment records its full definition"
+      "title": "Every deployment records its full definition",
+      "tasks": "T001,T004"
     },
     "FR-002": {
-      "title": "Redeploy an earlier healthy deployment from API and history"
+      "title": "Redeploy an earlier healthy deployment from API and history",
+      "tasks": "T006,T010,T011"
     },
     "FR-003": {
-      "title": "Redeploy uses recorded digests, new job version"
+      "title": "Redeploy uses recorded digests, new job version",
+      "tasks": "T004,T006,T013"
     },
     "FR-004": {
-      "title": "Redeploy recorded with its source deployment"
+      "title": "Redeploy recorded with its source deployment",
+      "tasks": "T001,T006,T010,T011"
     },
     "FR-005": {
-      "title": "Stored definition becomes the redeployed one"
+      "title": "Stored definition becomes the redeployed one",
+      "tasks": "T006"
     },
     "FR-006": {
-      "title": "Refused when a used secret has no value, naming it"
+      "title": "Refused when a used secret has no value, naming it",
+      "tasks": "T006"
     },
     "FR-007": {
-      "title": "Refused when an image digest is gone, naming the service"
+      "title": "Refused when an image digest is gone, naming the service",
+      "tasks": "T003,T005,T006"
     },
     "FR-008": {
-      "title": "Validated like any deploy"
+      "title": "Validated like any deploy",
+      "tasks": "T006"
     },
     "FR-009": {
-      "title": "Removed secrets listed in confirmation and warnings"
+      "title": "Removed secrets listed in confirmation and warnings",
+      "tasks": "T004,T006,T011"
     },
     "FR-010": {
-      "title": "Refused for not healthy or no recorded definition"
+      "title": "Refused for not healthy or no recorded definition",
+      "tasks": "T002,T006,T010"
     },
     "FR-011": {
-      "title": "Export live version as HCL from API and Configure"
+      "title": "Export live version as HCL from API and Configure",
+      "tasks": "T009,T010,T011"
     },
     "FR-012": {
-      "title": "Export any past deployment with a definition"
+      "title": "Export any past deployment with a definition",
+      "tasks": "T009,T010,T011"
     },
     "FR-013": {
-      "title": "Export parses to the registered job, plan shows no change"
+      "title": "Export parses to the registered job, plan shows no change",
+      "tasks": "T007,T008,T013"
     },
     "FR-014": {
-      "title": "Leading comment lists cluster prerequisites"
+      "title": "Leading comment lists cluster prerequisites",
+      "tasks": "T008"
     },
     "FR-015": {
-      "title": "No secret value or token in the export"
+      "title": "No secret value or token in the export",
+      "tasks": "T008,T010"
     },
     "FR-016": {
-      "title": "Export refused without a healthy deployment or definition"
+      "title": "Export refused without a healthy deployment or definition",
+      "tasks": "T002,T009,T010"
     },
     "FR-017": {
-      "title": "openapi in the same change"
+      "title": "openapi in the same change",
+      "tasks": "T010"
     }
   },
   "size": "oversized",
@@ -163,6 +201,9 @@
     "plan": {
       "summary": "Definition per deployment, redeploy through saveAndDeploy with pinned digests, export via a pure HCL writer",
       "key_finding": "Deployments store only digests today, and registry.Resolve never checks a digest exists"
+    },
+    "tasks": {
+      "summary": "15 tasks: foundational store + service lookup, US1 rollback and US2/3 export in parallel, then API+console, gate, docs, validation"
     }
   },
   "approach": "Every deployment records its definition. Redeploying a healthy past deployment saves that definition and runs the normal deploy with its digests pinned, after a registry existence check. Export renders Translate's job as HCL with a hand-written pure writer and a header listing cluster prerequisites."
