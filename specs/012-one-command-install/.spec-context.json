@@ -1,0 +1,104 @@
+{
+  "workflow": "companion",
+  "specName": "One-command install",
+  "branch": "012-one-command-install",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-09T01:08:21.835Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-09T01:11:35.476Z"
+    }
+  ],
+  "last_action": "living specs evaluated — skipped (not configured)",
+  "coverage": {
+    "FR-001": {
+      "title": "One command installs Docker, Nomad with ACLs, Traefik, Caravana under systemd"
+    },
+    "FR-002": {
+      "title": "Options: admin email (required), console domain, Lets Encrypt email"
+    },
+    "FR-003": {
+      "title": "No domain: name derived from the public IP"
+    },
+    "FR-004": {
+      "title": "Console, API and webhooks over trusted HTTPS on the console domain"
+    },
+    "FR-005": {
+      "title": "Preflight checks before any change, naming the failing one"
+    },
+    "FR-006": {
+      "title": "Every download checked against a published checksum"
+    },
+    "FR-007": {
+      "title": "Caravana under systemd, own user, scoped Nomad token, no wait on jobs"
+    },
+    "FR-008": {
+      "title": "Only 22, 80, 443 answer from the internet"
+    },
+    "FR-009": {
+      "title": "Admin created in a terminal, else the command printed"
+    },
+    "FR-010": {
+      "title": "Ends printing the console address and next step"
+    },
+    "FR-011": {
+      "title": "Rerun safe: finishes, idempotent, says what changed"
+    },
+    "FR-012": {
+      "title": "Newer version upgrades in place keeping everything"
+    },
+    "FR-013": {
+      "title": "Failed upgrade puts the previous version back"
+    },
+    "FR-014": {
+      "title": "Older version refused before changes"
+    },
+    "FR-015": {
+      "title": "Uninstall removes Caravana, keeps Nomad, Traefik, apps"
+    },
+    "FR-016": {
+      "title": "sudo caravana admin works with no extra setup"
+    },
+    "FR-017": {
+      "title": "Tagged release publishes installer, binaries, checksums"
+    },
+    "FR-018": {
+      "title": "host.sh rehearsal uses the installer"
+    }
+  },
+  "size": "oversized",
+  "classification": {
+    "projectedFiles": 16,
+    "projectedTasks": 16,
+    "scopeSignal": "none",
+    "verdict": "oversized"
+  },
+  "expectations": [
+    "OSes other than Ubuntu 24.04",
+    "multi-node",
+    "removing Nomad/Docker/Traefik on uninstall",
+    "publishing a release (maintainer action)",
+    "the Phase 2 gate run on a real VM"
+  ],
+  "context": [
+    "area: deploy/vm (host.sh, setup.sh, traefik.nomad.hcl, caravana.service, caravana-policy.hcl)",
+    "area: deploy/dev/setup.sh (Docker, CNI, Nomad pinned with checksums)",
+    "area: .github/workflows (CI only today, no release workflow)",
+    "area: internal/config, internal/ui (public console behind Traefik, trusted proxies)",
+    "constraint: constitution I one binary + SQLite, one-command install, 2 GB VM",
+    "constraint: constitution VII ACLs from the first install",
+    "finding: the console/API are loopback-only today (SSH tunnel); webhook host routes only /v1/webhooks/"
+  ],
+  "intent": "One pasted command turns a fresh Ubuntu VM into a working public Caravana host; same command upgrades; uninstall keeps apps"
+}
