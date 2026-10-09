@@ -84,7 +84,11 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 		"RCLONE_CONFIG_DEST_ACCESS_KEY_ID":     dest.AccessKeyID,
 		"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": dest.SecretAccessKey,
 		"RCLONE_CONFIG_DEST_FORCE_PATH_STYLE":  "true",
-		"BACKUP_PATH":                          path + "/" + appID + "/" + service,
+		// The bucket exists: the owner made it. Without this rclone tries to
+		// create it, which a key limited to one bucket (Cloudflare R2's, say)
+		// may not do, and the upload fails.
+		"RCLONE_CONFIG_DEST_NO_CHECK_BUCKET": "true",
+		"BACKUP_PATH":                        path + "/" + appID + "/" + service,
 	}
 }
 
