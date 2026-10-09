@@ -1,0 +1,31 @@
+name: release
+
+# Pushing a tag v<version> publishes a release: the installer, one tarball per architecture and
+# their checksums, built by tools/release.sh. deploy/install/README.md says how users install it.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # to create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The same checks as CI: a release is never built from a commit that fails them.
+      - run: go vet ./...
+      - run: go test -race ./...
+
+      - name: build
+        run: tools/release.sh build "${GITHUB_REF_NAME#v}" dist
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Caravana ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag

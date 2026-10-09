@@ -29,9 +29,16 @@ jobs:
       - run: go tool staticcheck ./...
       - run: go test -race ./...
 
-      # Lab and VM scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest) checks them.
+      # Lab, VM and install scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest)
+      # checks them. deploy/dev/install-test.sh runs the installer on a VM.
       - name: shellcheck
-        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh tools/*.sh
+        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh tools/*.sh
+
+      # The release a v* tag would publish still builds (tools/release.sh, release.yml).
+      - name: release builds
+        run: |
+          tools/release.sh build 0.0.0-ci "$RUNNER_TEMP/release"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c SHA256SUMS)
 
       # The committed stylesheet must match its sources (the pinned Tailwind CLI, checksum-verified).
       - name: stylesheet is up to date
