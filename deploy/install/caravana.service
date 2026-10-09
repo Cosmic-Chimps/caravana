@@ -1,5 +1,5 @@
-# Caravana control plane on a public host (deploy/vm). It runs under systemd, not as a Nomad
-# job, so a cold start never waits on anything else (docs/plan.md, item 012).
+# Caravana control plane, installed by deploy/install/install.sh. It runs under systemd, not
+# as a Nomad job, so a cold start never waits on anything else (docs/plan.md, item 012).
 [Unit]
 Description=Caravana control plane
 Wants=network-online.target
@@ -9,7 +9,7 @@ After=network-online.target nomad.service
 User=caravana
 Group=caravana
 EnvironmentFile=/etc/caravana/caravana.env
-ExecStart=/usr/local/bin/caravana
+ExecStart=/opt/caravana/current/caravana
 Restart=on-failure
 RestartSec=2
 # Caravana only needs its data directory and the network.

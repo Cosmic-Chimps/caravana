@@ -83,10 +83,12 @@ func startLab(t *testing.T) labEnv {
 			API:      "http://" + addr,
 			APIToken: labAPIToken(t, ctx, dataDir),
 			Webhook:  "http://" + hookAddr,
-			AppHost:  "whoami.localhost",
-			AppURL:   "https://whoami.localhost:8443/",
-			App:      labClient,
-			Nomad:    nomad,
+			// The lab runs Caravana with its webhook-only listener.
+			WebhookOnly: true,
+			AppHost:     "whoami.localhost",
+			AppURL:      "https://whoami.localhost:8443/",
+			App:         labClient,
+			Nomad:       nomad,
 		},
 	}
 }
@@ -108,14 +110,14 @@ func TestConsoleLab(t *testing.T) {
 	runConsole(t, env.target, labEmail, labPassword)
 }
 
-// labCaravanaToken does what deploy/vm/setup.sh does on the host: it applies
-// the policy in deploy/vm/caravana-policy.hcl as "caravana" and makes a client
+// labCaravanaToken does what deploy/install/install.sh does on the host: it applies
+// the policy in deploy/install/caravana-policy.hcl as "caravana" and makes a client
 // token with only that policy, deleted when the test ends. Every lab run thus
 // checks the current policy file, so a missing capability fails here and not
 // first on a real host.
 func labCaravanaToken(t *testing.T, nomad *api.Client) string {
 	t.Helper()
-	rules, err := os.ReadFile("../../deploy/vm/caravana-policy.hcl")
+	rules, err := os.ReadFile("../../deploy/install/caravana-policy.hcl")
 	if err != nil {
 		t.Fatal(err)
 	}

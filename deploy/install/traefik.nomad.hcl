@@ -1,24 +1,32 @@
-# Traefik v3 for a public Caravana host (deploy/vm). Same as the lab's, plus Let's Encrypt
-# (HTTP-01), HTTP→HTTPS redirects, certificates on a host volume, the dashboard on loopback,
-# and one static route: the control plane's webhook host (research R5, R6).
+# Traefik v3 for a Caravana host, run by deploy/install/install.sh. Same as the lab's, plus
+# Let's Encrypt (HTTP-01), HTTP→HTTPS redirects, certificates on a host volume, the dashboard
+# on loopback, and one static route: the console domain, to Caravana (feature 012, R5). Apps
+# get their routes from Nomad service tags.
 #
 # The access log stays off on purpose: webhook tokens can travel in query strings, and Traefik
-# would write full URLs to it (spec FR-009). Don't enable it without dropping query strings.
+# would write full URLs to it. Don't enable it without dropping query strings.
 
-variable "webhook_host" {
+variable "console_domain" {
   type        = string
-  description = "Public host name for Caravana's webhook, e.g. hooks.example.com"
+  description = "The console's domain, e.g. caravana.example.com; empty for no console route"
+  default     = ""
+}
+
+variable "acme" {
+  type        = string
+  description = "production or staging (Let's Encrypt), or none (Traefik's default certificate)"
+  default     = "production"
 }
 
 variable "acme_email" {
   type        = string
   description = "Let's Encrypt account email"
+  default     = ""
 }
 
-variable "acme_ca" {
-  type        = string
-  description = "ACME directory URL: Let's Encrypt production, or staging for test runs"
-  default     = "https://acme-v02.api.letsencrypt.org/directory"
+locals {
+  acme_ca  = var.acme == "staging" ? "https://acme-staging-v02.api.letsencrypt.org/directory" : "https://acme-v02.api.letsencrypt.org/directory"
+  resolver = var.acme == "none" ? "{}" : "{certResolver: letsencrypt}"
 }
 
 job "traefik" {
@@ -50,25 +58,25 @@ job "traefik" {
         destination = "/acme"
       }
 
-      # The one route not made from Nomad service tags (plan's Complexity Tracking): only
-      # /v1/webhooks/ on the webhook host, to Caravana's webhook-only listener on loopback.
-      # Traefik runs in the host's network, so 127.0.0.1 is the host's loopback.
+      # The one route not made from Nomad service tags: the console domain, to Caravana's
+      # listener on loopback (console, API and webhooks). Traefik runs in the host's network,
+      # so 127.0.0.1 is the host's loopback, which Caravana trusts as its proxy. The installer
+      # adds the domain only once the admin exists.
       template {
-        destination = "local/webhook.yml"
-        data        = <<-YAML
+        destination = "local/caravana.yml"
+        data        = var.console_domain == "" ? "{}\n" : <<-YAML
           http:
             routers:
-              caravana-webhook:
-                rule: "Host(`${var.webhook_host}`) && PathPrefix(`/v1/webhooks/`)"
+              caravana:
+                rule: "Host(`${var.console_domain}`)"
                 entryPoints: [websecure]
-                tls:
-                  certResolver: letsencrypt
-                service: caravana-webhook
+                tls: ${local.resolver}
+                service: caravana
             services:
-              caravana-webhook:
+              caravana:
                 loadBalancer:
                   servers:
-                    - url: "http://127.0.0.1:7071"
+                    - url: "http://127.0.0.1:7070"
           YAML
       }
 
@@ -80,7 +88,7 @@ job "traefik" {
           "--entrypoints.web.http.redirections.entrypoint.to=websecure",
           "--entrypoints.web.http.redirections.entrypoint.scheme=https",
           "--entrypoints.websecure.address=:443",
-          # Dashboard and API on loopback only; reach them through deploy/vm/host.sh tunnel.
+          # Dashboard and API on loopback only; reach them through an SSH tunnel.
           "--entrypoints.traefik.address=127.0.0.1:8081",
           "--api.dashboard=true",
           "--api.insecure=true",
@@ -91,11 +99,11 @@ job "traefik" {
           # Follow Nomad's event stream instead of polling every 15 s, so a route is
           # dropped within the translator's 5 s shutdown_delay when an allocation stops.
           "--providers.nomad.watch=true",
-          "--providers.file.filename=/local/webhook.yml",
+          "--providers.file.filename=/local/caravana.yml",
           "--certificatesresolvers.letsencrypt.acme.email=${var.acme_email}",
           "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json",
           "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",
-          "--certificatesresolvers.letsencrypt.acme.caserver=${var.acme_ca}",
+          "--certificatesresolvers.letsencrypt.acme.caserver=${local.acme_ca}",
           "--log.level=INFO",
         ]
       }

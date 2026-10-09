@@ -1,5 +1,5 @@
 # Nomad agent config for a public Caravana host: one node, server + client, ACLs on.
-# Rendered by deploy/vm/setup.sh (it fills or drops the CPU line). Unlike the lab, nothing
+# Rendered by deploy/install/install.sh (it fills or drops the CPU line). Unlike the lab, nothing
 # listens publicly: Nomad is on loopback and every allocation port is on the private
 # caravana0 interface, so apps are reached only through Traefik (spec FR-005, FR-005a).
 

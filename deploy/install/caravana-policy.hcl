@@ -11,7 +11,7 @@
 # those volumes and not the host's own traefik-acme (Traefik's certificates and keys). Nomad
 # accepts only letters, digits, "-" and "*" in these names, so a rule can't match "_"; an exact
 # name wins over a glob, so the deny holds.
-# setup.sh applies it on every run, so `host.sh up` brings an existing host up to date.
+# install.sh applies it on every run, so running the installer again brings a host up to date.
 namespace "default" {
   capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete"]
 
