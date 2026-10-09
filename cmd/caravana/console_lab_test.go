@@ -84,6 +84,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-reads", c.reads},
 		{"console-deploy-changed", c.deployChanged},
 		{"console-secrets", c.secrets},
+		{"console-redeploy-version", c.redeployVersion},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -236,6 +237,57 @@ func (c *console) secrets(t *testing.T) {
 	if _, _, err := c.g.target.Nomad.Variables().Read(path, nil); err == nil {
 		t.Errorf("Nomad variable %s is still there after the secret was removed", path)
 	}
+}
+
+// redeployVersion: the history's "Redeploy this version" on the first healthy
+// deployment (before the image changed) deploys it again from the console,
+// names it as the source, and the stored app is that version once more
+// (feature 011).
+func (c *console) redeployVersion(t *testing.T) {
+	var list struct {
+		Deployments []struct {
+			ID                 string `json:"id"`
+			Status             string `json:"status"`
+			Source             string `json:"source"`
+			Trigger            string `json:"trigger"`
+			DefinitionRecorded bool   `json:"definitionRecorded"`
+		} `json:"deployments"`
+	}
+	c.g.getJSON(t, "/v1/apps/whoami/deployments?limit=100", &list)
+	past := ""
+	for _, d := range list.Deployments { // newest first: the last match is the oldest
+		if d.Status == "healthy" && d.DefinitionRecorded {
+			past = d.ID
+		}
+	}
+	if past == "" {
+		t.Fatal("no healthy deployment to go back to")
+	}
+	if _, body := c.get(t, "/apps/whoami/deployments"); !strings.Contains(body, "/apps/whoami/deployments/"+past+"/redeploy") {
+		t.Fatalf("the history doesn't offer to redeploy %s", past)
+	}
+
+	c.prev = c.summary(t).LastDeployment.ID
+	resp, body := c.post(t, "/apps/whoami/deployments/"+past+"/redeploy", url.Values{})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps/whoami/deployments" {
+		t.Fatalf("POST redeploy = %d → %q: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+	c.waitDeployment(t, 3*time.Minute, c.prev)
+
+	c.g.getJSON(t, "/v1/apps/whoami/deployments?limit=1", &list)
+	if d := list.Deployments[0]; d.Source != past || d.Trigger != "console" || d.Status != "healthy" {
+		t.Errorf("newest deployment = %+v, want a healthy console redeploy of %s", d, past)
+	}
+	var stored struct {
+		App struct {
+			Services []struct{ Image string } `json:"services"`
+		} `json:"app"`
+	}
+	c.g.getJSON(t, "/v1/apps/whoami", &stored)
+	if stored.App.Services[0].Image == "traefik/whoami:v1.10" {
+		t.Errorf("the stored app still has the later image %s", stored.App.Services[0].Image)
+	}
+	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends

@@ -105,6 +105,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"same-payload", false, g.samePayload},
 		{"broken-reverts", false, g.brokenReverts},
 		{"missing-tag", false, g.missingTag},
+		{"rollback-export", false, g.rollbackExport},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {
@@ -310,7 +311,8 @@ func (g *gate) secretsRender(t *testing.T) {
 		}
 	}
 	deployAndRead(fmt.Sprintf(secretsApp, quoted))
-	deployAndRead("") // a redeploy keeps the value
+	deployAndRead("")                                    // a redeploy keeps the value
+	g.exportMatchesLive(t, appID, value, string(quoted)) // feature 011: names it, never its value
 
 	var rec struct {
 		App struct {
@@ -626,6 +628,8 @@ func (g *gate) composeAppStep(t *testing.T) {
 	if after := readByName(again); after != before {
 		t.Errorf("after a redeploy store serves %q, want %q: its volume lost its data, or web reaches the old copy", after, before)
 	}
+	// Feature 011: a multi-service export (volume, names sidecar) is the job Nomad runs.
+	g.exportMatchesLive(t, appID)
 
 	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
 	resp.Body.Close()
@@ -777,6 +781,97 @@ func (g *gate) missingTag(t *testing.T) {
 	after, _, _ := g.target.Nomad.Jobs().Info("whoami", nil)
 	if before != nil && after != nil && *before.Version != *after.Version {
 		t.Errorf("job version moved from %d to %d", *before.Version, *after.Version)
+	}
+}
+
+// rollbackExport (feature 011): an earlier healthy deployment of whoami is
+// deployed again with its pinned digest and named as the source; one that
+// never ran properly is refused; and the live version's export is the job
+// Nomad runs.
+func (g *gate) rollbackExport(t *testing.T) {
+	var list struct {
+		Deployments []struct {
+			gateDeployment
+			Source             string `json:"source"`
+			DefinitionRecorded bool   `json:"definitionRecorded"`
+		} `json:"deployments"`
+	}
+	g.getJSON(t, "/v1/apps/whoami/deployments?limit=100", &list)
+	var past, notHealthy string
+	var pastDigest string
+	for _, d := range list.Deployments {
+		switch {
+		case d.Status == "healthy" && d.ID != g.live.ID && d.DefinitionRecorded && past == "":
+			past, pastDigest = d.ID, d.Digests["web"]
+		case d.Status == "reverted" && notHealthy == "":
+			notHealthy = d.ID
+		}
+	}
+	if past == "" || notHealthy == "" {
+		t.Fatalf("no earlier healthy deployment (%q) or reverted one (%q) to work with", past, notHealthy)
+	}
+
+	resp := g.api(t, http.MethodPost, "/v1/apps/whoami/deployments/"+notHealthy+"/redeploy", "", "")
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(raw), "deployment_not_healthy") {
+		t.Errorf("redeploy of the reverted deployment = %d %s, want 409 deployment_not_healthy", resp.StatusCode, raw)
+	}
+
+	resp = g.api(t, http.MethodPost, "/v1/apps/whoami/deployments/"+past+"/redeploy", "", "")
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var d struct {
+		gateDeployment
+		Source string `json:"source"`
+	}
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil || d.Source != past || d.Digests["web"] != pastDigest {
+		t.Fatalf("redeploy of %s = %d %s, want 202 naming it with its digest", past, resp.StatusCode, raw)
+	}
+	if final := g.waitFinal(t, d.ID, 3*time.Minute); final.Status != "healthy" {
+		t.Fatalf("the redeploy ended %s: %s", final.Status, final.Error)
+	}
+	g.live = d.gateDeployment
+	job, _, err := g.target.Nomad.Jobs().Info("whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Meta["caravana.deployment"] != d.ID || job.TaskGroups[0].Tasks[0].Config["image"] != pastDigest {
+		t.Errorf("Nomad runs deployment %s with %v, want %s with %s",
+			job.Meta["caravana.deployment"], job.TaskGroups[0].Tasks[0].Config["image"], d.ID, pastDigest)
+	}
+
+	g.exportMatchesLive(t, "whoami")
+}
+
+// exportMatchesLive exports appID's live version, has Nomad parse the HCL,
+// and plans it against the running job: the plan must change nothing
+// (FR-013). The file must hold neither the gate's API token nor any of
+// secrets, values the gate set as secrets.
+func (g *gate) exportMatchesLive(t *testing.T, appID string, secrets ...string) {
+	t.Helper()
+	resp := g.api(t, http.MethodGet, "/v1/apps/"+appID+"/jobspec", "", "")
+	hcl, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("export %s = %d %s %s", appID, resp.StatusCode, resp.Header.Get("Content-Type"), hcl)
+	}
+	for _, never := range append(secrets, g.target.APIToken) {
+		if strings.Contains(string(hcl), never) {
+			t.Fatalf("the export of %s holds a token or a secret value", appID)
+		}
+	}
+	job, err := g.target.Nomad.Jobs().ParseHCLOpts(&api.JobsParseRequest{JobHCL: string(hcl), Canonicalize: true})
+	if err != nil {
+		t.Fatalf("Nomad can't parse the export of %s: %v\n%s", appID, err, hcl)
+	}
+	plan, _, err := g.target.Nomad.Jobs().Plan(job, true, nil)
+	if err != nil {
+		t.Fatalf("plan the export of %s: %v", appID, err)
+	}
+	if plan.Diff == nil || plan.Diff.Type != "None" {
+		diff, _ := json.MarshalIndent(plan.Diff, "", "  ")
+		t.Errorf("planning the export of %s against the live job changes it:\n%s", appID, diff)
 	}
 }
 
