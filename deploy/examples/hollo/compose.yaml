@@ -9,6 +9,9 @@ services:
   hollo:
     image: ghcr.io/fedify-dev/hollo:0.6.16
     expose: ["3000"]
+    # Caravana gives a service 64 MB unless it says otherwise, and Nomad enforces it: Node.js
+    # needs more.
+    mem_limit: 768m
     environment:
       BEHIND_PROXY: "true" # Traefik terminates HTTPS in front of it
       LOG_LEVEL: info
@@ -23,6 +26,7 @@ services:
   postgres:
     image: postgres:17
     expose: ["5432"]
+    mem_limit: 512m
     environment:
       POSTGRES_USER: hollo
       POSTGRES_DB: hollo
