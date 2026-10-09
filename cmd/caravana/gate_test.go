@@ -34,14 +34,20 @@ import (
 
 // gateTarget is where the gate runs.
 type gateTarget struct {
-	API      string       // Caravana's API, e.g. http://127.0.0.1:17070
-	APIToken string       // an API token of the admin: every API route but health and the webhook needs one
-	Webhook  string       // the webhook base URL: the webhook-only listener, or the public webhook host
-	AppHost  string       // the app's host name, e.g. whoami.localhost
-	AppURL   string       // the app's URL, e.g. https://whoami.localhost:8443/
-	App      *http.Client // how to call the app (the lab's skips certificate checks)
-	Nomad    *api.Client
-	Public   *publicTarget // nil in the lab: the public-only steps are skipped
+	API      string // Caravana's API, e.g. http://127.0.0.1:17070
+	APIToken string // an API token of the admin: every API route but health and the webhook needs one
+	Webhook  string // the webhook base URL: the webhook-only listener, or the console domain
+	// WebhookOnly says Webhook serves nothing but the webhook (the lab's
+	// webhook-only listener); an installed host serves it on the console domain.
+	WebhookOnly bool
+	// HTTP calls the API and the webhook; nil means http.DefaultClient. A host
+	// on Let's Encrypt's staging CA needs one that skips the certificate check.
+	HTTP    *http.Client
+	AppHost string       // the app's host name, e.g. whoami.localhost
+	AppURL  string       // the app's URL, e.g. https://whoami.localhost:8443/
+	App     *http.Client // how to call the app (the lab's skips certificate checks)
+	Nomad   *api.Client
+	Public  *publicTarget // nil in the lab: the public-only steps are skipped
 }
 
 // publicTarget is what only a real host has.
@@ -80,6 +86,14 @@ type gate struct {
 	token  string // whoami's webhook token
 	first  gateDeployment
 	live   gateDeployment // the deployment Nomad runs
+}
+
+// client is how the gate calls the API and the webhook.
+func (g *gate) client() *http.Client {
+	if g.target.HTTP != nil {
+		return g.target.HTTP
+	}
+	return http.DefaultClient
 }
 
 // runGate runs every step, in order, stopping at the first failure.
@@ -127,7 +141,7 @@ func (g *gate) apiNeedsToken(t *testing.T) {
 		if authorization != "" {
 			req.Header.Set("Authorization", authorization)
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := g.client().Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,7 +242,7 @@ func (g *gate) webhookUnchanged(t *testing.T) {
 // consoleReads: what the console reads from Nomad works with the token
 // Caravana really runs with (feature 007): the app list has whoami, its copies
 // include a healthy one, and its logs answer 200. The logs read needs the
-// read-logs capability in deploy/vm/caravana-policy.hcl, so a policy without
+// read-logs capability in deploy/install/caravana-policy.hcl, so a policy without
 // it fails here and not in front of a user.
 func (g *gate) consoleReads(t *testing.T) {
 	var list struct {
@@ -285,7 +299,7 @@ const secretsApp = `{
 // Nomad Variables store and the env template, with the token Caravana really
 // runs with (feature 008). A redeploy without a body keeps it, and deleting
 // the app removes it from Nomad. The store needs the variables rule in
-// deploy/vm/caravana-policy.hcl, so a policy without it fails here.
+// deploy/install/caravana-policy.hcl, so a policy without it fails here.
 func (g *gate) secretsRender(t *testing.T) {
 	const appID = "gate-secrets"
 	value := "line one\nsay \"hi\" = $HOME {{ .x }} é \\ " + g.run
@@ -584,7 +598,7 @@ volumes:
 // really runs with: web reaches store by its Compose name on its container
 // port, a redeploy keeps store's volume data and web still reaches it by
 // name, and deleting the app deletes the volume. The volume needs the
-// host-volume rules in deploy/vm/caravana-policy.hcl, so a policy without
+// host-volume rules in deploy/install/caravana-policy.hcl, so a policy without
 // them fails here.
 func (g *gate) composeAppStep(t *testing.T) {
 	const appID = "gate-compose"
@@ -695,10 +709,15 @@ func (g *gate) httpRedirects(t *testing.T) {
 	}
 }
 
-// webhookOnly: the webhook base serves nothing but the webhook.
+// webhookOnly: the webhook base serves nothing but the webhook. Only a
+// webhook-only listener does; an installed host serves the webhook on the
+// console domain, next to everything else (feature 012).
 func (g *gate) webhookOnly(t *testing.T) {
+	if !g.target.WebhookOnly {
+		t.Skip("the webhook is served on the console domain, not by a webhook-only listener")
+	}
 	for _, path := range []string{"/v1/health", "/v1/apps/whoami", "/"} {
-		resp, err := http.Get(g.target.Webhook + path)
+		resp, err := g.client().Get(g.target.Webhook + path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -707,7 +726,7 @@ func (g *gate) webhookOnly(t *testing.T) {
 			t.Errorf("GET %s on the webhook base = %d, want 404", path, resp.StatusCode)
 		}
 	}
-	resp, err := http.Post(g.target.Webhook+"/v1/webhooks/no-such-app", "", nil)
+	resp, err := g.client().Post(g.target.Webhook+"/v1/webhooks/no-such-app", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -937,7 +956,7 @@ func (g *gate) apiRequest(method, path, contentType, body string) (*http.Respons
 		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("Authorization", "Bearer "+g.target.APIToken)
-	return http.DefaultClient.Do(req)
+	return g.client().Do(req)
 }
 
 // api is apiRequest that fails the test when the request can't be sent.
@@ -960,7 +979,7 @@ func (g *gate) hook(t *testing.T, token string) (int, bool, gateDeployment) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1067,11 +1086,13 @@ func TestGate(t *testing.T) {
 	host := need("GATE_APP_HOST")
 	staging := os.Getenv("GATE_ACME_STAGING") == "1"
 	app := &http.Client{Timeout: 5 * time.Second} // the system's roots
+	var console *http.Client                      // the API and the webhook, on the console domain
 	if staging {
 		// Staging certificates aren't publicly trusted, so the steps that only
 		// need the app to answer skip the check; https-trusted still fails
 		// and says why.
 		app.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} // staging CA only
+		console = &http.Client{Transport: app.Transport}
 	}
 	runGate(t, gateTarget{
 		API:      need("GATE_API"),
@@ -1080,6 +1101,7 @@ func TestGate(t *testing.T) {
 		AppHost:  host,
 		AppURL:   "https://" + host + "/",
 		App:      app,
+		HTTP:     console,
 		Nomad:    nomad,
 		Public:   &publicTarget{IP: need("GATE_PUBLIC_IP"), Staging: staging},
 	})
