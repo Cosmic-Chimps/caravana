@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "One-command install",
   "branch": "012-one-command-install",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planning",
   "history": [
     {
       "step": "specify",
@@ -18,6 +18,27 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-09T01:11:35.476Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-09T06:43:43.322Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T06:48:11.011Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T06:49:03.317Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
@@ -100,5 +121,49 @@
     "constraint: constitution VII ACLs from the first install",
     "finding: the console/API are loopback-only today (SSH tunnel); webhook host routes only /v1/webhooks/"
   ],
-  "intent": "One pasted command turns a fresh Ubuntu VM into a working public Caravana host; same command upgrades; uninstall keeps apps"
+  "intent": "One pasted command turns a fresh Ubuntu VM into a working public Caravana host; same command upgrades; uninstall keeps apps",
+  "decisions": [
+    {
+      "decision": "Bash installer + per-release tarball (binary + host files) + SHA256SUMS; --from for local artifacts",
+      "why": "host files stay real, lintable files; one install path for release, rehearsal and lab",
+      "rejected": "heredocs in one script; a caravana install Go subcommand"
+    },
+    {
+      "decision": "tools/release.sh + a tag workflow using gh",
+      "why": "one builder for every artifact, no new tool",
+      "rejected": "goreleaser"
+    },
+    {
+      "decision": "ldflags version, caravana version, version in /v1/health",
+      "why": "upgrade/downgrade decisions and confirming the new process answers",
+      "rejected": "reading the version from the tarball name only"
+    },
+    {
+      "decision": "Versioned /opt/caravana dirs + current symlink; data copied before upgrade and restored with the binary on failure",
+      "why": "a migrated store is unreadable by the old binary",
+      "rejected": "binary-only rollback"
+    },
+    {
+      "decision": "One console domain routed by Traefik to :7070, trusted proxies 127.0.0.1,::1, webhook-only listener dropped on hosts",
+      "why": "main listener already serves webhooks; trusted proxies give Secure cookies and real client IPs",
+      "rejected": "keeping the console tunnel-only"
+    },
+    {
+      "decision": "Console route goes live only after the admin step",
+      "why": "no public console without an admin",
+      "rejected": "route first"
+    },
+    {
+      "decision": "Installer test on a throwaway Lima Ubuntu VM with --acme none",
+      "why": "tests install, rerun, upgrade, rollback, refusal and uninstall without a public VM",
+      "rejected": "only testing on a paid VM"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Bash installer from release tarballs, upgrade with data+binary rollback, public console via Traefik, host.sh wraps it, Lima VM test",
+      "key_finding": "The repo is private, so the curl-from-releases command works for others only once it is public; the console is loopback-only today and needs trusted proxies to be public"
+    }
+  },
+  "approach": "A bash installer, published per release with a checksum-verified tarball of the binary and host files, does preflight, Docker/Nomad/Traefik/Caravana setup, admin creation, then routes the console domain; reruns upgrade with rollback of binary and data; host.sh up runs it with --from; a Lima VM test covers install, rerun, upgrade, rollback and uninstall."
 }
