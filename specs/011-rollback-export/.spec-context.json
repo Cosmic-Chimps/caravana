@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Rollback and export",
   "branch": "011-rollback-export",
-  "currentStep": "tasks",
-  "status": "tasking",
+  "currentStep": "implement",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -60,9 +60,150 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-08T20:29:58.359Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:30:00.458Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-08T20:30:16.415Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:32:08.177Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:32:36.651Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:33:20.949Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:35:01.481Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:36:23.616Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:38:14.250Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:41:54.265Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:44:47.981Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:45:12.530Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:50:48.676Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:58:52.209Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T20:59:08.246Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-08T21:05:07.290Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T00:55:26.912Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T00:55:27.190Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T00:55:27.245Z"
     }
   ],
-  "last_action": "living specs evaluated — skipped (not configured)",
+  "last_action": "15/15 tasks done; race suite and TestLab pass",
   "telemetryInstanceId": "2f61103c-963c-467a-985b-54fc8f967022",
   "coverage": {
     "FR-001": {
@@ -195,6 +336,21 @@
       "decision": "Gate step parses the export with Nomad and plans it: diff None",
       "why": "proves FR-013/SC-003 for real",
       "rejected": "golden files alone"
+    },
+    {
+      "decision": "Console reads removed secrets from the pure service.RemovedSecrets over the recorded definition",
+      "why": "the history already loads definitions; no extra service call",
+      "rejected": "a RedeployImpact service method"
+    },
+    {
+      "decision": "Maps (meta, env) written as HCL map attributes, not blocks",
+      "why": "keys like caravana.app are not HCL identifiers",
+      "rejected": "meta blocks with bare keys"
+    },
+    {
+      "decision": "Store times with nine fixed fraction digits",
+      "why": "RFC3339Nano trims zeros and broke text ordering; found by a flaky list test",
+      "rejected": "ordering by rowid only"
     }
   ],
   "step_summaries": {
@@ -204,7 +360,229 @@
     },
     "tasks": {
       "summary": "15 tasks: foundational store + service lookup, US1 rollback and US2/3 export in parallel, then API+console, gate, docs, validation"
+    },
+    "implement": {
+      "summary": "Redeploy any past healthy version with pinned digests, and export any recorded deployment as a Nomad HCL jobspec, in API 0.9.0 and the console"
     }
   },
-  "approach": "Every deployment records its definition. Redeploying a healthy past deployment saves that definition and runs the normal deploy with its digests pinned, after a registry existence check. Export renders Translate's job as HCL with a hand-written pure writer and a header listing cluster prerequisites."
+  "approach": "Every deployment records its definition. Redeploying a healthy past deployment saves that definition and runs the normal deploy with its digests pinned, after a registry existence check. Export renders Translate's job as HCL with a hand-written pure writer and a header listing cluster prerequisites.",
+  "currentTask": "T015",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "migration 0006, DeploymentRecord.Definition/Source, CreateDeployment(def, source), tests",
+      "files": [
+        "internal/store/migrations/0006_rollback.sql",
+        "internal/store/deployments.go",
+        "internal/store/deployments_test.go"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "service errors and version() lookup (same app, definition recorded), tests",
+      "files": [
+        "internal/service/versions.go",
+        "internal/service/versions_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "registry.Client.Exists (HEAD by digest, same token/retries), fake serves digests + Delete, tests",
+      "files": [
+        "internal/registry/client.go",
+        "internal/registry/client_test.go",
+        "internal/registry/registrytest/registry.go"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "deploy path records definition, pinned digests + source skip Resolve, removedSecrets warning on every deploy, tests",
+      "files": [
+        "internal/service/deploy.go",
+        "internal/service/compose.go",
+        "internal/service/deploy_test.go"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "Deployer.CheckDigests: Exists per service, ImageError on the service image field, tests",
+      "files": [
+        "internal/deploy/deploy.go",
+        "internal/deploy/deploy_test.go"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "Service.RedeployVersion (healthy, CheckDigests, pinned saveAndDeploy); RemovedSecrets exported for the console instead of RedeployImpact; tests incl. every refusal changing nothing",
+      "files": [
+        "internal/service/rollback.go",
+        "internal/service/rollback_test.go",
+        "internal/service/deploy.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "nomadjob.HCL pure writer, goldens for every case, reflective field-coverage test, quoting tests; verified all goldens parse in lab Nomad to the same canonical job",
+      "files": [
+        "internal/nomadjob/hcl.go",
+        "internal/nomadjob/hcl_test.go",
+        "internal/nomadjob/testdata",
+        "internal/nomadjob/translate.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "Deployer.Export: Translate + HCL with a header (routing, host volumes, secret names + variable paths, backup jobs), no secret values, tests",
+      "files": [
+        "internal/deploy/export.go",
+        "internal/deploy/export_test.go",
+        "internal/nomadjob/hcl.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "Service.Export: live (newest healthy) or by ID, file name, errors, tests",
+      "files": [
+        "internal/service/export.go",
+        "internal/service/export_test.go"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "API: redeployDeployment, exportApp, exportDeployment, Deployment.source/definitionRecorded, three 409 codes, openapi 0.9.0, tests; plus store time-format sort fix found by a flaky list test",
+      "files": [
+        "internal/api/export.go",
+        "internal/api/export_test.go",
+        "internal/api/api.go",
+        "internal/api/errors.go",
+        "internal/api/deployments.go",
+        "api/openapi.yaml",
+        "internal/store/apps.go",
+        "internal/store/apps_test.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "Console: history rows offer Redeploy this version (removed secrets, webhook note, refusal in place or at top), Redeploy of <id>, export links; Configure Export section; download routes; tests",
+      "files": [
+        "internal/ui/versions.go",
+        "internal/ui/versions_test.go",
+        "internal/ui/app.go",
+        "internal/ui/configure.go",
+        "internal/ui/ui.go",
+        "internal/ui/templates/app.html",
+        "internal/ui/static/app.css",
+        "internal/ui/apps_test.go"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "parity entries for the three console routes",
+      "files": [
+        "internal/api/parity_test.go"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "CLAUDE.md where-we-are + phase list, docs/plan.md 011 done",
+      "files": [
+        "CLAUDE.md",
+        "docs/plan.md"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "gate step rollback-export (reverted refused, past healthy redeployed with its digest, Nomad runs it); exportMatchesLive parse+plan diff None for whoami, secrets and compose apps; console lab redeploy step",
+      "files": [
+        "cmd/caravana/gate_test.go",
+        "cmd/caravana/console_lab_test.go"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "all CI checks clean; go test -race all ok; TestLab PASS 946s incl. rollback-export"
+    }
+  },
+  "verified": [
+    {
+      "what": "TestLab: console steps then the gate, incl. console-redeploy-version and rollback-export, on the scoped policy token",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 30m",
+      "result": "PASS in 946s"
+    },
+    {
+      "what": "every golden HCL parsed by the lab Nomad (ParseHCLOpts canonicalized) equals the canonicalized translated job; a changed count is caught",
+      "command": "temporary test, removed",
+      "result": "all 11 cases equal"
+    },
+    {
+      "what": "go build",
+      "command": "go build ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 7.0,
+      "result": "no output"
+    },
+    {
+      "what": "go vet",
+      "command": "go vet ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.8,
+      "result": "no output"
+    },
+    {
+      "what": "staticcheck",
+      "command": "go tool staticcheck ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 2.7,
+      "result": "no output"
+    },
+    {
+      "what": "gofmt",
+      "command": "test -z \"$(gofmt -l .)\"",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.0,
+      "result": "no output"
+    },
+    {
+      "what": "tidy",
+      "command": "go mod tidy -diff",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.2,
+      "result": "no output"
+    },
+    {
+      "what": "cross-compile arm64",
+      "command": "CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 4.3,
+      "result": "no output"
+    },
+    {
+      "what": "ui css",
+      "command": "tools/ui-css.sh check",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 2.9,
+      "result": "internal/ui/static/app.css is up to date · ≈ tailwindcss v4.3.3 · Done in 635ms"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "simplified: Export uses today settings (entrypoint, cert resolver, names image), not those of the deployment time; store settings per deployment if that matters",
+      "step": "implement"
+    },
+    {
+      "note": "Deployments recorded before 011 cannot be redeployed or exported; no backfill",
+      "step": "implement"
+    },
+    {
+      "note": "Backup jobs are not part of an export; the header names them",
+      "step": "implement"
+    }
+  ]
 }

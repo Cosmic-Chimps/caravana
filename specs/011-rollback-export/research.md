@@ -56,7 +56,7 @@ this check a deleted image would only fail later in Nomad, after the definition 
 
 **Decision**: a pure helper `removedSecrets(old, next app.App) []app.Warning` in
 `internal/service`, used by `saveAndDeploy` for every deploy, beside `unmountedVolumes`. The
-console calls `Service.RedeployImpact(ctx, appID, deploymentID)`, which returns the same list for
+console calls the same pure `service.RemovedSecrets(current, definition)` (as built; first planned as a `RedeployImpact` call) for
 the confirmation before anything is posted.
 
 **Rationale**: any deploy that drops a secret deletes its value (Constitution III), so every

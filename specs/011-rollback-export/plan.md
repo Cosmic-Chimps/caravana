@@ -25,7 +25,7 @@ internal/store/deployments.go (+ tests)          # record carries Definition and
 internal/registry/client.go (+ tests)            # Exists: HEAD the manifest of a digest
 internal/deploy/deploy.go (+ tests)              # CheckDigests; Export (Translate + HCL + header)
 internal/nomadjob/hcl.go, hcl_test.go, testdata/*.golden.nomad.hcl, translate.go (package doc)
-internal/service/deploy.go, rollback.go (+ tests)   # pinned digests through saveAndDeploy; RedeployVersion, RedeployImpact, Export; removedSecrets
+internal/service/deploy.go, rollback.go (+ tests)   # pinned digests through saveAndDeploy; RedeployVersion, Export; RemovedSecrets
 internal/api/deployments.go, export.go, api.go, errors.go (+ tests), parity_test.go
 api/openapi.yaml                                 # 0.8.0 → 0.9.0
 internal/ui/app.go, configure.go, view.go, templates/app.html (+ tests), static/app.css

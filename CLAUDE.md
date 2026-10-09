@@ -115,7 +115,23 @@ GET/PUT, list, back up now, restore (`api/openapi.yaml` 0.8.0); console: Setting
 destination and a Backups tab. The policy gained variables `caravana/*`, and the gate has a step
 `backup-restore` (A, back up, B, restore, A) against an `rclone serve s3` bucket job. `TestLab`
 gives the in-process Caravana a token made from `deploy/vm/caravana-policy.hcl` (applied on every
-run), not the lab's management token, so a missing capability fails in the lab. Next: 011.
+run), not the lab's management token, so a missing capability fails in the lab. Feature 011 is
+implemented on branch `011-rollback-export`: every deployment records the app definition it
+deployed (`deployments.definition`, secret values left out, migration `0006_rollback.sql`) and
+its `source` for a redeploy. `Service.RedeployVersion` deploys a past healthy deployment again:
+`Deployer.CheckDigests` (a registry `HEAD` per pinned digest, `registry.Client.Exists`) refuses a
+deleted image first, then the normal deploy runs with those digests pinned (no tag lookup), and
+the definition becomes the stored app. Any deploy that drops a secret warns that its value is
+deleted. Export is `nomadjob.HCL`, a small pure writer for the fields `Translate` sets (golden
+`*.golden.nomad.hcl`; a reflection test fails naming any field it doesn't write), behind a
+header naming what the job needs (Traefik, host volumes, secret variable paths); there is no HCL
+module. API 0.9.0: `redeployDeployment`, `exportApp`, `exportDeployment` (`text/plain`
+downloads), `Deployment.source`/`definitionRecorded`, codes `deployment_not_healthy`,
+`definition_not_recorded`, `no_live_deployment`. Console: each history entry offers "Redeploy
+this version" and "Export jobspec"; Configure has Export. The gate has a step `rollback-export`,
+and `exportMatchesLive` parses an export with Nomad and plans it against the live job (diff
+`None`) for whoami, the secrets app and the compose app. Stored times now keep nine fraction
+digits so they sort as text. Next: 012.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -138,6 +154,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to
   S3-compatible storage (done for PostgreSQL, branch `010-databases-backups`)
 - 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
+  (done, branch `011-rollback-export`)
 - 012 One-command install (`deploy/vm/` is its rehearsal)
 
 Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume

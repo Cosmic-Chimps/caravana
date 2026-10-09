@@ -41,4 +41,4 @@ The file is named `<app>.nomad.hcl`.
 
 A deploy whose definition drops secrets the stored app had warns once per secret, on
 `services[i].secrets` (field of the old app), saying its value is removed. It is the same list
-`RedeployImpact` returns to the console's confirmation.
+the console's confirmation shows, from `service.RemovedSecrets` (implemented instead of a `RedeployImpact` call: the history already holds the definitions).
