@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "One-command install",
   "branch": "012-one-command-install",
-  "currentStep": "plan",
-  "status": "planning",
+  "currentStep": "tasks",
+  "status": "tasking",
   "history": [
     {
       "step": "specify",
@@ -39,63 +39,102 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-09T06:49:03.317Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T06:49:04.022Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-09T14:03:19.994Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:04:23.198Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
   "coverage": {
     "FR-001": {
-      "title": "One command installs Docker, Nomad with ACLs, Traefik, Caravana under systemd"
+      "title": "One command installs Docker, Nomad with ACLs, Traefik, Caravana under systemd",
+      "tasks": "T002,T004,T010"
     },
     "FR-002": {
-      "title": "Options: admin email (required), console domain, Lets Encrypt email"
+      "title": "Options: admin email (required), console domain, Lets Encrypt email",
+      "tasks": "T004"
     },
     "FR-003": {
-      "title": "No domain: name derived from the public IP"
+      "title": "No domain: name derived from the public IP",
+      "tasks": "T004"
     },
     "FR-004": {
-      "title": "Console, API and webhooks over trusted HTTPS on the console domain"
+      "title": "Console, API and webhooks over trusted HTTPS on the console domain",
+      "tasks": "T002,T004,T009"
     },
     "FR-005": {
-      "title": "Preflight checks before any change, naming the failing one"
+      "title": "Preflight checks before any change, naming the failing one",
+      "tasks": "T004,T010"
     },
     "FR-006": {
-      "title": "Every download checked against a published checksum"
+      "title": "Every download checked against a published checksum",
+      "tasks": "T003,T004,T008"
     },
     "FR-007": {
-      "title": "Caravana under systemd, own user, scoped Nomad token, no wait on jobs"
+      "title": "Caravana under systemd, own user, scoped Nomad token, no wait on jobs",
+      "tasks": "T002,T004"
     },
     "FR-008": {
-      "title": "Only 22, 80, 443 answer from the internet"
+      "title": "Only 22, 80, 443 answer from the internet",
+      "tasks": "T004,T011"
     },
     "FR-009": {
-      "title": "Admin created in a terminal, else the command printed"
+      "title": "Admin created in a terminal, else the command printed",
+      "tasks": "T004"
     },
     "FR-010": {
-      "title": "Ends printing the console address and next step"
+      "title": "Ends printing the console address and next step",
+      "tasks": "T004"
     },
     "FR-011": {
-      "title": "Rerun safe: finishes, idempotent, says what changed"
+      "title": "Rerun safe: finishes, idempotent, says what changed",
+      "tasks": "T004,T010"
     },
     "FR-012": {
-      "title": "Newer version upgrades in place keeping everything"
+      "title": "Newer version upgrades in place keeping everything",
+      "tasks": "T005,T010"
     },
     "FR-013": {
-      "title": "Failed upgrade puts the previous version back"
+      "title": "Failed upgrade puts the previous version back",
+      "tasks": "T005,T010"
     },
     "FR-014": {
-      "title": "Older version refused before changes"
+      "title": "Older version refused before changes",
+      "tasks": "T001,T005,T010"
     },
     "FR-015": {
-      "title": "Uninstall removes Caravana, keeps Nomad, Traefik, apps"
+      "title": "Uninstall removes Caravana, keeps Nomad, Traefik, apps",
+      "tasks": "T006,T010"
     },
     "FR-016": {
-      "title": "sudo caravana admin works with no extra setup"
+      "title": "sudo caravana admin works with no extra setup",
+      "tasks": "T004,T009"
     },
     "FR-017": {
-      "title": "Tagged release publishes installer, binaries, checksums"
+      "title": "Tagged release publishes installer, binaries, checksums",
+      "tasks": "T003,T013"
     },
     "FR-018": {
-      "title": "host.sh rehearsal uses the installer"
+      "title": "host.sh rehearsal uses the installer",
+      "tasks": "T009"
     }
   },
   "size": "oversized",
@@ -163,6 +202,9 @@
     "plan": {
       "summary": "Bash installer from release tarballs, upgrade with data+binary rollback, public console via Traefik, host.sh wraps it, Lima VM test",
       "key_finding": "The repo is private, so the curl-from-releases command works for others only once it is public; the console is loopback-only today and needs trusted proxies to be public"
+    },
+    "tasks": {
+      "summary": "15 tasks: foundational version/host files/release.sh, installer (install, upgrade, uninstall) in one owned script, rehearsal + Lima VM test + gate, release workflow, docs, validation"
     }
   },
   "approach": "A bash installer, published per release with a checksum-verified tarball of the binary and host files, does preflight, Docker/Nomad/Traefik/Caravana setup, admin creation, then routes the console domain; reruns upgrade with rollback of binary and data; host.sh up runs it with --from; a Lima VM test covers install, rerun, upgrade, rollback and uninstall."
