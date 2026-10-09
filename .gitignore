@@ -58,3 +58,6 @@ __pycache__/
 
 /.private/
 .headroom*
+
+# Example apps: the overlay holds secret values
+/deploy/examples/*/overlay.json

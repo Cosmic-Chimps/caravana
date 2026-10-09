@@ -1,0 +1,17 @@
+{
+  "services": {
+    "hollo": {
+      "domains": [{"host": "social.example.com", "port": 3000}],
+      "secrets": [
+        {"name": "SECRET_KEY", "value": "REPLACE: openssl rand -hex 32"},
+        {"name": "DATABASE_URL", "value": "postgres://hollo:REPLACE-DB-PASSWORD@postgres:5432/hollo"}
+      ]
+    },
+    "postgres": {
+      "secrets": [
+        {"name": "POSTGRES_PASSWORD", "value": "REPLACE-DB-PASSWORD"}
+      ],
+      "backup": {"engine": "postgres", "keep": 14}
+    }
+  }
+}
