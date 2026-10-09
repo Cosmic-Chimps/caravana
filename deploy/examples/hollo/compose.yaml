@@ -14,7 +14,7 @@ services:
       LOG_LEVEL: info
       DRIVE_DISK: fs
       FS_STORAGE_PATH: /var/lib/hollo
-      # Your Hollo domain, as in overlay.json, followed by /assets.
+      # deploy.sh puts Hollo's domain from overlay.json in place of social.example.com.
       STORAGE_URL_BASE: https://social.example.com/assets
     volumes:
       - media:/var/lib/hollo

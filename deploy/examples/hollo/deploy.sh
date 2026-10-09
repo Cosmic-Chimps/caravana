@@ -28,11 +28,13 @@ deploy) path="/v1/apps/$APP/compose" ;;
   ;;
 esac
 
-# The request body: the Compose file as a string, plus the overlay's services.
+# The request body: the Compose file as a string, with Hollo's domain from the overlay in
+# place of social.example.com, plus the overlay's services.
 body="$(python3 - "$DIR/compose.yaml" "$DIR/overlay.json" <<'EOF'
 import json, sys
-compose = open(sys.argv[1]).read()
 overlay = json.load(open(sys.argv[2]))
+domain = overlay["services"]["hollo"]["domains"][0]["host"]
+compose = open(sys.argv[1]).read().replace("social.example.com", domain)
 print(json.dumps({"compose": compose, "services": overlay["services"]}))
 EOF
 )"
