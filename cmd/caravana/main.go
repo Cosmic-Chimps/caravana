@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -28,6 +29,11 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/ui"
 )
 
+// version is this build's version. Releases set it with
+// -ldflags "-X main.version=<version>" (tools/release.sh); a plain go build
+// says "dev".
+var version = "dev"
+
 // shutdownTimeout is how long in-flight requests get to finish on SIGINT or
 // SIGTERM.
 const shutdownTimeout = 10 * time.Second
@@ -48,6 +54,10 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	if len(args) > 0 && args[0] == "admin" {
 		return runAdmin(ctx, args[1:], getenv, stdin, stdout, stderr)
 	}
+	if len(args) == 1 && args[0] == "version" {
+		fmt.Fprintln(stdout, version)
+		return 0
+	}
 	log := slog.New(slog.NewJSONHandler(stderr, nil))
 
 	cfg, err := config.Load(args, getenv)
@@ -56,7 +66,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		return 1
 	}
 	// Never log cfg.NomadToken: it prints as [redacted] anyway.
-	log.Info("starting", "listen", cfg.Listen, "dataDir", cfg.DataDir, "nomadAddr", cfg.NomadAddr)
+	log.Info("starting", "version", version, "listen", cfg.Listen, "dataDir", cfg.DataDir, "nomadAddr", cfg.NomadAddr)
 
 	st, err := store.Open(ctx, cfg.DataDir)
 	if err != nil {
@@ -97,7 +107,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		log.Error("web pages", "error", err)
 		return 1
 	}
-	apiHandler := api.New(api.Deps{Service: svc, Auth: auth, Store: st, Proxies: cfg.TrustedProxies, Log: log})
+	apiHandler := api.New(api.Deps{Service: svc, Auth: auth, Store: st, Proxies: cfg.TrustedProxies, Log: log, Version: version})
 	// streamCtx is the parent of every request's context. shutdownAll cancels
 	// it first, which ends the open live streams; Shutdown alone waits for
 	// active requests, and a stream never finishes by itself.

@@ -135,7 +135,7 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 	}
 
 	// As in production, the request log wraps the API from outside.
-	api := httpx.LogRequests(log, New(Deps{Service: svc, Auth: e.Auth, Store: st, Log: log}))
+	api := httpx.LogRequests(log, New(Deps{Service: svc, Auth: e.Auth, Store: st, Log: log, Version: "1.2.3-test"}))
 	raw := httptest.NewServer(api)
 	withToken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Webhook calls carry their own token, in the query or the header.
@@ -209,9 +209,10 @@ func TestHealth(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
-	if got := strings.TrimSpace(string(raw)); got != `{"status":"ok"}` {
-		t.Errorf("body = %s, want {\"status\":\"ok\"}", got)
+	if got := strings.TrimSpace(string(raw)); got != `{"status":"ok","version":"1.2.3-test"}` {
+		t.Errorf("body = %s, want status ok and the version", got)
 	}
+	checkSchema(t, loadContract(t), raw, "Health")
 
 	st.Close()
 	resp, err = http.Get(url + "/v1/health")

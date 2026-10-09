@@ -19,6 +19,6 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) error {
 		s.log.Warn("health: store unreachable", "error", err)
 		return &Error{Status: http.StatusServiceUnavailable, Code: codeUnavailable, Message: "store is not reachable"}
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.version})
 	return nil
 }

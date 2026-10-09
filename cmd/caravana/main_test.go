@@ -269,3 +269,13 @@ func TestShutdownEndsOpenStreams(t *testing.T) {
 		t.Logf("reading the ended stream: %v", err) // a reset is as good as a clean close
 	}
 }
+
+// Feature 012: `caravana version` prints the build's version, which the
+// installer compares before an upgrade.
+func TestVersionCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"version"}, func(string) string { return "" }, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 || strings.TrimSpace(stdout.String()) != version {
+		t.Errorf("version = %d %q, want 0 and %q", code, stdout.String(), version)
+	}
+}

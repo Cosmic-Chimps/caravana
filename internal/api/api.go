@@ -42,6 +42,7 @@ type server struct {
 	svc     *service.Service
 	auth    *service.Auth
 	store   *store.Store // for the health check only; everything else goes through svc
+	version string       // answered by the health check
 	proxies httpx.Proxies
 	csrf    *http.CrossOriginProtection // for requests authenticated by a session cookie
 	log     *slog.Logger
@@ -99,6 +100,8 @@ type Deps struct {
 	Store   *store.Store // only pinged by the health check
 	Proxies httpx.Proxies
 	Log     *slog.Logger
+	// Version is the running build's version, answered by the health check.
+	Version string
 }
 
 // New returns the API's HTTP handler. Everything goes through the service
@@ -113,7 +116,7 @@ func New(d Deps) http.Handler {
 
 // newServer builds the server's state. Tests use it to change the timings.
 func newServer(d Deps) *server {
-	return &server{svc: d.Service, auth: d.Auth, store: d.Store, proxies: d.Proxies, log: d.Log,
+	return &server{svc: d.Service, auth: d.Auth, store: d.Store, proxies: d.Proxies, log: d.Log, version: d.Version,
 		csrf: http.NewCrossOriginProtection()}
 }
 

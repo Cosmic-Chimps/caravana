@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.9.0
+  version: 0.9.1
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -1060,11 +1060,17 @@ components:
     Health:
       type: object
       additionalProperties: false
-      required: [status]
+      required: [status, version]
       properties:
         status:
           type: string
           const: ok
+        version:
+          type: string
+          description: |
+            The running Caravana's version, e.g. `0.12.0`; `dev` for a build without one. The
+            installer waits for it to confirm an upgrade.
+          examples: ["0.12.0"]
 
     App:
       type: object
