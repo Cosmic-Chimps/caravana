@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "One-command install",
   "branch": "012-one-command-install",
-  "currentStep": "tasks",
-  "status": "tasking",
+  "currentStep": "implement",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -60,9 +60,150 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-09T14:04:23.198Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:04:26.097Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-09T14:04:41.320Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:07:42.689Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:10:16.924Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:13:44.300Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:13:59.523Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:14:14.578Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:14:27.658Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:14:51.842Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:14:51.995Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:15:28.875Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:16:32.343Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:17:51.204Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:18:01.693Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:18:39.999Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:33:09.092Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:49:18.489Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-09T14:49:18.511Z"
     }
   ],
-  "last_action": "living specs evaluated — skipped (not configured)",
+  "last_action": "15/15 tasks done; install-test, race suite and TestLab pass",
   "coverage": {
     "FR-001": {
       "title": "One command installs Docker, Nomad with ACLs, Traefik, Caravana under systemd",
@@ -196,6 +337,16 @@
       "decision": "Installer test on a throwaway Lima Ubuntu VM with --acme none",
       "why": "tests install, rerun, upgrade, rollback, refusal and uninstall without a public VM",
       "rejected": "only testing on a paid VM"
+    },
+    {
+      "decision": "Uninstall leaves Traefik untouched; the console domain answers 502",
+      "why": "any change to the Traefik job restarts it and drops every app route for seconds (found by the VM test)",
+      "rejected": "re-running Traefik without the console route"
+    },
+    {
+      "decision": "The installer waits for Traefik to route the console before printing the address",
+      "why": "the first run pulls Traefik image; the printed address must answer",
+      "rejected": "printing right after the job is submitted"
     }
   ],
   "step_summaries": {
@@ -205,7 +356,199 @@
     },
     "tasks": {
       "summary": "15 tasks: foundational version/host files/release.sh, installer (install, upgrade, uninstall) in one owned script, rehearsal + Lima VM test + gate, release workflow, docs, validation"
+    },
+    "implement": {
+      "summary": "One-command installer from GitHub releases: install, upgrade with rollback, uninstall keeping apps; public console on one domain; host.sh and a Lima VM test use it"
     }
   },
-  "approach": "A bash installer, published per release with a checksum-verified tarball of the binary and host files, does preflight, Docker/Nomad/Traefik/Caravana setup, admin creation, then routes the console domain; reruns upgrade with rollback of binary and data; host.sh up runs it with --from; a Lima VM test covers install, rerun, upgrade, rollback and uninstall."
+  "approach": "A bash installer, published per release with a checksum-verified tarball of the binary and host files, does preflight, Docker/Nomad/Traefik/Caravana setup, admin creation, then routes the console domain; reruns upgrade with rollback of binary and data; host.sh up runs it with --from; a Lima VM test covers install, rerun, upgrade, rollback and uninstall.",
+  "currentTask": "T015",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "var version (ldflags), caravana version, health answers version, openapi 0.9.1, tests",
+      "files": [
+        "cmd/caravana/main.go",
+        "cmd/caravana/main_test.go",
+        "internal/api/api.go",
+        "internal/api/health.go",
+        "internal/api/api_test.go",
+        "api/openapi.yaml"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "host files moved to deploy/install; Traefik route 'caravana' (console domain -> :7070) with acme production/staging/none replaces the webhook-only route; unit runs /opt/caravana/current; lab test reads the new policy path; verified the job parses in Nomad for all three variants",
+      "files": [
+        "deploy/install/nomad.hcl.tpl",
+        "deploy/install/traefik.nomad.hcl",
+        "deploy/install/caravana-policy.hcl",
+        "deploy/install/traefik-policy.hcl",
+        "deploy/install/caravana.service",
+        "cmd/caravana/lab_test.go",
+        "cmd/caravana/gate_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "tools/release.sh build VERSION DIR: both arch tarballs (binary with version + host files, root-owned), install.sh with version, SHA256SUMS; verified locally",
+      "files": [
+        "tools/release.sh"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "install.sh install path: options + recorded options, preflight (root, Ubuntu 24.04, arch, memory, version, foreign Nomad/Docker, ports, IP, DNS), checksum-verified release, packages, Nomad/CNI pinned+checksummed, caravana0, nomad.hcl, ACL bootstrap, caravana-nomad, ufw, policies, caravana user/env (trusted proxies)/wrapper/unit, health with version, admin via /dev/tty, Traefik console route, changed list, final message",
+      "files": [
+        "deploy/install/install.sh"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "upgrade: stop, copy data to .pre-<old>, switch current, start, health with new version; on failure restore data + current, start old, exit 1; keep two versions; older refused in preflight, same version restarts only on changes",
+      "files": [
+        "deploy/install/install.sh"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "--uninstall [--purge]: stop/remove unit and wrapper, revoke Caravana's Nomad token, Traefik without the console route, drop env and /opt/caravana; purge removes data, settings, user; Nomad/Traefik/apps stay",
+      "files": [
+        "deploy/install/install.sh"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "deploy/install/README.md: command, options, layout, host commands, upgrade, uninstall, removing the rest, releases",
+      "files": [
+        "deploy/install/README.md"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "TestInstallerMatchesLab: Nomad/CNI pins equal to the lab's; downloads are checksum-checked",
+      "files": [
+        "cmd/caravana/install_test.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "gate: webhook-only step skipped unless the target has a webhook-only listener (lab sets WebhookOnly); API/webhook calls through target.HTTP (staging-aware); ports-closed already expects 7071 closed",
+      "files": [
+        "cmd/caravana/gate_test.go",
+        "cmd/caravana/lab_test.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "host.sh wraps the installer: up builds a dev release + install.sh --from over ssh -t, admin/prove via sudo caravana, prove through the public console domain, uninstall added; host.env.example (CONSOLE domain, ADMIN email); README rewritten; setup.sh removed",
+      "files": [
+        "deploy/vm/host.sh",
+        "deploy/vm/host.env.example",
+        "deploy/vm/README.md",
+        "deploy/vm/setup.sh"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "deploy/dev/install-test.sh: fresh Lima Ubuntu 24.04; refuses versionless; install --acme none; admin + sign-in with __Host- Secure cookie; rerun no change; whoami; upgrade with zero failed answers; broken release rolled back; older refused; uninstall keeps whoami",
+      "files": [
+        "deploy/dev/install-test.sh"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "release.yml on v* tags (vet, race tests, tools/release.sh, gh release create); ci.yml shellchecks deploy/install and builds a release",
+      "files": [
+        ".github/workflows/release.yml",
+        ".github/workflows/ci.yml"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "README.md (new: install command, use, develop), CLAUDE.md where-we-are + commands, docs/plan.md 012 done",
+      "files": [
+        "README.md",
+        "CLAUDE.md",
+        "docs/plan.md"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "install-test.sh passes on a fresh Lima Ubuntu 24.04; it found and fixed: no wait for Traefik before printing the address, upgrade cleanup deleting the current link, uninstall restarting Traefik (now left untouched, console domain 502), apt/tar noise",
+      "files": [
+        "deploy/install/install.sh",
+        "deploy/dev/install-test.sh",
+        "tools/release.sh",
+        "deploy/install/README.md"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "all CI checks clean; go test -race ok; install-test.sh PASSED on a fresh Lima Ubuntu 24.04; TestLab PASS 893s"
+    }
+  },
+  "verified": [
+    {
+      "what": "installer end to end on a fresh Lima Ubuntu 24.04: refuse versionless, install, admin, sign-in (__Host- Secure cookie via Traefik), rerun no change, whoami, upgrade with 0 failed answers, broken release rolled back with data, older refused, uninstall with 0 failed answers",
+      "command": "deploy/dev/install-test.sh",
+      "result": "INSTALL TEST PASSED"
+    },
+    {
+      "what": "TestLab with the moved policy and gate changes",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 30m",
+      "result": "PASS in 893s"
+    },
+    {
+      "what": "go test -race, vet, staticcheck, gofmt, tidy, cross-compiles, ui checks, shellcheck of every script",
+      "command": "see CLAUDE.md",
+      "result": "all clean"
+    },
+    {
+      "what": "go vet",
+      "command": "go vet ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.0,
+      "result": "no output"
+    },
+    {
+      "what": "staticcheck",
+      "command": "go tool staticcheck ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.9,
+      "result": "no output"
+    },
+    {
+      "what": "gofmt",
+      "command": "test -z \"$(gofmt -l .)\"",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.4,
+      "result": "no output"
+    },
+    {
+      "what": "release build",
+      "command": "tools/release.sh build 0.0.0-check /tmp/caravana-rel-check",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 4.0,
+      "result": "release 0.0.0-check in /tmp/caravana-rel-check"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "The repo is private: the curl-from-releases command works for others only once it is public and a v* tag is pushed (maintainer action)",
+      "step": "implement"
+    },
+    {
+      "note": "Let s Encrypt, public ports and the gate through the public console are proven only by host.sh prove on a real VM (Phase 2 gate)",
+      "step": "implement"
+    },
+    {
+      "note": "Ubuntu 24.04 only; sslip.io fallback relies on a third-party DNS service",
+      "step": "implement"
+    }
+  ]
 }

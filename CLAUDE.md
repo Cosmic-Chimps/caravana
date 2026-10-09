@@ -131,7 +131,21 @@ downloads), `Deployment.source`/`definitionRecorded`, codes `deployment_not_heal
 this version" and "Export jobspec"; Configure has Export. The gate has a step `rollback-export`,
 and `exportMatchesLive` parses an export with Nomad and plans it against the live job (diff
 `None`) for whoami, the secrets app and the compose app. Stored times now keep nine fraction
-digits so they sort as text. Next: 012.
+digits so they sort as text. Feature 012 is implemented on branch `012-one-command-install`:
+`deploy/install/install.sh` turns a fresh Ubuntu 24.04 VM into a Caravana host (preflight that
+refuses before changing anything; Docker, Nomad with ACLs and CNI at the lab's pins with
+checksums; `caravana0`, ufw, Traefik with one static route, the console domain to
+`127.0.0.1:7070`; Caravana under systemd from `/opt/caravana/<version>` via the `current` link,
+`CARAVANA_TRUSTED_PROXIES=127.0.0.1,::1`; the admin via `/dev/tty`). Rerunning it upgrades (the
+data is copied first and put back with the old binary if the new one fails health); an older
+version is refused; `--uninstall [--purge]` keeps Nomad, Traefik and the apps. The host files
+live in `deploy/install/` and ship in each release, which `tools/release.sh build` makes
+(tarballs per arch, `install.sh` with its version, `SHA256SUMS`) and `.github/workflows/release.yml`
+publishes on a `v*` tag. Builds carry a version (`caravana version`, `/v1/health` answers it,
+`api/openapi.yaml` 0.9.1). On a host: `sudo caravana admin …`, `sudo caravana-nomad …`.
+`deploy/vm/host.sh up` builds a dev release and runs the installer over SSH (`setup.sh` is gone),
+and `prove` goes through the public console domain. `deploy/dev/install-test.sh` runs every
+installer path on a throwaway Lima VM. Next: the Phase 2 gate on a real VM.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -155,7 +169,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
   S3-compatible storage (done for PostgreSQL, branch `010-databases-backups`)
 - 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
   (done, branch `011-rollback-export`)
-- 012 One-command install (`deploy/vm/` is its rehearsal)
+- 012 One-command install (done, branch `012-one-command-install`)
 
 Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume
 and a backup that restores.
@@ -211,12 +225,14 @@ deploy/dev/lab.sh shell            # inside the VM: sudo lab-nomad <cmd> (manage
 ```
 
 ```bash
-deploy/vm/host.sh up               # set up or update the public VM (settings in deploy/vm/host.env)
-deploy/vm/host.sh admin init --email you@example.com   # once per host: the admin the gate and the pages need
-deploy/vm/host.sh prove            # the Phase 1 gate against the VM (~12 min), ends GATE PASSED/FAILED
-deploy/vm/host.sh tunnel           # private access to the VM's API, Nomad and Traefik dashboard
-eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN, CARAVANA_URL through the tunnel
-shellcheck deploy/dev/*.sh deploy/vm/*.sh tools/*.sh
+tools/release.sh build 0.0.0-dev.1 /tmp/rel   # a release: tarballs per arch, install.sh, SHA256SUMS
+deploy/dev/install-test.sh         # the installer on a throwaway Lima VM: install, rerun, upgrade, rollback, uninstall (~10 min)
+deploy/vm/host.sh up               # build a dev release and install/upgrade it on the public VM (settings in deploy/vm/host.env)
+deploy/vm/host.sh prove            # the gate against the VM (~15 min), ends GATE PASSED/FAILED
+deploy/vm/host.sh admin status     # sudo caravana admin <cmd> on the VM
+deploy/vm/host.sh tunnel           # private access to the VM's Nomad and Traefik dashboard
+eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN through the tunnel, CARAVANA_URL
+shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh tools/*.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.
