@@ -232,7 +232,7 @@ deploy/vm/host.sh prove            # the gate against the VM (~15 min), ends GAT
 deploy/vm/host.sh admin status     # sudo caravana admin <cmd> on the VM
 deploy/vm/host.sh tunnel           # private access to the VM's Nomad and Traefik dashboard
 eval "$(deploy/vm/host.sh env)"    # NOMAD_ADDR, NOMAD_TOKEN through the tunnel, CARAVANA_URL
-shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh tools/*.sh
+shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh deploy/examples/*/*.sh tools/*.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of these plus `go test -race` and `go mod tidy -diff`.

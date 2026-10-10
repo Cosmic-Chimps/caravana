@@ -32,7 +32,7 @@ jobs:
       # Lab, VM and install scripts can't run in CI; shellcheck (preinstalled on ubuntu-latest)
       # checks them. deploy/dev/install-test.sh runs the installer on a VM.
       - name: shellcheck
-        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh tools/*.sh
+        run: shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh deploy/examples/*/*.sh tools/*.sh
 
       # The release a v* tag would publish still builds (tools/release.sh, release.yml).
       - name: release builds

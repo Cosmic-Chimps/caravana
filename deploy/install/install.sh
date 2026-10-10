@@ -112,8 +112,9 @@ preflight() {
   local os_id="" os_version=""
   # shellcheck source=/dev/null
   [ -r /etc/os-release ] && os_id="$(. /etc/os-release && echo "$ID")" && os_version="$(. /etc/os-release && echo "$VERSION_ID")"
-  [ "$os_id" = ubuntu ] && [ "$os_version" = 24.04 ] ||
+  if [ "$os_id" != ubuntu ] || [ "$os_version" != 24.04 ]; then
     refuse "this is ${os_id:-an unknown OS} ${os_version}; Caravana installs on Ubuntu 24.04 LTS"
+  fi
 
   arch="$(dpkg --print-architecture)"
   case "$arch" in amd64 | arm64) ;; *) refuse "this CPU is $arch; Caravana runs on amd64 and arm64" ;; esac
@@ -240,11 +241,13 @@ install_nomad() {
   # Bridge traffic must pass through iptables so Nomad's port mappings work.
   echo br_netfilter | write_if_changed /etc/modules-load.d/nomad.conf 0644 bridge-netfilter || true
   modprobe br_netfilter
-  write_if_changed /etc/sysctl.d/99-nomad.conf 0644 bridge-netfilter <<'EOF' && sysctl --system >/dev/null || true
+  if write_if_changed /etc/sysctl.d/99-nomad.conf 0644 bridge-netfilter <<'EOF'; then
 net.bridge.bridge-nf-call-arptables = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
+    sysctl --system >/dev/null
+  fi
 
   step "private interface caravana0 (allocation ports bind here, never publicly)"
   write_if_changed /etc/systemd/network/10-caravana0.netdev 0644 caravana0 <<'EOF' || true
@@ -459,8 +462,9 @@ start_version() {
     # Keep this version and the one before it. "current" is a link, not a version.
     local dir
     for dir in "$OPT"/*; do
-      [ -d "$dir" ] && [ ! -L "$dir" ] || continue
-      case "$(basename "$dir")" in "$CARAVANA_VERSION" | "$installed") ;; *) rm -rf "$dir" ;; esac
+      if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+        case "$(basename "$dir")" in "$CARAVANA_VERSION" | "$installed") ;; *) rm -rf "$dir" ;; esac
+      fi
     done
   fi
   health_is "$CARAVANA_VERSION" || {
