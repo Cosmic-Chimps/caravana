@@ -1,0 +1,85 @@
+{
+  "workflow": "companion",
+  "specName": "Memory per service",
+  "branch": "013-memory-per-service",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-11T21:14:15.811Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-11T21:15:13.975Z"
+    }
+  ],
+  "last_action": "living specs evaluated — skipped (not configured)",
+  "coverage": {
+    "FR-001": {
+      "title": "A service has a memory reservation and a ceiling"
+    },
+    "FR-002": {
+      "title": "Default reservation 256 MB"
+    },
+    "FR-003": {
+      "title": "Default ceiling: max(reservation, 1024 MB)"
+    },
+    "FR-004": {
+      "title": "Reservation above ceiling refused naming the field"
+    },
+    "FR-005": {
+      "title": "Compose mem_reservation/reservations set reservation; mem_limit/limits set ceiling"
+    },
+    "FR-006": {
+      "title": "Ceiling without reservation reserves min(ceiling, default)"
+    },
+    "FR-007": {
+      "title": "API carries both numbers; openapi in the same change"
+    },
+    "FR-008": {
+      "title": "Console definition shows reservation and ceiling"
+    },
+    "FR-009": {
+      "title": "Installer enables memory oversubscription, new and upgraded hosts"
+    },
+    "FR-010": {
+      "title": "Deploy warns when bursting is off"
+    },
+    "FR-011": {
+      "title": "Operator can change both defaults"
+    },
+    "FR-012": {
+      "title": "Ships as v0.1.1; upgrade keeps data and apps"
+    }
+  },
+  "size": "normal",
+  "classification": {
+    "projectedFiles": 12,
+    "projectedTasks": 9,
+    "scopeSignal": "none",
+    "verdict": "normal"
+  },
+  "expectations": [
+    "CPU changes",
+    "redeploying existing apps automatically",
+    "showing live memory use (012.5)"
+  ],
+  "context": [
+    "area: internal/app Resources (MemoryMB)",
+    "area: internal/nomadjob task resources + goldens",
+    "area: internal/compose memory mapping",
+    "area: internal/config CARAVANA_DEFAULT_MEMORY_MB",
+    "area: deploy/install/install.sh + deploy/dev (scheduler memory oversubscription)",
+    "area: internal/ui configure definition panel",
+    "constraint: constitution V openapi same change, no breaking change",
+    "finding: today mem_limit maps to MemoryMB as a hard Nomad limit; default 64 MB"
+  ],
+  "intent": "Services reserve 256 MB by default and may burst to a ceiling (1 GB default); released as v0.1.1 to test the real-host upgrade"
+}
