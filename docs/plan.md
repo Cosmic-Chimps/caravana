@@ -176,6 +176,23 @@ and by `Accept` header, between the app and Fediproxy. Until then, an app ships 
 Traefik tags. More than one router per service needs a constitution amendment, because VI names
 the router `<app>-<service>`.
 
+### Updates from the console (Phase 2.5 or 3)
+
+Added 2026-10-11. Today Caravana is updated by running the install command again on the
+server (feature 012: newer versions upgrade with rollback, apps keep running). Nothing tells the
+owner a new version exists. Two steps:
+
+1. **A notice:** the console shows "Caravana X.Y.Z is available" with the release notes and the
+   command to run. It only reads the releases list.
+2. **Updating from the console:** "Update" only records a request. A root systemd timer from the
+   installer picks it up and runs that release's installer, checksum-verified, with the same
+   rollback. Opt-in automatic updates (patch releases at a set hour) use the same timer. The
+   console never gets root: Caravana's service user can't touch `/opt/caravana` or systemd, so a
+   compromised console can't take over the host.
+
+Phase 3 adds nodes over SSH with the same install, so updating Nomad and Caravana on every node
+belongs with it.
+
 ### Bring your own Nomad (Phase 4)
 
 Added 2026-10-11. Caravana can run as the PaaS alone, on a machine without Nomad. People create
