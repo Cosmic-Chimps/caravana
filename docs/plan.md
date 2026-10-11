@@ -129,6 +129,26 @@ rolls back.
 Git sources + builds as Nomad batch jobs, app templates, teams and roles, managed Cloud tier
 (needs legal review of Nomad's BSL first).
 
+**Backlog: bring your own Nomad** (added 2026-10-11). Caravana can run as the PaaS alone, on a
+machine without Nomad. People create an account in Caravana and connect the Nomad clusters they
+already run. They get Caravana's console over those clusters: deploys, rollbacks, secrets,
+backups, logs and their status. Today one installation is one admin and one Nomad (`NOMAD_ADDR`)
+on the same host. This is also the shape of the managed Cloud tier above. Questions its spec
+has to settle:
+
+- **Accounts:** sign-up and more than one user, which is the teams and roles work above.
+- **Clusters per account:** an address, a token and a CA per cluster, stored safely.
+  Constitution VII keeps the control plane's own secrets in Nomad Variables, but here there is no
+  local Nomad, so this needs an amendment.
+- **Reaching the cluster:** Caravana calls a public Nomad API over TLS, or a small agent in the
+  cluster connects out to Caravana. The agent works behind firewalls and NAT.
+- **Jobs Caravana didn't create:** today they are refused (`job_conflict`). For observability,
+  Caravana shows them read-only, and can later adopt them as apps.
+- **What a cluster must have:** Caravana assumes Traefik's Nomad provider (routing tags), dynamic
+  host volumes and Docker. It checks the cluster when connecting and says what's missing.
+- **The scoped policy:** connecting includes making Caravana's own limited token from
+  `caravana-policy.hcl`, never keeping a management token.
+
 ## Open decisions (settle them in the feature spec that needs them)
 
 1. **Digest resolution**: settled in feature 003: our own small registry v2 client in
