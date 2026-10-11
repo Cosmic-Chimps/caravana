@@ -129,14 +129,62 @@ rolls back.
 Git sources + builds as Nomad batch jobs, app templates, teams and roles, managed Cloud tier
 (needs legal review of Nomad's BSL first).
 
-**Backlog: bring your own Nomad** (added 2026-10-11). Caravana can run as the PaaS alone, on a
-machine without Nomad. People create an account in Caravana and connect the Nomad clusters they
-already run. They get Caravana's console over those clusters: deploys, rollbacks, secrets,
-backups, logs and their status. Today one installation is one admin and one Nomad (`NOMAD_ADDR`)
-on the same host. This is also the shape of the managed Cloud tier above. Questions its spec
+## Backlog (found while running real apps, not scheduled yet)
+
+Each item names the phase it belongs to. Its feature spec settles the details.
+
+### Memory per service (next, small)
+
+Added 2026-10-11. A service that doesn't set its memory gets `CARAVANA_DEFAULT_MEMORY_MB`, 64 MB,
+and Nomad enforces it as a hard limit, so Node.js, .NET, Postgres or Keycloak are killed at
+start. Hollo's example sets `mem_limit` to work around it. Raise the default (256 MB, say), and
+let a service use the node's spare memory beyond what it reserves (Nomad's `memory_max`), so a
+short peak isn't a kill. It changes `nomadjob` and its golden files, the configuration, and the
+console's definition panel.
+
+### Private registry credentials (Phase 2.5)
+
+Added 2026-10-11. Caravana resolves digests and Nomad pulls images anonymously, so only public
+images deploy. Most real apps, Bella Baxter (Phase 2.5's gate) and anything published by
+`PublishToCaravana` need private ones. It needs:
+
+- credentials per registry, write-only like secrets, kept in Nomad Variables
+- the digest lookup using them (`internal/registry`)
+- the job's docker `auth` taken from a template, never written into the job
+- the console and the API
+
+### Backups for more than Postgres (Phase 2.5)
+
+Added 2026-10-11. Feature 010 backs up PostgreSQL only. Real apps also keep data in SQLite files
+(Fhodor) and in plain volumes (Hollo's uploaded media). Next engines:
+
+- `sqlite`: a consistent copy with `sqlite3 .backup` or `VACUUM INTO`, never a raw copy of a
+  file in use
+- `volume`: a tarball of the volume, taken while the service is stopped, or with a warning that
+  it may be inconsistent
+- MySQL/MariaDB and Redis, as 010 already planned
+
+All use the same destination, retention, back up now and restore.
+
+### Routing by path and header (Phase 3 or later)
+
+Added 2026-10-11. Traefik routes one domain to one service today. Fediproxy, the maintainer's
+ActivityPub sidecar, needs one domain split by path (`/.well-known/webfinger`, `/inbox`, `/ap/*`)
+and by `Accept` header, between the app and Fediproxy. Until then, an app ships its own gateway
+(YARP, Caddy) as the one service with the domain, and that gateway trusts Traefik's
+`X-Forwarded-*` headers. Path prefixes and headers would join the overlay's `domains`, still as
+Traefik tags. More than one router per service needs a constitution amendment, because VI names
+the router `<app>-<service>`.
+
+### Bring your own Nomad (Phase 4)
+
+Added 2026-10-11. Caravana can run as the PaaS alone, on a machine without Nomad. People create
+an account in Caravana and connect the Nomad clusters they already run. They get Caravana's
+console over those clusters: deploys, rollbacks, secrets, backups, logs and their status. Today one installation is one admin and one Nomad (`NOMAD_ADDR`)
+on the same host. This is also the shape of Phase 4's managed Cloud tier. Questions its spec
 has to settle:
 
-- **Accounts:** sign-up and more than one user, which is the teams and roles work above.
+- **Accounts:** sign-up and more than one user, which is Phase 4's teams and roles.
 - **Clusters per account:** an address, a token and a CA per cluster, stored safely.
   Constitution VII keeps the control plane's own secrets in Nomad Variables, but here there is no
   local Nomad, so this needs an amendment.
