@@ -66,3 +66,6 @@ __pycache__/
 # notes are per-session. Claude Code uses .claude/skills; no Copilot copies under .github/.
 /.claude/skills/impeccable/scripts/bin/
 /.impeccable/critique/
+
+# Claude Code worktrees (local)
+/.claude/worktrees/
