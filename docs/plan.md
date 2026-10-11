@@ -86,6 +86,13 @@ every port but 22, 80 and 443 closed from outside. The same checks pass in the l
 **Phase 2 gate:** a real multi-service compose app runs, with a database on a host volume and a
 backup that restores. 008–012 are the MVP: after 012, someone else can install and use it.
 
+**Status: passed 2026-10-11.** On a netcup VPS (Ubuntu 24.04, amd64), installed with the
+published one-line command from release `v0.1.0`, behind Cloudflare DNS: Hollo
+(`deploy/examples/hollo/`) runs as two services, Hollo and Postgres 17, each on a host volume,
+at its own domain with a Let's Encrypt certificate, and federates. Its image was upgraded
+(0.6.16 to 0.9.22) by a deploy. A backup to Cloudflare R2, then a restore, brought back the post
+written before the backup and dropped the one written after.
+
 **Working rule from 008 on:** each feature ships its console part with it, not later (backups
 on the app page in 010, "redeploy this version" in 011). Constitution V already makes the API
 and the console share the service layer; this keeps the console from falling behind.

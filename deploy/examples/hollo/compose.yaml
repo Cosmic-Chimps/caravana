@@ -7,7 +7,7 @@
 name: hollo
 services:
   hollo:
-    image: ghcr.io/fedify-dev/hollo:0.6.16
+    image: ghcr.io/fedify-dev/hollo:0.9.22
     expose: ["3000"]
     # Caravana gives a service 64 MB unless it says otherwise, and Nomad enforces it: Node.js
     # needs more.

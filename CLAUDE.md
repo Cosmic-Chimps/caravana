@@ -145,7 +145,9 @@ publishes on a `v*` tag. Builds carry a version (`caravana version`, `/v1/health
 `api/openapi.yaml` 0.9.1). On a host: `sudo caravana admin …`, `sudo caravana-nomad …`.
 `deploy/vm/host.sh up` builds a dev release and runs the installer over SSH (`setup.sh` is gone),
 and `prove` goes through the public console domain. `deploy/dev/install-test.sh` runs every
-installer path on a throwaway Lima VM. Next: the Phase 2 gate on a real VM.
+installer path on a throwaway Lima VM. The Phase 2 gate passed on 2026-10-11: Hollo (two services,
+Postgres on a volume, backed up to R2 and restored) on a netcup VPS installed from release `v0.1.0`.
+`deploy/examples/hollo/` holds its files and a runbook.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -172,7 +174,7 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 012 One-command install (done, branch `012-one-command-install`)
 
 Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume
-and a backup that restores.
+and a backup that restores. Passed 2026-10-11 (Hollo on netcup, see `docs/plan.md`).
 
 Out of scope for now: git builds, multi-node, WireGuard, teams and roles, Aspire/Bella Baxter
 (Phase 2.5), GPUs and binaries.
