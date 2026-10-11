@@ -61,3 +61,8 @@ __pycache__/
 
 # Example apps: the overlay holds secret values
 /deploy/examples/*/overlay.json
+
+# The impeccable design skill: its launcher downloads its binary on first run, and its critique
+# notes are per-session. Claude Code uses .claude/skills; no Copilot copies under .github/.
+/.claude/skills/impeccable/scripts/bin/
+/.impeccable/critique/
