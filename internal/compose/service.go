@@ -65,17 +65,27 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 	} else if sc.Scale != nil {
 		svc.Replicas = new(*sc.Scale)
 	}
-	mem, cpus := int64(sc.MemLimit), float64(sc.CPUS)
+	// Memory as Docker means it: a reservation the scheduler counts, and a
+	// limit the service may burst to while the node has memory spare.
+	ceiling, reserve, cpus := int64(sc.MemLimit), int64(sc.MemReservation), float64(sc.CPUS)
 	if sc.Deploy != nil && sc.Deploy.Resources.Limits != nil {
 		if b := int64(sc.Deploy.Resources.Limits.MemoryBytes); b > 0 {
-			mem = b
+			ceiling = b
 		}
 		if c := float64(sc.Deploy.Resources.Limits.NanoCPUs); c > 0 {
 			cpus = c
 		}
 	}
-	if mem > 0 {
-		svc.Resources.MemoryMB = int(math.Ceil(float64(mem) / (1 << 20)))
+	if sc.Deploy != nil && sc.Deploy.Resources.Reservations != nil {
+		if b := int64(sc.Deploy.Resources.Reservations.MemoryBytes); b > 0 {
+			reserve = b
+		}
+	}
+	if ceiling > 0 {
+		svc.Resources.MemoryMaxMB = megabytes(ceiling)
+	}
+	if reserve > 0 {
+		svc.Resources.MemoryMB = megabytes(reserve)
 	}
 	if cpus > 0 {
 		svc.Resources.CPUMHz = int(math.Round(cpus * 1000))
@@ -231,3 +241,6 @@ func serviceWarnings(sc types.ServiceConfig, warn func(string, string, ...any)) 
 		warn(".stop_grace_period", "is ignored: Nomad's kill timeout applies")
 	}
 }
+
+// megabytes is a byte count in whole MB, rounded up.
+func megabytes(b int64) int { return int(math.Ceil(float64(b) / (1 << 20))) }

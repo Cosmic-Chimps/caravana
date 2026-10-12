@@ -100,6 +100,8 @@ func TestRefused(t *testing.T) {
 		wantMsg   string
 	}{
 		{"build", "services:\n  web:\n    build: .\n", nil, "services.web.build", "prebuilt images"},
+		{"a CPU reservation", "services:\n  web:\n    image: x\n    deploy:\n      resources:\n        reservations:\n          cpus: \"0.5\"\n", nil, "services.web.deploy.resources.reservations.cpus", ""},
+		{"a reservation above the limit", "services:\n  web:\n    image: x\n    mem_limit: 256m\n    mem_reservation: 512m\n", nil, "services.web.resources.memoryMB", "ceiling"},
 		{"build next to image", "services:\n  web:\n    image: x\n    build: .\n", nil, "services.web.build", "prebuilt images"},
 		{"entrypoint", "services:\n  web:\n    image: x\n    entrypoint: [sh]\n", nil, "services.web.entrypoint", ""},
 		{"env_file", "services:\n  web:\n    image: x\n    env_file: web.env\n", nil, "services.web.env_file", "files from your disk"},
@@ -210,5 +212,32 @@ func TestVariables(t *testing.T) {
 	}
 	if _, _, err := Translate("blog", Request{Compose: "services:\n  web:\n    image: ${LEAK}\n"}); err == nil {
 		t.Error("a variable set only in Caravana's environment was used")
+	}
+}
+
+// Feature 013: Compose's memory fields, as Docker means them.
+func TestMemory(t *testing.T) {
+	tests := []struct {
+		name             string
+		file             string
+		reserve, ceiling int
+	}{
+		{"mem_limit is the ceiling", "services:\n  web:\n    image: x\n    mem_limit: 768m\n", 0, 768},
+		{"mem_reservation is the reservation", "services:\n  web:\n    image: x\n    mem_reservation: 300m\n", 300, 0},
+		{"both", "services:\n  web:\n    image: x\n    mem_limit: 1g\n    mem_reservation: 512m\n", 512, 1024},
+		{"deploy.resources", "services:\n  web:\n    image: x\n    deploy:\n      resources:\n        limits: {memory: 2g}\n        reservations: {memory: 1g}\n", 1024, 2048},
+		{"neither", "services:\n  web:\n    image: x\n", 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, _, err := Translate("shop", Request{Compose: tt.file})
+			if err != nil {
+				t.Fatalf("Translate: %v", err)
+			}
+			r := a.Services[0].Resources
+			if r.MemoryMB != tt.reserve || r.MemoryMaxMB != tt.ceiling {
+				t.Errorf("memoryMB %d, memoryMaxMB %d; want %d, %d", r.MemoryMB, r.MemoryMaxMB, tt.reserve, tt.ceiling)
+			}
+		})
 	}
 }

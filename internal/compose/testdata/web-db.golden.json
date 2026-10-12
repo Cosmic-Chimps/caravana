@@ -70,7 +70,8 @@
         "replicas": 2,
         "resources": {
           "cpuMHz": 500,
-          "memoryMB": 256
+          "memoryMB": 128,
+          "memoryMaxMB": 256
         },
         "health": {
           "path": "/healthz",
