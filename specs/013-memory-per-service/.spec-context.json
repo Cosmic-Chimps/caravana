@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Memory per service",
   "branch": "013-memory-per-service",
-  "currentStep": "tasks",
-  "status": "tasking",
+  "currentStep": "implement",
+  "status": "implementing",
   "history": [
     {
       "step": "specify",
@@ -60,9 +60,87 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-12T01:23:46.938Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:23:47.441Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-12T01:23:47.523Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:24:14.775Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:25:04.159Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:26:31.636Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:28:59.176Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:29:43.525Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:30:17.700Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:30:29.398Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:46:55.841Z"
     }
   ],
-  "last_action": "living specs evaluated — skipped (not configured)",
+  "last_action": "9/9 tasks; install-test, race and TestLab pass",
   "coverage": {
     "FR-001": {
       "title": "A service has a memory reservation and a ceiling",
@@ -156,6 +234,11 @@
       "decision": "Compose mem_limit is the ceiling, mem_reservation the reservation",
       "why": "matches Docker semantics; packs more apps per node",
       "rejected": "mem_limit as reservation (today)"
+    },
+    {
+      "decision": "Console hides memory left at defaults (Using defaults line) instead of printing default numbers",
+      "why": "matches the existing definition panel convention",
+      "rejected": "showing 256/1024 for unset fields"
     }
   ],
   "step_summaries": {
@@ -165,7 +248,123 @@
     },
     "tasks": {
       "summary": "9 tasks: model+config then translator; installer/lab setting; Compose, console, API in parallel; docs; validation"
+    },
+    "implement": {
+      "summary": "Memory reservation (256 MB default) and burst ceiling (1 GB default) per service, Compose mapping, console, openapi 0.10.0, installer turns on oversubscription"
     }
   },
-  "approach": "Translator sets MemoryMB (reservation, default 256) and MemoryMaxMB (ceiling, default max(res,1024)); Compose maps mem_reservation/mem_limit; installer and lab enable Nomad memory oversubscription; console shows both; ships as v0.1.1."
+  "approach": "Translator sets MemoryMB (reservation, default 256) and MemoryMaxMB (ceiling, default max(res,1024)); Compose maps mem_reservation/mem_limit; installer and lab enable Nomad memory oversubscription; console shows both; ships as v0.1.1.",
+  "currentTask": "T009",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "Resources.MemoryMaxMB, validation (non-negative, reservation <= ceiling), tests",
+      "files": [
+        "internal/app/app.go",
+        "internal/app/validate.go",
+        "internal/app/validate_test.go"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "CARAVANA_DEFAULT_MEMORY_MAX_MB (1024), default reservation 256, ceiling >= reservation, tests",
+      "files": [
+        "internal/config/config.go",
+        "internal/config/config_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "Settings.DefaultMemoryMaxMB, taskResources (reservation/ceiling rules), HCL memory_max, goldens, lab whoami.json, TestTaskMemory",
+      "files": [
+        "internal/nomadjob/translate.go",
+        "internal/nomadjob/translate_test.go",
+        "internal/nomadjob/hcl.go",
+        "internal/nomadjob/hcl_test.go",
+        "internal/nomadjob/testdata",
+        "deploy/dev/whoami.json"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "Compose: mem_reservation/reservations.memory -> reservation, mem_limit/limits.memory -> ceiling; allowlist; other reservations refused; fixture, TestMemory; Hollo comment",
+      "files": [
+        "internal/compose/fields.go",
+        "internal/compose/service.go",
+        "internal/compose/compose_test.go",
+        "internal/compose/testdata",
+        "deploy/examples/hollo/compose.yaml"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "console Memory row: reserved / up to / both, hidden when default; TestMemoryValue",
+      "files": [
+        "internal/ui/configure.go",
+        "internal/ui/configure_test.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "openapi 0.10.0 memoryMB/memoryMaxMB described; TestDeployMemory round-trip + reservation-above-ceiling 400; oversubscription warning already carried via register warnings (register_test)",
+      "files": [
+        "api/openapi.yaml",
+        "internal/api/deployments_test.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "CLAUDE.md where we are; plan backlog item marked done with what v0.1.1 changes",
+      "files": [
+        "CLAUDE.md",
+        "docs/plan.md"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "all CI checks clean; race ok; install-test PASSED (scheduler on); TestLab PASS 871s with oversubscription on"
+    }
+  },
+  "verified": [
+    {
+      "what": "TestLab with memory oversubscription on in the lab (export plan check includes memory_max)",
+      "command": "CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 30m",
+      "result": "PASS in 871s"
+    },
+    {
+      "what": "installer on a fresh Lima Ubuntu 24.04: scheduler set, rerun no change, upgrade, rollback, refuse older, uninstall",
+      "command": "deploy/dev/install-test.sh",
+      "result": "INSTALL TEST PASSED"
+    },
+    {
+      "what": "go vet",
+      "command": "go vet ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.5,
+      "result": "no output"
+    },
+    {
+      "what": "staticcheck",
+      "command": "go tool staticcheck ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.6,
+      "result": "no output"
+    },
+    {
+      "what": "gofmt",
+      "command": "test -z \"$(gofmt -l .)\"",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 0.2,
+      "result": "no output"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "SC-003 (upgrade the real netcup host from v0.1.0 to v0.1.1) is the maintainer action after merge and tag",
+      "step": "implement"
+    }
+  ]
 }

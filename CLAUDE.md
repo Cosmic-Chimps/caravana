@@ -147,7 +147,13 @@ publishes on a `v*` tag. Builds carry a version (`caravana version`, `/v1/health
 and `prove` goes through the public console domain. `deploy/dev/install-test.sh` runs every
 installer path on a throwaway Lima VM. The Phase 2 gate passed on 2026-10-11: Hollo (two services,
 Postgres on a volume, backed up to R2 and restored) on a netcup VPS installed from release `v0.1.0`.
-`deploy/examples/hollo/` holds its files and a runbook.
+`deploy/examples/hollo/` holds its files and a runbook. Feature 013 (memory per service, branch
+`013-memory-per-service`, release `v0.1.1`): a service reserves `memoryMB` (default 256,
+`CARAVANA_DEFAULT_MEMORY_MB`) and may burst to `memoryMaxMB` (default the larger of the
+reservation and 1024, `CARAVANA_DEFAULT_MEMORY_MAX_MB`) as Nomad's `memory_max`. Compose's
+`mem_reservation` is the reservation and `mem_limit` the ceiling. The installer and `lab.sh up`
+turn on Nomad's memory oversubscription (`operator scheduler set-config`). Without it, Nomad
+ignores the ceiling and its register warning lands in the deployment's warnings.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

@@ -140,14 +140,12 @@ Git sources + builds as Nomad batch jobs, app templates, teams and roles, manage
 
 Each item names the phase it belongs to. Its feature spec settles the details.
 
-### Memory per service (next, small)
+### Memory per service (done: feature 013, release v0.1.1)
 
-Added 2026-10-11. A service that doesn't set its memory gets `CARAVANA_DEFAULT_MEMORY_MB`, 64 MB,
-and Nomad enforces it as a hard limit, so Node.js, .NET, Postgres or Keycloak are killed at
-start. Hollo's example sets `mem_limit` to work around it. Raise the default (256 MB, say), and
-let a service use the node's spare memory beyond what it reserves (Nomad's `memory_max`), so a
-short peak isn't a kill. It changes `nomadjob` and its golden files, the configuration, and the
-console's definition panel.
+Done 2026-10-11 (specs/013-memory-per-service). Each service reserves memory (`memoryMB`, 256 MB
+by default) and may burst to a ceiling while the node has memory spare (`memoryMaxMB`, by default
+the larger of the reservation and 1024 MB). Compose's `mem_reservation` is the reservation and
+`mem_limit` the ceiling. The installer and the lab turn on Nomad's memory oversubscription.
 
 ### Private registry credentials (Phase 2.5)
 
