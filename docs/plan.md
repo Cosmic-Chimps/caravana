@@ -146,6 +146,8 @@ Done 2026-10-11 (specs/013-memory-per-service). Each service reserves memory (`m
 by default) and may burst to a ceiling while the node has memory spare (`memoryMaxMB`, by default
 the larger of the reservation and 1024 MB). Compose's `mem_reservation` is the reservation and
 `mem_limit` the ceiling. The installer and the lab turn on Nomad's memory oversubscription.
+The real host upgraded from `v0.1.0` to `v0.1.1` on 2026-10-12 with the published command, Hollo
+answering throughout: the first upgrade on a server with real data.
 
 ### Private registry credentials (Phase 2.5)
 
