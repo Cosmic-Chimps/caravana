@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Console v2",
   "branch": "014-console-v2",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planned",
   "history": [
     {
       "step": "specify",
@@ -11,6 +11,13 @@
       "kind": "start",
       "by": "extension",
       "at": "2026-10-12T18:42:37.303Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-12T18:59:04.553Z"
     }
   ]
 }
