@@ -183,6 +183,12 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	if svc.Resources.MemoryMB < 0 {
 		return NewFieldError(field+".resources.memoryMB", "must not be negative")
 	}
+	if svc.Resources.MemoryMaxMB < 0 {
+		return NewFieldError(field+".resources.memoryMaxMB", "must not be negative")
+	}
+	if r := svc.Resources; r.MemoryMB > 0 && r.MemoryMaxMB > 0 && r.MemoryMB > r.MemoryMaxMB {
+		return NewFieldError(field+".resources.memoryMB", "reserves %d MB, more than the service's ceiling of %d MB (memoryMaxMB)", r.MemoryMB, r.MemoryMaxMB)
+	}
 
 	envNames, err := validateEnv(field, svc.Env)
 	if err != nil {

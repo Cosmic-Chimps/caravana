@@ -211,6 +211,12 @@ type HealthCheck struct {
 type Resources struct {
 	// CPUMHz is the CPU share in MHz. Zero means the environment default.
 	CPUMHz int `json:"cpuMHz,omitempty"`
-	// MemoryMB is the memory limit in MB. Zero means the environment default.
+	// MemoryMB is the memory reserved for the service, in MB: what the
+	// scheduler counts when it places copies. Zero means the environment
+	// default.
 	MemoryMB int `json:"memoryMB,omitempty"`
+	// MemoryMaxMB is the most memory the service may use while the node has
+	// it spare, in MB; past it the copy is killed and restarted. Zero means
+	// the larger of the reservation and the environment default.
+	MemoryMaxMB int `json:"memoryMaxMB,omitempty"`
 }

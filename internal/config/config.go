@@ -76,6 +76,7 @@ var (
 	certResolverSetting = setting{"CARAVANA_CERT_RESOLVER", "cert-resolver"}
 	cpuSetting          = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
 	memorySetting       = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
+	memoryMaxSetting    = setting{"CARAVANA_DEFAULT_MEMORY_MAX_MB", "default-memory-max-mb"}
 	namesImageSetting   = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
 	backupImageSetting  = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
@@ -88,12 +89,13 @@ var (
 // translatorSettings maps nomadjob's field names to our settings, so its
 // validation errors name the env var and flag the operator actually sets.
 var translatorSettings = map[string]setting{
-	"settings.entrypoint":      entrypointSetting,
-	"settings.certResolver":    certResolverSetting,
-	"settings.defaultCPUMHz":   cpuSetting,
-	"settings.defaultMemoryMB": memorySetting,
-	"settings.namesImage":      namesImageSetting,
-	"settings.backupImage":     backupImageSetting,
+	"settings.entrypoint":         entrypointSetting,
+	"settings.certResolver":       certResolverSetting,
+	"settings.defaultCPUMHz":      cpuSetting,
+	"settings.defaultMemoryMB":    memorySetting,
+	"settings.defaultMemoryMaxMB": memoryMaxSetting,
+	"settings.namesImage":         namesImageSetting,
+	"settings.backupImage":        backupImageSetting,
 }
 
 // Load reads the configuration. args are the command-line arguments without
@@ -113,7 +115,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	entrypoint := fs.String(entrypointSetting.flag, envOr(entrypointSetting, "websecure"), "Traefik entrypoint for app routers")
 	certResolver := fs.String(certResolverSetting.flag, envOr(certResolverSetting, ""), "Traefik certificate resolver; empty means Traefik's default certificate")
 	cpu := fs.String(cpuSetting.flag, envOr(cpuSetting, "100"), "default CPU per service, in MHz")
-	memory := fs.String(memorySetting.flag, envOr(memorySetting, "64"), "default memory per service, in MB")
+	memory := fs.String(memorySetting.flag, envOr(memorySetting, "256"), "default memory reserved per service, in MB")
+	memoryMax := fs.String(memoryMaxSetting.flag, envOr(memoryMaxSetting, "1024"), "default memory a service may burst to while the node has it spare, in MB")
 	namesImage := fs.String(namesImageSetting.flag, envOr(namesImageSetting, ""), "image of the sidecar that lets an app's services reach each other by name, pinned by digest; empty means the built-in busybox")
 	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
@@ -137,6 +140,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if c.Settings.DefaultMemoryMB, err = parseInt(memorySetting, *memory); err != nil {
+		return Config{}, err
+	}
+	if c.Settings.DefaultMemoryMaxMB, err = parseInt(memoryMaxSetting, *memoryMax); err != nil {
 		return Config{}, err
 	}
 	if err := checkListen(c.Listen); err != nil {

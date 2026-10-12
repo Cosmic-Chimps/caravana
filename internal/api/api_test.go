@@ -113,7 +113,7 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 		t.Fatalf("nomad client: %v", err)
 	}
 	d := deploy.New(client, &registry.Client{Endpoints: e.Registry.Endpoints()},
-		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64})
+		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256})
 	d.Timing = deploy.Timing{PollGap: time.Millisecond, BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,
 		VersionRetries: []time.Duration{time.Millisecond}}
 	svc := service.New(st, d, deploy.NewVariables(client), log)

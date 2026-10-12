@@ -125,6 +125,7 @@ func (w *hclWriter) task(t *api.Task) {
 			w.block("resources", nil, func() {
 				w.optInt("cpu", r.CPU)
 				w.optInt("memory", r.MemoryMB)
+				w.optInt("memory_max", r.MemoryMaxMB)
 			})
 		}
 		for _, m := range t.VolumeMounts {

@@ -24,10 +24,11 @@ func TestLoad(t *testing.T) {
 		Listen:  "127.0.0.1:7070",
 		DataDir: "data",
 		Settings: nomadjob.Settings{
-			Entrypoint:      "websecure",
-			CertResolver:    "",
-			DefaultCPUMHz:   100,
-			DefaultMemoryMB: 64,
+			Entrypoint:         "websecure",
+			CertResolver:       "",
+			DefaultCPUMHz:      100,
+			DefaultMemoryMB:    256,
+			DefaultMemoryMaxMB: 1024,
 		},
 		NomadAddr: "http://127.0.0.1:4646",
 	}
@@ -43,17 +44,18 @@ func TestLoad(t *testing.T) {
 		{
 			name: "env sets every field",
 			env: map[string]string{
-				"CARAVANA_LISTEN":             "127.0.0.1:9000",
-				"CARAVANA_DATA_DIR":           "/var/lib/caravana",
-				"CARAVANA_TRAEFIK_ENTRYPOINT": "https",
-				"CARAVANA_CERT_RESOLVER":      "letsencrypt",
-				"CARAVANA_DEFAULT_CPU_MHZ":    "250",
-				"CARAVANA_DEFAULT_MEMORY_MB":  "128",
+				"CARAVANA_LISTEN":                "127.0.0.1:9000",
+				"CARAVANA_DATA_DIR":              "/var/lib/caravana",
+				"CARAVANA_TRAEFIK_ENTRYPOINT":    "https",
+				"CARAVANA_CERT_RESOLVER":         "letsencrypt",
+				"CARAVANA_DEFAULT_CPU_MHZ":       "250",
+				"CARAVANA_DEFAULT_MEMORY_MB":     "128",
+				"CARAVANA_DEFAULT_MEMORY_MAX_MB": "512",
 			},
 			want: func(c *Config) {
 				c.Listen = "127.0.0.1:9000"
 				c.DataDir = "/var/lib/caravana"
-				c.Settings = nomadjob.Settings{Entrypoint: "https", CertResolver: "letsencrypt", DefaultCPUMHz: 250, DefaultMemoryMB: 128}
+				c.Settings = nomadjob.Settings{Entrypoint: "https", CertResolver: "letsencrypt", DefaultCPUMHz: 250, DefaultMemoryMB: 128, DefaultMemoryMaxMB: 512}
 			},
 		},
 		{
@@ -71,6 +73,7 @@ func TestLoad(t *testing.T) {
 		{name: "data dir empty", args: []string{"-data-dir", ""}, wantErr: []string{"CARAVANA_DATA_DIR", "-data-dir"}},
 		{name: "cpu not a number", env: map[string]string{"CARAVANA_DEFAULT_CPU_MHZ": "abc"}, wantErr: []string{"CARAVANA_DEFAULT_CPU_MHZ", "-default-cpu-mhz"}},
 		{name: "memory negative", env: map[string]string{"CARAVANA_DEFAULT_MEMORY_MB": "-5"}, wantErr: []string{"CARAVANA_DEFAULT_MEMORY_MB", "-default-memory-mb"}},
+		{name: "memory ceiling below the reservation", env: map[string]string{"CARAVANA_DEFAULT_MEMORY_MAX_MB": "128"}, wantErr: []string{"CARAVANA_DEFAULT_MEMORY_MAX_MB", "-default-memory-max-mb"}},
 		{name: "entrypoint list", env: map[string]string{"CARAVANA_TRAEFIK_ENTRYPOINT": "a,b"}, wantErr: []string{"CARAVANA_TRAEFIK_ENTRYPOINT", "-traefik-entrypoint"}},
 		{name: "cert resolver with space", env: map[string]string{"CARAVANA_CERT_RESOLVER": "le tls"}, wantErr: []string{"CARAVANA_CERT_RESOLVER", "-cert-resolver"}},
 		{name: "unknown flag", args: []string{"-nope"}, wantErr: []string{"-nope"}},

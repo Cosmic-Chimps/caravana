@@ -58,6 +58,7 @@ job "blog" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
     }
     task "names" {
@@ -112,6 +113,7 @@ job "blog" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
     }
     task "names" {

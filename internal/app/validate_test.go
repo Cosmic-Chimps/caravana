@@ -98,6 +98,10 @@ func TestValidate(t *testing.T) {
 		{"replicas negative", func(a *App, d *Deployment) { a.Services[0].Replicas = new(-1) }, "services[0].replicas"},
 		{"cpu negative", func(a *App, d *Deployment) { a.Services[0].Resources.CPUMHz = -1 }, "services[0].resources.cpuMHz"},
 		{"memory negative", func(a *App, d *Deployment) { a.Services[0].Resources.MemoryMB = -1 }, "services[0].resources.memoryMB"},
+		{"memory ceiling negative", func(a *App, d *Deployment) { a.Services[0].Resources.MemoryMaxMB = -1 }, "services[0].resources.memoryMaxMB"},
+		{"reservation above the ceiling", func(a *App, d *Deployment) {
+			a.Services[0].Resources = Resources{MemoryMB: 512, MemoryMaxMB: 256}
+		}, "services[0].resources.memoryMB"},
 
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},

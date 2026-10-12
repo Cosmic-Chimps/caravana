@@ -58,6 +58,7 @@ job "shop" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
     }
     task "names" {
@@ -134,6 +135,7 @@ job "shop" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
       volume_mount {
         volume = "db-data"

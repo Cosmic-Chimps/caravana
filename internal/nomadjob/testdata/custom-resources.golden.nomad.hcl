@@ -52,6 +52,7 @@ job "whoami" {
       resources {
         cpu = 500
         memory = 256
+        memory_max = 256
       }
     }
   }

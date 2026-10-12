@@ -17,7 +17,7 @@ import (
 // whoamiDigest is the digest part of apptest.WhoamiDigest.
 const whoamiDigest = "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
 
-var labSettings = nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64}
+var labSettings = nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256}
 
 // fastTiming makes every wait a few milliseconds.
 var fastTiming = Timing{

@@ -44,7 +44,7 @@
               "CPU": 100,
               "Cores": null,
               "MemoryMB": 64,
-              "MemoryMaxMB": null,
+              "MemoryMaxMB": 256,
               "DiskMB": null,
               "Networks": null,
               "Devices": null,

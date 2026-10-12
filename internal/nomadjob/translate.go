@@ -30,6 +30,10 @@ type Settings struct {
 	DefaultCPUMHz int
 	// DefaultMemoryMB is used for services that don't set their own memory.
 	DefaultMemoryMB int
+	// DefaultMemoryMaxMB is the memory ceiling of services that don't set
+	// their own: they may use up to the larger of it and their reservation
+	// while the node has memory spare. It is at least DefaultMemoryMB.
+	DefaultMemoryMaxMB int
 	// NamesImage is the image of the sidecar that lets the services of an app
 	// reach each other by name. It must be pinned by digest. Empty means
 	// DefaultNamesImage.
@@ -160,6 +164,9 @@ func (s Settings) Validate() error {
 	if s.DefaultMemoryMB < minMemoryMB {
 		return app.NewFieldError("settings.defaultMemoryMB", "must be at least %d, got %d", minMemoryMB, s.DefaultMemoryMB)
 	}
+	if s.DefaultMemoryMaxMB < s.DefaultMemoryMB {
+		return app.NewFieldError("settings.defaultMemoryMaxMB", "must be at least the default reservation (%d MB), got %d", s.DefaultMemoryMB, s.DefaultMemoryMaxMB)
+	}
 	if s.NamesImage != "" && !pinnedImageRE.MatchString(s.NamesImage) {
 		return app.NewFieldError("settings.namesImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.NamesImage)
 	}
@@ -177,6 +184,9 @@ func checkNomadLimits(i int, svc app.Service, s Settings) error {
 
 	if mem := svc.Resources.MemoryMB; mem != 0 && mem < minMemoryMB {
 		return app.NewFieldError(field+".resources.memoryMB", "must be at least %d MB, got %d", minMemoryMB, mem)
+	}
+	if mem := svc.Resources.MemoryMaxMB; mem != 0 && mem < minMemoryMB {
+		return app.NewFieldError(field+".resources.memoryMaxMB", "must be at least %d MB, got %d", minMemoryMB, mem)
 	}
 
 	h := svc.Health
@@ -429,14 +439,11 @@ func task(appID string, svc app.Service, image string, s Settings) *api.Task {
 	}
 
 	t := &api.Task{
-		Name:   svc.Name,
-		Driver: "docker",
-		Config: config,
-		Env:    env,
-		Resources: &api.Resources{
-			CPU:      new(orDefault(svc.Resources.CPUMHz, s.DefaultCPUMHz)),
-			MemoryMB: new(orDefault(svc.Resources.MemoryMB, s.DefaultMemoryMB)),
-		},
+		Name:      svc.Name,
+		Driver:    "docker",
+		Config:    config,
+		Env:       env,
+		Resources: taskResources(svc.Resources, s),
 	}
 	// The job names the variable, never a value: values stay in the store.
 	if len(svc.Secrets) > 0 {
@@ -459,4 +466,32 @@ func orDefault[T comparable](v, def T) T {
 		return def
 	}
 	return v
+}
+
+// taskResources is what a service's task reserves, and the memory ceiling
+// it may burst to while the node has memory spare (Nomad's memory_max; the
+// cluster must allow memory oversubscription, or Nomad ignores it and says
+// so when the job is registered).
+//
+//   - reservation: the service's own, else the default, lowered to the
+//     service's ceiling when only the ceiling is set
+//   - ceiling: the service's own, else the larger of the reservation and the
+//     default ceiling
+func taskResources(r app.Resources, s Settings) *api.Resources {
+	reserve := r.MemoryMB
+	if reserve == 0 {
+		reserve = s.DefaultMemoryMB
+		if r.MemoryMaxMB > 0 && r.MemoryMaxMB < reserve {
+			reserve = r.MemoryMaxMB
+		}
+	}
+	ceiling := r.MemoryMaxMB
+	if ceiling == 0 {
+		ceiling = max(reserve, s.DefaultMemoryMaxMB)
+	}
+	return &api.Resources{
+		CPU:         new(orDefault(r.CPUMHz, s.DefaultCPUMHz)),
+		MemoryMB:    new(reserve),
+		MemoryMaxMB: new(ceiling),
+	}
 }

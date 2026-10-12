@@ -58,6 +58,7 @@ job "blog" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
       template {
         data = "{{ with nomadVar \"nomad/jobs/blog/web\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}"
@@ -118,6 +119,7 @@ job "blog" {
       resources {
         cpu = 100
         memory = 64
+        memory_max = 256
       }
       template {
         data = "{{ with nomadVar \"nomad/jobs/blog/worker\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}"

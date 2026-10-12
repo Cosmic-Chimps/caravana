@@ -58,7 +58,7 @@ func newDeployer(t *testing.T, reg *registrytest.Server, nomad *deploytest.Nomad
 		t.Fatalf("nomad client: %v", err)
 	}
 	d := deploy.New(client, &registry.Client{Endpoints: reg.Endpoints()},
-		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64})
+		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256})
 	d.Timing = deploy.Timing{
 		ImageTimeout:   5 * time.Second,
 		PollGap:        time.Millisecond,

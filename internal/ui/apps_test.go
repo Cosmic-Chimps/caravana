@@ -64,7 +64,7 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 		t.Fatalf("nomad client: %v", err)
 	}
 	deployer := deploy.New(client, &registry.Client{Endpoints: reg.Endpoints()},
-		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64})
+		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256})
 	deployer.Timing = deploy.Timing{
 		ImageTimeout: 5 * time.Second, PollGap: time.Millisecond,
 		BackoffStart: time.Millisecond, BackoffMax: 5 * time.Millisecond,

@@ -31,10 +31,11 @@ func whoamiDeployment() app.Deployment { return apptest.Whoami().Deployment }
 // default certificate.
 func labSettings() Settings {
 	return Settings{
-		Entrypoint:      "websecure",
-		CertResolver:    "",
-		DefaultCPUMHz:   100,
-		DefaultMemoryMB: 64,
+		Entrypoint:         "websecure",
+		CertResolver:       "",
+		DefaultCPUMHz:      100,
+		DefaultMemoryMB:    64,
+		DefaultMemoryMaxMB: 256,
 	}
 }
 
@@ -187,10 +188,14 @@ func TestTranslateErrors(t *testing.T) {
 		{"cert resolver with space", func(a *app.App, d *app.Deployment, s *Settings) { s.CertResolver = "le tls" }, "settings.certResolver"},
 		{"default cpu zero", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultCPUMHz = 0 }, "settings.defaultCPUMHz"},
 		{"default memory below minimum", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultMemoryMB = 9 }, "settings.defaultMemoryMB"},
+		{"default ceiling below the default reservation", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultMemoryMaxMB = 32 }, "settings.defaultMemoryMaxMB"},
 
 		{"memory below minimum", func(a *app.App, d *app.Deployment, s *Settings) {
 			a.Services[0].Resources.MemoryMB = 5
 		}, "services[0].resources.memoryMB"},
+		{"memory ceiling below minimum", func(a *app.App, d *app.Deployment, s *Settings) {
+			a.Services[0].Resources.MemoryMaxMB = 5
+		}, "services[0].resources.memoryMaxMB"},
 		{"interval below minimum", func(a *app.App, d *app.Deployment, s *Settings) {
 			a.Services[0].Health.Interval = 500 * time.Millisecond
 		}, "services[0].health.interval"},
@@ -371,5 +376,30 @@ func TestVolumeGroupsReplaceTheirCopy(t *testing.T) {
 	m := db.Tasks[0].VolumeMounts
 	if len(m) != 1 || *m[0].Volume != "db-data" || *m[0].Destination != "/var/lib/postgresql/data" {
 		t.Errorf("db mounts = %+v", m)
+	}
+}
+
+// Feature 013: what a task reserves and what it may burst to.
+func TestTaskMemory(t *testing.T) {
+	s := Settings{DefaultCPUMHz: 100, DefaultMemoryMB: 256, DefaultMemoryMaxMB: 1024}
+	tests := []struct {
+		name             string
+		set              app.Resources
+		reserve, ceiling int
+	}{
+		{"nothing set", app.Resources{}, 256, 1024},
+		{"a reservation", app.Resources{MemoryMB: 512}, 512, 1024},
+		{"a reservation above the default ceiling", app.Resources{MemoryMB: 2048}, 2048, 2048},
+		{"a ceiling below the default reservation", app.Resources{MemoryMaxMB: 128}, 128, 128},
+		{"a ceiling above it", app.Resources{MemoryMaxMB: 768}, 256, 768},
+		{"both", app.Resources{MemoryMB: 300, MemoryMaxMB: 600}, 300, 600},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := taskResources(tt.set, s)
+			if *r.MemoryMB != tt.reserve || *r.MemoryMaxMB != tt.ceiling {
+				t.Errorf("reserve %d, ceiling %d; want %d, %d", *r.MemoryMB, *r.MemoryMaxMB, tt.reserve, tt.ceiling)
+			}
+		})
 	}
 }
