@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Memory per service",
   "branch": "013-memory-per-service",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planning",
   "history": [
     {
       "step": "specify",
@@ -18,6 +18,27 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-11T21:15:13.975Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-12T01:10:58.675Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:11:31.221Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:12:02.798Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
@@ -81,5 +102,34 @@
     "constraint: constitution V openapi same change, no breaking change",
     "finding: today mem_limit maps to MemoryMB as a hard Nomad limit; default 64 MB"
   ],
-  "intent": "Services reserve 256 MB by default and may burst to a ceiling (1 GB default); released as v0.1.1 to test the real-host upgrade"
+  "intent": "Services reserve 256 MB by default and may burst to a ceiling (1 GB default); released as v0.1.1 to test the real-host upgrade",
+  "decisions": [
+    {
+      "decision": "MemoryMB is the reservation, new MemoryMaxMB the ceiling (Nomad memory_max)",
+      "why": "Nomad oversubscription model; additive, no client breaks",
+      "rejected": "renaming memoryMB"
+    },
+    {
+      "decision": "Installer and lab enable scheduler memory oversubscription via operator set-config",
+      "why": "applies to existing clusters, incl. the real host on upgrade",
+      "rejected": "default_scheduler_config (bootstrap only)"
+    },
+    {
+      "decision": "No policy change; rely on Nomad register warning when oversubscription is off",
+      "why": "Nomad already warns and Caravana already records register warnings",
+      "rejected": "operator:read in Caravana policy"
+    },
+    {
+      "decision": "Compose mem_limit is the ceiling, mem_reservation the reservation",
+      "why": "matches Docker semantics; packs more apps per node",
+      "rejected": "mem_limit as reservation (today)"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Two memory numbers, translator rules, Compose mapping, installer/lab oversubscription, console row, openapi 0.10.0",
+      "key_finding": "Nomad warns on register when oversubscription is off, and Caravana already records register warnings"
+    }
+  },
+  "approach": "Translator sets MemoryMB (reservation, default 256) and MemoryMaxMB (ceiling, default max(res,1024)); Compose maps mem_reservation/mem_limit; installer and lab enable Nomad memory oversubscription; console shows both; ships as v0.1.1."
 }
