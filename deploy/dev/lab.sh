@@ -36,6 +36,10 @@ cmd_up() {
   fi
   write_env
 
+  # Services may burst past their memory reservation up to their ceiling, as on an installed
+  # host (deploy/install/install.sh).
+  vm_nomad operator scheduler set-config -memory-oversubscription=true >/dev/null
+
   # The repo is visible inside the VM at the same path (home folder mount, read-only).
   vm_nomad acl policy apply -namespace default -job traefik \
     -description "Traefik reads service registrations" traefik-read "$DIR/traefik-policy.hcl"

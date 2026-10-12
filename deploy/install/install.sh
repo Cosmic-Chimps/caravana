@@ -338,6 +338,14 @@ EOF
   ufw --force enable >/dev/null
   [ "$before" = "$(ufw status verbose)" ] || changed+=(firewall)
 
+  step "Nomad scheduler: services may burst into spare memory"
+  # A service reserves its memory and may use up to its ceiling (memory_max) while the node has
+  # memory spare. Nomad ignores ceilings unless the cluster allows memory oversubscription.
+  if ! nomad_cli operator scheduler get-config | grep -Eq '^Memory Oversubscription +=+ +true'; then
+    nomad_cli operator scheduler set-config -memory-oversubscription=true >/dev/null
+    changed+=(scheduler)
+  fi
+
   step "Nomad ACL policies"
   nomad_cli acl policy apply -namespace default -job traefik \
     -description "Traefik reads service registrations" traefik-read "$OPT/$CARAVANA_VERSION/traefik-policy.hcl" >/dev/null

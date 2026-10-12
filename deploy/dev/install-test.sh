@@ -110,6 +110,10 @@ main() {
   grep -qi '^set-cookie: __Host-caravana_session=.*Secure' <<<"$out" ||
     die "behind Traefik the session cookie should be __Host- and Secure:\n$out"
 
+  say "services may burst into spare memory"
+  vm sudo caravana-nomad operator scheduler get-config | grep -Eq '^Memory Oversubscription +=+ +true' ||
+    die "the installer didn't turn on memory oversubscription"
+
   say "a rerun changes nothing"
   out="$(install "$v1")"
   grep -q '^changed: $' <<<"$out" || die "a rerun with nothing new changed: $(grep '^changed:' <<<"$out")"
