@@ -554,3 +554,30 @@ func TestDeploymentProgress(t *testing.T) {
 		}
 	})
 }
+
+// Feature 013: a service's memory reservation and ceiling round-trip, and a
+// reservation above the ceiling is refused on the reservation.
+func TestDeployMemory(t *testing.T) {
+	e := newTestEnv(t, "")
+	withMemory := func(res string) string {
+		return strings.Replace(whoamiBody, `"name": "web",`, `"name": "web", "resources": `+res+`,`, 1)
+	}
+
+	d := deployOK(t, e, "whoami", withMemory(`{"memoryMB": 300, "memoryMaxMB": 600}`))
+	waitHealthy(t, e, "whoami", d.ID)
+	_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami", "", "")
+	if !strings.Contains(string(raw), `"memoryMB":300`) || !strings.Contains(string(raw), `"memoryMaxMB":600`) {
+		t.Errorf("the stored app lost its memory settings: %s", raw)
+	}
+	r := e.Nomad.Job("whoami").TaskGroups[0].Tasks[0].Resources
+	if *r.MemoryMB != 300 || *r.MemoryMaxMB != 600 {
+		t.Errorf("Nomad's task reserves %d, may use %d; want 300 and 600", *r.MemoryMB, *r.MemoryMaxMB)
+	}
+
+	status, _, raw := call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json",
+		withMemory(`{"memoryMB": 600, "memoryMaxMB": 300}`))
+	body := decodeAs[errorBody](t, raw)
+	if status != http.StatusBadRequest || body.Error.Field != "services[0].resources.memoryMB" {
+		t.Errorf("reservation above the ceiling = %d %s, want 400 on services[0].resources.memoryMB", status, raw)
+	}
+}

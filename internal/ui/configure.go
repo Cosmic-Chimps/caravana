@@ -191,7 +191,7 @@ func serviceRows(svc app.Service) []defRow {
 		defRow{Label: "Domains", Values: domains},
 		defRow{Label: "Copies", Values: []string{strconv.Itoa(replicasOf(svc))}},
 		defRow{Label: "CPU", Values: unitValue(svc.Resources.CPUMHz, "MHz")},
-		defRow{Label: "Memory", Values: unitValue(svc.Resources.MemoryMB, "MB")},
+		defRow{Label: "Memory", Values: memoryValue(svc.Resources)},
 		defRow{Label: "Health check", Values: nonEmpty(healthWords(svc.Health))},
 	)
 	envRow := defRow{Label: "Environment variables", Values: env}
@@ -230,6 +230,20 @@ func unitValue(n int, unit string) []string {
 		return nil
 	}
 	return []string{strconv.Itoa(n) + " " + unit}
+}
+
+// memoryValue is what a service sets for its memory: "256 MB reserved, up to
+// 1024 MB", or either half alone; none when it leaves both to the defaults.
+func memoryValue(r app.Resources) []string {
+	switch {
+	case r.MemoryMB > 0 && r.MemoryMaxMB > 0:
+		return []string{fmt.Sprintf("%d MB reserved, up to %d MB", r.MemoryMB, r.MemoryMaxMB)}
+	case r.MemoryMB > 0:
+		return []string{fmt.Sprintf("%d MB reserved", r.MemoryMB)}
+	case r.MemoryMaxMB > 0:
+		return []string{fmt.Sprintf("up to %d MB", r.MemoryMaxMB)}
+	}
+	return nil
 }
 
 // replicasOf is how many copies the service asks for: a missing count means 1.

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.9.1
+  version: 0.10.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -1194,7 +1194,21 @@ components:
           additionalProperties: false
           properties:
             cpuMHz: {type: integer, minimum: 0}
-            memoryMB: {type: integer, minimum: 0}
+            memoryMB:
+              type: integer
+              minimum: 0
+              description: |
+                Memory reserved for the service, in MB: the scheduler counts it. 0 means the
+                installation's default (256 unless configured), lowered to `memoryMaxMB` when only
+                that is set.
+            memoryMaxMB:
+              type: integer
+              minimum: 0
+              description: |
+                The most memory the service may use while the node has it spare, in MB; past it the
+                copy is restarted. At least `memoryMB`. 0 means the larger of the reservation and
+                the installation's default (1024 unless configured). When the cluster doesn't allow
+                memory oversubscription, Nomad ignores it and the deployment's warnings say so.
         health:
           type: object
           additionalProperties: false

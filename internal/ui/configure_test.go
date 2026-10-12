@@ -29,7 +29,7 @@ func shopApp() app.App {
 				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}},
 				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}},
 				Replicas:  &two,
-				Resources: app.Resources{CPUMHz: 250, MemoryMB: 256},
+				Resources: app.Resources{CPUMHz: 250, MemoryMB: 256, MemoryMaxMB: 1024},
 				Health:    &app.HealthCheck{Path: "/healthz", Interval: 15 * time.Second, Timeout: 3 * time.Second}},
 			{Name: "worker", Image: "ghcr.io/example/shop-worker:2.1"},
 		},
@@ -75,7 +75,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		"Display name The Shop", "Source image",
 		// the web service, every field of it
 		"Image ghcr.io/example/shop:2.1", "Command /bin/server", "Arguments --port 8080",
-		"Ports http → 8080", "Domains shop.example.com", "Copies 2", "CPU 250 MHz", "Memory 256 MB",
+		"Ports http → 8080", "Domains shop.example.com", "Copies 2", "CPU 250 MHz", "Memory 256 MB reserved, up to 1024 MB",
 		"Health check GET /healthz every 15 s, timeout 3 s",
 		"LOG_LEVEL", "API_KEY", "Values aren't shown.",
 		// the worker: what it leaves out is said once, in one line, not as a row of "none" each
@@ -486,5 +486,23 @@ func TestConfigureNeedsASessionAndAnApp(t *testing.T) {
 	resp, body := e.get(t, "/apps/ghost/configure")
 	if resp.StatusCode != http.StatusNotFound || !strings.Contains(text(body), "There's no app called ghost.") {
 		t.Errorf("GET unknown app = %d:\n%s", resp.StatusCode, text(body))
+	}
+}
+
+// Feature 013: the Memory row says what the service sets, either half alone.
+func TestMemoryValue(t *testing.T) {
+	tests := []struct {
+		r    app.Resources
+		want string
+	}{
+		{app.Resources{MemoryMB: 256, MemoryMaxMB: 1024}, "256 MB reserved, up to 1024 MB"},
+		{app.Resources{MemoryMB: 300}, "300 MB reserved"},
+		{app.Resources{MemoryMaxMB: 768}, "up to 768 MB"},
+		{app.Resources{}, ""},
+	}
+	for _, tt := range tests {
+		if got := strings.Join(memoryValue(tt.r), ""); got != tt.want {
+			t.Errorf("memoryValue(%+v) = %q, want %q", tt.r, got, tt.want)
+		}
 	}
 }
