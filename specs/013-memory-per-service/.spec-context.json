@@ -2,8 +2,8 @@
   "workflow": "companion",
   "specName": "Memory per service",
   "branch": "013-memory-per-service",
-  "currentStep": "plan",
-  "status": "planning",
+  "currentStep": "tasks",
+  "status": "tasking",
   "history": [
     {
       "step": "specify",
@@ -39,45 +39,78 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-12T01:12:02.798Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:12:03.194Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-12T01:23:45.784Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:23:46.938Z"
     }
   ],
   "last_action": "living specs evaluated — skipped (not configured)",
   "coverage": {
     "FR-001": {
-      "title": "A service has a memory reservation and a ceiling"
+      "title": "A service has a memory reservation and a ceiling",
+      "tasks": "T001,T003"
     },
     "FR-002": {
-      "title": "Default reservation 256 MB"
+      "title": "Default reservation 256 MB",
+      "tasks": "T002,T003"
     },
     "FR-003": {
-      "title": "Default ceiling: max(reservation, 1024 MB)"
+      "title": "Default ceiling: max(reservation, 1024 MB)",
+      "tasks": "T002,T003"
     },
     "FR-004": {
-      "title": "Reservation above ceiling refused naming the field"
+      "title": "Reservation above ceiling refused naming the field",
+      "tasks": "T001,T007"
     },
     "FR-005": {
-      "title": "Compose mem_reservation/reservations set reservation; mem_limit/limits set ceiling"
+      "title": "Compose mem_reservation/reservations set reservation; mem_limit/limits set ceiling",
+      "tasks": "T005"
     },
     "FR-006": {
-      "title": "Ceiling without reservation reserves min(ceiling, default)"
+      "title": "Ceiling without reservation reserves min(ceiling, default)",
+      "tasks": "T003,T005"
     },
     "FR-007": {
-      "title": "API carries both numbers; openapi in the same change"
+      "title": "API carries both numbers; openapi in the same change",
+      "tasks": "T007"
     },
     "FR-008": {
-      "title": "Console definition shows reservation and ceiling"
+      "title": "Console definition shows reservation and ceiling",
+      "tasks": "T006"
     },
     "FR-009": {
-      "title": "Installer enables memory oversubscription, new and upgraded hosts"
+      "title": "Installer enables memory oversubscription, new and upgraded hosts",
+      "tasks": "T004"
     },
     "FR-010": {
-      "title": "Deploy warns when bursting is off"
+      "title": "Deploy warns when bursting is off",
+      "tasks": "T007"
     },
     "FR-011": {
-      "title": "Operator can change both defaults"
+      "title": "Operator can change both defaults",
+      "tasks": "T002"
     },
     "FR-012": {
-      "title": "Ships as v0.1.1; upgrade keeps data and apps"
+      "title": "Ships as v0.1.1; upgrade keeps data and apps",
+      "tasks": "T008,T009"
     }
   },
   "size": "normal",
@@ -129,6 +162,9 @@
     "plan": {
       "summary": "Two memory numbers, translator rules, Compose mapping, installer/lab oversubscription, console row, openapi 0.10.0",
       "key_finding": "Nomad warns on register when oversubscription is off, and Caravana already records register warnings"
+    },
+    "tasks": {
+      "summary": "9 tasks: model+config then translator; installer/lab setting; Compose, console, API in parallel; docs; validation"
     }
   },
   "approach": "Translator sets MemoryMB (reservation, default 256) and MemoryMaxMB (ceiling, default max(res,1024)); Compose maps mem_reservation/mem_limit; installer and lab enable Nomad memory oversubscription; console shows both; ships as v0.1.1."
