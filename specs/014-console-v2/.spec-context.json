@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Console v2",
+  "branch": "014-console-v2",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-12T18:42:37.303Z"
+    }
+  ]
+}
