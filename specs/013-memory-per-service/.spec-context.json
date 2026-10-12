@@ -3,7 +3,7 @@
   "specName": "Memory per service",
   "branch": "013-memory-per-service",
   "currentStep": "implement",
-  "status": "implementing",
+  "status": "completed",
   "history": [
     {
       "step": "specify",
@@ -138,6 +138,21 @@
       "kind": "complete",
       "by": "ai",
       "at": "2026-10-12T01:46:55.841Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:47:08.689Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-10-12T01:47:08.708Z"
     }
   ],
   "last_action": "9/9 tasks; install-test, race and TestLab pass",
@@ -254,7 +269,7 @@
     }
   },
   "approach": "Translator sets MemoryMB (reservation, default 256) and MemoryMaxMB (ceiling, default max(res,1024)); Compose maps mem_reservation/mem_limit; installer and lab enable Nomad memory oversubscription; console shows both; ships as v0.1.1.",
-  "currentTask": "T009",
+  "currentTask": "T004",
   "task_summaries": {
     "T001": {
       "status": "DONE",
@@ -323,6 +338,15 @@
     "T009": {
       "status": "DONE",
       "did": "all CI checks clean; race ok; install-test PASSED (scheduler on); TestLab PASS 871s with oversubscription on"
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "installer and lab.sh up turn on memory oversubscription when off (changed: scheduler); install-test checks it",
+      "files": [
+        "deploy/install/install.sh",
+        "deploy/dev/lab.sh",
+        "deploy/dev/install-test.sh"
+      ]
     }
   },
   "verified": [

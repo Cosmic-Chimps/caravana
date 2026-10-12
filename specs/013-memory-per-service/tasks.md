@@ -28,7 +28,7 @@ Files: `internal/app/app.go`, `internal/app/validate.go`, `internal/app/validate
 
 Files: `deploy/install/install.sh`, `deploy/dev/lab.sh`, `deploy/dev/install-test.sh`
 
-- [ ] **T004** [US1] The installer and `lab.sh up` turn on Nomad's memory oversubscription when it's off (`operator scheduler set-config -memory-oversubscription=true`), and the installer lists `scheduler` in `changed:`. `install-test.sh` checks that it's on after the install and that a rerun leaves it alone · deploy/install/install.sh, deploy/dev/lab.sh, deploy/dev/install-test.sh
+- [x] **T004** [US1] The installer and `lab.sh up` turn on Nomad's memory oversubscription when it's off (`operator scheduler set-config -memory-oversubscription=true`), and the installer lists `scheduler` in `changed:`. `install-test.sh` checks that it's on after the install and that a rerun leaves it alone · deploy/install/install.sh, deploy/dev/lab.sh, deploy/dev/install-test.sh
 
 **Checkpoint**: a service with no settings reserves 256 MB and may burst to 1 GB on an installed host or in the lab.
 
