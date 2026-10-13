@@ -78,11 +78,12 @@
   // htmx throws away an answer whose status is 4xx or 5xx, which would leave
   // a refused form looking as if nothing happened. The server answers a
   // refused form with the form again, errors under their fields, and one of
-  // these two statuses (422: something typed is wrong; 502: Nomad or the
-  // registry couldn't be used). Swap those in.
+  // these three statuses (422: something typed is wrong; 409: the app changed
+  // since the form was opened; 502: Nomad or the registry couldn't be used).
+  // Swap those in.
   document.addEventListener("htmx:beforeSwap", function (event) {
     const status = event.detail.xhr.status;
-    if (status === 422 || status === 502) {
+    if (status === 422 || status === 409 || status === 502) {
       event.detail.shouldSwap = true;
       event.detail.isError = false;
     }

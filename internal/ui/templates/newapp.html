@@ -3,8 +3,6 @@
      its errors; without script the browser posts it and gets the page back.
      "newapp-form" is also what an htmx post's answer is. Takes a newAppForm. */}}
 
-{{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}
-
 {{define "newapp-form"}}
 <form method="post" action="/apps" hx-post="/apps" hx-target="this" hx-swap="outerHTML" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
   {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}

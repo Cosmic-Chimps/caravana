@@ -285,8 +285,22 @@ func fieldMessage(path, message string) string {
 		subject = "The port"
 	case strings.Contains(path, ".domains["):
 		subject = "The domain"
+	case strings.HasSuffix(path, ".health.interval"):
+		subject = "The check interval"
+	case strings.HasSuffix(path, ".health.timeout"):
+		subject = "The check timeout"
 	case strings.Contains(path, ".health"):
 		subject = "The health check path"
+	case strings.Contains(path, ".env["):
+		subject = "The variable name"
+	case strings.HasSuffix(path, ".replicas"):
+		subject = "The number of copies"
+	case strings.HasSuffix(path, ".resources.cpuMHz"):
+		subject = "The CPU"
+	case strings.HasSuffix(path, ".resources.memoryMB"):
+		subject = "The memory reservation"
+	case strings.HasSuffix(path, ".resources.memoryMaxMB"):
+		subject = "The memory ceiling"
 	}
 	return subject + " " + message
 }

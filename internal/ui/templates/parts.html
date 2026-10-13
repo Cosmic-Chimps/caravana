@@ -13,6 +13,9 @@
 {{/* sentence: prose with its names and versions set in mono. Takes a sentence (a list of parts, see view.go). */}}
 {{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 
+{{/* field-error: the message under an input, announced when it is the form's first. Takes a formField. */}}
+{{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}
+
 {{/* time: a relative phrase ("5 minutes ago") with the exact time on hover. Takes a when. */}}
 {{define "time"}}<time class="cv-data"{{with .ISO}} datetime="{{.}}"{{end}}{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}
 

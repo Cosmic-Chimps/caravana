@@ -1091,6 +1091,12 @@ func formsIn(body string) []plainForm {
 				f.Values.Set(name, attr(in, "value"))
 			}
 		}
+		// A textarea's value is its text; the first line break is not part of it.
+		for _, ta := range regexp.MustCompile(`(?s)<textarea\b([^>]*)>(.*?)</textarea>`).FindAllStringSubmatch(m[2], -1) {
+			if name := attr(ta[1], "name"); name != "" {
+				f.Values.Set(name, strings.TrimPrefix(html.UnescapeString(ta[2]), "\n"))
+			}
+		}
 		forms = append(forms, f)
 	}
 	return forms
@@ -1131,7 +1137,7 @@ func (e *consoleEnv) submit(t *testing.T, f plainForm, set url.Values) (*http.Re
 }
 
 // Every form of the console is a plain post: the page's own markup is enough to
-// create an app, deploy, make and revoke a webhook token, delete an app and
+// create an app, deploy, edit its definition, make and revoke a webhook token, delete an app and
 // change the Settings, with no script and with nothing but same-site headers.
 func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	e := newConsoleEnv(t)
@@ -1163,6 +1169,26 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 		resp, body := e.submit(t, f, nil)
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/plain/deployments" {
 			t.Fatalf("POST deploy = %d to %q, want 303 to the Deployments tab:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+	})
+
+	t.Run("Configure", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/configure")
+		f := formWith(t, page, "/apps/plain/configure")
+		if !f.HTMX || f.Values.Get("revision") == "" {
+			t.Errorf("the Configure form posts in place when script runs: %v, revision %q", f.HTMX, f.Values.Get("revision"))
+		}
+		resp, body := e.submit(t, f, url.Values{"svc.plain.env": {"MODE=plain"}})
+		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/apps/plain/deployments#deployment-") {
+			t.Fatalf("POST configure = %d to %q, want 303 to the new deployment's entry:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+		if got := e.storedApp(t, "plain").Services[0].Env; len(got) != 1 || got[0].Name != "MODE" {
+			t.Errorf("env = %+v, want MODE", got)
+		}
+		// The same form again is stale now: refused with the page, not lost.
+		resp, body = e.submit(t, f, nil)
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "This app changed since you opened the form.") {
+			t.Errorf("a stale POST = %d, want 409 with the page:\n%s", resp.StatusCode, text(body))
 		}
 	})
 

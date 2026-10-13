@@ -83,6 +83,68 @@ func (s *editService) fields() []struct {
 	}
 }
 
+// inputSpec is how one input is drawn: its label above, a hint below, the
+// placeholder that says what an empty value means, and its shape. The specs
+// are in the order the inputs show.
+type inputSpec struct {
+	Name        string // the field part of the posted name
+	Label       string
+	Hint        string
+	Placeholder string
+	Area        bool // a textarea
+	Wide        bool // takes the whole row
+	Numeric     bool // a number: phones show their number pad
+}
+
+var inputSpecs = []inputSpec{
+	{Name: "image", Label: "Image", Wide: true},
+	{Name: "env", Label: "Environment", Area: true, Wide: true,
+		Hint: "One NAME=value per line. Lines starting with # are ignored. This list replaces the current one."},
+	{Name: "port", Numeric: true, Label: "Container port"},
+	{Name: "domains", Label: "Domains", Area: true, Wide: true, Hint: "One host per line. HTTPS is set up for each."},
+	{Name: "copies", Numeric: true, Label: "Copies", Placeholder: "1"},
+	{Name: "healthPath", Label: "Health check", Placeholder: "TCP", Hint: "A path such as /healthz. Empty checks the TCP port."},
+	{Name: "healthInterval", Numeric: true, Label: "Check every (seconds)", Placeholder: "10"},
+	{Name: "healthTimeout", Numeric: true, Label: "Check timeout (seconds)", Placeholder: "2"},
+	{Name: "cpu", Numeric: true, Label: "CPU (MHz)", Placeholder: "default"},
+	{Name: "memory", Numeric: true, Label: "Memory reserved (MB)", Placeholder: "default"},
+	{Name: "memoryMax", Numeric: true, Label: "Memory ceiling (MB)", Placeholder: "default"},
+}
+
+// editInput is one input of a service as the page draws it.
+type editInput struct {
+	inputSpec
+	Field *formField
+}
+
+// shows reports whether the service has this input: see the Show flags.
+func (s editService) shows(field string) bool {
+	switch field {
+	case "port":
+		return s.ShowPort
+	case "domains":
+		return s.ShowDomains
+	case "healthPath", "healthInterval", "healthTimeout":
+		return s.ShowHealth
+	}
+	return true
+}
+
+// Inputs lists the inputs the service has, in the order they show.
+func (s editService) Inputs() []editInput {
+	byName := map[string]*formField{}
+	for _, in := range s.fields() {
+		byName[in.Name] = in.Field
+	}
+	var out []editInput
+	for _, spec := range inputSpecs {
+		if s.shows(spec.Name) {
+			out = append(out, editInput{inputSpec: spec, Field: byName[spec.Name]})
+		}
+	}
+	return out
+}
+
 // newEditService makes a service's section with its IDs set and its Show
 // flags worked out from the stored service.
 func newEditService(svc app.Service) editService {

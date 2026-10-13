@@ -212,6 +212,19 @@
   .cv-def-row .cv-hint { margin-top: 4px; }
   /* The facts nobody set: one line at the foot of the panel, not a row of "none" each. */
   .cv-def-defaults { margin: 0; padding: 9px 0 6px; border-top: 1px solid var(--color-line-1); }
+  /* The edit form: one panel per service. The inputs sit in a grid that fills the width with
+     columns of at least 10rem; the wide ones (image, lists) take a whole row. After the inputs
+     come the service's facts the form keeps, as definition rows. */
+  .cv-edit { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+  .cv-edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 16px; }
+  .cv-edit-wide { grid-column: 1 / -1; }
+  .cv-edit .cv-def-rows { margin-top: -4px; }
+  /* A save refused because the app changed: a warning panel above the form, with the current values. */
+  .cv-stale { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-color: var(--color-warn-line); font-size: 14px; line-height: 1.45; color: var(--color-fg-1); }
+  .cv-stale-title { display: flex; gap: 10px; align-items: baseline; font-weight: 500; }
+  .cv-stale-title .cv-mark { position: relative; top: 0.05em; }
+  .cv-stale-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .cv-stale-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; overflow-wrap: anywhere; }
   .cv-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
   .cv-confirm > summary { display: inline-flex; list-style: none; cursor: pointer; }
   .cv-confirm > summary::-webkit-details-marker { display: none; }

@@ -69,45 +69,76 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		}
 	}
 
+	// The app's own facts, and what the web service keeps that the form can't change.
 	got := text(body)
-	for _, want := range []string{
-		// the app itself
-		"Display name The Shop", "Source image",
-		// the web service, every field of it
-		"Image ghcr.io/example/shop:2.1", "Command /bin/server", "Arguments --port 8080",
-		"Ports http → 8080", "Domains shop.example.com", "Copies 2", "CPU 250 MHz", "Memory 256 MB reserved, up to 1024 MB",
-		"Health check GET /healthz every 15 s, timeout 3 s",
-		"LOG_LEVEL", "API_KEY", "Values aren't shown.",
-		// the worker: what it leaves out is said once, in one line, not as a row of "none" each
-		"Image ghcr.io/example/shop-worker:2.1", "Copies 1",
-		"Using defaults: command, arguments, ports, domains, CPU, memory, health check, environment variables.",
-		// nothing here can be edited, and the page says so
-		"Editing here comes later. Until then, change these through the API: POST /v1/apps/shop/deployments.",
-	} {
+	for _, want := range []string{"Display name The Shop", "Source image", "Command /bin/server", "Arguments --port 8080"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the definition lacks %q:\n%s", want, got)
 		}
 	}
-	// A fact with no value has no row, and a panel with such facts has one defaults line (the web
-	// service sets every fact, so only the worker has one).
-	for _, gone := range []string{"Command image default", "Arguments none", "Ports none", "CPU default", "Health check none", "Environment variables none"} {
-		if strings.Contains(got, gone) {
-			t.Errorf("the definition still has a row %q:\n%s", gone, got)
-		}
-	}
-	if n := strings.Count(got, "Using defaults:"); n != 1 {
-		t.Errorf("%d \"Using defaults\" lines, want 1 (only the worker leaves facts unset):\n%s", n, got)
-	}
-	for _, secret := range []string{"debug-value-x1", "s3cr3t-value-9f2"} {
-		if strings.Contains(body, secret) {
-			t.Errorf("an environment value (%q) is in the page", secret)
-		}
+	if strings.Contains(got, "Made from a Compose file") {
+		t.Error("an image app says it was made from a Compose file")
 	}
 
-	// Services have their own panels, in order.
-	web, worker := strings.Index(body, `<h3 class="cv-data text-fg-1">web</h3>`), strings.Index(body, `<h3 class="cv-data text-fg-1">worker</h3>`)
+	// The form holds every editable value, one panel per service, in order, drawn from the stored app.
+	f := formWith(t, body, "/apps/shop/configure")
+	rec, err := e.Store.GetApp(context.Background(), "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"revision":               rec.Revision,
+		"svc.web.image":          "ghcr.io/example/shop:2.1",
+		"svc.web.env":            "LOG_LEVEL=debug-value-x1\nAPI_KEY=s3cr3t-value-9f2",
+		"svc.web.port":           "8080",
+		"svc.web.domains":        "shop.example.com",
+		"svc.web.copies":         "2",
+		"svc.web.healthPath":     "/healthz",
+		"svc.web.healthInterval": "15",
+		"svc.web.healthTimeout":  "3",
+		"svc.web.cpu":            "250",
+		"svc.web.memory":         "256",
+		"svc.web.memoryMax":      "1024",
+		"svc.worker.image":       "ghcr.io/example/shop-worker:2.1",
+		"svc.worker.env":         "",
+		"svc.worker.copies":      "",
+		"svc.worker.memory":      "",
+	} {
+		if got := f.Values.Get(name); got != want {
+			t.Errorf("input %s = %q, want %q", name, got, want)
+		}
+	}
+	// A worker has no port, domains or health check to edit.
+	for _, name := range []string{"svc.worker.port", "svc.worker.domains", "svc.worker.healthPath"} {
+		if _, has := f.Values[name]; has {
+			t.Errorf("the worker has an input %s", name)
+		}
+	}
+	for _, want := range []string{"Image", "Environment", "Container port", "Domains", "Copies", "Health check", "CPU (MHz)",
+		"Memory reserved (MB)", "Memory ceiling (MB)", "Save and deploy"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the form lacks %q:\n%s", want, got)
+		}
+	}
+	web, worker := strings.Index(body, `<h3 id="svc-web-title"`), strings.Index(body, `<h3 id="svc-worker-title"`)
 	if web < 0 || worker < web {
 		t.Errorf("service panels: web at %d, worker at %d", web, worker)
+	}
+	// The memory input has the anchor the needs-you list links to.
+	if !strings.Contains(body, `id="svc-web-memory"`) {
+		t.Error("the memory input has no id svc-web-memory")
+	}
+}
+
+// A Compose-made app says that a file replaces edits.
+func TestConfigureNotesComposeApps(t *testing.T) {
+	e := newConsoleEnv(t)
+	a := shopApp()
+	a.Source.Kind = app.SourceCompose
+	e.seed(t, a)
+	_, body := e.get(t, "/apps/shop/configure")
+	if got := text(body); !strings.Contains(got, "Made from a Compose file. Deploying a file again replaces these edits.") {
+		t.Errorf("the note is missing:\n%s", got)
 	}
 }
 
@@ -129,30 +160,6 @@ func TestConfigureShowsVolumes(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
-	}
-}
-
-func TestConfigureHealthCheckWords(t *testing.T) {
-	tests := []struct {
-		name   string
-		health *app.HealthCheck
-		want   string
-	}{
-		{"http with the defaults", &app.HealthCheck{Path: "/"}, "Health check GET / every 10 s, timeout 2 s"},
-		{"tcp", &app.HealthCheck{Interval: 30 * time.Second}, "Health check TCP every 30 s, timeout 2 s"},
-		{"on a named port", &app.HealthCheck{Path: "/up", Port: "http"}, "Health check GET /up on port http every 10 s, timeout 2 s"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			e := newConsoleEnv(t)
-			a := shopApp()
-			a.Services[0].Health = tc.health
-			e.seed(t, a)
-			_, body := e.get(t, "/apps/shop/configure")
-			if got := text(body); !strings.Contains(got, tc.want) {
-				t.Errorf("lacks %q:\n%s", tc.want, got)
-			}
-		})
 	}
 }
 
@@ -473,7 +480,7 @@ func TestConfigureNeedsASessionAndAnApp(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login?next=") {
 		t.Errorf("GET without a session = %d to %q, want 303 to /login", resp.StatusCode, location(t, resp))
 	}
-	for _, path := range []string{"/apps/shop/webhook", "/apps/shop/webhook/revoke", "/apps/shop/delete"} {
+	for _, path := range []string{"/apps/shop/webhook", "/apps/shop/webhook/revoke", "/apps/shop/delete", "/apps/shop/configure"} {
 		resp, _ := e.do(t, request{method: http.MethodPost, path: path, headers: map[string]string{"Sec-Fetch-Site": "same-origin"}})
 		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/login") {
 			t.Errorf("POST %s without a session = %d to %q, want 303 to /login", path, resp.StatusCode, location(t, resp))
@@ -486,23 +493,5 @@ func TestConfigureNeedsASessionAndAnApp(t *testing.T) {
 	resp, body := e.get(t, "/apps/ghost/configure")
 	if resp.StatusCode != http.StatusNotFound || !strings.Contains(text(body), "There's no app called ghost.") {
 		t.Errorf("GET unknown app = %d:\n%s", resp.StatusCode, text(body))
-	}
-}
-
-// Feature 013: the Memory row says what the service sets, either half alone.
-func TestMemoryValue(t *testing.T) {
-	tests := []struct {
-		r    app.Resources
-		want string
-	}{
-		{app.Resources{MemoryMB: 256, MemoryMaxMB: 1024}, "256 MB reserved, up to 1024 MB"},
-		{app.Resources{MemoryMB: 300}, "300 MB reserved"},
-		{app.Resources{MemoryMaxMB: 768}, "up to 768 MB"},
-		{app.Resources{}, ""},
-	}
-	for _, tt := range tests {
-		if got := strings.Join(memoryValue(tt.r), ""); got != tt.want {
-			t.Errorf("memoryValue(%+v) = %q, want %q", tt.r, got, tt.want)
-		}
 	}
 }

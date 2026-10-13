@@ -16,15 +16,10 @@ import (
 func postOf(f editForm) url.Values {
 	post := url.Values{"revision": {f.Revision}}
 	for _, s := range f.Services {
-		shown := map[string]bool{
-			"port": s.ShowPort, "domains": s.ShowDomains,
-			"healthPath": s.ShowHealth, "healthInterval": s.ShowHealth, "healthTimeout": s.ShowHealth,
-		}
 		for _, in := range s.fields() {
-			if show, special := shown[in.Name]; special && !show {
-				continue
+			if s.shows(in.Name) {
+				post.Set(inputName(s.Name, in.Name), in.Field.Value)
 			}
-			post.Set(inputName(s.Name, in.Name), in.Field.Value)
 		}
 	}
 	return post

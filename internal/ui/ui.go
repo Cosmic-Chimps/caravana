@@ -135,6 +135,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps/{id}", s.requireSession(s.showApp)},
 		{"GET", "/apps/{id}/deployments", s.requireSession(s.showDeployments)},
 		{"GET", "/apps/{id}/configure", s.requireSession(s.showConfigure)},
+		{"POST", "/apps/{id}/configure", s.protected(s.requireSession(s.saveConfigure))},
 		{"GET", "/apps/{id}/logs", s.requireSession(s.showLogs)},
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/deployments/{deploymentId}/redeploy", s.protected(s.requireSession(s.redeployVersion))},

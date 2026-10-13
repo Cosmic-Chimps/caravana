@@ -671,12 +671,18 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 // ---- Configure tab (/apps/{id}/configure) --------------------------------------------
 
 // configureExtras is what a Configure response adds to the stored facts: the
-// webhook URL just made (shown once), and the refusals of a delete.
+// webhook URL just made (shown once), the refusals of a delete, and the form
+// when a refused save draws it again.
 type configureExtras struct {
 	WebhookURL   string
 	DeleteError  sentence
 	DeleteNotice sentence
 	Secret       secretForm
+	// Form, when set, is the edit form to draw (what was typed, with its
+	// errors) instead of one made from the stored app. Stale is the panel of
+	// a save refused because the app changed.
+	Form  *editForm
+	Stale *staleView
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -711,9 +717,14 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	}
 	head.LiveURL = "/live/apps/" + id
 
+	form := formOf(sum.App, sum.Revision)
+	if extra.Form != nil {
+		form = *extra.Form
+	}
 	tab := &configureTab{
-		Panels:  definitionOf(sum.App),
-		APIHint: sentence{plain("Editing here comes later. Until then, change these through the API: "), mono("POST /v1/apps/" + id + "/deployments"), plain(".")},
+		App:     appFacts(sum.App),
+		Compose: sum.App.Source.Kind == app.SourceCompose,
+		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
 		Export:  exportOf(id, deployments),

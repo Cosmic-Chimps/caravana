@@ -1,26 +1,25 @@
 package ui
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// This file is what the Configure tab shows: the stored definition as plain
-// facts, the webhook, and the delete section. The handlers are in app.go.
-
-// What a health check does when it leaves its interval or timeout unset (the
-// documented defaults of app.HealthCheck).
-const (
-	defaultCheckInterval = 10 * time.Second
-	defaultCheckTimeout  = 2 * time.Second
-)
+// This file is what the Configure tab shows: the definition as a form (one
+// panel per service) with the app's facts above it, the secrets, the webhook,
+// and the delete section. The handlers of the tab's other sections are in
+// app.go; the form's own is here.
 
 // defRow is one fact of the definition: a label and its values (each a mono
 // line). Note is a line of small print under the values. A fact with no
@@ -87,12 +86,102 @@ func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 
 // configureTab is the body of the Configure tab.
 type configureTab struct {
-	Panels  []defPanel
-	APIHint sentence
+	App     defPanel // the app's own facts
+	Compose bool     // the app was made from a Compose file: a note says a file replaces edits
+	Edit    editView
 	Secrets secretsView
 	Webhook webhookView
 	Export  exportView
 	Delete  deleteView
+}
+
+// editView is the form of the Configure tab: the inputs with what was typed
+// (or what is stored), one section per service, and, after a refused stale
+// save, what changed under the owner.
+type editView struct {
+	Action   string
+	Form     editForm
+	Services []editServiceView
+	Stale    *staleView
+}
+
+// editServiceView is a service's inputs with the facts of it the form keeps.
+type editServiceView struct {
+	editService
+	Kept []defRow
+}
+
+// staleView is the panel after a save refused because the app changed since
+// the form was opened: the fields where the app now differs from what was
+// typed, with the app's current value.
+type staleView struct {
+	Diffs []staleDiff
+}
+
+// staleDiff is one such field.
+type staleDiff struct {
+	Service, Label, Current string
+}
+
+// editViewOf joins the form with the stored app it edits: the facts a service
+// keeps come from the stored service of the same name.
+func editViewOf(stored app.App, form editForm, stale *staleView) editView {
+	v := editView{Action: "/apps/" + stored.ID + "/configure", Form: form, Stale: stale}
+	for _, s := range form.Services {
+		sv := editServiceView{editService: s}
+		for _, svc := range stored.Services {
+			if svc.Name == s.Name {
+				sv.Kept = keptRows(svc, s)
+			}
+		}
+		v.Services = append(v.Services, sv)
+	}
+	return v
+}
+
+// staleOf lists the fields where the app as stored now differs from what the
+// form holds: the current values a refused stale save shows. Services the
+// form doesn't have (added since it was drawn) are not listed; their sections
+// are in the form that comes back.
+func staleOf(current app.App, typed editForm) *staleView {
+	now := formOf(current, "")
+	v := &staleView{}
+	for _, ns := range now.Services {
+		ts, ok := typed.service(ns.Name)
+		if !ok {
+			continue
+		}
+		typedFields := ts.fields()
+		for i, in := range ns.fields() {
+			if !ns.shows(in.Name) || sameText(in.Field.Value, typedFields[i].Field.Value) {
+				continue
+			}
+			label := in.Name
+			for _, spec := range inputSpecs {
+				if spec.Name == in.Name {
+					label = spec.Label
+				}
+			}
+			v.Diffs = append(v.Diffs, staleDiff{Service: ns.Name, Label: label, Current: currentText(in.Field.Value)})
+		}
+	}
+	return v
+}
+
+// sameText compares two input values as the form does: line breaks and the
+// space around the value don't count.
+func sameText(a, b string) bool {
+	norm := func(s string) string { return strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n")) }
+	return norm(a) == norm(b)
+}
+
+// currentText is an input's stored value on one line, for the stale panel.
+func currentText(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "empty"
+	}
+	return strings.ReplaceAll(v, "\n", ", ")
 }
 
 // exportView is the Export section: a download of the live version's
@@ -152,129 +241,54 @@ func secretsOf(a app.App, form secretForm) secretsView {
 	return v
 }
 
-// definitionOf lays the stored app out as panels: the app, then one per
-// service, in order. Every field of app.App is in one of them, except the
-// values of environment variables, which are never drawn (FR-015).
-func definitionOf(a app.App) []defPanel {
-	appRows := []defRow{{Label: "ID", Values: []string{a.ID}}}
+// appFacts lays out the app's own facts, above the form: what the form
+// doesn't edit and the owner may want to read.
+func appFacts(a app.App) defPanel {
+	rows := []defRow{{Label: "ID", Values: []string{a.ID}}}
 	if a.Name != "" {
-		appRows = append(appRows, defRow{Label: "Display name", Values: []string{a.Name}})
+		rows = append(rows, defRow{Label: "Display name", Values: []string{a.Name}})
 	}
-	appRows = append(appRows, defRow{Label: "Source", Values: []string{string(a.Source.Kind)}})
-	panels := []defPanel{defPanelOf("App", appRows)}
-
-	for _, svc := range a.Services {
-		panels = append(panels, defPanelOf(svc.Name, serviceRows(svc)))
-	}
-	return panels
+	rows = append(rows, defRow{Label: "Source", Values: []string{string(a.Source.Kind)}})
+	return defPanelOf("App", rows)
 }
 
-func serviceRows(svc app.Service) []defRow {
-	rows := []defRow{
-		{Label: "Image", Values: []string{svc.Image}},
-		{Label: "Command", Values: nonEmpty(svc.Command)},
-		{Label: "Arguments", Values: svc.Args},
+// keptRows are the facts of a service the form can't change and a save keeps:
+// shown under its inputs so the owner sees what else the service is.
+// Environment values are in the form; secrets have their own section.
+func keptRows(svc app.Service, s editService) []defRow {
+	var rows []defRow
+	if svc.Command != "" {
+		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 	}
-
-	var ports, domains, env []string
-	for _, p := range svc.Ports {
-		ports = append(ports, p.Name+" → "+strconv.Itoa(p.ContainerPort))
+	if len(svc.Args) > 0 {
+		rows = append(rows, defRow{Label: "Arguments", Values: svc.Args})
 	}
-	for _, d := range svc.Domains {
-		domains = append(domains, d.Host+" → "+d.Port)
-	}
-	for _, v := range svc.Env {
-		env = append(env, v.Name)
-	}
-	rows = append(rows,
-		defRow{Label: "Ports", Values: ports},
-		defRow{Label: "Domains", Values: domains},
-		defRow{Label: "Copies", Values: []string{strconv.Itoa(replicasOf(svc))}},
-		defRow{Label: "CPU", Values: unitValue(svc.Resources.CPUMHz, "MHz")},
-		defRow{Label: "Memory", Values: memoryValue(svc.Resources)},
-		defRow{Label: "Health check", Values: nonEmpty(healthWords(svc.Health))},
-	)
-	envRow := defRow{Label: "Environment variables", Values: env}
-	if len(env) > 0 {
-		envRow.Note = "Values aren't shown."
-	}
-	rows = append(rows, envRow)
-	// No volumes isn't a default, so a service without any has no row and
-	// isn't named on the "Using defaults" line either.
-	if len(svc.Volumes) == 0 {
-		return rows
-	}
-	var volumes []string
-	for _, v := range svc.Volumes {
-		s := v.Name + " → " + v.Path
-		if v.ReadOnly {
-			s += " (read-only)"
+	if len(svc.Ports) > 0 && !s.ShowPort {
+		var ports []string
+		for _, p := range svc.Ports {
+			ports = append(ports, p.Name+" → "+strconv.Itoa(p.ContainerPort))
 		}
-		volumes = append(volumes, s)
+		rows = append(rows, defRow{Label: "Ports", Values: ports, Note: "A service with several ports changes them through the API."})
 	}
-	return append(rows, defRow{Label: "Volumes", Values: volumes, Note: "Kept across deploys, erased with the app."})
-}
-
-// nonEmpty is a one-value list, or none for "": a fact with no values goes
-// into the panel's "Using defaults" line.
-func nonEmpty(s string) []string {
-	if s == "" {
-		return nil
+	if svc.Health != nil && svc.Health.Port != "" {
+		rows = append(rows, defRow{Label: "Health check port", Values: []string{svc.Health.Port}})
 	}
-	return []string{s}
-}
-
-// unitValue is "250 MHz", or none for a field left at zero (the default).
-func unitValue(n int, unit string) []string {
-	if n == 0 {
-		return nil
+	if len(svc.Volumes) > 0 {
+		var volumes []string
+		for _, v := range svc.Volumes {
+			text := v.Name + " → " + v.Path
+			if v.ReadOnly {
+				text += " (read-only)"
+			}
+			volumes = append(volumes, text)
+		}
+		rows = append(rows, defRow{Label: "Volumes", Values: volumes, Note: "Kept across deploys, erased with the app."})
 	}
-	return []string{strconv.Itoa(n) + " " + unit}
-}
-
-// memoryValue is what a service sets for its memory: "256 MB reserved, up to
-// 1024 MB", or either half alone; none when it leaves both to the defaults.
-func memoryValue(r app.Resources) []string {
-	switch {
-	case r.MemoryMB > 0 && r.MemoryMaxMB > 0:
-		return []string{fmt.Sprintf("%d MB reserved, up to %d MB", r.MemoryMB, r.MemoryMaxMB)}
-	case r.MemoryMB > 0:
-		return []string{fmt.Sprintf("%d MB reserved", r.MemoryMB)}
-	case r.MemoryMaxMB > 0:
-		return []string{fmt.Sprintf("up to %d MB", r.MemoryMaxMB)}
+	if b := svc.Backup; b != nil {
+		rows = append(rows, defRow{Label: "Backup", Values: []string{
+			fmt.Sprintf("%s, %s (UTC), keeping the last %d", b.Engine, b.ScheduleOrDefault(), b.KeepOrDefault())}})
 	}
-	return nil
-}
-
-// replicasOf is how many copies the service asks for: a missing count means 1.
-func replicasOf(svc app.Service) int {
-	if svc.Replicas == nil {
-		return 1
-	}
-	return *svc.Replicas
-}
-
-// healthWords says how a service is checked: "GET /healthz every 10 s,
-// timeout 2 s", "TCP every 10 s, timeout 2 s", or "" for no check.
-func healthWords(h *app.HealthCheck) string {
-	if h == nil {
-		return ""
-	}
-	interval, timeout := h.Interval, h.Timeout
-	if interval == 0 {
-		interval = defaultCheckInterval
-	}
-	if timeout == 0 {
-		timeout = defaultCheckTimeout
-	}
-	what := "TCP"
-	if h.Path != "" {
-		what = "GET " + h.Path
-	}
-	if h.Port != "" {
-		what += " on port " + h.Port
-	}
-	return fmt.Sprintf("%s every %s, timeout %s", what, durationText(interval), durationText(timeout))
+	return rows
 }
 
 // whatGoes is the sentence that says what deleting the app removes (research
@@ -357,4 +371,180 @@ func whatGoes(a app.App, sum service.AppSummary, deployments int, hasToken bool)
 		s = append(s, plain(" Its backups stay in the backup destination."))
 	}
 	return append(s, plain(" This can't be undone."))
+}
+
+// maxEditBytes bounds the edit form: environment lists are long, but not this long.
+const maxEditBytes = 256 << 10
+
+// savedNote is what a refused deploy adds when the edit was already saved:
+// the stored app has the new values, so the next save starts from them.
+const savedNote = "The changes are saved; the failed attempt is on the Deployments tab."
+
+// saveConfigure answers POST /apps/{id}/configure: it lays the posted form
+// over the stored app (applyEdit) and saves and deploys it in one step, on
+// the condition that the app still has the revision the form was drawn from.
+// Success goes to the deployment's entry on the Deployments tab (a refusal
+// draws the form again with everything typed, the message at its input).
+func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	r.Body = http.MaxBytesReader(w, r.Body, maxEditBytes)
+	if err := r.ParseForm(); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			s.message(w, http.StatusRequestEntityTooLarge, "Too large", "That form is larger than 256 KiB.", "Shorten the environment lists and try again.")
+			return
+		}
+		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		return
+	}
+	// A form without its revision would save over whatever is there.
+	revision := strings.TrimSpace(r.PostForm.Get("revision"))
+	if revision == "" {
+		s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and save from there.")
+		return
+	}
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, "read app", err)
+		return
+	}
+
+	form, ok := parseEditForm(r.PostForm, rec.App)
+	if !ok {
+		form.markFirstError()
+		s.drawEdit(w, r, http.StatusUnprocessableEntity, rec.App, form, nil)
+		return
+	}
+	edited := applyEdit(rec.App, form)
+	deployment, err := s.svc.DeployIf(ctx, edited, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		to := "/apps/" + id + "/deployments#deployment-" + deployment.Deployment.ID
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("HX-Redirect", to)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Redirect(w, r, to, http.StatusSeeOther)
+		return
+	}
+
+	// Whatever happened, draw the form from the app as it is stored now: a
+	// deploy that failed after saving, or a stale save, both left a newer one.
+	fresh, getErr := s.svc.GetApp(ctx, id)
+	switch {
+	case errors.Is(getErr, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+		return
+	case getErr != nil:
+		s.serverError(w, "read app", getErr)
+		return
+	}
+	if errors.Is(err, service.ErrAppChanged) {
+		form, _ = parseEditForm(r.PostForm, fresh.App)
+		form.Revision = fresh.Revision
+		s.drawEdit(w, r, http.StatusConflict, fresh.App, form, staleOf(fresh.App, form))
+		return
+	}
+	form, _ = parseEditForm(r.PostForm, fresh.App)
+	form.Revision = fresh.Revision
+	status, ok := refuseEdit(&form, edited, err)
+	if !ok {
+		s.serverError(w, "save and deploy from the console", err)
+		return
+	}
+	form.markFirstError()
+	s.drawEdit(w, r, status, fresh.App, form, nil)
+}
+
+// drawEdit answers a refused save: the whole Configure tab, or, for an htmx
+// post, the form alone to swap in place.
+func (s *server) drawEdit(w http.ResponseWriter, r *http.Request, status int, stored app.App, form editForm, stale *staleView) {
+	if r.Header.Get("HX-Request") != "true" {
+		s.configurePage(w, r, status, stored.ID, configureExtras{Form: &form, Stale: stale})
+		return
+	}
+	var buf bytes.Buffer
+	if err := s.pages["app"].ExecuteTemplate(&buf, "configure-form", editViewOf(stored, form, stale)); err != nil {
+		s.serverError(w, "render edit form", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// refuseEdit says what a failed save looks like on the form: the message on
+// the input it is about, or a sentence for the form as a whole, and the HTTP
+// status. edited is the app that was sent, whose service order its field paths
+// refer to. ok is false for errors the form has no words for.
+func refuseEdit(f *editForm, edited app.App, err error) (status int, ok bool) {
+	var fieldErr *app.FieldError
+	var imageErr *deploy.ImageError
+	var deployErr *service.DeployError
+
+	// onInput puts a message on the input a model path belongs to.
+	onInput := func(path, message string) bool {
+		name, found := fieldFor(path, edited)
+		if !found {
+			return false
+		}
+		field, found := f.field(name)
+		if !found {
+			return false
+		}
+		field.Error = sentence{plain(message)}
+		return true
+	}
+	// notice is a sentence for the form; a deploy that failed after the app
+	// was saved says so, since the stored app has the changes.
+	notice := func(parts ...part) {
+		f.Notice = sentence(parts)
+		switch {
+		case deployErr != nil && len(parts) > 0:
+			f.Notice = append(f.Notice, plain(" "+savedNote))
+		case deployErr != nil:
+			f.Notice = sentence{plain(savedNote)}
+		}
+	}
+	_ = errors.As(err, &deployErr)
+
+	switch {
+	case errors.As(err, &fieldErr):
+		if !onInput(fieldErr.Field, fieldMessage(fieldErr.Field, fieldErr.Message)) {
+			notice(plain("caravana can't deploy this app: "), mono(fieldErr.Field), plain(" "+fieldErr.Message))
+		} else if deployErr != nil {
+			notice()
+		}
+		return http.StatusUnprocessableEntity, true
+	case errors.As(err, &imageErr):
+		status = http.StatusUnprocessableEntity
+		if !errors.Is(err, deploy.ErrImageNotFound) {
+			status = http.StatusBadGateway // the registry couldn't answer: not the typed value's fault
+		}
+		if onInput(imageErr.Field, imageErr.Error()) {
+			notice()
+		} else {
+			notice(plain(imageErr.Error()))
+		}
+		return status, true
+	case errors.Is(err, deploy.ErrNomadUnavailable):
+		notice(plain("Nomad can't be reached, so nothing was deployed."))
+		return http.StatusBadGateway, true
+	case errors.Is(err, secrets.ErrUnavailable):
+		notice(plain("The secret store refused the change, so nothing was deployed. The running copies keep their secrets."))
+		return http.StatusBadGateway, true
+	}
+	// A job Nomad rejected, a job Caravana didn't create: the sentences of the Deploy form.
+	status, sentenceOf, ok := refuseDeploy(&deployForm{}, err)
+	if !ok {
+		return 0, false
+	}
+	notice(sentenceOf...)
+	return status, true
 }
