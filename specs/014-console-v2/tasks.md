@@ -126,7 +126,7 @@ Files: `internal/ui/composeform.go`, `internal/ui/composeform_test.go`, `interna
 **⟶ Wait for T017, then:**
 
 - [X] T018 [P] [US2] Parity: `"POST /apps/new/compose/preview": {ops: ["previewCompose"]}`, `"POST /apps/new/compose": {ops: ["deployCompose"]}` · internal/api/parity_test.go
-- [ ] T019 [P] [US2] Lab step: create the compose example (`internal/compose/testdata` web-db or the lab's own) through the New app › Compose forms, follow the deployment to healthy · cmd/caravana/console_lab_test.go
+- [X] T019 [P] [US2] Lab step: create the compose example (`internal/compose/testdata` web-db or the lab's own) through the New app › Compose forms, follow the deployment to healthy · cmd/caravana/console_lab_test.go
 
 **Checkpoint**: Compose apps can be created from the console.
 

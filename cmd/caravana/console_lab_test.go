@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -89,6 +90,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-edit", c.edit},
 		{"console-redeploy-version", c.redeployVersion},
 		{"console-needs-you", c.needsYou},
+		{"console-compose", c.compose},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -321,9 +323,17 @@ func (c *console) edit(t *testing.T) {
 // browser without script would send them: every named input and textarea.
 func editFormValues(t *testing.T, page string) url.Values {
 	t.Helper()
-	m := regexp.MustCompile(`(?s)<form id="edit-form"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	return formValuesOf(t, page, "edit-form")
+}
+
+// formValuesOf is editFormValues for the form with that ID: the Compose
+// forms' pages use it too. A select isn't read; none of these steps has one
+// that matters.
+func formValuesOf(t *testing.T, page, id string) url.Values {
+	t.Helper()
+	m := regexp.MustCompile(`(?s)<form id="` + id + `"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
 	if m == nil {
-		t.Fatalf("no edit form on the Configure page:\n%s", page)
+		t.Fatalf("no form %q on the page:\n%s", id, page)
 	}
 	attr := func(tag, name string) string {
 		v := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
@@ -566,6 +576,162 @@ func (c *console) needsYou(t *testing.T) {
 	}
 	if _, running := c.get(t, "/parts/apps/oomer/copies"); !strings.Contains(running, "ran out of memory") {
 		t.Errorf("the Running tab's copies don't say a copy ran out of memory:\n%s", running)
+	}
+}
+
+// consoleCompose is a small Compose file for the console's Compose forms:
+// busybox serving a page on 8080. A second version adds an environment
+// variable, to see what a deploy from Compose changes.
+const consoleCompose = `services:
+  web:
+    image: busybox:1.37
+    command: ["sh", "-c", "mkdir -p /www; echo ok > /www/index.html; exec httpd -f -p 8080 -h /www"]
+    ports: ["8080"]
+`
+
+const consoleComposeV2 = consoleCompose + `    environment:
+      FLAG: v2
+`
+
+// compose: New app › Compose file (feature 014). The preview creates nothing;
+// the second button creates the app with the health check and the secret
+// typed into the page, the deployment ends healthy and the secret reaches the
+// service; the stored app is what the API makes of the same file and overlay;
+// a taken name is refused. Then Deploy from Compose: the overlay starts from
+// the app's (the secret as a name, empty), a new file deploys with the
+// secret's value kept, and the form opened before is refused as stale.
+func (c *console) compose(t *testing.T) {
+	const id = "console-compose"
+	remove := func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/apps/"+id, "", ""); err == nil {
+			resp.Body.Close()
+		}
+	}
+	remove() // a leftover from an aborted run, if any
+	t.Cleanup(remove)
+	secret := "compose-secret-" + c.g.run
+	appStatus := func() int {
+		resp, err := c.g.apiRequest(http.MethodGet, "/v1/apps/"+id, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	// envIs checks a variable inside the deployment's copy of web. Nomad's exec
+	// now and then answers an empty string right after the copy starts, so it
+	// asks again for a few seconds before it says the value is wrong.
+	envIs := func(deployment, name, want, why string) {
+		t.Helper()
+		var got string
+		if !waitUntil(30*time.Second, func() bool {
+			got = c.g.execEnv(t, id, "web", name, deployment)
+			return got == want
+		}) {
+			t.Errorf("%s inside the service = %q, want %s", name, got, why)
+		}
+	}
+	// deployed reads the deployment a 303 to the app's Deployments tab names and waits for it to end healthy.
+	deployed := func(resp *http.Response, body string) string {
+		t.Helper()
+		const prefix = "/apps/" + id + "/deployments#deployment-"
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, prefix) {
+			t.Fatalf("the post = %d → %q, want 303 to the new deployment: %s", resp.StatusCode, loc, body)
+		}
+		deployment := strings.TrimPrefix(loc, prefix)
+		if final := c.g.waitFinalOf(t, id, deployment, 4*time.Minute); final.Status != "healthy" {
+			t.Fatalf("deployment %s ended %s: %s", deployment, final.Status, final.Error)
+		}
+		return deployment
+	}
+
+	resp, body := c.get(t, "/apps/new?from=compose")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `action="/apps/new/compose/preview"`) {
+		t.Fatalf("GET /apps/new?from=compose = %d, want 200 with the Compose form: %s", resp.StatusCode, body)
+	}
+
+	// The preview shows the service and creates nothing.
+	resp, preview := c.post(t, "/apps/new/compose/preview", url.Values{"name": {id}, "compose": {consoleCompose}})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(preview, "busybox:1.37") || !strings.Contains(preview, "Create and deploy") {
+		t.Fatalf("POST the preview = %d, want 200 with the service and the create button: %s", resp.StatusCode, preview)
+	}
+	if got := appStatus(); got != http.StatusNotFound {
+		t.Fatalf("GET /v1/apps/%s after a preview = %d, want 404", id, got)
+	}
+
+	// Create it with the overlay typed into the page.
+	form := formValuesOf(t, preview, "compose-form")
+	if form.Get("svc.web.overlay") != "1" {
+		t.Fatalf("the preview's form = %v, want web's overlay", form)
+	}
+	form.Set("svc.web.healthPath", "/")
+	form.Set("svc.web.newSecret.0", "API_KEY")
+	form.Set("svc.web.newSecretValue.0", secret)
+	resp, body = c.post(t, "/apps/new/compose", form)
+	first := deployed(resp, body)
+	envIs(first, "API_KEY", secret, "the value typed on the page")
+
+	// The stored app is what the API makes of the same file and overlay.
+	request, _ := json.Marshal(map[string]any{"compose": consoleCompose, "services": map[string]any{"web": map[string]any{
+		"health":  map[string]any{"path": "/"},
+		"secrets": []map[string]any{{"name": "API_KEY", "value": secret}}}}})
+	var stored, previewed struct {
+		App any `json:"app"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id, &stored)
+	api := c.g.api(t, http.MethodPost, "/v1/apps/"+id+"/compose/preview", "application/json", string(request))
+	err := json.NewDecoder(api.Body).Decode(&previewed)
+	api.Body.Close()
+	if err != nil || api.StatusCode != http.StatusOK {
+		t.Fatalf("the API's preview = %d: %v", api.StatusCode, err)
+	}
+	if !reflect.DeepEqual(stored.App, previewed.App) {
+		t.Errorf("the stored app differs from the API's preview of the same request:\n stored: %v\n   API: %v", stored.App, previewed.App)
+	}
+
+	// The name is taken now, and nothing replaces the app.
+	resp, body = c.post(t, "/apps/new/compose", form)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "already exists") {
+		t.Errorf("POST /apps/new/compose for a taken name = %d, want 409 saying it already exists", resp.StatusCode)
+	}
+
+	// Deploy from Compose: the form carries the revision; the preview starts from the app's overlay.
+	resp, body = c.get(t, "/apps/"+id+"/compose")
+	if resp.StatusCode != http.StatusOK || formValuesOf(t, body, "compose-form").Get("revision") == "" {
+		t.Fatalf("GET /apps/%s/compose = %d, want 200 with a revision: %s", id, resp.StatusCode, body)
+	}
+	revision := formValuesOf(t, body, "compose-form").Get("revision")
+	resp, preview = c.post(t, "/apps/"+id+"/compose/preview", url.Values{"revision": {revision}, "compose": {consoleComposeV2}})
+	again := formValuesOf(t, preview, "compose-form")
+	if resp.StatusCode != http.StatusOK || again.Get("svc.web.healthPath") != "/" || !strings.Contains(preview, "Empty keeps the current value.") {
+		t.Fatalf("the preview from Deploy from Compose = %d, want the app's health check and the secret kept: %s", resp.StatusCode, preview)
+	}
+	if v, ok := again["svc.web.secret.API_KEY"]; !ok || v[0] != "" || strings.Contains(preview, secret) {
+		t.Errorf("the secret on the page = %v (present: %v), want its name with an empty input and no value anywhere", v, ok)
+	}
+	staleForm := url.Values{}
+	for k, v := range again {
+		staleForm[k] = v
+	}
+
+	resp, body = c.post(t, "/apps/"+id+"/compose", again)
+	second := deployed(resp, body)
+	envIs(second, "FLAG", "v2", "v2 from the new file")
+	envIs(second, "API_KEY", secret, "the value kept by the empty secret input")
+
+	// The form opened before that deploy is stale now.
+	var before, after struct {
+		Deployments []struct{ ID string } `json:"deployments"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id+"/deployments?limit=100", &before)
+	resp, body = c.post(t, "/apps/"+id+"/compose", staleForm)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "This app changed since you opened the form.") {
+		t.Errorf("POST from a stale form = %d, want 409 with the stale panel", resp.StatusCode)
+	}
+	c.g.getJSON(t, "/v1/apps/"+id+"/deployments?limit=100", &after)
+	if len(after.Deployments) != len(before.Deployments) {
+		t.Errorf("a stale deploy made %d deployments, want none", len(after.Deployments)-len(before.Deployments))
 	}
 }
 

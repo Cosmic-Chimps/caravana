@@ -259,10 +259,13 @@ func TestComposeCreate(t *testing.T) {
 	if got := e.storedApp(t, "shop"); !reflect.DeepEqual(got, want) {
 		t.Errorf("stored app\n got %+v\nwant %+v", got, want)
 	}
-	for _, name := range []string{"API_KEY", "POSTGRES_PASSWORD"} {
-		if strings.Contains(body, name+"="+aSecret) {
-			t.Errorf("the response mentions a value of %s", name)
-		}
+	// The values typed went to the secret store, not into the stored app or any page.
+	e.waitDeploy(t, recs[0].Deployment.ID)
+	if got := e.Nomad.Variable("nomad/jobs/shop/web")["API_KEY"]; got != aSecret {
+		t.Errorf("web's API_KEY in the secret store = %q, want the value typed", got)
+	}
+	if got := e.Nomad.Variable("nomad/jobs/shop/db")["POSTGRES_PASSWORD"]; got != aSecret+"-db" {
+		t.Errorf("db's POSTGRES_PASSWORD in the secret store = %q, want the value typed", got)
 	}
 }
 
