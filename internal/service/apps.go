@@ -227,14 +227,21 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 // error is one of deploy's (ErrNomadUnavailable): a list of copies has no
 // stored fallback, so callers say that Nomad can't be reached.
 func (s *Service) Copies(ctx context.Context, appID string) ([]Copy, error) {
-	if _, err := s.store.GetApp(ctx, appID); err != nil {
-		return nil, err
+	_, copies, err := s.appCopies(ctx, appID)
+	return copies, err
+}
+
+// appCopies is Copies, with the stored app it checked.
+func (s *Service) appCopies(ctx context.Context, appID string) (app.App, []Copy, error) {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return app.App{}, nil, err
 	}
 	copies, err := s.deployer.Copies(ctx, appID)
 	if err != nil {
-		return nil, fmt.Errorf("list copies of %q: %w", appID, err)
+		return app.App{}, nil, fmt.Errorf("list copies of %q: %w", appID, err)
 	}
-	return copies, nil
+	return rec.App, copies, nil
 }
 
 // DeleteApp erases an app for good (research R16): its Nomad job is stopped
