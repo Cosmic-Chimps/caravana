@@ -24,6 +24,11 @@
 // items, one over 64 KiB, or a path Nomad wouldn't accept. Variable(path) and
 // SetVariable(path, items) let tests read and change them directly.
 //
+// Allocation stats: SetStats(allocID, usage) sets what
+// GET /v1/client/allocation/{id}/stats answers (404 until set), SetStatsDelay
+// holds each answer back, and StatsRequests and MaxStatsInFlight report how
+// they were asked.
+//
 // Dynamic host volumes are kept in memory too: PUT /v1/volume/host/create,
 // GET and DELETE /v1/volume/host/{id}, GET /v1/volumes?type=host&prefix=. A
 // new volume is "pending" and becomes "ready" the second time it is read, as
@@ -88,6 +93,12 @@ type Nomad struct {
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
 
+	stats         map[string]api.AllocResourceUsage // by copy ID
+	statsDelay    time.Duration
+	statsRequests int
+	statsInFlight int
+	statsMax      int
+
 	volumes      map[string]*hostVolume // by ID
 	volumeStatus int                    // non-zero: every host volume request answers it
 }
@@ -124,6 +135,7 @@ func New(t testing.TB) *Nomad {
 		logChanged: make(chan struct{}),
 
 		vars:    map[string]map[string]string{},
+		stats:   map[string]api.AllocResourceUsage{},
 		volumes: map[string]*hostVolume{},
 	}
 	n.srv = httptest.NewServer(http.HandlerFunc(n.serve))
@@ -295,6 +307,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.purge(w, r, strings.TrimPrefix(r.URL.Path, "/v1/job/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/logs/"):
 		n.serveLogs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/logs/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/stats"):
+		n.serveStats(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/stats"))
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/allocations":
 		n.allocations(w, r, "")
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/allocation/"):
@@ -1198,4 +1212,66 @@ func (n *Nomad) serveLogs(w http.ResponseWriter, r *http.Request, id string) {
 			}
 		}
 	}
+}
+
+// SetStats sets what the copy's stats request answers: the usage of the
+// allocation and of each of its tasks. A copy with no stats answers 404, like
+// Nomad does for an allocation its node doesn't have.
+func (n *Nomad) SetStats(copyID string, usage api.AllocResourceUsage) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.stats[copyID] = usage
+}
+
+// SetStatsDelay holds every stats answer back by d (until the request is
+// cancelled), so tests can see requests overlap or time out.
+func (n *Nomad) SetStatsDelay(d time.Duration) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statsDelay = d
+}
+
+// StatsRequests counts the stats requests answered or cancelled so far.
+func (n *Nomad) StatsRequests() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.statsRequests
+}
+
+// MaxStatsInFlight is the most stats requests that were open at the same time.
+func (n *Nomad) MaxStatsInFlight() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.statsMax
+}
+
+// serveStats answers GET /v1/client/allocation/{id}/stats.
+func (n *Nomad) serveStats(w http.ResponseWriter, r *http.Request, id string) {
+	n.mu.Lock()
+	n.statsRequests++
+	n.statsInFlight++
+	n.statsMax = max(n.statsMax, n.statsInFlight)
+	delay := n.statsDelay
+	n.mu.Unlock()
+	defer func() {
+		n.mu.Lock()
+		n.statsInFlight--
+		n.mu.Unlock()
+	}()
+
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+	}
+	n.mu.Lock()
+	usage, ok := n.stats[id]
+	n.mu.Unlock()
+	if !ok {
+		http.Error(w, "allocation not found", http.StatusNotFound)
+		return
+	}
+	n.writeJSON(w, usage)
 }

@@ -478,6 +478,18 @@ func orDefault[T comparable](v, def T) T {
 //   - ceiling: the service's own, else the larger of the reservation and the
 //     default ceiling
 func taskResources(r app.Resources, s Settings) *api.Resources {
+	cpu, reserve, ceiling := Reserved(r, s)
+	return &api.Resources{
+		CPU:         new(cpu),
+		MemoryMB:    new(reserve),
+		MemoryMaxMB: new(ceiling),
+	}
+}
+
+// Reserved is what a service's task reserves, with the defaults applied: its
+// CPU in MHz, its memory in MB, and its memory ceiling in MB. The job is built
+// from it and the console shows it next to the use, so both say the same.
+func Reserved(r app.Resources, s Settings) (cpuMHz, memoryMB, memoryMaxMB int) {
 	reserve := r.MemoryMB
 	if reserve == 0 {
 		reserve = s.DefaultMemoryMB
@@ -489,9 +501,5 @@ func taskResources(r app.Resources, s Settings) *api.Resources {
 	if ceiling == 0 {
 		ceiling = max(reserve, s.DefaultMemoryMaxMB)
 	}
-	return &api.Resources{
-		CPU:         new(orDefault(r.CPUMHz, s.DefaultCPUMHz)),
-		MemoryMB:    new(reserve),
-		MemoryMaxMB: new(ceiling),
-	}
+	return orDefault(r.CPUMHz, s.DefaultCPUMHz), reserve, ceiling
 }

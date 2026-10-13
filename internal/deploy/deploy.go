@@ -64,6 +64,8 @@ type Timing struct {
 	// VolumeDeleteWait bounds retrying a volume delete that Nomad refuses
 	// because a stopping copy still uses it. Default 60 s.
 	VolumeDeleteWait time.Duration
+	// UsageTimeout bounds reading one copy's CPU and memory. Default 2 s.
+	UsageTimeout time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
