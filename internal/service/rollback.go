@@ -32,5 +32,5 @@ func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID strin
 	if err := s.deployer.CheckDigests(ctx, a, rec.Deployment.Digests); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	return s.saveAndDeploy(ctx, a, trigger, nil, &pinned{digests: rec.Deployment.Digests, source: deploymentID})
+	return s.saveAndDeploy(ctx, a, Condition{}, trigger, nil, &pinned{digests: rec.Deployment.Digests, source: deploymentID})
 }

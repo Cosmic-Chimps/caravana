@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -75,6 +76,79 @@ func TestDeployComposeRefused(t *testing.T) {
 	if e.nomad.Registrations() != 0 {
 		t.Error("Nomad got a job")
 	}
+}
+
+// Feature 014: a Compose deploy can be conditional on the stored app too.
+func TestDeployComposeIf(t *testing.T) {
+	ctx := context.Background()
+	req := compose.Request{Compose: twoServices}
+
+	t.Run("IfNew creates and then refuses", func(t *testing.T) {
+		e := newEnv(t)
+		rec, err := e.svc.DeployComposeIf(ctx, "blog", req, Condition{IfNew: true}, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("DeployComposeIf() = %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		before, _ := e.svc.GetApp(ctx, "blog")
+
+		_, err = e.svc.DeployComposeIf(ctx, "blog", req, Condition{IfNew: true}, app.TriggerManual)
+		if !errors.Is(err, ErrAppExists) {
+			t.Fatalf("second DeployComposeIf() = %v, want ErrAppExists", err)
+		}
+		if after, _ := e.svc.GetApp(ctx, "blog"); !reflect.DeepEqual(after, before) || e.nomad.Registrations() != 1 {
+			t.Errorf("a refused create changed something (%d registrations)", e.nomad.Registrations())
+		}
+	})
+
+	t.Run("IfRevision", func(t *testing.T) {
+		e := newEnv(t)
+		rec, err := e.svc.DeployCompose(ctx, "blog", req, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("DeployCompose() = %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		stored, _ := e.svc.GetApp(ctx, "blog")
+
+		if _, err := e.svc.DeployComposeIf(ctx, "blog", req, Condition{IfRevision: "0000000000000000"}, app.TriggerManual); !errors.Is(err, ErrAppChanged) {
+			t.Fatalf("with a stale revision = %v, want ErrAppChanged", err)
+		}
+		if e.nomad.Registrations() != 1 {
+			t.Errorf("registrations = %d, want 1", e.nomad.Registrations())
+		}
+
+		again, err := e.svc.DeployComposeIf(ctx, "blog", req, Condition{IfRevision: stored.Revision}, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("with the current revision = %v", err)
+		}
+		waitFinal(t, e.store, again.Deployment.ID)
+	})
+
+	t.Run("a refused file names its path and saves nothing", func(t *testing.T) {
+		e := newEnv(t)
+		_, err := e.svc.DeployComposeIf(ctx, "blog", compose.Request{Compose: "services:\n  web:\n    build: .\n"}, Condition{IfNew: true}, app.TriggerManual)
+		var fe *app.FieldError
+		if !errors.As(err, &fe) || fe.Field != "services.web.build" {
+			t.Fatalf("DeployComposeIf() = %v, want a field error on services.web.build", err)
+		}
+		if _, err := e.svc.GetApp(ctx, "blog"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("GetApp() = %v, want nothing saved", err)
+		}
+	})
+
+	t.Run("a secret with no value is refused on create", func(t *testing.T) {
+		e := newEnv(t)
+		withSecret := compose.Request{Compose: twoServices, Services: map[string]compose.Overlay{
+			"web": {Secrets: []app.Secret{{Name: "TOKEN"}}},
+		}}
+		var fe *app.FieldError
+		if _, err := e.svc.DeployComposeIf(ctx, "blog", withSecret, Condition{IfNew: true}, app.TriggerManual); !errors.As(err, &fe) {
+			t.Fatalf("DeployComposeIf() = %v, want *app.FieldError", err)
+		}
+		if _, err := e.svc.GetApp(ctx, "blog"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("GetApp() = %v, want nothing saved", err)
+		}
+	})
 }
 
 // FR-002: a preview answers the app and its warnings, with secret names only,

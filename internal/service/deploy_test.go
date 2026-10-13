@@ -315,7 +315,7 @@ func TestDeployPinned(t *testing.T) {
 	e.registry.AddIndex("traefik/whoami", "latest", movedDigest) // the tag moved
 
 	pin := &pinned{digests: map[string]string{"web": apptest.WhoamiDigest}, source: "dep-past"}
-	rec, err := e.svc.saveAndDeploy(ctx, whoami(), app.TriggerManual, nil, pin)
+	rec, err := e.svc.saveAndDeploy(ctx, whoami(), Condition{}, app.TriggerManual, nil, pin)
 	if err != nil {
 		t.Fatalf("saveAndDeploy() = %v", err)
 	}
@@ -354,6 +354,159 @@ func TestDeployWarnsRemovedSecrets(t *testing.T) {
 	if len(rec.Warnings) != 1 || !strings.Contains(rec.Warnings[0].Message, `secret "TOKEN"`) {
 		t.Errorf("warnings = %+v, want one naming TOKEN", rec.Warnings)
 	}
+}
+
+// Feature 014: a deploy can be conditional on the stored app.
+func TestDeployIf(t *testing.T) {
+	ctx := context.Background()
+
+	// storedApp deploys whoami and returns its revision.
+	storedApp := func(t *testing.T, e *env) string {
+		t.Helper()
+		rec, err := e.svc.Deploy(ctx, whoami(), app.TriggerManual)
+		if err != nil {
+			t.Fatalf("Deploy() = %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		stored, err := e.svc.GetApp(ctx, "whoami")
+		if err != nil {
+			t.Fatalf("GetApp() = %v", err)
+		}
+		return stored.Revision
+	}
+	edited := func() app.App {
+		a := whoami()
+		a.Services[0].Replicas = new(5)
+		return a
+	}
+
+	t.Run("matching revision deploys the edit", func(t *testing.T) {
+		e := newEnv(t)
+		rev := storedApp(t, e)
+		rec, err := e.svc.DeployIf(ctx, edited(), Condition{IfRevision: rev}, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("DeployIf() = %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		if stored, _ := e.svc.GetApp(ctx, "whoami"); !reflect.DeepEqual(stored.App, edited()) {
+			t.Errorf("stored app = %+v, want the edit", stored.App)
+		}
+		if e.nomad.Registrations() != 2 {
+			t.Errorf("registrations = %d, want 2", e.nomad.Registrations())
+		}
+	})
+
+	t.Run("stale revision saves and deploys nothing", func(t *testing.T) {
+		e := newEnv(t)
+		storedApp(t, e)
+		before, _ := e.svc.GetApp(ctx, "whoami")
+		_, err := e.svc.DeployIf(ctx, edited(), Condition{IfRevision: "0000000000000000"}, app.TriggerManual)
+		if !errors.Is(err, ErrAppChanged) {
+			t.Fatalf("DeployIf() = %v, want ErrAppChanged", err)
+		}
+		if !strings.Contains(err.Error(), before.Revision) {
+			t.Errorf("error %q doesn't name the current revision %s", err, before.Revision)
+		}
+		after, _ := e.svc.GetApp(ctx, "whoami")
+		if !reflect.DeepEqual(after, before) {
+			t.Errorf("a refused deploy changed the stored app: %+v", after.App)
+		}
+		if e.nomad.Registrations() != 1 {
+			t.Errorf("registrations = %d, want only the first deploy's", e.nomad.Registrations())
+		}
+		if recs, _ := e.store.ListDeployments(ctx, "whoami", 10); len(recs) != 1 {
+			t.Errorf("%d deployment records, want 1", len(recs))
+		}
+	})
+
+	t.Run("revision on an unknown app", func(t *testing.T) {
+		e := newEnv(t)
+		_, err := e.svc.DeployIf(ctx, whoami(), Condition{IfRevision: "0000000000000000"}, app.TriggerManual)
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("DeployIf() = %v, want store.ErrNotFound", err)
+		}
+	})
+
+	t.Run("IfNew creates a free ID", func(t *testing.T) {
+		e := newEnv(t)
+		rec, err := e.svc.DeployIf(ctx, whoami(), Condition{IfNew: true}, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("DeployIf() = %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		if _, err := e.svc.GetApp(ctx, "whoami"); err != nil {
+			t.Errorf("GetApp() = %v, want the app saved", err)
+		}
+	})
+
+	t.Run("IfNew refuses a taken ID", func(t *testing.T) {
+		e := newEnv(t)
+		storedApp(t, e)
+		before, _ := e.svc.GetApp(ctx, "whoami")
+		_, err := e.svc.DeployIf(ctx, edited(), Condition{IfNew: true}, app.TriggerManual)
+		if !errors.Is(err, ErrAppExists) {
+			t.Fatalf("DeployIf() = %v, want ErrAppExists", err)
+		}
+		after, _ := e.svc.GetApp(ctx, "whoami")
+		if !reflect.DeepEqual(after, before) || e.nomad.Registrations() != 1 {
+			t.Errorf("a refused create changed something: app %+v, %d registrations", after.App, e.nomad.Registrations())
+		}
+	})
+
+	t.Run("both conditions is an error", func(t *testing.T) {
+		e := newEnv(t)
+		_, err := e.svc.DeployIf(ctx, whoami(), Condition{IfNew: true, IfRevision: "abc"}, app.TriggerManual)
+		if err == nil {
+			t.Fatal("DeployIf() with both conditions succeeded")
+		}
+		if _, err := e.svc.GetApp(ctx, "whoami"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("GetApp() = %v, want nothing saved", err)
+		}
+	})
+
+	t.Run("validation and secret checks come before any save", func(t *testing.T) {
+		for name, cond := range map[string]func(rev string) Condition{
+			"IfNew":      func(string) Condition { return Condition{IfNew: true} },
+			"IfRevision": func(rev string) Condition { return Condition{IfRevision: rev} },
+		} {
+			t.Run(name, func(t *testing.T) {
+				e := newEnv(t)
+				id := "other"
+				rev := ""
+				if name == "IfRevision" {
+					id, rev = "whoami", storedApp(t, e)
+				}
+				replaces := e.secrets.Replaces()
+
+				// A secret with no value anywhere is refused naming it.
+				a := whoami()
+				a.ID = id
+				a.Services[0].Secrets = []app.Secret{{Name: "TOKEN"}}
+				var fe *app.FieldError
+				if _, err := e.svc.DeployIf(ctx, a, cond(rev), app.TriggerManual); !errors.As(err, &fe) {
+					t.Fatalf("DeployIf() with a valueless secret = %v, want *app.FieldError", err)
+				}
+				// An invalid app is refused too.
+				bad := whoami()
+				bad.ID = id
+				bad.Services[0].Image = ""
+				if _, err := e.svc.DeployIf(ctx, bad, cond(rev), app.TriggerManual); !errors.As(err, &fe) {
+					t.Fatalf("DeployIf() with no image = %v, want *app.FieldError", err)
+				}
+
+				if e.secrets.Replaces() != replaces {
+					t.Error("the secret store was written")
+				}
+				if name == "IfNew" {
+					if _, err := e.svc.GetApp(ctx, id); !errors.Is(err, store.ErrNotFound) {
+						t.Errorf("GetApp() = %v, want nothing saved", err)
+					}
+				} else if stored, _ := e.svc.GetApp(ctx, id); stored.Revision != rev {
+					t.Errorf("the stored app moved to revision %s", stored.Revision)
+				}
+			})
+		}
+	})
 }
 
 func TestRemovedSecrets(t *testing.T) {

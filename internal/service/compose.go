@@ -13,11 +13,18 @@ import (
 // in the deployment record. A file Caravana can't honor is an
 // *app.FieldError naming the path in the file, and nothing is saved.
 func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.Request, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.DeployComposeIf(ctx, appID, req, Condition{}, trigger)
+}
+
+// DeployComposeIf is DeployCompose with a condition on the stored app, as
+// DeployIf has: a new app only (IfNew) or an app still at the revision the
+// caller saw (IfRevision).
+func (s *Service) DeployComposeIf(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
 	a, warnings, err := compose.Translate(appID, req)
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	rec, err := s.saveAndDeploy(ctx, a, trigger, warnings, nil)
+	rec, err := s.saveAndDeploy(ctx, a, cond, trigger, warnings, nil)
 	return rec, compose.InFile(err, a)
 }
 

@@ -42,7 +42,33 @@ type appState struct {
 // deployment record exists, errors are *DeployError and the record says
 // failed.
 func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.saveAndDeploy(ctx, a, trigger, nil, nil)
+	return s.saveAndDeploy(ctx, a, Condition{}, trigger, nil, nil)
+}
+
+// Condition says what must still be true of the stored app for a deploy to
+// save it. The zero value is no condition: save whatever is there, as Deploy
+// does. Setting both fields is a programming error, refused before anything
+// else happens.
+type Condition struct {
+	// IfRevision saves only if the stored app still has this revision (the
+	// one the caller read), so an edit made from a stale copy is refused.
+	IfRevision string
+	// IfNew saves only if no app has this ID yet, so a create never replaces.
+	IfNew bool
+}
+
+// ErrAppChanged is the refusal of a deploy whose Condition.IfRevision no
+// longer matches: the stored app changed since the caller read it. Nothing
+// was saved or deployed. The error's text names the revision the app has now.
+var ErrAppChanged = errors.New("the app changed since it was read")
+
+// DeployIf is Deploy with a condition on the stored app: IfRevision gives
+// ErrAppChanged when it differs (or store.ErrNotFound when there is no such
+// app), IfNew gives ErrAppExists when the ID is taken. Validation, the secret
+// checks and the backup checks come first, so their errors win, and nothing
+// is saved or deployed on any refusal.
+func (s *Service) DeployIf(ctx context.Context, a app.App, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.saveAndDeploy(ctx, a, cond, trigger, nil, nil)
 }
 
 // pinned is a redeploy of a past deployment: its digests are used as they
@@ -52,9 +78,13 @@ type pinned struct {
 	source  string // the past deployment's ID
 }
 
-// saveAndDeploy is Deploy with warnings from the input (a Compose file) to
-// record with the deployment, and pin set for a redeploy of a past one.
-func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trigger, warnings []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
+// saveAndDeploy is Deploy with a condition on the stored app, warnings from
+// the input (a Compose file) to record with the deployment, and pin set for a
+// redeploy of a past one.
+func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, trigger app.Trigger, warnings []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
+	if cond.IfNew && cond.IfRevision != "" {
+		return store.DeploymentRecord{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
+	}
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -70,12 +100,42 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, trigger app.Trig
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return store.DeploymentRecord{}, err
 	}
-	// Only names are stored: the values go to the secret store, in deploy.
-	if _, err := s.store.SaveApp(ctx, a.WithoutSecretValues()); err != nil {
+	if err := s.saveApp(ctx, a, cond); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
 	return s.deployWarned(ctx, a, trigger, warnings, pin)
+}
+
+// saveApp stores a as the condition allows. Only names are stored: the
+// secret values go to the secret store, in deploy. In each conditional case
+// the store decides, in one step with the write, so of two saves at once
+// exactly one wins.
+func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition) error {
+	stored := a.WithoutSecretValues()
+	switch {
+	case cond.IfNew:
+		if _, err := s.store.InsertApp(ctx, stored); errors.Is(err, store.ErrAlreadyExists) {
+			return fmt.Errorf("app %q: %w", a.ID, ErrAppExists)
+		} else if err != nil {
+			return err
+		}
+	case cond.IfRevision != "":
+		if _, err := s.store.SaveAppIf(ctx, stored, cond.IfRevision); errors.Is(err, store.ErrRevisionMismatch) {
+			// Name the revision it has now, so the caller can start over from it.
+			if cur, getErr := s.store.GetApp(ctx, a.ID); getErr == nil {
+				return fmt.Errorf("app %q is now at revision %s: %w", a.ID, cur.Revision, ErrAppChanged)
+			}
+			return fmt.Errorf("app %q: %w", a.ID, ErrAppChanged)
+		} else if err != nil {
+			return err
+		}
+	default:
+		if _, err := s.store.SaveApp(ctx, stored); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // unmountedVolumes warns about each volume the stored app has and the new
