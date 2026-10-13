@@ -32,6 +32,8 @@ type Copy struct {
 	Status      CopyStatus
 	Restarts    int        // restarts, summed over the allocation's tasks
 	StartedAt   *time.Time // the first start of any task; nil while none has started
+	LastRestart *time.Time // the newest restart of any task; nil if none restarted
+	OutOfMemory bool       // the service's last stop was the kernel killing it for passing its memory ceiling
 	Terminal    bool       // true for stopped and failed: it will never run again
 }
 
@@ -87,8 +89,29 @@ func copyOf(a *api.AllocationListStub) Copy {
 			t := ts.StartedAt
 			c.StartedAt = &t
 		}
+		if !ts.LastRestart.IsZero() && (c.LastRestart == nil || ts.LastRestart.After(*c.LastRestart)) {
+			t := ts.LastRestart
+			c.LastRestart = &t
+		}
 	}
+	c.OutOfMemory = killedForMemory(a.TaskStates[a.TaskGroup])
 	return c
+}
+
+// killedForMemory reports whether the service's task last stopped because the
+// kernel killed it for passing its memory ceiling: its newest "Terminated"
+// event carries oom_killed, which is what the Docker driver records. The
+// other tasks of the group (the names sidecar) are not the service.
+func killedForMemory(ts *api.TaskState) bool {
+	if ts == nil {
+		return false
+	}
+	for i := len(ts.Events) - 1; i >= 0; i-- { // Nomad appends events, newest last
+		if e := ts.Events[i]; e != nil && e.Type == api.TaskTerminated {
+			return e.Details["oom_killed"] == "true"
+		}
+	}
+	return false
 }
 
 // Copies lists jobID's copies: every copy that isn't terminal, plus the

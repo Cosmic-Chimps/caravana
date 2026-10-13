@@ -64,6 +64,55 @@ func TestCopyOf(t *testing.T) {
 		}
 	})
 
+	t.Run("LastRestart is the newest restart of any task", func(t *testing.T) {
+		got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
+			"web":     {Restarts: 2, LastRestart: t0.Add(2 * time.Minute)},
+			"sidecar": {Restarts: 1, LastRestart: t0.Add(time.Minute)},
+			"never":   {},
+			"gone":    nil,
+		}})
+		if got.LastRestart == nil || !got.LastRestart.Equal(t0.Add(2*time.Minute)) {
+			t.Errorf("LastRestart = %v, want %v", got.LastRestart, t0.Add(2*time.Minute))
+		}
+		if got := copyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.LastRestart != nil {
+			t.Errorf("LastRestart = %v, want nil when nothing restarted", got.LastRestart)
+		}
+	})
+
+	t.Run("OutOfMemory", func(t *testing.T) {
+		terminated := func(oom string) *api.TaskEvent {
+			return &api.TaskEvent{Type: api.TaskTerminated, Details: map[string]string{"oom_killed": oom, "exit_code": "137"}}
+		}
+		started := &api.TaskEvent{Type: api.TaskStarted}
+		tests := []struct {
+			name   string
+			states map[string]*api.TaskState
+			want   bool
+		}{
+			{"the service's newest terminated event is an OOM kill",
+				map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{started, terminated("true"), started}}}, true},
+			{"a terminated event that wasn't an OOM kill",
+				map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{started, terminated("false")}}}, false},
+			{"an older OOM kill, then an ordinary stop",
+				map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{terminated("true"), started, terminated("false")}}}, false},
+			{"a terminated event without details",
+				map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{{Type: api.TaskTerminated}}}}, false},
+			{"no events", map[string]*api.TaskState{"web": {}}, false},
+			{"the names sidecar's OOM kill is not the service's",
+				map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{started}}, "names": {Events: []*api.TaskEvent{terminated("true")}}}, false},
+			{"no task named like the service", map[string]*api.TaskState{"names": {Events: []*api.TaskEvent{terminated("true")}}}, false},
+			{"a nil event", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{nil}}}, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
+				if got.OutOfMemory != tc.want {
+					t.Errorf("OutOfMemory = %v, want %v", got.OutOfMemory, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("StartedAt is nil while no task has started", func(t *testing.T) {
 		got := copyOf(&api.AllocationListStub{ClientStatus: "pending", TaskStates: map[string]*api.TaskState{
 			"web": {State: "pending"},
@@ -106,6 +155,21 @@ func TestCopies(t *testing.T) {
 		want := []string{"db-1", "new-early", "new-late", "new-crashed", "new-pending", "old-run"}
 		if !reflect.DeepEqual(ids, want) {
 			t.Errorf("copies = %v, want %v", ids, want)
+		}
+	})
+
+	t.Run("restart time and an OOM kill survive the trip through Nomad's API", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		nomad.SetCopies("blog", api.AllocationListStub{ID: "a1", TaskGroup: "web", ClientStatus: "running",
+			TaskStates: map[string]*api.TaskState{"web": {Restarts: 1, LastRestart: t0, Events: []*api.TaskEvent{
+				{Type: api.TaskTerminated, Details: map[string]string{"oom_killed": "true"}},
+			}}}})
+		got, err := d.Copies(ctx, "blog")
+		if err != nil || len(got) != 1 {
+			t.Fatalf("Copies = %v, %v", got, err)
+		}
+		if !got[0].OutOfMemory || got[0].LastRestart == nil || !got[0].LastRestart.Equal(t0) {
+			t.Errorf("copy = %+v, want OutOfMemory and LastRestart %v", got[0], t0)
 		}
 	})
 
