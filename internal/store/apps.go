@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,11 +18,25 @@ import (
 // and teach GetApp to upgrade older documents.
 const appSchemaVersion = 1
 
+// ErrRevisionMismatch means SaveAppIf found a different stored app than the
+// caller read: someone saved in between, so nothing was written.
+var ErrRevisionMismatch = errors.New("app changed since it was read")
+
 // AppRecord is a stored app.
 type AppRecord struct {
 	App       app.App
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// Revision names this exact stored document: the first 16 hex digits of
+	// the SHA-256 of its JSON. The same document always has the same revision,
+	// so a save that changes nothing doesn't move it, and any change does.
+	Revision string
+}
+
+// revisionOf returns the revision of a stored document.
+func revisionOf(doc string) string {
+	sum := sha256.Sum256([]byte(doc))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 // SaveApp inserts the app, or replaces the stored one with the same ID.
@@ -48,6 +64,57 @@ func (s *Store) SaveApp(ctx context.Context, a app.App) (AppRecord, error) {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
 	return s.GetApp(ctx, a.ID)
+}
+
+// SaveAppIf is SaveApp for an app read earlier: it saves only when the stored
+// app still has the given revision, else it writes nothing and returns
+// ErrRevisionMismatch. The read and the write share one transaction (which
+// takes the write lock when it begins), so two saves from the same revision
+// can't both pass. An unknown ID is ErrNotFound. Like SaveApp, an identical
+// document leaves UpdatedAt alone.
+func (s *Store) SaveAppIf(ctx context.Context, a app.App, revision string) (AppRecord, error) {
+	if a.ID == "" {
+		return AppRecord{}, errors.New("save app: ID is required")
+	}
+	doc, err := json.Marshal(a)
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	defer tx.Rollback() // does nothing once Commit succeeds
+
+	// The connection pool has one connection and this transaction holds it,
+	// so every read and write below goes through tx, never through s.db.
+	var stored string
+	err = tx.QueryRowContext(ctx, "SELECT document FROM apps WHERE id = ?", a.ID).Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AppRecord{}, fmt.Errorf("app %q: %w", a.ID, ErrNotFound)
+	}
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	if current := revisionOf(stored); current != revision {
+		return AppRecord{}, fmt.Errorf("app %q is at revision %s, not %s: %w",
+			a.ID, current, revision, ErrRevisionMismatch)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE apps SET schema_version = ?, document = ?, updated_at = ?
+		WHERE id = ? AND document != ?`,
+		appSchemaVersion, string(doc), formatTime(s.now()), a.ID, string(doc)); err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	rec, err := scanApp(tx.QueryRowContext(ctx, "SELECT "+appColumns+" FROM apps WHERE id = ?", a.ID))
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	return rec, nil
 }
 
 // InsertApp stores a new app. An app with the same ID is ErrAlreadyExists and
@@ -134,7 +201,7 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 			id, version, appSchemaVersion, ErrSchemaTooNew)
 	}
 
-	rec := AppRecord{}
+	rec := AppRecord{Revision: revisionOf(doc)}
 	if err := json.Unmarshal([]byte(doc), &rec.App); err != nil {
 		return AppRecord{}, fmt.Errorf("decode app %q: %w", id, err)
 	}

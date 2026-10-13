@@ -196,6 +196,164 @@ func TestInsertApp(t *testing.T) {
 	}
 }
 
+func TestAppRevision(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	first, err := s.SaveApp(ctx, apptest.Whoami().App)
+	if err != nil {
+		t.Fatalf("SaveApp: %v", err)
+	}
+	if len(first.Revision) != 16 {
+		t.Errorf("Revision = %q, want 16 hex digits", first.Revision)
+	}
+
+	// The same document gives the same revision, from every reader.
+	same, err := s.SaveApp(ctx, apptest.Whoami().App)
+	if err != nil {
+		t.Fatalf("SaveApp identical: %v", err)
+	}
+	got, err := s.GetApp(ctx, "whoami")
+	if err != nil {
+		t.Fatalf("GetApp: %v", err)
+	}
+	listed, err := s.ListApps(ctx)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("ListApps = %v, %v", listed, err)
+	}
+	for name, rev := range map[string]string{"SaveApp": same.Revision, "GetApp": got.Revision, "ListApps": listed[0].Revision} {
+		if rev != first.Revision {
+			t.Errorf("%s revision = %q, want %q", name, rev, first.Revision)
+		}
+	}
+
+	// A change gives a new one.
+	changed := apptest.Whoami().App
+	changed.Services[0].Replicas = new(3)
+	after, err := s.SaveApp(ctx, changed)
+	if err != nil {
+		t.Fatalf("SaveApp changed: %v", err)
+	}
+	if after.Revision == first.Revision {
+		t.Errorf("a changed app kept revision %q", after.Revision)
+	}
+
+	// A fresh insert reports its revision too.
+	other := apptest.Whoami().App
+	other.ID = "other"
+	ins, err := s.InsertApp(ctx, other)
+	if err != nil || ins.Revision == "" {
+		t.Errorf("InsertApp revision = %q, %v; want one", ins.Revision, err)
+	}
+}
+
+func TestSaveAppIf(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	first, err := s.SaveApp(ctx, apptest.Whoami().App)
+	if err != nil {
+		t.Fatalf("SaveApp: %v", err)
+	}
+
+	t.Run("matching revision saves", func(t *testing.T) {
+		edited := apptest.Whoami().App
+		edited.Services[0].Replicas = new(4)
+		rec, err := s.SaveAppIf(ctx, edited, first.Revision)
+		if err != nil {
+			t.Fatalf("SaveAppIf: %v", err)
+		}
+		if !reflect.DeepEqual(rec.App, edited) || rec.Revision == first.Revision || !rec.UpdatedAt.After(first.UpdatedAt) {
+			t.Errorf("SaveAppIf = %+v, want the edited app, a new revision and a later UpdatedAt", rec)
+		}
+		got, err := s.GetApp(ctx, "whoami")
+		if err != nil || !reflect.DeepEqual(got, rec) {
+			t.Errorf("GetApp = %+v, %v; want the returned record", got, err)
+		}
+	})
+
+	t.Run("stale revision is refused and writes nothing", func(t *testing.T) {
+		before, err := s.GetApp(ctx, "whoami")
+		if err != nil {
+			t.Fatalf("GetApp: %v", err)
+		}
+		edited := apptest.Whoami().App
+		edited.Services[0].Replicas = new(9)
+		if _, err := s.SaveAppIf(ctx, edited, first.Revision); !errors.Is(err, ErrRevisionMismatch) {
+			t.Fatalf("SaveAppIf with a stale revision = %v, want ErrRevisionMismatch", err)
+		}
+		after, err := s.GetApp(ctx, "whoami")
+		if err != nil || !reflect.DeepEqual(after, before) {
+			t.Errorf("a refused save changed the app\n got: %+v\nwant: %+v (%v)", after, before, err)
+		}
+	})
+
+	t.Run("an identical document keeps UpdatedAt", func(t *testing.T) {
+		before, err := s.GetApp(ctx, "whoami")
+		if err != nil {
+			t.Fatalf("GetApp: %v", err)
+		}
+		rec, err := s.SaveAppIf(ctx, before.App, before.Revision)
+		if err != nil {
+			t.Fatalf("SaveAppIf: %v", err)
+		}
+		if !reflect.DeepEqual(rec, before) {
+			t.Errorf("an identical save changed the record\n got: %+v\nwant: %+v", rec, before)
+		}
+	})
+
+	t.Run("unknown app", func(t *testing.T) {
+		a := apptest.Whoami().App
+		a.ID = "nope"
+		if _, err := s.SaveAppIf(ctx, a, "0000000000000000"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("SaveAppIf on a missing app = %v, want ErrNotFound", err)
+		}
+		if _, err := s.GetApp(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("SaveAppIf created the app: %v", err)
+		}
+	})
+
+	t.Run("no ID", func(t *testing.T) {
+		if _, err := s.SaveAppIf(ctx, app.App{}, first.Revision); err == nil {
+			t.Error("SaveAppIf without an ID did not fail")
+		}
+	})
+}
+
+// Two saves from the same revision: exactly one wins.
+func TestSaveAppIfConcurrent(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	base, err := s.SaveApp(ctx, apptest.Whoami().App)
+	if err != nil {
+		t.Fatalf("SaveApp: %v", err)
+	}
+
+	const writers = 8
+	errs := make(chan error, writers)
+	for i := range writers {
+		go func() {
+			a := apptest.Whoami().App
+			a.Services[0].Replicas = new(i + 3)
+			_, err := s.SaveAppIf(ctx, a, base.Revision)
+			errs <- err
+		}()
+	}
+	var won, refused int
+	for range writers {
+		switch err := <-errs; {
+		case err == nil:
+			won++
+		case errors.Is(err, ErrRevisionMismatch):
+			refused++
+		default:
+			t.Errorf("SaveAppIf: unexpected error %v", err)
+		}
+	}
+	if won != 1 || refused != writers-1 {
+		t.Errorf("%d saves won and %d were refused, want 1 and %d", won, refused, writers-1)
+	}
+}
+
 func TestDeleteApp(t *testing.T) {
 	ctx := context.Background()
 	count := func(t *testing.T, s *Store, query string, args ...any) int {
