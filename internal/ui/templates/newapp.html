@@ -1,7 +1,8 @@
 {{/* The New app page (/apps/new): one plain form that posts to /apps. htmx posts
      it in place (hx-post), so a refusal swaps the form for the same form with
      its errors; without script the browser posts it and gets the page back.
-     "newapp-form" is also what an htmx post's answer is. Takes a newAppForm. */}}
+     "newapp-form" is also what an htmx post's answer is. Takes a newAppForm. The
+     "Compose file" tab (?from=compose) draws compose.html's form instead. */}}
 
 {{define "newapp-form"}}
 <form method="post" action="/apps" hx-post="/apps" hx-target="this" hx-swap="outerHTML" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
@@ -48,11 +49,16 @@
 {{end}}
 
 {{define "content"}}
-<section class="cv-main cv-narrow">
+<section class="cv-main{{if not .Compose}} cv-narrow{{end}}">
   <header class="cv-pagehead">
     <h1 class="cv-headline">New app</h1>
-    <p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it.</p>
+    {{if .Compose}}<p class="cv-lede">Deploy a Compose file. caravana shows what it becomes before anything is saved.</p>
+    {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it.</p>{{end}}
   </header>
-  {{template "newapp-form" .Form}}
+  <nav aria-label="What to deploy" class="cv-tabs">
+    <a href="/apps/new" class="cv-tab"{{if not .Compose}} aria-current="page"{{end}}>Image</a>
+    <a href="/apps/new?from=compose" class="cv-tab"{{if .Compose}} aria-current="page"{{end}}>Compose file</a>
+  </nav>
+  {{if .Compose}}{{template "compose-form" .Compose}}{{else}}{{template "newapp-form" .Form}}{{end}}
 </section>
 {{end}}

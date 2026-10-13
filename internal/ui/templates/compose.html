@@ -1,0 +1,176 @@
+{{/* The Compose forms (feature 014): New app › Compose file and Deploy from Compose. One
+     form, two steps: "Preview" shows what the file becomes and the inputs for what Compose
+     has no words for; the second button creates or deploys. Each button posts to its own
+     address (formaction), so the page works without script; when script runs, htmx posts
+     the clicked button's address and swaps this form for the one that comes back. A secret
+     input is a password input and is never given a value. Takes a composeView. */}}
+
+{{define "compose-form"}}
+<form id="compose-form" method="post" action="{{.PreviewAction}}" hx-target="this" hx-swap="outerHTML" class="flex flex-col gap-5">
+  {{with .Draft.Revision}}<input type="hidden" name="revision" value="{{.}}">{{end}}
+  {{if .Stale}}
+  <div role="alert" class="cv-panel cv-stale">
+    <p class="cv-stale-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app changed since you opened the form.</span></p>
+    <p>Nothing was deployed. What is below is checked against the app as it is now; deploy again to replace it with this file.</p>
+  </div>
+  {{end}}
+  {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .SavedID}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{if $.Existing}}The app is saved with this file, but its deploy didn't start. The failed attempt is on the <a href="/apps/{{.}}/deployments">Deployments tab</a>.{{else}}<span class="cv-inline-mono text-fg-1">{{.}}</span> was saved, but its first deploy didn't start. Change what is wrong on its <a href="/apps/{{.}}/deployments">Deployments tab</a> and deploy again.{{end}}</span></div>{{end}}
+  {{if .SecretsNote}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Secret values aren't kept; type them again.</span></div>{{end}}
+
+  {{if not .Existing}}
+  <label class="flex flex-col gap-2" for="name">
+    <span class="cv-label">Name</span>
+    <input class="cv-field" id="name" type="text" name="name" value="{{.Draft.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .Draft.Name.Alert}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Lowercase letters, digits and dashes. It names the app and its job.</span>
+    {{template "field-error" .Draft.Name}}
+  </label>
+  {{end}}
+
+  <label class="flex flex-col gap-2" for="compose">
+    <span class="cv-label">Compose file</span>
+    <textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose" rows="14" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
+{{.Draft.File.Value}}</textarea>
+    <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Domains, health checks and secrets are set below, after the preview.</span>
+    {{template "field-error" .Draft.File}}
+  </label>
+
+  {{with .Refusals}}
+  <section aria-labelledby="refused-title" class="flex flex-col gap-2">
+    <h2 id="refused-title" class="cv-label">Caravana can't deploy this file</h2>
+    <div class="cv-panel p-4 flex flex-col gap-3">
+      {{range .}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.Path}}</span> {{.Message}}</span></div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <div><button type="submit" class="cv-btn {{if .CanDeploy}}cv-btn-secondary{{else}}cv-btn-primary{{end}}" hx-post="{{.PreviewAction}}">Preview</button></div>
+
+  {{if or .Previewed .Services}}
+  {{with .Changes}}
+  <section aria-labelledby="changes-title" class="flex flex-col gap-2">
+    <h2 id="changes-title" class="cv-label">Against the app today</h2>
+    <div class="cv-panel p-4 flex flex-col gap-3">
+      {{range .}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{with .Warnings}}
+  <section aria-labelledby="warnings-title" class="flex flex-col gap-2">
+    <h2 id="warnings-title" class="cv-label">What changes in meaning</h2>
+    <div class="cv-panel p-4 flex flex-col gap-3">
+      {{range .}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.Path}}</span> {{.Message}}</span></div>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section aria-labelledby="services-title" class="flex flex-col gap-3">
+    <h2 id="services-title" class="cv-label">{{if .Previewed}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
+    {{range .Services}}
+    {{$svc := .}}
+    <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">
+      <h3 id="svc-{{.Name}}-title" class="cv-data text-fg-1">{{.Name}}</h3>
+      <input type="hidden" name="svc.{{.Name}}.overlay" value="1">
+      {{with .Facts}}
+      <dl class="cv-def-rows">
+        {{range .}}{{if .Values}}
+        <div class="cv-def-row">
+          <dt class="cv-label">{{.Label}}</dt>
+          <dd>
+            <ul class="cv-def-values">{{range .Values}}
+              <li class="cv-data text-fg-1">{{.}}</li>{{end}}
+            </ul>
+          </dd>
+        </div>
+        {{end}}{{end}}
+      </dl>
+      {{end}}
+
+      {{with .Inputs}}
+      <div class="cv-edit-fields">
+        {{range .}}
+        <label class="flex flex-col gap-2{{if .Wide}} cv-edit-wide{{end}}" for="{{.Field.ID}}">
+          <span class="cv-label">{{.Label}}</span>
+          {{if .Area}}<textarea class="cv-field cv-field-area" id="{{.Field.ID}}" name="svc.{{$svc.Name}}.{{.Name}}" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+{{.Field.Value}}</textarea>
+          {{else}}<input class="cv-field" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{end}}
+          {{with .Hint}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
+          {{template "field-error" .Field}}
+        </label>
+        {{end}}
+      </div>
+      {{end}}
+
+      <fieldset class="flex flex-col gap-3">
+        <legend class="cv-label">Secrets</legend>
+        <div class="cv-edit-fields">
+          {{range .Secrets}}
+          <label class="flex flex-col gap-2" for="{{.Field.ID}}">
+            <span class="cv-data text-fg-1">{{.Name}}</span>
+            <input class="cv-field" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+            <span class="cv-data-muted cv-hint">{{if .Exists}}Empty keeps the current value.{{else}}Type its value.{{end}}</span>
+            {{template "field-error" .Field}}
+          </label>
+          {{end}}
+        </div>
+        <p class="cv-data-muted cv-hint">Add a secret: its name, then its value. It reaches the service as an environment variable. Values are not kept on this page.</p>
+        <div class="cv-edit-fields">
+          {{range $i, $row := .NewSecrets}}
+          <div class="flex flex-col gap-2">
+            <label class="flex flex-col gap-2" for="{{$row.ID}}">
+              <span class="cv-label">Name</span>
+              <input class="cv-field" id="{{$row.ID}}" type="text" name="svc.{{$svc.Name}}.newSecret.{{$i}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if $row.Error}} aria-invalid="true" aria-describedby="{{$row.ID}}-error"{{end}}{{if $row.Alert}} autofocus{{end}}>
+            </label>
+            <label class="flex flex-col gap-2" for="{{$row.ID}}-value">
+              <span class="cv-label">Value</span>
+              <input class="cv-field" id="{{$row.ID}}-value" type="password" name="svc.{{$svc.Name}}.newSecretValue.{{$i}}" autocomplete="new-password">
+            </label>
+            {{template "field-error" $row}}
+          </div>
+          {{end}}
+        </div>
+      </fieldset>
+
+      {{if .ShowBackup}}
+      <fieldset class="flex flex-col gap-3">
+        <legend class="cv-label">Backup</legend>
+        <div class="cv-edit-fields">
+          <label class="flex flex-col gap-2" for="{{.BackupEngine.ID}}">
+            <span class="cv-label">Engine</span>
+            <select class="cv-field cv-select" id="{{.BackupEngine.ID}}" name="svc.{{.Name}}.backupEngine"{{if .BackupEngine.Error}} aria-invalid="true" aria-describedby="{{.BackupEngine.ID}}-error"{{end}}{{if .BackupEngine.Alert}} autofocus{{end}}>
+              <option value=""{{if eq .BackupEngine.Value ""}} selected{{end}}>None</option>
+              <option value="postgres"{{if eq .BackupEngine.Value "postgres"}} selected{{end}}>PostgreSQL</option>
+            </select>
+            {{template "field-error" .BackupEngine}}
+          </label>
+          {{range .BackupInputs}}
+          <label class="flex flex-col gap-2" for="{{.Field.ID}}">
+            <span class="cv-label">{{.Label}}</span>
+            <input class="cv-field" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+            {{with .Hint}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
+            {{template "field-error" .Field}}
+          </label>
+          {{end}}
+        </div>
+      </fieldset>
+      {{end}}
+    </div>
+    {{end}}
+  </section>
+
+  {{if .CanDeploy}}
+  <div><button type="submit" class="cv-btn cv-btn-primary" formaction="{{.DeployAction}}" hx-post="{{.DeployAction}}">{{if .Existing}}Deploy{{else}}Create and deploy{{end}}</button></div>
+  {{end}}
+  {{end}}
+</form>
+{{end}}
+
+{{/* compose-deploy: Deploy from Compose under an app's Configure tab. Takes a composeView. */}}
+{{define "compose-deploy"}}
+<section aria-labelledby="compose-title" class="flex flex-col gap-3">
+  <h2 id="compose-title" class="cv-label">Deploy from Compose</h2>
+  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Domains, health checks and secret names start from the app's. <a href="/apps/{{.AppID}}/configure">Back to Configure</a></p>
+  {{template "compose-form" .}}
+</section>
+{{end}}

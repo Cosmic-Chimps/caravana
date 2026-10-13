@@ -87,11 +87,16 @@ func (f *newAppForm) fieldFor(path string) *formField {
 // newAppPage is the whole New app page.
 type newAppPage struct {
 	pageData
-	Form newAppForm
+	Form    newAppForm
+	Compose *composeView // set on the Compose file tab
 }
 
 // showNewApp answers GET /apps/new.
 func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session string) {
+	if r.URL.Query().Get("from") == "compose" {
+		s.drawCompose(w, r, http.StatusOK, newComposeView(""))
+		return
+	}
 	s.renderNewApp(w, r, http.StatusOK, newForm())
 }
 

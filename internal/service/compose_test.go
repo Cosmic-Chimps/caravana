@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -174,5 +175,18 @@ func TestPreviewCompose(t *testing.T) {
 	}
 	if e.nomad.Registrations() != 0 || e.secrets.Replaces() != 0 || len(e.nomad.HostVolumes()) != 0 {
 		t.Error("a preview reached Nomad or the secret store")
+	}
+}
+
+// A refusal of the app's own rules names its path in the file, as a deploy's does.
+func TestPreviewComposeRefusalNamesFilePath(t *testing.T) {
+	e := newEnv(t)
+	req := compose.Request{Compose: twoServices, Services: map[string]compose.Overlay{
+		"web": {Health: &compose.Health{Interval: 5 * time.Second, Timeout: 9 * time.Second}},
+	}}
+	_, _, err := e.svc.PreviewCompose(context.Background(), "blog", req)
+	var fe *app.FieldError
+	if !errors.As(err, &fe) || fe.Field != "services.web.health.timeout" {
+		t.Errorf("PreviewCompose = %v, want a field error at services.web.health.timeout", err)
 	}
 }

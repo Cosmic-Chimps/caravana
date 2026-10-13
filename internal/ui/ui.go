@@ -132,6 +132,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
 		{"POST", "/apps", s.protected(s.requireSession(s.createApp))},
+		{"POST", "/apps/new/compose/preview", s.protected(s.requireSession(s.previewNewCompose))},
+		{"POST", "/apps/new/compose", s.protected(s.requireSession(s.createNewCompose))},
 		{"GET", "/apps/{id}", s.requireSession(s.showApp)},
 		{"GET", "/apps/{id}/deployments", s.requireSession(s.showDeployments)},
 		{"GET", "/apps/{id}/configure", s.requireSession(s.showConfigure)},
@@ -230,7 +232,8 @@ func (s *server) asset(name string) (string, error) {
 var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"}
 
 // parseTemplates builds one template set per page: the document (base), the
-// shell (sidebar and top bar), the shared parts, and the page's own
+// shell (sidebar and top bar), the shared parts, the Compose form (which
+// New app and an app's page both draw), and the page's own
 // "content". Later files override same-named defines of earlier ones, which
 // is how a page fills the shell's "action" slot. html/template escapes every
 // value for where it lands (HTML text, attribute, URL), like Razor's @.
@@ -238,7 +241,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 	pages := map[string]*template.Template{}
 	for _, name := range names {
 		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "destField": destField}).ParseFS(templatesFS,
-			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/"+name+".html")
+			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

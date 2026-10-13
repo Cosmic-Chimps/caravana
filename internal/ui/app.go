@@ -69,6 +69,7 @@ type appPage struct {
 	Running     *copiesRegion
 	Deployments *deploymentsTab
 	Configure   *configureTab
+	Compose     *composeView // Deploy from Compose, under the Configure tab
 	Logs        *logsTab
 	Backups     *backupsTab
 }

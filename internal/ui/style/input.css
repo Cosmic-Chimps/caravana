@@ -229,6 +229,8 @@
   .cv-edit { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
   .cv-edit-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 16px; }
   .cv-edit-wide { grid-column: 1 / -1; }
+  /* The Compose file: a tall mono box that scrolls sideways instead of wrapping a YAML line. */
+  .cv-field-file { min-height: 280px; white-space: pre; overflow: auto; }
   .cv-edit .cv-def-rows { margin-top: -4px; }
   /* A save refused because the app changed: a warning panel above the form, with the current values. */
   .cv-stale { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-color: var(--color-warn-line); font-size: 14px; line-height: 1.45; color: var(--color-fg-1); }
