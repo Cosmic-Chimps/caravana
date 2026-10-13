@@ -126,7 +126,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 	var out []composeServiceView
 	for _, ds := range d.Services {
 		v := composeServiceView{draftService: ds, ShowDomains: true, ShowHealth: true,
-			ShowHealthPort: ds.HealthPort.Value != "", ShowBackup: ds.BackupEngine.Value != ""}
+			ShowHealthPort: ds.HealthPort.Value != "", ShowBackup: ds.hasBackupInput()}
 		if a != nil {
 			for _, svc := range a.Services {
 				if svc.Name != ds.Name {
@@ -135,12 +135,23 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 				v.Facts = composeFacts(svc)
 				v.ShowDomains, v.ShowHealth = len(svc.Ports) > 0, len(svc.Ports) > 0
 				v.ShowHealthPort = len(svc.Ports) > 1
-				v.ShowBackup = ds.BackupEngine.Value != "" || strings.Contains(strings.ToLower(svc.Image), "postgres")
+				v.ShowBackup = ds.hasBackupInput() || strings.Contains(strings.ToLower(svc.Image), "postgres")
 			}
 		}
 		out = append(out, v)
 	}
 	return out
+}
+
+// hasBackupInput says the service has something in its backup inputs, or an
+// error on them, so they must be drawn whatever the image is.
+func (s draftService) hasBackupInput() bool {
+	for _, f := range []formField{s.BackupEngine, s.BackupSchedule, s.BackupKeep} {
+		if f.Value != "" || len(f.Error) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // composeFacts are what the preview says of a service: its image, ports,

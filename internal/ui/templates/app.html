@@ -373,6 +373,7 @@
     </dl>
   </div>
   {{if .Compose}}<p class="text-sm text-fg-3">Made from a Compose file. Deploying a file again replaces these edits.</p>{{end}}
+  <p class="text-sm text-fg-3"><a href="/apps/{{.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Replace the app with a Compose file.</p>
   {{template "configure-form" .Edit}}
   <p class="text-sm text-fg-3">Saving deploys the app with these values. Copies that are running keep the old ones until the new ones are healthy.</p>
 </section>

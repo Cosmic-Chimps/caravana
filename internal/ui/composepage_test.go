@@ -351,6 +351,17 @@ func TestComposeCreateRefusals(t *testing.T) {
 		}
 	})
 
+	t.Run("a backup setting without an engine shows its error", func(t *testing.T) {
+		e := composeEnv(t)
+		_, page := e.previewNew(t, "shop", shopCompose)
+		values := composeFormOf(t, page, url.Values{"svc.db.backupEngine": {""}, "svc.db.backupKeep": {"3"}})
+		resp, body := e.postForm(t, "/apps/new/compose", values)
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `aria-describedby="svc-db-backupEngine-error"`) ||
+			!strings.Contains(text(body), "Choose postgres") {
+			t.Errorf("create = %d; want 422 with the error on the engine:\n%s", resp.StatusCode, text(body))
+		}
+	})
+
 	t.Run("a secret with no value yet is refused naming it", func(t *testing.T) {
 		e := composeEnv(t)
 		_, page := e.previewNew(t, "shop", shopCompose)
