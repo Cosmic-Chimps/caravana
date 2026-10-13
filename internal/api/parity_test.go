@@ -51,7 +51,11 @@ var consoleParity = map[string]parity{
 	// The Compose forms (feature 014): the preview saves nothing; the create is a Compose deploy with If-None-Match: *.
 	"POST /apps/new/compose/preview": {ops: []string{"previewCompose"}},
 	"POST /apps/new/compose":         {ops: []string{"deployCompose"}},
-	"POST /apps/{id}/deploy":         {ops: []string{"deployApp"}},
+	// Deploy from Compose: getApp gives the revision and what the overlay starts from; deployCompose with If-Match deploys.
+	"GET /apps/{id}/compose":          {ops: []string{"getApp"}},
+	"POST /apps/{id}/compose/preview": {ops: []string{"getApp", "previewCompose"}},
+	"POST /apps/{id}/compose":         {ops: []string{"deployCompose"}},
+	"POST /apps/{id}/deploy":          {ops: []string{"deployApp"}},
 	// The edit form (feature 014): getApp gives the revision, deployApp with If-Match saves the change.
 	"POST /apps/{id}/configure": {ops: []string{"getApp", "deployApp"}},
 	// Past versions (feature 011).
