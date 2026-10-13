@@ -534,8 +534,9 @@ A "Show older" secondary button ends the list when there is more.
 A deploy that didn't hold is said once, in a sentence, and fixed with one action, never in an alert
 box. Wherever it appears it is the same:
 - the Apps headline names the app first: "1 app needs you: whoami has a failed deploy." An app with
-  healthy copies and a failed newest deploy still counts. A reverted deploy doesn't (what runs is
-  what was running), but its pill still reads "reverted" in the failed look;
+  healthy copies and a failed newest deploy still counts. So does a reverted one, as the needs-you list
+  holds it (what runs is what was running, but it is a deploy that didn't hold); its pill reads
+  "reverted" in the failed look;
 - the app's list row and its page header carry the failed pill, and the row sorts above healthy
   ones (The Problems-First Rule);
 - on Running, an app with no copies says "No copies are running." and, under it, "v8 failed: see

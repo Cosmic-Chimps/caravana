@@ -68,14 +68,50 @@ func TestHeadlineOf(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := headlineOf(tc.in).String(); got != tc.want {
+			if got := headlineOf(tc.in, nil).String(); got != tc.want {
 				t.Errorf("headline = %q, want %q", got, tc.want)
 			}
 		})
 	}
 
+	t.Run("the needs-you list counts too", func(t *testing.T) {
+		item := func(kind service.AttentionKind, appID string) service.AttentionItem {
+			return service.AttentionItem{Kind: kind, AppID: appID}
+		}
+		tests := []struct {
+			name  string
+			in    []service.AppSummary
+			items []service.AttentionItem
+			want  string
+		}{
+			{"a reverted deploy on a healthy app", []service.AppSummary{revertedDeploy(ok("blog")), ok("whoami")},
+				[]service.AttentionItem{item(service.AttentionDeployFailed, "blog")},
+				"1 app needs you: blog has a failed deploy. 1 app healthy."},
+			{"a copy that keeps restarting", []service.AppSummary{ok("blog")},
+				[]service.AttentionItem{item(service.AttentionRestarting, "blog")},
+				"1 app needs you: blog has a service that keeps restarting."},
+			{"a failed backup, newest item words", []service.AppSummary{ok("blog")},
+				[]service.AttentionItem{item(service.AttentionBackupFailed, "blog"), item(service.AttentionRestoreFailed, "blog")},
+				"1 app needs you: blog has a failed backup."},
+			{"an app with several items is one app", []service.AppSummary{ok("blog"), ok("whoami"), rolling("jobs")},
+				[]service.AttentionItem{item(service.AttentionOutOfMemory, "blog"), item(service.AttentionUnhealthy, "blog"), item(service.AttentionUnhealthy, "jobs")},
+				"2 apps need you: blog, jobs. 1 app healthy."},
+			{"status trouble keeps its own words", []service.AppSummary{degraded("api")},
+				[]service.AttentionItem{item(service.AttentionRestarting, "api")},
+				"1 app needs you: api has 1 of 2 copies healthy."},
+			{"an item without an app is nobody's trouble", []service.AppSummary{ok("blog")},
+				[]service.AttentionItem{item(service.AttentionNoBackupDestination, "")},
+				"1 app healthy."},
+		}
+		for _, tc := range tests {
+			if got := headlineOf(tc.in, tc.items).String(); got != tc.want {
+				t.Errorf("%s: headline = %q, want %q", tc.name, got, tc.want)
+			}
+		}
+	})
+
 	t.Run("names are set apart as mono", func(t *testing.T) {
-		got := headlineOf([]service.AppSummary{degraded("api")})
+		got := headlineOf([]service.AppSummary{degraded("api")}, nil)
 		if len(got) != 3 || got[0].Mono || !got[1].Mono || got[1].Text != "api" || got[2].Mono {
 			t.Errorf("parts = %+v, want plain, mono api, plain", got)
 		}

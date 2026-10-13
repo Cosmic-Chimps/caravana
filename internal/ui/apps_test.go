@@ -251,7 +251,7 @@ func TestAppsListsEveryApp(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /apps = %d:\n%s", resp.StatusCode, body)
 	}
-	if got, want := h1Text(t, body), "1 app needs you: api has 1 of 2 copies healthy. 2 apps healthy."; got != want {
+	if got, want := h1Text(t, body), "2 apps need you: api, blog. 1 app healthy."; got != want { // blog: its reverted deploy is on the needs-you list
 		t.Errorf("headline = %q, want %q", got, want)
 	}
 
@@ -432,6 +432,7 @@ func TestConsolePagesNeedASession(t *testing.T) {
 	for path, from := range map[string]string{
 		"/parts/apps":               "/apps",
 		"/parts/activity":           "/apps",
+		"/parts/attention":          "/apps",
 		"/parts/apps/whoami/header": "/apps/whoami",
 		"/parts/apps/nope/header":   "/apps/nope",
 	} {
@@ -568,7 +569,7 @@ func TestAppsNoticeAfterDelete(t *testing.T) {
 func TestLiveStreamsOfTheConsole(t *testing.T) {
 	e := newConsoleEnv(t)
 
-	t.Run("/live sends apps and activity, and nothing about one app", func(t *testing.T) {
+	t.Run("/live sends apps, activity and attention, and nothing about one app", func(t *testing.T) {
 		ls := openStream(t, e.URL, "/live", e.Cookie.Value)
 		ls.expect("sync")
 		if _, err := e.Svc.Deploy(context.Background(), whoamiApp(), app.TriggerManual); err != nil {
@@ -577,8 +578,8 @@ func TestLiveStreamsOfTheConsole(t *testing.T) {
 		seen := map[string]bool{}
 		for !(seen["apps"] && seen["activity"]) {
 			name := ls.next()
-			if name != "apps" && name != "activity" {
-				t.Fatalf("event %q on /live, want only apps and activity", name)
+			if name != "apps" && name != "activity" && name != "attention" {
+				t.Fatalf("event %q on /live, want only apps, activity and attention", name)
 			}
 			seen[name] = true
 		}

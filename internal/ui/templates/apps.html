@@ -9,6 +9,7 @@
   <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
   <p class="cv-lede">Every app on this caravana, live.</p>
 </header>
+<section aria-label="Needs you" hx-get="/parts/attention" hx-trigger="sse:attention" hx-swap="innerHTML">{{template "attention-region" .Attention}}</section>
 {{if .Rows}}
 <div class="cv-panel cv-apps" role="table" aria-label="Apps">
   <div class="cv-apps-head cv-label" role="row">
@@ -32,6 +33,32 @@
 </div>
 {{else}}
 <div class="cv-panel">{{template "empty" .Empty}}</div>
+{{end}}
+{{end}}
+
+{{/* attention-region: what needs the owner (FR-018..FR-021): one row per item, newest first,
+     or one line saying nothing does. When Nomad can't be read the line is not said: copy
+     problems may be missing. The page draws it inside the apps region and /parts/attention
+     draws it alone. Takes an attentionRegion. */}}
+{{define "attention-region"}}
+{{if .Unknown}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+  <span>Copies couldn't be checked: Nomad can't be reached.</span>
+</div>
+{{end}}
+{{if .Rows}}
+<div class="cv-panel" role="list" aria-label="Needs you">
+  {{range .Rows}}
+  <div class="cv-row cv-need" role="listitem">
+    <span class="cv-need-text">{{template "status-mark" .Mark}}<span>{{template "sentence" .Text}}</span></span>
+    {{if .When.Text}}<span class="cv-need-when">{{template "time" .When}}</span>{{end}}
+    <a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a>
+  </div>
+  {{end}}
+</div>
+{{else if not .Unknown}}
+<p class="cv-need-none">Nothing needs you.</p>
 {{end}}
 {{end}}
 

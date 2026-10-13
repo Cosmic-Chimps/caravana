@@ -112,6 +112,17 @@
   .cv-lines { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; }
   .cv-lines > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* The needs-you list under the headline: a mark and one sentence, when it happened, one action.
+     Rows keep the panel's hairlines; the sentence wraps and the action stays on the right. */
+  .cv-need { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 16px; align-items: baseline; padding: 12px 16px; }
+  .cv-need-text { display: flex; gap: 10px; align-items: baseline; font-size: 14px; line-height: 1.45; color: var(--color-fg-1); text-wrap: pretty; overflow-wrap: anywhere; }
+  .cv-need-text .cv-mark { position: relative; top: 0.05em; flex: none; }
+  .cv-need-when time { font-size: 12px; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-need .cv-btn { align-self: center; text-decoration: none; }
+  .cv-need-none { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  /* The Running tab's note beside a copy's status when the kernel killed it for memory. */
+  .cv-oom { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font: 400 12px/1.35 var(--font-mono); color: var(--color-warn); }
+
   /* How the last deploy ended, when not well: a link to that deployment on the Deployments tab. */
   .cv-outcome { display: inline-flex; align-items: center; gap: 6px; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
   .cv-outcome:hover { color: var(--color-fg-1); text-decoration-color: var(--color-fg-3); }
@@ -303,6 +314,8 @@
 /* Under 640px: a smaller headline and stacked definition rows and entries. */
 @media (max-width: 639.98px) {
   .cv-headline { font-size: 24px; }
+  .cv-need { grid-template-columns: minmax(0, 1fr) auto; }
+  .cv-need-text { grid-column: 1 / -1; }
   .cv-def-row { grid-template-columns: minmax(0, 1fr); }
   .cv-deploy-meta { margin-left: 0; width: 100%; text-align: left; }
 }

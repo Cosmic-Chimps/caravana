@@ -454,7 +454,7 @@ func TestSecurityHeaders(t *testing.T) {
 		// Every console page and part, signed in and not, and the answers to refused posts.
 		{path: "/"}, {path: "/apps"}, {path: "/apps/new"}, {path: "/apps/whoami"}, {path: "/apps/whoami/deployments"},
 		{path: "/apps/whoami/configure"}, {path: "/apps/whoami/logs"}, {path: "/apps/nope"}, {path: "/account"},
-		{path: "/parts/apps"}, {path: "/parts/activity"}, {path: "/parts/apps/whoami/header"},
+		{path: "/parts/apps"}, {path: "/parts/activity"}, {path: "/parts/attention"}, {path: "/parts/apps/whoami/header"},
 		{path: "/parts/apps/whoami/copies"}, {path: "/parts/apps/whoami/deployments"},
 		{path: "/live"}, {path: "/live/apps/whoami"},
 		{method: http.MethodPost, path: "/apps", headers: cross}, {method: http.MethodPost, path: "/apps/whoami/deploy", headers: cross},

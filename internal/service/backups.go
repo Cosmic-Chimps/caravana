@@ -432,8 +432,11 @@ func (s *Service) recordRestores(ctx context.Context) {
 	}
 }
 
-// backupsChanged tells the open pages of the app, and the needs-you list.
+// backupsChanged tells the open pages of the app, and the needs-you list. The
+// Apps headline counts the apps on that list, so the list of apps hears of it
+// too.
 func (s *Service) backupsChanged(appID string) {
 	s.publish(Change{AppID: appID, What: ChangeDeployments})
+	s.publish(Change{What: ChangeApps})
 	s.publish(Change{What: ChangeAttention})
 }

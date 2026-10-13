@@ -100,7 +100,7 @@
 
   {{/* Backup destination (feature 010): one S3-compatible bucket for every database. The
        secret key is never shown; an empty field keeps the saved one. */}}
-  <section aria-labelledby="backups" class="flex flex-col gap-2">
+  <section id="backup-destination" aria-labelledby="backups" class="flex flex-col gap-2">
     <h2 id="backups" class="cv-label">Backup destination</h2>
     {{with .Dest}}
     <form method="post" action="/settings/backups" class="cv-panel p-4 flex flex-col gap-4" autocomplete="off">

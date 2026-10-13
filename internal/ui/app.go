@@ -203,6 +203,9 @@ type copyEntry struct {
 	Version  string // "v7"
 	Restarts int
 	UpFor    string // "1 min 30 s", "not started", or "not running" for a copy that ended
+	// OutOfMemory marks a copy whose last stop was the kernel killing it for
+	// passing its memory ceiling; the status column says so.
+	OutOfMemory bool
 }
 
 // copiesRegion is what the "copies" region draws: the copies, or one sentence
@@ -256,7 +259,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 
 func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 	e := copyEntry{ID: c.ID, Short: shortID(c.ID), Service: c.Service, Status: copyStatusView(c.Status),
-		Version: versionLabel(&c.Version), Restarts: c.Restarts}
+		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory}
 	switch {
 	case c.Terminal:
 		e.UpFor = "not running"

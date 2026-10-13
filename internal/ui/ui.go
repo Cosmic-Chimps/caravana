@@ -151,6 +151,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
+		{"GET", "/parts/attention", s.requirePart(s.partAttention)},
 		{"GET", "/parts/apps/{id}/header", s.requirePart(s.partAppHeader)},
 		{"GET", "/parts/apps/{id}/copies", s.requirePart(s.partCopies)},
 		{"GET", "/parts/apps/{id}/deployments", s.requirePart(s.partDeployments)},

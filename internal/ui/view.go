@@ -250,27 +250,40 @@ func deployOutcome(rec *store.DeploymentRecord) string {
 
 // headlineOf is the one sentence the Apps page opens with: how things stand
 // right now (research R7). Apps that need a human come first, named; the rest
-// are counted.
-func headlineOf(sums []service.AppSummary) sentence {
+// are counted. An app needs a human when its status says so, or when the
+// needs-you list has an item for it (items without an app, like a missing
+// backup destination, are in the list but are no app's trouble).
+func headlineOf(sums []service.AppSummary, items []service.AttentionItem) sentence {
 	if len(sums) == 0 {
 		return sentence{plain("No apps yet.")}
 	}
 
+	first := map[string]service.AttentionItem{} // each app's newest item
+	for _, it := range items {
+		if _, ok := first[it.AppID]; !ok && it.AppID != "" {
+			first[it.AppID] = it
+		}
+	}
+
+	type troubled struct{ id, words string }
 	var healthy, rolling int
-	var trouble []service.AppSummary
+	var trouble []troubled
 	for _, sum := range sums {
+		item, listed := first[sum.App.ID]
 		switch sum.Status.State {
 		case service.StateHealthy, service.StateRollingOut:
 			// Healthy copies don't clear a deploy that failed: that is still on the user.
 			if lastDeployFailed(sum) {
-				trouble = append(trouble, sum)
+				trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+			} else if listed {
+				trouble = append(trouble, troubled{sum.App.ID, headlineWords(item)})
 			} else if sum.Status.State == service.StateHealthy {
 				healthy++
 			} else {
 				rolling++
 			}
 		case service.StateDegraded, service.StateNotRunning:
-			trouble = append(trouble, sum)
+			trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
 		case service.StateUnknown:
 			return sentence{plain("Nomad can't be reached; showing what caravana last recorded.")}
 		}
@@ -278,15 +291,15 @@ func headlineOf(sums []service.AppSummary) sentence {
 
 	var out sentence
 	if len(trouble) == 1 {
-		out = append(sentence{plain("1 app needs you: "), mono(trouble[0].App.ID)}, plain(" "+troubleWords(trouble[0])+"."))
+		out = append(sentence{plain("1 app needs you: "), mono(trouble[0].id)}, plain(" "+trouble[0].words+"."))
 	} else if len(trouble) > 1 {
 		out = sentence{plain(fmt.Sprintf("%d apps need you: ", len(trouble)))}
 		const shown = 3
-		for i, sum := range trouble[:min(len(trouble), shown)] {
+		for i, t := range trouble[:min(len(trouble), shown)] {
 			if i > 0 {
 				out = append(out, plain(", "))
 			}
-			out = append(out, mono(sum.App.ID))
+			out = append(out, mono(t.id))
 		}
 		if len(trouble) > shown {
 			out = append(out, plain(fmt.Sprintf(" and %d more", len(trouble)-shown)))

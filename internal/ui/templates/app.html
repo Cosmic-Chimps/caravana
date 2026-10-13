@@ -151,7 +151,7 @@
   <div class="cv-row cv-copies-row" role="row">
     <div role="cell" class="cv-k-id"><span class="cv-data text-fg-1" title="{{.ID}}">{{.Short}}</span></div>
     <div role="cell" class="cv-k-service" data-label="Service"><span class="cv-data">{{.Service}}</span></div>
-    <div role="cell" class="cv-k-status">{{template "status-quiet" .Status}}</div>
+    <div role="cell" class="cv-k-status">{{template "status-quiet" .Status}}{{if .OutOfMemory}}<span class="cv-oom"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>ran out of memory</span>{{end}}</div>
     <div role="cell" class="cv-k-version" data-label="Version"><span class="cv-data text-fg-1">{{.Version}}</span></div>
     <div role="cell" class="cv-k-restarts" data-label="Restarts"{{if gt .Restarts 0}} title="Restarted {{.Restarts}} time{{if ne .Restarts 1}}s{{end}}"{{end}}><span class="cv-data{{if gt .Restarts 0}} cv-restarts-warn{{end}}">{{.Restarts}}</span></div>
     <div role="cell" class="cv-k-up" data-label="Up for"><span class="cv-data{{if eq .UpFor "not running"}}-muted{{end}}">{{.UpFor}}</span></div>

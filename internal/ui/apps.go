@@ -56,12 +56,15 @@ type activityRow struct {
 	When    when
 }
 
-// appsRegion is what the "apps" region draws: the headline and the table, or
-// the empty state when there is no app.
+// appsRegion is what the "apps" region draws: the headline, the needs-you
+// list and the table, or the empty state when there is no app. The needs-you
+// list is a region of its own too (it refreshes by itself on "attention"),
+// drawn here so that a load of the page and a refresh of this region agree.
 type appsRegion struct {
-	Headline sentence
-	Rows     []appRow
-	Empty    emptyView
+	Headline  sentence
+	Attention attentionRegion
+	Rows      []appRow
+	Empty     emptyView
 }
 
 // activityRegion is what the "activity" region draws.
@@ -111,7 +114,7 @@ func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string
 	s.render(w, http.StatusOK, "apps", page)
 }
 
-// partApps answers GET /parts/apps: the headline and the table.
+// partApps answers GET /parts/apps: the headline, the needs-you list and the table.
 func (s *server) partApps(w http.ResponseWriter, r *http.Request, session string) {
 	region, err := s.loadApps(r)
 	if err != nil {
@@ -135,13 +138,17 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 
 // liveApps answers GET /live: the stream of the Apps page.
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
-	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity}})
+	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention}})
 }
 
-// loadApps reads every app and builds the headline and the rows,
-// problems first.
+// loadApps reads every app and builds the headline, the needs-you list and
+// the rows, problems first.
 func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	sums, err := s.svc.ListApps(r.Context())
+	if err != nil {
+		return appsRegion{}, err
+	}
+	attention, items, err := s.loadAttention(r)
 	if err != nil {
 		return appsRegion{}, err
 	}
@@ -152,7 +159,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	}
 	sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
 
-	region := appsRegion{Headline: headlineOf(sums), Rows: rows,
+	region := appsRegion{Headline: headlineOf(sums, items), Attention: attention, Rows: rows,
 		Empty: emptyView{Title: "Deploy an image and it shows up here."}}
 	if s.newApp {
 		region.Empty.ActionLabel, region.Empty.ActionHref = "New app", "/apps/new"
