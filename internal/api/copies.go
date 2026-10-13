@@ -26,6 +26,28 @@ type copyJSON struct {
 	Description string     `json:"description,omitempty"`
 	LastRestart *time.Time `json:"lastRestartAt,omitempty"`
 	OutOfMemory bool       `json:"outOfMemory"`
+	Usage       *usageJSON `json:"usage,omitempty"`
+}
+
+// usageJSON is a copy's CPU and memory (schema CopyUsage). A copy Nomad
+// couldn't give numbers for has only Error, so the numbers are pointers: nil
+// leaves them out, and a real 0 is still sent.
+type usageJSON struct {
+	CPUMHz           *int   `json:"cpuMHz,omitempty"`
+	MemoryMB         *int   `json:"memoryMB,omitempty"`
+	CPUReservedMHz   *int   `json:"cpuReservedMHz,omitempty"`
+	MemoryReservedMB *int   `json:"memoryReservedMB,omitempty"`
+	MemoryCeilingMB  *int   `json:"memoryCeilingMB,omitempty"`
+	NearCeiling      *bool  `json:"nearCeiling,omitempty"`
+	Error            string `json:"error,omitempty"`
+}
+
+func toUsageJSON(u service.CopyUsage) *usageJSON {
+	if u.Error != "" {
+		return &usageJSON{Error: u.Error}
+	}
+	return &usageJSON{CPUMHz: &u.CPUMHz, MemoryMB: &u.MemoryMB, CPUReservedMHz: &u.CPUReservedMHz,
+		MemoryReservedMB: &u.MemoryReservedMB, MemoryCeilingMB: &u.MemoryCeilingMB, NearCeiling: &u.NearCeiling}
 }
 
 func toCopyJSON(c service.Copy) copyJSON {
@@ -36,9 +58,31 @@ func toCopyJSON(c service.Copy) copyJSON {
 
 // listCopies answers GET /v1/apps/{id}/copies: the app's copies, as the
 // Running tab shows them. A Nomad that can't be read is 502, since the list
-// has nothing stored to fall back on.
+// has nothing stored to fall back on. With usage=true each running copy also
+// carries its CPU and memory, which costs a request to Nomad per copy; without
+// it Nomad is asked for the list only.
 func (s *server) listCopies(w http.ResponseWriter, r *http.Request) error {
-	copies, err := s.svc.Copies(r.Context(), r.PathValue("id"))
+	withUsage := false
+	if r.URL.Query().Has("usage") {
+		switch u := r.URL.Query().Get("usage"); u {
+		case "true":
+			withUsage = true
+		case "false":
+		default:
+			return app.NewFieldError("usage", "must be true or false, not %q", u)
+		}
+	}
+
+	var (
+		copies []service.Copy
+		usage  map[string]service.CopyUsage
+		err    error
+	)
+	if withUsage {
+		copies, usage, err = s.svc.CopiesWithUsage(r.Context(), r.PathValue("id"))
+	} else {
+		copies, err = s.svc.Copies(r.Context(), r.PathValue("id"))
+	}
 	if err != nil {
 		return err
 	}
@@ -46,7 +90,11 @@ func (s *server) listCopies(w http.ResponseWriter, r *http.Request) error {
 		Copies []copyJSON `json:"copies"`
 	}{Copies: make([]copyJSON, 0, len(copies))}
 	for _, c := range copies {
-		out.Copies = append(out.Copies, toCopyJSON(c))
+		cj := toCopyJSON(c)
+		if u, ok := usage[c.ID]; ok {
+			cj.Usage = toUsageJSON(u)
+		}
+		out.Copies = append(out.Copies, cj)
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

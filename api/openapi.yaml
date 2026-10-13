@@ -235,7 +235,18 @@ paths:
         Every copy that hasn't ended, plus the ended copies of the app's latest job version
         that Nomad still keeps. Ordered by service, then job version (newest first), then start
         time.
+
+        With `usage=true`, each copy that is running also has `usage`: its CPU and memory now,
+        next to what its service reserves. That asks Nomad once per copy, so leave it off when
+        the list is enough.
       tags: [apps]
+      parameters:
+        - name: usage
+          in: query
+          description: Add each running copy's CPU and memory use.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: The app's copies; empty when it has none.
@@ -1629,6 +1640,44 @@ components:
           description: |
             The service's last stop was the kernel killing it for passing its memory ceiling
             (`memoryMaxMB`).
+        usage:
+          $ref: "#/components/schemas/CopyUsage"
+
+    CopyUsage:
+      type: object
+      additionalProperties: false
+      description: |
+        What one running copy's service task uses now, read from Nomad when asked for. The
+        sidecar that lets services find each other is not counted. Only with `usage=true`, and
+        only for copies that have started and not ended. When Nomad can't give this copy's
+        numbers, only `error` is present.
+      properties:
+        cpuMHz:
+          type: integer
+          minimum: 0
+          description: CPU used now, in MHz.
+        memoryMB:
+          type: integer
+          minimum: 0
+          description: Memory used now, in MB.
+        cpuReservedMHz:
+          type: integer
+          minimum: 0
+          description: The service's CPU reservation, in MHz, with the default applied.
+        memoryReservedMB:
+          type: integer
+          minimum: 0
+          description: The service's memory reservation, in MB, with the default applied.
+        memoryCeilingMB:
+          type: integer
+          minimum: 0
+          description: The most memory the service may use before the kernel stops it, in MB.
+        nearCeiling:
+          type: boolean
+          description: '`memoryMB` is 90 % or more of `memoryCeilingMB`.'
+        error:
+          type: string
+          description: A sentence saying Nomad couldn't give this copy's numbers; the numbers are absent.
 
     CopyList:
       type: object

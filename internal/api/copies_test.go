@@ -29,6 +29,15 @@ type copyBody struct {
 	Description string  `json:"description"`
 	LastRestart *string `json:"lastRestartAt"`
 	OutOfMemory bool    `json:"outOfMemory"`
+	Usage       *struct {
+		CPUMHz           *int   `json:"cpuMHz"`
+		MemoryMB         *int   `json:"memoryMB"`
+		CPUReservedMHz   *int   `json:"cpuReservedMHz"`
+		MemoryReservedMB *int   `json:"memoryReservedMB"`
+		MemoryCeilingMB  *int   `json:"memoryCeilingMB"`
+		NearCeiling      *bool  `json:"nearCeiling"`
+		Error            string `json:"error"`
+	} `json:"usage"`
 }
 
 // US4: the Running tab's twin.
@@ -97,6 +106,104 @@ func TestListCopies(t *testing.T) {
 		checkSchema(t, loadContract(t), raw, "Error")
 		if loc := header.Get("Location"); loc != "" {
 			t.Errorf("Location = %q, want none: no deployment record is involved", loc)
+		}
+	})
+}
+
+// US4: the Running tab's CPU and memory.
+func TestListCopiesUsage(t *testing.T) {
+	e := newTestEnv(t, "")
+	seedHealthy(t, e, "whoami", 3, 7)
+	started := time.Date(2026, 10, 4, 9, 5, 0, 0, time.UTC)
+	running := func(id string) api.AllocationListStub {
+		return api.AllocationListStub{ID: id, TaskGroup: "web", JobVersion: 7, ClientStatus: "running",
+			TaskStates: map[string]*api.TaskState{"web": {StartedAt: started}}}
+	}
+	usage := func(ticks float64, mb uint64) api.AllocResourceUsage {
+		return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+			CpuStats:    &api.CpuStats{TotalTicks: ticks},
+			MemoryStats: &api.MemoryStats{Usage: mb << 20, Measured: []string{"Usage"}},
+		}}}}
+	}
+	e.Nomad.SetCopies("whoami", running("a1"), running("a2"), running("a3"),
+		api.AllocationListStub{ID: "a4", TaskGroup: "web", JobVersion: 7, ClientStatus: "pending"})
+	e.Nomad.SetStats("a1", usage(0, 40))
+	e.Nomad.SetStats("a2", usage(75, 240)) // 90 % of the 256 MB ceiling is 230.4
+	// a3 has no stats: Nomad answers 404 for it.
+
+	get := func(t *testing.T, query string) map[string]copyBody {
+		t.Helper()
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/copies"+query, "", "")
+		if status != http.StatusOK {
+			t.Fatalf("GET copies%s = %d %s", query, status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "CopyList")
+		byID := map[string]copyBody{}
+		for _, c := range decodeAs[struct {
+			Copies []copyBody `json:"copies"`
+		}](t, raw).Copies {
+			byID[c.ID] = c
+		}
+		return byID
+	}
+
+	t.Run("with usage=true running copies have numbers, with the reservation", func(t *testing.T) {
+		got := get(t, "?usage=true")
+		// The test service reserves 100 MHz and 64 MB, with a 256 MB ceiling.
+		u := got["a1"].Usage
+		if u == nil || u.CPUMHz == nil || *u.CPUMHz != 0 || u.MemoryMB == nil || *u.MemoryMB != 40 ||
+			*u.CPUReservedMHz != 100 || *u.MemoryReservedMB != 64 || *u.MemoryCeilingMB != 256 || *u.NearCeiling || u.Error != "" {
+			t.Errorf("a1 usage = %+v, want 0 MHz (sent, not left out) and 40 MB, not near the ceiling", u)
+		}
+		if u := got["a2"].Usage; u == nil || *u.CPUMHz != 75 || *u.MemoryMB != 240 || !*u.NearCeiling {
+			t.Errorf("a2 usage = %+v, want 75 MHz, 240 MB, near the ceiling", u)
+		}
+	})
+	t.Run("a copy Nomad can't answer for has only an error", func(t *testing.T) {
+		got := get(t, "?usage=true")
+		u := got["a3"].Usage
+		if u == nil || u.Error != "Nomad didn't answer for this copy." || u.CPUMHz != nil || u.MemoryMB != nil || u.NearCeiling != nil {
+			t.Errorf("a3 usage = %+v, want only an error", u)
+		}
+	})
+	t.Run("a copy that hasn't started has no usage", func(t *testing.T) {
+		if u := get(t, "?usage=true")["a4"].Usage; u != nil {
+			t.Errorf("a4 usage = %+v, want none", u)
+		}
+	})
+	t.Run("without the parameter nothing changes and Nomad isn't asked for stats", func(t *testing.T) {
+		before := e.Nomad.StatsRequests()
+		for _, q := range []string{"", "?usage=false"} {
+			for id, c := range get(t, q) {
+				if c.Usage != nil {
+					t.Errorf("copies%s: %s has usage %+v", q, id, c.Usage)
+				}
+			}
+		}
+		if n := e.Nomad.StatsRequests() - before; n != 0 {
+			t.Errorf("%d stats requests, want 0", n)
+		}
+	})
+	t.Run("a bad value is 400 invalid_field", func(t *testing.T) {
+		for _, q := range []string{"?usage=yes", "?usage=", "?usage=TRUE", "?usage=1"} {
+			status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/copies"+q, "", "")
+			body := decodeAs[errorBody](t, raw)
+			if status != http.StatusBadRequest || body.Error.Code != codeInvalidField || body.Error.Field != "usage" {
+				t.Errorf("copies%s = %d %s, want 400 invalid_field on usage", q, status, raw)
+			}
+			checkSchema(t, loadContract(t), raw, "Error")
+		}
+	})
+	t.Run("an unknown app is 404 and Nomad down is 502", func(t *testing.T) {
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/ghost/copies?usage=true", "", "")
+		if status != http.StatusNotFound {
+			t.Errorf("ghost = %d %s", status, raw)
+		}
+		e.Nomad.Down()
+		defer e.Nomad.Up()
+		status, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/copies?usage=true", "", "")
+		if status != http.StatusBadGateway || decodeAs[errorBody](t, raw).Error.Code != codeNomadUnavailable {
+			t.Errorf("Nomad down = %d %s, want 502 nomad_unavailable", status, raw)
 		}
 	})
 }
