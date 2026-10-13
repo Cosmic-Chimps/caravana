@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -96,4 +97,68 @@ func TestBackupRecords(t *testing.T) {
 	if list, _ := s.ListRestores(ctx, "blog", 0); len(list) != 0 {
 		t.Errorf("restores after the app's delete = %+v", list)
 	}
+}
+
+func TestLatestBackupRuns(t *testing.T) {
+	ctx := context.Background()
+	t0 := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
+
+	t.Run("none", func(t *testing.T) {
+		s := openTestStore(t)
+		b, r, err := s.LatestBackupRuns(ctx)
+		if err != nil || len(b) != 0 || len(r) != 0 {
+			t.Errorf("LatestBackupRuns = %v, %v, %v; want none", b, r, err)
+		}
+	})
+
+	t.Run("the newest of each service of each app", func(t *testing.T) {
+		s := openTestStore(t)
+		for _, id := range []string{"blog", "shop"} {
+			if _, err := s.SaveApp(ctx, app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		save := func(appID, svc, id, status string, at time.Time) {
+			t.Helper()
+			if err := s.SaveBackup(ctx, BackupRecord{AppID: appID, ID: id, Service: svc, Status: status, StartedAt: at}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		save("blog", "db", "b-old", BackupSucceeded, t0)
+		save("blog", "db", "b-new", BackupFailed, t0.Add(time.Hour))
+		save("blog", "cache", "c-1", BackupSucceeded, t0)
+		save("shop", "db", "s-a", BackupSucceeded, t0) // same start: the larger ID wins
+		save("shop", "db", "s-b", BackupFailed, t0)
+		if err := s.ExpireBackups(ctx, "blog", []string{"b-new"}); err != nil {
+			t.Fatal(err)
+		}
+
+		restore := func(appID, id, status string, at time.Time) {
+			t.Helper()
+			if err := s.SaveRestore(ctx, RestoreRecord{ID: id, AppID: appID, Service: "db", BackupID: "x", Status: status, CreatedAt: at}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		restore("blog", "r-old", BackupFailed, t0)
+		restore("blog", "r-new", BackupSucceeded, t0.Add(time.Minute))
+
+		backups, restores, err := s.LatestBackupRuns(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, b := range backups {
+			got = append(got, b.AppID+"/"+b.Service+"="+b.ID)
+		}
+		want := []string{"blog/cache=c-1", "blog/db=b-new", "shop/db=s-b"}
+		if !slices.Equal(got, want) {
+			t.Errorf("backups = %v, want %v", got, want)
+		}
+		if !backups[1].Expired {
+			t.Errorf("an expired newest backup is still returned, marked expired: %+v", backups[1])
+		}
+		if len(restores) != 1 || restores[0].ID != "r-new" || restores[0].Status != BackupSucceeded {
+			t.Errorf("restores = %+v, want just r-new", restores)
+		}
+	})
 }

@@ -113,6 +113,15 @@ func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]Bac
 		return nil, fmt.Errorf("list backups of %q: %w", appID, err)
 	}
 	defer rows.Close()
+	out, err := scanBackups(rows)
+	if err != nil {
+		return nil, fmt.Errorf("list backups of %q: %w", appID, err)
+	}
+	return out, nil
+}
+
+// scanBackups reads backup rows in the column order ListBackups selects.
+func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 	var out []BackupRecord
 	for rows.Next() {
 		var b BackupRecord
@@ -121,8 +130,9 @@ func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]Bac
 		var finished sql.NullString
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
 			&expired, &started, &finished); err != nil {
-			return nil, fmt.Errorf("list backups of %q: %w", appID, err)
+			return nil, err
 		}
+		var err error
 		b.Expired = expired == 1
 		if b.StartedAt, err = parseTime(started); err != nil {
 			return nil, err
@@ -188,14 +198,24 @@ func (s *Store) ListRestores(ctx context.Context, appID string, limit int) ([]Re
 		return nil, fmt.Errorf("list restores of %q: %w", appID, err)
 	}
 	defer rows.Close()
+	out, err := scanRestores(rows)
+	if err != nil {
+		return nil, fmt.Errorf("list restores of %q: %w", appID, err)
+	}
+	return out, nil
+}
+
+// scanRestores reads restore rows in the column order ListRestores selects.
+func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 	var out []RestoreRecord
 	for rows.Next() {
 		var r RestoreRecord
 		var created string
 		var finished sql.NullString
 		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished); err != nil {
-			return nil, fmt.Errorf("list restores of %q: %w", appID, err)
+			return nil, err
 		}
+		var err error
 		if r.CreatedAt, err = parseTime(created); err != nil {
 			return nil, err
 		}
@@ -205,6 +225,41 @@ func (s *Store) ListRestores(ctx context.Context, appID string, limit int) ([]Re
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// LatestBackupRuns returns, for every service of every app, its newest
+// backup and its newest restore (by start time, ties by ID), for the
+// needs-you list. Expired backups count: the question is whether the last
+// run worked, not whether its file is still kept.
+func (s *Store) LatestBackupRuns(ctx context.Context) ([]BackupRecord, []RestoreRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at FROM (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY app_id, service ORDER BY started_at DESC, id DESC) AS n
+			FROM backups)
+		WHERE n = 1 ORDER BY app_id, service`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("latest backups: %w", err)
+	}
+	backups, err := scanBackups(rows)
+	rows.Close()
+	if err != nil {
+		return nil, nil, fmt.Errorf("latest backups: %w", err)
+	}
+
+	rows, err = s.db.QueryContext(ctx, `
+		SELECT id, app_id, service, backup_id, status, message, created_at, finished_at FROM (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY app_id, service ORDER BY created_at DESC, id DESC) AS n
+			FROM restores)
+		WHERE n = 1 ORDER BY app_id, service`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("latest restores: %w", err)
+	}
+	restores, err := scanRestores(rows)
+	rows.Close()
+	if err != nil {
+		return nil, nil, fmt.Errorf("latest restores: %w", err)
+	}
+	return backups, restores, nil
 }
 
 // RunningRestores returns every restore still running, across apps, for the
