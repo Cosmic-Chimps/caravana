@@ -171,10 +171,8 @@ driver, 2026-10-13): a busybox service with `memoryMB: 16`, `memoryMaxMB: 24` ru
 extra request is made. (If a future Nomad drops events from the stub, the fallback is the event's
 `DisplayMessage` "OOM Killed" from `Allocations().Info`, for copies with restarts only.)
 
-One consequence to know: with no restart policy in the job, Nomad's default is two restarts and
-then the copy fails and is replaced. A copy that has failed is terminal and gives no item (data
-model: non-terminal copies only), so a service that is killed in a loop shows the item while a
-copy is alive and between its kills, not while all of its copies are in the failed state.
+A copy that has been killed for memory and then failed (Nomad's default: two restarts, then the
+copy fails and is replaced after a delay) still gives the item for an hour (R9).
 
 ## R9. The "needs you" list: derived, not stored
 
@@ -193,10 +191,19 @@ Rules, per app, in this order (data-model "Attention item"):
   Action: the deployment on the Deployments tab (redeploy the last healthy version from there).
   This item replaces copy items for that app's copies of the failed version (one problem, one
   item, US5-5).
-- **out_of_memory**: a non-terminal copy with `OutOfMemory`. When: `LastRestart`. Action:
-  Configure, the service's memory field (`#svc-<service>-memory`).
-- **restarting**: a non-terminal copy with 3 or more restarts and not out of memory. When:
-  `LastRestart`. Action: the Logs tab for that copy.
+- **out_of_memory**: a considered copy with `OutOfMemory`. When: its `LastRestart` or
+  `FinishedAt`, the newer. Action: Configure, the service's memory field
+  (`#svc-<service>-memory`).
+- **restarting**: in a service, over considered copies not out of memory, the restarts plus one
+  per failed copy reach 3. When: the newest `LastRestart` or `FinishedAt` among them. Action: the
+  Logs tab for one of those copies.
+
+  Considered copies are those that haven't ended and those that *failed* within the last hour
+  (`FinishedAt`); stopped copies never count. Caravana sends no restart or reschedule policy, so
+  Nomad's service defaults apply: two restarts in 30 minutes, then the copy fails ("fail" mode)
+  and a replacement is scheduled after a delay that grows from 30 seconds to an hour. A crash
+  loop is therefore failed copies and fresh replacements, never one copy with three restarts, and
+  ignoring terminal copies would hide it exactly while the replacement waits.
 - **unhealthy**: a non-terminal copy `unhealthy` while no rollout of the app runs. When: now
   isn't known, so its `StartedAt`. Action: the Logs tab for that copy.
 - **backup_failed** / **restore_failed**: the newest backup (or restore) of a service failed.

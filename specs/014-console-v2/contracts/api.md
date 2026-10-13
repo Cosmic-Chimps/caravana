@@ -64,6 +64,7 @@ Nomad unreachable for the list itself stays 502 `nomad_unavailable`, as today.
 | `service` | string, optional | the service, for copy and backup kinds |
 | `copies` | string[], optional | copy IDs, for copy kinds |
 | `deploymentId` | string, optional | for `deploy_failed` |
+| `deploymentStatus` | enum `failed`, `reverted`, optional | for `deploy_failed`: how the deployment ended |
 | `jobVersion` | integer, optional | for `deploy_failed`, when registered |
 | `at` | date-time | when it happened |
 | `detail` | string, optional | the raw fact (Nomad's description, the deploy or backup error) |

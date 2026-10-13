@@ -33,6 +33,7 @@ type Copy struct {
 	Restarts    int        // restarts, summed over the allocation's tasks
 	StartedAt   *time.Time // the first start of any task; nil while none has started
 	LastRestart *time.Time // the newest restart of any task; nil if none restarted
+	FinishedAt  *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
 	OutOfMemory bool       // the service's last stop was the kernel killing it for passing its memory ceiling
 	Terminal    bool       // true for stopped and failed: it will never run again
 }
@@ -92,6 +93,10 @@ func copyOf(a *api.AllocationListStub) Copy {
 		if !ts.LastRestart.IsZero() && (c.LastRestart == nil || ts.LastRestart.After(*c.LastRestart)) {
 			t := ts.LastRestart
 			c.LastRestart = &t
+		}
+		if !ts.FinishedAt.IsZero() && (c.FinishedAt == nil || ts.FinishedAt.After(*c.FinishedAt)) {
+			t := ts.FinishedAt
+			c.FinishedAt = &t
 		}
 	}
 	c.OutOfMemory = killedForMemory(a.TaskStates[a.TaskGroup])

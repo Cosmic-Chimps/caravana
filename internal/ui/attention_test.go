@@ -33,11 +33,11 @@ func TestAttentionRows(t *testing.T) {
 		action string
 		href   string
 	}{
-		{"a reverted deploy", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", Version: &v8, Detail: "health checks failed"},
+		{"a reverted deploy", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusReverted, Version: &v8, Detail: "health checks failed"},
 			"failed", "blog's deploy v8 was reverted: health checks failed.", "View deployment", "/apps/blog/deployments#deployment-b2"},
-		{"a failed deploy that never got a version, a trailing full stop in the detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", Detail: "no such image.\n"},
+		{"a failed deploy that never got a version, a trailing full stop in the detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed, Detail: "no such image.\n"},
 			"failed", "whoami's deploy failed: no such image.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
-		{"a failed deploy without a detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1"},
+		{"a failed deploy without a detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed},
 			"failed", "whoami's deploy failed.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
 		{"one copy out of memory", service.AttentionItem{Kind: service.AttentionOutOfMemory, AppID: "blog", Service: "web", Copies: []string{"c1"}},
 			"failed", "1 copy of blog/web ran out of memory.", "Raise memory", "/apps/blog/configure#svc-web-memory"},
@@ -61,7 +61,7 @@ func TestAttentionRows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.item.When = then
-			row := e.Server.attentionRow(context.Background(), now, tc.item)
+			row := e.Server.attentionRow(now, tc.item)
 			if got := row.Text.String(); got != tc.text {
 				t.Errorf("text = %q, want %q", got, tc.text)
 			}
@@ -75,7 +75,7 @@ func TestAttentionRows(t *testing.T) {
 	}
 
 	t.Run("names are set apart as mono", func(t *testing.T) {
-		row := e.Server.attentionRow(context.Background(), now, tests[3].item)
+		row := e.Server.attentionRow(now, tests[3].item)
 		var monos []string
 		for _, p := range row.Text {
 			if p.Mono {
@@ -88,8 +88,8 @@ func TestAttentionRows(t *testing.T) {
 	})
 
 	t.Run("a long detail is cut to one line", func(t *testing.T) {
-		item := service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", Detail: strings.Repeat("x ", 300)}
-		got := e.Server.attentionRow(context.Background(), now, item).Text.String()
+		item := service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusFailed, Detail: strings.Repeat("x ", 300)}
+		got := e.Server.attentionRow(now, item).Text.String()
 		if len([]rune(got)) > 260 || strings.Contains(got, "\n") || !strings.Contains(got, "…") {
 			t.Errorf("text = %q, want one cut line", got)
 		}

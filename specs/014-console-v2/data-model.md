@@ -66,6 +66,7 @@ service of the preview: `svc.<name>.domains`, `.healthPath`, `.healthInterval`,
 | Field | From |
 | --- | --- |
 | `LastRestart *time.Time` | newest non-zero `TaskState.LastRestart` over the copy's tasks |
+| `FinishedAt *time.Time` | newest non-zero `TaskState.FinishedAt` over the copy's tasks; only meaningful for terminal copies |
 | `OutOfMemory bool` | the service task's newest `Terminated` event has `Details["oom_killed"] == "true"` |
 
 ## Copy usage (service)
@@ -98,6 +99,7 @@ type AttentionItem struct {
     Service    string    // "" for deploy_failed and no_backup_destination
     Copies     []string  // the copy IDs it is about (copy kinds)
     Deployment string    // deploy_failed: the deployment ID
+    DeploymentStatus store.Status // deploy_failed: failed or reverted
     Version    *uint64   // deploy_failed: its job version, when registered
     When       time.Time
     Detail     string    // the raw fact: Nomad's description, the deploy or backup error
@@ -109,19 +111,25 @@ type Attention struct {
 }
 ```
 
-Rules (research R9), per app:
+Rules (research R9), per app. The copies considered are the ones that haven't ended, plus the
+ones that **failed** within the last hour (`recentFailure`, by `FinishedAt`); stopped copies never
+count. Nomad restarts a copy twice, then fails it and schedules a replacement after a growing
+delay, so a crash loop is failed copies and fresh ones, and no single copy restarts three times.
 
 | Kind | True while | When | Fix |
 | --- | --- | --- | --- |
 | `deploy_failed` | latest deployment is `failed` or `reverted` | its `UpdatedAt` | `/apps/<app>/deployments#<deployment>` |
-| `out_of_memory` | a non-terminal copy has `OutOfMemory` | `LastRestart` | `/apps/<app>/configure#svc-<service>-memory` |
-| `restarting` | a non-terminal copy has ≥ 3 restarts, not out of memory | `LastRestart` | `/apps/<app>/logs?copy=<copy>` |
+| `out_of_memory` | a considered copy has `OutOfMemory` | newest `LastRestart`/`FinishedAt` among them | `/apps/<app>/configure#svc-<service>-memory` |
+| `restarting` | in a service, over considered copies not out of memory, `sum(Restarts) + 1 per failed copy` is ≥ 3 (`restartingAt`) | newest `LastRestart`/`FinishedAt` among the copies listed | `/apps/<app>/logs?copy=<copy>` |
 | `unhealthy` | a non-terminal copy is `unhealthy` and no rollout of the app runs | `StartedAt` | `/apps/<app>/logs?copy=<copy>` |
 | `backup_failed` | a service's newest backup failed | its finish time | `/apps/<app>/backups` |
 | `restore_failed` | a service's newest restore failed | its finish time | `/apps/<app>/backups` |
 | `no_backup_destination` | some service has `Backup` and no destination is set | the newest such app's `UpdatedAt` | `/settings#backup-destination` |
 
 - With a `deploy_failed` item, copies of that deployment's job version add no copy items.
+- A copy gives at most one item: out of memory, then restarting, then unhealthy.
+- A `restarting` item lists the copies that restarted or failed; `Detail` is the newest one's
+  Nomad description.
 - Copy items of one kind for one service merge into one item (`Copies` lists them; `When` is the
   newest).
 - Sorted by `When`, newest first; ties by app ID then service.

@@ -10,19 +10,20 @@ import (
 // attentionItemJSON is one thing that needs the owner (schema AttentionItem).
 // It carries the facts; the console writes the sentence.
 type attentionItemJSON struct {
-	Kind         string    `json:"kind"`
-	AppID        string    `json:"appId,omitempty"`
-	Service      string    `json:"service,omitempty"`
-	Copies       []string  `json:"copies,omitempty"`
-	DeploymentID string    `json:"deploymentId,omitempty"`
-	JobVersion   *uint64   `json:"jobVersion,omitempty"`
-	At           time.Time `json:"at"`
-	Detail       string    `json:"detail,omitempty"`
+	Kind             string    `json:"kind"`
+	AppID            string    `json:"appId,omitempty"`
+	Service          string    `json:"service,omitempty"`
+	Copies           []string  `json:"copies,omitempty"`
+	DeploymentID     string    `json:"deploymentId,omitempty"`
+	DeploymentStatus string    `json:"deploymentStatus,omitempty"`
+	JobVersion       *uint64   `json:"jobVersion,omitempty"`
+	At               time.Time `json:"at"`
+	Detail           string    `json:"detail,omitempty"`
 }
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Service: it.Service, Copies: it.Copies,
-		DeploymentID: it.Deployment, JobVersion: it.Version, At: it.When, Detail: it.Detail}
+		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version, At: it.When, Detail: it.Detail}
 }
 
 // listAttention answers GET /v1/attention: what needs the owner, newest

@@ -31,6 +31,12 @@ const (
 // are an ordinary hiccup; Nomad's own restart policy stops at a few more.
 const restartingAt = 3
 
+// recentFailure is how long a copy that failed still counts as a problem. Nomad
+// restarts a copy twice, then fails it and schedules a replacement after a
+// growing delay (30 s up to an hour), so a crash loop shows as failed copies
+// and fresh ones, and no one copy restarts three times.
+const recentFailure = time.Hour
+
 // AttentionItem is one thing that needs the owner. It holds the facts; the
 // console turns them into a sentence and the API sends them as they are.
 type AttentionItem struct {
@@ -39,9 +45,12 @@ type AttentionItem struct {
 	Service    string   // "" for deploy_failed and no_backup_destination
 	Copies     []string // the copy IDs it is about (copy kinds)
 	Deployment string   // deploy_failed: the deployment ID
-	Version    *uint64  // deploy_failed: its job version, when registered
-	When       time.Time
-	Detail     string // the raw fact: Nomad's description, the deploy or backup error
+	// DeploymentStatus is the deployment's final status, failed or reverted,
+	// for deploy_failed.
+	DeploymentStatus store.Status
+	Version          *uint64 // deploy_failed: its job version, when registered
+	When             time.Time
+	Detail           string // the raw fact: Nomad's description, the deploy or backup error
 }
 
 // Attention is the needs-you list.
@@ -76,7 +85,7 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	if copiesErr != nil {
 		s.log.Warn("can't read copies from Nomad; the needs-you list leaves them out", "error", copiesErr)
 	}
-	return attentionOf(apps, latest, copies, copiesErr, backups, restores, destErr == nil), nil
+	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil), nil
 }
 
 // attentionOf applies the rules of data-model "Attention item". It is pure:
@@ -87,7 +96,7 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 // restarting and unhealthy, and copies of the version a failed deployment
 // registered give none: the failed deploy is the one problem. Copy items of
 // one kind in one service become one item.
-func attentionOf(apps []store.AppRecord, latest map[string]store.DeploymentRecord,
+func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.DeploymentRecord,
 	copies map[string][]Copy, copiesErr error,
 	backups []store.BackupRecord, restores []store.RestoreRecord, hasDestination bool) Attention {
 
@@ -105,7 +114,7 @@ func attentionOf(apps []store.AppRecord, latest map[string]store.DeploymentRecor
 		if failed {
 			out.Items = append(out.Items, AttentionItem{
 				Kind: AttentionDeployFailed, AppID: a.ID, Deployment: d.Deployment.ID,
-				Version: d.JobVersion, When: d.UpdatedAt, Detail: d.Error,
+				DeploymentStatus: d.Status, Version: d.JobVersion, When: d.UpdatedAt, Detail: d.Error,
 			})
 		}
 		for _, svc := range a.Services {
@@ -118,42 +127,11 @@ func attentionOf(apps []store.AppRecord, latest map[string]store.DeploymentRecor
 		if copiesErr != nil {
 			continue
 		}
-		// Merged copy items, in the order their services first show up.
-		var merged []*AttentionItem
-		find := func(kind AttentionKind, service string) *AttentionItem {
-			for _, it := range merged {
-				if it.Kind == kind && it.Service == service {
-					return it
-				}
-			}
-			it := &AttentionItem{Kind: kind, AppID: a.ID, Service: service}
-			merged = append(merged, it)
-			return it
+		var skip *uint64 // the job version a failed deployment registered
+		if failed {
+			skip = d.JobVersion
 		}
-		for _, c := range copies[a.ID] {
-			if c.Terminal || (failed && d.JobVersion != nil && c.Version == *d.JobVersion) {
-				continue
-			}
-			var kind AttentionKind
-			switch {
-			case c.OutOfMemory:
-				kind = AttentionOutOfMemory
-			case c.Restarts >= restartingAt:
-				kind = AttentionRestarting
-			case c.Status == deploy.CopyUnhealthy && !rollingOut:
-				kind = AttentionUnhealthy
-			default:
-				continue
-			}
-			it := find(kind, c.Service)
-			it.Copies = append(it.Copies, c.ID)
-			if when := copyTime(c, kind); len(it.Copies) == 1 || when.After(it.When) {
-				it.When, it.Detail = when, c.Description
-			}
-		}
-		for _, it := range merged {
-			out.Items = append(out.Items, *it)
-		}
+		out.Items = append(out.Items, copyItems(now, a.ID, copies[a.ID], skip, rollingOut)...)
 	}
 
 	for _, b := range backups {
@@ -189,21 +167,92 @@ func attentionOf(apps []store.AppRecord, latest map[string]store.DeploymentRecor
 	return out
 }
 
-// copyTime is when a copy's problem happened: its last restart for the
-// restart kinds, its start for an unhealthy copy (nothing says when it
-// turned unhealthy). A copy with neither is the zero time.
-func copyTime(c Copy, kind AttentionKind) time.Time {
-	var t *time.Time
-	switch {
-	case kind != AttentionUnhealthy && c.LastRestart != nil:
-		t = c.LastRestart
-	default:
-		t = c.StartedAt
+// copyItems turns one app's copies into items, per service (data-model
+// "Attention item"). Considered are the copies that haven't ended, and the
+// ones that failed within recentFailure: stopped copies never count, and
+// neither do copies of skip, the version a failed deployment registered (that
+// deploy is the one problem). In a service:
+//
+//   - copies killed for memory are one out_of_memory item;
+//   - of the others, restarts plus one per failed copy reaching restartingAt
+//     is one restarting item over the copies that restarted or failed;
+//   - a copy failing its health check, outside a rollout, that is in neither
+//     is one unhealthy item. A copy gives at most one item.
+func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rollingOut bool) []AttentionItem {
+	var services []string // in the order they first show up
+	byService := map[string][]Copy{}
+	for _, c := range copies {
+		failedRecently := c.Status == deploy.CopyFailed && c.FinishedAt != nil && now.Sub(*c.FinishedAt) <= recentFailure
+		if (c.Terminal && !failedRecently) || (skip != nil && c.Version == *skip) {
+			continue
+		}
+		if _, ok := byService[c.Service]; !ok {
+			services = append(services, c.Service)
+		}
+		byService[c.Service] = append(byService[c.Service], c)
 	}
-	if t == nil {
-		return time.Time{}
+
+	var items []AttentionItem
+	for _, name := range services {
+		oom := AttentionItem{Kind: AttentionOutOfMemory, AppID: appID, Service: name}
+		restarting := AttentionItem{Kind: AttentionRestarting, AppID: appID, Service: name}
+		unhealthy := AttentionItem{Kind: AttentionUnhealthy, AppID: appID, Service: name}
+		restarts := 0
+		for _, c := range byService[name] {
+			switch {
+			case c.OutOfMemory:
+				oom.add(c, eventTime(c))
+			case c.Restarts > 0 || c.Status == deploy.CopyFailed:
+				restarts += c.Restarts
+				if c.Status == deploy.CopyFailed {
+					restarts++
+				}
+				restarting.add(c, eventTime(c))
+			}
+		}
+		if restarts < restartingAt {
+			restarting.Copies = nil // too few to be a loop: those copies are judged on their health alone
+		}
+		for _, c := range byService[name] {
+			if c.Status == deploy.CopyUnhealthy && !rollingOut && !c.OutOfMemory && !slices.Contains(restarting.Copies, c.ID) {
+				start := time.Time{}
+				if c.StartedAt != nil {
+					start = *c.StartedAt
+				}
+				unhealthy.add(c, start)
+			}
+		}
+		for _, it := range []AttentionItem{oom, restarting, unhealthy} {
+			if len(it.Copies) > 0 {
+				items = append(items, it)
+			}
+		}
 	}
-	return *t
+	return items
+}
+
+// add puts a copy on a copy item. The item is dated by its newest copy, and
+// says what Nomad says of that one.
+func (it *AttentionItem) add(c Copy, when time.Time) {
+	it.Copies = append(it.Copies, c.ID)
+	if len(it.Copies) == 1 || when.After(it.When) {
+		it.When, it.Detail = when, c.Description
+	}
+}
+
+// eventTime is when a copy last restarted or ended, or started when neither
+// has happened; the zero time when none is known.
+func eventTime(c Copy) time.Time {
+	var newest time.Time
+	for _, t := range []*time.Time{c.LastRestart, c.FinishedAt} {
+		if t != nil && t.After(newest) {
+			newest = *t
+		}
+	}
+	if newest.IsZero() && c.StartedAt != nil {
+		return *c.StartedAt
+	}
+	return newest
 }
 
 // keepsBackups reports whether the app's service still has a backup policy:

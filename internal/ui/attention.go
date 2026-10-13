@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -41,14 +40,14 @@ func (s *server) loadAttention(r *http.Request) (attentionRegion, []service.Atte
 	now := s.now()
 	region := attentionRegion{Unknown: att.CopiesUnknown}
 	for _, it := range att.Items {
-		region.Rows = append(region.Rows, s.attentionRow(r.Context(), now, it))
+		region.Rows = append(region.Rows, s.attentionRow(now, it))
 	}
 	return region, att.Items, nil
 }
 
 // attentionRow says one item in the console's words. The API sends facts;
 // the sentence, the mark and the link are the console's (research R9, R12).
-func (s *server) attentionRow(ctx context.Context, now time.Time, it service.AttentionItem) attentionRow {
+func (s *server) attentionRow(now time.Time, it service.AttentionItem) attentionRow {
 	row := attentionRow{Mark: "failed"}
 	if !it.When.IsZero() {
 		row.When = whenOf(now, &it.When, "")
@@ -59,7 +58,7 @@ func (s *server) attentionRow(ctx context.Context, now time.Time, it service.Att
 	switch it.Kind {
 	case service.AttentionDeployFailed:
 		verb := "failed"
-		if rec, err := s.svc.GetDeployment(ctx, it.AppID, it.Deployment); err == nil && rec.Status == store.StatusReverted {
+		if it.DeploymentStatus == store.StatusReverted {
 			verb = "was reverted"
 		}
 		row.Text = sentence{mono(it.AppID), plain("'s deploy ")}

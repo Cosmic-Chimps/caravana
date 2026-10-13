@@ -1679,6 +1679,10 @@ components:
         deploymentId:
           type: string
           description: The deployment, for `deploy_failed`.
+        deploymentStatus:
+          type: string
+          enum: [failed, reverted]
+          description: How that deployment ended, for `deploy_failed`.
         jobVersion:
           type: integer
           minimum: 0

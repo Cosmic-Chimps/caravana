@@ -21,6 +21,7 @@ type attentionItemBody struct {
 	Service      *string  `json:"service"`
 	Copies       []string `json:"copies"`
 	DeploymentID *string  `json:"deploymentId"`
+	DeployStatus *string  `json:"deploymentStatus"`
 	JobVersion   *uint64  `json:"jobVersion"`
 	At           string   `json:"at"`
 	Detail       *string  `json:"detail"`
@@ -138,9 +139,12 @@ func TestListAttention(t *testing.T) {
 			}
 			return *s
 		}
-		if it := by["deploy_failed"]; str(it.AppID) != "shop" || str(it.DeploymentID) != "shop-d3" || it.JobVersion == nil || *it.JobVersion != 3 ||
+		if it := by["deploy_failed"]; str(it.AppID) != "shop" || str(it.DeploymentID) != "shop-d3" || str(it.DeployStatus) != "reverted" || it.JobVersion == nil || *it.JobVersion != 3 ||
 			str(it.Detail) != "the new copies failed their health check" || it.Service != nil || it.Copies != nil {
 			t.Errorf("deploy_failed = %+v", it)
+		}
+		if by["out_of_memory"].DeployStatus != nil {
+			t.Errorf("an out_of_memory item carries a deploymentStatus: %+v", by["out_of_memory"])
 		}
 		if it := by["out_of_memory"]; str(it.AppID) != "blog" || str(it.Service) != "web" || !slices.Equal(it.Copies, []string{"w1"}) ||
 			it.At != "2026-10-12T08:00:00Z" || str(it.Detail) != "Tasks are running" {
@@ -177,7 +181,8 @@ func TestListAttention(t *testing.T) {
 		seedDeployment(t, e, "shop", "shop-d3", store.StatusFailed, 3, "no image")
 		e.Nomad.Down()
 		got := getAttention(t, e)
-		if !got.CopiesUnknown || len(got.Items) != 1 || got.Items[0].Kind != "deploy_failed" {
+		if !got.CopiesUnknown || len(got.Items) != 1 || got.Items[0].Kind != "deploy_failed" ||
+			got.Items[0].DeployStatus == nil || *got.Items[0].DeployStatus != "failed" {
 			t.Errorf("attention = %+v, want copiesUnknown and the deploy_failed item", got)
 		}
 	})

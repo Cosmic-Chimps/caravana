@@ -18,6 +18,10 @@ var attT0 = time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 
 func at(m int) time.Time { return attT0.Add(time.Duration(m) * time.Minute) }
 
+// attNow is the moment the table judges at: an hour and a half after attT0, so
+// at(0)..at(30) are within recentFailure.
+var attNow = attT0.Add(90 * time.Minute)
+
 // appRec is a stored app with the given services; a service named "db" has a
 // backup policy.
 func appRec(id string, updated time.Time, services ...string) store.AppRecord {
@@ -74,13 +78,13 @@ func TestAttentionOf(t *testing.T) {
 			name:   "a failed deployment",
 			apps:   []store.AppRecord{appRec("blog", at(0), "web")},
 			latest: map[string]store.DeploymentRecord{"blog": dep("blog", "d7", store.StatusFailed, ver(7), at(5), "no image")},
-			want:   []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", Version: ver(7), When: at(5), Detail: "no image"}},
+			want:   []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", DeploymentStatus: store.StatusFailed, Version: ver(7), When: at(5), Detail: "no image"}},
 		},
 		{
 			name:   "a reverted deployment that never got a job version",
 			apps:   []store.AppRecord{appRec("blog", at(0), "web")},
 			latest: map[string]store.DeploymentRecord{"blog": dep("blog", "d8", store.StatusReverted, nil, at(5), "unhealthy")},
-			want:   []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d8", When: at(5), Detail: "unhealthy"}},
+			want:   []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d8", DeploymentStatus: store.StatusReverted, When: at(5), Detail: "unhealthy"}},
 		},
 		{
 			name: "pending, running, healthy and superseded deployments are not failures",
@@ -159,6 +163,77 @@ func TestAttentionOf(t *testing.T) {
 			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"b1", "b2"}, When: at(9), Detail: "newer"}},
 		},
 		{
+			name: "a crash loop: a copy that restarted twice and failed, and its replacement waiting to start",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "old", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, Restarts: 2,
+					LastRestart: tp(at(70)), FinishedAt: tp(at(75)), Description: "Failed tasks"},
+				{ID: "new", Service: "web", Version: 1, Status: deploy.CopyStarting},
+			}},
+			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"old"}, When: at(75), Detail: "Failed tasks"}},
+		},
+		{
+			name: "failed copies count one restart each, so three of them are a loop",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "f1", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(40))},
+				{ID: "f2", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(60))},
+				{ID: "f3", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(50))},
+				{ID: "ok", Service: "web", Version: 1, Status: deploy.CopyHealthy},
+			}},
+			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"f1", "f2", "f3"}, When: at(60)}},
+		},
+		{
+			name: "two failures are not yet a loop",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "f1", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(40))},
+				{ID: "f2", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(60))},
+			}},
+		},
+		{
+			name: "a failed copy finished two hours ago is forgotten",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "old", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, Restarts: 2, FinishedAt: tp(attNow.Add(-2 * time.Hour)), OutOfMemory: true},
+			}},
+		},
+		{
+			name: "a copy killed for memory that has since failed is out of memory, once, with its replacement",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "old", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, Restarts: 2, OutOfMemory: true,
+					LastRestart: tp(at(70)), FinishedAt: tp(at(75)), Description: "Failed tasks"},
+				{ID: "new", Service: "web", Version: 1, Status: deploy.CopyHealthy, Restarts: 1, OutOfMemory: true, LastRestart: tp(at(85))},
+			}},
+			want: []AttentionItem{{Kind: AttentionOutOfMemory, AppID: "blog", Service: "web", Copies: []string{"old", "new"}, When: at(85)}},
+		},
+		{
+			name: "a stopped copy never counts",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "s1", Service: "web", Version: 1, Status: deploy.CopyStopped, Terminal: true, Restarts: 9, OutOfMemory: true, FinishedAt: tp(at(80))},
+			}},
+		},
+		{
+			name:   "failed copies of a failed deployment's version add nothing",
+			apps:   []store.AppRecord{appRec("blog", at(0), "web")},
+			latest: map[string]store.DeploymentRecord{"blog": dep("blog", "d7", store.StatusFailed, ver(7), at(85), "x")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "f1", Service: "web", Version: 7, Status: deploy.CopyFailed, Terminal: true, Restarts: 2, FinishedAt: tp(at(80)), OutOfMemory: true},
+			}},
+			want: []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", DeploymentStatus: store.StatusFailed, Version: ver(7), When: at(85), Detail: "x"}},
+		},
+		{
+			name: "restarts of a copy that failed health add to the loop, and an unhealthy copy in the loop is not a second item",
+			apps: []store.AppRecord{appRec("blog", at(0), "web")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "f1", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, Restarts: 2, FinishedAt: tp(at(60))},
+				{ID: "u1", Service: "web", Version: 1, Status: deploy.CopyUnhealthy, Restarts: 1, LastRestart: tp(at(70)), StartedAt: tp(at(65))},
+			}},
+			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"f1", "u1"}, When: at(70)}},
+		},
+		{
 			name: "two services, or two kinds, are separate items",
 			apps: []store.AppRecord{appRec("blog", at(0), "web", "worker")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
 			copies: map[string][]Copy{"blog": {
@@ -181,7 +256,7 @@ func TestAttentionOf(t *testing.T) {
 				{ID: "old", Service: "web", Version: 6, Status: deploy.CopyHealthy, Restarts: 3, LastRestart: tp(at(2))},
 			}},
 			want: []AttentionItem{
-				{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", Version: ver(7), When: at(10), Detail: "unhealthy"},
+				{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", DeploymentStatus: store.StatusReverted, Version: ver(7), When: at(10), Detail: "unhealthy"},
 				{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"old"}, When: at(2)},
 			},
 		},
@@ -191,7 +266,7 @@ func TestAttentionOf(t *testing.T) {
 			latest: map[string]store.DeploymentRecord{"blog": dep("blog", "d7", store.StatusFailed, nil, at(10), "no image")},
 			copies: map[string][]Copy{"blog": {{ID: "b1", Service: "web", Version: 6, Status: deploy.CopyHealthy, Restarts: 3, LastRestart: tp(at(2))}}},
 			want: []AttentionItem{
-				{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", When: at(10), Detail: "no image"},
+				{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", DeploymentStatus: store.StatusFailed, When: at(10), Detail: "no image"},
 				{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"b1"}, When: at(2)},
 			},
 		},
@@ -201,7 +276,7 @@ func TestAttentionOf(t *testing.T) {
 			latest:  map[string]store.DeploymentRecord{"blog": dep("blog", "d7", store.StatusFailed, ver(7), at(10), "x")},
 			copies:  map[string][]Copy{"blog": {{ID: "b1", Service: "web", Version: 6, Status: deploy.CopyHealthy, Restarts: 9}}},
 			copyErr: errNomad, unknown: true,
-			want: []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", Version: ver(7), When: at(10), Detail: "x"}},
+			want: []AttentionItem{{Kind: AttentionDeployFailed, AppID: "blog", Deployment: "d7", DeploymentStatus: store.StatusFailed, Version: ver(7), When: at(10), Detail: "x"}},
 		},
 		{
 			name: "a failed backup and a failed restore, dated by their finish",
@@ -267,16 +342,16 @@ func TestAttentionOf(t *testing.T) {
 			},
 			want: []AttentionItem{
 				{Kind: AttentionRestarting, AppID: "b", Service: "web", Copies: []string{"b1"}, When: at(6)},
-				{Kind: AttentionDeployFailed, AppID: "a", Deployment: "ad", When: at(5), Detail: "y"},
+				{Kind: AttentionDeployFailed, AppID: "a", Deployment: "ad", DeploymentStatus: store.StatusFailed, When: at(5), Detail: "y"},
 				{Kind: AttentionRestarting, AppID: "a", Service: "web", Copies: []string{"a2"}, When: at(5)},
 				{Kind: AttentionRestarting, AppID: "a", Service: "worker", Copies: []string{"a1"}, When: at(5)},
-				{Kind: AttentionDeployFailed, AppID: "b", Deployment: "bd", When: at(5), Detail: "x"},
+				{Kind: AttentionDeployFailed, AppID: "b", Deployment: "bd", DeploymentStatus: store.StatusFailed, When: at(5), Detail: "x"},
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := attentionOf(tc.apps, tc.latest, tc.copies, tc.copyErr, tc.backups, tc.restores, !tc.noDest)
+			got := attentionOf(attNow, tc.apps, tc.latest, tc.copies, tc.copyErr, tc.backups, tc.restores, !tc.noDest)
 			if got.CopiesUnknown != tc.unknown {
 				t.Errorf("CopiesUnknown = %v, want %v", got.CopiesUnknown, tc.unknown)
 			}
@@ -285,7 +360,7 @@ func TestAttentionOf(t *testing.T) {
 			}
 			for i, w := range tc.want {
 				g := got.Items[i]
-				if g.Kind != w.Kind || g.AppID != w.AppID || g.Service != w.Service || g.Deployment != w.Deployment ||
+				if g.Kind != w.Kind || g.AppID != w.AppID || g.Service != w.Service || g.Deployment != w.Deployment || g.DeploymentStatus != w.DeploymentStatus ||
 					!g.When.Equal(w.When) || g.Detail != w.Detail || !slices.Equal(g.Copies, w.Copies) ||
 					(g.Version == nil) != (w.Version == nil) || (g.Version != nil && *g.Version != *w.Version) {
 					t.Errorf("item %d = %+v, want %+v", i, g, w)
@@ -299,14 +374,14 @@ func TestAttentionOf(t *testing.T) {
 // fixed give an empty list.
 func TestAttentionOfResolution(t *testing.T) {
 	apps := []store.AppRecord{appRec("blog", at(0), "web", "db")}
-	broken := attentionOf(apps,
+	broken := attentionOf(attNow, apps,
 		map[string]store.DeploymentRecord{"blog": dep("blog", "d1", store.StatusFailed, nil, at(5), "x")},
 		nil, nil,
 		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupFailed, StartedAt: at(1)}}, nil, true)
 	if len(broken.Items) != 2 {
 		t.Fatalf("broken = %+v, want the failed deploy and the failed backup", broken.Items)
 	}
-	fixed := attentionOf(apps,
+	fixed := attentionOf(attNow, apps,
 		map[string]store.DeploymentRecord{"blog": dep("blog", "d2", store.StatusHealthy, ver(2), at(8), "")},
 		nil, nil,
 		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupSucceeded, StartedAt: at(9)}}, nil, true)
@@ -348,7 +423,7 @@ func TestAttention(t *testing.T) {
 		for _, it := range got.Items {
 			kinds[it.Kind] = it
 		}
-		if f := kinds[AttentionDeployFailed]; f.Deployment != second.Deployment.ID || f.Detail != desc || f.AppID != "whoami" {
+		if f := kinds[AttentionDeployFailed]; f.Deployment != second.Deployment.ID || f.DeploymentStatus != store.StatusReverted || f.Detail != desc || f.AppID != "whoami" {
 			t.Errorf("deploy_failed = %+v", f)
 		}
 		if r := kinds[AttentionRestarting]; r.Service != "web" || !slices.Equal(r.Copies, []string{"w1"}) {

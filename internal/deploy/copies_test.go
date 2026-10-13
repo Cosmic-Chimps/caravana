@@ -79,6 +79,21 @@ func TestCopyOf(t *testing.T) {
 		}
 	})
 
+	t.Run("FinishedAt is the newest end of any task", func(t *testing.T) {
+		got := copyOf(&api.AllocationListStub{ClientStatus: "failed", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
+			"web":     {FinishedAt: t0.Add(2 * time.Minute)},
+			"sidecar": {FinishedAt: t0.Add(time.Minute)},
+			"never":   {},
+			"gone":    nil,
+		}})
+		if got.FinishedAt == nil || !got.FinishedAt.Equal(t0.Add(2*time.Minute)) {
+			t.Errorf("FinishedAt = %v, want %v", got.FinishedAt, t0.Add(2*time.Minute))
+		}
+		if got := copyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.FinishedAt != nil {
+			t.Errorf("FinishedAt = %v, want nil when nothing ended", got.FinishedAt)
+		}
+	})
+
 	t.Run("OutOfMemory", func(t *testing.T) {
 		terminated := func(oom string) *api.TaskEvent {
 			return &api.TaskEvent{Type: api.TaskTerminated, Details: map[string]string{"oom_killed": oom, "exit_code": "137"}}

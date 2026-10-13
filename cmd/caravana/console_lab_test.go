@@ -495,9 +495,9 @@ func (c *console) needsYou(t *testing.T) {
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
 
 	// Out of memory. With no restart policy in the job, Nomad's default is
-	// two restarts, then the copy fails and is replaced, so the copy is there
-	// as running (not ended) only part of the time: the check reads the copy
-	// and the list in one go, and tries again until both agree.
+	// two restarts, then the copy fails and is replaced after a delay. A
+	// failed copy still counts for an hour, so the item holds through the
+	// replacement's wait; the check reads the copy and the list in one go.
 	oomer := `{"source": {"kind": "image"}, "services": [{
 	  "name": "hog", "image": "busybox:1.37", "command": "sh", "args": ["-c", "head -c 64m /dev/zero | tail"],
 	  "resources": {"memoryMB": 16, "memoryMaxMB": 24}}]}`
@@ -538,7 +538,7 @@ func (c *console) needsYou(t *testing.T) {
 			return false
 		}
 		for _, cp := range copies.Copies {
-			if cp.OutOfMemory && cp.Status != "failed" && cp.Status != "stopped" {
+			if cp.OutOfMemory && cp.Status != "stopped" {
 				killed = cp
 			}
 		}
