@@ -249,7 +249,7 @@ func (s *Service) Copies(ctx context.Context, appID string) ([]Copy, error) {
 // (also store.ErrNotFound). Rollout watchers of the app are stopped before
 // the app goes, or they would ask Nomad about a job that no longer exists for
 // as long as the process runs. Then the open pages hear of it: deleted for
-// the app's own page, apps and activity for the lists.
+// the app's own page, apps, activity and attention for the lists.
 func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	// Checked before the lock, so asking about an ID that doesn't exist
 	// creates no state.
@@ -302,5 +302,6 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 	s.publish(Change{AppID: id, What: ChangeDeleted})
 	s.publish(Change{What: ChangeApps})
 	s.publish(Change{What: ChangeActivity})
+	s.publish(Change{What: ChangeAttention})
 	return nil
 }

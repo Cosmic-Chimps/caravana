@@ -18,6 +18,7 @@ const (
 	ChangeDeployments ChangeKind = "deployments" // one app's deployment list
 	ChangeCopies      ChangeKind = "copies"      // one app's running copies
 	ChangeDeleted     ChangeKind = "deleted"     // one app is gone
+	ChangeAttention   ChangeKind = "attention"   // what needs the owner, across apps
 )
 
 // Change is a notice that something changed. It says what, never the new
@@ -112,6 +113,7 @@ func (s *Service) deploymentChanged(appID string) {
 	s.publish(Change{AppID: appID, What: ChangeApp})
 	s.publish(Change{What: ChangeApps})
 	s.publish(Change{What: ChangeActivity})
+	s.publish(Change{What: ChangeAttention})
 }
 
 // appChanged publishes that an app was saved: its header and settings, and
@@ -173,4 +175,5 @@ func (s *Service) copiesChanged(jobIDs []string) {
 		s.publish(Change{AppID: id, What: ChangeApp})
 	}
 	s.publish(Change{What: ChangeApps})
+	s.publish(Change{What: ChangeAttention})
 }

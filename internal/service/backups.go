@@ -89,6 +89,7 @@ func (s *Service) SetBackupDestination(ctx context.Context, in DestinationInput)
 	if err := s.store.SetBackupDestination(ctx, d); err != nil {
 		return store.BackupDestination{}, err
 	}
+	s.publish(Change{What: ChangeAttention}) // "no backup destination" may be resolved
 	if err := s.deployer.SetBackupDestination(ctx, toDeployDestination(d, secret)); err != nil {
 		return d, fmt.Errorf("saved, but the backup jobs still point at the old destination: %w", err)
 	}
@@ -431,7 +432,8 @@ func (s *Service) recordRestores(ctx context.Context) {
 	}
 }
 
-// backupsChanged tells the open pages of the app.
+// backupsChanged tells the open pages of the app, and the needs-you list.
 func (s *Service) backupsChanged(appID string) {
 	s.publish(Change{AppID: appID, What: ChangeDeployments})
+	s.publish(Change{What: ChangeAttention})
 }
