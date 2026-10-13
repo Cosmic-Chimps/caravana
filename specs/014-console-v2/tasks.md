@@ -102,7 +102,7 @@ Files: `internal/deploy/copies.go`, `internal/deploy/copies_test.go`,
 **⟶ Wait for Wave 2, then:**
 
 - [X] T014 [P] [US5] Parity: `"GET /parts/attention": {ops: ["listAttention"]}`; `"GET /apps"` and `"GET /live"` add `listAttention` · internal/api/parity_test.go
-- [ ] T015 [P] [US5] Lab step (research R8, R13): deploy a lab app with a health path that 404s, wait for reverted, `GET /v1/attention` has a `deploy_failed` item and `/parts/attention` shows it; deploy it fixed, the item is gone. Then a busybox service with `memoryMB: 16, memoryMaxMB: 24` running `sh -c 'head -c 64m /dev/zero | tail'`: within 60 s its copy has `outOfMemory: true` and an `out_of_memory` item exists (if Nomad's list stub has no events, fall back as research R8 says and note it in research.md) · cmd/caravana/console_lab_test.go
+- [X] T015 [P] [US5] Lab step (research R8, R13): deploy a lab app with a health path that 404s, wait for reverted, `GET /v1/attention` has a `deploy_failed` item and `/parts/attention` shows it; deploy it fixed, the item is gone. Then a busybox service with `memoryMB: 16, memoryMaxMB: 24` running `sh -c 'head -c 64m /dev/zero | tail'`: within 60 s its copy has `outOfMemory: true` and an `out_of_memory` item exists (if Nomad's list stub has no events, fall back as research R8 says and note it in research.md) · cmd/caravana/console_lab_test.go
 
 **Checkpoint**: US5 works in the API and the console.
 

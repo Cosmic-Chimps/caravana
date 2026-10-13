@@ -162,10 +162,19 @@ allocation list Nomad already returns (`AllocationListStub.TaskStates` carries t
 no extra request. The API's `Copy` gains `lastRestartAt` and `outOfMemory`; the Running tab
 shows "ran out of memory" on such a copy.
 
-To verify in the lab during implementation: a service with `memoryMaxMB: 32` running a process
-that allocates 64 MB shows `oom_killed` on its event. If the stub ever lacks events, the
-fallback is the event's `DisplayMessage` "OOM Killed" from `Allocations().Info` for copies with
-restarts only.
+**Verified in the lab** (`TestConsoleLab`, step `console-needs-you`, Nomad 2.x with the Docker
+driver, 2026-10-13): a busybox service with `memoryMB: 16`, `memoryMaxMB: 24` running
+`head -c 64m /dev/zero | tail` is killed by the kernel, and within seconds the allocation *list*
+(`GET /v1/allocations`, which is all `AllCopies` reads) carries the service task's events with
+`Details["oom_killed"] == "true"` on the `Terminated` event, so the API's `listCopies` says
+`outOfMemory: true` and `listAttention` has the `out_of_memory` item. No fallback is needed and no
+extra request is made. (If a future Nomad drops events from the stub, the fallback is the event's
+`DisplayMessage` "OOM Killed" from `Allocations().Info`, for copies with restarts only.)
+
+One consequence to know: with no restart policy in the job, Nomad's default is two restarts and
+then the copy fails and is replaced. A copy that has failed is terminal and gives no item (data
+model: non-terminal copies only), so a service that is killed in a loop shows the item while a
+copy is alive and between its kills, not while all of its copies are in the failed state.
 
 ## R9. The "needs you" list: derived, not stored
 

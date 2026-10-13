@@ -88,6 +88,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-secrets", c.secrets},
 		{"console-edit", c.edit},
 		{"console-redeploy-version", c.redeployVersion},
+		{"console-needs-you", c.needsYou},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -392,6 +393,180 @@ func (c *console) redeployVersion(t *testing.T) {
 		t.Errorf("the stored app still has the later image %s", stored.App.Services[0].Image)
 	}
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
+}
+
+// attentionItem is the part of an AttentionItem of GET /v1/attention these
+// steps read.
+type attentionItem struct {
+	Kind         string   `json:"kind"`
+	AppID        string   `json:"appId"`
+	Service      string   `json:"service"`
+	Copies       []string `json:"copies"`
+	DeploymentID string   `json:"deploymentId"`
+	Detail       string   `json:"detail"`
+}
+
+// attention reads the needs-you list through the API, as the Apps page's twin.
+func (c *console) attention(t *testing.T) (items []attentionItem, copiesUnknown bool) {
+	t.Helper()
+	var list struct {
+		Items         []attentionItem `json:"items"`
+		CopiesUnknown bool            `json:"copiesUnknown"`
+	}
+	c.g.getJSON(t, "/v1/attention", &list)
+	return list.Items, list.CopiesUnknown
+}
+
+// attentionOf finds the item of that kind for that app.
+func attentionOf(items []attentionItem, kind, appID string) (attentionItem, bool) {
+	for _, it := range items {
+		if it.Kind == kind && it.AppID == appID {
+			return it, true
+		}
+	}
+	return attentionItem{}, false
+}
+
+// needsYou: the needs-you list (feature 014, US5) against real Nomad.
+//
+// A deploy of an image that doesn't exist fails before anything is
+// registered, which is quick; a health check that can't pass takes Nomad's
+// 10 minute progress deadline to end "reverted", which the unit tests cover
+// (the console says "was reverted" for those). The failed deploy puts a
+// deploy_failed item on the API's list and on /parts/attention, with a link
+// to the deployment, and the live stream of the Apps page says "attention";
+// a working deploy after it takes the item away.
+//
+// Then a service that eats memory past its ceiling is killed by the kernel:
+// within 60 s its copy says outOfMemory (the oom_killed event comes in the
+// allocation list, research R8) and the list has an out_of_memory item.
+func (c *console) needsYou(t *testing.T) {
+	events := c.events
+	defer func() { c.events = events }() // the app page's stream, which deleteApp reads
+	c.openLive(t, "/live")
+	c.expectEvent(t, "sync", 5*time.Second)
+
+	c.prev = c.summary(t).LastDeployment.ID
+	resp, body := c.post(t, "/apps/whoami/deploy", url.Values{"image.whoami": {"traefik/whoami:does-not-exist"}})
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("POST /apps/whoami/deploy with a missing tag = %d, want 422: %s", resp.StatusCode, body)
+	}
+	c.expectEvent(t, "attention", 30*time.Second)
+	failed := c.summary(t).LastDeployment
+	if failed == nil || failed.ID == c.prev || failed.Status != "failed" {
+		t.Fatalf("whoami's newest deployment = %+v, want a new failed one", failed)
+	}
+
+	var item attentionItem
+	waitFor(t, "a deploy_failed item for whoami", 30*time.Second, func() bool {
+		items, _ := c.attention(t)
+		var ok bool
+		item, ok = attentionOf(items, "deploy_failed", "whoami")
+		return ok
+	})
+	if item.DeploymentID != failed.ID || !strings.Contains(item.Detail, "does-not-exist") {
+		t.Errorf("deploy_failed item = %+v, want the failed deployment %s and its error", item, failed.ID)
+	}
+	_, part := c.get(t, "/parts/attention")
+	for _, want := range []string{"deploy failed", `href="/apps/whoami/deployments#deployment-` + failed.ID + `"`} {
+		if !strings.Contains(part, want) {
+			t.Errorf("/parts/attention lacks %q:\n%s", want, part)
+		}
+	}
+	if _, apps := c.get(t, "/apps"); !strings.Contains(apps, "whoami") || !strings.Contains(apps, "needs you") {
+		t.Errorf("the Apps page doesn't say whoami needs you")
+	}
+
+	// A working deploy takes it away, with nothing done to the item.
+	c.prev = failed.ID
+	resp, body = c.post(t, "/apps/whoami/deploy", url.Values{"image.whoami": {"traefik/whoami:latest"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /apps/whoami/deploy = %d, want 303: %s", resp.StatusCode, body)
+	}
+	c.waitDeployment(t, 3*time.Minute, failed.ID)
+	waitFor(t, "the deploy_failed item to be gone", 30*time.Second, func() bool {
+		items, _ := c.attention(t)
+		_, still := attentionOf(items, "deploy_failed", "whoami")
+		return !still
+	})
+	if _, part := c.get(t, "/parts/attention"); strings.Contains(part, failed.ID) {
+		t.Errorf("/parts/attention still links to the failed deployment %s:\n%s", failed.ID, part)
+	}
+	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
+
+	// Out of memory. With no restart policy in the job, Nomad's default is
+	// two restarts, then the copy fails and is replaced, so the copy is there
+	// as running (not ended) only part of the time: the check reads the copy
+	// and the list in one go, and tries again until both agree.
+	oomer := `{"source": {"kind": "image"}, "services": [{
+	  "name": "hog", "image": "busybox:1.37", "command": "sh", "args": ["-c", "head -c 64m /dev/zero | tail"],
+	  "resources": {"memoryMB": 16, "memoryMaxMB": 24}}]}`
+	resp = c.g.api(t, http.MethodPost, "/v1/apps/oomer/deployments", "application/json", oomer)
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("deploy the memory hog = %d: %s", resp.StatusCode, raw)
+	}
+	t.Cleanup(func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/apps/oomer", "", ""); err == nil {
+			resp.Body.Close()
+		}
+	})
+
+	var killed struct {
+		ID, Status    string
+		OutOfMemory   bool   `json:"outOfMemory"`
+		LastRestartAt string `json:"lastRestartAt"`
+	}
+	var oom attentionItem
+	var attentionPart string
+	found := waitUntil(60*time.Second, func() bool {
+		var copies struct {
+			Copies []struct {
+				ID, Status    string
+				OutOfMemory   bool   `json:"outOfMemory"`
+				LastRestartAt string `json:"lastRestartAt"`
+			} `json:"copies"`
+		}
+		resp, err := c.g.apiRequest(http.MethodGet, "/v1/apps/oomer/copies", "", "")
+		if err != nil {
+			return false
+		}
+		err = json.NewDecoder(resp.Body).Decode(&copies)
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			return false
+		}
+		for _, cp := range copies.Copies {
+			if cp.OutOfMemory && cp.Status != "failed" && cp.Status != "stopped" {
+				killed = cp
+			}
+		}
+		if !killed.OutOfMemory {
+			return false
+		}
+		items, _ := c.attention(t)
+		var ok bool
+		oom, ok = attentionOf(items, "out_of_memory", "oomer")
+		if ok {
+			_, attentionPart = c.get(t, "/parts/attention")
+		}
+		return ok
+	})
+	if !found {
+		t.Fatalf("within 60 s the memory hog's copy never showed outOfMemory with an out_of_memory item (last copy: %+v)", killed)
+	}
+	if oom.Service != "hog" || len(oom.Copies) == 0 || killed.LastRestartAt == "" {
+		t.Errorf("out_of_memory item = %+v, copy = %+v; want service hog, its copies, and a last restart time", oom, killed)
+	}
+	for _, want := range []string{"oomer/hog", "ran out of memory.", `href="/apps/oomer/configure#svc-hog-memory"`} {
+		if !strings.Contains(attentionPart, want) {
+			t.Errorf("/parts/attention lacks %q:\n%s", want, attentionPart)
+		}
+	}
+	if _, running := c.get(t, "/parts/apps/oomer/copies"); !strings.Contains(running, "ran out of memory") {
+		t.Errorf("the Running tab's copies don't say a copy ran out of memory:\n%s", running)
+	}
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends
