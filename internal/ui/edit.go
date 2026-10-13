@@ -99,7 +99,7 @@ type inputSpec struct {
 var inputSpecs = []inputSpec{
 	{Name: "image", Label: "Image", Wide: true},
 	{Name: "env", Label: "Environment", Area: true, Wide: true,
-		Hint: "One NAME=value per line. Lines starting with # are ignored. This list replaces the current one."},
+		Hint: "One NAME=value per line. Lines starting with # are ignored. This list replaces the current one. Values show here; put passwords and keys in Secrets."},
 	{Name: "port", Numeric: true, Label: "Container port"},
 	{Name: "domains", Label: "Domains", Area: true, Wide: true, Hint: "One host per line. HTTPS is set up for each."},
 	{Name: "copies", Numeric: true, Label: "Copies", Placeholder: "1"},
