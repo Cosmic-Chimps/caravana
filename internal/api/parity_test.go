@@ -29,9 +29,9 @@ var consoleParity = map[string]parity{
 	"GET /apps/new":  {why: "a blank form; creating the app is POST /apps"},
 	"GET /account":   {why: "a redirect to /settings"},
 	"GET /static/":   {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":      {ops: []string{"listApps", "listRecentDeployments"}}, // notices that these two changed
+	"GET /live":      {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
 	"GET /settings":  {ops: []string{"listTokens"}},
-	"GET /apps":      {ops: []string{"listApps"}},
+	"GET /apps":      {ops: []string{"listApps", "listAttention"}},
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
@@ -41,6 +41,7 @@ var consoleParity = map[string]parity{
 
 	"GET /parts/apps":                  {ops: []string{"listApps"}},
 	"GET /parts/activity":              {ops: []string{"listRecentDeployments"}},
+	"GET /parts/attention":             {ops: []string{"listAttention"}},
 	"GET /parts/apps/{id}/header":      {ops: []string{"getApp"}},
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
 	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
