@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -107,9 +108,54 @@ func deploymentPath(appID, deploymentID string) string {
 	return "/v1/apps/" + appID + "/deployments/" + deploymentID
 }
 
+// ifMatch reads the optional If-Match header of a deploy: the revision the
+// client read (from getApp's ETag), as the service's condition. The value is
+// one quoted revision; a weak tag (W/"x") counts as the same revision. An
+// absent header is no condition. Anything else (a list, an unquoted value,
+// `*`) is 400 naming the header, so a client never believes it is protected
+// when it isn't.
+func ifMatch(r *http.Request) (service.Condition, error) {
+	values := r.Header.Values("If-Match")
+	if len(values) == 0 {
+		return service.Condition{}, nil
+	}
+	bad := func(msg string) error {
+		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "If-Match", Message: msg}
+	}
+	if len(values) > 1 {
+		return service.Condition{}, bad("send one revision, as getApp's ETag gives it")
+	}
+	tag := strings.TrimPrefix(strings.TrimSpace(values[0]), "W/")
+	quoted := len(tag) >= 2 && tag[0] == '"' && tag[len(tag)-1] == '"'
+	rev := strings.Trim(tag, `"`)
+	if !quoted || rev == "" || strings.ContainsAny(rev, `",`) {
+		return service.Condition{}, bad(`must be one quoted revision, like "0123456789abcdef"`)
+	}
+	return service.Condition{IfRevision: rev}, nil
+}
+
+// ifNoneMatch reads the optional If-None-Match header of a create: only `*`
+// (create only if the ID is free) is allowed; any other value is 400 naming
+// the header.
+func ifNoneMatch(r *http.Request) (bool, error) {
+	values := r.Header.Values("If-None-Match")
+	if len(values) == 0 {
+		return false, nil
+	}
+	if len(values) > 1 || strings.TrimSpace(values[0]) != "*" {
+		return false, &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "If-None-Match",
+			Message: "only * is supported (create only if the app doesn't exist)"}
+	}
+	return true, nil
+}
+
 // deploy answers POST /v1/apps/{id}/deployments. With a body it saves and
 // deploys the app; with an empty body it redeploys the stored one. It answers
 // 202 once Nomad has accepted the job; the client follows the Location.
+//
+// With a body, an If-Match header makes the save conditional on the stored
+// app's revision (412 app_changed when it moved). Without a body the header
+// is ignored: a redeploy changes no definition, so there is nothing to protect.
 func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 	// Best effort: a writer that can't change deadlines keeps the server's.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
@@ -123,6 +169,10 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 
 	var rec store.DeploymentRecord
 	if present {
+		var cond service.Condition
+		if cond, err = ifMatch(r); err != nil {
+			return err
+		}
 		switch a.ID {
 		case "":
 			a.ID = id
@@ -131,7 +181,7 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 			return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "id",
 				Message: fmt.Sprintf("%q doesn't match the app ID in the path (%q)", a.ID, id)}
 		}
-		rec, err = s.svc.Deploy(r.Context(), a, app.TriggerManual)
+		rec, err = s.svc.DeployIf(r.Context(), a, cond, app.TriggerManual)
 	} else {
 		rec, err = s.svc.Redeploy(r.Context(), id, app.TriggerManual)
 	}

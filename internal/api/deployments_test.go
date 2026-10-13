@@ -141,6 +141,158 @@ func TestDeployEndpoint(t *testing.T) {
 	})
 }
 
+// callHeaders is call with extra request headers. A key may be given more
+// than once, as a client sending two header lines would.
+func callHeaders(t *testing.T, method, url, body string, headers [][2]string) (int, http.Header, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for _, h := range headers {
+		req.Header.Add(h[0], h[1])
+	}
+	resp, err := noRedirects.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header, raw
+}
+
+// appRevision reads an app and returns its revision, checking that the ETag
+// header and the body field agree.
+func appRevision(t *testing.T, e *testEnv, appID string) string {
+	t.Helper()
+	status, header, raw := call(t, http.MethodGet, e.URL+"/v1/apps/"+appID, "", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET app %s = %d %s", appID, status, raw)
+	}
+	checkSchema(t, loadContract(t), raw, "AppRecord")
+	rev := decodeAs[struct {
+		Revision string `json:"revision"`
+	}](t, raw).Revision
+	if rev == "" || header.Get("ETag") != `"`+rev+`"` {
+		t.Fatalf("ETag %q, revision %q; want the revision quoted", header.Get("ETag"), rev)
+	}
+	return rev
+}
+
+// Feature 014: getApp names the app's revision, and a deploy with If-Match
+// saves only if it is still current.
+func TestDeployIfMatch(t *testing.T) {
+	post := func(e *testEnv, body string, headers ...[2]string) (int, http.Header, []byte) {
+		return callHeaders(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", body, headers)
+	}
+	ifMatch := func(v string) [2]string { return [2]string{"If-Match", v} }
+	// edited is whoamiBody with a longer health timeout: a real change the fake registry can deploy.
+	edited := strings.Replace(whoamiBody, `"2s"`, `"3s"`, 1)
+
+	t.Run("the current revision deploys the edit", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		deployOK(t, e, "whoami", whoamiBody)
+		rev := appRevision(t, e, "whoami")
+
+		status, _, raw := post(e, edited, ifMatch(`"`+rev+`"`))
+		if status != http.StatusAccepted {
+			t.Fatalf("status %d: %s", status, raw)
+		}
+		if got := appRevision(t, e, "whoami"); got == rev {
+			t.Error("the revision didn't change after an edit")
+		}
+	})
+
+	t.Run("a weak tag is the same revision", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		deployOK(t, e, "whoami", whoamiBody)
+		rev := appRevision(t, e, "whoami")
+		if status, _, raw := post(e, whoamiBody, ifMatch(`W/"`+rev+`"`)); status != http.StatusAccepted {
+			t.Errorf("status %d: %s", status, raw)
+		}
+	})
+
+	t.Run("a redeploy of the same payload keeps the revision", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		deployOK(t, e, "whoami", whoamiBody)
+		rev := appRevision(t, e, "whoami")
+		deployOK(t, e, "whoami", whoamiBody)
+		if got := appRevision(t, e, "whoami"); got != rev {
+			t.Errorf("revision %s after an identical deploy, want %s", got, rev)
+		}
+	})
+
+	t.Run("a stale revision is 412 and deploys nothing", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		deployOK(t, e, "whoami", whoamiBody)
+		rev := appRevision(t, e, "whoami")
+		registrations := e.Nomad.Registrations()
+
+		status, header, raw := post(e, edited, ifMatch(`"0000000000000000"`))
+		if status != http.StatusPreconditionFailed {
+			t.Fatalf("status = %d, want 412 (body %s)", status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "Error")
+		got := decodeAs[errorBody](t, raw).Error
+		if got.Code != "app_changed" || got.Field != "" || !strings.Contains(got.Message, rev) {
+			t.Errorf("error = %+v, want app_changed, no field, naming revision %s", got, rev)
+		}
+		if header.Get("Location") != "" || e.Nomad.Registrations() != registrations {
+			t.Error("a refused deploy left a deployment or a job")
+		}
+		if appRevision(t, e, "whoami") != rev {
+			t.Error("a refused deploy changed the stored app")
+		}
+	})
+
+	t.Run("an unknown app is 404", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		status, _, raw := post(e, whoamiBody, ifMatch(`"0000000000000000"`))
+		if status != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (body %s)", status, raw)
+		}
+		if e.Nomad.Registrations() != 0 {
+			t.Error("a refused deploy registered a job")
+		}
+	})
+
+	t.Run("without a body the header is ignored", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		deployOK(t, e, "whoami", whoamiBody)
+		if status, _, raw := post(e, "", ifMatch(`"0000000000000000"`)); status != http.StatusAccepted {
+			t.Errorf("redeploy with a stale If-Match = %d %s, want 202", status, raw)
+		}
+	})
+
+	t.Run("malformed values are 400 naming the header", func(t *testing.T) {
+		for name, headers := range map[string][][2]string{
+			"unquoted":  {ifMatch("abcdef0123456789")},
+			"star":      {ifMatch("*")},
+			"empty tag": {ifMatch(`""`)},
+			"a list":    {ifMatch(`"a", "b"`)},
+			"two lines": {ifMatch(`"a"`), ifMatch(`"b"`)},
+		} {
+			t.Run(name, func(t *testing.T) {
+				e := newTestEnv(t, "")
+				status, _, raw := post(e, whoamiBody, headers...)
+				if status != http.StatusBadRequest {
+					t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+				}
+				checkSchema(t, loadContract(t), raw, "Error")
+				if got := decodeAs[errorBody](t, raw).Error; got.Code != "invalid_field" || got.Field != "If-Match" {
+					t.Errorf("error = %+v, want invalid_field on If-Match", got)
+				}
+				if e.Nomad.Registrations() != 0 {
+					t.Error("a refused deploy registered a job")
+				}
+			})
+		}
+	})
+}
+
 // US2
 func TestRedeployEndpoint(t *testing.T) {
 	e := newTestEnv(t, "")

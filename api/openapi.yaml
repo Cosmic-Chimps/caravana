@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.10.0
+  version: 0.11.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -153,10 +153,17 @@ paths:
     get:
       operationId: getApp
       summary: Read an app as it was last sent.
+      description: |
+        The answer carries the app's `revision` (also as the `ETag` header): a short name for
+        this exact stored definition. Send it back as `If-Match` on `deployApp` or
+        `deployCompose` to deploy a change only if nobody changed the app since you read it.
       tags: [apps]
       responses:
         "200":
           description: The stored app.
+          headers:
+            ETag:
+              $ref: "#/components/headers/AppETag"
           content:
             application/json:
               schema:
@@ -304,7 +311,15 @@ paths:
         (`services.web.build`). `x-` extensions are ignored. Variables (`${NAME}`) take only the
         file's own defaults. What Compose has no words for (public domains, a health check
         Nomad can run, secret values) goes in `services`, next to the file.
+
+        Two optional preconditions make the save safe against other writers. `If-Match` with the
+        `revision` from `getApp` saves only if the stored app still has it, else `412
+        app_changed` and nothing is saved or deployed. `If-None-Match: *` creates the app only if
+        the ID is free, else `409 app_exists` (`field: "id"`). Sending both is `400`.
       tags: [deployments]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IfNoneMatch"
       requestBody:
         required: true
         content:
@@ -327,8 +342,22 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: '`If-Match` was sent, and no app with this ID is stored.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
-          $ref: "#/components/responses/JobConflict"
+          description: |
+            `app_exists` (`field: "id"`): `If-None-Match: *` was sent and an app with this ID is
+            stored. Or `job_conflict`, as for `deployApp`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "412":
+          $ref: "#/components/responses/AppChanged"
         "413":
           $ref: "#/components/responses/BodyTooLarge"
         "415":
@@ -546,7 +575,13 @@ paths:
         The same body sent twice leaves the stored app unchanged and creates a new deployment
         and a new job version. When two deploys of one app overlap, the one requested last
         wins and the others end `superseded`.
+
+        With a body, `If-Match` with the `revision` from `getApp` saves only if the stored app
+        still has it, else `412 app_changed` and nothing is saved or deployed. Without a body
+        the header is ignored: a redeploy changes no definition.
       tags: [deployments]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
       requestBody:
         required: false
         content:
@@ -575,13 +610,17 @@ paths:
         "403":
           $ref: "#/components/responses/CrossOrigin"
         "404":
-          description: Empty body, and no app with this ID is stored.
+          description: |
+            Empty body, and no app with this ID is stored; or a body with `If-Match`, and no app
+            with this ID is stored.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
           $ref: "#/components/responses/JobConflict"
+        "412":
+          $ref: "#/components/responses/AppChanged"
         "413":
           $ref: "#/components/responses/BodyTooLarge"
         "415":
@@ -1018,6 +1057,29 @@ components:
       examples:
         whoami:
           value: whoami
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        One quoted revision, as `getApp` returns it in `ETag` (a weak `W/"…"` tag is treated the
+        same). The deploy saves only if the stored app still has this revision, else `412
+        app_changed`. A list, an unquoted value or `*` is `400 invalid_field` with `field`
+        `If-Match`.
+      schema:
+        type: string
+        examples: ['"0123456789abcdef"']
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |
+        Only `*`: create the app only if no app has this ID, else `409 app_exists`. Any other
+        value is `400 invalid_field` with `field` `If-None-Match`, as is sending it with
+        `If-Match`.
+      schema:
+        type: string
+        enum: ["*"]
     TokenID:
       name: tokenId
       in: path
@@ -1050,6 +1112,11 @@ components:
       description: "The app's webhook token as `?token=cvwh_…`, for senders that only take a URL."
 
   headers:
+    AppETag:
+      description: The app's `revision` in quotes, for `If-Match`.
+      schema:
+        type: string
+        examples: ['"0123456789abcdef"']
     DeploymentLocation:
       description: The deployment's URL, `/v1/apps/{id}/deployments/{deploymentId}`.
       schema:
@@ -1440,12 +1507,20 @@ components:
     AppRecord:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt]
+      required: [app, createdAt, updatedAt, revision]
       properties:
         app:
           $ref: "#/components/schemas/App"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        revision:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          description: |
+            Names this exact stored definition: it changes whenever the app is saved with a
+            change, and stays the same when it is saved unchanged. Send it as `If-Match` to
+            deploy only if the app is still as you read it.
+          examples: ["0123456789abcdef"]
 
     AppSummary:
       type: object
@@ -1709,7 +1784,8 @@ components:
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
-                `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`.
+                `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
+                `app_changed`.
               examples: [invalid_field]
             message:
               type: string
@@ -1853,6 +1929,15 @@ components:
       description: |
         `backup_running`: a backup or restore of this service is running; try again when it
         ends. `no_backup_destination`: no backup destination is set.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AppChanged:
+      description: |
+        `app_changed`: `If-Match` was sent and the stored app's revision differs, so someone
+        saved a change since the client read it. Nothing was saved or deployed. The message
+        names the app's current revision; read the app again (`getApp`) and decide.
       content:
         application/json:
           schema:

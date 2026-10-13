@@ -53,6 +53,97 @@ func TestDeployComposeEndpoint(t *testing.T) {
 	checkSchema(t, loadContract(t), raw, "AppRecord")
 }
 
+// Feature 014: deployCompose with If-None-Match: * creates only, with
+// If-Match edits only.
+func TestDeployComposeConditions(t *testing.T) {
+	post := func(e *testEnv, headers ...[2]string) (int, http.Header, []byte) {
+		return callHeaders(t, http.MethodPost, e.URL+"/v1/apps/whoami/compose", composeBody(t, whoamiCompose, nil), headers)
+	}
+	header := func(k, v string) [2]string { return [2]string{k, v} }
+	errorOf := func(t *testing.T, raw []byte) errorBody {
+		t.Helper()
+		checkSchema(t, loadContract(t), raw, "Error")
+		return decodeAs[errorBody](t, raw)
+	}
+
+	t.Run("If-None-Match creates, then refuses a taken ID", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		if status, _, raw := post(e, header("If-None-Match", "*")); status != http.StatusAccepted {
+			t.Fatalf("create: status %d: %s", status, raw)
+		}
+		registrations := e.Nomad.Registrations()
+		rev := appRevision(t, e, "whoami")
+
+		status, header, raw := post(e, header("If-None-Match", "*"))
+		if status != http.StatusConflict {
+			t.Fatalf("second create: status = %d, want 409 (body %s)", status, raw)
+		}
+		if got := errorOf(t, raw).Error; got.Code != "app_exists" || got.Field != "id" {
+			t.Errorf("error = %+v, want app_exists on id", got)
+		}
+		if header.Get("Location") != "" || e.Nomad.Registrations() != registrations || appRevision(t, e, "whoami") != rev {
+			t.Error("a refused create changed something")
+		}
+	})
+
+	t.Run("If-Match", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		if status, _, raw := post(e); status != http.StatusAccepted {
+			t.Fatalf("deploy: status %d: %s", status, raw)
+		}
+		rev := appRevision(t, e, "whoami")
+		registrations := e.Nomad.Registrations()
+
+		status, _, raw := post(e, header("If-Match", `"0000000000000000"`))
+		if status != http.StatusPreconditionFailed {
+			t.Fatalf("stale: status = %d, want 412 (body %s)", status, raw)
+		}
+		if got := errorOf(t, raw).Error; got.Code != "app_changed" || !strings.Contains(got.Message, rev) {
+			t.Errorf("error = %+v, want app_changed naming %s", got, rev)
+		}
+		if e.Nomad.Registrations() != registrations {
+			t.Error("a refused deploy registered a job")
+		}
+		if status, _, raw := post(e, header("If-Match", `"`+rev+`"`)); status != http.StatusAccepted {
+			t.Errorf("current: status %d: %s", status, raw)
+		}
+	})
+
+	t.Run("If-Match on an unknown app is 404", func(t *testing.T) {
+		e := newTestEnv(t, "")
+		status, _, raw := post(e, header("If-Match", `"0000000000000000"`))
+		if status != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (body %s)", status, raw)
+		}
+	})
+
+	t.Run("bad headers are 400 naming the header", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			headers   [][2]string
+			wantField string
+		}{
+			"both":                {[][2]string{header("If-Match", `"a"`), header("If-None-Match", "*")}, "If-None-Match"},
+			"If-None-Match value": {[][2]string{header("If-None-Match", `"a"`)}, "If-None-Match"},
+			"If-None-Match list":  {[][2]string{header("If-None-Match", "*, *")}, "If-None-Match"},
+			"If-Match unquoted":   {[][2]string{header("If-Match", "a")}, "If-Match"},
+		} {
+			t.Run(name, func(t *testing.T) {
+				e := newTestEnv(t, "")
+				status, _, raw := post(e, tc.headers...)
+				if status != http.StatusBadRequest {
+					t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+				}
+				if got := errorOf(t, raw).Error; got.Code != "invalid_field" || got.Field != tc.wantField {
+					t.Errorf("error = %+v, want invalid_field on %s", got, tc.wantField)
+				}
+				if e.Nomad.Registrations() != 0 {
+					t.Error("a refused deploy registered a job")
+				}
+			})
+		}
+	})
+}
+
 // FR-002: preview answers the app and warnings, saves nothing, and never
 // echoes a secret value.
 func TestPreviewComposeEndpoint(t *testing.T) {

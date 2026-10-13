@@ -14,15 +14,20 @@ type appRecordJSON struct {
 	App       app.App   `json:"app"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Revision names this exact stored app; a client sends it back as
+	// If-Match to deploy a change only if nobody changed the app meanwhile.
+	Revision string `json:"revision"`
 }
 
-// getApp answers GET /v1/apps/{id}: the app as it was last sent.
+// getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
+// revision as the ETag header and as a field.
 func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 	rec, err := s.svc.GetApp(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt})
+	w.Header().Set("ETag", `"`+rec.Revision+`"`)
+	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision})
 	return nil
 }
 

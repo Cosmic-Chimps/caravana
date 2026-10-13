@@ -31,6 +31,7 @@ const (
 	codeDeploymentNotHealthy  = "deployment_not_healthy"
 	codeDefinitionNotRecorded = "definition_not_recorded"
 	codeNoLiveDeployment      = "no_live_deployment"
+	codeAppChanged            = "app_changed"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with
