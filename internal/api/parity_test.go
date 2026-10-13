@@ -48,6 +48,8 @@ var consoleParity = map[string]parity{
 	// What the console changes.
 	"POST /apps":             {ops: []string{"createApp"}},
 	"POST /apps/{id}/deploy": {ops: []string{"deployApp"}},
+	// The edit form (feature 014): getApp gives the revision, deployApp with If-Match saves the change.
+	"POST /apps/{id}/configure": {ops: []string{"getApp", "deployApp"}},
 	// Past versions (feature 011).
 	"POST /apps/{id}/deployments/{deploymentId}/redeploy": {ops: []string{"redeployDeployment"}},
 	"GET /apps/{id}/deployments/{deploymentId}/jobspec":   {ops: []string{"exportDeployment"}},
@@ -72,7 +74,7 @@ var consoleParity = map[string]parity{
 // TestConsoleParity fails when the console has a route the table doesn't know
 // (so nobody checked it has an API twin), when the table names an operation the
 // contract doesn't have or one of the wrong kind (a page that changes data
-// must be backed by a call that changes it), or when the table keeps a route
+// must be backed by a call that changes it, and may read besides), or when the table keeps a route
 // the console no longer serves.
 func TestConsoleParity(t *testing.T) {
 	doc := loadContract(t)
@@ -99,16 +101,21 @@ func TestConsoleParity(t *testing.T) {
 		if changes && len(p.ops) == 0 && key != "POST /login" && key != "POST /logout" {
 			t.Errorf("%s changes data but names no API operation", key)
 		}
+		// A page that changes data may also read (the edit form reads the
+		// app's revision with getApp), but one of its operations must change it.
+		writes := false
 		for _, op := range p.ops {
 			method, found := methodOf[op]
 			switch {
 			case !found:
 				t.Errorf("%s names operation %q, which api/openapi.yaml doesn't have", key, op)
-			case changes && method == "GET":
-				t.Errorf("%s changes data, but %s is a GET", key, op)
 			case !changes && method != "GET":
 				t.Errorf("%s only reads, but %s is a %s", key, op, method)
 			}
+			writes = writes || found && method != "GET"
+		}
+		if changes && len(p.ops) > 0 && !writes {
+			t.Errorf("%s changes data, but all of its operations (%v) are GETs", key, p.ops)
 		}
 	}
 

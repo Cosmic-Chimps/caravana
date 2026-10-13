@@ -63,7 +63,7 @@ Files: `internal/ui/edit.go`, `internal/ui/edit_test.go`, `internal/ui/merge.go`
 
 **⟶ Wait for T006, then:**
 
-- [ ] T007 [P] [US1] Parity: `"POST /apps/{id}/configure": {ops: []string{"getApp", "deployApp"}}` · internal/api/parity_test.go
+- [X] T007 [P] [US1] Parity: `"POST /apps/{id}/configure": {ops: []string{"getApp", "deployApp"}}` · internal/api/parity_test.go
 - [ ] T008 [P] [US1] Lab step in `TestConsoleLab` (research R13): through the console's HTTP forms, edit a lab app's env and memory, follow the deployment to healthy, check Nomad's job has the new env and memory and the stored app kept its volume; a second post with the old revision gets 409 and registers nothing · cmd/caravana/console_lab_test.go
 
 **Checkpoint**: US1 works end to end; this alone is shippable.
