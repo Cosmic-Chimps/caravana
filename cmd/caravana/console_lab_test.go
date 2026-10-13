@@ -14,10 +14,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +86,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-reads", c.reads},
 		{"console-deploy-changed", c.deployChanged},
 		{"console-secrets", c.secrets},
+		{"console-edit", c.edit},
 		{"console-redeploy-version", c.redeployVersion},
 		{"console-delete", c.deleteApp},
 	}
@@ -237,6 +240,107 @@ func (c *console) secrets(t *testing.T) {
 	if _, _, err := c.g.target.Nomad.Variables().Read(path, nil); err == nil {
 		t.Errorf("Nomad variable %s is still there after the secret was removed", path)
 	}
+}
+
+// edit: the Configure form (feature 014) changes the environment and the
+// memory of whoami in one save: one deployment that ends healthy, Nomad's job
+// has the new env and memory, and the stored app kept what the form doesn't
+// touch. A second post from the same form, now stale, is refused with 409 and
+// registers nothing. (Volumes and backup are kept by the same merge; a volume
+// needs a host volume plugin, which the unit tests cover.)
+func (c *console) edit(t *testing.T) {
+	value := "edit " + c.g.run
+	_, page := c.get(t, "/apps/whoami/configure")
+	form := editFormValues(t, page)
+	if form.Get("revision") == "" || form.Get("svc.whoami.image") != "traefik/whoami:v1.10" {
+		t.Fatalf("the Configure form = %v, want a revision and the image traefik/whoami:v1.10", form)
+	}
+	stale := url.Values{}
+	for k, v := range form {
+		stale[k] = v
+	}
+
+	form.Set("svc.whoami.env", "CONSOLE_EDIT="+value)
+	form.Set("svc.whoami.memory", "200")
+	form.Set("svc.whoami.memoryMax", "300")
+	c.prev = c.summary(t).LastDeployment.ID
+	resp, body := c.post(t, "/apps/whoami/configure", form)
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/apps/whoami/deployments#deployment-") {
+		t.Fatalf("POST /apps/whoami/configure = %d → %q, want 303 to the new deployment: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+	c.waitDeployment(t, 3*time.Minute, c.prev)
+	deployed := c.summary(t).LastDeployment.ID
+
+	job, _, err := c.g.target.Nomad.Jobs().Info("whoami", nil)
+	if err != nil {
+		t.Fatalf("read Nomad's job: %v", err)
+	}
+	task := job.TaskGroups[0].Tasks[0]
+	if task.Env["CONSOLE_EDIT"] != value || task.Resources == nil || task.Resources.MemoryMB == nil || *task.Resources.MemoryMB != 200 ||
+		task.Resources.MemoryMaxMB == nil || *task.Resources.MemoryMaxMB != 300 {
+		t.Errorf("Nomad's task env = %v, resources = %+v; want CONSOLE_EDIT, 200 MB and a 300 MB ceiling", task.Env, task.Resources)
+	}
+
+	var stored struct {
+		App struct {
+			Services []struct {
+				Image   string                         `json:"image"`
+				Ports   []struct{ ContainerPort int }  `json:"ports"`
+				Domains []struct{ Host string }        `json:"domains"`
+				Health  struct{ Path string }          `json:"health"`
+				Env     []struct{ Name, Value string } `json:"env"`
+			} `json:"services"`
+		} `json:"app"`
+	}
+	c.g.getJSON(t, "/v1/apps/whoami", &stored)
+	svc := stored.App.Services[0]
+	if svc.Image != "traefik/whoami:v1.10" || len(svc.Ports) != 1 || svc.Ports[0].ContainerPort != 80 ||
+		len(svc.Domains) != 1 || svc.Domains[0].Host != c.g.target.AppHost || svc.Health.Path != "/" ||
+		len(svc.Env) != 1 || svc.Env[0].Name != "CONSOLE_EDIT" {
+		t.Errorf("stored service = %+v, want the image, port, domain and health check kept and the one env var", svc)
+	}
+	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
+
+	// The form opened before the save is stale now.
+	stale.Set("svc.whoami.env", "SHOULD_NOT=land")
+	resp, body = c.post(t, "/apps/whoami/configure", stale)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "This app changed since you opened the form.") {
+		t.Errorf("POST from a stale form = %d, want 409 with the stale panel", resp.StatusCode)
+	}
+	if got := c.summary(t).LastDeployment.ID; got != deployed {
+		t.Errorf("a stale save started deployment %s, want none after %s", got, deployed)
+	}
+	c.g.getJSON(t, "/v1/apps/whoami", &stored)
+	if env := stored.App.Services[0].Env; len(env) != 1 || env[0].Name != "CONSOLE_EDIT" {
+		t.Errorf("a stale save changed the stored env to %+v", env)
+	}
+}
+
+// editFormValues reads the values of the Configure form from its page, as a
+// browser without script would send them: every named input and textarea.
+func editFormValues(t *testing.T, page string) url.Values {
+	t.Helper()
+	m := regexp.MustCompile(`(?s)<form id="edit-form"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no edit form on the Configure page:\n%s", page)
+	}
+	attr := func(tag, name string) string {
+		v := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
+		if v == nil {
+			return ""
+		}
+		return html.UnescapeString(v[1])
+	}
+	values := url.Values{}
+	for _, in := range regexp.MustCompile(`<input\b[^>]*>`).FindAllString(m[1], -1) {
+		if name := attr(in, "name"); name != "" {
+			values.Set(name, attr(in, "value"))
+		}
+	}
+	for _, ta := range regexp.MustCompile(`(?s)<textarea\b([^>]*)>(.*?)</textarea>`).FindAllStringSubmatch(m[1], -1) {
+		values.Set(attr(ta[1], "name"), strings.TrimPrefix(html.UnescapeString(ta[2]), "\n"))
+	}
+	return values
 }
 
 // redeployVersion: the history's "Redeploy this version" on the first healthy
