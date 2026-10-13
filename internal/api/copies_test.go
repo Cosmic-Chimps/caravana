@@ -27,6 +27,8 @@ type copyBody struct {
 	Restarts    int     `json:"restarts"`
 	StartedAt   *string `json:"startedAt"`
 	Description string  `json:"description"`
+	LastRestart *string `json:"lastRestartAt"`
+	OutOfMemory bool    `json:"outOfMemory"`
 }
 
 // US4: the Running tab's twin.
@@ -37,7 +39,8 @@ func TestListCopies(t *testing.T) {
 	e.Nomad.SetCopies("whoami",
 		api.AllocationListStub{ID: "a1", TaskGroup: "web", JobVersion: 7, ClientStatus: "running", NodeName: "node-1",
 			ClientDescription: "Tasks are running",
-			TaskStates:        map[string]*api.TaskState{"web": {Restarts: 2, StartedAt: started}}},
+			TaskStates: map[string]*api.TaskState{"web": {Restarts: 2, StartedAt: started, LastRestart: started.Add(time.Minute),
+				Events: []*api.TaskEvent{{Type: api.TaskTerminated, Details: map[string]string{"oom_killed": "true"}}}}}},
 		api.AllocationListStub{ID: "a2", TaskGroup: "web", JobVersion: 7, ClientStatus: "pending", NodeName: "node-2"},
 		api.AllocationListStub{ID: "a0", TaskGroup: "web", JobVersion: 6, ClientStatus: "failed", NodeName: "node-1"})
 
@@ -56,10 +59,11 @@ func TestListCopies(t *testing.T) {
 	}
 	first := got[0]
 	if first.Service != "web" || first.Node != "node-1" || first.Version != 7 || first.Status != "healthy" || first.Restarts != 2 ||
-		first.Description != "Tasks are running" || first.StartedAt == nil || *first.StartedAt != "2026-10-04T09:05:00Z" {
+		first.Description != "Tasks are running" || first.StartedAt == nil || *first.StartedAt != "2026-10-04T09:05:00Z" ||
+		first.LastRestart == nil || *first.LastRestart != "2026-10-04T09:06:00Z" || !first.OutOfMemory {
 		t.Errorf("first copy = %+v", first)
 	}
-	if second := got[1]; second.Status != "starting" || second.StartedAt != nil {
+	if second := got[1]; second.Status != "starting" || second.StartedAt != nil || second.LastRestart != nil || second.OutOfMemory {
 		t.Errorf("second copy = %+v, want starting with no start time", second)
 	}
 

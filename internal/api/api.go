@@ -58,6 +58,7 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps", s.listApps, false, false},
 		{http.MethodPost, "/v1/apps", s.createApp, false, false},
 		{http.MethodGet, "/v1/deployments", s.listRecentDeployments, false, false},
+		{http.MethodGet, "/v1/attention", s.listAttention, false, false},
 		{http.MethodGet, "/v1/apps/{id}", s.getApp, false, false},
 		{http.MethodDelete, "/v1/apps/{id}", s.deleteApp, false, false},
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},

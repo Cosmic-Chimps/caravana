@@ -147,6 +147,35 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/attention:
+    get:
+      operationId: listAttention
+      summary: List what needs the owner.
+      description: |
+        The "needs you" list the console's home shows, newest first: an app whose latest deploy
+        failed or was reverted, a copy that ran out of memory, keeps restarting or fails its
+        health check, a service whose latest backup or restore failed, and backups asked for
+        with no backup destination. It is computed on each call and nothing is stored: an item
+        is there while its condition is. Copies of the job version a failed deployment
+        registered add no items of their own, and copies of one service with the same problem
+        are one item.
+
+        When Nomad can't be read the answer is still 200 with `copiesUnknown: true`, and only
+        the kinds that come from Caravana's own records (`deploy_failed`, `backup_failed`,
+        `restore_failed`, `no_backup_destination`) are listed.
+      tags: [apps]
+      responses:
+        "200":
+          description: What needs the owner; empty when nothing does.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Attention"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -1564,7 +1593,7 @@ components:
     Copy:
       type: object
       additionalProperties: false
-      required: [id, service, node, version, status, restarts]
+      required: [id, service, node, version, status, restarts, outOfMemory]
       properties:
         id:
           type: string
@@ -1591,6 +1620,15 @@ components:
         description:
           type: string
           description: Nomad's own description of the copy's state, e.g. `Tasks are running`.
+        lastRestartAt:
+          type: string
+          format: date-time
+          description: When any of the copy's tasks last restarted. Absent if none has.
+        outOfMemory:
+          type: boolean
+          description: |
+            The service's last stop was the kernel killing it for passing its memory ceiling
+            (`memoryMaxMB`).
 
     CopyList:
       type: object
@@ -1601,6 +1639,60 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Copy"
+
+    Attention:
+      type: object
+      additionalProperties: false
+      required: [items, copiesUnknown]
+      properties:
+        items:
+          type: array
+          description: Newest first.
+          items:
+            $ref: "#/components/schemas/AttentionItem"
+        copiesUnknown:
+          type: boolean
+          description: |
+            True when Nomad couldn't be read: the copy kinds (`out_of_memory`, `restarting`,
+            `unhealthy`) may be missing.
+
+    AttentionItem:
+      type: object
+      additionalProperties: false
+      required: [kind, at]
+      properties:
+        kind:
+          type: string
+          enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination]
+          description: What needs a person.
+        appId:
+          type: string
+          description: Absent for `no_backup_destination`, which is about the installation.
+        service:
+          type: string
+          description: The service, for the copy and backup kinds.
+        copies:
+          type: array
+          items:
+            type: string
+          description: The IDs of the copies it is about (from `listCopies`), for the copy kinds.
+        deploymentId:
+          type: string
+          description: The deployment, for `deploy_failed`.
+        jobVersion:
+          type: integer
+          minimum: 0
+          description: The deployment's job version, for `deploy_failed`, when it was registered.
+        at:
+          type: string
+          format: date-time
+          description: |
+            When it happened: the deployment's end, the copy's last restart (an unhealthy copy:
+            its start), the backup's or restore's end, or the newest change to an app that asks
+            for backups.
+        detail:
+          type: string
+          description: The raw fact, e.g. Nomad's description or the error of the deploy or backup.
 
     LogLine:
       type: object

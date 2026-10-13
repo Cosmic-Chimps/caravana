@@ -24,11 +24,14 @@ type copyJSON struct {
 	Restarts    int        `json:"restarts"`
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	Description string     `json:"description,omitempty"`
+	LastRestart *time.Time `json:"lastRestartAt,omitempty"`
+	OutOfMemory bool       `json:"outOfMemory"`
 }
 
 func toCopyJSON(c service.Copy) copyJSON {
 	return copyJSON{ID: c.ID, Service: c.Service, Node: c.Node, Version: c.Version, Status: string(c.Status),
-		Restarts: c.Restarts, StartedAt: c.StartedAt, Description: c.Description}
+		Restarts: c.Restarts, StartedAt: c.StartedAt, Description: c.Description,
+		LastRestart: c.LastRestart, OutOfMemory: c.OutOfMemory}
 }
 
 // listCopies answers GET /v1/apps/{id}/copies: the app's copies, as the
