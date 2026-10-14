@@ -85,6 +85,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-create", c.create},
 		{"console-healthy", c.healthy},
 		{"console-reads", c.reads},
+		{"console-usage", c.usage},
 		{"console-deploy-changed", c.deployChanged},
 		{"console-secrets", c.secrets},
 		{"console-edit", c.edit},
@@ -188,6 +189,74 @@ func (c *console) reads(t *testing.T) {
 		defer resp.Body.Close()
 		return resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&logs) == nil && len(logs.Lines) > 0
 	})
+}
+
+// usage: CPU and memory per copy (feature 014, US4) against real Nomad, with
+// the token of the scoped policy, so a missing capability for the allocation's
+// stats fails here. A running copy of whoami has non-zero memory (its service
+// task's, not the sidecar's), and the reservation is the app's (the defaults,
+// whoami sets none). The Running tab's copies part shows it, and the first
+// answer says which of Nomad's memory measures was used (cgroups v2 reports
+// Usage, v1 RSS) in the test log.
+func (c *console) usage(t *testing.T) {
+	var copies struct {
+		Copies []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Usage  *struct {
+				CPUMHz           *int   `json:"cpuMHz"`
+				MemoryMB         *int   `json:"memoryMB"`
+				CPUReservedMHz   *int   `json:"cpuReservedMHz"`
+				MemoryReservedMB *int   `json:"memoryReservedMB"`
+				MemoryCeilingMB  *int   `json:"memoryCeilingMB"`
+				Error            string `json:"error"`
+			} `json:"usage"`
+		} `json:"copies"`
+	}
+	waitFor(t, "a running copy of whoami with usage", time.Minute, func() bool {
+		copies.Copies = nil
+		c.g.getJSON(t, "/v1/apps/whoami/copies?usage=true", &copies)
+		for _, cp := range copies.Copies {
+			if cp.Status == "healthy" && cp.Usage != nil && cp.Usage.Error == "" && cp.Usage.MemoryMB != nil && *cp.Usage.MemoryMB > 0 {
+				return true
+			}
+		}
+		return false
+	})
+	for _, cp := range copies.Copies {
+		if cp.Status != "healthy" {
+			continue
+		}
+		u := cp.Usage
+		if u == nil || u.Error != "" || u.CPUMHz == nil || u.MemoryMB == nil || *u.MemoryMB <= 0 ||
+			u.CPUReservedMHz == nil || *u.CPUReservedMHz <= 0 || u.MemoryReservedMB == nil || *u.MemoryReservedMB <= 0 ||
+			u.MemoryCeilingMB == nil || *u.MemoryCeilingMB < *u.MemoryReservedMB {
+			t.Errorf("healthy copy %s usage = %+v, want numbers with the app's reservation", cp.ID, u)
+			continue
+		}
+		t.Logf("copy %s: %d MHz, %d MB used; reserved %d MHz, %d MB; ceiling %d MB",
+			cp.ID[:8], *u.CPUMHz, *u.MemoryMB, *u.CPUReservedMHz, *u.MemoryReservedMB, *u.MemoryCeilingMB)
+	}
+
+	// Without the parameter Nomad isn't asked for usage and the copy has none.
+	var plain struct {
+		Copies []struct {
+			Usage *struct{} `json:"usage"`
+		} `json:"copies"`
+	}
+	c.g.getJSON(t, "/v1/apps/whoami/copies", &plain)
+	for _, cp := range plain.Copies {
+		if cp.Usage != nil {
+			t.Errorf("listCopies without usage=true has usage: %+v", cp)
+		}
+	}
+
+	// The console's part says it in words.
+	resp, body := c.get(t, "/parts/apps/whoami/copies")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, " MHz") || !strings.Contains(body, " MB") ||
+		!strings.Contains(body, "ceiling") || strings.Contains(body, "Nomad didn't answer for this copy.") {
+		t.Errorf("GET /parts/apps/whoami/copies = %d, want CPU and memory in the table:\n%s", resp.StatusCode, body)
+	}
 }
 
 // deployChanged: the Deploy form with a new tag deploys it (303 to the

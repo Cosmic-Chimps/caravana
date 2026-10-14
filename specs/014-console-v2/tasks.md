@@ -175,7 +175,7 @@ Files: `internal/deploy/usage.go`, `internal/deploy/usage_test.go`,
 
 **⟶ Wait for T024 and T025, then:**
 
-- [ ] T026 [US4] Parity, lab and gate: parity `"GET /apps/{id}"`, `"GET /parts/apps/{id}/copies"` and `"GET /live/apps/{id}"` keep `listCopies` (now with usage; update comments). Lab step: `listCopies?usage=true` on a running lab app has non-zero memory and the app's reservation. Gate step `console-v2-reads` in `runGate` after `console-reads`: with the scoped token, `GET /v1/apps/<app>/copies?usage=true` has `usage` without `error` for a running copy, and `GET /v1/attention` answers 200 · internal/api/parity_test.go, cmd/caravana/console_lab_test.go, cmd/caravana/gate_test.go
+- [X] T026 [US4] Parity, lab and gate: parity `"GET /apps/{id}"`, `"GET /parts/apps/{id}/copies"` and `"GET /live/apps/{id}"` keep `listCopies` (now with usage; update comments). Lab step: `listCopies?usage=true` on a running lab app has non-zero memory and the app's reservation. Gate step `console-v2-reads` in `runGate` after `console-reads`: with the scoped token, `GET /v1/apps/<app>/copies?usage=true` has `usage` without `error` for a running copy, and `GET /v1/attention` answers 200 · internal/api/parity_test.go, cmd/caravana/console_lab_test.go, cmd/caravana/gate_test.go
 
 **Checkpoint**: all five stories work from the API and the console.
 

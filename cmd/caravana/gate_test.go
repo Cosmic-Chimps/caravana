@@ -110,6 +110,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"webhook-redeploy", false, g.webhookRedeploy},
 		{"webhook-unchanged", false, g.webhookUnchanged},
 		{"console-reads", false, g.consoleReads},
+		{"console-v2-reads", false, g.consoleV2Reads},
 		{"secrets-render", false, g.secretsRender},
 		{"compose-app", false, g.composeAppStep},
 		{"backup-restore", false, g.backupRestoreStep},
@@ -279,6 +280,42 @@ func (g *gate) consoleReads(t *testing.T) {
 	defer resp.Body.Close()
 	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /v1/apps/whoami/logs?lines=10 = %d, want 200 (does Caravana's Nomad policy have read-logs?): %s", resp.StatusCode, raw)
+	}
+}
+
+// consoleV2Reads: the reads Console v2 added, with the token Caravana's
+// policy gives a client. A running copy has usage with no error, which fails
+// when the policy lacks what Nomad's allocation stats need (a missing
+// capability shows only on a real host), and the needs-you list answers 200.
+func (g *gate) consoleV2Reads(t *testing.T) {
+	var copies struct {
+		Copies []struct {
+			Status string `json:"status"`
+			Usage  *struct {
+				MemoryMB *int   `json:"memoryMB"`
+				Error    string `json:"error"`
+			} `json:"usage"`
+		} `json:"copies"`
+	}
+	g.getJSON(t, "/v1/apps/whoami/copies?usage=true", &copies)
+	checked := false
+	for _, c := range copies.Copies {
+		if c.Status != "healthy" {
+			continue
+		}
+		checked = true
+		if c.Usage == nil || c.Usage.Error != "" || c.Usage.MemoryMB == nil {
+			t.Errorf("GET /v1/apps/whoami/copies?usage=true: a healthy copy has usage %+v, want numbers without error (does Caravana's Nomad policy allow reading allocation stats?)", c.Usage)
+		}
+	}
+	if !checked {
+		t.Errorf("GET /v1/apps/whoami/copies?usage=true has no healthy copy: %+v", copies.Copies)
+	}
+
+	resp := g.api(t, http.MethodGet, "/v1/attention", "", "")
+	defer resp.Body.Close()
+	if raw, _ := io.ReadAll(resp.Body); resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /v1/attention = %d, want 200: %s", resp.StatusCode, raw)
 	}
 }
 

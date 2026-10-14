@@ -22,27 +22,30 @@ type parity struct {
 // serves them. A page that reads several things lists each operation.
 var consoleParity = map[string]parity{
 	// Pages with nothing of their own to read or change.
-	"GET /{$}":       {why: "a redirect to /apps"},
-	"GET /login":     {why: "the sign-in form; clients use API tokens"},
-	"POST /login":    {why: "starts a browser session; clients send an API token"},
-	"POST /logout":   {why: "ends a browser session; an API token has none"},
-	"GET /apps/new":  {why: "a blank form; creating the app is POST /apps"},
-	"GET /account":   {why: "a redirect to /settings"},
-	"GET /static/":   {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":      {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
-	"GET /settings":  {ops: []string{"listTokens"}},
-	"GET /apps":      {ops: []string{"listApps", "listAttention"}},
+	"GET /{$}":      {why: "a redirect to /apps"},
+	"GET /login":    {why: "the sign-in form; clients use API tokens"},
+	"POST /login":   {why: "starts a browser session; clients send an API token"},
+	"POST /logout":  {why: "ends a browser session; an API token has none"},
+	"GET /apps/new": {why: "a blank form; creating the app is POST /apps"},
+	"GET /account":  {why: "a redirect to /settings"},
+	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
+	"GET /settings": {ops: []string{"listTokens"}},
+	"GET /apps":     {ops: []string{"listApps", "listAttention"}},
+	// The Running tab reads listCopies with usage=true: CPU and memory per copy.
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook"}},
 	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
-	"GET /live/apps/{id}":        {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
+	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
+	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
 
-	"GET /parts/apps":                  {ops: []string{"listApps"}},
-	"GET /parts/activity":              {ops: []string{"listRecentDeployments"}},
-	"GET /parts/attention":             {ops: []string{"listAttention"}},
-	"GET /parts/apps/{id}/header":      {ops: []string{"getApp"}},
+	"GET /parts/apps":             {ops: []string{"listApps"}},
+	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
+	"GET /parts/attention":        {ops: []string{"listAttention"}},
+	"GET /parts/apps/{id}/header": {ops: []string{"getApp"}},
+	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
 	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
 
