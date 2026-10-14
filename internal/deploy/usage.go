@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -13,6 +14,12 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
+
+// ErrUsageNotCollected is the Err of a copy whose node answered, but has no
+// usage to give: the answer has no task and no time, which is what Nomad sends
+// when its client isn't collecting task stats (telemetry's
+// publish_allocation_metrics is off). It is the host's setup, not a failed call.
+var ErrUsageNotCollected = errors.New("nomad isn't collecting usage on this node")
 
 // CopyUsage is what one copy's service task uses right now (research R6).
 // When Err is set the numbers are zero: Nomad didn't answer for this copy.
@@ -90,6 +97,9 @@ func (d *Deployer) usageOf(ctx context.Context, c Copy, timeout time.Duration) C
 // usageFromStats picks the service task's numbers out of Nomad's answer.
 // Memory is Usage when Nomad measured it (cgroups v2), else RSS (cgroups v1).
 func usageFromStats(c Copy, stats *api.AllocResourceUsage) CopyUsage {
+	if len(stats.Tasks) == 0 && stats.Timestamp == 0 {
+		return CopyUsage{Err: ErrUsageNotCollected}
+	}
 	task := stats.Tasks[c.Service]
 	if task == nil || task.ResourceUsage == nil {
 		return CopyUsage{Err: fmt.Errorf("%w: no usage reported for task %q of copy %s", ErrNomadUnavailable, c.Service, c.ID)}

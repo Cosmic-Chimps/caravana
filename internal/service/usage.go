@@ -2,12 +2,19 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 )
 
-// errNoUsage is what a copy shows when Nomad gave no usage for it.
-const errNoUsage = "Nomad didn't answer for this copy."
+// What a copy shows when it has no usage: Nomad didn't answer for it, or its
+// node answers but isn't collecting task stats (an upgraded host that hasn't
+// had the installer run again).
+const (
+	errNoUsage       = "Nomad didn't answer for this copy."
+	errNotCollecting = "Nomad isn't collecting usage on this node; run the installer again to turn it on."
+)
 
 // CopyUsage is what one running copy uses now, next to what its service
 // reserves (data-model "Copy usage"). When Error is set the numbers are zero.
@@ -55,9 +62,12 @@ func (s *Service) CopiesWithUsage(ctx context.Context, appID string) ([]Copy, ma
 		}
 		cpu, mem, ceiling := s.deployer.Reserved(svc.Resources)
 		cu := CopyUsage{CPUReservedMHz: cpu, MemoryReservedMB: mem, MemoryCeilingMB: ceiling}
-		if u.Err != nil {
+		switch {
+		case errors.Is(u.Err, deploy.ErrUsageNotCollected):
+			cu.Error = errNotCollecting
+		case u.Err != nil:
 			cu.Error = errNoUsage
-		} else {
+		default:
 			cu.CPUMHz, cu.MemoryMB = u.CPUMHz, u.MemoryMB
 			cu.NearCeiling = u.MemoryMB*10 >= ceiling*9
 		}

@@ -128,6 +128,21 @@ func TestCopiesWithUsage(t *testing.T) {
 		}
 	})
 
+	t.Run("a node that isn't collecting says so, not that Nomad didn't answer", func(t *testing.T) {
+		e := newEnv(t)
+		saveApp(t, e, appWith("blog", 1))
+		e.nomad.SetCopies("blog", startedStub("c1", "web"))
+		e.nomad.SetStats("c1", api.AllocResourceUsage{}) // 200 with no tasks, as Nomad answers without telemetry
+		_, usage, err := e.svc.CopiesWithUsage(ctx, "blog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "Nomad isn't collecting usage on this node; run the installer again to turn it on."
+		if u := usage["c1"]; u.Error != want || u.MemoryMB != 0 {
+			t.Errorf("c1 = %+v, want the error %q", u, want)
+		}
+	})
+
 	t.Run("copies that haven't started have no entry", func(t *testing.T) {
 		e := newEnv(t)
 		saveApp(t, e, appWith("blog", 1))

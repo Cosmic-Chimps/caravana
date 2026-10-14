@@ -59,6 +59,13 @@ func TestUsageFromStats(t *testing.T) {
 		})
 	}
 
+	t.Run("an answer with no task and no time says Nomad isn't collecting", func(t *testing.T) {
+		got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{ResourceUsage: &api.ResourceUsage{}})
+		if !errors.Is(got.Err, ErrUsageNotCollected) || errors.Is(got.Err, ErrNomadUnavailable) {
+			t.Errorf("Err = %v, want ErrUsageNotCollected only", got.Err)
+		}
+	})
+
 	t.Run("no stats for the service's task is an error", func(t *testing.T) {
 		got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{
 			"names": taskUsage(1, api.MemoryStats{}),
@@ -148,6 +155,15 @@ func TestUsage(t *testing.T) {
 		}
 		if peak := nomad.MaxStatsInFlight(); peak > 4 || peak < 2 {
 			t.Errorf("most in flight = %d, want 2 to 4", peak)
+		}
+	})
+
+	t.Run("a node that doesn't collect is told apart from a failed call", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		nomad.SetStats("c1", api.AllocResourceUsage{}) // 200, no tasks, Timestamp 0
+		got := d.Usage(context.Background(), []Copy{runningCopy("c1", "web")})
+		if !errors.Is(got["c1"].Err, ErrUsageNotCollected) {
+			t.Errorf("usage = %+v, want ErrUsageNotCollected", got["c1"])
 		}
 	})
 
