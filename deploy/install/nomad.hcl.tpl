@@ -45,3 +45,11 @@ plugin "docker" {
     allow_privileged = false
   }
 }
+
+# Nomad's stats hook doesn't collect task stats unless this is set (seen with Nomad 2.0.7): the
+# stats endpoint answers 200 with no tasks, and the console's CPU and memory per copy (feature
+# 014) would be empty. No metrics sink is configured, so nothing is published anywhere; it only
+# turns the collection on.
+telemetry {
+  publish_allocation_metrics = true
+}
