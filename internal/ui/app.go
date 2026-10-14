@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -145,7 +147,9 @@ func (s *server) showApp(w http.ResponseWriter, r *http.Request, session string)
 		s.serverError(w, "read admin", err)
 		return
 	}
-	head.LiveURL = "/live/apps/" + id
+	// ?tab=running is what makes the stream send "usage" events: nothing reads
+	// CPU and memory from Nomad unless this tab is open (FR-015).
+	head.LiveURL = "/live/apps/" + id + "?tab=running"
 	copies, err := s.loadCopies(r, id)
 	if err != nil {
 		s.serverError(w, "list copies", err)
@@ -180,17 +184,42 @@ func (s *server) tabKey(key string) string {
 }
 
 // liveApp answers GET /live/apps/{id}: the stream of one app's page.
-// With ?logs=1 (the Logs tab) it also carries the app's log lines.
+// With ?logs=1 (the Logs tab) it also carries the app's log lines; with
+// ?tab=running (the Running tab) a "usage" event every few seconds, which is
+// what makes the copies region read CPU and memory again.
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	route := liveRoute{AppID: id,
 		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeDeleted}}
-	if r.URL.Query().Get("logs") == "1" {
+	switch {
+	case r.URL.Query().Get("logs") == "1":
 		if choice, ok := logChoiceOf(r.URL.Query()); ok {
 			route.Start = s.logStart(id, choice)
 		}
+	case r.URL.Query().Get("tab") == "running":
+		route.Start = s.usageStart()
 	}
 	s.stream(w, r, route)
+}
+
+// usageStart is the Start of the Running tab's stream: a "usage" event every
+// usageEvery until the stream ends. The event carries nothing; the page
+// fetches the copies region again, and that is what asks Nomad.
+func (s *server) usageStart() func(ctx context.Context, ev *httpx.EventWriter) {
+	return func(ctx context.Context, ev *httpx.EventWriter) {
+		tick := time.NewTicker(s.live.usageInterval())
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				if ev.Event("usage", nil) != nil {
+					return // the client is gone
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
 }
 
 // ---- Running tab (/apps/{id}) --------------------------------------------------------
@@ -207,6 +236,20 @@ type copyEntry struct {
 	// OutOfMemory marks a copy whose last stop was the kernel killing it for
 	// passing its memory ceiling; the status column says so.
 	OutOfMemory bool
+	Usage       usageView
+}
+
+// usageView is a copy's CPU and memory cells. A copy that isn't running has
+// neither (the cells show a dash); one Nomad didn't answer for has Error.
+type usageView struct {
+	Has      bool   // there are numbers
+	Error    string // the sentence, when Nomad didn't answer for this copy
+	CPU      string // "42 MHz"
+	CPUOf    string // "of 100 MHz reserved"
+	Memory   string // "120 MB"
+	MemoryOf string // "of 256 MB ceiling, 64 reserved"
+	MeterPct int    // memory in use against the ceiling, 0 to 100
+	NearCeil bool   // 90 % of the ceiling or more: the warning mark and words
 }
 
 // copiesRegion is what the "copies" region draws: the copies, or one sentence
@@ -229,7 +272,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 	ctx := r.Context()
 	region := copiesRegion{RefreshHref: "/parts/apps/" + appID + "/copies", DeploymentsHref: s.deploymentsHref(appID)}
 
-	copies, err := s.svc.Copies(ctx, appID)
+	copies, usage, err := s.svc.CopiesWithUsage(ctx, appID)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		region.Gone = sentence{mono(appID), plain(" was deleted.")}
@@ -244,7 +287,11 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 
 	now := s.now()
 	for _, c := range copies {
-		region.Rows = append(region.Rows, copyEntryOf(now, c))
+		e := copyEntryOf(now, c)
+		if u, ok := usage[c.ID]; ok {
+			e.Usage = usageViewOf(u)
+		}
+		region.Rows = append(region.Rows, e)
 	}
 	if len(copies) == 0 {
 		recs, err := s.svc.ListDeployments(ctx, appID, 1)
@@ -270,6 +317,19 @@ func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 		e.UpFor = durationText(now.Sub(*c.StartedAt))
 	}
 	return e
+}
+
+func usageViewOf(u service.CopyUsage) usageView {
+	if u.Error != "" {
+		return usageView{Error: u.Error}
+	}
+	v := usageView{Has: true, NearCeil: u.NearCeiling,
+		CPU: fmt.Sprintf("%d MHz", u.CPUMHz), CPUOf: fmt.Sprintf("of %d MHz reserved", u.CPUReservedMHz),
+		Memory: fmt.Sprintf("%d MB", u.MemoryMB), MemoryOf: fmt.Sprintf("of %d MB ceiling, %d reserved", u.MemoryCeilingMB, u.MemoryReservedMB)}
+	if u.MemoryCeilingMB > 0 {
+		v.MeterPct = min(u.MemoryMB*100/u.MemoryCeilingMB, 100)
+	}
+	return v
 }
 
 // partCopies answers GET /parts/apps/{id}/copies: the region alone. An app

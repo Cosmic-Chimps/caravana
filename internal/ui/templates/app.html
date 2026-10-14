@@ -127,7 +127,7 @@
 {{define "running"}}
 <section aria-labelledby="copies-title" class="flex flex-col gap-2">
   <h2 id="copies-title" class="cv-label">Copies</h2>
-  <div class="cv-panel" hx-get="{{.RefreshHref}}" hx-trigger="sse:copies, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "copies-region" .}}</div>
+  <div class="cv-panel" hx-get="{{.RefreshHref}}" hx-trigger="sse:copies, sse:usage, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "copies-region" .}}</div>
 </section>
 {{end}}
 
@@ -147,6 +147,8 @@
     <span role="columnheader" class="cv-k-version">Version</span>
     <span role="columnheader" class="cv-k-restarts">Restarts</span>
     <span role="columnheader" class="cv-k-up">Up for</span>
+    <span role="columnheader" class="cv-k-cpu">CPU</span>
+    <span role="columnheader" class="cv-k-mem">Memory</span>
   </div>
   {{range .Rows}}
   <div class="cv-row cv-copies-row" role="row">
@@ -156,6 +158,19 @@
     <div role="cell" class="cv-k-version" data-label="Version"><span class="cv-data text-fg-1">{{.Version}}</span></div>
     <div role="cell" class="cv-k-restarts" data-label="Restarts"{{if gt .Restarts 0}} title="Restarted {{.Restarts}} time{{if ne .Restarts 1}}s{{end}}"{{end}}><span class="cv-data{{if gt .Restarts 0}} cv-restarts-warn{{end}}">{{.Restarts}}</span></div>
     <div role="cell" class="cv-k-up" data-label="Up for"><span class="cv-data{{if eq .UpFor "not running"}}-muted{{end}}">{{.UpFor}}</span></div>
+    {{with .Usage}}{{if .Error}}
+    <div role="cell" class="cv-k-usage-err"><span class="cv-usage-of">{{.Error}}</span></div>
+    {{else if .Has}}
+    <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data text-fg-1">{{.CPU}}</span>
+      <span class="cv-usage-of">{{.CPUOf}}</span></div>
+    <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data text-fg-1">{{.Memory}}</span>
+      <meter class="cv-meter{{if .NearCeil}} cv-meter-warn{{end}}" min="0" max="100" value="{{.MeterPct}}" aria-hidden="true"></meter>
+      <span class="cv-usage-of">{{.MemoryOf}}</span>
+      {{if .NearCeil}}<span class="cv-oom"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>close to its ceiling</span>{{end}}</div>
+    {{else}}
+    <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data-muted" title="Not running">&mdash;</span></div>
+    <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data-muted" title="Not running">&mdash;</span></div>
+    {{end}}{{end}}
   </div>
   {{end}}
 </div>

@@ -18,20 +18,22 @@ const (
 	defaultKeepalive = 20 * time.Second       // a comment line, so proxies keep an idle stream
 	defaultRecheck   = 30 * time.Second       // how often the session is checked again
 	defaultLogRetry  = 5 * time.Second        // how long the log view waits before it tries Nomad again
+	defaultUsage     = 5 * time.Second        // how often the Running tab reads CPU and memory (research R7)
 )
 
 // liveSettings are the stream's timings and its source of notices. The zero
 // value means the defaults and the real Service; tests set short timings and
 // a fake source. (C#: an options object whose unset fields mean "default".)
 type liveSettings struct {
-	coalesce, keepalive, recheck, logRetry time.Duration
-	subscribe                              func(appID string) (<-chan service.Change, func())
+	coalesce, keepalive, recheck, logRetry, usageEvery time.Duration
+	subscribe                                          func(appID string) (<-chan service.Change, func())
 }
 
 func (l liveSettings) coalesceEvery() time.Duration  { return orDefault(l.coalesce, defaultCoalesce) }
 func (l liveSettings) keepaliveEvery() time.Duration { return orDefault(l.keepalive, defaultKeepalive) }
 func (l liveSettings) recheckEvery() time.Duration   { return orDefault(l.recheck, defaultRecheck) }
 func (l liveSettings) logRetryEvery() time.Duration  { return orDefault(l.logRetry, defaultLogRetry) }
+func (l liveSettings) usageInterval() time.Duration  { return orDefault(l.usageEvery, defaultUsage) }
 
 func orDefault(d, def time.Duration) time.Duration {
 	if d > 0 {

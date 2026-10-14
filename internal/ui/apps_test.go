@@ -470,7 +470,7 @@ func TestAppPage(t *testing.T) {
 		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago from the console.`,
 		// the breadcrumbs, and the stream and the region of this app
 		`<a href="/apps">Apps</a>`, `aria-current="page">whoami</span>`,
-		`hx-ext="sse" sse-connect="/live/apps/whoami" sse-close="ended" data-live`,
+		`hx-ext="sse" sse-connect="/live/apps/whoami?tab=running" sse-close="ended" data-live`,
 		`hx-get="/parts/apps/whoami/header" hx-trigger="sse:app, sse:deleted, sse:sync"`,
 	} {
 		if !strings.Contains(body, want) {

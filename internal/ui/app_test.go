@@ -780,21 +780,16 @@ func TestRunningTabListsTheCopies(t *testing.T) {
 		}
 	})
 
-	t.Run("a column header names each cell, and no CPU or memory is shown", func(t *testing.T) {
-		for _, want := range []string{`role="table"`, ">Copy<", ">Service<", ">Status<", ">Version<", ">Restarts<", ">Up for<"} {
+	t.Run("a column header names each cell", func(t *testing.T) {
+		for _, want := range []string{`role="table"`, ">Copy<", ">Service<", ">Status<", ">Version<", ">Restarts<", ">Up for<", ">CPU<", ">Memory<"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the table lacks %q", want)
-			}
-		}
-		for _, absent := range []string{">CPU<", ">Memory<"} {
-			if strings.Contains(body, absent) {
-				t.Errorf("the table shows %q", absent)
 			}
 		}
 	})
 
 	t.Run("the region is live: it refreshes on copies and on a (re)connect", func(t *testing.T) {
-		if !strings.Contains(body, `hx-get="/parts/apps/whoami/copies" hx-trigger="sse:copies, sse:sync" hx-swap="innerHTML"`) {
+		if !strings.Contains(body, `hx-get="/parts/apps/whoami/copies" hx-trigger="sse:copies, sse:usage, sse:sync" hx-swap="innerHTML"`) {
 			t.Errorf("the copies region doesn't listen for its notices:\n%s", body)
 		}
 	})
