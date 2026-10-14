@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Keep and edit the Compose file",
+  "branch": "015-compose-file-edit",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-14T14:14:54.584Z"
+    }
+  ]
+}
