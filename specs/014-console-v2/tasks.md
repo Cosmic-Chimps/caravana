@@ -181,7 +181,7 @@ Files: `internal/deploy/usage.go`, `internal/deploy/usage_test.go`,
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T027 [P] Docs: CLAUDE.md "Where we are" gets feature 014 (what changed in the console and the API, 0.11.0, the new codes and routes); docs/plan.md marks 012.5 done as feature 014 and renumbers Phase 2.5's items (Aspire 015, Bella Baxter 016); DESIGN.md gets the edit form, needs-you list and usage cells if `/impeccable document` is run · CLAUDE.md, docs/plan.md
+- [X] T027 [P] Docs: CLAUDE.md "Where we are" gets feature 014 (what changed in the console and the API, 0.11.0, the new codes and routes); docs/plan.md marks 012.5 done as feature 014 and renumbers Phase 2.5's items (Aspire 015, Bella Baxter 016); DESIGN.md gets the edit form, needs-you list and usage cells if `/impeccable document` is run · CLAUDE.md, docs/plan.md
 - [ ] T028 Validate against the Success Criteria: `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `go test -race ./...`, `gofmt -l .`, `go mod tidy -diff`, `CGO_ENABLED=0 GOOS=linux GOARCH=amd64|arm64 go build ./...`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck (via Docker), `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 25m`; then walk quickstart.md §1–§5 in the browser with and without JavaScript · specs/014-console-v2/quickstart.md
 
 ## Dependencies & Execution Order

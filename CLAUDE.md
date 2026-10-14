@@ -153,7 +153,24 @@ Postgres on a volume, backed up to R2 and restored) on a netcup VPS installed fr
 reservation and 1024, `CARAVANA_DEFAULT_MEMORY_MAX_MB`) as Nomad's `memory_max`. Compose's
 `mem_reservation` is the reservation and `mem_limit` the ceiling. The installer and `lab.sh up`
 turn on Nomad's memory oversubscription (`operator scheduler set-config`). Without it, Nomad
-ignores the ceiling and its register warning lands in the deployment's warnings.
+ignores the ceiling and its register warning lands in the deployment's warnings. Feature 014
+(Console v2, the plan's 012.5, branch `014-console-v2`): every stored app has a `revision` (the
+first 16 hex digits of the SHA-256 of its stored document; `getApp` sends it as `ETag`), and
+`deployApp`/`deployCompose` take `If-Match` (412 `app_changed`) and `deployCompose` takes
+`If-None-Match: *` (409 `app_exists`); in the service that is `Condition` on `DeployIf` /
+`DeployComposeIf`, and `store.SaveAppIf` checks and writes in one transaction. Configure is now
+an edit form per service (`internal/ui/edit.go` parses, `merge.go` lays it over the stored app so
+command, args, secrets, volumes and backup are kept; env values are shown). New app has a
+Compose tab and Configure has "Deploy from Compose" (`composeform.go`, `composepage.go`): preview
+first, overlay with domains, health, secrets (never echoed) and backup. The Running tab shows CPU
+and memory per copy from Nomad's allocation stats (`deploy.Usage`, `listCopies?usage=true`),
+read every 5 s only while the tab's stream has `?tab=running`; Nomad collects them only with
+`telemetry { publish_allocation_metrics = true }`, which the installer's `nomad.hcl` now sets
+(rerun the installer on an existing host). The Apps home opens with a "needs you" list
+(`service.Attention`, `GET /v1/attention`), derived on every read: failed or reverted deploys,
+out-of-memory kills, crash loops (restarts plus failed copies of the last hour reach 3),
+unhealthy copies, failed backups and restores, no backup destination. API 0.11.0. The gate has a
+step `console-v2-reads`.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
@@ -178,6 +195,8 @@ Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the
 - 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
   (done, branch `011-rollback-export`)
 - 012 One-command install (done, branch `012-one-command-install`)
+- 012.5 Console v2: edit the definition, paste Compose, CPU and memory per copy, "needs you"
+  (done as feature 014, branch `014-console-v2`)
 
 Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume
 and a backup that restores. Passed 2026-10-11 (Hollo on netcup, see `docs/plan.md`).
