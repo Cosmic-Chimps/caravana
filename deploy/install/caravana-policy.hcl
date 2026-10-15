@@ -11,9 +11,13 @@
 # those volumes and not the host's own traefik-acme (Traefik's certificates and keys). Nomad
 # accepts only letters, digits, "-" and "*" in these names, so a rule can't match "_"; an exact
 # name wins over a glob, so the deny holds.
+# alloc-lifecycle and read-fs are volume backups (feature 016): Caravana restarts a copy's tasks
+# (alloc-lifecycle) so its caravana-volumes task backs up or restores the volumes while the service
+# is stopped, then reads the result file that task wrote (read-fs). Not alloc-exec: Caravana never
+# opens a shell in an app's container.
 # install.sh applies it on every run, so running the installer again brings a host up to date.
 namespace "default" {
-  capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete"]
+  capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete", "alloc-lifecycle", "read-fs"]
 
   variables {
     path "nomad/jobs/*" {
