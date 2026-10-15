@@ -210,10 +210,13 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	if err := s.deployer.Validate(rec.App); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	return s.deploy(ctx, rec.App, trigger)
+	// The app isn't saved again, so its kept file stays; the deployment records
+	// it too, so the history keeps the file this deploy came from.
+	return s.deployWarned(ctx, rec.App, trigger, made{file: rec.Compose}, nil)
 }
 
-// deploy runs one deploy of a, which was not made from a Compose file.
+// deploy runs one deploy of a, which was not made from a Compose file. Only
+// CreateApp uses it: a new app has no file yet.
 func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
 	return s.deployWarned(ctx, a, trigger, made{}, nil)
 }

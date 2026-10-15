@@ -617,3 +617,35 @@ func TestDeployWithoutFileNoDropWarning(t *testing.T) {
 		}
 	}
 }
+
+// Feature 015: a redeploy of the stored app changes no file. The app keeps
+// the one it has, the new deployment records it, and no warning says it was
+// dropped.
+func TestRedeployKeepsFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	req := compose.Request{Compose: keptFile, Services: map[string]compose.Overlay{
+		"web": {Secrets: []app.Secret{{Name: "TOKEN", Value: new(keptSentinel)}}},
+	}}
+	composeHealthy(t, e, req)
+	want := req.WithoutSecretValues()
+	before, _ := e.svc.GetApp(ctx, "whoami")
+
+	rec, err := e.svc.Redeploy(ctx, "whoami", app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Redeploy() = %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+
+	if n := droppedFile(rec); n != 0 {
+		t.Errorf("warnings = %+v, want no drop warning", rec.Warnings)
+	}
+	dep, _ := e.svc.GetDeployment(ctx, "whoami", rec.Deployment.ID)
+	if !reflect.DeepEqual(dep.Compose, &want) {
+		t.Errorf("the redeploy records file %+v, want %+v", dep.Compose, want)
+	}
+	after, _ := e.svc.GetApp(ctx, "whoami")
+	if !reflect.DeepEqual(after.Compose, &want) || after.Revision != before.Revision {
+		t.Errorf("after the redeploy: file %+v, revision %s (was %s); want both unchanged", after.Compose, after.Revision, before.Revision)
+	}
+}

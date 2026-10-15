@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"maps"
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -57,5 +59,39 @@ func (s *Service) editSecrets(ctx context.Context, appID, service string, trigge
 	services := slices.Clone(a.Services)
 	services[i].Secrets = list
 	a.Services = services
-	return s.Deploy(ctx, a, trigger)
+
+	var m made
+	if rec.Compose != nil {
+		// The secrets are part of the kept file's overlay: change its names to
+		// follow the app, so the editor and the app never disagree (the Compose
+		// text itself stays as it was). Without this, Deploy would drop the file.
+		file := withSecretNames(*rec.Compose, service, list)
+		m.file = &file
+	}
+	return s.saveAndDeploy(ctx, a, Condition{}, trigger, m, nil)
+}
+
+// withSecretNames returns a copy of file whose overlay for service lists the
+// secrets in list, by name only. A service left with an empty overlay has no
+// entry at all, as if the overlay had never mentioned it. file is not changed.
+func withSecretNames(file compose.Request, service string, list []app.Secret) compose.Request {
+	file = file.WithoutSecretValues() // its own Services map and Secrets slices
+	services := make(map[string]compose.Overlay, len(file.Services)+1)
+	maps.Copy(services, file.Services)
+
+	overlay := services[service]
+	overlay.Secrets = nil
+	for _, sec := range list {
+		overlay.Secrets = append(overlay.Secrets, app.Secret{Name: sec.Name})
+	}
+	if len(overlay.Domains) == 0 && overlay.Health == nil && len(overlay.Secrets) == 0 && overlay.Backup == nil {
+		delete(services, service)
+	} else {
+		services[service] = overlay
+	}
+	file.Services = services
+	if len(services) == 0 {
+		file.Services = nil
+	}
+	return file
 }

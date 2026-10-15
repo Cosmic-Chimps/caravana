@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -352,5 +353,30 @@ func TestWebhookDeployOutcomes(t *testing.T) {
 				t.Errorf("record = %s, trigger %s; want failed, webhook", rec.Status, rec.Deployment.Trigger)
 			}
 		})
+	}
+}
+
+// Feature 015: a webhook redeploy of a Compose app keeps its file: the app
+// still has it, the new deployment records it, and there is no drop warning.
+func TestWebhookKeepsFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	composeHealthy(t, e, compose.Request{Compose: keptFile})
+	tok, _ := e.svc.CreateWebhookToken(ctx, "whoami")
+	e.registry.AddIndex("traefik/whoami", "latest", movedDigest)
+
+	res, err := e.svc.Webhook(ctx, "whoami", tok.Token)
+	if err != nil || !res.Changed {
+		t.Fatalf("Webhook = changed %v, %v; want a redeploy", res.Changed, err)
+	}
+	waitFinal(t, e.store, res.Deployment.Deployment.ID)
+	if n := droppedFile(res.Deployment); n != 0 {
+		t.Errorf("warnings = %+v, want no drop warning", res.Deployment.Warnings)
+	}
+	if dep, _ := e.svc.GetDeployment(ctx, "whoami", res.Deployment.Deployment.ID); dep.Compose == nil || dep.Compose.Compose != keptFile {
+		t.Errorf("the webhook deployment records %+v, want the kept file", dep.Compose)
+	}
+	if stored, _ := e.svc.GetApp(ctx, "whoami"); stored.Compose == nil || stored.Compose.Compose != keptFile {
+		t.Errorf("kept file after the webhook = %+v, want it unchanged", stored.Compose)
 	}
 }

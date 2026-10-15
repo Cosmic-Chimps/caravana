@@ -156,7 +156,7 @@ Files: `internal/service/rollback.go`, `internal/service/deploy.go`, `internal/s
 
 Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal/service/secretedit_test.go`, `internal/service/webhook_test.go`, `internal/service/deploy_test.go`, `internal/api/compose.go`, `internal/api/deployments.go`, `internal/api/apps.go`, `internal/api/api.go`, `internal/api/errors.go`, `internal/api/compose_test.go`, `internal/api/deployments_test.go`, `internal/api/apps_test.go`, `internal/api/parity_test.go`, `api/openapi.yaml`, `internal/ui/*_test.go`
 
-- [ ] T013 [US4] Redeploys and secret edits carry the file (research R4 "Secret edit detail", FR-007):
+- [X] T013 [US4] Redeploys and secret edits carry the file (research R4 "Secret edit detail", FR-007):
   - In internal/service/deploy.go: `Redeploy` passes `made{file: rec.Compose}` to `deployWarned`. The app isn't saved, but the deployment records the file.
   - In internal/service/secretedit.go `editSecrets`: when `rec.Compose != nil`, copy it with `WithoutSecretValues()`, set `file.Services[service].Secrets` to the new list's names (create the `Services` map and the service's `Overlay` entry if missing; an empty list removes the `secrets` key, leaving an overlay entry with no fields deleted), and deploy through `s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: &file}, nil)` instead of `s.Deploy`. Without a file, behavior is unchanged.
 
