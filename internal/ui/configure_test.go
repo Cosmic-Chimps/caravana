@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -225,24 +226,97 @@ func TestConfigureKeptFile(t *testing.T) {
 	}
 }
 
-// Feature 015: an image app, and a Compose app with no kept file, are
-// drawn as they were: the edit form, no Compose form, no read-only line.
-func TestConfigureWithoutKeptFileIsAsBefore(t *testing.T) {
-	image := configureEnv(t)
-	legacy, _ := shopEnv(t) // made from Compose before 015: no kept file
-	for name, e := range map[string]*consoleEnv{"image app": image, "compose app without a file": legacy} {
-		id := "shop"
-		_, body := e.get(t, "/apps/"+id+"/configure")
-		for _, gone := range []string{`id="compose-form"`, "This app is edited through its Compose file."} {
-			if strings.Contains(body, gone) {
-				t.Errorf("%s: the page has %q", name, gone)
-			}
+// Feature 015: an image app is drawn as it was: the edit form, no Compose
+// form, no read-only line, no "wasn't kept" notice.
+func TestConfigureImageAppIsAsBefore(t *testing.T) {
+	e := configureEnv(t)
+	_, body := e.get(t, "/apps/shop/configure")
+	for _, gone := range []string{`id="compose-form"`, "This app is edited through its Compose file.", "wasn't kept"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the page has %q", gone)
 		}
-		for _, want := range []string{`id="edit-form"`, "Save and deploy"} {
-			if !strings.Contains(body, want) {
-				t.Errorf("%s: the page lacks %q", name, want)
-			}
+	}
+	for _, want := range []string{`id="edit-form"`, "Save and deploy"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
 		}
+	}
+}
+
+// Feature 015, US2: a Compose app made before the file was kept asks for it
+// once: the notice, an empty file, the overlay from the app, the revision, and
+// the per-field form still editable below.
+func TestConfigureNotKeptFile(t *testing.T) {
+	e, revision := shopEnv(t)
+	resp, body := e.get(t, "/apps/shop/configure")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, text(body))
+	}
+	got := text(body)
+	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
+		t.Errorf("the page lacks the notice:\n%s", got)
+	}
+
+	// The Compose form: an empty file, the overlay the app has, secret names with empty inputs.
+	f := formWith(t, body, "/apps/shop/compose/preview")
+	if v, ok := f.Values["compose"]; !ok || v[0] != "" {
+		t.Errorf("the textarea = %v, want it present and empty", v)
+	}
+	for name, want := range map[string]string{
+		"revision":                        revision,
+		"svc.web.domains":                 "shop.example.com",
+		"svc.web.healthPath":              "/health",
+		"svc.web.secret.API_KEY":          "",
+		"svc.db.secret.POSTGRES_PASSWORD": "",
+		"svc.db.backupKeep":               "5",
+	} {
+		if got, ok := f.Values[name]; !ok || got[0] != want {
+			t.Errorf("input %s = %v, want %q", name, got, want)
+		}
+	}
+	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) || strings.Contains(body, ">Deploy</button>") {
+		t.Errorf("the form should offer Preview and no Deploy yet:\n%s", got)
+	}
+	if strings.Contains(body, sentinel015) || strings.Contains(body, storedSecret) {
+		t.Error("a secret value is on the Configure page")
+	}
+
+	// The per-field form is editable as in 014, with its note and the link.
+	for _, want := range []string{`id="edit-form"`, "Save and deploy", `name="svc.web.image"`,
+		"Made from a Compose file. Deploying a file again replaces these edits.", ">Deploy from Compose</a>"} {
+		if !strings.Contains(body, want) && !strings.Contains(got, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if strings.Contains(got, "This app is edited through its Compose file.") {
+		t.Error("the definition is read-only for an app that kept no file")
+	}
+}
+
+// Feature 015, US2: paste the file once on Configure, preview and deploy, and
+// the app keeps it: Configure then shows the file and the read-only definition.
+func TestConfigureNotKeptFilePasteOnce(t *testing.T) {
+	e, _ := shopEnv(t)
+	_, page := e.get(t, "/apps/shop/configure")
+	const pasted = "# pasted once\n" + shopCompose
+
+	resp, body := e.postForm(t, "/apps/shop/compose/preview", shopFormOf(t, page, url.Values{"compose": {pasted}}))
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, ">Deploy</button>") {
+		t.Fatalf("preview = %d:\n%s", resp.StatusCode, text(body))
+	}
+	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, body, nil))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
+	}
+	e.waitDeploy(t, e.deployments(t, "shop")[0].Deployment.ID)
+
+	_, body = e.get(t, "/apps/shop/configure")
+	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != pasted {
+		t.Errorf("Configure shows %q, want the pasted file", got)
+	}
+	got := text(body)
+	if strings.Contains(got, "wasn't kept") || !strings.Contains(got, "This app is edited through its Compose file.") {
+		t.Errorf("after the paste Configure should show the kept view:\n%s", got)
 	}
 }
 

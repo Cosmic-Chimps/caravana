@@ -227,7 +227,7 @@
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
   {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
-  {{if or .Redeploy .ExportHref}}
+  {{if or .Redeploy .ExportHref .ComposeHref}}
   <div class="cv-actions">
     {{with .Redeploy}}
     <details class="cv-confirm"{{if .Error}} open{{end}}>
@@ -245,6 +245,7 @@
     </details>
     {{end}}
     {{with .ExportHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" download>Export jobspec</a>{{end}}
+    {{with .ComposeHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" download>Download Compose file</a>{{end}}
   </div>
   {{end}}
   {{with .Warnings}}
@@ -376,6 +377,7 @@
 {{with .ComposeForm}}
 <section aria-labelledby="compose-file-title" class="flex flex-col gap-2">
   <h2 id="compose-file-title" class="cv-label">Compose file</h2>
+  {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
   {{template "compose-form" .}}
 </section>
 {{end}}

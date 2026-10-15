@@ -46,6 +46,10 @@ type composeView struct {
 	// Kept says the draft was filled from the Compose file the app keeps
 	// (feature 015), not typed: its services are drawn before any preview.
 	Kept bool
+	// NotKept says the app was made from Compose before the file was kept: the
+	// file is empty and the overlay is filled from the app, so Configure can ask
+	// for the file once (feature 015, US2).
+	NotKept bool
 
 	// Notice is an error that isn't about one input; SavedID is set when the
 	// app was saved but its deploy didn't start; Stale says the app changed
@@ -341,6 +345,21 @@ func keptComposeView(rec store.AppRecord) composeView {
 	v.Draft.Revision = rec.Revision
 	v.Draft.keepStored(rec.App)
 	v.Draft.ensureServices(rec.App)
+	v.Services = serviceViews(v.Draft, &rec.App)
+	return v
+}
+
+// notKeptComposeView is the Compose form of an app made from Compose before
+// the file was kept (feature 015, US2, research R6): an empty file to paste
+// once, the overlay as the stored app has it (draftFrom), and the app's
+// revision. Its services are drawn at once, as the kept view's are, so the
+// overlay can be seen and edited with the file.
+func notKeptComposeView(rec store.AppRecord) composeView {
+	v := newComposeView(rec.App.ID)
+	v.NotKept = true
+	v.Draft = draftFrom(rec.App)
+	v.Draft.File = formField{ID: "compose"}
+	v.Draft.Revision = rec.Revision
 	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
 }

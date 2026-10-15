@@ -157,6 +157,45 @@ func TestDeployIfStaleAfterCommentEdit(t *testing.T) {
 	}
 }
 
+// Feature 015, US2: an app made from Compose before the file was kept takes
+// the file with its next Compose deploy, and that deploy adds no drop warning.
+func TestDeployComposeOnAppWithoutFileKeepsIt(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	first, err := e.svc.DeployCompose(ctx, "blog", compose.Request{Compose: twoServices}, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("DeployCompose: %v", err)
+	}
+	waitFinal(t, e.store, first.Deployment.ID)
+
+	// Make it what a 014 app is: a stored Compose app with no file.
+	stored, err := e.svc.GetApp(ctx, "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := e.store.SaveApp(ctx, stored.App, nil)
+	if err != nil || legacy.Compose != nil {
+		t.Fatalf("SaveApp(nil file) = %+v, %v; want an app with no file", legacy, err)
+	}
+
+	req := compose.Request{Compose: keptFile}
+	rec, err := e.svc.DeployComposeIf(ctx, "blog", req, Condition{IfRevision: legacy.Revision}, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("DeployComposeIf: %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+	after, err := e.svc.GetApp(ctx, "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Compose == nil || after.Compose.Compose != keptFile {
+		t.Errorf("kept file after the deploy = %+v, want the pasted file byte for byte", after.Compose)
+	}
+	if n := droppedFile(rec); n != 0 {
+		t.Errorf("warnings = %+v, want no drop warning", rec.Warnings)
+	}
+}
+
 // FR-005: a refused file saves nothing and deploys nothing.
 func TestDeployComposeRefused(t *testing.T) {
 	ctx := context.Background()

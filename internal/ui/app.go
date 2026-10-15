@@ -397,6 +397,9 @@ type historyEntry struct {
 	// recorded definition only. ExportHref downloads its jobspec.
 	Redeploy   *redeployView
 	ExportHref string
+	// ComposeHref downloads the Compose file this deployment was made from
+	// (feature 015); "" when it wasn't made from one.
+	ComposeHref string
 }
 
 // historyRegion is what the "deployments" region draws: the history, newest
@@ -806,6 +809,11 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		tab.ComposeForm = &v
 		tab.Edit.ReadOnly = true
 		tab.Edit.Panels = servicePanels(sum.App)
+	} else if sum.App.Source.Kind == app.SourceCompose {
+		// Made from Compose before the file was kept: ask for it once. The
+		// per-field form stays editable until the file is pasted (US2).
+		v := notKeptComposeView(sum.AppRecord)
+		tab.ComposeForm = &v
 	}
 	if hook.Enabled {
 		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")

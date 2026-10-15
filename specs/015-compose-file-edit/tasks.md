@@ -113,7 +113,7 @@ Files: `internal/service/deploy.go`, `internal/service/compose.go`, `internal/se
 
 Files: `internal/ui/app.go`, `internal/ui/configure.go`, `internal/ui/configure_test.go`, `internal/ui/templates/app.html`, `internal/ui/templates/compose.html`, `internal/ui/static/app.css`
 
-- [ ] T009 [US2] Not-kept Configure (research R6, contracts/console.md "App made from Compose, no kept file"):
+- [X] T009 [US2] Not-kept Configure (research R6, contracts/console.md "App made from Compose, no kept file"):
   - In internal/ui/app.go `configurePage`: when `sum.Compose == nil` and `sum.App.Source.Kind == app.SourceCompose`, set `ComposeForm` to a view whose draft is `draftFrom(sum.App)` (014) with an empty file, `NotKept: true` and the revision. Leave `Edit.ReadOnly` false.
   - In the template: above the form, the notice "This app's Compose file wasn't kept. Paste it once to edit it here from now on." Both the Compose form and the editable per-field form are on the page.
 
@@ -129,10 +129,10 @@ Files: `internal/ui/app.go`, `internal/ui/configure.go`, `internal/ui/configure_
 
 Files: `internal/service/rollback.go`, `internal/service/deploy.go`, `internal/service/rollback_test.go`, `internal/ui/versions.go`, `internal/ui/app.go`, `internal/ui/ui.go`, `internal/ui/versions_test.go`, `internal/ui/templates/app.html`, `internal/ui/static/app.css`, `internal/api/parity_test.go`, `cmd/caravana/console_lab_test.go`
 
-- [ ] T010 [US3] Rollback restores the file (research R4, FR-006), in internal/service/rollback.go: `RedeployVersion` passes `made{file: rec.Compose}`. A version with a file makes it the kept file; one without drops the kept file, and T004's check in `saveAndDeploy` adds the warning.
+- [X] T010 [US3] Rollback restores the file (research R4, FR-006), in internal/service/rollback.go: `RedeployVersion` passes `made{file: rec.Compose}`. A version with a file makes it the kept file; one without drops the kept file, and T004's check in `saveAndDeploy` adds the warning.
 
   Tests in internal/service/rollback_test.go: deploy file A, then B, redeploy A, and the kept file is A with A's overlay; redeploy a version without a file over a kept-file app, and the file is dropped with the warning; secret values are still kept in the secret store (the existing redeploy secret tests stay green).
-- [ ] T011 [US3] History download (research R8, contracts/console.md "Deployments history"):
+- [X] T011 [US3] History download (research R8, contracts/console.md "Deployments history"):
   - In internal/ui/app.go: add `ComposeHref string` to `historyEntry`.
   - In internal/ui/versions.go `addVersionActions`: set `ComposeHref = base + "/compose"` when `rec.Compose != nil`, independent of `rec.Definition`.
   - Add the handler `downloadCompose` for `GET /apps/{id}/deployments/{deploymentId}/compose`. It reads the deployment through `s.svc.GetDeployment(ctx, id, depID)` and answers the file text with `Content-Type: application/yaml; charset=utf-8`, `Content-Disposition: attachment; filename="<app>-<deploymentId>.compose.yaml"` and `Cache-Control: no-store`. A deployment without a file, or not of this app, gets the not-found page (404).
@@ -144,7 +144,7 @@ Files: `internal/service/rollback.go`, `internal/service/deploy.go`, `internal/s
 
 **⟶ Wait for T010 and T011, then:**
 
-- [ ] T012 [US3] Lab step, rollback half, in cmd/caravana/console_lab_test.go `console-compose-file-edit`: redeploy the `v1.10` deployment from the console, wait for healthy, check that Configure shows `v1.10` and the original comment, and that the history download of the first deployment equals the first file byte for byte.
+- [X] T012 [US3] Lab step, rollback half, in cmd/caravana/console_lab_test.go `console-compose-file-edit`: redeploy the `v1.10` deployment from the console, wait for healthy, check that Configure shows `v1.10` and the original comment, and that the history download of the first deployment equals the first file byte for byte.
 
 **Checkpoint**: rollback leaves the right file in the editor (SC-002).
 
@@ -167,7 +167,7 @@ Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal
   - Add `codeComposeNotKept = "compose_not_kept"` to internal/api/errors.go, and register both routes in internal/api/api.go with the same auth as the other `/v1` reads.
   - Add `ComposeKept bool \`json:"composeKept"\`` to `appRecordJSON`, to `appSummaryJSON` (internal/api/apps.go) and to `deploymentJSON` (internal/api/deployments.go `toDeploymentJSON`).
   - In api/openapi.yaml, 0.11.0 → 0.12.0: the two GET operations (reusing the `ComposeRequest` schema; document "secret values are never returned"), the `composeKept` fields, the `compose_not_kept` code, and a sentence on `deployApp` (the drop warning) and on `redeployDeployment` (the version's file comes back).
-  - In internal/api/parity_test.go: add `getCompose` to `GET /apps/{id}/configure` and `GET /apps/{id}/compose`, plus the T011 entry if it isn't there yet.
+  - In internal/api/parity_test.go: add `getCompose` to `GET /apps/{id}/configure` and `GET /apps/{id}/compose`. T011 already added the entry `"GET /apps/{id}/deployments/{deploymentId}/compose"` with `why: "the file download; the API twin getDeploymentCompose lands in T014"`: switch it to `ops: []string{"getDeploymentCompose"}`.
 
   Tests in internal/api/compose_test.go, deployments_test.go and apps_test.go: 200 with the ETag; the 404 codes; `composeKept` true and false; the round trip GET → `deployCompose` with `If-Match` gives 202 and keeps secret values (fake secret store unchanged); the contract and parity tests pass.
 

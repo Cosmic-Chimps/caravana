@@ -29,16 +29,21 @@ type redeployView struct {
 }
 
 // addVersionActions adds what a past deployment offers: where it came from,
-// redeploying it (healthy ones with a recorded definition) and exporting it
-// (any with a recorded definition). current is the stored app.
+// downloading the Compose file it was made from (any that kept one, whether or
+// not its definition was recorded), redeploying it (healthy ones with a
+// recorded definition) and exporting it (any with a recorded definition).
+// current is the stored app.
 func addVersionActions(e *historyEntry, rec store.DeploymentRecord, current app.App) {
 	if rec.Source != "" {
 		e.Source = &sourceLink{ID: rec.Source, Short: shortID(rec.Source)}
 	}
+	base := "/apps/" + rec.AppID + "/deployments/" + rec.Deployment.ID
+	if rec.Compose != nil {
+		e.ComposeHref = base + "/compose"
+	}
 	if rec.Definition == nil {
 		return
 	}
-	base := "/apps/" + rec.AppID + "/deployments/" + rec.Deployment.ID
 	e.ExportHref = base + "/jobspec"
 	if rec.Status != store.StatusHealthy {
 		return
@@ -123,6 +128,30 @@ func (s *server) export(w http.ResponseWriter, r *http.Request, deploymentID str
 		s.message(w, http.StatusNotFound, "Not found", "There's no such app or deployment.", "Go back to the Apps page.")
 	default:
 		s.serverError(w, "export a jobspec", err)
+	}
+}
+
+// downloadCompose answers GET /apps/{id}/deployments/{deploymentId}/compose:
+// the Compose file the deployment was made from, as stored (feature 015), so
+// a history entry offers exactly what its version was deployed from. The
+// stored copy has no secret values. A deployment with no file, or one of
+// another app, is the not-found page.
+func (s *server) downloadCompose(w http.ResponseWriter, r *http.Request, session string) {
+	id, depID := r.PathValue("id"), r.PathValue("deploymentId")
+	rec, err := s.svc.GetDeployment(r.Context(), id, depID)
+	switch {
+	case err == nil && rec.Compose != nil:
+		// App and deployment IDs are made of letters, digits and dashes, so the
+		// name needs no escaping inside its quotes.
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+id+"-"+depID+`.compose.yaml"`)
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(rec.Compose.Compose))
+	case err == nil, errors.Is(err, store.ErrNotFound):
+		s.message(w, http.StatusNotFound, "Not found", "There's no Compose file for that deployment.",
+			"Only deployments made from a Compose file have one. Go back to the Deployments tab.")
+	default:
+		s.serverError(w, "download a Compose file", err)
 	}
 }
 

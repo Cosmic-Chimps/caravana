@@ -65,8 +65,11 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/deployments/{deploymentId}/redeploy": {ops: []string{"redeployDeployment"}},
 	"GET /apps/{id}/deployments/{deploymentId}/jobspec":   {ops: []string{"exportDeployment"}},
 	"GET /apps/{id}/jobspec":                              {ops: []string{"exportApp"}},
-	"POST /apps/{id}/webhook":                             {ops: []string{"createWebhookToken"}},
-	"POST /apps/{id}/webhook/revoke":                      {ops: []string{"deleteWebhookToken"}},
+	// The kept Compose file's download (feature 015). T014 adds getDeploymentCompose and
+	// switches this to ops: []string{"getDeploymentCompose"}.
+	"GET /apps/{id}/deployments/{deploymentId}/compose": {why: "the file download; the API twin getDeploymentCompose lands in T014"},
+	"POST /apps/{id}/webhook":                           {ops: []string{"createWebhookToken"}},
+	"POST /apps/{id}/webhook/revoke":                    {ops: []string{"deleteWebhookToken"}},
 	// Setting or removing one secret is a deploy of the app with its secrets
 	// listed, the others without a value (keep).
 	"POST /apps/{id}/secrets":        {ops: []string{"deployApp"}},

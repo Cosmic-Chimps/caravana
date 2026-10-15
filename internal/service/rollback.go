@@ -12,6 +12,8 @@ import (
 // definition it deployed, with the images it ran, pinned by the same
 // digests (the tags are not resolved again). The definition becomes the
 // app's stored one, and the new deployment names deploymentID as its source.
+// The Compose file that version was deployed from, if it had one, becomes the
+// app's kept file; if it had none, the kept file is dropped with a warning.
 //
 // It is refused before anything changes when the deployment isn't healthy
 // (ErrDeploymentNotHealthy), has no recorded definition
@@ -32,5 +34,8 @@ func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID strin
 	if err := s.deployer.CheckDigests(ctx, a, rec.Deployment.Digests); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	return s.saveAndDeploy(ctx, a, Condition{}, trigger, made{}, &pinned{digests: rec.Deployment.Digests, source: deploymentID})
+	// The version's Compose file comes back with its definition, so the editor
+	// shows what that version was made from. A version made from a definition has
+	// none: the kept file is dropped, with the warning saveAndDeploy adds.
+	return s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: rec.Compose}, &pinned{digests: rec.Deployment.Digests, source: deploymentID})
 }

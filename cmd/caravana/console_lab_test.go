@@ -834,7 +834,10 @@ func (c *console) deployedFrom(t *testing.T, id string, resp *http.Response, bod
 // 015). It is created through the console form from a file with a comment;
 // Configure shows the file as typed (the comment is in the page); editing the
 // tag, previewing and deploying with the revision from the page ends healthy,
-// the API's app has the new image, and Configure shows the edited file.
+// the API's app has the new image, and Configure shows the edited file. Then the
+// first deployment is redeployed from the history: Configure shows v1.10 and
+// its comment again, and the history downloads that deployment's file byte for
+// byte.
 func (c *console) composeFileEdit(t *testing.T) {
 	const id = "cfe"
 	remove := func() {
@@ -900,9 +903,47 @@ func (c *console) composeFileEdit(t *testing.T) {
 		t.Errorf("Configure's file after the edit = %q, want %q", got, v11)
 	}
 
-	// The rollback half (task T012) goes here: redeploy the first deployment
-	// from the History, check that Configure shows v10 and its comment again,
-	// and that the history download of the first deployment equals v10.
+	// Rollback: redeploying the first deployment from the history brings back
+	// its file, so Configure shows v1.10 and its comment again.
+	if _, history := c.get(t, "/apps/"+id+"/deployments"); !strings.Contains(history, "/apps/"+id+"/deployments/"+first+"/redeploy") {
+		t.Fatalf("the history doesn't offer to redeploy %s", first)
+	}
+	resp, body = c.post(t, "/apps/"+id+"/deployments/"+first+"/redeploy", url.Values{})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps/"+id+"/deployments" {
+		t.Fatalf("POST redeploy = %d → %q, want 303 to the history: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+	var newest struct {
+		Deployments []struct {
+			ID     string `json:"id"`
+			Source string `json:"source"`
+		} `json:"deployments"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id+"/deployments?limit=1", &newest)
+	if len(newest.Deployments) != 1 || newest.Deployments[0].Source != first {
+		t.Fatalf("newest deployment = %+v, want the redeploy of %s", newest.Deployments, first)
+	}
+	if final := c.g.waitFinalOf(t, id, newest.Deployments[0].ID, 4*time.Minute); final.Status != "healthy" {
+		t.Fatalf("the redeploy %s ended %s: %s", newest.Deployments[0].ID, final.Status, final.Error)
+	}
+	if got := imageOf(); got != "traefik/whoami:v1.10" {
+		t.Errorf("the app's image after the rollback = %q, want traefik/whoami:v1.10", got)
+	}
+	_, page = c.get(t, "/apps/"+id+"/configure")
+	if got := formValuesOf(t, page, "compose-form").Get("compose"); got != v10 {
+		t.Errorf("Configure's file after the rollback = %q, want the first file %q", got, v10)
+	}
+	if !strings.Contains(page, "# cfe: edited here, kept as typed") {
+		t.Errorf("Configure after the rollback lacks the original comment")
+	}
+
+	// The history downloads each deployment's own file, byte for byte.
+	resp, download := c.get(t, "/apps/"+id+"/deployments/"+first+"/compose")
+	if resp.StatusCode != http.StatusOK || download != v10 {
+		t.Errorf("GET the first deployment's Compose file = %d %q, want 200 with %q", resp.StatusCode, download, v10)
+	}
+	if want := `attachment; filename="` + id + "-" + first + `.compose.yaml"`; resp.Header.Get("Content-Disposition") != want {
+		t.Errorf("Content-Disposition = %q, want %q", resp.Header.Get("Content-Disposition"), want)
+	}
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends

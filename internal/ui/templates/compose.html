@@ -67,7 +67,7 @@
   {{end}}
 
   <section aria-labelledby="services-title" class="flex flex-col gap-3">
-    <h2 id="services-title" class="cv-label">{{if or .Previewed .Kept}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
+    <h2 id="services-title" class="cv-label">{{if or .Previewed .Kept .NotKept}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
     {{range .Services}}
     {{$svc := .}}
     <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">
