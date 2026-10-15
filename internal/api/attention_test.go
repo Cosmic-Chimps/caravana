@@ -47,7 +47,7 @@ func seedDeployment(t *testing.T, e *testEnv, appID, id string, status store.Sta
 	t.Helper()
 	ctx := context.Background()
 	d := app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}
-	if _, err := e.Store.CreateDeployment(ctx, appID, d, nil, ""); err != nil {
+	if _, err := e.Store.CreateDeployment(ctx, appID, d, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Store.UpdateDeployment(ctx, id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: &version}); err != nil {
@@ -60,7 +60,7 @@ func seedDeployment(t *testing.T, e *testEnv, appID, id string, status store.Sta
 
 func seedApp(t *testing.T, e *testEnv, id string, services ...app.Service) {
 	t.Helper()
-	if _, err := e.Store.SaveApp(context.Background(), app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: services}); err != nil {
+	if _, err := e.Store.SaveApp(context.Background(), app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: services}, nil); err != nil {
 		t.Fatal(err)
 	}
 }

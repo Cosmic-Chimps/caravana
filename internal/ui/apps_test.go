@@ -111,7 +111,7 @@ type seedDeploy struct {
 func (e *consoleEnv) seed(t *testing.T, a app.App, ds ...seedDeploy) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := e.Store.SaveApp(ctx, a); err != nil {
+	if _, err := e.Store.SaveApp(ctx, a, nil); err != nil {
 		t.Fatalf("SaveApp(%s): %v", a.ID, err)
 	}
 	digests := map[string]string{}
@@ -119,7 +119,7 @@ func (e *consoleEnv) seed(t *testing.T, a app.App, ds ...seedDeploy) {
 		digests[svc.Name] = "traefik/whoami@" + sampleDigest
 	}
 	for _, d := range ds {
-		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests}, d.Definition, d.Source); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests}, d.Definition, nil, d.Source); err != nil {
 			t.Fatalf("CreateDeployment(%s): %v", d.ID, err)
 		}
 		if d.Version != 0 {

@@ -25,11 +25,11 @@ func leftover(t *testing.T, status store.Status, version *uint64, inNomad bool) 
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	if _, err := st.SaveApp(ctx, whoami()); err != nil {
+	if _, err := st.SaveApp(ctx, whoami(), nil); err != nil {
 		t.Fatal(err)
 	}
 	id := "leftover"
-	if _, err := st.CreateDeployment(ctx, "whoami", app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}, nil, ""); err != nil {
+	if _, err := st.CreateDeployment(ctx, "whoami", app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if status == store.StatusRunning {

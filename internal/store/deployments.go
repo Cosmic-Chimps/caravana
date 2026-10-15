@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 )
 
 // Status is where a deployment stands.
@@ -43,6 +44,10 @@ type DeploymentRecord struct {
 	// Definition is the app as this deployment deployed it, secret values
 	// left out. nil for deployments recorded before feature 011.
 	Definition *app.App
+	// Compose is the app's kept Compose file when this deployment ran, secret
+	// values left out. nil for deployments not made from a file and for those
+	// recorded before feature 015.
+	Compose *compose.Request
 	// Source is the deployment this one redeployed, or "".
 	Source    string
 	CreatedAt time.Time
@@ -60,9 +65,10 @@ type DeploymentUpdate struct {
 
 // CreateDeployment records a new, pending deployment of an existing app,
 // with the definition it deploys (stored without secret values; nil stores
-// none) and the deployment it redeploys (source, or ""). Neither changes
-// afterwards.
-func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deployment, definition *app.App, source string) (DeploymentRecord, error) {
+// none), the Compose file the app keeps (file, likewise without secret
+// values; nil stores none) and the deployment it redeploys (source, or "").
+// None of them changes afterwards.
+func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deployment, definition *app.App, file *compose.Request, source string) (DeploymentRecord, error) {
 	if d.ID == "" {
 		return DeploymentRecord{}, errors.New("create deployment: ID is required")
 	}
@@ -77,6 +83,10 @@ func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deploy
 			return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
 		}
 		def = sql.NullString{String: string(doc), Valid: true}
+	}
+	kept, err := composeColumn(file)
+	if err != nil {
+		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
 	}
 	if source != "" {
 		src = sql.NullString{String: source, Valid: true}
@@ -101,9 +111,9 @@ func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deploy
 
 	now := formatTime(s.now())
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO deployments (id, app_id, trigger, digests, status, definition, source_deployment, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, appID, string(d.Trigger), string(digests), string(StatusPending), def, src, now, now); err != nil {
+		INSERT INTO deployments (id, app_id, trigger, digests, status, definition, compose, source_deployment, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, appID, string(d.Trigger), string(digests), string(StatusPending), def, kept, src, now, now); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("create deployment %q: %w", d.ID, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -317,7 +327,7 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, source_deployment, created_at, updated_at"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at"
 
 // querier is what *sql.DB and *sql.Tx have in common, so the same read works
 // inside and outside a transaction.
@@ -345,10 +355,10 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		trigger, digests, status, warnings string
 		created, updated                   string
 		jobVersion                         sql.NullInt64
-		definition, source                 sql.NullString
+		definition, kept, source           sql.NullString
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
-		&warnings, &rec.Error, &definition, &source, &created, &updated); err != nil {
+		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
@@ -366,6 +376,12 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		rec.Definition = new(app.App)
 		if err := json.Unmarshal([]byte(definition.String), rec.Definition); err != nil {
 			return DeploymentRecord{}, fmt.Errorf("decode definition: %w", err)
+		}
+	}
+	if kept.Valid {
+		rec.Compose = new(compose.Request)
+		if err := json.Unmarshal([]byte(kept.String), rec.Compose); err != nil {
+			return DeploymentRecord{}, fmt.Errorf("decode compose file: %w", err)
 		}
 	}
 	rec.Source = source.String

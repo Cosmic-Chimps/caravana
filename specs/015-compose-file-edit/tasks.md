@@ -30,12 +30,12 @@ Files: `internal/compose/compose.go`, `internal/compose/compose_test.go`,
 `internal/store/deployments.go`, `internal/store/*_test.go`, and the store call sites in
 `internal/service`, `internal/api`, `internal/ui` and `cmd/caravana` (tests included)
 
-- [ ] T001 [P] `Request.WithoutSecretValues` (data-model "Kept file", research R11): in internal/compose/compose.go, beside `Request`, add `func (r Request) WithoutSecretValues() Request`. It returns a copy with a new `Services` map and new `Secrets` slices in which every `app.Secret.Value` is nil and names are kept; the caller's request is never changed. A nil or empty `Services` stays as it is. Tests in internal/compose/compose_test.go: values gone, names and order kept, other overlay fields equal, the original request unchanged (mutate the copy and check the original), empty and nil maps.
-- [ ] T002 [P] Migration (data-model "Migration"): add internal/store/migrations/0007_compose_file.sql with the two `ALTER TABLE … ADD COLUMN compose TEXT;` statements and the comments in data-model.md. Check that the store's migration runner picks it up the way it picks up 0006_rollback.sql (embedded, by file name), and extend the store's migration test if there is one listing the files.
+- [X] T001 [P] `Request.WithoutSecretValues` (data-model "Kept file", research R11): in internal/compose/compose.go, beside `Request`, add `func (r Request) WithoutSecretValues() Request`. It returns a copy with a new `Services` map and new `Secrets` slices in which every `app.Secret.Value` is nil and names are kept; the caller's request is never changed. A nil or empty `Services` stays as it is. Tests in internal/compose/compose_test.go: values gone, names and order kept, other overlay fields equal, the original request unchanged (mutate the copy and check the original), empty and nil maps.
+- [X] T002 [P] Migration (data-model "Migration"): add internal/store/migrations/0007_compose_file.sql with the two `ALTER TABLE … ADD COLUMN compose TEXT;` statements and the comments in data-model.md. Check that the store's migration runner picks it up the way it picks up 0006_rollback.sql (embedded, by file name), and extend the store's migration test if there is one listing the files.
 
 **⟶ Wait for T001 and T002, then:**
 
-- [ ] T003 Store records and write calls (research R1–R3, data-model "Store records"), in internal/store/apps.go and internal/store/deployments.go:
+- [X] T003 Store records and write calls (research R1–R3, data-model "Store records"), in internal/store/apps.go and internal/store/deployments.go:
   - Add `Compose *compose.Request` to `store.AppRecord` and `store.DeploymentRecord`.
   - Change the signatures to `SaveApp(ctx, a, file *compose.Request)`, `SaveAppIf(ctx, a, file, revision)`, `InsertApp(ctx, a, file)` and `CreateDeployment(ctx, appID, d, definition, file, source)`.
   - Each write stores `json.Marshal(file.WithoutSecretValues())` in the `compose` column, or NULL when `file` is nil.

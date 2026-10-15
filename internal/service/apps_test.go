@@ -164,7 +164,7 @@ func finalDeployment(t *testing.T, st *store.Store, appID, id string, status sto
 	t.Helper()
 	ctx := context.Background()
 	d := app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{}}
-	if _, err := st.CreateDeployment(ctx, appID, d, nil, ""); err != nil {
+	if _, err := st.CreateDeployment(ctx, appID, d, nil, nil, ""); err != nil {
 		t.Fatalf("CreateDeployment: %v", err)
 	}
 	if _, err := st.UpdateDeployment(ctx, id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: &version}); err != nil {
@@ -195,7 +195,7 @@ func TestListApps(t *testing.T) {
 	t.Run("by ID with status and last deployment, one Nomad request", func(t *testing.T) {
 		e := newEnv(t)
 		for _, a := range []app.App{appWith("whoami", 2), appWith("blog", 1), appWith("shop", 1)} {
-			if _, err := e.store.SaveApp(ctx, a); err != nil {
+			if _, err := e.store.SaveApp(ctx, a, nil); err != nil {
 				t.Fatalf("SaveApp: %v", err)
 			}
 		}
@@ -243,7 +243,7 @@ func TestListApps(t *testing.T) {
 	t.Run("Nomad down: unknown summaries, no error, one log line", func(t *testing.T) {
 		e, logs := loggedEnv(t)
 		for _, id := range []string{"whoami", "blog"} {
-			if _, err := e.store.SaveApp(ctx, appWith(id, 1)); err != nil {
+			if _, err := e.store.SaveApp(ctx, appWith(id, 1), nil); err != nil {
 				t.Fatal(err)
 			}
 			finalDeployment(t, e.store, id, id+"-1", store.StatusHealthy, 1)
@@ -274,7 +274,7 @@ func TestListApps(t *testing.T) {
 func TestAppSummary(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
-	if _, err := e.store.SaveApp(ctx, appWith("whoami", 1)); err != nil {
+	if _, err := e.store.SaveApp(ctx, appWith("whoami", 1), nil); err != nil {
 		t.Fatal(err)
 	}
 	finalDeployment(t, e.store, "whoami", "w1", store.StatusHealthy, 4)
@@ -303,7 +303,7 @@ func TestRecentDeployments(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	for _, id := range []string{"whoami", "blog"} {
-		if _, err := e.store.SaveApp(ctx, appWith(id, 1)); err != nil {
+		if _, err := e.store.SaveApp(ctx, appWith(id, 1), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -394,7 +394,7 @@ func TestListDeploymentsBefore(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	for _, id := range []string{"whoami", "blog"} {
-		if _, err := e.store.SaveApp(ctx, appWith(id, 1)); err != nil {
+		if _, err := e.store.SaveApp(ctx, appWith(id, 1), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -583,7 +583,7 @@ func TestCopies(t *testing.T) {
 
 	t.Run("not-ended copies, plus the ended copies of the newest version, in order", func(t *testing.T) {
 		e := newEnv(t)
-		if _, err := e.store.SaveApp(ctx, appWith("blog", 1, 1)); err != nil {
+		if _, err := e.store.SaveApp(ctx, appWith("blog", 1, 1), nil); err != nil {
 			t.Fatalf("SaveApp: %v", err)
 		}
 		e.nomad.SetCopies("blog",
@@ -614,7 +614,7 @@ func TestCopies(t *testing.T) {
 
 	t.Run("an app with no copies has an empty list, not nil", func(t *testing.T) {
 		e := newEnv(t)
-		if _, err := e.store.SaveApp(ctx, appWith("blog", 1)); err != nil {
+		if _, err := e.store.SaveApp(ctx, appWith("blog", 1), nil); err != nil {
 			t.Fatalf("SaveApp: %v", err)
 		}
 		got, err := e.svc.Copies(ctx, "blog")
@@ -626,7 +626,7 @@ func TestCopies(t *testing.T) {
 	t.Run("another app's copies are not listed", func(t *testing.T) {
 		e := newEnv(t)
 		for _, id := range []string{"blog", "shop"} {
-			if _, err := e.store.SaveApp(ctx, appWith(id, 1)); err != nil {
+			if _, err := e.store.SaveApp(ctx, appWith(id, 1), nil); err != nil {
 				t.Fatalf("SaveApp: %v", err)
 			}
 		}
@@ -646,7 +646,7 @@ func TestCopies(t *testing.T) {
 
 	t.Run("Nomad down is ErrNomadUnavailable", func(t *testing.T) {
 		e := newEnv(t)
-		if _, err := e.store.SaveApp(ctx, appWith("blog", 1)); err != nil {
+		if _, err := e.store.SaveApp(ctx, appWith("blog", 1), nil); err != nil {
 			t.Fatalf("SaveApp: %v", err)
 		}
 		e.nomad.Down()
@@ -754,7 +754,7 @@ func TestDeleteApp(t *testing.T) {
 
 	t.Run("a job already gone from Nomad doesn't stop the delete", func(t *testing.T) {
 		e := newEnv(t)
-		if _, err := e.store.SaveApp(ctx, whoami()); err != nil {
+		if _, err := e.store.SaveApp(ctx, whoami(), nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := e.svc.DeleteApp(ctx, "whoami"); err != nil {

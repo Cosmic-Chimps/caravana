@@ -33,7 +33,7 @@ func TestNoSecretReachesLogsOrResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	if _, err := seed.SaveApp(context.Background(), apptest.Whoami().App); err != nil {
+	if _, err := seed.SaveApp(context.Background(), apptest.Whoami().App, nil); err != nil {
 		t.Fatalf("seed app: %v", err)
 	}
 	seed.Close()

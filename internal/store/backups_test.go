@@ -34,7 +34,7 @@ func TestBackupDestination(t *testing.T) {
 func TestBackupRecords(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
-	if _, err := s.SaveApp(ctx, app.App{ID: "blog", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}); err != nil {
+	if _, err := s.SaveApp(ctx, app.App{ID: "blog", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	t0 := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
@@ -114,7 +114,7 @@ func TestLatestBackupRuns(t *testing.T) {
 	t.Run("the newest of each service of each app", func(t *testing.T) {
 		s := openTestStore(t)
 		for _, id := range []string{"blog", "shop"} {
-			if _, err := s.SaveApp(ctx, app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}); err != nil {
+			if _, err := s.SaveApp(ctx, app.App{ID: id, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}, nil); err != nil {
 				t.Fatal(err)
 			}
 		}

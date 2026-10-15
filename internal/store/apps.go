@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 )
 
 // appSchemaVersion is the format of the app documents this binary writes.
@@ -24,25 +25,55 @@ var ErrRevisionMismatch = errors.New("app changed since it was read")
 
 // AppRecord is a stored app.
 type AppRecord struct {
-	App       app.App
+	App app.App
+	// Compose is the Compose file the app was made from, as last deployed,
+	// secret values left out. nil when the app wasn't made from a file, or
+	// the file was dropped.
+	Compose   *compose.Request
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	// Revision names this exact stored document: the first 16 hex digits of
-	// the SHA-256 of its JSON. The same document always has the same revision,
-	// so a save that changes nothing doesn't move it, and any change does.
+	// Revision names this exact stored app: the first 16 hex digits of the
+	// SHA-256 of its JSON document and, when it keeps a Compose file, of that
+	// file's JSON too. The same app and file always have the same revision, so
+	// a save that changes nothing doesn't move it, and any change (even a
+	// comment in the file) does.
 	Revision string
 }
 
-// revisionOf returns the revision of a stored document.
-func revisionOf(doc string) string {
-	sum := sha256.Sum256([]byte(doc))
-	return hex.EncodeToString(sum[:])[:16]
+// revisionOf returns the revision of a stored app: the hash of the document,
+// then, only when the app keeps a file, a zero byte and the file's JSON. The
+// zero byte keeps the two parts from running together. An app without a file
+// hashes the document alone, so its revision is what it was before files were
+// kept and open console pages don't turn stale.
+func revisionOf(doc, composeJSON string, kept bool) string {
+	h := sha256.New()
+	h.Write([]byte(doc))
+	if kept {
+		h.Write([]byte{0})
+		h.Write([]byte(composeJSON))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// SaveApp inserts the app, or replaces the stored one with the same ID.
-// Saving an identical app changes nothing, not even UpdatedAt, so repeating
-// the same deploy payload only adds a deployment record.
-func (s *Store) SaveApp(ctx context.Context, a app.App) (AppRecord, error) {
+// composeColumn is the value for the compose column: the file's JSON without
+// secret values, or NULL for no file. The service strips the values too; this
+// is the second line, so no caller can store one by mistake.
+func composeColumn(file *compose.Request) (sql.NullString, error) {
+	if file == nil {
+		return sql.NullString{}, nil
+	}
+	doc, err := json.Marshal(file.WithoutSecretValues())
+	if err != nil {
+		return sql.NullString{}, err
+	}
+	return sql.NullString{String: string(doc), Valid: true}, nil
+}
+
+// SaveApp inserts the app, or replaces the stored one with the same ID. file
+// is the Compose file the app was made from, or nil. Saving an identical app
+// and file changes nothing, not even UpdatedAt, so repeating the same deploy
+// payload only adds a deployment record.
+func (s *Store) SaveApp(ctx context.Context, a app.App, file *compose.Request) (AppRecord, error) {
 	if a.ID == "" {
 		return AppRecord{}, errors.New("save app: ID is required")
 	}
@@ -50,16 +81,23 @@ func (s *Store) SaveApp(ctx context.Context, a app.App) (AppRecord, error) {
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
+	kept, err := composeColumn(file)
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
 	now := formatTime(s.now())
+	// IS NOT, not !=, for compose: it is NULL for an app without a file, and
+	// NULL != 'x' is NULL (not true), which would skip a real change.
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO apps (id, schema_version, document, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			schema_version = excluded.schema_version,
 			document       = excluded.document,
+			compose        = excluded.compose,
 			updated_at     = excluded.updated_at
-		WHERE apps.document != excluded.document`,
-		a.ID, appSchemaVersion, string(doc), now, now)
+		WHERE apps.document != excluded.document OR apps.compose IS NOT excluded.compose`,
+		a.ID, appSchemaVersion, string(doc), kept, now, now)
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
@@ -71,12 +109,17 @@ func (s *Store) SaveApp(ctx context.Context, a app.App) (AppRecord, error) {
 // ErrRevisionMismatch. The read and the write share one transaction (which
 // takes the write lock when it begins), so two saves from the same revision
 // can't both pass. An unknown ID is ErrNotFound. Like SaveApp, an identical
-// document leaves UpdatedAt alone.
-func (s *Store) SaveAppIf(ctx context.Context, a app.App, revision string) (AppRecord, error) {
+// document and file leave UpdatedAt alone. The revision covers the stored
+// file, so a stale revision is refused even when only the file changed.
+func (s *Store) SaveAppIf(ctx context.Context, a app.App, file *compose.Request, revision string) (AppRecord, error) {
 	if a.ID == "" {
 		return AppRecord{}, errors.New("save app: ID is required")
 	}
 	doc, err := json.Marshal(a)
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
+	}
+	kept, err := composeColumn(file)
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
@@ -89,22 +132,23 @@ func (s *Store) SaveAppIf(ctx context.Context, a app.App, revision string) (AppR
 	// The connection pool has one connection and this transaction holds it,
 	// so every read and write below goes through tx, never through s.db.
 	var stored string
-	err = tx.QueryRowContext(ctx, "SELECT document FROM apps WHERE id = ?", a.ID).Scan(&stored)
+	var storedCompose sql.NullString
+	err = tx.QueryRowContext(ctx, "SELECT document, compose FROM apps WHERE id = ?", a.ID).Scan(&stored, &storedCompose)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppRecord{}, fmt.Errorf("app %q: %w", a.ID, ErrNotFound)
 	}
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
-	if current := revisionOf(stored); current != revision {
+	if current := revisionOf(stored, storedCompose.String, storedCompose.Valid); current != revision {
 		return AppRecord{}, fmt.Errorf("app %q is at revision %s, not %s: %w",
 			a.ID, current, revision, ErrRevisionMismatch)
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE apps SET schema_version = ?, document = ?, updated_at = ?
-		WHERE id = ? AND document != ?`,
-		appSchemaVersion, string(doc), formatTime(s.now()), a.ID, string(doc)); err != nil {
+		UPDATE apps SET schema_version = ?, document = ?, compose = ?, updated_at = ?
+		WHERE id = ? AND (document != ? OR compose IS NOT ?)`,
+		appSchemaVersion, string(doc), kept, formatTime(s.now()), a.ID, string(doc), kept); err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
 	rec, err := scanApp(tx.QueryRowContext(ctx, "SELECT "+appColumns+" FROM apps WHERE id = ?", a.ID))
@@ -121,7 +165,7 @@ func (s *Store) SaveAppIf(ctx context.Context, a app.App, revision string) (AppR
 // nothing changes: unlike SaveApp it never replaces, so two concurrent
 // creates of one ID can't both win (the database decides, not a check
 // before the write).
-func (s *Store) InsertApp(ctx context.Context, a app.App) (AppRecord, error) {
+func (s *Store) InsertApp(ctx context.Context, a app.App, file *compose.Request) (AppRecord, error) {
 	if a.ID == "" {
 		return AppRecord{}, errors.New("insert app: ID is required")
 	}
@@ -129,12 +173,16 @@ func (s *Store) InsertApp(ctx context.Context, a app.App) (AppRecord, error) {
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
 	}
+	kept, err := composeColumn(file)
+	if err != nil {
+		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
+	}
 	now := formatTime(s.now())
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO apps (id, schema_version, document, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`,
-		a.ID, appSchemaVersion, string(doc), now, now)
+		a.ID, appSchemaVersion, string(doc), kept, now, now)
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
 	}
@@ -184,7 +232,7 @@ func (s *Store) ListApps(ctx context.Context) ([]AppRecord, error) {
 	return out, nil
 }
 
-const appColumns = "id, schema_version, document, created_at, updated_at"
+const appColumns = "id, schema_version, document, compose, created_at, updated_at"
 
 // scanApp reads one row of appColumns and decodes the app document. It
 // returns sql.ErrNoRows unwrapped (for GetApp); other errors name the app.
@@ -192,8 +240,9 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 	var (
 		id, doc, created, upd string
 		version               int
+		kept                  sql.NullString
 	)
-	if err := row.Scan(&id, &version, &doc, &created, &upd); err != nil {
+	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd); err != nil {
 		return AppRecord{}, err
 	}
 	if version > appSchemaVersion {
@@ -201,9 +250,15 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 			id, version, appSchemaVersion, ErrSchemaTooNew)
 	}
 
-	rec := AppRecord{Revision: revisionOf(doc)}
+	rec := AppRecord{Revision: revisionOf(doc, kept.String, kept.Valid)}
 	if err := json.Unmarshal([]byte(doc), &rec.App); err != nil {
 		return AppRecord{}, fmt.Errorf("decode app %q: %w", id, err)
+	}
+	if kept.Valid {
+		rec.Compose = new(compose.Request)
+		if err := json.Unmarshal([]byte(kept.String), rec.Compose); err != nil {
+			return AppRecord{}, fmt.Errorf("decode compose file of app %q: %w", id, err)
+		}
 	}
 	var err error
 	if rec.CreatedAt, err = parseTime(created); err != nil {

@@ -20,7 +20,7 @@ import (
 func logsEnv(t *testing.T) *env {
 	t.Helper()
 	e := newEnv(t)
-	if _, err := e.store.SaveApp(context.Background(), appWith("blog", 2, 1)); err != nil {
+	if _, err := e.store.SaveApp(context.Background(), appWith("blog", 2, 1), nil); err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
 	start := func(minute int) map[string]*api.TaskState {
@@ -165,7 +165,7 @@ func TestLogsUnknowns(t *testing.T) {
 		}
 	})
 	t.Run("an app without copies has no lines", func(t *testing.T) {
-		if _, err := e.store.SaveApp(context.Background(), appWith("quiet", 1)); err != nil {
+		if _, err := e.store.SaveApp(context.Background(), appWith("quiet", 1), nil); err != nil {
 			t.Fatal(err)
 		}
 		lines, err := readLogs(t, e, "quiet", LogQuery{Lines: 500})

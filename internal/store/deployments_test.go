@@ -17,7 +17,7 @@ import (
 func storeWithApp(t *testing.T) *Store {
 	t.Helper()
 	s := openTestStore(t)
-	if _, err := s.SaveApp(context.Background(), apptest.Whoami().App); err != nil {
+	if _, err := s.SaveApp(context.Background(), apptest.Whoami().App, nil); err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
 	return s
@@ -34,11 +34,11 @@ func TestDeployments(t *testing.T) {
 
 	t.Run("create", func(t *testing.T) {
 		s := storeWithApp(t)
-		if _, err := s.CreateDeployment(ctx, "nope", newDeployment("d1"), nil, ""); !errors.Is(err, ErrNotFound) {
+		if _, err := s.CreateDeployment(ctx, "nope", newDeployment("d1"), nil, nil, ""); !errors.Is(err, ErrNotFound) {
 			t.Errorf("create for an unknown app = %v, want ErrNotFound", err)
 		}
 
-		rec, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, "")
+		rec, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, nil, "")
 		if err != nil {
 			t.Fatalf("CreateDeployment: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestDeployments(t *testing.T) {
 			t.Errorf("GetDeployment = %+v, %v; want %+v", got, err, rec)
 		}
 
-		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, ""); !errors.Is(err, ErrAlreadyExists) {
+		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, nil, ""); !errors.Is(err, ErrAlreadyExists) {
 			t.Errorf("duplicate create = %v, want ErrAlreadyExists", err)
 		}
 	})
@@ -61,7 +61,7 @@ func TestDeployments(t *testing.T) {
 	t.Run("list newest first", func(t *testing.T) {
 		s := storeWithApp(t)
 		for _, id := range []string{"d1", "d2", "d3"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -73,7 +73,7 @@ func TestDeployments(t *testing.T) {
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 		s.now = func() time.Time { return fixed }
 		for _, id := range []string{"a", "c", "b"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -99,7 +99,7 @@ func TestDeployments(t *testing.T) {
 
 	t.Run("update", func(t *testing.T) {
 		s := storeWithApp(t)
-		created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, "")
+		created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, nil, "")
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
@@ -152,7 +152,7 @@ func TestDeployments(t *testing.T) {
 	t.Run("list with a limit", func(t *testing.T) {
 		s := storeWithApp(t)
 		for _, id := range []string{"d1", "d2", "d3"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -180,7 +180,7 @@ func TestDeployments(t *testing.T) {
 		s := storeWithApp(t)
 		final := map[string]Status{"healthy": StatusHealthy, "failed": StatusFailed, "reverted": StatusReverted, "superseded": StatusSuperseded}
 		for _, id := range []string{"pending", "running", "healthy", "failed", "reverted", "superseded"} {
-			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 			if id == "pending" {
@@ -251,7 +251,7 @@ func TestTransitions(t *testing.T) {
 		for _, to := range append(all, "bogus") {
 			t.Run(string(from)+"->"+string(to), func(t *testing.T) {
 				s := storeWithApp(t)
-				if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, ""); err != nil {
+				if _, err := s.CreateDeployment(ctx, "whoami", newDeployment("d1"), nil, nil, ""); err != nil {
 					t.Fatalf("create: %v", err)
 				}
 				for _, step := range pathTo[from] {
@@ -289,7 +289,7 @@ func TestLatestHealthyDeployment(t *testing.T) {
 	// end creates a deployment and moves it to a final status.
 	end := func(id string, final Status) {
 		t.Helper()
-		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, ""); err != nil {
+		if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: StatusRunning}); err != nil {
@@ -323,7 +323,7 @@ func storeWithApps(t *testing.T) *Store {
 	for _, id := range []string{"blog", "shop", "whoami"} {
 		a := apptest.Whoami().App
 		a.ID = id
-		if _, err := s.SaveApp(context.Background(), a); err != nil {
+		if _, err := s.SaveApp(context.Background(), a, nil); err != nil {
 			t.Fatalf("SaveApp %s: %v", id, err)
 		}
 	}
@@ -347,7 +347,7 @@ func TestLatestDeployments(t *testing.T) {
 		for _, d := range []struct{ app, id string }{
 			{"blog", "b1"}, {"whoami", "w1"}, {"blog", "b2"}, {"whoami", "w2"}, {"blog", "b3"},
 		} {
-			if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", d.id, err)
 			}
 		}
@@ -372,7 +372,7 @@ func TestLatestDeployments(t *testing.T) {
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 		s.now = func() time.Time { return fixed }
 		for _, id := range []string{"c", "a", "b"} {
-			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
 			}
 		}
@@ -398,7 +398,7 @@ func TestListRecentDeployments(t *testing.T) {
 	for _, d := range []struct{ app, id string }{
 		{"blog", "d1"}, {"whoami", "d2"}, {"blog", "d3"}, {"shop", "d4"}, {"whoami", "d5"},
 	} {
-		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, ""); err != nil {
+		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, nil, ""); err != nil {
 			t.Fatalf("create %s: %v", d.id, err)
 		}
 	}
@@ -438,7 +438,7 @@ func TestListDeploymentsBefore(t *testing.T) {
 	for _, d := range []struct{ app, id string }{
 		{"whoami", "d1"}, {"blog", "b1"}, {"whoami", "d2"}, {"whoami", "d3"}, {"whoami", "d4"},
 	} {
-		rec, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, "")
+		rec, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, nil, "")
 		if err != nil {
 			t.Fatalf("create %s: %v", d.id, err)
 		}
@@ -488,11 +488,11 @@ func TestDeploymentDefinition(t *testing.T) {
 	def.Services[0].Env = []app.EnvVar{{Name: "MODE", Value: "a"}}
 	def.Services[0].Secrets = []app.Secret{{Name: "TOKEN", Value: new("s3cret")}}
 
-	created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d2"), &def, "d1")
+	created, err := s.CreateDeployment(ctx, "whoami", newDeployment("d2"), &def, nil, "d1")
 	if err != nil {
 		t.Fatalf("CreateDeployment: %v", err)
 	}
-	old, err := s.CreateDeployment(ctx, "whoami", newDeployment("d0"), nil, "")
+	old, err := s.CreateDeployment(ctx, "whoami", newDeployment("d0"), nil, nil, "")
 	if err != nil {
 		t.Fatalf("CreateDeployment: %v", err)
 	}

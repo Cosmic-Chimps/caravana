@@ -62,7 +62,7 @@ func TestExport(t *testing.T) {
 	t.Run("no healthy deployment", func(t *testing.T) {
 		other := whoami()
 		other.ID = "other"
-		if _, err := e.store.SaveApp(ctx, other); err != nil {
+		if _, err := e.store.SaveApp(ctx, other, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := e.svc.Export(ctx, "other", ""); !errors.Is(err, ErrNoLiveDeployment) {

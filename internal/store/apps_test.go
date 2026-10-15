@@ -34,7 +34,7 @@ func TestAppsRoundTrip(t *testing.T) {
 	s := openTestStore(t)
 	for _, c := range apptest.Cases() {
 		t.Run(c.Name, func(t *testing.T) {
-			if _, err := s.SaveApp(ctx, c.App); err != nil {
+			if _, err := s.SaveApp(ctx, c.App, nil); err != nil {
 				t.Fatalf("SaveApp: %v", err)
 			}
 			got, err := s.GetApp(ctx, c.App.ID)
@@ -53,7 +53,7 @@ func TestAppsSave(t *testing.T) {
 	s := openTestStore(t)
 	a := apptest.Whoami().App
 
-	first, err := s.SaveApp(ctx, a)
+	first, err := s.SaveApp(ctx, a, nil)
 	if err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestAppsSave(t *testing.T) {
 	}
 
 	// Saving the same app again changes nothing, not even UpdatedAt.
-	same, err := s.SaveApp(ctx, apptest.Whoami().App)
+	same, err := s.SaveApp(ctx, apptest.Whoami().App, nil)
 	if err != nil {
 		t.Fatalf("SaveApp identical: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestAppsSave(t *testing.T) {
 
 	changed := apptest.Whoami().App
 	changed.Services[0].Replicas = new(3)
-	after, err := s.SaveApp(ctx, changed)
+	after, err := s.SaveApp(ctx, changed, nil)
 	if err != nil {
 		t.Fatalf("SaveApp changed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestAppsSave(t *testing.T) {
 		t.Errorf("apps rows = %d, %v; want 1", n, err)
 	}
 
-	if _, err := s.SaveApp(ctx, app.App{}); err == nil {
+	if _, err := s.SaveApp(ctx, app.App{}, nil); err == nil {
 		t.Error("SaveApp with an empty ID succeeded")
 	}
 }
@@ -104,7 +104,7 @@ func TestAppsErrors(t *testing.T) {
 		t.Errorf("GetApp(nope) = %v, want ErrNotFound", err)
 	}
 
-	if _, err := s.SaveApp(ctx, apptest.Whoami().App); err != nil {
+	if _, err := s.SaveApp(ctx, apptest.Whoami().App, nil); err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
 	if _, err := s.db.ExecContext(ctx, "UPDATE apps SET schema_version = 2"); err != nil {
@@ -131,7 +131,7 @@ func TestListApps(t *testing.T) {
 	for _, id := range []string{"whoami", "blog", "shop"} {
 		a := apptest.Whoami().App
 		a.ID = id
-		if _, err := s.SaveApp(ctx, a); err != nil {
+		if _, err := s.SaveApp(ctx, a, nil); err != nil {
 			t.Fatalf("SaveApp %s: %v", id, err)
 		}
 	}
@@ -169,7 +169,7 @@ func TestInsertApp(t *testing.T) {
 	s := openTestStore(t)
 	a := apptest.Whoami().App
 
-	rec, err := s.InsertApp(ctx, a)
+	rec, err := s.InsertApp(ctx, a, nil)
 	if err != nil {
 		t.Fatalf("InsertApp: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestInsertApp(t *testing.T) {
 	// The same ID again is refused, and the stored app stays as it was.
 	other := apptest.Whoami().App
 	other.Services[0].Replicas = new(5)
-	if _, err := s.InsertApp(ctx, other); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := s.InsertApp(ctx, other, nil); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("second InsertApp = %v, want ErrAlreadyExists", err)
 	}
 	got, err := s.GetApp(ctx, a.ID)
@@ -191,7 +191,7 @@ func TestInsertApp(t *testing.T) {
 		t.Errorf("the stored app changed\n got: %+v\nwant: %+v", got, rec)
 	}
 
-	if _, err := s.InsertApp(ctx, app.App{}); err == nil {
+	if _, err := s.InsertApp(ctx, app.App{}, nil); err == nil {
 		t.Error("InsertApp without an ID did not fail")
 	}
 }
@@ -200,7 +200,7 @@ func TestAppRevision(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
 
-	first, err := s.SaveApp(ctx, apptest.Whoami().App)
+	first, err := s.SaveApp(ctx, apptest.Whoami().App, nil)
 	if err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestAppRevision(t *testing.T) {
 	}
 
 	// The same document gives the same revision, from every reader.
-	same, err := s.SaveApp(ctx, apptest.Whoami().App)
+	same, err := s.SaveApp(ctx, apptest.Whoami().App, nil)
 	if err != nil {
 		t.Fatalf("SaveApp identical: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestAppRevision(t *testing.T) {
 	// A change gives a new one.
 	changed := apptest.Whoami().App
 	changed.Services[0].Replicas = new(3)
-	after, err := s.SaveApp(ctx, changed)
+	after, err := s.SaveApp(ctx, changed, nil)
 	if err != nil {
 		t.Fatalf("SaveApp changed: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestAppRevision(t *testing.T) {
 	// A fresh insert reports its revision too.
 	other := apptest.Whoami().App
 	other.ID = "other"
-	ins, err := s.InsertApp(ctx, other)
+	ins, err := s.InsertApp(ctx, other, nil)
 	if err != nil || ins.Revision == "" {
 		t.Errorf("InsertApp revision = %q, %v; want one", ins.Revision, err)
 	}
@@ -250,7 +250,7 @@ func TestAppRevision(t *testing.T) {
 func TestSaveAppIf(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
-	first, err := s.SaveApp(ctx, apptest.Whoami().App)
+	first, err := s.SaveApp(ctx, apptest.Whoami().App, nil)
 	if err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestSaveAppIf(t *testing.T) {
 	t.Run("matching revision saves", func(t *testing.T) {
 		edited := apptest.Whoami().App
 		edited.Services[0].Replicas = new(4)
-		rec, err := s.SaveAppIf(ctx, edited, first.Revision)
+		rec, err := s.SaveAppIf(ctx, edited, nil, first.Revision)
 		if err != nil {
 			t.Fatalf("SaveAppIf: %v", err)
 		}
@@ -278,7 +278,7 @@ func TestSaveAppIf(t *testing.T) {
 		}
 		edited := apptest.Whoami().App
 		edited.Services[0].Replicas = new(9)
-		if _, err := s.SaveAppIf(ctx, edited, first.Revision); !errors.Is(err, ErrRevisionMismatch) {
+		if _, err := s.SaveAppIf(ctx, edited, nil, first.Revision); !errors.Is(err, ErrRevisionMismatch) {
 			t.Fatalf("SaveAppIf with a stale revision = %v, want ErrRevisionMismatch", err)
 		}
 		after, err := s.GetApp(ctx, "whoami")
@@ -292,7 +292,7 @@ func TestSaveAppIf(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetApp: %v", err)
 		}
-		rec, err := s.SaveAppIf(ctx, before.App, before.Revision)
+		rec, err := s.SaveAppIf(ctx, before.App, nil, before.Revision)
 		if err != nil {
 			t.Fatalf("SaveAppIf: %v", err)
 		}
@@ -304,7 +304,7 @@ func TestSaveAppIf(t *testing.T) {
 	t.Run("unknown app", func(t *testing.T) {
 		a := apptest.Whoami().App
 		a.ID = "nope"
-		if _, err := s.SaveAppIf(ctx, a, "0000000000000000"); !errors.Is(err, ErrNotFound) {
+		if _, err := s.SaveAppIf(ctx, a, nil, "0000000000000000"); !errors.Is(err, ErrNotFound) {
 			t.Errorf("SaveAppIf on a missing app = %v, want ErrNotFound", err)
 		}
 		if _, err := s.GetApp(ctx, "nope"); !errors.Is(err, ErrNotFound) {
@@ -313,7 +313,7 @@ func TestSaveAppIf(t *testing.T) {
 	})
 
 	t.Run("no ID", func(t *testing.T) {
-		if _, err := s.SaveAppIf(ctx, app.App{}, first.Revision); err == nil {
+		if _, err := s.SaveAppIf(ctx, app.App{}, nil, first.Revision); err == nil {
 			t.Error("SaveAppIf without an ID did not fail")
 		}
 	})
@@ -323,7 +323,7 @@ func TestSaveAppIf(t *testing.T) {
 func TestSaveAppIfConcurrent(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
-	base, err := s.SaveApp(ctx, apptest.Whoami().App)
+	base, err := s.SaveApp(ctx, apptest.Whoami().App, nil)
 	if err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestSaveAppIfConcurrent(t *testing.T) {
 		go func() {
 			a := apptest.Whoami().App
 			a.Services[0].Replicas = new(i + 3)
-			_, err := s.SaveAppIf(ctx, a, base.Revision)
+			_, err := s.SaveAppIf(ctx, a, nil, base.Revision)
 			errs <- err
 		}()
 	}
@@ -368,7 +368,7 @@ func TestDeleteApp(t *testing.T) {
 	t.Run("removes the token, the deployments and the app", func(t *testing.T) {
 		s := storeWithApps(t)
 		for _, id := range []string{"d1", "d2"} {
-			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("CreateDeployment: %v", err)
 			}
 		}
@@ -404,7 +404,7 @@ func TestDeleteApp(t *testing.T) {
 
 	t.Run("an unknown ID is ErrNotFound and nothing changes", func(t *testing.T) {
 		s := storeWithApps(t)
-		if _, err := s.CreateDeployment(ctx, "shop", newDeployment("d1"), nil, ""); err != nil {
+		if _, err := s.CreateDeployment(ctx, "shop", newDeployment("d1"), nil, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.DeleteApp(ctx, "nope"); !errors.Is(err, ErrNotFound) {
@@ -421,7 +421,7 @@ func TestDeleteApp(t *testing.T) {
 	t.Run("another app's rows are untouched", func(t *testing.T) {
 		s := storeWithApps(t)
 		for _, id := range []string{"blog", "shop"} {
-			if _, err := s.CreateDeployment(ctx, id, newDeployment("d-"+id), nil, ""); err != nil {
+			if _, err := s.CreateDeployment(ctx, id, newDeployment("d-"+id), nil, nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.SetWebhookToken(ctx, id, "bb"); err != nil {
@@ -449,7 +449,7 @@ func TestDeleteApp(t *testing.T) {
 		}
 		a := apptest.Whoami().App
 		a.ID = "blog"
-		if _, err := s.InsertApp(ctx, a); err != nil {
+		if _, err := s.InsertApp(ctx, a, nil); err != nil {
 			t.Errorf("InsertApp after delete = %v", err)
 		}
 	})

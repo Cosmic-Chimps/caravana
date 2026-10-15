@@ -89,12 +89,12 @@ func seedHealthy(t *testing.T, e *testEnv, id string, replicas int, version uint
 	a := apptest.Whoami().App
 	a.ID = id
 	a.Services[0].Replicas = &replicas
-	if _, err := e.Store.SaveApp(ctx, a); err != nil {
+	if _, err := e.Store.SaveApp(ctx, a, nil); err != nil {
 		t.Fatal(err)
 	}
 	d := apptest.Whoami().Deployment
 	d.ID = id + "-d1"
-	if _, err := e.Store.CreateDeployment(ctx, id, d, nil, ""); err != nil {
+	if _, err := e.Store.CreateDeployment(ctx, id, d, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Store.UpdateDeployment(ctx, d.ID, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: &version}); err != nil {
@@ -157,7 +157,7 @@ func TestListApps(t *testing.T) {
 	t.Run("an app never deployed has no lastDeployment", func(t *testing.T) {
 		a := apptest.Whoami().App
 		a.ID = "fresh"
-		if _, err := e.Store.SaveApp(context.Background(), a); err != nil {
+		if _, err := e.Store.SaveApp(context.Background(), a, nil); err != nil {
 			t.Fatal(err)
 		}
 		_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps", "", "")

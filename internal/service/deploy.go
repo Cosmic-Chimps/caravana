@@ -115,13 +115,13 @@ func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition) error 
 	stored := a.WithoutSecretValues()
 	switch {
 	case cond.IfNew:
-		if _, err := s.store.InsertApp(ctx, stored); errors.Is(err, store.ErrAlreadyExists) {
+		if _, err := s.store.InsertApp(ctx, stored, nil); errors.Is(err, store.ErrAlreadyExists) {
 			return fmt.Errorf("app %q: %w", a.ID, ErrAppExists)
 		} else if err != nil {
 			return err
 		}
 	case cond.IfRevision != "":
-		if _, err := s.store.SaveAppIf(ctx, stored, cond.IfRevision); errors.Is(err, store.ErrRevisionMismatch) {
+		if _, err := s.store.SaveAppIf(ctx, stored, nil, cond.IfRevision); errors.Is(err, store.ErrRevisionMismatch) {
 			// Name the revision it has now, so the caller can start over from it.
 			if cur, getErr := s.store.GetApp(ctx, a.ID); getErr == nil {
 				return fmt.Errorf("app %q is now at revision %s: %w", a.ID, cur.Revision, ErrAppChanged)
@@ -131,7 +131,7 @@ func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition) error 
 			return err
 		}
 	default:
-		if _, err := s.store.SaveApp(ctx, stored); err != nil {
+		if _, err := s.store.SaveApp(ctx, stored, nil); err != nil {
 			return err
 		}
 	}
@@ -209,7 +209,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	if pin != nil {
 		source = pin.source
 	}
-	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, source)
+	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, nil, source)
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}

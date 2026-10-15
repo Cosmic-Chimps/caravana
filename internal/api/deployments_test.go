@@ -466,18 +466,18 @@ func TestNomadTokenNeverLeaks(t *testing.T) {
 func TestListDeployments(t *testing.T) {
 	ctx := context.Background()
 	e := newTestEnv(t, "")
-	if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App); err != nil {
+	if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App, nil); err != nil {
 		t.Fatal(err)
 	}
 	for i := range 25 {
 		d := apptest.Whoami().Deployment
 		d.ID = fmt.Sprintf("d%02d", i)
-		if _, err := e.Store.CreateDeployment(ctx, "whoami", d, nil, ""); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, "whoami", d, nil, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := e.Store.SaveApp(ctx, app.App{ID: "empty", Source: app.Source{Kind: app.SourceImage},
-		Services: []app.Service{{Name: "worker", Image: "nginx"}}}); err != nil {
+		Services: []app.Service{{Name: "worker", Image: "nginx"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -525,7 +525,7 @@ func TestListRecentDeployments(t *testing.T) {
 	for _, id := range []string{"whoami", "blog"} {
 		a := apptest.Whoami().App
 		a.ID = id
-		if _, err := e.Store.SaveApp(ctx, a); err != nil {
+		if _, err := e.Store.SaveApp(ctx, a, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -533,7 +533,7 @@ func TestListRecentDeployments(t *testing.T) {
 		d := apptest.Whoami().Deployment
 		d.ID = fmt.Sprintf("d%02d", i)
 		appID := []string{"whoami", "blog"}[i%2]
-		if _, err := e.Store.CreateDeployment(ctx, appID, d, nil, ""); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, appID, d, nil, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond) // distinct creation times keep "newest" unambiguous
@@ -640,7 +640,7 @@ func TestDeploymentProgress(t *testing.T) {
 
 	t.Run("listDeployments adds it to the newest running deployment only", func(t *testing.T) {
 		e := newTestEnv(t, "")
-		if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App); err != nil {
+		if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App, nil); err != nil {
 			t.Fatal(err)
 		}
 		job := func() *api.Job { return &api.Job{ID: new("whoami")} }
@@ -656,7 +656,7 @@ func TestDeploymentProgress(t *testing.T) {
 		}{{"d1", 0, store.StatusRunning}, {"d2", 0, store.StatusHealthy}, {"d3", 1, store.StatusRunning}, {"d4", 1, store.StatusRunning}} {
 			dep := apptest.Whoami().Deployment
 			dep.ID = d.id
-			if _, err := e.Store.CreateDeployment(ctx, "whoami", dep, nil, ""); err != nil {
+			if _, err := e.Store.CreateDeployment(ctx, "whoami", dep, nil, nil, ""); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := e.Store.UpdateDeployment(ctx, d.id, store.DeploymentUpdate{Status: store.StatusRunning, JobVersion: new(d.version)}); err != nil {

@@ -458,7 +458,7 @@ func TestAttention(t *testing.T) {
 	t.Run("backups without a destination, until one is set", func(t *testing.T) {
 		e := newEnv(t)
 		// Saved without deploying: Deploy refuses a backup with no destination.
-		if _, err := e.store.SaveApp(ctx, db()); err != nil {
+		if _, err := e.store.SaveApp(ctx, db(), nil); err != nil {
 			t.Fatal(err)
 		}
 		got, err := e.svc.Attention(ctx)

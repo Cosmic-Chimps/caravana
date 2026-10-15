@@ -30,7 +30,7 @@ func statsFor(group string, ticks float64, usedMB uint64) api.AllocResourceUsage
 
 func saveApp(t *testing.T, e *env, a app.App) {
 	t.Helper()
-	if _, err := e.store.SaveApp(context.Background(), a); err != nil {
+	if _, err := e.store.SaveApp(context.Background(), a, nil); err != nil {
 		t.Fatalf("SaveApp: %v", err)
 	}
 }

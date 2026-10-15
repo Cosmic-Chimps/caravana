@@ -20,10 +20,10 @@ func TestVersion(t *testing.T) {
 
 	other := whoami()
 	other.ID = "other"
-	if _, err := e.store.SaveApp(ctx, other); err != nil {
+	if _, err := e.store.SaveApp(ctx, other, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.store.CreateDeployment(ctx, "whoami", app.Deployment{ID: "old", Trigger: app.TriggerManual, Digests: map[string]string{}}, nil, ""); err != nil {
+	if _, err := e.store.CreateDeployment(ctx, "whoami", app.Deployment{ID: "old", Trigger: app.TriggerManual, Digests: map[string]string{}}, nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 

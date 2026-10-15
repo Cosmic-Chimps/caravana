@@ -18,7 +18,7 @@ func recordDeployment(t *testing.T, e *env, id string, def *app.App, status stor
 	t.Helper()
 	ctx := context.Background()
 	d := app.Deployment{ID: id, Trigger: app.TriggerManual, Digests: map[string]string{"web": apptest.WhoamiDigest}}
-	if _, err := e.store.CreateDeployment(ctx, "whoami", d, def, ""); err != nil {
+	if _, err := e.store.CreateDeployment(ctx, "whoami", d, def, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	steps := []store.Status{store.StatusRunning, status}
@@ -107,7 +107,7 @@ func TestRedeployVersionRefused(t *testing.T) {
 			recordDeployment(t, e, "theirs", new(whoami()), store.StatusHealthy)
 			other := whoami()
 			other.ID = "other"
-			if _, err := e.store.SaveApp(ctx, other); err != nil {
+			if _, err := e.store.SaveApp(ctx, other, nil); err != nil {
 				t.Fatal(err)
 			}
 			return "other", "theirs"

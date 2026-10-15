@@ -173,7 +173,7 @@ func TestWebhook(t *testing.T) {
 		tok, _ := e.svc.CreateWebhookToken(ctx, "whoami")
 		edited := whoami()
 		edited.Services[0].Replicas = new(3)
-		if _, err := e.store.SaveApp(ctx, edited); err != nil {
+		if _, err := e.store.SaveApp(ctx, edited, nil); err != nil {
 			t.Fatal(err)
 		}
 		res, err := e.svc.Webhook(ctx, "whoami", tok.Token)
@@ -193,7 +193,7 @@ func TestWebhookUnauthorized(t *testing.T) {
 	other := whoami()
 	other.ID, other.Name = "other", "other"
 	other.Services[0].Domains[0].Host = "other.localhost"
-	if _, err := e.store.SaveApp(ctx, other); err != nil {
+	if _, err := e.store.SaveApp(ctx, other, nil); err != nil {
 		t.Fatal(err)
 	}
 	otherTok, _ := e.svc.CreateWebhookToken(ctx, "other")
@@ -201,7 +201,7 @@ func TestWebhookUnauthorized(t *testing.T) {
 	noToken := whoami()
 	noToken.ID, noToken.Name = "plain", "plain"
 	noToken.Services[0].Domains[0].Host = "plain.localhost"
-	if _, err := e.store.SaveApp(ctx, noToken); err != nil {
+	if _, err := e.store.SaveApp(ctx, noToken, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -326,7 +326,7 @@ func TestWebhookDeployOutcomes(t *testing.T) {
 		{"missing tag", func(e *env) {
 			a := whoami()
 			a.Services[0].Image = "traefik/whoami:nope"
-			if _, err := e.store.SaveApp(context.Background(), a); err != nil {
+			if _, err := e.store.SaveApp(context.Background(), a, nil); err != nil {
 				t.Fatal(err)
 			}
 		}, deploy.ErrImageNotFound},

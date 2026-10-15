@@ -290,7 +290,7 @@ func TestSaveConfigure(t *testing.T) {
 // seedOverwrite stores a over the stored app of the same ID without deploying it.
 func (e *consoleEnv) seedOverwrite(t *testing.T, a app.App) {
 	t.Helper()
-	if _, err := e.Store.SaveApp(context.Background(), a); err != nil {
+	if _, err := e.Store.SaveApp(context.Background(), a, nil); err != nil {
 		t.Fatalf("SaveApp(%s): %v", a.ID, err)
 	}
 }

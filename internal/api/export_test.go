@@ -85,14 +85,14 @@ func TestRedeployAndExport(t *testing.T) {
 func TestRedeployAndExportErrors(t *testing.T) {
 	ctx := context.Background()
 	e := newTestEnv(t, "")
-	if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App); err != nil {
+	if _, err := e.Store.SaveApp(ctx, apptest.Whoami().App, nil); err != nil {
 		t.Fatal(err)
 	}
 	def := apptest.Whoami().App
 	record := func(id string, def *app.App, final store.Status) {
 		t.Helper()
 		if _, err := e.Store.CreateDeployment(ctx, "whoami", app.Deployment{ID: id, Trigger: app.TriggerManual,
-			Digests: map[string]string{"web": apptest.WhoamiDigest}}, def, ""); err != nil {
+			Digests: map[string]string{"web": apptest.WhoamiDigest}}, def, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := e.Store.UpdateDeployment(ctx, id, store.DeploymentUpdate{Status: final}); err != nil {
@@ -124,7 +124,7 @@ func TestRedeployAndExportErrors(t *testing.T) {
 
 	t.Run("an image gone from its registry", func(t *testing.T) {
 		if _, err := e.Store.CreateDeployment(ctx, "whoami", app.Deployment{ID: "gone", Trigger: app.TriggerManual,
-			Digests: map[string]string{"web": "traefik/whoami@sha256:" + strings.Repeat("e", 64)}}, &def, ""); err != nil {
+			Digests: map[string]string{"web": "traefik/whoami@sha256:" + strings.Repeat("e", 64)}}, &def, nil, ""); err != nil {
 			t.Fatal(err)
 		}
 		for _, st := range []store.Status{store.StatusRunning, store.StatusHealthy} {
