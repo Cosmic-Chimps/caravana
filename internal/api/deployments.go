@@ -37,9 +37,12 @@ type deploymentJSON struct {
 	Source string `json:"source,omitempty"`
 	// DefinitionRecorded says whether it can be redeployed (when healthy) and
 	// exported: deployments from before feature 011 can't.
-	DefinitionRecorded bool      `json:"definitionRecorded"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	DefinitionRecorded bool `json:"definitionRecorded"`
+	// ComposeKept says getDeploymentCompose has a file to answer: the
+	// deployment was made from a Compose file.
+	ComposeKept bool      `json:"composeKept"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
@@ -93,6 +96,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 		UpdatedAt:  rec.UpdatedAt,
 	}
 	d.DefinitionRecorded = rec.Definition != nil
+	d.ComposeKept = rec.Compose != nil
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}

@@ -167,6 +167,202 @@ func TestPreviewComposeEndpoint(t *testing.T) {
 	}
 }
 
+// keptSentinel is a secret value that must never come back from any read.
+const keptSentinel = "s3cret-sentinel-015"
+
+// keptFile is a Compose file with a comment and a trailing newline: what the
+// reads must give back byte for byte.
+const keptFile = "# the whoami app\n" + whoamiCompose
+
+// keptRequest is a getCompose answer, decoded as far as the tests look.
+type keptRequest struct {
+	Compose  string `json:"compose"`
+	Services map[string]struct {
+		Secrets []map[string]any `json:"secrets"`
+	} `json:"services"`
+}
+
+// deployKept deploys whoami from keptFile with one secret that has a value,
+// and waits for the rollout. It returns the deployment.
+func deployKept(t *testing.T, e *testEnv) deployment {
+	t.Helper()
+	body := composeBody(t, keptFile, map[string]any{
+		"web": map[string]any{"secrets": []any{map[string]any{"name": "TOKEN", "value": keptSentinel}}},
+	})
+	status, _, raw := call(t, http.MethodPost, e.URL+"/v1/apps/whoami/compose", "application/json", body)
+	if status != http.StatusAccepted {
+		t.Fatalf("deploy: status %d: %s", status, raw)
+	}
+	d := decodeAs[deployment](t, raw)
+	waitHealthy(t, e, "whoami", d.ID)
+	return d
+}
+
+// checkKept checks that raw is a ComposeRequest holding keptFile, with the
+// one secret by name only.
+func checkKept(t *testing.T, raw []byte) {
+	t.Helper()
+	checkSchema(t, loadContract(t), raw, "ComposeRequest")
+	got := decodeAs[keptRequest](t, raw)
+	if got.Compose != keptFile {
+		t.Errorf("compose = %q, want the file byte for byte", got.Compose)
+	}
+	secrets := got.Services["web"].Secrets
+	if len(secrets) != 1 || secrets[0]["name"] != "TOKEN" {
+		t.Errorf("secrets = %v, want TOKEN by name", secrets)
+	}
+	if _, has := secrets[0]["value"]; has {
+		t.Errorf("secret = %v, want no value", secrets[0])
+	}
+	if strings.Contains(string(raw), keptSentinel) {
+		t.Errorf("a secret value came back: %s", raw)
+	}
+}
+
+// Feature 015: getCompose and getDeploymentCompose answer the kept file and
+// overlay, secrets by name, with the app's revision as the ETag.
+func TestGetCompose(t *testing.T) {
+	e := newTestEnv(t, "")
+	d := deployKept(t, e)
+
+	status, header, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/compose", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getCompose: status %d: %s", status, raw)
+	}
+	checkKept(t, raw)
+	if want := `"` + appRevision(t, e, "whoami") + `"`; header.Get("ETag") != want {
+		t.Errorf("ETag = %q, want the app's revision %s", header.Get("ETag"), want)
+	}
+
+	status, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments/"+d.ID+"/compose", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getDeploymentCompose: status %d: %s", status, raw)
+	}
+	checkKept(t, raw)
+}
+
+// Feature 015: a read that has no file to answer is 404 compose_not_kept with
+// its own message; an unknown app or deployment is the plain not_found.
+func TestGetComposeNotKept(t *testing.T) {
+	e := newTestEnv(t, "")
+	image := deployOK(t, e, "whoami", whoamiBody)
+	waitHealthy(t, e, "whoami", image.ID)
+
+	tests := []struct {
+		name, path, wantCode, wantMessage string
+	}{
+		{"app from an image", "/v1/apps/whoami/compose", "compose_not_kept", "This app's Compose file wasn't kept."},
+		{"deployment from an image", "/v1/apps/whoami/deployments/" + image.ID + "/compose", "compose_not_kept", "This deployment wasn't made from a Compose file."},
+		{"unknown app", "/v1/apps/ghost/compose", "not_found", ""},
+		{"unknown app, deployment", "/v1/apps/ghost/deployments/" + image.ID + "/compose", "not_found", ""},
+		{"unknown deployment", "/v1/apps/whoami/deployments/nope/compose", "not_found", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, _, raw := call(t, http.MethodGet, e.URL+tt.path, "", "")
+			if status != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 (body %s)", status, raw)
+			}
+			checkSchema(t, loadContract(t), raw, "Error")
+			got := decodeAs[errorBody](t, raw).Error
+			if got.Code != tt.wantCode || (tt.wantMessage != "" && got.Message != tt.wantMessage) {
+				t.Errorf("error = %+v, want %s %q", got, tt.wantCode, tt.wantMessage)
+			}
+		})
+	}
+}
+
+// Feature 015: composeKept says whether the file read answers 200, on the
+// app, in the list of apps and on every deployment answer.
+func TestComposeKeptFields(t *testing.T) {
+	e := newTestEnv(t, "")
+	kept := deployKept(t, e)
+	image := deployOK(t, e, "plain", whoamiBody)
+	waitHealthy(t, e, "plain", image.ID)
+
+	appKept := func(id string) bool {
+		t.Helper()
+		_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/"+id, "", "")
+		return decodeAs[struct {
+			ComposeKept bool `json:"composeKept"`
+		}](t, raw).ComposeKept
+	}
+	if !appKept("whoami") || appKept("plain") {
+		t.Errorf("getApp composeKept: whoami %v, plain %v; want true, false", appKept("whoami"), appKept("plain"))
+	}
+
+	_, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps", "", "")
+	checkSchema(t, loadContract(t), raw, "AppSummaryList")
+	listed := map[string]bool{}
+	for _, s := range decodeAs[struct {
+		Apps []struct {
+			App         struct{ ID string } `json:"app"`
+			ComposeKept bool                `json:"composeKept"`
+		} `json:"apps"`
+	}](t, raw).Apps {
+		listed[s.App.ID] = s.ComposeKept
+	}
+	if !listed["whoami"] || listed["plain"] || len(listed) != 2 {
+		t.Errorf("listApps composeKept = %v, want whoami true, plain false", listed)
+	}
+
+	_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments/"+kept.ID, "", "")
+	if !decodeAs[deployment](t, raw).ComposeKept {
+		t.Errorf("getDeployment of the Compose deploy: composeKept false, want true (%s)", raw)
+	}
+	_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/plain/deployments", "", "")
+	for _, d := range decodeAs[struct {
+		Deployments []deployment `json:"deployments"`
+	}](t, raw).Deployments {
+		if d.ComposeKept {
+			t.Errorf("listDeployments of an image app: composeKept true on %s", d.ID)
+		}
+	}
+	if !strings.Contains(string(raw), `"composeKept":false`) {
+		t.Errorf("listDeployments = %s, want composeKept false written out", raw)
+	}
+}
+
+// Feature 015: what getCompose answers goes back to deployCompose unchanged:
+// with its ETag as If-Match it is a safe edit, and every secret keeps its value.
+func TestGetComposeRoundTrip(t *testing.T) {
+	e := newTestEnv(t, "")
+	deployKept(t, e)
+	status, header, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/compose", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getCompose: status %d: %s", status, raw)
+	}
+
+	status, _, got := callHeaders(t, http.MethodPost, e.URL+"/v1/apps/whoami/compose", string(raw),
+		[][2]string{{"If-Match", header.Get("ETag")}})
+	if status != http.StatusAccepted {
+		t.Fatalf("deployCompose with the answer: status %d: %s", status, got)
+	}
+	waitHealthy(t, e, "whoami", decodeAs[deployment](t, got).ID)
+	if v := e.Nomad.Variable("nomad/jobs/whoami/web"); v["TOKEN"] != keptSentinel {
+		t.Errorf("secret store = %v, want the value kept", v)
+	}
+
+	// The same ETag is now stale only if the file changed: it didn't.
+	if _, h2, _ := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/compose", "", ""); h2.Get("ETag") != header.Get("ETag") {
+		t.Errorf("ETag after an unchanged deploy = %q, was %q", h2.Get("ETag"), header.Get("ETag"))
+	}
+
+	// A comment-only edit moves it, so the old ETag is refused.
+	edited := strings.Replace(string(raw), "# the whoami app", "# the whoami app, edited", 1)
+	status, _, got = callHeaders(t, http.MethodPost, e.URL+"/v1/apps/whoami/compose", edited,
+		[][2]string{{"If-Match", header.Get("ETag")}})
+	if status != http.StatusAccepted {
+		t.Fatalf("comment edit: status %d: %s", status, got)
+	}
+	waitHealthy(t, e, "whoami", decodeAs[deployment](t, got).ID)
+	status, _, got = callHeaders(t, http.MethodPost, e.URL+"/v1/apps/whoami/compose", edited,
+		[][2]string{{"If-Match", header.Get("ETag")}})
+	if status != http.StatusPreconditionFailed {
+		t.Errorf("stale ETag after a comment edit: status %d, want 412 (%s)", status, got)
+	}
+}
+
 // FR-004, FR-006: refusals are 400 naming the path in the file or request.
 func TestComposeErrors(t *testing.T) {
 	tests := []struct {

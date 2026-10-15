@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.11.0
+  version: 0.12.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -338,13 +338,50 @@ paths:
   /v1/apps/{id}/compose:
     parameters:
       - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: getCompose
+      summary: Read the Compose file the app was last deployed from.
+      description: |
+        The request of the last `deployCompose` (or of the version `redeployDeployment` brought
+        back): the file text exactly as it was sent, with its overlay. Secret values are never
+        returned: each secret in `services` has its `name` only. Sending the answer back to
+        `deployCompose` unchanged keeps every secret's current value, and with the `ETag` as
+        `If-Match` it is a safe edit.
+
+        An app deployed from an image or a definition has no file: 404 `compose_not_kept`
+        (`composeKept` is false on the app). So does an app made from Compose before its file
+        was kept, until it is deployed from Compose once more. A deploy from a definition
+        (`deployApp` with a body) drops the file.
+      tags: [apps]
+      responses:
+        "200":
+          description: The kept request.
+          headers:
+            ETag:
+              $ref: "#/components/headers/AppETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComposeRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No such app (`not_found`), or it has no kept file (`compose_not_kept`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
     post:
       operationId: deployCompose
       summary: Save an app from a Compose file and deploy it.
       description: |
         The Compose file is turned into an app (source kind `compose`) and deployed exactly
         like `deployApp` does with a body: saved under this ID, replacing the stored app, and
-        rolled out. The file itself isn't stored; redeploys use the stored app.
+        rolled out. The file is kept as it was sent, comments included, with the app and with
+        the deployment, and `getCompose` and `getDeploymentCompose` give it back. Secret values
+        are not kept with it: they go to the secret store only. Redeploys use the stored app.
 
         Every attribute of the file is honored, honored with a warning in the deployment's
         `warnings`, or refused with 400 naming it in `field` as a path in the file
@@ -619,6 +656,10 @@ paths:
         With a body, `If-Match` with the `revision` from `getApp` saves only if the stored app
         still has it, else `412 app_changed` and nothing is saved or deployed. Without a body
         the header is ignored: a redeploy changes no definition.
+
+        A body on an app that keeps its Compose file (`composeKept`) drops the file, since the
+        file no longer matches the app: the deploy goes on, and the deployment's `warnings`
+        say so. Without a body, and for a webhook, the kept file is unchanged.
       tags: [deployments]
       parameters:
         - $ref: "#/components/parameters/IfMatch"
@@ -732,6 +773,43 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/apps/{id}/deployments/{deploymentId}/compose:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: getDeploymentCompose
+      summary: Read the Compose file one deployment was made from.
+      description: |
+        The request that deployment was made from, as `getCompose` answers it: secret values are
+        never returned. A deployment made from an image or a definition has none
+        (`composeKept` is false on it), and neither does one from before Caravana kept the file.
+      tags: [deployments]
+      responses:
+        "200":
+          description: The request the deployment was made from.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComposeRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: |
+            No such app, or no such deployment of this app (`not_found`), or the deployment
+            wasn't made from a Compose file (`compose_not_kept`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/deployments/{deploymentId}/redeploy:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -749,6 +827,10 @@ paths:
         pinned by the same digest (tags are not resolved again). The definition becomes the
         stored app, and the new deployment's `source` names the one it came from. It is a new
         deployment and a new Nomad job version, followed like any other (see `deployApp`).
+
+        The Compose file that version was made from becomes the app's kept file again (see
+        `getCompose`). A version made from a definition has none, so a kept file is dropped,
+        with a warning, as `deployApp` does with a body.
 
         Secret values are not versioned: the version's secrets keep their current values. A
         secret it uses that has no value now is refused (400 `invalid_field` on
@@ -1547,7 +1629,7 @@ components:
     AppRecord:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, revision]
+      required: [app, createdAt, updatedAt, revision, composeKept]
       properties:
         app:
           $ref: "#/components/schemas/App"
@@ -1557,20 +1639,27 @@ components:
           type: string
           pattern: "^[0-9a-f]{16}$"
           description: |
-            Names this exact stored definition: it changes whenever the app is saved with a
-            change, and stays the same when it is saved unchanged. Send it as `If-Match` to
-            deploy only if the app is still as you read it.
+            Names this exact stored definition and the Compose file kept with it: it changes
+            whenever the app is saved with a change (a comment-only edit of the file counts),
+            and stays the same when it is saved unchanged. Send it as `If-Match` to deploy only
+            if the app is still as you read it.
           examples: ["0123456789abcdef"]
+        composeKept:
+          type: boolean
+          description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
 
     AppSummary:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, status]
+      required: [app, createdAt, updatedAt, composeKept, status]
       properties:
         app:
           $ref: "#/components/schemas/App"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        composeKept:
+          type: boolean
+          description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
         status:
           $ref: "#/components/schemas/AppStatus"
         lastDeployment:
@@ -1781,7 +1870,7 @@ components:
     Deployment:
       type: object
       additionalProperties: false
-      required: [id, appId, trigger, status, digests, warnings, definitionRecorded, createdAt, updatedAt]
+      required: [id, appId, trigger, status, digests, warnings, definitionRecorded, composeKept, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -1821,6 +1910,12 @@ components:
           description: |
             Whether Caravana saved what this deployment deployed. Only then can it be exported,
             and redeployed once healthy. False for deployments from before version 0.9.0.
+        composeKept:
+          type: boolean
+          description: |
+            The deployment was made from a Compose file, and `getDeploymentCompose` answers
+            200. False for deployments from an image or a definition, and from before version
+            0.12.0.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         progress:
@@ -1930,7 +2025,7 @@ components:
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
                 `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
-                `app_changed`.
+                `app_changed`, `compose_not_kept`.
               examples: [invalid_field]
             message:
               type: string

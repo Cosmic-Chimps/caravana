@@ -57,15 +57,16 @@ func call(t *testing.T, method, url, contentType, body string) (int, http.Header
 
 // deployment is a Deployment response, decoded.
 type deployment struct {
-	ID         string            `json:"id"`
-	AppID      string            `json:"appId"`
-	Trigger    string            `json:"trigger"`
-	Status     string            `json:"status"`
-	JobVersion *uint64           `json:"jobVersion"`
-	Digests    map[string]string `json:"digests"`
-	Warnings   []app.Warning     `json:"warnings"`
-	Error      string            `json:"error"`
-	Progress   *progress         `json:"progress"`
+	ID          string            `json:"id"`
+	AppID       string            `json:"appId"`
+	Trigger     string            `json:"trigger"`
+	Status      string            `json:"status"`
+	JobVersion  *uint64           `json:"jobVersion"`
+	Digests     map[string]string `json:"digests"`
+	Warnings    []app.Warning     `json:"warnings"`
+	Error       string            `json:"error"`
+	Progress    *progress         `json:"progress"`
+	ComposeKept bool              `json:"composeKept"`
 }
 
 // progress is the Progress schema, decoded.

@@ -70,10 +70,11 @@ func TestGetApp(t *testing.T) {
 
 // appSummary is the part of AppSummary the tests read.
 type appSummary struct {
-	App       app.App `json:"app"`
-	CreatedAt string  `json:"createdAt"`
-	UpdatedAt string  `json:"updatedAt"`
-	Status    struct {
+	App         app.App `json:"app"`
+	CreatedAt   string  `json:"createdAt"`
+	UpdatedAt   string  `json:"updatedAt"`
+	ComposeKept bool    `json:"composeKept"`
+	Status      struct {
 		State         string  `json:"state"`
 		WantedCopies  int     `json:"wantedCopies"`
 		HealthyCopies int     `json:"healthyCopies"`

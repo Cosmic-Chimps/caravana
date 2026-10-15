@@ -161,7 +161,7 @@ Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal
   - In internal/service/secretedit.go `editSecrets`: when `rec.Compose != nil`, copy it with `WithoutSecretValues()`, set `file.Services[service].Secrets` to the new list's names (create the `Services` map and the service's `Overlay` entry if missing; an empty list removes the `secrets` key, leaving an overlay entry with no fields deleted), and deploy through `s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: &file}, nil)` instead of `s.Deploy`. Without a file, behavior is unchanged.
 
   Tests: set and remove a secret on a kept-file app, and the `compose` text is identical while the overlay's secret names follow (internal/service/secretedit_test.go). `Redeploy` and the webhook keep the file and record it on the new deployment (internal/service/deploy_test.go, internal/service/webhook_test.go). No warning is added on any of these paths.
-- [ ] T014 [P] [US4] API reads (contracts/api.md, research R9):
+- [X] T014 [P] [US4] API reads (contracts/api.md, research R9):
   - In internal/api/compose.go: add `getCompose` for `GET /v1/apps/{id}/compose`. It reads `s.svc.GetApp` and answers 200 with `rec.Compose` as JSON and `ETag: "<revision>"`; with no file, 404 `compose_not_kept`, message "This app's Compose file wasn't kept."
   - Add `getDeploymentCompose` for `GET /v1/apps/{id}/deployments/{deploymentId}/compose`, using `s.svc.GetDeployment`. With no file, 404 `compose_not_kept`, message "This deployment wasn't made from a Compose file."
   - Add `codeComposeNotKept = "compose_not_kept"` to internal/api/errors.go, and register both routes in internal/api/api.go with the same auth as the other `/v1` reads.

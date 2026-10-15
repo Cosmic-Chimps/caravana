@@ -36,7 +36,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
-	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook"}},
+	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose"}},
 	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
 	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
@@ -55,7 +55,7 @@ var consoleParity = map[string]parity{
 	"POST /apps/new/compose/preview": {ops: []string{"previewCompose"}},
 	"POST /apps/new/compose":         {ops: []string{"deployCompose"}},
 	// Deploy from Compose: getApp gives the revision and what the overlay starts from; deployCompose with If-Match deploys.
-	"GET /apps/{id}/compose":          {ops: []string{"getApp"}},
+	"GET /apps/{id}/compose":          {ops: []string{"getApp", "getCompose"}},
 	"POST /apps/{id}/compose/preview": {ops: []string{"getApp", "previewCompose"}},
 	"POST /apps/{id}/compose":         {ops: []string{"deployCompose"}},
 	"POST /apps/{id}/deploy":          {ops: []string{"deployApp"}},
@@ -65,9 +65,8 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/deployments/{deploymentId}/redeploy": {ops: []string{"redeployDeployment"}},
 	"GET /apps/{id}/deployments/{deploymentId}/jobspec":   {ops: []string{"exportDeployment"}},
 	"GET /apps/{id}/jobspec":                              {ops: []string{"exportApp"}},
-	// The kept Compose file's download (feature 015). T014 adds getDeploymentCompose and
-	// switches this to ops: []string{"getDeploymentCompose"}.
-	"GET /apps/{id}/deployments/{deploymentId}/compose": {why: "the file download; the API twin getDeploymentCompose lands in T014"},
+	// The kept Compose file's download (feature 015).
+	"GET /apps/{id}/deployments/{deploymentId}/compose": {ops: []string{"getDeploymentCompose"}},
 	"POST /apps/{id}/webhook":                           {ops: []string{"createWebhookToken"}},
 	"POST /apps/{id}/webhook/revoke":                    {ops: []string{"deleteWebhookToken"}},
 	// Setting or removing one secret is a deploy of the app with its secrets

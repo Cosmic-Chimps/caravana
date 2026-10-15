@@ -17,6 +17,9 @@ type appRecordJSON struct {
 	// Revision names this exact stored app; a client sends it back as
 	// If-Match to deploy a change only if nobody changed the app meanwhile.
 	Revision string `json:"revision"`
+	// ComposeKept says getCompose has a file to answer: the app was last
+	// deployed from a Compose file.
+	ComposeKept bool `json:"composeKept"`
 }
 
 // getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
@@ -27,7 +30,8 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	w.Header().Set("ETag", `"`+rec.Revision+`"`)
-	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision})
+	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
+		ComposeKept: rec.Compose != nil})
 	return nil
 }
 
@@ -44,6 +48,7 @@ type appSummaryJSON struct {
 	App            app.App         `json:"app"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
+	ComposeKept    bool            `json:"composeKept"`
 	Status         appStatusJSON   `json:"status"`
 	LastDeployment *deploymentJSON `json:"lastDeployment,omitempty"`
 }
@@ -60,9 +65,10 @@ func (s *server) listApps(w http.ResponseWriter, r *http.Request) error {
 	}{Apps: make([]appSummaryJSON, 0, len(sums))}
 	for _, sum := range sums {
 		j := appSummaryJSON{
-			App:       sum.App,
-			CreatedAt: sum.CreatedAt,
-			UpdatedAt: sum.UpdatedAt,
+			App:         sum.App,
+			CreatedAt:   sum.CreatedAt,
+			UpdatedAt:   sum.UpdatedAt,
+			ComposeKept: sum.Compose != nil,
 			Status: appStatusJSON{
 				State:         sum.Status.State,
 				WantedCopies:  sum.Status.WantedCopies,
