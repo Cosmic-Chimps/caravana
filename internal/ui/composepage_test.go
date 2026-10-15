@@ -505,6 +505,34 @@ func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 	}
 }
 
+// Feature 015: Configure's form is drawn with the services filled in, so the
+// owner can change one (a domain) and deploy at once, without a preview. The
+// deploy checks the file itself; the change is kept and deployed.
+func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
+	e, _ := keptSentinelEnv(t)
+	_, page := e.get(t, "/apps/shop/configure")
+	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.domains": {"edited.example.com"}}))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
+	}
+	recs := e.deployments(t, "shop")
+	e.waitDeploy(t, recs[0].Deployment.ID)
+
+	rec, err := e.Store.GetApp(context.Background(), "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := rec.Compose.Services["web"]
+	if len(web.Domains) != 1 || web.Domains[0].Host != "edited.example.com" {
+		t.Errorf("kept overlay domains = %+v, want edited.example.com", web.Domains)
+	}
+	for _, svc := range rec.App.Services {
+		if svc.Name == "web" && (len(svc.Domains) != 1 || svc.Domains[0].Host != "edited.example.com") {
+			t.Errorf("app domains = %+v, want edited.example.com", svc.Domains)
+		}
+	}
+}
+
 // Feature 015, US1: edit the kept file on Configure, preview, deploy. The edit
 // is kept; a second tab that still holds the old file is refused as stale.
 func TestConfigureKeptFileEditFlow(t *testing.T) {

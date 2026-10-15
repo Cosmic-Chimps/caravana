@@ -70,8 +70,14 @@ type composeView struct {
 }
 
 // CanDeploy is whether the page offers the second button: the file
-// translated and nothing is refused.
-func (v composeView) CanDeploy() bool { return v.Previewed && len(v.Refusals) == 0 }
+// translated and nothing is refused, or the form was filled from the app
+// (Kept, NotKept), so its services are already drawn and the owner edits them
+// in place. A deploy previews the file first anyway and comes back with the
+// refusals instead of deploying, so skipping Preview is safe; without the
+// button, the nearest "Deploy" was the top bar's link, which leaves the page.
+func (v composeView) CanDeploy() bool {
+	return (v.Previewed || v.Kept || v.NotKept) && len(v.Refusals) == 0
+}
 
 // FileRows is the height of the file's textarea: a row for each line and one
 // to spare, from 12 rows (an empty form) to 40 (a long file scrolls).

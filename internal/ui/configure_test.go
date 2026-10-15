@@ -193,9 +193,11 @@ func TestConfigureKeptFile(t *testing.T) {
 			t.Errorf("input %s = %v, want %q", name, got, want)
 		}
 	}
-	// Preview first, as on Deploy from Compose: the deploy button comes with the preview.
-	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) || strings.Contains(body, ">Deploy</button>") {
-		t.Errorf("the form should offer Preview and no Deploy yet:\n%s", text(body))
+	// The services are drawn from the kept file, so Deploy is there from the
+	// start, under them; Preview stays for a look first.
+	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) ||
+		!strings.Contains(body, `formaction="/apps/shop/compose" hx-post="/apps/shop/compose">Deploy</button>`) {
+		t.Errorf("the form should offer Preview and Deploy:\n%s", text(body))
 	}
 	for _, want := range []string{`wrap="off"`, `spellcheck="false"`, `autocapitalize="off"`, "Put passwords and keys in secrets below, not in the file."} {
 		if !strings.Contains(body, want) {
@@ -274,8 +276,9 @@ func TestConfigureNotKeptFile(t *testing.T) {
 			t.Errorf("input %s = %v, want %q", name, got, want)
 		}
 	}
-	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) || strings.Contains(body, ">Deploy</button>") {
-		t.Errorf("the form should offer Preview and no Deploy yet:\n%s", got)
+	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) ||
+		!strings.Contains(body, `formaction="/apps/shop/compose" hx-post="/apps/shop/compose">Deploy</button>`) {
+		t.Errorf("the form should offer Preview and Deploy:\n%s", got)
 	}
 	if strings.Contains(body, sentinel015) || strings.Contains(body, storedSecret) {
 		t.Error("a secret value is on the Configure page")
