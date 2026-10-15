@@ -173,7 +173,7 @@ Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal
 
 **⟶ Wait for T013 and T014, then:**
 
-- [ ] T015 [US4] Definition deploy through the API drops the file (FR-009), in internal/api/deployments_test.go: `deployApp` with a body on a kept-file app answers 202, the deployment's `warnings` contain the exact drop sentence, `getCompose` then answers 404 `compose_not_kept`, and `getApp.composeKept` is false. Also: `deployApp` with no body keeps the file. No production code is expected: if a test fails, fix it in internal/service/deploy.go.
+- [X] T015 [US4] Definition deploy through the API drops the file (FR-009), in internal/api/deployments_test.go: `deployApp` with a body on a kept-file app answers 202, the deployment's `warnings` contain the exact drop sentence, `getCompose` then answers 404 `compose_not_kept`, and `getApp.composeKept` is false. Also: `deployApp` with no body keeps the file. No production code is expected: if a test fails, fix it in internal/service/deploy.go.
 - [ ] T016 [P] [US4] Console after a drop, in internal/ui/configure_test.go: after a definition deploy, Configure for that Compose app shows the "wasn't kept" note and the editable per-field form (US4 independent test), and the history entry shows the drop warning.
 - [ ] T017 [US4] No secret value anywhere (SC-003, FR-002, research R11): one test per path that shows a file. Each deploys a Compose app whose overlay has secret value `s3cret-sentinel-015`, then asserts the bytes never appear in the response bodies of:
   - Configure (`GET /apps/{id}/configure`, internal/ui/configure_test.go);

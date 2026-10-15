@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -322,6 +323,62 @@ func TestRedeployEndpoint(t *testing.T) {
 		status, _, raw := call(t, http.MethodPost, url, "application/json", "{}")
 		if status != http.StatusBadRequest || decodeAs[errorBody](t, raw).Error.Code != codeInvalidField {
 			t.Errorf("status %d body %s, want 400 invalid_field", status, raw)
+		}
+	})
+}
+
+// Feature 015: deployApp with no body deploys the stored app again and keeps
+// its Compose file; with a body the app no longer matches the file, so the
+// file is dropped and the deployment's warnings say so.
+func TestDeployAppAndKeptFile(t *testing.T) {
+	e := newTestEnv(t, "")
+	url := e.URL + "/v1/apps/whoami/deployments"
+	deployKept(t, e)
+
+	t.Run("no body keeps the file", func(t *testing.T) {
+		d := deployOK(t, e, "whoami", "")
+		waitHealthy(t, e, "whoami", d.ID)
+		for _, w := range d.Warnings {
+			if strings.Contains(w.Message, "Compose file was dropped") {
+				t.Errorf("warnings = %+v, want no drop warning", d.Warnings)
+			}
+		}
+		if !d.ComposeKept {
+			t.Errorf("the redeploy's composeKept = false, want true")
+		}
+		if status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami/compose", "", ""); status != http.StatusOK {
+			t.Errorf("getCompose after a redeploy: %d %s, want 200", status, raw)
+		}
+	})
+
+	t.Run("a body drops it with a warning", func(t *testing.T) {
+		status, _, raw := call(t, http.MethodPost, url, "application/json", whoamiBody)
+		if status != http.StatusAccepted {
+			t.Fatalf("status %d body %s, want 202", status, raw)
+		}
+		checkSchema(t, loadContract(t), raw, "Deployment")
+		d := decodeAs[deployment](t, raw)
+		waitHealthy(t, e, "whoami", d.ID)
+
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/deployments/"+d.ID, "", "")
+		got := decodeAs[deployment](t, raw)
+		want := app.Warning{Message: "This app's Compose file was dropped: it was deployed from a definition, not a file."}
+		if !slices.Contains(got.Warnings, want) {
+			t.Errorf("warnings = %+v, want %+v", got.Warnings, want)
+		}
+		if got.ComposeKept {
+			t.Error("the deployment's composeKept = true, want false")
+		}
+
+		status, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami/compose", "", "")
+		if status != http.StatusNotFound || decodeAs[errorBody](t, raw).Error.Code != "compose_not_kept" {
+			t.Errorf("getCompose after the drop: %d %s, want 404 compose_not_kept", status, raw)
+		}
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/whoami", "", "")
+		if decodeAs[struct {
+			ComposeKept bool `json:"composeKept"`
+		}](t, raw).ComposeKept {
+			t.Error("getApp composeKept = true after the drop, want false")
 		}
 	})
 }
