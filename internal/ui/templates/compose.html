@@ -142,6 +142,7 @@
             <select class="cv-field cv-select" id="{{.BackupEngine.ID}}" name="svc.{{.Name}}.backupEngine"{{if .BackupEngine.Error}} aria-invalid="true" aria-describedby="{{.BackupEngine.ID}}-error"{{end}}{{if .BackupEngine.Alert}} autofocus{{end}}>
               <option value=""{{if eq .BackupEngine.Value ""}} selected{{end}}>None</option>
               <option value="postgres"{{if eq .BackupEngine.Value "postgres"}} selected{{end}}>PostgreSQL</option>
+              <option value="volume"{{if eq .BackupEngine.Value "volume"}} selected{{end}}>Volume (stops the service while it runs)</option>
             </select>
             {{template "field-error" .BackupEngine}}
           </label>

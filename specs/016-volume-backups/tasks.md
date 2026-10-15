@@ -201,7 +201,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
   - api/openapi.yaml 0.12.0 → 0.13.0 for all of it.
 
   Tests in internal/api/backups_test.go: a volume backup's JSON, the 409, the contract test.
-- [ ] T014 [P] [US1] Console (contracts/console.md):
+- [X] T014 [P] [US1] Console (contracts/console.md):
   - The engine select on Configure's edit form (internal/ui/edit.go) and the Compose overlay (internal/ui/composeform.go) gains `<option value="volume">Volume (stops the service while it runs)</option>`.
   - A `volume` engine error maps to the backup engine input: "This service has no volume to back up." for the no-volume refusal; the shared-volume message as the service gives it.
   - On the Backups tab (internal/ui/backups.go, templates/app.html):

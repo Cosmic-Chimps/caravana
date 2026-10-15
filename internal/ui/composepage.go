@@ -154,7 +154,9 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 				v.Facts = composeFacts(svc)
 				v.ShowDomains, v.ShowHealth = len(svc.Ports) > 0, len(svc.Ports) > 0
 				v.ShowHealthPort = len(svc.Ports) > 1
-				v.ShowBackup = ds.hasBackupInput() || strings.Contains(strings.ToLower(svc.Image), "postgres")
+				// A database image, or a service with a volume (the volume engine's
+				// only requirement), can be given a backup.
+				v.ShowBackup = ds.hasBackupInput() || strings.Contains(strings.ToLower(svc.Image), "postgres") || len(svc.Volumes) > 0
 			}
 		}
 		out = append(out, v)
@@ -320,6 +322,10 @@ func onField(subject, message string) sentence {
 func (v *composeView) refuse(d *composeDraft, fe *app.FieldError) {
 	if f, subject := d.fieldFor(fe.Field); f != nil {
 		f.Error = onField(subject, fe.Message)
+		if strings.HasSuffix(fe.Field, ".backup.engine") && fe.Message == app.NoVolumeToBackUp {
+			// The model's message names no subject; the form says which service.
+			f.Error = sentence{plain("This service has no volume to back up.")}
+		}
 		return
 	}
 	v.Refusals = append(v.Refusals, composeNote{Path: fe.Field, Message: fe.Message})

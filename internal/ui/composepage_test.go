@@ -146,6 +146,38 @@ func TestComposePreview(t *testing.T) {
 	}
 }
 
+// Feature 016: a service with a volume gets the backup inputs, whatever its
+// image, and the engine select offers the volume engine in the words of the
+// console contract. A service without a volume (and no database image) has none.
+func TestComposePreviewVolumeEngine(t *testing.T) {
+	const file = "services:\n  files:\n    image: traefik/whoami:latest\n    volumes: [\"files-data:/data\"]\n  plain:\n    image: traefik/whoami:latest\nvolumes:\n  files-data: {}\n"
+	e := composeEnv(t)
+	resp, body := e.previewNew(t, "shop", file)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("preview = %d:\n%s", resp.StatusCode, text(body))
+	}
+	if !strings.Contains(body, `name="svc.files.backupEngine"`) || strings.Contains(body, `name="svc.plain.backupEngine"`) {
+		t.Errorf("the backup inputs should be on files only:\n%s", text(body))
+	}
+	if !strings.Contains(body, `<option value="volume">Volume (stops the service while it runs)</option>`) ||
+		!strings.Contains(body, `<option value="postgres">PostgreSQL</option>`) {
+		t.Errorf("the engine select lacks its options:\n%s", body)
+	}
+
+	// Choosing it creates the app with a volume backup.
+	values := composeFormOf(t, body, url.Values{"svc.files.backupEngine": {"volume"}, "svc.files.backupKeep": {"4"}})
+	resp, body = e.postForm(t, "/apps/new/compose", values)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create = %d:\n%s", resp.StatusCode, text(body))
+	}
+	stored := e.storedApp(t, "shop")
+	for _, svc := range stored.Services {
+		if svc.Name == "files" && (svc.Backup == nil || svc.Backup.Engine != app.BackupVolume || svc.Backup.Keep != 4) {
+			t.Errorf("files backup = %+v, want a volume backup keeping 4", svc.Backup)
+		}
+	}
+}
+
 func TestComposePreviewRefusals(t *testing.T) {
 	tests := []struct {
 		name, file string
@@ -360,8 +392,24 @@ func TestComposeCreateRefusals(t *testing.T) {
 		values := composeFormOf(t, page, url.Values{"svc.db.backupEngine": {""}, "svc.db.backupKeep": {"3"}})
 		resp, body := e.postForm(t, "/apps/new/compose", values)
 		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `aria-describedby="svc-db-backupEngine-error"`) ||
-			!strings.Contains(text(body), "Choose postgres") {
+			!strings.Contains(text(body), "Choose an engine") {
 			t.Errorf("create = %d; want 422 with the error on the engine:\n%s", resp.StatusCode, text(body))
+		}
+	})
+
+	// Feature 016: the model refuses a volume backup on a service with no
+	// volume, and the form says so on the engine, in its own words.
+	t.Run("a volume backup on a service without a volume shows its error", func(t *testing.T) {
+		e := composeEnv(t)
+		_, page := e.previewNew(t, "shop", shopCompose)
+		values := composeFormOf(t, page, url.Values{"svc.web.backupEngine": {"volume"}})
+		resp, body := e.postForm(t, "/apps/new/compose", values)
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `aria-describedby="svc-web-backupEngine-error"`) ||
+			!strings.Contains(text(body), "This service has no volume to back up.") {
+			t.Errorf("create = %d; want 422 with the error on the engine:\n%s", resp.StatusCode, text(body))
+		}
+		if _, err := e.Store.GetApp(context.Background(), "shop"); err == nil {
+			t.Error("a refused create saved the app")
 		}
 	})
 

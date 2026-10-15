@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -146,3 +147,124 @@ func TestBackupsTab(t *testing.T) {
 }
 
 func sleepMs(n int) { time.Sleep(time.Duration(n) * time.Millisecond) }
+
+// kumaApp is one service, with a name that holds "-", on a volume, backed up
+// with the volume engine (feature 016). It needs no port and no credentials.
+func kumaApp() app.App {
+	return app.App{ID: "kuma", Name: "Kuma", Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{{Name: "uptime-kuma", Image: "traefik/whoami:latest",
+			Volumes: []app.Volume{{Name: "data", Path: "/app/data"}},
+			Backup:  &app.Backup{Engine: app.BackupVolume, Keep: 3}}}}
+}
+
+// volumeBackupsEnv has kuma deployed through the service with a destination.
+func volumeBackupsEnv(t *testing.T) *consoleEnv {
+	t.Helper()
+	e := newConsoleEnv(t)
+	if resp, body := e.postForm(t, "/settings/backups", url.Values{"endpoint": {"http://10.0.0.5:9000"}, "region": {"us-east-1"},
+		"bucket": {"backups"}, "accessKeyId": {"AK"}, "secretAccessKey": {destSecret}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /settings/backups = %d:\n%s", resp.StatusCode, text(body))
+	}
+	rec, err := e.Svc.Deploy(context.Background(), kumaApp(), app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	e.waitDeploy(t, rec.Deployment.ID)
+	return e
+}
+
+// saveVolumeBackup stores a finished volume backup, as a run leaves it.
+func (e *consoleEnv) saveVolumeBackup(t *testing.T, id string, stopped time.Duration, bytes int64) {
+	t.Helper()
+	started := time.Now().Add(-2 * time.Hour).UTC()
+	finished := started.Add(stopped)
+	err := e.Store.SaveBackup(context.Background(), store.BackupRecord{AppID: "kuma", ID: id, Service: "uptime-kuma", Engine: app.BackupVolume,
+		Status: store.BackupSucceeded, Bytes: bytes, Object: "caravana/kuma/uptime-kuma/1/", StartedAt: started, FinishedAt: &finished,
+		Stopped: &stopped, Volumes: []store.VolumeArchive{{Name: "data", Bytes: bytes, SizeKB: 4}}})
+	if err != nil {
+		t.Fatalf("SaveBackup: %v", err)
+	}
+}
+
+// Feature 016: a volume service's heading line, its "Back up now" behind a
+// confirmation, the stop time on its rows, and the volume Restore words; all
+// as plain HTML, with no script.
+func TestBackupsTabVolume(t *testing.T) {
+	e := volumeBackupsEnv(t)
+	e.saveVolumeBackup(t, "uptime-kuma-1000", 4*time.Second, 2048)
+
+	_, body := e.get(t, "/apps/kuma/backups")
+	got := text(body)
+	for _, want := range []string{
+		"Volume backup, every day at 03:00 UTC, keeping 3. The service stops while a backup runs (last time 4 s).",
+		"succeeded uptime-kuma", "2.0 KB", "stopped 4 s",
+		"The service stops for a few seconds while the backup runs.",
+		"The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.",
+		"Type uptime-kuma to confirm",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the tab lacks %q:\n%s", want, got)
+		}
+	}
+	// Back up now sits in a <details>, and its form posts the service's name.
+	details := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="/apps/kuma/backups"[^>]*>.*?name="service" value="uptime-kuma".*?</form>`)
+	if !details.MatchString(body) {
+		t.Errorf("Back up now isn't a confirmation with its own form:\n%s", body)
+	}
+	if strings.Contains(body, "pg_restore") || strings.Contains(got, "Clients connected meanwhile") {
+		t.Error("the tab shows the database words for a volume backup")
+	}
+
+	// A wrong name opens the confirmation again with its error; the restore itself is feature 016's next task.
+	resp, body := e.postForm(t, "/apps/kuma/backups/uptime-kuma-1000/restore", url.Values{"confirm": {"uptime"}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "Type uptime-kuma to confirm.") {
+		t.Errorf("a wrong confirmation = %d:\n%s", resp.StatusCode, text(body))
+	}
+}
+
+// Feature 016: a run's refusals are sentences on the tab, and a service that
+// hasn't a running copy is told to deploy first.
+func TestBackUpNowVolumeRefusals(t *testing.T) {
+	e := volumeBackupsEnv(t)
+	resp, body := e.postForm(t, "/apps/kuma/backups", url.Values{"service": {"uptime-kuma"}})
+	if resp.StatusCode != http.StatusConflict ||
+		!strings.Contains(text(body), "The service has no running copy to back up. Start it with a deploy first.") {
+		t.Errorf("Back up now without a copy = %d:\n%s", resp.StatusCode, text(body))
+	}
+}
+
+func TestScheduleText(t *testing.T) {
+	tests := []struct{ spec, want string }{
+		{"0 3 * * *", "every day at 03:00 UTC"},
+		{"30 14 * * *", "every day at 14:30 UTC"},
+		{"15 * * * *", "every hour at :15"},
+		{"*/10 * * * *", "on */10 * * * * (UTC)"},
+		{"0 3 * * 1", "on 0 3 * * 1 (UTC)"},
+		{"0 25 * * *", "on 0 25 * * * (UTC)"},
+		{"", "on  (UTC)"},
+	}
+	for _, tt := range tests {
+		if got := scheduleText(tt.spec); got != tt.want {
+			t.Errorf("scheduleText(%q) = %q, want %q", tt.spec, got, tt.want)
+		}
+	}
+}
+
+func TestStoppedText(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "under 1 s"},
+		{400 * time.Millisecond, "under 1 s"},
+		{500 * time.Millisecond, "1 s"},
+		{4200 * time.Millisecond, "4 s"},
+		{4600 * time.Millisecond, "5 s"},
+		{90 * time.Second, "90 s"},
+	}
+	for _, tt := range tests {
+		if got := stoppedText(tt.d); got != tt.want {
+			t.Errorf("stoppedText(%v) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}

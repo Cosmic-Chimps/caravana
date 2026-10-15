@@ -132,6 +132,11 @@ func validateBackup(field string, svc Service) error {
 	return nil
 }
 
+// NoVolumeToBackUp is the message of the refusal of a volume backup on a
+// service that mounts no volume. It is a constant so that the console, which
+// words the refusal for its own form, recognizes it.
+const NoVolumeToBackUp = "the service has no volume to back up"
+
 // validateVolumeBackup checks what only a volume backup needs: there must be a
 // volume to archive, and the schedule must be one Caravana's own scheduler can
 // run (the five-field check above lets "99 * * * *" through; Postgres backups
@@ -142,7 +147,7 @@ func validateBackup(field string, svc Service) error {
 // never has to share its volume.
 func validateVolumeBackup(field string, svc Service) error {
 	if len(svc.Volumes) == 0 {
-		return NewFieldError(field+".engine", "the service has no volume to back up")
+		return NewFieldError(field+".engine", "%s", NoVolumeToBackUp)
 	}
 	if svc.Backup.Schedule != "" {
 		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
