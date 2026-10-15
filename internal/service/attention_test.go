@@ -23,13 +23,17 @@ func at(m int) time.Time { return attT0.Add(time.Duration(m) * time.Minute) }
 var attNow = attT0.Add(90 * time.Minute)
 
 // appRec is a stored app with the given services; a service named "db" has a
-// backup policy.
+// Postgres backup policy, and one named "files" a volume backup policy.
 func appRec(id string, updated time.Time, services ...string) store.AppRecord {
 	a := app.App{ID: id}
 	for _, name := range services {
 		svc := app.Service{Name: name, Image: "example/" + name}
-		if name == "db" {
+		switch name {
+		case "db":
 			svc.Backup = &app.Backup{Engine: app.BackupPostgres}
+		case "files":
+			svc.Volumes = []app.Volume{{Name: "data", Path: "/data"}}
+			svc.Backup = &app.Backup{Engine: app.BackupVolume}
 		}
 		a.Services = append(a.Services, svc)
 	}
@@ -117,6 +121,50 @@ func TestAttentionOf(t *testing.T) {
 				{ID: "b1", Service: "web", Version: 1, Status: deploy.CopyHealthy, Restarts: 3, LastRestart: tp(at(5))},
 			}},
 			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"b1"}, When: at(5)}},
+		},
+		{
+			// A volume backup restarts the copy's tasks (feature 016): three
+			// of them, one a night, are no crash loop.
+			name: "restarts Caravana asked for are not a crash loop",
+			apps: []store.AppRecord{appRec("blog", at(0), "files")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {{ID: "f1", Service: "files", Version: 1, Status: deploy.CopyHealthy,
+				Restarts: 6, RequestedRestarts: 6, LastRestart: tp(at(5)), StartedAt: tp(at(0))}}},
+		},
+		{
+			name: "a real crash among requested restarts still counts, with the other crash",
+			apps: []store.AppRecord{appRec("blog", at(0), "files")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				// One crash and three restarts asked for.
+				{ID: "f1", Service: "files", Version: 1, Status: deploy.CopyHealthy, Restarts: 4, RequestedRestarts: 3, LastRestart: tp(at(5))},
+				// A failed copy counts one more, and its own crash.
+				{ID: "f0", Service: "files", Version: 1, Status: deploy.CopyFailed, Terminal: true, Restarts: 1, FinishedAt: tp(at(40))},
+			}},
+			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "files", Copies: []string{"f1", "f0"}, When: at(40)}},
+		},
+		{
+			name: "requested restarts alone leave a copy to be judged on its health",
+			apps: []store.AppRecord{appRec("blog", at(0), "files")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {{ID: "f1", Service: "files", Version: 1, Status: deploy.CopyUnhealthy,
+				Restarts: 9, RequestedRestarts: 9, StartedAt: tp(at(3)), LastRestart: tp(at(8))}}},
+			want: []AttentionItem{{Kind: AttentionUnhealthy, AppID: "blog", Service: "files", Copies: []string{"f1"}, When: at(3)}},
+		},
+		{
+			// Nomad keeps only each task's last events, so the requested count
+			// can fall short of what was asked, never pass what restarted.
+			name: "more requested than restarts counts no negative crashes",
+			apps: []store.AppRecord{appRec("blog", at(0), "files")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "f1", Service: "files", Version: 1, Status: deploy.CopyHealthy, Restarts: 1, RequestedRestarts: 4},
+				{ID: "f2", Service: "files", Version: 1, Status: deploy.CopyHealthy, Restarts: 2, LastRestart: tp(at(5))},
+			}},
+		},
+		{
+			name: "a failed volume backup is listed like any failed backup",
+			apps: []store.AppRecord{appRec("blog", at(0), "files")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {run("f1", "files", 1)}},
+			backups: []store.BackupRecord{{AppID: "blog", Service: "files", Engine: app.BackupVolume, Status: store.BackupFailed,
+				Message: "upload of data: boom", StartedAt: at(1), FinishedAt: tp(at(2))}},
+			want: []AttentionItem{{Kind: AttentionBackupFailed, AppID: "blog", Service: "files", When: at(2), Detail: "upload of data: boom"}},
 		},
 		{
 			name: "a copy that restarts in a loop is restarting even while it is only starting",
