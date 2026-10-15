@@ -477,6 +477,34 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 	}
 }
 
+// Feature 015, US4: a refused deploy of an app that keeps its file redraws what
+// was typed, the file included, but never a secret value: not the one typed
+// and not the one the app has.
+func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
+	e, _ := keptSentinelEnv(t)
+	_, page := e.get(t, "/apps/shop/configure")
+	typed := shopFormOf(t, page, url.Values{
+		"svc.web.secret.API_KEY":   {sentinel015 + "-typed"},
+		"svc.web.newSecret.0":      {"TOKEN"},
+		"svc.web.newSecretValue.0": {sentinel015 + "-new"},
+		"svc.web.domains":          {"bad domain:xx"},
+	})
+
+	resp, body := e.postForm(t, "/apps/shop/compose", typed)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("a refused deploy = %d, want 422:\n%s", resp.StatusCode, text(body))
+	}
+	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != keptShopFile {
+		t.Errorf("the redrawn file = %q, want what was typed", got)
+	}
+	if strings.Contains(body, sentinel015) || strings.Contains(body, storedSecret) {
+		t.Errorf("the refused page holds a secret value:\n%s", text(body))
+	}
+	if stored, _ := e.Store.GetApp(context.Background(), "shop"); stored.Compose == nil || stored.Compose.Compose != keptShopFile {
+		t.Errorf("a refused deploy changed the kept file: %+v", stored.Compose)
+	}
+}
+
 // Feature 015, US1: edit the kept file on Configure, preview, deploy. The edit
 // is kept; a second tab that still holds the old file is refused as stale.
 func TestConfigureKeptFileEditFlow(t *testing.T) {

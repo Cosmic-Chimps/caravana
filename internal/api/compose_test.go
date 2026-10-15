@@ -323,6 +323,40 @@ func TestComposeKeptFields(t *testing.T) {
 	}
 }
 
+// Feature 015, SC-003: no read of an app deployed from a Compose file with a
+// secret value holds that value, and neither does the request log.
+func TestComposeReadsHoldNoSecretValue(t *testing.T) {
+	e := newTestEnv(t, "")
+	d := deployKept(t, e)
+	// The value is in the secret store, so the check below can't pass for want of a deploy.
+	if v := e.Nomad.Variable("nomad/jobs/whoami/web"); v["TOKEN"] != keptSentinel {
+		t.Fatalf("secret store = %v, want the value deployed", v)
+	}
+
+	for _, path := range []string{
+		"/v1/apps/whoami/compose",
+		"/v1/apps/whoami/deployments/" + d.ID + "/compose",
+		"/v1/apps/whoami",
+		"/v1/apps",
+		"/v1/apps/whoami/deployments",
+		"/v1/apps/whoami/deployments/" + d.ID,
+		"/v1/deployments",
+	} {
+		t.Run(path, func(t *testing.T) {
+			status, _, raw := call(t, http.MethodGet, e.URL+path, "", "")
+			if status != http.StatusOK || len(raw) == 0 {
+				t.Fatalf("status %d, body %q; want 200 with a body", status, raw)
+			}
+			if strings.Contains(string(raw), keptSentinel) {
+				t.Errorf("the answer holds the secret value: %s", raw)
+			}
+		})
+	}
+	if strings.Contains(e.Logs.String(), keptSentinel) {
+		t.Error("the request log holds the secret value")
+	}
+}
+
 // Feature 015: what getCompose answers goes back to deployCompose unchanged:
 // with its ETag as If-Match it is a safe edit, and every secret keeps its value.
 func TestGetComposeRoundTrip(t *testing.T) {

@@ -209,6 +209,24 @@ func TestDownloadComposeFile(t *testing.T) {
 	}
 }
 
+// Feature 015, US4: the history, as a page and as the part a live update
+// refetches, holds no secret value, though entries from a file link to it.
+func TestHistoryHasNoSecretValue(t *testing.T) {
+	e, first := keptHistoryEnv(t)
+	for _, path := range []string{"/apps/shop/deployments", "/parts/apps/shop/deployments"} {
+		resp, body := e.get(t, path)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d", path, resp.StatusCode)
+		}
+		if !strings.Contains(body, "/deployments/"+first+"/compose") {
+			t.Errorf("%s doesn't link the file (the check would pass on an empty page)", path)
+		}
+		if strings.Contains(body, sentinel015) || strings.Contains(body, storedSecret) {
+			t.Errorf("%s holds a secret value", path)
+		}
+	}
+}
+
 // Feature 015, US3: no file, or another app's deployment, is the not-found page.
 func TestDownloadComposeFileNotFound(t *testing.T) {
 	e, _ := keptHistoryEnv(t)

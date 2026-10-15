@@ -125,6 +125,7 @@ func TestComposeFileNeverStoresSecretValues(t *testing.T) {
 	if _, err := s.InsertApp(ctx, a, keptFile()); err != nil {
 		t.Fatalf("InsertApp: %v", err)
 	}
+	assertNoSentinel(t, s, "apps")
 	// Each write path gets its own check: change the file, save it again.
 	writes := map[string]func(file *compose.Request) error{
 		"SaveApp": func(file *compose.Request) error {
