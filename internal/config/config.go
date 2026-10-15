@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
@@ -39,6 +40,10 @@ type Config struct {
 	// NomadToken is the Nomad ACL token. It comes from the environment only:
 	// a flag would show it in the process list.
 	NomadToken Secret
+	// VolumeBackupTimeout is how long a volume backup or restore may take
+	// before it is given up (feature 016). The service stays stopped for as
+	// long as the run lasts, so it bounds that too.
+	VolumeBackupTimeout time.Duration
 }
 
 // Secret is a string that never prints. Formatting it with fmt or logging it
@@ -70,15 +75,16 @@ type setting struct {
 func (s setting) String() string { return s.env + " / -" + s.flag }
 
 var (
-	listenSetting       = setting{"CARAVANA_LISTEN", "listen"}
-	dataDirSetting      = setting{"CARAVANA_DATA_DIR", "data-dir"}
-	entrypointSetting   = setting{"CARAVANA_TRAEFIK_ENTRYPOINT", "traefik-entrypoint"}
-	certResolverSetting = setting{"CARAVANA_CERT_RESOLVER", "cert-resolver"}
-	cpuSetting          = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
-	memorySetting       = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
-	memoryMaxSetting    = setting{"CARAVANA_DEFAULT_MEMORY_MAX_MB", "default-memory-max-mb"}
-	namesImageSetting   = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
-	backupImageSetting  = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
+	listenSetting        = setting{"CARAVANA_LISTEN", "listen"}
+	dataDirSetting       = setting{"CARAVANA_DATA_DIR", "data-dir"}
+	entrypointSetting    = setting{"CARAVANA_TRAEFIK_ENTRYPOINT", "traefik-entrypoint"}
+	certResolverSetting  = setting{"CARAVANA_CERT_RESOLVER", "cert-resolver"}
+	cpuSetting           = setting{"CARAVANA_DEFAULT_CPU_MHZ", "default-cpu-mhz"}
+	memorySetting        = setting{"CARAVANA_DEFAULT_MEMORY_MB", "default-memory-mb"}
+	memoryMaxSetting     = setting{"CARAVANA_DEFAULT_MEMORY_MAX_MB", "default-memory-max-mb"}
+	namesImageSetting    = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
+	backupImageSetting   = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
+	volumeTimeoutSetting = setting{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "volume-backup-timeout"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -119,6 +125,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	memoryMax := fs.String(memoryMaxSetting.flag, envOr(memoryMaxSetting, "1024"), "default memory a service may burst to while the node has it spare, in MB")
 	namesImage := fs.String(namesImageSetting.flag, envOr(namesImageSetting, ""), "image of the sidecar that lets an app's services reach each other by name, pinned by digest; empty means the built-in busybox")
 	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
+	volumeTimeout := fs.String(volumeTimeoutSetting.flag, envOr(volumeTimeoutSetting, "30m"), "longest a volume backup or restore may take, as a duration such as 30m; the service stays stopped meanwhile")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -144,6 +151,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	}
 	if c.Settings.DefaultMemoryMaxMB, err = parseInt(memoryMaxSetting, *memoryMax); err != nil {
 		return Config{}, err
+	}
+	if c.VolumeBackupTimeout, err = time.ParseDuration(*volumeTimeout); err != nil || c.VolumeBackupTimeout < time.Minute {
+		return Config{}, fmt.Errorf("%s: %q must be a duration of at least a minute, such as 30m", volumeTimeoutSetting, *volumeTimeout)
 	}
 	if err := checkListen(c.Listen); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", listenSetting, err)

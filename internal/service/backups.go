@@ -28,9 +28,9 @@ var (
 	ErrBackupRunning       = errors.New("a backup or restore of this service is running")
 )
 
-// errVolumeRunsPending stands in until volume backups can be started (feature
-// 016): a volume backup is not a Nomad job, so the Postgres way of starting a
-// run would fail with a confusing answer from Nomad.
+// errVolumeRunsPending stands in until volume restores can be started (feature
+// 016, T017): a volume restore is not a Nomad job, so the Postgres way of
+// starting one would fail with a confusing answer from Nomad.
 var errVolumeRunsPending = errors.New("volume backups can't be started yet")
 
 // Two kinds of backup, two ways to run (feature 016). A Postgres backup is a
@@ -225,7 +225,17 @@ func (s *Service) backedUpService(ctx context.Context, appID, service string) (a
 // BackUpNow starts a backup of one service at once. A backup or restore of
 // the service already running is ErrBackupRunning: two runs started within
 // the same second would be one run in Nomad.
+//
+// A Postgres backup is a Nomad job. A volume backup restarts the service's
+// own copy and stops the service while it runs (see startVolumeBackup), which
+// can also be ErrNoRunningCopy.
 func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.BackupRecord, error) {
+	return s.backUpNow(ctx, appID, service, "manual")
+}
+
+// backUpNow is BackUpNow for a trigger: "manual", or "schedule" from the
+// scheduler of volume backups.
+func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
 	_, svc, err := s.backedUpService(ctx, appID, service)
 	if err != nil {
 		return store.BackupRecord{}, err
@@ -240,8 +250,8 @@ func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.B
 	} else if busy {
 		return store.BackupRecord{}, ErrBackupRunning
 	}
-	if !postgresBackup(svc) {
-		return store.BackupRecord{}, errVolumeRunsPending
+	if hasVolumeBackup(svc) {
+		return s.startVolumeBackup(ctx, appID, service, trigger)
 	}
 	jobID, err := s.deployer.ForceBackup(ctx, appID, service)
 	if err != nil {

@@ -148,7 +148,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
   - exit code always 0.
 
   These tests skip when `sh` or `tar` is missing.
-- [ ] T009 [P] [US1] Scheduler (research R5), in internal/service/schedule.go:
+- [X] T009 [P] [US1] Scheduler (research R5), in internal/service/schedule.go:
   - `type clock interface{ Now() time.Time }` (real by default; tests inject).
   - `dueSlot(spec string, lastStart, now time.Time) (slot time.Time, due bool, skipped bool)` is pure, via `cronexpr`. Due when a slot is in (lastStart, now] and `now - slot < 1h`; skipped when the latest slot is older than an hour.
   - `scheduleVolumeBackups(ctx)` ticks every 30 s (`Service.scheduleGap`), lists apps, and for each `volume` service with a due slot calls the same path as BackUpNow (T011) with trigger "schedule". It logs skipped slots.
@@ -158,13 +158,13 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
 
 **⟶ Wait for T007–T009, then:**
 
-- [ ] T010 [P] [US1] Store a run's request (research R2, R7), in internal/service/volumebackup.go (new):
+- [X] T010 [P] [US1] Store a run's request (research R2, R7), in internal/service/volumebackup.go (new):
   - `type volumeRequest struct{ ID, Action, Object, TS string; NotAfter time.Time }`.
   - `newVolumeRequest(action, object string, now time.Time, limit time.Duration)`: the ID is `<service>-<unix>`, as Postgres run IDs; `NotAfter` = now + limit + 5 min.
   - `CARAVANA_VOLUME_BACKUP_TIMEOUT` is added to internal/config, default 30m.
 
   Unit tests.
-- [ ] T011 [US1] The run (research R1–R3, R6, R7; data-model "State of a volume run"), in internal/service/volumebackup.go:
+- [X] T011 [US1] The run (research R1–R3, R6, R7; data-model "State of a volume run"), in internal/service/volumebackup.go:
   - `startVolumeRun(ctx, appID, service, action, object)`:
     1. Take the app's `appState.mu`.
     2. Check `backupBusy` (`ErrBackupRunning`) and the running copy (`ErrNoRunningCopy`, a new error).
@@ -189,7 +189,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
   - a second BackUpNow gives `ErrBackupRunning`;
   - no running copy gives `ErrNoRunningCopy`;
   - resume settles both ways.
-- [ ] T012 [P] [US1] Needs-you (research R11), internal/service/attention.go: the crash-loop count subtracts `Copy.RequestedRestarts`. A failed volume backup is listed by the existing failed-backup rule; check it with a test. Tests: three requested restarts don't make a crash loop; a real crash plus requested restarts still counts the crash.
+- [X] T012 [P] [US1] Needs-you (research R11), internal/service/attention.go: the crash-loop count subtracts `Copy.RequestedRestarts`. A failed volume backup is listed by the existing failed-backup rule; check it with a test. Tests: three requested restarts don't make a crash loop; a real crash plus requested restarts still counts the crash.
 
 **⟶ Wait for T010–T012, then:**
 

@@ -251,8 +251,12 @@ func (s *Service) appCopies(ctx context.Context, appID string) (app.App, []Copy,
 // the same call can simply be made again; a job Nomad no longer has counts as
 // purged. An unknown app is store.ErrNotFound.
 //
-// It takes the app's deploy lock, so it waits for a deploy in progress, and a
-// deploy that was waiting for the lock finds the app deleted and gives up
+// It takes the app's deploy lock, so it waits for a deploy in progress, and for
+// a volume backup or restore (which holds the same lock until it is settled, at
+// most the run's time limit plus a few minutes): the run's own steps never wait
+// for the delete, so the two can't deadlock, and deleting the app's volumes
+// under a run that is archiving them would be worse than waiting. A deploy that
+// was waiting for the lock finds the app deleted and gives up
 // (also store.ErrNotFound). Rollout watchers of the app are stopped before
 // the app goes, or they would ask Nomad about a job that no longer exists for
 // as long as the process runs. Then the open pages hear of it: deleted for

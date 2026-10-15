@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
@@ -30,7 +31,8 @@ func TestLoad(t *testing.T) {
 			DefaultMemoryMB:    256,
 			DefaultMemoryMaxMB: 1024,
 		},
-		NomadAddr: "http://127.0.0.1:4646",
+		NomadAddr:           "http://127.0.0.1:4646",
+		VolumeBackupTimeout: 30 * time.Minute,
 	}
 
 	tests := []struct {
@@ -110,6 +112,14 @@ func TestLoad(t *testing.T) {
 		{name: "names image pinned", env: map[string]string{"CARAVANA_NAMES_IMAGE": "ghcr.io/acme/busybox@sha256:" + strings.Repeat("a", 64)},
 			want: func(c *Config) { c.Settings.NamesImage = "ghcr.io/acme/busybox@sha256:" + strings.Repeat("a", 64) }},
 		{name: "names image with a tag", args: []string{"-names-image", "busybox:1.37"}, wantErr: []string{"CARAVANA_NAMES_IMAGE / -names-image", "pinned by digest"}},
+		{name: "volume backup timeout from env", env: map[string]string{"CARAVANA_VOLUME_BACKUP_TIMEOUT": "2h"},
+			want: func(c *Config) { c.VolumeBackupTimeout = 2 * time.Hour }},
+		{name: "volume backup timeout flag beats env", args: []string{"-volume-backup-timeout", "45m"},
+			env: map[string]string{"CARAVANA_VOLUME_BACKUP_TIMEOUT": "2h"}, want: func(c *Config) { c.VolumeBackupTimeout = 45 * time.Minute }},
+		{name: "volume backup timeout not a duration", env: map[string]string{"CARAVANA_VOLUME_BACKUP_TIMEOUT": "30"},
+			wantErr: []string{"CARAVANA_VOLUME_BACKUP_TIMEOUT / -volume-backup-timeout", `"30"`}},
+		{name: "volume backup timeout under a minute", args: []string{"-volume-backup-timeout", "10s"},
+			wantErr: []string{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "at least a minute"}},
 		{name: "no token flag", args: []string{"-nomad-token", "x"}, wantErr: []string{"-nomad-token"}},
 		{name: "nomad addr without scheme", env: map[string]string{"NOMAD_ADDR": "127.0.0.1:4646"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},
 		{name: "nomad addr ftp", args: []string{"-nomad-addr", "ftp://x"}, wantErr: []string{"NOMAD_ADDR", "-nomad-addr"}},

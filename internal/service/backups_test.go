@@ -335,9 +335,9 @@ func TestBackupBusy(t *testing.T) {
 	}
 }
 
-// Back up now and restore know the volume engine's runs can't start yet, but
-// already refuse a second run and a backup of the other engine, and the list
-// shows both engines' records.
+// Restore doesn't start a volume restore yet (T017), but already refuses a
+// second run and a backup of the other engine, and the list shows both
+// engines' records.
 func TestVolumeRunsBeforeTheyCanStart(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -346,9 +346,6 @@ func TestVolumeRunsBeforeTheyCanStart(t *testing.T) {
 	t0 := time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC)
 	done := t0.Add(time.Minute)
 
-	if _, err := e.svc.BackUpNow(ctx, "whoami", "web"); !errors.Is(err, errVolumeRunsPending) {
-		t.Errorf("BackUpNow = %v, want errVolumeRunsPending", err)
-	}
 	saved := store.BackupRecord{AppID: "whoami", ID: "web-1", Service: "web", Engine: app.BackupVolume, Status: store.BackupSucceeded,
 		Object: "backups/caravana/whoami/web/1/", StartedAt: t0, FinishedAt: &done}
 	if err := e.store.SaveBackup(ctx, saved); err != nil {
