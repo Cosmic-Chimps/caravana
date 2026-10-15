@@ -114,6 +114,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"secrets-render", false, g.secretsRender},
 		{"compose-app", false, g.composeAppStep},
 		{"backup-restore", false, g.backupRestoreStep},
+		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},
@@ -459,6 +460,70 @@ func gateS3Job(secret string) *api.Job {
 	}
 }
 
+// startBucket runs gateS3Job, waits until it listens, and points the backup
+// destination at it. The job is deregistered when the step ends, so each step
+// that needs a bucket starts its own (its contents are gone with it).
+func (g *gate) startBucket(t *testing.T) {
+	t.Helper()
+	nomad := g.target.Nomad
+	secret := "gate-" + g.run
+	if _, _, err := nomad.Jobs().Register(gateS3Job(secret), nil); err != nil {
+		t.Fatalf("register the S3 bucket job: %v", err)
+	}
+	t.Cleanup(func() { _, _, _ = nomad.Jobs().Deregister("gate-s3", true, nil) })
+	nodes, _, err := nomad.Nodes().List(nil)
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("list nodes: %v", err)
+	}
+	node, _, err := nomad.Nodes().Info(nodes[0].ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeIP := node.Attributes["unique.network.ip-address"]
+	waitFor(t, "the S3 bucket to listen", 2*time.Minute, func() bool {
+		_, err := g.bucketExec("nc", "-z", "127.0.0.1", "9000")
+		return err == nil
+	})
+
+	dest, _ := json.Marshal(map[string]string{"endpoint": "http://" + nodeIP + ":9000", "region": "us-east-1", "bucket": "backups",
+		"prefix": "gate", "accessKeyId": "GATEKEY", "secretAccessKey": secret})
+	resp := g.api(t, http.MethodPut, "/v1/backups/destination", "application/json", string(dest))
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || strings.Contains(string(raw), secret) {
+		t.Fatalf("PUT destination: %d %s", resp.StatusCode, raw)
+	}
+}
+
+// bucketExec runs a command inside the bucket job's task and answers its
+// trimmed output. Only a copy Nomad still wants running counts: an earlier
+// step's bucket may still be stopping when the next step starts its own.
+func (g *gate) bucketExec(cmd ...string) (string, error) {
+	nomad := g.target.Nomad
+	allocs, _, err := nomad.Jobs().Allocations("gate-s3", false, nil)
+	if err != nil {
+		return "", err
+	}
+	for _, a := range allocs {
+		if a.ClientStatus != "running" || a.DesiredStatus != "run" {
+			continue
+		}
+		full, _, err := nomad.Allocations().Info(a.ID, nil)
+		if err != nil {
+			return "", err
+		}
+		var out, errOut strings.Builder
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		code, err := nomad.Allocations().Exec(ctx, full, "s3", false, cmd, strings.NewReader(""), &out, &errOut, nil, nil)
+		if err == nil && code != 0 {
+			err = fmt.Errorf("exit %d: %s", code, strings.TrimSpace(errOut.String()))
+		}
+		return strings.TrimSpace(out.String()), err
+	}
+	return "", fmt.Errorf("no running bucket copy")
+}
+
 // gateDBCompose is a Compose file with one backed-up PostgreSQL service on
 // a volume. The password is plain env: it is a throwaway database.
 const gateDBCompose = `services:
@@ -481,54 +546,13 @@ func (g *gate) backupRestoreStep(t *testing.T) {
 	resp := g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "") // a leftover from an aborted run, if any
 	resp.Body.Close()
 
-	// The bucket.
-	secret := "gate-" + g.run
-	if _, _, err := nomad.Jobs().Register(gateS3Job(secret), nil); err != nil {
-		t.Fatalf("register the S3 bucket job: %v", err)
-	}
-	t.Cleanup(func() { _, _, _ = nomad.Jobs().Deregister("gate-s3", true, nil) })
-	nodes, _, err := nomad.Nodes().List(nil)
-	if err != nil || len(nodes) == 0 {
-		t.Fatalf("list nodes: %v", err)
-	}
-	node, _, err := nomad.Nodes().Info(nodes[0].ID, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodeIP := node.Attributes["unique.network.ip-address"]
-	waitFor(t, "the S3 bucket to listen", 2*time.Minute, func() bool {
-		allocs, _, err := nomad.Jobs().Allocations("gate-s3", false, nil)
-		if err != nil {
-			return false
-		}
-		for _, a := range allocs {
-			if a.ClientStatus == "running" {
-				full, _, err := nomad.Allocations().Info(a.ID, nil)
-				if err != nil {
-					return false
-				}
-				code, err := nomad.Allocations().Exec(context.Background(), full, "s3", false, []string{"nc", "-z", "127.0.0.1", "9000"},
-					strings.NewReader(""), io.Discard, io.Discard, nil, nil)
-				return err == nil && code == 0
-			}
-		}
-		return false
-	})
-
-	dest, _ := json.Marshal(map[string]string{"endpoint": "http://" + nodeIP + ":9000", "region": "us-east-1", "bucket": "backups",
-		"prefix": "gate", "accessKeyId": "GATEKEY", "secretAccessKey": secret})
-	resp = g.api(t, http.MethodPut, "/v1/backups/destination", "application/json", string(dest))
-	raw, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || strings.Contains(string(raw), secret) {
-		t.Fatalf("PUT destination: %d %s", resp.StatusCode, raw)
-	}
+	g.startBucket(t)
 
 	// The database.
 	body, _ := json.Marshal(map[string]any{"compose": gateDBCompose,
 		"services": map[string]any{"db": map[string]any{"backup": map[string]any{"engine": "postgres", "keep": 2}}}})
 	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/compose", "application/json", string(body))
-	raw, _ = io.ReadAll(resp.Body)
+	raw, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	var d gateDeployment
 	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
@@ -611,6 +635,200 @@ func (g *gate) backupRestoreStep(t *testing.T) {
 	}
 	if left, _, err := nomad.Jobs().List(&api.QueryOptions{Prefix: appID + "_"}); err != nil || len(left) != 0 {
 		t.Errorf("backup jobs left after delete: %d (%v)", len(left), err)
+	}
+}
+
+// volumeApp is the app of the volume backup step (feature 016): busybox with
+// one volume, data, at /data. Its command writes "A" into /data/v only when
+// the file is missing, then serves /data over HTTP on 8080, so the health
+// check (GET /v) passes once the file is there and the step reads the file
+// from inside the copy.
+const volumeApp = `{
+  "source": {"kind": "image"},
+  "services": [{
+    "name": "web",
+    "image": "busybox:1.37",
+    "command": "sh",
+    "args": ["-c", "[ -f /data/v ] || printf A > /data/v; exec httpd -f -p 8080 -h /data"],
+    "ports": [{"name": "http", "containerPort": 8080}],
+    "health": {"path": "/v", "interval": "5s", "timeout": "2s"},
+    "volumes": [{"name": "data", "path": "/data"}],
+    "backup": {"engine": "volume", "keep": 2}
+  }]
+}`
+
+// gateVolumeRun is the part of a Backup (schema Backup) the volume step reads.
+type gateVolumeRun struct {
+	ID             string   `json:"id"`
+	Engine         string   `json:"engine"`
+	Status         string   `json:"status"`
+	Message        string   `json:"message"`
+	Bytes          int64    `json:"bytes"`
+	StoppedSeconds *float64 `json:"stoppedSeconds"`
+	Volumes        []struct {
+		Name      string `json:"name"`
+		Bytes     int64  `json:"bytes"`
+		SizeBytes int64  `json:"sizeBytes"`
+	} `json:"volumes"`
+}
+
+// volumeBackupRestoreStep: a volume backup (feature 016), with the token
+// Caravana really runs with. The app's own copy is restarted to run the
+// backup, so the step checks that the job is untouched (the same version, the
+// same copy), that the service was stopped for a measured time, and that the
+// archive is in the bucket. T017 adds the restore half where marked.
+func (g *gate) volumeBackupRestoreStep(t *testing.T) {
+	const appID = "vol"
+	nomad := g.target.Nomad
+	resp := g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "") // a leftover from an aborted run, if any
+	resp.Body.Close()
+
+	g.startBucket(t)
+
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/deployments", "application/json", volumeApp)
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var d gateDeployment
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
+		t.Fatalf("deploy %s: %d %s", appID, resp.StatusCode, raw)
+	}
+	if final := g.waitFinalOf(t, appID, d.ID, 4*time.Minute); final.Status != "healthy" {
+		t.Fatalf("deploy %s ended %s: %s", appID, final.Status, final.Error)
+	}
+	// readFile reads /data/v inside the copy of this deployment, whatever copy
+	// serves it, waiting while the service is still starting.
+	readFile := func() string {
+		t.Helper()
+		var got string
+		var lastErr error
+		if !waitUntil(time.Minute, func() bool {
+			got, lastErr = g.exec(t, appID, "web", d.ID, "cat", "/data/v")
+			return lastErr == nil
+		}) {
+			t.Fatalf("cat /data/v: %v", lastErr)
+		}
+		return got
+	}
+	if got := readFile(); got != "A" {
+		t.Fatalf("/data/v = %q at the start, want A", got)
+	}
+
+	// The job and its copy, as they are before the backup.
+	versionOf := func() uint64 {
+		t.Helper()
+		job, _, err := nomad.Jobs().Info(appID, nil)
+		if err != nil || job.Version == nil {
+			t.Fatalf("read job %s: %v", appID, err)
+		}
+		return *job.Version
+	}
+	copyOf := func() string {
+		t.Helper()
+		stubs, _, err := nomad.Jobs().Allocations(appID, false, nil)
+		if err != nil {
+			t.Fatalf("list the copies of %s: %v", appID, err)
+		}
+		var running []string
+		for _, s := range stubs {
+			if s.DesiredStatus == "run" {
+				running = append(running, s.ID)
+			}
+		}
+		if len(running) != 1 {
+			t.Fatalf("%s has %d copies Nomad wants running, want 1", appID, len(running))
+		}
+		return running[0]
+	}
+	versionBefore, copyBefore := versionOf(), copyOf()
+
+	// Back up now, and wait for the run.
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/backups", "application/json", `{"service": "web"}`)
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var started struct{ ID string }
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &started) != nil || started.ID == "" {
+		t.Fatalf("back up now: %d %s", resp.StatusCode, raw)
+	}
+	var run gateVolumeRun
+	waitFor(t, "the volume backup to succeed", 5*time.Minute, func() bool {
+		var l struct {
+			Backups []gateVolumeRun `json:"backups"`
+		}
+		g.getJSON(t, "/v1/apps/"+appID+"/backups", &l)
+		for _, b := range l.Backups {
+			if b.ID != started.ID {
+				continue
+			}
+			switch b.Status {
+			case "failed":
+				t.Fatalf("the volume backup failed: %s", b.Message)
+			case "succeeded":
+				run = b
+				return true
+			}
+		}
+		return false
+	})
+
+	settled := time.Now()
+	if run.Engine != "volume" {
+		t.Errorf("the backup's engine = %q, want volume", run.Engine)
+	}
+	if run.StoppedSeconds == nil || *run.StoppedSeconds <= 0 {
+		t.Errorf("stoppedSeconds = %v, want more than 0: the service was stopped while its volume was archived", run.StoppedSeconds)
+	}
+	if len(run.Volumes) != 1 || run.Volumes[0].Name != "data" || run.Volumes[0].Bytes <= 0 || run.Volumes[0].SizeBytes <= 0 {
+		t.Errorf("volumes = %+v, want the one volume data with its archive and data sizes", run.Volumes)
+	} else if run.Bytes != run.Volumes[0].Bytes {
+		t.Errorf("bytes = %d, want the archive's %d", run.Bytes, run.Volumes[0].Bytes)
+	}
+	// The record doesn't name the object, but the run's ID ends in the
+	// timestamp its directory in the bucket is named by: <prefix>/vol/web/<ts>/.
+	ts := strings.TrimPrefix(run.ID, "web-")
+	if listed, err := g.bucketExec("ls", "/data/backups/gate/vol/web/"+ts+"/"); err != nil || !strings.Contains(listed, "data.tar.gz") {
+		t.Errorf("the bucket's backups/gate/vol/web/%s/ lists %q (%v), want data.tar.gz", ts, listed, err)
+	}
+
+	// The backup restarted the same copy and left the job alone.
+	if got := versionOf(); got != versionBefore {
+		t.Errorf("the job is at version %d after the backup, was %d: a volume backup must not change it", got, versionBefore)
+	}
+	if got := copyOf(); got != copyBefore {
+		t.Errorf("the copy is %s after the backup, was %s: it should be the same copy, restarted", got, copyBefore)
+	}
+	// Healthy again: serving its data, with every check of the copy passing.
+	if got := readFile(); got != "A" {
+		t.Errorf("/data/v = %q after the backup, want A", got)
+	}
+	// A check result older than the run is the one from before the restart, so
+	// only results from after it count.
+	waitFor(t, "the copy's checks to pass again", 2*time.Minute, func() bool {
+		checks, err := nomad.Allocations().Checks(copyBefore, nil)
+		if err != nil || len(checks) == 0 {
+			return false
+		}
+		for _, c := range checks {
+			if c.Status != "success" || c.Timestamp < settled.Unix() {
+				return false
+			}
+		}
+		return true
+	})
+
+	// T017 (restore half) goes here, before the app is deleted:
+	//   1. change /data/v to "B" (a redeploy with a command that overwrites it,
+	//      or a write through Nomad's exec);
+	//   2. POST /v1/apps/vol/backups/<run.ID>/restore, wait until it succeeds;
+	//   3. readFile() must answer "A", and versionOf() must still be versionBefore.
+
+	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+	}
+	left, _, err := nomad.HostVolumes().List(&api.HostVolumeListRequest{}, &api.QueryOptions{Prefix: appID + "_"})
+	if err != nil || len(left) != 0 {
+		t.Errorf("host volumes left after delete: %d (%v)", len(left), err)
 	}
 }
 

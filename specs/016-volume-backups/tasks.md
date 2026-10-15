@@ -212,7 +212,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
     - the no-running-copy refusal sentence.
 
   Tests in internal/ui/backups_test.go and edit_test.go for each string, and that the forms work without JS.
-- [ ] T015 [US1] Gate step, backup half, in cmd/caravana/gate_test.go: a new step `volume-backup-restore` after `backup-restore`, using its `rclone serve s3` bucket. It:
+- [X] T015 [US1] Gate step, backup half, in cmd/caravana/gate_test.go: a new step `volume-backup-restore` after `backup-restore`, using its `rclone serve s3` bucket. It:
   - deploys app `vol` (busybox writing `/data/v` once at start, with a volume `data` and a `volume` backup);
   - writes "A" into the file through a console/API-free path. Use the app's command: it writes "A" when the file is missing;
   - backs up now through the API and waits until the run succeeds;
