@@ -36,13 +36,22 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 
-	var routes, volumes, secrets, backups []string
+	var routes, volumes, volumeVars, secrets, backups []string
 	for _, svc := range a.Services {
 		for _, dom := range svc.Domains {
 			routes = append(routes, fmt.Sprintf("  %s -> service %s, port %s", dom.Host, svc.Name, dom.Port))
 		}
 		for _, v := range svc.Volumes {
 			volumes = append(volumes, fmt.Sprintf("- Host volume %q, mounted by service %s.", nomadjob.VolumeName(a.ID, v.Name), svc.Name))
+		}
+		if len(svc.Volumes) > 0 {
+			// Without the variable, the caravana-volumes task waits for it
+			// and the service never starts.
+			path := nomadjob.VolumeVariablePath(a.ID, svc.Name)
+			volumeVars = append(volumeVars, fmt.Sprintf(
+				"- Nomad Variable %s, which the %s task of service %s reads before the service starts.\n"+
+					"  Create it before running the job, e.g. nomad var put %s LIMIT=1800",
+				path, nomadjob.VolumeTaskName, svc.Name, path))
 		}
 		if len(svc.Secrets) > 0 {
 			names := make([]string, len(svc.Secrets))
@@ -68,6 +77,9 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 		}
 	}
 	for _, v := range volumes {
+		b.WriteString(v + "\n")
+	}
+	for _, v := range volumeVars {
 		b.WriteString(v + "\n")
 	}
 	for _, s := range secrets {

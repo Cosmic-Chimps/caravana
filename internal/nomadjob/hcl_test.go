@@ -59,6 +59,7 @@ var hclCovers = []string{
 	"TaskGroups[].Tasks[].Name", "TaskGroups[].Tasks[].Driver", "TaskGroups[].Tasks[].KillTimeout",
 	"TaskGroups[].Tasks[].Lifecycle.Hook", "TaskGroups[].Tasks[].Lifecycle.Sidecar",
 	"TaskGroups[].Tasks[].Config.image", "TaskGroups[].Tasks[].Config.command", "TaskGroups[].Tasks[].Config.args",
+	"TaskGroups[].Tasks[].Config.entrypoint",
 	"TaskGroups[].Tasks[].Env",
 	"TaskGroups[].Tasks[].Resources.CPU", "TaskGroups[].Tasks[].Resources.MemoryMB", "TaskGroups[].Tasks[].Resources.MemoryMaxMB",
 	"TaskGroups[].Tasks[].VolumeMounts[].Volume", "TaskGroups[].Tasks[].VolumeMounts[].Destination", "TaskGroups[].Tasks[].VolumeMounts[].ReadOnly",

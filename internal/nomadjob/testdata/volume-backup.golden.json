@@ -1,0 +1,348 @@
+{
+  "Job": {
+    "Region": null,
+    "Namespace": null,
+    "ID": "kuma",
+    "Name": "kuma",
+    "Type": "service",
+    "Priority": null,
+    "AllAtOnce": null,
+    "Datacenters": [
+      "*"
+    ],
+    "NodePool": null,
+    "Constraints": null,
+    "Affinities": null,
+    "TaskGroups": [
+      {
+        "Name": "web",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "web",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "image": "louislam/uptime-kuma@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": null,
+            "DispatchPayload": null,
+            "VolumeMounts": [
+              {
+                "Volume": "data",
+                "Destination": "/app/data",
+                "ReadOnly": false,
+                "PropagationMode": null,
+                "SELinuxLabel": null
+              },
+              {
+                "Volume": "uploads",
+                "Destination": "/app/uploads",
+                "ReadOnly": false,
+                "PropagationMode": null,
+                "SELinuxLabel": null
+              }
+            ],
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          },
+          {
+            "Name": "caravana-volumes",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": false
+            },
+            "Config": {
+              "args": [
+                "[ -n \"$ROOT\" ] || ROOT=/caravana-volumes\n[ -n \"$DATA\" ] || DATA=/alloc/data/caravana\n[ -n \"$REQUEST_FILE\" ] || REQUEST_FILE=/local/request.env\n\n# One \"\u003cvolume\u003e \u003ckilobytes\u003e\" line for each volume, replaced as a whole so\n# Caravana never reads half a file.\nmeasure_sizes() {\n  mkdir -p \"$DATA\" || return 0\n  : \u003e \"$DATA/.sizes.tmp\" || return 0\n  for dir in \"$ROOT\"/*; do\n    [ -d \"$dir\" ] || continue\n    kb=$(du -sk \"$dir\" 2\u003e/dev/null | cut -f1)\n    [ -n \"$kb\" ] || kb=0\n    echo \"$(basename \"$dir\") $kb\" \u003e\u003e \"$DATA/.sizes.tmp\"\n  done\n  mv \"$DATA/.sizes.tmp\" \"$DATA/sizes\"\n}\n\n# finish \u003cstatus\u003e writes the result file from MESSAGE and the detail lines the\n# run left in $DETAIL, replacing nothing half-written.\nfinish() {\n  message=$(printf '%s' \"$MESSAGE\" | tr '\\n' ' ')\n  {\n    echo \"status=$1\"\n    echo \"message=$message\"\n    [ ! -f \"$DETAIL\" ] || cat \"$DETAIL\"\n  } \u003e \"$DATA/.$REQUEST.tmp\" \u0026\u0026 mv \"$DATA/.$REQUEST.tmp\" \"$DATA/$REQUEST.result\"\n  rm -f \"$DETAIL\"\n}\n\n# --- The runs. Each returns 0 for success, or 1 with MESSAGE saying why. It\n# --- appends \"key=value\" lines to $DETAIL for the result file.\n\ndo_backup() {\n  MESSAGE=\"not implemented yet\"\n  return 1\n}\n\ndo_restore() {\n  MESSAGE=\"not implemented yet\"\n  return 1\n}\n\n# --- The request.\n\nhandle_request() {\n  [ -f \"$REQUEST_FILE\" ] || return 0\n  REQUEST= ACTION= OBJECT= NOT_AFTER=\n  set -a\n  . \"$REQUEST_FILE\"\n  set +a\n  # The ID names a file: letters, digits, \"-\" and \"_\" only.\n  case \"$REQUEST\" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac\n  case \"$NOT_AFTER\" in ''|*[!0-9]*) return 0 ;; esac\n  [ \"$NOT_AFTER\" -ge \"$(date +%s)\" ] || return 0\n  [ ! -e \"$DATA/$REQUEST.result\" ] || return 0\n\n  mkdir -p \"$DATA\" || return 0\n  DETAIL=\"$DATA/.$REQUEST.detail\"\n  rm -f \"$DETAIL\"\n  MESSAGE=\n  case \"$ACTION\" in\n    backup) if do_backup; then finish succeeded; else finish failed; fi ;;\n    restore) if do_restore; then finish succeeded; else finish failed; fi ;;\n    *) MESSAGE=\"unknown action\"; finish failed ;;\n  esac\n}\n\nmeasure_sizes\n( handle_request )\nexit 0\n"
+              ],
+              "entrypoint": [
+                "/bin/sh",
+                "-c"
+              ],
+              "image": "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 50,
+              "Cores": null,
+              "MemoryMB": 32,
+              "MemoryMaxMB": 512,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "local/request.env",
+                "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/kuma/web/caravana-volumes\" }}{{ range .Tuples }}{{ .K }}='{{ .V | replaceAll \"'\" \"'\\\\''\" }}'\n{{ end }}{{ end }}",
+                "ChangeMode": "noop",
+                "ChangeScript": null,
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": false,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": [
+              {
+                "Volume": "data",
+                "Destination": "/caravana-volumes/data",
+                "ReadOnly": false,
+                "PropagationMode": null,
+                "SELinuxLabel": null
+              },
+              {
+                "Volume": "uploads",
+                "Destination": "/caravana-volumes/uploads",
+                "ReadOnly": false,
+                "PropagationMode": null,
+                "SELinuxLabel": null
+              }
+            ],
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": {
+          "data": {
+            "Name": "data",
+            "Type": "host",
+            "Source": "kuma_data",
+            "ReadOnly": false,
+            "Sticky": false,
+            "AccessMode": "single-node-single-writer",
+            "AttachmentMode": "file-system",
+            "MountOptions": null,
+            "PerAlloc": false
+          },
+          "uploads": {
+            "Name": "uploads",
+            "Type": "host",
+            "Source": "kuma_uploads",
+            "ReadOnly": false,
+            "Sticky": false,
+            "AccessMode": "single-node-single-writer",
+            "AttachmentMode": "file-system",
+            "MountOptions": null,
+            "PerAlloc": false
+          }
+        },
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 0,
+          "AutoRevert": null,
+          "AutoPromote": false
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": [
+              {
+                "Label": "http",
+                "Value": 0,
+                "To": 3001,
+                "HostNetwork": "",
+                "IgnoreCollision": false
+              }
+            ],
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": [
+          {
+            "Name": "kuma-web",
+            "Tags": [
+              "traefik.enable=true",
+              "traefik.http.routers.kuma-web.rule=Host(`kuma.example.com`)",
+              "traefik.http.routers.kuma-web.entrypoints=websecure",
+              "traefik.http.routers.kuma-web.tls=true"
+            ],
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "",
+            "Address": "",
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "http",
+                "Command": "",
+                "Args": null,
+                "Path": "/",
+                "Protocol": "",
+                "PortLabel": "",
+                "Expose": false,
+                "AddressMode": "",
+                "Advertise": "",
+                "Interval": 10000000000,
+                "Timeout": 2000000000,
+                "InitialStatus": "",
+                "Notes": "",
+                "TLSServerName": "",
+                "TLSSkipVerify": false,
+                "Header": null,
+                "Method": "",
+                "CheckRestart": null,
+                "GRPCService": "",
+                "GRPCUseTLS": false,
+                "TaskName": "",
+                "SuccessBeforePassing": 0,
+                "FailuresBeforeCritical": 0,
+                "FailuresBeforeWarning": 0,
+                "Body": "",
+                "OnUpdate": ""
+              }
+            ],
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          }
+        ],
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      }
+    ],
+    "Update": {
+      "Stagger": null,
+      "MaxParallel": 1,
+      "HealthCheck": "checks",
+      "MinHealthyTime": 10000000000,
+      "HealthyDeadline": 180000000000,
+      "ProgressDeadline": 600000000000,
+      "Canary": null,
+      "AutoRevert": true,
+      "AutoPromote": true
+    },
+    "Multiregion": null,
+    "Spreads": null,
+    "Periodic": null,
+    "ParameterizedJob": null,
+    "Reschedule": null,
+    "Migrate": null,
+    "Meta": {
+      "caravana.app": "kuma",
+      "caravana.deployment": "d1"
+    },
+    "UI": null,
+    "Stop": null,
+    "ParentID": null,
+    "Dispatched": false,
+    "DispatchIdempotencyToken": null,
+    "Payload": null,
+    "ConsulNamespace": null,
+    "VaultNamespace": null,
+    "NomadTokenID": null,
+    "Status": null,
+    "StatusDescription": null,
+    "Stable": null,
+    "Version": null,
+    "SubmitTime": null,
+    "CreateIndex": null,
+    "ModifyIndex": null,
+    "JobModifyIndex": null,
+    "VersionTag": null
+  }
+}
