@@ -43,6 +43,9 @@ type composeView struct {
 	AppID                       string // Existing only
 	PreviewAction, DeployAction string
 	Draft                       composeDraft
+	// Kept says the draft was filled from the Compose file the app keeps
+	// (feature 015), not typed: its services are drawn before any preview.
+	Kept bool
 
 	// Notice is an error that isn't about one input; SavedID is set when the
 	// app was saved but its deploy didn't start; Stale says the app changed
@@ -65,6 +68,12 @@ type composeView struct {
 // CanDeploy is whether the page offers the second button: the file
 // translated and nothing is refused.
 func (v composeView) CanDeploy() bool { return v.Previewed && len(v.Refusals) == 0 }
+
+// FileRows is the height of the file's textarea: a row for each line and one
+// to spare, from 12 rows (an empty form) to 40 (a long file scrolls).
+func (v composeView) FileRows() int {
+	return min(max(strings.Count(v.Draft.File.Value, "\n")+2, 12), 40)
+}
 
 // composeServiceView is one service's panel: the facts the preview found
 // (none when the file didn't translate) and the overlay inputs. The Show
@@ -316,6 +325,23 @@ func newComposeView(appID string) composeView {
 		v.PreviewAction, v.DeployAction = "/apps/"+appID+"/compose/preview", "/apps/"+appID+"/compose"
 	}
 	v.Draft = composeDraft{Name: formField{ID: "name"}, File: formField{ID: "compose"}}
+	return v
+}
+
+// keptComposeView is the Compose form of an app that keeps its file (feature
+// 015, research R6, R7): the file as it was deployed, the overlay it had, and
+// the stored app's secrets as names with empty inputs, with the revision of the
+// app the form was drawn from. Its services are drawn at once, with the facts of
+// the stored app, so the owner can edit them before a preview. rec.Compose must
+// not be nil.
+func keptComposeView(rec store.AppRecord) composeView {
+	v := newComposeView(rec.App.ID)
+	v.Kept = true
+	v.Draft = draftOf(*rec.Compose)
+	v.Draft.Revision = rec.Revision
+	v.Draft.keepStored(rec.App)
+	v.Draft.ensureServices(rec.App)
+	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
 }
 

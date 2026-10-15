@@ -29,9 +29,10 @@
 
   <label class="flex flex-col gap-2" for="compose">
     <span class="cv-label">Compose file</span>
-    <textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose" rows="14" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
+    <textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
 {{.Draft.File.Value}}</textarea>
     <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Domains, health checks and secrets are set below, after the preview.</span>
+    <span class="cv-data-muted cv-hint">Put passwords and keys in secrets below, not in the file.</span>
     {{template "field-error" .Draft.File}}
   </label>
 
@@ -66,7 +67,7 @@
   {{end}}
 
   <section aria-labelledby="services-title" class="flex flex-col gap-3">
-    <h2 id="services-title" class="cv-label">{{if .Previewed}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
+    <h2 id="services-title" class="cv-label">{{if or .Previewed .Kept}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
     {{range .Services}}
     {{$svc := .}}
     <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">

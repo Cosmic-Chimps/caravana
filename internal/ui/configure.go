@@ -88,7 +88,13 @@ func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 type configureTab struct {
 	App     defPanel // the app's own facts
 	Compose bool     // the app was made from a Compose file: a note says a file replaces edits
-	Edit    editView
+	// ComposeForm is the Compose form drawn first when the app keeps its file
+	// (feature 015); the definition is then read-only (Edit.ReadOnly).
+	ComposeForm *composeView
+	// Notice is a refusal of the tab as a whole: a per-field save that an app
+	// edited through its file doesn't take.
+	Notice sentence
+	Edit   editView
 	Secrets secretsView
 	Webhook webhookView
 	Export  exportView
@@ -98,11 +104,16 @@ type configureTab struct {
 // editView is the form of the Configure tab: the inputs with what was typed
 // (or what is stored), one section per service, and, after a refused stale
 // save, what changed under the owner.
+//
+// An app that keeps its Compose file has no form to edit: ReadOnly is set, and
+// Panels hold what its services are, one panel each (feature 015).
 type editView struct {
 	Action   string
 	Form     editForm
 	Services []editServiceView
 	Stale    *staleView
+	ReadOnly bool
+	Panels   []defPanel
 }
 
 // editServiceView is a service's inputs with the facts of it the form keeps.
@@ -291,6 +302,83 @@ func keptRows(svc app.Service, s editService) []defRow {
 	return rows
 }
 
+// servicePanels shows each service of the app as a panel of facts, for the
+// Configure tab of an app that is edited through its Compose file: what the
+// file and its overlay made, read-only. Environment values are shown, as the
+// edit form shows them; secrets are not here (their names are in the Secrets
+// section, their values nowhere).
+func servicePanels(a app.App) []defPanel {
+	var out []defPanel
+	for _, svc := range a.Services {
+		rows := []defRow{{Label: "Image", Values: []string{svc.Image}}}
+		if len(svc.Env) > 0 {
+			var env []string
+			for _, v := range svc.Env {
+				env = append(env, v.Name+"="+v.Value)
+			}
+			rows = append(rows, defRow{Label: "Environment", Values: env})
+		}
+		if svc.Command != "" {
+			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
+		}
+		if len(svc.Args) > 0 {
+			rows = append(rows, defRow{Label: "Arguments", Values: svc.Args})
+		}
+		var ports []string
+		for _, p := range svc.Ports {
+			ports = append(ports, p.Name+" → "+strconv.Itoa(p.ContainerPort))
+		}
+		rows = append(rows, defRow{Label: "Ports", Values: ports})
+		var domains []string
+		for _, d := range svc.Domains {
+			domains = append(domains, d.Host)
+		}
+		rows = append(rows, defRow{Label: "Domains", Values: domains})
+		if svc.Replicas != nil {
+			rows = append(rows, defRow{Label: "Copies", Values: []string{strconv.Itoa(*svc.Replicas)}})
+		}
+		if h := svc.Health; h != nil {
+			check := "TCP"
+			if h.Path != "" {
+				check = h.Path
+			}
+			if h.Interval > 0 {
+				check += ", every " + secondsText(h.Interval) + " s"
+			}
+			if h.Timeout > 0 {
+				check += ", timeout " + secondsText(h.Timeout) + " s"
+			}
+			rows = append(rows, defRow{Label: "Health check", Values: []string{check}})
+		}
+		if r := svc.Resources; r.CPUMHz > 0 {
+			rows = append(rows, defRow{Label: "CPU", Values: []string{strconv.Itoa(r.CPUMHz) + " MHz"}})
+		}
+		var memory []string
+		if r := svc.Resources; r.MemoryMB > 0 {
+			memory = append(memory, strconv.Itoa(r.MemoryMB)+" MB reserved")
+		}
+		if r := svc.Resources; r.MemoryMaxMB > 0 {
+			memory = append(memory, "up to "+strconv.Itoa(r.MemoryMaxMB)+" MB")
+		}
+		rows = append(rows, defRow{Label: "Memory", Values: memory})
+		var volumes []string
+		for _, v := range svc.Volumes {
+			text := v.Name + " → " + v.Path
+			if v.ReadOnly {
+				text += " (read-only)"
+			}
+			volumes = append(volumes, text)
+		}
+		rows = append(rows, defRow{Label: "Volumes", Values: volumes})
+		if b := svc.Backup; b != nil {
+			rows = append(rows, defRow{Label: "Backup", Values: []string{
+				fmt.Sprintf("%s, %s (UTC), keeping the last %d", b.Engine, b.ScheduleOrDefault(), b.KeepOrDefault())}})
+		}
+		out = append(out, defPanelOf(svc.Name, rows))
+	}
+	return out
+}
+
 // whatGoes is the sentence that says what deleting the app removes (research
 // R16): its copies stop, its addresses stop answering, its history and its
 // webhook token are erased.
@@ -380,6 +468,10 @@ const maxEditBytes = 256 << 10
 // the stored app has the new values, so the next save starts from them.
 const savedNote = "The changes are saved; the failed attempt is on the Deployments tab."
 
+// editedThroughFileNotice is the refusal of a per-field save on an app that
+// keeps its Compose file (feature 015).
+const editedThroughFileNotice = "This app is edited through its Compose file. Change the file above and deploy it."
+
 // saveConfigure answers POST /apps/{id}/configure: it lays the posted form
 // over the stored app (applyEdit) and saves and deploys it in one step, on
 // the condition that the app still has the revision the form was drawn from.
@@ -411,6 +503,13 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	}
 	if err != nil {
 		s.serverError(w, "read app", err)
+		return
+	}
+	// An app that keeps its Compose file is edited through the file. The page
+	// has no form to post here, so this is a hand-made post: saving fields
+	// would deploy a definition the file doesn't say, and drop the file.
+	if rec.Compose != nil {
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain(editedThroughFileNotice)}})
 		return
 	}
 

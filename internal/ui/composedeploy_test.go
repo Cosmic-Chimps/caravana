@@ -14,16 +14,27 @@ import (
 // storedSecret is the value shop's API_KEY has in the secret store; no page may draw it.
 const storedSecret = "stored-api-key-marker"
 
-// shopEnv has shop deployed from shopCompose through the service: web with a
-// domain, a health check and a secret, worker, and db with a backup.
-func shopEnv(t *testing.T) (*consoleEnv, string) {
-	t.Helper()
-	e := composeEnv(t)
-	req := compose.Request{Compose: shopCompose, Services: map[string]compose.Overlay{
+// shopRequest is the Compose request shop is deployed from: web with a domain,
+// a health check and a secret, worker, and db with a backup.
+func shopRequest() compose.Request {
+	return compose.Request{Compose: shopCompose, Services: map[string]compose.Overlay{
 		"web": {Domains: []compose.Domain{{Host: "shop.example.com"}}, Health: &compose.Health{Path: "/health"},
 			Secrets: []app.Secret{{Name: "API_KEY", Value: new(storedSecret)}}},
 		"db": {Backup: &app.Backup{Engine: "postgres", Keep: 5}, Secrets: []app.Secret{{Name: "POSTGRES_PASSWORD", Value: new("pw")}}},
 	}}
+}
+
+// keptShopEnv has shop deployed from shopRequest through the service, which
+// keeps its Compose file (feature 015). The revision is the stored app's.
+func keptShopEnv(t *testing.T) (*consoleEnv, string) {
+	t.Helper()
+	return deployShop(t, shopRequest())
+}
+
+// deployShop is keptShopEnv for another request.
+func deployShop(t *testing.T, req compose.Request) (*consoleEnv, string) {
+	t.Helper()
+	e := composeEnv(t)
 	rec, err := e.Svc.DeployCompose(context.Background(), "shop", req, app.TriggerManual)
 	if err != nil {
 		t.Fatalf("DeployCompose: %v", err)
@@ -34,6 +45,23 @@ func shopEnv(t *testing.T) (*consoleEnv, string) {
 		t.Fatal(err)
 	}
 	return e, stored.Revision
+}
+
+// shopEnv is keptShopEnv for an app made before feature 015: the same app
+// with no kept file, so the Compose forms start empty as they did in 014.
+func shopEnv(t *testing.T) (*consoleEnv, string) {
+	t.Helper()
+	e, _ := keptShopEnv(t)
+	ctx := context.Background()
+	stored, err := e.Store.GetApp(ctx, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := e.Store.SaveApp(ctx, stored.App, nil)
+	if err != nil {
+		t.Fatalf("SaveApp: %v", err)
+	}
+	return e, legacy.Revision
 }
 
 // previewShop posts the Deploy from Compose preview with the revision a form drawn now has.

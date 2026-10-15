@@ -83,7 +83,7 @@ Files: `internal/service/deploy.go`, `internal/service/compose.go`, `internal/se
 - [X] T005 [P] [US1] `draftOf` (research R7), in internal/ui/composeform.go: add the pure `draftOf(req compose.Request) composeDraft`, the inverse of `composeDraft.request()`. It sets the file text and name and, per overlay service (sorted, as `sortServices`), sets domains (with `:port` only when the request names a port), health path, port, interval and timeout (`secondsText`), backup engine, schedule and keep, and secrets as `draftSecret{Exists: true}` with empty values. Then it calls `build()` on each service.
 
   Round-trip test in internal/ui/composeform_test.go: `parse(post(draftOf(r))).request()` equals `r.WithoutSecretValues()` for each pair in internal/compose/testdata (`*.compose.yaml` + `*.overlay.json`), for deploy/examples/hollo (`compose.yaml` + `overlay.example.json`), and for a request with no overlay at all. Here `post` turns the draft into the form values the template would post; reuse the helper composeform_test.go already has for 014's tests if there is one.
-- [ ] T006 [US1] Configure with a kept file (research R6, contracts/console.md "App with a kept file"):
+- [X] T006 [US1] Configure with a kept file (research R6, contracts/console.md "App with a kept file"):
   - In internal/ui/app.go `configurePage`: when `sum.Compose != nil`, build a `composeView` (as `newComposeView` does) whose draft is `draftOf(*sum.Compose)` with `keepStored(sum.App)` applied and `Revision = sum.Revision`, posting to `/apps/{id}/compose/preview` and `/apps/{id}/compose`. Put it on `configureTab` as `ComposeForm *composeView`, and set `Edit.ReadOnly = true`.
   - In internal/ui/composedeploy.go `showComposeDeploy`: prefill the same way when the app has a kept file.
   - In internal/ui/templates/app.html: the "configure" template draws `{{template "compose-form" .ComposeForm}}` first when set. With `ReadOnly`, the per-service definition is drawn as read-only `defPanel`s headed "This app is edited through its Compose file." (no inputs, no Save). Replace 014's `Compose` note with this when a file is kept.
@@ -91,7 +91,7 @@ Files: `internal/service/deploy.go`, `internal/service/compose.go`, `internal/se
   - Run `tools/ui-css.sh build` if a new class is used.
 
   Tests in internal/ui/configure_test.go: the page shows the kept file text (with a `#` comment) HTML-escaped, the overlay values, secret names with empty inputs, the hidden revision, the read-only definition and its line; image apps and Compose apps without a file render as in 014. Test in internal/ui/composepage_test.go: `GET /apps/{id}/compose` is prefilled the same way.
-- [ ] T007 [US1] Per-field save refused on a kept-file app (contracts/console.md "Per-field save"), in internal/ui/configure.go `saveConfigure`: when the stored app has a kept file, answer 409 with the Configure page and the notice "This app is edited through its Compose file. Change the file above and deploy it." Nothing is deployed. Test in internal/ui/configure_save_test.go: 409, the notice, no new deployment, the file still kept.
+- [X] T007 [US1] Per-field save refused on a kept-file app (contracts/console.md "Per-field save"), in internal/ui/configure.go `saveConfigure`: when the stored app has a kept file, answer 409 with the Configure page and the notice "This app is edited through its Compose file. Change the file above and deploy it." Nothing is deployed. Test in internal/ui/configure_save_test.go: 409, the notice, no new deployment, the file still kept.
 
 **⟶ Wait for T004–T007, then:**
 

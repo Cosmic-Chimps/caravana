@@ -8,7 +8,8 @@ import (
 )
 
 // showComposeDeploy answers GET /apps/{id}/compose: the Deploy from Compose
-// form, with the app's revision in it and nothing previewed yet.
+// form, with the app's revision in it and nothing previewed yet. When the app
+// keeps its Compose file, the form is filled from it.
 func (s *server) showComposeDeploy(w http.ResponseWriter, r *http.Request, session string) {
 	id := r.PathValue("id")
 	rec, err := s.svc.GetApp(r.Context(), id)
@@ -18,6 +19,11 @@ func (s *server) showComposeDeploy(w http.ResponseWriter, r *http.Request, sessi
 	}
 	if err != nil {
 		s.serverError(w, "read app", err)
+		return
+	}
+	// An app that keeps its file opens with it, as Configure does.
+	if rec.Compose != nil {
+		s.drawCompose(w, r, http.StatusOK, keptComposeView(rec))
 		return
 	}
 	v := newComposeView(id)

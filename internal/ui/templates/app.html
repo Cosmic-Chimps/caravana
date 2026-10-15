@@ -370,6 +370,15 @@
      is a plain form post; the confirmations are <details>, so they work without script.
      Takes a configureTab. */}}
 {{define "configure"}}
+{{/* An app that keeps its Compose file edits it here first (feature 015): the same form as
+     Deploy from Compose, filled from the file. The definition below is then read-only. */}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .ComposeForm}}
+<section aria-labelledby="compose-file-title" class="flex flex-col gap-2">
+  <h2 id="compose-file-title" class="cv-label">Compose file</h2>
+  {{template "compose-form" .}}
+</section>
+{{end}}
 <section aria-labelledby="definition-title" class="flex flex-col gap-2">
   <h2 id="definition-title" class="cv-label">Definition</h2>
   <div class="cv-panel cv-def">
@@ -387,10 +396,31 @@
       {{end}}
     </dl>
   </div>
+  {{if .Edit.ReadOnly}}
+  <p class="text-sm text-fg-3">This app is edited through its Compose file.</p>
+  {{range .Edit.Panels}}
+  <div class="cv-panel cv-def">
+    <h3 class="cv-data text-fg-1">{{.Title}}</h3>
+    <dl class="cv-def-rows">
+      {{range .Rows}}
+      <div class="cv-def-row">
+        <dt class="cv-label">{{.Label}}</dt>
+        <dd>
+          <ul class="cv-def-values">{{range .Values}}
+            <li class="cv-data text-fg-1">{{.}}</li>{{end}}
+          </ul>
+        </dd>
+      </div>
+      {{end}}
+    </dl>
+  </div>
+  {{end}}
+  {{else}}
   {{if .Compose}}<p class="text-sm text-fg-3">Made from a Compose file. Deploying a file again replaces these edits.</p>{{end}}
   <p class="text-sm text-fg-3"><a href="/apps/{{.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Replace the app with a Compose file.</p>
   {{template "configure-form" .Edit}}
   <p class="text-sm text-fg-3">Saving deploys the app with these values. Copies that are running keep the old ones until the new ones are healthy.</p>
+  {{end}}
 </section>
 
 {{/* Secrets: names only. Setting or removing one is a deploy; a value is never in the page,

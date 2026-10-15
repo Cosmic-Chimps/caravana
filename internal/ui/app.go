@@ -747,6 +747,9 @@ type configureExtras struct {
 	// a save refused because the app changed.
 	Form  *editForm
 	Stale *staleView
+	// Notice is a refusal of the tab as a whole (a per-field save on an app
+	// edited through its Compose file).
+	Notice sentence
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -788,12 +791,21 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	tab := &configureTab{
 		App:     appFacts(sum.App),
 		Compose: sum.App.Source.Kind == app.SourceCompose,
+		Notice:  extra.Notice,
 		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
 		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
+	}
+	if sum.Compose != nil {
+		// The file is the app's source of truth: its form comes first, and the
+		// definition it makes is shown, not edited (feature 015, research R6).
+		v := keptComposeView(sum.AppRecord)
+		tab.ComposeForm = &v
+		tab.Edit.ReadOnly = true
+		tab.Edit.Panels = servicePanels(sum.App)
 	}
 	if hook.Enabled {
 		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")

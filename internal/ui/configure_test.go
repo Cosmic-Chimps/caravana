@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"regexp"
 	"strings"
@@ -139,6 +140,109 @@ func TestConfigureNotesComposeApps(t *testing.T) {
 	_, body := e.get(t, "/apps/shop/configure")
 	if got := text(body); !strings.Contains(got, "Made from a Compose file. Deploying a file again replaces these edits.") {
 		t.Errorf("the note is missing:\n%s", got)
+	}
+}
+
+// sentinel015 is a secret value that no page may ever draw.
+const sentinel015 = "s3cret-sentinel-015"
+
+// keptShopFile is shopCompose with a comment the kept file must show back
+// as typed, with characters that need escaping.
+const keptShopFile = "# shop stack <kept> & commented\n" + shopCompose
+
+// keptSentinelEnv has shop deployed from keptShopFile, with a secret whose
+// value is sentinel015, so every page that draws the kept file can be searched.
+func keptSentinelEnv(t *testing.T) (*consoleEnv, string) {
+	t.Helper()
+	req := shopRequest()
+	req.Compose = keptShopFile
+	ov := req.Services["web"]
+	ov.Secrets = []app.Secret{{Name: "API_KEY", Value: new(sentinel015)}}
+	req.Services["web"] = ov
+	return deployShop(t, req)
+}
+
+// Feature 015, US1: Configure of an app that keeps its Compose file shows the
+// form first, filled from the file, and the definition as facts, not inputs.
+func TestConfigureKeptFile(t *testing.T) {
+	e, revision := keptSentinelEnv(t)
+	resp, body := e.get(t, "/apps/shop/configure")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /apps/shop/configure = %d:\n%s", resp.StatusCode, text(body))
+	}
+
+	// The file as it was typed, escaped, in the textarea of the Compose form.
+	if !strings.Contains(body, html.EscapeString("# shop stack <kept> & commented")) {
+		t.Errorf("the page lacks the file's comment, escaped:\n%s", body)
+	}
+	f := formWith(t, body, "/apps/shop/compose/preview")
+	if got := f.Values.Get("compose"); got != keptShopFile {
+		t.Errorf("the textarea = %q, want the kept file byte for byte", got)
+	}
+	// The overlay, the secret names with empty inputs, and the revision.
+	for name, want := range map[string]string{
+		"revision":                        revision,
+		"svc.web.domains":                 "shop.example.com",
+		"svc.web.healthPath":              "/health",
+		"svc.web.secret.API_KEY":          "",
+		"svc.db.secret.POSTGRES_PASSWORD": "",
+		"svc.db.backupKeep":               "5",
+	} {
+		if got, ok := f.Values[name]; !ok || got[0] != want {
+			t.Errorf("input %s = %v, want %q", name, got, want)
+		}
+	}
+	// Preview first, as on Deploy from Compose: the deploy button comes with the preview.
+	if !strings.Contains(body, `hx-post="/apps/shop/compose/preview">Preview</button>`) || strings.Contains(body, ">Deploy</button>") {
+		t.Errorf("the form should offer Preview and no Deploy yet:\n%s", text(body))
+	}
+	for _, want := range []string{`wrap="off"`, `spellcheck="false"`, `autocapitalize="off"`, "Put passwords and keys in secrets below, not in the file."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the file's textarea lacks %q", want)
+		}
+	}
+
+	// The definition is read-only: facts, no inputs, no save.
+	got := text(body)
+	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Domains shop.example.com"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the page lacks %q:\n%s", want, got)
+		}
+	}
+	for _, gone := range []string{`name="svc.web.image"`, `name="svc.web.env"`, `id="edit-form"`, "Save and deploy", "Made from a Compose file", "Deploy from Compose"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the page still has %q", gone)
+		}
+	}
+	// The sections below are as before, and no value is anywhere.
+	for _, want := range []string{"Secrets", "Webhook", "Export", "Delete app"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the page lacks the %s section", want)
+		}
+	}
+	if strings.Contains(body, sentinel015) {
+		t.Error("a secret value is on the Configure page")
+	}
+}
+
+// Feature 015: an image app, and a Compose app with no kept file, are
+// drawn as they were: the edit form, no Compose form, no read-only line.
+func TestConfigureWithoutKeptFileIsAsBefore(t *testing.T) {
+	image := configureEnv(t)
+	legacy, _ := shopEnv(t) // made from Compose before 015: no kept file
+	for name, e := range map[string]*consoleEnv{"image app": image, "compose app without a file": legacy} {
+		id := "shop"
+		_, body := e.get(t, "/apps/"+id+"/configure")
+		for _, gone := range []string{`id="compose-form"`, "This app is edited through its Compose file."} {
+			if strings.Contains(body, gone) {
+				t.Errorf("%s: the page has %q", name, gone)
+			}
+		}
+		for _, want := range []string{`id="edit-form"`, "Save and deploy"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: the page lacks %q", name, want)
+			}
+		}
 	}
 }
 

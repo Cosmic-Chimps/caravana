@@ -287,6 +287,37 @@ func TestSaveConfigure(t *testing.T) {
 	})
 }
 
+// Feature 015: an app that keeps its Compose file takes no per-field save. A
+// hand-made post is refused with 409 and the notice, and nothing is deployed:
+// saving fields would deploy a definition the file doesn't say.
+func TestSaveConfigureRefusedForKeptFile(t *testing.T) {
+	e, revision := keptShopEnv(t)
+	before := e.storedApp(t, "shop")
+	regs, deployments := e.Nomad.Registrations(), len(e.deployments(t, "shop"))
+
+	resp, body := e.postForm(t, "/apps/shop/configure", url.Values{
+		"revision":       {revision},
+		"svc.web.image":  {"traefik/whoami:v1.11"},
+		"svc.web.memory": {"192"},
+	})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("POST = %d, want 409:\n%s", resp.StatusCode, text(body))
+	}
+	if !strings.Contains(text(body), "This app is edited through its Compose file. Change the file above and deploy it.") {
+		t.Errorf("the notice is missing:\n%s", text(body))
+	}
+	if e.Nomad.Registrations() != regs || len(e.deployments(t, "shop")) != deployments {
+		t.Error("a refused save deployed")
+	}
+	if got := e.storedApp(t, "shop"); !reflect.DeepEqual(got, before) {
+		t.Errorf("the stored app changed: %+v", got)
+	}
+	rec, err := e.Store.GetApp(context.Background(), "shop")
+	if err != nil || rec.Compose == nil || rec.Revision != revision {
+		t.Errorf("the kept file or revision changed: %+v, %v", rec.Compose, err)
+	}
+}
+
 // seedOverwrite stores a over the stored app of the same ID without deploying it.
 func (e *consoleEnv) seedOverwrite(t *testing.T, a app.App) {
 	t.Helper()

@@ -436,3 +436,91 @@ func TestComposeHTMX(t *testing.T) {
 		t.Errorf("an htmx preview of a taken name = %d:\n%s", resp.StatusCode, body)
 	}
 }
+
+// Feature 015: Deploy from Compose of an app that keeps its file opens filled
+// from it, as Configure does, and never draws a secret value.
+func TestComposeDeployFormKeptFile(t *testing.T) {
+	e, revision := keptSentinelEnv(t)
+	resp, body := e.get(t, "/apps/shop/compose")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET = %d:\n%s", resp.StatusCode, text(body))
+	}
+	f := formWith(t, body, "/apps/shop/compose/preview")
+	if got := f.Values.Get("compose"); got != keptShopFile {
+		t.Errorf("the textarea = %q, want the kept file", got)
+	}
+	for name, want := range map[string]string{
+		"revision":               revision,
+		"svc.web.domains":        "shop.example.com",
+		"svc.web.healthPath":     "/health",
+		"svc.web.secret.API_KEY": "",
+		"svc.db.backupKeep":      "5",
+	} {
+		if got, ok := f.Values[name]; !ok || got[0] != want {
+			t.Errorf("input %s = %v, want %q", name, got, want)
+		}
+	}
+	for _, want := range []string{`wrap="off"`, "Put passwords and keys in secrets below, not in the file."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, sentinel015) {
+		t.Error("the page holds a secret value")
+	}
+
+	// An app with no kept file opens empty, as in 014.
+	legacy, _ := shopEnv(t)
+	_, body = legacy.get(t, "/apps/shop/compose")
+	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" {
+		t.Errorf("the textarea of an app with no kept file = %q, want it empty", f.Values.Get("compose"))
+	}
+}
+
+// Feature 015, US1: edit the kept file on Configure, preview, deploy. The edit
+// is kept; a second tab that still holds the old file is refused as stale.
+func TestConfigureKeptFileEditFlow(t *testing.T) {
+	e, _ := keptSentinelEnv(t)
+	_, page := e.get(t, "/apps/shop/configure")
+	const edited = "# shop stack, edited\n" + shopCompose
+	first := shopFormOf(t, page, url.Values{"compose": {edited}})
+	secondTab := shopFormOf(t, page, url.Values{"compose": {"# a second tab\n" + shopCompose}})
+
+	resp, body := e.postForm(t, "/apps/shop/compose/preview", first)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, ">Deploy</button>") {
+		t.Fatalf("preview = %d:\n%s", resp.StatusCode, text(body))
+	}
+	resp, body = e.postForm(t, "/apps/shop/compose", shopFormOf(t, body, nil))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
+	}
+	recs := e.deployments(t, "shop")
+	e.waitDeploy(t, recs[0].Deployment.ID)
+
+	rec, err := e.Store.GetApp(context.Background(), "shop")
+	if err != nil || rec.Compose == nil || rec.Compose.Compose != edited {
+		t.Fatalf("kept file = %+v, %v; want the edited one", rec.Compose, err)
+	}
+	if recs[0].Compose == nil || recs[0].Compose.Compose != edited {
+		t.Errorf("the deployment's file = %+v, want the edited one", recs[0].Compose)
+	}
+	_, body = e.get(t, "/apps/shop/configure")
+	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != edited {
+		t.Errorf("Configure shows %q, want the edited file", got)
+	}
+	if strings.Contains(body, sentinel015) {
+		t.Error("Configure holds a secret value")
+	}
+
+	// The other tab's deploy is refused, and its typed file comes back.
+	resp, body = e.postForm(t, "/apps/shop/compose", secondTab)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "This app changed since you opened the form.") {
+		t.Fatalf("a stale deploy = %d; want 409 with the stale panel:\n%s", resp.StatusCode, text(body))
+	}
+	if got := formWith(t, body, "/apps/shop/compose/preview").Values.Get("compose"); got != "# a second tab\n"+shopCompose {
+		t.Errorf("the stale form's file = %q, want what was typed", got)
+	}
+	if strings.Contains(body, sentinel015) {
+		t.Error("the stale page holds a secret value")
+	}
+}
