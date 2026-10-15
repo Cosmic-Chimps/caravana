@@ -31,14 +31,14 @@ different files and can run side by side.
 
 ## Phase 1: Setup
 
-- [ ] T001 Make `github.com/hashicorp/cronexpr` a direct dependency in go.mod. It is already in go.sum through the Nomad client; run `go mod tidy` and check that `go mod tidy -diff` is clean. Also add `alloc-lifecycle` and `read-fs` to the namespace capabilities in deploy/install/caravana-policy.hcl, with a comment line in the file's header comment explaining both (feature 016: restart a copy's tasks for a volume backup, and read the result file it writes; not `alloc-exec`). The commit message justifies the dependency (constitution I). Files: go.mod, go.sum, deploy/install/caravana-policy.hcl
+- [X] T001 Make `github.com/hashicorp/cronexpr` a direct dependency in go.mod. It is already in go.sum through the Nomad client; run `go mod tidy` and check that `go mod tidy -diff` is clean. Also add `alloc-lifecycle` and `read-fs` to the namespace capabilities in deploy/install/caravana-policy.hcl, with a comment line in the file's header comment explaining both (feature 016: restart a copy's tasks for a volume backup, and read the result file it writes; not `alloc-exec`). The commit message justifies the dependency (constitution I). Files: go.mod, go.sum, deploy/install/caravana-policy.hcl
 
 ## Phase 2: Foundational (blocks every story)
 
 Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/store/*`, and
 `internal/service/backups.go` (engine branches only)
 
-- [ ] T002 [P] App model (research R8, data-model "App model"), in internal/app/app.go and validate.go:
+- [X] T002 [P] App model (research R8, data-model "App model"), in internal/app/app.go and validate.go:
   - Add `BackupVolume = "volume"` beside `BackupPostgres`, and update `Backup.Engine`'s doc comment.
   - Validate `backup.engine`. It accepts `postgres` or `volume`, else this field error: `%q is not supported; it is "postgres" or "volume"`.
   - For `volume`, refuse at `services[i].backup.engine`:
@@ -48,7 +48,7 @@ Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/s
   - Postgres rules stay as they are.
 
   Table tests in internal/app/validate_test.go cover each case, and both engines with and without volumes.
-- [ ] T003 [P] Store (data-model "Store"):
+- [X] T003 [P] Store (data-model "Store"):
   - Add internal/store/migrations/0008_volume_backups.sql, exactly as data-model.md says.
   - In internal/store/backups.go, `BackupRecord` and `RestoreRecord` gain `Engine string` (default `"postgres"` when empty on write), `Stopped *time.Duration` (stored as `stopped_ms`) and, on `BackupRecord`, `Volumes []VolumeArchive{Name string; Bytes int64; SizeKB int64}` (JSON in `volumes`).
   - Add internal/store/volumes.go with `SaveVolumeSize(ctx, appID, volume string, kb int64, at time.Time)` and `VolumeSizes(ctx, appID) (map[string]VolumeSize, error)`.
@@ -59,7 +59,7 @@ Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/s
   - old rows read with engine `postgres` and nil Stopped/Volumes;
   - sizes upsert;
   - DeleteApp clears them.
-- [ ] T004 [P] The task and the script (research R1–R4, R9, data-model "Job shape"), in internal/nomadjob/volumes.go (new) and translate.go:
+- [X] T004 [P] The task and the script (research R1–R4, R9, data-model "Job shape"), in internal/nomadjob/volumes.go (new) and translate.go:
   - **Names and constants**: `VolumeTaskName = "caravana-volumes"`; `VolumeVariablePath(appID, service)` = `nomad/jobs/<app>/<service>/caravana-volumes`; the result-file paths (`/alloc/data/caravana/sizes` and `/alloc/data/caravana/<request>.result`); the `VolumeScript` const.
   - **The task**: `volumeTask(appID string, svc app.Service, s Settings) *api.Task`:
     - prestart, not a sidecar; `Settings.BackupImage`;
@@ -87,7 +87,7 @@ Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/s
 
 **⟶ Wait for T002–T004, then:**
 
-- [ ] T005 Deploy, Nomad side (research R2, R3, R9; data-model "Deploy"):
+- [X] T005 Deploy, Nomad side (research R2, R3, R9; data-model "Deploy"):
   - In internal/deploy/volumerun.go (new), with `context.Context` first everywhere:
     - `WriteVolumeVariable(ctx, a app.App, svc app.Service, dest *BackupDestination, keep int, req *VolumeRequest)` writes the task's variable: destination items via `destinationItems` when dest is non-nil, `KEEP`, `LIMIT`, and the request items, empty when req is nil;
     - `ClearVolumeRequest(ctx, appID, service)` keeps the rest;
@@ -104,7 +104,7 @@ Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/s
   - In internal/deploy/deploytest, fakes for alloc restart (it re-runs a configurable script result), alloc FS reads (a map of path → text per copy), and host volumes.
 
   Tests: each function against the fakes, and the variable never containing a secret in the job.
-- [ ] T006 Service engine branches, internal/service/backups.go, so feature 010's code ignores `volume` services:
+- [X] T006 Service engine branches, internal/service/backups.go, so feature 010's code ignores `volume` services:
   - `checkBackups` asks a `volume` service only for a destination: no credentials, no ports.
   - `syncBackups` passes only Postgres creds.
   - `recordApp` skips `volume` services; their records are written by the run, T011.

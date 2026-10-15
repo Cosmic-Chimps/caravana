@@ -28,6 +28,19 @@ var (
 	ErrBackupRunning       = errors.New("a backup or restore of this service is running")
 )
 
+// errVolumeRunsPending stands in until volume backups can be started (feature
+// 016): a volume backup is not a Nomad job, so the Postgres way of starting a
+// run would fail with a confusing answer from Nomad.
+var errVolumeRunsPending = errors.New("volume backups can't be started yet")
+
+// Two kinds of backup, two ways to run (feature 016). A Postgres backup is a
+// Nomad job, which this file starts and whose runs the watcher records. A
+// volume backup runs inside the service's own copy, and the run itself
+// records it (volumebackup.go), so the Nomad-job code skips those services.
+func postgresBackup(svc app.Service) bool {
+	return svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres
+}
+
 // restoreTimeout is how long a restore may stay unfinished before it is
 // recorded failed. A restore job whose variable is missing never fails by
 // itself: its copy waits for it (research R3).
@@ -119,7 +132,8 @@ func (s *Service) backupDestination(ctx context.Context) (deploy.BackupDestinati
 }
 
 // checkBackups refuses backups the installation can't run: none without a
-// destination.
+// destination. That is all a volume backup needs: no port and no credentials
+// (app.Validate checks a Postgres service's own).
 func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 	for i, svc := range a.Services {
 		if svc.Backup == nil {
@@ -137,14 +151,15 @@ func (s *Service) checkBackups(ctx context.Context, a app.App) error {
 
 // syncBackups makes the app's backup jobs match a, with the credentials the
 // official postgres image reads, from the service's env or its secrets
-// (sets). It answers a warning when it couldn't: the app itself is deployed
-// by then.
+// (sets). Only Postgres backups are jobs; volume backups have none, and a
+// service that changed to one loses its old job. It answers a warning when it
+// couldn't: the app itself is deployed by then.
 func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string]string, sets secrets.Sets) []app.Warning {
 	dest, _, err := s.backupDestination(ctx)
 	if err == nil {
 		creds := map[string]deploy.BackupCredentials{}
 		for _, svc := range a.Services {
-			if svc.Backup == nil {
+			if !postgresBackup(svc) {
 				continue
 			}
 			value := func(name, def string) string {
@@ -211,7 +226,8 @@ func (s *Service) backedUpService(ctx context.Context, appID, service string) (a
 // the service already running is ErrBackupRunning: two runs started within
 // the same second would be one run in Nomad.
 func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.BackupRecord, error) {
-	if _, _, err := s.backedUpService(ctx, appID, service); err != nil {
+	_, svc, err := s.backedUpService(ctx, appID, service)
+	if err != nil {
 		return store.BackupRecord{}, err
 	}
 	if _, ok, err := s.backupDestination(ctx); err != nil {
@@ -219,10 +235,13 @@ func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.B
 	} else if !ok {
 		return store.BackupRecord{}, ErrNoBackupDestination
 	}
-	if busy, err := s.backupBusy(ctx, appID, service); err != nil {
+	if busy, err := s.backupBusy(ctx, appID, svc); err != nil {
 		return store.BackupRecord{}, err
 	} else if busy {
 		return store.BackupRecord{}, ErrBackupRunning
+	}
+	if !postgresBackup(svc) {
+		return store.BackupRecord{}, errVolumeRunsPending
 	}
 	jobID, err := s.deployer.ForceBackup(ctx, appID, service)
 	if err != nil {
@@ -237,20 +256,36 @@ func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.B
 }
 
 // backupBusy reports whether a backup or restore of the service is running.
-func (s *Service) backupBusy(ctx context.Context, appID, service string) (bool, error) {
-	runs, err := s.deployer.BackupRuns(ctx, appID, service)
-	if err != nil {
-		return false, err
-	}
-	if slices.ContainsFunc(runs, func(r deploy.BackupRun) bool { return r.Status == deploy.RunRunning }) {
-		return true, nil
+// For a Postgres service that is Nomad's word for its backup jobs, and the
+// store's for restores. A volume run is no Nomad job, so for a volume service
+// it is the store's word for both: the run records itself as running before
+// it starts, and settles the record when it ends.
+func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service) (bool, error) {
+	if postgresBackup(svc) {
+		runs, err := s.deployer.BackupRuns(ctx, appID, svc.Name)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(runs, func(r deploy.BackupRun) bool { return r.Status == deploy.RunRunning }) {
+			return true, nil
+		}
+	} else {
+		backups, err := s.store.ListBackups(ctx, appID, 0)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(backups, func(b store.BackupRecord) bool {
+			return b.Service == svc.Name && b.Status == store.BackupRunning
+		}) {
+			return true, nil
+		}
 	}
 	restores, err := s.store.ListRestores(ctx, appID, 0)
 	if err != nil {
 		return false, err
 	}
 	return slices.ContainsFunc(restores, func(r store.RestoreRecord) bool {
-		return r.Service == service && r.Status == store.BackupRunning
+		return r.Service == svc.Name && r.Status == store.BackupRunning
 	}), nil
 }
 
@@ -274,10 +309,17 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	} else if !ok {
 		return store.RestoreRecord{}, ErrNoBackupDestination
 	}
-	if busy, err := s.backupBusy(ctx, appID, b.Service); err != nil {
+	if b.Engine != svc.Backup.Engine {
+		return store.RestoreRecord{}, fmt.Errorf("backup %s was made by the %s engine, and the service now backs up with %s: %w",
+			backupID, b.Engine, svc.Backup.Engine, store.ErrNotFound)
+	}
+	if busy, err := s.backupBusy(ctx, appID, svc); err != nil {
 		return store.RestoreRecord{}, err
 	} else if busy {
 		return store.RestoreRecord{}, ErrBackupRunning
+	}
+	if !postgresBackup(svc) {
+		return store.RestoreRecord{}, errVolumeRunsPending
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {
@@ -357,12 +399,13 @@ func (s *Service) recordBackups(ctx context.Context) {
 	s.recordRestores(ctx)
 }
 
-// recordApp records the runs of a's backed-up services that Nomad knows and
-// the store doesn't have as final yet.
+// recordApp records the runs of a's Postgres-backed services that Nomad knows
+// and the store doesn't have as final yet. A volume backup isn't a Nomad job:
+// its run records itself.
 func (s *Service) recordApp(ctx context.Context, a app.App) {
 	changed := false
 	for _, svc := range a.Services {
-		if svc.Backup == nil {
+		if !postgresBackup(svc) {
 			continue
 		}
 		runs, err := s.deployer.BackupRuns(ctx, a.ID, svc.Name)
@@ -411,6 +454,9 @@ func (s *Service) recordRestores(ctx context.Context) {
 		return
 	}
 	for _, r := range running {
+		if r.Engine != app.BackupPostgres {
+			continue // a volume restore has no Nomad job: its run settles it
+		}
 		status, msg, err := s.deployer.RestoreStatus(ctx, r.AppID, r.Service)
 		if err != nil {
 			s.log.Warn("record restores: read", "app", r.AppID, "restore", r.ID, "error", err)
