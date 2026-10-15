@@ -34,7 +34,15 @@
 // new volume is "pending" and becomes "ready" the second time it is read, as
 // a real one is after a few seconds. Like Nomad, a name can't be created
 // twice, and a volume can't be deleted while copies of a job that mounts it
-// exist. HostVolumes() names them for tests.
+// exist. HostVolumes() names them for tests, and AddHostVolume makes one as if
+// a deploy had.
+//
+// Copies' files and restarts (allocfs.go), for volume backups: files in a
+// copy's directory are kept per copy and path (WriteAllocFile, AllocFile) and
+// read the way GET /v1/client/fs/cat does. Restarting a copy's tasks
+// (PUT /v1/client/allocation/{id}/restart) is recorded (Restarts), adds the
+// task events Nomad does, and runs the hook OnRestart sets, which is how a test
+// plays the caravana-volumes task: it writes the result file there.
 package deploytest
 
 import (
@@ -101,6 +109,14 @@ type Nomad struct {
 
 	volumes      map[string]*hostVolume // by ID
 	volumeStatus int                    // non-zero: every host volume request answers it
+
+	// Copies' files and restarts (allocfs.go).
+	files         map[string]map[string]string // text by path, by copy ID
+	fsStatus      int                          // non-zero: every file read answers it
+	restarts      []RestartRequest
+	restartStatus int // non-zero: every restart answers it
+	onRestart     func(copyID string)
+	restartStop   time.Duration // how long a restarted main task stays stopped
 }
 
 // hostVolume is one dynamic host volume and how often it was read.
@@ -137,6 +153,9 @@ func New(t testing.TB) *Nomad {
 		vars:    map[string]map[string]string{},
 		stats:   map[string]api.AllocResourceUsage{},
 		volumes: map[string]*hostVolume{},
+
+		files:       map[string]map[string]string{},
+		restartStop: 2 * time.Second,
 	}
 	n.srv = httptest.NewServer(http.HandlerFunc(n.serve))
 	t.Cleanup(n.srv.Close)
@@ -307,6 +326,10 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.purge(w, r, strings.TrimPrefix(r.URL.Path, "/v1/job/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/logs/"):
 		n.serveLogs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/logs/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/cat/"):
+		n.serveCat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/cat/"))
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/restart"):
+		n.serveRestart(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/restart"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/stats"):
 		n.serveStats(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/stats"))
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/allocations":

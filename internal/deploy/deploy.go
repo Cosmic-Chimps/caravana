@@ -66,6 +66,10 @@ type Timing struct {
 	VolumeDeleteWait time.Duration
 	// UsageTimeout bounds reading one copy's CPU and memory. Default 2 s.
 	UsageTimeout time.Duration
+	// RenderGap is the time between two reads of a copy's rendered volume
+	// request, and RenderWait how long Caravana waits for it to show the
+	// request. Defaults 500 ms and 30 s.
+	RenderGap, RenderWait time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -80,6 +84,12 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.BackoffMax == 0 {
 		t.BackoffMax = 30 * time.Second
+	}
+	if t.RenderGap == 0 {
+		t.RenderGap = 500 * time.Millisecond
+	}
+	if t.RenderWait == 0 {
+		t.RenderWait = 30 * time.Second
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute

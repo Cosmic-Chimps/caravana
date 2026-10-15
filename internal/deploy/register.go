@@ -69,6 +69,11 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 	if err := d.EnsureVolumes(ctx, a); err != nil {
 		return Registered{}, err
 	}
+	// The caravana-volumes tasks read their variable before the service
+	// starts, so it has to exist before the job does.
+	if err := d.ensureVolumeVariables(ctx, a); err != nil {
+		return Registered{}, err
+	}
 
 	resp, _, err := d.nomad.Jobs().RegisterOpts(res.Job,
 		&api.RegisterOptions{EnforceIndex: true, ModifyIndex: modifyIndex},
