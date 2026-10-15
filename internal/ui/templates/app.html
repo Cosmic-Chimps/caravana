@@ -372,11 +372,12 @@
      Takes a configureTab. */}}
 {{define "configure"}}
 {{/* An app that keeps its Compose file edits it here first (feature 015): the same form as
-     Deploy from Compose, filled from the file. The definition below is then read-only. */}}
+     Deploy from Compose, filled from the file. The definition below is then read-only. The
+     heading says "Edit", not "Compose file": the form's own field is labelled that already. */}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .ComposeForm}}
-<section aria-labelledby="compose-file-title" class="flex flex-col gap-2">
-  <h2 id="compose-file-title" class="cv-label">Compose file</h2>
+<section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
+  <h2 id="compose-edit-title" class="cv-label">Edit</h2>
   {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
   {{template "compose-form" .}}
 </section>
