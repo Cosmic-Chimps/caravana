@@ -28,6 +28,7 @@ const (
 	codeSecretStoreUnavail    = "secret_store_unavailable"
 	codeBackupRunning         = "backup_running"
 	codeNoBackupDestination   = "no_backup_destination"
+	codeNoRunningCopy         = "no_running_copy"
 	codeDeploymentNotHealthy  = "deployment_not_healthy"
 	codeDefinitionNotRecorded = "definition_not_recorded"
 	codeNoLiveDeployment      = "no_live_deployment"

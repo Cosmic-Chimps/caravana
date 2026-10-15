@@ -193,7 +193,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
 
 **⟶ Wait for T010–T012, then:**
 
-- [ ] T013 [US1] API (contracts/api.md):
+- [X] T013 [US1] API (contracts/api.md):
   - `Backup` JSON gains `engine`, `stoppedSeconds` (float, omitted when nil) and `volumes` (`[{name, bytes, sizeBytes}]`, sizeBytes = SizeKB×1024).
   - `Restore` JSON gains `engine` and `stoppedSeconds`.
   - `BackupPolicy.engine` gains the enum value `volume`.

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.12.0
+  version: 0.13.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -563,7 +563,12 @@ paths:
       description: |
         Starts a backup of a service with a backup policy. It runs in the background: list the
         backups to follow it. 409 `backup_running` while a backup or restore of that service
-        runs; 409 `no_backup_destination` when none is set.
+        runs (for a `volume` backup, also while one runs for another service of the app);
+        409 `no_backup_destination` when none is set; 409 `no_running_copy` when a `volume`
+        backup finds no running copy to stop. A `volume` backup stops the service for the
+        time it takes and starts it again; the job and its version don't change. If the copy
+        never picked up the request, the answer is 202 with a record already `failed`, and
+        its `message` says why.
       tags: [backups]
       requestBody:
         required: true
@@ -608,11 +613,13 @@ paths:
         schema: {type: string}
     post:
       operationId: restoreBackup
-      summary: Load a backup into its running database.
+      summary: Load a backup into its running database, or back into its volumes.
       description: |
-        Replaces what the service's database holds with the backup (`pg_restore --clean`).
-        Clients connected meanwhile may see errors. It runs in the background: list the backups
-        to follow the restore. One restore per service at a time.
+        For a database, replaces what the service's database holds with the backup
+        (`pg_restore --clean`). Clients connected meanwhile may see errors. For a `volume`
+        backup, stops the service, replaces its volumes with the backup's files and starts it
+        again; 409 `no_running_copy` when there is no copy to stop. It runs in the
+        background: list the backups to follow the restore. One restore per service at a time.
       tags: [backups]
       responses:
         "202":
@@ -1505,12 +1512,20 @@ components:
       additionalProperties: false
       required: [engine]
       description: |
-        Makes the service a database Caravana backs up to the backup destination. The service
-        needs ports and `POSTGRES_PASSWORD` in its env or secrets.
+        Makes Caravana back the service up to the backup destination.
+
+        `postgres`: the service is a database. It needs ports and `POSTGRES_PASSWORD` in its
+        env or secrets.
+
+        `volume`: the service's volumes are archived while the service is stopped, for a few
+        seconds. The service must mount a volume (else the deploy is refused with 400
+        `invalid_field` on `services[i].backup.engine`), and its schedule must be a cron
+        expression Caravana can run. Every volume belongs to one service, so no other service
+        shares the one that is archived, and no service is named `caravana-volumes`.
       properties:
         engine:
           type: string
-          enum: [postgres]
+          enum: [postgres, volume]
         schedule:
           type: string
           description: Five-field cron, in UTC. Leave it out for `0 3 * * *`.
@@ -1549,34 +1564,70 @@ components:
     Backup:
       type: object
       additionalProperties: false
-      required: [id, service, status, bytes, startedAt]
+      required: [id, service, engine, status, bytes, startedAt]
       properties:
         id: {type: string, examples: ["db-1791386036"]}
         service: {type: string}
+        engine:
+          type: string
+          enum: [postgres, volume]
         status:
           type: string
           enum: [running, succeeded, failed]
-        bytes: {type: integer}
+        bytes:
+          type: integer
+          description: The dump's size, or for a `volume` backup the sum of its archives.
         message:
           type: string
-          description: Why it failed, as the dump or the upload said.
+          description: |
+            Why it failed, as the dump or the upload said. A succeeded `volume` backup may
+            carry a warning here, for instance that retention couldn't remove an old backup.
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
+        stoppedSeconds:
+          type: number
+          description: |
+            `volume` backups only: how long the service was stopped, once measured. Absent
+            while the run is going, and when Caravana couldn't measure it.
+        volumes:
+          type: array
+          description: "`volume` backups only: one archive per volume."
+          items:
+            $ref: "#/components/schemas/BackupVolume"
+
+    BackupVolume:
+      type: object
+      additionalProperties: false
+      required: [name, bytes, sizeBytes]
+      properties:
+        name: {type: string}
+        bytes:
+          type: integer
+          description: The archive's size in the destination.
+        sizeBytes:
+          type: integer
+          description: The volume's data when it was archived, before compression.
 
     Restore:
       type: object
       additionalProperties: false
-      required: [id, service, backupId, status, createdAt]
+      required: [id, service, backupId, engine, status, createdAt]
       properties:
         id: {type: string}
         service: {type: string}
         backupId: {type: string}
+        engine:
+          type: string
+          enum: [postgres, volume]
         status:
           type: string
           enum: [running, succeeded, failed]
         message: {type: string}
         createdAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
+        stoppedSeconds:
+          type: number
+          description: "`volume` restores only: how long the service was stopped, once measured."
 
     BackupList:
       type: object
@@ -2024,7 +2075,7 @@ components:
                 `job_conflict`, `registry_unavailable`, `nomad_unavailable`,
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
-                `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
+                `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
                 `app_changed`, `compose_not_kept`.
               examples: [invalid_field]
             message:
@@ -2168,7 +2219,9 @@ components:
     BackupConflict:
       description: |
         `backup_running`: a backup or restore of this service is running; try again when it
-        ends. `no_backup_destination`: no backup destination is set.
+        ends. `no_backup_destination`: no backup destination is set. `no_running_copy`: a
+        backup or restore of a service with a `volume` backup, and the service has no running
+        copy to stop (it was never deployed, is still starting, or has stopped).
       content:
         application/json:
           schema:
