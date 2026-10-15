@@ -93,8 +93,8 @@ type configureTab struct {
 	ComposeForm *composeView
 	// Notice is a refusal of the tab as a whole: a per-field save that an app
 	// edited through its file doesn't take.
-	Notice sentence
-	Edit   editView
+	Notice  sentence
+	Edit    editView
 	Secrets secretsView
 	Webhook webhookView
 	Export  exportView

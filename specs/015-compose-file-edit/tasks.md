@@ -95,7 +95,7 @@ Files: `internal/service/deploy.go`, `internal/service/compose.go`, `internal/se
 
 **⟶ Wait for T004–T007, then:**
 
-- [ ] T008 [US1] Lab step, first half (research R12), in cmd/caravana/console_lab_test.go: add the step `console-compose-file-edit` after `console-compose`. It does the following:
+- [X] T008 [US1] Lab step, first half (research R12), in cmd/caravana/console_lab_test.go: add the step `console-compose-file-edit` after `console-compose`. It does the following:
   - creates a Compose app `cfe` from a one-service file with a `#` comment (whoami `v1.10`, port 80, domain `cfe.localhost`, health `/`) through the console form;
   - waits for healthy, then GETs Configure and checks the comment is in the page;
   - posts the Compose form with the tag changed to `v1.11` (preview, then deploy, with the revision from the page);

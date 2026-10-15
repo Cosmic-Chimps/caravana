@@ -92,6 +92,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-redeploy-version", c.redeployVersion},
 		{"console-needs-you", c.needsYou},
 		{"console-compose", c.compose},
+		{"console-compose-file-edit", c.composeFileEdit},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -802,6 +803,106 @@ func (c *console) compose(t *testing.T) {
 	if len(after.Deployments) != len(before.Deployments) {
 		t.Errorf("a stale deploy made %d deployments, want none", len(after.Deployments)-len(before.Deployments))
 	}
+}
+
+// fileEditCompose is the one-service file of the compose-file-edit step, with a
+// comment Caravana must keep as typed. %s is the image tag.
+const fileEditCompose = `# cfe: edited here, kept as typed
+services:
+  web:
+    image: traefik/whoami:%s   # the tag changes below
+    ports: ["80"]
+`
+
+// deployedFrom reads the deployment that a 303 from an app's Compose form
+// names and waits for it to end healthy.
+func (c *console) deployedFrom(t *testing.T, id string, resp *http.Response, body string) string {
+	t.Helper()
+	const prefix = "/deployments#deployment-"
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/apps/"+id+prefix) {
+		t.Fatalf("the post = %d → %q, want 303 to the new deployment of %s: %s", resp.StatusCode, loc, id, body)
+	}
+	deployment := strings.TrimPrefix(loc, "/apps/"+id+prefix)
+	if final := c.g.waitFinalOf(t, id, deployment, 4*time.Minute); final.Status != "healthy" {
+		t.Fatalf("deployment %s ended %s: %s", deployment, final.Status, final.Error)
+	}
+	return deployment
+}
+
+// composeFileEdit: an app made from a Compose file keeps the file (feature
+// 015). It is created through the console form from a file with a comment;
+// Configure shows the file as typed (the comment is in the page); editing the
+// tag, previewing and deploying with the revision from the page ends healthy,
+// the API's app has the new image, and Configure shows the edited file.
+func (c *console) composeFileEdit(t *testing.T) {
+	const id = "cfe"
+	remove := func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/apps/"+id, "", ""); err == nil {
+			resp.Body.Close()
+		}
+	}
+	remove() // a leftover from an aborted run, if any
+	t.Cleanup(remove)
+	v10, v11 := fmt.Sprintf(fileEditCompose, "v1.10"), fmt.Sprintf(fileEditCompose, "v1.11")
+	imageOf := func() string {
+		t.Helper()
+		var stored consoleApp
+		c.g.getJSON(t, "/v1/apps/"+id, &stored)
+		if len(stored.App.Services) != 1 {
+			t.Fatalf("GET /v1/apps/%s has %d services, want 1", id, len(stored.App.Services))
+		}
+		return stored.App.Services[0].Image
+	}
+
+	// Create it through the form, with its domain and health check typed on the page.
+	resp, preview := c.post(t, "/apps/new/compose/preview", url.Values{"name": {id}, "compose": {v10}})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(preview, "Create and deploy") {
+		t.Fatalf("POST the preview = %d, want 200 with the create button: %s", resp.StatusCode, preview)
+	}
+	form := formValuesOf(t, preview, "compose-form")
+	form.Set("svc.web.domains", id+".localhost")
+	form.Set("svc.web.healthPath", "/")
+	resp, body := c.post(t, "/apps/new/compose", form)
+	first := c.deployedFrom(t, id, resp, body)
+
+	// Configure shows the file as typed, the comment in it, and the overlay.
+	resp, page := c.get(t, "/apps/"+id+"/configure")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(page, "# cfe: edited here, kept as typed") {
+		t.Fatalf("GET /apps/%s/configure = %d, want 200 with the file's comment in the page: %s", id, resp.StatusCode, page)
+	}
+	kept := formValuesOf(t, page, "compose-form")
+	if kept.Get("compose") != v10 || kept.Get("revision") == "" || kept.Get("svc.web.domains") != id+".localhost" || kept.Get("svc.web.healthPath") != "/" {
+		t.Fatalf("Configure's Compose form = %v, want the file as typed, a revision, and the overlay", kept)
+	}
+	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `id="edit-form"`) {
+		t.Errorf("Configure draws the per-field form of an app edited through its file")
+	}
+
+	// Edit the tag from that page: preview, then deploy with its revision.
+	kept.Set("compose", v11)
+	resp, preview = c.post(t, "/apps/"+id+"/compose/preview", kept)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(preview, "traefik/whoami:v1.11") {
+		t.Fatalf("POST the preview of the edited file = %d, want 200 with the new image: %s", resp.StatusCode, preview)
+	}
+	resp, body = c.post(t, "/apps/"+id+"/compose", formValuesOf(t, preview, "compose-form"))
+	second := c.deployedFrom(t, id, resp, body)
+	if second == first {
+		t.Fatalf("the edit made no new deployment (still %s)", first)
+	}
+
+	// The new image runs, and Configure shows the edited file, comment kept.
+	if got := imageOf(); got != "traefik/whoami:v1.11" {
+		t.Errorf("the app's image = %q, want traefik/whoami:v1.11", got)
+	}
+	_, page = c.get(t, "/apps/"+id+"/configure")
+	if got := formValuesOf(t, page, "compose-form").Get("compose"); got != v11 {
+		t.Errorf("Configure's file after the edit = %q, want %q", got, v11)
+	}
+
+	// The rollback half (task T012) goes here: redeploy the first deployment
+	// from the History, check that Configure shows v10 and its comment again,
+	// and that the history download of the first deployment equals v10.
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends
