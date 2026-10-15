@@ -133,7 +133,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
     2. Yes, it counts. A 64 MB / 100 MHz prestart task beside a 32 MB / 50 MHz main task raised the node's allocated memory by 96 MB and its CPU by 150 MHz, and they stay reserved for the copy's whole life. So `caravana-volumes` reserves 50 MHz and 32 MB and may burst to 512 MB (`memory_max`; memory oversubscription is on since feature 013). T004 was changed to match.
   - Also checked: the template's `replaceAll` quoting renders in Nomad 2.0.7. A variable value with `'`, `$(...)`, backticks and `$HOME` was sourced by `sh` literally, and nothing ran.
   - All scratch jobs and the variable were removed.
-- [ ] T008 [P] [US1] The script's backup path in internal/nomadjob/volumes.go (`VolumeScript`), per research R4:
+- [X] T008 [P] [US1] The script's backup path in internal/nomadjob/volumes.go (`VolumeScript`), per research R4:
   - Stream each volume: `tar -czf - -C <dir> --exclude ./.caravana-restore . | rclone rcat "dest:$BACKUP_PATH/$ts/<v>.tar.gz"`, with `ts` = the request's timestamp item `TS`.
   - Record bytes with `rclone size --json` or `rclone lsl`, and sizes from `du -sk`.
   - Apply retention over the `<ts>/` directories (`rclone lsf --dirs-only`, sorted, delete the oldest beyond `KEEP` with `rclone purge`), printing each into `expired=`.

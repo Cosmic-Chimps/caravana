@@ -3,13 +3,17 @@ package nomadjob
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -76,15 +80,19 @@ func checkVolumeTask(t *testing.T, appID string, svc app.Service, tg *api.TaskGr
 		t.Errorf("resources = cpu %d, memory %d, max %d; want 50, 32, 512", *r.CPU, *r.MemoryMB, *r.MemoryMaxMB)
 	}
 
-	if len(vt.Templates) != 1 {
-		t.Fatalf("templates = %d, want 1", len(vt.Templates))
+	// Two templates of the one variable: the request under local/, and the
+	// destination (with its secret key) under secrets/.
+	if len(vt.Templates) != 2 {
+		t.Fatalf("templates = %d, want 2", len(vt.Templates))
 	}
-	tmpl := vt.Templates[0]
-	if *tmpl.DestPath != "local/request.env" || *tmpl.ChangeMode != "noop" || tmpl.Envvars == nil || *tmpl.Envvars {
-		t.Errorf("template = %s %s env=%v, want local/request.env, noop, env false", *tmpl.DestPath, *tmpl.ChangeMode, tmpl.Envvars)
-	}
-	if want := `nomadVar "nomad/jobs/` + appID + "/" + svc.Name + `/caravana-volumes"`; !strings.Contains(*tmpl.EmbeddedTmpl, want) {
-		t.Errorf("template doesn't read %s:\n%s", want, *tmpl.EmbeddedTmpl)
+	for i, wantDest := range []string{"local/request.env", "secrets/destination.env"} {
+		tmpl := vt.Templates[i]
+		if *tmpl.DestPath != wantDest || *tmpl.ChangeMode != "noop" || tmpl.Envvars == nil || *tmpl.Envvars {
+			t.Errorf("template %d = %s %s env=%v, want %s, noop, env false", i, *tmpl.DestPath, *tmpl.ChangeMode, tmpl.Envvars, wantDest)
+		}
+		if want := `nomadVar "nomad/jobs/` + appID + "/" + svc.Name + `/caravana-volumes"`; !strings.Contains(*tmpl.EmbeddedTmpl, want) {
+			t.Errorf("template %d doesn't read %s:\n%s", i, want, *tmpl.EmbeddedTmpl)
+		}
 	}
 
 	// One mount for each volume, under /caravana-volumes. The task's mount is
@@ -109,16 +117,101 @@ func checkVolumeTask(t *testing.T, appID string, svc app.Service, tg *api.TaskGr
 	}
 }
 
-func TestVolumeTemplateAndScriptAvoidNomadInterpolation(t *testing.T) {
-	tmpl := *volumeTemplate("kuma", "web").EmbeddedTmpl
-	for name, text := range map[string]string{"VolumeScript": VolumeScript, "the template": tmpl} {
+func TestVolumeTemplatesAndScriptAvoidNomadInterpolation(t *testing.T) {
+	for name, text := range map[string]string{
+		"VolumeScript":             VolumeScript,
+		"the request template":     *volumeTemplate("kuma", "web", volumeRequestDest, false).EmbeddedTmpl,
+		"the destination template": *volumeTemplate("kuma", "web", volumeDestinationDest, true).EmbeddedTmpl,
+	} {
 		if strings.Contains(text, "${") {
 			t.Errorf("%s contains \"${\", which Nomad interpolates", name)
 		}
+		if name != "VolumeScript" && !strings.Contains(text, `='{{ .V | replaceAll "'" "'\\''" }}'`) {
+			// Values are single-quoted for the shell that sources the file.
+			t.Errorf("%s doesn't single-quote values:\n%s", name, text)
+		}
 	}
-	// Values are single-quoted for the shell that sources the file.
-	if !strings.Contains(tmpl, `='{{ .V | replaceAll "'" "'\\''" }}'`) {
-		t.Errorf("the template doesn't single-quote values:\n%s", tmpl)
+}
+
+// templateVar plays what Nomad's nomadVar gives a template: the variable's
+// items as .Tuples.
+type templateVar struct{ Tuples []templateTuple }
+type templateTuple struct{ K, V string }
+
+// render runs a template's text in Go's own template engine, with the two
+// consul-template functions it uses written as they are documented there:
+// regexMatch regex input, and replaceAll old new input. It is not Nomad's
+// engine (the lab and the gate check that), but it is the same template
+// language, so it proves which keys end up in which file and how a value is
+// quoted.
+func render(t *testing.T, tmpl *api.Template, items map[string]string) string {
+	t.Helper()
+	var tuples []templateTuple
+	for _, k := range slices.Sorted(maps.Keys(items)) {
+		tuples = append(tuples, templateTuple{K: k, V: items[k]})
+	}
+	funcs := template.FuncMap{
+		"nomadVar":   func(string) *templateVar { return &templateVar{Tuples: tuples} },
+		"regexMatch": func(re, s string) (bool, error) { return regexp.MatchString(re, s) },
+		"replaceAll": func(old, new, s string) string { return strings.ReplaceAll(s, old, new) },
+	}
+	tp, err := template.New("t").Funcs(funcs).Parse(*tmpl.EmbeddedTmpl)
+	if err != nil {
+		t.Fatalf("parse %s: %v", *tmpl.DestPath, err)
+	}
+	var out strings.Builder
+	if err := tp.Execute(&out, nil); err != nil {
+		t.Fatalf("render %s: %v", *tmpl.DestPath, err)
+	}
+	return out.String()
+}
+
+// TestVolumeTemplatesSplitTheDestination: the secret key must never reach
+// local/request.env, which Nomad's file system API shows to whoever holds
+// read-fs. Only secrets/destination.env gets the destination's keys.
+func TestVolumeTemplatesSplitTheDestination(t *testing.T) {
+	items := map[string]string{
+		"REQUEST": "web-17", "ACTION": "backup", "TS": "17", "NOT_AFTER": "99", "LIMIT": "1800", "KEEP": "4",
+		"BACKUP_PATH":                          "backups/caravana/kuma/web",
+		"OBJECT":                               "it's $(x)",
+		"RCLONE_CONFIG_DEST_ENDPOINT":          "http://10.0.0.5:9000",
+		"RCLONE_CONFIG_DEST_ACCESS_KEY_ID":     "AK",
+		"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY": "s3cr3t-key-marker",
+	}
+	request := volumeTemplate("kuma", "web", volumeRequestDest, false)
+	destination := volumeTemplate("kuma", "web", volumeDestinationDest, true)
+
+	// The filter is in the template text, which Nomad's engine will run.
+	if !strings.Contains(*request.EmbeddedTmpl, `not (.K | regexMatch "^RCLONE_CONFIG_DEST_")`) {
+		t.Errorf("the request template doesn't filter out the destination keys:\n%s", *request.EmbeddedTmpl)
+	}
+	if !strings.Contains(*destination.EmbeddedTmpl, `if .K | regexMatch "^RCLONE_CONFIG_DEST_"`) {
+		t.Errorf("the destination template doesn't keep only the destination keys:\n%s", *destination.EmbeddedTmpl)
+	}
+
+	gotRequest := render(t, request, items)
+	if strings.Contains(gotRequest, "RCLONE_CONFIG_DEST_") || strings.Contains(gotRequest, "s3cr3t-key-marker") {
+		t.Errorf("the request file holds the destination:\n%s", gotRequest)
+	}
+	wantRequest := "ACTION='backup'\nBACKUP_PATH='backups/caravana/kuma/web'\nKEEP='4'\nLIMIT='1800'\nNOT_AFTER='99'\n" +
+		"OBJECT='it'\\''s $(x)'\nREQUEST='web-17'\nTS='17'\n"
+	if gotRequest != wantRequest {
+		t.Errorf("request file:\n%s\nwant:\n%s", gotRequest, wantRequest)
+	}
+
+	wantDestination := "RCLONE_CONFIG_DEST_ACCESS_KEY_ID='AK'\nRCLONE_CONFIG_DEST_ENDPOINT='http://10.0.0.5:9000'\n" +
+		"RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY='s3cr3t-key-marker'\n"
+	if got := render(t, destination, items); got != wantDestination {
+		t.Errorf("destination file:\n%s\nwant:\n%s", got, wantDestination)
+	}
+
+	// A variable with no destination (a service not backed up) renders an
+	// empty destination file, and the request as it is.
+	if got := render(t, destination, map[string]string{"REQUEST": ""}); got != "" {
+		t.Errorf("destination file without a destination = %q, want empty", got)
+	}
+	if got := render(t, request, map[string]string{"REQUEST": ""}); got != "REQUEST=''\n" {
+		t.Errorf("request file without a request = %q", got)
 	}
 }
 
@@ -232,27 +325,157 @@ func TestParseVolumeSizes(t *testing.T) {
 	}
 }
 
-// scriptRun is one run of VolumeScript under a real sh, on temp directories.
+// scriptRun is one run of VolumeScript under a real sh, on temp directories,
+// with a fake rclone and a fake timeout first on the PATH.
 type scriptRun struct {
-	t    *testing.T
-	root string // ROOT, with volumes "data" and "logs"
-	data string // DATA
-	dir  string // the working directory
+	t      *testing.T
+	root   string // ROOT, with volumes "data" and "logs"
+	data   string // DATA
+	dir    string // the working directory
+	bucket string // what "dest:" means to the fake rclone
+	bin    string // the fake tools
+	log    string // one line for each call the fake tools answered
 }
 
-// runScript runs VolumeScript with request as the contents of the request
-// file (no file when request is nil) and reports the run. The script must
-// exit 0 whatever it is given.
-func runScript(t *testing.T, request *string) *scriptRun {
+// The fake tools. A stub runs only under the fake timeout (which sets
+// UNDER_TIMEOUT), as the script must wrap every call to tar and rclone. The
+// fake timeout drops its first argument, the seconds, and runs the rest; it
+// logs the seconds, and can be told to run out instead. macOS has no timeout.
+//
+// The fake rclone knows what the script uses: rcat, lsf --dirs-only, purge,
+// size --json and copyto. "dest:<path>" is the file or directory <path> under
+// $FAKE_BUCKET, which stands for the bucket. FAKE_SECRET makes it refuse a
+// run whose secret key isn't that; FAKE_FAIL_RCAT (a part of an object's name)
+// and FAKE_FAIL_CMD (a subcommand) make the named calls fail.
+const (
+	fakeTimeout = `#!/bin/sh
+echo "timeout $1 $2" >> "$FAKE_LOG"
+if [ "$FAKE_TIMEOUT_EXPIRE" = "$2" ]; then
+  echo "timed out" >&2
+  exit 124
+fi
+shift
+UNDER_TIMEOUT=1 exec "$@"
+`
+	fakeTar = `#!/bin/sh
+[ -n "$UNDER_TIMEOUT" ] || { echo "tar ran outside timeout" >&2; exit 99; }
+if [ -n "$FAKE_FAIL_TAR" ]; then
+  echo "tar: $FAKE_FAIL_TAR" >&2
+  echo "partial" 
+  exit 2
+fi
+exec REALTAR "$@"
+`
+	fakeRclone = `#!/bin/sh
+[ -n "$UNDER_TIMEOUT" ] || { echo "rclone ran outside timeout" >&2; exit 99; }
+echo "rclone $*" >> "$FAKE_LOG"
+cmd=$1
+shift
+if [ "$cmd" = "$FAKE_FAIL_CMD" ]; then
+  [ "$cmd" != rcat ] || cat > /dev/null
+  echo "Failed to $cmd: injected failure" >&2
+  exit 1
+fi
+if [ -n "$FAKE_SECRET" ] && [ "$RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY" != "$FAKE_SECRET" ]; then
+  [ "$cmd" != rcat ] || cat > /dev/null
+  echo "AccessDenied: the secret key is wrong" >&2
+  exit 1
+fi
+local_path() { echo "$FAKE_BUCKET/${1#dest:}"; }
+case "$cmd" in
+  rcat)
+    p=$(local_path "$1")
+    case "$p" in *"$FAKE_FAIL_RCAT"*) if [ -n "$FAKE_FAIL_RCAT" ]; then cat > /dev/null; echo "Failed to rcat: boom" >&2; exit 1; fi ;; esac
+    mkdir -p "$(dirname "$p")" && cat > "$p" ;;
+  lsf)
+    shift # --dirs-only
+    p=$(local_path "$1")
+    [ -d "$p" ] || { echo "directory not found" >&2; exit 3; }
+    for d in "$p"/*/; do [ -d "$d" ] && echo "$(basename "$d")/"; done
+    exit 0 ;;
+  purge)
+    p=$(local_path "$1")
+    [ -d "$p" ] || { echo "directory not found" >&2; exit 3; }
+    rm -rf "$p" ;;
+  size)
+    shift # --json
+    p=$(local_path "$1")
+    [ -f "$p" ] || { echo "object not found" >&2; exit 3; }
+    n=$(wc -c < "$p" | tr -d ' ')
+    echo "{\"count\":1,\"bytes\":$n,\"sizeless\":0}" ;;
+  copyto)
+    case "$1" in
+      dest:*) p=$(local_path "$1"); [ -f "$p" ] || { echo "object not found" >&2; exit 3; }; cp "$p" "$2" ;;
+      *) p=$(local_path "$2"); mkdir -p "$(dirname "$p")" && cp "$1" "$p" ;;
+    esac ;;
+  *) echo "fake rclone: unknown command $cmd" >&2; exit 2 ;;
+esac
+`
+)
+
+// The fake tools are written once for the whole test run, not for each test:
+// macOS scans every new executable the first time it runs, about half a
+// second each, which made every script test take seconds.
+var (
+	fakeTools     sync.Once
+	fakeToolsPath string
+	fakeToolsErr  error
+)
+
+// fakeToolsDir returns the directory of the fake timeout, tar and rclone.
+// realTar is the host's tar, which the fake tar runs unless told to fail.
+func fakeToolsDir(t *testing.T, realTar string) string {
 	t.Helper()
-	for _, tool := range []string{"sh", "du", "cut", "tr", "date", "basename", "mv", "mkdir", "cat", "rm"} {
+	fakeTools.Do(func() {
+		fakeToolsPath, fakeToolsErr = os.MkdirTemp("", "caravana-fake-tools-")
+		if fakeToolsErr != nil {
+			return
+		}
+		for name, text := range map[string]string{
+			"timeout": fakeTimeout,
+			"tar":     strings.ReplaceAll(fakeTar, "REALTAR", realTar),
+			"rclone":  fakeRclone,
+		} {
+			if fakeToolsErr = os.WriteFile(filepath.Join(fakeToolsPath, name), []byte(text), 0o755); fakeToolsErr != nil {
+				return
+			}
+		}
+	})
+	if fakeToolsErr != nil {
+		t.Fatalf("fake tools: %v", fakeToolsErr)
+	}
+	return fakeToolsPath
+}
+
+// TestMain removes the fake tools' directory when the tests are done.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if fakeToolsPath != "" {
+		os.RemoveAll(fakeToolsPath)
+	}
+	os.Exit(code)
+}
+
+// newScriptRun makes the directories and the fake tools. It skips the test
+// when a tool the script needs is missing.
+func newScriptRun(t *testing.T) *scriptRun {
+	t.Helper()
+	for _, tool := range []string{"sh", "du", "cut", "tr", "date", "basename", "dirname", "mv", "mkdir", "cat", "rm",
+		"tar", "tail", "head", "sort", "grep", "sed", "wc", "cp"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not found: %v", tool, err)
 		}
 	}
+	realTar, _ := exec.LookPath("tar")
 	r := &scriptRun{t: t, dir: t.TempDir()}
 	r.root = filepath.Join(r.dir, "vols")
 	r.data = filepath.Join(r.dir, "alloc", "data", "caravana") // not created: the script makes it
+	r.bucket = filepath.Join(r.dir, "bucket")
+	r.bin = fakeToolsDir(t, realTar)
+	r.log = filepath.Join(r.dir, "calls.log")
+	if err := os.MkdirAll(r.bucket, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for name, size := range map[string]int{"data": 40 * 1024, "logs": 10} {
 		if err := os.MkdirAll(filepath.Join(r.root, name), 0o755); err != nil {
 			t.Fatal(err)
@@ -261,21 +484,37 @@ func runScript(t *testing.T, request *string) *scriptRun {
 			t.Fatal(err)
 		}
 	}
+	return r
+}
+
+// run runs VolumeScript with request as the contents of the request file (no
+// file when request is nil) and extra environment ("KEY=value"), and reports
+// the run. The script must exit 0 whatever it is given.
+func (r *scriptRun) run(request *string, env ...string) *scriptRun {
+	r.t.Helper()
 	reqFile := filepath.Join(r.dir, "request.env") // absent unless written
 	if request != nil {
 		if err := os.WriteFile(reqFile, []byte(*request), 0o644); err != nil {
-			t.Fatal(err)
+			r.t.Fatal(err)
 		}
 	}
-
 	cmd := exec.Command("sh", "-c", VolumeScript)
 	cmd.Dir = r.dir
-	cmd.Env = append(os.Environ(), "ROOT="+r.root, "DATA="+r.data, "REQUEST_FILE="+reqFile)
+	cmd.Env = append(os.Environ(), "PATH="+r.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"ROOT="+r.root, "DATA="+r.data, "REQUEST_FILE="+reqFile, "DEST_FILE="+filepath.Join(r.dir, "destination.env"),
+		"FAKE_BUCKET="+r.bucket, "FAKE_LOG="+r.log)
+	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("the script must always exit 0, got %v\n%s", err, out)
+		r.t.Fatalf("the script must always exit 0, got %v\n%s", err, out)
 	}
 	return r
+}
+
+// runScript is a run with the default directories.
+func runScript(t *testing.T, request *string, env ...string) *scriptRun {
+	t.Helper()
+	return newScriptRun(t).run(request, env...)
 }
 
 // files lists the names in the data directory, hidden ones included.
@@ -334,22 +573,26 @@ func TestVolumeScriptMeasuresSizes(t *testing.T) {
 }
 
 func TestVolumeScriptRequests(t *testing.T) {
-	// The stubs for the backup and restore runs fail with "not implemented
-	// yet", which is what makes the shape testable end to end here.
+	// The restore run is a stub that fails with "not implemented yet" until
+	// T016, and a backup request with no timestamp or destination fails before
+	// it touches anything: both make the shape testable end to end here.
 	tests := []struct {
 		name     string
 		request  func() *string
 		resultOf string // the request ID whose result file should exist; empty means none
 		wantMsg  string
 	}{
-		{"a backup", func() *string { return request("REQUEST", "web-1", "ACTION", "backup", "NOT_AFTER", inAnHour()) }, "web-1", "not implemented yet"},
+		{"a backup without a timestamp", func() *string { return request("REQUEST", "web-1", "ACTION", "backup", "NOT_AFTER", inAnHour()) }, "web-1", "the request has no timestamp"},
+		{"a backup without a destination", func() *string {
+			return request("REQUEST", "web-10", "ACTION", "backup", "TS", "1791", "NOT_AFTER", inAnHour())
+		}, "web-10", "the request has no backup destination"},
 		{"a restore", func() *string {
 			return request("REQUEST", "web-2", "ACTION", "restore", "OBJECT", "b/kuma/web/1/", "NOT_AFTER", inAnHour())
 		}, "web-2", "not implemented yet"},
 		{"an unknown action", func() *string { return request("REQUEST", "web-3", "ACTION", "format", "NOT_AFTER", inAnHour()) }, "web-3", "unknown action"},
 		{"no action", func() *string { return request("REQUEST", "web-4", "NOT_AFTER", inAnHour()) }, "web-4", "unknown action"},
 		{"values with quotes and shell syntax", func() *string {
-			return request("REQUEST", "web-5", "ACTION", "backup", "NOT_AFTER", inAnHour(),
+			return request("REQUEST", "web-5", "ACTION", "restore", "NOT_AFTER", inAnHour(),
 				"OBJECT", "it's $(touch PWNED) `touch PWNED2` \"x\" $HOME \\n")
 		}, "web-5", "not implemented yet"},
 
@@ -403,11 +646,7 @@ func TestVolumeScriptNeverRepeatsARun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(r.data, "web-1.result"), []byte("status=succeeded\nmessage=kept\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("sh", "-c", VolumeScript)
-	cmd.Env = append(os.Environ(), "ROOT="+r.root, "DATA="+r.data, "REQUEST_FILE="+filepath.Join(r.dir, "request.env"))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("second run: %v\n%s", err, out)
-	}
+	r.run(nil) // the request file is still there
 	if got := r.read("web-1.result"); got != "status=succeeded\nmessage=kept\n" {
 		t.Errorf("the result was rewritten:\nfirst: %q\nnow:   %q", first, got)
 	}

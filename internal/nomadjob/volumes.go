@@ -100,7 +100,10 @@ func volumeTask(appID string, svc app.Service, s Settings) *api.Task {
 			MemoryMB:    new(volumeMemoryMB),
 			MemoryMaxMB: new(volumeMemoryMaxMB),
 		},
-		Templates: []*api.Template{volumeTemplate(appID, svc.Name)},
+		Templates: []*api.Template{
+			volumeTemplate(appID, svc.Name, volumeRequestDest, false),
+			volumeTemplate(appID, svc.Name, volumeDestinationDest, true),
+		},
 	}
 	for _, v := range svc.Volumes {
 		t.VolumeMounts = append(t.VolumeMounts, &api.VolumeMount{
@@ -117,10 +120,30 @@ func hasVolumeBackup(svc app.Service) bool {
 	return svc.Backup != nil && svc.Backup.Engine == app.BackupVolume
 }
 
-// volumeTemplate renders the task's variable as KEY='value' lines in
-// local/request.env, for the script to source. It is not env: see
-// volumeRequestPath. "noop" means a changed variable never restarts anything;
-// Caravana restarts the copy itself, once the file shows the new request.
+// Where the two templates render, as the task sees them (relative to the
+// task directory, as Nomad wants them). The request goes under local/, which
+// Nomad's file system API shows, and Caravana reads it to know the copy has
+// the request. The destination goes under secrets/, which the API never
+// shows: it holds the S3 secret key, and nobody with read-fs on the token
+// should be able to read that through a copy's files.
+const (
+	volumeRequestDest     = "local/request.env"
+	volumeDestinationDest = "secrets/destination.env"
+	// volumeDestinationPath is where the script finds the second file.
+	volumeDestinationPath = "/secrets/destination.env"
+	// destinationKeyPattern picks the variable's keys that hold the
+	// destination (what deploy's destinationItems writes). BACKUP_PATH is not
+	// one: it is a bucket path, not a credential.
+	destinationKeyPattern = "^RCLONE_CONFIG_DEST_"
+)
+
+// volumeTemplate renders the task's variable as KEY='value' lines, for the
+// script to source. destination picks which keys: false renders every key but
+// the destination's (the request file), true renders only those (the
+// destination file, which holds the secret key). Both read the same variable,
+// so Caravana still writes one. It is not env: see volumeRequestPath. "noop"
+// means a changed variable never restarts anything; Caravana restarts the copy
+// itself, once the request file shows the new request.
 //
 // A value is put in single quotes, and each single quote inside it is written
 // as quote, backslash, quote, quote (which closes the string, adds a literal
@@ -130,12 +153,17 @@ func hasVolumeBackup(svc app.Service) bool {
 // which secretsTemplate uses for Nomad's own env-file parser, would leave
 // both for the shell to expand.) The template text has no "${", which Nomad
 // would interpolate.
-func volumeTemplate(appID, service string) *api.Template {
+func volumeTemplate(appID, service, destPath string, destination bool) *api.Template {
+	filter := `.K | regexMatch "` + destinationKeyPattern + `"`
+	if !destination {
+		filter = "not (" + filter + ")"
+	}
 	tmpl := `{{ with nomadVar "` + VolumeVariablePath(appID, service) + `" }}` +
-		`{{ range .Tuples }}{{ .K }}='{{ .V | replaceAll "'" "'\\''" }}'` + "\n" + `{{ end }}{{ end }}`
+		`{{ range .Tuples }}{{ if ` + filter + ` }}{{ .K }}='{{ .V | replaceAll "'" "'\\''" }}'` + "\n" +
+		`{{ end }}{{ end }}{{ end }}`
 	return &api.Template{
 		EmbeddedTmpl: new(tmpl),
-		DestPath:     new("local/request.env"),
+		DestPath:     new(destPath),
 		Envvars:      new(false),
 		ChangeMode:   new("noop"),
 	}
@@ -157,15 +185,24 @@ func volumeTemplate(appID, service string) *api.Template {
 // never repeat a run, least of all a restore, which would replace newer data
 // with an old backup.
 //
-// ROOT, DATA and REQUEST_FILE can be set in the environment, for tests; the
-// defaults are the task's real paths.
+// ROOT, DATA, REQUEST_FILE and DEST_FILE can be set in the environment, for
+// tests; the defaults are the task's real paths.
 //
-// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS and the
-// destination's RCLONE_CONFIG_DEST_* and BACKUP_PATH) is sourced in a
-// subshell, so a damaged file ends that subshell and nothing more.
+// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS and
+// BACKUP_PATH) is sourced from REQUEST_FILE, and the destination's
+// RCLONE_CONFIG_DEST_* from DEST_FILE, in a subshell, so a damaged file ends
+// that subshell and nothing more. They are two files because only one of them
+// may be readable through Nomad's file system API (see volumeDestinationDest).
+//
+// Every call to tar or rclone runs under BusyBox timeout, with the seconds the
+// run has left of its LIMIT, so one stuck upload can't hold the service
+// stopped for longer than the limit. A tar piped into rclone is wrapped on both
+// sides, and its two exit codes are both checked (a pipeline's status is its
+// last command's, and an archive cut short would otherwise upload as good).
 const VolumeScript = `[ -n "$ROOT" ] || ROOT=` + VolumeRoot + `
 [ -n "$DATA" ] || DATA=` + VolumeDataDir + `
 [ -n "$REQUEST_FILE" ] || REQUEST_FILE=` + volumeRequestPath + `
+[ -n "$DEST_FILE" ] || DEST_FILE=` + volumeDestinationPath + `
 
 # One "<volume> <kilobytes>" line for each volume, replaced as a whole so
 # Caravana never reads half a file.
@@ -174,15 +211,21 @@ measure_sizes() {
   : > "$DATA/.sizes.tmp" || return 0
   for dir in "$ROOT"/*; do
     [ -d "$dir" ] || continue
-    kb=$(du -sk "$dir" 2>/dev/null | cut -f1)
-    [ -n "$kb" ] || kb=0
-    echo "$(basename "$dir") $kb" >> "$DATA/.sizes.tmp"
+    echo "$(basename "$dir") $(kb_of "$dir")" >> "$DATA/.sizes.tmp"
   done
   mv "$DATA/.sizes.tmp" "$DATA/sizes"
 }
 
+# kb_of <dir> prints the kilobytes the directory holds.
+kb_of() {
+  kb=$(du -sk "$1" 2>/dev/null | cut -f1)
+  [ -n "$kb" ] || kb=0
+  echo "$kb"
+}
+
 # finish <status> writes the result file from MESSAGE and the detail lines the
-# run left in $DETAIL, replacing nothing half-written.
+# run left in $DETAIL, replacing nothing half-written, and removes the run's
+# scratch files.
 finish() {
   message=$(printf '%s' "$MESSAGE" | tr '\n' ' ')
   {
@@ -190,15 +233,120 @@ finish() {
     echo "message=$message"
     [ ! -f "$DETAIL" ] || cat "$DETAIL"
   } > "$DATA/.$REQUEST.tmp" && mv "$DATA/.$REQUEST.tmp" "$DATA/$REQUEST.result"
-  rm -f "$DETAIL"
+  rm -rf "$DETAIL" "$WORK"
+}
+
+# seconds_left prints the seconds of the run's time limit that remain, at
+# least 1: timeout 0 would mean no limit at all.
+seconds_left() {
+  now=$(date +%s)
+  left=$((DEADLINE - now))
+  [ "$left" -ge 1 ] || left=1
+  echo "$left"
+}
+
+# step_failed <what> <stderr file> <exit status> sets MESSAGE from the step's
+# last line of stderr, or says it ran out of time, and returns 1.
+step_failed() {
+  line=$(tail -n 1 "$2" 2>/dev/null | tr -d '\r')
+  case "$3" in
+    124|143) MESSAGE="$1 timed out (the limit is $LIMIT seconds)" ;;
+    *) if [ -n "$line" ]; then MESSAGE="$1: $line"; else MESSAGE="$1 failed (exit status $3)"; fi ;;
+  esac
+  return 1
 }
 
 # --- The runs. Each returns 0 for success, or 1 with MESSAGE saying why. It
 # --- appends "key=value" lines to $DETAIL for the result file.
 
+# do_backup streams each volume as a gzipped tar into the destination, at
+# BACKUP_PATH/TS/<volume>.tar.gz. Nothing is staged on disk: the copy's own
+# disk is small. The first failure purges what the run uploaded, so no partial
+# backup is left behind.
 do_backup() {
-  MESSAGE="not implemented yet"
-  return 1
+  case "$TS" in ''|*[!0-9]*) MESSAGE="the request has no timestamp"; return 1 ;; esac
+  [ -n "$BACKUP_PATH" ] || { MESSAGE="the request has no backup destination"; return 1; }
+  found=
+  for dir in "$ROOT"/*; do
+    [ -d "$dir" ] || continue
+    found=1
+    if ! upload_volume "$dir" "$(basename "$dir")"; then
+      discard_backup
+      return 1
+    fi
+  done
+  [ -n "$found" ] || { MESSAGE="the service has no volume mounted"; return 1; }
+  echo "object=$BACKUP_PATH/$TS/" >> "$DETAIL"
+  apply_retention
+  return 0
+}
+
+# upload_volume <dir> <name> archives one volume and records its sizes.
+upload_volume() {
+  rm -f "$WORK/tar.status"
+  {
+    timeout "$(seconds_left)" tar -czf - -C "$1" --exclude ./.caravana-restore . 2> "$WORK/tar.err"
+    echo $? > "$WORK/tar.status"
+  } | timeout "$(seconds_left)" rclone rcat "dest:$BACKUP_PATH/$TS/$2.tar.gz" 2> "$WORK/rclone.err"
+  uploaded=$?
+  archived=$(cat "$WORK/tar.status" 2>/dev/null)
+  # rclone's word comes first: when it dies, tar fails with a broken pipe.
+  [ "$uploaded" -eq 0 ] || { step_failed "upload of $2" "$WORK/rclone.err" "$uploaded"; return 1; }
+  [ -n "$archived" ] || archived=1
+  [ "$archived" = 0 ] || { step_failed "archive of $2" "$WORK/tar.err" "$archived"; return 1; }
+
+  out=$(timeout "$(seconds_left)" rclone size --json "dest:$BACKUP_PATH/$TS/$2.tar.gz" 2> "$WORK/rclone.err")
+  status=$?
+  [ "$status" -eq 0 ] || { step_failed "size of the archive of $2" "$WORK/rclone.err" "$status"; return 1; }
+  bytes=$(printf '%s' "$out" | sed -n 's/.*"bytes": *\([0-9][0-9]*\).*/\1/p')
+  [ -n "$bytes" ] || { MESSAGE="the size of the archive of $2 is unreadable: $out"; return 1; }
+  {
+    echo "volume.$2.bytes=$bytes"
+    echo "volume.$2.size=$(kb_of "$1")"
+  } >> "$DETAIL"
+}
+
+# discard_backup removes this run's directory from the destination, as well as
+# it can, and forgets the volumes the run had recorded. It gets its own minute:
+# the run's own time may be spent.
+discard_backup() {
+  : > "$DETAIL"
+  timeout 60 rclone purge "dest:$BACKUP_PATH/$TS" > /dev/null 2>&1
+  return 0
+}
+
+# apply_retention deletes the oldest backups beyond KEEP and lists their
+# timestamps in expired=. The new backup is already safe, so a failure here
+# doesn't fail the run: it is said in the message of a run that succeeded, and
+# what was deleted before the failure is still listed. Only directories named
+# with digits count, so nothing else under BACKUP_PATH is touched, and the new
+# backup is never deleted. No KEEP, or a bad one, deletes nothing.
+apply_retention() {
+  case "$KEEP" in ''|*[!0-9]*|0) return 0 ;; esac
+  dirs=$(timeout "$(seconds_left)" rclone lsf --dirs-only "dest:$BACKUP_PATH/" 2> "$WORK/rclone.err")
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    step_failed "listing the old backups" "$WORK/rclone.err" "$status"
+    MESSAGE="the backup is kept, but old backups were not removed: $MESSAGE"
+    return 0
+  fi
+  old=$(echo "$dirs" | grep -E '^[0-9]+/$' | sort -n)
+  excess=$(($(echo "$old" | grep -c .) - KEEP))
+  [ "$excess" -gt 0 ] || return 0
+  expired=
+  for d in $(echo "$old" | head -n "$excess"); do
+    d=$(basename "$d")
+    [ "$d" != "$TS" ] || continue
+    timeout "$(seconds_left)" rclone purge "dest:$BACKUP_PATH/$d" > /dev/null 2> "$WORK/rclone.err"
+    status=$?
+    if [ "$status" -ne 0 ]; then
+      step_failed "removing the backup $d" "$WORK/rclone.err" "$status"
+      MESSAGE="the backup is kept, but old backups were not removed: $MESSAGE"
+      break
+    fi
+    expired="$expired $d"
+  done
+  [ -z "$expired" ] || echo "expired=$(echo $expired)" >> "$DETAIL"
 }
 
 do_restore() {
@@ -210,9 +358,10 @@ do_restore() {
 
 handle_request() {
   [ -f "$REQUEST_FILE" ] || return 0
-  REQUEST= ACTION= OBJECT= NOT_AFTER=
+  REQUEST= ACTION= OBJECT= NOT_AFTER= LIMIT= KEEP= TS= BACKUP_PATH=
   set -a
   . "$REQUEST_FILE"
+  [ ! -f "$DEST_FILE" ] || . "$DEST_FILE"
   set +a
   # The ID names a file: letters, digits, "-" and "_" only.
   case "$REQUEST" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
@@ -220,8 +369,14 @@ handle_request() {
   [ "$NOT_AFTER" -ge "$(date +%s)" ] || return 0
   [ ! -e "$DATA/$REQUEST.result" ] || return 0
 
-  mkdir -p "$DATA" || return 0
+  # The run's time limit, counted from now. A LIMIT that is no number is
+  # the default of half an hour.
+  case "$LIMIT" in ''|*[!0-9]*|0) LIMIT=1800 ;; esac
+  DEADLINE=$(($(date +%s) + LIMIT))
+
+  WORK="$DATA/.$REQUEST.work"
   DETAIL="$DATA/.$REQUEST.detail"
+  mkdir -p "$WORK" || return 0
   rm -f "$DETAIL"
   MESSAGE=
   case "$ACTION" in
