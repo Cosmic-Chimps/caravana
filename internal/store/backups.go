@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -57,30 +58,68 @@ func (s *Store) SetBackupDestination(ctx context.Context, d BackupDestination) e
 	return nil
 }
 
+// enginePostgres is what a record without an engine means: every run made
+// before feature 016. It is the value of app.BackupPostgres; the store doesn't
+// import the app package for one word.
+const enginePostgres = "postgres"
+
+// VolumeArchive is one volume's part of a volume backup.
+type VolumeArchive struct {
+	Name string `json:"name"`
+	// Bytes is the size of the archive in the destination.
+	Bytes int64 `json:"bytes"`
+	// SizeKB is the size of the volume's data when it was archived, in
+	// kilobytes (the unit du reports).
+	SizeKB int64 `json:"sizeKB"`
+}
+
 // BackupRecord is one backup run of one service.
 type BackupRecord struct {
 	AppID, ID, Service, JobID string
-	Status                    string
-	Object                    string
-	Bytes                     int64
-	Message                   string
-	Expired                   bool
-	StartedAt                 time.Time
-	FinishedAt                *time.Time
+	// Engine is "postgres" or "volume". Empty means "postgres" when saved.
+	Engine     string
+	Status     string
+	Object     string
+	Bytes      int64
+	Message    string
+	Expired    bool
+	StartedAt  time.Time
+	FinishedAt *time.Time
+	// Stopped is how long the service was stopped. Only a volume run has it,
+	// and only once it was measured; nil otherwise.
+	Stopped *time.Duration
+	// Volumes lists the archives of a volume backup, one per volume.
+	Volumes []VolumeArchive
 }
+
+// backupColumns is the column order scanBackups reads.
+const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
+	engine, stopped_ms, volumes`
 
 // SaveBackup creates or updates a backup record. A final record never goes
 // back to running: a later write of running is ignored.
 func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
+	if b.Engine == "" {
+		b.Engine = enginePostgres
+	}
+	var volumes any // NULL, not "null", when there are none
+	if len(b.Volumes) > 0 {
+		doc, err := json.Marshal(b.Volumes)
+		if err != nil {
+			return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
+		}
+		volumes = string(doc)
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO backups (app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO backups (app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
+			engine, stopped_ms, volumes)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (app_id, id) DO UPDATE SET status = excluded.status, object = excluded.object,
 			bytes = excluded.bytes, message = excluded.message, expired = excluded.expired,
-			finished_at = excluded.finished_at
+			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms, volumes = excluded.volumes
 		WHERE backups.status = 'running' OR excluded.status != 'running'`,
 		b.AppID, b.ID, b.Service, b.JobID, b.Status, b.Object, b.Bytes, b.Message, boolInt(b.Expired),
-		formatTime(b.StartedAt), optionalTime(b.FinishedAt))
+		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes)
 	if err != nil {
 		return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
 	}
@@ -101,7 +140,7 @@ func (s *Store) ExpireBackups(ctx context.Context, appID string, ids []string) e
 // ListBackups returns an app's backups, newest first, at most limit (all
 // when limit <= 0). Expired ones are included; callers decide.
 func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]BackupRecord, error) {
-	q := `SELECT app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at
+	q := `SELECT ` + backupColumns + `
 		FROM backups WHERE app_id = ? ORDER BY started_at DESC, id DESC`
 	args := []any{appID}
 	if limit > 0 {
@@ -120,16 +159,17 @@ func (s *Store) ListBackups(ctx context.Context, appID string, limit int) ([]Bac
 	return out, nil
 }
 
-// scanBackups reads backup rows in the column order ListBackups selects.
+// scanBackups reads backup rows in the order of backupColumns.
 func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 	var out []BackupRecord
 	for rows.Next() {
 		var b BackupRecord
 		var expired int
 		var started string
-		var finished sql.NullString
+		var finished, volumes sql.NullString
+		var stopped sql.NullInt64
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
-			&expired, &started, &finished); err != nil {
+			&expired, &started, &finished, &b.Engine, &stopped, &volumes); err != nil {
 			return nil, err
 		}
 		var err error
@@ -139,6 +179,12 @@ func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 		}
 		if b.FinishedAt, err = parseOptionalTime(finished); err != nil {
 			return nil, err
+		}
+		b.Stopped = millisToDuration(stopped)
+		if volumes.Valid {
+			if err := json.Unmarshal([]byte(volumes.String), &b.Volumes); err != nil {
+				return nil, fmt.Errorf("backup %s of %q: bad stored volumes: %w", b.ID, b.AppID, err)
+			}
 		}
 		out = append(out, b)
 	}
@@ -162,21 +208,33 @@ func (s *Store) GetBackup(ctx context.Context, appID, id string) (BackupRecord, 
 // RestoreRecord is one restore of one backup.
 type RestoreRecord struct {
 	ID, AppID, Service, BackupID string
-	Status                       string
-	Message                      string
-	CreatedAt                    time.Time
-	FinishedAt                   *time.Time
+	// Engine is "postgres" or "volume". Empty means "postgres" when saved.
+	Engine     string
+	Status     string
+	Message    string
+	CreatedAt  time.Time
+	FinishedAt *time.Time
+	// Stopped is how long the service was stopped, for a volume restore once
+	// measured; nil otherwise.
+	Stopped *time.Duration
 }
+
+// restoreColumns is the column order scanRestores reads.
+const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms"
 
 // SaveRestore creates or updates a restore record.
 func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
+	if r.Engine == "" {
+		r.Engine = enginePostgres
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET status = excluded.status, message = excluded.message,
-			finished_at = excluded.finished_at
+			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms
 		WHERE restores.status = 'running'`,
-		r.ID, r.AppID, r.Service, r.BackupID, r.Status, r.Message, formatTime(r.CreatedAt), optionalTime(r.FinishedAt))
+		r.ID, r.AppID, r.Service, r.BackupID, r.Status, r.Message, formatTime(r.CreatedAt), optionalTime(r.FinishedAt),
+		r.Engine, optionalMillis(r.Stopped))
 	if err != nil {
 		return fmt.Errorf("save restore %s of %q: %w", r.ID, r.AppID, err)
 	}
@@ -186,7 +244,7 @@ func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
 // ListRestores returns an app's restores, newest first, at most limit (all
 // when limit <= 0).
 func (s *Store) ListRestores(ctx context.Context, appID string, limit int) ([]RestoreRecord, error) {
-	q := `SELECT id, app_id, service, backup_id, status, message, created_at, finished_at
+	q := `SELECT ` + restoreColumns + `
 		FROM restores WHERE app_id = ? ORDER BY created_at DESC, id DESC`
 	args := []any{appID}
 	if limit > 0 {
@@ -205,14 +263,16 @@ func (s *Store) ListRestores(ctx context.Context, appID string, limit int) ([]Re
 	return out, nil
 }
 
-// scanRestores reads restore rows in the column order ListRestores selects.
+// scanRestores reads restore rows in the order of restoreColumns.
 func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 	var out []RestoreRecord
 	for rows.Next() {
 		var r RestoreRecord
 		var created string
 		var finished sql.NullString
-		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished); err != nil {
+		var stopped sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished,
+			&r.Engine, &stopped); err != nil {
 			return nil, err
 		}
 		var err error
@@ -222,6 +282,7 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 		if r.FinishedAt, err = parseOptionalTime(finished); err != nil {
 			return nil, err
 		}
+		r.Stopped = millisToDuration(stopped)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -233,7 +294,7 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 // run worked, not whether its file is still kept.
 func (s *Store) LatestBackupRuns(ctx context.Context) ([]BackupRecord, []RestoreRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at FROM (
+		SELECT `+backupColumns+` FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY app_id, service ORDER BY started_at DESC, id DESC) AS n
 			FROM backups)
 		WHERE n = 1 ORDER BY app_id, service`)
@@ -247,7 +308,7 @@ func (s *Store) LatestBackupRuns(ctx context.Context) ([]BackupRecord, []Restore
 	}
 
 	rows, err = s.db.QueryContext(ctx, `
-		SELECT id, app_id, service, backup_id, status, message, created_at, finished_at FROM (
+		SELECT `+restoreColumns+` FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY app_id, service ORDER BY created_at DESC, id DESC) AS n
 			FROM restores)
 		WHERE n = 1 ORDER BY app_id, service`)
@@ -306,6 +367,23 @@ func optionalTime(t *time.Time) any {
 		return nil
 	}
 	return formatTime(*t)
+}
+
+// optionalMillis is a duration as stored: whole milliseconds, NULL for nil.
+func optionalMillis(d *time.Duration) any {
+	if d == nil {
+		return nil
+	}
+	return d.Milliseconds()
+}
+
+// millisToDuration is optionalMillis read back.
+func millisToDuration(ms sql.NullInt64) *time.Duration {
+	if !ms.Valid {
+		return nil
+	}
+	d := time.Duration(ms.Int64) * time.Millisecond
+	return &d
 }
 
 func parseOptionalTime(s sql.NullString) (*time.Time, error) {

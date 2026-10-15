@@ -301,6 +301,7 @@ func (s *Store) DeleteApp(ctx context.Context, id string) error {
 		"DELETE FROM deployments WHERE app_id = ?",
 		"DELETE FROM backups WHERE app_id = ?",
 		"DELETE FROM restores WHERE app_id = ?",
+		"DELETE FROM volume_sizes WHERE app_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, query, id); err != nil {
 			return fmt.Errorf("delete app %q: %w", id, err)
