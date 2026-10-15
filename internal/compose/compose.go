@@ -40,6 +40,30 @@ type Request struct {
 	Services map[string]Overlay `json:"services,omitempty"`
 }
 
+// WithoutSecretValues returns the request with every secret's value removed,
+// names kept: what Caravana keeps and shows of a request. Deployed again, the
+// secret store still holds the values. The copy has its own Services map and
+// Secrets slices, so changing it never changes r. (Domains and the rest are
+// shared with r: nothing here writes to them.)
+func (r Request) WithoutSecretValues() Request {
+	if r.Services == nil {
+		return r
+	}
+	services := make(map[string]Overlay, len(r.Services))
+	for name, overlay := range r.Services {
+		if len(overlay.Secrets) > 0 {
+			names := make([]app.Secret, len(overlay.Secrets))
+			for i, s := range overlay.Secrets {
+				names[i] = app.Secret{Name: s.Name}
+			}
+			overlay.Secrets = names
+		}
+		services[name] = overlay
+	}
+	r.Services = services
+	return r
+}
+
 // Overlay is the Caravana-only part of one service.
 type Overlay struct {
 	// Domains are public hostnames routed over HTTPS to the service.

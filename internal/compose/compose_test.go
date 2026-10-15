@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -240,4 +241,82 @@ func TestMemory(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWithoutSecretValues checks that values go, names and everything else
+// stay, and that the caller's request is never changed.
+func TestWithoutSecretValues(t *testing.T) {
+	value := func(s string) *string { return &s }
+	full := func() Request {
+		return Request{
+			Compose: "# comment\nservices:\n  web:\n    image: nginx\n",
+			Name:    "Kuma",
+			Services: map[string]Overlay{
+				"web": {
+					Domains: []Domain{{Host: "kuma.example.com", Port: 80}},
+					Health:  &Health{Path: "/", Port: 80},
+					Secrets: []app.Secret{{Name: "TOKEN", Value: value("s3cret-sentinel-015")}, {Name: "KEEP"}, {Name: "LAST", Value: value("x")}},
+				},
+				"db": {
+					Secrets: []app.Secret{{Name: "PASSWORD", Value: value("s3cret-sentinel-015")}},
+					Backup:  &app.Backup{Engine: "postgres"},
+				},
+				"plain": {},
+			},
+		}
+	}
+
+	t.Run("values removed, the rest kept", func(t *testing.T) {
+		got := full().WithoutSecretValues()
+		want := full()
+		for name, overlay := range want.Services {
+			for i := range overlay.Secrets {
+				overlay.Secrets[i].Value = nil
+			}
+			want.Services[name] = overlay
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got  %+v\nwant %+v", got, want)
+		}
+		for name, overlay := range got.Services {
+			for _, s := range overlay.Secrets {
+				if s.Value != nil {
+					t.Errorf("services.%s.secrets %q still has a value", name, s.Name)
+				}
+			}
+		}
+		if names := got.Services["web"].Secrets; len(names) != 3 || names[0].Name != "TOKEN" || names[1].Name != "KEEP" || names[2].Name != "LAST" {
+			t.Errorf("web secret names or order changed: %+v", names)
+		}
+	})
+
+	t.Run("the original is never changed", func(t *testing.T) {
+		orig := full()
+		got := orig.WithoutSecretValues()
+		// Change the copy every way a caller could; the original must not move.
+		got.Services["web"].Secrets[0].Name = "CHANGED"
+		got.Services["new"] = Overlay{}
+		delete(got.Services, "db")
+		if !reflect.DeepEqual(orig, full()) {
+			t.Errorf("the original request changed: %+v", orig)
+		}
+		if v := orig.Services["web"].Secrets[0].Value; v == nil || *v != "s3cret-sentinel-015" {
+			t.Errorf("the original's secret value was lost: %v", v)
+		}
+	})
+
+	t.Run("nil and empty services stay as they are", func(t *testing.T) {
+		if got := (Request{Compose: "x"}).WithoutSecretValues(); got.Services != nil {
+			t.Errorf("nil Services became %#v", got.Services)
+		}
+		empty := Request{Compose: "x", Services: map[string]Overlay{}}
+		got := empty.WithoutSecretValues()
+		if got.Services == nil || len(got.Services) != 0 {
+			t.Errorf("empty Services became %#v", got.Services)
+		}
+		got.Services["a"] = Overlay{}
+		if len(empty.Services) != 0 {
+			t.Error("the copy of an empty map shares it with the original")
+		}
+	})
 }
