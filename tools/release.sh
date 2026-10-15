@@ -2,6 +2,11 @@
 # Builds a Caravana release: what the installer downloads (feature 012).
 #
 #   tools/release.sh build VERSION OUT_DIR
+#   tools/release.sh notes VERSION
+#
+# notes prints VERSION's section of CHANGELOG.md (the lines under "## VERSION - date", without
+# that heading), which the release workflow publishes as the release's notes. It fails when
+# the section is missing or empty, so no release goes out with nothing to say.
 #
 # writes into OUT_DIR:
 #   caravana_<VERSION>_linux_amd64.tar.gz   the binary (built with that version) and
@@ -19,7 +24,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 host_files=(nomad.hcl.tpl traefik.nomad.hcl caravana-policy.hcl traefik-policy.hcl caravana.service)
 
 usage() {
-  echo "usage: tools/release.sh build VERSION OUT_DIR" >&2
+  echo "usage: tools/release.sh build VERSION OUT_DIR | notes VERSION" >&2
   exit 2
 }
 
@@ -62,10 +67,28 @@ build() {
   echo "release $version in $out"
 }
 
+notes() {
+  local version="$1" text
+  # From the version's heading (exactly "## X.Y.Z" then " - date" or the end of the line) to
+  # the next "## ", blank lines at either end trimmed.
+  text="$(awk -v v="$version" '
+    /^## / { on = ($2 == v && (NF == 2 || $3 == "-")); next }
+    on' "$root/CHANGELOG.md" | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}')"
+  if [ -z "$text" ]; then
+    echo "release: CHANGELOG.md has no section \"## $version - <date>\", or it is empty" >&2
+    exit 1
+  fi
+  printf '%s\n' "$text"
+}
+
 case "${1:-}" in
 build)
   [ $# -eq 3 ] || usage
   build "$2" "$3"
+  ;;
+notes)
+  [ $# -eq 2 ] || usage
+  notes "$2"
   ;;
 *) usage ;;
 esac

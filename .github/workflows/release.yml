@@ -18,6 +18,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The release's notes are its CHANGELOG.md section. A tag without one fails here, before
+      # anything is built.
+      - name: notes
+        run: tools/release.sh notes "${GITHUB_REF_NAME#v}" >"$RUNNER_TEMP/notes.md"
+
       # The same checks as CI: a release is never built from a commit that fails them.
       - run: go vet ./...
       - run: go test -race ./...
@@ -28,4 +33,7 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Caravana ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+        # --generate-notes adds GitHub's list of commits and the compare link after our notes.
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Caravana ${GITHUB_REF_NAME#v}"
+          --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag

@@ -272,6 +272,7 @@ deploy/dev/lab.sh shell            # inside the VM: sudo lab-nomad <cmd> (manage
 
 ```bash
 tools/release.sh build 0.0.0-dev.1 /tmp/rel   # a release: tarballs per arch, install.sh, SHA256SUMS
+tools/release.sh notes 0.3.0       # that version's CHANGELOG.md section: the release's notes (a v* tag without one fails)
 deploy/dev/install-test.sh         # the installer on a throwaway Lima VM: install, rerun, upgrade, rollback, uninstall (~10 min)
 deploy/vm/host.sh up               # build a dev release and install/upgrade it on the public VM (settings in deploy/vm/host.env)
 deploy/vm/host.sh prove            # the gate against the VM (~15 min), ends GATE PASSED/FAILED
