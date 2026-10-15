@@ -189,8 +189,12 @@ Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal
 ## Phase 7: Polish & cross-cutting
 
 - [X] T018 [P] Docs: in CLAUDE.md "Where we are", add the feature 015 paragraph (kept file on app and deployment, migration 0007, revision covers it, Configure edits the file and the definition is read-only, "paste it once", rollback restores it, history download, `getCompose` / `getDeploymentCompose` / `composeKept` in API 0.12.0, definition deploys drop it with a warning, lab step `console-compose-file-edit`). In docs/plan.md, mark 015 done, keeping the numbering agreed on 2026-10-14 (015 Compose file, 016 volumes + backups, then Aspire 017, Bella Baxter 018).
-- [ ] T019 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`, `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` and `GOARCH=amd64`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`. Run them all and fix whatever fails.
+- [X] T019 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`, `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...` and `GOARCH=amd64`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`. Run them all and fix whatever fails.
+  - 2026-10-15: all pass with nothing to fix. `go test -race -count=1 ./...` is ok in every package. shellcheck (via Docker) is clean on lab.sh, install.sh, ui-css.sh and release.sh; this feature changes no script.
 - [ ] T020 Lab validation: `eval "$(deploy/dev/lab.sh env)"`, then `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab -v`, and then the quickstart (§1–§6) by hand in a browser with JavaScript off and on. Record the results in this file under T020, as 014's T028 did.
+  - 2026-10-15, automated part: `TestConsoleLab` passes on the Lima lab, 14 of 14 steps in 222 s. The new `console-compose-file-edit` step took 52.6 s. It created `cfe` from a file with a comment, saw the file on Configure, edited the tag v1.10 → v1.11 and deployed. It then redeployed the v1.10 version, saw v1.10 and its comment back on Configure, and checked that the history download equals the first file byte for byte.
+  - Quickstart §2, §4 and §6 (API round trip, secret edit, webhook and redeploy keep the file, a definition deploy drops it, no secret value anywhere) are covered by the `httptest` suites in internal/api, internal/service and internal/ui. They were not run by hand.
+  - Still open: the quickstart by hand in a browser (JavaScript on and off), and SC-005 (paste Uptime Kuma's file once on the maintainer's host).
 
 ## Dependencies & Execution Order
 
