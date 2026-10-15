@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -42,8 +43,22 @@ type appState struct {
 // deployment record exists, errors are *DeployError and the record says
 // failed.
 func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.saveAndDeploy(ctx, a, Condition{}, trigger, nil, nil)
+	return s.saveAndDeploy(ctx, a, Condition{}, trigger, made{}, nil)
 }
+
+// made is what an app was made from: the Compose file it keeps (nil for a
+// definition) and the warnings that input brought (a Compose file's changed
+// meanings), recorded first in the deployment.
+type made struct {
+	file     *compose.Request
+	warnings []app.Warning
+}
+
+// droppedFileWarning is recorded when a deploy from a definition (or from a
+// version that had no file) replaces an app that kept its Compose file: the
+// file no longer matches the app, so it is not kept. It has no field, since
+// no request field is at fault.
+const droppedFileWarning = "This app's Compose file was dropped: it was deployed from a definition, not a file."
 
 // Condition says what must still be true of the stored app for a deploy to
 // save it. The zero value is no condition: save whatever is there, as Deploy
@@ -68,7 +83,7 @@ var ErrAppChanged = errors.New("the app changed since it was read")
 // checks and the backup checks come first, so their errors win, and nothing
 // is saved or deployed on any refusal.
 func (s *Service) DeployIf(ctx context.Context, a app.App, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.saveAndDeploy(ctx, a, cond, trigger, nil, nil)
+	return s.saveAndDeploy(ctx, a, cond, trigger, made{}, nil)
 }
 
 // pinned is a redeploy of a past deployment: its digests are used as they
@@ -78,10 +93,10 @@ type pinned struct {
 	source  string // the past deployment's ID
 }
 
-// saveAndDeploy is Deploy with a condition on the stored app, warnings from
-// the input (a Compose file) to record with the deployment, and pin set for a
-// redeploy of a past one.
-func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, trigger app.Trigger, warnings []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
+// saveAndDeploy is Deploy with a condition on the stored app, m saying what
+// the app was made from (the Compose file to keep and the warnings to record
+// with the deployment), and pin set for a redeploy of a past one.
+func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, trigger app.Trigger, m made, pin *pinned) (store.DeploymentRecord, error) {
 	if cond.IfNew && cond.IfRevision != "" {
 		return store.DeploymentRecord{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
 	}
@@ -95,33 +110,36 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 		return store.DeploymentRecord{}, err
 	}
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
-		warnings = append(warnings, unmountedVolumes(old.App, a)...)
-		warnings = append(warnings, RemovedSecrets(old.App, a)...)
+		m.warnings = append(m.warnings, unmountedVolumes(old.App, a)...)
+		m.warnings = append(m.warnings, RemovedSecrets(old.App, a)...)
+		if old.Compose != nil && m.file == nil {
+			m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
+		}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return store.DeploymentRecord{}, err
 	}
-	if err := s.saveApp(ctx, a, cond); err != nil {
+	if err := s.saveApp(ctx, a, cond, m.file); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	s.appChanged(a.ID)
-	return s.deployWarned(ctx, a, trigger, warnings, pin)
+	return s.deployWarned(ctx, a, trigger, m, pin)
 }
 
-// saveApp stores a as the condition allows. Only names are stored: the
-// secret values go to the secret store, in deploy. In each conditional case
-// the store decides, in one step with the write, so of two saves at once
-// exactly one wins.
-func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition) error {
+// saveApp stores a, and file as the Compose file it is kept with (nil for
+// none), as the condition allows. Only names are stored: the secret values go
+// to the secret store, in deploy. In each conditional case the store decides,
+// in one step with the write, so of two saves at once exactly one wins.
+func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition, file *compose.Request) error {
 	stored := a.WithoutSecretValues()
 	switch {
 	case cond.IfNew:
-		if _, err := s.store.InsertApp(ctx, stored, nil); errors.Is(err, store.ErrAlreadyExists) {
+		if _, err := s.store.InsertApp(ctx, stored, file); errors.Is(err, store.ErrAlreadyExists) {
 			return fmt.Errorf("app %q: %w", a.ID, ErrAppExists)
 		} else if err != nil {
 			return err
 		}
 	case cond.IfRevision != "":
-		if _, err := s.store.SaveAppIf(ctx, stored, nil, cond.IfRevision); errors.Is(err, store.ErrRevisionMismatch) {
+		if _, err := s.store.SaveAppIf(ctx, stored, file, cond.IfRevision); errors.Is(err, store.ErrRevisionMismatch) {
 			// Name the revision it has now, so the caller can start over from it.
 			if cur, getErr := s.store.GetApp(ctx, a.ID); getErr == nil {
 				return fmt.Errorf("app %q is now at revision %s: %w", a.ID, cur.Revision, ErrAppChanged)
@@ -131,7 +149,7 @@ func (s *Service) saveApp(ctx context.Context, a app.App, cond Condition) error 
 			return err
 		}
 	default:
-		if _, err := s.store.SaveApp(ctx, stored, nil); err != nil {
+		if _, err := s.store.SaveApp(ctx, stored, file); err != nil {
 			return err
 		}
 	}
@@ -195,21 +213,22 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	return s.deploy(ctx, rec.App, trigger)
 }
 
-// deploy runs one deploy of a.
+// deploy runs one deploy of a, which was not made from a Compose file.
 func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.deployWarned(ctx, a, trigger, nil, nil)
+	return s.deployWarned(ctx, a, trigger, made{}, nil)
 }
 
-// deployWarned is deploy with warnings about how a was made (a Compose
-// file's changed meanings), which come first in the record, and pin set for
-// a redeploy of a past deployment.
-func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, input []app.Warning, pin *pinned) (store.DeploymentRecord, error) {
+// deployWarned is deploy with m, what a was made from: its warnings (a
+// Compose file's changed meanings) come first in the record, and its Compose
+// file is the one the deployment records. pin is set for a redeploy of a past
+// deployment.
+func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (store.DeploymentRecord, error) {
 	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}}
 	source := ""
 	if pin != nil {
 		source = pin.source
 	}
-	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, nil, source)
+	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -275,7 +294,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	// Nomad has accepted the job: from now on nothing is returned as an
 	// error. A failed write is logged, and the watcher brings the record up
 	// to date (research R6).
-	warnings = append(append(slices.Clone(input), warnings...), reg.Warnings...)
+	warnings = append(append(slices.Clone(m.warnings), warnings...), reg.Warnings...)
 	// The backup jobs follow the app's definition, with the image and the
 	// secrets of this deploy. The app runs either way; a failure is a warning.
 	warnings = append(warnings, s.syncBackups(ctx, a, digests, sets)...)

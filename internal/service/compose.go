@@ -19,12 +19,17 @@ func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.R
 // DeployComposeIf is DeployCompose with a condition on the stored app, as
 // DeployIf has: a new app only (IfNew) or an app still at the revision the
 // caller saw (IfRevision).
+//
+// The request is kept with the app and the deployment, so the owner can edit
+// the file later. The kept copy has no secret values; the request itself, with
+// them, still feeds Translate, so the values reach the secret store.
 func (s *Service) DeployComposeIf(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
 	a, warnings, err := compose.Translate(appID, req)
 	if err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	rec, err := s.saveAndDeploy(ctx, a, cond, trigger, warnings, nil)
+	file := req.WithoutSecretValues()
+	rec, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
 	return rec, compose.InFile(err, a)
 }
 

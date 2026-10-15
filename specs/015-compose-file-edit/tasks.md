@@ -65,7 +65,7 @@ Files: `internal/compose/compose.go`, `internal/compose/compose_test.go`,
 
 Files: `internal/service/deploy.go`, `internal/service/compose.go`, `internal/service/deploy_test.go`, `internal/service/compose_test.go`, `internal/ui/composeform.go`, `internal/ui/composeform_test.go`, `internal/ui/configure.go`, `internal/ui/configure_test.go`, `internal/ui/configure_save_test.go`, `internal/ui/composedeploy.go`, `internal/ui/composepage_test.go`, `internal/ui/app.go`, `internal/ui/templates/app.html`, `internal/ui/templates/compose.html`, `internal/ui/style/`, `internal/ui/static/app.css`, `cmd/caravana/console_lab_test.go`
 
-- [ ] T004 [US1] Service keeps the file (research R4, R5; data-model "Service"), in internal/service/deploy.go and internal/service/compose.go:
+- [X] T004 [US1] Service keeps the file (research R4, R5; data-model "Service"), in internal/service/deploy.go and internal/service/compose.go:
   - Add `type made struct { file *compose.Request; warnings []app.Warning }`.
   - `saveAndDeploy(ctx, a, cond, trigger, m made, pin)` replaces its `warnings` argument with `made`. `saveApp` passes `m.file` to the store. `deployWarned(ctx, a, trigger, m made, pin)` passes `m.file` to `CreateDeployment`.
   - In `saveAndDeploy`, when the stored app has `Compose != nil` and `m.file == nil`, append the warning `This app's Compose file was dropped: it was deployed from a definition, not a file.` (exact text, no `Field`), next to `unmountedVolumes` and `RemovedSecrets`.

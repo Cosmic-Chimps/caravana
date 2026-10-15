@@ -12,6 +12,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -315,7 +316,7 @@ func TestDeployPinned(t *testing.T) {
 	e.registry.AddIndex("traefik/whoami", "latest", movedDigest) // the tag moved
 
 	pin := &pinned{digests: map[string]string{"web": apptest.WhoamiDigest}, source: "dep-past"}
-	rec, err := e.svc.saveAndDeploy(ctx, whoami(), Condition{}, app.TriggerManual, nil, pin)
+	rec, err := e.svc.saveAndDeploy(ctx, whoami(), Condition{}, app.TriggerManual, made{}, pin)
 	if err != nil {
 		t.Fatalf("saveAndDeploy() = %v", err)
 	}
@@ -545,5 +546,74 @@ func TestRemovedSecrets(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// droppedFile counts the "Compose file was dropped" warnings of a record.
+func droppedFile(rec store.DeploymentRecord) int {
+	n := 0
+	for _, w := range rec.Warnings {
+		if w.Message == droppedFileWarning && w.Field == "" {
+			n++
+		}
+	}
+	return n
+}
+
+// Feature 015: a deploy from a definition replaces an app that kept its
+// Compose file, so the file is dropped and the warning says so, once.
+func TestDeployDefinitionDropsKeptFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	first, err := e.svc.DeployCompose(ctx, "blog", compose.Request{Compose: twoServices}, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("DeployCompose: %v", err)
+	}
+	waitFinal(t, e.store, first.Deployment.ID)
+	stored, err := e.svc.GetApp(ctx, "blog")
+	if err != nil || stored.Compose == nil {
+		t.Fatalf("GetApp() = %+v, %v; want the app to keep its file", stored, err)
+	}
+
+	rec, err := e.svc.Deploy(ctx, stored.App, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+	if n := droppedFile(rec); n != 1 {
+		t.Errorf("warnings = %+v, want the drop warning once", rec.Warnings)
+	}
+	after, _ := e.svc.GetApp(ctx, "blog")
+	if after.Compose != nil {
+		t.Errorf("kept file after a definition deploy = %+v, want none", after.Compose)
+	}
+	if dep, _ := e.svc.GetDeployment(ctx, "blog", rec.Deployment.ID); dep.Compose != nil {
+		t.Errorf("the deployment records a file: %+v", dep.Compose)
+	}
+
+	// The next definition deploy has no file left to drop.
+	again, err := e.svc.Deploy(ctx, after.App, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("second Deploy: %v", err)
+	}
+	waitFinal(t, e.store, again.Deployment.ID)
+	if n := droppedFile(again); n != 0 {
+		t.Errorf("second deploy warnings = %+v, want no drop warning", again.Warnings)
+	}
+}
+
+// Feature 015: an app that never had a file gets no drop warning.
+func TestDeployWithoutFileNoDropWarning(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	for range 2 {
+		rec, err := e.svc.Deploy(ctx, whoami(), app.TriggerManual)
+		if err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		if n := droppedFile(rec); n != 0 {
+			t.Errorf("warnings = %+v, want no drop warning", rec.Warnings)
+		}
 	}
 }

@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +61,99 @@ func TestDeployCompose(t *testing.T) {
 	}
 	if final := waitFinal(t, e.store, again.Deployment.ID); final.Status != store.StatusHealthy {
 		t.Errorf("redeploy = %s", final.Status)
+	}
+}
+
+// keptSentinel is a secret value that must never be kept with a Compose file.
+const keptSentinel = "s3cret-sentinel-015"
+
+// keptFile is a Compose file with a comment, blank lines and a trailing
+// newline: what the store must give back byte for byte.
+const keptFile = "# the blog\nservices:\n\n  web:\n    image: traefik/whoami:latest   # pinned later\n"
+
+// Feature 015: a Compose deploy keeps the file, as typed, with the app and
+// with the deployment, and never a secret value.
+func TestDeployComposeKeepsFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	req := compose.Request{Compose: keptFile, Name: "Blog", Services: map[string]compose.Overlay{
+		"web": {Secrets: []app.Secret{{Name: "TOKEN", Value: new(keptSentinel)}}},
+	}}
+	rec, err := e.svc.DeployCompose(ctx, "blog", req, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("DeployCompose: %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+
+	want := req.WithoutSecretValues()
+	stored, err := e.svc.GetApp(ctx, "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored.Compose, &want) {
+		t.Errorf("app's kept file = %+v, want %+v", stored.Compose, want)
+	}
+	dep, err := e.svc.GetDeployment(ctx, "blog", rec.Deployment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dep.Compose, &want) {
+		t.Errorf("deployment's kept file = %+v, want %+v", dep.Compose, want)
+	}
+	if dep.Compose.Compose != keptFile {
+		t.Errorf("file text = %q, want it byte for byte", dep.Compose.Compose)
+	}
+
+	// The value went to the secret store, and nowhere the file is kept.
+	if got := e.secrets.Live("blog"); got["web"]["TOKEN"] != keptSentinel {
+		t.Errorf("secret store = %v, want the value deployed", got)
+	}
+	doc, _ := json.Marshal([]any{stored, dep})
+	if strings.Contains(string(doc), keptSentinel) {
+		t.Error("a secret value was kept with the Compose file")
+	}
+
+	// A second Compose deploy replaces the file.
+	next := compose.Request{Compose: "services:\n  web:\n    image: traefik/whoami:latest\n"}
+	again, err := e.svc.DeployCompose(ctx, "blog", next, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("second DeployCompose: %v", err)
+	}
+	waitFinal(t, e.store, again.Deployment.ID)
+	stored, _ = e.svc.GetApp(ctx, "blog")
+	if stored.Compose == nil || stored.Compose.Compose != next.Compose {
+		t.Errorf("app's kept file after the second deploy = %+v, want the new file", stored.Compose)
+	}
+}
+
+// Feature 015: a comment-only edit is a change of the app's kept file, so a
+// deploy that read the app before it is refused as stale.
+func TestDeployIfStaleAfterCommentEdit(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	first := compose.Request{Compose: "services:\n  web:\n    image: traefik/whoami:latest\n"}
+	rec, err := e.svc.DeployCompose(ctx, "blog", first, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("DeployCompose: %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+	before, _ := e.svc.GetApp(ctx, "blog")
+
+	edited := compose.Request{Compose: "# a comment\n" + first.Compose}
+	rec, err = e.svc.DeployComposeIf(ctx, "blog", edited, Condition{IfRevision: before.Revision}, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("comment-only edit: %v", err)
+	}
+	waitFinal(t, e.store, rec.Deployment.ID)
+	after, _ := e.svc.GetApp(ctx, "blog")
+	if after.Revision == before.Revision {
+		t.Fatal("a comment-only edit left the revision as it was")
+	}
+
+	// The second tab still holds the old revision.
+	_, err = e.svc.DeployIf(ctx, before.App, Condition{IfRevision: before.Revision}, app.TriggerManual)
+	if !errors.Is(err, ErrAppChanged) {
+		t.Fatalf("DeployIf with the stale revision = %v, want ErrAppChanged", err)
 	}
 }
 
