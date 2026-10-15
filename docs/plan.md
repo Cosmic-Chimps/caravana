@@ -82,6 +82,8 @@ every port but 22, 80 and 443 closed from outside. The same checks pass in the l
 | 011 | **Rollback + export** | Redeploy any past version from the UI or API; export any app as a plain Nomad jobspec. Done: every deployment records its definition, a past healthy one redeploys with its pinned digests, and exports are HCL from a small writer of our own, parsed and planned by Nomad in the gate (specs/011-rollback-export). |
 | 012 | **One-command install** | A fresh VM becomes Docker + Nomad (ACLs on) + Traefik + Caravana. Caravana runs as a systemd service, not as a Nomad job, so a cold start never waits on anything. Done: `deploy/install/install.sh` from each GitHub release, reruns upgrade with rollback, `--uninstall` keeps the apps, the console is public on one domain (specs/012-one-command-install). |
 | 012.5 | **Console v2** | What the design handoff has that no feature above brings. Done as feature 014 (specs/014-console-v2): Configure edits each service (image, env, port, domains, copies, health check, CPU, memory) and saves with a deploy, refused if the app changed since the form was drawn (`If-Match` on the app's revision in the API); New app takes a pasted Compose file with a preview, and Configure redeploys one; the Running tab shows CPU and memory per copy (Nomad's allocation stats, read only while the tab is open); the Apps home opens with a "needs you" list (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and restores, no backup destination), `GET /v1/attention`. |
+| 015 | **Keep and edit the Compose file** | Done (specs/015-compose-file-edit). An app made from Compose keeps the file as typed, comments included, with each deployment, and never a secret value. Configure edits the file and its overlay (preview, then deploy, refused if the app changed since the form was drawn) and shows the definition read-only. An app made before the file was kept is asked for it once. Rollback brings back the version's file, history downloads each entry's file, and secret edits, redeploys and the webhook keep it. A deploy from a definition drops it, with a warning. API 0.12.0: `getCompose`, `getDeploymentCompose`, `composeKept`. |
+| 016 | **Volumes panel + volume backups** | Next, agreed 2026-10-14, not specified yet. A volumes panel per app (name, mount path, host path, size, last backup), and a `volume` backup engine: stop the copy, tar the volume, start it again, with 010's destination, retention, back up now and restore. First test case: Uptime Kuma 2 with its embedded MariaDB. See "Backups for more than Postgres" in the backlog. |
 
 **Phase 2 gate:** a real multi-service compose app runs, with a database on a host volume and a
 backup that restores. 008–012 are the MVP: after 012, someone else can install and use it.
@@ -99,8 +101,8 @@ and the console share the service layer; this keeps the console from falling beh
 
 ## Phase 2.5: Aspire + Bella Baxter
 
-- 015: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`) rendered from Nomad services.
-- 016: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+- 017: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`) rendered from Nomad services.
+- 018: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
 **Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.

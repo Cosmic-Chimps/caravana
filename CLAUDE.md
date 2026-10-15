@@ -170,7 +170,26 @@ read every 5 s only while the tab's stream has `?tab=running`; Nomad collects th
 (`service.Attention`, `GET /v1/attention`), derived on every read: failed or reverted deploys,
 out-of-memory kills, crash loops (restarts plus failed copies of the last hour reach 3),
 unhealthy copies, failed backups and restores, no backup destination. API 0.11.0. The gate has a
-step `console-v2-reads`.
+step `console-v2-reads`. Feature 015 is implemented on branch `015-compose-file-edit` (stacked on
+014): an app deployed from Compose keeps the file as typed, comments included, on the app
+(`apps.compose`) and on each deployment (`deployments.compose`), both JSON of `compose.Request`
+with every secret value removed (`Request.WithoutSecretValues`; migration `0007_compose_file.sql`),
+and the app's `revision` covers it, so a comment-only edit is a change. `store.SaveApp`,
+`SaveAppIf`, `InsertApp` and `CreateDeployment` take the file (nil for none); in the service,
+`made{file, warnings}` says what a deploy was made from. Configure of a kept-file app shows the
+Compose form first (`draftOf` fills it from the kept request; preview, then deploy with
+`If-Match`) and the definition read-only ("This app is edited through its Compose file."; the
+per-field save answers 409). An app made from Compose before this feature is asked for its file
+once ("paste it once": empty editor, overlay prefilled from the app, per-field form still
+editable). Rollback (`RedeployVersion`) makes the version's file the kept one, and each history
+entry made from a file offers "Download Compose file". Secret edits (`editSecrets` rewrites the
+overlay's secret names), `Redeploy` and the webhook keep the file and record it on the new
+deployment. A deploy from a definition (`deployApp` with a body, `Deploy`) drops the file with the
+warning "This app's Compose file was dropped: it was deployed from a definition, not a file." API
+0.12.0: `getCompose` (with the revision as `ETag`), `getDeploymentCompose`, `composeKept` on
+`AppRecord`, `AppSummary` and `Deployment`, code `compose_not_kept` (404). No page, download or
+API read holds a secret value (tests search for `s3cret-sentinel-015`). `TestConsoleLab` has a step
+`console-compose-file-edit` (create from a file, edit, roll back, download).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
