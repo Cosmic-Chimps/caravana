@@ -293,6 +293,50 @@ func TestConfigureNotKeptFile(t *testing.T) {
 	}
 }
 
+// Feature 015, US4: a deploy from a definition drops the kept file, so Configure
+// goes back to asking for it once, with the per-field form editable, and the
+// history entry of that deploy says what was dropped.
+func TestConfigureAfterADefinitionDeploy(t *testing.T) {
+	ctx := context.Background()
+	e, _ := keptSentinelEnv(t)
+	stored, err := e.Store.GetApp(ctx, "shop")
+	if err != nil || stored.Compose == nil {
+		t.Fatalf("GetApp() = %+v, %v; want the app to keep its file", stored, err)
+	}
+	rec, err := e.Svc.Deploy(ctx, stored.App, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	e.waitDeploy(t, rec.Deployment.ID)
+
+	_, body := e.get(t, "/apps/shop/configure")
+	got := text(body)
+	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
+		t.Errorf("Configure lacks the notice after the drop:\n%s", got)
+	}
+	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" || f.Values.Get("svc.web.domains") != "shop.example.com" {
+		t.Errorf("the Compose form: file %q, domains %q; want an empty file and the overlay from the app",
+			f.Values.Get("compose"), f.Values.Get("svc.web.domains"))
+	}
+	for _, want := range []string{`id="edit-form"`, "Save and deploy", `name="svc.web.image"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the per-field form lacks %q", want)
+		}
+	}
+	if strings.Contains(got, "This app is edited through its Compose file.") {
+		t.Error("the definition is still read-only after the file was dropped")
+	}
+	if strings.Contains(body, sentinel015) {
+		t.Error("a secret value is on the Configure page")
+	}
+
+	_, history := e.get(t, "/apps/shop/deployments")
+	if drop := text(entry(t, history, rec.Deployment.ID)); !strings.Contains(drop,
+		"This app's Compose file was dropped: it was deployed from a definition, not a file.") {
+		t.Errorf("the history entry lacks the drop warning:\n%s", drop)
+	}
+}
+
 // Feature 015, US2: paste the file once on Configure, preview and deploy, and
 // the app keeps it: Configure then shows the file and the read-only definition.
 func TestConfigureNotKeptFilePasteOnce(t *testing.T) {
