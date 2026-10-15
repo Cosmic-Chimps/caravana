@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Volumes panel and volume backups",
   "branch": "016-volume-backups",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planned",
   "history": [
     {
       "step": "specify",
@@ -18,6 +18,20 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-15T19:41:45.000Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-15T19:45:00.000Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-15T20:01:21.000Z"
     }
   ]
 }
