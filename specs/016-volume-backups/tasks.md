@@ -123,11 +123,16 @@ Files: `internal/app/*`, `internal/nomadjob/*`, `internal/deploy/*`, `internal/s
 
 Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `internal/service/service.go`, `internal/service/resume.go`, `internal/service/attention.go`, `internal/api/backups.go`, `internal/api/errors.go`, `api/openapi.yaml`, `internal/ui/backups.go`, `internal/ui/edit.go`, `internal/ui/composeform.go`, `internal/ui/templates/app.html`, `internal/ui/templates/compose.html`, `cmd/caravana/gate_test.go`
 
-- [ ] T007 [US1] Lab check of two open points (research R4, R12), before writing the run. In the Lima lab (`deploy/dev/lab.sh up`; `limactl shell --workdir / caravana-lab sudo lab-nomad ...`):
+- [X] T007 [US1] Lab check of two open points (research R4, R12), before writing the run. In the Lima lab (`deploy/dev/lab.sh up`; `limactl shell --workdir / caravana-lab sudo lab-nomad ...`):
   1. Does the pinned backup image's BusyBox have `timeout`? Run `docker run --rm --entrypoint timeout <DefaultBackupImage> --help`.
   2. Deploy a scratch job with the T004 task shape. Does `nomad alloc status` show the prestart task's 64 MB added to the running copy's reservation?
 
   Record both answers under this task. If there is no `timeout`, T011 enforces the limit by restarting again with the request cleared. Clean up the scratch job, volume and variable.
+  - 2026-10-15, answers:
+    1. Yes. BusyBox 1.37's `timeout [-s SIG] [-k KILL_SECS] SECS PROG ARGS` is in the image, so the script uses it unconditionally.
+    2. Yes, it counts. A 64 MB / 100 MHz prestart task beside a 32 MB / 50 MHz main task raised the node's allocated memory by 96 MB and its CPU by 150 MHz, and they stay reserved for the copy's whole life. So `caravana-volumes` reserves 50 MHz and 32 MB and may burst to 512 MB (`memory_max`; memory oversubscription is on since feature 013). T004 was changed to match.
+  - Also checked: the template's `replaceAll` quoting renders in Nomad 2.0.7. A variable value with `'`, `$(...)`, backticks and `$HOME` was sourced by `sh` literally, and nothing ran.
+  - All scratch jobs and the variable were removed.
 - [ ] T008 [P] [US1] The script's backup path in internal/nomadjob/volumes.go (`VolumeScript`), per research R4:
   - Stream each volume: `tar -czf - -C <dir> --exclude ./.caravana-restore . | rclone rcat "dest:$BACKUP_PATH/$ts/<v>.tar.gz"`, with `ts` = the request's timestamp item `TS`.
   - Record bytes with `rclone size --json` or `rclone lsl`, and sizes from `du -sk`.
