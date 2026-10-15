@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -251,6 +252,107 @@ func TestComposeDraftFrom(t *testing.T) {
 	}
 	if names := serviceNames(d); !slices.Equal(names, []string{"db", "docs", "web"}) {
 		t.Errorf("services = %v, want them sorted", names)
+	}
+}
+
+// draftPost is the form a browser posts from a drawn draft: the file, the name,
+// each service's marker and inputs, and its secrets as empty password inputs.
+func draftPost(d composeDraft) url.Values {
+	post := url.Values{"compose": {d.File.Value}, "name": {d.Name.Value}}
+	for i := range d.Services {
+		s := &d.Services[i]
+		post.Set("svc."+s.Name+".overlay", "1")
+		for _, in := range s.inputs() {
+			post.Set(inputName(s.Name, in.name), in.field.Value)
+		}
+		for _, sec := range s.Secrets {
+			post.Set(inputName(s.Name, "secret."+sec.Name), "")
+		}
+	}
+	return post
+}
+
+// Feature 015: a kept request drawn as a draft and posted back is the same
+// request, with secret values removed, for every example pair the translator
+// is tested with, for Hollo, and for a request that has no overlay at all.
+func TestDraftOfRoundTrip(t *testing.T) {
+	type pair struct {
+		name string
+		req  compose.Request
+	}
+	var pairs []pair
+	load := func(name, composePath, overlayPath string) {
+		file, err := os.ReadFile(composePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := compose.Request{Compose: string(file)}
+		if raw, err := os.ReadFile(overlayPath); err == nil {
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Fatalf("%s: %v", overlayPath, err)
+			}
+			req.Compose = string(file)
+		}
+		pairs = append(pairs, pair{name, req})
+	}
+	files, err := filepath.Glob("../compose/testdata/*.compose.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no compose test data: %v", err)
+	}
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), ".compose.yaml")
+		load(name, f, "../compose/testdata/"+name+".overlay.json")
+	}
+	load("hollo", "../../deploy/examples/hollo/compose.yaml", "../../deploy/examples/hollo/overlay.example.json")
+	pairs = append(pairs,
+		pair{"no overlay", compose.Request{Compose: "# kept\nservices:\n  web:\n    image: traefik/whoami\n"}},
+		pair{"every overlay field", compose.Request{Compose: "services: {}\n", Services: map[string]compose.Overlay{
+			"web": {
+				Domains: []compose.Domain{{Host: "a.example.com"}, {Host: "b.example.com", Port: 8080}},
+				Health:  &compose.Health{Path: "/up", Port: 8080, Interval: 1500 * time.Millisecond, Timeout: 500 * time.Millisecond},
+				Secrets: []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-015")}},
+			},
+			"db": {Backup: &app.Backup{Engine: "postgres", Schedule: "0 4 * * *", Keep: 7}},
+		}}})
+
+	for _, p := range pairs {
+		t.Run(p.name, func(t *testing.T) {
+			d := draftOf(p.req)
+			if d.File.Value != p.req.Compose || d.Name.Value != p.req.Name {
+				t.Errorf("file or name differ: %q, %q", d.File.Value, d.Name.Value)
+			}
+			for _, s := range d.Services {
+				for _, sec := range s.Secrets {
+					if !sec.Exists {
+						t.Errorf("secret %s of %s isn't marked as existing", sec.Name, s.Name)
+					}
+				}
+			}
+			parsed, ok := parseComposeDraft(draftPost(d))
+			if !ok {
+				t.Fatalf("the draft's own post was refused: %+v", parsed)
+			}
+			got := parsed.request()
+			got.Name = parsed.Name.Value // the console sets the name from the stored app, not the form
+			want := p.req.WithoutSecretValues()
+			if !reflect.DeepEqual(sortedSecrets(got), sortedSecrets(want)) {
+				t.Errorf("round trip = %+v\nwant        %+v", got, want)
+			}
+		})
+	}
+}
+
+// Feature 015: the draft of a kept request never carries a secret value, even
+// when the request does.
+func TestDraftOfHasNoSecretValues(t *testing.T) {
+	d := draftOf(compose.Request{Compose: "x", Services: map[string]compose.Overlay{
+		"web": {Secrets: []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-015")}}},
+	}})
+	if len(d.values) != 0 {
+		t.Errorf("values = %v, want none", d.values)
+	}
+	if got := d.request().Services["web"].Secrets; len(got) != 1 || got[0].Value != nil {
+		t.Errorf("request secrets = %+v, want TOKEN with no value", got)
 	}
 }
 

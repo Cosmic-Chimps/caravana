@@ -384,6 +384,49 @@ func draftFrom(a app.App) composeDraft {
 	return d
 }
 
+// draftOf is a kept Compose request as the form's draft: the inverse of
+// composeDraft.request (feature 015, research R7). The owner sees what was
+// sent, not what Caravana derived from it, so an overlay with no health check
+// shows no health inputs. A secret is listed as existing, with no value: kept
+// requests have none, and an empty input keeps the value the secret store has.
+// A domain names its port only when the request does.
+func draftOf(req compose.Request) composeDraft {
+	d := composeDraft{
+		Name:   formField{ID: "name", Value: req.Name},
+		File:   formField{ID: "compose", Value: req.Compose},
+		values: map[string]map[string]string{},
+	}
+	for name, ov := range req.Services {
+		s := newDraftService(name)
+		var domains []string
+		for _, dom := range ov.Domains {
+			host := dom.Host
+			if dom.Port != 0 {
+				host += ":" + strconv.Itoa(dom.Port)
+			}
+			domains = append(domains, host)
+		}
+		s.Domains.Value = strings.Join(domains, "\n")
+		if h := ov.Health; h != nil {
+			s.HealthPath.Value = h.Path
+			s.HealthPort.Value = numberText(h.Port)
+			s.HealthInterval.Value, s.HealthTimeout.Value = secondsText(h.Interval), secondsText(h.Timeout)
+		}
+		if b := ov.Backup; b != nil {
+			s.BackupEngine.Value, s.BackupSchedule.Value = b.Engine, b.Schedule
+			s.BackupKeep.Value = numberText(b.Keep)
+		}
+		for _, sec := range ov.Secrets {
+			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true,
+				Field: formField{ID: inputID(name, "secret-"+sec.Name)}})
+		}
+		s.build()
+		d.Services = append(d.Services, s)
+	}
+	d.sortServices()
+	return d
+}
+
 // keepStored adds, to each service the stored app also has, the secrets it
 // has that the draft lacks, and marks the ones it has as existing: this form
 // can't remove a secret (the Configure tab does), so a deploy from a file
