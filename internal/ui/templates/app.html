@@ -1,7 +1,6 @@
 {{/* An app's page (/apps/{id}): the header region, and below it the tab's own
-     content (each tab adds its define here as its story lands). */}}
-
-{{define "action"}}{{if .DeployHref}}<a href="{{.DeployHref}}" class="cv-btn cv-btn-primary cv-btn-sm">Deploy</a>{{end}}{{end}}
+     content (each tab adds its define here as its story lands). The top bar has no action
+     here (shell.html's empty one): each tab's Deploy is its own form's button. */}}
 
 {{define "app-header"}}
 {{if .Gone}}

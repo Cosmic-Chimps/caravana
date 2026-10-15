@@ -1003,14 +1003,22 @@ func TestDeployRefusedForAJobCaravanaDidNotCreate(t *testing.T) {
 	}
 }
 
-// DESIGN.md: at most one primary Deploy per view. It is the top bar's on every tab but Deployments,
-// where the form's own button is.
-func TestEveryAppTabHasExactlyOneDeploy(t *testing.T) {
+// DESIGN.md: an app's top bar has no Deploy; a tab's Deploy is its own form's
+// button, so pressing it deploys what the page holds. Deployments has exactly
+// one; the other tabs have none in the top bar and at most one of their own.
+func TestAppTabsDeployOnlyFromTheirForm(t *testing.T) {
 	e := runningEnv(t)
-	for _, tab := range []string{"", "/deployments", "/configure", "/logs"} {
+	primaryDeploy := regexp.MustCompile(`class="cv-btn cv-btn-primary[^"]*"[^>]*>Deploy</`)
+	// whoami is an image app: its Configure form saves (and so deploys) with
+	// its own Save button, not one called Deploy.
+	want := map[string]int{"": 0, "/deployments": 1, "/configure": 0, "/logs": 0}
+	for tab, n := range want {
 		_, body := e.get(t, "/apps/whoami"+tab)
-		if n := regexp.MustCompile(`class="cv-btn cv-btn-primary[^"]*"[^>]*>Deploy</`).FindAllString(body, -1); len(n) != 1 {
-			t.Errorf("tab %q has %d primary Deploy buttons, want 1: %v", tab, len(n), n)
+		if !strings.Contains(body, `<div class="cv-top-action"></div>`) {
+			t.Errorf("tab %q has an action in the top bar", tab)
+		}
+		if got := len(primaryDeploy.FindAllString(body, -1)); got != n {
+			t.Errorf("tab %q has %d primary Deploy buttons, want %d", tab, got, n)
 		}
 	}
 }

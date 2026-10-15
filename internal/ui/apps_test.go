@@ -502,7 +502,7 @@ func TestAppPage(t *testing.T) {
 		}
 	})
 
-	t.Run("tabs built so far are links, the current one marked, and Deploy leads to its form", func(t *testing.T) {
+	t.Run("tabs built so far are links, the current one marked, and the top bar has no Deploy", func(t *testing.T) {
 		e.Server.tabs = []tabSpec{
 			{Key: "running", Label: "Running", Path: ""},
 			{Key: "deployments", Label: "Deployments", Path: "/deployments"},
@@ -514,7 +514,7 @@ func TestAppPage(t *testing.T) {
 			`<nav aria-label="App sections" class="cv-tabs">`,
 			`<a href="/apps/whoami" class="cv-tab" aria-current="page">Running<span class="cv-tab-count">2</span></a>`,
 			`<a href="/apps/whoami/deployments" class="cv-tab">Deployments<span class="cv-tab-count">v7</span></a>`,
-			`<a href="/apps/whoami/deployments" class="cv-btn cv-btn-primary cv-btn-sm">Deploy</a>`,
+			`<div class="cv-top-action"></div>`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the app page lacks %q:\n%s", want, body)

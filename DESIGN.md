@@ -348,8 +348,9 @@ in place never shifts its neighbors.
   not a centered column and not a narrower one: the headline ("Signed in as <email>."), then one
   labeled section per job (Password, API tokens), each a flat panel.
 - **The page's one primary action:** each view shows one primary (Readout White) button. An app's
-  tabs share one rule: the top bar's primary is "Deploy" on Running, Configure and Logs; on
-  Deployments the form's own "Deploy" button is the primary and the top bar shows none. The Apps
+  tabs share one rule: the top bar holds no action. A tab's primary belongs to its own form ("Deploy"
+  on Deployments, "Deploy" or "Save" on Configure), so pressing it deploys what that page holds; a
+  top-bar Deploy that only led elsewhere read as this page's button and lost an edit. The Apps
   page's top bar has "New app" only while the list isn't empty; an empty list puts its one primary
   inside the empty panel. Everything else on a page is secondary, danger or ghost-weight.
 - **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is 14-16px,
@@ -607,8 +608,8 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Do** sort lists failed → warning → rolling → healthy → idle.
 - **Do** explain a problem in a sentence plus one fix button, and put the raw Nomad error under it in
   muted mono.
-- **Do** give each view one primary button; the top bar's Deploy yields to the form's own on the
-  Deployments tab.
+- **Do** give each view at most one primary button, and put it in the form it submits; an app's top
+  bar has none.
 - **Do** confirm a consequence in a `<details>` disclosure under its button, and make Delete app ask
   for the app's name.
 - **Do** label stacked-row facts with their column's name (`data-label`) and give every standalone

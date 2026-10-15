@@ -58,7 +58,6 @@ type appHeader struct {
 	Summary    sentence
 	NomadError string // why the status is unknown, as Nomad said it; mono detail
 	Tabs       []tabLink
-	DeployHref string   // the top bar's Deploy action; "" until the Deployments tab exists, and on that tab
 	HeaderHref string   // where the header region refreshes from; it keeps the tab, so the right one stays marked
 	Gone       sentence // "blog was deleted." / "There's no app called x."
 }
@@ -116,10 +115,6 @@ func (s *server) header(sum service.AppSummary, current string) appHeader {
 			Label: t.Label, Href: "/apps/" + sum.App.ID + t.Path,
 			Count: tabCount(t.Key, sum), Current: t.Key == current,
 		})
-	}
-	// Deploy leads to the Deployments tab's form; on that tab the form is right there.
-	if s.hasTab("deployments") && current != "deployments" {
-		h.DeployHref = "/apps/" + sum.App.ID + "/deployments"
 	}
 	h.HeaderHref = "/parts/apps/" + sum.App.ID + "/header"
 	if current != "running" {
