@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-16
+
 ### Added
 - Volume backups: a service's backup can now use the engine `volume`, for apps that keep their
   data in files (SQLite, an embedded MariaDB, uploads) rather than in Postgres. On its schedule,

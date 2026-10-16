@@ -76,6 +76,10 @@ notes() {
     on' "$root/CHANGELOG.md" | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}')"
   if [ -z "$text" ]; then
     echo "release: CHANGELOG.md has no section \"## $version - <date>\", or it is empty" >&2
+    # The usual cause: the changes are still under "Unreleased". Say how to fix it.
+    if grep -q '^## Unreleased' "$root/CHANGELOG.md"; then
+      echo "release: rename \"## Unreleased\" to \"## $version - $(date -u +%Y-%m-%d)\" (add a new empty \"## Unreleased\" above it), commit, and tag that commit" >&2
+    fi
     exit 1
   fi
   printf '%s\n' "$text"
