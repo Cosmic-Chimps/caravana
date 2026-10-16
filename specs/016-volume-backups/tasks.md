@@ -276,7 +276,7 @@ Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/ap
   - the console's Volumes section at the top of the Backups tab, drawn only when the app has a volume, with the columns and copy of contracts/console.md, and the "not backed up" hint linking to Configure.
 
   Tests: the API answer, the section's rows (mounted, not mounted, not measured yet, not backed up), and the parity test.
-- [ ] T021 [US3] Console lab step `console-volumes` in cmd/caravana/console_lab_test.go: deploy a Compose app with a volume and a `volume` backup through the console, open Backups, check the Volumes row has a size, press "Back up now" (the form inside the `<details>`), wait for success, and check the row shows "stopped". Then delete the app. `go vet ./cmd/caravana` must pass.
+- [X] T021 [US3] Console lab step `console-volumes` in cmd/caravana/console_lab_test.go: deploy a Compose app with a volume and a `volume` backup through the console, open Backups, check the Volumes row has a size, press "Back up now" (the form inside the `<details>`), wait for success, and check the row shows "stopped". Then delete the app. `go vet ./cmd/caravana` must pass.
 
 **Checkpoint**: all three stories work in the API and the console.
 

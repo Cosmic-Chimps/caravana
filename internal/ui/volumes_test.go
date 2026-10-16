@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -104,7 +105,7 @@ func TestBackupsTabVolumes(t *testing.T) {
 	clockNow := e.Clock.Now()
 	ran := clockNow.Add(-2*time.Hour - time.Minute).UTC()
 	if err := e.Store.SaveBackup(ctx, store.BackupRecord{AppID: "kuma", ID: "uptime-kuma-1000", Service: "uptime-kuma", Engine: "volume",
-		Status: store.BackupSucceeded, Bytes: 2048, StartedAt: ran}); err != nil {
+		Status: store.BackupSucceeded, Bytes: 2048, StartedAt: ran, Stopped: new(4 * time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	started := clockNow.Add(-3*time.Hour - time.Minute)
@@ -126,6 +127,19 @@ func TestBackupsTabVolumes(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the Volumes section lacks %q:\n%s", want, got)
+		}
+	}
+	// The lab's console-volumes step (cmd/caravana/console_lab_test.go) reads
+	// the page by these patterns, so the markup stays in step with it.
+	for _, pattern := range []string{
+		`>(\d+(?:\.\d)? (?:B|KB|MB|GB))</span>\s*<span class="cv-usage-of">measured `,
+		`<span class="cv-data text-fg-1">data</span>`,
+		`succeeded</span>, last <time`,
+		`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="(/apps/kuma/backups)"[^>]*>(.*?)</form>`,
+		`stopped (?:under 1|\d+) s`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(body) {
+			t.Errorf("the page doesn't match the lab step's pattern %s", pattern)
 		}
 	}
 	if !strings.Contains(body, "/host_volumes/") {
