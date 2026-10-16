@@ -122,6 +122,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"broken-reverts", false, g.brokenReverts},
 		{"missing-tag", false, g.missingTag},
 		{"rollback-export", false, g.rollbackExport},
+		{"private-registry", false, g.privateRegistryStep},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {
@@ -521,8 +522,15 @@ func (g *gate) startBucket(t *testing.T) {
 // trimmed output. Only a copy Nomad still wants running counts: an earlier
 // step's bucket may still be stopping when the next step starts its own.
 func (g *gate) bucketExec(cmd ...string) (string, error) {
+	return g.jobExec("gate-s3", "s3", cmd...)
+}
+
+// jobExec runs a command inside the task of a job the gate itself started (not
+// an app), in a copy Nomad still wants running, and answers its trimmed
+// output. An exit code other than 0 is an error holding the code and stderr.
+func (g *gate) jobExec(jobID, task string, cmd ...string) (string, error) {
 	nomad := g.target.Nomad
-	allocs, _, err := nomad.Jobs().Allocations("gate-s3", false, nil)
+	allocs, _, err := nomad.Jobs().Allocations(jobID, false, nil)
 	if err != nil {
 		return "", err
 	}
@@ -537,13 +545,13 @@ func (g *gate) bucketExec(cmd ...string) (string, error) {
 		var out, errOut strings.Builder
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		code, err := nomad.Allocations().Exec(ctx, full, "s3", false, cmd, strings.NewReader(""), &out, &errOut, nil, nil)
+		code, err := nomad.Allocations().Exec(ctx, full, task, false, cmd, strings.NewReader(""), &out, &errOut, nil, nil)
 		if err == nil && code != 0 {
 			err = fmt.Errorf("exit %d: %s", code, strings.TrimSpace(errOut.String()))
 		}
 		return strings.TrimSpace(out.String()), err
 	}
-	return "", fmt.Errorf("no running bucket copy")
+	return "", fmt.Errorf("no running copy of job %s", jobID)
 }
 
 // gateDBCompose is a Compose file with one backed-up PostgreSQL service on
@@ -1257,6 +1265,383 @@ func (g *gate) exportMatchesLive(t *testing.T, appID string, secrets ...string) 
 	if plan.Diff == nil || plan.Diff.Type != "None" {
 		diff, _ := json.MarshalIndent(plan.Diff, "", "  ")
 		t.Errorf("planning the export of %s against the live job changes it:\n%s", appID, diff)
+	}
+}
+
+// gateRegistryHost is where the private-registry step's registry listens, on
+// the node's loopback. The Docker daemon treats loopback registries as
+// insecure by default, so it pulls from this one over plain HTTP, and Caravana
+// reads digests from it the same way (lab finding P6: Lima forwards the VM's
+// loopback to the Mac, where the lab's Caravana runs).
+const gateRegistryHost = "127.0.0.1:5000"
+
+// gateRegistryJob is a registry (registry:2) with htpasswd auth on
+// gateRegistryHost, run with the gate's own token like the S3 bucket. A
+// prestart task writes the htpasswd file from the per-run user and password
+// into the allocation's shared directory; the registry task then reads it. Both
+// tasks use the host's network, so the registry binds the node's loopback. The
+// password is in this job's env, which is fine for a throwaway one: the job is
+// the gate's, not an app, and it lives only for the step.
+func gateRegistryJob(user, pass string) *api.Job {
+	return &api.Job{
+		ID: new("gate-registry"), Name: new("gate-registry"), Type: new("service"), Datacenters: []string{"*"},
+		TaskGroups: []*api.TaskGroup{{
+			Name:     new("registry"),
+			Networks: []*api.NetworkResource{{Mode: "host"}},
+			Tasks: []*api.Task{
+				{
+					Name: "htpasswd", Driver: "docker",
+					Lifecycle: &api.TaskLifecycle{Hook: "prestart"},
+					Env:       map[string]string{"U": user, "P": pass},
+					Config: map[string]any{
+						"image":   "httpd:2-alpine",
+						"command": "sh",
+						"args":    []string{"-c", `htpasswd -Bbn "$U" "$P" > /alloc/data/htpasswd`},
+					},
+					Resources: &api.Resources{CPU: new(50), MemoryMB: new(64)},
+				},
+				{
+					Name: "registry", Driver: "docker",
+					Env: map[string]string{
+						"REGISTRY_AUTH":                "htpasswd",
+						"REGISTRY_AUTH_HTPASSWD_REALM": "gate",
+						"REGISTRY_AUTH_HTPASSWD_PATH":  "/alloc/data/htpasswd",
+						"REGISTRY_HTTP_ADDR":           gateRegistryHost,
+					},
+					Config:    map[string]any{"image": "registry:2", "network_mode": "host"},
+					Resources: &api.Resources{CPU: new(100), MemoryMB: new(128)},
+				},
+			},
+		}},
+	}
+}
+
+// gateSkopeoJob is a batch job that copies busybox into the gate's registry as
+// gate/busybox:v1, with the per-run credentials from its env (so they are not
+// in the command line). It runs through a shell, whatever the image's own
+// entrypoint is.
+func gateSkopeoJob(user, pass string) *api.Job {
+	return &api.Job{
+		ID: new("gate-skopeo"), Name: new("gate-skopeo"), Type: new("batch"), Datacenters: []string{"*"},
+		TaskGroups: []*api.TaskGroup{{
+			Name:     new("copy"),
+			Networks: []*api.NetworkResource{{Mode: "host"}},
+			// A failed copy ends the job after two more tries, so the step sees
+			// "failed" and says why, instead of waiting out its time.
+			RestartPolicy: &api.RestartPolicy{Attempts: new(2), Interval: new(10 * time.Minute), Delay: new(5 * time.Second), Mode: new("fail")},
+			Tasks: []*api.Task{{
+				Name: "skopeo", Driver: "docker",
+				Env: map[string]string{"U": user, "P": pass},
+				Config: map[string]any{
+					"image":        "quay.io/skopeo/stable",
+					"network_mode": "host",
+					"entrypoint":   []string{"/bin/sh", "-c"},
+					"args": []string{`exec skopeo copy --dest-creds "$U:$P" --dest-tls-verify=false ` +
+						`docker://busybox:1.37 docker://` + gateRegistryHost + `/gate/busybox:v1`},
+				},
+				Resources: &api.Resources{CPU: new(200), MemoryMB: new(256)},
+			}},
+		}},
+	}
+}
+
+// gatePrivateApp is the app of the private-registry step: busybox's httpd on
+// 8080, with a TCP health check, from the gate's private registry.
+const gatePrivateApp = `{
+  "source": {"kind": "image"},
+  "services": [{
+    "name": "web",
+    "image": "` + gateRegistryHost + `/gate/busybox:v1",
+    "command": "httpd",
+    "args": ["-f", "-p", "8080", "-h", "/tmp"],
+    "ports": [{"name": "http", "containerPort": 8080}],
+    "health": {"interval": "5s", "timeout": "2s"}
+  }]
+}`
+
+// registryAnswers401 says whether the gate's registry is up and asking for a
+// login. It asks from this process, which reaches the node's loopback in the
+// lab (Lima forwards it), and from inside the registry's own task, which also
+// works when the gate runs far from the node (host.sh prove): busybox's wget
+// exits non-zero on a 401 and names the status.
+func (g *gate) registryAnswers401() bool {
+	client := &http.Client{Timeout: 3 * time.Second}
+	if resp, err := client.Get("http://" + gateRegistryHost + "/v2/"); err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusUnauthorized {
+			return true
+		}
+	}
+	_, err := g.jobExec("gate-registry", "registry", "wget", "-q", "-O", "/dev/null", "http://"+gateRegistryHost+"/v2/")
+	return err != nil && strings.Contains(err.Error(), "401")
+}
+
+// runningCopies lists the copies of appID that Nomad wants running and runs.
+func (g *gate) runningCopies(t *testing.T, appID string) []string {
+	t.Helper()
+	stubs, _, err := g.target.Nomad.Jobs().Allocations(appID, false, nil)
+	if err != nil {
+		t.Fatalf("list the copies of %s: %v", appID, err)
+	}
+	var ids []string
+	for _, s := range stubs {
+		if s.DesiredStatus == "run" && s.ClientStatus == "running" {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
+
+// privateRegistryStep (feature 017): an app whose image is in a registry that
+// wants a login deploys with the credentials Caravana stores, and with the
+// token Caravana really runs with. The step starts its own registry with
+// htpasswd auth and puts an image in it, then checks, in order:
+//
+//  1. without credentials the deploy is 422 image_not_found, saying to add them;
+//  2. with a wrong secret the test is not ok and the deploy is 422
+//     registry_auth_failed;
+//  3. with the right one the test is ok and the deploy becomes healthy;
+//  4. the registered job holds placeholders and no secret, and no answer of
+//     the API does;
+//  5. removing the credentials leaves the running app running (its copy keeps
+//     its pull credentials until it starts again, so the variable is only
+//     emptied);
+//  6. deleting the app leaves no variable of it, and the step's jobs and
+//     credentials are gone.
+//
+// The user and password are made for each run.
+func (g *gate) privateRegistryStep(t *testing.T) {
+	const appID = "priv"
+	nomad := g.target.Nomad
+	user, pass := "gate"+g.run, "pw-"+g.run
+	wrong := "wrong-" + pass
+	registryPath := "/v1/registries/" + gateRegistryHost
+	copyPath := nomadjob.PullCredentialsPath(appID, "web")
+
+	// clean removes everything the step makes, whatever state it is in: it
+	// runs first (an aborted earlier run may have left some) and when the step
+	// ends.
+	clean := func() {
+		for _, req := range [][2]string{{http.MethodDelete, "/v1/apps/" + appID}, {http.MethodDelete, registryPath}} {
+			if resp, err := g.apiRequest(req[0], req[1], "", ""); err == nil {
+				resp.Body.Close()
+			}
+		}
+		for _, id := range []string{"gate-skopeo", "gate-registry"} {
+			_, _, _ = nomad.Jobs().Deregister(id, true, nil)
+		}
+		_, _ = nomad.Variables().Delete(deploy.RegistryVariablePath(gateRegistryHost), nil)
+		if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+appID+"/", nil); err == nil {
+			for _, m := range metas {
+				_, _ = nomad.Variables().Delete(m.Path, nil)
+			}
+		}
+	}
+	clean()
+	t.Cleanup(clean)
+
+	// The registry, and an image in it.
+	if _, _, err := nomad.Jobs().Register(gateRegistryJob(user, pass), nil); err != nil {
+		t.Fatalf("register the registry job: %v", err)
+	}
+	waitFor(t, "the registry to answer 401 on "+gateRegistryHost, 3*time.Minute, g.registryAnswers401)
+	if _, _, err := nomad.Jobs().Register(gateSkopeoJob(user, pass), nil); err != nil {
+		t.Fatalf("register the skopeo job: %v", err)
+	}
+	var copyFailure string
+	waitFor(t, "skopeo to copy the image into the registry", 6*time.Minute, func() bool {
+		stubs, _, err := nomad.Jobs().Allocations("gate-skopeo", false, nil)
+		if err != nil {
+			return false
+		}
+		for _, s := range stubs {
+			switch s.ClientStatus {
+			case "complete":
+				return true
+			case "failed":
+				copyFailure = "the allocation failed"
+				if state := s.TaskStates["skopeo"]; state != nil {
+					for _, ev := range state.Events {
+						copyFailure += "; " + ev.DisplayMessage
+					}
+				}
+				return true
+			}
+		}
+		return false
+	})
+	if copyFailure != "" {
+		t.Fatalf("skopeo could not copy the image: %s", copyFailure)
+	}
+
+	// body reads and closes a response.
+	body := func(resp *http.Response) []byte {
+		t.Helper()
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	// deployPrivate deploys the app and answers the status and body.
+	deployPrivate := func() (int, []byte) {
+		t.Helper()
+		resp := g.api(t, http.MethodPost, "/v1/apps/"+appID+"/deployments", "application/json", gatePrivateApp)
+		status := resp.StatusCode
+		return status, body(resp)
+	}
+	// refusal is the code, field and message of an error answer.
+	refusal := func(raw []byte) (code, field, message string) {
+		var e struct {
+			Error struct{ Code, Field, Message string } `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		return e.Error.Code, e.Error.Field, e.Error.Message
+	}
+	// saveCredentials stores the credentials and checks the answer holds no secret.
+	saveCredentials := func(password string) {
+		t.Helper()
+		payload, _ := json.Marshal(map[string]string{"username": user, "password": password})
+		resp := g.api(t, http.MethodPut, registryPath, "application/json", string(payload))
+		status := resp.StatusCode
+		raw := body(resp)
+		if status != http.StatusOK || strings.Contains(string(raw), password) {
+			t.Fatalf("PUT %s = %d %s, want 200 without the secret", registryPath, status, raw)
+		}
+	}
+	// testCredentials runs the registry test and answers whether it was ok.
+	testCredentials := func() bool {
+		t.Helper()
+		resp := g.api(t, http.MethodPost, registryPath+"/test", "", "")
+		status := resp.StatusCode
+		raw := body(resp)
+		var r struct {
+			LastTest *struct{ OK bool } `json:"lastTest"`
+		}
+		if status != http.StatusOK || json.Unmarshal(raw, &r) != nil || r.LastTest == nil {
+			t.Fatalf("POST %s/test = %d %s, want 200 with lastTest", registryPath, status, raw)
+		}
+		return r.LastTest.OK
+	}
+	// noSecret fails when an answer holds a password the step used.
+	noSecret := func(what string, raw []byte) {
+		t.Helper()
+		for _, secret := range []string{pass, wrong} {
+			if strings.Contains(string(raw), secret) {
+				t.Errorf("%s holds a password", what)
+			}
+		}
+	}
+
+	// 1. No credentials: the image is "not found", and the message says what to do.
+	status, raw := deployPrivate()
+	code, field, message := refusal(raw)
+	if status != http.StatusUnprocessableEntity || code != "image_not_found" || field != "services[0].image" ||
+		!strings.Contains(message, "add credentials for "+gateRegistryHost) {
+		t.Fatalf("deploy without credentials = %d %s, want 422 image_not_found on services[0].image saying to add credentials for %s",
+			status, raw, gateRegistryHost)
+	}
+
+	// 2. A wrong secret: the test and the deploy both say it was refused.
+	saveCredentials(wrong)
+	if testCredentials() {
+		t.Fatal("the registry test with a wrong secret is ok, want refused")
+	}
+	status, raw = deployPrivate()
+	code, field, _ = refusal(raw)
+	if status != http.StatusUnprocessableEntity || code != "registry_auth_failed" || field != "services[0].image" {
+		t.Fatalf("deploy with a wrong secret = %d %s, want 422 registry_auth_failed on services[0].image", status, raw)
+	}
+	noSecret("the refused deploy's answer", raw)
+
+	// 3. The right secret: the test is ok, and the node pulls the image.
+	saveCredentials(pass)
+	if !testCredentials() {
+		t.Fatal("the registry test with the right secret is not ok")
+	}
+	status, raw = deployPrivate()
+	var d gateDeployment
+	if status != http.StatusAccepted || json.Unmarshal(raw, &d) != nil {
+		t.Fatalf("deploy with the right secret = %d %s, want 202", status, raw)
+	}
+	if final := g.waitFinalOf(t, appID, d.ID, 5*time.Minute); final.Status != "healthy" {
+		t.Fatalf("the private app ended %s: %s", final.Status, final.Error)
+	}
+
+	// 4. No secret anywhere a reader can look. The job holds the placeholders
+	// the Docker driver fills in from the task's own variable, and the pinned
+	// image keeps the registry's host and port.
+	job, _, err := nomad.Jobs().Info(appID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobJSON, _ := json.Marshal(job)
+	noSecret("the registered job", jobJSON)
+	config := job.TaskGroups[0].Tasks[0].Config
+	if image, _ := config["image"].(string); !strings.HasPrefix(image, gateRegistryHost+"/gate/busybox@sha256:") {
+		t.Errorf("the job's image = %q, want it pinned to a digest on %s", config["image"], gateRegistryHost)
+	}
+	auth, _ := config["auth"].([]any)
+	var block map[string]any
+	if len(auth) == 1 {
+		block, _ = auth[0].(map[string]any)
+	}
+	if block["username"] != "${"+nomadjob.RegistryUsernameEnv+"}" || block["password"] != "${"+nomadjob.RegistryPasswordEnv+"}" ||
+		block["server_address"] != gateRegistryHost {
+		t.Errorf("the job's auth = %v, want placeholders for %s", auth, gateRegistryHost)
+	}
+	for _, path := range []string{"/v1/registries", "/v1/apps/" + appID, "/v1/apps/" + appID + "/deployments/" + d.ID,
+		"/v1/apps/" + appID + "/jobspec"} {
+		resp := g.api(t, http.MethodGet, path, "", "")
+		status := resp.StatusCode
+		answer := body(resp)
+		if status != http.StatusOK {
+			t.Errorf("GET %s = %d", path, status)
+		}
+		noSecret("GET "+path, answer)
+		if path == "/v1/registries" && !strings.Contains(string(answer), gateRegistryHost) {
+			t.Errorf("GET /v1/registries = %s, want %s listed", answer, gateRegistryHost)
+		}
+	}
+
+	// 5. Remove the credentials: the app that runs keeps running, and its
+	// variable is emptied (the registry stays named in it).
+	before := g.runningCopies(t, appID)
+	if len(before) != 1 {
+		t.Fatalf("%s has %d running copies, want 1", appID, len(before))
+	}
+	resp := g.api(t, http.MethodDelete, registryPath, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE %s = %d, want 204", registryPath, resp.StatusCode)
+	}
+	if v, _, err := nomad.Variables().Peek(copyPath, nil); err != nil || v == nil || v.Items[nomadjob.RegistryPasswordEnv] != "" {
+		t.Errorf("after the removal the copy's variable is %+v (%v), want it there with the password emptied", v, err)
+	}
+	time.Sleep(5 * time.Second) // time enough for Nomad to stop a copy, if anything asked it to
+	if after := g.runningCopies(t, appID); len(after) != 1 || after[0] != before[0] {
+		t.Errorf("after the removal the running copies are %v, want the same one, %v", after, before)
+	}
+
+	// 6. Deleting the app leaves nothing of it in Nomad Variables, and the
+	// step's own jobs and credentials go.
+	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+	}
+	if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+appID+"/", nil); err != nil || len(metas) != 0 {
+		t.Errorf("variables left after deleting %s: %d (%v)", appID, len(metas), err)
+	}
+	clean()
+	if v, _, err := nomad.Variables().Peek(deploy.RegistryVariablePath(gateRegistryHost), nil); err != nil || v != nil {
+		t.Errorf("the registry's credentials are still stored: %+v (%v)", v, err)
+	}
+	for _, id := range []string{"gate-skopeo", "gate-registry"} {
+		if j, _, err := nomad.Jobs().Info(id, nil); err == nil && j != nil && j.Status != nil && *j.Status != "dead" {
+			t.Errorf("job %s is %s after the step, want gone", id, *j.Status)
+		}
 	}
 }
 

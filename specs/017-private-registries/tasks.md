@@ -185,7 +185,7 @@ credentials.
     registry's credentials" linking to `/settings#registries` (internal/ui/view.go, where the
     failed-deploy actions are), with tests;
   - the webhook and `RedeployVersion` paths give the same error (service tests).
-- [ ] T011 [US1] Gate step `private-registry`, in cmd/caravana/gate_test.go, after `rollback-export`, per research R7:
+- [X] T011 [US1] Gate step `private-registry`, in cmd/caravana/gate_test.go, after `rollback-export`, per research R7:
   - the `gate-registry` job, with an `httpd:2-alpine` prestart task that writes htpasswd from
     env, and `registry:2` on host network `127.0.0.1:5000`;
   - a skopeo batch job that copies `busybox:1.37` to `127.0.0.1:5000/gate/busybox:v1` with
