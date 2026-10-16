@@ -1,39 +1,113 @@
 name: release
 
-# Pushing a tag v<version> publishes a release: the installer, one tarball per architecture and
-# their checksums, built by tools/release.sh. deploy/install/README.md says how users install it.
+# Publishes a release: the installer, one tarball per architecture and their checksums, built by
+# tools/release.sh. deploy/install/README.md says how users install it.
+#
+# Start it from GitHub (Actions › release › Run workflow) or with
+#
+#   gh workflow run release.yml -f version=0.6.0
+#
+# It renames CHANGELOG.md's "## Unreleased" to "## 0.6.0 - <today>" (tools/release.sh prepare),
+# commits that to main, tags the commit v0.6.0, then builds and publishes from that tag. Nothing
+# is done by hand, so the tag can't point at a changelog that wasn't prepared (what broke the
+# first runs of v0.4.0 and v0.5.0). A version whose section is already there (prepared and merged
+# by hand) skips the rename.
+#
+# Pushing a v* tag by hand still works when its commit has the version's changelog section; the
+# notes step refuses it otherwise, before anything is built, and says to use this workflow.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, X.Y.Z (no v)"
+        required: true
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write # to create the release
+  contents: write # commit the changelog, push the tag, create the release
+
+# Two releases never run at once: both would commit to main.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A dispatched run starts from main's tip; a tag push from the tag.
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      # The release's notes are its CHANGELOG.md section. A tag without one fails here, before
-      # anything is built.
+      # Which version: the input of a dispatched run, or the pushed tag without its "v".
+      - name: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+          echo "TAG=v$version" >>"$GITHUB_ENV"
+
+      # A dispatched run refuses a version that is already tagged: a release is never replaced.
+      - name: refuse an existing tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG already exists. Delete it first (git push origin :refs/tags/$TAG) if no release was published from it."
+            exit 1
+          fi
+
+      # The changelog, prepared here unless it already has the version's section.
+      - name: prepare the changelog
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if ! tools/release.sh notes "$VERSION" >/dev/null 2>&1; then
+            tools/release.sh prepare "$VERSION"
+          fi
+
+      # The release's notes are its CHANGELOG.md section. A hand-pushed tag without one fails
+      # here, before anything is built.
       - name: notes
-        run: tools/release.sh notes "${GITHUB_REF_NAME#v}" >"$RUNNER_TEMP/notes.md"
+        run: |
+          if ! tools/release.sh notes "$VERSION" >"$RUNNER_TEMP/notes.md"; then
+            echo "::error::CHANGELOG.md has no section for $VERSION at this tag. Delete the tag and release with: gh workflow run release.yml -f version=$VERSION"
+            exit 1
+          fi
 
       # The same checks as CI: a release is never built from a commit that fails them.
       - run: go vet ./...
       - run: go test -race ./...
 
+      # Only now, with the checks green, does a dispatched run commit and tag. Main and the tag
+      # go up in one atomic push: both or neither.
+      - name: commit and tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git commit -m "chore(release): $VERSION" -- CHANGELOG.md
+          fi
+          git tag -a "$TAG" -m "$TAG"
+          git push --atomic origin HEAD:main "refs/tags/$TAG"
+
       - name: build
-        run: tools/release.sh build "${GITHUB_REF_NAME#v}" dist
+        run: tools/release.sh build "$VERSION" dist
 
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         # --generate-notes adds GitHub's list of commits and the compare link after our notes.
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Caravana ${GITHUB_REF_NAME#v}"
+          gh release create "$TAG" dist/* --title "Caravana $VERSION"
           --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
