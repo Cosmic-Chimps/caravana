@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -201,4 +204,237 @@ func limitDetail(detail string) string {
 		return string(r[:maxEventDetail]) + "…"
 	}
 	return detail
+}
+
+// The notifier (feature 018, research R1). The needs-you list is derived on
+// every read and keeps nothing, so "it appeared" and "it went away" are found
+// by comparing it with sent_problems, the table of what was already sent. That
+// table survives a restart, which is what keeps a problem from being sent twice.
+
+// summaryAbove is how many problems one check may send one by one. More than
+// that and a node restart would bury the owner, so the check sends one summary
+// per channel instead (FR-011).
+const summaryAbove = 10
+
+// summaryListed is how many problems a summary names; the rest are counted.
+const summaryListed = 20
+
+// problemKey is the identity of a needs-you item: its kind, app, service and,
+// for a failed deploy, the deployment. Copy IDs are left out on purpose: a crash
+// loop swaps its copies and is still one problem.
+func problemKey(it AttentionItem) string {
+	return strings.Join([]string{string(it.Kind), it.AppID, it.Service, it.Deployment}, "|")
+}
+
+// isCopyKind says whether a kind of item comes from Nomad's allocations, which
+// can't be judged while Nomad can't be read. It takes the kind as the list
+// writes it or as the table stores it (a plain string).
+func isCopyKind[K ~string](kind K) bool {
+	switch AttentionKind(kind) {
+	case AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy:
+		return true
+	}
+	return false
+}
+
+// problemChanges is what one comparison of the list with the table finds.
+type problemChanges struct {
+	Opened   []AttentionItem     // on the list, never sent: send "opened"
+	Resolved []store.SentProblem // sent, and gone for resolveAfter: send "resolved"
+	Seen     []string            // keys sent before and on the list now: move their last-seen time
+	Dropped  []string            // keys of apps that no longer exist: forget, say nothing
+}
+
+// diffProblems compares the needs-you list now with the problems already sent.
+// It is pure, so the table test calls it with whatever it needs.
+//
+//   - An item on the list and not in prev is opened; one in both is seen.
+//   - A sent problem off the list for resolveAfter or more since it was last seen
+//     is resolved. A younger one is kept as it is, so an item that flaps doesn't
+//     send "resolved" and then "opened" again.
+//   - When copiesKnown is false (Nomad couldn't be read) the copy kinds are not
+//     judged: not opened, and not resolved, so an outage doesn't send a burst of
+//     "resolved".
+//   - apps holds the IDs of the apps that exist. A problem of an app that is gone
+//     is dropped without a message, and an item of one is not opened: it can only
+//     be an app deleted while this check was running.
+func diffProblems(prev []store.SentProblem, now []AttentionItem, copiesKnown bool, apps map[string]bool,
+	at time.Time, resolveAfter time.Duration) problemChanges {
+
+	sent := make(map[string]bool, len(prev))
+	for _, p := range prev {
+		sent[p.Key] = true
+	}
+
+	var out problemChanges
+	present := map[string]bool{} // the keys on the list that this check judges
+	for _, it := range now {
+		key := problemKey(it)
+		switch {
+		case present[key]: // the same item twice: one problem
+			continue
+		case it.AppID != "" && !apps[it.AppID]:
+			continue
+		case !copiesKnown && isCopyKind(it.Kind):
+			continue
+		}
+		present[key] = true
+		if sent[key] {
+			out.Seen = append(out.Seen, key)
+		} else {
+			out.Opened = append(out.Opened, it)
+		}
+	}
+
+	for _, p := range prev {
+		switch {
+		case present[p.Key]:
+		case p.AppID != "" && !apps[p.AppID]:
+			out.Dropped = append(out.Dropped, p.Key)
+		case !copiesKnown && isCopyKind(p.Kind):
+			// Not judged: it may well still be there.
+		case at.Sub(p.LastSeenAt) >= resolveAfter:
+			out.Resolved = append(out.Resolved, p)
+		}
+	}
+	return out
+}
+
+// runNotifier checks the needs-you list every gap until ctx ends (research R1).
+//
+// It is woken by a timer alone. The console's own refresh comes from the change
+// hub, but subscribing to it would keep the copies watcher (one blocking query
+// on every allocation in Nomad) running for as long as Caravana does, where it
+// now only runs while a page is open. A check every 30 seconds is well inside
+// "within a minute or two" (FR-003), and the first one waits a gap, so a
+// Caravana that starts before Nomad does doesn't look at a cluster that isn't
+// up yet.
+func (s *Service) runNotifier(ctx context.Context, gap time.Duration) {
+	t := time.NewTicker(gap)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := s.checkProblems(ctx); err != nil && ctx.Err() == nil {
+				s.log.Warn("check the needs-you list for notifications; trying again", "error", err)
+			}
+		}
+	}
+}
+
+// checkProblems is one pass of the notifier: read the needs-you list, work out
+// what is new and what is over, and in one transaction record that and queue a
+// message for each channel that wants problems. Nothing is sent here: the
+// sender does that, so a slow receiver can't hold a check up.
+//
+// When anything fails nothing is recorded, and the next check finds the same
+// changes again.
+func (s *Service) checkProblems(ctx context.Context) error {
+	att, err := s.Attention(ctx)
+	if err != nil {
+		return err
+	}
+	prev, err := s.store.ListSentProblems(ctx)
+	if err != nil {
+		return err
+	}
+	apps, err := s.store.ListApps(ctx)
+	if err != nil {
+		return err
+	}
+	channels, err := s.store.ListNotificationChannels(ctx)
+	if err != nil {
+		return err
+	}
+
+	exists := make(map[string]bool, len(apps))
+	for _, rec := range apps {
+		exists[rec.App.ID] = true
+	}
+	now := s.clock.Now().UTC()
+	changes := diffProblems(prev, att.Items, !att.CopiesUnknown, exists, now, s.resolveAfter)
+
+	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped)}
+	var opened, resolved []notify.Event
+	for _, it := range changes.Opened {
+		ev := problemEvent(it, s.publicURL, now)
+		opened = append(opened, ev)
+		check.Opened = append(check.Opened, store.SentProblem{
+			Key: problemKey(it), Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
+			OpenedAt: now, LastSeenAt: now, Summary: ev.Title,
+		})
+	}
+	for _, p := range changes.Resolved {
+		resolved = append(resolved, resolvedEvent(p, s.publicURL, now))
+		check.Removed = append(check.Removed, p.Key)
+	}
+
+	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.publicURL, now),
+		summarize(resolved, "problems resolved", notify.EventProblemResolved, s.publicURL, now)...)
+	for _, ch := range channelsWanting(channels, EventProblems) {
+		for _, ev := range events {
+			d, err := newDelivery(ch.ID, ev, now)
+			if err != nil {
+				return err
+			}
+			check.Deliveries = append(check.Deliveries, d)
+		}
+	}
+	return s.store.ApplyProblemCheck(ctx, check)
+}
+
+// summarize returns events as they are, or, when there are more than
+// summaryAbove of them, one summary event listing them (FR-011). word is what
+// the summary's title counts: "3 new problems".
+func summarize(events []notify.Event, word, typ, base string, at time.Time) []notify.Event {
+	if len(events) <= summaryAbove {
+		return events
+	}
+	var lines []string
+	for i, ev := range events {
+		if i == summaryListed {
+			lines = append(lines, fmt.Sprintf("…and %d more.", len(events)-summaryListed))
+			break
+		}
+		lines = append(lines, "- "+ev.Title)
+	}
+	return []notify.Event{{
+		Type:  typ,
+		Title: fmt.Sprintf("%d %s", len(events), word),
+		Text:  strings.Join(lines, "\n"),
+		URL:   consoleLink(base, "/"),
+		At:    at,
+	}}
+}
+
+// channelsWanting returns the channels that are not paused and want event
+// (EventProblems, EventDeployFailed or EventDeploySucceeded).
+func channelsWanting(channels []store.NotificationChannel, event string) []store.NotificationChannel {
+	var out []store.NotificationChannel
+	for _, ch := range channels {
+		if !ch.Paused && slices.Contains(ch.Events, event) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+// newDelivery makes a pending delivery of ev to a channel, due at once. The
+// payload is the event as JSON, with no secret in it; the sender renders it
+// again for the channel's kind.
+func newDelivery(channelID string, ev notify.Event, at time.Time) (store.Delivery, error) {
+	id, err := newID("ndl_")
+	if err != nil {
+		return store.Delivery{}, err
+	}
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return store.Delivery{}, fmt.Errorf("encode a notification: %w", err)
+	}
+	return store.Delivery{
+		ID: id, ChannelID: channelID, EventType: ev.Type, Title: ev.Title, Payload: string(payload),
+		Status: store.DeliveryPending, NextAt: at, CreatedAt: at,
+	}, nil
 }

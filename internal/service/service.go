@@ -34,8 +34,9 @@ type Service struct {
 	// watchers counts the goroutines following rollouts, so Wait can let
 	// them finish on shutdown (like awaiting background Tasks in C#).
 	watchers sync.WaitGroup
-	// backupWatcher is the one goroutine recording backup runs. It lives as
-	// long as Start's context, apart from the rollout watchers.
+	// backupWatcher counts the goroutines that live as long as Start's context,
+	// apart from the rollout watchers: the one recording backup runs, the volume
+	// backup scheduler and the notifier (and the sender, see sender.go).
 	backupWatcher sync.WaitGroup
 
 	changes   changeHub     // live notices for open pages, see changes.go
@@ -55,6 +56,7 @@ type Service struct {
 	publicURL    string        // the console's address for links; empty means no links
 	resolveAfter time.Duration // how long a problem must be gone before "resolved" is sent
 	notifyClient *http.Client  // what deliveries go through; tests may replace it
+	notifyGap    time.Duration // between two checks of the needs-you list, see notifier.go
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -101,6 +103,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		resolveAfter: defaultResolveAfter,
 		notifyClient: defaultNotifyClient(),
+		notifyGap:    30 * time.Second,
 	}
 }
 
@@ -157,6 +160,12 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.scheduleVolumeBackups(ctx, s.scheduleGap)
+	}()
+	// The notifier starts no watchers, so it can live in the same group.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runNotifier(ctx, s.notifyGap)
 	}()
 	return nil
 }

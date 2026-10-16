@@ -95,7 +95,12 @@ Nothing.
 - [X] T007 [P] [US1] Wording, in internal/service/notifier.go: for each attention kind and deploy outcome, a title and text in the console's wording (internal/ui/attention.go has the needs-you sentences: port their wording, without importing ui), and the link per research R6 when the public URL is set. Tests: a table of every kind.
   - Also: Slack, Discord and ntfy messages end with a `Detail: <raw detail>` line (one line, cut at 500 characters), in `notify.Render`, for FR-006.
   - The deploy `trigger` is the record's own value: `console`, `manual` or `webhook`.
-- [ ] T008 [US1] The notifier (research R1), in internal/service/notifier.go:
+- [X] T008 [US1] The notifier (research R1), in internal/service/notifier.go:
+  - Done as built, with these differences from the text below:
+    - `diffProblems` also takes the IDs of the apps that exist and returns a `problemChanges` struct (opened, resolved, seen, dropped).
+    - `store.ApplyProblemCheck` writes the table and the queue in one transaction.
+    - More than 10 resolved in one check are also one summary.
+    - The notifier is woken by a 30 s timer alone, because `Subscribe` would keep the copies watcher running for as long as Caravana does. The first check comes one gap after start.
   - `problemKey(item)`.
   - The pure `diffProblems(prev, now, copiesKnown, at, resolveAfter)`:
     - new items are opened;

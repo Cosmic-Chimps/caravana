@@ -385,3 +385,85 @@ func TestDeliveries(t *testing.T) {
 		}
 	})
 }
+
+// One check's changes are applied together or not at all: a delivery that
+// cannot be queued (its channel is gone) leaves the table of sent problems as
+// it was.
+func TestApplyProblemCheck(t *testing.T) {
+	ctx := context.Background()
+	problem := func(key string, seen time.Time) SentProblem {
+		return SentProblem{Key: key, Kind: "backup_failed", AppID: "kuma", Service: "db", OpenedAt: notifyT0, LastSeenAt: seen, Summary: "s"}
+	}
+	setup := func(t *testing.T) *Store {
+		t.Helper()
+		s := openTestStore(t)
+		if err := s.SaveNotificationChannel(ctx, newChannel("nch_aa")); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"old", "kept", "gone"} {
+			if err := s.UpsertSentProblem(ctx, problem(key, notifyT0)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return s
+	}
+	later := notifyT0.Add(time.Minute)
+
+	t.Run("opened, seen, removed and queued together", func(t *testing.T) {
+		s := setup(t)
+		err := s.ApplyProblemCheck(ctx, ProblemCheck{
+			Opened: []SentProblem{problem("new", later)}, Seen: []string{"kept"}, SeenAt: later,
+			Removed: []string{"gone"}, Deliveries: []Delivery{newDelivery("ndl_a", "nch_aa", later)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.ListSentProblems(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]time.Time{}
+		for _, p := range got {
+			seen[p.Key] = p.LastSeenAt
+		}
+		if len(seen) != 3 || !seen["kept"].Equal(later) || !seen["new"].Equal(later) || !seen["old"].Equal(notifyT0) {
+			t.Errorf("problems = %v, want old (untouched), kept (moved), new", seen)
+		}
+		if _, ok := seen["gone"]; ok {
+			t.Error("a removed problem is still there")
+		}
+		if d, _ := s.ListDeliveries(ctx, "nch_aa", 10); len(d) != 1 || d[0].Status != DeliveryPending {
+			t.Errorf("deliveries = %v, want one pending", d)
+		}
+	})
+
+	t.Run("a failing delivery rolls back the table", func(t *testing.T) {
+		s := setup(t)
+		err := s.ApplyProblemCheck(ctx, ProblemCheck{
+			Opened: []SentProblem{problem("new", later)}, Removed: []string{"gone"},
+			Deliveries: []Delivery{newDelivery("ndl_a", "nch_missing", later)}, // no such channel
+		})
+		if err == nil {
+			t.Fatal("ApplyProblemCheck succeeded for a delivery of a missing channel")
+		}
+		got, _ := s.ListSentProblems(ctx)
+		if len(got) != 3 {
+			t.Errorf("problems = %v, want the three from before", got)
+		}
+		for _, p := range got {
+			if p.Key == "new" {
+				t.Error("a problem opened by a failed check was kept")
+			}
+		}
+	})
+
+	t.Run("an empty check changes nothing", func(t *testing.T) {
+		s := setup(t)
+		if err := s.ApplyProblemCheck(ctx, ProblemCheck{}); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := s.ListSentProblems(ctx); len(got) != 3 {
+			t.Errorf("problems = %v", got)
+		}
+	})
+}

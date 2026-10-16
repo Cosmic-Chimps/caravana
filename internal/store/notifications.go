@@ -216,6 +216,62 @@ func (s *Store) DeleteSentProblemsOfApp(ctx context.Context, appID string) error
 	return nil
 }
 
+// ProblemCheck is everything one check of the needs-you list changes: the
+// problems it opened and the messages queued for them and for the problems it
+// resolved.
+type ProblemCheck struct {
+	Opened     []SentProblem // recorded as sent (an existing key is replaced)
+	Seen       []string      // keys still on the list: their last-seen time moves to SeenAt
+	SeenAt     time.Time
+	Removed    []string   // keys resolved, or dropped because their app is gone
+	Deliveries []Delivery // queued, all pending
+}
+
+// ApplyProblemCheck records one check in a single transaction, so the table of
+// what was sent and the queue of what to send never disagree: a crash between
+// the two would otherwise send a problem twice (queued, not recorded) or never
+// (recorded, not queued). If any part fails, none of it is applied and the next
+// check works the same changes out again.
+func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("record a problem check: %w", err)
+	}
+	defer tx.Rollback() // does nothing once Commit succeeds
+
+	for _, p := range c.Opened {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, app_id = excluded.app_id, service = excluded.service,
+				opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary`,
+			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary); err != nil {
+			return fmt.Errorf("record a problem check: save problem %q: %w", p.Key, err)
+		}
+	}
+	for _, key := range c.Seen {
+		if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET last_seen_at = ? WHERE key = ?", formatTime(c.SeenAt), key); err != nil {
+			return fmt.Errorf("record a problem check: touch problem %q: %w", key, err)
+		}
+	}
+	for _, key := range c.Removed {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sent_problems WHERE key = ?", key); err != nil {
+			return fmt.Errorf("record a problem check: delete problem %q: %w", key, err)
+		}
+	}
+	for _, d := range c.Deliveries {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO notification_deliveries (`+deliveryColumns+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.ID, d.ChannelID, d.EventType, d.Title, d.Payload, d.Status, d.Attempts,
+			formatTime(d.NextAt), d.Error, formatTime(d.CreatedAt), optionalTime(d.FinishedAt)); err != nil {
+			return fmt.Errorf("record a problem check: queue delivery %q: %w", d.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("record a problem check: %w", err)
+	}
+	return nil
+}
+
 // The states of a delivery.
 const (
 	DeliveryPending = "pending" // queued, or waiting for its next attempt
