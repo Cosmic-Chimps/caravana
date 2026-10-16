@@ -176,6 +176,45 @@ service, and in Phase 3 on another node than the copies. Once Phase 3 puts a Car
 each node, the agent can serve a node-level credential helper that reads the credentials from
 Nomad Variables, and the per-task copies and the `auth` block go away.
 
+### Amazon ECR (Phase 2.5 or later, on demand)
+
+Added 2026-10-16. ECR's registry password is a token from `ecr:GetAuthorizationToken` that
+expires after 12 hours, so 017's "user name and secret" breaks half a day after it is pasted.
+Dokploy users hit exactly this (Dokploy issue #2040; its PRs #2660 and #4141 log in at deploy
+time only, so a restart or reschedule after 12 hours still fails, and #4632 broke the `AWS` user
+name by lowercasing it).
+
+The plan, built on 017 with no breaking change:
+
+- **A second credential kind.** A host matching `<account>.dkr.ecr.<region>.amazonaws.com` (the
+  region comes from the host) takes an AWS access key ID and secret instead of a user name and
+  password, for an IAM user with `AmazonEC2ContainerRegistryReadOnly`. Kept write-only in
+  `caravana/registries/<key>` as today; an additive migration adds `kind` (`static` | `ecr`) to
+  `registries`.
+- **Caravana mints the token.** One SigV4-signed call to `ecr:GetAuthorizationToken` returns the
+  token and its expiry. Prefer a small standard-library signer tested against AWS's published
+  vectors over the AWS SDK (constitution I); take the SDK only if the signer proves fragile.
+- **Caravana refreshes it.** A background refresher, like 016's scheduler, renews each ECR token
+  at about half its life (6 h), with backoff, and once at startup. Each new token goes through
+  017's `SyncRegistryCopies`, so every private app's copy gets it without a restart.
+- **Digest lookups** use user `AWS` (case kept) and the token as Basic auth, which 017's client
+  already speaks.
+- **Fail loudly.** A refresh that keeps failing near expiry goes on the needs-you list with AWS's
+  error. "Test" checks the AWS keys by minting a token.
+- **What stays safe.** Images already on the node are reused without a pull, so a lapse only
+  affects copies that must pull.
+
+Not needed: public ECR (`public.ecr.aws`) works anonymously today; Azure ACR (service principal)
+and Google Artifact Registry (`_json_key`) use long-lived credentials that 017 already handles.
+
+The alternative, for AWS-only hosts: AWS's `docker-credential-ecr-login` with an EC2 instance
+role, as Nomad's docker credential helper. No keys are stored, but it needs the node-level work
+above (Phase 3) and still leaves Caravana's own digest lookup needing credentials.
+
+Check before building:
+- in the lab, that a task restarted after its variable changed pulls with the new value;
+- against a real ECR repository (needs an AWS account), the challenge and the manifest answer.
+
 ### Backups for more than Postgres (Phase 2.5)
 
 Added 2026-10-11. Feature 010 backs up PostgreSQL only. Real apps also keep data in SQLite files
