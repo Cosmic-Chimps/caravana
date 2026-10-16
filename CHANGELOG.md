@@ -9,6 +9,31 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- Volume backups: a service's backup can now use the engine `volume`, for apps that keep their
+  data in files (SQLite, an embedded MariaDB, uploads) rather than in Postgres. On its schedule,
+  or with "Back up now", the service stops, its volumes are archived to your backup destination,
+  and it starts again. The stop is usually a few seconds, and the Backups tab shows how long the
+  last one took.
+- Restore a volume backup from the Backups tab. The service stops, its volumes get back exactly
+  the backup's files (files added since are deleted), and it starts again. If anything fails
+  along the way, the volumes are left as they were.
+- The Backups tab opens with a Volumes section: each volume's mount, where it lives on the host,
+  its size, and its last backup or "not backed up".
+- API 0.13.0: `GET /v1/apps/{id}/volumes`; backups and restores say their `engine` and
+  `stoppedSeconds`; a 409 `no_running_copy` when there is no running copy to back up or restore.
+
+### Changed
+- Every service with a volume gains a small task, `caravana-volumes`, that runs before the service
+  starts (it measures the volumes, and does backups and restores). It reserves 32 MB while the
+  service runs.
+- Restarts Caravana asks for no longer count towards "keeps restarting" on the needs-you list.
+
+### Upgrade
+- Rerun the installer: Caravana's Nomad policy gains `alloc-lifecycle` and `read-fs`.
+- Then deploy each app that has a volume once, so it gains the `caravana-volumes` task. Until
+  then its volumes show "not measured yet" and can't be backed up with the `volume` engine.
+
 ## 0.3.0 - 2026-10-15
 
 ### Added
