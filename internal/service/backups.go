@@ -171,7 +171,10 @@ func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string
 			user := value("POSTGRES_USER", "postgres")
 			creds[svc.Name] = deploy.BackupCredentials{User: user, Password: value("POSTGRES_PASSWORD", ""), Database: value("POSTGRES_DB", user)}
 		}
-		err = s.deployer.SyncBackups(ctx, a, digests, creds, dest)
+		var private map[string]bool
+		if private, err = s.privateRegistries(ctx); err == nil {
+			err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private)
+		}
 	}
 	if err != nil {
 		s.log.Error("schedule backups", "app", a.ID, "error", err)
@@ -335,7 +338,11 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
-	if err := s.deployer.Restore(ctx, appID, svc, image, b.Object); err != nil {
+	private, err := s.privateRegistries(ctx)
+	if err != nil {
+		return store.RestoreRecord{}, err
+	}
+	if err := s.deployer.Restore(ctx, appID, svc, image, b.Object, private); err != nil {
 		return store.RestoreRecord{}, err
 	}
 	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: backupID,

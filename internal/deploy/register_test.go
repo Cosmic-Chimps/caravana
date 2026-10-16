@@ -35,7 +35,7 @@ func TestRegister(t *testing.T) {
 
 	t.Run("new job", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
-		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if err != nil {
 			t.Fatalf("Register() = %v", err)
 		}
@@ -54,10 +54,10 @@ func TestRegister(t *testing.T) {
 
 	t.Run("new version of our own job", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
-		if _, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs()); err != nil {
+		if _, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil); err != nil {
 			t.Fatalf("first Register() = %v", err)
 		}
-		reg, err := d.Register(ctx, whoami(), deployment("d2"), ownsIDs("d1"))
+		reg, err := d.Register(ctx, whoami(), deployment("d2"), ownsIDs("d1"), nil)
 		if err != nil {
 			t.Fatalf("second Register() = %v", err)
 		}
@@ -72,7 +72,7 @@ func TestRegister(t *testing.T) {
 	t.Run("nomad warnings", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.RegisterWarnings("1 warning: group web uses a deprecated field\n")
-		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if err != nil {
 			t.Fatalf("Register() = %v", err)
 		}
@@ -84,7 +84,7 @@ func TestRegister(t *testing.T) {
 	t.Run("version can't be read back", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.FailVersions(3)
-		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if err != nil {
 			t.Fatalf("Register() = %v, want no error: Nomad accepted the job", err)
 		}
@@ -102,7 +102,7 @@ func TestRegister(t *testing.T) {
 			t.Errorf("FindVersion before any job = %d, %v, %v; want not found", v, found, err)
 		}
 		for _, id := range []string{"d1", "d2"} {
-			if _, err := d.Register(ctx, whoami(), deployment(id), ownsIDs("d1")); err != nil {
+			if _, err := d.Register(ctx, whoami(), deployment(id), ownsIDs("d1"), nil); err != nil {
 				t.Fatalf("Register(%s) = %v", id, err)
 			}
 		}
@@ -135,7 +135,7 @@ func TestRegisterErrors(t *testing.T) {
 	t.Run("foreign job", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.AddForeignJob(labJob(false))
-		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if !errors.Is(err, ErrJobConflict) || !strings.Contains(err.Error(), `"whoami"`) {
 			t.Errorf("Register() = %v, want ErrJobConflict naming the job", err)
 		}
@@ -147,7 +147,7 @@ func TestRegisterErrors(t *testing.T) {
 	t.Run("stopped foreign job is registered over", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.AddForeignJob(labJob(true))
-		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		reg, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if err != nil {
 			t.Fatalf("Register() = %v", err)
 		}
@@ -160,7 +160,7 @@ func TestRegisterErrors(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		// owns runs between reading the job and registering: change the
 		// job right then, as another client would.
-		if _, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs()); err != nil {
+		if _, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil); err != nil {
 			t.Fatalf("first Register() = %v", err)
 		}
 		owns := func(ctx context.Context, id string) (bool, error) {
@@ -168,7 +168,7 @@ func TestRegisterErrors(t *testing.T) {
 			nomad.AddForeignJob(&j)
 			return true, nil
 		}
-		_, err := d.Register(ctx, whoami(), deployment("d2"), owns)
+		_, err := d.Register(ctx, whoami(), deployment("d2"), owns, nil)
 		if !errors.Is(err, ErrJobConflict) || !strings.Contains(err.Error(), "changed while deploying") {
 			t.Errorf("Register() = %v, want ErrJobConflict (changed while deploying)", err)
 		}
@@ -177,7 +177,7 @@ func TestRegisterErrors(t *testing.T) {
 	t.Run("nomad rejects the job", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.RejectNext(http.StatusBadRequest, "1 error occurred: task group web: missing driver")
-		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if !errors.Is(err, ErrNomadRejected) || !strings.Contains(err.Error(), "task group web: missing driver") {
 			t.Errorf("Register() = %v, want ErrNomadRejected with Nomad's text", err)
 		}
@@ -191,7 +191,7 @@ func TestRegisterErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.nomad = client
-		_, err = d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		_, err = d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if !errors.Is(err, ErrNomadUnavailable) || !strings.Contains(err.Error(), "refused the token") {
 			t.Errorf("Register() = %v, want ErrNomadUnavailable (token refused)", err)
 		}
@@ -203,7 +203,7 @@ func TestRegisterErrors(t *testing.T) {
 	t.Run("nomad down", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.Down()
-		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs())
+		_, err := d.Register(ctx, whoami(), deployment("d1"), ownsIDs(), nil)
 		if !errors.Is(err, ErrNomadUnavailable) || !strings.Contains(err.Error(), nomad.Addr()) {
 			t.Errorf("Register() = %v, want ErrNomadUnavailable naming the address", err)
 		}

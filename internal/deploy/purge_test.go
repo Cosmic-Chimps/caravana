@@ -15,7 +15,7 @@ func TestPurge(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.Succeed()
 		a := whoami()
-		if _, err := d.Register(ctx, a, deployment("d1"), ownsIDs()); err != nil {
+		if _, err := d.Register(ctx, a, deployment("d1"), ownsIDs(), nil); err != nil {
 			t.Fatal(err)
 		}
 		nomad.SetCopies(a.ID, api.AllocationListStub{ClientStatus: "running"})

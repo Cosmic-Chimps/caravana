@@ -160,7 +160,7 @@ credentials.
   - The export header names the variable path.
   - Goldens: a private service, a Compose app mixing private and public images, and a private
     Postgres with a backup.
-- [ ] T009 [US1] Per-task copies and sync, in internal/deploy/registries.go, register.go and backups.go:
+- [X] T009 [US1] Per-task copies and sync, in internal/deploy/registries.go, register.go and backups.go:
   - `ensureRegistryVariables(ctx, a)`, called from `Register` before register: for each service
     whose registry has credentials, write `nomad/jobs/<app>/<service>/<service>` with
     `registry=<host>` and the two credential items.

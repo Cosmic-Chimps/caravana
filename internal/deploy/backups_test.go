@@ -30,7 +30,7 @@ func TestSyncBackups(t *testing.T) {
 	digests := map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]}
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
 		t.Fatalf("SyncBackups: %v", err)
 	}
 	job := nomad.Job("shop_db_backup")
@@ -58,7 +58,7 @@ func TestSyncBackups(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Services[0].Backup = nil
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || len(nomad.Runs("shop_db_backup")) != 0 || nomad.Variable("nomad/jobs/shop_db_backup") != nil {
@@ -71,7 +71,7 @@ func TestBackupRuns(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil); err != nil {
 		t.Fatal(err)
 	}
 	ok, err := d.ForceBackup(ctx, "shop", "db")
@@ -113,10 +113,10 @@ func TestRestoreJob(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump"); err != nil {
+	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump", nil); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	if v := nomad.Variable("nomad/jobs/shop_db_restore"); v["PGPASSWORD"] != "pw" {

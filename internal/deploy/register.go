@@ -33,9 +33,13 @@ type Registered struct {
 // fails with ErrJobConflict and registers nothing (R7). The write enforces
 // the job's modify index, so a change between the check and the write fails
 // too, instead of being overwritten.
+//
+// private is the set of registry hosts Caravana holds credentials for (as for
+// nomadjob.Translate): a service whose image comes from one pulls with them,
+// and gets its pull-credentials variable written before the job is.
 func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
-	owns func(ctx context.Context, deploymentID string) (bool, error)) (Registered, error) {
-	res, err := nomadjob.Translate(a, dep, d.settings, nil)
+	owns func(ctx context.Context, deploymentID string) (bool, error), private map[string]bool) (Registered, error) {
+	res, err := nomadjob.Translate(a, dep, d.settings, private)
 	if err != nil {
 		return Registered{}, fmt.Errorf("translate %q: %w", a.ID, err)
 	}
@@ -72,6 +76,10 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 	// The caravana-volumes tasks read their variable before the service
 	// starts, so it has to exist before the job does.
 	if err := d.ensureVolumeVariables(ctx, a); err != nil {
+		return Registered{}, err
+	}
+	// Likewise the task of a private image reads its login before it pulls.
+	if err := d.ensureRegistryVariables(ctx, a, dep, private); err != nil {
 		return Registered{}, err
 	}
 

@@ -295,8 +295,16 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		return s.fail(rec, err)
 	}
 
+	// The registries Caravana has credentials for: a service whose image is on
+	// one pulls with them. Read from the store, as the export does.
+	private, err := s.privateRegistries(ctx)
+	if err != nil {
+		s.restoreSecrets(a.ID, dep.ID)
+		return s.fail(rec, err)
+	}
+
 	dep.Digests = digests
-	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID))
+	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID), private)
 	if err != nil {
 		s.restoreSecrets(a.ID, dep.ID)
 		return s.fail(rec, err)

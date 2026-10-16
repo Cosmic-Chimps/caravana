@@ -96,9 +96,12 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 // with a backup policy, its job's variable (credentials and destination)
 // and its periodic job, dumping with the service's pinned image from
 // digests; every other backup job of the app is purged with its runs and its
-// variable. creds are by service name.
+// variable. creds are by service name. private is the set of registry hosts
+// Caravana holds credentials for (as for nomadjob.Translate): a service whose
+// image is on one of them has its pull credentials added to its job's variable,
+// for the dump task's docker auth block.
 func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[string]string,
-	creds map[string]BackupCredentials, dest BackupDestination) error {
+	creds map[string]BackupCredentials, dest BackupDestination, private map[string]bool) error {
 	want := map[string]bool{}
 	for _, svc := range a.Services {
 		// Only Postgres backups are Nomad jobs. A volume backup runs inside
@@ -112,10 +115,14 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 		c := creds[svc.Name]
 		items := destinationItems(a.ID, svc.Name, dest)
 		items["PGUSER"], items["PGPASSWORD"], items["PGDATABASE"] = c.User, c.Password, c.Database
+		items, err := d.withPullCredentials(ctx, items, digests[svc.Name], private)
+		if err != nil {
+			return err
+		}
 		if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), items); err != nil {
 			return err
 		}
-		job := nomadjob.BackupJob(a.ID, svc, digests[svc.Name], d.settings, nil)
+		job := nomadjob.BackupJob(a.ID, svc, digests[svc.Name], d.settings, private)
 		if _, _, err := d.nomad.Jobs().Register(job, (&api.WriteOptions{}).WithContext(ctx)); err != nil {
 			return d.registerError(id, err)
 		}

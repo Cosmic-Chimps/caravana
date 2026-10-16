@@ -92,7 +92,7 @@ func TestProgressNotFound(t *testing.T) {
 
 func TestProgressPicksItsVersion(t *testing.T) {
 	d, nomad := registered(t)
-	if _, err := d.Register(context.Background(), whoami(), deployment("d2"), ownsIDs("d1")); err != nil {
+	if _, err := d.Register(context.Background(), whoami(), deployment("d2"), ownsIDs("d1"), nil); err != nil {
 		t.Fatalf("second Register: %v", err)
 	}
 	nomad.Script("whoami", 0, deploytest.Rolling("old", map[string]api.DeploymentState{"web": {DesiredTotal: 9}}))

@@ -15,9 +15,17 @@ import (
 // own copy of the backup job's variable first: a job can't read another
 // job's variable, and its copy would wait for one forever instead of
 // failing. An earlier restore job of the service is purged.
-func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, image, object string) error {
+//
+// private is the set of registry hosts Caravana holds credentials for (as for
+// nomadjob.Translate). The restore task runs image, so the copy's pull
+// credentials are those of image's registry, whatever the backup job's variable
+// held.
+func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, image, object string, private map[string]bool) error {
 	items, err := d.readVariable(ctx, nomadjob.BackupVariablePath(nomadjob.BackupJobID(appID, svc.Name)))
 	if err != nil {
+		return err
+	}
+	if items, err = d.withPullCredentials(ctx, items, image, private); err != nil {
 		return err
 	}
 	id := nomadjob.RestoreJobID(appID, svc.Name)
@@ -27,7 +35,7 @@ func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, i
 	if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), items); err != nil {
 		return err
 	}
-	job := nomadjob.RestoreJob(appID, svc, image, object, d.settings, nil)
+	job := nomadjob.RestoreJob(appID, svc, image, object, d.settings, private)
 	if _, _, err := d.nomad.Jobs().Register(job, (&api.WriteOptions{}).WithContext(ctx)); err != nil {
 		return d.registerError(id, err)
 	}

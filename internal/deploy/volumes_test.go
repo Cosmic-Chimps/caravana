@@ -68,7 +68,7 @@ func TestEnsureVolumesErrors(t *testing.T) {
 		nomad.AddForeignJob(&api.Job{ID: new("whoami"), Name: new("whoami")})
 		owns := func(context.Context, string) (bool, error) { return false, nil }
 		dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{"web": "traefik/whoami@" + whoamiDigest}}
-		if _, err := d.Register(ctx, withVolume("data"), dep, owns); !errors.Is(err, ErrJobConflict) {
+		if _, err := d.Register(ctx, withVolume("data"), dep, owns, nil); !errors.Is(err, ErrJobConflict) {
 			t.Fatalf("Register = %v, want ErrJobConflict", err)
 		}
 		if got := nomad.HostVolumes(); len(got) != 0 {
@@ -119,7 +119,7 @@ func TestDeleteVolumes(t *testing.T) {
 	a := withVolume("data")
 	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{"web": "traefik/whoami@" + whoamiDigest}}
 	owns := func(context.Context, string) (bool, error) { return true, nil }
-	if _, err := d.Register(ctx, a, dep, owns); err != nil {
+	if _, err := d.Register(ctx, a, dep, owns, nil); err != nil {
 		t.Fatal(err)
 	}
 	nomad.SetCopies("whoami", api.AllocationListStub{ClientStatus: "running", TaskGroup: "web"})
@@ -144,7 +144,7 @@ func TestDeleteVolumes(t *testing.T) {
 	t.Run("still in use when the wait ends", func(t *testing.T) {
 		d.Timing.VolumeDeleteWait = 20 * time.Millisecond
 		dep.ID = "d2"
-		if _, err := d.Register(ctx, withVolume("data"), dep, owns); err != nil {
+		if _, err := d.Register(ctx, withVolume("data"), dep, owns, nil); err != nil {
 			t.Fatal(err)
 		}
 		nomad.SetCopies("whoami", api.AllocationListStub{ClientStatus: "running", TaskGroup: "web"})

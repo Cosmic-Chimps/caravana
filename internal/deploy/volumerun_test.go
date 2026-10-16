@@ -103,7 +103,7 @@ func TestVolumeJobHoldsNoSecret(t *testing.T) {
 	a := volumeApp(app.BackupVolume)
 	dest := testDest
 	dest.SecretAccessKey = "s3cr3t-key-marker"
-	if _, err := d.Register(ctx, a, deployment("d1"), ownsIDs()); err != nil {
+	if _, err := d.Register(ctx, a, deployment("d1"), ownsIDs(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.WriteVolumeVariable(ctx, a, a.Services[0], &dest, 4, nil); err != nil {
@@ -221,7 +221,7 @@ func TestRegisterWritesTheVolumeVariable(t *testing.T) {
 			if tt.before != nil {
 				nomad.SetVariable(volumeVar, tt.before)
 			}
-			if _, err := d.Register(ctx, tt.app, deployment("d1"), ownsIDs()); err != nil {
+			if _, err := d.Register(ctx, tt.app, deployment("d1"), ownsIDs(), nil); err != nil {
 				t.Fatalf("Register: %v", err)
 			}
 			got := nomad.Variable(volumeVar)
@@ -234,7 +234,7 @@ func TestRegisterWritesTheVolumeVariable(t *testing.T) {
 	t.Run("Nomad refusing the variable stops the register", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		nomad.FailVariables(403)
-		if _, err := d.Register(ctx, volumeApp(""), deployment("d1"), ownsIDs()); err == nil {
+		if _, err := d.Register(ctx, volumeApp(""), deployment("d1"), ownsIDs(), nil); err == nil {
 			t.Fatal("Register = nil")
 		}
 		if nomad.Job("whoami") != nil {
@@ -536,7 +536,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
 	a := backedUp()
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") == nil {
@@ -545,7 +545,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 
 	a.Services[0].Backup = &app.Backup{Engine: app.BackupVolume}
 	a.Services[0].Volumes = []app.Volume{{Name: "data", Path: "/data"}}
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || nomad.Variable("nomad/jobs/shop_db_backup") != nil {

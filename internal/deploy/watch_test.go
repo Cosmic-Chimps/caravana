@@ -19,7 +19,7 @@ func state(status, desc string) api.Deployment {
 func registered(t *testing.T) (*Deployer, *deploytest.Nomad) {
 	t.Helper()
 	d, _, nomad := newTestDeployer(t)
-	if _, err := d.Register(context.Background(), whoami(), deployment("d1"), ownsIDs()); err != nil {
+	if _, err := d.Register(context.Background(), whoami(), deployment("d1"), ownsIDs(), nil); err != nil {
 		t.Fatalf("Register() = %v", err)
 	}
 	return d, nomad
@@ -92,7 +92,7 @@ func TestWatchNoDeploymentYet(t *testing.T) {
 
 func TestWatchNewerVersionWithoutOurs(t *testing.T) {
 	d, nomad := registered(t)
-	if _, err := d.Register(context.Background(), whoami(), deployment("d2"), ownsIDs("d1")); err != nil {
+	if _, err := d.Register(context.Background(), whoami(), deployment("d2"), ownsIDs("d1"), nil); err != nil {
 		t.Fatalf("Register(d2) = %v", err)
 	}
 	nomad.Script("whoami", 1, state(api.DeploymentStatusRunning, ""))
