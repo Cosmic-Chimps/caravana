@@ -53,6 +53,14 @@ func (d *Deployer) DeleteRegistrySecret(ctx context.Context, host string) error 
 	return d.deleteVariable(ctx, RegistryVariablePath(host))
 }
 
+// SyncRegistryCopies rewrites the per-task copies of host's credentials after
+// they were saved or removed, so apps already deployed pick them up the next
+// time they start (research R2). Feature 017 task T009 writes the copies;
+// until then no variable names a registry, so there is nothing to rewrite.
+func (d *Deployer) SyncRegistryCopies(ctx context.Context, host string) error {
+	return nil
+}
+
 // TestRegistry asks host's registry to accept the credentials stored for it,
 // within the time one image lookup gets. The error wraps registry.ErrUnauthorized
 // or registry.ErrUnavailable, or says that no credentials are stored.

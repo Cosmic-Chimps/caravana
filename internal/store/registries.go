@@ -104,6 +104,18 @@ func (s *Store) SaveRegistryTest(ctx context.Context, host string, t RegistryTes
 	return affectedOrNotFound(res, "registry "+host)
 }
 
+// ClearRegistryTest forgets the last test of a registry, because its
+// credentials changed and the old outcome no longer says anything about them.
+// An unknown host is ErrNotFound.
+func (s *Store) ClearRegistryTest(ctx context.Context, host string) error {
+	res, err := s.db.ExecContext(ctx,
+		"UPDATE registries SET last_test_at = NULL, last_test_ok = NULL, last_test_message = '' WHERE host = ?", host)
+	if err != nil {
+		return fmt.Errorf("clear test of registry %q: %w", host, err)
+	}
+	return affectedOrNotFound(res, "registry "+host)
+}
+
 // affectedOrNotFound is ErrNotFound, naming what, when the statement changed
 // no row.
 func affectedOrNotFound(res sql.Result, what string) error {

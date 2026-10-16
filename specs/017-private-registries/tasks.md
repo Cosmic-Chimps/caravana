@@ -100,7 +100,7 @@ write-only.
 **Independent test**: quickstart steps 3, 6 and 8 without a deploy: save, test (ok), save a wrong
 secret, test (refused), fix it, remove it. The API never answers the secret.
 
-- [ ] T005 [US2] Service, in internal/service/registries.go (new):
+- [X] T005 [US2] Service, in internal/service/registries.go (new):
   - `Registries(ctx)`, `SaveRegistry(ctx, host, username string, password *string)`,
     `DeleteRegistry(ctx, host)` and `TestRegistry(ctx, host)`, in the shape of
     `SetBackupDestination` (feature 010).

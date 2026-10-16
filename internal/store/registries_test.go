@@ -128,4 +128,23 @@ func TestRegistries(t *testing.T) {
 			t.Errorf("SaveRegistryTest() of a missing host = %v, want ErrNotFound", err)
 		}
 	})
+
+	t.Run("clearing a test leaves the registry untested", func(t *testing.T) {
+		s := openTestStore(t)
+		if err := s.SaveRegistry(ctx, Registry{Host: "ghcr.io", Username: "u", CreatedAt: t0, UpdatedAt: t0}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveRegistryTest(ctx, "ghcr.io", RegistryTest{At: t0, OK: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.ClearRegistryTest(ctx, "ghcr.io"); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := s.GetRegistry(ctx, "ghcr.io"); err != nil || got.LastTest != nil {
+			t.Errorf("GetRegistry().LastTest = %+v, %v; want nil", got.LastTest, err)
+		}
+		if err := s.ClearRegistryTest(ctx, "quay.io"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("ClearRegistryTest() of a missing host = %v, want ErrNotFound", err)
+		}
+	})
 }
