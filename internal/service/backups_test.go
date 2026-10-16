@@ -335,10 +335,10 @@ func TestBackupBusy(t *testing.T) {
 	}
 }
 
-// Restore doesn't start a volume restore yet (T017), but already refuses a
+// Restore refuses a volume restore with no running copy, a
 // second run and a backup of the other engine, and the list shows both
 // engines' records.
-func TestVolumeRunsBeforeTheyCanStart(t *testing.T) {
+func TestVolumeRunRefusals(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	setDestination(t, e)
@@ -351,8 +351,8 @@ func TestVolumeRunsBeforeTheyCanStart(t *testing.T) {
 	if err := e.store.SaveBackup(ctx, saved); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Restore(ctx, "whoami", "web-1"); !errors.Is(err, errVolumeRunsPending) {
-		t.Errorf("Restore = %v, want errVolumeRunsPending", err)
+	if _, err := e.svc.Restore(ctx, "whoami", "web-1"); !errors.Is(err, ErrNoRunningCopy) {
+		t.Errorf("Restore = %v, want ErrNoRunningCopy", err)
 	}
 
 	// A backup made by the other engine isn't restored into this service.

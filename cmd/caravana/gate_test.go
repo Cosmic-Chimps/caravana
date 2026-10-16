@@ -672,11 +672,22 @@ type gateVolumeRun struct {
 	} `json:"volumes"`
 }
 
-// volumeBackupRestoreStep: a volume backup (feature 016), with the token
-// Caravana really runs with. The app's own copy is restarted to run the
-// backup, so the step checks that the job is untouched (the same version, the
+// gateVolumeRestore is the part of a Restore (schema Restore) the volume step reads.
+type gateVolumeRestore struct {
+	ID             string   `json:"id"`
+	BackupID       string   `json:"backupId"`
+	Engine         string   `json:"engine"`
+	Status         string   `json:"status"`
+	Message        string   `json:"message"`
+	StoppedSeconds *float64 `json:"stoppedSeconds"`
+}
+
+// volumeBackupRestoreStep: a volume backup and its restore (feature 016), with
+// the token Caravana really runs with. The app's own copy is restarted to run
+// each, so the step checks that the job is untouched (the same version, the
 // same copy), that the service was stopped for a measured time, and that the
-// archive is in the bucket. T017 adds the restore half where marked.
+// archive is in the bucket. Then it changes the data, restores the backup and
+// checks that the old data is back and what was added since is gone.
 func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 	const appID = "vol"
 	nomad := g.target.Nomad
@@ -815,11 +826,81 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 		return true
 	})
 
-	// T017 (restore half) goes here, before the app is deleted:
-	//   1. change /data/v to "B" (a redeploy with a command that overwrites it,
-	//      or a write through Nomad's exec);
-	//   2. POST /v1/apps/vol/backups/<run.ID>/restore, wait until it succeeds;
-	//   3. readFile() must answer "A", and versionOf() must still be versionBefore.
+	// The restore half. The data changes after the backup: /data/v becomes "B"
+	// and /data/new appears, written through Nomad's exec (the gate's token can;
+	// Caravana's can't). Restoring the backup must bring "A" back and delete
+	// /data/new: a restore replaces the volume, it doesn't merge into it.
+	if out, err := g.exec(t, appID, "web", d.ID, "sh", "-c", "printf B > /data/v && printf x > /data/new"); err != nil {
+		t.Fatalf("change the volume's files: %v (%q)", err, out)
+	}
+	if got := readFile(); got != "B" {
+		t.Fatalf("/data/v = %q after the change, want B", got)
+	}
+
+	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/backups/"+run.ID+"/restore", "", "")
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var restoring struct{ ID string }
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &restoring) != nil || restoring.ID == "" {
+		t.Fatalf("restore %s: %d %s", run.ID, resp.StatusCode, raw)
+	}
+	var restore gateVolumeRestore
+	waitFor(t, "the volume restore to succeed", 5*time.Minute, func() bool {
+		var l struct {
+			Restores []gateVolumeRestore `json:"restores"`
+		}
+		g.getJSON(t, "/v1/apps/"+appID+"/backups", &l)
+		for _, r := range l.Restores {
+			if r.ID != restoring.ID {
+				continue
+			}
+			switch r.Status {
+			case "failed":
+				t.Fatalf("the volume restore failed: %s", r.Message)
+			case "succeeded":
+				restore = r
+				return true
+			}
+		}
+		return false
+	})
+	restored := time.Now()
+	if restore.Engine != "volume" || restore.BackupID != run.ID {
+		t.Errorf("restore = %+v, want engine volume and the backup %s", restore, run.ID)
+	}
+	if restore.StoppedSeconds == nil || *restore.StoppedSeconds <= 0 {
+		t.Errorf("restore stoppedSeconds = %v, want more than 0: the service was stopped while its volume was replaced", restore.StoppedSeconds)
+	}
+
+	// The old data is back and what was added since is gone.
+	if got := readFile(); got != "A" {
+		t.Errorf("/data/v = %q after the restore, want A", got)
+	}
+	if out, err := g.exec(t, appID, "web", d.ID, "sh", "-c", "[ ! -e /data/new ] && echo gone"); err != nil || out != "gone" {
+		t.Errorf("/data/new after the restore: %q (%v), want it deleted: a restore replaces the volume's files", out, err)
+	}
+	if out, err := g.exec(t, appID, "web", d.ID, "ls", "-A", "/data"); err != nil || out != "v" {
+		t.Errorf("/data holds %q (%v) after the restore, want only v (no staging directory left)", out, err)
+	}
+	// Like the backup, the restore restarted the same copy and left the job alone.
+	if got := versionOf(); got != versionBefore {
+		t.Errorf("the job is at version %d after the restore, was %d: a volume restore must not change it", got, versionBefore)
+	}
+	if got := copyOf(); got != copyBefore {
+		t.Errorf("the copy is %s after the restore, was %s: it should be the same copy, restarted", got, copyBefore)
+	}
+	waitFor(t, "the copy's checks to pass after the restore", 2*time.Minute, func() bool {
+		checks, err := nomad.Allocations().Checks(copyBefore, nil)
+		if err != nil || len(checks) == 0 {
+			return false
+		}
+		for _, c := range checks {
+			if c.Status != "success" || c.Timestamp < restored.Unix() {
+				return false
+			}
+		}
+		return true
+	})
 
 	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
 	resp.Body.Close()

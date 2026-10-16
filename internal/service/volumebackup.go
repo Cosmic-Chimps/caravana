@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,8 +20,10 @@ import (
 // waits until the copy has rendered it, restarts the copy's tasks (the service
 // stops cleanly, the task archives its volumes, the service starts again) and
 // reads the result file the task leaves. The job doesn't change, so a backup
-// is no Nomad deployment and no new version. This file is the run: who may
-// start one, what it records, and how it ends.
+// is no Nomad deployment and no new version. A restore is the same run with a
+// different request (the task loads an earlier backup's archives instead of
+// writing new ones), so the two share everything but their records. This file
+// is the run: who may start one, what it records, and how it ends.
 
 // ErrNoRunningCopy is the refusal of a volume run when the service has no copy
 // to restart: it hasn't been deployed, is still starting, or has stopped.
@@ -111,34 +114,46 @@ func (s *Service) claimVolumeRun(appID string) (release func(), err error) {
 	return release, nil
 }
 
-// volumeRun is a run whose request is out and whose record is saved as running:
-// what the goroutine that settles it needs.
+// volumeRun is a run (a backup or a restore) whose request is out: what the
+// goroutine that carries it to its end needs.
 type volumeRun struct {
 	appID, service string
 	copyID         string
 	req            volumeRequest
-	rec            store.BackupRecord
-	release        func() // the app's deploy lock and claim
+	started        time.Time
+	release        func() // the app's deploy lock and claim; the owner of the run calls it
+
+	// notRendered is set when the copy never showed the request (prepareVolumeRun
+	// has cleared it already). The run is not started: its record is saved
+	// failed, with this as the reason, and release is called.
+	notRendered error
+
+	// settle records how the run ended, in the record of a backup or a restore.
+	// The caller of prepareVolumeRun sets it once its running record is saved.
+	settle func(volumeOutcome)
 }
 
-// startVolumeBackup starts a backup of one service's volumes now, and returns
-// its record, running. trigger ("manual" or "schedule") is for the log.
+// prepareVolumeRun is the first half of a backup or a restore of one service's
+// volumes, the part the two share: it claims the app, checks what may have
+// changed since the caller looked, finds the running copy, writes the request
+// into the service's variable and waits until the copy has rendered it.
+// action is deploy.VolumeBackup or deploy.VolumeRestore, and object (a restore
+// only) the backup to load. The caller then saves its own running record and
+// hands the run to startVolumeRun.
 //
 // It holds the app's deploy lock from before it writes the request until the
 // run is settled, which is what keeps a deploy from registering a new job
 // while the service is stopped, and DeleteApp from deleting the volumes under
-// the archive. Every way out gives the lock back and clears the request: a
-// goroutine, tracked in s.watchers, does so when the run ends, and an error on
-// the way to it does so here.
+// the archive. On an error it has released the lock and cleared the request;
+// on success the caller owns both, and run.release gives the lock back.
 //
-// The errors before the run starts are ErrBackupRunning (a volume run of the
-// app has the lock, or the service's record says running), ErrNoBackupDestination,
-// ErrNoRunningCopy and Nomad's. A copy that never shows the request is not an
-// error: the record is saved failed, with the reason, and returned.
-func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
+// The errors are ErrBackupRunning (a volume run of the app has the lock, or the
+// service's records say running), ErrNoBackupDestination, ErrNoRunningCopy and
+// Nomad's. A copy that never shows the request is not an error but run.notRendered.
+func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, object string) (volumeRun, error) {
 	release, err := s.claimVolumeRun(appID)
 	if err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
 	handedOver := false
 	defer func() {
@@ -150,93 +165,178 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 	// What was checked before the lock may have changed while a deploy held it.
 	a, svc, err := s.backedUpService(ctx, appID, service)
 	if err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
 	if !hasVolumeBackup(svc) {
-		return store.BackupRecord{}, fmt.Errorf("service %q of %q no longer has a volume backup: %w", service, appID, store.ErrNotFound)
+		return volumeRun{}, fmt.Errorf("service %q of %q no longer has a volume backup: %w", service, appID, store.ErrNotFound)
 	}
 	dest, ok, err := s.backupDestination(ctx)
 	if err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
 	if !ok {
-		return store.BackupRecord{}, ErrNoBackupDestination
+		return volumeRun{}, ErrNoBackupDestination
 	}
 	if busy, err := s.backupBusy(ctx, appID, svc); err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	} else if busy {
-		return store.BackupRecord{}, ErrBackupRunning
+		return volumeRun{}, ErrBackupRunning
 	}
 	copyID, ok, err := s.deployer.RunningCopy(ctx, appID, service)
 	if err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
 	if !ok {
-		return store.BackupRecord{}, ErrNoRunningCopy
+		return volumeRun{}, ErrNoRunningCopy
 	}
 
-	req, err := s.freshVolumeRequest(ctx, appID, service, deploy.VolumeBackup, "")
+	req, err := s.freshVolumeRequest(ctx, appID, service, action, object)
 	if err != nil {
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
 	if err := s.deployer.WriteVolumeVariable(ctx, a, svc, &dest, svc.Backup.KeepOrDefault(), req.forNomad()); err != nil {
 		s.clearVolumeRequest(appID, service) // a write that failed may still have gone through
-		return store.BackupRecord{}, err
+		return volumeRun{}, err
 	}
-	started := s.clock.Now().UTC()
-	rec := store.BackupRecord{AppID: appID, ID: req.ID, Service: service, JobID: volumeJobID(appID, service, req.TS),
-		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: started}
+	run := volumeRun{appID: appID, service: service, copyID: copyID, req: req, started: s.clock.Now().UTC(), release: release}
 
 	if err := s.deployer.WaitRequestRendered(ctx, copyID, req.ID); err != nil {
 		s.clearVolumeRequest(appID, service)
 		if !errors.Is(err, deploy.ErrRequestNotRendered) {
-			return store.BackupRecord{}, err
+			return volumeRun{}, err
 		}
 		// The copy would run nothing, or an older request, so it is not
-		// restarted: the run fails, and says why.
+		// restarted: the caller fails the run, and says why.
+		run.notRendered = err
+	}
+	handedOver = true
+	return run, nil
+}
+
+// startVolumeRun hands a prepared run, whose running record is saved and whose
+// settle is set, to a goroutine that restarts the copy and follows the run to
+// its end. The goroutine is tracked in s.watchers, and gives the lock back and
+// clears the request when the run ends.
+func (s *Service) startVolumeRun(run volumeRun) {
+	s.watchers.Add(1)
+	go func() {
+		defer s.watchers.Done()
+		s.driveVolumeRun(run)
+	}()
+}
+
+// startVolumeBackup starts a backup of one service's volumes now, and returns
+// its record, running. trigger ("manual" or "schedule") is for the log. See
+// prepareVolumeRun for what it checks and holds. A copy that never shows the
+// request is not an error: the record is saved failed, with the reason, and
+// returned.
+func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
+	run, err := s.prepareVolumeRun(ctx, appID, service, deploy.VolumeBackup, "")
+	if err != nil {
+		return store.BackupRecord{}, err
+	}
+	rec := store.BackupRecord{AppID: appID, ID: run.req.ID, Service: service, JobID: volumeJobID(appID, service, run.req.TS),
+		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: run.started}
+
+	if run.notRendered != nil {
+		defer run.release()
 		now := time.Now().UTC()
-		rec.Status, rec.Message, rec.FinishedAt = store.BackupFailed, err.Error(), &now
+		rec.Status, rec.Message, rec.FinishedAt = store.BackupFailed, run.notRendered.Error(), &now
 		if err := s.store.SaveBackup(ctx, rec); err != nil {
 			return store.BackupRecord{}, err
 		}
 		s.backupsChanged(appID)
-		s.log.Warn("volume backup failed before the restart", "app", appID, "service", service, "trigger", trigger, "error", err)
+		s.log.Warn("volume backup failed before the restart", "app", appID, "service", service, "trigger", trigger, "error", run.notRendered)
 		return rec, nil
 	}
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		s.clearVolumeRequest(appID, service)
+		run.release()
 		return store.BackupRecord{}, err
 	}
 	s.backupsChanged(appID)
-	s.log.Info("volume backup started", "app", appID, "service", service, "run", req.ID, "trigger", trigger)
+	s.log.Info("volume backup started", "app", appID, "service", service, "run", rec.ID, "trigger", trigger)
 
-	handedOver = true
-	run := volumeRun{appID: appID, service: service, copyID: copyID, req: req, rec: rec, release: release}
-	s.watchers.Add(1)
-	go func() {
-		defer s.watchers.Done()
-		s.driveVolumeBackup(run)
-	}()
+	run.settle = func(out volumeOutcome) { s.settleVolumeBackup(rec, out) }
+	s.startVolumeRun(run)
 	return rec, nil
+}
+
+// startVolumeRestore starts the restore of the volume backup b, whose service
+// and volumes it loads back into the running service: the copy restarts, its
+// task replaces the volumes' files with the archives', and the service starts
+// again. It returns the restore's record, running, with the same errors and
+// holds as startVolumeBackup (see prepareVolumeRun).
+//
+// The restore's record ID is the request's ID with the app's: request IDs
+// are only unique within an app, restore IDs across all of them.
+func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.BackupRecord) (store.RestoreRecord, error) {
+	run, err := s.prepareVolumeRun(ctx, appID, b.Service, deploy.VolumeRestore, b.Object)
+	if err != nil {
+		return store.RestoreRecord{}, err
+	}
+	rec := store.RestoreRecord{ID: restoreRecordID(appID, run.req.ID), AppID: appID, Service: b.Service, BackupID: b.ID,
+		Engine: app.BackupVolume, Status: store.BackupRunning, CreatedAt: run.started}
+
+	if run.notRendered != nil {
+		defer run.release()
+		now := time.Now().UTC()
+		rec.Status, rec.Message, rec.FinishedAt = store.BackupFailed, run.notRendered.Error(), &now
+		if err := s.store.SaveRestore(ctx, rec); err != nil {
+			return store.RestoreRecord{}, err
+		}
+		s.backupsChanged(appID)
+		s.log.Warn("volume restore failed before the restart", "app", appID, "service", b.Service, "error", run.notRendered)
+		return rec, nil
+	}
+	if err := s.store.SaveRestore(ctx, rec); err != nil {
+		s.clearVolumeRequest(appID, b.Service)
+		run.release()
+		return store.RestoreRecord{}, err
+	}
+	s.backupsChanged(appID)
+	s.log.Info("volume restore started", "app", appID, "service", b.Service, "run", rec.ID, "backup", b.ID)
+
+	run.settle = func(out volumeOutcome) { s.settleVolumeRestore(rec, out) }
+	s.startVolumeRun(run)
+	return rec, nil
+}
+
+// restoreRecordID is the ID of the restore record of the run whose request ID
+// is requestID, and requestIDOfRestore reads it back (resume needs the request
+// to find its result file).
+func restoreRecordID(appID, requestID string) string { return appID + "-" + requestID }
+
+func requestIDOfRestore(appID, restoreID string) string {
+	return strings.TrimPrefix(restoreID, appID+"-")
 }
 
 // freshVolumeRequest is a request for a run started now, whose ID no record has
 // yet: two runs of one service in the same second would share an ID, and with
-// it a result file. It moves on by a second until the ID is free.
+// it a result file, whether they are two backups, two restores or one of each.
+// It moves on by a second until the ID is free.
 func (s *Service) freshVolumeRequest(ctx context.Context, appID, service, action, object string) (volumeRequest, error) {
+	restores, err := s.store.ListRestores(ctx, appID, 0)
+	if err != nil {
+		return volumeRequest{}, err
+	}
+	restoreIDs := map[string]bool{}
+	for _, r := range restores {
+		restoreIDs[r.ID] = true
+	}
 	now := s.clock.Now()
 	for range 100 {
 		req := newVolumeRequest(service, action, object, now, s.volume.limit, s.volume.grace)
 		_, err := s.store.GetBackup(ctx, appID, req.ID)
-		if errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, store.ErrNotFound) && !restoreIDs[restoreRecordID(appID, req.ID)] {
 			return req, nil
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return volumeRequest{}, err
 		}
 		now = now.Add(time.Second)
 	}
-	return volumeRequest{}, fmt.Errorf("volume backup of %q: no free run ID near %s", service, now.Format(time.RFC3339))
+	return volumeRequest{}, fmt.Errorf("volume %s of %q: no free run ID near %s", action, service, now.Format(time.RFC3339))
 }
 
 // clearVolumeRequest takes the request out of the service's variable. It uses
@@ -342,11 +442,11 @@ func (s *Service) awaitStop(ctx context.Context, copyID, service string, since t
 	}
 }
 
-// driveVolumeBackup carries a run from the restart to its record, and then,
+// driveVolumeRun carries a run from the restart to its record, and then,
 // whatever happened, clears the request, gives the lock back and tells the open
 // pages. If Caravana is shutting down it leaves the request and the record as
-// they are: the next start settles the run (resumeVolumeBackups).
-func (s *Service) driveVolumeBackup(run volumeRun) {
+// they are: the next start settles the run (resumeVolumeRuns).
+func (s *Service) driveVolumeRun(run volumeRun) {
 	// The app's own context: it ends at shutdown, and a DeleteApp can't end
 	// it while this run holds the lock it needs first.
 	ctx := s.watchContext(run.appID)
@@ -361,7 +461,7 @@ func (s *Service) driveVolumeBackup(run volumeRun) {
 	restartedAt := time.Now()
 	if err := s.deployer.RestartCopy(ctx, run.copyID); err != nil {
 		if ctx.Err() == nil {
-			s.settleVolumeBackup(run.rec, failedOutcome("couldn't restart the service: "+err.Error(), nil))
+			run.settle(failedOutcome("couldn't restart the service: "+err.Error(), nil))
 		}
 		return
 	}
@@ -371,10 +471,10 @@ func (s *Service) driveVolumeBackup(run volumeRun) {
 	}
 	if !found {
 		waited := time.Since(restartedAt)
-		s.settleVolumeBackup(run.rec, failedOutcome(failure, &waited))
+		run.settle(failedOutcome(failure, &waited))
 		return
 	}
-	s.settleVolumeBackup(run.rec, outcomeOf(res, s.awaitStop(ctx, run.copyID, run.service, restartedAt)))
+	run.settle(outcomeOf(res, s.awaitStop(ctx, run.copyID, run.service, restartedAt)))
 }
 
 // outcomeOf is the outcome of a run whose result file says res.
@@ -420,18 +520,44 @@ func (s *Service) settleVolumeBackup(rec store.BackupRecord, out volumeOutcome) 
 			}
 		}
 	}
+	if !s.saveOutcome(ctx, "backup", rec.AppID, rec.ID, func(ctx context.Context) error { return s.store.SaveBackup(ctx, rec) }) {
+		return
+	}
+	s.log.Info("volume backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", out.status, "message", out.message)
+}
+
+// settleVolumeRestore records how a restore ended: the status and message (a
+// success may still carry one, when the old files couldn't be cleaned up), and
+// how long the service was stopped. The volumes' sizes are measured by the
+// task at the service's next start, so nothing is written for them here. The
+// write is retried, as a backup's is.
+func (s *Service) settleVolumeRestore(rec store.RestoreRecord, out volumeOutcome) {
+	now := time.Now().UTC()
+	rec.Status, rec.Message, rec.FinishedAt, rec.Stopped = out.status, out.message, &now, out.stopped
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if !s.saveOutcome(ctx, "restore", rec.AppID, rec.ID, func(ctx context.Context) error { return s.store.SaveRestore(ctx, rec) }) {
+		return
+	}
+	s.log.Info("volume restore finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", out.status, "message", out.message)
+}
+
+// saveOutcome calls save until it works or ctx ends, so one failed write doesn't
+// leave a finished run "running" for good. kind ("backup" or "restore") and id
+// are for the log. It reports whether the record was saved.
+func (s *Service) saveOutcome(ctx context.Context, kind, appID, id string, save func(context.Context) error) bool {
 	for {
-		err := s.store.SaveBackup(ctx, rec)
+		err := save(ctx)
 		if err == nil {
-			break
+			return true
 		}
-		s.log.Warn("record the volume backup's outcome; retrying", "app", rec.AppID, "backup", rec.ID, "error", err)
+		s.log.Warn("record the volume "+kind+"'s outcome; retrying", "app", appID, "run", id, "error", err)
 		select {
 		case <-time.After(s.retryGap):
 		case <-ctx.Done():
-			s.log.Error("record the volume backup's outcome", "app", rec.AppID, "backup", rec.ID, "error", err)
-			return
+			s.log.Error("record the volume "+kind+"'s outcome", "app", appID, "run", id, "error", err)
+			return false
 		}
 	}
-	s.log.Info("volume backup finished", "app", rec.AppID, "service", rec.Service, "run", rec.ID, "status", out.status, "message", out.message)
 }

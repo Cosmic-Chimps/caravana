@@ -215,7 +215,7 @@ func TestBackupsTabVolume(t *testing.T) {
 		t.Error("the tab shows the database words for a volume backup")
 	}
 
-	// A wrong name opens the confirmation again with its error; the restore itself is feature 016's next task.
+	// A wrong name opens the confirmation again with its error.
 	resp, body := e.postForm(t, "/apps/kuma/backups/uptime-kuma-1000/restore", url.Values{"confirm": {"uptime"}})
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "Type uptime-kuma to confirm.") {
 		t.Errorf("a wrong confirmation = %d:\n%s", resp.StatusCode, text(body))

@@ -28,11 +28,6 @@ var (
 	ErrBackupRunning       = errors.New("a backup or restore of this service is running")
 )
 
-// errVolumeRunsPending stands in until volume restores can be started (feature
-// 016, T017): a volume restore is not a Nomad job, so the Postgres way of
-// starting one would fail with a confusing answer from Nomad.
-var errVolumeRunsPending = errors.New("volume backups can't be started yet")
-
 // Two kinds of backup, two ways to run (feature 016). A Postgres backup is a
 // Nomad job, which this file starts and whose runs the watcher records. A
 // volume backup runs inside the service's own copy, and the run itself
@@ -299,9 +294,14 @@ func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service)
 	}), nil
 }
 
-// Restore loads a backup into its running database. Only a succeeded backup
-// still in the destination can be restored, one restore per service at a
-// time.
+// Restore loads a backup into the running service. Only a succeeded backup
+// still in the destination can be restored, one backup or restore per service
+// at a time.
+//
+// A Postgres restore is a Nomad job that loads the dump into the running
+// database. A volume restore restarts the service's own copy and stops the
+// service while its volumes are replaced with the archives' files (see
+// startVolumeRestore), which can also be ErrNoRunningCopy.
 func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.RestoreRecord, error) {
 	b, err := s.store.GetBackup(ctx, appID, backupID)
 	if err != nil {
@@ -328,8 +328,8 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	} else if busy {
 		return store.RestoreRecord{}, ErrBackupRunning
 	}
-	if !postgresBackup(svc) {
-		return store.RestoreRecord{}, errVolumeRunsPending
+	if hasVolumeBackup(svc) {
+		return s.startVolumeRestore(ctx, appID, b)
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {

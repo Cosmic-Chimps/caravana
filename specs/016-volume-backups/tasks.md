@@ -242,7 +242,7 @@ Files: `internal/nomadjob/volumes.go`, `internal/service/backups.go`, `internal/
   - a corrupt archive fails with the volume unchanged;
   - a second volume's extract fails with both volumes unchanged;
   - exit 0 always.
-- [ ] T017 [US2] Service and gate:
+- [X] T017 [US2] Service and gate:
   - `Restore` in internal/service/backups.go branches to `startVolumeRun(..., "restore", backup.Object)` for `volume` backups. Only a succeeded, non-expired backup of a volume service, as today; the restore record has engine `volume`, and on completion `stopped`. The UI's restore confirmation copy comes from T014; check it renders for volume backups.
   - The gate step `volume-backup-restore` gains its second half:
     1. change the file to "B" (redeploy with an env change that makes the command overwrite it, or exec a write through a second backup-free path you document);

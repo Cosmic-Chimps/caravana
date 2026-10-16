@@ -115,7 +115,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resume(ctx); err != nil {
 		return err
 	}
-	if err := s.resumeVolumeBackups(ctx); err != nil {
+	if err := s.resumeVolumeRuns(ctx); err != nil {
 		return err
 	}
 	s.backupWatcher.Add(1)

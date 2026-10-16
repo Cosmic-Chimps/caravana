@@ -56,60 +56,82 @@ func (s *Service) settle(ctx context.Context, rec store.DeploymentRecord) {
 	s.follow(ctx, rec.AppID, id, &v, running)
 }
 
-// resumeVolumeBackups settles each volume backup a previous run of Caravana left
-// running (research R7), each app in the background: Start never waits for
-// Nomad.
-func (s *Service) resumeVolumeBackups(ctx context.Context) error {
+// unsettledRun is a volume run, a backup or a restore, that a previous run of
+// Caravana left running.
+type unsettledRun struct {
+	// requestID names the run's request and its result file.
+	requestID string
+	service   string
+	startedAt time.Time
+	// settle records how the run ended, in its backup or restore record.
+	settle func(volumeOutcome)
+}
+
+// resumeVolumeRuns settles each volume backup and restore a previous run of
+// Caravana left running (research R7), each app in the background: Start never
+// waits for Nomad.
+func (s *Service) resumeVolumeRuns(ctx context.Context) error {
 	apps, err := s.store.ListApps(ctx)
 	if err != nil {
-		return fmt.Errorf("resume volume backups: %w", err)
+		return fmt.Errorf("resume volume runs: %w", err)
 	}
 	for _, rec := range apps {
-		backups, err := s.store.ListBackups(ctx, rec.App.ID, 0)
+		appID := rec.App.ID
+		backups, err := s.store.ListBackups(ctx, appID, 0)
 		if err != nil {
-			return fmt.Errorf("resume volume backups: %w", err)
+			return fmt.Errorf("resume volume runs: %w", err)
 		}
-		var running []store.BackupRecord
+		restores, err := s.store.ListRestores(ctx, appID, 0)
+		if err != nil {
+			return fmt.Errorf("resume volume runs: %w", err)
+		}
+		var running []unsettledRun
 		for _, b := range backups {
 			if b.Engine == app.BackupVolume && b.Status == store.BackupRunning {
-				running = append(running, b)
+				running = append(running, unsettledRun{requestID: b.ID, service: b.Service, startedAt: b.StartedAt,
+					settle: func(out volumeOutcome) { s.settleVolumeBackup(b, out) }})
+			}
+		}
+		for _, r := range restores {
+			if r.Engine == app.BackupVolume && r.Status == store.BackupRunning {
+				running = append(running, unsettledRun{requestID: requestIDOfRestore(appID, r.ID), service: r.Service, startedAt: r.CreatedAt,
+					settle: func(out volumeOutcome) { s.settleVolumeRestore(r, out) }})
 			}
 		}
 		if len(running) == 0 {
 			continue
 		}
-		appID := rec.App.ID
-		s.log.Info("resuming volume backups", "app", appID, "runs", len(running))
+		s.log.Info("resuming volume runs", "app", appID, "runs", len(running))
 		s.watchers.Add(1)
 		go func() {
 			defer s.watchers.Done()
-			s.settleVolumeBackups(s.watchContext(appID), appID, running)
+			s.settleVolumeRuns(s.watchContext(appID), appID, running)
 		}()
 	}
 	return nil
 }
 
-// settleVolumeBackups settles one app's unfinished runs, one after another,
+// settleVolumeRuns settles one app's unfinished runs, one after another,
 // under one claim of the app: the run may still be going in the copy, and a
 // deploy must wait for it, as for any run. Per run: the result file, if the
 // copy still has it, within what is left of the run's time; otherwise the run
 // failed with Caravana's restart. Either way its request is cleared.
-func (s *Service) settleVolumeBackups(ctx context.Context, appID string, runs []store.BackupRecord) {
+func (s *Service) settleVolumeRuns(ctx context.Context, appID string, runs []unsettledRun) {
 	release, err := s.claimVolumeRun(appID)
 	if err != nil {
-		s.log.Warn("resume volume backups: can't take the app", "app", appID, "error", err)
+		s.log.Warn("resume volume runs: can't take the app", "app", appID, "error", err)
 		return
 	}
 	defer func() {
 		release()
 		s.backupsChanged(appID)
 	}()
-	for _, rec := range runs {
-		s.settleOneVolumeBackup(ctx, rec)
+	for _, run := range runs {
+		s.settleOneVolumeRun(ctx, appID, run)
 		if ctx.Err() != nil {
 			return
 		}
-		s.clearVolumeRequest(appID, rec.Service)
+		s.clearVolumeRequest(appID, run.service)
 	}
 }
 
@@ -117,23 +139,23 @@ func (s *Service) settleVolumeBackups(ctx context.Context, appID string, runs []
 // and that left no result.
 const restartedMessage = "Caravana restarted during the run"
 
-func (s *Service) settleOneVolumeBackup(ctx context.Context, rec store.BackupRecord) {
+func (s *Service) settleOneVolumeRun(ctx context.Context, appID string, run unsettledRun) {
 	// What is left of the time the run was given, from when it was recorded.
-	until := rec.StartedAt.Add(s.volume.limit + s.volume.grace)
-	copyID, ok := s.liveCopy(ctx, rec.AppID, rec.Service, until)
+	until := run.startedAt.Add(s.volume.limit + s.volume.grace)
+	copyID, ok := s.liveCopy(ctx, appID, run.service, until)
 	if !ok {
 		if ctx.Err() == nil {
-			s.settleVolumeBackup(rec, failedOutcome(restartedMessage, nil))
+			run.settle(failedOutcome(restartedMessage, nil))
 		}
 		return
 	}
-	res, found, aborted, _ := s.awaitVolumeResult(ctx, copyID, rec.ID, max(time.Until(until), time.Millisecond))
+	res, found, aborted, _ := s.awaitVolumeResult(ctx, copyID, run.requestID, max(time.Until(until), time.Millisecond))
 	switch {
 	case aborted:
 	case found:
-		s.settleVolumeBackup(rec, outcomeOf(res, s.awaitStop(ctx, copyID, rec.Service, rec.StartedAt)))
+		run.settle(outcomeOf(res, s.awaitStop(ctx, copyID, run.service, run.startedAt)))
 	default:
-		s.settleVolumeBackup(rec, failedOutcome(restartedMessage, nil))
+		run.settle(failedOutcome(restartedMessage, nil))
 	}
 }
 
@@ -155,7 +177,7 @@ func (s *Service) liveCopy(ctx context.Context, appID, service string, until tim
 		if ctx.Err() != nil || !time.Now().Before(until) {
 			return "", false
 		}
-		s.log.Warn("resume volume backups: read copies; retrying", "app", appID, "error", err)
+		s.log.Warn("resume volume runs: read copies; retrying", "app", appID, "error", err)
 		select {
 		case <-ctx.Done():
 		case <-time.After(s.volume.poll):
