@@ -200,7 +200,7 @@ credentials.
 
 ## Phase 5: User Story 3 - Images from other registries (Priority: P2)
 
-- [ ] T012 [US3] Coverage: an end-to-end deploy test (service level, with an `httptest` registry as `Client.Endpoints`) of an image from a host with a port, showing the pinned name keeps `host:port`. Also check the console's add-form hint and the API's host canonicalization (`Index.Docker.IO` → `docker.io`). Anything T001 missed gets fixed here.
+- [X] T012 [US3] Coverage: an end-to-end deploy test (service level, with an `httptest` registry as `Client.Endpoints`) of an image from a host with a port, showing the pinned name keeps `host:port`. Also check the console's add-form hint and the API's host canonicalization (`Index.Docker.IO` → `docker.io`). Anything T001 missed gets fixed here.
 
 ## Phase 6: Polish & cross-cutting
 

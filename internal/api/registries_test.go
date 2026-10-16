@@ -78,11 +78,15 @@ func TestRegistryEndpoints(t *testing.T) {
 			t.Error("a PUT without a password didn't keep the secret, or didn't change the user")
 		}
 
-		// The Docker Hub alias is the one entry for docker.io.
-		status, _, raw = call(t, http.MethodPut, e.URL+"/v1/registries/index.docker.io", "application/json", registryBody("me", "tok"))
+		// The Docker Hub alias, in any case, is the one entry for docker.io, and
+		// the stored credentials are where deploys look for docker.io.
+		status, _, raw = call(t, http.MethodPut, e.URL+"/v1/registries/Index.Docker.IO", "application/json", registryBody("me", "tok"))
 		record(raw)
 		if status != http.StatusOK || decodeAs[registryJSON](t, raw).Host != "docker.io" {
-			t.Errorf("PUT index.docker.io = %d %s, want host docker.io", status, raw)
+			t.Errorf("PUT Index.Docker.IO = %d %s, want host docker.io", status, raw)
+		}
+		if stored := e.Nomad.Variable("caravana/registries/docker~io"); stored["username"] != "me" || stored["password"] != "tok" {
+			t.Error("the alias didn't store its credentials under docker.io")
 		}
 
 		status, _, raw = call(t, http.MethodGet, e.URL+"/v1/registries", "", "")
