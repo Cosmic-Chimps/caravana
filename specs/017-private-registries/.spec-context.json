@@ -1,0 +1,23 @@
+{
+  "workflow": "speckit",
+  "specName": "Private registries",
+  "branch": "017-private-registries",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-16T03:10:00.000Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-16T03:23:52.000Z"
+    }
+  ]
+}
