@@ -42,6 +42,20 @@ type Service struct {
 	budget     time.Duration // for one deploy's registry and Nomad work
 	retryGap   time.Duration // between retries of a store write
 	backupPoll time.Duration // between two passes of the backup watcher
+
+	// Volume runs and their scheduler (feature 016), see volumebackup.go and
+	// schedule.go.
+	clock       clock         // the time, for the scheduler and run IDs
+	scheduleGap time.Duration // between two passes of the volume backup scheduler
+	volume      volumeTiming
+}
+
+// volumeTiming holds the waits of a volume run, so tests can shorten them.
+type volumeTiming struct {
+	limit    time.Duration // how long a run may take (CARAVANA_VOLUME_BACKUP_TIMEOUT)
+	grace    time.Duration // how long past the limit Caravana waits for the result
+	poll     time.Duration // between two reads of the result file
+	comeBack time.Duration // how long to wait for the service's task to start again
 }
 
 // DeployError is returned by Deploy and Redeploy once a deployment record
@@ -68,6 +82,25 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		budget:     25 * time.Second,
 		retryGap:   time.Second,
 		backupPoll: 15 * time.Second,
+
+		clock:       realClock{},
+		scheduleGap: 30 * time.Second,
+		volume: volumeTiming{
+			limit:    deploy.DefaultVolumeLimit,
+			grace:    5 * time.Minute,
+			poll:     2 * time.Second,
+			comeBack: time.Minute,
+		},
+	}
+}
+
+// SetVolumeBackupTimeout sets how long a volume backup or restore may take
+// before Caravana gives it up (CARAVANA_VOLUME_BACKUP_TIMEOUT, 30 minutes by
+// default). The service stays stopped while a run lasts, so it bounds that
+// too. Call it before Start; a value that isn't positive keeps the default.
+func (s *Service) SetVolumeBackupTimeout(d time.Duration) {
+	if d > 0 {
+		s.volume.limit = d
 	}
 }
 
@@ -82,19 +115,28 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resume(ctx); err != nil {
 		return err
 	}
+	if err := s.resumeVolumeRuns(ctx); err != nil {
+		return err
+	}
 	s.backupWatcher.Add(1)
 	go func() {
 		defer s.backupWatcher.Done()
 		s.watchBackups(ctx, s.backupPoll)
 	}()
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.scheduleVolumeBackups(ctx, s.scheduleGap)
+	}()
 	return nil
 }
 
 // Wait blocks until every watcher has returned. Call it after cancelling
-// Start's context.
+// Start's context. The backup scheduler goes first: it can start volume runs,
+// which are watchers, so none can be added once it has stopped.
 func (s *Service) Wait() {
-	s.watchers.Wait()
 	s.backupWatcher.Wait()
+	s.watchers.Wait()
 }
 
 // GetApp returns the stored app, or store.ErrNotFound.

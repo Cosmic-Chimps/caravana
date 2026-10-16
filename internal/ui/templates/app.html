@@ -39,26 +39,77 @@
 {{/* The Backups tab (feature 010). Takes a backupsTab. */}}
 {{define "backups"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if .Volumes}}
+<section aria-labelledby="volumes-title" class="flex flex-col gap-2">
+  <h2 id="volumes-title" class="cv-label">Volumes</h2>
+  <div class="cv-panel">
+    <div class="cv-volumes" role="table" aria-label="Volumes">
+      <div class="cv-volumes-head cv-label" role="row">
+        <span role="columnheader">Volume</span>
+        <span role="columnheader">Mounted at</span>
+        <span role="columnheader">On the host</span>
+        <span role="columnheader">Size</span>
+        <span role="columnheader">Backup</span>
+      </div>
+      {{range .Volumes}}
+      <div class="cv-row cv-volumes-row" role="row">
+        <div role="cell"><span class="cv-data text-fg-1">{{.Name}}</span></div>
+        <div role="cell" data-label="Mounted at">
+          {{range .Mounts}}<span class="cv-data">{{.}}</span>{{else}}<span class="cv-data-muted">not mounted</span>{{end}}
+        </div>
+        <div role="cell" data-label="On the host">
+          {{if .HostPath}}<span class="cv-data-muted">{{.HostPath}}</span>{{else}}<span class="cv-data-muted" title="Nomad couldn't be read">&mdash;</span>{{end}}
+        </div>
+        <div role="cell" data-label="Size">
+          {{if .Size}}<span class="cv-data text-fg-1">{{.Size}}</span>
+          <span class="cv-usage-of">measured {{template "time" .Measured}}</span>
+          {{else}}<span class="cv-data-muted">not measured yet</span>{{end}}
+        </div>
+        <div role="cell" data-label="Backup">
+          {{if .BackedUp}}<span class="cv-data text-fg-1">{{.Schedule}}</span>
+          {{if .HasLast}}<span class="cv-usage-of">{{template "status-quiet" .LastStatus}}, last {{template "time" .Last}}</span>
+          {{else}}<span class="cv-usage-of">no backup yet</span>{{end}}
+          {{else}}<span class="cv-data-muted">not backed up</span>{{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{if $.VolumeHint}}<p class="text-sm text-fg-3">Set a backup on the service in <a href="/apps/{{$.ID}}/configure">Configure</a> to keep a copy off this server.</p>{{end}}
+</section>
+{{end}}
 <section aria-labelledby="databases-title" class="flex flex-col gap-2">
-  <h2 id="databases-title" class="cv-label">Databases</h2>
+  <h2 id="databases-title" class="cv-label">Backed-up services</h2>
   <div class="cv-panel p-4 flex flex-col gap-4">
     {{if not .Destination}}<p class="text-base text-fg-1">No backup destination is set. <a href="/settings#backups">Set one in Settings</a> before backups can run.</p>{{end}}
     {{range .Services}}
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
         <div class="cv-data text-fg-1">{{.Name}}</div>
-        <p class="cv-data-muted">PostgreSQL, on <span class="cv-inline-mono">{{.Schedule}}</span> (UTC), keeping the last {{.Keep}}.</p>
+        {{if .Volume}}<p class="cv-data-muted">Volume backup, {{.ScheduleText}}, keeping {{.Keep}}. The service stops while a backup runs{{with .LastStopped}} (last time {{.}}){{end}}.</p>
+        {{else}}<p class="cv-data-muted">PostgreSQL, on <span class="cv-inline-mono">{{.Schedule}}</span> (UTC), keeping the last {{.Keep}}.</p>{{end}}
       </div>
       {{if $.Destination}}
+      {{if .Volume}}
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Back up now…</summary>
+        <form method="post" action="/apps/{{$.ID}}/backups" class="cv-confirm-body">
+          <p>The service stops for a few seconds while the backup runs.</p>
+          <input type="hidden" name="service" value="{{.Name}}">
+          <div><button type="submit" class="cv-btn cv-btn-secondary">Back up now</button></div>
+        </form>
+      </details>
+      {{else}}
       <form method="post" action="/apps/{{$.ID}}/backups">
         <input type="hidden" name="service" value="{{.Name}}">
         <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Back up now</button>
       </form>
       {{end}}
+      {{end}}
     </div>
     {{else}}
     <p class="text-base text-fg-1">No service of this app is backed up.</p>
-    <p class="text-sm text-fg-3">Give a PostgreSQL service a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span>), through the API or the Compose request.</p>
+    <p class="text-sm text-fg-3">Give a service a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume), through the API or the Compose request.</p>
     {{end}}
   </div>
 </section>
@@ -76,12 +127,14 @@
           <span class="cv-data text-fg-1">{{.Service}}</span>
           <span class="cv-data-muted">{{template "time" .Started}}</span>
           {{with .Size}}<span class="cv-data-muted">{{.}}</span>{{end}}
+          {{with .Stopped}}<span class="cv-data-muted">{{.}}</span>{{end}}
         </div>
         {{if .CanRestore}}
         <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>
           <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore…</summary>
           <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/restore" class="cv-confirm-body">
-            <p>This replaces everything <span class="cv-inline-mono">{{.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>
+            {{if .Volume}}<p>The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.</p>
+            {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
             <label class="flex flex-col gap-2">
               <span class="cv-label">Type <span class="cv-inline-mono">{{.Service}}</span> to confirm</span>
               <input class="cv-field" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if eq $.ConfirmErr .ID}} autofocus aria-invalid="true"{{end}}>
@@ -112,6 +165,7 @@
         {{else}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span>restoring</span>{{end}}
         <span class="cv-data text-fg-1">{{.Service}}</span>
         <span class="cv-data-muted">from {{.BackupID}}, {{template "time" .Created}}</span>
+        {{with .Stopped}}<span class="cv-data-muted">{{.}}</span>{{end}}
       </div>
       {{with .Message}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
     </div>

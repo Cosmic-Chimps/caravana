@@ -101,7 +101,10 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 	creds map[string]BackupCredentials, dest BackupDestination) error {
 	want := map[string]bool{}
 	for _, svc := range a.Services {
-		if svc.Backup == nil {
+		// Only Postgres backups are Nomad jobs. A volume backup runs inside
+		// the service's own copy (volumerun.go), so a service whose engine
+		// became "volume" falls through to the purge below.
+		if svc.Backup == nil || svc.Backup.Engine != app.BackupPostgres {
 			continue
 		}
 		id := nomadjob.BackupJobID(a.ID, svc.Name)
@@ -141,9 +144,12 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 	return nil
 }
 
-// SetBackupDestination points every backup job at dest, from its next run:
-// it rewrites the destination items of each backup job's variable, keeping
-// its credentials. No job changes, so no app is deployed.
+// SetBackupDestination points every backup at dest, from its next run: it
+// rewrites the destination items of each backup job's variable, keeping its
+// credentials, and of each caravana-volumes variable that has a destination,
+// keeping its request and the rest. No job changes, so no app is deployed.
+// A caravana-volumes variable without a destination belongs to a service
+// that isn't backed up: it doesn't get the secret key.
 func (d *Deployer) SetBackupDestination(ctx context.Context, dest BackupDestination) error {
 	metas, _, err := d.nomad.Variables().PrefixList("nomad/jobs/", (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
@@ -151,6 +157,20 @@ func (d *Deployer) SetBackupDestination(ctx context.Context, dest BackupDestinat
 	}
 	for _, m := range metas {
 		jobID := strings.TrimPrefix(m.Path, "nomad/jobs/")
+		if appID, service, ok := splitVolumeVariablePath(jobID); ok {
+			items, err := d.readVariable(ctx, m.Path)
+			if err != nil {
+				return err
+			}
+			if _, backedUp := items["BACKUP_PATH"]; !backedUp {
+				continue
+			}
+			maps.Copy(items, destinationItems(appID, service, dest))
+			if err := d.writeVariable(ctx, m.Path, items); err != nil {
+				return err
+			}
+			continue
+		}
 		appID, service, ok := splitBackupJobID(jobID)
 		if !ok {
 			continue
@@ -171,6 +191,16 @@ func (d *Deployer) SetBackupDestination(ctx context.Context, dest BackupDestinat
 func splitBackupJobID(jobID string) (appID, service string, ok bool) {
 	parts := strings.Split(jobID, "_")
 	if len(parts) != 3 || (parts[2] != "backup" && parts[2] != "restore") {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+// splitVolumeVariablePath reads "<app>/<service>/caravana-volumes" (the path
+// after "nomad/jobs/") back.
+func splitVolumeVariablePath(path string) (appID, service string, ok bool) {
+	parts := strings.Split(path, "/")
+	if len(parts) != 3 || parts[2] != nomadjob.VolumeTaskName {
 		return "", "", false
 	}
 	return parts[0], parts[1], true

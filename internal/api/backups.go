@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -25,36 +26,79 @@ func toDestinationJSON(d store.BackupDestination) backupDestinationJSON {
 		AccessKeyID: d.AccessKeyID, UpdatedAt: d.UpdatedAt}
 }
 
-// backupJSON is one backup (schema Backup).
+// backupJSON is one backup (schema Backup). Engine, StoppedSeconds and Volumes
+// are feature 016's: only a volume run has the last two.
 type backupJSON struct {
 	ID         string     `json:"id"`
 	Service    string     `json:"service"`
+	Engine     string     `json:"engine"`
 	Status     string     `json:"status"`
 	Bytes      int64      `json:"bytes"`
 	Message    string     `json:"message,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	// StoppedSeconds is how long the service was stopped, a pointer so that a
+	// run without the measurement leaves it out instead of saying 0.
+	StoppedSeconds *float64 `json:"stoppedSeconds,omitempty"`
+	// Volumes is one entry per archive, omitted
+	// when empty so that a Postgres backup does not carry the field.
+	Volumes []backupVolumeJSON `json:"volumes,omitempty"`
+}
+
+// backupVolumeJSON is one volume's archive in a volume backup (schema
+// BackupVolume).
+type backupVolumeJSON struct {
+	Name string `json:"name"`
+	// Bytes is the archive's size in the destination.
+	Bytes int64 `json:"bytes"`
+	// SizeBytes is the volume's data when it was archived. The store keeps
+	// kilobytes, which is what du reports.
+	SizeBytes int64 `json:"sizeBytes"`
 }
 
 func toBackupJSON(b store.BackupRecord) backupJSON {
-	return backupJSON{ID: b.ID, Service: b.Service, Status: b.Status, Bytes: b.Bytes, Message: b.Message,
-		StartedAt: b.StartedAt, FinishedAt: b.FinishedAt}
+	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Bytes: b.Bytes,
+		Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped)}
+	for _, v := range b.Volumes {
+		out.Volumes = append(out.Volumes, backupVolumeJSON{Name: v.Name, Bytes: v.Bytes, SizeBytes: v.SizeKB * 1024})
+	}
+	return out
+}
+
+// engineOrPostgres is the engine of a record: the store defaults it when it
+// saves, but a record built by hand may not have one.
+func engineOrPostgres(engine string) string {
+	if engine == "" {
+		return app.BackupPostgres
+	}
+	return engine
+}
+
+// seconds is d in seconds, or nil when d is nil.
+func seconds(d *time.Duration) *float64 {
+	if d == nil {
+		return nil
+	}
+	s := d.Seconds()
+	return &s
 }
 
 // restoreJSON is one restore (schema Restore).
 type restoreJSON struct {
-	ID         string     `json:"id"`
-	Service    string     `json:"service"`
-	BackupID   string     `json:"backupId"`
-	Status     string     `json:"status"`
-	Message    string     `json:"message,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	ID             string     `json:"id"`
+	Service        string     `json:"service"`
+	BackupID       string     `json:"backupId"`
+	Engine         string     `json:"engine"`
+	Status         string     `json:"status"`
+	Message        string     `json:"message,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	FinishedAt     *time.Time `json:"finishedAt,omitempty"`
+	StoppedSeconds *float64   `json:"stoppedSeconds,omitempty"`
 }
 
 func toRestoreJSON(r store.RestoreRecord) restoreJSON {
-	return restoreJSON{ID: r.ID, Service: r.Service, BackupID: r.BackupID, Status: r.Status, Message: r.Message,
-		CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt}
+	return restoreJSON{ID: r.ID, Service: r.Service, BackupID: r.BackupID, Engine: engineOrPostgres(r.Engine), Status: r.Status,
+		Message: r.Message, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, StoppedSeconds: seconds(r.Stopped)}
 }
 
 // getBackupDestination answers GET /v1/backups/destination.
@@ -142,6 +186,8 @@ func backupError(err error) *Error {
 	switch {
 	case errors.Is(err, service.ErrBackupRunning):
 		return &Error{Status: http.StatusConflict, Code: codeBackupRunning, Message: err.Error()}
+	case errors.Is(err, service.ErrNoRunningCopy):
+		return &Error{Status: http.StatusConflict, Code: codeNoRunningCopy, Message: "The service has no running copy. Deploy it first."}
 	case errors.Is(err, service.ErrNoBackupDestination):
 		return &Error{Status: http.StatusConflict, Code: codeNoBackupDestination, Message: err.Error() + "; set one with PUT /v1/backups/destination"}
 	}

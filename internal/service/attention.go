@@ -175,7 +175,8 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 //
 //   - copies killed for memory are one out_of_memory item;
 //   - of the others, restarts plus one per failed copy reaching restartingAt
-//     is one restarting item over the copies that restarted or failed;
+//     is one restarting item over the copies that restarted or failed. The
+//     restarts Caravana asked for (a volume backup's) don't count;
 //   - a copy failing its health check, outside a rollout, that is in neither
 //     is one unhealthy item. A copy gives at most one item.
 func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rollingOut bool) []AttentionItem {
@@ -199,11 +200,16 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 		unhealthy := AttentionItem{Kind: AttentionUnhealthy, AppID: appID, Service: name}
 		restarts := 0
 		for _, c := range byService[name] {
+			// The restarts nobody asked for. A volume backup restarts the
+			// copy's tasks, and three nightly backups must not make a healthy
+			// app look like a crash loop. Both counts are sums over the same
+			// tasks (see deploy.Copy), so the difference is the crashes.
+			crashes := max(c.Restarts-c.RequestedRestarts, 0)
 			switch {
 			case c.OutOfMemory:
 				oom.add(c, eventTime(c))
-			case c.Restarts > 0 || c.Status == deploy.CopyFailed:
-				restarts += c.Restarts
+			case crashes > 0 || c.Status == deploy.CopyFailed:
+				restarts += crashes
 				if c.Status == deploy.CopyFailed {
 					restarts++
 				}

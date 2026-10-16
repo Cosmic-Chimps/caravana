@@ -62,6 +62,8 @@ func TestExport(t *testing.T) {
 		}
 		for _, want := range []string{
 			`# - Host volume "shop_db-data", mounted by service db.`,
+			"# - Nomad Variable nomad/jobs/shop/db/caravana-volumes, which the caravana-volumes task of service db reads",
+			"#   Create it before running the job, e.g. nomad var put nomad/jobs/shop/db/caravana-volumes LIMIT=1800",
 			"# - Nomad Variable nomad/jobs/shop/db with the secrets POSTGRES_PASSWORD.",
 			"Backups run as separate Nomad jobs (shop_db_backup)",
 		} {

@@ -162,6 +162,15 @@
   .cv-copies-row { min-height: 46px; padding-block: 8px; font-size: 13px; }
   .cv-copies-row > *, .cv-copies-head > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cv-restarts-warn { color: var(--color-warn); }
+  /* The Backups tab's Volumes table (feature 016): five columns of mono facts. A host path or a
+     list of mounts may be long, so these cells wrap instead of cutting; the size and the backup
+     put what they were measured or run against on a line of their own, as the copies' cells do. */
+  .cv-volumes { --cols: minmax(88px, 0.8fr) minmax(120px, 1fr) minmax(120px, 1.2fr) 112px minmax(168px, 1.1fr); container-type: inline-size; }
+  .cv-volumes-head, .cv-volumes-row { display: grid; grid-template-columns: var(--cols); column-gap: 12px; align-items: start; padding: 0 16px; }
+  .cv-volumes-head { height: 36px; align-items: center; background: var(--color-ink-2); }
+  .cv-volumes-row { min-height: 46px; padding-block: 10px; font-size: 13px; }
+  .cv-volumes-row > *, .cv-volumes-head > * { min-width: 0; overflow-wrap: anywhere; }
+  .cv-volumes-row > div { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
   /* CPU and memory: the number, then what it is measured against, on lines of their own. The
      memory meter is a thin bar of use against the ceiling; the warning mark and words beside it
      carry the state, so the color is never the only sign. A copy Nomad didn't answer for has one
@@ -328,6 +337,14 @@
   .cv-copies-row > .cv-k-cpu { grid-area: cpu; }
   .cv-copies-row > .cv-k-mem { grid-area: mem; }
   .cv-copies-row > .cv-k-usage-err { grid-area: auto; grid-column: 1 / -1; grid-row: 4; }
+}
+
+/* The Volumes table stacks like the copies table, by its own width: one column of facts, each
+   with its column's name above it. */
+@container (max-width: 719.98px) {
+  .cv-volumes-row [data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font: 400 12px/1.2 var(--font-mono); color: var(--color-fg-3); }
+  .cv-volumes-head { display: none; }
+  .cv-volumes-row { grid-template-columns: minmax(0, 1fr); row-gap: 8px; padding: 12px 16px; }
 }
 
 /* Under 640px: a smaller headline and stacked definition rows and entries. */

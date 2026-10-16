@@ -265,7 +265,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 		Tasks: []*api.Task{task(a.ID, svc, image, s)},
 	}
 	if len(svc.Volumes) > 0 {
-		tg.Volumes = volumeRequests(a.ID, svc.Volumes)
+		tg.Volumes = volumeRequests(a.ID, svc)
 		// A canary can't be placed on a single-writer volume the old copy
 		// still holds, so these groups stop the old copy, then start the new
 		// one. Still health-checked and reverted like any other deploy. A
@@ -282,20 +282,28 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 		}
 		tg.Tasks = append(tg.Tasks, namesTask(a, s))
 	}
+	if len(svc.Volumes) > 0 {
+		tg.Tasks = append(tg.Tasks, volumeTask(a.ID, svc, s))
+	}
 	return tg
 }
 
 // volumeRequests asks Nomad for each of a service's volumes, keyed by the
 // volume's name, which the task's mounts refer to. Each is the app's dynamic
 // host volume, held by one allocation at a time.
-func volumeRequests(appID string, volumes []app.Volume) map[string]*api.VolumeRequest {
-	reqs := make(map[string]*api.VolumeRequest, len(volumes))
-	for _, v := range volumes {
+//
+// The request is writable, even for a volume the service mounts read-only,
+// when the service has a volume backup: the caravana-volumes task has to be
+// able to restore into it. The service's own mount keeps its read_only, so
+// the service sees no change.
+func volumeRequests(appID string, svc app.Service) map[string]*api.VolumeRequest {
+	reqs := make(map[string]*api.VolumeRequest, len(svc.Volumes))
+	for _, v := range svc.Volumes {
 		reqs[v.Name] = &api.VolumeRequest{
 			Name:           v.Name,
 			Type:           "host",
 			Source:         VolumeName(appID, v.Name),
-			ReadOnly:       v.ReadOnly,
+			ReadOnly:       v.ReadOnly && !hasVolumeBackup(svc),
 			AccessMode:     "single-node-single-writer",
 			AttachmentMode: "file-system",
 		}

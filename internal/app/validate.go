@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/hashicorp/cronexpr"
 )
 
 // Patterns are compiled once, when the program starts. MustCompile panics on
@@ -105,8 +107,8 @@ func validateBackup(field string, svc Service) error {
 	if b == nil {
 		return nil
 	}
-	if b.Engine != BackupPostgres {
-		return NewFieldError(field+".engine", "%q is not supported; only %q is", b.Engine, BackupPostgres)
+	if b.Engine != BackupPostgres && b.Engine != BackupVolume {
+		return NewFieldError(field+".engine", "%q is not supported; it is %q or %q", b.Engine, BackupPostgres, BackupVolume)
 	}
 	if b.Keep < 0 || b.Keep > 100 {
 		return NewFieldError(field+".keep", "must be between 1 and 100 (leave it out for %d), got %d", DefaultBackupKeep, b.Keep)
@@ -116,6 +118,9 @@ func validateBackup(field string, svc Service) error {
 			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", b.Schedule, DefaultBackupSchedule)
 		}
 	}
+	if b.Engine == BackupVolume {
+		return validateVolumeBackup(field, svc)
+	}
 	if len(svc.Ports) == 0 {
 		return NewFieldError(field, "the backup reaches the database over its port, and the service has none")
 	}
@@ -123,6 +128,31 @@ func validateBackup(field string, svc Service) error {
 		slices.ContainsFunc(svc.Secrets, func(s Secret) bool { return s.Name == "POSTGRES_PASSWORD" })
 	if !has {
 		return NewFieldError(field, "the backup logs in with POSTGRES_PASSWORD; set it in the service's environment or secrets")
+	}
+	return nil
+}
+
+// NoVolumeToBackUp is the message of the refusal of a volume backup on a
+// service that mounts no volume. It is a constant so that the console, which
+// words the refusal for its own form, recognizes it.
+const NoVolumeToBackUp = "the service has no volume to back up"
+
+// validateVolumeBackup checks what only a volume backup needs: there must be a
+// volume to archive, and the schedule must be one Caravana's own scheduler can
+// run (the five-field check above lets "99 * * * *" through; Postgres backups
+// leave that to Nomad, which refuses it at register time).
+//
+// A volume shared with another service is refused too, but earlier, by
+// validateVolumes: each volume belongs to one service, so a volume backup
+// never has to share its volume.
+func validateVolumeBackup(field string, svc Service) error {
+	if len(svc.Volumes) == 0 {
+		return NewFieldError(field+".engine", "%s", NoVolumeToBackUp)
+	}
+	if svc.Backup.Schedule != "" {
+		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
+			return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", svc.Backup.Schedule, err)
+		}
 	}
 	return nil
 }
@@ -163,6 +193,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return NewFieldError(field+".name", "service %q is declared twice", svc.Name)
 	}
 	names[svc.Name] = true
+	if svc.Name == ReservedServiceName {
+		return NewFieldError(field+".name", "%q is reserved: Caravana runs a task of that name beside every service with a volume", svc.Name)
+	}
 	if n := len(appID) + 1 + len(svc.Name); n > maxLabelLen {
 		return NewFieldError(field+".name", "%s-%s is %d characters; the Nomad service name allows at most %d", appID, svc.Name, n, maxLabelLen)
 	}

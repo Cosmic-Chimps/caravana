@@ -182,6 +182,50 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Backup = &Backup{Engine: BackupPostgres}
 		}, "services[1].backup"},
 		{"backup without a password", func(a *App, d *Deployment) { a.Services[0].Backup = &Backup{Engine: BackupPostgres} }, "services[0].backup"},
+		{"postgres backup with a volume", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Volumes = []Volume{{Name: "pgdata", Path: "/var/lib/postgresql/data"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres}
+		}, ""},
+
+		// Volume backups need a volume, and no ports or password (the worker has none).
+		{"valid volume backup", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: "*/15 * * * *", Keep: 3}
+		}, ""},
+		{"valid volume backup with ports and a read-only volume", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "data", Path: "/data", ReadOnly: true}}
+			a.Services[0].Backup = &Backup{Engine: BackupVolume}
+		}, ""},
+		{"volume backup without a volume", func(a *App, d *Deployment) {
+			a.Services[1].Backup = &Backup{Engine: BackupVolume}
+		}, "services[1].backup.engine"},
+		{"volume backup keep too many", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Keep: 101}
+		}, "services[1].backup.keep"},
+		{"volume backup schedule not five fields", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: "daily"}
+		}, "services[1].backup.schedule"},
+		{"volume backup schedule out of range", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: "99 * * * *"}
+		}, "services[1].backup.schedule"},
+		{"volume backup of a volume shared with another service", func(a *App, d *Deployment) {
+			// Refused as a shared volume before the backup is looked at: the
+			// model gives every volume to one service, so a backup never shares.
+			a.Services[0].Volumes = []Volume{{Name: "shared", Path: "/d"}}
+			a.Services[1].Volumes = []Volume{{Name: "shared", Path: "/d"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume}
+		}, "services[1].volumes[0].name"},
+
+		// The task Caravana adds beside a service with a volume owns its name.
+		{"reserved service name", func(a *App, d *Deployment) {
+			a.Services[1].Name = ReservedServiceName
+			delete(d.Digests, "worker")
+			d.Digests[ReservedServiceName] = testDigest
+		}, "services[1].name"},
 
 		// Ports.
 		{"port name empty", func(a *App, d *Deployment) { a.Services[0].Ports[0].Name = "" }, "services[0].ports[0].name"},

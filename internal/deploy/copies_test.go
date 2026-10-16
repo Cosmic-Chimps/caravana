@@ -128,6 +128,35 @@ func TestCopyOf(t *testing.T) {
 		}
 	})
 
+	t.Run("RequestedRestarts counts the restarts someone asked for, over all tasks", func(t *testing.T) {
+		asked := &api.TaskEvent{Type: api.TaskRestartSignal, DisplayMessage: "User requested all tasks to restart"}
+		askedViaReason := &api.TaskEvent{Type: api.TaskRestartSignal, RestartReason: "User requested all tasks to restart"}
+		oneTask := &api.TaskEvent{Type: api.TaskRestartSignal, DisplayMessage: "Task signaled to restart"}
+		crash := &api.TaskEvent{Type: api.TaskRestarting, DisplayMessage: "Task restarting in 5s"}
+		tests := []struct {
+			name   string
+			states map[string]*api.TaskState
+			want   int
+		}{
+			{"none", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{{Type: api.TaskStarted}}}}, 0},
+			{"one restart of three tasks signals each", map[string]*api.TaskState{
+				"web": {Events: []*api.TaskEvent{asked}}, "names": {Events: []*api.TaskEvent{asked}}, "caravana-volumes": {Events: []*api.TaskEvent{asked}}}, 3},
+			{"two restarts of one task", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{asked, {Type: api.TaskStarted}, asked}}}, 2},
+			{"the reason field counts too", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{askedViaReason}}}, 1},
+			{"a signal for one task isn't a request for all", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{oneTask}}}, 0},
+			{"a crash restart isn't one", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{crash}}}, 0},
+			{"a nil event and a nil state", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{nil, asked}}, "gone": nil}, 1},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
+				if got.RequestedRestarts != tc.want {
+					t.Errorf("RequestedRestarts = %d, want %d", got.RequestedRestarts, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("StartedAt is nil while no task has started", func(t *testing.T) {
 		got := copyOf(&api.AllocationListStub{ClientStatus: "pending", TaskStates: map[string]*api.TaskState{
 			"web": {State: "pending"},

@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,9 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 	t.Cleanup(cancel) // t is runConsole's, so this runs after the last step
 	c := &console{
 		ctx: ctx,
-		g:   &gate{target: target},
+		// run names this lab run in the secrets the steps make up (the volumes
+		// step's bucket key, for one), as the gate's own does.
+		g: &gate{target: target, run: strconv.FormatInt(time.Now().UnixNano(), 36)},
 		web: &http.Client{
 			Jar:           jar,
 			Timeout:       30 * time.Second,
@@ -93,6 +96,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-needs-you", c.needsYou},
 		{"console-compose", c.compose},
 		{"console-compose-file-edit", c.composeFileEdit},
+		{"console-volumes", c.volumes},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -943,6 +947,171 @@ func (c *console) composeFileEdit(t *testing.T) {
 	}
 	if want := `attachment; filename="` + id + "-" + first + `.compose.yaml"`; resp.Header.Get("Content-Disposition") != want {
 		t.Errorf("Content-Disposition = %q, want %q", resp.Header.Get("Content-Disposition"), want)
+	}
+}
+
+// consoleVolumeCompose is the file of the volumes step: busybox with one named
+// volume, which its command writes "A" into once and then serves over HTTP, so
+// the health check (GET /v) passes only once the file is there.
+const consoleVolumeCompose = `services:
+  web:
+    image: busybox:1.37
+    command: ["sh", "-c", "[ -f /data/v ] || printf A > /data/v; exec httpd -f -p 8080 -h /data"]
+    ports: ["8080"]
+    volumes: ["data:/data"]
+volumes:
+  data: {}
+`
+
+// volumes: the Volumes section and a volume backup, through the console
+// (feature 016, US3). The app is made from the Compose form with the overlay's
+// backup engine set to "Volume (stops the service while it runs)". Once it is
+// healthy, Backups lists the volume with its mount, host path and a size (the
+// caravana-volumes task measures at the copy's start, so the page is asked again
+// for up to 30 s), and says there is no backup yet. "Back up now", in its
+// <details>, starts a run; when it has succeeded the backup's row says how long
+// the service was stopped and the Volumes row shows the last backup. Then the
+// app is deleted through the console.
+//
+// The backup needs a destination. The console steps run first, on a Caravana
+// whose data directory is new, so none is set: the step starts the gate's S3
+// bucket job (gate.startBucket) and points Caravana at it, as the gate steps
+// do. A destination that is already set is left alone (it is not ours to
+// overwrite), and then only the backup half is skipped, with a log line.
+func (c *console) volumes(t *testing.T) {
+	const id = "cvol"
+	remove := func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/apps/"+id, "", ""); err == nil {
+			resp.Body.Close()
+		}
+	}
+	remove() // a leftover from an aborted run, if any
+	t.Cleanup(remove)
+
+	canBackUp := false
+	resp := c.g.api(t, http.MethodGet, "/v1/backups/destination", "", "")
+	resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		c.g.startBucket(t)
+		canBackUp = true
+	case http.StatusOK:
+		t.Log("a backup destination is already set; leaving it, and skipping the back-up half of this step")
+	default:
+		t.Fatalf("GET /v1/backups/destination = %d, want 404 (none yet) or 200", resp.StatusCode)
+	}
+
+	// Create the app from the Compose form, with the volume engine picked on the page.
+	resp, preview := c.post(t, "/apps/new/compose/preview", url.Values{"name": {id}, "compose": {consoleVolumeCompose}})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(preview, `name="svc.web.backupEngine"`) ||
+		!strings.Contains(preview, `<option value="volume">Volume (stops the service while it runs)</option>`) {
+		t.Fatalf("POST the preview = %d, want 200 with the backup engine choice for a service with a volume: %s", resp.StatusCode, preview)
+	}
+	form := formValuesOf(t, preview, "compose-form")
+	form.Set("svc.web.healthPath", "/v")
+	form.Set("svc.web.backupEngine", "volume") // a select, which formValuesOf doesn't read
+	form.Set("svc.web.backupKeep", "2")
+	resp, body := c.post(t, "/apps/new/compose", form)
+	c.deployedFrom(t, id, resp, body)
+
+	// The Volumes row: the volume, its mount, its host path and, once the task has
+	// measured it, a size ("4 KB", with when it was measured).
+	size := regexp.MustCompile(`>(\d+(?:\.\d)? (?:B|KB|MB|GB))</span>\s*<span class="cv-usage-of">measured `)
+	var page string
+	waitFor(t, "the Volumes row to show a size", 30*time.Second, func() bool {
+		resp, page = c.get(t, "/apps/"+id+"/backups")
+		return resp.StatusCode == http.StatusOK && size.MatchString(page)
+	})
+	var volumes []struct {
+		Name     string `json:"name"`
+		Mounted  bool   `json:"mounted"`
+		HostPath string `json:"hostPath"`
+		BackedUp bool   `json:"backedUp"`
+		Size     *struct {
+			Bytes int64 `json:"bytes"`
+		} `json:"size"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id+"/volumes", &volumes)
+	if len(volumes) != 1 || volumes[0].Name != "data" || !volumes[0].Mounted || !volumes[0].BackedUp ||
+		volumes[0].HostPath == "" || volumes[0].Size == nil || volumes[0].Size.Bytes <= 0 {
+		t.Fatalf("GET /v1/apps/%s/volumes = %+v, want data, mounted, backed up, with a host path and a size", id, volumes)
+	}
+	for _, want := range []string{`id="volumes-title"`, `<span class="cv-data text-fg-1">data</span>`, "web:/data",
+		volumes[0].HostPath, "every day at 03:00 UTC", "no backup yet"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Volumes section lacks %q:\n%s", want, page)
+		}
+	}
+	if !canBackUp {
+		return
+	}
+
+	// "Back up now" is a form inside a <details>; it posts the service's name.
+	m := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="(/apps/` + id + `/backups)"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("the Backups tab has no Back up now confirmation for %s:\n%s", id, page)
+	}
+	attr := func(tag, name string) string {
+		if v := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag); v != nil {
+			return html.UnescapeString(v[1])
+		}
+		return ""
+	}
+	backUp := url.Values{}
+	for _, in := range regexp.MustCompile(`<input\b[^>]*>`).FindAllString(m[2], -1) {
+		if name := attr(in, "name"); name != "" {
+			backUp.Set(name, attr(in, "value"))
+		}
+	}
+	if backUp.Get("service") != "web" {
+		t.Fatalf("the Back up now form = %v, want service web", backUp)
+	}
+	resp, body = c.post(t, m[1], backUp)
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps/"+id+"/backups" {
+		t.Fatalf("POST Back up now = %d → %q, want 303 to the Backups tab: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+
+	// The run restarts the app's own copy, archives the volume and starts it
+	// again; it ends within the minute or so the restart takes, and the limit is
+	// 30 minutes, so wait a few.
+	var run gateVolumeRun
+	waitFor(t, "the volume backup to end", 4*time.Minute, func() bool {
+		var list struct {
+			Backups []gateVolumeRun `json:"backups"`
+		}
+		c.g.getJSON(t, "/v1/apps/"+id+"/backups", &list)
+		if len(list.Backups) == 0 {
+			return false
+		}
+		run = list.Backups[0]
+		return run.Status != "running"
+	})
+	if run.Status != "succeeded" || run.Engine != "volume" {
+		t.Fatalf("the volume backup ended %s (%s) as engine %s, want succeeded as volume", run.Status, run.Message, run.Engine)
+	}
+
+	// The backup's row says the service was stopped, and the Volumes row its last backup.
+	_, page = c.get(t, "/apps/"+id+"/backups")
+	if !regexp.MustCompile(`stopped (?:under 1|\d+) s`).MatchString(page) {
+		t.Errorf("the backup's row doesn't say how long the service was stopped:\n%s", page)
+	}
+	if !regexp.MustCompile(`succeeded</span>, last <time`).MatchString(page) || strings.Contains(page, "no backup yet") {
+		t.Errorf("the Volumes row doesn't show the last backup:\n%s", page)
+	}
+
+	// Delete it through the console: the app and its Nomad job go.
+	resp, body = c.post(t, "/apps/"+id+"/delete", url.Values{"confirm": {id}})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps?deleted="+id {
+		t.Fatalf("POST /apps/%s/delete = %d → %q, want 303 to /apps?deleted=%s: %s", id, resp.StatusCode, resp.Header.Get("Location"), id, body)
+	}
+	waitFor(t, id+"'s Nomad job to be gone", time.Minute, func() bool {
+		_, _, err := c.g.target.Nomad.Jobs().Info(id, nil)
+		return err != nil && strings.Contains(err.Error(), "404")
+	})
+	gone := c.g.api(t, http.MethodGet, "/v1/apps/"+id, "", "")
+	gone.Body.Close()
+	if gone.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /v1/apps/%s after the delete = %d, want 404", id, gone.StatusCode)
 	}
 }
 

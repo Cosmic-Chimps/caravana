@@ -18,14 +18,22 @@ import (
 
 // appState orders the deploys of one app (research R9). mu is held from
 // image resolution through registration, so two deploys of the same app
-// never interleave (DeleteApp takes it too). The other fields belong to
-// Service.mu, except deleted, which belongs to mu.
+// never interleave (DeleteApp takes it too). A volume run (volumebackup.go)
+// holds it from writing its request until the run is settled, so a deploy that
+// comes during a run waits for the run, and a run never starts in the middle of
+// a deploy. The other fields belong to Service.mu, except deleted, which
+// belongs to mu.
 type appState struct {
 	mu sync.Mutex
 	// deleted is set by DeleteApp while it holds mu. A deploy that was waiting
 	// for mu sees it and gives up, instead of registering a job for an app that
 	// is gone.
 	deleted bool
+	// volumeRun is set (under Service.mu) from the moment a volume backup or
+	// restore of the app claims it until the run is over. The run holds mu for
+	// that whole time, which a second run could only wait out, for as long as
+	// the first lasts; so it checks this first and is refused instead.
+	volumeRun bool
 
 	latest string // the most recently requested deployment
 

@@ -66,7 +66,58 @@ func goldenCases() []goldenCase {
 	letsEncrypt := labSettings()
 	letsEncrypt.CertResolver = "letsencrypt"
 	w := apptest.Whoami()
-	return append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
+	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
+	return append(cases, volumeBackupCases()...)
+}
+
+// volumeBackupCases are the apps with a volume backup (feature 016). They live
+// here, not in apptest, so the packages that run every apptest shape through
+// the console's forms don't have to know the engine yet. The "volumes" case
+// of apptest is the service with a volume and no backup.
+func volumeBackupCases() []goldenCase {
+	kuma := func(volumes ...app.Volume) app.App {
+		return app.App{
+			ID:     "kuma",
+			Source: app.Source{Kind: app.SourceImage},
+			Services: []app.Service{{
+				Name:    "web",
+				Image:   "louislam/uptime-kuma:2",
+				Ports:   []app.Port{{Name: "http", ContainerPort: 3001}},
+				Domains: []app.Domain{{Host: "kuma.example.com", Port: "http"}},
+				Health:  &app.HealthCheck{Path: "/"},
+				Volumes: volumes,
+				Backup:  &app.Backup{Engine: app.BackupVolume, Schedule: "0 4 * * *", Keep: 5},
+			}},
+		}
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"web": "louislam/uptime-kuma@sha256:" + strings.Repeat("a", 64),
+	}}
+	return []goldenCase{
+		{
+			name:       "volume-backup",
+			app:        kuma(app.Volume{Name: "data", Path: "/app/data"}, app.Volume{Name: "uploads", Path: "/app/uploads"}),
+			deployment: dep,
+			settings:   labSettings(),
+		},
+		{
+			name:       "volume-backup-readonly",
+			app:        kuma(app.Volume{Name: "data", Path: "/app/data", ReadOnly: true}),
+			deployment: dep,
+			settings:   labSettings(),
+		},
+		{
+			// A read-only mount without a backup: the task can only measure it.
+			name: "volume-readonly",
+			app: func() app.App {
+				a := kuma(app.Volume{Name: "data", Path: "/app/data", ReadOnly: true})
+				a.Services[0].Backup = nil
+				return a
+			}(),
+			deployment: dep,
+			settings:   labSettings(),
+		},
+	}
 }
 
 func TestTranslate(t *testing.T) {
@@ -313,7 +364,13 @@ func TestServicesByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tg := range res.Job.TaskGroups {
-		if len(tg.Tasks) != 2 || tg.Tasks[0].Name != *tg.Name || tg.Tasks[1].Name != "names" {
+		// The db service has a volume, which adds the caravana-volumes task
+		// after names (TestVolumeTask checks it).
+		wantTasks := 2
+		if *tg.Name == "db" {
+			wantTasks = 3
+		}
+		if len(tg.Tasks) != wantTasks || tg.Tasks[0].Name != *tg.Name || tg.Tasks[1].Name != "names" {
 			t.Fatalf("group %s tasks = %d, want its own task first, then names", *tg.Name, len(tg.Tasks))
 		}
 		names := tg.Tasks[1]

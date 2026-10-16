@@ -30,12 +30,19 @@ type Copy struct {
 	Description string // Nomad's client description, e.g. "Tasks are running"
 	Version     uint64 // the job version
 	Status      CopyStatus
-	Restarts    int        // restarts, summed over the allocation's tasks
-	StartedAt   *time.Time // the first start of any task; nil while none has started
-	LastRestart *time.Time // the newest restart of any task; nil if none restarted
-	FinishedAt  *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
-	OutOfMemory bool       // the service's last stop was the kernel killing it for passing its memory ceiling
-	Terminal    bool       // true for stopped and failed: it will never run again
+	Restarts    int // restarts, summed over the allocation's tasks
+	// RequestedRestarts is how many of those Caravana asked for: a volume
+	// backup restarts the copy's tasks. Nomad's event "Restart Signaled" says
+	// so, and it is counted over the same tasks as Restarts, so that the
+	// difference is the restarts nobody asked for (the needs-you list's
+	// crash-loop rule). Nomad keeps only each task's last events, so it is an
+	// undercount for a copy restarted many times.
+	RequestedRestarts int
+	StartedAt         *time.Time // the first start of any task; nil while none has started
+	LastRestart       *time.Time // the newest restart of any task; nil if none restarted
+	FinishedAt        *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
+	OutOfMemory       bool       // the service's last stop was the kernel killing it for passing its memory ceiling
+	Terminal          bool       // true for stopped and failed: it will never run again
 }
 
 // copyOf maps one allocation to a Copy (research R8):
@@ -86,6 +93,7 @@ func copyOf(a *api.AllocationListStub) Copy {
 			continue
 		}
 		c.Restarts += int(ts.Restarts)
+		c.RequestedRestarts += requestedRestarts(ts)
 		if !ts.StartedAt.IsZero() && (c.StartedAt == nil || ts.StartedAt.Before(*c.StartedAt)) {
 			t := ts.StartedAt
 			c.StartedAt = &t
@@ -101,6 +109,23 @@ func copyOf(a *api.AllocationListStub) Copy {
 	}
 	c.OutOfMemory = killedForMemory(a.TaskStates[a.TaskGroup])
 	return c
+}
+
+// requestedRestartMessage is what a task's "Restart Signaled" event says when
+// someone asked for all of the allocation's tasks to restart (lab finding L5).
+// A restart Nomad decides on itself, after a crash, has no such event.
+const requestedRestartMessage = "User requested all tasks to restart"
+
+// requestedRestarts counts the restarts of one task that were asked for.
+func requestedRestarts(ts *api.TaskState) int {
+	n := 0
+	for _, e := range ts.Events {
+		if e != nil && e.Type == api.TaskRestartSignal &&
+			strings.Contains(e.DisplayMessage+" "+e.Message+" "+e.RestartReason, requestedRestartMessage) {
+			n++
+		}
+	}
+	return n
 }
 
 // killedForMemory reports whether the service's task last stopped because the

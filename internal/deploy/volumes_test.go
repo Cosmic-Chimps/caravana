@@ -77,6 +77,35 @@ func TestEnsureVolumesErrors(t *testing.T) {
 	})
 }
 
+func TestHostVolumes(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+
+	// None yet: an empty answer, not an error.
+	got, err := d.HostVolumes(ctx, "whoami")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("HostVolumes of nothing = %v, %v", got, err)
+	}
+
+	dataPath := nomad.AddHostVolume("whoami_data")
+	nomad.AddHostVolume("whoami_old")
+	nomad.AddHostVolume("whoami2_data") // another app's volume is not listed
+	got, err = d.HostVolumes(ctx, "whoami")
+	if err != nil {
+		t.Fatalf("HostVolumes: %v", err)
+	}
+	if len(got) != 2 || got["data"].HostPath != dataPath || got["old"].HostPath == "" {
+		t.Errorf("HostVolumes = %v, want data at %s and old", got, dataPath)
+	}
+
+	t.Run("nomad down", func(t *testing.T) {
+		nomad.Down()
+		if _, err := d.HostVolumes(ctx, "whoami"); !errors.Is(err, ErrNomadUnavailable) {
+			t.Errorf("HostVolumes = %v, want ErrNomadUnavailable", err)
+		}
+	})
+}
+
 func TestDeleteVolumes(t *testing.T) {
 	ctx := context.Background()
 	d, _, nomad := newTestDeployer(t)

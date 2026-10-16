@@ -286,8 +286,8 @@ func (s *draftService) build() bool {
 
 	switch engine := s.BackupEngine.Value; {
 	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != ""):
-		refuse(&s.BackupEngine, "Choose postgres to set a schedule or how many to keep.")
-	case engine == "postgres":
+		refuse(&s.BackupEngine, "Choose an engine to set a schedule or how many to keep.")
+	case engine == app.BackupPostgres || engine == app.BackupVolume:
 		b := app.Backup{Engine: engine, Schedule: s.BackupSchedule.Value}
 		if s.BackupKeep.Value != "" {
 			if n, err := strconv.Atoi(s.BackupKeep.Value); err != nil || n < 1 || n > 100 {
@@ -298,7 +298,7 @@ func (s *draftService) build() bool {
 		}
 		s.overlay.Backup = &b
 	case engine != "":
-		refuse(&s.BackupEngine, "Choose none or postgres.")
+		refuse(&s.BackupEngine, "Choose none, PostgreSQL or Volume.")
 	}
 	return ok
 }

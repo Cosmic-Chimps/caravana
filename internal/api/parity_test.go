@@ -74,7 +74,7 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/secrets":        {ops: []string{"deployApp"}},
 	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
 	// Backups (feature 010).
-	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "getBackupDestination"}},
+	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination"}},
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},
 	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
 	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},

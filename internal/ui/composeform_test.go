@@ -157,6 +157,18 @@ func TestComposeDraftOverlay(t *testing.T) {
 		t.Errorf("backup = %+v, want %+v", req.Services["db"].Backup, want)
 	}
 
+	// Feature 016: the volume engine, with a schedule and how many to keep.
+	post = overlayPost("x", []string{"web"}, map[string]string{
+		"svc.web.backupEngine": "volume", "svc.web.backupSchedule": "30 2 * * *", "svc.web.backupKeep": "5",
+	})
+	d, ok = parseComposeDraft(post)
+	if !ok {
+		t.Fatal("parse refused a volume backup")
+	}
+	if want := (&app.Backup{Engine: "volume", Schedule: "30 2 * * *", Keep: 5}); !reflect.DeepEqual(d.request().Services["web"].Backup, want) {
+		t.Errorf("volume backup = %+v, want %+v", d.request().Services["web"].Backup, want)
+	}
+
 	// A service with nothing set has no entry: no health check means the default TCP one.
 	d, _ = parseComposeDraft(overlayPost("x", []string{"web"}, nil))
 	if len(d.request().Services) != 0 {
@@ -176,8 +188,8 @@ func TestComposeDraftErrors(t *testing.T) {
 		{"health port text", "healthPort", "web", "healthPort", "1 to 65535"},
 		{"interval text", "healthInterval", "soon", "healthInterval", "seconds"},
 		{"timeout zero", "healthTimeout", "0", "healthTimeout", "seconds"},
-		{"engine unknown", "backupEngine", "mysql", "backupEngine", "none or postgres"},
-		{"schedule without an engine", "backupSchedule", "0 4 * * *", "backupEngine", "Choose postgres"},
+		{"engine unknown", "backupEngine", "mysql", "backupEngine", "none, PostgreSQL or Volume"},
+		{"schedule without an engine", "backupSchedule", "0 4 * * *", "backupEngine", "Choose an engine"},
 		{"keep text", "backupKeep", "many", "backupKeep", "1 to 100"},
 	}
 	for _, tc := range tests {

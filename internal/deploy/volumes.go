@@ -129,6 +129,36 @@ func (d *Deployer) DeleteVolumes(ctx context.Context, appID string) error {
 	return nil
 }
 
+// HostVolumeInfo is what Nomad knows about one of an app's volumes.
+type HostVolumeInfo struct {
+	// HostPath is the directory on the node that holds the volume's files.
+	HostPath string
+}
+
+// HostVolumes returns the host volumes Nomad has for appID, by the name the
+// app gives them (without the "<app>_" prefix). The volumes panel uses it to
+// show where each lives and to list the ones no service mounts any more. The
+// list call doesn't carry the host path, so each volume is read once more.
+func (d *Deployer) HostVolumes(ctx context.Context, appID string) (map[string]HostVolumeInfo, error) {
+	prefix := nomadjob.VolumePrefix(appID)
+	have, err := d.listVolumes(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]HostVolumeInfo, len(have))
+	for name, stub := range have {
+		v, _, err := d.nomad.HostVolumes().Get(stub.ID, (&api.QueryOptions{}).WithContext(ctx))
+		if err != nil {
+			if statusOf(err) == http.StatusNotFound {
+				continue // deleted between the list and the read
+			}
+			return nil, d.volumeError("read volume "+name, err)
+		}
+		out[strings.TrimPrefix(name, prefix)] = HostVolumeInfo{HostPath: v.HostPath}
+	}
+	return out, nil
+}
+
 // listVolumes returns the host volumes whose names start with prefix, by
 // name. The prefix ends in "_", so one app's never match another's.
 func (d *Deployer) listVolumes(ctx context.Context, prefix string) (map[string]*api.HostVolumeStub, error) {

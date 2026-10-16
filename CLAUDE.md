@@ -189,7 +189,34 @@ warning "This app's Compose file was dropped: it was deployed from a definition,
 0.12.0: `getCompose` (with the revision as `ETag`), `getDeploymentCompose`, `composeKept` on
 `AppRecord`, `AppSummary` and `Deployment`, code `compose_not_kept` (404). No page, download or
 API read holds a secret value (tests search for `s3cret-sentinel-015`). `TestConsoleLab` has a step
-`console-compose-file-edit` (create from a file, edit, roll back, download).
+`console-compose-file-edit` (create from a file, edit, roll back, download). Feature 016 is
+implemented on branch `016-volume-backups`: a service's backup may use the engine `volume`.
+The service stops, its volumes are archived to the backup destination, and it starts again. Restore
+works the same way, all or nothing across the service's volumes, and files added since the backup
+are deleted. It runs inside the app's own copy: every service with volumes gets a
+`caravana-volumes` prestart task (the pinned rclone image, `nomadjob.VolumeScript`, always exits 0)
+that measures its volumes at each start. Caravana writes a request (`REQUEST`, `ACTION`, `OBJECT`,
+`TS`, `NOT_AFTER`) into the task's variable `nomad/jobs/<app>/<service>/caravana-volumes`, waits
+until `local/request.env` shows it, then restarts the copy's tasks (`Allocations().Restart`, all
+tasks). The service stops cleanly, the task does the run and writes
+`/alloc/data/caravana/<request>.result`, and the service starts again: same copy, same job version,
+no Nomad deployment. Other facts:
+- The destination's keys render only into `secrets/destination.env`, which the fs API can't read.
+- Restarted tasks' output isn't kept, which is why the outcome goes in a file.
+- Scaling to 0 was rejected: two job versions per backup, and auto-revert could stick at count 0
+  (research L1–L11).
+- Caravana schedules volume backups itself (`hashicorp/cronexpr`, now a direct dependency), and
+  holds the app's deploy lock for the whole run, so deploys and deletes wait. A second run is
+  refused (`ErrBackupRunning`), and runs left running at a restart are settled at start.
+- `Copy.RequestedRestarts` keeps these restarts off the crash-loop rule.
+- Migration `0008_volume_backups.sql`: `engine`, `stopped_ms`, `volumes` on backups and restores,
+  and `volume_sizes`.
+- The policy gained `alloc-lifecycle` and `read-fs`: rerun the installer, then redeploy each volume
+  app once so it gains the task.
+- API 0.13.0: `listVolumes` (`AppVolume`), `engine` and `stoppedSeconds` on backups and restores,
+  `volumes` on backups, 409 `no_running_copy`.
+- The Backups tab opens with a Volumes section (mount, host path, size, last backup).
+- The gate has a step `volume-backup-restore`, and `TestConsoleLab` a step `console-volumes`.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

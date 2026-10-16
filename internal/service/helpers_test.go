@@ -65,8 +65,18 @@ func newDeployer(t *testing.T, reg *registrytest.Server, nomad *deploytest.Nomad
 		BackoffStart:   time.Millisecond,
 		BackoffMax:     5 * time.Millisecond,
 		VersionRetries: []time.Duration{time.Millisecond, time.Millisecond},
+		RenderGap:      time.Millisecond,
+		RenderWait:     120 * time.Millisecond,
 	}
 	return d
+}
+
+// Set moves the fake clock (defined in auth_test.go) to t. The service gets one
+// in startService, for its scheduler and run IDs.
+func (c *fakeClock) Set(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = t
 }
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -79,6 +89,11 @@ func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad
 	svc.retryGap = 5 * time.Millisecond
 	svc.watchIdle = 10 * time.Millisecond
 	svc.backupPoll = 10 * time.Millisecond
+	// Volume runs: short waits, and no scheduler pass after the first, which
+	// finds nothing yet. Tests of the scheduler call runDueVolumeBackups.
+	svc.clock = &fakeClock{t: time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC)}
+	svc.scheduleGap = time.Hour
+	svc.volume = volumeTiming{limit: time.Minute, grace: 150 * time.Millisecond, poll: 2 * time.Millisecond, comeBack: 150 * time.Millisecond}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

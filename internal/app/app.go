@@ -66,8 +66,9 @@ type Service struct {
 	// mounted by this service only. A service with a volume runs one copy,
 	// and its deploys replace the copy instead of running two at once.
 	Volumes []Volume `json:"volumes,omitempty"`
-	// Backup makes the service a database Caravana backs up on a schedule to
-	// the installation's backup destination. nil means no backups.
+	// Backup makes Caravana back the service up on a schedule to the
+	// installation's backup destination: a Postgres database, or the files of
+	// its volumes. nil means no backups.
 	Backup *Backup `json:"backup,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
@@ -117,14 +118,27 @@ type Volume struct {
 	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
-// BackupPostgres is the only backup engine so far: pg_dump and pg_restore,
-// with the credentials the official postgres image reads (POSTGRES_USER,
-// POSTGRES_PASSWORD, POSTGRES_DB) from the service's env or secrets.
-const BackupPostgres = "postgres"
+// ReservedServiceName is the name of the task Caravana adds beside every
+// service that has a volume (feature 016). A service can't take it, so the
+// task can't be confused with a service's own.
+const ReservedServiceName = "caravana-volumes"
+
+// Backup engines.
+const (
+	// BackupPostgres is pg_dump and pg_restore, with the credentials the
+	// official postgres image reads (POSTGRES_USER, POSTGRES_PASSWORD,
+	// POSTGRES_DB) from the service's env or secrets.
+	BackupPostgres = "postgres"
+	// BackupVolume archives the service's volumes with the service stopped, so
+	// it works for any app that keeps its data in a volume (feature 016).
+	BackupVolume = "volume"
+)
 
 // Backup is a service's backup policy.
 type Backup struct {
-	// Engine is the database the service runs: "postgres".
+	// Engine is how the service is backed up: BackupPostgres, for a database
+	// Caravana reaches over its port, or BackupVolume, for the files of the
+	// service's volumes.
 	Engine string `json:"engine"`
 	// Schedule is a five-field cron expression, in UTC. Empty means every day
 	// at 03:00 (DefaultBackupSchedule).
