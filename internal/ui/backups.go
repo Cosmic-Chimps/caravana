@@ -22,11 +22,40 @@ import (
 type backupsTab struct {
 	ID          string
 	Destination bool // a destination is set
-	Services    []backupService
-	Backups     []backupRow
-	Restores    []restoreRow
-	Notice      sentence
-	ConfirmErr  string // the backup whose restore confirmation was wrong
+	// Volumes is the Volumes section (feature 016), first on the tab; none when
+	// the app has no volume, and then the section isn't drawn.
+	Volumes []volumeRow
+	// VolumeHint says a mounted volume isn't backed up, which the section
+	// answers with a link to Configure.
+	VolumeHint bool
+	Services   []backupService
+	Backups    []backupRow
+	Restores   []restoreRow
+	Notice     sentence
+	ConfirmErr string // the backup whose restore confirmation was wrong
+}
+
+// volumeRow is one row of the Volumes section.
+type volumeRow struct {
+	Name string
+	// Mounts is "service:/path" for each mount, with "(read-only)" when so. A
+	// volume no service mounts has none, and says so.
+	Mounts    []string
+	Unmounted bool
+	// HostPath is empty when Nomad couldn't be read.
+	HostPath string
+	// Size is "312 MB", empty while the volume has never been measured; then
+	// Measured says when it was.
+	Size     string
+	Measured when
+	// BackedUp says a volume backup covers it, on Schedule (in words). Last is
+	// when its newest run started and LastStatus how it went; HasLast is false
+	// until one ran.
+	BackedUp   bool
+	Schedule   string
+	HasLast    bool
+	Last       when
+	LastStatus statusView
 }
 
 // backupService is one service with a backup policy: a database, or (feature
@@ -93,6 +122,13 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 	}
 	head.LiveURL = "/live/apps/" + id
 
+	volumes, err := s.svc.Volumes(ctx, id)
+	if err != nil {
+		s.serverError(w, "read volumes", err)
+		return
+	}
+	tab.Volumes, tab.VolumeHint = volumeRows(s.now(), volumes)
+
 	tab.ID, tab.Destination = id, destErr == nil
 	for _, svc := range sum.App.Services {
 		if svc.Backup == nil {
@@ -129,6 +165,66 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		tab.Restores = append(tab.Restores, row)
 	}
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "backups"), Backups: &tab})
+}
+
+// volumeRows turns the service's volumes into the section's rows, and says
+// whether to show the hint that a mounted volume isn't backed up. It is pure,
+// so the table test calls it with a fixed now.
+func volumeRows(now time.Time, volumes []service.VolumeView) (rows []volumeRow, hint bool) {
+	for _, v := range volumes {
+		row := volumeRow{Name: v.Name, Unmounted: !v.Mounted, HostPath: v.HostPath, BackedUp: v.BackedUp}
+		for _, m := range v.Mounts {
+			text := m.Service + ":" + m.Path
+			if m.ReadOnly {
+				text += " (read-only)"
+			}
+			row.Mounts = append(row.Mounts, text)
+		}
+		if v.Size != nil {
+			row.Size, row.Measured = humanBytes(v.Size.Bytes), whenOf(now, &v.Size.MeasuredAt, "")
+		}
+		if v.BackedUp {
+			row.Schedule = scheduleText(v.Schedule)
+			if v.LastBackup != nil {
+				row.HasLast = true
+				row.Last = whenOf(now, &v.LastBackup.StartedAt, "")
+				row.LastStatus = backupStatus(v.LastBackup.Status)
+			}
+		} else if v.Mounted {
+			hint = true
+		}
+		rows = append(rows, row)
+	}
+	return rows, hint
+}
+
+// backupStatus is a backup's status as a mark and a word.
+func backupStatus(status string) statusView {
+	switch status {
+	case store.BackupSucceeded:
+		return statusView{Kind: "healthy", Word: "succeeded"}
+	case store.BackupFailed:
+		return statusView{Kind: "failed", Word: "failed"}
+	}
+	return statusView{Kind: "rolling", Word: "running"}
+}
+
+// humanBytes is a size as people read it: "312 MB", "1.5 GB", "4 KB". Under 10
+// of a unit it keeps one decimal (and drops a ".0"); from 10 up, whole units.
+func humanBytes(n int64) string {
+	if n < 1<<10 {
+		return fmt.Sprintf("%d B", n)
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	v, i := float64(n)/(1<<10), 0
+	for v >= 1023.5 && i < len(units)-1 { // 1023.6 KB would print as "1024 KB"
+		v /= 1 << 10
+		i++
+	}
+	if v < 9.95 { // 9.96 would print as "10.0"
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + " " + units[i]
+	}
+	return fmt.Sprintf("%.0f %s", v, units[i])
 }
 
 // scheduleText tells a cron expression in words when it is a plain one: "every
@@ -226,7 +322,7 @@ func (s *server) refuseBackup(w http.ResponseWriter, r *http.Request, id string,
 	case errors.Is(err, service.ErrBackupRunning):
 		tab.Notice = sentence{plain("A backup or restore of this service is running. Try again when it ends.")}
 	case errors.Is(err, service.ErrNoRunningCopy):
-		tab.Notice = sentence{plain("The service has no running copy to back up. Start it with a deploy first.")}
+		tab.Notice = sentence{plain("The service has no running copy. Start it with a deploy first.")}
 	case errors.Is(err, service.ErrNoBackupDestination):
 		tab.Notice = sentence{plain("No backup destination is set. Set one in Settings first.")}
 	case errors.Is(err, store.ErrNotFound):

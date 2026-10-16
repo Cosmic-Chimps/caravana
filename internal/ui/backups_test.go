@@ -228,7 +228,7 @@ func TestBackUpNowVolumeRefusals(t *testing.T) {
 	e := volumeBackupsEnv(t)
 	resp, body := e.postForm(t, "/apps/kuma/backups", url.Values{"service": {"uptime-kuma"}})
 	if resp.StatusCode != http.StatusConflict ||
-		!strings.Contains(text(body), "The service has no running copy to back up. Start it with a deploy first.") {
+		!strings.Contains(text(body), "The service has no running copy. Start it with a deploy first.") {
 		t.Errorf("Back up now without a copy = %d:\n%s", resp.StatusCode, text(body))
 	}
 }

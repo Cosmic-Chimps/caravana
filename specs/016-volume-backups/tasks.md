@@ -270,7 +270,7 @@ Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/ap
   - host paths from T018. When Nomad fails, leave them empty and still answer.
 
   Pure helper `volumeViews(app, hostVols, sizes, backups)` with table tests; one test for a failing Nomad.
-- [ ] T020 [US3] API and console:
+- [X] T020 [US3] API and console:
   - `listVolumes` (`GET /v1/apps/{id}/volumes`) in internal/api/volumes.go, registered in api.go, in api/openapi.yaml (`Volume` schema per contracts/api.md);
   - parity: `GET /apps/{id}/backups` gains `listVolumes`;
   - the console's Volumes section at the top of the Backups tab, drawn only when the app has a volume, with the columns and copy of contracts/console.md, and the "not backed up" hint linking to Configure.

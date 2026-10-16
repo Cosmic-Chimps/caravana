@@ -263,6 +263,38 @@ paths:
         "502":
           $ref: "#/components/responses/NomadUnavailable"
 
+  /v1/apps/{id}/volumes:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: listVolumes
+      summary: List an app's volumes, with their size and backup state.
+      description: |
+        The volumes in the app's stored definition, then the volumes Nomad still has for the app
+        that no service mounts any more (`mounted: false`; they stay until the app is deleted).
+
+        Sizes are measured by each copy's `caravana-volumes` task when the copy starts, so a
+        volume of an app deployed before volume backups existed has no `size` until the app is
+        deployed again. A running copy is asked for its newest measurement; a copy that doesn't
+        answer in 2 seconds leaves the stored one. When Nomad can't be read the answer is still
+        200: `hostPath` is absent and the unmounted volumes are not listed.
+      tags: [backups]
+      responses:
+        "200":
+          description: In the order of the definition, unmounted volumes last; empty when the app has none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppVolume"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/logs:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -1607,6 +1639,71 @@ components:
         sizeBytes:
           type: integer
           description: The volume's data when it was archived, before compression.
+
+    AppVolume:
+      type: object
+      additionalProperties: false
+      required: [name, mounted, mounts, backedUp]
+      properties:
+        name: {type: string, examples: ["uptime-kuma-db-data"]}
+        mounted:
+          type: boolean
+          description: |
+            False for a volume Nomad has for the app that no service mounts; `mounts` is then
+            empty.
+        mounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppVolumeMount"
+        hostPath:
+          type: string
+          description: |
+            The directory on the node that holds the volume's files. Absent when Nomad couldn't
+            be read.
+        size:
+          $ref: "#/components/schemas/AppVolumeSize"
+        backedUp:
+          type: boolean
+          description: |
+            True when the service that mounts the volume has a `volume` backup. A volume of a
+            `postgres`-backed service is not backed up in this sense.
+        lastBackup:
+          $ref: "#/components/schemas/AppVolumeBackup"
+
+    AppVolumeMount:
+      type: object
+      additionalProperties: false
+      required: [service, path, readOnly]
+      properties:
+        service: {type: string}
+        path: {type: string}
+        readOnly: {type: boolean}
+
+    AppVolumeSize:
+      type: object
+      description: Absent from an `AppVolume` that has never been measured.
+      additionalProperties: false
+      required: [bytes, measuredAt]
+      properties:
+        bytes: {type: integer}
+        measuredAt:
+          type: string
+          format: date-time
+          description: When the copy's `caravana-volumes` task measured it.
+
+    AppVolumeBackup:
+      type: object
+      description: |
+        The newest `volume` backup of the service that mounts the volume, whatever its outcome.
+        Absent when `backedUp` is false, and until the first backup ran.
+      additionalProperties: false
+      required: [id, status, startedAt]
+      properties:
+        id: {type: string, examples: ["uptime-kuma-1792119600"]}
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        startedAt: {type: string, format: date-time}
 
     Restore:
       type: object

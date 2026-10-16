@@ -39,6 +39,45 @@
 {{/* The Backups tab (feature 010). Takes a backupsTab. */}}
 {{define "backups"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if .Volumes}}
+<section aria-labelledby="volumes-title" class="flex flex-col gap-2">
+  <h2 id="volumes-title" class="cv-label">Volumes</h2>
+  <div class="cv-panel">
+    <div class="cv-volumes" role="table" aria-label="Volumes">
+      <div class="cv-volumes-head cv-label" role="row">
+        <span role="columnheader">Volume</span>
+        <span role="columnheader">Mounted at</span>
+        <span role="columnheader">On the host</span>
+        <span role="columnheader">Size</span>
+        <span role="columnheader">Backup</span>
+      </div>
+      {{range .Volumes}}
+      <div class="cv-row cv-volumes-row" role="row">
+        <div role="cell"><span class="cv-data text-fg-1">{{.Name}}</span></div>
+        <div role="cell" data-label="Mounted at">
+          {{range .Mounts}}<span class="cv-data">{{.}}</span>{{else}}<span class="cv-data-muted">not mounted</span>{{end}}
+        </div>
+        <div role="cell" data-label="On the host">
+          {{if .HostPath}}<span class="cv-data-muted">{{.HostPath}}</span>{{else}}<span class="cv-data-muted" title="Nomad couldn't be read">&mdash;</span>{{end}}
+        </div>
+        <div role="cell" data-label="Size">
+          {{if .Size}}<span class="cv-data text-fg-1">{{.Size}}</span>
+          <span class="cv-usage-of">measured {{template "time" .Measured}}</span>
+          {{else}}<span class="cv-data-muted">not measured yet</span>{{end}}
+        </div>
+        <div role="cell" data-label="Backup">
+          {{if .BackedUp}}<span class="cv-data text-fg-1">{{.Schedule}}</span>
+          {{if .HasLast}}<span class="cv-usage-of">{{template "status-quiet" .LastStatus}}, last {{template "time" .Last}}</span>
+          {{else}}<span class="cv-usage-of">no backup yet</span>{{end}}
+          {{else}}<span class="cv-data-muted">not backed up</span>{{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{if $.VolumeHint}}<p class="text-sm text-fg-3">Set a backup on the service in <a href="/apps/{{$.ID}}/configure">Configure</a> to keep a copy off this server.</p>{{end}}
+</section>
+{{end}}
 <section aria-labelledby="databases-title" class="flex flex-col gap-2">
   <h2 id="databases-title" class="cv-label">Backed-up services</h2>
   <div class="cv-panel p-4 flex flex-col gap-4">

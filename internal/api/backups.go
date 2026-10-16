@@ -187,7 +187,7 @@ func backupError(err error) *Error {
 	case errors.Is(err, service.ErrBackupRunning):
 		return &Error{Status: http.StatusConflict, Code: codeBackupRunning, Message: err.Error()}
 	case errors.Is(err, service.ErrNoRunningCopy):
-		return &Error{Status: http.StatusConflict, Code: codeNoRunningCopy, Message: "The service has no running copy to back up. Deploy it first."}
+		return &Error{Status: http.StatusConflict, Code: codeNoRunningCopy, Message: "The service has no running copy. Deploy it first."}
 	case errors.Is(err, service.ErrNoBackupDestination):
 		return &Error{Status: http.StatusConflict, Code: codeNoBackupDestination, Message: err.Error() + "; set one with PUT /v1/backups/destination"}
 	}

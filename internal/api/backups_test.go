@@ -125,7 +125,7 @@ func TestVolumeBackupEndpoints(t *testing.T) {
 	const variable = "nomad/jobs/shop/kuma/caravana-volumes"
 	status, _, raw := call(t, http.MethodPost, e.URL+"/v1/apps/shop/backups", "application/json", `{"service": "kuma"}`)
 	if got := decodeAs[errorBody](t, raw).Error; status != http.StatusConflict || got.Code != codeNoRunningCopy ||
-		got.Message != "The service has no running copy to back up. Deploy it first." {
+		got.Message != "The service has no running copy. Deploy it first." {
 		t.Fatalf("POST backups without a running copy = %d %s, want 409 no_running_copy", status, raw)
 	}
 
