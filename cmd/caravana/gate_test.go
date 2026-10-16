@@ -1272,8 +1272,10 @@ func (g *gate) exportMatchesLive(t *testing.T, appID string, secrets ...string) 
 // the node's loopback. The Docker daemon treats loopback registries as
 // insecure by default, so it pulls from this one over plain HTTP, and Caravana
 // reads digests from it the same way (lab finding P6: Lima forwards the VM's
-// loopback to the Mac, where the lab's Caravana runs).
-const gateRegistryHost = "127.0.0.1:5000"
+// loopback to the Mac, where the lab's Caravana runs). Not port 5000: macOS's
+// AirPlay Receiver listens there on the Mac and answers 403, so the lab's
+// Caravana would talk to it instead of the forwarded registry.
+const gateRegistryHost = "127.0.0.1:15000"
 
 // gateRegistryJob is a registry (registry:2) with htpasswd auth on
 // gateRegistryHost, run with the gate's own token like the S3 bucket. A
@@ -1364,13 +1366,16 @@ const gatePrivateApp = `{
 // lab (Lima forwards it), and from inside the registry's own task, which also
 // works when the gate runs far from the node (host.sh prove): busybox's wget
 // exits non-zero on a 401 and names the status.
+//
+// When this process gets any answer, only a registry's 401 counts: something
+// else answering on the port (in the lab, before Lima has forwarded it) means
+// Caravana would reach that too. The task's own check is only for when this
+// process can't connect at all.
 func (g *gate) registryAnswers401() bool {
 	client := &http.Client{Timeout: 3 * time.Second}
 	if resp, err := client.Get("http://" + gateRegistryHost + "/v2/"); err == nil {
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusUnauthorized {
-			return true
-		}
+		return resp.StatusCode == http.StatusUnauthorized && resp.Header.Get("Docker-Distribution-Api-Version") != ""
 	}
 	_, err := g.jobExec("gate-registry", "registry", "wget", "-q", "-O", "/dev/null", "http://"+gateRegistryHost+"/v2/")
 	return err != nil && strings.Contains(err.Error(), "401")

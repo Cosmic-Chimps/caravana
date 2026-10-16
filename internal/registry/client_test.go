@@ -520,6 +520,23 @@ func TestTest(t *testing.T) {
 		assertNoSecret(t, err, "deploy", sentinelPass)
 	})
 
+	t.Run("a 403 before any login doesn't claim credentials are missing", func(t *testing.T) {
+		// macOS's AirPlay Receiver on port 5000 answers like this: no challenge,
+		// so the stored credentials are never even looked up.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer srv.Close()
+		c := &Client{}
+		c.Credentials, _ = storedCredentials("deploy", sentinelPass)
+		err := c.Test(ctx, strings.TrimPrefix(srv.URL, "http://"))
+		if err == nil || strings.Contains(err.Error(), "no credentials are stored") ||
+			!strings.Contains(err.Error(), "refused access without asking for a login") {
+			t.Errorf("Test() error = %v, want one saying it refused before asking for a login", err)
+		}
+		assertNoSecret(t, err, "deploy", sentinelPass)
+	})
+
 	t.Run("not a registry", func(t *testing.T) {
 		srv := httptest.NewServer(http.NotFoundHandler())
 		defer srv.Close()

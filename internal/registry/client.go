@@ -85,6 +85,9 @@ type session struct {
 	secure     bool
 	user, pass string
 	creds      bool // user and pass are set
+	// looked is true once the stored credentials were looked up, which only
+	// happens when the registry asks for a login.
+	looked bool
 }
 
 func (c *Client) newSession(host string) *session {
@@ -98,6 +101,7 @@ func (s *session) basic() string {
 
 // login loads the stored credentials into s, if there are any.
 func (c *Client) login(ctx context.Context, s *session) error {
+	s.looked = true
 	if c.Credentials == nil {
 		return nil
 	}
@@ -276,10 +280,16 @@ func (c *Client) hashManifest(ctx context.Context, manifestURL, authorization st
 func (c *Client) Test(ctx context.Context, host string) error {
 	s := c.newSession(host)
 	err := c.test(ctx, s)
-	if err != nil && !s.creds && (errors.Is(err, errLoginRequired) || errors.Is(err, ErrNotFound)) {
+	switch {
+	case err == nil || s.creds || !(errors.Is(err, errLoginRequired) || errors.Is(err, ErrNotFound)):
+		return err
+	case !s.looked:
+		// It refused before asking for a login, so stored credentials, if
+		// any, were never offered: saying "none are stored" would mislead.
+		return fmt.Errorf("%s refused access without asking for a login; check that it is a container registry and that it lets this server in", host)
+	default:
 		return fmt.Errorf("%s asks for a login, and no credentials are stored for it", host)
 	}
-	return err
 }
 
 func (c *Client) test(ctx context.Context, s *session) error {
