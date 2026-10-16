@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.13.0
+  version: 0.14.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -568,6 +568,116 @@ paths:
           $ref: "#/components/responses/Internal"
         "502":
           $ref: "#/components/responses/BadGateway"
+
+  /v1/registries:
+    get:
+      operationId: listRegistries
+      summary: List the registries Caravana has credentials for, never the secrets.
+      description: Ordered by host. Public images from any registry deploy without an entry here.
+      tags: [registries]
+      responses:
+        "200":
+          description: The registries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Registry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/registries/{host}:
+    parameters:
+      - $ref: "#/components/parameters/RegistryHost"
+    put:
+      operationId: putRegistry
+      summary: Store the credentials for a private registry.
+      description: |
+        Creates the entry or replaces the one with this host. `password` is required when
+        creating and optional when updating: leave it out to keep the secret stored before.
+        It is never returned. Nothing is deployed or restarted: the next deploy of an image
+        from this registry uses the credentials, and apps already running pick them up the next
+        time they start. A save that changes the credentials forgets the last test.
+      tags: [registries]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryRequest"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/RegistryInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteRegistry
+      summary: Forget the credentials for a registry.
+      description: |
+        Apps already running keep running. The next deploy of a private image from this
+        registry fails until credentials are added again.
+      tags: [registries]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/RegistryNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/registries/{host}/test:
+    parameters:
+      - $ref: "#/components/parameters/RegistryHost"
+    post:
+      operationId: testRegistry
+      summary: Ask the registry to accept the stored credentials.
+      description: |
+        Makes one request to the registry and records the outcome with its time. A registry
+        that refuses the credentials or can't be reached is an answer, not an error: the
+        response is 200 and `lastTest.ok` is false, with the reason in `lastTest.message`.
+      tags: [registries]
+      responses:
+        "200":
+          description: The registry, with `lastTest` updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/RegistryNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /v1/apps/{id}/backups:
     parameters:
@@ -1241,6 +1351,21 @@ components:
       schema:
         type: string
         enum: ["*"]
+    RegistryHost:
+      name: host
+      in: path
+      required: true
+      description: |
+        The registry host as image names write it, with its port when it has one: `ghcr.io`,
+        `registry.example.com:5000`, and `docker.io` for Docker Hub. It is lowercased, and
+        `index.docker.io` is `docker.io`.
+      schema:
+        type: string
+      examples:
+        ghcr:
+          value: ghcr.io
+        selfHosted:
+          value: registry.example.com:5000
     TokenID:
       name: tokenId
       in: path
@@ -1592,6 +1717,46 @@ components:
         secretAccessKey:
           type: string
           writeOnly: true
+
+    Registry:
+      type: object
+      additionalProperties: false
+      required: [host, username, createdAt, updatedAt]
+      properties:
+        host:
+          type: string
+          description: The canonical host, lowercase, with its port; `docker.io` for Docker Hub.
+          examples: [ghcr.io]
+        username: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        lastTest:
+          type: object
+          additionalProperties: false
+          required: [at, ok]
+          description: The last `testRegistry`. Absent until the first test, and after a save that changes the credentials.
+          properties:
+            at: {type: string, format: date-time}
+            ok:
+              type: boolean
+              description: True when the registry accepted the credentials.
+            message:
+              type: string
+              description: Why the registry refused them or couldn't be reached. Absent when `ok`.
+
+    RegistryRequest:
+      type: object
+      additionalProperties: false
+      required: [username]
+      properties:
+        username: {type: string, minLength: 1}
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          description: |
+            The password or token. Required when creating; leave it out to keep the stored one.
+            An empty string is `422 invalid_field`.
 
     Backup:
       type: object
@@ -2173,7 +2338,7 @@ components:
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
                 `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
-                `app_changed`, `compose_not_kept`.
+                `app_changed`, `compose_not_kept`, `registry_auth_failed`.
               examples: [invalid_field]
             message:
               type: string
@@ -2301,6 +2466,20 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    RegistryNotFound:
+      description: Caravana has no credentials for this registry host (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RegistryInvalid:
+      description: |
+        `invalid_field`: `field` is `host` (not a registry host), `username` (empty) or
+        `password` (missing when creating, or present but empty). Nothing was saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     BodyTooLarge:
       description: The request body is larger than 1 MiB.
       content:
@@ -2346,8 +2525,9 @@ components:
             $ref: "#/components/schemas/Error"
     ImageNotFound:
       description: |
-        `image_not_found`: the registry has no such image or tag, or it's private (registry
-        credentials aren't supported yet). `field` is the service's `image`. Nothing was
+        `image_not_found`: the registry has no such image or tag, or it's private and no
+        credentials are stored for it (the message says to add them in Settings › Registries,
+        or with `putRegistry`). `field` is the service's `image`. Nothing was
         registered; the deployment record (see `Location`) is `failed`.
       headers:
         Location:
@@ -2422,6 +2602,8 @@ tags:
     description: Deploying apps and following their rollouts.
   - name: webhooks
     description: Webhook tokens, and the webhook that redeploys an app.
+  - name: registries
+    description: Credentials for private container registries.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account

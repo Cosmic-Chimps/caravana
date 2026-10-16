@@ -116,7 +116,7 @@ secret, test (refused), fix it, remove it. The API never answers the secret.
 
   Tests: each validation, the secret never stored in SQLite (raw read), test outcome recorded,
   delete of an unknown host.
-- [ ] T006 [US2] API (contracts/api.md):
+- [X] T006 [US2] API (contracts/api.md):
   - `listRegistries`, `putRegistry`, `deleteRegistry` and `testRegistry` in
     internal/api/registries.go, registered in api.go;
   - api/openapi.yaml 0.13.0 → 0.14.0, with the `Registry` schema and `registry_auth_failed`
