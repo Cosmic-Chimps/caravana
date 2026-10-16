@@ -282,10 +282,11 @@ Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/ap
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T022 [P] Docs:
+- [X] T022 [P] Docs:
   - CHANGELOG.md "Unreleased" gains Added (volume backups, restore, volumes panel, API 0.13.0) and Upgrade: rerun the installer for the new policy capabilities, then redeploy each app with a volume once so it gains the `caravana-volumes` task. Its panel says "not measured yet" until then. If CHANGELOG.md doesn't exist on this branch (branch `release-changelog` not merged yet), create the file with only that section and say so in the commit.
   - CLAUDE.md "Where we are" gains a feature 016 paragraph in the 015 style (task, request variable, restart, result file, scheduler, lock, migration 0008, policy capabilities, API 0.13.0, gate and lab steps).
   - docs/plan.md marks 016 done.
+  - Done 2026-10-15. The CHANGELOG entry went onto the `release-changelog` branch's "Unreleased" section instead of a new file here: a second CHANGELOG.md would collide when both branches merge. So merge `release-changelog` before or with this branch. docs/plan.md also gained the backlog item "Network isolation between apps", from the lab check of what an app sees as the source address.
 - [ ] T023 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`, the linux amd64 and arm64 CGO-free builds, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, and shellcheck on deploy/install via Docker. Run them all and fix what fails.
 - [ ] T024 Lab validation: `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab -v`, then `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 25m` (the lab applies caravana-policy.hcl, so the new capabilities are exercised), then quickstart §1–§4 by hand with Uptime Kuma 2. Record results here, as 015's T020 did.
 
