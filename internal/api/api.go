@@ -74,6 +74,13 @@ func (s *server) routes() []route {
 		{http.MethodPut, "/v1/registries/{host}", s.putRegistry, false, false},
 		{http.MethodDelete, "/v1/registries/{host}", s.deleteRegistry, false, false},
 		{http.MethodPost, "/v1/registries/{host}/test", s.testRegistry, false, false},
+		{http.MethodGet, "/v1/notifications/channels", s.listNotificationChannels, false, false},
+		{http.MethodPost, "/v1/notifications/channels", s.createNotificationChannel, false, false},
+		{http.MethodPatch, "/v1/notifications/channels/{id}", s.updateNotificationChannel, false, false},
+		{http.MethodDelete, "/v1/notifications/channels/{id}", s.deleteNotificationChannel, false, false},
+		{http.MethodPost, "/v1/notifications/channels/{id}/test", s.testNotificationChannel, false, false},
+		{http.MethodGet, "/v1/notifications/channels/{id}/deliveries", s.listNotificationDeliveries, false, false},
+		{http.MethodPost, "/v1/notifications/channels/{id}/secret", s.rotateNotificationSecret, false, false},
 		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
@@ -245,6 +252,8 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusConflict, Code: codeAppExists, Field: "id", Message: err.Error()}
 	case errors.Is(err, service.ErrAppChanged):
 		return &Error{Status: http.StatusPreconditionFailed, Code: codeAppChanged, Message: err.Error()}
+	case errors.Is(err, service.ErrNotAWebhook):
+		return &Error{Status: http.StatusConflict, Code: codeNotAWebhook, Message: err.Error()}
 	case errors.Is(err, service.ErrTokenNameTaken):
 		return &Error{Status: http.StatusConflict, Code: codeTokenNameTaken, Field: "name", Message: err.Error()}
 	case errors.Is(err, store.ErrNotFound):

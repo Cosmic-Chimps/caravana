@@ -35,6 +35,7 @@ const (
 	codeNoLiveDeployment      = "no_live_deployment"
 	codeAppChanged            = "app_changed"
 	codeComposeNotKept        = "compose_not_kept"
+	codeNotAWebhook           = "not_a_webhook"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

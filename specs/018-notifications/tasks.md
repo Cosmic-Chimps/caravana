@@ -72,7 +72,7 @@ Nothing.
 
   Tests: each validation; masking; secret round trip; no secret in any returned struct
   (sentinel); a test against `httptest` both ok and failing.
-- [ ] T005 [US3] API, in internal/api/notifications.go:
+- [X] T005 [US3] API, in internal/api/notifications.go:
   - the seven operations of contracts/api.md;
   - `not_a_webhook` 409;
   - api/openapi.yaml 0.14.0 → 0.15.0, with the schemas and the webhook message shape documented

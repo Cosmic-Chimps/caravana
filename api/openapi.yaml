@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.14.0
+  version: 0.15.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -678,6 +678,222 @@ paths:
           $ref: "#/components/responses/RegistryNotFound"
         "500":
           $ref: "#/components/responses/Internal"
+
+  /v1/notifications/channels:
+    get:
+      operationId: listNotificationChannels
+      summary: List the notification channels, never their secrets.
+      description: Oldest first.
+      tags: [notifications]
+      responses:
+        "200":
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationChannel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createNotificationChannel
+      summary: Add a notification channel.
+      description: |
+        A channel is a place Caravana tells things to: what needs the owner (the `problems`
+        events, sent when an item opens and when it has been gone for a while) and how deploys
+        end (`deploy_failed`, `deploy_succeeded`). The channel's secret parts (a Slack or
+        Discord URL, an ntfy token, a webhook's signing secret) are kept in the cluster's
+        secret store and are never returned. A webhook channel's answer carries its
+        `signingSecret`, this once: `rotateNotificationSecret` makes a new one.
+      tags: [notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelInput"
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannelCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/NotificationInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/notifications/channels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/NotificationChannelID"
+    patch:
+      operationId: updateNotificationChannel
+      summary: Change a notification channel.
+      description: |
+        Any of `name`, `url`, `token`, `events` and `paused`; a field left out keeps its value.
+        `url` may not be empty. For Slack and Discord the URL is itself the secret and is never
+        shown, so leave it out to keep it. `token` is for ntfy only: `""` removes the token.
+        The kind never changes.
+      tags: [notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelPatch"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/NotificationInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteNotificationChannel
+      summary: Remove a notification channel.
+      description: Messages stop at once. Its deliveries are removed with it.
+      tags: [notifications]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/notifications/channels/{id}/test:
+    parameters:
+      - $ref: "#/components/parameters/NotificationChannelID"
+    post:
+      operationId: testNotificationChannel
+      summary: Send a sample message to a channel, now.
+      description: |
+        Sends a `test` event before answering, without queueing it, and records the delivery.
+        A receiver that refuses the message or can't be reached is an answer, not an error: the
+        response is 200 and the delivery's `status` is `failed`, with the reason in `error`.
+        A paused channel can be tested.
+      tags: [notifications]
+      responses:
+        "200":
+          description: The delivery, `sent` or `failed`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/notifications/channels/{id}/deliveries:
+    parameters:
+      - $ref: "#/components/parameters/NotificationChannelID"
+    get:
+      operationId: listNotificationDeliveries
+      summary: List a channel's recent deliveries.
+      description: Newest first, at most 20. Older ones are pruned.
+      tags: [notifications]
+      responses:
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationDelivery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/notifications/channels/{id}/secret:
+    parameters:
+      - $ref: "#/components/parameters/NotificationChannelID"
+    post:
+      operationId: rotateNotificationSecret
+      summary: Make a new signing secret for a webhook channel.
+      description: |
+        The old secret stops working at once. The new one is in the answer, this once.
+        A channel that isn't a webhook is `409 not_a_webhook`.
+      tags: [notifications]
+      responses:
+        "200":
+          description: The new secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [signingSecret]
+                properties:
+                  signingSecret:
+                    type: string
+                    description: 64 hex digits. Shown only here.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotificationNotFound"
+        "409":
+          description: The channel isn't a webhook (`not_a_webhook`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /v1/apps/{id}/backups:
     parameters:
@@ -1366,6 +1582,14 @@ components:
           value: ghcr.io
         selfHosted:
           value: registry.example.com:5000
+    NotificationChannelID:
+      name: id
+      in: path
+      required: true
+      description: The channel's ID, as `listNotificationChannels` returns it.
+      schema:
+        type: string
+        pattern: "^nch_[0-9a-f]{12}$"
     TokenID:
       name: tokenId
       in: path
@@ -1743,6 +1967,216 @@ components:
             message:
               type: string
               description: Why the registry refused them or couldn't be reached. Absent when `ok`.
+
+    NotificationChannel:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, address, events, paused, hasToken, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          pattern: "^nch_[0-9a-f]{12}$"
+        kind:
+          type: string
+          enum: [webhook, slack, discord, ntfy]
+        name: {type: string}
+        address:
+          type: string
+          description: |
+            What the console shows. A webhook's URL and an ntfy topic URL are shown whole. A Slack
+            or Discord incoming-webhook URL is itself the secret, so only the host and the start
+            of the path remain, for example `hooks.slack.com/services/T…/••••`.
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationEventName"
+        paused:
+          type: boolean
+        hasToken:
+          type: boolean
+          description: True when an ntfy channel has an access token. The token is never returned.
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    NotificationChannelCreated:
+      description: |
+        A channel as `createNotificationChannel` answers: the channel, and for a webhook its
+        `signingSecret`, shown only here.
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, address, events, paused, hasToken, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          pattern: "^nch_[0-9a-f]{12}$"
+        kind:
+          type: string
+          enum: [webhook, slack, discord, ntfy]
+        name: {type: string}
+        address: {type: string, description: "As in `NotificationChannel`."}
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationEventName"
+        paused:
+          type: boolean
+        hasToken:
+          type: boolean
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        signingSecret:
+          type: string
+          description: 64 hex digits. Present for a `webhook` channel only. It is not shown again.
+
+    NotificationEventName:
+      type: string
+      enum: [problems, deploy_failed, deploy_succeeded]
+      description: |
+        What a channel asks for: `problems` (a needs-you item opening, and being resolved),
+        `deploy_failed` (a deploy ended failed, reverted or superseded) and `deploy_succeeded`
+        (a deploy ended healthy).
+
+    NotificationChannelInput:
+      type: object
+      additionalProperties: false
+      required: [kind, name, url, events]
+      properties:
+        kind:
+          type: string
+          enum: [webhook, slack, discord, ntfy]
+        name: {type: string, minLength: 1, maxLength: 80}
+        url:
+          type: string
+          description: |
+            An absolute http or https URL: where a webhook is posted, the Slack or Discord
+            incoming-webhook URL, or the ntfy topic URL such as `https://ntfy.sh/my-topic`. A
+            webhook or ntfy URL may not hold a user name and password.
+        token:
+          type: string
+          writeOnly: true
+          description: "ntfy only, and optional: the access token of a protected topic."
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NotificationEventName"
+        paused:
+          type: boolean
+          default: false
+
+    NotificationChannelPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        url:
+          type: string
+          minLength: 1
+          description: Leave it out to keep the address; for Slack and Discord that is the only way, since it is a secret.
+        token:
+          type: string
+          writeOnly: true
+          description: ntfy only. `""` removes the token; leave it out to keep it.
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NotificationEventName"
+        paused:
+          type: boolean
+
+    NotificationDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, eventType, title, status, attempts, createdAt]
+      properties:
+        id:
+          type: string
+          pattern: "^ndl_[0-9a-f]{12}$"
+        eventType:
+          $ref: "#/components/schemas/NotificationEventType"
+        title: {type: string}
+        status:
+          type: string
+          enum: [pending, sent, failed]
+          description: |
+            `pending` is queued or waiting for a retry (after 30 seconds, then 2 minutes);
+            `failed` means it gave up after 3 attempts, or the channel went away.
+        attempts: {type: integer}
+        error:
+          type: string
+          description: Why the last attempt failed, with the receiver's status. Never the address.
+        createdAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+
+    NotificationEventType:
+      type: string
+      enum: [problem.opened, problem.resolved, deploy.succeeded, deploy.failed, test]
+
+    NotificationEvent:
+      description: |
+        The JSON a **webhook** channel receives: `POST <url>` with `Content-Type:
+        application/json`. Slack, Discord and ntfy channels get the same event as a short text
+        message instead. This is a document for receivers; no endpoint of this API takes or
+        returns it.
+
+        Headers:
+        - `Caravana-Event`: the `type`;
+        - `Caravana-Delivery`: the `id`;
+        - `Caravana-Signature`: `t=<unix seconds>,v1=<hex>`, where `v1` is the HMAC-SHA256, under
+          the channel's signing secret, of the string `"<t>.<raw body>"`.
+
+        A receiver should compute that over the raw body bytes, compare in constant time, and
+        reject a `t` more than 5 minutes from its own clock. Any 2xx answer means accepted;
+        anything else is retried twice more, after 30 seconds and 2 minutes.
+      type: object
+      additionalProperties: false
+      required: [id, type, title, text, at]
+      properties:
+        id:
+          type: string
+          description: The delivery's ID. A retry sends the same one.
+          examples: [ndl_3f9a1c2b4d5e]
+        type:
+          $ref: "#/components/schemas/NotificationEventType"
+        kind:
+          type: string
+          description: |
+            For problems, what the needs-you list calls it, such as `deploy_failed`,
+            `backup_failed`, `restarting` or `out_of_memory`.
+        app:
+          type: string
+          description: The app's ID. Absent for installation-wide events.
+        service: {type: string}
+        title:
+          type: string
+          examples: ["kuma: the backup of uptime-kuma failed"]
+        text:
+          type: string
+          description: What happened, in plain words.
+        detail:
+          type: string
+          description: The raw reason, as Nomad, the registry or the backup tool said it.
+        deployment:
+          type: string
+          description: "Deploy events only: the deployment's ID."
+        version:
+          type: integer
+          description: "Deploy events only: the Nomad job version, once registered."
+        outcome:
+          type: string
+          enum: [healthy, failed, reverted, superseded]
+          description: Deploy events only.
+        trigger:
+          type: string
+          description: |
+            Deploy events only: what started the deployment, as the deployment record says it:
+            `console` (the web console), `manual` (an API call) or `webhook`. Receivers should
+            accept values they don't know.
+        url:
+          type: string
+          description: The console page about it. Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`).
+        at: {type: string, format: date-time}
 
     RegistryRequest:
       type: object
@@ -2338,7 +2772,7 @@ components:
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
                 `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
-                `app_changed`, `compose_not_kept`, `registry_auth_failed`.
+                `app_changed`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`.
               examples: [invalid_field]
             message:
               type: string
@@ -2480,6 +2914,22 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotificationNotFound:
+      description: There is no notification channel with this ID (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotificationInvalid:
+      description: |
+        `invalid_field`: `field` is `kind` (unknown), `name` (empty or over 80 characters), `url`
+        (empty, not an absolute http or https URL, or holding a user name and password in a
+        webhook or ntfy URL), `token` (on a channel that isn't ntfy) or `events` (none, or an
+        unknown one). Nothing was saved. The message never repeats the URL.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     BodyTooLarge:
       description: The request body is larger than 1 MiB.
       content:
@@ -2607,6 +3057,8 @@ tags:
     description: Webhook tokens, and the webhook that redeploys an app.
   - name: registries
     description: Credentials for private container registries.
+  - name: notifications
+    description: Channels that tell the owner what needs them and how deploys end, and their deliveries.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account
