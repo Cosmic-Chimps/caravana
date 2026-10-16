@@ -73,12 +73,12 @@ Nothing: no new module or tool.
   - anonymous public access, unchanged;
   - `Test` ok, refused and unreachable;
   - a sentinel password absent from every error string.
-- [ ] T003 [P] Store (data-model "Store"): add internal/store/migrations/0009_registries.sql and internal/store/registries.go with `Registry`, `RegistryTest`, `SaveRegistry`, `ListRegistries`, `GetRegistry`, `DeleteRegistry` and `SaveRegistryTest`. Tests: upsert keeps `created_at`, list order, delete of a missing host gives `ErrNotFound`, and test fields round-trip.
+- [X] T003 [P] Store (data-model "Store"): add internal/store/migrations/0009_registries.sql and internal/store/registries.go with `Registry`, `RegistryTest`, `SaveRegistry`, `ListRegistries`, `GetRegistry`, `DeleteRegistry` and `SaveRegistryTest`. Tests: upsert keeps `created_at`, list order, delete of a missing host gives `ErrNotFound`, and test fields round-trip.
 
 **⟶ Wait for T001–T003, then:**
 
 - [ ] T004 Deploy, the secret and the hook (data-model "Deploy"), in internal/deploy/registries.go (new):
-  - `RegistryCredentials(ctx, host)` reads `caravana/registries/<key>` (key: host with `:` → `_`);
+  - `RegistryCredentials(ctx, host)` reads `caravana/registries/<key>` (key: host with `.` → `~` and `:` → `_`: Nomad paths allow neither);
     ok is false when the variable is absent.
   - `SaveRegistrySecret(ctx, host, user, pass)` and `DeleteRegistrySecret(ctx, host)`.
   - `TestRegistry(ctx, host)` calls `registry.Client.Test`.
