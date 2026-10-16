@@ -92,7 +92,9 @@ Nothing.
 
 ## Phase 4: User Story 1 - Problems (P1) 🎯 MVP
 
-- [ ] T007 [P] [US1] Wording, in internal/service/notifier.go: for each attention kind and deploy outcome, a title and text in the console's wording (internal/ui/attention.go has the needs-you sentences: port their wording, without importing ui), and the link per research R6 when the public URL is set. Tests: a table of every kind.
+- [X] T007 [P] [US1] Wording, in internal/service/notifier.go: for each attention kind and deploy outcome, a title and text in the console's wording (internal/ui/attention.go has the needs-you sentences: port their wording, without importing ui), and the link per research R6 when the public URL is set. Tests: a table of every kind.
+  - Also: Slack, Discord and ntfy messages end with a `Detail: <raw detail>` line (one line, cut at 500 characters), in `notify.Render`, for FR-006.
+  - The deploy `trigger` is the record's own value: `console`, `manual` or `webhook`.
 - [ ] T008 [US1] The notifier (research R1), in internal/service/notifier.go:
   - `problemKey(item)`.
   - The pure `diffProblems(prev, now, copiesKnown, at, resolveAfter)`:

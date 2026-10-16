@@ -56,7 +56,8 @@ Errors:
 ```
 
 Deploy events add `deployment`, `version`, `outcome` (`healthy`, `failed`, `reverted`,
-`superseded`) and `trigger` (`console`, `api`, `webhook`, `redeploy`).
+`superseded`) and `trigger`, as the deployment record has it: `console`, `manual` (an API call) or `webhook`.
+Receivers should accept values they don't know.
 
 Headers:
 - `Caravana-Event: <type>`;

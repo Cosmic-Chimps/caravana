@@ -7,3 +7,4 @@ Tags: warning
 Title: kuma: the backup of uptime-kuma failed
 
 The volume backup at 03:00 UTC failed.
+Detail: upload of data: Failed to rcat: <timeout> & more

@@ -80,7 +80,7 @@ func renderWebhook(ch Channel, ev Event, deliveryID string, now time.Time) (*htt
 // JSON field that holds the text and the markup for bold: the title in bold,
 // then the text, then the link when there is one.
 func renderChat(ch Channel, field, bold string, ev Event) (*http.Request, error) {
-	text := bold + ev.Title + bold + "\n" + ev.Text
+	text := bold + ev.Title + bold + "\n" + withDetail(ev)
 	if ev.URL != "" {
 		text += "\n" + ev.URL
 	}
@@ -96,7 +96,7 @@ func renderChat(ch Channel, field, bold string, ev Event) (*http.Request, error)
 // are "high" priority with a warning tag; resolved problems, successful
 // deploys and tests are default priority with a check mark.
 func renderNtfy(ch Channel, ev Event) (*http.Request, error) {
-	req, err := newPost(ch.Address, []byte(ev.Text), "text/plain; charset=utf-8")
+	req, err := newPost(ch.Address, []byte(withDetail(ev)), "text/plain; charset=utf-8")
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +139,25 @@ func marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// maxDetail is how many characters of the raw detail a chat message carries.
+// The webhook's JSON has the whole detail; a chat message stays readable.
+const maxDetail = 500
+
+// withDetail is the text of a Slack, Discord or ntfy message: the event's text,
+// then the raw reason on a line of its own ("Detail: ..."), so the message
+// says what went wrong and not only that something did (FR-006). The detail is
+// put on one line and cut at maxDetail characters.
+func withDetail(ev Event) string {
+	detail := strings.Join(strings.Fields(ev.Detail), " ")
+	if detail == "" {
+		return ev.Text
+	}
+	if r := []rune(detail); len(r) > maxDetail {
+		detail = string(r[:maxDetail]) + "…"
+	}
+	return ev.Text + "\nDetail: " + detail
 }
 
 // oneLine replaces line breaks with spaces, for values that go into headers.

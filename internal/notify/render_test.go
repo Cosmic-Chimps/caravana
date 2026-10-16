@@ -169,3 +169,37 @@ func TestRenderErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderDetail checks the "Detail: " line of the chat kinds (FR-006): there
+// when the event has a detail, on one line, cut when long, and absent when not.
+func TestRenderDetail(t *testing.T) {
+	long := strings.Repeat("x", maxDetail+50)
+	tests := []struct {
+		name   string
+		detail string
+		want   string // what follows the text
+	}{
+		{"none", "", ""},
+		{"short", "deadline reached", "\nDetail: deadline reached"},
+		{"several lines", "first\n  second\r\nthird", "\nDetail: first second third"},
+		{"long", long, "\nDetail: " + strings.Repeat("x", maxDetail) + "…"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := Event{Type: EventDeployFailed, Title: "t", Text: "text", Detail: tc.detail}
+			if got, want := withDetail(ev), "text"+tc.want; got != want {
+				t.Errorf("withDetail() = %q, want %q", got, want)
+			}
+			for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
+				req, err := Render(Channel{kind, "https://example.com/x", ""}, ev, "ndl_1", fixedNow)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, _ := io.ReadAll(req.Body)
+				if has := strings.Contains(string(body), "Detail: "); has != (tc.detail != "") {
+					t.Errorf("%s: body has detail = %v, want %v: %s", kind, has, tc.detail != "", body)
+				}
+			}
+		})
+	}
+}

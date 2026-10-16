@@ -6,3 +6,4 @@ Tags: warning
 Title: hollo: the deploy was reverted to v6
 
 Version 8 did not become healthy, so Nomad went back to version 6.
+Detail: deadline reached

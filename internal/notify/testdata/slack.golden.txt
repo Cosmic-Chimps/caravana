@@ -1,4 +1,4 @@
 POST https://hooks.slack.com/services/T000/B000/XXXX
 Content-Type: application/json
 
-{"text":"*kuma: the backup of uptime-kuma failed*\nThe volume backup at 03:00 UTC failed.\nhttps://caravana.example.com/apps/kuma/backups"}
+{"text":"*kuma: the backup of uptime-kuma failed*\nThe volume backup at 03:00 UTC failed.\nDetail: upload of data: Failed to rcat: <timeout> & more\nhttps://caravana.example.com/apps/kuma/backups"}

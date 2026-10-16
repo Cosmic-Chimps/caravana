@@ -1,4 +1,4 @@
 POST https://discord.com/api/webhooks/123/abc
 Content-Type: application/json
 
-{"content":"**hollo: the deploy was reverted to v6**\nVersion 8 did not become healthy, so Nomad went back to version 6.\nhttps://caravana.example.com/apps/hollo/deployments#deployment-dep_1a2b3c"}
+{"content":"**hollo: the deploy was reverted to v6**\nVersion 8 did not become healthy, so Nomad went back to version 6.\nDetail: deadline reached\nhttps://caravana.example.com/apps/hollo/deployments#deployment-dep_1a2b3c"}
