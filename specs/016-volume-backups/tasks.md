@@ -230,7 +230,7 @@ Files: `internal/service/volumebackup.go`, `internal/service/schedule.go`, `inte
 
 Files: `internal/nomadjob/volumes.go`, `internal/service/backups.go`, `internal/service/volumebackup.go`, `internal/ui/backups.go`, `cmd/caravana/gate_test.go`
 
-- [ ] T016 [US2] The script's restore path in `VolumeScript`, per research R4. For each volume:
+- [X] T016 [US2] The script's restore path in `VolumeScript`, per research R4. For each volume:
   1. Download `"$OBJECT<v>.tar.gz"` into `<dir>/.caravana-restore/<v>.tar.gz` and check it with `tar -tzf`.
   2. Only when every volume's archive checks out: per volume, move every entry but `.caravana-restore` into `.caravana-restore/old/`, then extract the archive into `<dir>`.
   3. On an extract failure: remove what was extracted (everything but `.caravana-restore`), and move the old entries back for **every** volume already swapped.

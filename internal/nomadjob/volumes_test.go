@@ -361,8 +361,15 @@ UNDER_TIMEOUT=1 exec "$@"
 [ -n "$UNDER_TIMEOUT" ] || { echo "tar ran outside timeout" >&2; exit 99; }
 if [ -n "$FAKE_FAIL_TAR" ]; then
   echo "tar: $FAKE_FAIL_TAR" >&2
-  echo "partial" 
+  echo "partial"
   exit 2
+fi
+# An extract into a directory with this in its name leaves a file behind and
+# fails, as a full disk or a cut-off archive would: $4 is the -C directory.
+if [ -n "$FAKE_FAIL_EXTRACT" ] && [ "$1" = -xzf ]; then
+  case "$4" in
+    *"$FAKE_FAIL_EXTRACT"*) touch "$4/half-extracted"; echo "tar: unexpected end of file" >&2; exit 2 ;;
+  esac
 fi
 exec REALTAR "$@"
 `
@@ -573,9 +580,9 @@ func TestVolumeScriptMeasuresSizes(t *testing.T) {
 }
 
 func TestVolumeScriptRequests(t *testing.T) {
-	// The restore run is a stub that fails with "not implemented yet" until
-	// T016, and a backup request with no timestamp or destination fails before
-	// it touches anything: both make the shape testable end to end here.
+	// A backup request with no timestamp or destination, and a restore with
+	// no backup to restore, fail before they touch anything: that makes the
+	// shape of a request testable end to end here.
 	tests := []struct {
 		name     string
 		request  func() *string
@@ -586,15 +593,15 @@ func TestVolumeScriptRequests(t *testing.T) {
 		{"a backup without a destination", func() *string {
 			return request("REQUEST", "web-10", "ACTION", "backup", "TS", "1791", "NOT_AFTER", inAnHour())
 		}, "web-10", "the request has no backup destination"},
-		{"a restore", func() *string {
-			return request("REQUEST", "web-2", "ACTION", "restore", "OBJECT", "b/kuma/web/1/", "NOT_AFTER", inAnHour())
-		}, "web-2", "not implemented yet"},
+		{"a restore with no object", func() *string {
+			return request("REQUEST", "web-2", "ACTION", "restore", "NOT_AFTER", inAnHour())
+		}, "web-2", "the request names no backup to restore"},
 		{"an unknown action", func() *string { return request("REQUEST", "web-3", "ACTION", "format", "NOT_AFTER", inAnHour()) }, "web-3", "unknown action"},
 		{"no action", func() *string { return request("REQUEST", "web-4", "NOT_AFTER", inAnHour()) }, "web-4", "unknown action"},
 		{"values with quotes and shell syntax", func() *string {
 			return request("REQUEST", "web-5", "ACTION", "restore", "NOT_AFTER", inAnHour(),
 				"OBJECT", "it's $(touch PWNED) `touch PWNED2` \"x\" $HOME \\n")
-		}, "web-5", "not implemented yet"},
+		}, "web-5", "download of data: object not found"},
 
 		// Ignored: nothing but the sizes.
 		{"an expired request", func() *string { return request("REQUEST", "web-6", "ACTION", "backup", "NOT_AFTER", anHourAgo()) }, "", ""},

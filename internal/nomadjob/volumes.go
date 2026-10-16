@@ -349,9 +349,146 @@ apply_retention() {
   [ -z "$expired" ] || echo "expired=$(echo $expired)" >> "$DETAIL"
 }
 
+# do_restore replaces every volume's files with the archives of the backup at
+# OBJECT. It must either restore every volume or leave every volume as it was,
+# so it works in three steps:
+#   1. stage: download each volume's archive into <volume>/.caravana-restore
+#      (on the volume's own disk, where the room for the data already is) and
+#      check that tar can read it. Nothing of the volume is touched yet, so a
+#      missing or damaged archive, even the last one's, changes nothing.
+#   2. swap: volume by volume, move the current files into
+#      .caravana-restore/old (a rename, no copying) and extract the archive.
+#   3. If any extract fails, every volume swapped so far, and that one, is
+#      emptied of what was extracted and gets its old files back.
+# At the end the staging directories are removed, old files with them. The
+# backup path leaves .caravana-restore out of its archives, so nothing of this
+# is ever backed up.
 do_restore() {
-  MESSAGE="not implemented yet"
-  return 1
+  [ -n "$OBJECT" ] || { MESSAGE="the request names no backup to restore"; return 1; }
+  case "$OBJECT" in */) ;; *) OBJECT="$OBJECT/" ;; esac
+  # Old files left by an earlier restore that was cut off or could not put
+  # them back may be the only copy of someone's data: staging again would
+  # delete them, so refuse until a person has looked.
+  for dir in "$ROOT"/*; do
+    if [ -d "$dir/.caravana-restore/old" ]; then
+      MESSAGE="$(basename "$dir") has files left in .caravana-restore/old by an earlier restore; check them, then delete that directory"
+      return 1
+    fi
+  done
+  ROLLBACK_FAILED=
+  found=
+  for dir in "$ROOT"/*; do
+    [ -d "$dir" ] || continue
+    found=1
+    if ! stage_archive "$dir" "$(basename "$dir")"; then
+      discard_stages
+      return 1
+    fi
+  done
+  [ -n "$found" ] || { MESSAGE="the service has no volume mounted"; return 1; }
+
+  SWAPPED=
+  for dir in "$ROOT"/*; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    if ! swap_volume "$dir" "$name"; then
+      undo_swaps
+      if [ -n "$ROLLBACK_FAILED" ]; then
+        MESSAGE="$MESSAGE; the old files could not all be put back, they are in the .caravana-restore/old directory of each volume"
+      else
+        discard_stages
+      fi
+      return 1
+    fi
+    SWAPPED="$SWAPPED $name"
+  done
+  if ! discard_stages; then
+    MESSAGE="the volumes are restored, but the old files could not be removed from their .caravana-restore directories"
+  fi
+  return 0
+}
+
+# stage_archive <dir> <name> downloads the volume's archive and checks it.
+stage_archive() {
+  rm -rf "$1/.caravana-restore"
+  mkdir -p "$1/.caravana-restore" 2> "$WORK/mkdir.err"
+  status=$?
+  [ "$status" -eq 0 ] || { step_failed "preparing $2 for the restore" "$WORK/mkdir.err" "$status"; return 1; }
+  timeout "$(seconds_left)" rclone copyto "dest:$OBJECT$2.tar.gz" "$1/.caravana-restore/$2.tar.gz" 2> "$WORK/rclone.err"
+  status=$?
+  [ "$status" -eq 0 ] || { step_failed "download of $2" "$WORK/rclone.err" "$status"; return 1; }
+  timeout "$(seconds_left)" tar -tzf "$1/.caravana-restore/$2.tar.gz" > /dev/null 2> "$WORK/tar.err"
+  status=$?
+  [ "$status" -eq 0 ] || { step_failed "check of the archive of $2" "$WORK/tar.err" "$status"; return 1; }
+}
+
+# swap_volume <dir> <name> moves the volume's files aside and extracts its
+# archive. When it fails it puts this volume back as it was, and says so with
+# ROLLBACK_FAILED if it couldn't.
+swap_volume() {
+  mkdir "$1/.caravana-restore/old" 2> "$WORK/mkdir.err"
+  status=$?
+  [ "$status" -eq 0 ] || { step_failed "preparing $2 for the restore" "$WORK/mkdir.err" "$status"; return 1; }
+  if ! move_entries "$1" "$1/.caravana-restore/old"; then
+    MESSAGE="the files of $2 could not be moved aside"
+    put_back "$1" || ROLLBACK_FAILED=1
+    return 1
+  fi
+  timeout "$(seconds_left)" tar -xzf "$1/.caravana-restore/$2.tar.gz" -C "$1" 2> "$WORK/tar.err"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    step_failed "extract of the archive of $2" "$WORK/tar.err" "$status"
+    clear_entries "$1"
+    put_back "$1" || ROLLBACK_FAILED=1
+    return 1
+  fi
+}
+
+# undo_swaps puts back the volumes that were swapped before a later one failed.
+undo_swaps() {
+  for swapped in $SWAPPED; do
+    clear_entries "$ROOT/$swapped"
+    put_back "$ROOT/$swapped" || ROLLBACK_FAILED=1
+  done
+}
+
+# put_back <dir> moves a volume's old files back from .caravana-restore/old.
+put_back() {
+  move_entries "$1/.caravana-restore/old" "$1"
+}
+
+# discard_stages removes every volume's staging directory, the old files in it
+# included. It returns 1 when one could not be removed.
+discard_stages() {
+  discarded=0
+  for stage in "$ROOT"/*; do
+    [ -d "$stage" ] || continue
+    rm -rf "$stage/.caravana-restore" || discarded=1
+  done
+  return $discarded
+}
+
+# move_entries <from> <to> moves everything in <from>, hidden files too (a
+# plain * skips them), except a .caravana-restore. It tries every entry and
+# returns 1 if any failed.
+move_entries() {
+  moved=0
+  for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    [ "$(basename "$entry")" != .caravana-restore ] || continue
+    mv "$entry" "$2/" || moved=1
+  done
+  return $moved
+}
+
+# clear_entries <dir> deletes everything in <dir>, hidden files too, except a
+# .caravana-restore: what a failed extract left behind.
+clear_entries() {
+  for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    [ "$(basename "$entry")" != .caravana-restore ] || continue
+    rm -rf "$entry"
+  done
 }
 
 # --- The request.
