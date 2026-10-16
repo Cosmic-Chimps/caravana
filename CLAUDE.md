@@ -261,32 +261,24 @@ Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` →
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
 `https://<name>.localhost:8443`.
 
-## Current phase: 2 — Compose + UI (single node)
+## Current phase: 2.5 — Running real apps day to day (single node)
 
-Phase 1 (Engine) is done; its gate passed on 2026-10-04. Scope right now, in the order of
+Phases 1 and 2 are done (gates passed 2026-10-04 and 2026-10-11); 013–017 followed from running
+real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the order of
 `docs/plan.md`, nothing beyond it unless asked:
-- 006 Minimal auth: one admin login for the UI, API tokens for clients (before anything is public)
-  (done, branch `006-minimal-auth`)
-- 007 HTMX UI v1: app list and detail, deploy button, deployment history with live status, logs
-  from Nomad allocations. It calls only `internal/service`. Live updates are SSE (decided).
-  (done, branch `007-htmx-ui-v1`)
-- 008 Secrets: `secrets.Provider`, Nomad Variables, declarative replace on every deploy
-  (done, branch `008-secrets`)
-- 009 Compose translator (`compose-go`): loud errors, warnings for changed meaning, explicit
-  host volumes (done, branch `009-compose-translator`)
-- 010 Databases + backups: pinned to a node with a host volume; backups as periodic batch jobs to
-  S3-compatible storage (done for PostgreSQL, branch `010-databases-backups`)
-- 011 Rollback + export: redeploy any past version; export any app as a plain Nomad jobspec
-  (done, branch `011-rollback-export`)
-- 012 One-command install (done, branch `012-one-command-install`)
-- 012.5 Console v2: edit the definition, paste Compose, CPU and memory per copy, "needs you"
-  (done as feature 014, branch `014-console-v2`)
+- 018 Notifications: push the "needs you" problems and deploy outcomes to the owner (signed
+  webhooks, Slack/Discord, ntfy)
+- 019 Organization / Project / Environment: projects, environments with promotion, Nomad
+  namespaces
+- 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
+  registry, deployed by digest (first test case: Phanpy)
 
-Gate to finish Phase 2: a real multi-service compose app runs, with a database on a host volume
-and a backup that restores. Passed 2026-10-11 (Hollo on netcup, see `docs/plan.md`).
+Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a
+staging environment, is promoted to production, and a failure during it reaches the owner as a
+notification.
 
-Out of scope for now: git builds, multi-node, WireGuard, teams and roles, Aspire/Bella Baxter
-(Phase 2.5), GPUs and binaries.
+Out of scope for now: multi-node, WireGuard, teams and roles, Aspire/Bella Baxter (Phase 2.75),
+GPUs and binaries, Amazon ECR (backlog).
 
 ## Architecture
 

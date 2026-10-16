@@ -100,10 +100,26 @@ written before the backup and dropped the one written after.
 on the app page in 010, "redeploy this version" in 011). Constitution V already makes the API
 and the console share the service layer; this keeps the console from falling behind.
 
-## Phase 2.5: Aspire + Bella Baxter
+## Phase 2.5: Running real apps day to day
 
-- 018: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`) rendered from Nomad services.
-- 019: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+Reordered 2026-10-16 with the maintainer. After 017, what was missing on the maintainer's own host
+was being told when something breaks, a way to group apps by project and environment, and
+building from source. Aspire and Bella Baxter move to Phase 2.75.
+
+| # | Feature | Notes |
+| --- | --- | --- |
+| 018 | **Notifications** | Push what the "needs you" list derives (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and restores) and deploy outcomes to the owner. Outgoing webhooks with signed JSON, which also cover Slack and Discord incoming webhooks, plus ntfy. Email later. |
+| 019 | **Organization / Project / Environment** | Projects group apps; environments (production, staging, ...) hold each project's own copies of its apps with their own env, secrets and domains, and promotion between them. The organization is the installation until teams (Phase 4). Decide a Nomad namespace per environment or per project, how Traefik watches namespaces, and the constitution change to VI's router name `<app>-<service>`. Existing apps move to a default project and a `production` environment in the `default` namespace, so nothing running moves. It gets costlier the longer it waits: every feature keys state (jobs, variables, volumes, backup paths, routers) on the bare app ID. |
+| 020 | **Build from source** | A git repo plus a Dockerfile, built as a Nomad batch job (rootless BuildKit), pushed to a registry from 017, then deployed by digest. Build once, deploy to staging, promote to production (019); failed builds notify (018). First test case: Phanpy. Buildpacks or Nixpacks later, if ever. Moved here from Phase 4. |
+
+**Gate:** on the maintainer's host, an app built from a git repo deploys to a staging environment,
+is promoted to production, and a failure during it reaches the owner as a notification.
+
+## Phase 2.75: Aspire + Bella Baxter
+
+- 021: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
+  rendered from Nomad services. `PublishToCaravana` targets a project and environment (019).
+- 022: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
 **Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.
@@ -117,8 +133,8 @@ drain in the UI, cluster-wide routing. **Gate:** 3 nodes that survive the loss o
 
 **On demand:** not part of the MVP, and built when users ask for it. Phase 3 comes first: it
 proves the core promise (one VM to twenty). Consul Connect versus native discovery over
-WireGuard is decided at the start of Phase 3; Nomad namespaces per organization or project are
-planned for Phase 4 (teams), so app IDs only need to be unique within one.
+WireGuard is decided at the start of Phase 3; Nomad namespaces per project or environment come
+with 019 (Phase 2.5), so app IDs only need to be unique within one.
 
 - GPU nodes: node bootstrap installs the NVIDIA driver, the container toolkit and Nomad's NVIDIA
   device plugin (not part of the Nomad download), then checks that the GPU fingerprint shows up.
@@ -136,8 +152,8 @@ rolls back.
 
 ## Phase 4: Platform
 
-Git sources + builds as Nomad batch jobs, app templates, teams and roles, managed Cloud tier
-(needs legal review of Nomad's BSL first).
+More build sources (buildpacks, monorepos), app templates, teams and roles, managed Cloud tier
+(needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (020).
 
 ## Backlog (found while running real apps, not scheduled yet)
 
