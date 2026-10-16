@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,10 @@ type Service struct {
 	clock       clock         // the time, for the scheduler and run IDs
 	scheduleGap time.Duration // between two passes of the volume backup scheduler
 	volume      volumeTiming
+
+	// Notifications (feature 018), see notifications.go.
+	publicURL    string        // the console's address for links; empty means no links
+	resolveAfter time.Duration // how long a problem must be gone before "resolved" is sent
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -91,6 +96,28 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 			poll:     2 * time.Second,
 			comeBack: time.Minute,
 		},
+
+		resolveAfter: defaultResolveAfter,
+	}
+}
+
+// defaultResolveAfter is how long a problem must be gone from the needs-you
+// list before a notification says it is resolved.
+const defaultResolveAfter = 5 * time.Minute
+
+// SetPublicURL sets the console's own address (CARAVANA_PUBLIC_URL), which
+// notifications use to link to the page about an event. Empty means messages
+// carry no links. Call it before Start.
+func (s *Service) SetPublicURL(u string) {
+	s.publicURL = strings.TrimRight(u, "/")
+}
+
+// SetNotifyResolveAfter sets how long a problem must be gone before "resolved"
+// is sent (CARAVANA_NOTIFY_RESOLVE_AFTER, 5 minutes by default). Call it
+// before Start; a value that isn't positive keeps the default.
+func (s *Service) SetNotifyResolveAfter(d time.Duration) {
+	if d > 0 {
+		s.resolveAfter = d
 	}
 }
 

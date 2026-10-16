@@ -43,7 +43,7 @@ Nothing.
 
   Tests: round trips; due ordering by `next_at`; prune keeps 20 per channel and never prunes
   pending rows; cascade on channel delete.
-- [ ] T003 [P] Config and variable helpers:
+- [X] T003 [P] Config and variable helpers:
   - `CARAVANA_PUBLIC_URL` (`-public-url`): optional, absolute http(s), trailing slash trimmed.
   - `CARAVANA_NOTIFY_RESOLVE_AFTER` (`-notify-resolve-after`): default 5m, minimum 10s.
 

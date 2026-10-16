@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -44,6 +45,15 @@ type Config struct {
 	// before it is given up (feature 016). The service stays stopped for as
 	// long as the run lasts, so it bounds that too.
 	VolumeBackupTimeout time.Duration
+	// PublicURL is the console's own address, such as
+	// "https://caravana.example.com", without a trailing slash (feature 018).
+	// Notifications use it to link to the page about an event; empty means
+	// messages have no links.
+	PublicURL string
+	// NotifyResolveAfter is how long a problem must be gone from the needs-you
+	// list before "resolved" is sent, so one that flaps does not send a message
+	// on every swing (feature 018).
+	NotifyResolveAfter time.Duration
 }
 
 // Secret is a string that never prints. Formatting it with fmt or logging it
@@ -85,6 +95,8 @@ var (
 	namesImageSetting    = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
 	backupImageSetting   = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
 	volumeTimeoutSetting = setting{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "volume-backup-timeout"}
+	publicURLSetting     = setting{"CARAVANA_PUBLIC_URL", "public-url"}
+	resolveAfterSetting  = setting{"CARAVANA_NOTIFY_RESOLVE_AFTER", "notify-resolve-after"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -126,6 +138,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	namesImage := fs.String(namesImageSetting.flag, envOr(namesImageSetting, ""), "image of the sidecar that lets an app's services reach each other by name, pinned by digest; empty means the built-in busybox")
 	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
 	volumeTimeout := fs.String(volumeTimeoutSetting.flag, envOr(volumeTimeoutSetting, "30m"), "longest a volume backup or restore may take, as a duration such as 30m; the service stays stopped meanwhile")
+	publicURL := fs.String(publicURLSetting.flag, envOr(publicURLSetting, ""), "the console's own address, such as https://caravana.example.com, used for links in notifications; empty means no links")
+	resolveAfter := fs.String(resolveAfterSetting.flag, envOr(resolveAfterSetting, "5m"), "how long a problem must be gone before a notification says it is resolved, as a duration such as 5m; at least 10s")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -154,6 +168,12 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	}
 	if c.VolumeBackupTimeout, err = time.ParseDuration(*volumeTimeout); err != nil || c.VolumeBackupTimeout < time.Minute {
 		return Config{}, fmt.Errorf("%s: %q must be a duration of at least a minute, such as 30m", volumeTimeoutSetting, *volumeTimeout)
+	}
+	if c.NotifyResolveAfter, err = time.ParseDuration(*resolveAfter); err != nil || c.NotifyResolveAfter < 10*time.Second {
+		return Config{}, fmt.Errorf("%s: %q must be a duration of at least 10 seconds, such as 5m", resolveAfterSetting, *resolveAfter)
+	}
+	if c.PublicURL, err = parsePublicURL(*publicURL); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", publicURLSetting, err)
 	}
 	if err := checkListen(c.Listen); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", listenSetting, err)
@@ -205,6 +225,20 @@ func checkListen(addr string) error {
 		return fmt.Errorf("port %q must be between 1 and 65535", port)
 	}
 	return nil
+}
+
+// parsePublicURL checks the console's address and drops its trailing slashes,
+// so a link is the address plus "/apps/..." whichever way the owner wrote it.
+// Empty is fine: it means no links.
+func parsePublicURL(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("%q must be an http:// or https:// URL with a host and no query, e.g. https://caravana.example.com", raw)
+	}
+	return strings.TrimRight(raw, "/"), nil
 }
 
 func checkNomadAddr(addr string) error {

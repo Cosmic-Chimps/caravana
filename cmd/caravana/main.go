@@ -83,6 +83,8 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	}
 	svc := service.New(st, deploy.New(nomad, &registry.Client{}, cfg.Settings), deploy.NewVariables(nomad), log)
 	svc.SetVolumeBackupTimeout(cfg.VolumeBackupTimeout)
+	svc.SetPublicURL(cfg.PublicURL)
+	svc.SetNotifyResolveAfter(cfg.NotifyResolveAfter)
 	auth := service.NewAuth(st, log, service.AuthOptions{})
 	if _, err := auth.AdminEmail(ctx); errors.Is(err, service.ErrNoAdmin) {
 		log.Warn("no admin yet: every API route refuses requests until one exists. On this host, run: caravana admin init --email <email>")
