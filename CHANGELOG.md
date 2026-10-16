@@ -9,6 +9,39 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- Private registries: Settings › Registries keeps a user name and a password or token per
+  registry (GitHub's `ghcr.io`, GitLab, Quay, Docker Hub, or your own). Deploys, redeploys,
+  webhooks and rollbacks of images from that registry then work. "Test" checks the credentials
+  against the registry and shows when they last worked. The password is write-only: it is never
+  shown again, never in a log, a page, an export or a deployment record.
+- Images from any registry host now deploy, including hosts with a port (`registry.example.com:5000`)
+  and your own self-hosted ones. A host on `localhost` or another loopback address is reached over
+  plain HTTP; every other host must serve its registry over HTTPS.
+- Changing or removing a registry's credentials updates the apps that use them. Nothing restarts;
+  the new credentials are used the next time Nomad starts a copy of the app (a deploy, or a copy
+  that restarts).
+- API 0.14.0: `GET /v1/registries`, `PUT` and `DELETE /v1/registries/{host}`,
+  `POST /v1/registries/{host}/test`; a 422 `registry_auth_failed` when a registry turns the stored
+  credentials down.
+
+### Changed
+- When an image is missing or private, the message now says "add credentials for <host> in
+  Settings › Registries", instead of saying credentials aren't supported.
+- A deploy that fails because the registry refused the stored credentials says so, with one action
+  that opens Settings › Registries.
+
+### Security
+- To let Nomad pull a private image, the credentials reach that app's own container as the
+  environment variables `CARAVANA_REGISTRY_USERNAME` and `CARAVANA_REGISTRY_PASSWORD`. Only
+  apps whose image comes from a registry you added get them, and the job Nomad stores holds
+  placeholders, not the password. Use a token that can only read images (for GitHub, a
+  personal access token with `read:packages`), never your account password.
+
+### Upgrade
+- Nothing to do beyond rerunning the installer: the store gains its registries table when the new
+  version starts, and no new Nomad capability is needed.
+
 ## 0.4.0 - 2026-10-16
 
 ### Added

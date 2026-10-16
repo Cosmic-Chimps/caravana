@@ -84,6 +84,7 @@ every port but 22, 80 and 443 closed from outside. The same checks pass in the l
 | 012.5 | **Console v2** | What the design handoff has that no feature above brings. Done as feature 014 (specs/014-console-v2): Configure edits each service (image, env, port, domains, copies, health check, CPU, memory) and saves with a deploy, refused if the app changed since the form was drawn (`If-Match` on the app's revision in the API); New app takes a pasted Compose file with a preview, and Configure redeploys one; the Running tab shows CPU and memory per copy (Nomad's allocation stats, read only while the tab is open); the Apps home opens with a "needs you" list (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and restores, no backup destination), `GET /v1/attention`. |
 | 015 | **Keep and edit the Compose file** | Done (specs/015-compose-file-edit). An app made from Compose keeps the file as typed, comments included, with each deployment, and never a secret value. Configure edits the file and its overlay (preview, then deploy, refused if the app changed since the form was drawn) and shows the definition read-only. An app made before the file was kept is asked for it once. Rollback brings back the version's file, history downloads each entry's file, and secret edits, redeploys and the webhook keep it. A deploy from a definition drops it, with a warning. API 0.12.0: `getCompose`, `getDeploymentCompose`, `composeKept`. |
 | 016 | **Volumes panel + volume backups** | Done (specs/016-volume-backups). A `volume` backup engine: the service stops, its volumes are archived to 010's destination with its retention, back up now and restore, and it starts again. It runs as a `caravana-volumes` prestart task in the app's own copy, triggered by restarting the copy's tasks, so a backup adds no job version. Caravana schedules these backups itself. The Backups tab has a Volumes section (mount, host path, size, last backup). API 0.13.0: `listVolumes`. First test case: Uptime Kuma 2 with its embedded MariaDB. |
+| 017 | **Private registries** | Done (specs/017-private-registries). Settings › Registries keeps a user name and a write-only password or token per registry host, in a Nomad Variable (`caravana/registries/<key>`), with Test. The digest lookup (Basic and credentialed Bearer) and the node's pull both use them: each private service gets a per-task copy of the credentials that its docker `auth` block interpolates, so the job holds placeholders only. Images from any host work (ports, GitLab, Quay, self-hosted). Changing credentials updates the copies with no restarts. A refused credential is 422 `registry_auth_failed` with a console fix. API 0.14.0: `listRegistries`, `putRegistry`, `deleteRegistry`, `testRegistry`. Accepted trade-off: the credentials reach each private app's own container environment, so use a read-only token. |
 
 **Phase 2 gate:** a real multi-service compose app runs, with a database on a host volume and a
 backup that restores. 008–012 are the MVP: after 012, someone else can install and use it.
@@ -101,8 +102,8 @@ and the console share the service layer; this keeps the console from falling beh
 
 ## Phase 2.5: Aspire + Bella Baxter
 
-- 017: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`) rendered from Nomad services.
-- 018: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+- 018: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`) rendered from Nomad services.
+- 019: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
 **Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.
@@ -151,16 +152,29 @@ the larger of the reservation and 1024 MB). Compose's `mem_reservation` is the r
 The real host upgraded from `v0.1.0` to `v0.1.1` on 2026-10-12 with the published command, Hollo
 answering throughout: the first upgrade on a server with real data.
 
-### Private registry credentials (Phase 2.5)
+### Private registry credentials (done: feature 017)
 
-Added 2026-10-11. Caravana resolves digests and Nomad pulls images anonymously, so only public
-images deploy. Most real apps, Bella Baxter (Phase 2.5's gate) and anything published by
-`PublishToCaravana` need private ones. It needs:
+Added 2026-10-11, done 2026-10-16 (specs/017-private-registries). Caravana resolved digests and
+Nomad pulled images anonymously, so only public images deployed. Most real apps, Bella Baxter
+(Phase 2.5's gate) and anything published by `PublishToCaravana` need private ones. Built:
 
 - credentials per registry, write-only like secrets, kept in Nomad Variables
 - the digest lookup using them (`internal/registry`)
 - the job's docker `auth` taken from a template, never written into the job
-- the console and the API
+- the console (Settings › Registries) and the API (`/v1/registries`)
+
+### Node-level registry credentials (Phase 3)
+
+Added 2026-10-16, from feature 017's research. Nomad's docker driver has no per-job way to give a
+pull credential except the task's `auth` block, so 017 hands each private service its credentials
+through a template with `env = true`. That puts `CARAVANA_REGISTRY_USERNAME` and
+`CARAVANA_REGISTRY_PASSWORD` in the app's own container environment: the owner's own app can read
+them (one owner per installation until Phase 4), which is why the console asks for a read-only
+token. A client-level Docker auth file or credential helper on each node would keep the secret out
+of containers, but Caravana can't own a file the Nomad client reads: it runs as a sandboxed
+service, and in Phase 3 on another node than the copies. Once Phase 3 puts a Caravana agent on
+each node, the agent can serve a node-level credential helper that reads the credentials from
+Nomad Variables, and the per-task copies and the `auth` block go away.
 
 ### Backups for more than Postgres (Phase 2.5)
 

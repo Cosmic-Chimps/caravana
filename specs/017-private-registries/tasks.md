@@ -214,7 +214,7 @@ credentials.
   - the request log.
 
   Extend existing tests where they exist.
-- [ ] T014 [P] Docs:
+- [X] T014 [P] Docs:
   - CHANGELOG.md "Unreleased" gains Added (private registries, any registry host, Test) and
     Changed (the "missing or private" message points at Settings). No Upgrade step is needed.
   - CLAUDE.md "Where we are" gains a 017 paragraph.

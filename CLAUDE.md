@@ -218,6 +218,44 @@ no Nomad deployment. Other facts:
 - The Backups tab opens with a Volumes section (mount, host path, size, last backup).
 - The gate has a step `volume-backup-restore`, and `TestConsoleLab` a step `console-volumes`.
 
+Feature 017 is implemented on branch `017-private-registries` (stacked on 016): private images
+deploy. `internal/registry` takes any registry host (`Parse` reads `host:port`, lowercases the
+host and turns `index.docker.io` into `docker.io`; `Endpoint` is `https://<host>`, or plain
+`http://` for loopback hosts only) and a `Client.Credentials` hook: a Bearer challenge sends the
+token request with Basic auth, a Basic challenge retries with it, and `ErrUnauthorized` means the
+registry refused credentials it was given. `Client.Test` runs the same flow against `/v2/`.
+Credentials never appear in an error, a log or a URL. Other facts:
+- The secret lives in the Nomad Variable `caravana/registries/<key>` (items `username`,
+  `password`; the key writes `.` as `~` and `:` as `_`, since Nomad paths allow neither). SQLite
+  holds only the host, the user name and the last test (migration `0009_registries.sql`), as the
+  backup destination does.
+- A service whose image is on a credentialed host gets a per-task copy of the credentials,
+  `nomad/jobs/<app>/<svc>/<svc>` (items `registry`, `CARAVANA_REGISTRY_USERNAME`,
+  `CARAVANA_REGISTRY_PASSWORD`), written by `ensureRegistryVariables` just before `Register`. The
+  docker `auth` block interpolates the two names, and a `noop` template renders the copy into
+  `secrets/registry.env` (`env = true`). `Translate` gets the credentialed hosts as an argument and
+  stays pure. The job holds placeholders only, so no job, export, record or log has the password.
+  The Postgres backup and restore jobs get the same `auth` and items.
+- The trade-off, accepted and documented: `env = true` puts both values in the app's own container
+  environment, so the console asks for a read-only token. Nomad's docker driver has no other
+  per-job way, and a node-level credential helper waits for Phase 3's agent on each node (backlog).
+- `SyncRegistryCopies(ctx, host)` runs after every save or removal: it rewrites each per-task copy
+  (and backup and restore variable) whose registry is the host, with the new credentials or with
+  the credential items emptied (Nomad refuses a variable with every item empty, so `registry`
+  stays). It registers no job and restarts nothing; the new values reach a copy when its task next
+  starts. A sync failure answers "saved, but apps already deployed still have the old credentials".
+- A registry that turns the stored credentials down is `deploy.ErrRegistryAuth`, an `*ImageError`
+  with the field, mapped to 422 `registry_auth_failed`. A missing image without credentials says
+  "add credentials for <host> in Settings › Registries". The failed deploy in the console has one
+  action, "Check the registry's credentials". The webhook and `RedeployVersion` give the same errors.
+- API 0.14.0: `listRegistries`, `putRegistry` (a PUT without `password` keeps the secret),
+  `deleteRegistry`, `testRegistry`, `Registry` schema (no password property). Console: Settings ›
+  Registries (add, edit, Test, remove; forms work without JavaScript).
+- The gate has a step `private-registry` (a `registry:2` job with htpasswd on `127.0.0.1:5000` and
+  a skopeo copy of busybox into it: no credentials, wrong, right, then no-secret checks and
+  removal). A test searches for a sentinel password in every page, answer, error, job, export,
+  record and request log.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
