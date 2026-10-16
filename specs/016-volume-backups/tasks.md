@@ -262,7 +262,7 @@ Files: `internal/nomadjob/volumes.go`, `internal/service/backups.go`, `internal/
 
 Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/api/volumes.go`, `internal/api/api.go`, `api/openapi.yaml`, `internal/api/parity_test.go`, `internal/ui/backups.go`, `internal/ui/templates/app.html`, `cmd/caravana/console_lab_test.go`
 
-- [ ] T018 [P] [US3] `deploy.HostVolumes(ctx, appID) (map[string]HostVolumeInfo, error)` in internal/deploy/volumes.go: name (without the app prefix) → host path (from `HostVolumes().Get`). Test with the fake.
+- [X] T018 [P] [US3] `deploy.HostVolumes(ctx, appID) (map[string]HostVolumeInfo, error)` in internal/deploy/volumes.go: name (without the app prefix) → host path (from `HostVolumes().Get`). Test with the fake.
 - [ ] T019 [US3] `service.Volumes(ctx, appID) ([]VolumeView, error)` in internal/service/volumes.go (research R9, R10):
   - the stored app's volumes with their mounts, plus Nomad's volumes for the app that no service mounts (`Mounted` false);
   - sizes: read `VolumeSizes` from each running copy of a service with volumes (2 s timeout per copy, at most 4 at once), save them, then read `store.VolumeSizes`;
