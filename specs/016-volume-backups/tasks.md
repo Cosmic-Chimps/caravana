@@ -287,8 +287,19 @@ Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/ap
   - CLAUDE.md "Where we are" gains a feature 016 paragraph in the 015 style (task, request variable, restart, result file, scheduler, lock, migration 0008, policy capabilities, API 0.13.0, gate and lab steps).
   - docs/plan.md marks 016 done.
   - Done 2026-10-15. The CHANGELOG entry went onto the `release-changelog` branch's "Unreleased" section instead of a new file here: a second CHANGELOG.md would collide when both branches merge. So merge `release-changelog` before or with this branch. docs/plan.md also gained the backlog item "Network isolation between apps", from the lab check of what an app sees as the source address.
-- [ ] T023 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`, the linux amd64 and arm64 CGO-free builds, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, and shellcheck on deploy/install via Docker. Run them all and fix what fails.
+- [X] T023 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`, the linux amd64 and arm64 CGO-free builds, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, and shellcheck on deploy/install via Docker. Run them all and fix what fails.
+  - 2026-10-15: all pass, nothing to fix. `go test -race -count=1 ./...` is ok in every package. shellcheck is clean on install.sh, release.sh, ui-css.sh and lab.sh.
 - [ ] T024 Lab validation: `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab -v`, then `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 25m` (the lab applies caravana-policy.hcl, so the new capabilities are exercised), then quickstart §1–§4 by hand with Uptime Kuma 2. Record results here, as 015's T020 did.
+  - 2026-10-15, automated part: `TestLab` (the console steps, then the gate, on the scoped policy token) passes 18 of 18 steps in 19 min.
+    - `console-volumes` (53 s): a Compose app with a volume and a `volume` backup, made through the console. The Volumes row shows a measured size and host path, "Back up now" through the `<details>` form succeeds, and the row shows "stopped".
+    - `volume-backup-restore` (79 s):
+      - the backup succeeds with `stoppedSeconds > 0` and the archive in the bucket;
+      - the file is changed to "B" and a new file is added, then the restore succeeds;
+      - "A" is back, the new file is gone, and no staging directory is left;
+      - the job version is unchanged, and the copy is the same one, healthy again.
+  - Proven in the real image along the way: `regexMatch` and `replaceAll` in templates, `secrets/` unreadable through the fs API, BusyBox `tar --exclude`, `timeout`, and `rclone size --json`.
+  - The gate's `exec` helper now retries a run that exits 0 with no output, up to three times. Nomad's exec stream sometimes reports the exit before the output. This showed up once in `secrets-render` and once in this feature's step.
+  - Still open: quickstart §1–§4 by hand with Uptime Kuma 2, and SC-001 on the maintainer's host after the release (rerun the installer, redeploy Kuma, set its backup to Volume, back up, restore once).
 
 ## Dependencies & Execution Order
 

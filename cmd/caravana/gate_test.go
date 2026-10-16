@@ -405,7 +405,29 @@ func (g *gate) execEnv(t *testing.T, appID, task, name, deploymentID string) str
 // group and task share the service's name) that belongs to the deployment's
 // job version, with Nomad's exec (the gate's token can; Caravana's can't).
 // It answers the trimmed output, or an error with the exit code and stderr.
+//
+// Nomad's exec stream sometimes reports a command's exit before its output
+// has arrived, so a run that exits 0 with no output is run again, up to three
+// times in all, a second apart (seen in the lab: printenv answering "" for a
+// variable that was set). Every command the gate runs this way may run twice:
+// they read, or write the same thing again.
 func (g *gate) exec(t *testing.T, appID, service, deploymentID string, cmd ...string) (string, error) {
+	t.Helper()
+	var out string
+	var err error
+	for try := 0; try < 3; try++ {
+		if try > 0 {
+			time.Sleep(time.Second)
+		}
+		if out, err = g.execOnce(t, appID, service, deploymentID, cmd...); err != nil || out != "" {
+			break
+		}
+	}
+	return out, err
+}
+
+// execOnce is one run of exec's command.
+func (g *gate) execOnce(t *testing.T, appID, service, deploymentID string, cmd ...string) (string, error) {
 	t.Helper()
 	var alloc *api.Allocation
 	waitFor(t, "a running copy of "+appID+"/"+service, time.Minute, func() bool {
@@ -706,19 +728,27 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 	if final := g.waitFinalOf(t, appID, d.ID, 4*time.Minute); final.Status != "healthy" {
 		t.Fatalf("deploy %s ended %s: %s", appID, final.Status, final.Error)
 	}
-	// readFile reads /data/v inside the copy of this deployment, whatever copy
-	// serves it, waiting while the service is still starting.
-	readFile := func() string {
+	// read runs a command that only reads, inside the copy of this deployment,
+	// and returns its output. Nomad's exec stream can report the exit before the
+	// output has arrived, so an empty answer is asked again (a few times, over a
+	// few seconds); every read here prints something when it works. It waits
+	// while the service is still starting.
+	read := func(cmd ...string) string {
 		t.Helper()
 		var got string
 		var lastErr error
 		if !waitUntil(time.Minute, func() bool {
-			got, lastErr = g.exec(t, appID, "web", d.ID, "cat", "/data/v")
-			return lastErr == nil
+			got, lastErr = g.exec(t, appID, "web", d.ID, cmd...)
+			return lastErr == nil && got != ""
 		}) {
-			t.Fatalf("cat /data/v: %v", lastErr)
+			t.Fatalf("%s: %q (%v)", strings.Join(cmd, " "), got, lastErr)
 		}
 		return got
+	}
+	// readFile reads /data/v.
+	readFile := func() string {
+		t.Helper()
+		return read("cat", "/data/v")
 	}
 	if got := readFile(); got != "A" {
 		t.Fatalf("/data/v = %q at the start, want A", got)
@@ -876,11 +906,11 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 	if got := readFile(); got != "A" {
 		t.Errorf("/data/v = %q after the restore, want A", got)
 	}
-	if out, err := g.exec(t, appID, "web", d.ID, "sh", "-c", "[ ! -e /data/new ] && echo gone"); err != nil || out != "gone" {
-		t.Errorf("/data/new after the restore: %q (%v), want it deleted: a restore replaces the volume's files", out, err)
+	if out := read("sh", "-c", "[ -e /data/new ] && echo present || echo gone"); out != "gone" {
+		t.Errorf("/data/new after the restore: %q, want it deleted: a restore replaces the volume's files", out)
 	}
-	if out, err := g.exec(t, appID, "web", d.ID, "ls", "-A", "/data"); err != nil || out != "v" {
-		t.Errorf("/data holds %q (%v) after the restore, want only v (no staging directory left)", out, err)
+	if out := read("ls", "-A", "/data"); out != "v" {
+		t.Errorf("/data holds %q after the restore, want only v (no staging directory left)", out)
 	}
 	// Like the backup, the restore restarted the same copy and left the job alone.
 	if got := versionOf(); got != versionBefore {
