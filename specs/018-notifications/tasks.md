@@ -56,7 +56,7 @@ Nothing.
 
 ## Phase 3: User Story 3 - Manage channels (P1)
 
-- [ ] T004 [US3] Service, in internal/service/notifications.go:
+- [X] T004 [US3] Service, in internal/service/notifications.go:
   - `NotificationChannels`, `CreateNotificationChannel(ctx, in)`, `UpdateNotificationChannel`,
     `DeleteNotificationChannel`, `TestNotificationChannel` and `RotateNotificationSecret`, per
     data-model "Service".

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,7 @@ type Service struct {
 	// Notifications (feature 018), see notifications.go.
 	publicURL    string        // the console's address for links; empty means no links
 	resolveAfter time.Duration // how long a problem must be gone before "resolved" is sent
+	notifyClient *http.Client  // what deliveries go through; tests may replace it
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -98,6 +100,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		},
 
 		resolveAfter: defaultResolveAfter,
+		notifyClient: defaultNotifyClient(),
 	}
 }
 
