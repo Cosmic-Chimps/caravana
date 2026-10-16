@@ -4,7 +4,7 @@ Additions only. No request that works today changes meaning.
 
 ## Volumes
 
-`GET /v1/apps/{id}/volumes` (`listVolumes`) → 200 `[]Volume`
+`GET /v1/apps/{id}/volumes` (`listVolumes`) → 200 `[]AppVolume` (schema `AppVolume`: `Volume` already names the definition's volume)
 
 ```json
 [{
