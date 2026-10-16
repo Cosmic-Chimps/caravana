@@ -178,7 +178,7 @@ credentials.
   - the sync rewrites copies and doesn't register any job;
   - removal empties the copies;
   - a public app gets no copy.
-- [ ] T010 [US1] Errors and the fix action:
+- [X] T010 [US1] Errors and the fix action:
   - `deploy.ErrRegistryAuth` → 422 `registry_auth_failed`, with `field` from the `ImageError`, in
     internal/api/api.go (`mapError`), with tests;
   - in the console, the failed-deploy sentence for this error, and its one fix action "Check the
