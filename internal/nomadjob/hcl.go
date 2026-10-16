@@ -117,6 +117,18 @@ func (w *hclWriter) task(t *api.Task) {
 		}
 		w.block("config", nil, func() {
 			for _, k := range slices.Sorted(maps.Keys(t.Config)) {
+				// A nested block (docker's auth) is a list of objects in the
+				// JSON job, and a block in HCL.
+				if blocks, ok := t.Config[k].([]map[string]any); ok {
+					for _, m := range blocks {
+						w.block(k, nil, func() {
+							for _, name := range slices.Sorted(maps.Keys(m)) {
+								w.attr(name, configValue(m[name]))
+							}
+						})
+					}
+					continue
+				}
 				w.attr(k, configValue(t.Config[k]))
 			}
 		})

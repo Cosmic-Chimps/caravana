@@ -589,7 +589,7 @@ func TestSetBackupDestinationReachesVolumeBackups(t *testing.T) {
 
 func TestVolumeVariablePathMatchesTheJob(t *testing.T) {
 	a := volumeApp(app.BackupVolume)
-	res, err := nomadjob.Translate(a, apptest.Whoami().Deployment, labSettings)
+	res, err := nomadjob.Translate(a, apptest.Whoami().Deployment, labSettings, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

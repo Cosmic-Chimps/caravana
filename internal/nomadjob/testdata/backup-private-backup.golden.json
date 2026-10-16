@@ -1,0 +1,281 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "shop_db_backup",
+  "Name": "shop_db_backup",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "backup",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "dump",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": {
+            "Hook": "prestart",
+            "Sidecar": false
+          },
+          "Config": {
+            "args": [
+              "-Fc",
+              "-f",
+              "/alloc/data/backup.dump"
+            ],
+            "auth": [
+              {
+                "password": "${CARAVANA_REGISTRY_PASSWORD}",
+                "server_address": "ghcr.io",
+                "username": "${CARAVANA_REGISTRY_USERNAME}"
+              }
+            ],
+            "command": "pg_dump",
+            "image": "ghcr.io/acme/postgres@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": null,
+          "Services": null,
+          "Resources": {
+            "CPU": 100,
+            "Cores": null,
+            "MemoryMB": 128,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": null,
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/shop_db_backup\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            },
+            {
+              "SourcePath": null,
+              "DestPath": "local/database.env",
+              "EmbeddedTmpl": "{{ range nomadService \"shop-db\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}PGHOST={{ .Address }}\nPGPORT={{ .Port }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": null,
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        },
+        {
+          "Name": "upload",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "set -eu\nts=$(echo \"$NOMAD_JOB_ID\" | sed 's/.*periodic-//')\nkey=\"$BACKUP_PATH/$ts.dump\"\nrclone copyto /alloc/data/backup.dump \"dest:$key\"\necho \"caravana-backup key=$key bytes=$(stat -c %s /alloc/data/backup.dump)\"\nfiles=$(rclone lsf --files-only \"dest:$BACKUP_PATH/\" | grep '\\.dump$' | sort)\nn=$(echo \"$files\" | grep -c . || true)\nif [ \"$n\" -gt \"$BACKUP_KEEP\" ]; then\n  echo \"$files\" | head -n $((n - BACKUP_KEEP)) | while read -r f; do\n    rclone deletefile \"dest:$BACKUP_PATH/$f\"\n    echo \"caravana-expired $f\"\n  done\nfi\n"
+            ],
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "image": "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "BACKUP_KEEP": "3"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 100,
+            "Cores": null,
+            "MemoryMB": 128,
+            "MemoryMaxMB": null,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": null,
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/shop_db_backup\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": null,
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": null,
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": {
+    "Enabled": true,
+    "Spec": null,
+    "Specs": [
+      "0 3 * * *"
+    ],
+    "SpecType": "cron",
+    "ProhibitOverlap": true,
+    "TimeZone": "UTC"
+  },
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.app": "shop",
+    "caravana.service": "db"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

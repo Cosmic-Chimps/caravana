@@ -54,6 +54,9 @@ type goldenCase struct {
 	app        app.App
 	deployment app.Deployment
 	settings   Settings
+	// private is the registry hosts Caravana holds credentials for; nil for
+	// every case that predates private registries.
+	private map[string]bool
 }
 
 // goldenCases is every apptest shape with the lab settings, plus the whoami
@@ -67,7 +70,8 @@ func goldenCases() []goldenCase {
 	letsEncrypt.CertResolver = "letsencrypt"
 	w := apptest.Whoami()
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
-	return append(cases, volumeBackupCases()...)
+	cases = append(cases, volumeBackupCases()...)
+	return append(cases, privateRegistryCases()...)
 }
 
 // volumeBackupCases are the apps with a volume backup (feature 016). They live
@@ -123,7 +127,7 @@ func volumeBackupCases() []goldenCase {
 func TestTranslate(t *testing.T) {
 	for _, tc := range goldenCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := Translate(tc.app, tc.deployment, tc.settings)
+			res, err := Translate(tc.app, tc.deployment, tc.settings, tc.private)
 			if err != nil {
 				t.Fatalf("Translate: %v", err)
 			}
@@ -166,7 +170,7 @@ func TestTranslateMatchesLabJob(t *testing.T) {
 		t.Fatalf("decode lab job: %v", err)
 	}
 
-	res, err := Translate(whoamiApp(), whoamiDeployment(), labSettings())
+	res, err := Translate(whoamiApp(), whoamiDeployment(), labSettings(), nil)
 	if err != nil {
 		t.Fatalf("Translate: %v", err)
 	}
@@ -182,7 +186,7 @@ func TestTranslateDeterministic(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var first []byte
 			for i := range 100 {
-				res, err := Translate(tc.app, tc.deployment, tc.settings)
+				res, err := Translate(tc.app, tc.deployment, tc.settings, tc.private)
 				if err != nil {
 					t.Fatalf("Translate: %v", err)
 				}
@@ -205,11 +209,11 @@ func TestTranslateNewDeploymentOnlyChangesMeta(t *testing.T) {
 	d2 := whoamiDeployment()
 	d2.ID = "d2"
 
-	r1, err := Translate(whoamiApp(), d1, labSettings())
+	r1, err := Translate(whoamiApp(), d1, labSettings(), nil)
 	if err != nil {
 		t.Fatalf("Translate d1: %v", err)
 	}
-	r2, err := Translate(whoamiApp(), d2, labSettings())
+	r2, err := Translate(whoamiApp(), d2, labSettings(), nil)
 	if err != nil {
 		t.Fatalf("Translate d2: %v", err)
 	}
@@ -278,7 +282,7 @@ func TestTranslateErrors(t *testing.T) {
 			a, d, s := whoamiApp(), whoamiDeployment(), labSettings()
 			tc.mutate(&a, &d, &s)
 
-			res, err := Translate(a, d, s)
+			res, err := Translate(a, d, s, nil)
 			var fe *app.FieldError
 			if !errors.As(err, &fe) {
 				t.Fatalf("Translate() error = %v, want a *app.FieldError for %q", err, tc.wantField)
@@ -316,7 +320,7 @@ func TestSecretsStayOutOfTheJob(t *testing.T) {
 	a.Services[0].Secrets = []app.Secret{{Name: "API_KEY", Value: new(marker)}}
 	d := apptest.Whoami().Deployment
 
-	res, err := Translate(a, d, labSettings())
+	res, err := Translate(a, d, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +336,7 @@ func TestSecretsStayOutOfTheJob(t *testing.T) {
 		t.Errorf("templates = %+v, want one noop template reading nomad/jobs/whoami/web", tmpls)
 	}
 
-	plain, err := Translate(apptest.Whoami().App, d, labSettings())
+	plain, err := Translate(apptest.Whoami().App, d, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +349,7 @@ func TestSecretsStayOutOfTheJob(t *testing.T) {
 // registrations (research R3).
 func TestServicesByName(t *testing.T) {
 	single := apptest.Whoami()
-	res, err := Translate(single.App, single.Deployment, labSettings())
+	res, err := Translate(single.App, single.Deployment, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +363,7 @@ func TestServicesByName(t *testing.T) {
 			vols = c
 		}
 	}
-	res, err = Translate(vols.App, vols.Deployment, labSettings())
+	res, err = Translate(vols.App, vols.Deployment, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +402,7 @@ func TestServicesByName(t *testing.T) {
 		a.Services[1].Name = strings.Repeat("d", 50)
 		d := vols.Deployment
 		d.Digests = map[string]string{"web": d.Digests["web"], a.Services[1].Name: d.Digests["db"]}
-		_, err := Translate(a, d, labSettings())
+		_, err := Translate(a, d, labSettings(), nil)
 		var fe *app.FieldError
 		if !errors.As(err, &fe) || fe.Field != "services[1].name" {
 			t.Errorf("Translate = %v, want a field error on services[1].name", err)
@@ -415,7 +419,7 @@ func TestVolumeGroupsReplaceTheirCopy(t *testing.T) {
 			vols = c
 		}
 	}
-	res, err := Translate(vols.App, vols.Deployment, labSettings())
+	res, err := Translate(vols.App, vols.Deployment, labSettings(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

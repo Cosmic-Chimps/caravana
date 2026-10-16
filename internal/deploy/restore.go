@@ -27,7 +27,7 @@ func (d *Deployer) Restore(ctx context.Context, appID string, svc app.Service, i
 	if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), items); err != nil {
 		return err
 	}
-	job := nomadjob.RestoreJob(appID, svc, image, object, d.settings)
+	job := nomadjob.RestoreJob(appID, svc, image, object, d.settings, nil)
 	if _, _, err := d.nomad.Jobs().Register(job, (&api.WriteOptions{}).WithContext(ctx)); err != nil {
 		return d.registerError(id, err)
 	}

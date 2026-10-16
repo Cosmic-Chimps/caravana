@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/registry"
 )
 
 // Settings are per-installation values. They come from the control plane's
@@ -116,17 +117,24 @@ var traefikNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Translate builds the Nomad job for an app and one of its deployments. On
 // invalid input it returns a *app.FieldError naming the field, and no job.
 //
+// private is the set of registry hosts ("ghcr.io", "registry.example.com:5000",
+// "docker.io") Caravana holds credentials for, true for each. A service whose
+// image comes from one of them pulls with those credentials (see pullAuth).
+// It is an argument, not a Setting: it belongs to the moment of the deploy,
+// not to the installation's configuration. nil means none, and gives the job
+// every service had before private registries existed.
+//
 // Checks run in this order and stop at the first problem: the settings, the
 // model's rules (app.ValidateApp), Nomad's limits with defaults applied, then
 // the deployment's rules (app.Validate).
-func Translate(a app.App, d app.Deployment, s Settings) (Result, error) {
+func Translate(a app.App, d app.Deployment, s Settings, private map[string]bool) (Result, error) {
 	if err := Check(a, s); err != nil {
 		return Result{}, err
 	}
 	if err := app.Validate(a, d); err != nil {
 		return Result{}, err
 	}
-	return Result{Job: job(a, d, s)}, nil
+	return Result{Job: job(a, d, s, private)}, nil
 }
 
 // Check runs every rule Translate runs that doesn't need a deployment: the
@@ -207,7 +215,7 @@ func checkNomadLimits(i int, svc app.Service, s Settings) error {
 	return nil
 }
 
-func job(a app.App, d app.Deployment, s Settings) *api.Job {
+func job(a app.App, d app.Deployment, s Settings, private map[string]bool) *api.Job {
 	name := a.Name
 	if name == "" {
 		name = a.ID
@@ -235,12 +243,12 @@ func job(a app.App, d app.Deployment, s Settings) *api.Job {
 		},
 	}
 	for _, svc := range a.Services {
-		j.TaskGroups = append(j.TaskGroups, taskGroup(a, svc, d.Digests[svc.Name], s))
+		j.TaskGroups = append(j.TaskGroups, taskGroup(a, svc, d.Digests[svc.Name], s, private))
 	}
 	return j
 }
 
-func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGroup {
+func taskGroup(a app.App, svc app.Service, image string, s Settings, private map[string]bool) *api.TaskGroup {
 	count := 1
 	if svc.Replicas != nil {
 		count = *svc.Replicas
@@ -262,7 +270,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings) *api.TaskGr
 		ShutdownDelay: new(shutdownDelay),
 		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports}},
 		// The service's own task is always the first.
-		Tasks: []*api.Task{task(a.ID, svc, image, s)},
+		Tasks: []*api.Task{task(a.ID, svc, image, s, private)},
 	}
 	if len(svc.Volumes) > 0 {
 		tg.Volumes = volumeRequests(a.ID, svc)
@@ -429,8 +437,86 @@ func secretsTemplate(appID, service string) *api.Template {
 	}
 }
 
-func task(appID string, svc app.Service, image string, s Settings) *api.Task {
+// Pulling a private image (feature 017, research R1). The Docker driver reads
+// its registry login from the task's config, and Nomad fills ${...} in that
+// config from the task's environment before it pulls. So the job holds only
+// placeholders; a template renders the two values from a Nomad Variable into
+// the task's environment, where only that task can read them.
+const (
+	// RegistryUsernameEnv and RegistryPasswordEnv are the environment names the
+	// placeholders and the variable's items use. The password reaches the
+	// service's own container under that name, which the console says.
+	RegistryUsernameEnv = "CARAVANA_REGISTRY_USERNAME"
+	RegistryPasswordEnv = "CARAVANA_REGISTRY_PASSWORD"
+)
+
+// pullAuth is the docker driver's auth block for an image, and true, when the
+// image comes from a registry in private. The JSON job format takes a block as
+// a list holding one object. The values are placeholders, never credentials.
+func pullAuth(image string, private map[string]bool) (auth []map[string]any, ok bool) {
+	host, ok := PrivateRegistry(image, private)
+	if !ok {
+		return nil, false
+	}
+	return []map[string]any{{
+		"username":       "${" + RegistryUsernameEnv + "}",
+		"password":       "${" + RegistryPasswordEnv + "}",
+		"server_address": host,
+	}}, true
+}
+
+// PrivateRegistry returns the canonical registry host of image, and true, when
+// that host is in private.
+func PrivateRegistry(image string, private map[string]bool) (host string, ok bool) {
+	if len(private) == 0 {
+		return "", false
+	}
+	ref, err := registry.Parse(image)
+	if err != nil || !private[ref.Registry] {
+		return "", false
+	}
+	return ref.Registry, true
+}
+
+// PullCredentialsPath is the Nomad Variable that holds the credentials a
+// service's task pulls its image with. It is the task's own path
+// (nomad/jobs/<job>/<group>/<task>), which Nomad lets that task read without
+// any ACL policy, and no other service's.
+func PullCredentialsPath(appID, service string) string {
+	return SecretsPath(appID, service) + "/" + service
+}
+
+// pullCredentialsTemplate renders the two credential items into the task's
+// environment. Both lines are always written, each JSON-quoted like the
+// secrets (see secretsTemplate): a missing item renders as "", so the
+// placeholders always resolve and a pull without credentials fails with the
+// registry's own error. It loops over the variable's tuples, as the other
+// templates do, instead of naming a map key. "noop": a changed variable never
+// touches a running copy, so new credentials reach copies when they start.
+func pullCredentialsTemplate(appID, service string) *api.Template {
+	tmpl := `{{ with nomadVar "` + PullCredentialsPath(appID, service) + `" }}` +
+		`{{ $user := "" }}{{ $pass := "" }}` +
+		`{{ range .Tuples }}` +
+		`{{ if eq .K "` + RegistryUsernameEnv + `" }}{{ $user = printf "%s" .V }}{{ end }}` +
+		`{{ if eq .K "` + RegistryPasswordEnv + `" }}{{ $pass = printf "%s" .V }}{{ end }}` +
+		`{{ end }}` +
+		RegistryUsernameEnv + `={{ $user | toJSON }}` + "\n" +
+		RegistryPasswordEnv + `={{ $pass | toJSON }}` + "\n" +
+		`{{ end }}`
+	return &api.Template{
+		EmbeddedTmpl: new(tmpl),
+		DestPath:     new("secrets/registry.env"),
+		Envvars:      new(true),
+		ChangeMode:   new("noop"),
+	}
+}
+
+func task(appID string, svc app.Service, image string, s Settings, private map[string]bool) *api.Task {
 	config := map[string]any{"image": image}
+	auth, isPrivate := pullAuth(image, private)
+	if isPrivate {
+		config["auth"] = auth
+	}
 	if svc.Command != "" {
 		config["command"] = svc.Command
 	}
@@ -456,6 +542,9 @@ func task(appID string, svc app.Service, image string, s Settings) *api.Task {
 	// The job names the variable, never a value: values stay in the store.
 	if len(svc.Secrets) > 0 {
 		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name)}
+	}
+	if isPrivate {
+		t.Templates = append(t.Templates, pullCredentialsTemplate(appID, svc.Name))
 	}
 	for _, v := range svc.Volumes {
 		t.VolumeMounts = append(t.VolumeMounts, &api.VolumeMount{

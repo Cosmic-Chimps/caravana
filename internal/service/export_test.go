@@ -30,6 +30,29 @@ func TestExport(t *testing.T) {
 		}
 	})
 
+	t.Run("an image from a registry with credentials", func(t *testing.T) {
+		if _, err := e.svc.SaveRegistry(ctx, "docker.io", "me", new(registryPassword)); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := e.svc.DeleteRegistry(ctx, "docker.io"); err != nil {
+				t.Fatal(err)
+			}
+		}()
+		_, hcl, err := e.svc.Export(ctx, "whoami", "")
+		if err != nil {
+			t.Fatalf("Export() = %v", err)
+		}
+		for _, want := range []string{`server_address = "docker.io"`, "nomad/jobs/whoami/web/web with CARAVANA_REGISTRY_USERNAME and CARAVANA_REGISTRY_PASSWORD"} {
+			if !strings.Contains(string(hcl), want) {
+				t.Errorf("the export lacks %q:\n%s", want, hcl)
+			}
+		}
+		if strings.Contains(string(hcl), registryPassword) || strings.Contains(string(hcl), `username = "me"`) {
+			t.Error("the export holds a credential")
+		}
+	})
+
 	recordDeployment(t, e, "old", nil, store.StatusHealthy) // now the newest healthy, with no definition
 
 	t.Run("a past deployment", func(t *testing.T) {

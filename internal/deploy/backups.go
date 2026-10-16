@@ -115,7 +115,7 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 		if err := d.writeVariable(ctx, nomadjob.BackupVariablePath(id), items); err != nil {
 			return err
 		}
-		job := nomadjob.BackupJob(a.ID, svc, digests[svc.Name], d.settings)
+		job := nomadjob.BackupJob(a.ID, svc, digests[svc.Name], d.settings, nil)
 		if _, _, err := d.nomad.Jobs().Register(job, (&api.WriteOptions{}).WithContext(ctx)); err != nil {
 			return d.registerError(id, err)
 		}

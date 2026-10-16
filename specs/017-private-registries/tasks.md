@@ -144,7 +144,7 @@ credentials.
 
 **Independent test**: the gate step `private-registry` (research R7) and quickstart steps 2–7.
 
-- [ ] T008 [P] [US1] Job shape (data-model "Job shape"), in internal/nomadjob/translate.go, backup.go and hcl.go:
+- [X] T008 [P] [US1] Job shape (data-model "Job shape"), in internal/nomadjob/translate.go, backup.go and hcl.go:
   - Translation learns which registry hosts have credentials. Add an input field or argument, for
     example `Private map[string]bool` keyed by host, passed by deploy; `Translate` stays pure.
   - For a service whose image's registry is private:

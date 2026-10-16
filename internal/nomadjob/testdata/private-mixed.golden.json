@@ -1,0 +1,902 @@
+{
+  "Job": {
+    "Region": null,
+    "Namespace": null,
+    "ID": "mix",
+    "Name": "mix",
+    "Type": "service",
+    "Priority": null,
+    "AllAtOnce": null,
+    "Datacenters": [
+      "*"
+    ],
+    "NodePool": null,
+    "Constraints": null,
+    "Affinities": null,
+    "TaskGroups": [
+      {
+        "Name": "web",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "web",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "auth": [
+                {
+                  "password": "${CARAVANA_REGISTRY_PASSWORD}",
+                  "server_address": "ghcr.io",
+                  "username": "${CARAVANA_REGISTRY_USERNAME}"
+                }
+              ],
+              "image": "ghcr.io/acme/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "secrets/registry.env",
+                "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/mix/web/web\" }}{{ $user := \"\" }}{{ $pass := \"\" }}{{ range .Tuples }}{{ if eq .K \"CARAVANA_REGISTRY_USERNAME\" }}{{ $user = printf \"%s\" .V }}{{ end }}{{ if eq .K \"CARAVANA_REGISTRY_PASSWORD\" }}{{ $pass = printf \"%s\" .V }}{{ end }}{{ end }}CARAVANA_REGISTRY_USERNAME={{ $user | toJSON }}\nCARAVANA_REGISTRY_PASSWORD={{ $pass | toJSON }}\n{{ end }}",
+                "ChangeMode": "noop",
+                "ChangeScript": null,
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": true,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          },
+          {
+            "Name": "names",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": true
+            },
+            "Config": {
+              "args": [
+                "-c",
+                "[ -f /local/base ] || cp /etc/hosts /local/base\ncat /local/base /local/names \u003e /etc/hosts\ntrap 'exit 0' TERM INT\nwhile :; do sleep 3600 \u0026 wait $!; done\n"
+              ],
+              "command": "/bin/sh",
+              "image": "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 20,
+              "Cores": null,
+              "MemoryMB": 16,
+              "MemoryMaxMB": null,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": 1000000000,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "local/names",
+                "EmbeddedTmpl": "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}",
+                "ChangeMode": "script",
+                "ChangeScript": {
+                  "Command": "/bin/sh",
+                  "Args": [
+                    "-c",
+                    "cat /local/base /local/names \u003e /etc/hosts"
+                  ],
+                  "Timeout": 5000000000,
+                  "FailOnError": false,
+                  "RunOnFirstRender": null
+                },
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": null,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": [
+              {
+                "Label": "http",
+                "Value": 0,
+                "To": 3000,
+                "HostNetwork": "",
+                "IgnoreCollision": false
+              }
+            ],
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": [
+          {
+            "Name": "mix-web",
+            "Tags": [
+              "traefik.enable=true",
+              "traefik.http.routers.mix-web.rule=Host(`mix.example.com`)",
+              "traefik.http.routers.mix-web.entrypoints=websecure",
+              "traefik.http.routers.mix-web.tls=true"
+            ],
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "",
+            "Address": "",
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "http",
+                "Command": "",
+                "Args": null,
+                "Path": "/",
+                "Protocol": "",
+                "PortLabel": "",
+                "Expose": false,
+                "AddressMode": "",
+                "Advertise": "",
+                "Interval": 10000000000,
+                "Timeout": 2000000000,
+                "InitialStatus": "",
+                "Notes": "",
+                "TLSServerName": "",
+                "TLSSkipVerify": false,
+                "Header": null,
+                "Method": "",
+                "CheckRestart": null,
+                "GRPCService": "",
+                "GRPCUseTLS": false,
+                "TaskName": "",
+                "SuccessBeforePassing": 0,
+                "FailuresBeforeCritical": 0,
+                "FailuresBeforeWarning": 0,
+                "Body": "",
+                "OnUpdate": ""
+              }
+            ],
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          },
+          {
+            "Name": "mix-web-internal",
+            "Tags": null,
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "alloc",
+            "Address": "",
+            "Checks": null,
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          }
+        ],
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      },
+      {
+        "Name": "api",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "api",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "auth": [
+                {
+                  "password": "${CARAVANA_REGISTRY_PASSWORD}",
+                  "server_address": "registry.example.com:5000",
+                  "username": "${CARAVANA_REGISTRY_USERNAME}"
+                }
+              ],
+              "image": "registry.example.com:5000/acme/api@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "secrets/registry.env",
+                "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/mix/api/api\" }}{{ $user := \"\" }}{{ $pass := \"\" }}{{ range .Tuples }}{{ if eq .K \"CARAVANA_REGISTRY_USERNAME\" }}{{ $user = printf \"%s\" .V }}{{ end }}{{ if eq .K \"CARAVANA_REGISTRY_PASSWORD\" }}{{ $pass = printf \"%s\" .V }}{{ end }}{{ end }}CARAVANA_REGISTRY_USERNAME={{ $user | toJSON }}\nCARAVANA_REGISTRY_PASSWORD={{ $pass | toJSON }}\n{{ end }}",
+                "ChangeMode": "noop",
+                "ChangeScript": null,
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": true,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          },
+          {
+            "Name": "names",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": true
+            },
+            "Config": {
+              "args": [
+                "-c",
+                "[ -f /local/base ] || cp /etc/hosts /local/base\ncat /local/base /local/names \u003e /etc/hosts\ntrap 'exit 0' TERM INT\nwhile :; do sleep 3600 \u0026 wait $!; done\n"
+              ],
+              "command": "/bin/sh",
+              "image": "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 20,
+              "Cores": null,
+              "MemoryMB": 16,
+              "MemoryMaxMB": null,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": 1000000000,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "local/names",
+                "EmbeddedTmpl": "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}",
+                "ChangeMode": "script",
+                "ChangeScript": {
+                  "Command": "/bin/sh",
+                  "Args": [
+                    "-c",
+                    "cat /local/base /local/names \u003e /etc/hosts"
+                  ],
+                  "Timeout": 5000000000,
+                  "FailOnError": false,
+                  "RunOnFirstRender": null
+                },
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": null,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": [
+              {
+                "Label": "http",
+                "Value": 0,
+                "To": 4000,
+                "HostNetwork": "",
+                "IgnoreCollision": false
+              }
+            ],
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": [
+          {
+            "Name": "mix-api",
+            "Tags": null,
+            "CanaryTags": null,
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "",
+            "Address": "",
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "http",
+                "Command": "",
+                "Args": null,
+                "Path": "/healthz",
+                "Protocol": "",
+                "PortLabel": "",
+                "Expose": false,
+                "AddressMode": "",
+                "Advertise": "",
+                "Interval": 10000000000,
+                "Timeout": 2000000000,
+                "InitialStatus": "",
+                "Notes": "",
+                "TLSServerName": "",
+                "TLSSkipVerify": false,
+                "Header": null,
+                "Method": "",
+                "CheckRestart": null,
+                "GRPCService": "",
+                "GRPCUseTLS": false,
+                "TaskName": "",
+                "SuccessBeforePassing": 0,
+                "FailuresBeforeCritical": 0,
+                "FailuresBeforeWarning": 0,
+                "Body": "",
+                "OnUpdate": ""
+              }
+            ],
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          },
+          {
+            "Name": "mix-api-internal",
+            "Tags": null,
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
+            "EnableTagOverride": false,
+            "PortLabel": "http",
+            "AddressMode": "alloc",
+            "Address": "",
+            "Checks": null,
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          }
+        ],
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      },
+      {
+        "Name": "cache",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "cache",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "image": "redis@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": null,
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          },
+          {
+            "Name": "names",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": {
+              "Hook": "prestart",
+              "Sidecar": true
+            },
+            "Config": {
+              "args": [
+                "-c",
+                "[ -f /local/base ] || cp /etc/hosts /local/base\ncat /local/base /local/names \u003e /etc/hosts\ntrap 'exit 0' TERM INT\nwhile :; do sleep 3600 \u0026 wait $!; done\n"
+              ],
+              "command": "/bin/sh",
+              "image": "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 20,
+              "Cores": null,
+              "MemoryMB": 16,
+              "MemoryMaxMB": null,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": 1000000000,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": [
+              {
+                "SourcePath": null,
+                "DestPath": "local/names",
+                "EmbeddedTmpl": "{{ range nomadService \"mix-web-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} web\n{{ end }}{{ end }}{{ range nomadService \"mix-api-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} api\n{{ end }}{{ end }}{{ range nomadService \"mix-cache-internal\" }}{{ if not (.Tags | contains \"caravana.canary=true\") }}{{ .Address }} cache\n{{ end }}{{ end }}",
+                "ChangeMode": "script",
+                "ChangeScript": {
+                  "Command": "/bin/sh",
+                  "Args": [
+                    "-c",
+                    "cat /local/base /local/names \u003e /etc/hosts"
+                  ],
+                  "Timeout": 5000000000,
+                  "FailOnError": false,
+                  "RunOnFirstRender": null
+                },
+                "ChangeSignal": null,
+                "Once": null,
+                "Splay": null,
+                "Perms": null,
+                "Uid": null,
+                "Gid": null,
+                "LeftDelim": null,
+                "RightDelim": null,
+                "Envvars": null,
+                "VaultGrace": null,
+                "Wait": null,
+                "ErrMissingKey": null
+              }
+            ],
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": [
+              {
+                "Label": "redis",
+                "Value": 0,
+                "To": 6379,
+                "HostNetwork": "",
+                "IgnoreCollision": false
+              }
+            ],
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": [
+          {
+            "Name": "mix-cache",
+            "Tags": null,
+            "CanaryTags": null,
+            "EnableTagOverride": false,
+            "PortLabel": "redis",
+            "AddressMode": "",
+            "Address": "",
+            "Checks": [
+              {
+                "Name": "health",
+                "Type": "tcp",
+                "Command": "",
+                "Args": null,
+                "Path": "",
+                "Protocol": "",
+                "PortLabel": "",
+                "Expose": false,
+                "AddressMode": "",
+                "Advertise": "",
+                "Interval": 10000000000,
+                "Timeout": 2000000000,
+                "InitialStatus": "",
+                "Notes": "",
+                "TLSServerName": "",
+                "TLSSkipVerify": false,
+                "Header": null,
+                "Method": "",
+                "CheckRestart": null,
+                "GRPCService": "",
+                "GRPCUseTLS": false,
+                "TaskName": "",
+                "SuccessBeforePassing": 0,
+                "FailuresBeforeCritical": 0,
+                "FailuresBeforeWarning": 0,
+                "Body": "",
+                "OnUpdate": ""
+              }
+            ],
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          },
+          {
+            "Name": "mix-cache-internal",
+            "Tags": null,
+            "CanaryTags": [
+              "caravana.canary=true"
+            ],
+            "EnableTagOverride": false,
+            "PortLabel": "redis",
+            "AddressMode": "alloc",
+            "Address": "",
+            "Checks": null,
+            "CheckRestart": null,
+            "Connect": null,
+            "Meta": null,
+            "CanaryMeta": null,
+            "TaggedAddresses": null,
+            "TaskName": "",
+            "OnUpdate": "",
+            "Identity": null,
+            "Weights": null,
+            "Provider": "nomad",
+            "Cluster": "",
+            "Kind": ""
+          }
+        ],
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      }
+    ],
+    "Update": {
+      "Stagger": null,
+      "MaxParallel": 1,
+      "HealthCheck": "checks",
+      "MinHealthyTime": 10000000000,
+      "HealthyDeadline": 180000000000,
+      "ProgressDeadline": 600000000000,
+      "Canary": null,
+      "AutoRevert": true,
+      "AutoPromote": true
+    },
+    "Multiregion": null,
+    "Spreads": null,
+    "Periodic": null,
+    "ParameterizedJob": null,
+    "Reschedule": null,
+    "Migrate": null,
+    "Meta": {
+      "caravana.app": "mix",
+      "caravana.deployment": "d1"
+    },
+    "UI": null,
+    "Stop": null,
+    "ParentID": null,
+    "Dispatched": false,
+    "DispatchIdempotencyToken": null,
+    "Payload": null,
+    "ConsulNamespace": null,
+    "VaultNamespace": null,
+    "NomadTokenID": null,
+    "Status": null,
+    "StatusDescription": null,
+    "Stable": null,
+    "Version": null,
+    "SubmitTime": null,
+    "CreateIndex": null,
+    "ModifyIndex": null,
+    "JobModifyIndex": null,
+    "VersionTag": null
+  }
+}

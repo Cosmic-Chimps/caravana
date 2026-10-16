@@ -35,7 +35,7 @@ type Registered struct {
 // too, instead of being overwritten.
 func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 	owns func(ctx context.Context, deploymentID string) (bool, error)) (Registered, error) {
-	res, err := nomadjob.Translate(a, dep, d.settings)
+	res, err := nomadjob.Translate(a, dep, d.settings, nil)
 	if err != nil {
 		return Registered{}, fmt.Errorf("translate %q: %w", a.ID, err)
 	}

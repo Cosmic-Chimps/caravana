@@ -23,7 +23,7 @@ import (
 
 func translated(t *testing.T, tc goldenCase) *api.Job {
 	t.Helper()
-	res, err := Translate(tc.app, tc.deployment, tc.settings)
+	res, err := Translate(tc.app, tc.deployment, tc.settings, tc.private)
 	if err != nil {
 		t.Fatalf("Translate: %v", err)
 	}
@@ -140,7 +140,8 @@ type templateTuple struct{ K, V string }
 
 // render runs a template's text in Go's own template engine, with the two
 // consul-template functions it uses written as they are documented there:
-// regexMatch regex input, and replaceAll old new input. It is not Nomad's
+// regexMatch regex input, replaceAll old new input and toJSON value (the JSON
+// text of a value, which is how the secrets templates quote). It is not Nomad's
 // engine (the lab and the gate check that), but it is the same template
 // language, so it proves which keys end up in which file and how a value is
 // quoted.
@@ -154,6 +155,10 @@ func render(t *testing.T, tmpl *api.Template, items map[string]string) string {
 		"nomadVar":   func(string) *templateVar { return &templateVar{Tuples: tuples} },
 		"regexMatch": func(re, s string) (bool, error) { return regexp.MatchString(re, s) },
 		"replaceAll": func(old, new, s string) string { return strings.ReplaceAll(s, old, new) },
+		"toJSON": func(v any) (string, error) {
+			b, err := json.Marshal(v)
+			return string(b), err
+		},
 	}
 	tp, err := template.New("t").Funcs(funcs).Parse(*tmpl.EmbeddedTmpl)
 	if err != nil {
@@ -221,7 +226,7 @@ func TestVolumeJobsHoldNoSecret(t *testing.T) {
 	c := volumeBackupCases()[0]
 	c.app.Services[0].Secrets = []app.Secret{{Name: "API_KEY", Value: new("s3cr3t-marker")}}
 	c.app.Services[0].Env = []app.EnvVar{{Name: "MODE", Value: "prod"}}
-	res, err := Translate(c.app.WithoutSecretValues(), c.deployment, c.settings)
+	res, err := Translate(c.app.WithoutSecretValues(), c.deployment, c.settings, c.private)
 	if err != nil {
 		t.Fatal(err)
 	}

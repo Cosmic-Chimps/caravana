@@ -18,26 +18,39 @@ import (
 // simplified: it uses today's settings (Traefik entrypoint, cert resolver,
 // names image), not the ones of the deployment's time. They change only
 // when the operator reconfigures Caravana; if that matters, store the
-// settings with each deployment.
-func (d *Deployer) Export(a app.App, dep app.Deployment, deployed time.Time) ([]byte, error) {
-	res, err := nomadjob.Translate(a.WithoutSecretValues(), dep, d.settings)
+// settings with each deployment. The same goes for private, the registry hosts
+// the caller holds credentials for today (as for Translate): an image from one
+// of them is exported with the docker auth block and its credentials variable
+// named in the header, never with a credential.
+func (d *Deployer) Export(a app.App, dep app.Deployment, deployed time.Time, private map[string]bool) ([]byte, error) {
+	res, err := nomadjob.Translate(a.WithoutSecretValues(), dep, d.settings, private)
 	if err != nil {
 		return nil, fmt.Errorf("export deployment %q of %q: %w", dep.ID, a.ID, err)
 	}
-	return nomadjob.HCL(res.Job, exportHeader(a, dep, deployed, d.settings)), nil
+	return nomadjob.HCL(res.Job, exportHeader(a, dep, deployed, d.settings, private)), nil
 }
 
 // exportHeader says where the file comes from and what the job needs from
 // the cluster: routing, host volumes and secrets.
-func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.Settings) string {
+func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.Settings, private map[string]bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Nomad job for app %q, exported by Caravana.\n", a.ID)
 	fmt.Fprintf(&b, "Deployment %s, deployed %s.\n", dep.ID, deployed.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 
-	var routes, volumes, volumeVars, secrets, backups []string
+	var routes, volumes, volumeVars, secrets, pulls, backups []string
 	for _, svc := range a.Services {
+		if host, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
+			// Without the variable, the task's template waits for it and the
+			// service never starts.
+			path := nomadjob.PullCredentialsPath(a.ID, svc.Name)
+			pulls = append(pulls, fmt.Sprintf(
+				"- Nomad Variable %s with %s and %s, which the %s task reads to pull its image from %s.\n"+
+					"  Create it before running the job, e.g. nomad var put %s %s=<user> %s=<token>",
+				path, nomadjob.RegistryUsernameEnv, nomadjob.RegistryPasswordEnv, svc.Name, host,
+				path, nomadjob.RegistryUsernameEnv, nomadjob.RegistryPasswordEnv))
+		}
 		for _, dom := range svc.Domains {
 			routes = append(routes, fmt.Sprintf("  %s -> service %s, port %s", dom.Host, svc.Name, dom.Port))
 		}
@@ -88,7 +101,10 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	if len(secrets) > 0 {
 		b.WriteString("  Their values are not in this file: they stay in Nomad.\n")
 	}
-	if len(routes)+len(volumes)+len(secrets) == 0 {
+	for _, p := range pulls {
+		b.WriteString(p + "\n")
+	}
+	if len(routes)+len(volumes)+len(secrets)+len(pulls) == 0 {
 		b.WriteString("- Nothing beyond a Nomad client with Docker.\n")
 	}
 	if len(backups) > 0 {

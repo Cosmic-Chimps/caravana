@@ -32,8 +32,8 @@ const pinnedPostgres = "postgres@sha256:ffffffffffffffffffffffffffffffffffffffff
 // files, and checks they hold no credential.
 func TestBackupJobs(t *testing.T) {
 	jobs := map[string]*api.Job{
-		"backup":  BackupJob("shop", backedUpDB(), pinnedPostgres, labSettings()),
-		"restore": RestoreJob("shop", backedUpDB(), pinnedPostgres, "bucket/shop/db/1791386036.dump", labSettings()),
+		"backup":  BackupJob("shop", backedUpDB(), pinnedPostgres, labSettings(), nil),
+		"restore": RestoreJob("shop", backedUpDB(), pinnedPostgres, "bucket/shop/db/1791386036.dump", labSettings(), nil),
 	}
 	for name, job := range jobs {
 		t.Run(name, func(t *testing.T) {

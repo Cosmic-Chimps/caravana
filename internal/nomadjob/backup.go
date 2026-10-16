@@ -67,9 +67,22 @@ if [ "$n" -gt "$BACKUP_KEEP" ]; then
 fi
 `
 
+// withPullAuth adds the docker auth block to config when image comes from a
+// registry in private (see pullAuth). The backup and restore variables already
+// export every item as env, so the credential items reach the task through the
+// template the task has.
+func withPullAuth(config map[string]any, image string, private map[string]bool) map[string]any {
+	if auth, ok := pullAuth(image, private); ok {
+		config["auth"] = auth
+	}
+	return config
+}
+
 // BackupJob is the periodic job that backs up svc of appID, dumping with
-// image (the service's pinned image).
-func BackupJob(appID string, svc app.Service, image string, s Settings) *api.Job {
+// image (the service's pinned image). private is as for Translate: when image
+// comes from one of those registries, the dump task pulls it with the
+// credentials in the job's variable.
+func BackupJob(appID string, svc app.Service, image string, s Settings, private map[string]bool) *api.Job {
 	id := BackupJobID(appID, svc.Name)
 	b := *svc.Backup
 	j := batchJob(id, appID, svc.Name)
@@ -85,7 +98,7 @@ func BackupJob(appID string, svc app.Service, image string, s Settings) *api.Job
 			Name:      "dump",
 			Driver:    "docker",
 			Lifecycle: &api.TaskLifecycle{Hook: "prestart"},
-			Config:    map[string]any{"image": image, "command": "pg_dump", "args": []string{"-Fc", "-f", dumpPath}},
+			Config:    withPullAuth(map[string]any{"image": image, "command": "pg_dump", "args": []string{"-Fc", "-f", dumpPath}}, image, private),
 			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name)},
 			Resources: smallResources(),
 		},
@@ -103,8 +116,8 @@ func BackupJob(appID string, svc app.Service, image string, s Settings) *api.Job
 
 // RestoreJob is the one-off job that loads the dump at object (a path in
 // the destination, as the backup run printed it) into svc of appID, with
-// image (the service's current pinned image).
-func RestoreJob(appID string, svc app.Service, image, object string, s Settings) *api.Job {
+// image (the service's current pinned image). private is as for BackupJob.
+func RestoreJob(appID string, svc app.Service, image, object string, s Settings, private map[string]bool) *api.Job {
 	id := RestoreJobID(appID, svc.Name)
 	j := batchJob(id, appID, svc.Name)
 	j.Meta["backup_key"] = object
@@ -121,8 +134,8 @@ func RestoreJob(appID string, svc app.Service, image, object string, s Settings)
 		&api.Task{
 			Name:   "restore",
 			Driver: "docker",
-			Config: map[string]any{"image": image, "entrypoint": []string{"/bin/sh", "-c"},
-				"args": []string{`pg_restore --clean --if-exists --no-owner -d "$PGDATABASE" ` + dumpPath}},
+			Config: withPullAuth(map[string]any{"image": image, "entrypoint": []string{"/bin/sh", "-c"},
+				"args": []string{`pg_restore --clean --if-exists --no-owner -d "$PGDATABASE" ` + dumpPath}}, image, private),
 			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name)},
 			Resources: smallResources(),
 		},
