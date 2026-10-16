@@ -382,7 +382,13 @@ func (s *Service) checkProblems(ctx context.Context) error {
 			check.Deliveries = append(check.Deliveries, d)
 		}
 	}
-	return s.store.ApplyProblemCheck(ctx, check)
+	if err := s.store.ApplyProblemCheck(ctx, check); err != nil {
+		return err
+	}
+	if len(check.Deliveries) > 0 {
+		s.queue.poke() // send them now, not at the sender's next look
+	}
+	return nil
 }
 
 // summarize returns events as they are, or, when there are more than

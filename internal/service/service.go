@@ -57,6 +57,8 @@ type Service struct {
 	resolveAfter time.Duration // how long a problem must be gone before "resolved" is sent
 	notifyClient *http.Client  // what deliveries go through; tests may replace it
 	notifyGap    time.Duration // between two checks of the needs-you list, see notifier.go
+	senderGap    time.Duration // between two looks for due deliveries, see sender.go
+	queue        *deliveryQueue
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -104,6 +106,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		resolveAfter: defaultResolveAfter,
 		notifyClient: defaultNotifyClient(),
 		notifyGap:    30 * time.Second,
+		senderGap:    defaultSenderGap,
+		queue:        newDeliveryQueue(),
 	}
 }
 
@@ -166,6 +170,12 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runNotifier(ctx, s.notifyGap)
+	}()
+	// Messages queued before a restart are sent by the first pass.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runSender(ctx, s.senderGap)
 	}()
 	return nil
 }

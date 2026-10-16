@@ -189,6 +189,16 @@ func TestDiffProblems(t *testing.T) {
 	}
 }
 
+// parkSender stops a started service's sender from sending anything, so the
+// tests of the notifier can look at what it queued: the sender starts a worker
+// only when it can take a token from the queue's slots, and here they are all
+// taken.
+func parkSender(svc *Service) {
+	for range maxParallelSends {
+		svc.queue.slots <- struct{}{}
+	}
+}
+
 // notifyEnv is an env with a channel for each of the filters, and a clock to
 // move.
 type notifyEnv struct {
@@ -202,6 +212,7 @@ func newNotifyEnv(t *testing.T) *notifyEnv {
 	t.Helper()
 	ctx := context.Background()
 	e := &notifyEnv{env: newEnv(t)}
+	parkSender(e.svc)
 	add := func(name string, events []string, paused bool) store.NotificationChannel {
 		in := channelInput(notify.KindNtfy, "https://ntfy.example.com/"+name)
 		in.Name, in.Events, in.Paused = name, events, paused
@@ -563,6 +574,7 @@ func TestNotifierLoop(t *testing.T) {
 
 	loop := New(e.store, e.svc.deployer, e.secrets, discardLogger())
 	loop.notifyGap = 5 * time.Millisecond
+	parkSender(loop)
 	runCtx, cancel := context.WithCancel(ctx)
 	if err := loop.Start(runCtx); err != nil {
 		t.Fatal(err)

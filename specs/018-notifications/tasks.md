@@ -124,7 +124,8 @@ Nothing.
   Tests: the diff table (new, seen, flapping under and over the delay, unknown copies, deleted
   app, restart with existing rows); `checkProblems` with fakes (one opened, then nothing on the
   next check, then resolved after the delay); summary above 10.
-- [ ] T009 [US1] The sender (research R3), in internal/service/sender.go:
+- [X] T009 [US1] The sender (research R3), in internal/service/sender.go:
+  - Done as built: one worker goroutine per channel with something due, so the loop never waits on a receiver; the loop is woken by a 5 s timer, by `poke` after a message is queued, and when a worker finishes.
   - a goroutine that every 5 s, and when woken by enqueue, takes due pending deliveries (limit 20)
     and sends them, at most 4 at once, one channel at a time per channel;
   - it reads the channel and its secret, then `Render` and `Send`;
