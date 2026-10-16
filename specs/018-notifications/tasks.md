@@ -80,7 +80,7 @@ Nothing.
 
   Tests: each operation; `signingSecret` only in the create and rotate answers; no secret
   elsewhere (sentinel); the contract test.
-- [ ] T006 [US3] Console, Settings › Notifications, per contracts/console.md (exact copy):
+- [X] T006 [US3] Console, Settings › Notifications, per contracts/console.md (exact copy):
   - internal/ui/notifications.go;
   - settings.go loads the channels and each channel's deliveries;
   - routes in ui.go with `protected(requireSession(...))`;

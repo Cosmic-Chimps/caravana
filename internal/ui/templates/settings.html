@@ -212,7 +212,161 @@
     </div>
     {{end}}
   </section>
+
+  {{/* Notifications (feature 018): where Caravana tells the owner what needs them and how
+       deploys end. A channel's secrets (a Slack or Discord URL, an ntfy token, a webhook's
+       signing secret) are write-only: no field of the page data holds one, and an empty field
+       keeps the stored one. The signing secret shows once, in .Secret. Test, Pause and Resume
+       are plain posts; Edit, Remove and Recent deliveries are <details>, so none needs script. */}}
+  <section id="notifications" aria-labelledby="notifications-heading" class="flex flex-col gap-2">
+    <h2 id="notifications-heading" class="cv-label">Notifications</h2>
+    {{with .Notifications}}
+    <p class="text-sm text-fg-3">Caravana tells you when something needs you and when a deploy ends, even when nobody has this page open.</p>
+    {{with .Secret}}
+    <div class="cv-panel p-4 flex flex-col gap-2" role="status">
+      <p class="text-base text-fg-1">Signing secret for <span class="font-mono">{{.Name}}</span>: <span class="cv-data text-fg-1 select-all [overflow-wrap:anywhere]" id="new-signing-secret">{{.Value}}</span>. Copy it now: it isn't shown again. Receivers check each message's Caravana-Signature header with it.</p>
+    </div>
+    {{end}}
+    {{with .Notice}}
+    {{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+    {{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+    {{end}}
+    {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+    <div class="cv-panel">
+      {{if .Rows}}
+      <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="border-b border-line-1">
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Channel</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Sends</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Address</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Last delivery</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $i, $row := .Rows}}
+          <tr class="cv-row align-top">
+            <td class="px-4 py-3">
+              <div class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Name}}{{if .Paused}} <span class="cv-data-muted">paused</span>{{end}}</div>
+              <div class="cv-data-muted">{{.KindLabel}}</div>
+              <details class="mt-2">
+                <summary class="cv-data-muted cursor-pointer">Recent deliveries</summary>
+                {{if .Deliveries}}
+                <ul class="mt-1.5 flex flex-col gap-1.5">
+                  {{range .Deliveries}}
+                  <li class="text-sm text-fg-2">
+                    <span class="cv-data-muted" title="{{.When.Exact}}">{{.When.Text}}</span>
+                    <span class="text-fg-1 [overflow-wrap:anywhere]">{{.Title}}</span>
+                    <span class="inline-flex items-baseline gap-1.5">{{if .OK}}<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>{{else if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}<span class="[overflow-wrap:anywhere]">{{.Detail}}</span></span>
+                  </li>
+                  {{end}}
+                </ul>
+                {{else}}<p class="mt-1.5 text-sm text-fg-3">Nothing sent yet.</p>{{end}}
+              </details>
+            </td>
+            <td class="px-4 py-3 text-sm text-fg-1">{{.Sends}}</td>
+            <td class="px-4 py-3"><span class="cv-data-muted [overflow-wrap:anywhere]">{{.Address}}</span></td>
+            <td class="px-4 py-3">
+              {{with .Last}}
+              {{if .OK}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span title="{{.When.Exact}}">sent {{.When.Text}}</span></span>
+              {{else}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span title="{{.When.Exact}}">failed {{.When.Text}}</span></span>
+              {{if .Error}}<span class="cv-data-muted mt-1 block [overflow-wrap:anywhere]">{{.Error}}</span>{{end}}{{end}}
+              {{else}}<span class="cv-data-muted">nothing sent yet</span>{{end}}
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap items-start justify-end gap-2">
+                <form method="post" action="/settings/notifications/{{.ID}}/test">
+                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Send a test to {{.Name}}">Send a test</button>
+                </form>
+                <details class="cv-confirm"{{if .Open}} open{{end}}>
+                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
+                  <div class="cv-confirm-body">
+                    <form method="post" action="/settings/notifications/{{.ID}}" class="flex flex-col gap-4" autocomplete="off">
+                      {{template "notify-fields" (notifyForm .Edit (printf "notify-edit-%d" $i) true .Kind .HasToken)}}
+                      <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+                    </form>
+                    {{if eq .Kind "webhook"}}
+                    <details class="cv-confirm">
+                      <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
+                      <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
+                        <p>The old secret stops working at once.</p>
+                        <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
+                      </form>
+                    </details>
+                    {{end}}
+                  </div>
+                </details>
+                <form method="post" action="/settings/notifications/{{.ID}}">
+                  <input type="hidden" name="paused" value="{{if .Paused}}0{{else}}1{{end}}">
+                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="{{if .Paused}}Resume{{else}}Pause{{end}} {{.Name}}">{{if .Paused}}Resume{{else}}Pause{{end}}</button>
+                </form>
+                <details class="cv-confirm">
+                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
+                  <form method="post" action="/settings/notifications/{{.ID}}/remove" class="cv-confirm-body">
+                    <p>Messages stop at once. Deliveries already listed are removed with it.</p>
+                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+                  </form>
+                </details>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{else}}
+      <p class="px-4 py-4 text-sm leading-normal text-fg-3">No channels yet. Add ntfy, Slack, Discord or a webhook to hear about problems.</p>
+      {{end}}
+
+      <form method="post" action="/settings/notifications" class="cv-row flex flex-col gap-4 p-4" autocomplete="off">
+        {{template "notify-fields" (notifyForm .Add "notify-add" false "" false)}}
+        <div><button type="submit" class="cv-btn cv-btn-primary">Add channel</button></div>
+      </form>
+    </div>
+    {{end}}
+  </section>
 </div>
+{{end}}
+
+{{/* The inputs of a Notifications add or edit form. Takes a notifyFormView. An edit form
+     keeps the kind in a hidden input. A token or Slack or Discord URL never has a value. */}}
+{{define "notify-fields"}}
+{{if .Editing}}<input type="hidden" name="kind" value="{{.Kind}}">
+{{else}}
+<label class="flex flex-col gap-2 min-w-[12rem]">
+  <span class="cv-label">Kind</span>
+  <select class="cv-field cv-select" id="{{.Prefix}}-kind" name="kind">{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+</label>
+{{end}}
+<div class="flex flex-wrap gap-4">
+  <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+    <span class="cv-label">Name</span>
+    <input class="cv-field" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
+    {{with .Error "name"}}<span id="{{$.Prefix}}-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+  </label>
+  <label class="flex flex-col gap-2 min-w-[12rem] flex-[2]">
+    <span class="cv-label">URL</span>
+    <input class="cv-field" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
+    {{with .Error "url"}}<span id="{{$.Prefix}}-url-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{else}}{{with .URLHint}}<span id="{{$.Prefix}}-url-hint" class="cv-data-muted">{{.}}</span>{{end}}{{end}}
+  </label>
+</div>
+{{if or (not .Editing) (eq .Kind "ntfy")}}
+<label class="flex flex-col gap-2 min-w-[12rem]">
+  <span class="cv-label">ntfy access token</span>
+  <input class="cv-field" type="password" id="{{.Prefix}}-token" name="token" autocomplete="new-password"{{with .Error "token"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-token-error"{{else}} aria-describedby="{{.Prefix}}-token-hint"{{end}}>
+  {{with .Error "token"}}<span id="{{$.Prefix}}-token-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{else}}<span id="{{.Prefix}}-token-hint" class="cv-data-muted">{{.TokenHint}}</span>{{end}}
+</label>
+{{end}}
+<fieldset class="flex flex-col gap-2"{{with .Error "events"}} aria-invalid="true" aria-describedby="{{$.Prefix}}-events-error"{{end}}>
+  <legend class="cv-label mb-2">Send</legend>
+  <label class="cv-check"><input type="checkbox" name="events" value="problems"{{if .Form.Problems}} checked{{end}}><span>Problems (opened and resolved)</span></label>
+  <label class="cv-check"><input type="checkbox" name="events" value="deploy_failed"{{if .Form.DeployFailed}} checked{{end}}><span>Failed deploys</span></label>
+  <label class="cv-check"><input type="checkbox" name="events" value="deploy_succeeded"{{if .Form.DeploySucceeded}} checked{{end}}><span>Successful deploys</span></label>
+  {{with .Error "events"}}<span id="{{$.Prefix}}-events-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+</fieldset>
 {{end}}
 
 {{/* One input of a Registries form. Takes a registryFieldView. The password input never

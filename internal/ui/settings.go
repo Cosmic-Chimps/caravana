@@ -47,6 +47,7 @@ type settingsData struct {
 	NewToken        *newToken
 	Dest            destinationForm
 	Registries      registriesData
+	Notifications   notificationsData
 }
 
 // destinationForm is the backup destination section: the saved destination
@@ -80,6 +81,8 @@ func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session st
 	data.Dest.Saved = r.URL.Query().Get("backups") == "saved"
 	data.Registries.Saved = r.URL.Query().Get("registries") == "saved"
 	data.Registries.Tested = r.URL.Query().Get("tested")
+	data.Notifications.Saved = r.URL.Query().Get("notifications") == "saved"
+	data.Notifications.Notified = r.URL.Query().Get("notified")
 	s.renderSettings(w, r, data)
 }
 
@@ -158,6 +161,10 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data set
 	if s.svc != nil {
 		if data.Registries, err = s.registriesSection(r, data.Registries); err != nil {
 			s.serverError(w, "list registries", err)
+			return
+		}
+		if data.Notifications, err = s.notificationsSection(r, data.Notifications); err != nil {
+			s.serverError(w, "list notification channels", err)
 			return
 		}
 	}

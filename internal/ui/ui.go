@@ -171,6 +171,11 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/registries", s.protected(s.requireSession(s.saveRegistry))},
 		{"POST", "/settings/registries/{host}/test", s.protected(s.requireSession(s.testRegistry))},
 		{"POST", "/settings/registries/{host}/remove", s.protected(s.requireSession(s.removeRegistry))},
+		{"POST", "/settings/notifications", s.protected(s.requireSession(s.addNotification))},
+		{"POST", "/settings/notifications/{id}", s.protected(s.requireSession(s.updateNotification))},
+		{"POST", "/settings/notifications/{id}/test", s.protected(s.requireSession(s.testNotification))},
+		{"POST", "/settings/notifications/{id}/secret", s.protected(s.requireSession(s.rotateNotification))},
+		{"POST", "/settings/notifications/{id}/remove", s.protected(s.requireSession(s.removeNotification))},
 		{"GET", "/account", s.showAccount},
 		{"GET", "/static/", http.StripPrefix("/static/", s.serveStatic()).ServeHTTP},
 	}
@@ -247,7 +252,7 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "destField": destField, "regField": regField}).ParseFS(templatesFS,
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "destField": destField, "regField": regField, "notifyForm": notifyFormFor}).ParseFS(templatesFS,
 			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)

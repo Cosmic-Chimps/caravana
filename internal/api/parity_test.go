@@ -30,7 +30,7 @@ var consoleParity = map[string]parity{
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
 	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
-	"GET /settings": {ops: []string{"listTokens", "listRegistries"}},
+	"GET /settings": {ops: []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries"}},
 	"GET /apps":     {ops: []string{"listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy.
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
@@ -82,10 +82,17 @@ var consoleParity = map[string]parity{
 	"POST /settings/registries":               {ops: []string{"putRegistry"}},
 	"POST /settings/registries/{host}/test":   {ops: []string{"testRegistry"}},
 	"POST /settings/registries/{host}/remove": {ops: []string{"deleteRegistry"}},
-	"POST /apps/{id}/delete":                  {ops: []string{"deleteApp"}},
-	"POST /settings/password":                 {ops: []string{"changePassword"}},
-	"POST /settings/tokens":                   {ops: []string{"createToken"}},
-	"POST /settings/tokens/{tokenId}/revoke":  {ops: []string{"revokeToken"}},
+	// Notification channels (feature 018): the add form is a create; a row's edit form is a patch, and so are
+	// Pause and Resume (a patch of "paused"); a new signing secret and the test are their own operations.
+	"POST /settings/notifications":             {ops: []string{"createNotificationChannel"}},
+	"POST /settings/notifications/{id}":        {ops: []string{"updateNotificationChannel"}},
+	"POST /settings/notifications/{id}/test":   {ops: []string{"testNotificationChannel"}},
+	"POST /settings/notifications/{id}/secret": {ops: []string{"rotateNotificationSecret"}},
+	"POST /settings/notifications/{id}/remove": {ops: []string{"deleteNotificationChannel"}},
+	"POST /apps/{id}/delete":                   {ops: []string{"deleteApp"}},
+	"POST /settings/password":                  {ops: []string{"changePassword"}},
+	"POST /settings/tokens":                    {ops: []string{"createToken"}},
+	"POST /settings/tokens/{tokenId}/revoke":   {ops: []string{"revokeToken"}},
 }
 
 // TestConsoleParity fails when the console has a route the table doesn't know
