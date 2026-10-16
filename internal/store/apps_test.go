@@ -442,6 +442,29 @@ func TestDeleteApp(t *testing.T) {
 		}
 	})
 
+	t.Run("removes the app's sent problems and keeps the others", func(t *testing.T) {
+		s := storeWithApps(t)
+		at := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+		for _, p := range []SentProblem{
+			{Key: "deploy_failed|blog||d1", Kind: "deploy_failed", AppID: "blog", OpenedAt: at, LastSeenAt: at, Summary: "blog"},
+			{Key: "deploy_failed|shop||d2", Kind: "deploy_failed", AppID: "shop", OpenedAt: at, LastSeenAt: at, Summary: "shop"},
+			{Key: "no_backup_destination|||", Kind: "no_backup_destination", OpenedAt: at, LastSeenAt: at, Summary: "none"},
+		} {
+			if err := s.UpsertSentProblem(ctx, p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.DeleteApp(ctx, "blog"); err != nil {
+			t.Fatalf("DeleteApp: %v", err)
+		}
+		if n := count(t, s, "SELECT count(*) FROM sent_problems WHERE app_id = 'blog'"); n != 0 {
+			t.Errorf("sent_problems still has %d rows of the app", n)
+		}
+		if n := count(t, s, "SELECT count(*) FROM sent_problems"); n != 2 {
+			t.Errorf("sent_problems = %d rows, want the other 2", n)
+		}
+	})
+
 	t.Run("the ID can be stored again", func(t *testing.T) {
 		s := storeWithApps(t)
 		if err := s.DeleteApp(ctx, "blog"); err != nil {

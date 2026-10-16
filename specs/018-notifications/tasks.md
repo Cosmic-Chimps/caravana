@@ -35,7 +35,7 @@ Nothing.
   Tests: one golden per kind under internal/notify/testdata (method, URL, headers, body). Also
   `Sign`/`Verify` round trip with tolerance and tamper cases, `Send` against `httptest` (ok, 500,
   slow over the timeout), and a sentinel URL path absent from every error.
-- [ ] T002 [P] Store (data-model "Migration", "Store"):
+- [X] T002 [P] Store (data-model "Migration", "Store"):
   - internal/store/migrations/0010_notifications.sql, exactly as data-model.md says;
   - internal/store/notifications.go with channels CRUD, sent problems (list, upsert, touch,
     delete, delete by app), deliveries (enqueue, due, finish, retry, list, prune);
