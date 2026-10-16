@@ -26,20 +26,34 @@ import (
 var (
 	ErrImageNotFound       = errors.New("image not found")
 	ErrRegistryUnavailable = errors.New("registry unavailable")
-	ErrJobConflict         = errors.New("job conflict")
-	ErrNomadUnavailable    = errors.New("nomad unavailable")
-	ErrNomadRejected       = errors.New("nomad rejected the job")
+	// ErrRegistryAuth: the registry refused the credentials Caravana has stored
+	// for it (feature 017).
+	ErrRegistryAuth     = errors.New("registry refused the stored credentials")
+	ErrJobConflict      = errors.New("job conflict")
+	ErrNomadUnavailable = errors.New("nomad unavailable")
+	ErrNomadRejected    = errors.New("nomad rejected the job")
 )
 
 // ImageError is a failure to pin one service's image. It matches
-// ErrImageNotFound or ErrRegistryUnavailable with errors.Is, and the
-// registry's own error too.
+// ErrImageNotFound, ErrRegistryAuth or ErrRegistryUnavailable with errors.Is,
+// and the registry's own error too.
 type ImageError struct {
 	Field string // services[i].image
 	Image string // as the user wrote it
 	Err   error  // the registry's error
 
-	kind error // ErrImageNotFound or ErrRegistryUnavailable
+	kind error // ErrImageNotFound, ErrRegistryAuth or ErrRegistryUnavailable
+}
+
+// imageKind says which of the deploy's image errors a registry error is.
+func imageKind(err error) error {
+	switch {
+	case errors.Is(err, registry.ErrNotFound):
+		return ErrImageNotFound
+	case errors.Is(err, registry.ErrUnauthorized):
+		return ErrRegistryAuth
+	}
+	return ErrRegistryUnavailable
 }
 
 func (e *ImageError) Error() string { return e.Err.Error() }
@@ -135,9 +149,15 @@ func NewNomadClient(addr, token string) (*api.Client, error) {
 	return c, nil
 }
 
-// New returns a Deployer.
+// New returns a Deployer. It sets reg.Credentials to read the credentials
+// Caravana keeps for a registry (RegistryCredentials), unless the caller set
+// its own, so every digest lookup through reg can log in to a private one.
 func New(nomad *api.Client, reg *registry.Client, s nomadjob.Settings) *Deployer {
-	return &Deployer{nomad: nomad, registry: reg, settings: s}
+	d := &Deployer{nomad: nomad, registry: reg, settings: s}
+	if reg != nil && reg.Credentials == nil {
+		reg.Credentials = d.RegistryCredentials
+	}
+	return d
 }
 
 // Validate checks everything that doesn't need the registry or Nomad: the
@@ -178,11 +198,7 @@ func (d *Deployer) Resolve(ctx context.Context, a app.App) (map[string]string, [
 		pinned, err := d.registry.Resolve(imageCtx, ref)
 		cancel()
 		if err != nil {
-			kind := ErrRegistryUnavailable
-			if errors.Is(err, registry.ErrNotFound) {
-				kind = ErrImageNotFound
-			}
-			return nil, nil, &ImageError{Field: field, Image: svc.Image, Err: err, kind: kind}
+			return nil, nil, &ImageError{Field: field, Image: svc.Image, Err: err, kind: imageKind(err)}
 		}
 		digests[svc.Name] = pinned
 	}
@@ -205,11 +221,7 @@ func (d *Deployer) CheckDigests(ctx context.Context, a app.App, digests map[stri
 		err = d.registry.Exists(imageCtx, ref)
 		cancel()
 		if err != nil {
-			kind := ErrRegistryUnavailable
-			if errors.Is(err, registry.ErrNotFound) {
-				kind = ErrImageNotFound
-			}
-			return &ImageError{Field: field, Image: digests[svc.Name], Err: err, kind: kind}
+			return &ImageError{Field: field, Image: digests[svc.Name], Err: err, kind: imageKind(err)}
 		}
 	}
 	return nil

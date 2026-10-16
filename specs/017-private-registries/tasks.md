@@ -77,7 +77,7 @@ Nothing: no new module or tool.
 
 **⟶ Wait for T001–T003, then:**
 
-- [ ] T004 Deploy, the secret and the hook (data-model "Deploy"), in internal/deploy/registries.go (new):
+- [X] T004 Deploy, the secret and the hook (data-model "Deploy"), in internal/deploy/registries.go (new):
   - `RegistryCredentials(ctx, host)` reads `caravana/registries/<key>` (key: host with `.` → `~` and `:` → `_`: Nomad paths allow neither);
     ok is false when the variable is absent.
   - `SaveRegistrySecret(ctx, host, user, pass)` and `DeleteRegistrySecret(ctx, host)`.

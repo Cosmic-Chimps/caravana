@@ -30,7 +30,7 @@ with these calls:
 
 | Path | Items | Written by | Read by |
 | --- | --- | --- | --- |
-| `caravana/registries/<key>` (`<key>` = host, `:` → `_`) | `username`, `password` | Caravana on save; deleted on remove | Caravana (digest lookup, test, copying into the variables below) |
+| `caravana/registries/<key>` (`<key>` = host, `.` → `~`, `:` → `_`) | `username`, `password` | Caravana on save; deleted on remove | Caravana (digest lookup, test, copying into the variables below) |
 | `nomad/jobs/<app>/<service>/<service>` | `registry` (host), `CARAVANA_REGISTRY_USERNAME`, `CARAVANA_REGISTRY_PASSWORD` | Caravana before every register of a service whose registry has credentials; rewritten when the credentials change or are removed (credential items empty) | the service's main task template only |
 | `nomad/jobs/<app>_<service>_backup`, `..._restore` (existing) | gain `CARAVANA_REGISTRY_USERNAME` and `CARAVANA_REGISTRY_PASSWORD` when the service's registry has credentials | `SyncBackups`, `Restore` | the `dump` and `restore` tasks' template (existing; it renders every item as env) |
 

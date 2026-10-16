@@ -49,8 +49,8 @@ agent on each node; added to the backlog.
 
 **Decision**:
 - **The secret**: in Caravana's own Nomad Variables, `caravana/registries/<key>` with items
-  `username` and `password`. The key is the host with `:` written as `_` (`registry.example.com_5000`),
-  because variable paths don't take `:`. The policy already allows `caravana/*`.
+  `username` and `password`. The key is the host with `.` written as `~` and `:` as `_` (`registry~example~com_5000`),
+  because variable paths take neither `.` nor `:`. The policy already allows `caravana/*`.
 - **Facts the console shows**, in SQLite, migration `0009_registries.sql`: host, user name, created
   and updated times, and the last test's time, outcome and message. As with the backup destination
   (feature 010), the secret is never in SQLite.
