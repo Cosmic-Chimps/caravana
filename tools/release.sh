@@ -3,6 +3,12 @@
 #
 #   tools/release.sh build VERSION OUT_DIR
 #   tools/release.sh notes VERSION
+#   tools/release.sh prepare VERSION
+#
+# prepare turns CHANGELOG.md's "## Unreleased" section into "## VERSION - <today, UTC>" and puts
+# a new empty "## Unreleased" above it. Run it, commit, then tag that commit: the release
+# workflow refuses a tag whose version has no section. It refuses an empty Unreleased section and
+# a version that already has one.
 #
 # notes prints VERSION's section of CHANGELOG.md (the lines under "## VERSION - date", without
 # that heading), which the release workflow publishes as the release's notes. It fails when
@@ -24,7 +30,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 host_files=(nomad.hcl.tpl traefik.nomad.hcl caravana-policy.hcl traefik-policy.hcl caravana.service)
 
 usage() {
-  echo "usage: tools/release.sh build VERSION OUT_DIR | notes VERSION" >&2
+  echo "usage: tools/release.sh build VERSION OUT_DIR | notes VERSION | prepare VERSION" >&2
   exit 2
 }
 
@@ -85,7 +91,32 @@ notes() {
   printf '%s\n' "$text"
 }
 
+prepare() {
+  local version="$1" changelog="$root/CHANGELOG.md" date tmp
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] ||
+    { echo "release: version $version isn't X.Y.Z or X.Y.Z-suffix" >&2; exit 2; }
+  if awk -v v="$version" '/^## / && $2 == v { found = 1 } END { exit !found }' "$changelog"; then
+    echo "release: CHANGELOG.md already has a section for $version" >&2
+    exit 1
+  fi
+  if ! awk '/^## Unreleased/ { on = 1; next } /^## / { on = 0 } on && /[^[:space:]]/ { found = 1 } END { exit !found }' "$changelog"; then
+    echo "release: CHANGELOG.md's \"## Unreleased\" section is missing or empty: nothing to release" >&2
+    exit 1
+  fi
+  date="$(date -u +%Y-%m-%d)"
+  tmp="$(mktemp)"
+  awk -v v="$version" -v d="$date" '
+    !done && /^## Unreleased[[:space:]]*$/ { print; print ""; print "## " v " - " d; done = 1; next }
+    { print }' "$changelog" >"$tmp"
+  mv "$tmp" "$changelog"
+  echo "CHANGELOG.md: \"## Unreleased\" is now \"## $version - $date\"; commit it, then tag v$version"
+}
+
 case "${1:-}" in
+prepare)
+  [ $# -eq 2 ] || usage
+  prepare "$2"
+  ;;
 build)
   [ $# -eq 3 ] || usage
   build "$2" "$3"

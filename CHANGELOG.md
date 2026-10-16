@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-16
+
 ### Added
 - Private registries: Settings › Registries keeps a user name and a password or token per
   registry (GitHub's `ghcr.io`, GitLab, Quay, Docker Hub, or your own). Deploys, redeploys,
