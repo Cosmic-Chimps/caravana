@@ -130,7 +130,100 @@
     </form>
     {{end}}
   </section>
+
+  {{/* Registries (feature 017): credentials for private images. The password is write-only:
+       no field of the page data holds it, and an empty field keeps the stored one. Test, Edit
+       and Remove sit on each row; Edit and Remove open a <details>, so none needs script. */}}
+  <section id="registries" aria-labelledby="registries-heading" class="flex flex-col gap-2">
+    <h2 id="registries-heading" class="cv-label">Registries</h2>
+    {{with .Registries}}
+    <p class="text-sm text-fg-3">Credentials Caravana uses to read private images. Use a token that can only read images: it reaches each private app's own container as <span class="font-mono">CARAVANA_REGISTRY_USERNAME</span> and <span class="font-mono">CARAVANA_REGISTRY_PASSWORD</span>.</p>
+    {{with .Notice}}
+    {{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+    {{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+    {{end}}
+    {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+    <div class="cv-panel">
+      {{if .Rows}}
+      <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="border-b border-line-1">
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Registry</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium">User</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium">Last check</th>
+            <th scope="col" class="cv-label px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $i, $row := .Rows}}
+          <tr class="cv-row align-top">
+            <td class="px-4 py-3"><span class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Host}}</span></td>
+            <td class="px-4 py-3"><span class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Username}}</span></td>
+            <td class="px-4 py-3">
+              {{with .Check}}
+              {{if .OK}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span title="{{.When.Exact}}">works, {{.When.Text}}</span></span>
+              {{else}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span title="{{.When.Exact}}">refused, {{.When.Text}}</span></span>
+              {{if .Message}}<span class="cv-data-muted mt-1 block [overflow-wrap:anywhere]">{{.Message}}</span>{{end}}{{end}}
+              {{else}}<span class="cv-data-muted">not checked yet</span>{{end}}
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap items-start justify-end gap-2">
+                <form method="post" action="/settings/registries/{{.Host}}/test">
+                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test credentials for {{.Host}}">Test</button>
+                </form>
+                <details class="cv-confirm"{{if .Open}} open{{end}}>
+                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit credentials for {{.Host}}">Edit</summary>
+                  <form method="post" action="/settings/registries" class="cv-confirm-body" autocomplete="off">
+                    <input type="hidden" name="host" value="{{.Host}}">
+                    <input type="hidden" name="edit" value="1">
+                    {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "username" "User name" "" "")}}
+                    {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "password" "Password or token" "" "Leave empty to keep the current one.")}}
+                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+                  </form>
+                </details>
+                <details class="cv-confirm">
+                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove credentials for {{.Host}}">Remove</summary>
+                  <form method="post" action="/settings/registries/{{.Host}}/remove" class="cv-confirm-body">
+                    <p>Apps already running keep running. The next deploy of a private image from this registry fails until you add credentials again.</p>
+                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+                  </form>
+                </details>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{else}}
+      <p class="px-4 py-4 text-sm leading-normal text-fg-3">No registries yet. Public images from any registry deploy without one.</p>
+      {{end}}
+
+      <form method="post" action="/settings/registries" class="cv-row flex flex-col gap-4 p-4" autocomplete="off">
+        <div class="flex flex-wrap gap-4">
+          {{template "registry-field" (regField .Add "registry-add" "host" "Registry" "ghcr.io" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub.")}}
+          {{template "registry-field" (regField .Add "registry-add" "username" "User name" "" "")}}
+          {{template "registry-field" (regField .Add "registry-add" "password" "Password or token" "" "")}}
+        </div>
+        <div><button type="submit" class="cv-btn cv-btn-primary">Save</button></div>
+      </form>
+    </div>
+    {{end}}
+  </section>
 </div>
+{{end}}
+
+{{/* One input of a Registries form. Takes a registryFieldView. The password input never
+     has a value; a refusal replaces the hint. */}}
+{{define "registry-field"}}
+<label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+  <span class="cv-label">{{.Label}}</span>
+  <input class="cv-field" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{else if .Hint}} aria-describedby="{{.ID}}-hint"{{end}}>
+  {{if .Err}}<span id="{{.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err}}</span></span>
+  {{else if .Hint}}<span id="{{.ID}}-hint" class="cv-data-muted">{{.Hint}}</span>{{end}}
+</label>
 {{end}}
 
 {{/* One text field of the destination form. Takes a destFieldView. */}}

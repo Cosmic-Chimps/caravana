@@ -125,7 +125,7 @@ secret, test (refused), fix it, remove it. The API never answers the secret.
 
   Tests: each operation, password absent from every answer (sentinel), 404, and the 422 field
   errors.
-- [ ] T007 [US2] Console, Settings › Registries (contracts/console.md):
+- [X] T007 [US2] Console, Settings › Registries (contracts/console.md):
   - internal/ui/settings.go and templates/settings.html;
   - routes in internal/ui/ui.go: `POST /settings/registries` (save), `POST /settings/registries/{host}/test`,
     and `POST /settings/registries/{host}/remove`, each `protected(requireSession(...))`;

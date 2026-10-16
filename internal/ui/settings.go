@@ -46,6 +46,7 @@ type settingsData struct {
 	ExpiresErr      *fieldError
 	NewToken        *newToken
 	Dest            destinationForm
+	Registries      registriesData
 }
 
 // destinationForm is the backup destination section: the saved destination
@@ -77,6 +78,8 @@ func destField(f destinationForm, name, label, value, placeholder string) destFi
 func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session string) {
 	data := settingsData{PasswordChanged: r.URL.Query().Get("password") == "changed"}
 	data.Dest.Saved = r.URL.Query().Get("backups") == "saved"
+	data.Registries.Saved = r.URL.Query().Get("registries") == "saved"
+	data.Registries.Tested = r.URL.Query().Get("tested")
 	s.renderSettings(w, r, data)
 }
 
@@ -149,6 +152,12 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data set
 				AccessKeyID: d.AccessKeyID, HasSecret: true, Saved: data.Dest.Saved}
 		case !errors.Is(err, store.ErrNotFound):
 			s.serverError(w, "read backup destination", err)
+			return
+		}
+	}
+	if s.svc != nil {
+		if data.Registries, err = s.registriesSection(r, data.Registries); err != nil {
+			s.serverError(w, "list registries", err)
 			return
 		}
 	}

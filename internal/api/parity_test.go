@@ -30,7 +30,7 @@ var consoleParity = map[string]parity{
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
 	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
-	"GET /settings": {ops: []string{"listTokens"}},
+	"GET /settings": {ops: []string{"listTokens", "listRegistries"}},
 	"GET /apps":     {ops: []string{"listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy.
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
@@ -78,10 +78,14 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},
 	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
 	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},
-	"POST /apps/{id}/delete":                     {ops: []string{"deleteApp"}},
-	"POST /settings/password":                    {ops: []string{"changePassword"}},
-	"POST /settings/tokens":                      {ops: []string{"createToken"}},
-	"POST /settings/tokens/{tokenId}/revoke":     {ops: []string{"revokeToken"}},
+	// Registry credentials (feature 017): the add and edit forms are one PUT, an empty password leaves it out.
+	"POST /settings/registries":               {ops: []string{"putRegistry"}},
+	"POST /settings/registries/{host}/test":   {ops: []string{"testRegistry"}},
+	"POST /settings/registries/{host}/remove": {ops: []string{"deleteRegistry"}},
+	"POST /apps/{id}/delete":                  {ops: []string{"deleteApp"}},
+	"POST /settings/password":                 {ops: []string{"changePassword"}},
+	"POST /settings/tokens":                   {ops: []string{"createToken"}},
+	"POST /settings/tokens/{tokenId}/revoke":  {ops: []string{"revokeToken"}},
 }
 
 // TestConsoleParity fails when the console has a route the table doesn't know

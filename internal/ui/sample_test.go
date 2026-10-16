@@ -321,6 +321,7 @@ func formPages(t *testing.T, e *consoleEnv, id string) map[string]string {
 	post("delete, mismatch", "/apps/"+id+"/delete", url.Values{"confirm": {"other"}})
 	post("new token", "/settings/tokens", url.Values{"name": {"ci"}})
 	post("password, errors", "/settings/password", url.Values{"currentPassword": {"x"}, "newPassword": {"y"}})
+	post("registry, errors", "/settings/registries", url.Values{"host": {"acme"}, "username": {"u"}})
 	return pages
 }
 
