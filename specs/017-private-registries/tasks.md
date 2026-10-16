@@ -223,8 +223,20 @@ credentials.
     - Phase 2.5 renumbers Aspire to 018 and Bella Baxter to 019;
     - a backlog item "Node-level registry credentials (Phase 3)" records research R1's
       trade-off.
-- [ ] T015 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, build, vet, staticcheck, gofmt, `go test -race ./...`, the amd64 and arm64 CGO-free builds, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck.
+- [X] T015 Full check (CLAUDE.md "Commands"): `go mod tidy -diff`, build, vet, staticcheck, gofmt, `go test -race ./...`, the amd64 and arm64 CGO-free builds, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`, shellcheck.
+  - 2026-10-16: all pass. `go test -race -count=1 ./internal/...` is ok in every package, and shellcheck is clean on `tools/release.sh` and `install.sh`.
 - [ ] T016 Lab validation: `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab -v -timeout 25m` (alone in the lab), then quickstart "By hand with GHCR" on the maintainer's host after the release (SC-001, SC-005). Record the results here.
+  - 2026-10-16, automated part: `TestLab` passes 19 of 19 steps (20 min). `private-registry` (42 s), against a real `registry:2` with htpasswd:
+    1. No credentials: 422 `image_not_found`, "add credentials for …".
+    2. Wrong secret: the test is not ok, and the deploy is 422 `registry_auth_failed`.
+    3. Right secret: the test is ok, and the deploy turns healthy, pulled by the node with the interpolated `auth` block.
+    4. The job and the API hold no secret.
+    5. Removal leaves the app running.
+  - Two lab problems were fixed along the way:
+    1. macOS's AirPlay Receiver holds port 5000 on the Mac, where the lab's Caravana runs, and answers 403. The gate's registry moved to port 15000. Its readiness check now trusts only a registry's own 401.
+    2. Earlier, one run's `broken-reverts` dropped 1 of 1147 calls. It wasn't reproduced in two later runs.
+  - Fixed in the product along the way: `Test` no longer says "no credentials are stored" when a host refused before asking for a login.
+  - Still open: the by-hand GHCR walk on the maintainer's host after the release (SC-001, SC-005).
 
 ## Dependencies & Execution Order
 
