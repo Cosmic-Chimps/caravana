@@ -262,6 +262,7 @@ func TestWebhookDeployErrors(t *testing.T) {
 			deployOKBody := withImage("traefik/whoami:nope")
 			call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json", deployOKBody)
 		}, 422, codeImageNotFound, "services[0].image"},
+		{"registry refuses the stored credentials", func(e *testEnv) { refuseStoredCredentials(t, e) }, 422, codeRegistryAuthFailed, "services[0].image"},
 		{"registry down", func(e *testEnv) { e.Registry.Fail("traefik/whoami", "latest", 429) }, 502, codeRegistryUnavailable, "services[0].image"},
 		{"foreign job", func(e *testEnv) {
 			e.Registry.AddIndex("traefik/whoami", "latest", movedDigest)
@@ -279,6 +280,9 @@ func TestWebhookDeployErrors(t *testing.T) {
 			}
 			checkSchema(t, loadContract(t), raw, "Error")
 			got := decodeAs[errorBody](t, raw).Error
+			if strings.Contains(string(raw), registrySecret) {
+				t.Errorf("the answer holds a stored secret: %s", raw)
+			}
 			if got.Code != tc.wantCode || got.Field != tc.wantField || header.Get("Location") == "" {
 				t.Errorf("error %+v, Location %q; want %s on %q with a Location", got, header.Get("Location"), tc.wantCode, tc.wantField)
 			}

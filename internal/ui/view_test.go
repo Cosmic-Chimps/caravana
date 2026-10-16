@@ -403,6 +403,10 @@ func TestDeploymentSentence(t *testing.T) {
 			"This deploy didn't start: the image wasn't found. v6 keeps serving."},
 		{"failed before registration: the registry", rec(store.StatusFailed, nil, "registry unavailable: it answered 503"), deployFacts{Current: true},
 			"This deploy didn't start: the registry couldn't be reached."},
+		{"failed before registration: the registry refused the credentials", rec(store.StatusFailed, nil, "ghcr.io: ghcr.io/acme/shop:v1: the registry refused the stored credentials (ghcr.io answered 401)"), deployFacts{Current: true, Previous: v6},
+			"This deploy didn't start: the registry refused the stored credentials. v6 keeps serving."},
+		{"failed before registration: the credentials are fine, the image isn't there", rec(store.StatusFailed, nil, "ghcr.io: ghcr.io/acme/shop:v1: image not found, or the stored credentials for ghcr.io can't read it"), deployFacts{Current: true},
+			"This deploy didn't start: the image wasn't found."},
 		{"failed before registration: Nomad down", rec(store.StatusFailed, nil, "nomad unavailable: Nomad is unreachable at http://x (register job whoami)"), deployFacts{Current: true},
 			"This deploy didn't start: Nomad couldn't be reached."},
 		{"failed before registration: Nomad refused the job", rec(store.StatusFailed, nil, "nomad rejected the job: Nomad answered 400: bad"), deployFacts{Current: true},
@@ -481,23 +485,31 @@ func TestFailedAction(t *testing.T) {
 		rec   store.DeploymentRecord
 		facts deployFacts
 		want  string // the label; "" for no action
+		href  string // where it goes; "" means the deploy form, #deploy
 	}{
-		{"failed, the newest", rec(store.StatusFailed, "job conflict: x"), current, "Deploy again"},
-		{"reverted, the newest", rec(store.StatusReverted, "unhealthy"), current, "Deploy again"},
-		{"the image wasn't found: the fix is the image", rec(store.StatusFailed, "ghcr.io: x:1: image not found, or private"), current, "Change the image"},
-		{"failed, but a newer deploy came after", rec(store.StatusFailed, "x"), older, ""},
-		{"healthy", rec(store.StatusHealthy, ""), current, ""},
-		{"rolling out", rec(store.StatusRunning, ""), current, ""},
-		{"superseded", rec(store.StatusSuperseded, ""), current, ""},
+		{"failed, the newest", rec(store.StatusFailed, "job conflict: x"), current, "Deploy again", ""},
+		{"reverted, the newest", rec(store.StatusReverted, "unhealthy"), current, "Deploy again", ""},
+		{"the image wasn't found: the fix is the image", rec(store.StatusFailed, "ghcr.io: x:1: image not found, or private"), current, "Change the image", ""},
+		{"the credentials were refused: the fix is in Settings", rec(store.StatusFailed, "ghcr.io: ghcr.io/acme/x:1: the registry refused the stored credentials (ghcr.io answered 401)"), current,
+			"Check the registry's credentials", "/settings#registries"},
+		{"the image isn't there with credentials: still the image", rec(store.StatusFailed, "ghcr.io: x:1: image not found, or the stored credentials for ghcr.io can't read it"), current, "Change the image", ""},
+		{"failed, but a newer deploy came after", rec(store.StatusFailed, "x"), older, "", ""},
+		{"healthy", rec(store.StatusHealthy, ""), current, "", ""},
+		{"rolling out", rec(store.StatusRunning, ""), current, "", ""},
+		{"superseded", rec(store.StatusSuperseded, ""), current, "", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := failedAction(tc.rec, tc.facts)
+			href := tc.href
+			if href == "" {
+				href = "#deploy"
+			}
 			switch {
 			case tc.want == "" && got != nil:
 				t.Errorf("action = %+v, want none", *got)
-			case tc.want != "" && (got == nil || got.Label != tc.want || got.Href != "#deploy"):
-				t.Errorf("action = %+v, want %q to #deploy", got, tc.want)
+			case tc.want != "" && (got == nil || got.Label != tc.want || got.Href != href):
+				t.Errorf("action = %+v, want %q to %s", got, tc.want, href)
 			}
 		})
 	}

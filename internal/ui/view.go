@@ -504,6 +504,8 @@ func failureCause(errText string) string {
 	// The registry's message carries the image's name in front ("ghcr.io: x:1: image not
 	// found"), so these look for the phrase, not the start of the text.
 	switch msg := strings.ToLower(errText); {
+	case registryRefused(errText):
+		return "the registry refused the stored credentials"
 	case strings.Contains(msg, "image not found"):
 		return "the image wasn't found"
 	case strings.Contains(msg, "registry unavailable"):
@@ -539,12 +541,28 @@ type actionLink struct {
 // deployFormHref is the deploy form on the Deployments tab.
 const deployFormHref = "#deploy"
 
+// registriesHref is Settings' Registries section, where the stored credentials
+// are checked and fixed.
+const registriesHref = "/settings#registries"
+
+// registryRefused says whether a stored deploy error is the registry turning
+// down the credentials Caravana sent (deploy.ErrRegistryAuth), which every such
+// message carries. A missing image with credentials sent ("... or the stored
+// credentials for X can't read it") is another error, about the image.
+func registryRefused(errText string) bool {
+	return strings.Contains(strings.ToLower(errText), "refused the stored credentials")
+}
+
 // failedAction is the action on a deployment that failed or was reverted, when
 // it is the app's newest (an older one has nothing to fix: a newer deploy
-// came after it). Every action leads to the deploy form on the same tab.
+// came after it). Every action leads to the deploy form on the same tab, except
+// a registry that refused the credentials, whose fix is in Settings.
 func failedAction(rec store.DeploymentRecord, f deployFacts) *actionLink {
 	if !f.Current || (rec.Status != store.StatusFailed && rec.Status != store.StatusReverted) {
 		return nil
+	}
+	if registryRefused(rec.Error) {
+		return &actionLink{Label: "Check the registry's credentials", Href: registriesHref}
 	}
 	if strings.Contains(strings.ToLower(rec.Error), "image not found") {
 		return &actionLink{Label: "Change the image", Href: deployFormHref}

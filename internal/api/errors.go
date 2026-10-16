@@ -17,6 +17,7 @@ const (
 	codeInternal              = "internal"
 	codeUnavailable           = "unavailable"
 	codeImageNotFound         = "image_not_found"
+	codeRegistryAuthFailed    = "registry_auth_failed"
 	codeJobConflict           = "job_conflict"
 	codeRegistryUnavailable   = "registry_unavailable"
 	codeNomadUnavailable      = "nomad_unavailable"

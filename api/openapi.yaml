@@ -2527,8 +2527,11 @@ components:
       description: |
         `image_not_found`: the registry has no such image or tag, or it's private and no
         credentials are stored for it (the message says to add them in Settings › Registries,
-        or with `putRegistry`). `field` is the service's `image`. Nothing was
-        registered; the deployment record (see `Location`) is `failed`.
+        or with `putRegistry`). `registry_auth_failed`: credentials are stored for the
+        image's registry and it refused them (the message names the registry and the image;
+        fix them with `putRegistry` and check them with `testRegistry`). `field` is the
+        service's `image`. Nothing was registered; the deployment record (see `Location`) is
+        `failed`.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"

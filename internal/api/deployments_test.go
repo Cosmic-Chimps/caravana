@@ -419,6 +419,20 @@ func TestSupersededBeforeRegistration(t *testing.T) {
 	}
 }
 
+// refuseStoredCredentials makes Docker Hub (where the fake registry stands in for
+// it) ask for a login, and stores a wrong secret for it: every lookup of a
+// docker.io image is then refused. The secret is the sentinel, so a test can
+// check it is in no answer.
+func refuseStoredCredentials(t *testing.T, e *testEnv) {
+	t.Helper()
+	e.Registry.RequireToken(true)
+	e.Registry.RequireLogin("deploy", "the-right-"+registrySecret)
+	wrong := registrySecret
+	if _, err := e.Service.SaveRegistry(context.Background(), "docker.io", "deploy", &wrong); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
+}
+
 // US4: every failure has the right status, code, field and Location.
 func TestDeployErrors(t *testing.T) {
 	tests := []struct {
@@ -438,6 +452,8 @@ func TestDeployErrors(t *testing.T) {
 			e.Nomad.AddForeignJob(&api.Job{ID: new("whoami"), Name: new("whoami"),
 				Meta: map[string]string{"caravana.deployment": "lab-manual"}})
 		}, wantStatus: 409, wantCode: codeJobConflict, wantMsg: `"whoami"`, wantLocation: true},
+		{name: "registry refuses the stored credentials", setup: func(e *testEnv) { refuseStoredCredentials(t, e) },
+			wantStatus: 422, wantCode: codeRegistryAuthFailed, wantField: "services[0].image", wantMsg: "refused the stored credentials", wantLocation: true},
 		{name: "registry unavailable", setup: func(e *testEnv) { e.Registry.Fail("traefik/whoami", "latest", 429) },
 			wantStatus: 502, wantCode: codeRegistryUnavailable, wantField: "services[0].image", wantMsg: "rate-limiting", wantLocation: true},
 		{name: "nomad unavailable", setup: func(e *testEnv) { e.Nomad.Down() },
@@ -478,6 +494,9 @@ func TestDeployErrors(t *testing.T) {
 			got := decodeAs[errorBody](t, raw).Error
 			if got.Code != tc.wantCode || got.Field != tc.wantField || !strings.Contains(got.Message, tc.wantMsg) {
 				t.Errorf("error = %+v, want code %s field %q message containing %q", got, tc.wantCode, tc.wantField, tc.wantMsg)
+			}
+			if strings.Contains(string(raw), registrySecret) {
+				t.Errorf("the answer holds a stored secret: %s", raw)
 			}
 
 			loc := header.Get("Location")

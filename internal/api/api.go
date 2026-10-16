@@ -251,6 +251,10 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusNotFound, Code: codeNotFound, Message: err.Error()}
 	case errors.As(err, &imageErr) && errors.Is(err, deploy.ErrImageNotFound):
 		return &Error{Status: http.StatusUnprocessableEntity, Code: codeImageNotFound, Field: imageErr.Field, Message: err.Error()}
+	case errors.As(err, &imageErr) && errors.Is(err, deploy.ErrRegistryAuth):
+		// The stored credentials are what to fix, so it is the request's to
+		// answer (422), like a missing image, and not a registry failure (502).
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeRegistryAuthFailed, Field: imageErr.Field, Message: err.Error()}
 	case errors.As(err, &imageErr):
 		return &Error{Status: http.StatusBadGateway, Code: codeRegistryUnavailable, Field: imageErr.Field, Message: err.Error()}
 	case errors.Is(err, deploy.ErrJobConflict):

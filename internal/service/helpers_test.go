@@ -53,11 +53,18 @@ func newEnv(t *testing.T) *env {
 // newDeployer returns a deployer wired to the fakes, with every wait short.
 func newDeployer(t *testing.T, reg *registrytest.Server, nomad *deploytest.Nomad) *deploy.Deployer {
 	t.Helper()
+	return newDeployerAt(t, reg.Endpoints(), nomad)
+}
+
+// newDeployerAt is newDeployer with the registry client's endpoints given: a
+// registry host (as an image writes it) → the URL of the fake that stands for it.
+func newDeployerAt(t *testing.T, endpoints map[string]string, nomad *deploytest.Nomad) *deploy.Deployer {
+	t.Helper()
 	client, err := deploy.NewNomadClient(nomad.Addr(), "")
 	if err != nil {
 		t.Fatalf("nomad client: %v", err)
 	}
-	d := deploy.New(client, &registry.Client{Endpoints: reg.Endpoints()},
+	d := deploy.New(client, &registry.Client{Endpoints: endpoints},
 		nomadjob.Settings{Entrypoint: "websecure", DefaultCPUMHz: 100, DefaultMemoryMB: 64, DefaultMemoryMaxMB: 256})
 	d.Timing = deploy.Timing{
 		ImageTimeout:   5 * time.Second,
@@ -85,7 +92,13 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 // waits for its watchers.
 func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad *deploytest.Nomad, sec secrets.Provider) *Service {
 	t.Helper()
-	svc := New(st, newDeployer(t, reg, nomad), sec, discardLogger())
+	return startServiceWith(t, st, newDeployer(t, reg, nomad), sec)
+}
+
+// startServiceWith is startService for a deployer the test built itself.
+func startServiceWith(t *testing.T, st *store.Store, d *deploy.Deployer, sec secrets.Provider) *Service {
+	t.Helper()
+	svc := New(st, d, sec, discardLogger())
 	svc.retryGap = 5 * time.Millisecond
 	svc.watchIdle = 10 * time.Millisecond
 	svc.backupPoll = 10 * time.Millisecond

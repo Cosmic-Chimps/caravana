@@ -710,7 +710,7 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 		return http.StatusUnprocessableEntity, sentence{plain("caravana can't deploy this app: "), mono(fieldErr.Field), plain(" " + fieldErr.Message)}, true
 	case errors.As(err, &imageErr):
 		status := http.StatusUnprocessableEntity
-		if !errors.Is(err, deploy.ErrImageNotFound) {
+		if !errors.Is(err, deploy.ErrImageNotFound) && !errors.Is(err, deploy.ErrRegistryAuth) {
 			status = http.StatusBadGateway // the registry couldn't answer: not the typed value's fault
 		}
 		if onField(imageErr.Field, imageErr.Error()) {

@@ -137,6 +137,28 @@ func TestRedeployAndExportErrors(t *testing.T) {
 			t.Errorf("field = %q, want services[0].image", f)
 		}
 	})
+
+	// The registry turns the stored credentials down: the same 422 as a deploy
+	// gives, with its own code, and no secret in it.
+	t.Run("an image whose registry refuses the stored credentials", func(t *testing.T) {
+		if _, err := e.Store.CreateDeployment(ctx, "whoami", app.Deployment{ID: "refused", Trigger: app.TriggerManual,
+			Digests: map[string]string{"web": "traefik/whoami@sha256:" + strings.Repeat("d", 64)}}, &def, nil, ""); err != nil {
+			t.Fatal(err)
+		}
+		for _, st := range []store.Status{store.StatusRunning, store.StatusHealthy} {
+			if _, err := e.Store.UpdateDeployment(ctx, "refused", store.DeploymentUpdate{Status: st}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		refuseStoredCredentials(t, e)
+		raw := expect(t, http.MethodPost, base+"/deployments/refused/redeploy", http.StatusUnprocessableEntity, codeRegistryAuthFailed)
+		if f := decodeAs[errorBody](t, raw).Error.Field; f != "services[0].image" {
+			t.Errorf("field = %q, want services[0].image", f)
+		}
+		if strings.Contains(string(raw), registrySecret) {
+			t.Errorf("the answer holds a stored secret: %s", raw)
+		}
+	})
 }
 
 // expect calls method url and checks the error status and code.

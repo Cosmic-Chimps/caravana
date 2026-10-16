@@ -653,7 +653,7 @@ func (v *composeView) refuseFailure(d *composeDraft, prev app.App, id string, er
 		return http.StatusUnprocessableEntity, true
 	case errors.As(err, &imageErr):
 		status = http.StatusUnprocessableEntity
-		if !errors.Is(err, deploy.ErrImageNotFound) {
+		if !errors.Is(err, deploy.ErrImageNotFound) && !errors.Is(err, deploy.ErrRegistryAuth) {
 			status = http.StatusBadGateway // the registry couldn't answer: not the file's fault
 		}
 		path := imageErr.Field
