@@ -166,8 +166,12 @@ func TestResolveWithStoredCredentials(t *testing.T) {
 			t.Fatal(err)
 		}
 		reg.Delete("acme/shop", whoamiDigest)
-		if err := d.CheckDigests(ctx, a, digests); !errors.Is(err, ErrImageNotFound) || errors.Is(err, ErrRegistryAuth) {
+		err := d.CheckDigests(ctx, a, digests)
+		if !errors.Is(err, ErrImageNotFound) || errors.Is(err, ErrRegistryAuth) {
 			t.Errorf("CheckDigests() = %v, want ErrImageNotFound", err)
+		}
+		if err != nil && strings.Contains(err.Error(), registrySecret) {
+			t.Errorf("error %q contains the secret", err)
 		}
 	})
 

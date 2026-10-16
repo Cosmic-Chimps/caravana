@@ -204,7 +204,7 @@ credentials.
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T013 [P] Sentinel sweep (SC-002): one test per path that handles credentials. Use a sentinel password and assert it is absent from:
+- [X] T013 [P] Sentinel sweep (SC-002): one test per path that handles credentials. Use a sentinel password and assert it is absent from:
   - the Settings page;
   - `listRegistries`, and the `putRegistry` and `testRegistry` answers;
   - every deploy error (refused, missing);

@@ -510,6 +510,10 @@ func TestDeployErrors(t *testing.T) {
 			if status != http.StatusOK || decodeAs[deployment](t, raw).Status != "failed" {
 				t.Errorf("GET %s = %d %s, want the failed deployment", loc, status, raw)
 			}
+			// SC-002: neither the stored deployment record nor the request log holds a stored secret.
+			if strings.Contains(string(raw), registrySecret) || strings.Contains(e.Logs.String(), registrySecret) {
+				t.Errorf("the deployment record or the request log holds a stored secret:\n%s\n%s", raw, e.Logs.String())
+			}
 			if e.Nomad.Registrations() != 0 {
 				t.Errorf("registrations = %d, want 0", e.Nomad.Registrations())
 			}

@@ -290,6 +290,10 @@ func TestWebhookDeployErrors(t *testing.T) {
 			if d := decodeAs[deployment](t, raw); d.Status != "failed" || d.Trigger != "webhook" {
 				t.Errorf("record = %s, trigger %s; want failed, webhook", d.Status, d.Trigger)
 			}
+			// SC-002: neither the deployment record nor the request log holds a stored secret.
+			if strings.Contains(string(raw), registrySecret) || strings.Contains(e.Logs.String(), registrySecret) {
+				t.Errorf("the deployment record or the request log holds a stored secret:\n%s\n%s", raw, e.Logs.String())
+			}
 		})
 	}
 }
