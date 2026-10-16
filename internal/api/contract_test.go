@@ -227,7 +227,7 @@ func TestContractBodies(t *testing.T) {
 	})
 	t.Run("deploy errors", func(t *testing.T) {
 		e := newTestEnv(t, "")
-		for _, body := range []string{withImage("traefik/whoami:nope"), withImage("quay.io/x/y:1"), "{}"} {
+		for _, body := range []string{withImage("traefik/whoami:nope"), withImage("bad_host.example.com/x/y:1"), "{}"} {
 			_, _, raw := call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json", body)
 			checkSchema(t, doc, raw, "Error")
 		}

@@ -195,9 +195,9 @@ func TestDeployFailures(t *testing.T) {
 
 	t.Run("validation saves nothing", func(t *testing.T) {
 		for name, mutate := range map[string]func(a *app.App){
-			"app rule":             func(a *app.App) { a.Services[0].Health = nil },
-			"unparseable image":    func(a *app.App) { a.Services[0].Image = "Traefik/whoami" },
-			"unsupported registry": func(a *app.App) { a.Services[0].Image = "quay.io/x/y:1" },
+			"app rule":              func(a *app.App) { a.Services[0].Health = nil },
+			"unparseable image":     func(a *app.App) { a.Services[0].Image = "Traefik/whoami" },
+			"invalid registry host": func(a *app.App) { a.Services[0].Image = "bad_host.example.com/x/y:1" },
 		} {
 			t.Run(name, func(t *testing.T) {
 				e := newEnv(t)

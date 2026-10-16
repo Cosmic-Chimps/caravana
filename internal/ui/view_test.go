@@ -376,7 +376,7 @@ func TestDeploymentSentence(t *testing.T) {
 	rec := func(status store.Status, version *uint64, errText string) store.DeploymentRecord {
 		return store.DeploymentRecord{AppID: "whoami", Status: status, JobVersion: version, Error: errText}
 	}
-	const imageGone = "image not found, or private (Caravana doesn't support registry credentials yet)"
+	const imageGone = "image not found, or private: add credentials for ghcr.io in Settings › Registries"
 	tests := []struct {
 		name  string
 		rec   store.DeploymentRecord

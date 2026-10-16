@@ -30,7 +30,7 @@ Nothing: no new module or tool.
 
 ## Phase 2: Foundational (blocks every story)
 
-- [ ] T001 [P] Any registry host, in internal/registry/reference.go and client.go (research R4):
+- [X] T001 [P] Any registry host, in internal/registry/reference.go and client.go (research R4):
   - `Parse` accepts any host the reference grammar allows. A first path part is a host when it
     has `.` or `:`, or is `localhost`.
   - `Registry` is the lowercased host; `index.docker.io` becomes `docker.io`. Docker Hub's
@@ -50,7 +50,7 @@ Nothing: no new module or tool.
     hosts.
   - New tests: hosts with ports, uppercase hosts, IPv6 loopback, `localhost:5000`, the endpoint
     table, the TLS error, and a non-registry 401.
-- [ ] T002 [P] Credentials in the digest lookup (research R3, R5), in internal/registry/client.go:
+- [X] T002 [P] Credentials in the digest lookup (research R3, R5), in internal/registry/client.go:
   - Add `Client.Credentials func(ctx context.Context, host string) (user, pass string, ok bool, err error)`;
     nil means anonymous.
   - On a 401:

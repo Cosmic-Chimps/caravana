@@ -1,10 +1,13 @@
 // Package registrytest is a fake container registry for tests: a real HTTP
 // server that answers manifest requests the way Docker Hub and GHCR do,
-// including the anonymous token handshake. Product code never imports it.
+// including the anonymous token handshake, and can ask for a login (Basic, or
+// Bearer with a token service that checks it) the way a private registry
+// does. Product code never imports it.
 package registrytest
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -42,6 +45,8 @@ type Server struct {
 	failToken    int
 	tokens       map[string]bool
 	requests     int
+	loginHeader  string   // the Authorization value a login must send; "" means no login is needed
+	tokenScopes  []string // the scope of every token request, in order
 }
 
 // New starts a fake registry that closes when the test ends.
@@ -62,10 +67,37 @@ func New(t testing.TB) *Server {
 // URL is the server's base URL.
 func (s *Server) URL() string { return s.srv.URL }
 
-// Endpoints maps both supported registries to this server, for
+// Host is the server's address as an image reference writes a registry host:
+// "127.0.0.1:<port>". A loopback host needs no registry.Client.Endpoints
+// entry, because the client speaks plain HTTP to it.
+func (s *Server) Host() string { return strings.TrimPrefix(s.srv.URL, "http://") }
+
+// Endpoints maps Docker Hub and GHCR to this server, for
 // registry.Client.Endpoints.
 func (s *Server) Endpoints() map[string]string {
 	return map[string]string{"docker.io": s.srv.URL, "ghcr.io": s.srv.URL}
+}
+
+// RequireLogin makes the registry ask for this user name and secret (an empty
+// user name turns it off). With RequireToken on, the token service wants them
+// as Basic auth and refuses a token request without them; otherwise manifest
+// requests are challenged with `Basic realm="test"`, like a registry:2 with
+// htpasswd.
+func (s *Server) RequireLogin(user, pass string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loginHeader = ""
+	if user != "" {
+		s.loginHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
+	}
+}
+
+// TokenScopes returns the scope of every token request so far, in order; ""
+// is a request with no scope.
+func (s *Server) TokenScopes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.tokenScopes...)
 }
 
 // AddIndex serves a multi-architecture index for repo:tag with this digest
@@ -173,6 +205,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.serveToken(w, r)
 		return
 	}
+	// A registry names its API version on every answer.
+	w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
+	if r.URL.Path == "/v2/" || r.URL.Path == "/v2" {
+		s.serveBase(w, r)
+		return
+	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/v2/")
 	i := strings.LastIndex(rest, "/manifests/")
 	if !ok || i < 0 || (r.Method != http.MethodHead && r.Method != http.MethodGet) {
@@ -194,16 +232,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	needToken := s.requireToken
 	failStatus := s.fails[k]
 	m, found := s.manifests[k]
-	authorized := s.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 	s.mu.Unlock()
 
-	if needToken && !authorized {
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
-			`Bearer realm="%s/token",service="test",scope="repository:%s:pull"`, s.srv.URL, k.repo))
-		writeRegistryError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+	if s.challenge(w, r, k.repo) {
 		return
 	}
 	if failStatus != 0 {
@@ -225,15 +258,56 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// challenge answers a request that isn't logged in with the registry's 401
+// and its WWW-Authenticate header, and reports whether it did. repo is the
+// repository asked for, "" for the base endpoint.
+func (s *Server) challenge(w http.ResponseWriter, r *http.Request, repo string) bool {
+	s.mu.Lock()
+	needToken, loginHeader := s.requireToken, s.loginHeader
+	given := r.Header.Get("Authorization")
+	tokenOK := s.tokens[strings.TrimPrefix(given, "Bearer ")]
+	s.mu.Unlock()
+
+	switch {
+	case needToken && !tokenOK:
+		scope := ""
+		if repo != "" {
+			scope = fmt.Sprintf(`,scope="repository:%s:pull"`, repo)
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test"%s`, s.srv.URL, scope))
+	case !needToken && loginHeader != "" && given != loginHeader:
+		w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+	default:
+		return false
+	}
+	writeRegistryError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+	return true
+}
+
+// serveBase answers GET /v2/, the API's base endpoint: 200 once logged in.
+func (s *Server) serveBase(w http.ResponseWriter, r *http.Request) {
+	if s.challenge(w, r, "") {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}"))
+}
+
 func (s *Server) serveToken(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	scope := r.URL.Query().Get("scope")
+	s.tokenScopes = append(s.tokenScopes, scope)
 	if s.failToken != 0 {
 		writeRegistryError(w, s.failToken, "DENIED", "token refused")
 		return
 	}
-	if r.URL.Query().Get("service") != "test" || !strings.HasPrefix(r.URL.Query().Get("scope"), "repository:") {
+	if r.URL.Query().Get("service") != "test" || (scope != "" && !strings.HasPrefix(scope, "repository:")) {
 		writeRegistryError(w, http.StatusBadRequest, "BAD_REQUEST", "missing service or scope")
+		return
+	}
+	if s.loginHeader != "" && r.Header.Get("Authorization") != s.loginHeader {
+		writeRegistryError(w, http.StatusUnauthorized, "UNAUTHORIZED", "incorrect username or password")
 		return
 	}
 	token := fmt.Sprintf("test-token-%d", len(s.tokens)+1)

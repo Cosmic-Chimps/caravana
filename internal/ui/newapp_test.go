@@ -172,7 +172,7 @@ func TestCreateAppFromTheConsole(t *testing.T) {
 			{"no name", postedForm("", "traefik/whoami:latest", "", "", ""), "name", "Enter a name", 422},
 			{"no image", postedForm("whoami", "", "", "", ""), "image", "Enter an image", 422},
 			{"image with a space", postedForm("whoami", "traefik whoami", "", "", ""), "image", "The image must not contain spaces", 422},
-			{"unsupported registry", postedForm("whoami", "quay.io/x/y:1", "", "", ""), "image", "Docker Hub and GHCR only", 422},
+			{"invalid registry host", postedForm("whoami", "bad_host.example.com/x/y:1", "", "", ""), "image", "not a valid registry host", 422},
 			{"port that isn't a number", postedForm("whoami", "traefik/whoami:latest", "http", "", "/"), "port", "a number from 1 to 65535", 422},
 			{"port out of range", postedForm("whoami", "traefik/whoami:latest", "70000", "", "/"), "port", "a number from 1 to 65535", 422},
 			{"domain without a port", postedForm("whoami", "traefik/whoami:latest", "", "whoami.example.com", "/"), "domain", "needs a port", 422},

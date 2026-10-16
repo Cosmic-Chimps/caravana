@@ -79,7 +79,7 @@ func historyEnv(t *testing.T) *consoleEnv {
 			Error: "Failed due to unhealthy allocations - rolling back to job version 2",
 			Warns: []app.Warning{{Field: "services[0].image", Message: `tag "1.2" is ignored: the digest pins the image`}}},
 		seedDeploy{ID: "d4", Trigger: app.TriggerConsole, Status: store.StatusFailed,
-			Error: "image not found, or private (Caravana doesn't support registry credentials yet)"},
+			Error: "image not found, or private: add credentials for ghcr.io in Settings › Registries"},
 		seedDeploy{ID: "d5", Trigger: app.TriggerManual, Status: store.StatusSuperseded, Version: 4,
 			Error: "Cancelled due to newer version of job"},
 		seedDeploy{ID: "d6", Trigger: app.TriggerConsole, Status: store.StatusRunning, Version: 5})
@@ -166,7 +166,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 			"d3": {"v3 failed its health checks. Nomad rolled back to v2.",
 				"Failed due to unhealthy allocations - rolling back to job version 2"},
 			"d4": {"This deploy didn't start: the image wasn't found.",
-				"image not found, or private (Caravana doesn't support registry credentials yet)"},
+				"image not found, or private: add credentials for ghcr.io in Settings › Registries"},
 			"d5": {"v4 was replaced by v5 before it finished.", "Cancelled due to newer version of job"},
 			"d6": {"Rolling out v5."},
 		} {

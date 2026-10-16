@@ -1,12 +1,14 @@
 // Package registry pins container images: it turns an image reference with
 // a tag ("traefik/whoami:latest") into one pinned by digest
 // ("traefik/whoami@sha256:…"), so every deploy runs exactly the image it
-// resolved. It speaks the registry v2 API to Docker Hub and GHCR, anonymously.
+// resolved. It speaks the registry v2 API to any registry: anonymously, or
+// with the credentials a Client is given for a private one.
 package registry
 
 import (
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 )
@@ -14,9 +16,13 @@ import (
 // Reference is a parsed image reference.
 type Reference struct {
 	// Name is the image as written, without tag or digest: "traefik/whoami",
-	// "nginx", "ghcr.io/acme/shop". The pinned image keeps it.
+	// "nginx", "ghcr.io/acme/shop", "registry.example.com:5000/acme/shop".
+	// The pinned image keeps it, host and port included. A host is written in
+	// lowercase: that is how Docker matches it to the credentials for it.
 	Name string
-	// Registry is the canonical registry host: "docker.io" or "ghcr.io".
+	// Registry is the canonical registry host, lowercased, with its port when
+	// it has one: "docker.io", "ghcr.io", "registry.example.com:5000".
+	// "index.docker.io" is "docker.io".
 	Registry string
 	// Repository is the path on that registry: "traefik/whoami",
 	// "library/nginx", "acme/shop".
@@ -37,12 +43,16 @@ var (
 	tagRE  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 	// digestRE is the only digest form Caravana pins: sha256.
 	digestRE = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	// hostRE is a registry host in lowercase: a DNS name or a bracketed IPv6
+	// address, then an optional port.
+	hostRE = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*|\[[0-9a-f:.]+\])(?::[0-9]{1,5})?$`)
 )
 
-// Parse parses an image reference: [host/]path[:tag][@sha256:<64 hex>].
-// Only Docker Hub (the default) and GHCR are supported; any other registry
-// is an error. Errors describe the problem without naming the field, so
-// callers can put them under the field they came from.
+// Parse parses an image reference: [host[:port]/]path[:tag][@sha256:<64 hex>].
+// Docker Hub is the default. A first part of the path is a registry host when
+// it has a "." or a ":", or is "localhost", as Docker reads it. Errors
+// describe the problem without naming the field, so callers can put them
+// under the field they came from.
 func Parse(image string) (Reference, error) {
 	if image == "" {
 		return Reference{}, errors.New("is required")
@@ -66,17 +76,16 @@ func Parse(image string) (Reference, error) {
 
 	name := rest
 	host, path := "", rest
-	if first, after, ok := strings.Cut(rest, "/"); ok && (strings.ContainsAny(first, ".:") || first == "localhost") {
-		host, path = first, after
+	if first, after, ok := strings.Cut(rest, "/"); ok && (strings.ContainsAny(first, ".:") || strings.EqualFold(first, "localhost")) {
+		host, path = strings.ToLower(first), after
+		if !hostRE.MatchString(host) {
+			return Reference{}, fmt.Errorf("%q is not a valid registry host (a name or an address, then an optional :port)", first)
+		}
+		name = host + "/" + path
 	}
-	var registry string
-	switch host {
-	case "", "docker.io", "index.docker.io":
+	registry := host
+	if host == "" || host == "index.docker.io" {
 		registry = "docker.io"
-	case "ghcr.io":
-		registry = "ghcr.io"
-	default:
-		return Reference{}, fmt.Errorf("registry %q isn't supported yet (Docker Hub and GHCR only)", host)
 	}
 	if !pathRE.MatchString(path) {
 		return Reference{}, fmt.Errorf("%q is not a valid image name (lowercase letters, digits, '.', '_' and '-', in parts separated by '/')", name)
@@ -94,6 +103,36 @@ func Parse(image string) (Reference, error) {
 		ref.Tag = "latest"
 	}
 	return ref, nil
+}
+
+// Endpoint returns the base URL of host's registry API. Docker Hub's API is
+// not on docker.io itself. A loopback host speaks plain HTTP, because
+// Docker's daemon treats those as insecure registries by default, so the
+// node pulls the way Caravana looks the digest up. Every other host must
+// serve HTTPS: credentials never cross the network in the clear.
+func Endpoint(host string) string {
+	switch {
+	case host == "docker.io":
+		return "https://registry-1.docker.io"
+	case isLoopback(host):
+		return "http://" + host
+	}
+	return "https://" + host
+}
+
+// isLoopback reports whether host, with or without a port, is localhost or a
+// loopback address (127.0.0.0/8, ::1).
+func isLoopback(host string) bool {
+	name := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		name = h
+	}
+	name = strings.Trim(name, "[]")
+	if name == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(name)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Pinned returns the image pinned to digest: Name + "@" + digest.

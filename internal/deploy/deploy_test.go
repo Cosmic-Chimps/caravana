@@ -56,7 +56,8 @@ func TestValidate(t *testing.T) {
 		{"app rule", func(a *app.App) { a.Services[0].Name = "Web" }, "services[0].name"},
 		{"nomad limit", func(a *app.App) { a.Services[0].Resources.MemoryMB = 5 }, "services[0].resources.memoryMB"},
 		{"unparseable image", func(a *app.App) { a.Services[0].Image = "Traefik/whoami" }, "services[0].image"},
-		{"unsupported registry", func(a *app.App) { a.Services[0].Image = "quay.io/x/y:1" }, "services[0].image"},
+		{"invalid registry host", func(a *app.App) { a.Services[0].Image = "bad_host.example.com/x/y:1" }, "services[0].image"},
+		{"registry on another host is valid", func(a *app.App) { a.Services[0].Image = "quay.io/x/y:1" }, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
