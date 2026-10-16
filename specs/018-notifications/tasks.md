@@ -141,7 +141,7 @@ Nothing.
 
 ## Phase 5: User Story 2 - Deploy outcomes (P1)
 
-- [ ] T010 [US2] `notifyDeploy(rec)` in internal/service/notifier.go, called from `finish` (rollout outcome) and `fail` (before register) in internal/service/deploy.go after the record write. It enqueues `deploy.succeeded` (healthy) or `deploy.failed` (failed, reverted, superseded) to channels wanting `deploy_succeeded` or `deploy_failed`, with version, outcome, trigger and reason (the record's error). It never blocks: an enqueue error is logged. Tests: each outcome, each event filter, webhook and redeploy triggers, failure before register (image not found).
+- [X] T010 [US2] `notifyDeploy(rec)` in internal/service/notifier.go, called from `finish` (rollout outcome) and `fail` (before register) in internal/service/deploy.go after the record write. It is also called where a deploy is superseded before it registers, which is the third place a deployment ends. It enqueues `deploy.succeeded` (healthy) or `deploy.failed` (failed, reverted, superseded) to channels wanting `deploy_succeeded` or `deploy_failed`, with version, outcome, trigger and reason (the record's error). It never blocks: an enqueue error is logged. Tests: each outcome, each event filter, webhook and redeploy triggers, failure before register (image not found).
 
 ## Phase 6: Polish
 

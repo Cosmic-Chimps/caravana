@@ -219,6 +219,51 @@ const summaryAbove = 10
 // summaryListed is how many problems a summary names; the rest are counted.
 const summaryListed = 20
 
+// notifyDeploy queues the outcome of a deployment that has just ended for the
+// channels that want it (research R2): "deploy succeeded" for healthy, "deploy
+// failed" for failed, reverted and superseded, whatever started it (console,
+// API, webhook). The callers are finish and fail, once the record is written, so
+// each deployment is told once.
+//
+// It only queues rows, which is quick, and never fails the deploy: an error is
+// logged and the message is lost, because a deploy that worked must not be
+// reported as failed over a notification. The sender does the sending.
+func (s *Service) notifyDeploy(rec store.DeploymentRecord) {
+	ev, ok := deployEvent(rec, s.publicURL)
+	if !ok {
+		return
+	}
+	wanted := EventDeployFailed
+	if ev.Type == notify.EventDeploySucceeded {
+		wanted = EventDeploySucceeded
+	}
+
+	// Detached from any request or shutdown, like the record write before it.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	channels, err := s.store.ListNotificationChannels(ctx)
+	if err != nil {
+		s.log.Error("queue a deploy notification: list channels", "deployment", rec.Deployment.ID, "error", err)
+		return
+	}
+	now := s.clock.Now().UTC()
+	queued := false
+	for _, ch := range channelsWanting(channels, wanted) {
+		d, err := newDelivery(ch.ID, ev, now)
+		if err == nil {
+			err = s.store.EnqueueDelivery(ctx, d)
+		}
+		if err != nil {
+			s.log.Error("queue a deploy notification", "deployment", rec.Deployment.ID, "channel", ch.ID, "error", err)
+			continue
+		}
+		queued = true
+	}
+	if queued {
+		s.queue.poke()
+	}
+}
+
 // problemKey is the identity of a needs-you item: its kind, app, service and,
 // for a failed deploy, the deployment. Copy IDs are left out on purpose: a crash
 // loop swaps its copies and is still one problem.

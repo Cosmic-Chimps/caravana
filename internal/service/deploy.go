@@ -277,6 +277,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		msg := fmt.Sprintf("replaced by deployment %s before it was registered", latest)
 		if upd, err := s.write(dep.ID, store.DeploymentUpdate{Status: store.StatusSuperseded, Error: msg}); err == nil {
 			rec = upd
+			s.notifyDeploy(rec)
 		} else {
 			s.log.Error("record superseded deployment", "deployment", dep.ID, "error", err)
 		}
@@ -343,6 +344,7 @@ func (s *Service) fail(rec store.DeploymentRecord, cause error) (store.Deploymen
 	id := rec.Deployment.ID
 	if upd, err := s.write(id, store.DeploymentUpdate{Status: store.StatusFailed, Error: cause.Error()}); err == nil {
 		rec = upd
+		s.notifyDeploy(rec)
 	} else {
 		s.log.Error("record failed deployment", "deployment", id, "error", err)
 	}
@@ -427,13 +429,17 @@ func (s *Service) findVersion(ctx context.Context, appID, deploymentID string) (
 // record couldn't be written (the next start resumes the deployment and
 // settles it again).
 func (s *Service) finish(appID, deploymentID string, status store.Status, msg string) {
-	if _, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); errors.Is(err, store.ErrNotFound) {
+	if rec, err := s.write(deploymentID, store.DeploymentUpdate{Status: status, Error: msg}); errors.Is(err, store.ErrNotFound) {
 		// The app was deleted while its rollout ended: nothing is left to
 		// record, and its secrets went with it.
 		s.log.Info("deployment gone before its outcome was recorded", "deployment", deploymentID, "status", status)
 		return
 	} else if err != nil {
 		s.log.Error("record deployment outcome", "deployment", deploymentID, "status", status, "error", err)
+	} else {
+		// Only the write that ended the record tells the owner: a resumed
+		// deployment that was already final fails the write and says nothing.
+		s.notifyDeploy(rec)
 	}
 	s.settleSecrets(appID, deploymentID, status)
 }

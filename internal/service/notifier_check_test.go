@@ -315,9 +315,18 @@ func TestCheckProblems(t *testing.T) {
 	if !got[0].NextAt.Equal(t0.Add(time.Minute)) || !got[0].CreatedAt.Equal(t0.Add(time.Minute)) {
 		t.Errorf("queued at %v, due %v; want the clock's %v", got[0].CreatedAt, got[0].NextAt, t0.Add(time.Minute))
 	}
-	// The channels that do not want problems, or are paused, got nothing.
-	if n := len(e.deliveriesOf(t, e.onlyDeploy)) + len(e.deliveriesOf(t, e.paused)); n != 0 {
-		t.Errorf("channels that don't want problems got %d messages", n)
+	// A paused channel got nothing. The channel that wants only failed deploys
+	// got the deploy's own message (feature 018 US2) and no problem.
+	if n := len(e.deliveriesOf(t, e.paused)); n != 0 {
+		t.Errorf("a paused channel got %d messages", n)
+	}
+	for _, d := range e.deliveriesOf(t, e.onlyDeploy) {
+		if d.EventType != notify.EventDeployFailed {
+			t.Errorf("a channel that doesn't want problems got a %s", d.EventType)
+		}
+	}
+	if n := len(e.deliveriesOf(t, e.onlyDeploy)); n != 1 {
+		t.Errorf("the failed-deploys channel got %d messages, want the deploy's one", n)
 	}
 	wantKey := "deploy_failed|whoami||" + second.Deployment.ID
 	if keys := e.sentKeys(t); !slices.Equal(keys, []string{wantKey}) {
