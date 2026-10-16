@@ -21,7 +21,7 @@ Nothing.
 
 ## Phase 2: Foundational
 
-- [ ] T001 [P] Package `internal/notify` (research R4, data-model "Package"), in notify.go, render.go, sign.go and send.go:
+- [X] T001 [P] Package `internal/notify` (research R4, data-model "Package"), in notify.go, render.go, sign.go and send.go:
   - `Event` and `Channel`.
   - `Render(ch, ev) (*http.Request, error)` for webhook, slack, discord and ntfy, with exactly the
     headers and bodies of research R4. `Render` also takes the delivery ID and a clock, for the

@@ -1,0 +1,8 @@
+POST https://ntfy.sh/my-topic
+Click: https://caravana.example.com/apps/hollo/deployments#deployment-dep_1a2b3c
+Content-Type: text/plain; charset=utf-8
+Priority: high
+Tags: warning
+Title: hollo: the deploy was reverted to v6
+
+Version 8 did not become healthy, so Nomad went back to version 6.

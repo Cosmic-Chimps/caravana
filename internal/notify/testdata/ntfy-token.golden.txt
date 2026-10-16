@@ -1,0 +1,9 @@
+POST https://ntfy.sh/my-topic
+Authorization: Bearer tk_secret
+Click: https://caravana.example.com/apps/kuma/backups
+Content-Type: text/plain; charset=utf-8
+Priority: high
+Tags: warning
+Title: kuma: the backup of uptime-kuma failed
+
+The volume backup at 03:00 UTC failed.

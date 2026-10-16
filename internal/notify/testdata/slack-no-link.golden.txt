@@ -1,0 +1,4 @@
+POST https://hooks.slack.com/services/T000/B000/XXXX
+Content-Type: application/json
+
+{"text":"*kuma: the backup of uptime-kuma is working again*\nIt has not been on the needs-you list for 5 minutes."}

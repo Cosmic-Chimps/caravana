@@ -1,0 +1,7 @@
+POST https://ntfy.example.com/alerts
+Content-Type: text/plain; charset=utf-8
+Priority: default
+Tags: white_check_mark
+Title: kuma: the backup of uptime-kuma is working again
+
+It has not been on the needs-you list for 5 minutes.
