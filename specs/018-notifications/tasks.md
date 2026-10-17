@@ -145,7 +145,7 @@ Nothing.
 
 ## Phase 6: Polish
 
-- [ ] T011 [P] Installer: `deploy/install/install.sh` writes `CARAVANA_PUBLIC_URL=https://$domain` into caravana.env (the console domain the installer already knows). Shellcheck clean.
+- [X] T011 [P] Installer: `deploy/install/install.sh` writes `CARAVANA_PUBLIC_URL=https://$domain` into caravana.env (the console domain the installer already knows). Shellcheck clean.
 - [ ] T012 Console lab step `console-notifications`, in cmd/caravana/console_lab_test.go, after `console-volumes`:
   1. Start an `httptest` server in the test that records requests.
   2. Add a webhook channel through the console form (all three events), and keep the shown

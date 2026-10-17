@@ -399,13 +399,15 @@ configure_caravana() {
   fi
   [ "$acme" = none ] && resolver=""
   # Traefik, on this host's loopback, is the only proxy: Caravana believes its forwarded
-  # headers, so cookies are Secure and sign-in limits count each real client.
+  # headers, so cookies are Secure and sign-in limits count each real client. The public URL
+  # is the console's own address, which notifications link to (feature 018).
   service_changed=0
   write_if_changed "$ENV_FILE" 0600 caravana-env <<EOF && service_changed=1
 CARAVANA_LISTEN=127.0.0.1:7070
 CARAVANA_DATA_DIR=$DATA
 CARAVANA_CERT_RESOLVER=$resolver
 CARAVANA_TRUSTED_PROXIES=127.0.0.1,::1
+CARAVANA_PUBLIC_URL=https://$domain
 NOMAD_ADDR=http://127.0.0.1:4646
 NOMAD_TOKEN=$token
 EOF
