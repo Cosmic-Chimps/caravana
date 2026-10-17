@@ -61,8 +61,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - The app ID of an app outside Default › production is `<project>--<environment>--<name>`, for
   example `shop--staging--web`; names are lowercase labels and never contain `--`. The ID is
   still the Nomad job, router, secrets path and volume prefix, so a client can compute it and
-  deploy with the same `deployApp` as before. The app's name is limited to 31 characters, and
-  the whole ID plus a service name to 63.
+  deploy with the same `deployApp` as before. The whole ID plus a service name must fit in 63
+  characters (the console's New app also keeps names to 31).
 - API 0.16.0: `listProjects`, `createProject`, `getProject`, `updateProject`, `deleteProject`,
   `createEnvironment`, `deleteEnvironment`, `listEnvironmentApps`, `createEnvironmentApp`,
   `getEnvironmentApp`, `previewPromotion`, `promoteApp` and `copyApp`. Apps, summaries, needs-you
