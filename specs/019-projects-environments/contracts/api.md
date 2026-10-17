@@ -50,8 +50,8 @@ otherwise `<project>--<environment>--<name>`. Any operation that creates an app
 services: [{name, imageFrom, imageTo, digestFrom, digestTo, changed: []string}], added: [],
 warnings: [], targetRevision}`. `imageFrom`/`digestFrom` are empty for an added service.
 
-`Deployment` gains `promotedFrom: {app, environment, deployment}`, present only on a promotion
-(`source` stays as today for a redeploy).
+`Deployment` gains `promotedFrom: {app, environment, deployment}`, present only on a promotion;
+`source` is then absent (it stays only for a redeploy of the same app's past deployment).
 
 ## Errors
 
