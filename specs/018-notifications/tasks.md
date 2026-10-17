@@ -161,7 +161,7 @@ Nothing.
      `problem.resolved` within 2 minutes.
   7. Remove the channel and the app.
   - `go vet ./cmd/caravana`.
-- [ ] T013 [P] Docs:
+- [X] T013 [P] Docs:
   - CHANGELOG "Unreleased": Added (notifications, channels, signed webhooks, `/v1/notifications`,
     API 0.15.0) and Upgrade (rerun the installer to set the console address used in links).
   - A CLAUDE.md "Where we are" paragraph for 018.

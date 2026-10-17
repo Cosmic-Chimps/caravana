@@ -256,6 +256,58 @@ Credentials never appear in an error, a log or a URL. Other facts:
   removal). A test searches for a sentinel password in every page, answer, error, job, export,
   record and request log.
 
+Feature 018 is implemented on branch `018-notifications` (stacked on 017): Caravana pushes what
+the needs-you list derives, and how deploys end, to the owner. `internal/notify` is the pure
+package: `Event`, `Channel`, `Render` (a ready `*http.Request` for `webhook`, `slack`, `discord`
+and `ntfy`, with the exact bodies and headers of the spec's research R4), `Sign`/`Verify` for
+webhooks (`Caravana-Signature: t=<unix>,v1=<hex>`, HMAC-SHA256 over `<t>.<body>`) and `Send` (10 s
+timeout, 2xx is ok, and no error ever holds the request URL, since a Slack or Discord URL is a
+secret). Other facts:
+- Migration `0010_notifications.sql`: `notification_channels`, `sent_problems` and
+  `notification_deliveries`. Deleting an app deletes its `sent_problems` rows; deliveries stay as
+  history, 20 per channel (pending rows are never pruned).
+- The notifier (`service/notifier.go`) checks `Service.Attention` every 30 s. The first check
+  comes one gap after start (a timer alone, since `Subscribe` would keep the copies watcher
+  running). The pure `diffProblems` compares the list with `sent_problems`: a new item is opened,
+  a present one is seen, an item gone for `resolveAfter` since its last sighting is resolved, a
+  younger one is kept (so a flapping problem sends one "opened"), the copy kinds are neither
+  opened nor resolved while Nomad can't be read, and an app that no longer exists is dropped
+  without "resolved". The key is `kind|app|service|deployment`, never the copy IDs.
+  `store.ApplyProblemCheck` writes the table and the queue in one transaction. More than 10
+  opened (or resolved) in one check become one summary per channel.
+- Deploy hooks: `notifyDeploy(rec)` is called after the record write where a deployment ends
+  (`finish` for the rollout, `fail` before register, and when it is superseded before it
+  registers). It queues `deploy.succeeded` or `deploy.failed` and never blocks: an enqueue error
+  is logged.
+- The delivery queue and sender (`service/sender.go`): a loop woken by a 5 s timer, a `poke`
+  after each enqueue and each finished worker takes due pending rows (20) and starts one worker
+  goroutine per channel with something due, up to 4, so a slow receiver can't delay another
+  channel. A failed send is retried after 30 s, then 2 min, then marked failed with the error
+  kept. A removed or paused channel's pending rows are marked failed without sending. Pending rows
+  survive a restart.
+- Secrets of a channel live in the Nomad Variable `caravana/notifications/<id>` (`url` for Slack
+  and Discord, `token` for ntfy, `signing_secret` for a webhook), written by
+  `deploy.SaveNotificationSecret` and removed with the channel; SQLite holds the masked address
+  only. A webhook's signing secret is 32 random bytes in hex, shown once on create and on rotate.
+  No page, answer, error, log or delivery holds a secret (tests search for sentinels). The
+  policy's `caravana/*` variables already cover it.
+- Settings: `CARAVANA_PUBLIC_URL` (`-public-url`, optional, for the links in messages; the
+  installer writes it from the console domain, so rerun it on an existing host) and
+  `CARAVANA_NOTIFY_RESOLVE_AFTER` (`-notify-resolve-after`, default 5m, at least 10s), both set
+  through `Service` setters from `cmd/caravana/main.go`.
+- API 0.15.0: `listNotificationChannels`, `createNotificationChannel` (`signingSecret` in the
+  answer once, for a webhook), `updateNotificationChannel`, `deleteNotificationChannel`,
+  `testNotificationChannel`, `listNotificationDeliveries`, `rotateNotificationSecret` (409
+  `not_a_webhook`), and the webhook message documented as a component for receivers. Console:
+  Settings › Notifications (add, edit, Send a test, Pause or Resume, Remove, recent deliveries,
+  the signing secret notice; forms work without JavaScript).
+- `TestConsoleLab` has a step `console-notifications`: a receiver in the test process, a webhook
+  channel added through the form, a test whose signature `notify.Verify` accepts, then a deploy
+  of a tag that doesn't exist (`deploy.failed` and one `problem.opened`), a fixed deploy
+  (`deploy.succeeded`, `problem.resolved`) and the channel removed. `startLab` sets
+  `CARAVANA_NOTIFY_RESOLVE_AFTER=10s`; the notifier's 30 s gap is not configurable, so the step
+  budgets for it and takes about two minutes more.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -267,7 +319,7 @@ Phases 1 and 2 are done (gates passed 2026-10-04 and 2026-10-11); 013–017 foll
 real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the order of
 `docs/plan.md`, nothing beyond it unless asked:
 - 018 Notifications: push the "needs you" problems and deploy outcomes to the owner (signed
-  webhooks, Slack/Discord, ntfy)
+  webhooks, Slack/Discord, ntfy) (done, branch `018-notifications`)
 - 019 Organization / Project / Environment: projects, environments with promotion, Nomad
   namespaces
 - 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017

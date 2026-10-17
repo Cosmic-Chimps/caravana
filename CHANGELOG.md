@@ -9,6 +9,43 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- Notifications: Caravana now tells you when something needs you and when a deploy ends, even
+  when nobody has the console open. Settings › Notifications adds channels of four kinds: ntfy
+  (a topic, with an optional access token), Slack and Discord (an incoming webhook URL), and a
+  plain webhook that gets signed JSON. Each channel picks what it hears: problems, failed
+  deploys, successful deploys. "Send a test" checks a channel, Pause and Resume stop and restart
+  it, and each channel lists its last 20 deliveries.
+- What is sent: a message when a problem on the Apps page's "needs you" list opens (failed or
+  reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and
+  restores, no backup destination) and another when it has been gone for 5 minutes. A problem
+  that flaps sends one "opened", not many. More than 10 new problems at once arrive as one
+  summary. A deploy that ends sends its outcome, the version, how it was started (console,
+  API or webhook) and the reason when it failed.
+- Messages are queued, so a receiver that is down or slow never holds up deploys: a failed
+  delivery is tried again after 30 seconds and after 2 minutes, then marked failed with its
+  reason. Messages queued before a restart are still sent after it.
+- Webhooks are signed: each message carries `Caravana-Signature: t=<unix seconds>,v1=<hex>`
+  (HMAC-SHA256 of `<t>.<body>` with the channel's signing secret), plus `Caravana-Event` and
+  `Caravana-Delivery`. The secret is shown once when the channel is added or the secret is
+  replaced (the old one stops working at once). Receivers should refuse a `t` older than 5
+  minutes. The message's fields are in `api/openapi.yaml`.
+- Messages link to the console page about the problem or deploy when `CARAVANA_PUBLIC_URL` is
+  set (the installer sets it from the console domain).
+- Secrets of a channel (a Slack or Discord URL, an ntfy token, a webhook's signing secret) are
+  write-only: kept in Nomad Variables, never shown again, never in a log, an error or a page.
+- Settings: `CARAVANA_PUBLIC_URL` (`-public-url`) is the console's address for links;
+  `CARAVANA_NOTIFY_RESOLVE_AFTER` (`-notify-resolve-after`, default 5m, at least 10s) is how
+  long a problem must be gone before "resolved" is sent.
+- API 0.15.0: `GET` and `POST /v1/notifications/channels`, `PATCH` and `DELETE`
+  `/v1/notifications/channels/{id}`, `POST .../{id}/test`, `GET .../{id}/deliveries` and
+  `POST .../{id}/secret`; a 409 `not_a_webhook`.
+
+### Upgrade
+- Rerun the installer so `CARAVANA_PUBLIC_URL` is set to your console domain; without it,
+  messages still go out, just without links. The store gains its notification tables when the
+  new version starts, and no new Nomad capability is needed.
+
 ## 0.5.0 - 2026-10-16
 
 ### Added
