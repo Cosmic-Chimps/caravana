@@ -1,0 +1,120 @@
+{{/* The project pages (feature 019): New project (/projects/new) and a project's own page
+     (/projects/{project}): its display name, its environments with their apps, a form to add
+     an environment, and Delete project. Every form is a plain post. Takes a projectsPage. */}}
+
+{{define "content"}}
+{{if .Gone}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Gone}}</h1>
+    <p><a href="/apps">Back to Apps</a></p>
+  </header>
+</section>
+{{else if .New}}
+<section class="cv-main cv-narrow">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">New project</h1>
+    <p class="cv-lede">A project groups the environments of one product, such as staging and production. It starts with a production environment.</p>
+  </header>
+  <form method="post" action="/projects" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+    {{with .New.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    <label class="flex flex-col gap-2" for="name">
+      <span class="cv-label">Name</span>
+      <input class="cv-field" id="name" type="text" name="name" value="{{.New.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .New.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .New.Name.Alert}} autofocus{{end}}>
+      <span class="cv-data-muted cv-hint">Lowercase letters, digits and single dashes; part of each app's address in Caravana.</span>
+      {{template "field-error" .New.Name}}
+    </label>
+    <label class="flex flex-col gap-2" for="displayName">
+      <span class="cv-label">Display name</span>
+      <input class="cv-field" id="displayName" type="text" name="displayName" value="{{.New.DisplayName.Value}}" autocomplete="off" maxlength="100"{{if .New.DisplayName.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .New.DisplayName.Alert}} autofocus{{end}}>
+      <span class="cv-data-muted cv-hint">Optional. What the console calls the project; the name is used when this is empty.</span>
+      {{template "field-error" .New.DisplayName}}
+    </label>
+    <div><button type="submit" class="cv-btn cv-btn-primary">Create project</button></div>
+  </form>
+</section>
+{{else}}
+{{with .Project}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{.Display}}</h1>
+    <p class="cv-lede">Project <span class="cv-inline-mono text-fg-1">{{.ID}}</span>. Its environments and the apps in them.</p>
+  </header>
+  {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+
+  <section aria-labelledby="display-title" class="flex flex-col gap-2">
+    <h2 id="display-title" class="cv-label">Display name</h2>
+    <form method="post" action="/projects/{{.ID}}" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
+      <label class="flex flex-col gap-2" for="displayName">
+        <span class="cv-label">Display name</span>
+        <input class="cv-field" id="displayName" type="text" name="displayName" value="{{.Name.Value}}" autocomplete="off" maxlength="100" required{{if .Name.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .Name.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">The project's name, <span class="cv-inline-mono">{{.ID}}</span>, can't change: it is part of each app's address.</span>
+        {{template "field-error" .Name}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-secondary">Save display name</button></div>
+    </form>
+  </section>
+
+  <section aria-labelledby="envs-title" class="flex flex-col gap-2">
+    <h2 id="envs-title" class="cv-label">Environments</h2>
+    <div class="cv-panel" role="list" aria-label="Environments">
+      {{range .Envs}}{{$env := .Name}}
+      <div class="cv-row cv-env-row" role="listitem">
+        <div class="cv-env-head">
+          <h3 class="cv-data text-fg-1">{{.Name}}</h3>
+          {{if .Offer}}
+          <form method="post" action="{{.Action}}">
+            <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .Reason}} disabled aria-describedby="env-{{.Name}}-reason"{{end}}>Delete {{.Name}}</button>
+          </form>
+          {{end}}
+        </div>
+        {{with .Reason}}<p id="env-{{$env}}-reason" class="cv-data-muted cv-hint">{{.}}</p>{{end}}
+        {{with .Note}}<p class="cv-data-muted cv-hint">{{.}}</p>{{end}}
+        {{if .Apps}}<ul class="cv-env-apps">{{range .Apps}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>
+        {{else}}<p class="cv-data-muted cv-hint">No apps in {{.Name}} yet. <a href="/apps/new?project={{$.Project.ID}}&amp;environment={{.Name}}">New app here</a></p>{{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  <section aria-labelledby="add-env-title" class="flex flex-col gap-2">
+    <h2 id="add-env-title" class="cv-label">Add environment</h2>
+    <form method="post" action="/projects/{{.ID}}/environments" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
+      <label class="flex flex-col gap-2" for="environment">
+        <span class="cv-label">Name</span>
+        <input class="cv-field" id="environment" type="text" name="environment" value="{{.AddEnv.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .AddEnv.Error}} aria-invalid="true" aria-describedby="environment-error"{{end}}{{if .AddEnv.Alert}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">Such as staging. Lowercase letters, digits and single dashes; part of each app's address in Caravana.</span>
+        {{template "field-error" .AddEnv}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-secondary">Add environment</button></div>
+    </form>
+  </section>
+
+  {{if .Delete.Offered}}
+  <section aria-labelledby="delete-title" class="cv-danger flex flex-col gap-2">
+    <h2 id="delete-title" class="cv-label">Delete project</h2>
+    <div class="cv-panel cv-danger-panel p-4">
+      <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
+        <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete project…</summary>
+        {{with .Delete}}
+        <form method="post" action="{{.Action}}" class="cv-confirm-body">
+          {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+          {{with .Apps}}<ul class="cv-env-apps">{{range .}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>{{end}}
+          <p>This deletes the project and its environments. It has to be empty first: no app is deleted for you.</p>
+          <label class="flex flex-col gap-2" for="delete-confirm">
+            <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
+            <input class="cv-field" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+            {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+          </label>
+          <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
+        </form>
+        {{end}}
+      </details>
+    </div>
+  </section>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+{{end}}

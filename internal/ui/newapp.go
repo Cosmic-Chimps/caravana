@@ -32,9 +32,12 @@ type formField struct {
 // the input that gets the cursor: the first one with an error.
 type newAppForm struct {
 	Name, Image, Port, Domain, Health formField
-	Notice                            sentence
-	SavedID                           string
-	Focus                             string
+	// Place is the project and environment the app goes in (feature 019). Only
+	// its Value is set until the page is drawn, which lists the options.
+	Place   placeChoice
+	Notice  sentence
+	SavedID string
+	Focus   string
 }
 
 // newForm is an empty form: every input has its ID, and the health check
@@ -91,18 +94,56 @@ type newAppPage struct {
 	Compose *composeView // set on the Compose file tab
 }
 
+// query is what the tabs add to their links so the chosen environment stays
+// chosen: "" for Default's production.
+func (p newAppPage) query() string {
+	if p.Compose != nil {
+		return p.Compose.Place.Query()
+	}
+	return p.Form.Place.Query()
+}
+
+// ImageHref and ComposeHref are the tabs' addresses. Each is one string, so the
+// template escapes it as an address and leaves its query alone.
+func (p newAppPage) ImageHref() string {
+	if q := p.query(); q != "" {
+		return "/apps/new?" + q
+	}
+	return "/apps/new"
+}
+
+func (p newAppPage) ComposeHref() string {
+	if q := p.query(); q != "" {
+		return "/apps/new?from=compose&" + q
+	}
+	return "/apps/new?from=compose"
+}
+
 // showNewApp answers GET /apps/new.
 func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session string) {
+	asked := placeAsked(r.URL.Query())
 	if r.URL.Query().Get("from") == "compose" {
-		s.drawCompose(w, r, http.StatusOK, newComposeView(""))
+		v := newComposeView("")
+		v.Place.Value = asked
+		s.drawCompose(w, r, http.StatusOK, v)
 		return
 	}
-	s.renderNewApp(w, r, http.StatusOK, newForm())
+	form := newForm()
+	form.Place.Value = asked
+	s.renderNewApp(w, r, http.StatusOK, form)
 }
 
 // renderNewApp draws the page, or, for an htmx request, just the form: htmx
 // swaps it in place of the old one, so errors appear where the form was.
 func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int, form newAppForm) {
+	pl, err := s.loadPlaces(r.Context())
+	if err != nil {
+		s.serverError(w, "list projects", err)
+		return
+	}
+	refusal := form.Place.Error
+	form.Place = pl.choice(form.Place.Value)
+	form.Place.Error = refusal
 	if r.Header.Get("HX-Request") == "true" {
 		var buf bytes.Buffer
 		if err := s.pages["newapp"].ExecuteTemplate(&buf, "newapp-form", form); err != nil {
@@ -137,14 +178,26 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 	form.Name.Value, form.Image.Value = val("name"), val("image")
 	form.Port.Value, form.Domain.Value, form.Health.Value = val("port"), val("domain"), val("healthPath")
 
+	form.Place.Value = val("place")
+
 	a, ok := buildNewApp(&form)
+	pl, err := s.loadPlaces(r.Context())
+	if err != nil {
+		s.serverError(w, "list projects", err)
+		return
+	}
+	place, refusal, placed := pl.placeFor(form.Place.Value, form.Name.Value)
+	if !placed {
+		form.Place.Error, ok = refusal, false
+	}
 	if !ok {
 		form.markFirstError()
 		s.renderNewApp(w, r, http.StatusUnprocessableEntity, form)
 		return
 	}
+	a.ID = place.ID()
 
-	_, err := s.svc.CreateApp(r.Context(), a, app.TriggerConsole)
+	_, err = s.svc.CreateApp(r.Context(), a, app.TriggerConsole)
 	if err == nil {
 		to := "/apps/" + a.ID + "/deployments"
 		if r.Header.Get("HX-Request") == "true" {
@@ -239,7 +292,11 @@ func refuseNewApp(f *newAppForm, id string, err error) (status int, ok bool) {
 
 	switch {
 	case errors.Is(err, service.ErrAppExists):
-		f.Name.Error = sentence{plain("An app called "), mono(id), plain(" already exists.")}
+		f.Name.Error = takenSentence(id)
+		return http.StatusUnprocessableEntity, true
+	case errors.Is(err, service.ErrProjectNotFound), errors.Is(err, service.ErrEnvironmentNotFound):
+		// The environment was deleted after the form was drawn.
+		f.Place.Error = sentence{plain("That environment doesn't exist any more. Choose another.")}
 		return http.StatusUnprocessableEntity, true
 	case errors.As(err, &fieldErr):
 		if !onField(fieldErr.Field, fieldMessage(fieldErr.Field, fieldErr.Message)) {

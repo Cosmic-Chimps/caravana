@@ -2,15 +2,10 @@
      activity rail in another. Each region is a define that the page draws
      and /parts/... draws alone, so a refresh and a load can't differ. */}}
 
-{{define "action"}}{{if and .NewApp .Rows}}<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>{{end}}{{end}}
+{{define "action"}}<a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>{{if and .NewApp (or .Rows .Groups)}} <a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>{{end}}{{end}}
 
-{{define "apps-region"}}
-<header class="cv-pagehead">
-  <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
-  <p class="cv-lede">Every app on this caravana, live.</p>
-</header>
-<section aria-label="Needs you" hx-get="/parts/attention" hx-trigger="sse:attention" hx-swap="innerHTML">{{template "attention-region" .Attention}}</section>
-{{if .Rows}}
+{{/* apps-table: the table of apps of one list (the whole installation, or one environment). Takes []appRow. */}}
+{{define "apps-table"}}
 <div class="cv-panel cv-apps" role="table" aria-label="Apps">
   <div class="cv-apps-head cv-label" role="row">
     <span role="columnheader" class="cv-c-status">Status</span>
@@ -20,10 +15,10 @@
     <span role="columnheader" class="cv-c-deploy">Last deploy</span>
     <span role="columnheader" class="cv-c-addr">Address</span>
   </div>
-  {{range .Rows}}
+  {{range .}}
   <div class="cv-row cv-apps-row" role="row">
     <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}}</div>
-    <div role="cell" class="cv-c-name"><a href="{{.Href}}" class="cv-app-name">{{.ID}}</a></div>
+    <div role="cell" class="cv-c-name"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></div>
     <div role="cell" class="cv-c-version" data-label="Version">{{if .Version}}<span class="cv-data text-fg-1">{{.Version}}</span>{{else}}<span class="cv-data-muted">none</span>{{end}}</div>
     <div role="cell" class="cv-c-image cv-lines" data-label="Image">{{range .Images}}<span class="cv-data" title="{{.Image}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Image}}</span>{{end}}</div>
     <div role="cell" class="cv-c-deploy cv-lines" data-label="Last deploy">{{with .Deploy}}{{template "time" .When}}{{if .Outcome}}<a href="{{.Href}}" class="cv-outcome">{{if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}{{.Outcome}}</a>{{end}}{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</div>
@@ -31,6 +26,33 @@
   </div>
   {{end}}
 </div>
+{{end}}
+
+{{define "apps-region"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  <p class="cv-lede">Every app on this caravana, live.</p>
+</header>
+<section aria-label="Needs you" hx-get="/parts/attention" hx-trigger="sse:attention" hx-swap="innerHTML">{{template "attention-region" .Attention}}</section>
+{{if .Groups}}
+{{range .Groups}}
+<section class="cv-project" aria-label="{{.Display}}">
+  <h2 class="cv-project-title"><a href="{{.Href}}">{{.Display}}</a></h2>
+  {{range .Envs}}
+  <div class="cv-env">
+    <h3 class="cv-label cv-env-title">{{.Name}}</h3>
+    {{if .Rows}}{{template "apps-table" .Rows}}{{else}}
+    <div class="cv-panel cv-env-empty">
+      <p>No apps in <span class="cv-inline-mono text-fg-1">{{.Name}}</span> yet.</p>
+      {{with .NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">New app here</a>{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}
+{{else if .Rows}}
+{{template "apps-table" .Rows}}
 {{else}}
 <div class="cv-panel">{{template "empty" .Empty}}</div>
 {{end}}
@@ -66,7 +88,7 @@
 {{range .Activity}}
 <div class="cv-row">
   <a href="{{.Href}}" class="cv-feed-link">
-    <span class="cv-feed-main"><span class="cv-app-name">{{.App}}</span>{{with .Version}} <span class="cv-data">{{.}}</span>{{end}}</span>
+    <span class="cv-feed-main">{{with .Where}}<span class="cv-data-muted">{{.}} ›</span>{{end}}<span class="cv-app-name">{{.App}}</span>{{with .Version}} <span class="cv-data">{{.}}</span>{{end}}</span>
     {{template "status-quiet" .Outcome}}
     <span class="cv-feed-meta cv-data-muted">{{.Trigger}} · {{template "time" .When}}</span>
   </a>
@@ -81,6 +103,12 @@
 <div role="status" class="cv-notice">
   <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
   <span><span class="cv-data text-fg-1">{{.}}</span> was deleted.</span>
+</div>
+{{end}}
+{{with .ProjectDeleted}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
+  <span>Project <span class="cv-data text-fg-1">{{.}}</span> was deleted.</span>
 </div>
 {{end}}
 <div class="cv-split">

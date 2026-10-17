@@ -131,6 +131,13 @@ func (s *server) routeTable() []route {
 		{"POST", "/logout", s.protected(s.signOut)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
+		{"GET", "/projects/new", s.requireSession(s.showNewProject)},
+		{"POST", "/projects", s.protected(s.requireSession(s.createProject))},
+		{"GET", "/projects/{project}", s.requireSession(s.showProject)},
+		{"POST", "/projects/{project}", s.protected(s.requireSession(s.updateProject))},
+		{"POST", "/projects/{project}/delete", s.protected(s.requireSession(s.deleteProject))},
+		{"POST", "/projects/{project}/environments", s.protected(s.requireSession(s.addEnvironment))},
+		{"POST", "/projects/{project}/environments/{environment}/delete", s.protected(s.requireSession(s.deleteEnvironment))},
 		{"POST", "/apps", s.protected(s.requireSession(s.createApp))},
 		{"POST", "/apps/new/compose/preview", s.protected(s.requireSession(s.previewNewCompose))},
 		{"POST", "/apps/new/compose", s.protected(s.requireSession(s.createNewCompose))},
@@ -141,6 +148,9 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps/{id}/compose", s.requireSession(s.showComposeDeploy)},
 		{"POST", "/apps/{id}/compose/preview", s.protected(s.requireSession(s.previewComposeDeploy))},
 		{"POST", "/apps/{id}/compose", s.protected(s.requireSession(s.deployFromCompose))},
+		{"GET", "/apps/{id}/promote", s.requireSession(s.showPromote)},
+		{"POST", "/apps/{id}/promote", s.protected(s.requireSession(s.promoteApp))},
+		{"POST", "/apps/{id}/copy", s.protected(s.requireSession(s.copyApp))},
 		{"GET", "/apps/{id}/logs", s.requireSession(s.showLogs)},
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/deployments/{deploymentId}/redeploy", s.protected(s.requireSession(s.redeployVersion))},
@@ -241,7 +251,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

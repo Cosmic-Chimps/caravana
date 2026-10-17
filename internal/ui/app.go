@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -52,7 +53,16 @@ type tabLink struct {
 // addresses and summary and its tabs. Gone and Missing replace all that with
 // one sentence and a way back.
 type appHeader struct {
-	ID         string
+	ID string
+	// Heading is the app's name in its environment, which the header's headline
+	// shows (the ID at home).
+	Heading string
+	// Where is "<project> › <environment> › <app>", each step a link or not; empty
+	// for an app at home while the installation has no other environment.
+	Where []placeStep
+	// Envs are the project's other environments with what the app can do there
+	// (feature 019); empty while the project has only this one.
+	Envs       []envLink
 	Status     statusView
 	Domains    []domainLink
 	Summary    sentence
@@ -100,11 +110,76 @@ func tabCount(key string, sum service.AppSummary) string {
 	return ""
 }
 
+// placeStep is one step of an app's place line: a project, an environment, the
+// app. The project links to its page.
+type placeStep struct {
+	Label string
+	Href  string
+	Mono  bool
+}
+
+// envLink is another environment of the app's project. Where the app exists,
+// Href leads to it and PromoteHref to the promotion's preview; where it doesn't,
+// CopyAction is what the Copy button posts to.
+type envLink struct {
+	Name        string
+	Exists      bool
+	Href        string
+	PromoteHref string
+	CopyAction  string
+}
+
+// placeParts fills the header's place line and Environments line (feature 019)
+// from the projects. A failure to read them is logged and leaves both out: the
+// rest of the header doesn't depend on them.
+func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSummary) {
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		s.log.Error("read projects for the app header", "app", sum.App.ID, "error", err)
+		return
+	}
+	place := sum.Place
+	if place.Project == "" {
+		return
+	}
+	h.Heading = cmp.Or(place.Name, sum.App.ID)
+	if atHome(place) && pl.single() {
+		return
+	}
+	h.Where = []placeStep{
+		{Label: pl.display(place.Project), Href: "/projects/" + url.PathEscape(place.Project)},
+		{Label: place.Environment, Mono: true},
+		{Label: place.Name, Mono: true},
+	}
+	for _, pr := range pl.Projects {
+		if pr.ID != place.Project || len(pr.Environments) < 2 {
+			continue
+		}
+		for _, env := range pr.Environments {
+			if env.Name == place.Environment {
+				continue
+			}
+			there := app.Place{Project: place.Project, Environment: env.Name, Name: place.Name}
+			if _, err := app.PlaceOf(there.ID()); err != nil {
+				continue // an app from before projects whose name holds "--" has no counterpart
+			}
+			link := envLink{Name: env.Name, CopyAction: "/apps/" + url.PathEscape(sum.App.ID) + "/copy"}
+			if rec, err := s.svc.GetApp(ctx, there.ID()); err == nil && rec.Place == there {
+				link.Exists = true
+				link.Href = "/apps/" + url.PathEscape(there.ID())
+				link.PromoteHref = "/apps/" + url.PathEscape(sum.App.ID) + "/promote?to=" + url.QueryEscape(env.Name)
+			}
+			h.Envs = append(h.Envs, link)
+		}
+	}
+}
+
 // header builds the app's header from its summary. current is the key of the
 // tab being shown.
-func (s *server) header(sum service.AppSummary, current string) appHeader {
+func (s *server) header(ctx context.Context, sum service.AppSummary, current string) appHeader {
 	h := appHeader{
 		ID:         sum.App.ID,
+		Heading:    sum.App.ID,
 		Status:     appStatusView(sum),
 		Domains:    domainLinks(sum.App),
 		Summary:    summaryOf(sum, s.now()),
@@ -120,6 +195,7 @@ func (s *server) header(sum service.AppSummary, current string) appHeader {
 	if current != "running" {
 		h.HeaderHref += "?tab=" + url.QueryEscape(current)
 	}
+	s.placeParts(ctx, &h, sum)
 	return h
 }
 
@@ -150,7 +226,7 @@ func (s *server) showApp(w http.ResponseWriter, r *http.Request, session string)
 		s.serverError(w, "list copies", err)
 		return
 	}
-	s.render(w, http.StatusOK, "app", appPage{pageData: head, appHeader: s.header(sum, "running"), Running: &copies})
+	s.render(w, http.StatusOK, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies})
 }
 
 // partAppHeader answers GET /parts/apps/{id}/header. A page only asks for it
@@ -165,7 +241,7 @@ func (s *server) partAppHeader(w http.ResponseWriter, r *http.Request, session s
 		s.log.Error("read app", "app", id, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	default:
-		s.renderPart(w, "app", "app-header", s.header(sum, s.tabKey(r.URL.Query().Get("tab"))))
+		s.renderPart(w, "app", "app-header", s.header(r.Context(), sum, s.tabKey(r.URL.Query().Get("tab"))))
 	}
 }
 
@@ -388,6 +464,9 @@ type historyEntry struct {
 	Digests  []digestView
 	// Source is the deployment this one redeployed; nil for the others.
 	Source *sourceLink
+	// Promoted is the deployment of another environment's app this one
+	// promoted (feature 019); nil for the others.
+	Promoted *promotedLink
 	// Redeploy offers this version again: healthy deployments with a
 	// recorded definition only. ExportHref downloads its jobspec.
 	Redeploy   *redeployView
@@ -576,7 +655,7 @@ func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status 
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "deployments"),
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "deployments"),
 		Deployments: &deploymentsTab{Form: form, History: history}})
 }
 
@@ -790,6 +869,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		App:     appFacts(sum.App),
 		Compose: sum.App.Source.Kind == app.SourceCompose,
 		Notice:  extra.Notice,
+		Copied:  copiedNotice(r, sum),
 		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
@@ -813,7 +893,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	if hook.Enabled {
 		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")
 	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "configure"), Configure: tab})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "configure"), Configure: tab})
 }
 
 // showConfigure answers GET /apps/{id}/configure.

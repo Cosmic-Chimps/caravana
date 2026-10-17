@@ -61,7 +61,7 @@ func TestAttentionRows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.item.When = then
-			row := e.Server.attentionRow(now, tc.item)
+			row := e.Server.attentionRow(now, tc.item, places{})
 			if got := row.Text.String(); got != tc.text {
 				t.Errorf("text = %q, want %q", got, tc.text)
 			}
@@ -75,7 +75,7 @@ func TestAttentionRows(t *testing.T) {
 	}
 
 	t.Run("names are set apart as mono", func(t *testing.T) {
-		row := e.Server.attentionRow(now, tests[3].item)
+		row := e.Server.attentionRow(now, tests[3].item, places{})
 		var monos []string
 		for _, p := range row.Text {
 			if p.Mono {
@@ -89,7 +89,7 @@ func TestAttentionRows(t *testing.T) {
 
 	t.Run("a long detail is cut to one line", func(t *testing.T) {
 		item := service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusFailed, Detail: strings.Repeat("x ", 300)}
-		got := e.Server.attentionRow(now, item).Text.String()
+		got := e.Server.attentionRow(now, item, places{}).Text.String()
 		if len([]rune(got)) > 260 || strings.Contains(got, "\n") || !strings.Contains(got, "…") {
 			t.Errorf("text = %q, want one cut line", got)
 		}

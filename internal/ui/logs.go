@@ -201,7 +201,7 @@ func (s *server) showLogs(w http.ResponseWriter, r *http.Request, session string
 	if tab.Stream != "" {
 		head.LiveURL = tab.Stream
 	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "logs"), Logs: &tab})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "logs"), Logs: &tab})
 }
 
 // logEventData is the data of a "log" event: a LogLine of the API, as JSON.

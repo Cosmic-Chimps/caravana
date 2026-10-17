@@ -4,6 +4,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -17,6 +18,14 @@ import (
 type sourceLink struct {
 	ID    string
 	Short string
+}
+
+// promotedLink says a deployment was a promotion, and points at the deployment
+// it promoted in the source app's history (feature 019).
+type promotedLink struct {
+	Environment string // where it came from
+	Short       string // the source deployment's short ID
+	Href        string
 }
 
 // redeployView is a history entry's "Redeploy this version" confirmation.
@@ -34,7 +43,12 @@ type redeployView struct {
 // recorded definition) and exporting it (any with a recorded definition).
 // current is the stored app.
 func addVersionActions(e *historyEntry, rec store.DeploymentRecord, current app.App) {
-	if rec.Source != "" {
+	switch {
+	case rec.SourceApp != "":
+		// A promotion: its source is a deployment of another app, in another environment.
+		e.Promoted = &promotedLink{Environment: rec.SourceEnvironment, Short: shortID(rec.Source),
+			Href: "/apps/" + url.PathEscape(rec.SourceApp) + "/deployments#deployment-" + url.PathEscape(rec.Source)}
+	case rec.Source != "":
 		e.Source = &sourceLink{ID: rec.Source, Short: shortID(rec.Source)}
 	}
 	base := "/apps/" + rec.AppID + "/deployments/" + rec.Deployment.ID

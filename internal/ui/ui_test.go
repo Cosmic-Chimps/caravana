@@ -1343,6 +1343,9 @@ func pagesToCheck(t *testing.T) map[string]string {
 	for name, body := range formPages(t, console, "shop") {
 		pages[name] = body
 	}
+	for name, body := range projectPages(t) {
+		pages[name] = body
+	}
 	for name, body := range pages {
 		if !isPart(name) && !strings.Contains(body, "<html") {
 			t.Fatalf("page %q did not render:\n%s", name, body)

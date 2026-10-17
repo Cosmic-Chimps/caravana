@@ -27,3 +27,18 @@
   {{if .ActionHref}}<a href="{{.ActionHref}}" class="cv-btn cv-btn-primary">{{.ActionLabel}}</a>{{end}}
 </div>
 {{end}}
+
+{{/* place-select: where a new app goes (feature 019), on both tabs of New app. Hidden while only
+     Default's production exists. Takes a placeChoice. */}}
+{{define "place-select"}}
+{{if .Visible}}
+<label class="flex flex-col gap-2" for="place">
+  <span class="cv-label">Project and environment</span>
+  <select class="cv-field cv-select" id="place" name="place"{{if .Error}} aria-invalid="true" aria-describedby="place-error"{{end}}>
+    {{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+  <span class="cv-data-muted cv-hint">Part of the app's address in Caravana. Another environment gets its own copy of the app.</span>
+  {{with .Error}}<span id="place-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+</label>
+{{end}}
+{{end}}

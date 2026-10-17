@@ -25,6 +25,7 @@
     <span class="cv-data-muted cv-hint">Lowercase letters, digits and dashes. It names the app and its job.</span>
     {{template "field-error" .Draft.Name}}
   </label>
+  {{template "place-select" .Place}}
   {{end}}
 
   <label class="flex flex-col gap-2" for="compose">

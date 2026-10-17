@@ -42,7 +42,10 @@ type composeView struct {
 	Existing                    bool
 	AppID                       string // Existing only
 	PreviewAction, DeployAction string
-	Draft                       composeDraft
+	// Place is the project and environment of a new app (feature 019); drawCompose
+	// lists its options.
+	Place placeChoice
+	Draft composeDraft
 	// Kept says the draft was filled from the Compose file the app keeps
 	// (feature 015), not typed: its services are drawn before any preview.
 	Kept bool
@@ -381,6 +384,16 @@ func notKeptComposeView(rec store.AppRecord) composeView {
 // gets no secret value.
 func (s *server) drawCompose(w http.ResponseWriter, r *http.Request, status int, v composeView) {
 	v.Draft = v.Draft.forPage()
+	if !v.Existing {
+		pl, err := s.loadPlaces(r.Context())
+		if err != nil {
+			s.serverError(w, "list projects", err)
+			return
+		}
+		refusal := v.Place.Error
+		v.Place = pl.choice(v.Place.Value)
+		v.Place.Error = refusal
+	}
 	if r.Header.Get("HX-Request") == "true" {
 		page := "newapp"
 		if v.Existing {
@@ -430,7 +443,7 @@ func (s *server) composeAppPage(w http.ResponseWriter, r *http.Request, status i
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "configure"), Compose: &v})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "configure"), Compose: &v})
 }
 
 // ---- steps ---------------------------------------------------------------
@@ -503,12 +516,26 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 
 	id := appID
 	if !v.Existing {
+		v.Place.Value = strings.TrimSpace(r.PostForm.Get("place"))
+		pl, err := s.loadPlaces(ctx)
+		if err != nil {
+			s.serverError(w, "list projects", err)
+			return
+		}
+		place, refusal, placed := pl.placeFor(v.Place.Value, draft.Name.Value)
+		if !placed {
+			v.Place.Error, ok = refusal, false
+		}
+		// The name as typed, not yet checked: an empty one has no ID to look up.
 		id = draft.Name.Value
+		if id != "" {
+			id = place.ID()
+		}
 		switch _, err := s.svc.GetApp(ctx, id); {
 		case id == "":
 			draft.Name.Error, ok = sentence{plain("Enter a name for the app.")}, false
 		case err == nil:
-			draft.Name.Error, ok, status = sentence{plain("An app called "), mono(id), plain(" already exists.")}, false, http.StatusConflict
+			draft.Name.Error, ok, status = takenSentence(id), false, http.StatusConflict
 		case !errors.Is(err, store.ErrNotFound):
 			s.serverError(w, "read app", err)
 			return
@@ -643,8 +670,12 @@ func (v *composeView) refuseFailure(d *composeDraft, prev app.App, id string, er
 
 	switch {
 	case errors.Is(err, service.ErrAppExists):
-		d.Name.Error = sentence{plain("An app called "), mono(id), plain(" already exists.")}
+		d.Name.Error = takenSentence(id)
 		return http.StatusConflict, true
+	case errors.Is(err, service.ErrProjectNotFound), errors.Is(err, service.ErrEnvironmentNotFound):
+		// The environment was deleted after the form was drawn.
+		v.Place.Error = sentence{plain("That environment doesn't exist any more. Choose another.")}
+		return http.StatusUnprocessableEntity, true
 	case errors.Is(err, service.ErrAppChanged):
 		v.Stale = true
 		return http.StatusConflict, true

@@ -164,7 +164,7 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		}
 		tab.Restores = append(tab.Restores, row)
 	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(sum, "backups"), Backups: &tab})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "backups"), Backups: &tab})
 }
 
 // volumeRows turns the service's volumes into the section's rows, and says

@@ -1,0 +1,72 @@
+{{/* The promote page (feature 019): what promoting an app into another environment would
+     deploy, and the one button that does it. A refusal takes the button's place and says why.
+     Takes a promotePage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+    <p class="cv-lede">The target runs the images this deployment pinned, with this deployment's command, ports, health check and volumes.</p>
+  </header>
+
+  {{with .Stale}}<div role="alert" class="cv-stale cv-panel"><p class="cv-stale-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{template "sentence" .}}</span></p><p>Nothing was promoted. What is below is the target as it is now.</p></div>{{end}}
+  {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    {{with .Copy}}
+    <form method="post" action="{{.Action}}"><input type="hidden" name="to" value="{{.To}}"><button type="submit" class="cv-btn cv-btn-primary">Copy to {{.To}}</button></form>
+    {{end}}
+    <a href="/apps/{{.AppID}}" class="cv-btn cv-btn-secondary">Back to {{.AppName}}</a>
+  </div>
+  {{else}}
+  <section aria-labelledby="changes-title" class="flex flex-col gap-2">
+    <h2 id="changes-title" class="cv-label">What changes in {{.To}}</h2>
+    <div class="cv-panel" role="list" aria-label="Services">
+      {{range .Services}}
+      <div class="cv-row cv-promote-row" role="listitem">
+        <h3 class="cv-data text-fg-1">{{.Name}}{{if .Added}} <span class="cv-data-muted">(added: {{$.To}} doesn't have it yet)</span>{{end}}</h3>
+        <dl class="cv-def-rows">
+          <div class="cv-def-row">
+            <dt class="cv-label">Image</dt>
+            <dd class="cv-data text-fg-1">{{if .Added}}{{.ImageTo}}{{else if .ImageChanged}}{{.ImageFrom}} → {{.ImageTo}}{{else}}{{.ImageTo}} <span class="cv-data-muted">(same image)</span>{{end}}</dd>
+          </div>
+          <div class="cv-def-row">
+            <dt class="cv-label">Digest</dt>
+            <dd class="cv-data text-fg-1">{{if .Added}}<span title="{{.FullTo}}">{{.DigestTo}}</span>{{else if .Differs}}{{if .DigestFrom}}<span title="{{.FullFrom}}">{{.DigestFrom}}</span>{{else}}<span class="cv-data-muted">not deployed yet</span>{{end}} → <span title="{{.FullTo}}">{{.DigestTo}}</span>{{else}}<span title="{{.FullTo}}">{{.DigestTo}}</span> <span class="cv-data-muted">(same digest)</span>{{end}}</dd>
+          </div>
+          {{with .Changed}}
+          <div class="cv-def-row">
+            <dt class="cv-label">Replaced</dt>
+            <dd class="cv-data text-fg-1">{{.}}</dd>
+          </div>
+          {{end}}
+        </dl>
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  {{with .Warnings}}
+  <section aria-labelledby="warnings-title" class="flex flex-col gap-2">
+    <h2 id="warnings-title" class="cv-label">Warnings</h2>
+    <div class="cv-panel p-4">
+      <ul class="cv-deploy-warnings">
+        {{range .}}<li><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{with .Field}}<span class="cv-data text-fg-1">{{.}}</span> {{end}}{{.Message}}</span></li>{{end}}
+      </ul>
+    </div>
+  </section>
+  {{end}}
+
+  <p class="text-base text-fg-1">{{template "sentence" .Keeps}}</p>
+
+  <form method="post" action="{{.Action}}" class="cv-actions">
+    <input type="hidden" name="to" value="{{.To}}">
+    <input type="hidden" name="revision" value="{{.Revision}}">
+    <button type="submit" class="cv-btn cv-btn-primary">Promote to {{.To}}</button>
+    <a href="/apps/{{.AppID}}" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

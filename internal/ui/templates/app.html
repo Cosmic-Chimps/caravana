@@ -10,13 +10,31 @@
 </header>
 {{else}}
 <header class="cv-apphead">
+  {{with .Where}}
+  <nav aria-label="Where this app is" class="cv-where">
+    {{range $i, $step := .}}{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">›</span>{{end}}{{if $step.Href}}<a href="{{$step.Href}}">{{$step.Label}}</a>{{else}}<span class="{{if $step.Mono}}cv-data text-fg-1{{else}}text-fg-1{{end}}">{{$step.Label}}</span>{{end}}{{end}}
+  </nav>
+  {{end}}
   <div class="cv-apphead-top">
-    <h1 class="cv-apptitle">{{.ID}}</h1>
+    <h1 class="cv-apptitle">{{or .Heading .ID}}</h1>
     {{template "status-pill" .Status}}
     {{range .Domains}}<a href="{{.URL}}" class="cv-data">{{.Host}}</a>{{end}}
   </div>
   <p class="cv-lede">{{template "sentence" .Summary}}</p>
   {{with .NomadError}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+  {{with .Envs}}
+  <div class="cv-envs">
+    <span class="cv-label">Environments</span>
+    <ul class="cv-envs-list">
+      {{range .}}
+      <li>
+        {{if .Exists}}<a href="{{.Href}}" class="cv-data">{{.Name}}</a><a href="{{.PromoteHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Promote to {{.Name}}</a>
+        {{else}}<span class="cv-data text-fg-1">{{.Name}}</span><form method="post" action="{{.CopyAction}}"><input type="hidden" name="to" value="{{.Name}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Copy to {{.Name}}</button></form>{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
   {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}<a href="{{.Href}}" class="cv-tab"{{if .Current}} aria-current="page"{{end}}>{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
 </header>
 {{end}}
@@ -279,6 +297,7 @@
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
+  {{with .Promoted}}<p class="cv-data-muted"><a href="{{.Href}}">Promoted from <span class="cv-inline-mono">{{.Environment}}</span> · deployment <span class="cv-inline-mono">{{.Short}}</span></a></p>{{end}}
   {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
   {{if or .Redeploy .ExportHref .ComposeHref}}
   <div class="cv-actions">
@@ -428,6 +447,7 @@
      Deploy from Compose, filled from the file. The definition below is then read-only. The
      heading says "Edit", not "Compose file": the form's own field is labelled that already. */}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Copied}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .ComposeForm}}
 <section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
   <h2 id="compose-edit-title" class="cv-label">Edit</h2>

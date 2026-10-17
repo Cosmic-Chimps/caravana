@@ -46,7 +46,7 @@ quickstart.md. Tests are required (constitution VIII).
 
 ## Phase 4: Console (US1, US3, US4)
 
-- [ ] T008 `internal/ui`: grouped home (and `/parts/apps`), "New project", `/projects/new`,
+- [X] T008 `internal/ui`: grouped home (and `/parts/apps`), "New project", `/projects/new`,
   `/projects/{project}` (display name, environments, add, delete, delete project), place select
   on both New app tabs, breadcrumb and "Environments" line on app pages, Copy (POST) and Promote
   (GET preview, POST confirm with revision, 412 page), history entry "Promoted from …".

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"cmp"
 	"net/http"
+	"net/url"
 	"regexp"
 	"time"
 
@@ -37,6 +39,7 @@ type deployCell struct {
 // appRow is one line of the apps table.
 type appRow struct {
 	ID      string
+	Name    string // what the row shows: the app's name in its environment (its ID at home)
 	Href    string
 	Status  statusView
 	Sort    string // the kind the table sorts by: the status, or failed when the newest deploy failed
@@ -47,7 +50,10 @@ type appRow struct {
 }
 
 // activityRow is one entry of the activity rail: a deployment of some app.
+// Where is "<project display> › <environment>" for an app outside Default ›
+// production, and then App is the app's name; at home App is its ID.
 type activityRow struct {
+	Where   string
 	App     string
 	Href    string
 	Version string
@@ -60,11 +66,31 @@ type activityRow struct {
 // list and the table, or the empty state when there is no app. The needs-you
 // list is a region of its own too (it refreshes by itself on "attention"),
 // drawn here so that a load of the page and a refresh of this region agree.
+//
+// While the installation has one project with one environment the apps are
+// Rows, as before projects. Otherwise they are Groups: a section per project
+// and a table per environment (feature 019).
 type appsRegion struct {
 	Headline  sentence
 	Attention attentionRegion
 	Rows      []appRow
+	Groups    []projectGroup
 	Empty     emptyView
+}
+
+// projectGroup is a project's section of the grouped Apps page.
+type projectGroup struct {
+	Display string
+	Href    string // the project's page
+	Envs    []envGroup
+}
+
+// envGroup is an environment's apps in the grouped Apps page. NewHref leads to
+// New app with this environment chosen; it is empty when New app isn't offered.
+type envGroup struct {
+	Name    string
+	Rows    []appRow
+	NewHref string
 }
 
 // activityRegion is what the "activity" region draws.
@@ -83,6 +109,8 @@ type appsPage struct {
 	activityRegion
 	NewApp  bool   // the top bar offers "New app"
 	Deleted string // an app ID to say was deleted, from ?deleted=
+	// ProjectDeleted is a project name to say was deleted, from ?projectDeleted=.
+	ProjectDeleted string
 }
 
 // deletedID matches what an app ID looks like; only that is echoed back from
@@ -110,6 +138,9 @@ func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string
 	page := appsPage{pageData: head, appsRegion: region, activityRegion: activity, NewApp: s.newApp}
 	if id := r.URL.Query().Get("deleted"); deletedID.MatchString(id) {
 		page.Deleted = id
+	}
+	if name := r.URL.Query().Get("projectDeleted"); labelName.MatchString(name) {
+		page.ProjectDeleted = name
 	}
 	s.render(w, http.StatusOK, "apps", page)
 }
@@ -142,27 +173,57 @@ func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadApps reads every app and builds the headline, the needs-you list and
-// the rows, problems first.
+// the rows, problems first. While there is one project with one environment
+// the rows are one table; otherwise each environment has its own, under its
+// project's heading.
 func (s *server) loadApps(r *http.Request) (appsRegion, error) {
-	sums, err := s.svc.ListApps(r.Context())
+	ctx := r.Context()
+	pl, err := s.loadPlaces(ctx)
 	if err != nil {
 		return appsRegion{}, err
 	}
-	attention, items, err := s.loadAttention(r)
+	sums, err := s.svc.ListApps(ctx)
+	if err != nil {
+		return appsRegion{}, err
+	}
+	attention, items, err := s.loadAttention(r, pl)
 	if err != nil {
 		return appsRegion{}, err
 	}
 	now := s.now()
-	rows := make([]appRow, 0, len(sums))
-	for _, sum := range sums {
-		rows = append(rows, s.appRow(now, sum))
-	}
-	sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
-
-	region := appsRegion{Headline: headlineOf(sums, items), Attention: attention, Rows: rows,
+	region := appsRegion{Headline: headlineOf(sums, items), Attention: attention,
 		Empty: emptyView{Title: "Deploy an image and it shows up here."}}
 	if s.newApp {
 		region.Empty.ActionLabel, region.Empty.ActionHref = "New app", "/apps/new"
+	}
+
+	if pl.single() {
+		rows := make([]appRow, 0, len(sums))
+		for _, sum := range sums {
+			rows = append(rows, s.appRow(now, sum))
+		}
+		sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
+		region.Rows = rows
+		return region, nil
+	}
+
+	byEnv := map[app.Place][]appRow{} // keyed by project and environment: the name is left empty
+	for _, sum := range sums {
+		key := app.Place{Project: sum.Place.Project, Environment: sum.Place.Environment}
+		byEnv[key] = append(byEnv[key], s.appRow(now, sum))
+	}
+	for _, pr := range pl.Projects {
+		group := projectGroup{Display: pr.DisplayName, Href: "/projects/" + url.PathEscape(pr.ID)}
+		for _, env := range pr.Environments {
+			rows := byEnv[app.Place{Project: pr.ID, Environment: env.Name}]
+			sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
+			eg := envGroup{Name: env.Name, Rows: rows}
+			if s.newApp {
+				eg.NewHref = "/apps/new?project=" + url.QueryEscape(pr.ID) + "&environment=" + url.QueryEscape(env.Name)
+			}
+			group.Envs = append(group.Envs, eg)
+		}
+		region.Groups = append(region.Groups, group)
 	}
 	return region, nil
 }
@@ -170,6 +231,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 func (s *server) appRow(now time.Time, sum service.AppSummary) appRow {
 	row := appRow{
 		ID:      sum.App.ID,
+		Name:    cmp.Or(sum.Place.Name, sum.App.ID),
 		Href:    "/apps/" + sum.App.ID,
 		Status:  appStatusView(sum),
 		Version: versionLabel(sum.Status.LiveVersion),
@@ -217,15 +279,27 @@ func (s *server) loadActivity(r *http.Request) (activityRegion, error) {
 	if err != nil {
 		return activityRegion{}, err
 	}
+	pl, err := s.loadPlaces(r.Context())
+	if err != nil {
+		return activityRegion{}, err
+	}
 	now := s.now()
 	rows := make([]activityRow, 0, len(recs))
 	for _, rec := range recs {
-		rows = append(rows, s.activityRow(now, rec))
+		rows = append(rows, s.activityRow(now, rec, pl))
 	}
 	return activityRegion{Activity: rows}, nil
 }
 
-func (s *server) activityRow(now time.Time, rec store.DeploymentRecord) activityRow {
+func (s *server) activityRow(now time.Time, rec store.DeploymentRecord, pl places) activityRow {
+	row := s.activityRowOf(now, rec)
+	if !atHome(rec.Place) {
+		row.Where, row.App = pl.display(rec.Place.Project)+" › "+rec.Place.Environment, rec.Place.Name
+	}
+	return row
+}
+
+func (s *server) activityRowOf(now time.Time, rec store.DeploymentRecord) activityRow {
 	return activityRow{
 		App:     rec.AppID,
 		Href:    s.deploymentsHref(rec.AppID),

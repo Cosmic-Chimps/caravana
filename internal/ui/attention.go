@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -32,7 +33,7 @@ type attentionRegion struct {
 
 // loadAttention reads the needs-you list and turns it into the region. The
 // items come back too, for the Apps headline, which counts the apps in them.
-func (s *server) loadAttention(r *http.Request) (attentionRegion, []service.AttentionItem, error) {
+func (s *server) loadAttention(r *http.Request, pl places) (attentionRegion, []service.AttentionItem, error) {
 	att, err := s.svc.Attention(r.Context())
 	if err != nil {
 		return attentionRegion{}, nil, err
@@ -40,20 +41,21 @@ func (s *server) loadAttention(r *http.Request) (attentionRegion, []service.Atte
 	now := s.now()
 	region := attentionRegion{Unknown: att.CopiesUnknown}
 	for _, it := range att.Items {
-		region.Rows = append(region.Rows, s.attentionRow(now, it))
+		region.Rows = append(region.Rows, s.attentionRow(now, it, pl))
 	}
 	return region, att.Items, nil
 }
 
 // attentionRow says one item in the console's words. The API sends facts;
 // the sentence, the mark and the link are the console's (research R9, R12).
-func (s *server) attentionRow(now time.Time, it service.AttentionItem) attentionRow {
+func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places) attentionRow {
 	row := attentionRow{Mark: "failed"}
 	if !it.When.IsZero() {
 		row.When = whenOf(now, &it.When, "")
 	}
-	app := "/apps/" + url.PathEscape(it.AppID)
-	where := mono(it.AppID + "/" + it.Service)
+	appHref := "/apps/" + url.PathEscape(it.AppID)
+	place := app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}
+	where := pl.label(place, it.AppID, "/"+it.Service)
 
 	switch it.Kind {
 	case service.AttentionDeployFailed:
@@ -61,7 +63,7 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem) attention
 		if it.DeploymentStatus == store.StatusReverted {
 			verb = "was reverted"
 		}
-		row.Text = sentence{mono(it.AppID), plain("'s deploy ")}
+		row.Text = append(pl.label(place, it.AppID, ""), plain("'s deploy "))
 		if v := versionLabel(it.Version); v != "" {
 			row.Text = append(row.Text, mono(v), plain(" "))
 		}
@@ -72,23 +74,23 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem) attention
 			row.Href += "#deployment-" + it.Deployment
 		}
 	case service.AttentionOutOfMemory:
-		row.Text = sentence{plain(copyCount(len(it.Copies)) + " of "), where, plain(" ran out of memory.")}
+		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" ran out of memory."))
 		row.Action = "Raise memory"
-		row.Href = app + "/configure#" + inputID(it.Service, "memory")
+		row.Href = appHref + "/configure#" + inputID(it.Service, "memory")
 	case service.AttentionRestarting:
 		row.Mark = "warning"
-		row.Text = sentence{plain(copyCount(len(it.Copies)) + " of "), where, plain(" " + verbFor(len(it.Copies), "keeps", "keep") + " restarting.")}
-		row.Action, row.Href = "View logs", app+logsQuery(it)
+		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" "+verbFor(len(it.Copies), "keeps", "keep")+" restarting."))
+		row.Action, row.Href = "View logs", appHref+logsQuery(it)
 	case service.AttentionUnhealthy:
 		row.Mark = "warning"
-		row.Text = sentence{plain(copyCount(len(it.Copies)) + " of "), where, plain(" " + verbFor(len(it.Copies), "is", "are") + " failing its health check.")}
-		row.Action, row.Href = "View logs", app+logsQuery(it)
+		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" "+verbFor(len(it.Copies), "is", "are")+" failing its health check."))
+		row.Action, row.Href = "View logs", appHref+logsQuery(it)
 	case service.AttentionBackupFailed:
-		row.Text = sentence{plain("The latest backup of "), where, plain(" failed.")}
-		row.Action, row.Href = "Open backups", app+"/backups"
+		row.Text = join(plainS("The latest backup of "), where, plainS(" failed."))
+		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionRestoreFailed:
-		row.Text = sentence{plain("The latest restore of "), where, plain(" failed.")}
-		row.Action, row.Href = "Open backups", app+"/backups"
+		row.Text = join(plainS("The latest restore of "), where, plainS(" failed."))
+		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionNoBackupDestination:
 		row.Mark = "warning"
 		row.Text = sentence{plain("Backups are set up, but no backup destination is.")}
@@ -152,7 +154,13 @@ func headlineWords(it service.AttentionItem) string {
 
 // partAttention answers GET /parts/attention: the needs-you region alone.
 func (s *server) partAttention(w http.ResponseWriter, r *http.Request, session string) {
-	region, _, err := s.loadAttention(r)
+	pl, err := s.loadPlaces(r.Context())
+	if err != nil {
+		s.log.Error("read projects", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	region, _, err := s.loadAttention(r, pl)
 	if err != nil {
 		s.log.Error("read what needs you", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

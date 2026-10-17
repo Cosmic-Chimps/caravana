@@ -16,6 +16,8 @@
     {{template "field-error" .Name}}
   </label>
 
+  {{template "place-select" .Place}}
+
   <label class="flex flex-col gap-2" for="image">
     <span class="cv-label">Image</span>
     <input class="cv-field" id="image" type="text" name="image" value="{{.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Focus "image"}} autofocus{{end}}>
@@ -56,8 +58,8 @@
     {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it.</p>{{end}}
   </header>
   <nav aria-label="What to deploy" class="cv-tabs">
-    <a href="/apps/new" class="cv-tab"{{if not .Compose}} aria-current="page"{{end}}>Image</a>
-    <a href="/apps/new?from=compose" class="cv-tab"{{if .Compose}} aria-current="page"{{end}}>Compose file</a>
+    <a href="{{.ImageHref}}" class="cv-tab"{{if not .Compose}} aria-current="page"{{end}}>Image</a>
+    <a href="{{.ComposeHref}}" class="cv-tab"{{if .Compose}} aria-current="page"{{end}}>Compose file</a>
   </nav>
   {{if .Compose}}{{template "compose-form" .Compose}}{{else}}{{template "newapp-form" .Form}}{{end}}
 </section>

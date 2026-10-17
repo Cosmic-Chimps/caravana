@@ -35,6 +35,18 @@ type sentence []part
 func plain(text string) part { return part{Text: text} }
 func mono(text string) part  { return part{Text: text, Mono: true} }
 
+// plainS is plain text as a sentence of its own, for join.
+func plainS(text string) sentence { return sentence{plain(text)} }
+
+// join puts sentences one after another.
+func join(parts ...sentence) sentence {
+	var out sentence
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	return out
+}
+
 // String is the sentence as plain text, for tests and logs.
 func (s sentence) String() string {
 	var b strings.Builder

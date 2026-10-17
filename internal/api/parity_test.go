@@ -26,14 +26,15 @@ var consoleParity = map[string]parity{
 	"GET /login":    {why: "the sign-in form; clients use API tokens"},
 	"POST /login":   {why: "starts a browser session; clients send an API token"},
 	"POST /logout":  {why: "ends a browser session; an API token has none"},
-	"GET /apps/new": {why: "a blank form; creating the app is POST /apps"},
+	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
 	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
 	"GET /settings": {ops: []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries"}},
-	"GET /apps":     {ops: []string{"listApps", "listAttention"}},
-	// The Running tab reads listCopies with usage=true: CPU and memory per copy.
-	"GET /apps/{id}": {ops: []string{"getApp", "listCopies"}},
+	"GET /apps":     {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
+	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
+	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose"}},
@@ -41,16 +42,17 @@ var consoleParity = map[string]parity{
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
 	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
 
-	"GET /parts/apps":             {ops: []string{"listApps"}},
+	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
 	"GET /parts/attention":        {ops: []string{"listAttention"}},
-	"GET /parts/apps/{id}/header": {ops: []string{"getApp"}},
+	"GET /parts/apps/{id}/header": {ops: []string{"getApp", "getProject", "getEnvironmentApp"}},
 	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
 	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
 
 	// What the console changes.
-	"POST /apps": {ops: []string{"createApp"}},
+	// The place select (feature 019): an app that goes outside Default's production is created in its environment.
+	"POST /apps": {ops: []string{"createApp", "createEnvironmentApp"}},
 	// The Compose forms (feature 014): the preview saves nothing; the create is a Compose deploy with If-None-Match: *.
 	"POST /apps/new/compose/preview": {ops: []string{"previewCompose"}},
 	"POST /apps/new/compose":         {ops: []string{"deployCompose"}},
@@ -90,10 +92,27 @@ var consoleParity = map[string]parity{
 	"POST /settings/notifications/{id}/secret": {ops: []string{"rotateNotificationSecret"}},
 	"POST /settings/notifications/{id}/remove": {ops: []string{"deleteNotificationChannel"}},
 	"POST /apps/{id}/delete":                   {ops: []string{"deleteApp"}},
-	"POST /settings/password":                  {ops: []string{"changePassword"}},
-	"POST /settings/tokens":                    {ops: []string{"createToken"}},
-	"POST /settings/tokens/{tokenId}/revoke":   {ops: []string{"revokeToken"}},
+	// Projects and environments (feature 019).
+	"GET /projects/new":                                          {why: "a blank form; creating the project is POST /projects"},
+	"POST /projects":                                             {ops: []string{"createProject"}},
+	"GET /projects/{project}":                                    {ops: []string{"getProject", "listEnvironmentApps"}},
+	"POST /projects/{project}":                                   {ops: []string{"updateProject"}},
+	"POST /projects/{project}/delete":                            {ops: []string{"deleteProject"}},
+	"POST /projects/{project}/environments":                      {ops: []string{"createEnvironment"}},
+	"POST /projects/{project}/environments/{environment}/delete": {ops: []string{"deleteEnvironment"}},
+	// Promote and copy between environments. The page reads the preview, which is a POST in the API
+	// because it takes a body but changes nothing; the form posts the promotion.
+	"GET /apps/{id}/promote":                 {ops: []string{"getApp", "previewPromotion"}},
+	"POST /apps/{id}/promote":                {ops: []string{"promoteApp"}},
+	"POST /apps/{id}/copy":                   {ops: []string{"copyApp"}},
+	"POST /settings/password":                {ops: []string{"changePassword"}},
+	"POST /settings/tokens":                  {ops: []string{"createToken"}},
+	"POST /settings/tokens/{tokenId}/revoke": {ops: []string{"revokeToken"}},
 }
+
+// postsThatOnlyRead are operations that are POSTs because they take a body and
+// change nothing: a console page that only reads may name them.
+var postsThatOnlyRead = map[string]bool{"previewPromotion": true}
 
 // TestConsoleParity fails when the console has a route the table doesn't know
 // (so nobody checked it has an API twin), when the table names an operation the
@@ -133,7 +152,7 @@ func TestConsoleParity(t *testing.T) {
 			switch {
 			case !found:
 				t.Errorf("%s names operation %q, which api/openapi.yaml doesn't have", key, op)
-			case !changes && method != "GET":
+			case !changes && method != "GET" && !postsThatOnlyRead[op]:
 				t.Errorf("%s only reads, but %s is a %s", key, op, method)
 			}
 			writes = writes || found && method != "GET"
