@@ -5,7 +5,7 @@ quickstart.md. Tests are required (constitution VIII).
 
 ## Phase 1: Foundation (blocks everything)
 
-- [ ] T001 [P] `internal/app/place.go` + `place_test.go`: `Place`, `DefaultProject`,
+- [X] T001 [P] `internal/app/place.go` + `place_test.go`: `Place`, `DefaultProject`,
   `DefaultEnvironment`, `PlaceOf`, `Place.ID`, `ValidName` (data-model.md). Table tests: round
   trip, bare names, refusals (`a--b`, four parts, `a---b--c`, empty part, uppercase), field
   errors on `id`/`name`.
