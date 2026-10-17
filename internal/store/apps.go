@@ -77,7 +77,7 @@ func (s *Store) SaveApp(ctx context.Context, a app.App, file *compose.Request) (
 	if a.ID == "" {
 		return AppRecord{}, errors.New("save app: ID is required")
 	}
-	doc, err := json.Marshal(a)
+	doc, err := json.Marshal(a.WithoutSecretValues()) // names only, as composeColumn
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
@@ -115,7 +115,7 @@ func (s *Store) SaveAppIf(ctx context.Context, a app.App, file *compose.Request,
 	if a.ID == "" {
 		return AppRecord{}, errors.New("save app: ID is required")
 	}
-	doc, err := json.Marshal(a)
+	doc, err := json.Marshal(a.WithoutSecretValues()) // names only, as composeColumn
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
@@ -169,7 +169,7 @@ func (s *Store) InsertApp(ctx context.Context, a app.App, file *compose.Request)
 	if a.ID == "" {
 		return AppRecord{}, errors.New("insert app: ID is required")
 	}
-	doc, err := json.Marshal(a)
+	doc, err := json.Marshal(a.WithoutSecretValues()) // names only, as composeColumn
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
 	}

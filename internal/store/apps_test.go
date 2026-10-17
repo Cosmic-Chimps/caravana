@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,8 +42,9 @@ func TestAppsRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetApp: %v", err)
 			}
-			if !reflect.DeepEqual(got.App, c.App) {
-				t.Errorf("round trip changed the app\n got: %+v\nwant: %+v", got.App, c.App)
+			// Secret values never reach the store: the round trip keeps names only.
+			if want := c.App.WithoutSecretValues(); !reflect.DeepEqual(got.App, want) {
+				t.Errorf("round trip changed the app\n got: %+v\nwant: %+v", got.App, want)
 			}
 		})
 	}
@@ -490,4 +492,50 @@ func TestFormatTimeSorts(t *testing.T) {
 	if got, err := parseTime("2026-10-08T12:00:05.7612Z"); err != nil || !got.Equal(earlier) {
 		t.Errorf("an older trimmed time = %v, %v", got, err)
 	}
+}
+
+// TestAppDocumentNeverStoresSecretValues reads the raw document column after
+// each write path: the store strips secret values itself, so a caller that
+// forgets to (CreateApp did) can't keep one in SQLite.
+func TestAppDocumentNeverStoresSecretValues(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	a := apptest.Whoami().App
+	a.Services[0].Secrets = []app.Secret{{Name: "TOKEN", Value: new("s3cret-sentinel-app")}}
+
+	assertClean := func(path string) {
+		t.Helper()
+		var raw string
+		if err := s.db.QueryRowContext(ctx, "SELECT document FROM apps WHERE id = ?", a.ID).Scan(&raw); err != nil {
+			t.Fatalf("%s: read apps.document: %v", path, err)
+		}
+		if strings.Contains(raw, "s3cret-sentinel-app") {
+			t.Errorf("%s: apps.document holds a secret value: %s", path, raw)
+		}
+		if !strings.Contains(raw, "TOKEN") {
+			t.Errorf("%s: apps.document lost the secret's name: %s", path, raw)
+		}
+		if a.Services[0].Secrets[0].Value == nil {
+			t.Errorf("%s changed the caller's app", path)
+		}
+	}
+
+	if _, err := s.InsertApp(ctx, a, nil); err != nil {
+		t.Fatalf("InsertApp: %v", err)
+	}
+	assertClean("InsertApp")
+	a.Services[0].Env = append(a.Services[0].Env, app.EnvVar{Name: "CHANGED", Value: "1"})
+	if _, err := s.SaveApp(ctx, a, nil); err != nil {
+		t.Fatalf("SaveApp: %v", err)
+	}
+	assertClean("SaveApp")
+	rec, err := s.GetApp(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetApp: %v", err)
+	}
+	a.Services[0].Env = append(a.Services[0].Env, app.EnvVar{Name: "AGAIN", Value: "2"})
+	if _, err := s.SaveAppIf(ctx, a, nil, rec.Revision); err != nil {
+		t.Fatalf("SaveAppIf: %v", err)
+	}
+	assertClean("SaveAppIf")
 }

@@ -210,7 +210,8 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
-	if _, err := s.store.InsertApp(ctx, a, nil); errors.Is(err, store.ErrAlreadyExists) {
+	// Only names are stored, as saveApp does; the values go to the secret store, in deploy.
+	if _, err := s.store.InsertApp(ctx, a.WithoutSecretValues(), nil); errors.Is(err, store.ErrAlreadyExists) {
 		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", a.ID, ErrAppExists)
 	} else if err != nil {
 		return store.DeploymentRecord{}, err
