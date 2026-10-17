@@ -166,8 +166,11 @@ Nothing.
     API 0.15.0) and Upgrade (rerun the installer to set the console address used in links).
   - A CLAUDE.md "Where we are" paragraph for 018.
   - docs/plan.md marks 018 done.
-- [ ] T014 Full check (CLAUDE.md "Commands"): `go test -race ./...` and the rest; shellcheck on install.sh.
-- [ ] T015 Lab: full `TestLab` alone in the lab; quickstart with ntfy on the maintainer's host after the release.
+- [X] T014 Full check (CLAUDE.md "Commands"): `go test -race ./...` and the rest; shellcheck on install.sh.
+  All passed 2026-10-17 (tidy, build, vet, staticcheck, gofmt, amd64/arm64, ui-css, ui-vendor, shellcheck, race).
+- [X] T015 Lab: full `TestLab` alone in the lab; quickstart with ntfy on the maintainer's host after the release.
+  `TestLab` passed 2026-10-17 (1371 s; `console-notifications` 77 s). The ntfy quickstart on the
+  maintainer's host waits for the release.
 
 ## Dependencies
 
