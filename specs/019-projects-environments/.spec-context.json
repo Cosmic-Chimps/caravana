@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Projects and Environments",
+  "branch": "019-projects-environments",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-17T20:50:08.061Z"
+    }
+  ]
+}
