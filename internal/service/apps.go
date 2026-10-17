@@ -113,7 +113,25 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 // and every summary says unknown: the stored data is still worth showing, so
 // this never returns a Nomad error.
 func (s *Service) ListApps(ctx context.Context) ([]AppSummary, error) {
-	recs, err := s.store.ListApps(ctx)
+	return s.ListAppsIn(ctx, "", "")
+}
+
+// ListAppsIn is ListApps for one project and/or one environment ("" means
+// any; an environment name alone matches that name in every project). A
+// project, or an environment of the project, that doesn't exist is
+// ErrProjectNotFound or ErrEnvironmentNotFound, so a typo is not an empty list.
+func (s *Service) ListAppsIn(ctx context.Context, project, environment string) ([]AppSummary, error) {
+	switch {
+	case project != "" && environment != "":
+		if err := s.requireEnvironment(ctx, project, environment); err != nil {
+			return nil, err
+		}
+	case project != "":
+		if err := s.requireProject(ctx, project); err != nil {
+			return nil, err
+		}
+	}
+	recs, err := s.store.ListAppsIn(ctx, project, environment)
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
 	}
@@ -208,6 +226,9 @@ var ErrAppExists = errors.New("an app with this ID already exists")
 // for Deploy: the app stays, and its failed deployment is recorded.
 func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
 	if err := s.deployer.Validate(a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	if err := s.checkPlace(ctx, a.ID); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	// Only names are stored, as saveApp does; the values go to the secret store, in deploy.

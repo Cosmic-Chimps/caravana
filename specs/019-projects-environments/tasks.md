@@ -18,7 +18,7 @@ quickstart.md. Tests are required (constitution VIII).
 
 ## Phase 2: US1 + US2 — projects, environments, nothing moves (P1)
 
-- [ ] T003 [US1] `internal/service/projects.go` + tests: `Projects`, `Project`, `CreateProject`,
+- [X] T003 [US1] `internal/service/projects.go` + tests: `Projects`, `Project`, `CreateProject`,
   `SetProjectDisplayName`, `DeleteProject`, `CreateEnvironment`, `DeleteEnvironment` (409
   `protected` for default/production), `checkPlace` on every create path (`CreateApp`,
   `saveAndDeploy` for an unknown ID, Compose) with `ErrProjectNotFound`/`ErrEnvironmentNotFound`;

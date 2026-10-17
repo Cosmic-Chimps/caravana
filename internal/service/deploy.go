@@ -111,6 +111,11 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	// A new app is placed by its ID (feature 019), so its project and
+	// environment must exist; an app that exists is not checked.
+	if err := s.checkPlace(ctx, a.ID); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	if err := s.checkSecrets(ctx, a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
