@@ -232,6 +232,42 @@ func (s *Store) ListApps(ctx context.Context) ([]AppRecord, error) {
 	return out, nil
 }
 
+// scrubSecretValues rewrites each stored app that still holds a secret value
+// with names only: before 0.6.0, POST /v1/apps kept the values it was sent.
+// Open runs it after the migrations; once every document is clean it changes
+// nothing. UpdatedAt stays, since the owner changed nothing.
+func (s *Store) scrubSecretValues(ctx context.Context) error {
+	apps, err := s.ListApps(ctx)
+	if err != nil {
+		return err
+	}
+	for _, rec := range apps {
+		if !hasSecretValue(rec.App) {
+			continue
+		}
+		doc, err := json.Marshal(rec.App.WithoutSecretValues())
+		if err != nil {
+			return fmt.Errorf("scrub app %q: %w", rec.App.ID, err)
+		}
+		if _, err := s.db.ExecContext(ctx, "UPDATE apps SET document = ? WHERE id = ?", string(doc), rec.App.ID); err != nil {
+			return fmt.Errorf("scrub app %q: %w", rec.App.ID, err)
+		}
+	}
+	return nil
+}
+
+// hasSecretValue reports whether any service of a holds a secret's value.
+func hasSecretValue(a app.App) bool {
+	for _, svc := range a.Services {
+		for _, sec := range svc.Secrets {
+			if sec.Value != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 const appColumns = "id, schema_version, document, compose, created_at, updated_at"
 
 // scanApp reads one row of appColumns and decodes the app document. It

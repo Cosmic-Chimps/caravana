@@ -41,6 +41,14 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `/v1/notifications/channels/{id}`, `POST .../{id}/test`, `GET .../{id}/deliveries` and
   `POST .../{id}/secret`; a 409 `not_a_webhook`.
 
+### Security
+- An app created with `POST /v1/apps` and secret values in its body kept those values in
+  Caravana's SQLite database, beside the names. Secret values now live only in Nomad Variables,
+  whichever way an app is created, and the new version removes any such value from the database
+  when it starts. Apps made in the console, by a deploy or from Compose were not affected. If you
+  created apps with secrets through `POST /v1/apps`, consider changing those secrets, since older
+  copies of the database (backups of `/var/lib/caravana`) may still hold them.
+
 ### Upgrade
 - Rerun the installer so `CARAVANA_PUBLIC_URL` is set to your console domain; without it,
   messages still go out, just without links. The store gains its notification tables when the

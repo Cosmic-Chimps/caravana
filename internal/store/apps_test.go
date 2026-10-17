@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -538,4 +539,43 @@ func TestAppDocumentNeverStoresSecretValues(t *testing.T) {
 		t.Fatalf("SaveAppIf: %v", err)
 	}
 	assertClean("SaveAppIf")
+}
+
+// TestOpenScrubsSecretValues: a document written before the fix, with a value
+// in it, holds names only once the store is opened again.
+func TestOpenScrubsSecretValues(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	a := apptest.Whoami().App
+	a.Services[0].Secrets = []app.Secret{{Name: "TOKEN"}}
+	if _, err := s.InsertApp(ctx, a, nil); err != nil {
+		t.Fatalf("InsertApp: %v", err)
+	}
+	// What an older version left behind: the value inside the document.
+	a.Services[0].Secrets[0].Value = new("s3cret-sentinel-old")
+	old, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE apps SET document = ? WHERE id = ?", string(old), a.ID); err != nil {
+		t.Fatalf("write the old document: %v", err)
+	}
+	s.Close()
+
+	s, err = Open(ctx, dir)
+	if err != nil {
+		t.Fatalf("Open again: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	var raw string
+	if err := s.db.QueryRowContext(ctx, "SELECT document FROM apps WHERE id = ?", a.ID).Scan(&raw); err != nil {
+		t.Fatalf("read apps.document: %v", err)
+	}
+	if strings.Contains(raw, "s3cret-sentinel-old") || !strings.Contains(raw, "TOKEN") {
+		t.Errorf("after Open, apps.document = %s, want the name TOKEN and no value", raw)
+	}
 }

@@ -75,6 +75,9 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 	if err == nil {
 		err = s.migrate(ctx)
 	}
+	if err == nil {
+		err = s.scrubSecretValues(ctx)
+	}
 	if err != nil {
 		s.Close()
 		return nil, err
