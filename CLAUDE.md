@@ -308,6 +308,66 @@ secret). Other facts:
   `CARAVANA_NOTIFY_RESOLVE_AFTER=10s`; the notifier's 30 s gap is not configurable, so the step
   budgets for it and takes about two minutes more.
 
+Feature 019 is implemented on branch `019-projects-environments` (stacked on 018): apps live in a
+project and an environment (Default › production holds every app from before, with its ID).
+- `app.Place{Project, Environment, Name}` and the pure `app.PlaceOf(id)` / `Place.ID()`: the ID is
+  the bare name in Default › production and `<project>--<environment>--<name>` elsewhere. Names
+  are lowercase labels without `--` (`app.ValidName`), so the parts read back and the two forms
+  never collide. Every Nomad-facing name (job, router `<app>-<service>`, variables, volumes,
+  backup jobs and objects, webhook path) still derives from the ID, so nothing existing moved and
+  constitution VI needed no change. The 63-character rule on `<id>-<service>` still applies; New
+  app keeps its 31-character name limit.
+- Migration `0011_projects.sql`: `projects` and `environments` tables (Default and its
+  production inserted), and `project`, `environment`, `app_name` columns on `apps` (filled from
+  the ID, `UNIQUE(project, environment, app_name)`), beside the app document and not in it, so no
+  `revision` changed and `Translate` is untouched. An old ID that `PlaceOf` refuses (it had a
+  `--`) stays in Default › production under its whole ID and keeps deploying.
+- `checkPlace` (service) runs before any path that creates an app (`CreateApp`, the first
+  `Deploy` or `DeployCompose` of an ID, the console's New app, `createEnvironmentApp`, `CopyApp`):
+  an unreadable ID is a field error on `id`; a project or environment that doesn't exist is a
+  `*PlaceError` (404 `project_not_found` / `environment_not_found`, field `id`), so a typo never
+  creates an app nobody can see. A client computes the ID and uses `deployApp` as before.
+- One Nomad namespace, `default`, for everything (research R1, lab 2026-10-17): Traefik's Nomad
+  provider watches `default` only; `namespaces=*` broke routing for every app, and a list needs
+  Traefik redeployed (a gap on 80/443 and its ACME state) whenever an environment is added, plus a
+  policy per namespace. Secrets are already isolated per job ID. Revisit with teams (Phase 4).
+- `Service.CopyApp(appID, to)`: the stored app with domains removed (and its kept Compose file's
+  overlay domains), inserted without a deploy; secret values were never stored, so the answer
+  lists `missingSecrets` and a deploy is refused until they have values. No webhook token,
+  backup or volume contents. `Service.PreviewPromotion` and `Promote(appID, to, cond, trigger)`
+  share `planPromotion`: the source's newest deployment must be healthy with a recorded
+  definition; the target (same name, another environment of the project) keeps env, secrets,
+  domains, replicas, resources and backup and takes the source's image, command, args, ports,
+  health and volumes (`promoted`, pure); a source-only service is added whole without domains; a
+  target-only service refuses. It deploys the source's digests pinned (`CheckDigests`, as
+  `RedeployVersion`), with the target's revision as the condition, and records the source
+  deployment (`SourceApp`/`SourceEnvironment` on the record). A target with a kept Compose file
+  loses it with the existing warning.
+- `service.RefusalError{Field, Err}` carries the sentinel of a promote or copy refusal
+  (`ErrAppNotInEnvironment`, `ErrPromotionRemovesService`, `ErrAppExists`) with the field at fault
+  (`to`, `services.<name>`); `service.PlaceError{Field, Err}` does the same for a missing project
+  or environment. Both are mapped in `internal/api`; `store.NotEmptyError` names the apps that
+  block a delete. Default and its production can't be deleted (`ErrProtected`).
+- API 0.16.0: the project and environment operations, `previewPromotion`, `promoteApp` (`If-Match`
+  is the target's revision), `copyApp`, and `project`/`environment`/`appName` on apps,
+  summaries, attention items, deployments and the webhook notification; `Deployment.promotedFrom`
+  (`source` stays for a redeploy of the same app's version). See `specs/019-projects-environments/contracts/api.md`.
+- Console (`internal/ui/projects.go`, `promote.go`, `places.go`): `/projects/new`,
+  `/projects/{project}` (display name, environments, add and delete, delete project by typing its
+  name), `POST /projects`, `/projects/{project}/environments[/{environment}/delete]`; New app and
+  the Compose tab have a `place` select (`<project>/<environment>`) shown only when there is
+  more than one environment; app pages have a breadcrumb and an Environments line (Copy to /
+  Promote to); `GET /apps/{id}/promote?to=` previews and `POST` confirms with the preview's
+  `revision` (412 draws the preview again); the Apps home groups by project and environment, as
+  before while only Default › production exists. Forms work without JavaScript.
+- Lab: the gate step `projects-promote` (`cmd/caravana/gate_projects_test.go`: project `lab019`,
+  staging and production deployed by ID, copy, promote with a stale and a right `If-Match`, an
+  added service, the `promotion_removes_service` refusal, `not_empty` deletes; its domains are
+  reached with the host name as TLS server name, through 127.0.0.1:8443 in the lab and the host's
+  IP on 443 on a real host, no DNS needed) and the console step `console-projects`
+  (`console_projects_test.go`: the same through the forms, promoting into a copy never deployed).
+  Both clean up with `t.Cleanup`.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -320,8 +380,9 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
 `docs/plan.md`, nothing beyond it unless asked:
 - 018 Notifications: push the "needs you" problems and deploy outcomes to the owner (signed
   webhooks, Slack/Discord, ntfy) (done, branch `018-notifications`)
-- 019 Organization / Project / Environment: projects, environments with promotion, Nomad
-  namespaces
+- 019 Organization / Project / Environment: projects, environments with copy and promotion, app
+  IDs `<project>--<environment>--<name>`, one Nomad namespace (done, branch
+  `019-projects-environments`)
 - 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
   registry, deployed by digest (first test case: Phanpy)
 

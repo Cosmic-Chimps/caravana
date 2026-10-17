@@ -40,6 +40,36 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - API 0.15.0: `GET` and `POST /v1/notifications/channels`, `PATCH` and `DELETE`
   `/v1/notifications/channels/{id}`, `POST .../{id}/test`, `GET .../{id}/deliveries` and
   `POST .../{id}/secret`; a 409 `not_a_webhook`.
+- Projects and environments: apps now live in a project and an environment, such as a project
+  `shop` with `staging` and `production`, each with its own copy of every app: its own env,
+  secrets, domains, memory, copies and backups. New project (and Add environment on the
+  project's page) are in the console, and New app has a "Project and environment" choice. The
+  Apps page groups apps by project and environment once you add the first one; until then it
+  looks as it did. An app's page shows where it is, and lists the project's other environments.
+- Copy to environment: "Copy to production" makes the same app in another environment without
+  deploying it. The copy has the app's definition but no domains, and none of its secret values
+  (they were never stored): its Configure page lists the secrets that need a value before the
+  first deploy. Webhook tokens, backups and volume contents are not copied.
+- Promote: "Promote to production" shows what would change (image and digest per service, the
+  parts of the service's shape that are replaced, services added) and deploys the staging
+  version to production by digest, so production runs exactly the image staging ran. The target
+  keeps its own env, secrets, domains, memory, copies and backups. It refuses, with the reason,
+  when staging's newest deployment isn't healthy, when its image is gone from the registry, or
+  when production has a service staging doesn't (promoting would delete it). The history says
+  "Promoted from staging" and links to the deployment it came from, and notifications name the
+  project, the environment and the promotion.
+- The app ID of an app outside Default › production is `<project>--<environment>--<name>`, for
+  example `shop--staging--web`; names are lowercase labels and never contain `--`. The ID is
+  still the Nomad job, router, secrets path and volume prefix, so a client can compute it and
+  deploy with the same `deployApp` as before. The app's name is limited to 31 characters, and
+  the whole ID plus a service name to 63.
+- API 0.16.0: `listProjects`, `createProject`, `getProject`, `updateProject`, `deleteProject`,
+  `createEnvironment`, `deleteEnvironment`, `listEnvironmentApps`, `createEnvironmentApp`,
+  `getEnvironmentApp`, `previewPromotion`, `promoteApp` and `copyApp`. Apps, summaries, needs-you
+  items, deployments and webhook messages gain `project`, `environment` and `appName`;
+  `listApps` takes `?project=` and `?environment=`; a promotion's deployment has `promotedFrom`.
+  New codes: `project_not_found`, `environment_not_found`, `project_exists`, `environment_exists`,
+  `not_empty`, `protected`, `app_not_in_environment` and `promotion_removes_service`.
 
 ### Security
 - An app created with `POST /v1/apps` and secret values in its body kept those values in
@@ -53,6 +83,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - Rerun the installer so `CARAVANA_PUBLIC_URL` is set to your console domain; without it,
   messages still go out, just without links. The store gains its notification tables when the
   new version starts, and no new Nomad capability is needed.
+- Nothing moves on upgrade: every app you have is in the project Default, environment
+  `production`, with the ID it has now, so no job, secret, volume, backup, address or webhook
+  URL changes and nothing is redeployed. The store gains its project tables when the new version
+  starts. Default and its production environment can't be deleted (your existing apps live
+  there); Default can be renamed for display. All environments share Nomad's `default`
+  namespace: a namespace per environment would need Traefik restarted each time one is added,
+  and gives nothing until there are teams.
 
 ## 0.5.0 - 2026-10-16
 

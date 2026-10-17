@@ -55,9 +55,9 @@ quickstart.md. Tests are required (constitution VIII).
 
 ## Phase 5: Lab, docs, checks
 
-- [ ] T009 `cmd/caravana/gate_test.go`: step `projects-promote` (quickstart.md 1).
+- [X] T009 `cmd/caravana/gate_test.go`: step `projects-promote` (quickstart.md 1).
   `cmd/caravana/console_lab_test.go`: step `console-projects` (quickstart.md 2).
-- [ ] T010 Docs: CHANGELOG "Unreleased" (Added, Upgrade: nothing to do, nothing moves),
+- [X] T010 Docs: CHANGELOG "Unreleased" (Added, Upgrade: nothing to do, nothing moves),
   CLAUDE.md 019 paragraph and phase list, `docs/plan.md` 019 row Done with the namespace finding.
 - [ ] T011 Full check (CLAUDE.md "Commands"), including `go test -race ./...`.
 - [ ] T012 Full `TestLab` alone in the lab.
