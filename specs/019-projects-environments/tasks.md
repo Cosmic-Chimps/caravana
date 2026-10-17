@@ -32,7 +32,7 @@ quickstart.md. Tests are required (constitution VIII).
 
 ## Phase 3: US3 + US4 — promote and copy (P1/P2)
 
-- [ ] T005 [US3] `internal/service/promote.go` + tests: `PreviewPromotion`, `Promote(ctx, id,
+- [X] T005 [US3] `internal/service/promote.go` + tests: `PreviewPromotion`, `Promote(ctx, id,
   to, cond, trigger)`, `CopyApp`; refusals per research R4/R5 and contracts/api.md;
   digests pinned from the source deployment (a moved tag is not followed: registrytest returns a
   new digest for the tag, the target still gets the old one); env/secrets/domains/replicas/
