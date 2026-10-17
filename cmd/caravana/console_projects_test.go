@@ -141,7 +141,10 @@ func (c *console) projects(t *testing.T) {
 		t.Fatalf("POST the copy = %d → %q, want 303 to the copy's Configure: %s", resp.StatusCode, resp.Header.Get("Location"), body)
 	}
 	resp, body = c.get(t, resp.Header.Get("Location"))
-	if got := pageText(body); resp.StatusCode != http.StatusOK || !strings.Contains(got, "Copied to production. Set its domains before deploying.") {
+	// pageText puts a space around each element, and the environment is a <code>
+	// element in the notice, so its two halves are checked apart.
+	if got := pageText(body); resp.StatusCode != http.StatusOK || !strings.Contains(got, "Copied to production") ||
+		!strings.Contains(got, "Set its domains before deploying.") {
 		t.Fatalf("the copy's Configure = %d, want the copied notice:\n%s", resp.StatusCode, got)
 	}
 	if _, _, err := c.g.target.Nomad.Jobs().Info(prodID, nil); err == nil {

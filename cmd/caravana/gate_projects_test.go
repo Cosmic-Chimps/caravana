@@ -150,6 +150,9 @@ func labWeb(image, foo, secret, host string) map[string]any {
 		"env":    []map[string]string{{"name": "FOO", "value": foo}},
 		"ports":  []map[string]any{{"name": "http", "containerPort": 80}},
 		"health": map[string]any{"path": "/", "interval": "5s", "timeout": "2s"},
+		// Small reservations: two environments of web and worker, plus a
+		// blue/green canary, must fit beside the lab's other jobs (1.9 GiB).
+		"resources": labResources,
 	}
 	sec := map[string]any{"name": "LAB_SECRET"}
 	if secret != "" {
@@ -164,8 +167,12 @@ func labWeb(image, foo, secret, host string) map[string]any {
 
 // labWorker is a service that only sleeps, with no port and no domain.
 func labWorker(name string) map[string]any {
-	return map[string]any{"name": name, "image": "busybox:1.37", "command": "sh", "args": []string{"-c", "exec sleep 86400"}}
+	return map[string]any{"name": name, "image": "busybox:1.37", "command": "sh", "args": []string{"-c", "exec sleep 86400"},
+		"resources": labResources}
 }
+
+// labResources is what each service of this step reserves (see labWeb).
+var labResources = map[string]int{"memoryMB": 16, "memoryMaxMB": 32}
 
 // labApp is the body of deployApp for these services.
 func labApp(services ...map[string]any) string {
