@@ -1594,6 +1594,204 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/apps/{id}/promote/preview:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: previewPromotion
+      summary: See what promoting the app to another environment would deploy.
+      description: |
+        `{id}` is the source; `to` names another environment of the same project, where an app
+        with the same name must already exist (`copyApp` makes it). Nothing is saved or
+        deployed. The answer says, per service, the image the target runs now and the one it
+        would run, the digests, and which parts of the service's shape (command, arguments,
+        ports, health check, volumes) the promotion replaces with the source's. It also lists
+        the warnings the deploy would carry and the target's `targetRevision`, to send back as
+        `If-Match` to `promoteApp`.
+
+        It refuses for every reason `promoteApp` does, except a stale `If-Match`, and it asks
+        the registry whether each pinned image is still there.
+      tags: [apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionRequest"
+      responses:
+        "200":
+          description: What the promotion would do.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotionPreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PromotionNotFound"
+        "409":
+          $ref: "#/components/responses/PromotionRefused"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PromotionInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/promote:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: promoteApp
+      summary: Deploy the app's newest healthy version into another environment.
+      description: |
+        `{id}` is the source, whose newest deployment must be healthy and have a recorded
+        definition; `to` names another environment of the same project, where an app with the
+        same name must already exist.
+
+        The target runs the images the source's deployment pinned, by the same digests (tags
+        are not resolved again), and takes its shape: command, arguments, ports, health check
+        and volume mounts. It keeps its own env, secrets (and their values), domains, copies,
+        memory and backup settings. A service only the source has is added whole, without
+        domains; if it has secrets, the target needs values for them first (`400 invalid_field`
+        on `services[i].secrets[j].value`, as for any deploy). A service only the target has
+        refuses the promotion (`409 promotion_removes_service`, `field` `services.<name>`).
+
+        It is a new deployment of the target and a new Nomad job version, followed like any
+        other (see `deployApp`). The deployment's `promotedFrom` names the source. A target
+        that keeps a Compose file loses it, with a warning, as a deploy from a definition
+        does. Nothing is saved when it refuses; an image that is gone from its registry is
+        refused before anything changes.
+
+        `If-Match` is the target's revision as `previewPromotion` or `getApp` gave it: when
+        the target has changed since, `412 app_changed`. Without it, the promotion is built
+        from the target as it is when the call arrives, and still refuses if that changes
+        before it is saved.
+      tags: [deployments]
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionRequest"
+      responses:
+        "202":
+          description: Nomad accepted the target's job; the rollout continues in the background.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PromotionNotFound"
+        "409":
+          $ref: "#/components/responses/PromotionRefused"
+        "412":
+          $ref: "#/components/responses/AppChanged"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PromotionInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/copy:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: copyApp
+      summary: Create the app in another environment of its project, without deploying it.
+      description: |
+        `{id}` is the source; `to` names another environment of the same project. The copy is
+        the stored app as it is (services, images, env values, backup settings) without
+        domains, and, if the app keeps a Compose file, that file with the overlay's domains
+        removed. Secret values were never stored, so the copy has none: `missingSecrets` lists
+        each secret it needs a value for, and a deploy is refused until they are set. Webhook
+        tokens, backups and the contents of volumes are not copied. Deploy it with `deployApp`
+        when it is ready; `promoteApp` updates it afterwards.
+
+        An environment that already has an app of that name is `409 app_exists` with `field`
+        `to`.
+      tags: [apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionRequest"
+      responses:
+        "201":
+          description: Created, not deployed.
+          headers:
+            Location:
+              description: The copy's URL, `/v1/apps/{id}`.
+              schema: {type: string}
+            ETag:
+              $ref: "#/components/headers/AppETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CopyResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: |
+            No such app (`not_found`), or no such environment in the project
+            (`environment_not_found`, `field` `to`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `app_exists` (`field: "to"`): the environment has an app of this name; promote
+            instead.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: |
+            `invalid_field` with `field` `to`: not a name, or the app's own environment. (A
+            copy that would not pass the checks of a deploy, such as an ID too long with the
+            place in front of it, is `400 invalid_field` on the field at fault.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/deployments/{deploymentId}/jobspec:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -3159,7 +3357,11 @@ components:
           description: Why it failed, reverted or was superseded. Absent otherwise.
         source:
           type: string
-          description: The deployment this one redeployed (`redeployDeployment`). Absent otherwise.
+          description: |
+            The deployment of this app that this one redeployed (`redeployDeployment`). Absent
+            otherwise, and absent on a promotion (see `promotedFrom`).
+        promotedFrom:
+          $ref: "#/components/schemas/PromotedFrom"
         definitionRecorded:
           type: boolean
           description: |
@@ -3200,6 +3402,134 @@ components:
         description:
           type: string
           description: Nomad's own status description of the rollout.
+
+    PromotedFrom:
+      type: object
+      additionalProperties: false
+      description: |
+        Present only on a deployment made by `promoteApp`: where its images and shape came
+        from.
+      required: [app, environment, deployment]
+      properties:
+        app:
+          type: string
+          description: The source app's ID.
+          examples: [shop--staging--web]
+        environment:
+          type: string
+          description: The source app's environment.
+          examples: [staging]
+        deployment:
+          type: string
+          description: The source's deployment, whose digests this one runs.
+
+    PromotionRequest:
+      type: object
+      additionalProperties: false
+      required: [to]
+      properties:
+        to:
+          $ref: "#/components/schemas/Name"
+          description: |
+            The environment to promote or copy into: another environment of the app's own
+            project.
+
+    PromotionServiceChange:
+      type: object
+      additionalProperties: false
+      description: What a promotion does to one service of the target.
+      required: [name, imageTo, digestTo, changed]
+      properties:
+        name: {type: string}
+        imageFrom:
+          type: string
+          description: |
+            The image the target runs now, as written (`repo:tag`). Absent for a service the
+            promotion adds.
+        imageTo:
+          type: string
+          description: The source's image, as written.
+        digestFrom:
+          type: string
+          description: |
+            The digest the target's newest healthy deployment pinned. Absent for an added
+            service and for a target that was never deployed.
+        digestTo:
+          type: string
+          description: The digest the source's deployment pinned, which the target will run.
+        changed:
+          type: array
+          description: |
+            The parts of the service's shape the promotion replaces and that differ from the
+            target's now.
+          items:
+            type: string
+            enum: [command, args, ports, health, volumes]
+
+    PromotionPreview:
+      type: object
+      additionalProperties: false
+      required: [from, to, fromEnvironment, toEnvironment, fromDeployment, services, added, warnings, targetRevision]
+      properties:
+        from: {type: string, description: "The source app's ID."}
+        to: {type: string, description: "The target app's ID."}
+        fromEnvironment: {type: string}
+        toEnvironment: {type: string}
+        fromDeployment:
+          type: string
+          description: The source's newest deployment, which the target would run.
+        services:
+          type: array
+          description: Every service the target will have, in order.
+          items:
+            $ref: "#/components/schemas/PromotionServiceChange"
+        added:
+          type: array
+          description: The services the target doesn't have yet and gets whole, without domains.
+          items: {type: string}
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+        targetRevision:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          description: |
+            The target's revision now. Send it as `If-Match` to `promoteApp` to promote only
+            if the target is still as the preview saw it.
+
+    MissingSecret:
+      type: object
+      additionalProperties: false
+      required: [service, name]
+      properties:
+        service: {type: string}
+        name: {type: string}
+
+    CopyResult:
+      type: object
+      additionalProperties: false
+      description: The new app, as `getApp` shows it, and the secrets it needs values for.
+      required: [app, createdAt, updatedAt, revision, composeKept, project, environment, appName, missingSecrets]
+      properties:
+        app:
+          $ref: "#/components/schemas/App"
+        project: {$ref: "#/components/schemas/PlaceProject"}
+        environment: {$ref: "#/components/schemas/PlaceEnvironment"}
+        appName: {$ref: "#/components/schemas/PlaceAppName"}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        revision:
+          $ref: "#/components/schemas/AppRecord/properties/revision"
+        composeKept:
+          type: boolean
+        missingSecrets:
+          type: array
+          description: |
+            Every secret of the copy, by service and name: none has a value yet. Empty when
+            the app has no secrets.
+          items:
+            $ref: "#/components/schemas/MissingSecret"
 
     DeploymentList:
       type: object
@@ -3282,7 +3612,8 @@ components:
                 `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
                 `app_changed`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`,
                 `project_not_found`, `environment_not_found`, `project_exists`,
-                `environment_exists`, `not_empty`, `protected`.
+                `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
+                `promotion_removes_service`.
               examples: [invalid_field]
             message:
               type: string
@@ -3442,6 +3773,38 @@ components:
       description: |
         `invalid_field`: `field` is `name` (not a lowercase label, or it holds `--`) or
         `displayName` (empty, not printable, or over 100 characters). Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PromotionNotFound:
+      description: |
+        `not_found`: no such app. `environment_not_found` (`field` `to`): the project has no
+        such environment. `app_not_in_environment` (`field` `to`): that environment has no app
+        of this name; the message says to copy it first (`copyApp`). `no_live_deployment`
+        applies too, as 409 below.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PromotionRefused:
+      description: |
+        `deployment_not_healthy`: the source's newest deployment is not healthy.
+        `definition_not_recorded`: it is from before Caravana saved what each deployment
+        deployed. `no_live_deployment`: the source was never deployed.
+        `promotion_removes_service` (`field` `services.<name>`): the target has a service the
+        source lacks, and promoting would delete it. `job_conflict`: as for `deployApp`.
+        Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PromotionInvalid:
+      description: |
+        `invalid_field` with `field` `to`: not a name, or the source's own environment.
+        `image_not_found` and `registry_auth_failed`: an image the promotion would run is no
+        longer in its registry, or its registry refused the stored credentials (`field` is the
+        service's `image`); nothing was changed.
       content:
         application/json:
           schema:

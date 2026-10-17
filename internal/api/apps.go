@@ -39,12 +39,16 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func toAppRecordJSON(rec store.AppRecord) appRecordJSON {
+	return appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
+		ComposeKept: rec.Compose != nil,
+		Project:     rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name}
+}
+
 // writeAppRecord answers 200 with a stored app and its revision as the ETag.
 func writeAppRecord(w http.ResponseWriter, rec store.AppRecord) {
 	w.Header().Set("ETag", `"`+rec.Revision+`"`)
-	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
-		ComposeKept: rec.Compose != nil,
-		Project:     rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name})
+	writeJSON(w, http.StatusOK, toAppRecordJSON(rec))
 }
 
 // appStatusJSON is an app's status (schema AppStatus).

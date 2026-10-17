@@ -33,8 +33,12 @@ type deploymentJSON struct {
 	Digests    map[string]string `json:"digests"`
 	Warnings   []app.Warning     `json:"warnings"`
 	Error      string            `json:"error,omitempty"`
-	// Source is the deployment this one redeployed.
+	// Source is the deployment of this app this one redeployed.
 	Source string `json:"source,omitempty"`
+	// PromotedFrom says where a promotion came from: the other app, its
+	// environment and the deployment whose images this one runs. Absent unless
+	// the deployment is a promotion.
+	PromotedFrom *promotedFromJSON `json:"promotedFrom,omitempty"`
 	// DefinitionRecorded says whether it can be redeployed (when healthy) and
 	// exported: deployments from before feature 011 can't.
 	DefinitionRecorded bool `json:"definitionRecorded"`
@@ -46,6 +50,13 @@ type deploymentJSON struct {
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
+}
+
+// promotedFromJSON is the source of a promotion (schema PromotedFrom).
+type promotedFromJSON struct {
+	App         string `json:"app"`
+	Environment string `json:"environment"`
+	Deployment  string `json:"deployment"`
 }
 
 // progressJSON is a rollout's progress as the API shows it (schema Progress).
@@ -91,9 +102,14 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 		Digests:    rec.Deployment.Digests,
 		Warnings:   rec.Warnings,
 		Error:      rec.Error,
-		Source:     rec.Source,
 		CreatedAt:  rec.CreatedAt,
 		UpdatedAt:  rec.UpdatedAt,
+	}
+	if rec.SourceApp != "" {
+		// A promotion's source is another app's deployment: not a redeploy.
+		d.PromotedFrom = &promotedFromJSON{App: rec.SourceApp, Environment: rec.SourceEnvironment, Deployment: rec.Source}
+	} else {
+		d.Source = rec.Source
 	}
 	d.DefinitionRecorded = rec.Definition != nil
 	d.ComposeKept = rec.Compose != nil

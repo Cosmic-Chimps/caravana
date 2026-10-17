@@ -429,6 +429,14 @@ func TestDeploymentSourceApp(t *testing.T) {
 		t.Errorf("promotion Source/SourceApp = %q/%q, want dep-plain/shop--staging--web", promotion.Source, promotion.SourceApp)
 	}
 
+	// The record names where its app is, and where the promotion came from.
+	if want := (app.Place{Project: "shop", Environment: "production", Name: "web"}); promotion.Place != want || promotion.SourceEnvironment != "staging" {
+		t.Errorf("promotion place %+v from %q, want %+v from staging", promotion.Place, promotion.SourceEnvironment, want)
+	}
+	if want := (app.Place{Project: "shop", Environment: "staging", Name: "web"}); plain.Place != want || plain.SourceEnvironment != "" || redeploy.SourceEnvironment != "" {
+		t.Errorf("plain place %+v, source environments %q/%q", plain.Place, plain.SourceEnvironment, redeploy.SourceEnvironment)
+	}
+
 	// Every read path carries it.
 	got, err := s.GetDeployment(ctx, "dep-promoted")
 	if err != nil || got.SourceApp != "shop--staging--web" {
@@ -446,7 +454,7 @@ func TestDeploymentSourceApp(t *testing.T) {
 	if err != nil || len(recent) != 4 {
 		t.Fatalf("ListRecentDeployments = %d, %v", len(recent), err)
 	}
-	if i := slices.IndexFunc(recent, func(r DeploymentRecord) bool { return r.Deployment.ID == "dep-promoted" }); i < 0 || recent[i].SourceApp != "shop--staging--web" {
+	if i := slices.IndexFunc(recent, func(r DeploymentRecord) bool { return r.Deployment.ID == "dep-promoted" }); i < 0 || recent[i].SourceApp != "shop--staging--web" || recent[i].SourceEnvironment != "staging" || recent[i].Place.Environment != "production" {
 		t.Errorf("recent deployments lose SourceApp: %+v", recent)
 	}
 	before, err := s.ListDeploymentsBefore(ctx, "shop--production--web", time.Now().Add(time.Hour), 10)

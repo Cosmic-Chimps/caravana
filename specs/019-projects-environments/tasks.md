@@ -38,7 +38,7 @@ quickstart.md. Tests are required (constitution VIII).
   new digest for the tag, the target still gets the old one); env/secrets/domains/replicas/
   resources/backup kept; source-only service added without domains; missing secret on it refused
   by the existing check; dropped Compose file warning; `promotedFrom` on the record.
-- [ ] T006 [US3] `internal/api/promote.go` + tests: `previewPromotion`, `promoteApp` (If-Match),
+- [X] T006 [US3] `internal/api/promote.go` + tests: `previewPromotion`, `promoteApp` (If-Match),
   `copyApp` (`missingSecrets`); `Deployment.promotedFrom`.
 - [ ] T007 [US5] FR-011: `AttentionItem`, `notify.Event` (+ `PromotedFrom`), activity rows and
   `listRecentDeployments` carry the place; webhook message schema in openapi; notify goldens

@@ -54,6 +54,13 @@ type DeploymentRecord struct {
 	// deployment is a promotion from there. "" for a redeploy of the app's own
 	// deployment and for no source at all.
 	SourceApp string
+	// SourceEnvironment is the environment SourceApp is in ("" when SourceApp
+	// is), which is what "promoted from staging" says.
+	SourceEnvironment string
+	// Place is where the deployment's app is: the stored place, read with the
+	// record so a list of deployments across apps names project and
+	// environment without a lookup per row.
+	Place     app.Place
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -332,16 +339,27 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name"
 
 // deploymentSource is what every read of deployments selects from: the table
-// plus source_app, the app of the deployment this one redeployed or was
-// promoted from (empty when it has no source or the source is the same app), and
-// seq, the table's rowid, which breaks ties between rows created in the same
-// instant (a derived table has no rowid of its own). The source's ID is its
-// primary key, so the lookup is one index probe per row returned.
+// plus
+//   - source_app, the app of the deployment this one redeployed or was promoted
+//     from (empty when it has no source or the source is the same app), and
+//     source_environment, that app's environment;
+//   - project, environment and app_name, the place of the deployment's app;
+//   - seq, the table's rowid, which breaks ties between rows created in the same
+//     instant (a derived table has no rowid of its own).
+//
+// Each lookup is by a primary key, so one index probe per row returned. An app
+// the apps table doesn't have (it can't happen: deleting an app deletes its
+// deployments) reads as Default's production under its ID.
 const deploymentSource = `(SELECT d.*, d.rowid AS seq,
-	COALESCE((SELECT s.app_id FROM deployments s WHERE s.id = d.source_deployment AND s.app_id != d.app_id), '') AS source_app
+	COALESCE((SELECT s.app_id FROM deployments s WHERE s.id = d.source_deployment AND s.app_id != d.app_id), '') AS source_app,
+	COALESCE((SELECT sa.environment FROM deployments s JOIN apps sa ON sa.id = s.app_id
+		WHERE s.id = d.source_deployment AND s.app_id != d.app_id), '') AS source_environment,
+	COALESCE((SELECT a.project FROM apps a WHERE a.id = d.app_id), 'default') AS project,
+	COALESCE((SELECT a.environment FROM apps a WHERE a.id = d.app_id), 'production') AS environment,
+	COALESCE((SELECT a.app_name FROM apps a WHERE a.id = d.app_id), d.app_id) AS app_name
 	FROM deployments d)`
 
 // querier is what *sql.DB and *sql.Tx have in common, so the same read works
@@ -373,7 +391,8 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		definition, kept, source           sql.NullString
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
-		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp); err != nil {
+		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp, &rec.SourceEnvironment,
+		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
