@@ -26,6 +26,10 @@ var ErrRevisionMismatch = errors.New("app changed since it was read")
 // AppRecord is a stored app.
 type AppRecord struct {
 	App app.App
+	// Place is the project, environment and name the app was stored with.
+	// It never changes, and it is not in the app document (so not in the
+	// revision either).
+	Place app.Place
 	// Compose is the Compose file the app was made from, as last deployed,
 	// secret values left out. nil when the app wasn't made from a file, or
 	// the file was dropped.
@@ -69,10 +73,23 @@ func composeColumn(file *compose.Request) (sql.NullString, error) {
 	return sql.NullString{String: string(doc), Valid: true}, nil
 }
 
+// placeOfID is the place an app is stored in: what its ID says. An ID that
+// app.PlaceOf refuses is one from before projects existed (any label with
+// "--" was allowed), so it stays in Default's production under its whole ID.
+// Only the service refuses to create new ones.
+func placeOfID(id string) app.Place {
+	p, err := app.PlaceOf(id)
+	if err != nil {
+		return app.Place{Project: app.DefaultProject, Environment: app.DefaultEnvironment, Name: id}
+	}
+	return p
+}
+
 // SaveApp inserts the app, or replaces the stored one with the same ID. file
 // is the Compose file the app was made from, or nil. Saving an identical app
 // and file changes nothing, not even UpdatedAt, so repeating the same deploy
-// payload only adds a deployment record.
+// payload only adds a deployment record. A new app is placed by its ID (see
+// placeOfID); replacing an existing one never moves it.
 func (s *Store) SaveApp(ctx context.Context, a app.App, file *compose.Request) (AppRecord, error) {
 	if a.ID == "" {
 		return AppRecord{}, errors.New("save app: ID is required")
@@ -88,16 +105,17 @@ func (s *Store) SaveApp(ctx context.Context, a app.App, file *compose.Request) (
 	now := formatTime(s.now())
 	// IS NOT, not !=, for compose: it is NULL for an app without a file, and
 	// NULL != 'x' is NULL (not true), which would skip a real change.
+	place := placeOfID(a.ID)
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at, project, environment, app_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			schema_version = excluded.schema_version,
 			document       = excluded.document,
 			compose        = excluded.compose,
 			updated_at     = excluded.updated_at
 		WHERE apps.document != excluded.document OR apps.compose IS NOT excluded.compose`,
-		a.ID, appSchemaVersion, string(doc), kept, now, now)
+		a.ID, appSchemaVersion, string(doc), kept, now, now, place.Project, place.Environment, place.Name)
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("save app %q: %w", a.ID, err)
 	}
@@ -178,11 +196,12 @@ func (s *Store) InsertApp(ctx context.Context, a app.App, file *compose.Request)
 		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
 	}
 	now := formatTime(s.now())
+	place := placeOfID(a.ID)
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO apps (id, schema_version, document, compose, created_at, updated_at, project, environment, app_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`,
-		a.ID, appSchemaVersion, string(doc), kept, now, now)
+		a.ID, appSchemaVersion, string(doc), kept, now, now, place.Project, place.Environment, place.Name)
 	if err != nil {
 		return AppRecord{}, fmt.Errorf("insert app %q: %w", a.ID, err)
 	}
@@ -212,7 +231,16 @@ func (s *Store) GetApp(ctx context.Context, id string) (AppRecord, error) {
 // empty (not nil) slice. One app whose document can't be read fails the whole
 // call, naming the app: the Apps page can't show a partial truth silently.
 func (s *Store) ListApps(ctx context.Context) ([]AppRecord, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+appColumns+" FROM apps ORDER BY id")
+	return s.ListAppsIn(ctx, "", "")
+}
+
+// ListAppsIn is ListApps for one project and/or one environment, ordered by
+// ID. An empty project or environment means "any", so an environment name
+// alone matches that name in every project.
+func (s *Store) ListAppsIn(ctx context.Context, project, environment string) ([]AppRecord, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT "+appColumns+` FROM apps
+		WHERE (? = '' OR project = ?) AND (? = '' OR environment = ?)
+		ORDER BY id`, project, project, environment, environment)
 	if err != nil {
 		return nil, fmt.Errorf("list apps: %w", err)
 	}
@@ -268,7 +296,7 @@ func hasSecretValue(a app.App) bool {
 	return false
 }
 
-const appColumns = "id, schema_version, document, compose, created_at, updated_at"
+const appColumns = "id, schema_version, document, compose, created_at, updated_at, project, environment, app_name"
 
 // scanApp reads one row of appColumns and decodes the app document. It
 // returns sql.ErrNoRows unwrapped (for GetApp); other errors name the app.
@@ -277,8 +305,9 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 		id, doc, created, upd string
 		version               int
 		kept                  sql.NullString
+		place                 app.Place
 	)
-	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd); err != nil {
+	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd, &place.Project, &place.Environment, &place.Name); err != nil {
 		return AppRecord{}, err
 	}
 	if version > appSchemaVersion {
@@ -286,7 +315,7 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 			id, version, appSchemaVersion, ErrSchemaTooNew)
 	}
 
-	rec := AppRecord{Revision: revisionOf(doc, kept.String, kept.Valid)}
+	rec := AppRecord{Place: place, Revision: revisionOf(doc, kept.String, kept.Valid)}
 	if err := json.Unmarshal([]byte(doc), &rec.App); err != nil {
 		return AppRecord{}, fmt.Errorf("decode app %q: %w", id, err)
 	}

@@ -9,7 +9,7 @@ quickstart.md. Tests are required (constitution VIII).
   `DefaultEnvironment`, `PlaceOf`, `Place.ID`, `ValidName` (data-model.md). Table tests: round
   trip, bare names, refusals (`a--b`, four parts, `a---b--c`, empty part, uppercase), field
   errors on `id`/`name`.
-- [ ] T002 `internal/store/migrations/0011_projects.sql` and `internal/store/projects.go` +
+- [X] T002 `internal/store/migrations/0011_projects.sql` and `internal/store/projects.go` +
   tests: tables, Default rows, apps columns, `ErrNotEmpty` (with app IDs), project and
   environment CRUD, `AppRecord.Place`, place filled on insert from `PlaceOf` (grandfathered
   fallback), never changed on update, `ListAppsIn`, `DeploymentRecord.SourceApp`. Upgrade test:

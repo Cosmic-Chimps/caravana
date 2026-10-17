@@ -49,7 +49,11 @@ type DeploymentRecord struct {
 	// recorded before feature 015.
 	Compose *compose.Request
 	// Source is the deployment this one redeployed, or "".
-	Source    string
+	Source string
+	// SourceApp is the app Source belongs to when that is another app: the
+	// deployment is a promotion from there. "" for a redeploy of the app's own
+	// deployment and for no source at all.
+	SourceApp string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -67,7 +71,8 @@ type DeploymentUpdate struct {
 // with the definition it deploys (stored without secret values; nil stores
 // none), the Compose file the app keeps (file, likewise without secret
 // values; nil stores none) and the deployment it redeploys (source, or "").
-// None of them changes afterwards.
+// None of them changes afterwards. source may name a deployment of another app
+// (a promotion); the record then has SourceApp.
 func (s *Store) CreateDeployment(ctx context.Context, appID string, d app.Deployment, definition *app.App, file *compose.Request, source string) (DeploymentRecord, error) {
 	if d.ID == "" {
 		return DeploymentRecord{}, errors.New("create deployment: ID is required")
@@ -199,7 +204,7 @@ func (s *Store) ListDeployments(ctx context.Context, appID string, limit int) ([
 	}
 	// rowid breaks ties between deployments created in the same instant.
 	out, err := s.queryDeployments(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE app_id = ? ORDER BY created_at DESC, seq DESC LIMIT ?",
 		appID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list deployments of %q: %w", appID, err)
@@ -221,7 +226,7 @@ func (s *Store) ListDeploymentsBefore(ctx context.Context, appID string, before 
 		return []DeploymentRecord{}, nil
 	}
 	out, err := s.queryDeployments(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? AND created_at < ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE app_id = ? AND created_at < ? ORDER BY created_at DESC, seq DESC LIMIT ?",
 		appID, formatTime(before), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list deployments of %q before %s: %w", appID, formatTime(before), err)
@@ -241,7 +246,7 @@ func (s *Store) LatestDeployments(ctx context.Context) (map[string]DeploymentRec
 		SELECT `+deploymentColumns+` FROM (
 			SELECT `+deploymentColumns+`,
 				ROW_NUMBER() OVER (PARTITION BY app_id ORDER BY created_at DESC, id) AS n
-			FROM deployments
+			FROM `+deploymentSource+`
 		) WHERE n = 1`)
 	if err != nil {
 		return nil, fmt.Errorf("latest deployments: %w", err)
@@ -271,7 +276,7 @@ func (s *Store) ListRecentDeployments(ctx context.Context, limit int) ([]Deploym
 		return []DeploymentRecord{}, nil
 	}
 	out, err := s.queryDeployments(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments ORDER BY created_at DESC, id LIMIT ?", limit)
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" ORDER BY created_at DESC, id LIMIT ?", limit)
 	if err != nil {
 		return nil, fmt.Errorf("list recent deployments: %w", err)
 	}
@@ -285,7 +290,7 @@ func (s *Store) ListRecentDeployments(ctx context.Context, limit int) ([]Deploym
 // running, oldest first. On startup the deploy flow picks them up again.
 func (s *Store) ListUnfinishedDeployments(ctx context.Context) ([]DeploymentRecord, error) {
 	out, err := s.queryDeployments(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments WHERE status IN (?, ?) ORDER BY created_at, rowid",
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE status IN (?, ?) ORDER BY created_at, seq",
 		string(StatusPending), string(StatusRunning))
 	if err != nil {
 		return nil, fmt.Errorf("list unfinished deployments: %w", err)
@@ -297,7 +302,7 @@ func (s *Store) ListUnfinishedDeployments(ctx context.Context) ([]DeploymentReco
 // Nomad is running for it. ErrNotFound when it has none.
 func (s *Store) LatestHealthyDeployment(ctx context.Context, appID string) (DeploymentRecord, error) {
 	recs, err := s.queryDeployments(ctx,
-		"SELECT "+deploymentColumns+" FROM deployments WHERE app_id = ? AND status = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE app_id = ? AND status = ? ORDER BY created_at DESC, seq DESC LIMIT 1",
 		appID, string(StatusHealthy))
 	if err != nil {
 		return DeploymentRecord{}, fmt.Errorf("latest healthy deployment of %q: %w", appID, err)
@@ -327,7 +332,17 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app"
+
+// deploymentSource is what every read of deployments selects from: the table
+// plus source_app, the app of the deployment this one redeployed or was
+// promoted from (empty when it has no source or the source is the same app), and
+// seq, the table's rowid, which breaks ties between rows created in the same
+// instant (a derived table has no rowid of its own). The source's ID is its
+// primary key, so the lookup is one index probe per row returned.
+const deploymentSource = `(SELECT d.*, d.rowid AS seq,
+	COALESCE((SELECT s.app_id FROM deployments s WHERE s.id = d.source_deployment AND s.app_id != d.app_id), '') AS source_app
+	FROM deployments d)`
 
 // querier is what *sql.DB and *sql.Tx have in common, so the same read works
 // inside and outside a transaction.
@@ -336,7 +351,7 @@ type querier interface {
 }
 
 func getDeployment(ctx context.Context, q querier, id string) (DeploymentRecord, error) {
-	row := q.QueryRowContext(ctx, "SELECT "+deploymentColumns+" FROM deployments WHERE id = ?", id)
+	row := q.QueryRowContext(ctx, "SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE id = ?", id)
 	rec, err := scanDeployment(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DeploymentRecord{}, fmt.Errorf("deployment %q: %w", id, ErrNotFound)
@@ -358,7 +373,7 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		definition, kept, source           sql.NullString
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
-		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated); err != nil {
+		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
