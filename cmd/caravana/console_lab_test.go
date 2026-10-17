@@ -102,6 +102,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-compose-file-edit", c.composeFileEdit},
 		{"console-volumes", c.volumes},
 		{"console-notifications", c.notifications},
+		{"console-projects", c.projects},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
