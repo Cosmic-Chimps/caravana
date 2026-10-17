@@ -105,3 +105,27 @@ Additive (0.16.0):
   `environment` and `appName`; `listApps` takes `?project=&environment=`.
 
 Every other operation keeps `/v1/apps/{id}` (FR-010).
+
+## R7. The place comes from the ID, on every create path
+
+**Decision**: a pure `app.PlaceOf(id)` reads the place from an ID: no `--` means project
+`default`, environment `production`, name = ID; otherwise exactly three labels joined by `--`,
+none containing `--`, else a field error on `id`. `app.Place.ID()` is the inverse. Every path
+that creates an app (`createApp`, a first `deployApp`/`deployCompose` of an unknown ID, the
+console's New app, `createEnvironmentApp`, `copyApp`) places it there and refuses with 404
+`environment_not_found` (field `id`) when that project or environment doesn't exist. The store
+fills its columns from the same function on insert, and never changes them on an update.
+
+**Rationale**: one rule, no new parameter on the existing operations: a client that computes
+`shop--staging--web` can deploy it with today's `deployApp`, which is what Aspire and 020 need.
+`environment_not_found` keeps a typo from creating an app nobody can see under a project.
+
+**Existing IDs with `--`** (allowed until now): they stay in Default › production with
+`app_name` = ID, and keep deploying (the rule applies to creation only). A later create whose
+computed ID equals one of them is refused by the store's primary key, as `app_exists`.
+
+## R8. Length
+
+The console's New app keeps its 31-character name limit. `PlaceOf` doesn't limit lengths; the
+existing `len(id)+1+len(service) ≤ 63` check in `app.Validate` does, and its message names the
+ID's length, so `shop--staging--` costs 15 characters of that budget and the owner sees why.

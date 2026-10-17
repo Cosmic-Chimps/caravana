@@ -192,8 +192,9 @@ build-from-source (020) need to target an environment.
   dash. App names MUST be unique within an environment; environment names within a project;
   project names within the installation. Projects also have a free-text display name.
 - **FR-003**: A new project MUST start with one environment, `production`. The owner MUST be able
-  to add, rename (display only) and delete environments and projects; deleting MUST be refused
-  while apps remain, naming them.
+  to add and delete environments and projects and to change a project's display name; deleting
+  MUST be refused while apps remain, naming them. Names themselves never change (they are part
+  of each app's ID).
 - **FR-004**: Each app MUST have one ID that is unique in the installation and stable for its
   life: its name when it is in the Default project's `production` environment, otherwise derived
   from project, environment and name by one documented rule that clients can compute. Every
@@ -219,8 +220,8 @@ build-from-source (020) need to target an environment.
   the owner create apps in a chosen project and environment; show every app's project and
   environment; and from an app, show its counterparts in the project's other environments with
   Promote and Copy actions.
-- **FR-010**: The API MUST offer everything the console does here (list, create, rename and
-  delete projects and environments; list and create apps in an environment; find an app by
+- **FR-010**: The API MUST offer everything the console does here (list, create and delete
+  projects and environments, change a project's display name; list and create apps in an environment; find an app by
   project, environment and name; promote; copy), and every existing endpoint MUST keep its path
   and meaning, adding the app's project and environment to what it returns.
 - **FR-011**: The needs-you list, notifications and activity MUST name the project and

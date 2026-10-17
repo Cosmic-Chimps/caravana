@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Projects and Environments",
   "branch": "019-projects-environments",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "tasks",
+  "status": "tasked",
   "history": [
     {
       "step": "specify",
@@ -11,6 +11,20 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-17T20:50:08.061Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-17T20:53:07.268Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-17T20:53:29.368Z"
     }
   ]
 }
