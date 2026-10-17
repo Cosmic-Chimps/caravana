@@ -6,6 +6,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // appRecordJSON is a stored app (schema AppRecord). The app is wrapped, not
@@ -20,6 +21,11 @@ type appRecordJSON struct {
 	// ComposeKept says getCompose has a file to answer: the app was last
 	// deployed from a Compose file.
 	ComposeKept bool `json:"composeKept"`
+	// Project, Environment and AppName say where the app is (feature 019);
+	// the app's ID is these three written out.
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+	AppName     string `json:"appName"`
 }
 
 // getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
@@ -29,10 +35,16 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	writeAppRecord(w, rec)
+	return nil
+}
+
+// writeAppRecord answers 200 with a stored app and its revision as the ETag.
+func writeAppRecord(w http.ResponseWriter, rec store.AppRecord) {
 	w.Header().Set("ETag", `"`+rec.Revision+`"`)
 	writeJSON(w, http.StatusOK, appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
-		ComposeKept: rec.Compose != nil})
-	return nil
+		ComposeKept: rec.Compose != nil,
+		Project:     rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name})
 }
 
 // appStatusJSON is an app's status (schema AppStatus).
@@ -49,14 +61,43 @@ type appSummaryJSON struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
 	ComposeKept    bool            `json:"composeKept"`
+	Project        string          `json:"project"`
+	Environment    string          `json:"environment"`
+	AppName        string          `json:"appName"`
 	Status         appStatusJSON   `json:"status"`
 	LastDeployment *deploymentJSON `json:"lastDeployment,omitempty"`
 }
 
-// listApps answers GET /v1/apps: every app by ID, with its status. When
-// Nomad can't be read the statuses are unknown and the answer is still 200.
+func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
+	j := appSummaryJSON{
+		App:         sum.App,
+		CreatedAt:   sum.CreatedAt,
+		UpdatedAt:   sum.UpdatedAt,
+		ComposeKept: sum.Compose != nil,
+		Project:     sum.Place.Project,
+		Environment: sum.Place.Environment,
+		AppName:     sum.Place.Name,
+		Status: appStatusJSON{
+			State:         sum.Status.State,
+			WantedCopies:  sum.Status.WantedCopies,
+			HealthyCopies: sum.Status.HealthyCopies,
+			LiveVersion:   sum.Status.LiveVersion,
+		},
+	}
+	if sum.LastDeployment != nil {
+		d := toDeploymentJSON(*sum.LastDeployment)
+		j.LastDeployment = &d
+	}
+	return j
+}
+
+// listApps answers GET /v1/apps: every app by ID, with its status, or those of
+// one project and/or environment (?project=, ?environment=; a project or
+// environment that doesn't exist is 404, not an empty list). When Nomad can't
+// be read the statuses are unknown and the answer is still 200.
 func (s *server) listApps(w http.ResponseWriter, r *http.Request) error {
-	sums, err := s.svc.ListApps(r.Context())
+	q := r.URL.Query()
+	sums, err := s.svc.ListAppsIn(r.Context(), q.Get("project"), q.Get("environment"))
 	if err != nil {
 		return err
 	}
@@ -64,23 +105,7 @@ func (s *server) listApps(w http.ResponseWriter, r *http.Request) error {
 		Apps []appSummaryJSON `json:"apps"`
 	}{Apps: make([]appSummaryJSON, 0, len(sums))}
 	for _, sum := range sums {
-		j := appSummaryJSON{
-			App:         sum.App,
-			CreatedAt:   sum.CreatedAt,
-			UpdatedAt:   sum.UpdatedAt,
-			ComposeKept: sum.Compose != nil,
-			Status: appStatusJSON{
-				State:         sum.Status.State,
-				WantedCopies:  sum.Status.WantedCopies,
-				HealthyCopies: sum.Status.HealthyCopies,
-				LiveVersion:   sum.Status.LiveVersion,
-			},
-		}
-		if sum.LastDeployment != nil {
-			d := toDeploymentJSON(*sum.LastDeployment)
-			j.LastDeployment = &d
-		}
-		out.Apps = append(out.Apps, j)
+		out.Apps = append(out.Apps, toAppSummaryJSON(sum))
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil

@@ -36,6 +36,12 @@ const (
 	codeAppChanged            = "app_changed"
 	codeComposeNotKept        = "compose_not_kept"
 	codeNotAWebhook           = "not_a_webhook"
+	codeProjectNotFound       = "project_not_found"
+	codeEnvironmentNotFound   = "environment_not_found"
+	codeProjectExists         = "project_exists"
+	codeEnvironmentExists     = "environment_exists"
+	codeNotEmpty              = "not_empty"
+	codeProtected             = "protected"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

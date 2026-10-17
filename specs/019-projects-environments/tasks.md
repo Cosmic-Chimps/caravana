@@ -24,7 +24,7 @@ quickstart.md. Tests are required (constitution VIII).
   `saveAndDeploy` for an unknown ID, Compose) with `ErrProjectNotFound`/`ErrEnvironmentNotFound`;
   existing apps skip it. `AppSummary`/`AppRecord` place exposed. Test: deploy to
   `shop--staging--web` before `staging` exists → environment not found, nothing saved.
-- [ ] T004 [US1] `internal/api/projects.go` + tests, `api/openapi.yaml` 0.16.0: `listProjects`,
+- [X] T004 [US1] `internal/api/projects.go` + tests, `api/openapi.yaml` 0.16.0: `listProjects`,
   `createProject`, `getProject`, `updateProject`, `deleteProject`, `createEnvironment`,
   `deleteEnvironment`, `listEnvironmentApps`, `createEnvironmentApp`, `getEnvironmentApp`;
   `project`/`environment`/`appName` on `AppRecord`, `AppSummary`, `listApps` filters; error codes

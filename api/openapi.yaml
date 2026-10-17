@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.15.0
+  version: 0.16.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -62,7 +62,21 @@ paths:
     get:
       operationId: listApps
       summary: List every app with its current status, by ID.
+      description: |
+        With `project` and/or `environment`, only the apps there. A project, or an environment
+        of the project, that doesn't exist is `404 project_not_found` or
+        `404 environment_not_found`, not an empty list. An `environment` alone matches that
+        name in every project. An empty value means no filter.
       tags: [apps]
+      parameters:
+        - name: project
+          in: query
+          description: Only apps of this project.
+          schema: {type: string}
+        - name: environment
+          in: query
+          description: Only apps in environments of this name (of the `project`, when given).
+          schema: {type: string}
       responses:
         "200":
           description: |
@@ -74,6 +88,8 @@ paths:
                 $ref: "#/components/schemas/AppSummaryList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
         "500":
           $ref: "#/components/responses/Internal"
     post:
@@ -82,6 +98,11 @@ paths:
       description: |
         Like `deployApp` with a body, but never replaces a stored app: an existing ID is
         `409 app_exists` and nothing changes. Follow the rollout at `Location`.
+
+        The ID places the app (see the `id` path parameter): `shop--staging--web` is `web` in
+        environment `staging` of project `shop`, which must exist, else
+        `404 project_not_found` or `404 environment_not_found` with `field: "id"`; an ID with
+        `--` that isn't `<project>--<environment>--<name>` is `400 invalid_field` on `id`.
       tags: [apps]
       requestBody:
         required: true
@@ -105,6 +126,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
         "409":
           description: |
             `app_exists` (`field: "id"`): an app with this ID is stored. Or `job_conflict`,
@@ -173,6 +196,331 @@ paths:
                 $ref: "#/components/schemas/Attention"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects:
+    get:
+      operationId: listProjects
+      summary: List the projects with their environments.
+      description: |
+        Project `default` first, then by creation. Every installation has `default` with its
+        `production` environment: the apps that existed before projects are there.
+      tags: [projects]
+      responses:
+        "200":
+          description: The projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createProject
+      summary: Create a project.
+      description: |
+        A project starts with one environment, `production`. Its `name` is part of its apps'
+        IDs and never changes; `displayName` is what the console shows.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRequest"
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location:
+              description: The project's URL, `/v1/projects/{project}`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/PlaceExists"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PlaceInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+    get:
+      operationId: getProject
+      summary: Read a project with its environments.
+      tags: [projects]
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      operationId: updateProject
+      summary: Change a project's display name.
+      description: |
+        The only thing about a project that can change: its name is part of every app's ID.
+        `default` may be renamed for display.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PlaceInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteProject
+      summary: Delete a project and its environments.
+      description: |
+        Refused while any app is in the project (`409 not_empty`, the message names them), and
+        for `default` (`409 protected`): apps that existed before projects are in it.
+      tags: [projects]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          $ref: "#/components/responses/PlaceInUse"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}/environments:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+    post:
+      operationId: createEnvironment
+      summary: Add an environment to a project.
+      description: It starts empty and is listed after the project's other environments.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentRequest"
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          $ref: "#/components/responses/PlaceExists"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/PlaceInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}/environments/{environment}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+      - $ref: "#/components/parameters/EnvironmentName"
+    delete:
+      operationId: deleteEnvironment
+      summary: Delete an environment.
+      description: |
+        Refused while any app is in it (`409 not_empty`, the message names them), and for
+        `production` of project `default` (`409 protected`).
+      tags: [projects]
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          $ref: "#/components/responses/PlaceInUse"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/projects/{project}/environments/{environment}/apps:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+      - $ref: "#/components/parameters/EnvironmentName"
+    get:
+      operationId: listEnvironmentApps
+      summary: List the apps of one environment, with their status, by ID.
+      description: |
+        As `listApps` with both filters, but a bare array. When Nomad can't be read, each
+        status is `unknown` and the stored data is still returned.
+      tags: [projects]
+      responses:
+        "200":
+          description: The apps in the environment; empty when it has none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createEnvironmentApp
+      summary: Create an app in this environment and start its first deployment.
+      description: |
+        As `createApp`, for the ID these names make (`<project>--<environment>--<appName>`, or
+        the bare `appName` in `default`/`production`): it never replaces a stored app, and an
+        ID that is taken is `409 app_exists`. `id` may be left out; when given it must equal
+        that ID. Follow the rollout at `Location`.
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentAppRequest"
+      responses:
+        "202":
+          description: Saved; Nomad accepted the job.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "409":
+          description: |
+            `app_exists` (`field: "id"`): an app with this ID is stored. Or `job_conflict`, as for
+            `deployApp`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: |
+            `invalid_field` with `field` `appName`: not a lowercase label, or it holds `--`. Or
+            `image_not_found` and `registry_auth_failed`, as for `createApp`.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/projects/{project}/environments/{environment}/apps/{name}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectName"
+      - $ref: "#/components/parameters/EnvironmentName"
+      - name: name
+        in: path
+        required: true
+        description: The app's name in the environment, as `appName` says.
+        schema:
+          $ref: "#/components/schemas/Name"
+    get:
+      operationId: getEnvironmentApp
+      summary: Read an app by its project, environment and name.
+      description: As `getApp`, for the ID these names make, with the revision as `ETag`.
+      tags: [projects]
+      responses:
+        "200":
+          description: The stored app.
+          headers:
+            ETag:
+              $ref: "#/components/headers/AppETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/PlaceNotFound"
+        "422":
+          $ref: "#/components/responses/PlaceInvalid"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -452,7 +800,10 @@ paths:
         "403":
           $ref: "#/components/responses/CrossOrigin"
         "404":
-          description: '`If-Match` was sent, and no app with this ID is stored.'
+          description: |
+            `If-Match` was sent, and no app with this ID is stored. Or the ID is new and names a
+            project or environment that doesn't exist: `project_not_found` or
+            `environment_not_found`, with `field: "id"`, and nothing is saved.
           content:
             application/json:
               schema:
@@ -1058,7 +1409,9 @@ paths:
         "404":
           description: |
             Empty body, and no app with this ID is stored; or a body with `If-Match`, and no app
-            with this ID is stored.
+            with this ID is stored. Or the ID is new and names a project or environment that
+            doesn't exist (`project_not_found` or `environment_not_found`, with `field: "id"`);
+            nothing is saved.
           content:
             application/json:
               schema:
@@ -1537,13 +1890,47 @@ components:
       name: id
       in: path
       required: true
-      description: The app ID, a lowercase DNS label. It is also the Nomad job ID.
+      description: |
+        The app ID, a lowercase DNS label. It is also the Nomad job ID. It says where the app
+        is: the bare name for an app in project `default`, environment `production`, otherwise
+        `<project>--<environment>--<name>`, so `shop--staging--web` is `web` in environment
+        `staging` of project `shop`. Project, environment and app names are lowercase labels
+        that never hold `--`, so the three parts can always be read back, and clients compute
+        the ID from them. Any operation that creates an app (`createApp`, the first `deployApp`
+        or `deployCompose` of an unknown ID) places it by this rule, and refuses a project or
+        environment that doesn't exist (404 `project_not_found` or `environment_not_found`,
+        `field: "id"`) and an ID with `--` that isn't three names (`400 invalid_field`, `id`).
+        `default--production--<name>` is refused: that place's ID is the bare name. Apps from
+        before projects keep their IDs, even ones with `--`, and sit in `default`/`production`.
+        An ID this long plus `-<service>` must fit in 63 characters, so the prefix costs room.
       schema:
         type: string
         pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
       examples:
         whoami:
           value: whoami
+        staging:
+          value: shop--staging--web
+    ProjectName:
+      name: project
+      in: path
+      required: true
+      description: The project's name, as `listProjects` returns it.
+      schema:
+        $ref: "#/components/schemas/Name"
+      examples:
+        default:
+          value: default
+    EnvironmentName:
+      name: environment
+      in: path
+      required: true
+      description: The environment's name in the project.
+      schema:
+        $ref: "#/components/schemas/Name"
+      examples:
+        production:
+          value: production
     IfMatch:
       name: If-Match
       in: header
@@ -2376,10 +2763,13 @@ components:
     AppRecord:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, revision, composeKept]
+      required: [app, createdAt, updatedAt, revision, composeKept, project, environment, appName]
       properties:
         app:
           $ref: "#/components/schemas/App"
+        project: {$ref: "#/components/schemas/PlaceProject"}
+        environment: {$ref: "#/components/schemas/PlaceEnvironment"}
+        appName: {$ref: "#/components/schemas/PlaceAppName"}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         revision:
@@ -2398,10 +2788,13 @@ components:
     AppSummary:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, composeKept, status]
+      required: [app, createdAt, updatedAt, composeKept, project, environment, appName, status]
       properties:
         app:
           $ref: "#/components/schemas/App"
+        project: {$ref: "#/components/schemas/PlaceProject"}
+        environment: {$ref: "#/components/schemas/PlaceEnvironment"}
+        appName: {$ref: "#/components/schemas/PlaceAppName"}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         composeKept:
@@ -2421,6 +2814,121 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AppSummary"
+
+    Name:
+      type: string
+      description: |
+        A project, environment or app name: a lowercase DNS label (letters a-z, digits and
+        single dashes, not starting or ending with one, at most 63 characters) that never holds
+        `--`, which separates the parts of an app ID.
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+      maxLength: 63
+      examples: [shop]
+
+    PlaceProject:
+      type: string
+      description: The project the app is in (`default` for an app from before projects).
+      examples: [shop]
+
+    PlaceEnvironment:
+      type: string
+      description: The environment of the project the app is in (`production` for an app from before projects).
+      examples: [staging]
+
+    PlaceAppName:
+      type: string
+      description: |
+        The app's name in its environment. The app's ID is `appName` in `default`/`production`,
+        else `<project>--<environment>--<appName>`. For an app from before projects whose ID
+        held `--`, the whole ID.
+      examples: [web]
+
+    Environment:
+      type: object
+      additionalProperties: false
+      required: [project, name, position, apps]
+      properties:
+        project: {type: string, description: "The project's name."}
+        name: {type: string}
+        position:
+          type: integer
+          minimum: 0
+          description: "The order environments are shown in; a project's `production` is 0, later ones follow."
+        apps:
+          type: integer
+          minimum: 0
+          description: How many apps are in it now.
+
+    Project:
+      type: object
+      additionalProperties: false
+      required: [name, displayName, environments, createdAt, updatedAt]
+      properties:
+        name:
+          type: string
+          description: "The project's name, the first part of its apps' IDs. It never changes."
+        displayName:
+          type: string
+          description: What the console shows. 1 to 100 printable characters.
+        environments:
+          type: array
+          description: In the order shown, `production` first unless it was deleted.
+          items:
+            $ref: "#/components/schemas/Environment"
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    ProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: "#/components/schemas/Name"
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Defaults to `name`. Anything printable, not only spaces.
+
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    EnvironmentRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: "#/components/schemas/Name"
+
+    EnvironmentAppRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        An `App`, plus the name it takes in the environment. `id` may be left out; when given it
+        must equal the ID the project, environment and `appName` make.
+      required: [appName, source, services]
+      properties:
+        appName:
+          $ref: "#/components/schemas/Name"
+        id:
+          type: string
+          description: Optional; if present, must equal the ID of this place.
+          pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        name:
+          $ref: "#/components/schemas/App/properties/name"
+        source:
+          $ref: "#/components/schemas/App/properties/source"
+        services:
+          $ref: "#/components/schemas/App/properties/services"
 
     AppStatus:
       type: object
@@ -2772,7 +3280,9 @@ components:
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
                 `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
-                `app_changed`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`.
+                `app_changed`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`,
+                `project_not_found`, `environment_not_found`, `project_exists`,
+                `environment_exists`, `not_empty`, `protected`.
               examples: [invalid_field]
             message:
               type: string
@@ -2896,6 +3406,42 @@ components:
             $ref: "#/components/schemas/Error"
     NotFound:
       description: No app with this ID is stored.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlaceNotFound:
+      description: |
+        `project_not_found` (`field` `project`, or `id` when an app ID named it) or
+        `environment_not_found` (`field` `environment`, or `id`): no such project, or the
+        project has no such environment. For `getEnvironmentApp`, also `not_found`: no app has
+        that name there.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlaceExists:
+      description: |
+        `project_exists` or `environment_exists`, with `field` `name`: the name is taken
+        (project names are unique in the installation, environment names in their project).
+        Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlaceInUse:
+      description: |
+        `not_empty`: apps are still there, and the message names them; delete or move them
+        first. `protected`: project `default` and its `production` environment can't be deleted,
+        since apps that existed before projects live there and their IDs depend on it.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlaceInvalid:
+      description: |
+        `invalid_field`: `field` is `name` (not a lowercase label, or it holds `--`) or
+        `displayName` (empty, not printable, or over 100 characters). Nothing was changed.
       content:
         application/json:
           schema:
@@ -3051,6 +3597,8 @@ tags:
     description: Server health.
   - name: apps
     description: Stored app definitions.
+  - name: projects
+    description: Projects, their environments, and the apps in each.
   - name: deployments
     description: Deploying apps and following their rollouts.
   - name: webhooks

@@ -59,6 +59,16 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps", s.createApp, false, false},
 		{http.MethodGet, "/v1/deployments", s.listRecentDeployments, false, false},
 		{http.MethodGet, "/v1/attention", s.listAttention, false, false},
+		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
+		{http.MethodPost, "/v1/projects", s.createProject, false, false},
+		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
+		{http.MethodPatch, "/v1/projects/{project}", s.updateProject, false, false},
+		{http.MethodDelete, "/v1/projects/{project}", s.deleteProject, false, false},
+		{http.MethodPost, "/v1/projects/{project}/environments", s.createEnvironment, false, false},
+		{http.MethodDelete, "/v1/projects/{project}/environments/{environment}", s.deleteEnvironment, false, false},
+		{http.MethodGet, "/v1/projects/{project}/environments/{environment}/apps", s.listEnvironmentApps, false, false},
+		{http.MethodPost, "/v1/projects/{project}/environments/{environment}/apps", s.createEnvironmentApp, false, false},
+		{http.MethodGet, "/v1/projects/{project}/environments/{environment}/apps/{name}", s.getEnvironmentApp, false, false},
 		{http.MethodGet, "/v1/apps/{id}", s.getApp, false, false},
 		{http.MethodDelete, "/v1/apps/{id}", s.deleteApp, false, false},
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
@@ -237,6 +247,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := versionError(err); e != nil {
+		return e
+	}
+	if e := placeError(err); e != nil {
 		return e
 	}
 	switch {
