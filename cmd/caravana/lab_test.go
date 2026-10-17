@@ -60,6 +60,10 @@ func startLab(t *testing.T) labEnv {
 		if key == "NOMAD_TOKEN" {
 			return scoped
 		}
+		if key == "CARAVANA_NOTIFY_RESOLVE_AFTER" {
+			// The console-notifications step waits for "resolved"; the default is 5 minutes.
+			return "10s"
+		}
 		return os.Getenv(key)
 	}
 	addr, hookAddr, dataDir := freeAddr(t), freeAddr(t), t.TempDir()

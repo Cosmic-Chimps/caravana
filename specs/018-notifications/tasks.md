@@ -146,7 +146,10 @@ Nothing.
 ## Phase 6: Polish
 
 - [X] T011 [P] Installer: `deploy/install/install.sh` writes `CARAVANA_PUBLIC_URL=https://$domain` into caravana.env (the console domain the installer already knows). Shellcheck clean.
-- [ ] T012 Console lab step `console-notifications`, in cmd/caravana/console_lab_test.go, after `console-volumes`:
+- [X] T012 Console lab step `console-notifications`, in cmd/caravana/console_lab_test.go, after `console-volumes`:
+  - Done as built, with these differences from the text below:
+    - The failing deploy uses an image tag that doesn't exist (`busybox:does-not-exist`), as `console-needs-you` does. It fails before registering, in seconds; a health path that 404s only fails at Nomad's 10 minute progress deadline.
+    - The notifier's 30 s check gap is not configurable, so the waits budget for it (problem opened within 75 s). The step waits for `problem.opened` before it fixes the app, or the problem would never have been sent, and ends with one more gap to show nothing is sent twice.
   1. Start an `httptest` server in the test that records requests.
   2. Add a webhook channel through the console form (all three events), and keep the shown
      secret.

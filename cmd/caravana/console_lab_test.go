@@ -18,13 +18,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/notify"
 )
 
 // consoleApp is the part of the API's AppSummary these steps read.
@@ -97,6 +101,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-compose", c.compose},
 		{"console-compose-file-edit", c.composeFileEdit},
 		{"console-volumes", c.volumes},
+		{"console-notifications", c.notifications},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
@@ -1113,6 +1118,284 @@ func (c *console) volumes(t *testing.T) {
 	if gone.StatusCode != http.StatusNotFound {
 		t.Errorf("GET /v1/apps/%s after the delete = %d, want 404", id, gone.StatusCode)
 	}
+}
+
+// notifyMessage is the part of a webhook message (api/openapi.yaml,
+// NotificationMessage) these steps read.
+type notifyMessage struct {
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Kind       string `json:"kind"`
+	App        string `json:"app"`
+	Title      string `json:"title"`
+	Deployment string `json:"deployment"`
+	Outcome    string `json:"outcome"`
+	Trigger    string `json:"trigger"`
+}
+
+// notifyRequest is one request the receiver got: what was sent, as it came.
+type notifyRequest struct {
+	At      time.Time
+	Header  http.Header
+	Body    []byte
+	Message notifyMessage
+}
+
+// notifyReceiver is a webhook receiver that answers 200 to everything and
+// records each request. Caravana runs in this process, so it reaches it.
+type notifyReceiver struct {
+	mu  sync.Mutex
+	got []notifyRequest
+}
+
+func (rx *notifyReceiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	req := notifyRequest{At: time.Now(), Header: r.Header.Clone(), Body: body}
+	_ = json.Unmarshal(body, &req.Message)
+	rx.mu.Lock()
+	rx.got = append(rx.got, req)
+	rx.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+}
+
+// count is how many requests so far match.
+func (rx *notifyReceiver) count(match func(notifyMessage) bool) int {
+	rx.mu.Lock()
+	defer rx.mu.Unlock()
+	n := 0
+	for _, r := range rx.got {
+		if match(r.Message) {
+			n++
+		}
+	}
+	return n
+}
+
+// first is the first request that matches, if any.
+func (rx *notifyReceiver) first(match func(notifyMessage) bool) (notifyRequest, bool) {
+	rx.mu.Lock()
+	defer rx.mu.Unlock()
+	for _, r := range rx.got {
+		if match(r.Message) {
+			return r, true
+		}
+	}
+	return notifyRequest{}, false
+}
+
+// all is a copy of every request so far.
+func (rx *notifyReceiver) all() []notifyRequest {
+	rx.mu.Lock()
+	defer rx.mu.Unlock()
+	return append([]notifyRequest(nil), rx.got...)
+}
+
+// notifications: Settings › Notifications and the messages it sends (feature
+// 018), against real Nomad. A receiver in this process stands in for the
+// owner's endpoint; the channel is added through the console form with all
+// three events on, and the signing secret is read from the page it is shown on
+// (once). "Send a test" must arrive with a signature notify.Verify accepts.
+//
+// Then an app is deployed with an image tag that doesn't exist, which fails
+// before anything is registered and so takes seconds, where a health check that
+// can't pass takes Nomad's 10 minute progress deadline (needsYou's reasoning).
+// The failed deployment must send deploy.failed once, and the notifier (which
+// looks at the needs-you list every 30 s) problem.opened for it once. The
+// problem has to be seen before it is fixed, or it would never have been sent.
+// A working deploy then sends deploy.succeeded, and once the item has been off
+// the list for the resolve delay (the lab sets CARAVANA_NOTIFY_RESOLVE_AFTER to
+// 10 s) problem.resolved. A last wait of one more check shows nothing is sent
+// twice. The channel is removed through the console, with its secret variable.
+func (c *console) notifications(t *testing.T) {
+	const (
+		id      = "cnotify"
+		name    = "lab receiver"
+		oneGap  = 30 * time.Second // the notifier's check interval
+		options = `"command": "sh", "args": ["-c", "mkdir -p /www; echo ok > /www/index.html; exec httpd -f -p 8080 -h /www"],
+    "ports": [{"name": "http", "containerPort": 8080}], "health": {"path": "/", "interval": "5s", "timeout": "2s"}`
+	)
+	removeApp := func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/apps/"+id, "", ""); err == nil {
+			resp.Body.Close()
+		}
+	}
+	removeApp() // a leftover from an aborted run, if any
+	t.Cleanup(removeApp)
+
+	rx := &notifyReceiver{}
+	srv := httptest.NewServer(rx)
+	t.Cleanup(srv.Close)
+
+	// Add the channel through the form: a webhook with every event on. The
+	// signing secret is in the page this answers with, and nowhere else.
+	resp, body := c.post(t, "/settings/notifications", url.Values{
+		"kind": {"webhook"}, "name": {name}, "url": {srv.URL},
+		"events": {"problems", "deploy_failed", "deploy_succeeded"},
+	})
+	m := regexp.MustCompile(`id="new-signing-secret">([^<]+)<`).FindStringSubmatch(body)
+	if resp.StatusCode != http.StatusOK || m == nil || !strings.Contains(body, "Signing secret for") ||
+		!strings.Contains(body, "Copy it now: it isn't shown again.") {
+		t.Fatalf("POST /settings/notifications = %d, want 200 showing the signing secret once: %s", resp.StatusCode, body)
+	}
+	secret := html.UnescapeString(m[1])
+
+	var channels []struct {
+		ID, Name, Kind, Address string
+	}
+	c.g.getJSON(t, "/v1/notifications/channels", &channels)
+	channelID := ""
+	for _, ch := range channels {
+		if ch.Name == name {
+			channelID = ch.ID
+			if ch.Kind != "webhook" || ch.Address != srv.URL {
+				t.Errorf("channel = %+v, want a webhook at %s", ch, srv.URL)
+			}
+		}
+	}
+	if channelID == "" {
+		t.Fatalf("GET /v1/notifications/channels = %+v, want the channel %q", channels, name)
+	}
+	removeChannel := func() {
+		if resp, err := c.g.apiRequest(http.MethodDelete, "/v1/notifications/channels/"+channelID, "", ""); err == nil {
+			resp.Body.Close()
+		}
+	}
+	t.Cleanup(removeChannel)
+	if raw, err := c.g.apiRequest(http.MethodGet, "/v1/notifications/channels", "", ""); err == nil {
+		list, _ := io.ReadAll(raw.Body)
+		raw.Body.Close()
+		if strings.Contains(string(list), secret) {
+			t.Errorf("the API's channel list shows the signing secret")
+		}
+	}
+	if _, page := c.get(t, "/settings"); strings.Contains(page, secret) || !strings.Contains(page, name) {
+		t.Errorf("Settings after adding the channel should list %q and never show the signing secret again", name)
+	}
+
+	// Send a test: the page says it was accepted, and the receiver got a message
+	// whose signature verifies with the secret from the page.
+	resp, body = c.post(t, "/settings/notifications/"+channelID+"/test", url.Values{})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST send a test = %d, want 303: %s", resp.StatusCode, body)
+	}
+	if _, page := c.get(t, resp.Header.Get("Location")); !strings.Contains(page, name+" accepted the test message.") {
+		t.Errorf("Settings after the test doesn't say %q accepted it:\n%s", name, page)
+	}
+	isType := func(typ string) func(notifyMessage) bool {
+		return func(msg notifyMessage) bool { return msg.Type == typ }
+	}
+	waitFor(t, "the test message to reach the receiver", 10*time.Second, func() bool { return rx.count(isType("test")) > 0 })
+	testReq, _ := rx.first(isType("test"))
+	if err := notify.Verify(secret, testReq.Header.Get(notify.SignatureHeader), testReq.Body, time.Now(), 5*time.Minute); err != nil {
+		t.Errorf("the test message's signature %q doesn't verify: %v", testReq.Header.Get(notify.SignatureHeader), err)
+	}
+	if testReq.Header.Get("Caravana-Event") != "test" || testReq.Header.Get("Caravana-Delivery") != testReq.Message.ID || testReq.Message.ID == "" {
+		t.Errorf("the test message's headers = %v, want Caravana-Event test and a Caravana-Delivery equal to its id %q", testReq.Header, testReq.Message.ID)
+	}
+
+	// A deploy that fails: one deploy.failed, then one problem.opened.
+	definition := func(image string) string {
+		return fmt.Sprintf(`{"source": {"kind": "image"}, "services": [{"name": "web", "image": %q, %s}]}`, image, options)
+	}
+	resp = c.g.api(t, http.MethodPost, "/v1/apps/"+id+"/deployments", "application/json", definition("busybox:does-not-exist"))
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusAccepted {
+		t.Fatalf("deploy of a missing tag = 202, want it refused: %s", raw)
+	}
+	var newest struct {
+		Deployments []gateDeployment `json:"deployments"`
+	}
+	c.g.getJSON(t, "/v1/apps/"+id+"/deployments?limit=1", &newest)
+	if len(newest.Deployments) != 1 || newest.Deployments[0].Status != "failed" {
+		t.Fatalf("%s's newest deployment = %+v, want one that failed", id, newest.Deployments)
+	}
+	failed := newest.Deployments[0].ID
+
+	ofApp := func(typ, kind string) func(notifyMessage) bool {
+		return func(msg notifyMessage) bool {
+			return msg.App == id && msg.Type == typ && (kind == "" || msg.Kind == kind)
+		}
+	}
+	waitFor(t, "deploy.failed to reach the receiver", 15*time.Second, func() bool { return rx.count(ofApp("deploy.failed", "")) > 0 })
+	if got, _ := rx.first(ofApp("deploy.failed", "")); got.Message.Deployment != failed || got.Message.Outcome != "failed" || got.Message.Trigger != "manual" {
+		t.Errorf("deploy.failed = %+v, want deployment %s, outcome failed, trigger manual", got.Message, failed)
+	}
+	// The notifier looks every 30 s, and its first look comes one gap after
+	// Caravana started (long ago by now), so one more gap and a sender turn is the most it takes.
+	waitFor(t, "problem.opened for the failed deploy", 2*oneGap+15*time.Second, func() bool {
+		return rx.count(ofApp("problem.opened", "deploy_failed")) > 0
+	})
+
+	// Fix it. The working deploy sends deploy.succeeded; the item leaves the
+	// list, and after the resolve delay problem.resolved follows.
+	resp = c.g.api(t, http.MethodPost, "/v1/apps/"+id+"/deployments", "application/json", definition("busybox:1.37"))
+	raw, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var fixed gateDeployment
+	if resp.StatusCode != http.StatusAccepted || json.Unmarshal(raw, &fixed) != nil || fixed.ID == "" {
+		t.Fatalf("deploy the fixed app = %d, want 202 with a deployment: %s", resp.StatusCode, raw)
+	}
+	if final := c.g.waitFinalOf(t, id, fixed.ID, 4*time.Minute); final.Status != "healthy" {
+		t.Fatalf("deployment %s ended %s: %s", fixed.ID, final.Status, final.Error)
+	}
+	waitFor(t, "deploy.succeeded to reach the receiver", 15*time.Second, func() bool { return rx.count(ofApp("deploy.succeeded", "")) > 0 })
+	if got, _ := rx.first(ofApp("deploy.succeeded", "")); got.Message.Deployment != fixed.ID || got.Message.Outcome != "healthy" {
+		t.Errorf("deploy.succeeded = %+v, want deployment %s, outcome healthy", got.Message, fixed.ID)
+	}
+	waitFor(t, "problem.resolved for the failed deploy", 2*time.Minute, func() bool {
+		return rx.count(ofApp("problem.resolved", "deploy_failed")) > 0
+	})
+
+	// One more look of the notifier: nothing is sent a second time.
+	time.Sleep(oneGap + 5*time.Second)
+	for _, want := range []struct {
+		typ, kind string
+	}{{"deploy.failed", ""}, {"problem.opened", "deploy_failed"}, {"deploy.succeeded", ""}, {"problem.resolved", "deploy_failed"}} {
+		if n := rx.count(ofApp(want.typ, want.kind)); n != 1 {
+			t.Errorf("%s (%s) for %s was sent %d times, want exactly once", want.typ, want.kind, id, n)
+		}
+	}
+	// Every message is signed and named the way the contract says, and no id repeats.
+	ids := map[string]bool{}
+	for _, r := range rx.all() {
+		if err := notify.Verify(secret, r.Header.Get(notify.SignatureHeader), r.Body, r.At, 5*time.Minute); err != nil {
+			t.Errorf("the %s message's signature doesn't verify: %v", r.Message.Type, err)
+		}
+		if r.Header.Get("Caravana-Event") != r.Message.Type || r.Header.Get("Caravana-Delivery") != r.Message.ID {
+			t.Errorf("the %s message's headers = %v, want Caravana-Event and Caravana-Delivery to match its body", r.Message.Type, r.Header)
+		}
+		if ids[r.Message.ID] {
+			t.Errorf("delivery %s reached the receiver twice", r.Message.ID)
+		}
+		ids[r.Message.ID] = true
+	}
+
+	// Remove the channel through the console: its row and its secret variable go.
+	resp, body = c.post(t, "/settings/notifications/"+channelID+"/remove", url.Values{})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST remove the channel = %d, want 303: %s", resp.StatusCode, body)
+	}
+	c.g.getJSON(t, "/v1/notifications/channels", &channels)
+	for _, ch := range channels {
+		if ch.ID == channelID {
+			t.Errorf("channel %s is still listed after it was removed", channelID)
+		}
+	}
+	if _, _, err := c.g.target.Nomad.Variables().Read("caravana/notifications/"+channelID, nil); err == nil {
+		t.Errorf("Nomad variable caravana/notifications/%s is still there after the channel was removed", channelID)
+	}
+
+	// And the app, through the API (the console's delete is the next step's).
+	resp = c.g.api(t, http.MethodDelete, "/v1/apps/"+id, "", "")
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("DELETE /v1/apps/%s = %d, want 204", id, resp.StatusCode)
+	}
+	waitFor(t, id+"'s Nomad job to be gone", time.Minute, func() bool {
+		_, _, err := c.g.target.Nomad.Jobs().Info(id, nil)
+		return err != nil && strings.Contains(err.Error(), "404")
+	})
 }
 
 // deleteApp: a wrong confirmation changes nothing (422); the right one sends
