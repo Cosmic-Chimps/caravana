@@ -25,14 +25,19 @@ const (
 
 // deploymentJSON is a deployment as the API shows it (schema Deployment).
 type deploymentJSON struct {
-	ID         string            `json:"id"`
-	AppID      string            `json:"appId"`
-	Trigger    app.Trigger       `json:"trigger"`
-	Status     store.Status      `json:"status"`
-	JobVersion *uint64           `json:"jobVersion,omitempty"`
-	Digests    map[string]string `json:"digests"`
-	Warnings   []app.Warning     `json:"warnings"`
-	Error      string            `json:"error,omitempty"`
+	ID    string `json:"id"`
+	AppID string `json:"appId"`
+	// Project, Environment and AppName say where the app is, so a list of
+	// deployments across apps (listRecentDeployments) names them.
+	Project     string            `json:"project"`
+	Environment string            `json:"environment"`
+	AppName     string            `json:"appName"`
+	Trigger     app.Trigger       `json:"trigger"`
+	Status      store.Status      `json:"status"`
+	JobVersion  *uint64           `json:"jobVersion,omitempty"`
+	Digests     map[string]string `json:"digests"`
+	Warnings    []app.Warning     `json:"warnings"`
+	Error       string            `json:"error,omitempty"`
 	// Source is the deployment of this app this one redeployed.
 	Source string `json:"source,omitempty"`
 	// PromotedFrom says where a promotion came from: the other app, its
@@ -94,8 +99,9 @@ func (s *server) withProgress(r *http.Request, rec store.DeploymentRecord, d *de
 
 func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	d := deploymentJSON{
-		ID:         rec.Deployment.ID,
-		AppID:      rec.AppID,
+		ID:      rec.Deployment.ID,
+		AppID:   rec.AppID,
+		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name,
 		Trigger:    rec.Deployment.Trigger,
 		Status:     rec.Status,
 		JobVersion: rec.JobVersion,

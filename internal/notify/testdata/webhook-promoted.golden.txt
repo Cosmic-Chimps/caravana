@@ -1,0 +1,7 @@
+POST https://hooks.example.com/caravana
+Caravana-Delivery: ndl_3f9a1c2b4d5e
+Caravana-Event: deploy.succeeded
+Caravana-Signature: t=1792206041,v1=020235a508652123eb2f528c3d4ce583d3fa732bc7311d1bf61c340320e96c34
+Content-Type: application/json
+
+{"id":"ndl_3f9a1c2b4d5e","type":"deploy.succeeded","app":"shop--production--web","project":"shop","environment":"production","appName":"web","title":"shop--production--web: deployed v3","text":"shop--production--web's deploy v3 is healthy, promoted from staging, started from the console.","deployment":"dep_9z8y7x","version":3,"outcome":"healthy","trigger":"console","promotedFrom":"staging","url":"https://caravana.example.com/apps/shop--production--web/deployments#deployment-dep_9z8y7x","at":"2026-10-17T03:00:41Z"}

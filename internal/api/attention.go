@@ -12,6 +12,9 @@ import (
 type attentionItemJSON struct {
 	Kind             string    `json:"kind"`
 	AppID            string    `json:"appId,omitempty"`
+	Project          string    `json:"project,omitempty"`
+	Environment      string    `json:"environment,omitempty"`
+	AppName          string    `json:"appName,omitempty"`
 	Service          string    `json:"service,omitempty"`
 	Copies           []string  `json:"copies,omitempty"`
 	DeploymentID     string    `json:"deploymentId,omitempty"`
@@ -22,7 +25,8 @@ type attentionItemJSON struct {
 }
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
-	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Service: it.Service, Copies: it.Copies,
+	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
+		Service: it.Service, Copies: it.Copies,
 		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version, At: it.When, Detail: it.Detail}
 }
 

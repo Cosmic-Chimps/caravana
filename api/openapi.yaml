@@ -2732,6 +2732,15 @@ components:
         app:
           type: string
           description: The app's ID. Absent for installation-wide events.
+        project:
+          type: string
+          description: The project of the app. Absent when `app` is.
+        environment:
+          type: string
+          description: The environment of the app, such as `staging`. Absent when `app` is.
+        appName:
+          type: string
+          description: The app's name in its environment. Absent when `app` is.
         service: {type: string}
         title:
           type: string
@@ -2758,6 +2767,12 @@ components:
             Deploy events only: what started the deployment, as the deployment record says it:
             `console` (the web console), `manual` (an API call) or `webhook`. Receivers should
             accept values they don't know.
+        promotedFrom:
+          type: string
+          description: |
+            Deploy events only, for a deployment made by promoting another environment's
+            (`promoteApp`): the name of the environment it came from. The `text` says so too.
+            Absent otherwise.
         url:
           type: string
           description: The console page about it. Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`).
@@ -3259,6 +3274,15 @@ components:
         appId:
           type: string
           description: Absent for `no_backup_destination`, which is about the installation.
+        project:
+          type: string
+          description: The project of `appId`'s app. Absent when `appId` is.
+        environment:
+          type: string
+          description: The environment of `appId`'s app. Absent when `appId` is.
+        appName:
+          type: string
+          description: The name of `appId`'s app in its environment. Absent when `appId` is.
         service:
           type: string
           description: The service, for the copy and backup kinds.
@@ -3323,12 +3347,15 @@ components:
     Deployment:
       type: object
       additionalProperties: false
-      required: [id, appId, trigger, status, digests, warnings, definitionRecorded, composeKept, createdAt, updatedAt]
+      required: [id, appId, project, environment, appName, trigger, status, digests, warnings, definitionRecorded, composeKept, createdAt, updatedAt]
       properties:
         id:
           type: string
         appId:
           type: string
+        project: {$ref: "#/components/schemas/PlaceProject"}
+        environment: {$ref: "#/components/schemas/PlaceEnvironment"}
+        appName: {$ref: "#/components/schemas/PlaceAppName"}
         trigger:
           type: string
           enum: [manual, webhook, console]

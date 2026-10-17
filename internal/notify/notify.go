@@ -39,19 +39,28 @@ const (
 // Title and Text are the console's own wording; Detail is the raw reason. None
 // of them holds a secret value.
 type Event struct {
-	Type       string    `json:"type"`
-	Kind       string    `json:"kind,omitempty"` // the needs-you kind, for problems
-	AppID      string    `json:"app,omitempty"`
-	Service    string    `json:"service,omitempty"`
-	Title      string    `json:"title"`
-	Text       string    `json:"text"`
-	Detail     string    `json:"detail,omitempty"`
-	Deployment string    `json:"deployment,omitempty"`
-	Version    *uint64   `json:"version,omitempty"`
-	Outcome    string    `json:"outcome,omitempty"`
-	Trigger    string    `json:"trigger,omitempty"`
-	URL        string    `json:"url,omitempty"` // the console page about it, when its address is known
-	At         time.Time `json:"at"`
+	Type  string `json:"type"`
+	Kind  string `json:"kind,omitempty"` // the needs-you kind, for problems
+	AppID string `json:"app,omitempty"`
+	// Project, Environment and AppName say where the app is (feature 019): the
+	// app's ID is these written out, so a receiver can route by environment
+	// without parsing it. Empty for installation-wide events.
+	Project     string  `json:"project,omitempty"`
+	Environment string  `json:"environment,omitempty"`
+	AppName     string  `json:"appName,omitempty"`
+	Service     string  `json:"service,omitempty"`
+	Title       string  `json:"title"`
+	Text        string  `json:"text"`
+	Detail      string  `json:"detail,omitempty"`
+	Deployment  string  `json:"deployment,omitempty"`
+	Version     *uint64 `json:"version,omitempty"`
+	Outcome     string  `json:"outcome,omitempty"`
+	Trigger     string  `json:"trigger,omitempty"`
+	// PromotedFrom is the environment a promotion came from, for deploy events
+	// of a deployment made by promoting another environment's.
+	PromotedFrom string    `json:"promotedFrom,omitempty"`
+	URL          string    `json:"url,omitempty"` // the console page about it, when its address is known
+	At           time.Time `json:"at"`
 }
 
 // Channel is what sending to one channel needs, with its secret part read from

@@ -48,6 +48,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	}
 	ev := notify.Event{
 		Type: notify.EventProblemOpened, Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
+		Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, it.Deployment)), At: at,
 	}
 	n := len(it.Copies)
@@ -103,6 +104,13 @@ func resolvedEvent(p store.SentProblem, base string, at time.Time) notify.Event 
 	}
 }
 
+// inPlace says where the event's app is, from the stored place (a zero place
+// says nothing, as for an event of no app).
+func inPlace(ev notify.Event, place app.Place) notify.Event {
+	ev.Project, ev.Environment, ev.AppName = place.Project, place.Environment, place.Name
+	return ev
+}
+
 // deployEvent says how a deployment ended: deploy.succeeded for healthy,
 // deploy.failed for failed, reverted and superseded. ok is false for a record
 // that has not ended, which has nothing to tell yet.
@@ -125,15 +133,29 @@ func deployEvent(rec store.DeploymentRecord, base string) (ev notify.Event, ok b
 	if rec.Status == store.StatusHealthy {
 		title = fmt.Sprintf("%s: deployed%s", rec.AppID, label)
 	}
-	return notify.Event{
+	// A promotion says where its images came from: the source app's environment.
+	promoted := ""
+	if rec.SourceApp != "" {
+		promoted = ", promoted from " + rec.SourceEnvironment
+	}
+	return inPlace(notify.Event{
 		Type: typ, AppID: rec.AppID, Title: title,
-		Text:       fmt.Sprintf("%s's deploy%s %s%s.", rec.AppID, label, long, startedBy(rec.Deployment.Trigger)),
+		Text:       fmt.Sprintf("%s's deploy%s %s%s%s.", rec.AppID, label, long, promoted, startedBy(rec.Deployment.Trigger)),
 		Detail:     limitDetail(rec.Error),
 		Deployment: rec.Deployment.ID, Version: rec.JobVersion, Outcome: string(rec.Status),
-		Trigger: string(rec.Deployment.Trigger),
-		URL:     consoleLink(base, deploymentPath(rec.AppID, rec.Deployment.ID)),
-		At:      rec.UpdatedAt,
-	}, true
+		Trigger: string(rec.Deployment.Trigger), PromotedFrom: promotedFrom(rec),
+		URL: consoleLink(base, deploymentPath(rec.AppID, rec.Deployment.ID)),
+		At:  rec.UpdatedAt,
+	}, rec.Place), true
+}
+
+// promotedFrom is the environment a promotion came from, or "" for a deployment
+// that is not one.
+func promotedFrom(rec store.DeploymentRecord) string {
+	if rec.SourceApp == "" {
+		return ""
+	}
+	return rec.SourceEnvironment
 }
 
 // startedBy says in words what started a deployment, to follow a sentence:
@@ -395,8 +417,10 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 
 	exists := make(map[string]bool, len(apps))
+	places := make(map[string]app.Place, len(apps)) // for the events that only have an app ID
 	for _, rec := range apps {
 		exists[rec.App.ID] = true
+		places[rec.App.ID] = rec.Place
 	}
 	now := s.clock.Now().UTC()
 	changes := diffProblems(prev, att.Items, !att.CopiesUnknown, exists, now, s.resolveAfter)
@@ -412,7 +436,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		})
 	}
 	for _, p := range changes.Resolved {
-		resolved = append(resolved, resolvedEvent(p, s.publicURL, now))
+		resolved = append(resolved, inPlace(resolvedEvent(p, s.publicURL, now), places[p.AppID]))
 		check.Removed = append(check.Removed, p.Key)
 	}
 

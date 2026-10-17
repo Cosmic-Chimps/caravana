@@ -45,6 +45,9 @@ type AttentionItem struct {
 	Service    string   // "" for deploy_failed and no_backup_destination
 	Copies     []string // the copy IDs it is about (copy kinds)
 	Deployment string   // deploy_failed: the deployment ID
+	// Project, Environment and AppName are where AppID is, from the stored place
+	// (empty without an AppID).
+	Project, Environment, AppName string
 	// DeploymentStatus is the deployment's final status, failed or reverted,
 	// for deploy_failed.
 	DeploymentStatus store.Status
@@ -154,6 +157,12 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 	}
 	if noDestination != nil {
 		out.Items = append(out.Items, AttentionItem{Kind: AttentionNoBackupDestination, When: *noDestination})
+	}
+
+	for i, it := range out.Items {
+		if rec, ok := known[it.AppID]; ok {
+			out.Items[i].Project, out.Items[i].Environment, out.Items[i].AppName = rec.Place.Project, rec.Place.Environment, rec.Place.Name
+		}
 	}
 
 	slices.SortStableFunc(out.Items, func(a, b AttentionItem) int {

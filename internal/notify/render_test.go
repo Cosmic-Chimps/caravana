@@ -21,6 +21,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 var (
 	fixedNow = time.Date(2026, 10, 17, 3, 0, 41, 0, time.UTC)
 	version8 = uint64(8)
+	version3 = uint64(3)
 )
 
 // backupFailed is a problem event with a link.
@@ -38,17 +39,38 @@ var backupFailed = Event{
 
 // deployFailed is a deploy event.
 var deployFailed = Event{
-	Type:       EventDeployFailed,
-	AppID:      "hollo",
-	Title:      "hollo: the deploy was reverted to v6",
-	Text:       "Version 8 did not become healthy, so Nomad went back to version 6.",
-	Detail:     "deadline reached",
-	Deployment: "dep_1a2b3c",
-	Version:    &version8,
-	Outcome:    "reverted",
-	Trigger:    "webhook",
-	URL:        "https://caravana.example.com/apps/hollo/deployments#deployment-dep_1a2b3c",
-	At:         fixedNow,
+	Type:        EventDeployFailed,
+	AppID:       "hollo",
+	Project:     "default",
+	Environment: "production",
+	AppName:     "hollo",
+	Title:       "hollo: the deploy was reverted to v6",
+	Text:        "Version 8 did not become healthy, so Nomad went back to version 6.",
+	Detail:      "deadline reached",
+	Deployment:  "dep_1a2b3c",
+	Version:     &version8,
+	Outcome:     "reverted",
+	Trigger:     "webhook",
+	URL:         "https://caravana.example.com/apps/hollo/deployments#deployment-dep_1a2b3c",
+	At:          fixedNow,
+}
+
+// promoted is a deploy event of a promotion: the place and where it came from.
+var promoted = Event{
+	Type:         EventDeploySucceeded,
+	AppID:        "shop--production--web",
+	Project:      "shop",
+	Environment:  "production",
+	AppName:      "web",
+	Title:        "shop--production--web: deployed v3",
+	Text:         "shop--production--web's deploy v3 is healthy, promoted from staging, started from the console.",
+	Deployment:   "dep_9z8y7x",
+	Version:      &version3,
+	Outcome:      "healthy",
+	Trigger:      "console",
+	PromotedFrom: "staging",
+	URL:          "https://caravana.example.com/apps/shop--production--web/deployments#deployment-dep_9z8y7x",
+	At:           fixedNow,
 }
 
 // resolvedNoLink is a resolved problem on a host without a public address.
@@ -68,6 +90,7 @@ func TestRender(t *testing.T) {
 		ev   Event
 	}{
 		{"webhook", Channel{KindWebhook, "https://hooks.example.com/caravana?x=1", "whsec_test"}, deployFailed},
+		{"webhook-promoted", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, promoted},
 		{"webhook-problem", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, backupFailed},
 		{"slack", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, backupFailed},
 		{"slack-no-link", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, resolvedNoLink},

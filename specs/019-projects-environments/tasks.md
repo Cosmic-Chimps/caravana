@@ -40,7 +40,7 @@ quickstart.md. Tests are required (constitution VIII).
   by the existing check; dropped Compose file warning; `promotedFrom` on the record.
 - [X] T006 [US3] `internal/api/promote.go` + tests: `previewPromotion`, `promoteApp` (If-Match),
   `copyApp` (`missingSecrets`); `Deployment.promotedFrom`.
-- [ ] T007 [US5] FR-011: `AttentionItem`, `notify.Event` (+ `PromotedFrom`), activity rows and
+- [X] T007 [US5] FR-011: `AttentionItem`, `notify.Event` (+ `PromotedFrom`), activity rows and
   `listRecentDeployments` carry the place; webhook message schema in openapi; notify goldens
   updated; deploy events of a promotion say "promoted from <env>" in their text.
 
