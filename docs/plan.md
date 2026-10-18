@@ -70,7 +70,7 @@ host serving only the webhook, a broken deploy reverted by Nomad with no failed 
 every port but 22, 80 and 443 closed from outside. The same checks pass in the local lab
 (`TestLab`).
 
-## Phase 2: Compose + UI (the "Dokploy for Nomad" experience)
+## Phase 2: Compose + UI (the "Heroku on your own VM" experience)
 
 | # | Feature | Notes |
 | --- | --- | --- |
@@ -196,9 +196,8 @@ Nomad Variables, and the per-task copies and the `auth` block go away.
 
 Added 2026-10-16. ECR's registry password is a token from `ecr:GetAuthorizationToken` that
 expires after 12 hours, so 017's "user name and secret" breaks half a day after it is pasted.
-Dokploy users hit exactly this (Dokploy issue #2040; its PRs #2660 and #4141 log in at deploy
-time only, so a restart or reschedule after 12 hours still fails, and #4632 broke the `AWS` user
-name by lowercasing it).
+Other PaaS tools hit exactly this: logging in at deploy time only still fails on a restart or
+reschedule after 12 hours, and lowercasing the user name breaks `AWS`.
 
 The plan, built on 017 with no breaking change:
 
@@ -300,6 +299,46 @@ has to settle:
   host volumes and Docker. It checks the cluster when connecting and says what's missing.
 - **The scoped policy:** connecting includes making Caravana's own limited token from
   `caravana-policy.hcl`, never keeping a management token.
+
+### What other PaaS tools have that we don't (ranked 2026-10-17)
+
+Added 2026-10-17, from comparing the live console, the design handoff in `design/console/` and
+`internal/app` against the self-hosted PaaS tools people come from. Not gaps: digest-pinned
+deploys with auto-revert, rollback by recorded definition, promotion by digest, the needs-you
+list with signed notifications, volume backups inside the app's copy, export as a Nomad job,
+`If-Match` on edits and the kept Compose file. Those stay the pitch.
+
+Ranked by day-to-day value for the single-host owner against cost and fit with the Nomad model.
+"Drawn" names the handoff screen that already covers it. Each one becomes its own Spec Kit
+feature when it is scheduled; the rows only say where it belongs.
+
+| # | Gap | Elsewhere | How it fits Caravana | Drawn | Phase |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Build from source | Git providers, autodeploy on push, build server, concurrent-build limit | Feature 020. Ship "autodeploy on push" with it, as the git twin of the image webhook | `NewAppScreen` | 2.5 (020) |
+| 2 | Stop, start, restart | Deploy, Reload, Rebuild, Stop per service; bulk actions per environment | Nomad `job stop` without purge, and the task restart 016 already uses. The design has the ○ stopped mark; `docs/design-feedback-007.md` 3.4 notes "no Restart yet" | `AppScreen` (partly) | 2.5, after 020 |
+| 3 | Scheduled tasks | A cron plus a command run in the service's container, with a run history | Nomad periodic batch jobs, which backups already are. The design feedback's "workload kinds: web, worker, scheduled" (7.1) and a Runs tab | `SchedulesScreen` | 2.5, after 020 |
+| 4 | Domain extras | Path, strip path, redirects, basic auth, custom middlewares, "Validate DNS", DNS providers that create records | Basic auth and a www or apex redirect are Traefik tags. A DNS check (the A record points at this host) and the certificate state are reads. Path and header routing stays in "Routing by path and header" above | `DomainsScreen` | 2.5, after 020 |
+| 5 | Monitoring with history | CPU, memory, disk, block and network I/O per app and per server, with a time range | Caravana reads CPU and memory only while the Running tab is open. A small ring buffer in SQLite from Nomad's node and allocation stats, host disk and memory on the Apps page ("room for about 4 more apps"), and "disk nearly full" on the needs-you list | `MonitoringScreen`, `CapacityScreen` | 2.5 or 3 |
+| 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.5 (cheap) or 4 |
+| 7 | More notification kinds | Email, Telegram, Teams, Gotify, Resend, Lark | Telegram is one HTTPS call with a bot token; email needs SMTP settings. Both are 018 channels | `SettingsScreen` | 2.5 (cheap) |
+| 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | 3 |
+| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines beyond Postgres ("Backups for more than Postgres" above), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 2.5 (backups), 3 (TCP ports) |
+| 10 | Preview deployments | A pull request gets its own deploy on a wildcard domain | An environment per pull request on top of 019 and 020 | `PreviewsScreen` | 2.75 or later, after 020 |
+| 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.5 (admin), 4 (teams) |
+| 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 2.75 or later |
+| 13 | Requests log | Traefik's access log, filterable, with a cleanup schedule | Traefik's JSON access log, shown as per-app request counts and status mix. Watch disk use | none | 3 |
+| 14 | Updates and host upkeep | "Check for updates", a cleanup button, Let's Encrypt email in settings | "Updates from the console" above. Nomad's docker driver removes unused images by default, so a daily image cleanup is covered; 020's build cache will need its own pruning | `UpdatesScreen` | 2.5 or 3 |
+| 15 | List ergonomics | Filter, type and status selects, tags, bulk select | The Apps page has no filter. The design feedback (5.2) already asks at what size one appears | none | 2.5 (cheap) |
+
+Suggested order after 020: items 2, 3 and 4 as one or two small features (stop and restart,
+scheduled tasks, basic auth and redirects on domains), then 5 for the host view; 6, 7 and 15
+ride along where cheap.
+
+Not to copy: the Traefik file editor, the Docker containers, images, networks and events pages
+and per-app Traefik config (the Caravana twin is the Operator view and a read-only view of jobs
+Caravana didn't create); Swarm-isms (Reload, Rebuild, a replicas box applied by a redeploy,
+"Clear deployments", since the history is a ledger and edits are deploys); the AI assistant and
+Import.
 
 ## Open decisions (settle them in the feature spec that needs them)
 
