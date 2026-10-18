@@ -36,6 +36,9 @@ type AppRecord struct {
 	Compose   *compose.Request
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// StoppedAt is when the app was stopped (feature 020.5); nil when it is
+	// not stopped. It is kept beside the document, so it is not in Revision.
+	StoppedAt *time.Time
 	// Revision names this exact stored app: the first 16 hex digits of the
 	// SHA-256 of its JSON document and, when it keeps a Compose file, of that
 	// file's JSON too. The same app and file always have the same revision, so
@@ -296,7 +299,7 @@ func hasSecretValue(a app.App) bool {
 	return false
 }
 
-const appColumns = "id, schema_version, document, compose, created_at, updated_at, project, environment, app_name"
+const appColumns = "id, schema_version, document, compose, created_at, updated_at, project, environment, app_name, stopped_at"
 
 // scanApp reads one row of appColumns and decodes the app document. It
 // returns sql.ErrNoRows unwrapped (for GetApp); other errors name the app.
@@ -305,9 +308,10 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 		id, doc, created, upd string
 		version               int
 		kept                  sql.NullString
+		stopped               sql.NullString
 		place                 app.Place
 	)
-	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd, &place.Project, &place.Environment, &place.Name); err != nil {
+	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd, &place.Project, &place.Environment, &place.Name, &stopped); err != nil {
 		return AppRecord{}, err
 	}
 	if version > appSchemaVersion {
@@ -330,6 +334,9 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 		return AppRecord{}, fmt.Errorf("app %q: %w", id, err)
 	}
 	if rec.UpdatedAt, err = parseTime(upd); err != nil {
+		return AppRecord{}, fmt.Errorf("app %q: %w", id, err)
+	}
+	if rec.StoppedAt, err = parseOptionalTime(stopped); err != nil {
 		return AppRecord{}, fmt.Errorf("app %q: %w", id, err)
 	}
 	return rec, nil
@@ -368,6 +375,7 @@ func (s *Store) DeleteApp(ctx context.Context, id string) error {
 		"DELETE FROM restores WHERE app_id = ?",
 		"DELETE FROM volume_sizes WHERE app_id = ?",
 		"DELETE FROM sent_problems WHERE app_id = ?",
+		"DELETE FROM app_actions WHERE app_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, query, id); err != nil {
 			return fmt.Errorf("delete app %q: %w", id, err)
