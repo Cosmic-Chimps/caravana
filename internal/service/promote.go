@@ -366,9 +366,12 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 		file = &kept
 	}
 	// The ID may be too long with the place in front of it, and the settings
-	// may have changed since the source was saved: refuse now, not at its first deploy.
-	if err := s.deployer.Validate(a); err != nil {
-		return store.AppRecord{}, nil, err
+	// may have changed since the source was saved: refuse now, not at its first
+	// deploy. An app with no definition yet is only a name: nothing to check.
+	if a.Defined() {
+		if err := s.deployer.Validate(a); err != nil {
+			return store.AppRecord{}, nil, err
+		}
 	}
 
 	rec, err := s.store.InsertApp(ctx, a, file)

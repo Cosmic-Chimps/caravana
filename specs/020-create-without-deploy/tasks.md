@@ -1,6 +1,6 @@
 # Tasks: Create an app without deploying it (020)
 
-- [ ] T001 [US1][US2] Service: `app.App.Defined`, `CreateAppOnly`, `ErrAppNotDefined` in `Redeploy` /
+- [X] T001 [US1][US2] Service: `app.App.Defined`, `CreateAppOnly`, `ErrAppNotDefined` in `Redeploy` /
   `RedeployVersion` (and so the webhook), `CopyApp` of an undefined app, attention test, `Defined`
   on summaries. Table tests on the fakes, including: a defined never-deployed app's first webhook
   deploys it; an undefined app's webhook is refused and records nothing; a deploy with a body

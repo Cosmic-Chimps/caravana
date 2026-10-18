@@ -213,11 +213,15 @@ func RemovedSecrets(old, next app.App) []app.Warning {
 }
 
 // Redeploy deploys the stored app again, exactly as Deploy would. An unknown
-// app is store.ErrNotFound. Feature 004's webhook calls it.
+// app is store.ErrNotFound, and one with no services yet is ErrAppNotDefined,
+// before anything is validated or recorded. Feature 004's webhook calls it.
 func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigger) (store.DeploymentRecord, error) {
 	rec, err := s.store.GetApp(ctx, appID)
 	if err != nil {
 		return store.DeploymentRecord{}, err
+	}
+	if !rec.App.Defined() {
+		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppNotDefined)
 	}
 	// The settings may have changed since the app was saved.
 	if err := s.deployer.Validate(rec.App); err != nil {

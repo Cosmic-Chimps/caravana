@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -98,7 +100,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 		st.State = StateRollingOut
 	case nomadErr != nil:
 		st.State = StateUnknown
-	case st.HealthyCopies >= st.WantedCopies:
+	case st.WantedCopies > 0 && st.HealthyCopies >= st.WantedCopies:
 		st.State = StateHealthy
 	case st.HealthyCopies > 0:
 		st.State = StateDegraded
@@ -239,6 +241,59 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	}
 	s.appChanged(a.ID)
 	return s.deploy(ctx, a, trigger)
+}
+
+// ErrAppNotDefined is the refusal of a deploy "as stored" of an app that has
+// no services yet (one saved by CreateAppOnly with only a name). Nothing is
+// recorded; a deploy that brings a definition works as for any app.
+var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with one (a body, a Compose file or Configure)")
+
+// CreateAppOnly saves a new app without deploying it: no deployment is
+// recorded and nothing reaches Nomad. The app may carry a full definition
+// (its first redeploy then deploys it as stored, which is what a webhook does)
+// or none: with no services it is only a name, and the first deploy that sends
+// a definition gives it one. An existing ID is ErrAppExists, as for CreateApp.
+//
+// A definition is checked as a deploy would check it (*app.FieldError), except
+// for what a deploy needs from the installation (secret values, a backup
+// destination), which the deploy that comes later checks. Secret values are
+// only ever sent with a deploy, so one here is refused naming its field, never
+// dropped; secret names are kept. The ID's project and environment must exist.
+func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
+	if a.Defined() {
+		if err := s.deployer.Validate(a); err != nil {
+			return store.AppRecord{}, err
+		}
+	} else {
+		if strings.ContainsFunc(a.Name, unicode.IsControl) {
+			return store.AppRecord{}, app.NewFieldError("name", "must not contain control characters")
+		}
+		// The stored document says "services": [], not null.
+		a.Source = app.Source{Kind: app.SourceImage}
+		a.Services = []app.Service{}
+	}
+	// A new app is placed by its ID, so it also checks the ID's own form
+	// (app.PlaceOf), which is all an app without services needs.
+	if err := s.checkPlace(ctx, a.ID); err != nil {
+		return store.AppRecord{}, err
+	}
+	for i, svc := range a.Services {
+		for j, sec := range svc.Secrets {
+			if sec.Value != nil {
+				return store.AppRecord{}, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].value", i, j),
+					"secret values are sent with a deploy; create the app with the secret's name only")
+			}
+		}
+	}
+	rec, err := s.store.InsertApp(ctx, a.WithoutSecretValues(), nil)
+	if errors.Is(err, store.ErrAlreadyExists) {
+		return store.AppRecord{}, fmt.Errorf("app %q: %w", a.ID, ErrAppExists)
+	}
+	if err != nil {
+		return store.AppRecord{}, err
+	}
+	s.appChanged(a.ID)
+	return rec, nil
 }
 
 // Copies lists an app's copies: every copy that hasn't ended, plus the ended

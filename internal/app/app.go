@@ -25,6 +25,11 @@ type App struct {
 	Services []Service `json:"services"`
 }
 
+// Defined reports whether the app has a definition to deploy: at least one
+// service. An app saved without deploying it (feature 020) may have none yet,
+// and is only ever stored: nothing deploys it until a deploy brings services.
+func (a App) Defined() bool { return len(a.Services) > 0 }
+
 // SourceKind is the kind of input an App was built from.
 type SourceKind string
 

@@ -20,9 +20,17 @@ import (
 // (ErrDefinitionNotRecorded), belongs to another app (store.ErrNotFound), uses
 // an image that is gone from its registry (*deploy.ImageError), or fails what
 // any deploy is checked for (a secret with no value, today's rules:
-// *app.FieldError). Secrets keep their current values; ones the current app
+// *app.FieldError), or when the app has no definition yet (ErrAppNotDefined,
+// checked first). Secrets keep their current values; ones the current app
 // has and that version doesn't are deleted, with a warning.
 func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID string, trigger app.Trigger) (store.DeploymentRecord, error) {
+	stored, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	if !stored.App.Defined() {
+		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppNotDefined)
+	}
 	rec, err := s.version(ctx, appID, deploymentID)
 	if err != nil {
 		return store.DeploymentRecord{}, err
