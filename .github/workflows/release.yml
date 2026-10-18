@@ -13,8 +13,11 @@ name: release
 # first runs of v0.4.0 and v0.5.0). A version whose section is already there (prepared and merged
 # by hand) skips the rename.
 #
-# Pushing a v* tag by hand still works when its commit has the version's changelog section; the
-# notes step refuses it otherwise, before anything is built, and says to use this workflow.
+# Pushing a v* tag by hand (git tag v0.6.0 && git push origin v0.6.0) works too. When the tagged
+# commit has no "## 0.6.0" section, the run prepares it in its own checkout, so the notes are
+# the "Unreleased" entries, and after publishing commits that rename to main, as long as main is
+# still at the tagged commit. The tag itself never moves. If main has moved on, the release is
+# still published and the run ends with a warning saying how to fix the changelog by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -67,22 +70,18 @@ jobs:
             exit 1
           fi
 
-      # The changelog, prepared here unless it already has the version's section.
+      # The changelog, prepared here unless it already has the version's section: for a
+      # dispatched run and for a pushed tag alike. prepare fails, before anything is built, when
+      # "## Unreleased" is empty: then there is nothing to say about this release.
       - name: prepare the changelog
-        if: github.event_name == 'workflow_dispatch'
         run: |
           if ! tools/release.sh notes "$VERSION" >/dev/null 2>&1; then
             tools/release.sh prepare "$VERSION"
           fi
 
-      # The release's notes are its CHANGELOG.md section. A hand-pushed tag without one fails
-      # here, before anything is built.
+      # The release's notes are its CHANGELOG.md section.
       - name: notes
-        run: |
-          if ! tools/release.sh notes "$VERSION" >"$RUNNER_TEMP/notes.md"; then
-            echo "::error::CHANGELOG.md has no section for $VERSION at this tag. Delete the tag and release with: gh workflow run release.yml -f version=$VERSION"
-            exit 1
-          fi
+        run: tools/release.sh notes "$VERSION" >"$RUNNER_TEMP/notes.md"
 
       # The same checks as CI: a release is never built from a commit that fails them.
       - run: go vet ./...
@@ -111,3 +110,25 @@ jobs:
         run: >-
           gh release create "$TAG" dist/* --title "Caravana $VERSION"
           --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
+
+      # A pushed tag whose changelog was prepared above: main gets the rename, so the next
+      # release starts from an empty "Unreleased". Only when main is still the tagged commit;
+      # otherwise its "Unreleased" may hold newer entries, which a rename would wrongly claim.
+      # The release is out either way, so this step warns rather than fails.
+      - name: record the changelog on main
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            exit 0 # the tagged commit had its section already
+          fi
+          git fetch -q origin main
+          if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]; then
+            echo "::warning::main has moved past $TAG, so its CHANGELOG.md still lists $VERSION's entries under \"## Unreleased\". Move them under \"## $VERSION - $(date -u +%F)\" by hand."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(release): $VERSION" -- CHANGELOG.md
+          if ! git push origin HEAD:main; then
+            echo "::warning::Couldn't push the changelog rename to main. Run tools/release.sh prepare $VERSION on main and commit it."
+          fi
