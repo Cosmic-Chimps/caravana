@@ -20,8 +20,8 @@
 
   <label class="flex flex-col gap-2" for="image">
     <span class="cv-label">Image</span>
-    <input class="cv-field" id="image" type="text" name="image" value="{{.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Focus "image"}} autofocus{{end}}>
-    <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span></span>
+    <input class="cv-field" id="image" type="text" name="image" value="{{.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Focus "image"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span>. To deploy now it must exist. Create the app without deploying to name an image your CI hasn't pushed yet, or to leave the image out.</span>
     {{template "field-error" .Image}}
   </label>
 
@@ -46,7 +46,10 @@
     {{template "field-error" .Health}}
   </label>
 
-  <div><button type="submit" class="cv-btn cv-btn-primary">Create and deploy</button></div>
+  <div class="cv-actions">
+    <button type="submit" name="action" value="deploy" class="cv-btn cv-btn-primary">Create and deploy</button>
+    <button type="submit" name="action" value="create" class="cv-btn cv-btn-secondary">Create without deploying</button>
+  </div>
 </form>
 {{end}}
 
@@ -55,7 +58,7 @@
   <header class="cv-pagehead">
     <h1 class="cv-headline">New app</h1>
     {{if .Compose}}<p class="cv-lede">Deploy a Compose file. caravana shows what it becomes before anything is saved.</p>
-    {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it.</p>{{end}}
+    {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it. Or create the app now and deploy it later, from a webhook or the API.</p>{{end}}
   </header>
   <nav aria-label="What to deploy" class="cv-tabs">
     <a href="{{.ImageHref}}" class="cv-tab"{{if not .Compose}} aria-current="page"{{end}}>Image</a>

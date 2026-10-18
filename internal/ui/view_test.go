@@ -13,10 +13,17 @@ import (
 // summary is an app summary for the table tests.
 func summary(id string, state service.AppState, healthy, wanted int, live *uint64, last *store.DeploymentRecord) service.AppSummary {
 	return service.AppSummary{
-		AppRecord:      store.AppRecord{App: app.App{ID: id}},
+		AppRecord:      store.AppRecord{App: app.App{ID: id, Services: []app.Service{{Name: "web"}}}},
 		Status:         service.AppStatus{State: state, HealthyCopies: healthy, WantedCopies: wanted, LiveVersion: live},
 		LastDeployment: last,
 	}
+}
+
+// undefinedSummary is an app created by name only: no services, never deployed.
+func undefinedSummary(id string) service.AppSummary {
+	sum := summary(id, service.StateNotRunning, 0, 0, nil, nil)
+	sum.App.Services = []app.Service{}
+	return sum
 }
 
 func TestHeadlineOf(t *testing.T) {
@@ -24,7 +31,11 @@ func TestHeadlineOf(t *testing.T) {
 	ok := func(id string) service.AppSummary { return summary(id, service.StateHealthy, 1, 1, v7, nil) }
 	rolling := func(id string) service.AppSummary { return summary(id, service.StateRollingOut, 1, 1, v7, nil) }
 	degraded := func(id string) service.AppSummary { return summary(id, service.StateDegraded, 1, 2, v7, nil) }
-	down := func(id string) service.AppSummary { return summary(id, service.StateNotRunning, 0, 1, nil, nil) }
+	// down is an app that was deployed and has no copies now; waiting was created and never deployed.
+	down := func(id string) service.AppSummary {
+		return summary(id, service.StateNotRunning, 0, 1, nil, &store.DeploymentRecord{Status: store.StatusHealthy})
+	}
+	waiting := func(id string) service.AppSummary { return summary(id, service.StateNotRunning, 0, 1, nil, nil) }
 
 	// failedDeploy is a deploy that never started: the newest one of the app, whatever the copies say.
 	failedDeploy := func(sum service.AppSummary) service.AppSummary {
@@ -59,6 +70,11 @@ func TestHeadlineOf(t *testing.T) {
 		{"only rolling out", []service.AppSummary{rolling("whoami"), rolling("blog")}, "2 rollouts in progress."},
 		{"one degraded", []service.AppSummary{degraded("api")}, "1 app needs you: api has 1 of 2 copies healthy."},
 		{"one not running", []service.AppSummary{down("api")}, "1 app needs you: api isn't running."},
+		{"created and never deployed is waiting, not trouble", []service.AppSummary{waiting("api")}, "1 app waiting for a first deploy."},
+		{"waiting apps are counted after the healthy ones", []service.AppSummary{ok("whoami"), waiting("api"), waiting("blog")},
+			"1 app healthy, 2 apps waiting for a first deploy."},
+		{"waiting never hides trouble", []service.AppSummary{degraded("api"), waiting("blog")},
+			"1 app needs you: api has 1 of 2 copies healthy. 1 app waiting for a first deploy."},
 		{"trouble first, then the rest counted", []service.AppSummary{ok("whoami"), degraded("api"), rolling("jobs")},
 			"1 app needs you: api has 1 of 2 copies healthy. 1 app healthy, 1 rollout in progress."},
 		{"several in trouble are listed", []service.AppSummary{degraded("api"), down("blog"), ok("whoami")}, "2 apps need you: api, blog. 1 app healthy."},
@@ -149,6 +165,8 @@ func TestSummaryOf(t *testing.T) {
 		{"rolling out, nothing serving, not registered yet", summary("a", service.StateRollingOut, 0, 1, nil, running(nil, 5*time.Second)),
 			"Rolling out a new version. Last deployed just now from the console."},
 		{"not running", summary("a", service.StateNotRunning, 0, 2, nil, at(48*time.Hour)), "No copies are running. Last deployed 2 days ago from the console."},
+		{"created and never deployed", summary("a", service.StateNotRunning, 0, 1, nil, nil), "Nothing is deployed yet."},
+		{"created with no definition", undefinedSummary("a"), "No definition yet, so nothing can be deployed."},
 		{"unknown", summary("a", service.StateUnknown, 0, 1, nil, at(time.Hour)),
 			"Nomad can't be reached right now, so caravana can't say what's running. Last deployed 1 hour ago from the console."},
 	}
@@ -172,7 +190,8 @@ func TestStatusViews(t *testing.T) {
 		{"rolling out", summary("a", service.StateRollingOut, 0, 2, nil, deployed), statusView{"rolling", "rolling out"}},
 		{"degraded says how many", summary("a", service.StateDegraded, 1, 3, nil, deployed), statusView{"warning", "1 of 3 healthy"}},
 		{"not running after a deploy is a failure", summary("a", service.StateNotRunning, 0, 1, nil, deployed), statusView{"failed", "not running"}},
-		{"not running without a deploy is idle", summary("a", service.StateNotRunning, 0, 1, nil, nil), statusView{"idle", "not running"}},
+		{"not running without a deploy is idle", summary("a", service.StateNotRunning, 0, 1, nil, nil), statusView{"idle", "never deployed"}},
+		{"no services is not defined yet", undefinedSummary("a"), statusView{"idle", "not defined yet"}},
 		{"unknown", summary("a", service.StateUnknown, 0, 1, nil, deployed), statusView{"idle", "unknown"}},
 	}
 	for _, tc := range apps {

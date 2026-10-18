@@ -77,6 +77,9 @@ type appHeader struct {
 type appPage struct {
 	pageData
 	appHeader
+	// Created is the notice after New app's "Create without deploying" (feature
+	// 020): the app exists and nothing is deployed yet. Empty otherwise.
+	Created     sentence
 	Running     *copiesRegion
 	Deployments *deploymentsTab
 	Configure   *configureTab
@@ -226,7 +229,12 @@ func (s *server) showApp(w http.ResponseWriter, r *http.Request, session string)
 		s.serverError(w, "list copies", err)
 		return
 	}
-	s.render(w, http.StatusOK, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies})
+	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies}
+	if r.URL.Query().Get("created") == "1" && sum.LastDeployment == nil {
+		// Only said while it is still true: a reload after the first deploy says nothing.
+		page.Created = sentence{plain("Created "), mono(cmp.Or(sum.Place.Name, sum.App.ID)), plain(". Nothing is deployed yet.")}
+	}
+	s.render(w, http.StatusOK, "app", page)
 }
 
 // partAppHeader answers GET /parts/apps/{id}/header. A page only asks for it
@@ -328,12 +336,47 @@ type usageView struct {
 // Gone when the app was deleted. Failure, with the Deployments link, explains
 // an empty list after a deploy that didn't work.
 type copiesRegion struct {
-	Rows            []copyEntry
+	Rows []copyEntry
+	// First is set when there are no copies because the app was never deployed
+	// (feature 020): what to do next instead of "No copies are running".
+	First           *firstDeploy
 	Failure         sentence // "v8 failed: see "; the template adds the link and the full stop
 	DeploymentsHref string
 	Notice          sentence
 	RefreshHref     string
 	Gone            sentence
+}
+
+// firstDeploy is the guidance of an app that was created and never deployed:
+// how to give it its first deploy (or, with no definition yet, a definition).
+type firstDeploy struct {
+	Defined       bool   // it has services: it deploys as stored
+	DeployAction  string // where "Deploy now" posts
+	ConfigureHref string // the Configure tab, where a definition is made
+	WebhookHref   string // Configure's webhook section
+	ComposeHref   string // Deploy from Compose
+	Call          string // the API call, as a curl line
+	CallNote      string // what goes in the call's body, for an app with no definition
+}
+
+// firstDeployOf builds the guidance for appID, which has no deployment.
+func (s *server) firstDeployOf(r *http.Request, rec store.AppRecord) *firstDeploy {
+	id := rec.App.ID
+	f := &firstDeploy{
+		Defined:       rec.App.Defined(),
+		DeployAction:  "/apps/" + id + "/deploy",
+		ConfigureHref: "/apps/" + id + "/configure",
+		WebhookHref:   "/apps/" + id + "/configure#webhook",
+		ComposeHref:   "/apps/" + id + "/compose",
+	}
+	call := `curl -X POST -H "Authorization: Bearer $CARAVANA_TOKEN" `
+	if f.Defined {
+		f.Call = call + s.origin(r) + "/v1/apps/" + id + "/deployments"
+	} else {
+		f.Call = call + `-H "Content-Type: application/json" -d @app.json ` + s.origin(r) + "/v1/apps/" + id + "/deployments"
+		f.CallNote = "app.json holds the app: its source and its services."
+	}
+	return f
 }
 
 // loadCopies reads an app's copies and the newest deployment, which says why
@@ -371,6 +414,10 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 		}
 		if len(recs) > 0 {
 			region.Failure = failedDeploySentence(recs[0])
+		} else if rec, err := s.svc.GetApp(ctx, appID); err == nil {
+			region.First = s.firstDeployOf(r, rec)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return copiesRegion{}, err
 		}
 	}
 	return region, nil
@@ -434,9 +481,12 @@ type deployField struct {
 // deployForm is the deploy form: one image field per service. Notice is an
 // error that isn't about one field (Nomad is down, say).
 type deployForm struct {
-	Action string
-	Fields []deployField
-	Notice sentence
+	// ConfigureHref and ComposeHref say where an app with no definition (so no
+	// image field to deploy) is given one.
+	ConfigureHref, ComposeHref string
+	Action                     string
+	Fields                     []deployField
+	Notice                     sentence
 }
 
 // digestView is one service's pinned image in an entry: the short digest, and
@@ -593,7 +643,8 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 // deployFormOf builds the form from the stored app: one field per service,
 // holding its image.
 func deployFormOf(a app.App) deployForm {
-	f := deployForm{Action: "/apps/" + a.ID + "/deploy"}
+	f := deployForm{Action: "/apps/" + a.ID + "/deploy",
+		ConfigureHref: "/apps/" + a.ID + "/configure", ComposeHref: "/apps/" + a.ID + "/compose"}
 	for _, svc := range a.Services {
 		label := "Image"
 		if len(a.Services) > 1 {
@@ -782,6 +833,8 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 	}
 
 	switch {
+	case errors.Is(err, service.ErrAppNotDefined):
+		return http.StatusConflict, sentence{plain("This app has no definition yet, so there is nothing to deploy. Define it in Configure, or deploy a Compose file.")}, true
 	case errors.As(err, &fieldErr):
 		if onField(fieldErr.Field, fieldErr.Message) {
 			return http.StatusUnprocessableEntity, nil, true
@@ -827,6 +880,9 @@ type configureExtras struct {
 	// Notice is a refusal of the tab as a whole (a per-field save on an app
 	// edited through its Compose file).
 	Notice sentence
+	// Define, when set, is the "Define the app" form to draw (what was typed,
+	// with its errors) for an app that has no definition yet.
+	Define *newAppForm
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -872,7 +928,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Copied:  copiedNotice(r, sum),
 		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Secrets: secretsOf(sum.App, extra.Secret),
-		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL},
+		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
 		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
@@ -889,6 +945,14 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		// per-field form stays editable until the file is pasted (US2).
 		v := notKeptComposeView(sum.AppRecord)
 		tab.ComposeForm = &v
+	}
+	if !sum.App.Defined() {
+		// Nothing to edit yet: the form that gives it a definition replaces the per-service one.
+		form := newForm()
+		if extra.Define != nil {
+			form = *extra.Define
+		}
+		tab.Define = &defineView{Action: "/apps/" + id + "/define", Revision: sum.Revision, Form: form}
 	}
 	if hook.Enabled {
 		tab.Webhook.Created = whenOf(s.now(), &hook.CreatedAt, "")

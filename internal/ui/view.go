@@ -179,8 +179,11 @@ func appStatusView(sum service.AppSummary) statusView {
 	case service.StateDegraded:
 		return statusView{"warning", fmt.Sprintf("%d of %d healthy", st.HealthyCopies, st.WantedCopies)}
 	case service.StateNotRunning:
-		if sum.LastDeployment == nil {
-			return statusView{"idle", "not running"}
+		switch {
+		case !sum.App.Defined():
+			return statusView{"idle", "not defined yet"}
+		case sum.LastDeployment == nil:
+			return statusView{"idle", "never deployed"}
 		}
 		return statusView{"failed", "not running"}
 	}
@@ -278,7 +281,7 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 	}
 
 	type troubled struct{ id, words string }
-	var healthy, rolling int
+	var healthy, rolling, waiting int
 	var trouble []troubled
 	for _, sum := range sums {
 		item, listed := first[sum.App.ID]
@@ -294,7 +297,14 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 			} else {
 				rolling++
 			}
-		case service.StateDegraded, service.StateNotRunning:
+		case service.StateNotRunning:
+			if neverDeployed(sum) {
+				// Created without deploying: waiting for its first deploy is what the owner asked for.
+				waiting++
+			} else {
+				trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+			}
+		case service.StateDegraded:
 			trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
 		case service.StateUnknown:
 			return sentence{plain("Nomad can't be reached; showing what caravana last recorded.")}
@@ -326,6 +336,9 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 	if rolling > 0 {
 		rest = append(rest, plural(rolling, "rollout")+" in progress")
 	}
+	if waiting > 0 {
+		rest = append(rest, appCount(waiting)+" waiting for a first deploy")
+	}
 	if len(rest) > 0 {
 		if len(out) > 0 {
 			out = append(out, plain(" "))
@@ -333,6 +346,12 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 		out = append(out, plain(strings.Join(rest, ", ")+"."))
 	}
 	return out
+}
+
+// neverDeployed says whether the app was created and has no deployment at all:
+// an app made without deploying it (feature 020) until its first deploy.
+func neverDeployed(sum service.AppSummary) bool {
+	return sum.LastDeployment == nil && sum.Status.State == service.StateNotRunning
 }
 
 // lastDeployFailed says whether the app's newest deployment failed (it never
@@ -392,6 +411,12 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 			out = append(out, plain(" "+copyCount(st.HealthyCopies)+" still run "), mono(live), plain("."))
 		}
 	case service.StateNotRunning:
+		switch {
+		case !sum.App.Defined() && sum.LastDeployment == nil:
+			return sentence{plain("No definition yet, so nothing can be deployed.")}
+		case neverDeployed(sum):
+			return sentence{plain("Nothing is deployed yet.")}
+		}
 		out = sentence{plain("No copies are running.")}
 	default:
 		out = sentence{plain("Nomad can't be reached right now, so caravana can't say what's running.")}

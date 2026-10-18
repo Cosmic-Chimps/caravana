@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,6 +68,8 @@ func defaultName(label string) string {
 // its token, set only in the response that created the token (it is shown
 // once and never stored).
 type webhookView struct {
+	// Never says the app was never deployed, so the webhook's first call deploys it.
+	Never   bool
 	Enabled bool
 	Created when
 	URL     string
@@ -96,12 +99,23 @@ type configureTab struct {
 	Notice sentence
 	// Copied says the app was just copied here from another environment and what
 	// it still needs (feature 019); empty otherwise.
-	Copied  sentence
+	Copied sentence
+	// Define is the "Define the app" form of an app with no services yet
+	// (feature 020); nil once it has a definition.
+	Define  *defineView
 	Edit    editView
 	Secrets secretsView
 	Webhook webhookView
 	Export  exportView
 	Delete  deleteView
+}
+
+// defineView is the form that gives an app with no definition its first one:
+// New app's image fields, posted with the revision the page was drawn from.
+type defineView struct {
+	Action   string
+	Revision string
+	Form     newAppForm
 }
 
 // editView is the form of the Configure tab: the inputs with what was typed
@@ -398,7 +412,10 @@ func whatGoes(a app.App, sum service.AppSummary, deployments int, hasToken bool)
 			hosts = append(hosts, d.Host)
 		}
 	}
-	if len(hosts) > 0 {
+	if deployments == 0 {
+		// Created and never deployed (feature 020): nothing runs, so nothing stops.
+		s = sentence{plain("It was never deployed, so nothing is running.")}
+	} else if len(hosts) > 0 {
 		s = append(s, plain(" and "))
 		for i, h := range hosts {
 			switch {
@@ -649,4 +666,98 @@ func refuseEdit(f *editForm, edited app.App, err error) (status int, ok bool) {
 	}
 	notice(sentenceOf...)
 	return status, true
+}
+
+// alreadyDefinedNotice is the refusal of a "Define the app" post for an app that
+// got its definition meanwhile (another tab, or a deploy through the API).
+const alreadyDefinedNotice = "This app has a definition now. Edit it below, or open the tab again."
+
+// defineApp answers POST /apps/{id}/define (feature 020): the Configure tab's
+// "Define the app" form for an app that has no services yet. It builds the one
+// service New app would build, from the same fields, and saves and deploys it
+// on the condition that the app still has the revision the page was drawn from.
+// Success goes to the deployment's entry; a refusal draws the tab again with
+// what was typed.
+func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	r.Body = http.MaxBytesReader(w, r.Body, maxEditBytes)
+	if err := r.ParseForm(); err != nil {
+		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		return
+	}
+	revision := strings.TrimSpace(r.PostForm.Get("revision"))
+	if revision == "" {
+		s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and define the app from there.")
+		return
+	}
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, "read app", err)
+		return
+	}
+	if rec.App.Defined() {
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain(alreadyDefinedNotice)}})
+		return
+	}
+
+	val := func(name string) string { return strings.TrimSpace(r.PostForm.Get(name)) }
+	form := newForm()
+	// The service is named like the app in its environment, as New app names it.
+	form.Name.Value = cmp.Or(rec.Place.Name, rec.App.ID)
+	form.Image.Value, form.Port.Value, form.Domain.Value, form.Health.Value = val("image"), val("port"), val("domain"), val("healthPath")
+	a, ok := buildNewApp(&form, true)
+	if !ok {
+		form.markFirstError()
+		s.configurePage(w, r, http.StatusUnprocessableEntity, id, configureExtras{Define: &form})
+		return
+	}
+	a.ID, a.Name, a.Source = id, rec.App.Name, rec.App.Source
+
+	deployment, err := s.svc.DeployIf(ctx, a, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
+		return
+	}
+	if errors.Is(err, service.ErrAppChanged) {
+		s.configurePage(w, r, http.StatusConflict, id, configureExtras{Notice: sentence{plain("The app changed since this page was drawn. Read what it is now, then define it again.")}})
+		return
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+
+	status, ok := refuseNewApp(&form, id, err)
+	if !ok {
+		s.serverError(w, "define app from the console", err)
+		return
+	}
+	var deployErr *service.DeployError
+	if errors.As(err, &deployErr) {
+		// The definition was saved before the deploy failed: the tab shows the app as
+		// defined now, and says what went wrong and where the attempt is.
+		s.configurePage(w, r, status, id, configureExtras{Notice: append(form.firstProblem(), plain(" "+savedNote))})
+		return
+	}
+	form.markFirstError()
+	s.configurePage(w, r, status, id, configureExtras{Define: &form})
+}
+
+// firstProblem is the sentence of the form's first error: its notice, or the
+// message under the first field that has one.
+func (f *newAppForm) firstProblem() sentence {
+	if len(f.Notice) > 0 {
+		return slices.Clone(f.Notice)
+	}
+	for _, in := range f.fields() {
+		if len(in.Field.Error) > 0 {
+			return slices.Clone(in.Field.Error)
+		}
+	}
+	return nil
 }

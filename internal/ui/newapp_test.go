@@ -170,7 +170,7 @@ func TestCreateAppFromTheConsole(t *testing.T) {
 			{"name that isn't a DNS label", postedForm("My App", "traefik/whoami:latest", "80", "", "/"), "name", "is not a lowercase DNS label", 422},
 			{"name too long for a service name", postedForm(strings.Repeat("a", 32), "traefik/whoami:latest", "", "", ""), "name", "at most 31 characters", 422},
 			{"no name", postedForm("", "traefik/whoami:latest", "", "", ""), "name", "Enter a name", 422},
-			{"no image", postedForm("whoami", "", "", "", ""), "image", "Enter an image", 422},
+			{"no image", postedForm("whoami", "", "", "", ""), "image", "Add an image to deploy now, or create the app without deploying", 422},
 			{"image with a space", postedForm("whoami", "traefik whoami", "", "", ""), "image", "The image must not contain spaces", 422},
 			{"invalid registry host", postedForm("whoami", "bad_host.example.com/x/y:1", "", "", ""), "image", "not a valid registry host", 422},
 			{"port that isn't a number", postedForm("whoami", "traefik/whoami:latest", "http", "", "/"), "port", "a number from 1 to 65535", 422},

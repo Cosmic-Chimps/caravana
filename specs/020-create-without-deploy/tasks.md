@@ -8,7 +8,7 @@
 - [X] T002 API 0.17.0: `?deploy=false` on `createApp` and `createEnvironmentApp`, 409
   `app_not_defined` (deployApp empty body, redeployDeployment, webhook), `defined` on AppRecord and
   AppSummary; tests; openapi sync.
-- [ ] T003 Console: New app's two buttons and optional image; app page states and `?created=1`
+- [X] T003 Console: New app's two buttons and optional image; app page states and `?created=1`
   notice; Configure's "Define the app" form; list status; handler tests; parity test;
   `tools/ui-css.sh build`.
 - [ ] T004 Lab step `console-create-only` (plan.md "Lab").

@@ -44,6 +44,7 @@
 {{if .Gone}}
 <section class="cv-main">{{template "app-header" .}}</section>
 {{else}}
+{{with .Created}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <section class="cv-main" aria-label="App" hx-get="{{.HeaderHref}}" hx-trigger="sse:app, sse:deleted, sse:sync" hx-swap="innerHTML">{{template "app-header" .}}</section>
 {{with .Running}}{{template "running" .}}{{end}}
 {{with .Deployments}}{{template "deployments" .}}{{end}}
@@ -52,6 +53,47 @@
 {{with .Logs}}{{template "logs" .}}{{end}}
 {{with .Backups}}{{template "backups" .}}{{end}}
 {{end}}
+{{end}}
+
+{{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
+     (feature 020). Takes a defineView. The service is named like the app, so there is no name
+     field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
+{{define "define-form"}}
+<form method="post" action="{{.Action}}" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+  <input type="hidden" name="revision" value="{{.Revision}}">
+  {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .Form.Name.Error}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+
+  <label class="flex flex-col gap-2" for="define-image">
+    <span class="cv-label">Image</span>
+    <input class="cv-field" id="define-image" type="text" name="image" value="{{.Form.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Form.Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Form.Focus "image"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span></span>
+    {{template "field-error" .Form.Image}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="define-port">
+    <span class="cv-label">Container port</span>
+    <input class="cv-field" id="define-port" type="text" inputmode="numeric" name="port" value="{{.Form.Port.Value}}" autocomplete="off" spellcheck="false"{{if .Form.Port.Error}} aria-invalid="true" aria-describedby="port-error"{{end}}{{if eq .Form.Focus "port"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Optional. Without a port this runs as a worker: no address, no health check.</span>
+    {{template "field-error" .Form.Port}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="define-domain">
+    <span class="cv-label">Domain</span>
+    <input class="cv-field" id="define-domain" type="text" name="domain" value="{{.Form.Domain.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Domain.Error}} aria-invalid="true" aria-describedby="domain-error"{{end}}{{if eq .Form.Focus "domain"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Optional. Needs a port. HTTPS is set up for it.</span>
+    {{template "field-error" .Form.Domain}}
+  </label>
+
+  <label class="flex flex-col gap-2" for="define-healthPath">
+    <span class="cv-label">Health check path</span>
+    <input class="cv-field" id="define-healthPath" type="text" name="healthPath" value="{{.Form.Health.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Health.Error}} aria-invalid="true" aria-describedby="healthPath-error"{{end}}{{if eq .Form.Focus "healthPath"}} autofocus{{end}}>
+    <span class="cv-data-muted cv-hint">Used with a port. Leave it empty for a TCP check instead of an HTTP one.</span>
+    {{template "field-error" .Form.Health}}
+  </label>
+
+  <div><button type="submit" class="cv-btn cv-btn-primary">Define and deploy</button></div>
+</form>
 {{end}}
 
 {{/* The Backups tab (feature 010). Takes a backupsTab. */}}
@@ -245,6 +287,29 @@
   </div>
   {{end}}
 </div>
+{{else if .First}}
+<div class="cv-empty">
+  {{if .First.Defined}}
+  <p class="cv-empty-title">Waiting for its first deploy.</p>
+  <p class="cv-empty-text">Nothing is running yet. Start it now, or let your CI do it with a webhook or the API.</p>
+  <div class="cv-actions">
+    <form method="post" action="{{.First.DeployAction}}"><button type="submit" class="cv-btn cv-btn-primary">Deploy now</button></form>
+    <a href="{{.First.WebhookHref}}" class="cv-btn cv-btn-secondary">Create a webhook token</a>
+  </div>
+  <p class="cv-empty-text">Or call the API with a token:</p>
+  <code class="cv-cmd">{{.First.Call}}</code>
+  {{else}}
+  <p class="cv-empty-title">No definition yet.</p>
+  <p class="cv-empty-text">The app is named, and that is all. Give it a definition and it deploys: in Configure, from a Compose file, or through the API.</p>
+  <div class="cv-actions">
+    <a href="{{.First.ConfigureHref}}" class="cv-btn cv-btn-primary">Define it in Configure</a>
+    <a href="{{.First.ComposeHref}}" class="cv-btn cv-btn-secondary">Deploy from Compose</a>
+  </div>
+  <p class="cv-empty-text">Or send the app to the API with a token:</p>
+  <code class="cv-cmd">{{.First.Call}}</code>
+  <p class="cv-empty-text">{{.First.CallNote}}</p>
+  {{end}}
+</div>
 {{else}}
 <div class="cv-empty">
   <p class="cv-empty-title">No copies are running.</p>
@@ -260,6 +325,12 @@
 {{define "deployments"}}
 <section id="deploy" aria-labelledby="deploy-title" class="flex flex-col gap-2">
   <h2 id="deploy-title" class="cv-label">Deploy</h2>
+  {{if not .Form.Fields}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">This app has no definition yet, so there is nothing to deploy.</p>
+    <p class="text-sm text-fg-3">Define it in <a href="{{.Form.ConfigureHref}}">Configure</a>, or <a href="{{.Form.ComposeHref}}">deploy a Compose file</a>.</p>
+  </div>
+  {{else}}
   <form method="post" action="{{.Form.Action}}" class="cv-panel p-4 flex flex-col gap-4">
     {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
     {{range .Form.Fields}}
@@ -273,6 +344,7 @@
     <p class="text-sm text-fg-3">Keep the image to deploy it again and pick up a new push to the same tag, or change the tag.</p>
     <div><button type="submit" class="cv-btn cv-btn-primary">Deploy</button></div>
   </form>
+  {{end}}
 </section>
 <section aria-labelledby="history-title" class="flex flex-col gap-2">
   <h2 id="history-title" class="cv-label">Deployments</h2>
@@ -455,6 +527,13 @@
   {{template "compose-form" .}}
 </section>
 {{end}}
+{{with .Define}}
+<section aria-labelledby="define-title" class="flex flex-col gap-2">
+  <h2 id="define-title" class="cv-label">Define the app</h2>
+  {{template "define-form" .}}
+  <p class="text-sm text-fg-3">Saving deploys the app. <a href="/apps/{{$.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Define it with a Compose file instead.</p>
+</section>
+{{end}}
 <section aria-labelledby="definition-title" class="flex flex-col gap-2">
   <h2 id="definition-title" class="cv-label">Definition</h2>
   <div class="cv-panel cv-def">
@@ -491,6 +570,8 @@
     </dl>
   </div>
   {{end}}
+  {{else if .Define}}
+  <p class="text-sm text-fg-3">No services yet.</p>
   {{else}}
   {{if .Compose}}<p class="text-sm text-fg-3">Made from a Compose file. Deploying a file again replaces these edits.</p>{{end}}
   <p class="text-sm text-fg-3"><a href="/apps/{{.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Replace the app with a Compose file.</p>
@@ -503,6 +584,9 @@
      not even after a refused save. */}}
 <section aria-labelledby="secrets-title" class="flex flex-col gap-2">
   <h2 id="secrets-title" class="cv-label">Secrets</h2>
+  {{if .Define}}
+  <div class="cv-panel p-4"><p class="text-sm text-fg-3">A secret belongs to a service. Define the app first, then add its secrets here.</p></div>
+  {{else}}
   <div class="cv-panel p-4 flex flex-col gap-4">
     {{with .Secrets.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
     {{range $svc := .Secrets.Services}}
@@ -555,9 +639,10 @@
     </form>
     {{end}}
   </div>
+  {{end}}
 </section>
 
-<section aria-labelledby="webhook-title" class="flex flex-col gap-2">
+<section id="webhook" aria-labelledby="webhook-title" class="flex flex-col gap-2">
   <h2 id="webhook-title" class="cv-label">Webhook</h2>
   <div class="cv-panel p-4 flex flex-col gap-4">
     {{with .Webhook.URL}}
@@ -591,6 +676,8 @@
     <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
     <form method="post" action="/apps/{{.Delete.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></form>
     {{end}}
+    {{if .Define}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
+    {{else if .Webhook.Never}}<p class="text-sm text-fg-3">The app was never deployed: the webhook's first call deploys it as stored.</p>{{end}}
   </div>
 </section>
 

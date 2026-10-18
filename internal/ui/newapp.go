@@ -164,10 +164,21 @@ func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int
 	s.render(w, status, "newapp", newAppPage{pageData: head, Form: form})
 }
 
+// Which button of New app was pressed: "Create and deploy" (the default) or
+// "Create without deploying" (feature 020). Each is a submit button named
+// "action", so both work without script.
+const (
+	actionDeploy = "deploy"
+	actionCreate = "create"
+)
+
 // createApp answers POST /apps: it builds the app of data-model.md's
 // "Validation rules added" from the form and creates it, with trigger
 // console. Success goes to the new app's Deployments tab; any problem draws
 // the form again with what was typed and the errors under their fields.
+// With action=create the app is only saved (CreateAppOnly), with what was
+// filled in, or with nothing but its name, and the page it lands on says
+// nothing is deployed yet.
 func (s *server) createApp(w http.ResponseWriter, r *http.Request, session string) {
 	if err := r.ParseForm(); err != nil {
 		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
@@ -180,7 +191,8 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 
 	form.Place.Value = val("place")
 
-	a, ok := buildNewApp(&form)
+	deployNow := r.PostForm.Get("action") != actionCreate
+	a, ok := buildNewApp(&form, deployNow)
 	pl, err := s.loadPlaces(r.Context())
 	if err != nil {
 		s.serverError(w, "list projects", err)
@@ -197,9 +209,16 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 	}
 	a.ID = place.ID()
 
-	_, err = s.svc.CreateApp(r.Context(), a, app.TriggerConsole)
+	if deployNow {
+		_, err = s.svc.CreateApp(r.Context(), a, app.TriggerConsole)
+	} else {
+		_, err = s.svc.CreateAppOnly(r.Context(), a)
+	}
 	if err == nil {
 		to := "/apps/" + a.ID + "/deployments"
+		if !deployNow {
+			to = "/apps/" + a.ID + "?created=1"
+		}
 		if r.Header.Get("HX-Request") == "true" {
 			// htmx would follow a redirect inside the form's place; this makes the browser go there.
 			w.Header().Set("HX-Redirect", to)
@@ -224,7 +243,12 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 // part of it. It reports the problems only the form can see (empty or
 // misspelled values, a domain with no port) on their fields, and ok is false
 // then; the app's own rules are checked by the service.
-func buildNewApp(f *newAppForm) (a app.App, ok bool) {
+//
+// An image is needed to deploy. When the app is only being created
+// (deployNow false) it may be left out, and the app is then only its name; a
+// port or a domain without an image to belong to is refused rather than
+// dropped.
+func buildNewApp(f *newAppForm, deployNow bool) (a app.App, ok bool) {
 	ok = true
 	refuse := func(field *formField, text string) {
 		field.Error, ok = sentence{plain(text)}, false
@@ -237,7 +261,12 @@ func buildNewApp(f *newAppForm) (a app.App, ok bool) {
 		refuse(&f.Name, "Use at most "+strconv.Itoa(maxNewAppName)+" characters: the service takes the same name, and Nomad allows 63 for the two together.")
 	}
 	if f.Image.Value == "" {
-		refuse(&f.Image, "Enter an image.")
+		switch {
+		case deployNow:
+			refuse(&f.Image, "Add an image to deploy now, or create the app without deploying.")
+		case f.Port.Value != "" || f.Domain.Value != "":
+			refuse(&f.Image, "Add the image the port and domain belong to, or clear them to create the app by name only.")
+		}
 	}
 
 	port := 0
@@ -254,6 +283,11 @@ func buildNewApp(f *newAppForm) (a app.App, ok bool) {
 	}
 	if !ok {
 		return app.App{}, false
+	}
+
+	if f.Image.Value == "" {
+		// Only a name: the app has no services until a deploy brings them.
+		return app.App{ID: f.Name.Value, Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{}}, true
 	}
 
 	svc := app.Service{Name: f.Name.Value, Image: f.Image.Value}

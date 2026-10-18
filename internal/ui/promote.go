@@ -295,6 +295,9 @@ func copiedNotice(r *http.Request, sum service.AppSummary) sentence {
 		}
 		names = append(names, m)
 	}
+	if !sum.App.Defined() {
+		return sentence{plain("Copied to "), mono(env), plain(". It has no definition yet, like the app it was copied from.")}
+	}
 	out := sentence{plain("Copied to "), mono(env), plain(". Set its domains")}
 	if len(names) == 0 {
 		return append(out, plain(" before deploying."))

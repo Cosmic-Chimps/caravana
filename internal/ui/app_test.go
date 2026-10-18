@@ -830,8 +830,8 @@ func TestRunningTabSaysWhyThereAreNoCopies(t *testing.T) {
 		e.seed(t, whoamiApp())
 		_, body := e.get(t, "/apps/whoami")
 		got := text(body)
-		if !strings.Contains(got, "No copies are running.") {
-			t.Errorf("the tab doesn't say there are no copies: %s", got)
+		if !strings.Contains(got, "Waiting for its first deploy.") || strings.Contains(got, "No copies are running.") {
+			t.Errorf("the tab doesn't say the app is waiting for its first deploy: %s", got)
 		}
 		if strings.Contains(got, "see Deployments") || strings.Contains(body, `role="table"`) {
 			t.Errorf("the tab blames a deploy that never happened, or draws an empty table: %s", got)

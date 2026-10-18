@@ -52,6 +52,7 @@ var consoleParity = map[string]parity{
 
 	// What the console changes.
 	// The place select (feature 019): an app that goes outside Default's production is created in its environment.
+	// "Create without deploying" (feature 020) is the same two operations with deploy=false.
 	"POST /apps": {ops: []string{"createApp", "createEnvironmentApp"}},
 	// The Compose forms (feature 014): the preview saves nothing; the create is a Compose deploy with If-None-Match: *.
 	"POST /apps/new/compose/preview": {ops: []string{"previewCompose"}},
@@ -63,6 +64,8 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/deploy":          {ops: []string{"deployApp"}},
 	// The edit form (feature 014): getApp gives the revision, deployApp with If-Match saves the change.
 	"POST /apps/{id}/configure": {ops: []string{"getApp", "deployApp"}},
+	// Define the app (feature 020): an app with no services gets its first definition, deployed with If-Match.
+	"POST /apps/{id}/define": {ops: []string{"getApp", "deployApp"}},
 	// Past versions (feature 011).
 	"POST /apps/{id}/deployments/{deploymentId}/redeploy": {ops: []string{"redeployDeployment"}},
 	"GET /apps/{id}/deployments/{deploymentId}/jobspec":   {ops: []string{"exportDeployment"}},
