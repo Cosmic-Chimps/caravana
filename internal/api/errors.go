@@ -34,6 +34,7 @@ const (
 	codeDefinitionNotRecorded = "definition_not_recorded"
 	codeNoLiveDeployment      = "no_live_deployment"
 	codeAppChanged            = "app_changed"
+	codeAppNotDefined         = "app_not_defined"
 	codeComposeNotKept        = "compose_not_kept"
 	codeNotAWebhook           = "not_a_webhook"
 	codeProjectNotFound       = "project_not_found"

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.16.0
+  version: 0.17.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -94,25 +94,38 @@ paths:
           $ref: "#/components/responses/Internal"
     post:
       operationId: createApp
-      summary: Create a new app and start its first deployment.
+      summary: Create a new app and start its first deployment, or only save it.
       description: |
         Like `deployApp` with a body, but never replaces a stored app: an existing ID is
         `409 app_exists` and nothing changes. Follow the rollout at `Location`.
+
+        With `deploy=false` the app is only saved: `201` and the stored app, no deployment, no
+        Nomad job, and nothing on the needs-you list. The body may then hold a full definition
+        (checked as a deploy checks it; the first `deployApp` with an empty body, or the app's
+        webhook, then deploys it as stored) or only an `id` and a `name`: the app then has no
+        services (`defined: false`) and a redeploy as stored is `409 app_not_defined` until a
+        deploy brings a definition (`deployApp` with a body, `deployCompose`). Secret names may
+        be listed, never their values: a value is `400 invalid_field` on
+        `services[i].secrets[j].value`, since values are only sent with a deploy.
 
         The ID places the app (see the `id` path parameter): `shop--staging--web` is `web` in
         environment `staging` of project `shop`, which must exist, else
         `404 project_not_found` or `404 environment_not_found` with `field: "id"`; an ID with
         `--` that isn't `<project>--<environment>--<name>` is `400 invalid_field` on `id`.
       tags: [apps]
+      parameters:
+        - $ref: "#/components/parameters/DeployFlag"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/App"
+              $ref: "#/components/schemas/NewApp"
       responses:
+        "201":
+          $ref: "#/components/responses/AppCreated"
         "202":
-          description: Saved; Nomad accepted the job.
+          description: Saved; Nomad accepted the job (`deploy` true or absent).
           headers:
             Location:
               $ref: "#/components/headers/DeploymentLocation"
@@ -431,13 +444,16 @@ paths:
           $ref: "#/components/responses/Internal"
     post:
       operationId: createEnvironmentApp
-      summary: Create an app in this environment and start its first deployment.
+      summary: Create an app in this environment and start its first deployment, or only save it.
       description: |
         As `createApp`, for the ID these names make (`<project>--<environment>--<appName>`, or
         the bare `appName` in `default`/`production`): it never replaces a stored app, and an
         ID that is taken is `409 app_exists`. `id` may be left out; when given it must equal
-        that ID. Follow the rollout at `Location`.
+        that ID. Follow the rollout at `Location`. `deploy=false` only saves the app, with a
+        definition or with `appName` alone, exactly as for `createApp`.
       tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/DeployFlag"
       requestBody:
         required: true
         content:
@@ -445,8 +461,10 @@ paths:
             schema:
               $ref: "#/components/schemas/EnvironmentAppRequest"
       responses:
+        "201":
+          $ref: "#/components/responses/AppCreated"
         "202":
-          description: Saved; Nomad accepted the job.
+          description: Saved; Nomad accepted the job (`deploy` true or absent).
           headers:
             Location:
               $ref: "#/components/headers/DeploymentLocation"
@@ -1358,7 +1376,9 @@ paths:
       summary: Save an app and deploy it, or redeploy the stored app.
       description: |
         With a body, the app is validated, saved (replacing the stored app with the same ID)
-        and deployed. With an empty body, the stored app is deployed again.
+        and deployed. With an empty body, the stored app is deployed again; an app that has
+        no services yet (`defined: false`, made by `createApp` with `deploy=false`) is
+        `409 app_not_defined` and nothing is recorded. A body gives it its definition.
 
         Every image tag is resolved to a digest, the app becomes a new Nomad job version, and
         the response comes back as soon as Nomad has accepted it. Follow the rollout by
@@ -1417,7 +1437,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          $ref: "#/components/responses/JobConflict"
+          $ref: "#/components/responses/DeployConflict"
         "412":
           $ref: "#/components/responses/AppChanged"
         "413":
@@ -1582,7 +1602,8 @@ paths:
           description: |
             `deployment_not_healthy`: only a healthy deployment can be redeployed.
             `definition_not_recorded`: the deployment is from before Caravana saved what each
-            deployment deployed. `job_conflict`: as for `deployApp`.
+            deployment deployed. `job_conflict`: as for `deployApp`. `app_not_defined`: the
+            app has no services yet (checked first).
           content:
             application/json:
               schema:
@@ -1929,7 +1950,10 @@ paths:
         `Authorization: Bearer` header (both present must be equal). Every image is resolved
         again: when every digest equals the app's latest healthy deployment and the stored app
         hasn't changed since, nothing is deployed (200, `changed: false`). Otherwise the stored
-        app is redeployed exactly like an empty-body `deployApp`, with trigger `webhook` (202).
+        app is redeployed exactly like an empty-body `deployApp`, with trigger `webhook` (202):
+        an app created with a definition and never deployed is deployed this way for the first
+        time. An app that has no services yet is `409 app_not_defined` and nothing is
+        recorded: the webhook never chooses an image, so it can't give an app its definition.
 
         Any request body is accepted and ignored (up to 1 MiB), whatever its content type.
         Every authorization failure, including an unknown app, gets the same 401.
@@ -1961,7 +1985,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          $ref: "#/components/responses/JobConflict"
+          $ref: "#/components/responses/DeployConflict"
         "413":
           $ref: "#/components/responses/BodyTooLarge"
         "422":
@@ -2141,6 +2165,17 @@ components:
       schema:
         type: string
         examples: ['"0123456789abcdef"']
+    DeployFlag:
+      name: deploy
+      in: query
+      required: false
+      description: |
+        `true` (the default) saves the app and deploys it. `false` only saves it: no deployment
+        is made, and the body may leave the services out (see `createApp`). Anything else is
+        `400 invalid_field` with `field` `deploy`.
+      schema:
+        type: boolean
+        default: true
     IfNoneMatch:
       name: If-None-Match
       in: header
@@ -2212,6 +2247,11 @@ components:
       schema:
         type: string
         examples: ['"0123456789abcdef"']
+    AppLocation:
+      description: The app's URL, `/v1/apps/{id}`.
+      schema:
+        type: string
+        examples: ["/v1/apps/whoami"]
     DeploymentLocation:
       description: The deployment's URL, `/v1/apps/{id}/deployments/{deploymentId}`.
       schema:
@@ -2262,7 +2302,9 @@ components:
                 deploy the same way.
         services:
           type: array
-          minItems: 1
+          description: |
+            At least one service to deploy. Only an app read back after `createApp` with
+            `deploy=false` can have none (`defined: false`).
           items:
             $ref: "#/components/schemas/Service"
       examples:
@@ -2973,10 +3015,33 @@ components:
       pattern: "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
       examples: ["10s"]
 
+    NewApp:
+      type: object
+      additionalProperties: false
+      description: |
+        The body of `createApp`. With `deploy` true or absent it is an `App` (`source` and at
+        least one service). With `deploy=false` only `id` is needed: `name` is optional, and
+        `source` and `services` may be left out for an app that has no definition yet. A
+        `services` that is sent is checked as a deploy checks it, and its secrets list names
+        only.
+      required: [id]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        name:
+          $ref: "#/components/schemas/App/properties/name"
+        source:
+          $ref: "#/components/schemas/App/properties/source"
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+
     AppRecord:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, revision, composeKept, project, environment, appName]
+      required: [app, createdAt, updatedAt, revision, composeKept, defined, project, environment, appName]
       properties:
         app:
           $ref: "#/components/schemas/App"
@@ -2997,11 +3062,20 @@ components:
         composeKept:
           type: boolean
           description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
+        defined:
+          $ref: "#/components/schemas/AppDefined"
+
+    AppDefined:
+      type: boolean
+      description: |
+        The app has services to deploy. `false` for an app created without a definition
+        (`createApp` with `deploy=false`): it is listed and can have a webhook token, but a
+        redeploy as stored is `409 app_not_defined` until a deploy brings services.
 
     AppSummary:
       type: object
       additionalProperties: false
-      required: [app, createdAt, updatedAt, composeKept, project, environment, appName, status]
+      required: [app, createdAt, updatedAt, composeKept, defined, project, environment, appName, status]
       properties:
         app:
           $ref: "#/components/schemas/App"
@@ -3013,6 +3087,8 @@ components:
         composeKept:
           type: boolean
           description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
+        defined:
+          $ref: "#/components/schemas/AppDefined"
         status:
           $ref: "#/components/schemas/AppStatus"
         lastDeployment:
@@ -3127,8 +3203,9 @@ components:
       additionalProperties: false
       description: |
         An `App`, plus the name it takes in the environment. `id` may be left out; when given it
-        must equal the ID the project, environment and `appName` make.
-      required: [appName, source, services]
+        must equal the ID the project, environment and `appName` make. As for `NewApp`, `source`
+        and `services` may be left out only with `deploy=false`.
+      required: [appName]
       properties:
         appName:
           $ref: "#/components/schemas/Name"
@@ -3141,7 +3218,7 @@ components:
         source:
           $ref: "#/components/schemas/App/properties/source"
         services:
-          $ref: "#/components/schemas/App/properties/services"
+          $ref: "#/components/schemas/NewApp/properties/services"
 
     AppStatus:
       type: object
@@ -3537,7 +3614,7 @@ components:
       type: object
       additionalProperties: false
       description: The new app, as `getApp` shows it, and the secrets it needs values for.
-      required: [app, createdAt, updatedAt, revision, composeKept, project, environment, appName, missingSecrets]
+      required: [app, createdAt, updatedAt, revision, composeKept, defined, project, environment, appName, missingSecrets]
       properties:
         app:
           $ref: "#/components/schemas/App"
@@ -3550,6 +3627,8 @@ components:
           $ref: "#/components/schemas/AppRecord/properties/revision"
         composeKept:
           type: boolean
+        defined:
+          $ref: "#/components/schemas/AppDefined"
         missingSecrets:
           type: array
           description: |
@@ -3637,7 +3716,7 @@ components:
                 `nomad_rejected`, `unauthorized`, `cross_origin`, `token_name_taken`, `app_exists`,
                 `secret_store_unavailable`, `backup_running`, `no_backup_destination`,
                 `no_running_copy`, `deployment_not_healthy`, `definition_not_recorded`, `no_live_deployment`,
-                `app_changed`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`,
+                `app_changed`, `app_not_defined`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`,
                 `project_not_found`, `environment_not_found`, `project_exists`,
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
                 `promotion_removes_service`.
@@ -3893,6 +3972,32 @@ components:
         `app_changed`: `If-Match` was sent and the stored app's revision differs, so someone
         saved a change since the client read it. Nothing was saved or deployed. The message
         names the app's current revision; read the app again (`getApp`) and decide.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AppCreated:
+      description: |
+        Saved without deploying (`deploy=false`): the stored app, its `revision` also as `ETag`
+        and the app's URL as `Location`. No deployment exists yet.
+      headers:
+        Location:
+          $ref: "#/components/headers/AppLocation"
+        ETag:
+          $ref: "#/components/headers/AppETag"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AppRecord"
+    DeployConflict:
+      description: |
+        `job_conflict`: Nomad already runs a job with this app's ID that Caravana didn't
+        create, or the job changed while deploying. Nothing was registered; the deployment
+        record (see `Location`) is `failed`. Or `app_not_defined`: the app has no services yet,
+        so there is nothing stored to deploy; nothing was recorded and there is no `Location`.
+      headers:
+        Location:
+          $ref: "#/components/headers/DeploymentLocation"
       content:
         application/json:
           schema:

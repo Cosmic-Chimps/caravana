@@ -266,6 +266,8 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "currentPassword", Message: err.Error()}
 	case errors.Is(err, service.ErrAppExists):
 		return &Error{Status: http.StatusConflict, Code: codeAppExists, Field: "id", Message: err.Error()}
+	case errors.Is(err, service.ErrAppNotDefined):
+		return &Error{Status: http.StatusConflict, Code: codeAppNotDefined, Message: err.Error()}
 	case errors.Is(err, service.ErrAppChanged):
 		return &Error{Status: http.StatusPreconditionFailed, Code: codeAppChanged, Message: err.Error()}
 	case errors.Is(err, service.ErrNotAWebhook):

@@ -5,7 +5,7 @@
   on summaries. Table tests on the fakes, including: a defined never-deployed app's first webhook
   deploys it; an undefined app's webhook is refused and records nothing; a deploy with a body
   defines it; secret values refused on create-only.
-- [ ] T002 API 0.17.0: `?deploy=false` on `createApp` and `createEnvironmentApp`, 409
+- [X] T002 API 0.17.0: `?deploy=false` on `createApp` and `createEnvironmentApp`, 409
   `app_not_defined` (deployApp empty body, redeployDeployment, webhook), `defined` on AppRecord and
   AppSummary; tests; openapi sync.
 - [ ] T003 Console: New app's two buttons and optional image; app page states and `?created=1`

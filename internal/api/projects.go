@@ -202,11 +202,16 @@ type environmentAppRequest struct {
 
 // createEnvironmentApp answers POST
 // /v1/projects/{project}/environments/{environment}/apps exactly as createApp
-// does (202 and the first deployment), for the ID the three names make.
+// does (202 and the first deployment, or with ?deploy=false 201 and the app
+// alone), for the ID the three names make.
 func (s *server) createEnvironmentApp(w http.ResponseWriter, r *http.Request) error {
 	// Best effort, as for createApp: a writer that can't change deadlines keeps the server's.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
 
+	deployNow, err := deployFlag(r)
+	if err != nil {
+		return err
+	}
 	var in environmentAppRequest
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -229,6 +234,14 @@ func (s *server) createEnvironmentApp(w http.ResponseWriter, r *http.Request) er
 	}
 	a := in.App
 	a.ID = id
+	if !deployNow {
+		rec, err := s.svc.CreateAppOnly(r.Context(), a)
+		if err != nil {
+			return err
+		}
+		writeCreatedApp(w, rec)
+		return nil
+	}
 	rec, err := s.svc.CreateApp(r.Context(), a, app.TriggerManual)
 	if err != nil {
 		return err

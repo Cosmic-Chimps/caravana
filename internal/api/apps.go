@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -21,6 +22,9 @@ type appRecordJSON struct {
 	// ComposeKept says getCompose has a file to answer: the app was last
 	// deployed from a Compose file.
 	ComposeKept bool `json:"composeKept"`
+	// Defined says the app has services to deploy. An app created without
+	// deploying it may have none yet (feature 020).
+	Defined bool `json:"defined"`
 	// Project, Environment and AppName say where the app is (feature 019);
 	// the app's ID is these three written out.
 	Project     string `json:"project"`
@@ -41,14 +45,37 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 
 func toAppRecordJSON(rec store.AppRecord) appRecordJSON {
 	return appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
-		ComposeKept: rec.Compose != nil,
-		Project:     rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name}
+		ComposeKept: rec.Compose != nil, Defined: rec.App.Defined(),
+		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name}
 }
 
 // writeAppRecord answers 200 with a stored app and its revision as the ETag.
 func writeAppRecord(w http.ResponseWriter, rec store.AppRecord) {
 	w.Header().Set("ETag", `"`+rec.Revision+`"`)
 	writeJSON(w, http.StatusOK, toAppRecordJSON(rec))
+}
+
+// writeCreatedApp answers 201 for an app saved without deploying it: the
+// record, its revision as the ETag, and the app's own URL as Location.
+func writeCreatedApp(w http.ResponseWriter, rec store.AppRecord) {
+	w.Header().Set("ETag", `"`+rec.Revision+`"`)
+	w.Header().Set("Location", "/v1/apps/"+rec.App.ID)
+	writeJSON(w, http.StatusCreated, toAppRecordJSON(rec))
+}
+
+// deployFlag reads the optional ?deploy= of the create operations: true (the
+// default) saves and deploys, false saves only. Anything else is 400 naming
+// the parameter, so a typo never deploys by surprise.
+func deployFlag(r *http.Request) (bool, error) {
+	switch v := r.URL.Query().Get("deploy"); v {
+	case "", "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "deploy",
+			Message: fmt.Sprintf("must be true or false, got %q", v)}
+	}
 }
 
 // appStatusJSON is an app's status (schema AppStatus).
@@ -65,6 +92,7 @@ type appSummaryJSON struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
 	ComposeKept    bool            `json:"composeKept"`
+	Defined        bool            `json:"defined"`
 	Project        string          `json:"project"`
 	Environment    string          `json:"environment"`
 	AppName        string          `json:"appName"`
@@ -78,6 +106,7 @@ func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
 		CreatedAt:   sum.CreatedAt,
 		UpdatedAt:   sum.UpdatedAt,
 		ComposeKept: sum.Compose != nil,
+		Defined:     sum.App.Defined(),
 		Project:     sum.Place.Project,
 		Environment: sum.Place.Environment,
 		AppName:     sum.Place.Name,
@@ -118,14 +147,27 @@ func (s *server) listApps(w http.ResponseWriter, r *http.Request) error {
 // createApp answers POST /v1/apps: it saves a new app and deploys it, like
 // deployApp with a body, but an ID that is already stored is 409 app_exists
 // and nothing changes. The app's ID comes from the body, since there is none
-// in the path.
+// in the path. With ?deploy=false it only saves (201 and the app, no
+// deployment), and the body may leave the services out.
 func (s *server) createApp(w http.ResponseWriter, r *http.Request) error {
 	// Best effort, as for deployApp: a writer that can't change deadlines keeps the server's.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
 
+	deployNow, err := deployFlag(r)
+	if err != nil {
+		return err
+	}
 	var a app.App
 	if err := decodeJSON(r, &a); err != nil {
 		return err
+	}
+	if !deployNow {
+		rec, err := s.svc.CreateAppOnly(r.Context(), a)
+		if err != nil {
+			return err
+		}
+		writeCreatedApp(w, rec)
+		return nil
 	}
 	rec, err := s.svc.CreateApp(r.Context(), a, app.TriggerManual)
 	if err != nil {
