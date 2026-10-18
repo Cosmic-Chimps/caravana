@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.6.0 - 2026-10-18
+
 ### Added
 - Notifications: Caravana now tells you when something needs you and when a deploy ends, even
   when nobody has the console open. Settings › Notifications adds channels of four kinds: ntfy
