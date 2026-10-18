@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.7.0 - 2026-10-18
+
 ### Added
 - Create an app without deploying it: New app has a second button, "Create without deploying".
   Give it a name and the image your CI will push (it doesn't have to exist yet) and nothing is
