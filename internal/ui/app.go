@@ -338,7 +338,7 @@ type usageView struct {
 type copiesRegion struct {
 	Rows []copyEntry
 	// First is set when there are no copies because the app was never deployed
-	// (feature 020): what to do next instead of "No copies are running".
+	// (feature 019.5): what to do next instead of "No copies are running".
 	First           *firstDeploy
 	Failure         sentence // "v8 failed: see "; the template adds the link and the full stop
 	DeploymentsHref string

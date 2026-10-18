@@ -23,7 +23,7 @@ type appRecordJSON struct {
 	// deployed from a Compose file.
 	ComposeKept bool `json:"composeKept"`
 	// Defined says the app has services to deploy. An app created without
-	// deploying it may have none yet (feature 020).
+	// deploying it may have none yet (feature 019.5).
 	Defined bool `json:"defined"`
 	// Project, Environment and AppName say where the app is (feature 019);
 	// the app's ID is these three written out.

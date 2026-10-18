@@ -165,7 +165,7 @@ func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int
 }
 
 // Which button of New app was pressed: "Create and deploy" (the default) or
-// "Create without deploying" (feature 020). Each is a submit button named
+// "Create without deploying" (feature 019.5). Each is a submit button named
 // "action", so both work without script.
 const (
 	actionDeploy = "deploy"

@@ -316,6 +316,7 @@ func TestDraftOfRoundTrip(t *testing.T) {
 		load(name, f, "../compose/testdata/"+name+".overlay.json")
 	}
 	load("hollo", "../../deploy/examples/hollo/compose.yaml", "../../deploy/examples/hollo/overlay.example.json")
+	load("ntfy", "../../deploy/examples/ntfy/compose.yaml", "../../deploy/examples/ntfy/overlay.example.json")
 	pairs = append(pairs,
 		pair{"no overlay", compose.Request{Compose: "# kept\nservices:\n  web:\n    image: traefik/whoami\n"}},
 		pair{"every overlay field", compose.Request{Compose: "services: {}\n", Services: map[string]compose.Overlay{

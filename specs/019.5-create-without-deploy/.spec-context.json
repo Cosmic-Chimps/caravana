@@ -1,7 +1,7 @@
 {
   "workflow": "speckit",
   "specName": "Create an app without deploying it",
-  "branch": "020-create-without-deploy",
+  "branch": "019.5-create-without-deploy",
   "currentStep": "implement",
   "status": "implemented",
   "history": [

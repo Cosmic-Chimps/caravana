@@ -1,4 +1,4 @@
-# Tasks: Create an app without deploying it (020)
+# Tasks: Create an app without deploying it (019.5)
 
 - [X] T001 [US1][US2] Service: `app.App.Defined`, `CreateAppOnly`, `ErrAppNotDefined` in `Redeploy` /
   `RedeployVersion` (and so the webhook), `CopyApp` of an undefined app, attention test, `Defined`
@@ -17,3 +17,6 @@
   also in CLAUDE.md and docs/vision.md where numbered).
 - [X] T006 Full check and full `TestLab` (main session). Passed 2026-10-18 (1484 s;
   `console-create-only` 31 s).
+
+Renumbered 2026-10-18: the maintainer's plan kept 020 for Build from source, so this feature is
+019.5 (folder and branch renamed); the 021–023 renumbering of T005 was undone in the merge.

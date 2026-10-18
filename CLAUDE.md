@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What we're building
 
-Caravana: an open source, self-hosted PaaS (Heroku/Dokploy-style) on **HashiCorp Nomad**
+Caravana: an open source, self-hosted PaaS (Heroku-style) on **HashiCorp Nomad**
 instead of Docker Swarm or Kubernetes. Two first-class front doors: the HTMX web UI in this repo,
 and a public HTTP API whose first client is a .NET Aspire integration (`PublishToCaravana`,
 separate C# repo).
@@ -368,7 +368,8 @@ project and an environment (Default › production holds every app from before, 
   (`console_projects_test.go`: the same through the forms, promoting into a copy never deployed).
   Both clean up with `t.Cleanup`.
 
-Feature 020 is implemented on branch `020-create-without-deploy` (stacked on 019): an app can be
+Feature 019.5 (`specs/019.5-create-without-deploy`, added outside the plan's numbering so 020
+stays Build from source) is implemented on branch `019.5-create-without-deploy` (stacked on 019): an app can be
 created without deploying it, with a definition or with only a name.
 - `Service.CreateAppOnly(ctx, app.App)` (`service/apps.go`): no deployment, no Nomad call.
   A definition goes through `deployer.Validate` (not the secret or backup checks, which the first
@@ -420,14 +421,19 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
 - 019 Organization / Project / Environment: projects, environments with copy and promotion, app
   IDs `<project>--<environment>--<name>`, one Nomad namespace (done, branch
   `019-projects-environments`)
-- 020 Create an app without deploying it: New app's "Create without deploying", `?deploy=false`,
-  apps that have no definition yet (done, branch `020-create-without-deploy`)
-- 021 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
+- 019.5 Create an app without deploying it: New app's "Create without deploying", `?deploy=false`,
+  apps that have no definition yet (done, branch `019.5-create-without-deploy`)
+- 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
   registry, deployed by digest (first test case: Phanpy)
 
 Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a
 staging environment, is promoted to production, and a failure during it reaches the owner as a
 notification.
+
+After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
+per screen (021 console IA, 022 Schedules, 023 Domains, 024 Logs, 025 Monitoring and capacity),
+then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
+and ends Phase 4 with "The handoff, screen by screen".
 
 Out of scope for now: multi-node, WireGuard, teams and roles, Aspire/Bella Baxter (Phase 2.75),
 GPUs and binaries, Amazon ECR (backlog).

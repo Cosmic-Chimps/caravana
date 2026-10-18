@@ -3,7 +3,9 @@
 How we get from an empty repo to the roadmap in [vision.md](vision.md). Each numbered item
 is a **Spec Kit feature**: `/speckit-specify` → `/speckit-plan` → `/speckit-tasks` →
 `/speckit-implement`, one git branch per feature. The details go in each feature's spec. This file
-only sets the order and the reason for it.
+only sets the order and the reason for it. From Phase 2.6 on, features are named after the
+screens of the design handoff (`design/console/`), and "The handoff, screen by screen" after
+Phase 4 says where each screen lands.
 
 Versions checked 2026-09-30: Go 1.27.1, Nomad 2.0.7, Traefik v3.7.
 
@@ -70,7 +72,7 @@ host serving only the webhook, a broken deploy reverted by Nomad with no failed 
 every port but 22, 80 and 443 closed from outside. The same checks pass in the local lab
 (`TestLab`).
 
-## Phase 2: Compose + UI (the "Dokploy for Nomad" experience)
+## Phase 2: Compose + UI (the "Heroku on your own VM" experience)
 
 | # | Feature | Notes |
 | --- | --- | --- |
@@ -110,18 +112,47 @@ building from source. Aspire and Bella Baxter move to Phase 2.75.
 | --- | --- | --- |
 | 018 | **Notifications** | Done (specs/018-notifications). Pushes what the "needs you" list derives (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and restores) and deploy outcomes to the owner. Channels are signed outgoing webhooks, Slack and Discord incoming webhooks, and ntfy, set in Settings › Notifications; their secrets live in Nomad Variables (`caravana/notifications/<id>`). A notifier diffs the list every 30 s against the problems already sent (so a flapping problem sends one "opened"), deploys queue their outcome, and a SQLite delivery queue retries twice before marking a message failed. API 0.15.0: `/v1/notifications/channels`. Email later. |
 | 019 | **Organization / Project / Environment** | Done (specs/019-projects-environments). Apps live in a project and an environment; every existing app is in Default › production with its ID, so nothing moved. An app's ID is its name there and `<project>--<environment>--<name>` elsewhere, still the key of its job, router, variables, volumes and backups, so constitution VI's `<app>-<service>` router name needed no change. **One Nomad namespace, not one per environment** (lab finding, 2026-10-17): Traefik's Nomad provider watches `default` only, `namespaces=*` broke routing for every app, and a namespace list needs Traefik redeployed (a gap on 80/443 and its ACME state) each time an environment is added; secrets are already isolated per job, so namespaces wait for teams (Phase 4). Copy to environment makes the app elsewhere without deploying; promote deploys one environment's newest healthy deployment into another by digest, keeping the target's env, secrets, domains, memory, copies and backups, and refuses to delete a service. API 0.16.0, console pages for projects, copy and promote, migration 0011. The gate step `projects-promote` and the console step `console-projects` cover it. |
-| 020 | **Create an app without deploying it** | Done (specs/020-create-without-deploy). Found while setting up CI for a new app: "create" always deployed, so an image CI hadn't pushed yet gave a failed deployment, a needs-you item and a notification on day one. New app gets "Create without deploying" (with an image, or with only a name), and `createApp` / `createEnvironmentApp` take `?deploy=false`. An app with no services is stored and listed ("not defined yet") but never reaches `Translate`: a redeploy as stored of it (Deploy now, the webhook, an empty-body deploy, a past version) is 409 `app_not_defined` and records nothing; a deploy that brings a definition (API body, Compose, Configure's "Define the app" form) works as for any app. A defined app that was never deployed deploys as stored on its first webhook call. The webhook still never chooses an image. Secret values are refused on a create without deploying (names are kept). No migration. API 0.17.0: `defined` on `AppRecord` and `AppSummary`, code `app_not_defined`. The console step `console-create-only` covers it. |
-| 021 | **Build from source** | A git repo plus a Dockerfile, built as a Nomad batch job (rootless BuildKit), pushed to a registry from 017, then deployed by digest. Build once, deploy to staging, promote to production (019); failed builds notify (018). First test case: Phanpy. Buildpacks or Nixpacks later, if ever. Moved here from Phase 4. |
+| 019.5 | **Create an app without deploying it** | Done (specs/019.5-create-without-deploy; added 2026-10-18 at the maintainer's request, outside the numbering). Found while setting up CI for a new app: "create" always deployed, so an image CI hadn't pushed yet gave a failed deployment, a needs-you item and a notification on day one. New app gets "Create without deploying" (with an image, or with only a name), and `createApp` / `createEnvironmentApp` take `?deploy=false`. An app with no services is stored and listed ("not defined yet") but never reaches `Translate`: a redeploy as stored of it (Deploy now, the webhook, an empty-body deploy, a past version) is 409 `app_not_defined` and records nothing; a deploy that brings a definition (API body, Compose, Configure's "Define the app" form) works as for any app. A defined app that was never deployed deploys as stored on its first webhook call. The webhook still never chooses an image. Secret values are refused on a create without deploying (names are kept). No migration. API 0.17.0: `defined` on `AppRecord` and `AppSummary`, code `app_not_defined`. The console step `console-create-only` covers it. |
+| 020 | **Build from source** | A git repo plus a Dockerfile, built as a Nomad batch job (rootless BuildKit), pushed to a registry from 017, then deployed by digest. Build once, deploy to staging, promote to production (019); failed builds notify (018). First test case: Phanpy. Buildpacks or Nixpacks later, if ever. Moved here from Phase 4. Drawn as `NewAppScreen` (the Git repository source: repository, branch, "Found a Dockerfile" check), `DeployScreen` (Queued, Build, Roll out, Live, the Build log tab, "What changed from v23"), Settings › Connections › Git providers (`SettingsScreen`), and the deploy's "pushed by" trigger. Autodeploy on push ships with it as the git twin of the image webhook. |
 
 **Gate:** on the maintainer's host, an app built from a git repo deploys to a staging environment,
 is promoted to production, and a failure during it reaches the owner as a notification.
 
+## Phase 2.6: The Developer view, complete (single node)
+
+Added 2026-10-18. From here on the plan follows the design handoff ("caravana console",
+Handoff 2, 2026-10-04, `design/console/`, local only): every feature names the screen it builds,
+and the index at the end of Phase 4 lists every screen and where it lands. The handoff draws the
+whole Developer view; after 020 these are the screens it has that the console doesn't, one
+feature each, in the order a single-host owner reaches for them. Nothing here needs a second
+node, and the rule from 008 on holds: each feature ships its console part with it.
+
+| # | Feature | Drawn as | Notes |
+| --- | --- | --- | --- |
+| 021 | **Console IA: the handoff's shape** | `AppScreen` Configure, `Shell` sidebar, `SettingsScreen` nav, `DevHome` "Shipping now" | Put the build back on the handoff's information architecture. Configure becomes the short form the handoff draws (copies and size, shipping, the domains list, secret names) and Variables and secrets, Domains and Backups become their own app pages; Settings gets the grouped left nav (Connections, Security, People) with counts and warning marks per entry; the Apps home gets the "Shipping now" card for a rollout in progress; the deployment entry gains the handoff's stages (Queued, Roll out, Live; Build from 020). Stop, Start and Restart arrive as app actions (the handoff has Restart; Stop is the one addition): Nomad job stop without purge, and the task restart 016 uses. Cheap things ride along: a kind word per row on the Apps table (`NowScreen` shows `compose`, `database`), an app filter on the Apps home (open question 2 of the 007 review), and the deployment entry naming which token or person deployed (`DeployList` says "by ana"). |
+| 022 | **Schedules** | `SchedulesScreen` | A command on a timer in a fresh copy of an app: the live version's image, variables and secrets, no traffic, as a Nomad periodic batch job (the shape backups already use). Presets ("every day at 03:00") over a cron line, a stop-after limit, skip a run if the last one is still going, Run now, Pause and Resume, the last 14 runs as marks, the logs of the last run, failed runs on the needs-you list and in notifications. Backups appear in the list as built-in schedules. Settles the installation's timezone (the handoff shows local time; backups are UTC today). |
+| 023 | **Domains** | `DomainsScreen`, `AddDomainPanel` | One page for every address: status (live, getting certificate, DNS points elsewhere, certificate expiring), the app and port it goes to, the certificate's renewal date, and per-domain options drawn as switches: Force HTTPS, www redirect, Team only (basic auth until there are accounts), path or port. Add a domain shows the record to create (an A record to this host; the edge CNAME is Phase 3) and checks DNS, certificate and reachability. Every option is a Traefik middleware on the existing router, so constitution VI's router name is untouched; path and header routing between services stays in the backlog. The issuer settings from `CertsScreen` (Let's Encrypt contact, warn before expiry) come here; its cluster parts wait for Phase 3. |
+| 024 | **Logs** | `LogsScreen` (Developer mode) | Logs across an environment, newest first, with levels read from the line (error, warn, info, debug), a search box, a time range, a histogram with deploy markers, repeated lines folded, "only this service", "lines around this", Download, and deploys as rows in the stream. ANSI sequences stripped or rendered. Backed by Nomad's log API as today; retention stays Nomad's, and "send them somewhere longer" is a Settings connection for later. |
+| 025 | **Monitoring and capacity** | `MonitoringScreen`, the Platform panel on `DevHome`, the Capacity panel of `NowScreen` for one host | Requests, errors and slowest 5 % per app from Traefik's metrics, memory per app, each compared with the same hour over the last 7 days (the shaded band) with deploy markers, and a table of apps sorted "unusual first". The host's own capacity: memory reserved against used, disk, "room for about 4 more apps like whoami", with "disk nearly full" on the needs-you list. History in a small SQLite ring buffer fed by Nomad's allocation and node stats and Traefik's metrics endpoint on loopback. |
+
+Also in this phase, with no screen of their own: "Start from an example" on New app, fed by
+`deploy/examples/` (the handoff has no templates screen; one to ask for), Telegram and email
+channels in Notifications (`NotifySettings` draws Email), and 2-step sign-in for the one admin
+(`LoginScreen` draws the code step).
+
+**Gate:** on the maintainer's host, each of the five pages shows real data for the apps already
+there, a schedule runs and fails visibly, and Configure for a two-service Compose app fits on
+two screens.
+
 ## Phase 2.75: Aspire + Bella Baxter
 
-- 022: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
+- 026: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
   rendered from Nomad services. `PublishToCaravana` targets a project and environment (019), and
-  can create an app without deploying it (020).
-- 023: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+  can create an app without deploying it (019.5).
+- 027: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+  Drawn as `VariablesScreen`'s "Where secrets come from" panel with one external source, not the
+  handoff's provider gallery: the constitution keeps Caravana whole without any provider and names
+  Bella Baxter first.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
 **Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.
@@ -129,21 +160,41 @@ is promoted to production, and a failure during it reaches the owner as a notifi
 ## Phase 3: Cluster
 
 Add a node over SSH, WireGuard mesh, Nomad TLS (Bella PKI or self-generated), placement and
-drain in the UI, cluster-wide routing. **Gate:** 3 nodes that survive the loss of 1.
+drain in the UI, cluster-wide routing. The handoff's Operator view is this phase, screen by
+screen. Features are numbered when they are specified, in about this order:
+
+| Feature | Drawn as | Notes |
+| --- | --- | --- |
+| Add a server | `AddServerScreen` | A join command with a one-time token (or SSH access), the checks as they pass (connected, Docker and disk, reaches the others on the private network, ready to take work), the server named and put in a pool. The installer from 012 becomes the join path. |
+| Servers and the server page | `ServersScreen`, `NodeScreen` | The list with CPU, memory and disk meters (used and reserved) and copies per server; the server page with what runs here, "Move work off" (a drain that says what moves and what a volume pins), "Take work again", the agent versions, and what happened on this server. |
+| Overview, the Operator home | `NowScreen` | The cluster headline, a panel per node with its copies, the apps table with a node column, needs-you, the live activity feed from Nomad's event stream, capacity for the cluster. The Developer and Operator toggle in the sidebar arrives here. |
+| Activity | `ActivityScreen` | One row per operation (deploys, restarts and moves, servers, schedules, failures) with its steps, trigger and outcome, by day. |
+| Placement | `PlacementScreen`, `SchedulerScreen` | Why a copy can't be placed, with the free memory per server and the ways to fix it (use less, add a server, undo); the scheduler's settings in plain words (spread or pack, priorities per environment, crash and server-loss rules); placement rules per app (only on, never two on one server, servers with a label). Nomad affinity, spread and constraints behind the words. |
+| Proxy and routing | `ProxyScreen` | A proxy per server with req/s, p95 and errors, take one out of rotation, routes with healthy copies per domain, and the defaults for every route (HTTP to HTTPS, timeout, upload size, requests per visitor, health check, slow start). |
+| Certificates | `CertsScreen` | The cluster parts: the cluster CA and the server and client certificates Caravana renews (Nomad TLS), and wildcard certificates through a DNS provider (`SettingsScreen` › DNS providers), which previews need later. |
+| Updates | `UpdatesScreen` | The backlog's "Updates from the console", cluster-wide: available updates (Caravana, Nomad, OS security fixes), the plan server by server with what stops, an update window, past runs. |
+| Operator logs | `LogsScreen` (Operator mode) | 024 plus the scheduler, Docker and Caravana sources per server. |
+| Capacity | `CapacityScreen` | 025 across servers: memory by server and project, "sizes worth changing" from 30-day peaks, what still fits per size, the reserved-memory trend and the date it runs out. |
+| A shell into a copy | `NodeScreen` has "Open shell" for a server only | Nomad alloc exec over a websocket; the no-JavaScript first step is "Run a command" with captured output. Exposing a TCP port (a ufw rule beside Traefik) belongs here too. |
+
+**Gate:** 3 nodes that survive the loss of 1. Node pools that add servers at a provider by
+themselves (`PoolsScreen`) and previews wait for Phase 4.
 
 ## Phase 3.5: GPU + binaries
 
 **On demand:** not part of the MVP, and built when users ask for it. Phase 3 comes first: it
 proves the core promise (one VM to twenty). Consul Connect versus native discovery over
-WireGuard is decided at the start of Phase 3; Nomad namespaces per project or environment come
-with 019 (Phase 2.5), so app IDs only need to be unique within one.
+WireGuard is decided at the start of Phase 3; Nomad namespaces per project or environment wait
+for teams (Phase 4, see 019), so app IDs stay unique across the installation.
 
 - GPU nodes: node bootstrap installs the NVIDIA driver, the container toolkit and Nomad's NVIDIA
   device plugin (not part of the Nomad download), then checks that the GPU fingerprint shows up.
 - App model: a GPU request per service (count, vendor, minimum memory) becomes a Nomad `device`
   block. No GPU node that fits means a clear error, not a job stuck pending.
 - Binary sources: a release artifact URL plus checksum becomes a Nomad `artifact` + `exec` task.
-  `raw_exec` is never enabled.
+  Drawn as `NewAppScreen`'s Binary source (download URL, checksum, command, arguments) with the
+  Sandboxed and Java isolation choices. The handoff's third choice, "Full host access", is not
+  built: `raw_exec` is never enabled (`docs/vision.md`).
 - Templates: Ollama, vLLM and ComfyUI with a GPU request and a model cache on a host volume.
 
 Needs a real GPU box to test (a rented GPU VM by the hour is enough). Nothing in Phases 1–3
@@ -155,7 +206,62 @@ rolls back.
 ## Phase 4: Platform
 
 More build sources (buildpacks, monorepos), app templates, teams and roles, managed Cloud tier
-(needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (021).
+(needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (020).
+Drawn as:
+
+- `MembersScreen`: organization roles (owner, admin, member), a role per project with an
+  override per environment (view, deploy, maintain), guests whose access ends, invites. Nomad
+  namespaces per project arrive with this (019's finding).
+- `SsoSettings`, `AuditSettings`, `SshSettings`: single sign-on with join-automatically and
+  require-SSO, the 90-day audit log with diffs, SSH keys placed on every server.
+- The org switcher and `NewOrgScreen`: an organization on the shared servers with a memory
+  limit, or on a pool of its own.
+- `PreviewsScreen`: a preview per pull request on a wildcard domain, which apps get their own
+  copy and which share, starting data (empty, seed, a copy of staging), sleep when idle, delete
+  after the PR closes, a limit per project.
+- `PoolsScreen`: pools by server type and region, minimum and maximum, servers added by
+  themselves at the provider, labels for placement rules.
+- `BackupsScreen` extras: restore to any second, weekly restore tests, "not backed up" gaps with
+  "safe to lose", download.
+- `VariablesScreen`'s grid: one row per name and one column per environment, shared variables,
+  "not shipped yet" changes, edit as `.env`.
+
+### The handoff, screen by screen
+
+Where each of the handoff's 26 screens lands. "Built" means the console has it in the handoff's
+sense, even where the layout differs (007 and 014 record the differences).
+
+| Screen | Built | Lands in |
+| --- | --- | --- |
+| `LoginScreen` | password sign-in | 2-step code in 2.6; SSO and reset link in Phase 4 |
+| `DevHome` | Apps home: headline, needs-you, activity | "Shipping now" card in 021; the Platform panel in 025 |
+| `DevHome` › `ProjectScreen` | project page, copy, promote (019) | environment switcher and "Deploys in staging" rail in 021 |
+| `AppScreen` | Running, Deployments, Configure, Logs, Backups | Configure's short form, Restart and Stop in 021 |
+| `DeployScreen` | a progress line in the deployment entry | 020 (Build) and 021 (stages) |
+| `NewAppScreen` | image and Compose sources | git in 020, examples in 2.6, binary in 3.5 |
+| `VariablesScreen` | per service, inside Configure | its own app page in 021; Bella Baxter source in 027; the cross-environment grid in Phase 4 |
+| `LogsScreen` | per app: copy, stream, pause, wrap | 024; Operator mode in Phase 3 |
+| `DomainsScreen` | domains inside Configure | 023 |
+| `SchedulesScreen` | backups only | 022 |
+| `BackupsScreen` | per app: volumes, back up now, restore | its own app page in 021; the extras in Phase 4 |
+| `MonitoringScreen` | CPU and memory per copy, live only | 025 |
+| `PreviewsScreen` | — | Phase 4 |
+| `PlacementScreen` | — | Phase 3 |
+| `SettingsScreen` | one page: password, tokens, destination, registries, notifications | the nav in 021; git providers in 020; DNS providers, SSH keys, SSO, audit in Phase 3 and 4 |
+| `MembersScreen` | — | Phase 4 |
+| `NewOrgScreen`, org switcher | — | Phase 4 |
+| `NowScreen` | — | Phase 3 (its Capacity panel for one host in 025) |
+| `ServerScreens` (list, server, add) | — | Phase 3 |
+| `CapacityScreen` | — | Phase 3 (one host in 025) |
+| `ActivityScreen` | — | Phase 3 |
+| `SchedulerScreen` | — | Phase 3 |
+| `PoolsScreen` | — | Phase 4 |
+| `ProxyScreen` | — | Phase 3 |
+| `CertsScreen` | Let's Encrypt through Traefik | issuer settings in 023; cluster certificates in Phase 3 |
+| `UpdatesScreen` | — | Phase 3 (the notice from the backlog's "Updates from the console" may come earlier) |
+
+Not drawn by the handoff and to ask for: templates ("Start from an example"), Stop as an action,
+a shell or "run a command" into a copy, exposing a TCP port, a light theme.
 
 ## Backlog (found while running real apps, not scheduled yet)
 
@@ -198,9 +304,8 @@ Nomad Variables, and the per-task copies and the `auth` block go away.
 
 Added 2026-10-16. ECR's registry password is a token from `ecr:GetAuthorizationToken` that
 expires after 12 hours, so 017's "user name and secret" breaks half a day after it is pasted.
-Dokploy users hit exactly this (Dokploy issue #2040; its PRs #2660 and #4141 log in at deploy
-time only, so a restart or reschedule after 12 hours still fails, and #4632 broke the `AWS` user
-name by lowercasing it).
+Other PaaS tools hit exactly this: logging in at deploy time only still fails on a restart or
+reschedule after 12 hours, and lowercasing the user name breaks `AWS`.
 
 The plan, built on 017 with no breaking change:
 
@@ -302,6 +407,42 @@ has to settle:
   host volumes and Docker. It checks the cluster when connecting and says what's missing.
 - **The scoped policy:** connecting includes making Caravana's own limited token from
   `caravana-policy.hcl`, never keeping a management token.
+
+### What other PaaS tools have that we don't (ranked 2026-10-17)
+
+Added 2026-10-17, from comparing the live console, the design handoff in `design/console/` and
+`internal/app` against the self-hosted PaaS tools people come from. Not gaps: digest-pinned
+deploys with auto-revert, rollback by recorded definition, promotion by digest, the needs-you
+list with signed notifications, volume backups inside the app's copy, export as a Nomad job,
+`If-Match` on edits and the kept Compose file. Those stay the pitch.
+
+Ranked by day-to-day value for the single-host owner against cost and fit with the Nomad model.
+"Drawn" names the handoff screen that already covers it. Scheduled on 2026-10-18: the Phase column
+names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
+
+| # | Gap | Elsewhere | How it fits Caravana | Drawn | Phase |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Build from source | Git providers, autodeploy on push, build server, concurrent-build limit | Feature 020. Ship "autodeploy on push" with it, as the git twin of the image webhook | `NewAppScreen` | 2.5 (020) |
+| 2 | Stop, start, restart | Deploy, Reload, Rebuild, Stop per service; bulk actions per environment | Nomad `job stop` without purge, and the task restart 016 already uses. The design has the ○ stopped mark; `docs/design-feedback-007.md` 3.4 notes "no Restart yet" | `AppScreen` (partly) | 2.6 (021) |
+| 3 | Scheduled tasks | A cron plus a command run in the service's container, with a run history | Nomad periodic batch jobs, which backups already are. The design feedback's "workload kinds: web, worker, scheduled" (7.1) and a Runs tab | `SchedulesScreen` | 2.6 (022) |
+| 4 | Domain extras | Path, strip path, redirects, basic auth, custom middlewares, "Validate DNS", DNS providers that create records | Basic auth and a www or apex redirect are Traefik tags. A DNS check (the A record points at this host) and the certificate state are reads. Path and header routing stays in "Routing by path and header" above | `DomainsScreen` | 2.6 (023) |
+| 5 | Monitoring with history | CPU, memory, disk, block and network I/O per app and per server, with a time range | Caravana reads CPU and memory only while the Running tab is open. A small ring buffer in SQLite from Nomad's node and allocation stats, host disk and memory on the Apps page ("room for about 4 more apps"), and "disk nearly full" on the needs-you list | `MonitoringScreen`, `CapacityScreen` | 2.6 (025) |
+| 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.6 (New app, no screen) |
+| 7 | More notification kinds | Email, Telegram, Teams, Gotify, Resend, Lark | Telegram is one HTTPS call with a bot token; email needs SMTP settings. Both are 018 channels | `SettingsScreen` | 2.6 (Notifications) |
+| 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | 3 |
+| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines beyond Postgres ("Backups for more than Postgres" above), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 2.5 (backups), 3 (TCP ports) |
+| 10 | Preview deployments | A pull request gets its own deploy on a wildcard domain | An environment per pull request on top of 019 and 020 | `PreviewsScreen` | 4 |
+| 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
+| 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 4 (`VariablesScreen` grid) |
+| 13 | Requests log | Traefik's access log, filterable, with a cleanup schedule | Traefik's JSON access log, shown as per-app request counts and status mix. Watch disk use | none | 2.6 (025 reads Traefik's metrics), 3 (the log itself) |
+| 14 | Updates and host upkeep | "Check for updates", a cleanup button, Let's Encrypt email in settings | "Updates from the console" above. Nomad's docker driver removes unused images by default, so a daily image cleanup is covered; 020's build cache will need its own pruning | `UpdatesScreen` | 3 (Updates) |
+| 15 | List ergonomics | Filter, type and status selects, tags, bulk select | The Apps page has no filter. The design feedback (5.2) already asks at what size one appears | none | 2.6 (021) |
+
+Not to copy: the Traefik file editor, the Docker containers, images, networks and events pages
+and per-app Traefik config (the Caravana twin is the Operator view and a read-only view of jobs
+Caravana didn't create); Swarm-isms (Reload, Rebuild, a replicas box applied by a redeploy,
+"Clear deployments", since the history is a ledger and edits are deploys); the AI assistant and
+Import.
 
 ## Open decisions (settle them in the feature spec that needs them)
 

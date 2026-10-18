@@ -349,7 +349,7 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 }
 
 // neverDeployed says whether the app was created and has no deployment at all:
-// an app made without deploying it (feature 020) until its first deploy.
+// an app made without deploying it (feature 019.5) until its first deploy.
 func neverDeployed(sum service.AppSummary) bool {
 	return sum.LastDeployment == nil && sum.Status.State == service.StateNotRunning
 }

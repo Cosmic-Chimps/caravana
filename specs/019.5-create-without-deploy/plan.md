@@ -1,6 +1,6 @@
 # Implementation Plan: Create an app without deploying it
 
-**Branch**: `020-create-without-deploy` (stacked on `019-projects-environments`) | **Date**: 2026-10-18 |
+**Branch**: `019.5-create-without-deploy` (stacked on `019-projects-environments`) | **Date**: 2026-10-18 |
 **Spec**: [create-without-deploy.spec.md](./create-without-deploy.spec.md)
 
 ## Summary

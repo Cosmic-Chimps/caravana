@@ -1,6 +1,6 @@
 # Feature Specification: Create an app without deploying it
 
-**Feature Branch**: `020-create-without-deploy` (stacked on `019-projects-environments`)
+**Feature Branch**: `019.5-create-without-deploy` (stacked on `019-projects-environments`)
 
 **Created**: 2026-10-18
 

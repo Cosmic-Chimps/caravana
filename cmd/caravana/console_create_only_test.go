@@ -1,6 +1,6 @@
 package main
 
-// The console-create-only step of the lab test (feature 020, plan.md "Lab"):
+// The console-create-only step of the lab test (feature 019.5, plan.md "Lab"):
 // an app created without deploying it, with only its name and with a
 // definition, and what gives each its first deploy. It is in its own file only
 // because console_lab_test.go is long; runConsole lists it with the others.

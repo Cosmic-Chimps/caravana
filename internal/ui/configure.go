@@ -101,7 +101,7 @@ type configureTab struct {
 	// it still needs (feature 019); empty otherwise.
 	Copied sentence
 	// Define is the "Define the app" form of an app with no services yet
-	// (feature 020); nil once it has a definition.
+	// (feature 019.5); nil once it has a definition.
 	Define  *defineView
 	Edit    editView
 	Secrets secretsView
@@ -413,7 +413,7 @@ func whatGoes(a app.App, sum service.AppSummary, deployments int, hasToken bool)
 		}
 	}
 	if deployments == 0 {
-		// Created and never deployed (feature 020): nothing runs, so nothing stops.
+		// Created and never deployed (feature 019.5): nothing runs, so nothing stops.
 		s = sentence{plain("It was never deployed, so nothing is running.")}
 	} else if len(hosts) > 0 {
 		s = append(s, plain(" and "))
@@ -672,7 +672,7 @@ func refuseEdit(f *editForm, edited app.App, err error) (status int, ok bool) {
 // got its definition meanwhile (another tab, or a deploy through the API).
 const alreadyDefinedNotice = "This app has a definition now. Edit it below, or open the tab again."
 
-// defineApp answers POST /apps/{id}/define (feature 020): the Configure tab's
+// defineApp answers POST /apps/{id}/define (feature 019.5): the Configure tab's
 // "Define the app" form for an app that has no services yet. It builds the one
 // service New app would build, from the same fields, and saves and deploys it
 // on the condition that the app still has the revision the page was drawn from.
