@@ -431,8 +431,9 @@ staging environment, is promoted to production, and a failure during it reaches 
 notification.
 
 After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
-per screen (021 console IA, 022 Schedules, 023 Domains, 024 Logs, 025 Monitoring and capacity),
-then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
+per screen (020.5 app actions and Run a command, 021 console IA, 022 Schedules, 023 Domains, 024
+Logs, 025 Monitoring and capacity; also a sqlite backup engine and an "update available" notice),
+ending with the API at 1.0, then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
 and ends Phase 4 with "The handoff, screen by screen".
 
 Out of scope for now: multi-node, WireGuard, teams and roles, Aspire/Bella Baxter (Phase 2.75),

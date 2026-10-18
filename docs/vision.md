@@ -53,7 +53,8 @@ Not (yet) for: service mesh, multi-region failover, compliance-first teams.
 | --- | --- | --- |
 | 1 · Engine (done 2026-10-04) | Image deploys, webhook redeploys, digest pinning, Traefik + HTTPS, single node | whoami live by webhook |
 | 2 · Compose (done 2026-10-11) | Compose translator, env and secrets, databases + backups, HTMX UI | A real compose app runs |
-| 2.5 · Day to day (now) | Notifications, organization / project / environment, build from source (Dockerfile) | A git-built app goes staging → production, and a failure reaches the owner |
+| 2.5 · Day to day (now) | Notifications, organization / project / environment, create without deploying, build from source (Dockerfile) | A git-built app goes staging → production, and a failure reaches the owner |
+| 2.6 · Developer view | The design handoff's Developer screens on one host: app actions and Run a command, the console's shape, schedules, domains, logs, monitoring and capacity; the API becomes 1.0 | Each page shows real data on the maintainer's host, and a schedule runs and fails visibly |
 | 2.75 · Aspire | Aspire integration (`PublishToCaravana`), Bella Baxter secrets | Bella Baxter deploys through `PublishToCaravana` |
 | 3 · Cluster | Add node over SSH, WireGuard mesh, placement and drain, cluster-wide routing | 3 nodes, survive 1 loss |
 | 3.5 · GPU + binaries | GPU nodes (driver + NVIDIA device plugin at node bootstrap), GPU requests in the app model, binary sources (`exec` driver + artifact download), AI templates (Ollama, vLLM, ComfyUI) | An Ollama template serves a model on a GPU node; a plain binary app deploys and rolls back |
