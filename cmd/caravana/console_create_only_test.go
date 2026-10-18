@@ -97,7 +97,8 @@ func (c *console) createOnly(t *testing.T) {
 	}
 	resp, body = c.get(t, "/apps/"+named+"?created=1")
 	got := pageText(body)
-	for _, want := range []string{"Created " + named + ". Nothing is deployed yet.", "No definition yet.", "Define it in Configure"} {
+	// The name is a <code> element in the notice, so pageText has a space after it.
+	for _, want := range []string{"Created " + named + " . Nothing is deployed yet.", "No definition yet.", "Define it in Configure"} {
 		if resp.StatusCode != http.StatusOK || !strings.Contains(got, want) {
 			t.Fatalf("GET the new app's page = %d, want %q:\n%s", resp.StatusCode, want, got)
 		}
