@@ -12,6 +12,31 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 ### Added
 - The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
   `dev` for a build of your own.
+- Run a command in a running app: the Running tab has a "Run a command" form for each copy. Type
+  a program and its arguments (quotes work like in a shell; for pipes or variables run
+  `sh -c '...'`) and the page answers with what it printed, what it wrote to stderr and its exit
+  code. A command that runs longer than a minute is stopped and the answer says so; output past
+  64 KB is cut and says so. The output is shown once, on that answer, and is kept nowhere: not in
+  the logs, not in the app's history, not in a notification, not when you reload. What is
+  recorded is that a command ran, its first word (not its arguments) and its exit code. This
+  replaces SSH and Nomad's CLI for things like resetting an app's admin credential.
+- Stop, Start and Restart for an app, in the app's header. Stop asks first and says what it does:
+  every copy stops and the app stops answering, while its definition, secrets, volumes, webhook
+  token and history stay. A stopped app shows as stopped (a ring mark) on the Apps page, the
+  Apps page doesn't count it as trouble, and anything that would deploy it (the deploy form,
+  Configure, the webhook, a promotion into it, a redeploy of a version) is refused with "The app
+  is stopped: start it first." Its scheduled backups are skipped, not failed. Start runs exactly
+  what ran before, with no new image lookup. Restart restarts the copies one at a time, waiting
+  for each to be running (and healthy) before the next, so an app with two copies keeps
+  answering; restarts you ask for never count as "keeps restarting". Stop, Start and Restart are
+  refused while a deploy or a volume backup of the app is running.
+- A list of recent actions on the Running tab: restarts, stops, starts and commands, with how
+  each ended and whether it came from the console or the API.
+- API 0.18.0: `runCommand` (`POST /v1/apps/{id}/copies/{copyId}/run`, answered with
+  `Cache-Control: no-store`), `stopApp`, `startApp`, `restartApp` (202, it goes on in the
+  background) and `listAppActions`. `AppStatus.state` gains `stopped`, `AppRecord` and
+  `AppSummary` gain `stoppedAt`. New codes `app_stopped`, `app_not_stopped`, `app_busy` and
+  `copy_not_running` (all 409).
 
 ### Fixed
 - "Keeps restarting" no longer stays on the Apps page after the app has settled. A copy's
@@ -19,6 +44,11 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   all day. Now a copy counts only while it has restarted within the last hour, as failed copies
   already did, and the warning clears by itself an hour after the last restart (a notification
   channel then gets "resolved").
+
+### Upgrade
+- Rerun the installer: Caravana's Nomad token gains `alloc-exec`, the permission "Run a command"
+  needs. Until you do, the form says Nomad refused the command and to run the installer again;
+  everything else works as before. Stop, Start and Restart need no new permission.
 
 ## 0.7.0 - 2026-10-18
 

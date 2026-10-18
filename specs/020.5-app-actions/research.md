@@ -4,7 +4,7 @@
 
 `api.Allocations().Exec(ctx, alloc, task, tty=false, command []string, stdin, stdout, stderr,
 terminalSizeCh, q) (exitCode int, err error)` opens Nomad's exec websocket with Caravana's own
-token. The scoped policy (`deploy/vm/caravana-policy.hcl`, applied by the installer and by
+token. The scoped policy (`deploy/install/caravana-policy.hcl`, applied by the installer and by
 `TestLab`) gains `alloc-exec` on namespace `default`. The task is the service's own task (task name
 = service name; never the `names` sidecar or `caravana-volumes`). stdin is an empty reader; no TTY.
 

@@ -91,7 +91,7 @@ a console step in the lab.
 - Pure `splitCommand(line) ([]string, error)` (quotes, backslash) with table tests.
 
 ### Lab
-- The scoped policy `deploy/vm/caravana-policy.hcl` gains `alloc-exec` (TestLab applies it, so a
+- The scoped policy `deploy/install/caravana-policy.hcl` gains `alloc-exec` (TestLab applies it, so a
   missing capability fails in the lab).
 - Gate step `app-actions`: deploy a two-copy whoami with small reservations; run `echo
   <sentinel>` in a copy (stdout has it, exit 0; `listAppActions` has `echo` without it; the

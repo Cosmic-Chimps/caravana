@@ -114,7 +114,7 @@ destination's secret key is in the Nomad Variable `caravana/backup-destination`.
 GET/PUT, list, back up now, restore (`api/openapi.yaml` 0.8.0); console: Settings › Backup
 destination and a Backups tab. The policy gained variables `caravana/*`, and the gate has a step
 `backup-restore` (A, back up, B, restore, A) against an `rclone serve s3` bucket job. `TestLab`
-gives the in-process Caravana a token made from `deploy/vm/caravana-policy.hcl` (applied on every
+gives the in-process Caravana a token made from `deploy/install/caravana-policy.hcl` (applied on every
 run), not the lab's management token, so a missing capability fails in the lab. Feature 011 is
 implemented on branch `011-rollback-export`: every deployment records the app definition it
 deployed (`deployments.definition`, secret values left out, migration `0006_rollback.sql`) and
@@ -406,6 +406,58 @@ created without deploying it, with a definition or with only a name.
   created with `deploy=false` that its webhook deploys. It uses a worker with small reservations
   for the second app, since the form's service takes the default memory.
 
+Feature 020.5 (`specs/020.5-app-actions`, Phase 2.6's first piece) is implemented on branch
+`020.5-app-actions` (stacked on 019.5): Run a command in a running copy, and Stop, Start and
+Restart per app.
+- Run a command: `Service.RunCommand` takes the program and its arguments (1 to 64 items, each at
+  most 4 KiB, no NUL), runs them with Nomad's alloc exec (`deploy.Exec`; no shell, no TTY, no
+  stdin) in the copy's service task, 60 s timeout, each of stdout and stderr cut at 64 KiB, and
+  returns a `CommandResult` (exit code, the two streams, `TimedOut`, `FailedToStart` with Nomad's
+  reason in `Stderr`). The output exists only in that return value: it is never logged, stored,
+  put in an error, a notice, a live event, a URL or a cache (research R2). Every run leaves an
+  `app_actions` row with the first word of the command, the exit code or a reason in Caravana's
+  words ("timed out after 1m0s", "failed to start"), the copy, the service and the trigger,
+  never the arguments or the output. Tests search every store row, log line and page for a
+  sentinel the command prints (`s3cret-sentinel-0205…`).
+- Stop is `Deregister` without purge for the app's job and its backup periodic jobs
+  (`deploy.StopApp`); Start reads the stopped job and registers it again with `Stop=false`
+  (`deploy.StartApp`), so the same job and the same digests run with no tag lookup. `apps.stopped_at`
+  (migration `0012_app_actions.sql`, with the `app_actions` table) is the owner's decision, so the
+  app's `revision` doesn't move. `statusOfRecord` makes the state `stopped` over every other state,
+  Attention ignores a stopped app, the scheduler skips its volume backups, and `ErrAppStopped` (409
+  `app_stopped`) refuses every deploy path (`saveAndDeploy`, `Redeploy`, `RedeployVersion`,
+  `Promote` into it, `BackUpNow`, `Restore`, and so the webhook). Stop, Start and Restart take the
+  app's deploy lock with `TryLock`, so a deploy or a volume run in progress is `ErrAppBusy` (409
+  `app_busy`), not a wait. Restart answers at once with a `running` action and a goroutine (lock held)
+  restarts the live version's copies one at a time (`RestartCopy`, then `WaitCopyRestarted`: running
+  again and passing its checks when the service has a health check, 2 minutes each); an interrupted
+  one is settled as failed at the next start (`FailRunningActions`). `Copy.RequestedRestarts`
+  keeps these restarts off the crash-loop rule.
+- API 0.18.0: `runCommand` (`Cache-Control: no-store`), `stopApp`, `startApp`, `restartApp` (202),
+  `listAppActions` (last 20), `AppStatus.state` `stopped`, `stoppedAt` on `AppRecord` and
+  `AppSummary`, codes `app_stopped`, `app_not_stopped`, `app_busy`, `copy_not_running`. The policy
+  `deploy/install/caravana-policy.hcl` gained `alloc-exec` (rerun the installer; without it the
+  form says Nomad refused and to run the installer again).
+- Console (`internal/ui/actions.go`): the app header has Restart (post), "Stop…" (a link to the
+  confirmation page `GET /apps/{id}/stop`, then post) and, for a stopped app, Start; each answers
+  303 to `/apps/{id}?did=stop|start|restart`, whose notice is only drawn while it is still true,
+  and a refusal draws the Running tab again with the reason and its status (409, 502), never a
+  redirect. The Running tab has a "Run a command" section outside the live regions (so a refresh
+  never replaces what is being typed or the result), a form per live copy; `splitCommand` reads the
+  line like a shell's words (quotes, backslash; no pipes, variables or globs: use `sh -c '...'`);
+  `POST /apps/{id}/copies/{copyId}/run` answers 200 with the tab and the result panel (exit code,
+  stdout and stderr in `<pre>`, cut and timed-out notes, "This output is shown once; it isn't
+  kept."). The "Recent actions" list is its own live region (`/parts/apps/{id}/actions`, refreshed on
+  the `actions` notice, which the app's stream now forwards) and shows the action, the program, the
+  exit code or outcome, the trigger and when, never output or arguments. A stopped app is the idle
+  ring "stopped" in lists and the header, the Apps headline counts it ("1 app stopped") and not
+  as trouble, and the deploy form, Configure, secrets, backups and promotion say "The app is
+  stopped: start it first." (the header's Start is the way out).
+- The gate has a step `app-actions` (`gate_actions_test.go`: a two-copy busybox app with a domain;
+  echo a sentinel, `sh -c 'exit 3'`, restart while the domain is called every 200 ms, stop, start,
+  same job shape, delete) and `TestConsoleLab` a step `console-app-actions`
+  (`console_actions_test.go`). Neither had been run in the lab when this was written.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -431,7 +483,7 @@ staging environment, is promoted to production, and a failure during it reaches 
 notification.
 
 After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
-per screen (020.5 app actions and Run a command, 021 console IA, 022 Schedules, 023 Domains, 024
+per screen (020.5 app actions and Run a command (done, branch `020.5-app-actions`), 021 console IA, 022 Schedules, 023 Domains, 024
 Logs, 025 Monitoring and capacity; also a sqlite backup engine and an "update available" notice),
 ending with the API at 1.0, then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
 and ends Phase 4 with "The handoff, screen by screen".
