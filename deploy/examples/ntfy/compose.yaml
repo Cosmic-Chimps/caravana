@@ -1,0 +1,36 @@
+# ntfy (https://ntfy.sh), push notifications over HTTP, on Caravana, closed to anyone without an
+# account. ntfy reads every server.yml option from an NTFY_* variable, so there is no config file
+# to mount: the settings are here, and its users, access rules and tokens are secrets.
+#
+# The secrets are not in this file: NTFY_AUTH_USERS, NTFY_AUTH_ACCESS and NTFY_AUTH_TOKENS come
+# from overlay.json, which deploy.sh sends with it. Bcrypt hashes are full of "$", which Compose
+# would read as variables, and secret values arrive as typed. See RUNBOOK.md.
+name: ntfy
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.31.1
+    command: serve
+    expose: ["80"]
+    # ntfy itself needs a few tens of MB. It reserves this and bursts up to mem_limit.
+    mem_reservation: 64m
+    mem_limit: 256m
+    environment:
+      # deploy.sh puts ntfy's domain from overlay.json in place of ntfy.example.com.
+      NTFY_BASE_URL: https://ntfy.example.com
+      NTFY_BEHIND_PROXY: "true" # Traefik terminates HTTPS in front of it
+      # Everything ntfy keeps lives on the volume: the message cache, the users and the
+      # attachments. ntfy refuses to start if /var/lib/ntfy doesn't exist; the volume makes it.
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+      # Nobody reads or publishes without an account. ntfy's default is read-write for everyone.
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
+      NTFY_ENABLE_LOGIN: "true" # a Log in button in the web app
+      # The iOS app is woken through ntfy.sh, which gets a poll request but never the message
+      # itself. Android doesn't need it.
+      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
+    volumes:
+      - data:/var/lib/ntfy
+
+volumes:
+  data: {}

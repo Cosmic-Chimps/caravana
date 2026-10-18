@@ -1,0 +1,14 @@
+{
+  "services": {
+    "ntfy": {
+      "domains": [{"host": "ntfy.example.com", "port": 80}],
+      "health": {"path": "/v1/health"},
+      "secrets": [
+        {"name": "NTFY_AUTH_USERS", "value": "admin:REPLACE-ADMIN-HASH:admin,caravana:REPLACE-CARAVANA-HASH:user"},
+        {"name": "NTFY_AUTH_ACCESS", "value": "caravana:caravana-alerts:wo"},
+        {"name": "NTFY_AUTH_TOKENS", "value": "caravana:REPLACE-CARAVANA-TOKEN:Caravana notifications"}
+      ],
+      "backup": {"engine": "volume", "keep": 14}
+    }
+  }
+}
