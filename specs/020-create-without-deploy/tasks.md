@@ -11,7 +11,7 @@
 - [X] T003 Console: New app's two buttons and optional image; app page states and `?created=1`
   notice; Configure's "Define the app" form; list status; handler tests; parity test;
   `tools/ui-css.sh build`.
-- [ ] T004 Lab step `console-create-only` (plan.md "Lab").
+- [X] T004 Lab step `console-create-only` (plan.md "Lab").
 - [ ] T005 Docs: CHANGELOG Unreleased (Added), CLAUDE.md 020 paragraph and phase list,
   `docs/plan.md`: a 020 row (done) and build from source renumbered 021 (Aspire 022, Bella 023;
   also in CLAUDE.md and docs/vision.md where numbered).
