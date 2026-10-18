@@ -172,6 +172,8 @@ var statusRank = map[string]int{"failed": 4, "warning": 3, "rolling": 2, "health
 func appStatusView(sum service.AppSummary) statusView {
 	st := sum.Status
 	switch st.State {
+	case service.StateStopped:
+		return statusView{"idle", "stopped"}
 	case service.StateRollingOut:
 		return statusView{"rolling", "rolling out"}
 	case service.StateHealthy:
@@ -281,7 +283,7 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 	}
 
 	type troubled struct{ id, words string }
-	var healthy, rolling, waiting int
+	var healthy, rolling, waiting, stopped int
 	var trouble []troubled
 	for _, sum := range sums {
 		item, listed := first[sum.App.ID]
@@ -306,6 +308,9 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 			}
 		case service.StateDegraded:
 			trouble = append(trouble, troubled{sum.App.ID, troubleWords(sum)})
+		case service.StateStopped:
+			// Stopped on purpose: not trouble, and nothing is expected of it.
+			stopped++
 		case service.StateUnknown:
 			return sentence{plain("Nomad can't be reached; showing what caravana last recorded.")}
 		}
@@ -338,6 +343,9 @@ func headlineOf(sums []service.AppSummary, items []service.AttentionItem) senten
 	}
 	if waiting > 0 {
 		rest = append(rest, appCount(waiting)+" waiting for a first deploy")
+	}
+	if stopped > 0 {
+		rest = append(rest, appCount(stopped)+" stopped")
 	}
 	if len(rest) > 0 {
 		if len(out) > 0 {
@@ -389,6 +397,12 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 	var out sentence
 	live := versionLabel(st.LiveVersion)
 	switch st.State {
+	case service.StateStopped:
+		out = sentence{plain("Stopped")}
+		if sum.StoppedAt != nil {
+			out = append(out, plain(" "+relative(now, *sum.StoppedAt)))
+		}
+		out = append(out, plain(". Start it to run what ran before."))
 	case service.StateHealthy:
 		out = sentence{plain(copyCount(st.HealthyCopies) + " running ")}
 		if live != "" {

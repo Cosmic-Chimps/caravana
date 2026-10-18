@@ -34,7 +34,8 @@ var consoleParity = map[string]parity{
 	"GET /apps":     {ops: []string{"listProjects", "listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
-	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp"}},
+	// It also lists the app's recent actions (feature 020.5).
+	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose"}},
@@ -49,6 +50,7 @@ var consoleParity = map[string]parity{
 	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
 	"GET /parts/apps/{id}/deployments": {ops: []string{"listDeployments"}},
+	"GET /parts/apps/{id}/actions":     {ops: []string{"listAppActions"}},
 
 	// What the console changes.
 	// The place select (feature 019): an app that goes outside Default's production is created in its environment.
@@ -95,6 +97,12 @@ var consoleParity = map[string]parity{
 	"POST /settings/notifications/{id}/secret": {ops: []string{"rotateNotificationSecret"}},
 	"POST /settings/notifications/{id}/remove": {ops: []string{"deleteNotificationChannel"}},
 	"POST /apps/{id}/delete":                   {ops: []string{"deleteApp"}},
+	// App actions (feature 020.5). The Stop page reads the app (its copies and backups) before the post stops it.
+	"GET /apps/{id}/stop":                 {ops: []string{"getApp"}},
+	"POST /apps/{id}/stop":                {ops: []string{"stopApp"}},
+	"POST /apps/{id}/start":               {ops: []string{"startApp"}},
+	"POST /apps/{id}/restart":             {ops: []string{"restartApp"}},
+	"POST /apps/{id}/copies/{copyId}/run": {ops: []string{"runCommand"}},
 	// Projects and environments (feature 019).
 	"GET /projects/new":                                          {why: "a blank form; creating the project is POST /projects"},
 	"POST /projects":                                             {ops: []string{"createProject"}},

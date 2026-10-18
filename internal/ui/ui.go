@@ -170,11 +170,17 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/secrets", s.protected(s.requireSession(s.setSecret))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
+		{"GET", "/apps/{id}/stop", s.requireSession(s.showStop)},
+		{"POST", "/apps/{id}/stop", s.protected(s.requireSession(s.stopApp))},
+		{"POST", "/apps/{id}/start", s.protected(s.requireSession(s.startApp))},
+		{"POST", "/apps/{id}/restart", s.protected(s.requireSession(s.restartApp))},
+		{"POST", "/apps/{id}/copies/{copyId}/run", s.protected(s.requireSession(s.runCommand))},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/attention", s.requirePart(s.partAttention)},
 		{"GET", "/parts/apps/{id}/header", s.requirePart(s.partAppHeader)},
 		{"GET", "/parts/apps/{id}/copies", s.requirePart(s.partCopies)},
+		{"GET", "/parts/apps/{id}/actions", s.requirePart(s.partActions)},
 		{"GET", "/parts/apps/{id}/deployments", s.requirePart(s.partDeployments)},
 		{"GET", "/live", s.liveApps},
 		{"GET", "/live/apps/{id}", s.liveApp},
@@ -256,7 +262,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

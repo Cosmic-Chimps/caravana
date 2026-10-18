@@ -13,7 +13,7 @@
   slog handler).
 - [X] T004 API 0.18.0: the five operations, `stopped` state, `stoppedAt`, codes; `no-store` on
   runCommand; tests incl. the sentinel; openapi sync.
-- [ ] T005 Console: header actions, Stop confirm page, Running tab run form + result panel + recent
+- [X] T005 Console: header actions, Stop confirm page, Running tab run form + result panel + recent
   actions, stopped states across pages, `splitCommand` + tests, handler tests incl. the sentinel
   absent after reload, parity, `tools/ui-css.sh build`.
 - [ ] T006 Lab: gate step `app-actions`, console step `console-app-actions` (plan.md "Lab").

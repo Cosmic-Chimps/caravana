@@ -21,6 +21,13 @@
     {{range .Domains}}<a href="{{.URL}}" class="cv-data">{{.Host}}</a>{{end}}
   </div>
   <p class="cv-lede">{{template "sentence" .Summary}}</p>
+  {{with .Buttons}}
+  <div class="cv-actions" role="group" aria-label="App actions">
+    {{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Start</button></form>
+    {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Restart</button></form>
+    <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Stop…</a>{{end}}
+  </div>
+  {{end}}
   {{with .NomadError}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Envs}}
   <div class="cv-envs">
@@ -45,8 +52,12 @@
 <section class="cv-main">{{template "app-header" .}}</section>
 {{else}}
 {{with .Created}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Notice}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Refusal}}<div role="alert" class="cv-main cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <section class="cv-main" aria-label="App" hx-get="{{.HeaderHref}}" hx-trigger="sse:app, sse:deleted, sse:sync" hx-swap="innerHTML">{{template "app-header" .}}</section>
 {{with .Running}}{{template "running" .}}{{end}}
+{{with .Run}}{{if .Show}}{{template "run-section" .}}{{end}}{{end}}
+{{with .Actions}}{{template "actions-section" .}}{{end}}
 {{with .Deployments}}{{template "deployments" .}}{{end}}
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
@@ -244,6 +255,86 @@
 </section>
 {{end}}
 
+{{/* run-section: "Run a command" (feature 020.5). A form per live copy, and on the answer to a post
+     its result or refusal. Outside the live regions, so a refresh never replaces what is being typed
+     or the output being read. Takes a runSection. */}}
+{{define "run-section"}}
+<section aria-labelledby="run-title" class="flex flex-col gap-2">
+  <h2 id="run-title" class="cv-label">Run a command</h2>
+  {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .Result}}
+  <div class="cv-panel p-4 flex flex-col gap-3" role="region" aria-label="Command result">
+    <p class="text-base text-fg-1"><span class="cv-pill cv-pill-{{.Kind}}"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{if not .Started}}not started{{else if eq .Kind "failed"}}failed{{else}}finished{{end}}</span>
+      <span class="cv-inline-mono text-fg-1">{{.Command}}</span> in copy <span class="cv-inline-mono text-fg-1" title="{{.CopyID}}">{{.Short}}</span>{{with .Service}} of <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}.
+      {{template "sentence" .Outcome}}</p>
+    {{if .Started}}
+    <div class="flex flex-col gap-1">
+      <h3 class="cv-label">Output (stdout)</h3>
+      {{if .Stdout}}<pre class="cv-output" tabindex="0">{{.Stdout}}</pre>{{else}}<p class="cv-data-muted">Nothing.</p>{{end}}
+      {{if .StdoutCut}}<p class="cv-data-muted">The output was cut: only the first part is shown.</p>{{end}}
+    </div>
+    <div class="flex flex-col gap-1">
+      <h3 class="cv-label">Errors (stderr)</h3>
+      {{if .Stderr}}<pre class="cv-output" tabindex="0">{{.Stderr}}</pre>{{else}}<p class="cv-data-muted">Nothing.</p>{{end}}
+      {{if .StderrCut}}<p class="cv-data-muted">The output was cut: only the first part is shown.</p>{{end}}
+    </div>
+    {{else}}
+    <pre class="cv-output" tabindex="0">{{.Stderr}}</pre>
+    {{end}}
+    <p class="text-sm text-fg-3">This output is shown once; it isn't kept.</p>
+  </div>
+  {{end}}
+  {{if .Forms}}
+  <div class="cv-panel">
+    {{range .Forms}}
+    {{$id := .ID}}
+    <form method="post" action="{{.Action}}" class="cv-row cv-runform p-3 flex flex-col gap-2">
+      <label class="flex flex-col gap-2" for="{{$id}}">
+        <span class="cv-label">Copy <span class="cv-inline-mono" title="{{.CopyID}}">{{.Short}}</span> of <span class="cv-inline-mono">{{.Service}}</span></span>
+        <span class="flex flex-wrap items-start gap-2">
+          <input class="cv-field cv-runfield" id="{{$id}}" type="text" name="command" value="{{.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
+          <button type="submit" class="cv-btn cv-btn-secondary">Run</button>
+        </span>
+      </label>
+      {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+    </form>
+    {{end}}
+    <p class="px-3 py-3 text-sm text-fg-3">One command, run in that copy without a shell or a terminal. Quote like a shell, with single or double quotes. Pipes, variables and redirects aren't understood: for those, run <span class="cv-inline-mono">sh -c '...'</span>. It stops after a minute. What it prints is shown once and isn't kept; only that it ran, its first word and its exit code are.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* actions-section: the recent actions in a live region. Takes an actionsRegion. */}}
+{{define "actions-section"}}
+<section aria-labelledby="actions-title" class="flex flex-col gap-2">
+  <h2 id="actions-title" class="cv-label">Recent actions</h2>
+  <div class="cv-panel" hx-get="{{.RefreshHref}}" hx-trigger="sse:actions, sse:sync" hx-swap="innerHTML" aria-live="polite">{{template "actions-region" .}}</div>
+</section>
+{{end}}
+
+{{define "actions-region"}}
+{{if .Gone}}
+<p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Gone}}</p>
+{{else}}
+{{range .Rows}}
+<div class="cv-row flex flex-col gap-1 p-3">
+  <div class="flex flex-wrap items-center gap-3">
+    {{template "status-quiet" .Status}}
+    <span class="cv-data text-fg-1">{{.Label}}</span>
+    {{with .Program}}<span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}
+    {{if .Copy}}<span class="cv-data-muted" title="{{.CopyID}}">in copy {{.Copy}}</span>{{end}}
+    <span class="cv-data-muted">{{.Trigger}}</span>
+    <span class="cv-data-muted">{{template "time" .When}}</span>
+  </div>
+  {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+</div>
+{{else}}
+<p class="px-4 py-4 text-sm text-fg-3">Nothing yet. Restarts, stops, starts and commands are listed here.</p>
+{{end}}
+{{end}}
+{{end}}
+
 {{/* copies-region: the table of copies, or why there are none. The page draws it inside
      its live panel and /parts/apps/{id}/copies draws it alone. Takes a copiesRegion. */}}
 {{define "copies-region"}}
@@ -313,6 +404,7 @@
 {{else}}
 <div class="cv-empty">
   <p class="cv-empty-title">No copies are running.</p>
+  {{with .StoppedNote}}<p class="cv-empty-text">{{template "sentence" .}}</p>{{end}}
   {{with .Failure}}<p class="cv-empty-text">{{template "sentence" .}}<a href="{{$.DeploymentsHref}}">Deployments</a>.</p>{{end}}
 </div>
 {{end}}
