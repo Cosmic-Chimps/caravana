@@ -16,7 +16,7 @@
 - [X] T005 Console: header actions, Stop confirm page, Running tab run form + result panel + recent
   actions, stopped states across pages, `splitCommand` + tests, handler tests incl. the sentinel
   absent after reload, parity, `tools/ui-css.sh build`.
-- [ ] T006 Lab: gate step `app-actions`, console step `console-app-actions` (plan.md "Lab").
+- [X] T006 Lab: gate step `app-actions`, console step `console-app-actions` (plan.md "Lab").
 - [ ] T007 Docs: CHANGELOG Unreleased (Added; Upgrade: rerun the installer for `alloc-exec`),
   CLAUDE.md 020.5 paragraph, docs/plan.md 020.5 row Done, ranked table row 2/8.
 - [ ] T008 Full check and full `TestLab` (main session).

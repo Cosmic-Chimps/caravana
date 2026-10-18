@@ -123,6 +123,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"missing-tag", false, g.missingTag},
 		{"rollback-export", false, g.rollbackExport},
 		{"projects-promote", false, g.projectsPromoteStep},
+		{"app-actions", false, g.appActionsStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"ports-closed", true, g.portsClosed},
 	}
