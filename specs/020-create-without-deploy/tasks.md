@@ -15,4 +15,5 @@
 - [X] T005 Docs: CHANGELOG Unreleased (Added), CLAUDE.md 020 paragraph and phase list,
   `docs/plan.md`: a 020 row (done) and build from source renumbered 021 (Aspire 022, Bella 023;
   also in CLAUDE.md and docs/vision.md where numbered).
-- [ ] T006 Full check and full `TestLab` (main session).
+- [X] T006 Full check and full `TestLab` (main session). Passed 2026-10-18 (1484 s;
+  `console-create-only` 31 s).
