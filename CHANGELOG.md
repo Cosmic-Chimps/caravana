@@ -9,6 +9,17 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
+  `dev` for a build of your own.
+
+### Fixed
+- "Keeps restarting" no longer stays on the Apps page after the app has settled. A copy's
+  restarts add up for as long as it runs, so three restarts in the morning kept the warning up
+  all day. Now a copy counts only while it has restarted within the last hour, as failed copies
+  already did, and the warning clears by itself an hour after the last restart (a notification
+  channel then gets "resolved").
+
 ## 0.7.0 - 2026-10-18
 
 ### Added
@@ -32,15 +43,6 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `id` (or `appName`) and a `name`. `AppRecord` and `AppSummary` gain `defined`. New code
   `app_not_defined` (409) on `deployApp` with an empty body, `redeployDeployment` and the
   webhook call.
-- The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
-  `dev` for a build of your own.
-
-### Fixed
-- "Keeps restarting" no longer stays on the Apps page after the app has settled. A copy's
-  restarts add up for as long as it runs, so three restarts in the morning kept the warning up
-  all day. Now a copy counts only while it has restarted within the last hour, as failed copies
-  already did, and the warning clears by itself an hour after the last restart (a notification
-  channel then gets "resolved").
 
 ## 0.6.0 - 2026-10-18
 
