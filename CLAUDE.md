@@ -368,6 +368,43 @@ project and an environment (Default › production holds every app from before, 
   (`console_projects_test.go`: the same through the forms, promoting into a copy never deployed).
   Both clean up with `t.Cleanup`.
 
+Feature 020 is implemented on branch `020-create-without-deploy` (stacked on 019): an app can be
+created without deploying it, with a definition or with only a name.
+- `Service.CreateAppOnly(ctx, app.App)` (`service/apps.go`): no deployment, no Nomad call.
+  A definition goes through `deployer.Validate` (not the secret or backup checks, which the first
+  deploy makes); no services means a stored app with `"services": []` and `source.kind` image
+  (`checkPlace` still reads the ID). A secret with a value is a `*app.FieldError` on
+  `services[i].secrets[j].value`: names are kept, values only ever travel with a deploy. An
+  existing ID is `ErrAppExists`. No migration, `nomadjob` untouched, no new module.
+- `app.App.Defined()` is `len(Services) > 0` (a method, not a field). `ErrAppNotDefined` is
+  returned by `Redeploy` (so the webhook, Deploy now and an empty-body deploy) and
+  `RedeployVersion` before anything is validated or recorded, so an app with zero services never
+  reaches `Translate` or `Register`; `Deploy`/`DeployIf`/Compose with a definition work as for a
+  new app. A defined app never deployed deploys as stored on its first webhook call
+  (`WebhookRedeploy`'s unchanged check finds no healthy deployment). `CopyApp` of an undefined app
+  copies the name and skips `Validate`. `statusOf` no longer says healthy when zero copies are
+  wanted; Attention needs a deployment, so a never-deployed app is never an item.
+- API 0.17.0: `createApp` and `createEnvironmentApp` take `deploy` (query, default true); with
+  `false` the answer is 201 with the `AppRecord` (`ETag`, `Location: /v1/apps/{id}`) and the body
+  is `NewApp` (only `id`, or `appName`, is needed); 409 `app_not_defined` on `deployApp` (empty
+  body), `redeployDeployment` and `callWebhook`; `defined` on `AppRecord`, `AppSummary` and
+  `CopyResult`. `App.services` no longer says `minItems: 1` in the schema (a read app may have
+  none); a deploy still refuses an empty list.
+- Console: New app's two submit buttons are `name="action"` (`deploy`, the default, and `create`),
+  so both work without script; the image is optional for `create`, and a port or domain without
+  an image is refused rather than dropped; `create` goes to `/apps/{id}?created=1` (the notice is
+  only drawn while the app has no deployment). The Running tab's empty state is `firstDeploy`
+  (Deploy now, Create a webhook token, the curl line; for an undefined app Configure, Deploy from
+  Compose and the curl line with a body). Configure of an app with no services shows
+  "Define the app" (`defineApp`, `POST /apps/{id}/define`: New app's fields, `DeployIf` with the
+  page's revision, the service named like the app's name) instead of the per-service form, and
+  its Secrets section says to define the app first. The list shows `never deployed` / `not
+  defined yet`, and the Apps headline counts such apps as "waiting for a first deploy".
+- `TestConsoleLab` has a step `console-create-only` (`console_create_only_test.go`): a name-only
+  app (no job, webhook 409), defined through Configure's form and healthy, then a defined app
+  created with `deploy=false` that its webhook deploys. It uses a worker with small reservations
+  for the second app, since the form's service takes the default memory.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -383,7 +420,9 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
 - 019 Organization / Project / Environment: projects, environments with copy and promotion, app
   IDs `<project>--<environment>--<name>`, one Nomad namespace (done, branch
   `019-projects-environments`)
-- 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
+- 020 Create an app without deploying it: New app's "Create without deploying", `?deploy=false`,
+  apps that have no definition yet (done, branch `020-create-without-deploy`)
+- 021 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
   registry, deployed by digest (first test case: Phanpy)
 
 Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a

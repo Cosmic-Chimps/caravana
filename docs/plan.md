@@ -110,16 +110,18 @@ building from source. Aspire and Bella Baxter move to Phase 2.75.
 | --- | --- | --- |
 | 018 | **Notifications** | Done (specs/018-notifications). Pushes what the "needs you" list derives (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and restores) and deploy outcomes to the owner. Channels are signed outgoing webhooks, Slack and Discord incoming webhooks, and ntfy, set in Settings › Notifications; their secrets live in Nomad Variables (`caravana/notifications/<id>`). A notifier diffs the list every 30 s against the problems already sent (so a flapping problem sends one "opened"), deploys queue their outcome, and a SQLite delivery queue retries twice before marking a message failed. API 0.15.0: `/v1/notifications/channels`. Email later. |
 | 019 | **Organization / Project / Environment** | Done (specs/019-projects-environments). Apps live in a project and an environment; every existing app is in Default › production with its ID, so nothing moved. An app's ID is its name there and `<project>--<environment>--<name>` elsewhere, still the key of its job, router, variables, volumes and backups, so constitution VI's `<app>-<service>` router name needed no change. **One Nomad namespace, not one per environment** (lab finding, 2026-10-17): Traefik's Nomad provider watches `default` only, `namespaces=*` broke routing for every app, and a namespace list needs Traefik redeployed (a gap on 80/443 and its ACME state) each time an environment is added; secrets are already isolated per job, so namespaces wait for teams (Phase 4). Copy to environment makes the app elsewhere without deploying; promote deploys one environment's newest healthy deployment into another by digest, keeping the target's env, secrets, domains, memory, copies and backups, and refuses to delete a service. API 0.16.0, console pages for projects, copy and promote, migration 0011. The gate step `projects-promote` and the console step `console-projects` cover it. |
-| 020 | **Build from source** | A git repo plus a Dockerfile, built as a Nomad batch job (rootless BuildKit), pushed to a registry from 017, then deployed by digest. Build once, deploy to staging, promote to production (019); failed builds notify (018). First test case: Phanpy. Buildpacks or Nixpacks later, if ever. Moved here from Phase 4. |
+| 020 | **Create an app without deploying it** | Done (specs/020-create-without-deploy). Found while setting up CI for a new app: "create" always deployed, so an image CI hadn't pushed yet gave a failed deployment, a needs-you item and a notification on day one. New app gets "Create without deploying" (with an image, or with only a name), and `createApp` / `createEnvironmentApp` take `?deploy=false`. An app with no services is stored and listed ("not defined yet") but never reaches `Translate`: a redeploy as stored of it (Deploy now, the webhook, an empty-body deploy, a past version) is 409 `app_not_defined` and records nothing; a deploy that brings a definition (API body, Compose, Configure's "Define the app" form) works as for any app. A defined app that was never deployed deploys as stored on its first webhook call. The webhook still never chooses an image. Secret values are refused on a create without deploying (names are kept). No migration. API 0.17.0: `defined` on `AppRecord` and `AppSummary`, code `app_not_defined`. The console step `console-create-only` covers it. |
+| 021 | **Build from source** | A git repo plus a Dockerfile, built as a Nomad batch job (rootless BuildKit), pushed to a registry from 017, then deployed by digest. Build once, deploy to staging, promote to production (019); failed builds notify (018). First test case: Phanpy. Buildpacks or Nixpacks later, if ever. Moved here from Phase 4. |
 
 **Gate:** on the maintainer's host, an app built from a git repo deploys to a staging environment,
 is promoted to production, and a failure during it reaches the owner as a notification.
 
 ## Phase 2.75: Aspire + Bella Baxter
 
-- 021: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
-  rendered from Nomad services. `PublishToCaravana` targets a project and environment (019).
-- 022: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
+- 022: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
+  rendered from Nomad services. `PublishToCaravana` targets a project and environment (019), and
+  can create an app without deploying it (020).
+- 023: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
 **Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.
@@ -153,7 +155,7 @@ rolls back.
 ## Phase 4: Platform
 
 More build sources (buildpacks, monorepos), app templates, teams and roles, managed Cloud tier
-(needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (020).
+(needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (021).
 
 ## Backlog (found while running real apps, not scheduled yet)
 

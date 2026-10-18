@@ -70,6 +70,26 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `listApps` takes `?project=` and `?environment=`; a promotion's deployment has `promotedFrom`.
   New codes: `project_not_found`, `environment_not_found`, `project_exists`, `environment_exists`,
   `not_empty`, `protected`, `app_not_in_environment` and `promotion_removes_service`.
+- Create an app without deploying it: New app has a second button, "Create without deploying".
+  Give it a name and the image your CI will push (it doesn't have to exist yet) and nothing is
+  deployed, nothing fails and nothing reaches your notifications. The app's page says it is
+  waiting for its first deploy and shows how to start it: Deploy now, a webhook token (the first
+  call of the webhook deploys the app as it is stored), or the API call. So CI can be set up
+  before its first build.
+- A name is enough: create an app with only its name and let your automation fill in the rest.
+  The app is listed as "not defined yet", can have a webhook token, and its page offers Define it
+  in Configure (an image, a port, a domain and a health check, saved and deployed in one step),
+  Deploy from Compose, and the API call with a body. Until it has a definition, Deploy now and
+  the webhook answer that there is nothing to deploy and record nothing, because the webhook
+  never chooses an image. Secret values can't be given when creating without deploying, only
+  with a deploy; copying such an app to another environment copies its name.
+- The Apps page counts apps that were never deployed as "waiting for a first deploy", not as
+  something that needs you.
+- API 0.17.0: `createApp` and `createEnvironmentApp` take `?deploy=false`: 201 with the app (its
+  `revision` as `ETag`, its URL as `Location`) and no deployment, and the body may hold only an
+  `id` (or `appName`) and a `name`. `AppRecord` and `AppSummary` gain `defined`. New code
+  `app_not_defined` (409) on `deployApp` with an empty body, `redeployDeployment` and the
+  webhook call.
 
 ### Security
 - An app created with `POST /v1/apps` and secret values in its body kept those values in
