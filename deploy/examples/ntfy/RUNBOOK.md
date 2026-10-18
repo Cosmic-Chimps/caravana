@@ -155,6 +155,7 @@ as sent.
 | A deployment fails | Its entry in the Deployments tab has the reason, and the Logs tab has ntfy's output |
 | ntfy stops at start | The Logs tab. An entry ntfy can't read (a hash cut short, a `:` missing) is named there. Fix `overlay.json`, then `./deploy.sh deploy` |
 | admin gets 401 | The password doesn't match the hash: make a new hash and deploy. Or `NTFY_AUTH_USERS` didn't reach ntfy: the Configure tab lists the service's secrets by name |
+| The web app opens without the login page | Either this browser is already signed in, or it runs an old `config.js` (`curl -s https://ntfy.example.com/config.js` shows what the server says now). Behind Cloudflare's proxy (orange cloud), Cloudflare replaces ntfy's `no-cache` on that file with a 4-hour `max-age`. Set the record to **DNS only** as in step 1, then in the browser clear the site's data (that also removes ntfy's service worker), or try a private window |
 | The phone gets nothing | The app's user is for `https://ntfy.example.com`, exactly the subscribed server. On iOS, `NTFY_UPSTREAM_BASE_URL` must stay set |
 | Caravana's test fails with 403 | The channel's URL must use the topic in `NTFY_AUTH_ACCESS` (`caravana-alerts`), and the token must be the one in `NTFY_AUTH_TOKENS` |
 | No certificate yet | The first one takes up to a minute. On the server: `sudo caravana-nomad alloc logs -job traefik` |
