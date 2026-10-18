@@ -30,6 +30,9 @@ type appRecordJSON struct {
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
 	AppName     string `json:"appName"`
+	// StoppedAt is when the app was stopped (feature 020.5); absent while it
+	// isn't. A stopped app refuses every deploy.
+	StoppedAt *time.Time `json:"stoppedAt,omitempty"`
 }
 
 // getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
@@ -46,7 +49,8 @@ func (s *server) getApp(w http.ResponseWriter, r *http.Request) error {
 func toAppRecordJSON(rec store.AppRecord) appRecordJSON {
 	return appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
 		ComposeKept: rec.Compose != nil, Defined: rec.App.Defined(),
-		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name}
+		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name,
+		StoppedAt: rec.StoppedAt}
 }
 
 // writeAppRecord answers 200 with a stored app and its revision as the ETag.
@@ -96,6 +100,7 @@ type appSummaryJSON struct {
 	Project        string          `json:"project"`
 	Environment    string          `json:"environment"`
 	AppName        string          `json:"appName"`
+	StoppedAt      *time.Time      `json:"stoppedAt,omitempty"`
 	Status         appStatusJSON   `json:"status"`
 	LastDeployment *deploymentJSON `json:"lastDeployment,omitempty"`
 }
@@ -110,6 +115,7 @@ func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
 		Project:     sum.Place.Project,
 		Environment: sum.Place.Environment,
 		AppName:     sum.Place.Name,
+		StoppedAt:   sum.StoppedAt,
 		Status: appStatusJSON{
 			State:         sum.Status.State,
 			WantedCopies:  sum.Status.WantedCopies,

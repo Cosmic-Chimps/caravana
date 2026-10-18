@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.17.0
+  version: 0.18.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -661,6 +661,223 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/apps/{id}/copies/{copyId}/run:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: copyId
+        in: path
+        required: true
+        description: The copy's ID, as `listCopies` gives it.
+        schema: {type: string}
+    post:
+      operationId: runCommand
+      summary: Run one command in a running copy and answer with what it printed.
+      description: |
+        Runs the program and its arguments in the copy's service container, without a shell, a
+        terminal or input (for a shell, send `["sh", "-c", "…"]`). It stops after 60 seconds
+        (`timedOut`), and each of `stdout` and `stderr` is cut at 64 KiB (`stdoutTruncated`,
+        `stderrTruncated`). A program the image doesn't have answers 200 with `failedToStart`
+        and Nomad's reason in `stderr`.
+
+        The output may hold a secret, so it is shown in this answer and nowhere else: it is
+        never stored, logged, cached (the answer has `Cache-Control: no-store`) or put in a
+        live notice. What Caravana keeps, and `listAppActions` shows, is when the command ran,
+        in which copy, how it was asked for, its first word and its exit code, never the
+        arguments or the output. A command doesn't change the app, so it needs no lock.
+      tags: [apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [command]
+              properties:
+                command:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  description: |
+                    The program, then its arguments. Each item is at most 4096 bytes and has no
+                    NUL byte; the program is not empty. Otherwise 400 `invalid_field` with
+                    `field` `command`.
+                  items:
+                    type: string
+                    maxLength: 4096
+      responses:
+        "200":
+          description: The command ran (or didn't start, or timed out); see the fields.
+          headers:
+            Cache-Control:
+              description: "`no-store`."
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: No such app, or the copy isn't one of the app's.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`copy_not_running`: the copy has ended or isn't running."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/stop:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: stopApp
+      summary: Stop every copy of the app, keeping everything else.
+      description: |
+        Stops the app's Nomad job and its scheduled Postgres backup jobs without deleting them.
+        The app's definition, secrets, volumes, backups, webhook token and history stay. Until
+        `startApp`, every deploy of the app (a deploy, the webhook, a promotion into it, a
+        redeploy of a version, an edit) is 409 `app_stopped`, its backups and restores too,
+        and its scheduled backups are skipped, not failed. The app's status is `stopped`.
+        The action is recorded (`listAppActions`); it is no deployment.
+
+        409 `app_busy` while a deploy, a volume backup or another action of the app is
+        running. 409 `app_not_defined` or `no_live_deployment` for an app that was never
+        deployed.
+      tags: [apps]
+      responses:
+        "200":
+          description: The stopped app with its status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ActionConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/start:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: startApp
+      summary: Start a stopped app again, exactly as it was.
+      description: |
+        Starts the job `stopApp` stopped, and its backup jobs: the same definition, the same
+        pinned images, no tag looked up. Nothing is deployed and no deployment is recorded;
+        Nomad makes a new job version of the same job. 409 `app_not_stopped` when the app
+        isn't stopped; 409 `app_busy`, `app_not_defined` and `no_live_deployment` as for
+        `stopApp`.
+      tags: [apps]
+      responses:
+        "200":
+          description: The app with its status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ActionConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/restart:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: restartApp
+      summary: Restart the app's copies one at a time.
+      description: |
+        Restarts each running copy of the app's live version in turn and waits for it to run
+        again (and to pass its checks, when its service has a health check) before the next,
+        so an app with several copies keeps answering. It returns at once with the action,
+        `running`; the restarts happen in the background while the app's lock is held, so a
+        deploy that comes meanwhile waits. Follow it with `listAppActions`: it ends
+        `succeeded`, or `failed` with the copy that didn't come back within two minutes. A
+        restart asked for this way never counts as a crash loop.
+
+        409 `app_stopped` for a stopped app, `no_running_copy` when no copy of the live
+        version runs, `app_busy`, `app_not_defined` and `no_live_deployment` as for `stopApp`.
+      tags: [apps]
+      responses:
+        "202":
+          description: Started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppAction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ActionConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/actions:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: listAppActions
+      summary: List the app's latest actions (stop, start, restart, run).
+      description: |
+        The newest 20, newest first. A run has its first word (`program`) and exit code; none
+        of them has command output or arguments.
+      tags: [apps]
+      responses:
+        "200":
+          description: Newest first; empty when the app has had none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppAction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/logs:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -829,7 +1046,7 @@ paths:
         "409":
           description: |
             `app_exists` (`field: "id"`): `If-None-Match: *` was sent and an app with this ID is
-            stored. Or `job_conflict`, as for `deployApp`.
+            stored. Or `job_conflict` or `app_stopped`, as for `deployApp`.
           content:
             application/json:
               schema:
@@ -1603,7 +1820,7 @@ paths:
             `deployment_not_healthy`: only a healthy deployment can be redeployed.
             `definition_not_recorded`: the deployment is from before Caravana saved what each
             deployment deployed. `job_conflict`: as for `deployApp`. `app_not_defined`: the
-            app has no services yet (checked first).
+            app has no services yet (checked first). `app_stopped`: the app is stopped.
           content:
             application/json:
               schema:
@@ -3064,6 +3281,15 @@ components:
           description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
         defined:
           $ref: "#/components/schemas/AppDefined"
+        stoppedAt:
+          $ref: "#/components/schemas/AppStoppedAt"
+
+    AppStoppedAt:
+      type: string
+      format: date-time
+      description: |
+        When the owner stopped the app (`stopApp`). Absent while it isn't stopped. A stopped app
+        refuses every deploy with 409 `app_stopped`.
 
     AppDefined:
       type: boolean
@@ -3089,6 +3315,8 @@ components:
           description: The app keeps the Compose file it was deployed from; `getCompose` answers 200.
         defined:
           $ref: "#/components/schemas/AppDefined"
+        stoppedAt:
+          $ref: "#/components/schemas/AppStoppedAt"
         status:
           $ref: "#/components/schemas/AppStatus"
         lastDeployment:
@@ -3227,13 +3455,81 @@ components:
       properties:
         state:
           type: string
-          enum: [rolling_out, healthy, degraded, not_running, unknown]
+          enum: [rolling_out, healthy, degraded, not_running, unknown, stopped]
+          description: |
+            `stopped`: the owner stopped the app (`stopApp`); it wins over every other state.
         wantedCopies: {type: integer, minimum: 0}
         healthyCopies: {type: integer, minimum: 0}
         liveVersion:
           type: integer
           minimum: 0
           description: The job version the healthy copies run. Absent when no copy is healthy.
+
+    AppAction:
+      type: object
+      additionalProperties: false
+      required: [id, action, trigger, status, startedAt]
+      description: |
+        One action on an app. Never holds command output or arguments.
+      properties:
+        id: {type: string}
+        action:
+          type: string
+          enum: [stop, start, restart, run]
+        trigger:
+          type: string
+          enum: [manual, console]
+          description: How it was asked for. `manual` is the API; `console` is the web console.
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+          description: |
+            A `run` is `succeeded` once the command ran to an exit (whatever its exit code), and
+            `failed` when it timed out or couldn't start. A restart interrupted by Caravana
+            restarting is `failed`.
+        copyId:
+          type: string
+          description: "`run` only: the copy the command ran in."
+        service:
+          type: string
+          description: "`run` only: the copy's service."
+        program:
+          type: string
+          description: "`run` only: the command's first word, nothing else."
+        exitCode:
+          type: integer
+          description: "`run` only: absent when the command timed out or didn't start."
+        error:
+          type: string
+          description: Why a failed action failed, in Caravana's words; never command output.
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+
+    CommandResult:
+      type: object
+      additionalProperties: false
+      required: [stdout, stderr, stdoutTruncated, stderrTruncated, timedOut, failedToStart]
+      description: |
+        What one command did. Shown in the answer to `runCommand` and nowhere else.
+      properties:
+        exitCode:
+          type: integer
+          description: The program's exit status. Absent when it timed out or didn't start.
+        stdout:
+          type: string
+          description: The first 64 KiB of the program's standard output.
+        stderr:
+          type: string
+          description: |
+            The first 64 KiB of its standard error. When `failedToStart`, Nomad's reason.
+        stdoutTruncated: {type: boolean}
+        stderrTruncated: {type: boolean}
+        timedOut:
+          type: boolean
+          description: It ran longer than 60 seconds and was stopped.
+        failedToStart:
+          type: boolean
+          description: The program couldn't be started (it isn't in the image, say).
 
     Copy:
       type: object
@@ -3719,7 +4015,8 @@ components:
                 `app_changed`, `app_not_defined`, `compose_not_kept`, `registry_auth_failed`, `not_a_webhook`,
                 `project_not_found`, `environment_not_found`, `project_exists`,
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
-                `promotion_removes_service`.
+                `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
+                `copy_not_running`.
               examples: [invalid_field]
             message:
               type: string
@@ -3900,6 +4197,7 @@ components:
         deployed. `no_live_deployment`: the source was never deployed.
         `promotion_removes_service` (`field` `services.<name>`): the target has a service the
         source lacks, and promoting would delete it. `job_conflict`: as for `deployApp`.
+        `app_stopped`: the target is stopped (`stopApp`); start it first.
         Nothing was changed.
       content:
         application/json:
@@ -3963,6 +4261,7 @@ components:
         ends. `no_backup_destination`: no backup destination is set. `no_running_copy`: a
         backup or restore of a service with a `volume` backup, and the service has no running
         copy to stop (it was never deployed, is still starting, or has stopped).
+        `app_stopped`: the app is stopped (`stopApp`); start it first.
       content:
         application/json:
           schema:
@@ -3989,12 +4288,25 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/AppRecord"
+    ActionConflict:
+      description: |
+        `app_stopped`: the app is stopped (`stop`, `restart`). `app_not_stopped`: it isn't
+        (`start`). `app_busy`: a deploy, a volume backup or another action of the app is
+        running; try again when it ends. `app_not_defined` or `no_live_deployment`: the app was
+        never deployed. `no_running_copy`: no copy of the live version runs (`restart`).
+        Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     DeployConflict:
       description: |
         `job_conflict`: Nomad already runs a job with this app's ID that Caravana didn't
         create, or the job changed while deploying. Nothing was registered; the deployment
         record (see `Location`) is `failed`. Or `app_not_defined`: the app has no services yet,
         so there is nothing stored to deploy; nothing was recorded and there is no `Location`.
+        Or `app_stopped`: the app is stopped (`stopApp`); start it first. Nothing was saved or
+        recorded and there is no `Location`.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"

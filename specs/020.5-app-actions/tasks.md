@@ -11,7 +11,7 @@
   `statusOf` stopped, Attention ignores stopped apps, startup `FailRunningActions`. A sentinel test:
   after `RunCommand` printing it, the sentinel is in no store row and no log line (capture the
   slog handler).
-- [ ] T004 API 0.18.0: the five operations, `stopped` state, `stoppedAt`, codes; `no-store` on
+- [X] T004 API 0.18.0: the five operations, `stopped` state, `stoppedAt`, codes; `no-store` on
   runCommand; tests incl. the sentinel; openapi sync.
 - [ ] T005 Console: header actions, Stop confirm page, Running tab run form + result panel + recent
   actions, stopped states across pages, `splitCommand` + tests, handler tests incl. the sentinel
