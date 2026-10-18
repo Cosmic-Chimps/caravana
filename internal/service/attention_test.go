@@ -18,9 +18,10 @@ var attT0 = time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 
 func at(m int) time.Time { return attT0.Add(time.Duration(m) * time.Minute) }
 
-// attNow is the moment the table judges at: an hour and a half after attT0, so
-// at(0)..at(30) are within recentFailure.
-var attNow = attT0.Add(90 * time.Minute)
+// attNow is the moment the table judges at: an hour after attT0, so every
+// at(m) the table uses is within recentFailure, restarts included (a copy that
+// last restarted more than an hour ago is no loop).
+var attNow = attT0.Add(60 * time.Minute)
 
 // appRec is a stored app with the given services; a service named "db" has a
 // Postgres backup policy, and one named "files" a volume backup policy.
@@ -121,6 +122,17 @@ func TestAttentionOf(t *testing.T) {
 				{ID: "b1", Service: "web", Version: 1, Status: deploy.CopyHealthy, Restarts: 3, LastRestart: tp(at(5))},
 			}},
 			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "web", Copies: []string{"b1"}, When: at(5)}},
+		},
+		{
+			// Restarts add up over a copy's life: four hours of running cleanly
+			// after them is no crash loop, an hour is the window.
+			name: "restarts older than an hour are no loop; within the hour they are",
+			apps: []store.AppRecord{appRec("blog", at(0), "web", "worker")}, latest: map[string]store.DeploymentRecord{"blog": healthy("blog")},
+			copies: map[string][]Copy{"blog": {
+				{ID: "b1", Service: "web", Version: 1, Status: deploy.CopyHealthy, Restarts: 4, LastRestart: tp(attNow.Add(-61 * time.Minute))},
+				{ID: "w1", Service: "worker", Version: 1, Status: deploy.CopyHealthy, Restarts: 4, LastRestart: tp(attNow.Add(-59 * time.Minute))},
+			}},
+			want: []AttentionItem{{Kind: AttentionRestarting, AppID: "blog", Service: "worker", Copies: []string{"w1"}, When: attNow.Add(-59 * time.Minute)}},
 		},
 		{
 			// A volume backup restarts the copy's tasks (feature 016): three
@@ -461,7 +473,7 @@ func TestAttention(t *testing.T) {
 		}
 		waitFinal(t, e.store, second.Deployment.ID)
 		e.nomad.SetCopies("whoami", api.AllocationListStub{ID: "w1", TaskGroup: "web", JobVersion: 0, ClientStatus: "running",
-			TaskStates: map[string]*api.TaskState{"web": {Restarts: 4, LastRestart: attT0}}})
+			TaskStates: map[string]*api.TaskState{"web": {Restarts: 4, LastRestart: time.Now().Add(-time.Minute)}}})
 
 		got, err := e.svc.Attention(ctx)
 		if err != nil || len(got.Items) != 2 {
