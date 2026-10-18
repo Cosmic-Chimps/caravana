@@ -238,6 +238,10 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	if err != nil {
 		return store.BackupRecord{}, err
 	}
+	// A stopped app has nothing to back up from (feature 020.5).
+	if err := s.refuseIfStopped(ctx, appID); err != nil {
+		return store.BackupRecord{}, err
+	}
 	if _, ok, err := s.backupDestination(ctx); err != nil {
 		return store.BackupRecord{}, err
 	} else if !ok {
@@ -315,6 +319,9 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	}
 	_, svc, err := s.backedUpService(ctx, appID, b.Service)
 	if err != nil {
+		return store.RestoreRecord{}, err
+	}
+	if err := s.refuseIfStopped(ctx, appID); err != nil {
 		return store.RestoreRecord{}, err
 	}
 	if _, ok, err := s.backupDestination(ctx); err != nil {

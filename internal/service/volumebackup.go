@@ -162,9 +162,13 @@ func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, 
 		}
 	}()
 
-	// What was checked before the lock may have changed while a deploy held it.
+	// What was checked before the lock may have changed while a deploy held it
+	// (or a stop: feature 020.5).
 	a, svc, err := s.backedUpService(ctx, appID, service)
 	if err != nil {
+		return volumeRun{}, err
+	}
+	if err := s.refuseIfStopped(ctx, appID); err != nil {
 		return volumeRun{}, err
 	}
 	if !hasVolumeBackup(svc) {

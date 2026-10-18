@@ -31,6 +31,7 @@ const (
 	StateDegraded   AppState = "degraded"    // some, but not all, wanted copies are healthy
 	StateNotRunning AppState = "not_running" // no healthy copy, at least one wanted
 	StateUnknown    AppState = "unknown"     // Nomad couldn't be read
+	StateStopped    AppState = "stopped"     // the owner stopped the app (feature 020.5); it wins over every other state
 )
 
 // AppStatus is what is true about an app right now, from the store and
@@ -110,6 +111,17 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	return st
 }
 
+// statusOfRecord is statusOf for a stored app: a stopped app (feature 020.5) is
+// stopped whatever its copies or Nomad say, since stopping is the owner's
+// decision and the store knows it. The counts stay as statusOf made them.
+func statusOfRecord(rec store.AppRecord, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
+	st := statusOf(rec.App, latest, copies, nomadErr)
+	if rec.StoppedAt != nil {
+		st.State = StateStopped
+	}
+	return st
+}
+
 // ListApps returns every app with its status, by ID. It makes one Nomad
 // request for all apps. When Nomad can't be read, the error is logged once
 // and every summary says unknown: the stored data is still worth showing, so
@@ -153,7 +165,7 @@ func (s *Service) ListAppsIn(ctx context.Context, project, environment string) (
 			sum.LastDeployment = &d
 		}
 		// The job ID is the app ID (constitution II). A missing key is a nil slice.
-		sum.Status = statusOf(rec.App, sum.LastDeployment, byJob[rec.App.ID], nomadErr)
+		sum.Status = statusOfRecord(rec, sum.LastDeployment, byJob[rec.App.ID], nomadErr)
 		out = append(out, sum)
 	}
 	return out, nil
@@ -177,7 +189,7 @@ func (s *Service) AppSummary(ctx context.Context, id string) (AppSummary, error)
 	if nomadErr != nil {
 		s.log.Warn("can't read copies from Nomad; app shows as unknown", "app", id, "error", nomadErr)
 	}
-	sum.Status = statusOf(rec.App, sum.LastDeployment, copies, nomadErr)
+	sum.Status = statusOfRecord(rec, sum.LastDeployment, copies, nomadErr)
 	return sum, nil
 }
 

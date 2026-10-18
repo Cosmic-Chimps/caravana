@@ -200,6 +200,9 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 	if err != nil {
 		return promotion{}, err
 	}
+	if target.StoppedAt != nil {
+		return promotion{}, &RefusalError{Field: "to", Err: fmt.Errorf("%q: %w", targetID, ErrAppStopped)}
+	}
 
 	result, changes, added, err := promoted(target.App, *from.Definition)
 	if err != nil {

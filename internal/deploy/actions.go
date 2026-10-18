@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/api"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
 // App actions (feature 020.5): stop and start an app, restart its copies and
@@ -270,6 +273,19 @@ func (d *Deployer) copyRestarted(ctx context.Context, copyID, task string, since
 		}
 	}
 	return true, nil
+}
+
+// BackupJobIDs are the Nomad jobs StopApp and StartApp take along with the app:
+// the periodic backup job of each service with a Postgres backup. (A volume
+// backup is no job, and restore jobs aren't periodic.)
+func BackupJobIDs(a app.App) []string {
+	var ids []string
+	for _, svc := range a.Services {
+		if svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres {
+			ids = append(ids, nomadjob.BackupJobID(a.ID, svc.Name))
+		}
+	}
+	return ids
 }
 
 // taskRunning is a task's state while it runs (Nomad's TaskState.State).

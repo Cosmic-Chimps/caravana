@@ -127,7 +127,9 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 			}
 		}
 
-		if copiesErr != nil {
+		// A stopped app (feature 020.5) has no copies on purpose: its ended
+		// copies are no crash, and the copy kinds have nothing to say.
+		if copiesErr != nil || rec.StoppedAt != nil {
 			continue
 		}
 		var skip *uint64 // the job version a failed deployment registered

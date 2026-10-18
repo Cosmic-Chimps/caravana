@@ -5,7 +5,7 @@
 - [X] T002 `internal/deploy/actions.go` + tests: `StopApp`, `StartApp`, `Exec` with the capped writer
   and `ExecResult`, `ErrCopyNotRunning`; deploytest fakes for each. `deploy/vm/caravana-policy.hcl`
   gains `alloc-exec`.
-- [ ] T003 [US1][US2][US3] `internal/service/actions.go` + tests: `RunCommand`, `StopApp`,
+- [X] T003 [US1][US2][US3] `internal/service/actions.go` + tests: `RunCommand`, `StopApp`,
   `StartApp`, `RestartApp` (background, lock held, per-copy wait), `ErrAppStopped` / `ErrAppBusy` /
   `ErrAppNotStopped`, refusals in every deploy path and backup-now/restore, scheduler skip,
   `statusOf` stopped, Attention ignores stopped apps, startup `FailRunningActions`. A sentinel test:
