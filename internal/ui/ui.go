@@ -45,6 +45,9 @@ type Deps struct {
 	Log     *slog.Logger
 	// Host is the host name shown in the sidebar; "" means the request's Host.
 	Host string
+	// Version is Caravana's own version, shown in the sidebar ("0.7.0", or
+	// "dev" for a build that isn't a release); "" shows none.
+	Version string
 	// Now is the clock for the relative times on the pages; nil means
 	// time.Now. Tests give it the same fake clock as the Auth.
 	Now func() time.Time
@@ -55,6 +58,7 @@ type server struct {
 	auth    *service.Auth
 	svc     *service.Service
 	host    string
+	version string
 	proxies httpx.Proxies
 	log     *slog.Logger
 	pages   map[string]*template.Template
@@ -92,7 +96,7 @@ func New(d Deps) (http.Handler, error) {
 // newServer builds the server's state: assets with their hashes and the
 // parsed templates. Tests use it to reach the server itself.
 func newServer(d Deps) (*server, error) {
-	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, proxies: d.Proxies, log: d.Log, now: d.Now,
+	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, version: d.Version, proxies: d.Proxies, log: d.Log, now: d.Now,
 		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
 	if s.now == nil {
 		s.now = time.Now

@@ -30,6 +30,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `id` (or `appName`) and a `name`. `AppRecord` and `AppSummary` gain `defined`. New code
   `app_not_defined` (409) on `deployApp` with an empty body, `redeployDeployment` and the
   webhook call.
+- The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
+  `dev` for a build of your own.
 
 ### Fixed
 - "Keeps restarting" no longer stays on the Apps page after the app has settled. A copy's

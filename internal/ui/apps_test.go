@@ -77,7 +77,7 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 	}
 	t.Cleanup(func() { stop(); svc.Wait() })
 
-	s, err := newServer(Deps{Auth: uie.Auth, Service: svc, Log: log, Host: "caravana.example.com", Now: uie.Clock.Now})
+	s, err := newServer(Deps{Auth: uie.Auth, Service: svc, Log: log, Host: "caravana.example.com", Version: "0.7.0", Now: uie.Clock.Now})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

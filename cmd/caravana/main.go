@@ -105,7 +105,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		return 1
 	}
 
-	pages, err := ui.New(ui.Deps{Auth: auth, Service: svc, Proxies: cfg.TrustedProxies, Log: log})
+	pages, err := ui.New(ui.Deps{Auth: auth, Service: svc, Proxies: cfg.TrustedProxies, Log: log, Version: version})
 	if err != nil {
 		log.Error("web pages", "error", err)
 		return 1
