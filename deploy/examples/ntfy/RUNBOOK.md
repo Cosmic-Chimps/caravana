@@ -115,7 +115,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TK" 'https:/
 3. **Subscribe to topic** (the `+`): the topic `caravana-alerts`, with **Use another server**
    on and `https://ntfy.example.com` as the server.
 
-The web app at `https://ntfy.example.com` works the same way: **Log in**, then subscribe.
+The web app at `https://ntfy.example.com` works the same way: it opens on its login page
+(`NTFY_REQUIRE_LOGIN`), then you subscribe. Its page loads for anyone, as any website's does; it
+is the server behind it that answers 403 without an account, which is what step 4 checks.
 
 ## 6. Caravana's notifications (console)
 

@@ -26,6 +26,9 @@ services:
       # Nobody reads or publishes without an account. ntfy's default is read-write for everyone.
       NTFY_AUTH_DEFAULT_ACCESS: deny-all
       NTFY_ENABLE_LOGIN: "true" # a Log in button in the web app
+      # The web app's page itself is static and loads for anyone; without this it opens empty
+      # (every topic answers 403). With it, it opens on the login page.
+      NTFY_REQUIRE_LOGIN: "true"
       # The iOS app is woken through ntfy.sh, which gets a poll request but never the message
       # itself. Android doesn't need it.
       NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
