@@ -12,6 +12,16 @@ import (
 	"github.com/hashicorp/nomad/api"
 )
 
+// A copy Nomad has told to stop may still say it is running; Stopping says so.
+func TestCopyOfStopping(t *testing.T) {
+	for desired, want := range map[string]bool{"": false, "run": false, "stop": true, "evict": true} {
+		got := copyOf(&api.AllocationListStub{ClientStatus: "running", DesiredStatus: desired})
+		if got.Stopping != want || got.Status != CopyHealthy {
+			t.Errorf("desired %q: stopping = %v, status = %s; want %v, healthy", desired, got.Stopping, got.Status, want)
+		}
+	}
+}
+
 func TestCopyOf(t *testing.T) {
 	yes, no := true, false
 	t0 := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)

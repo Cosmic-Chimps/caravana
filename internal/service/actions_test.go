@@ -110,6 +110,12 @@ func TestRestartTargets(t *testing.T) {
 		{"an unhealthy copy of the live version goes too", []Copy{c("a", 3, deploy.CopyHealthy), c("b", 3, deploy.CopyUnhealthy)}, "a,b"},
 		{"ended copies are skipped", []Copy{c("a", 3, deploy.CopyHealthy), c("b", 3, deploy.CopyStopped)}, "a"},
 		{"nothing healthy, nothing live", []Copy{c("a", 3, deploy.CopyStarting), c("b", 3, deploy.CopyUnhealthy)}, ""},
+		// After a Start, Nomad lists the copies it is replacing as running
+		// with desired status stop, and refuses to restart them (lab 2026-10-18).
+		{"copies Nomad is stopping are skipped, and never make a version live", []Copy{
+			{ID: "going", Version: 5, Status: deploy.CopyHealthy, Stopping: true},
+			c("a", 4, deploy.CopyHealthy),
+			{ID: "going-too", Version: 4, Status: deploy.CopyHealthy, Stopping: true}}, "a"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

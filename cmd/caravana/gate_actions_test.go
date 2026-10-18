@@ -90,13 +90,25 @@ func (g *gate) waitActionEnds(t *testing.T, appID, actionID string, within time.
 // appState is the API's state of the app: healthy, stopped, ...
 func (g *gate) appState(t *testing.T, appID string) string {
 	t.Helper()
-	var sum struct {
-		Status struct {
-			State string `json:"state"`
-		} `json:"status"`
+	// The state is on the summaries (listApps), not on the stored app that
+	// GET /v1/apps/{id} answers.
+	var list struct {
+		Apps []struct {
+			App struct {
+				ID string `json:"id"`
+			} `json:"app"`
+			Status struct {
+				State string `json:"state"`
+			} `json:"status"`
+		} `json:"apps"`
 	}
-	g.getJSON(t, "/v1/apps/"+appID, &sum)
-	return sum.Status.State
+	g.getJSON(t, "/v1/apps", &list)
+	for _, a := range list.Apps {
+		if a.App.ID == appID {
+			return a.Status.State
+		}
+	}
+	return ""
 }
 
 // taskShape is what a task of the job Nomad holds is made of, apart from its

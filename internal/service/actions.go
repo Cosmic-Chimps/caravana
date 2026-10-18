@@ -138,7 +138,7 @@ func (s *Service) RunCommand(ctx context.Context, appID, copyID string, command 
 		return CommandResult{}, fmt.Errorf("app %q has no copy %q: %w", appID, copyID, store.ErrNotFound)
 	}
 	c := copies[i]
-	if c.Terminal {
+	if c.Terminal || c.Stopping {
 		return CommandResult{}, fmt.Errorf("copy %q is %s: %w", copyID, c.Status, ErrCopyNotRunning)
 	}
 
@@ -445,13 +445,14 @@ func (s *Service) RestartApp(ctx context.Context, appID string, trigger app.Trig
 }
 
 // restartTargets are the copies a restart goes through: those of the live
-// version (the newest version with a healthy copy) that haven't ended, in the
-// order they are listed. None when no copy is healthy: there is nothing live to
-// restart.
+// version (the newest version with a healthy copy) that haven't ended and that
+// Nomad hasn't told to stop, in the order they are listed. None when no copy
+// is healthy: there is nothing live to restart. (Right after a Start, Nomad
+// still lists copies it is replacing as running; it refuses to restart them.)
 func restartTargets(copies []Copy) []Copy {
 	var live *uint64
 	for _, c := range copies {
-		if c.Status == deploy.CopyHealthy && (live == nil || c.Version > *live) {
+		if c.Status == deploy.CopyHealthy && !c.Stopping && (live == nil || c.Version > *live) {
 			live = new(c.Version)
 		}
 	}
@@ -460,7 +461,7 @@ func restartTargets(copies []Copy) []Copy {
 	}
 	var out []Copy
 	for _, c := range copies {
-		if c.Version == *live && !c.Terminal {
+		if c.Version == *live && !c.Terminal && !c.Stopping {
 			out = append(out, c)
 		}
 	}
