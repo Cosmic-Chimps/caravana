@@ -73,9 +73,11 @@ func wantedCopies(a app.App) int {
 // unreadable Nomad is unknown; healthy >= wanted is healthy; healthy > 0 is
 // degraded; otherwise not_running.
 //
-// A copy is healthy when deploy marked it so. The live version is the newest
-// version that has a healthy copy, and only copies of that version count, so
-// a healthy copy of an old version never hides a broken new one.
+// A copy is healthy when deploy marked it so, and Nomad hasn't told it to stop
+// (a copy on its way out, after a Stop or while a Start replaces it, serves
+// nothing for long). The live version is the newest version that has a
+// healthy copy, and only copies of that version count, so a healthy copy of
+// an old version never hides a broken new one.
 func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
 	st := AppStatus{WantedCopies: wantedCopies(a)}
 	if nomadErr != nil {
@@ -84,7 +86,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	}
 
 	for _, c := range copies {
-		if c.Status != deploy.CopyHealthy {
+		if c.Status != deploy.CopyHealthy || c.Stopping {
 			continue
 		}
 		if st.LiveVersion == nil || c.Version > *st.LiveVersion {
