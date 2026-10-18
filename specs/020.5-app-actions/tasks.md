@@ -2,7 +2,7 @@
 
 - [X] T001 Migration `0012_app_actions.sql` and `internal/store/actions.go` + tests (research R6;
   `stopped_at`, actions CRUD, deleted with the app, `FailRunningActions`).
-- [ ] T002 `internal/deploy/actions.go` + tests: `StopApp`, `StartApp`, `Exec` with the capped writer
+- [X] T002 `internal/deploy/actions.go` + tests: `StopApp`, `StartApp`, `Exec` with the capped writer
   and `ExecResult`, `ErrCopyNotRunning`; deploytest fakes for each. `deploy/vm/caravana-policy.hcl`
   gains `alloc-exec`.
 - [ ] T003 [US1][US2][US3] `internal/service/actions.go` + tests: `RunCommand`, `StopApp`,

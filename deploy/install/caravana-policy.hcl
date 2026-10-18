@@ -13,11 +13,13 @@
 # name wins over a glob, so the deny holds.
 # alloc-lifecycle and read-fs are volume backups (feature 016): Caravana restarts a copy's tasks
 # (alloc-lifecycle) so its caravana-volumes task backs up or restores the volumes while the service
-# is stopped, then reads the result file that task wrote (read-fs). Not alloc-exec: Caravana never
-# opens a shell in an app's container.
+# is stopped, then reads the result file that task wrote (read-fs).
+# alloc-exec is "Run a command" (feature 020.5): one non-interactive command in a running copy, for
+# the signed-in owner or an API token, with its output shown once and never kept. It lets Caravana's
+# token run commands in the apps' containers, which is the feature; it never opens a terminal.
 # install.sh applies it on every run, so running the installer again brings a host up to date.
 namespace "default" {
-  capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete", "alloc-lifecycle", "read-fs"]
+  capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete", "alloc-lifecycle", "read-fs", "alloc-exec"]
 
   variables {
     path "nomad/jobs/*" {
