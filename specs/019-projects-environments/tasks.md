@@ -59,8 +59,12 @@ quickstart.md. Tests are required (constitution VIII).
   `cmd/caravana/console_lab_test.go`: step `console-projects` (quickstart.md 2).
 - [X] T010 Docs: CHANGELOG "Unreleased" (Added, Upgrade: nothing to do, nothing moves),
   CLAUDE.md 019 paragraph and phase list, `docs/plan.md` 019 row Done with the namespace finding.
-- [ ] T011 Full check (CLAUDE.md "Commands"), including `go test -race ./...`.
-- [ ] T012 Full `TestLab` alone in the lab.
+- [X] T011 Full check (CLAUDE.md "Commands"), including `go test -race ./...`. Passed 2026-10-17.
+- [X] T012 Full `TestLab` alone in the lab. Passed 2026-10-17 (1404 s; `console-projects` 38 s,
+  `projects-promote` 115 s). Earlier runs found two lab-test problems, fixed in 2e3f1b7: the
+  step's default 256 MB reservations didn't fit beside a blue/green canary in the lab, and a
+  notice was matched across a `<code>` element. A run after an aborted one also met the gate's
+  `gate-db` volume left with data (the `clean` step removes only whoami); cleared by hand.
 
 ## Dependencies
 
