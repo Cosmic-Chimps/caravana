@@ -97,6 +97,24 @@ func actionsEnv(t *testing.T) *consoleEnv {
 	return e
 }
 
+// postAction posts a stop, start or restart. The deploy that actionsEnv waits
+// for holds the app's lock a moment longer than its record says it ended (it
+// still sends its notices), and these actions refuse a held lock with 409
+// "busy" rather than wait. So a busy answer is tried again for up to 5 s;
+// every other answer is returned as it came.
+func (e *consoleEnv) postAction(t *testing.T, path string) (*http.Response, string) {
+	t.Helper()
+	for range 100 {
+		resp, body := e.postForm(t, path, url.Values{})
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "Wait for it to finish") {
+			return resp, body
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("POST %s stayed busy for 5 s", path)
+	return nil, ""
+}
+
 func (e *consoleEnv) runIn(t *testing.T, copyID, line string) (*http.Response, string) {
 	t.Helper()
 	return e.postForm(t, "/apps/whoami/copies/"+copyID+"/run", url.Values{"command": {line}})
@@ -376,7 +394,7 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 	})
 
 	t.Run("posting stops it, and the page says so", func(t *testing.T) {
-		resp, body := e.postForm(t, "/apps/whoami/stop", url.Values{})
+		resp, body := e.postAction(t, "/apps/whoami/stop")
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/whoami?did=stop" {
 			t.Fatalf("stop = %d to %q:\n%s", resp.StatusCode, location(t, resp), text(body))
 		}
@@ -433,7 +451,7 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 	})
 
 	t.Run("a second Stop is refused, and the Stop page offers Start", func(t *testing.T) {
-		resp, body := e.postForm(t, "/apps/whoami/stop", url.Values{})
+		resp, body := e.postAction(t, "/apps/whoami/stop")
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "The app is stopped already.") || resp.Header.Get("Location") != "" {
 			t.Errorf("stop again = %d: %s", resp.StatusCode, text(body))
 		}
@@ -444,14 +462,14 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 	})
 
 	t.Run("Restart on a stopped app is refused", func(t *testing.T) {
-		resp, body := e.postForm(t, "/apps/whoami/restart", url.Values{})
+		resp, body := e.postAction(t, "/apps/whoami/restart")
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "The app is stopped: start it first.") {
 			t.Errorf("restart = %d: %s", resp.StatusCode, text(body))
 		}
 	})
 
 	t.Run("posting Start runs it again, and a second Start is refused", func(t *testing.T) {
-		resp, body := e.postForm(t, "/apps/whoami/start", url.Values{})
+		resp, body := e.postAction(t, "/apps/whoami/start")
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/whoami?did=start" {
 			t.Fatalf("start = %d to %q:\n%s", resp.StatusCode, location(t, resp), text(body))
 		}
@@ -466,7 +484,7 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 		if !strings.Contains(page, `action="/apps/whoami/restart"`) || strings.Contains(page, `action="/apps/whoami/start"`) {
 			t.Error("the header after Start isn't Restart and Stop")
 		}
-		resp, body = e.postForm(t, "/apps/whoami/start", url.Values{})
+		resp, body = e.postAction(t, "/apps/whoami/start")
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "isn't stopped") {
 			t.Errorf("start again = %d: %s", resp.StatusCode, text(body))
 		}
@@ -511,7 +529,7 @@ func TestBackUpNowOfAStoppedApp(t *testing.T) {
 // US3: Restart goes on in the background; the page says so, and the action ends done.
 func TestRestartInTheConsole(t *testing.T) {
 	e := actionsEnv(t)
-	resp, body := e.postForm(t, "/apps/whoami/restart", url.Values{})
+	resp, body := e.postAction(t, "/apps/whoami/restart")
 	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/whoami?did=restart" {
 		t.Fatalf("restart = %d to %q:\n%s", resp.StatusCode, location(t, resp), text(body))
 	}
@@ -533,7 +551,7 @@ func TestRestartInTheConsole(t *testing.T) {
 
 	t.Run("with no running copy it is refused", func(t *testing.T) {
 		e.Nomad.SetCopies("whoami")
-		resp, body := e.postForm(t, "/apps/whoami/restart", url.Values{})
+		resp, body := e.postAction(t, "/apps/whoami/restart")
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "No copy of the app is running") {
 			t.Errorf("restart = %d: %s", resp.StatusCode, text(body))
 		}
