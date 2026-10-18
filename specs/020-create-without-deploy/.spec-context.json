@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Create an app without deploying it",
+  "branch": "020-create-without-deploy",
+  "currentStep": "tasks",
+  "status": "tasked",
+  "history": [
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-18T05:13:35.704Z"
+    }
+  ]
+}
