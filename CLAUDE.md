@@ -475,8 +475,9 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
   `019-projects-environments`)
 - 019.5 Create an app without deploying it: New app's "Create without deploying", `?deploy=false`,
   apps that have no definition yet (done, branch `019.5-create-without-deploy`)
-- 020 Build from source: git repo + Dockerfile, built as a Nomad batch job, pushed to a 017
-  registry, deployed by digest (first test case: Phanpy)
+- 020 Deploy from CI: CI builds the image, the GitHub Action `Cosmic-Chimps/caravana-action`
+  (its own repo, cloned beside this one at `../caravana-action`) deploys, waits and promotes;
+  per-app deploy tokens; New app › "From a GitHub repo". Building on the host moved to Phase 3.
 
 Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a
 staging environment, is promoted to production, and a failure during it reaches the owner as a
