@@ -19,4 +19,9 @@
 - [X] T006 Lab: gate step `app-actions`, console step `console-app-actions` (plan.md "Lab").
 - [X] T007 Docs: CHANGELOG Unreleased (Added; Upgrade: rerun the installer for `alloc-exec`),
   CLAUDE.md 020.5 paragraph, docs/plan.md 020.5 row Done, ranked table row 2/8.
-- [ ] T008 Full check and full `TestLab` (main session).
+- [X] T008 Full check and full `TestLab` (main session). Passed 2026-10-18 (1565 s, 40 steps;
+  `app-actions` 49 s with 2 of 105 calls failing during the restart, `console-app-actions` 29 s).
+  The lab runs before it found three bugs, fixed in 43f7514 and fd40ba2 (copies Nomad is stopping
+  were restarted, exec'd into and counted healthy; the lab's appState read the wrong endpoint),
+  and two wrong plan assumptions, settled in 606c87f (a missing program is exit 127; an in-place
+  restart can fail a call, so the hitless restart is in the backlog).
