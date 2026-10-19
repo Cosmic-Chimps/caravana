@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.9.0 - 2026-10-19
+
 ### Added
 - A service may set its `entrypoint`: the program and its first arguments, replacing the
   image's own, with `command` and `args` after it. A Compose file's `entrypoint` (list or
