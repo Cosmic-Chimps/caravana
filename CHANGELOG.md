@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.9.1 - 2026-10-19
+
 ### Fixed
 - The terminal opens on a host behind HTTPS. It said "Couldn't connect" every time: Traefik
   marks a websocket request as `wss`, not `https`, so Caravana read the request as plain HTTP,
