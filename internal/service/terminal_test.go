@@ -221,6 +221,10 @@ func TestOpenTerminal(t *testing.T) {
 		if err := open("whoami", "c1", "auto", ok); !errors.Is(err, ErrAppStopped) {
 			t.Errorf("a stopped app = %v, want ErrAppStopped", err)
 		}
+		// The session dials Nomad from its own goroutine, so the one terminal
+		// that opened may not have reached the fake yet: wait for it, then
+		// check no refusal added another.
+		waitFor(t, "the largest-size terminal's exec", func() bool { return len(l.nomad.Execs()) >= 1 })
 		if got := len(l.nomad.Execs()); got != 1 {
 			t.Errorf("exec requests = %d; only the one of the largest-size check should have opened a terminal", got)
 		}

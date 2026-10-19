@@ -517,8 +517,17 @@ func TestStopPageOfAnAppWithBackups(t *testing.T) {
 // A stopped app refuses a backup with the same words.
 func TestBackUpNowOfAStoppedApp(t *testing.T) {
 	e := backupsEnv(t, true)
-	if _, err := e.Svc.StopApp(context.Background(), "duo", app.TriggerManual); err != nil {
-		t.Fatal(err)
+	// The setup's deploy may still hold the app's lock a moment after its
+	// record ends, and Stop refuses a held lock: try again while it is busy.
+	for i := 0; ; i++ {
+		_, err := e.Svc.StopApp(context.Background(), "duo", app.TriggerManual)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, service.ErrAppBusy) || i == 100 {
+			t.Fatal(err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	resp, body := e.postForm(t, "/apps/duo/backups", url.Values{"service": {"web"}})
 	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "The app is stopped: start it first.") {
