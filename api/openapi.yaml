@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.19.0
+  version: 0.20.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -758,6 +758,119 @@ paths:
         "502":
           $ref: "#/components/responses/NomadUnavailable"
 
+  /v1/apps/{id}/copies/{copyId}/terminal:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: copyId
+        in: path
+        required: true
+        description: The copy's ID, as `listCopies` gives it.
+        schema: {type: string}
+      - name: shell
+        in: query
+        required: false
+        description: |
+          Which shell to start in the service's container. `auto` (the default) starts `bash`
+          when the image has it and `sh` otherwise, through `/bin/sh -c`; `bash` runs
+          `/bin/bash` and `sh` runs `/bin/sh`. Anything else is 422 `invalid_field`.
+        schema: {type: string, enum: [auto, bash, sh], default: auto}
+      - name: cols
+        in: query
+        required: false
+        description: The terminal's width in characters, 1 to 1000. Otherwise 422 `invalid_field`.
+        schema: {type: integer, minimum: 1, maximum: 1000, default: 80}
+      - name: rows
+        in: query
+        required: false
+        description: The terminal's height in characters, 1 to 1000. Otherwise 422 `invalid_field`.
+        schema: {type: integer, minimum: 1, maximum: 1000, default: 24}
+    get:
+      operationId: openTerminal
+      summary: Open an interactive shell in a running copy, over a websocket.
+      description: |
+        Send a websocket upgrade request (`Upgrade: websocket`); the answer is 101 and then the
+        protocol below. Until the upgrade, errors are the usual JSON ones. Without an upgrade
+        request, 400 `bad_request`.
+
+        A terminal is root-equivalent access to the container, so it is narrow: a **full** API
+        token (`Authorization: Bearer`, no `Origin` check) or a browser session whose `Origin`
+        header is the console's own origin (the scheme and host the request arrived with, as
+        trusted proxies say). A session without that header, or with another, is 403
+        `cross_origin`. A deploy token is 403 `token_scope`.
+
+        **Frames from the client**, text, JSON, at most 64 KiB each:
+
+        - `{"type":"input","data":"<utf-8 text>"}`: keystrokes and pasted text.
+        - `{"type":"resize","cols":N,"rows":M}`: the terminal's new size, 1 to 1000.
+
+        Anything else (a binary frame, another type, a bad size) closes the connection with
+        1003.
+
+        **Frames from the server:** binary frames with the shell's output bytes as they come
+        (a terminal merges standard error into standard output), and, last, one text frame
+        `{"type":"exit","code":N}` when the shell exited (with `"message":"no shell found in
+        this image"` when it never started: exit 126 or 127 before anything was typed) or
+        `{"type":"exit","reason":"idle|limit|error","message":"…"}`, followed by a normal close
+        (1000). `idle` is 15 minutes without input and `limit` is 60 minutes open; `error`
+        covers Caravana or Nomad failing, a missing shell (`no shell found in this image`) and
+        credentials that stopped being valid. The server pings every 30 seconds; no pong and no
+        input for 60 seconds ends the session. A browser that closes the connection ends it.
+
+        At most five terminals are open at once, 429 `too_many_terminals` after that. Nothing
+        typed or printed is ever stored, logged or put in a notice: what Caravana keeps, and
+        `listAppActions` shows, is that a session ran (action `terminal`), in which copy and
+        service, how it was asked for, the shell asked for, its exit code or the reason it
+        ended. A terminal doesn't change the app, so it takes no lock; stopping the app ends
+        its copies and with them the session.
+      tags: [apps]
+      responses:
+        "101":
+          description: |
+            Switching Protocols: the connection is now the websocket described above.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            `cross_origin` (a session cookie whose `Origin` isn't the console's, or is missing)
+            or `token_scope` (a deploy token). Nothing was opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such app, or the copy isn't one of the app's.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `copy_not_running` (the copy has ended or isn't running), `app_stopped` (the app is
+            stopped: start it first) or `app_not_defined` (the app was never deployed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: |
+            `invalid_field`: `shell`, `cols` or `rows` isn't valid; `field` names it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "`too_many_terminals`: five terminals are already open."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
   /v1/apps/{id}/stop:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -872,10 +985,12 @@ paths:
       - $ref: "#/components/parameters/AppID"
     get:
       operationId: listAppActions
-      summary: List the app's latest actions (stop, start, restart, run).
+      summary: List the app's latest actions (stop, start, restart, run, terminal).
       description: |
-        The newest 20, newest first. A run has its first word (`program`) and exit code; none
-        of them has command output or arguments.
+        The newest 20, newest first. A run has its first word (`program`) and exit code; a
+        terminal session has the shell asked for (`program`), its exit code and, when it ended
+        another way, the reason in `error`; none of them has command output, arguments, input
+        or screen.
       tags: [apps]
       responses:
         "200":
@@ -3572,7 +3687,7 @@ components:
         id: {type: string}
         action:
           type: string
-          enum: [stop, start, restart, run]
+          enum: [stop, start, restart, run, terminal]
         trigger:
           type: string
           enum: [manual, console]
@@ -3583,22 +3698,31 @@ components:
           description: |
             A `run` is `succeeded` once the command ran to an exit (whatever its exit code), and
             `failed` when it timed out or couldn't start. A restart interrupted by Caravana
-            restarting is `failed`.
+            restarting is `failed`. A `terminal` is `succeeded` when the shell exited or the
+            user closed it (`error` is `closed` for that), and `failed` when it ended idle,
+            at the time limit, with a lost connection, or because the shell couldn't start.
         copyId:
           type: string
-          description: "`run` only: the copy the command ran in."
+          description: "`run` and `terminal` only: the copy the command or shell ran in."
         service:
           type: string
-          description: "`run` only: the copy's service."
+          description: "`run` and `terminal` only: the copy's service."
         program:
           type: string
-          description: "`run` only: the command's first word, nothing else."
+          description: |
+            `run`: the command's first word, nothing else. `terminal`: the shell asked for
+            (`auto`, `bash` or `sh`).
         exitCode:
           type: integer
-          description: "`run` only: absent when the command timed out or didn't start."
+          description: |
+            `run` and `terminal` only: absent when the command timed out or didn't start, or the
+            shell didn't exit with one.
         error:
           type: string
-          description: Why a failed action failed, in Caravana's words; never command output.
+          description: |
+            Why a failed action failed, in Caravana's words; never command output. For a
+            `terminal`, how it ended when the shell didn't exit: `idle for 15 minutes`,
+            `open for 60 minutes`, `connection lost`, `closed`, or a fixed sentence.
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
 

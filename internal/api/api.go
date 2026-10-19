@@ -50,6 +50,10 @@ type server struct {
 	// The timings of event streams; zero means the defaults (20 s and 30 s).
 	// Tests set short ones.
 	keepalive, recheck time.Duration
+
+	// The timings of a terminal's connection (see terminal.go); zero means
+	// the defaults (30 s and 60 s).
+	pingEvery, pongWait time.Duration
 }
 
 func (s *server) routes() []route {
@@ -74,6 +78,8 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
 		{http.MethodGet, "/v1/apps/{id}/volumes", s.listVolumes, false, false},
 		{http.MethodPost, "/v1/apps/{id}/copies/{copyId}/run", s.runCommand, false, false},
+		// A terminal is a stream like the logs: checking its session never renews it.
+		{http.MethodGet, "/v1/apps/{id}/copies/{copyId}/terminal", s.openTerminal, false, true},
 		{http.MethodPost, "/v1/apps/{id}/stop", s.stopApp, false, false},
 		{http.MethodPost, "/v1/apps/{id}/start", s.startApp, false, false},
 		{http.MethodPost, "/v1/apps/{id}/restart", s.restartApp, false, false},

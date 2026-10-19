@@ -5,7 +5,7 @@
   Exec with TTY and resizes; deploytest fake supports TTY/resize; tests.
 - [X] T003 service: `OpenTerminal` sessions (limits 5, idle 15 min, max 60 min, records, sentinel
   test that typed input and output are in no row and no log line).
-- [ ] T004 API 0.20.0: `openTerminal` websocket endpoint per contracts/terminal.md (auth, Origin,
+- [X] T004 API 0.20.0: `openTerminal` websocket endpoint per contracts/terminal.md (auth, Origin,
   scope, validation, upgrade, deadlines cleared, protocol, pings); tests with a Go websocket
   client against the fake (echo, resize, exit code, idle with short timers, cross-origin 403,
   deploy token 403, 429); openapi.
