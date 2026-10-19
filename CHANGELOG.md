@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.8.0 - 2026-10-19
+
 ### Added
 - The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
   `dev` for a build of your own.
