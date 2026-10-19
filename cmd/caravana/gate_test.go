@@ -790,7 +790,9 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 		}
 		var running []string
 		for _, s := range stubs {
-			if s.DesiredStatus == "run" {
+			// Running, not just wanted: a copy that failed and was replaced
+			// (after an agent restart) is still wanted until Nomad tidies up.
+			if s.DesiredStatus == "run" && s.ClientStatus == "running" {
 				running = append(running, s.ID)
 			}
 		}
@@ -805,8 +807,25 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 	// the agent's last restart, as on a host after an installer rerun, when
 	// Nomad no longer hands the request to the finished volume task until
 	// the copy restarts (seen on the maintainer's host with 0.8.0).
+	// Restoring a copy after an agent restart can itself fail: the bridge
+	// plugin may refuse the copy's address as already given ("duplicate
+	// allocation is not allowed", lab 2026-10-19), and Nomad then places a new
+	// copy, which started after the restart and so isn't the case this tests.
+	// So when the copy doesn't come through, wait for its replacement and
+	// restart the agent again, up to three times.
 	if g.target.RestartNomad != nil {
-		g.target.RestartNomad(t)
+		for attempt := 1; ; attempt++ {
+			g.target.RestartNomad(t)
+			if g.copyStillRuns(t, copyBefore) {
+				break
+			}
+			if attempt == 3 {
+				t.Fatalf("copy %s of %s didn't come through 3 restarts of the Nomad agent", copyBefore, appID)
+			}
+			t.Logf("copy %s didn't come through the agent restart (attempt %d); waiting for its replacement", copyBefore, attempt)
+			copyBefore = g.waitReplacementCopy(t, appID, copyBefore)
+			versionBefore = versionOf()
+		}
 	}
 
 	// Back up now, and wait for the run.
@@ -1398,6 +1417,44 @@ func (g *gate) registryAnswers401() bool {
 	}
 	_, err := g.jobExec("gate-registry", "registry", "wget", "-q", "-O", "/dev/null", "http://"+gateRegistryHost+"/v2/")
 	return err != nil && strings.Contains(err.Error(), "401")
+}
+
+// copyStillRuns reports whether the copy came through a restart of the Nomad
+// agent: within half a minute it is running, Nomad still wants it to, and its
+// tasks are running (the client restores them one by one).
+func (g *gate) copyStillRuns(t *testing.T, copyID string) bool {
+	t.Helper()
+	return waitUntil(30*time.Second, func() bool {
+		a, _, err := g.target.Nomad.Allocations().Info(copyID, nil)
+		if err != nil || a.ClientStatus != "running" || a.DesiredStatus != "run" {
+			return false
+		}
+		for _, ts := range a.TaskStates {
+			if ts.State == "dead" && ts.Failed {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// waitReplacementCopy waits, up to 3 minutes, for appID to run one copy other
+// than old, and returns it.
+func (g *gate) waitReplacementCopy(t *testing.T, appID, old string) string {
+	t.Helper()
+	var copyID string
+	if !waitUntil(3*time.Minute, func() bool {
+		for _, id := range g.runningCopies(t, appID) {
+			if id != old {
+				copyID = id
+				return true
+			}
+		}
+		return false
+	}) {
+		t.Fatalf("%s has no running copy other than %s after 3 minutes", appID, old)
+	}
+	return copyID
 }
 
 // runningCopies lists the copies of appID that Nomad wants running and runs.
