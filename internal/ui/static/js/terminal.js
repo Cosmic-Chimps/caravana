@@ -75,10 +75,12 @@
     }
   }
 
-  // The words for the exit message, as the contract's two shapes.
+  // The words for the exit message, as the contract's two shapes. A code may
+  // come with a message too ("no shell found in this image" with 127).
   function exitText(message) {
     if (typeof message.code === "number") {
-      return "Shell ended (exit " + message.code + ")";
+      const why = message.message ? ": " + message.message : "";
+      return "Shell ended (exit " + message.code + ")" + why;
     }
     return "Closed: " + (message.message || message.reason || "ended");
   }

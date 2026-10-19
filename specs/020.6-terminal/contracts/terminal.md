@@ -27,7 +27,10 @@ Bearer tokens (full API tokens) need no `Origin` check (no browser sends one wit
   - anything else: closes with 1003.
 - **Caravana → browser**:
   - **binary** frames: the shell's output bytes, as they come;
-  - text frame `{"type":"exit","code":N}` or `{"type":"exit","reason":"idle|limit|error","message":"…"}`
+  - text frame `{"type":"exit","code":N}` (with `"message":"no shell found in this image"` when
+    the shell exited 126 or 127 before anything was typed) or
+    `{"type":"exit","reason":"idle|limit|error","message":"…"}` (error also for "your sign-in
+    ended": the credentials are checked again every 30 s)
     as the last message, then a normal close (1000).
 - Keepalive: Caravana pings every 30 s; no pong within 60 s ends the session (`reason` "gone").
 - Message limit: 64 KiB per frame from the browser.
