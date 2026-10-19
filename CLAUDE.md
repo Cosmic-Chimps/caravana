@@ -505,6 +505,55 @@ a GitHub repository". CI builds the image; the GitHub Action `Cosmic-Chimps/cara
   when this was written. Running the script against the in-process API found that it must send
   `If-Match` quoted (`"<revision>"`), as `getApp`'s ETag has it.
 
+Feature 020.6 (`specs/020.6-terminal`, Phase 2.6) is implemented on branch `020.6-terminal`
+(stacked on 020): an interactive shell in a running copy, in the console and over the API.
+- The endpoint is `openTerminal`, `GET /v1/apps/{id}/copies/{copyId}/terminal?shell=auto|bash|sh&cols&rows`
+  upgraded to a websocket (`internal/api/terminal.go`, `github.com/gorilla/websocket`, already a
+  dependency since 020.5's deploytest, now in production code). Browser to Caravana: text frames
+  `{"type":"input","data"}` and `{"type":"resize","cols","rows"}` (64 KiB at most, anything else
+  closes with 1003); Caravana to browser: binary frames of the shell's output, then one text frame
+  `{"type":"exit","code":N}` or `{"type":"exit","reason":"idle|limit|error|gone","message"}` and a
+  normal close. Gorilla can't read on after a read timeout, so a client reads in one goroutine for
+  the whole connection (the lab's `termClient` does).
+- gorilla's upgrader needs `http.Hijacker`: `httpx`'s request-log recorder gained `Hijack()` (it
+  logs 101). The `http.Server` deadlines set before the handler are cleared after the upgrade
+  (`NetConn().SetDeadline(time.Time{})`); the session's own idle (15 min), limit (60 min) and
+  Caravana's ping (30 s, pong within 60 s) end it. The credentials are checked again every 30 s
+  (`credentialCheck`, the same as the copies stream's), so a revoked token or ended sign-in closes
+  the terminal with `reason: "error"`.
+- Who may open one: a session cookie whose `Origin` equals the console's own (scheme as the request
+  arrived after trusted proxies, and Host; a missing or foreign Origin is 403 `cross_origin`, since
+  `http.CrossOriginProtection` doesn't cover GET) or a full API token (no Origin check; no browser
+  sends one with a token). A deploy token is 403 `token_scope` by the scope middleware's default
+  deny. A sixth open terminal is 429 `too_many_terminals`. The trigger recorded is `console` for a
+  cookie and `manual` for a token.
+- `service.OpenTerminal` checks what `RunCommand` does (app, copy, stopped, `Stopping`), the limit of
+  5, records an `app_actions` row `terminal` (migration `0014_terminal.sql` recreated the table
+  with the wider CHECK; `program` is the shell asked for, `exit_code`, `error` in fixed words
+  "idle for 15 minutes", "open for 60 minutes", "connection lost", "closed") and runs
+  `deploy.OpenTerminal` (`Allocations().Exec` with a TTY) in the service's task. Input and output
+  are never logged, stored or put in an error (tests search rows, the SQLite file and logs for
+  `s3cret-sentinel-0206…`). The exit message "no shell found in this image" is for exit 126/127
+  before anything was typed (an exec that can't find the program).
+- Deviations from the contract: Nomad's exec can't set the environment, so `auto` exports
+  `TERM=xterm-256color` inside its `sh -c` (bash and sh take the runtime's own); the exit frame
+  carries `message` for the end reasons and for "no shell found", which the contract's first draft
+  had for reasons only.
+- The page is `GET /apps/{id}/copies/{copyId}/terminal` (`internal/ui/terminal.go`, `terminal.html`,
+  `static/js/terminal.js`): shell picker, New session, Close. xterm.js 6.0.0, its stylesheet and
+  `addon-fit` 0.11.0 are vendored (`tools/ui-vendor.versions`, `static/js/LICENSES.md`, checked by
+  `tools/ui-vendor.sh check`). xterm makes `<style>` elements, so this one page has its own CSP,
+  `style-src 'self' 'unsafe-inline'` and `connect-src 'self'` added to the console's policy
+  (scripts stay `'self'`; no inline script, the page passes what the script needs in `data-`
+  attributes). The Running tab has a Terminal link per running copy; without JavaScript the page
+  says to use Run a command. API 0.20.0.
+- The gate has a step `terminal` (`gate_terminal_test.go`: a busybox app, the gate's API token over
+  a websocket, `echo $((6*7))`, resize then `stty size`, a sentinel, `exit 3`, the recorded action
+  and no sentinel in any later answer; refusals for no credentials, a deploy token and `shell=zsh`)
+  and `TestConsoleLab` a step `console-terminal` (`console_terminal_test.go`: the page's CSP and
+  assets, the socket with the cookie and the console's Origin, a foreign Origin and no Origin both
+  403). Neither had been run in the lab when this was written.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -532,7 +581,7 @@ staging environment, is promoted to production, and a failure during it reaches 
 notification.
 
 After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
-per screen (020.5 app actions and Run a command (done, branch `020.5-app-actions`), 021 console IA, 022 Schedules, 023 Domains, 024
+per screen (020.5 app actions and Run a command (done, branch `020.5-app-actions`), 020.6 terminal into a copy (done, branch `020.6-terminal`), 021 console IA, 022 Schedules, 023 Domains, 024
 Logs, 025 Monitoring and capacity; also a sqlite backup engine and an "update available" notice),
 ending with the API at 1.0, then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
 and ends Phase 4 with "The handoff, screen by screen".

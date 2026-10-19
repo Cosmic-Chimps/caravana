@@ -9,6 +9,22 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- A terminal in a running app: the Running tab has a Terminal link for each copy, and it opens
+  an interactive shell in that copy, drawn in the page (it needs JavaScript; Run a command stays
+  for the cases that don't). Pick the shell: Automatic starts bash when the image has it and sh
+  otherwise, or choose bash or sh. Colors, the arrow keys, history, resizing the window and
+  programs like `top` or an editor work. Nothing typed or printed is kept: not in the logs, not
+  in the app's history, not in a notification. What is recorded is that a terminal was opened,
+  its shell, how long it lasted and how it ended. A terminal closes after 15 minutes without
+  input, or after 60 minutes, and at most 5 are open at once. Only a signed-in console or a
+  full API token can open one; a deploy token can't, and neither can another website (the
+  request must come from the console's own address). It replaces SSH for looking around inside
+  an app. Nothing to do when upgrading beyond rerunning the installer: Nomad's `alloc-exec`
+  came with 0.8.0.
+- API 0.20.0: `openTerminal` (`GET /v1/apps/{id}/copies/{copyId}/terminal`, a websocket; its
+  messages are described in the operation). A new code, `too_many_terminals` (429).
+
 ## 0.8.1 - 2026-10-19
 
 ### Added
