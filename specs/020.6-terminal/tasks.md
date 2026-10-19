@@ -15,4 +15,10 @@
 - [X] T006 Lab: gate step `terminal`, console step `console-terminal` (plan.md "Lab").
 - [X] T007 Docs: CHANGELOG Unreleased, CLAUDE.md 020.6 paragraph, docs/plan.md row 020.6 Done and
   the Phase 3 "A shell into a copy" row reduced to servers.
-- [ ] T008 Full check, full TestLab, and a look at the page in a real browser (main session).
+- [X] T008 Full check, full TestLab, and a look at the page in a real browser (main session).
+  Checks and TestLab passed 2026-10-19 (1641 s, 43 steps; `terminal` 19 s, `console-terminal`
+  17 s). The page was checked over HTTP signed in (200, the exact CSP, all 8 assets 200, no inline
+  script); the Chrome extension wasn't connected, so drawing and keystrokes in a real browser are
+  left for the maintainer. On the way: a clock flake in TestAppPage (00b29eb), the backup step's
+  first psql run twice by retries (b403e67), and a copy lost to the volume step's agent restart
+  (a01dc76).

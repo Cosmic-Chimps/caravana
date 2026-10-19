@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Terminal into a copy",
   "branch": "020.6-terminal",
-  "currentStep": "tasks",
-  "status": "tasked",
+  "currentStep": "implement",
+  "status": "implemented",
   "history": [
     {
       "step": "tasks",
@@ -11,6 +11,13 @@
       "kind": "complete",
       "by": "extension",
       "at": "2026-10-19T14:41:22.350Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-19T16:42:44.032Z"
     }
   ]
 }
