@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "PublishToCaravana (Aspire)",
+  "branch": "026-publish-to-caravana",
+  "currentStep": "tasks",
+  "status": "tasked",
+  "history": [
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-19T19:27:38.349Z"
+    }
+  ]
+}
