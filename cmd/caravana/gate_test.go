@@ -128,6 +128,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"rollback-export", false, g.rollbackExport},
 		{"projects-promote", false, g.projectsPromoteStep},
 		{"app-actions", false, g.appActionsStep},
+		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"ports-closed", true, g.portsClosed},
