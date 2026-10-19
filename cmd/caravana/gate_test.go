@@ -48,6 +48,10 @@ type gateTarget struct {
 	App     *http.Client // how to call the app (the lab's skips certificate checks)
 	Nomad   *api.Client
 	Public  *publicTarget // nil in the lab: the public-only steps are skipped
+	// RestartNomad restarts the Nomad agent and returns once it answers again;
+	// only the lab sets it. The volume step uses it to back up a copy that
+	// started before the agent's last restart (a host after an installer rerun).
+	RestartNomad func(t *testing.T)
 }
 
 // publicTarget is what only a real host has.
@@ -791,6 +795,14 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 		return running[0]
 	}
 	versionBefore, copyBefore := versionOf(), copyOf()
+
+	// In the lab, restart the Nomad agent first: the copy then started before
+	// the agent's last restart, as on a host after an installer rerun, when
+	// Nomad no longer hands the request to the finished volume task until
+	// the copy restarts (seen on the maintainer's host with 0.8.0).
+	if g.target.RestartNomad != nil {
+		g.target.RestartNomad(t)
+	}
 
 	// Back up now, and wait for the run.
 	resp = g.api(t, http.MethodPost, "/v1/apps/"+appID+"/backups", "application/json", `{"service": "web"}`)

@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,19 @@ func startLab(t *testing.T) labEnv {
 			AppURL:      "https://whoami.localhost:8443/",
 			App:         labClient,
 			Nomad:       nomad,
+			RestartNomad: func(t *testing.T) {
+				t.Helper()
+				out, err := exec.Command("limactl", "shell", "--workdir", "/", "caravana-lab",
+					"sudo", "systemctl", "restart", "nomad").CombinedOutput()
+				if err != nil {
+					t.Fatalf("restart the lab's Nomad agent: %v: %s", err, out)
+				}
+				waitFor(t, "the lab's Nomad agent to answer again", 2*time.Minute, func() bool {
+					_, err := nomad.Agent().Self()
+					return err == nil
+				})
+				time.Sleep(10 * time.Second) // the client restores its allocations
+			},
 		},
 	}
 }

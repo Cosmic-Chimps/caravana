@@ -82,7 +82,10 @@ type Timing struct {
 	UsageTimeout time.Duration
 	// RenderGap is the time between two reads of a copy's rendered volume
 	// request, and RenderWait how long Caravana waits for it to show the
-	// request. Defaults 500 ms and 30 s.
+	// request before restarting the copy all the same. Defaults 500 ms and
+	// 10 s: a copy whose template Nomad still watches shows it within a
+	// second, and one it doesn't (after an agent restart) never will, while
+	// "Back up now" waits for this inside a request the server cuts at 30 s.
 	RenderGap, RenderWait time.Duration
 }
 
@@ -103,7 +106,7 @@ func (t Timing) withDefaults() Timing {
 		t.RenderGap = 500 * time.Millisecond
 	}
 	if t.RenderWait == 0 {
-		t.RenderWait = 30 * time.Second
+		t.RenderWait = 10 * time.Second
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute
