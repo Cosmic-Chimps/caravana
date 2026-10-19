@@ -455,7 +455,11 @@ func TestAppPage(t *testing.T) {
 	e.seedStandard(t)
 	// This test is about the frame: it shows the tabs the test names, and none to begin with.
 	e.Server.tabs = nil
-	e.Clock.Advance(3*time.Minute + time.Second)
+	// The store stamps the seeded deployments with the real clock; the pages
+	// say "ago" by the fake one, which started when the env was made. Catch it
+	// up with the real time first (seeding is slow under -race), then move it
+	// 3½ minutes on, so every age reads "3 minutes ago" whatever the setup took.
+	e.Clock.Advance(time.Since(e.Clock.Now()) + 3*time.Minute + 30*time.Second)
 
 	resp, body := e.get(t, "/apps/whoami")
 	if resp.StatusCode != http.StatusOK {
