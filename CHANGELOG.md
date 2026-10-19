@@ -2,7 +2,7 @@
 
 What changed in each release, for people who run Caravana. Newest first. A release's notes on
 GitHub are its section here: `tools/release.sh notes <version>` prints it, and the release
-workflow refuses a tag whose version has no section.
+workflow turns "Unreleased" into the version's section when it has none yet.
 
 Each section has the changes that matter to a user, then **Upgrade** when an upgrade needs
 more than rerunning the installer. Add to "Unreleased" as you go; a release renames it.

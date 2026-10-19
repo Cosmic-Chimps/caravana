@@ -6,9 +6,10 @@
 #   tools/release.sh prepare VERSION
 #
 # prepare turns CHANGELOG.md's "## Unreleased" section into "## VERSION - <today, UTC>" and puts
-# a new empty "## Unreleased" above it. Run it, commit, then tag that commit: the release
-# workflow refuses a tag whose version has no section. It refuses an empty Unreleased section and
-# a version that already has one.
+# a new empty "## Unreleased" above it. The release workflow runs it for a version with no section
+# yet, whether it was started from the button or by a pushed tag, and commits the rename to main
+# (.github/workflows/release.yml). It refuses an empty Unreleased section and a version that
+# already has one.
 #
 # notes prints VERSION's section of CHANGELOG.md (the lines under "## VERSION - date", without
 # that heading), which the release workflow publishes as the release's notes. It fails when
