@@ -1,7 +1,7 @@
 # Tasks: Deploy from CI (020)
 
 ## Caravana (this repository)
-- [ ] T001 Migration 0013, store: token scope columns, `deployments.origin`; tests.
+- [X] T001 Migration 0013, store: token scope columns, `deployments.origin`; tests.
 - [ ] T002 Service/auth: scoped tokens (create, list, check returns the scope), `app.Origin` and its
   recording on deploys, promote and the webhook; notify event origin; tests.
 - [ ] T003 API 0.19.0: `scope` on createApiToken/listApiTokens, the scope middleware with the
