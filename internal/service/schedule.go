@@ -100,6 +100,9 @@ func (s *Service) runDueVolumeBackups(ctx context.Context, noted map[string]stri
 	}
 	now := s.clock.Now()
 	for _, rec := range apps {
+		if rec.StoppedAt != nil {
+			continue // a stopped app's backups wait for Start: no run, and nothing reported (feature 020.5)
+		}
 		for _, svc := range rec.App.Services {
 			if !hasVolumeBackup(svc) {
 				continue

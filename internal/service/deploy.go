@@ -108,6 +108,12 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if cond.IfNew && cond.IfRevision != "" {
 		return store.DeploymentRecord{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
 	}
+	// A stopped app takes no deploy of any kind (feature 020.5): a plain deploy,
+	// an edit, a redeploy of a version, a promotion into it. Nothing is saved
+	// or recorded.
+	if err := s.refuseIfStopped(ctx, a.ID); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -223,6 +229,9 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	if !rec.App.Defined() {
 		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppNotDefined)
 	}
+	if rec.StoppedAt != nil {
+		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppStopped)
+	}
 	// The settings may have changed since the app was saved.
 	if err := s.deployer.Validate(rec.App); err != nil {
 		return store.DeploymentRecord{}, err
@@ -267,6 +276,12 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	if state.deleted {
 		// DeleteApp ran while this deploy waited, and erased its record with the app.
 		return store.DeploymentRecord{}, fmt.Errorf("app %q was deleted: %w", a.ID, store.ErrNotFound)
+	}
+	// A stop that took the lock while this deploy waited for it: the check at
+	// the door passed before the app was stopped. The record exists, so it ends
+	// failed, saying why.
+	if err := s.refuseIfStopped(ctx, a.ID); err != nil {
+		return s.fail(rec, err)
 	}
 	// The budget starts once the lock is held, so waiting behind another
 	// deploy of the same app doesn't eat into it (research R11).

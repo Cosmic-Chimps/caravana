@@ -98,7 +98,14 @@ func startService(t *testing.T, st *store.Store, reg *registrytest.Server, nomad
 // startServiceWith is startService for a deployer the test built itself.
 func startServiceWith(t *testing.T, st *store.Store, d *deploy.Deployer, sec secrets.Provider) *Service {
 	t.Helper()
-	svc := New(st, d, sec, discardLogger())
+	return startServiceLogging(t, st, d, sec, discardLogger())
+}
+
+// startServiceLogging is startServiceWith with the logger the test chose, for
+// tests that read what the service logs.
+func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Logger) *Service {
+	t.Helper()
+	svc := New(st, d, sec, log)
 	svc.retryGap = 5 * time.Millisecond
 	svc.watchIdle = 10 * time.Millisecond
 	svc.backupPoll = 10 * time.Millisecond

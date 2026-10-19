@@ -16,11 +16,21 @@ import (
 // the routes don't reach yet (the shell, the parts, requirePart).
 func newTestServer(t *testing.T, e *uiEnv) *server {
 	t.Helper()
-	s, err := newServer(Deps{Auth: e.Auth, Log: slog.New(slog.DiscardHandler), Host: "caravana.example.com", Now: e.Clock.Now})
+	s, err := newServer(Deps{Auth: e.Auth, Log: slog.New(slog.DiscardHandler), Host: "caravana.example.com", Version: "0.7.0", Now: e.Clock.Now})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
 	return s
+}
+
+// The sidebar names Caravana's version: "v" and the release, "dev" for a
+// build that isn't one, nothing when the server wasn't told.
+func TestVersionLabel(t *testing.T) {
+	for version, want := range map[string]string{"0.7.0": "v0.7.0", "0.7.0-rc.1": "v0.7.0-rc.1", "dev": "dev", "": ""} {
+		if got := (&server{version: version}).versionLabel(); got != want {
+			t.Errorf("versionLabel(%q) = %q, want %q", version, got, want)
+		}
+	}
 }
 
 func TestStaticAssetsAreHashed(t *testing.T) {
@@ -213,7 +223,7 @@ func TestShellAndParts(t *testing.T) {
 	body := render(t, "")
 	for _, want := range []string{
 		// the sidebar: wordmark, host in mono, the two links with the current one marked, the account row
-		`class="cv-wordmark">caravana</a>`, `caravana.example.com`,
+		`class="cv-wordmark">caravana</a>`, `caravana.example.com`, `title="Caravana's version">v0.7.0</span>`,
 		`<a href="/apps" class="cv-nav-link">Apps</a>`, `<a href="/settings" class="cv-nav-link" aria-current="page">Settings</a>`,
 		testEmail, `<form method="post" action="/logout">`, `>Sign out</button>`,
 		// the narrow-screen menu, the skip link, the page and its action slot

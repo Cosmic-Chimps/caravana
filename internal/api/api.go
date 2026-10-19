@@ -73,6 +73,11 @@ func (s *server) routes() []route {
 		{http.MethodDelete, "/v1/apps/{id}", s.deleteApp, false, false},
 		{http.MethodGet, "/v1/apps/{id}/copies", s.listCopies, false, false},
 		{http.MethodGet, "/v1/apps/{id}/volumes", s.listVolumes, false, false},
+		{http.MethodPost, "/v1/apps/{id}/copies/{copyId}/run", s.runCommand, false, false},
+		{http.MethodPost, "/v1/apps/{id}/stop", s.stopApp, false, false},
+		{http.MethodPost, "/v1/apps/{id}/start", s.startApp, false, false},
+		{http.MethodPost, "/v1/apps/{id}/restart", s.restartApp, false, false},
+		{http.MethodGet, "/v1/apps/{id}/actions", s.listAppActions, false, false},
 		{http.MethodGet, "/v1/apps/{id}/logs", s.getLogs, false, true},
 		{http.MethodPost, "/v1/apps/{id}/deployments", s.deploy, false, false},
 		{http.MethodGet, "/v1/apps/{id}/compose", s.getCompose, false, false},
@@ -247,6 +252,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 	var fieldErr *app.FieldError
 	var imageErr *deploy.ImageError
 	if e := backupError(err); e != nil {
+		return e
+	}
+	if e := actionError(err); e != nil {
 		return e
 	}
 	if e := versionError(err); e != nil {

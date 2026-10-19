@@ -62,8 +62,11 @@ type appHeader struct {
 	Where []placeStep
 	// Envs are the project's other environments with what the app can do there
 	// (feature 019); empty while the project has only this one.
-	Envs       []envLink
-	Status     statusView
+	Envs   []envLink
+	Status statusView
+	// Actions are the Restart, Stop and Start buttons (feature 020.5); nil
+	// while nothing is deployed.
+	Buttons    *headerActions
 	Domains    []domainLink
 	Summary    sentence
 	NomadError string // why the status is unknown, as Nomad said it; mono detail
@@ -79,8 +82,16 @@ type appPage struct {
 	appHeader
 	// Created is the notice after New app's "Create without deploying" (feature
 	// 020): the app exists and nothing is deployed yet. Empty otherwise.
-	Created     sentence
-	Running     *copiesRegion
+	Created sentence
+	// Notice is what an action that just succeeded says (?did=), Refusal why one
+	// was refused (feature 020.5). Both show above the header.
+	Notice  sentence
+	Refusal sentence
+	Running *copiesRegion
+	// Run and Actions are the Running tab's "Run a command" part and its list
+	// of recent actions.
+	Run         *runSection
+	Actions     *actionsRegion
 	Deployments *deploymentsTab
 	Configure   *configureTab
 	Compose     *composeView // Deploy from Compose, under the Configure tab
@@ -184,6 +195,7 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		ID:         sum.App.ID,
 		Heading:    sum.App.ID,
 		Status:     appStatusView(sum),
+		Buttons:    actionsOf(sum),
 		Domains:    domainLinks(sum.App),
 		Summary:    summaryOf(sum, s.now()),
 		NomadError: sum.Status.NomadError,
@@ -205,7 +217,19 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 // showApp answers GET /apps/{id}: the app's page. An unknown app is a 404
 // page inside the shell.
 func (s *server) showApp(w http.ResponseWriter, r *http.Request, session string) {
-	id := r.PathValue("id")
+	s.runningPage(w, r, http.StatusOK, r.PathValue("id"), runningExtras{})
+}
+
+// runningExtras is what an answer adds to the Running tab: why an action was
+// refused, the result of a command, or the line a refused post typed.
+type runningExtras struct {
+	Refusal sentence
+	Result  *runResult
+	Typed   *typedCommand
+}
+
+// runningPage draws the Running tab (the app's own page) with the given status.
+func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int, id string, extra runningExtras) {
 	sum, err := s.svc.AppSummary(r.Context(), id)
 	missing := errors.Is(err, store.ErrNotFound)
 	if err != nil && !missing {
@@ -229,12 +253,49 @@ func (s *server) showApp(w http.ResponseWriter, r *http.Request, session string)
 		s.serverError(w, "list copies", err)
 		return
 	}
-	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies}
+	actions, err := s.loadActions(r, id)
+	if err != nil {
+		s.serverError(w, "list actions", err)
+		return
+	}
+	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies, Actions: &actions,
+		Run: runSectionOf(id, copies, extra), Refusal: extra.Refusal}
 	if r.URL.Query().Get("created") == "1" && sum.LastDeployment == nil {
 		// Only said while it is still true: a reload after the first deploy says nothing.
 		page.Created = sentence{plain("Created "), mono(cmp.Or(sum.Place.Name, sum.App.ID)), plain(". Nothing is deployed yet.")}
 	}
-	s.render(w, http.StatusOK, "app", page)
+	page.Notice = didNotice(r.URL.Query().Get("did"), sum)
+	s.render(w, status, "app", page)
+}
+
+// runSectionOf builds the "Run a command" part from the copies the tab shows:
+// a form for each copy that hasn't ended. A refused post's line goes back in
+// its copy's form, and a refusal that isn't about one form shows above them.
+func runSectionOf(id string, copies copiesRegion, extra runningExtras) *runSection {
+	sec := &runSection{Result: extra.Result}
+	for _, c := range copies.Rows {
+		if !c.Live {
+			continue
+		}
+		f := runForm{Action: "/apps/" + url.PathEscape(id) + "/copies/" + url.PathEscape(c.ID) + "/run",
+			ID: "run-" + c.Short, CopyID: c.ID, Short: c.Short, Service: c.Service}
+		if extra.Typed != nil && extra.Typed.CopyID == c.ID {
+			f.Value, f.Error = extra.Typed.Line, extra.Typed.Error
+		}
+		sec.Forms = append(sec.Forms, f)
+	}
+	if extra.Typed != nil {
+		// The error is on its form; a copy that is gone has none, so the
+		// sentence goes on top.
+		shown := false
+		for _, f := range sec.Forms {
+			shown = shown || f.CopyID == extra.Typed.CopyID
+		}
+		if !shown {
+			sec.Refusal = extra.Typed.Error
+		}
+	}
+	return sec
 }
 
 // partAppHeader answers GET /parts/apps/{id}/header. A page only asks for it
@@ -269,7 +330,7 @@ func (s *server) tabKey(key string) string {
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	route := liveRoute{AppID: id,
-		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeDeleted}}
+		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted}}
 	switch {
 	case r.URL.Query().Get("logs") == "1":
 		if choice, ok := logChoiceOf(r.URL.Query()); ok {
@@ -316,6 +377,8 @@ type copyEntry struct {
 	// passing its memory ceiling; the status column says so.
 	OutOfMemory bool
 	Usage       usageView
+	// Live says the copy hasn't ended, so a command can be run in it.
+	Live bool
 }
 
 // usageView is a copy's CPU and memory cells. A copy that isn't running has
@@ -339,8 +402,10 @@ type copiesRegion struct {
 	Rows []copyEntry
 	// First is set when there are no copies because the app was never deployed
 	// (feature 019.5): what to do next instead of "No copies are running".
-	First           *firstDeploy
-	Failure         sentence // "v8 failed: see "; the template adds the link and the full stop
+	First   *firstDeploy
+	Failure sentence // "v8 failed: see "; the template adds the link and the full stop
+	// StoppedNote says why an app with no copies has none: the owner stopped it.
+	StoppedNote     sentence
 	DeploymentsHref string
 	Notice          sentence
 	RefreshHref     string
@@ -412,12 +477,17 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 		if err != nil {
 			return copiesRegion{}, err
 		}
-		if len(recs) > 0 {
+		rec, recErr := s.svc.GetApp(ctx, appID)
+		if recErr != nil && !errors.Is(recErr, store.ErrNotFound) {
+			return copiesRegion{}, recErr
+		}
+		switch {
+		case recErr == nil && rec.StoppedAt != nil:
+			region.StoppedNote = sentence{plain("The app is stopped. Start it to run its copies again.")}
+		case len(recs) > 0:
 			region.Failure = failedDeploySentence(recs[0])
-		} else if rec, err := s.svc.GetApp(ctx, appID); err == nil {
+		case recErr == nil:
 			region.First = s.firstDeployOf(r, rec)
-		} else if !errors.Is(err, store.ErrNotFound) {
-			return copiesRegion{}, err
 		}
 	}
 	return region, nil
@@ -425,7 +495,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 
 func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 	e := copyEntry{ID: c.ID, Short: shortID(c.ID), Service: c.Service, Status: copyStatusView(c.Status),
-		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory}
+		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory, Live: !c.Terminal}
 	switch {
 	case c.Terminal:
 		e.UpFor = "not running"
@@ -675,6 +745,11 @@ func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) 
 // entry.
 func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy) {
 	id := sum.App.ID
+	if sum.StoppedAt != nil && len(form.Notice) == 0 {
+		// Said before anyone tries: a stopped app refuses every deploy, and the
+		// header has the Start button.
+		form.Notice = sentence{plain(appStoppedText)}
+	}
 	history, err := s.loadHistory(r, id)
 	if err == nil && refused != nil {
 		shown := false
@@ -833,6 +908,8 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 	}
 
 	switch {
+	case errors.Is(err, service.ErrAppStopped):
+		return http.StatusConflict, sentence{plain(appStoppedText)}, true
 	case errors.Is(err, service.ErrAppNotDefined):
 		return http.StatusConflict, sentence{plain("This app has no definition yet, so there is nothing to deploy. Define it in Configure, or deploy a Compose file.")}, true
 	case errors.As(err, &fieldErr):
@@ -920,6 +997,9 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	form := formOf(sum.App, sum.Revision)
 	if extra.Form != nil {
 		form = *extra.Form
+	}
+	if sum.StoppedAt != nil && len(extra.Notice) == 0 {
+		extra.Notice = sentence{plain(appStoppedText)}
 	}
 	tab := &configureTab{
 		App:     appFacts(sum.App),

@@ -93,15 +93,18 @@ func TestListAttention(t *testing.T) {
 		seedDeployment(t, e, "shop", "shop-d3", store.StatusReverted, 3, "the new copies failed their health check")
 
 		restart := time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC)
+		// Restarts count as a loop only within the last hour, so the restarting
+		// copies restarted minutes ago (on the real clock the service reads).
+		recent := time.Now().UTC().Truncate(time.Second).Add(-5 * time.Minute)
 		no := false
 		e.Nomad.SetCopies("blog",
 			api.AllocationListStub{ID: "w1", TaskGroup: "web", JobVersion: 4, ClientStatus: "running", ClientDescription: "Tasks are running",
 				TaskStates: map[string]*api.TaskState{"web": {Restarts: 1, LastRestart: restart, Events: []*api.TaskEvent{
 					{Type: api.TaskTerminated, Details: map[string]string{"oom_killed": "true"}}}}}},
 			api.AllocationListStub{ID: "k1", TaskGroup: "worker", JobVersion: 4, ClientStatus: "running",
-				TaskStates: map[string]*api.TaskState{"worker": {Restarts: 3, LastRestart: restart}}},
+				TaskStates: map[string]*api.TaskState{"worker": {Restarts: 3, LastRestart: recent}}},
 			api.AllocationListStub{ID: "k2", TaskGroup: "worker", JobVersion: 4, ClientStatus: "running",
-				TaskStates: map[string]*api.TaskState{"worker": {Restarts: 5, LastRestart: restart.Add(time.Minute)}}},
+				TaskStates: map[string]*api.TaskState{"worker": {Restarts: 5, LastRestart: recent.Add(time.Minute)}}},
 			api.AllocationListStub{ID: "d1", TaskGroup: "db", JobVersion: 4, ClientStatus: "running", ClientDescription: "Tasks are running",
 				DeploymentStatus: &api.AllocDeploymentStatus{Healthy: &no},
 				TaskStates:       map[string]*api.TaskState{"db": {StartedAt: restart.Add(-time.Hour)}}})
@@ -150,7 +153,7 @@ func TestListAttention(t *testing.T) {
 			it.At != "2026-10-12T08:00:00Z" || str(it.Detail) != "Tasks are running" {
 			t.Errorf("out_of_memory = %+v", it)
 		}
-		if it := by["restarting"]; str(it.Service) != "worker" || !slices.Equal(it.Copies, []string{"k1", "k2"}) || it.At != "2026-10-12T08:01:00Z" {
+		if it := by["restarting"]; str(it.Service) != "worker" || !slices.Equal(it.Copies, []string{"k1", "k2"}) || it.At != recent.Add(time.Minute).Format(time.RFC3339) {
 			t.Errorf("restarting = %+v, want the two worker copies as one item at the newer restart", it)
 		}
 		if it := by["unhealthy"]; str(it.Service) != "db" || !slices.Equal(it.Copies, []string{"d1"}) || it.At != "2026-10-12T07:00:00Z" {

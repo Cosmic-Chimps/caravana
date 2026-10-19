@@ -319,6 +319,8 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request, session s
 func (s *server) refuseBackup(w http.ResponseWriter, r *http.Request, id string, err error, tab backupsTab) {
 	status := http.StatusConflict
 	switch {
+	case errors.Is(err, service.ErrAppStopped):
+		tab.Notice = sentence{plain(appStoppedText)}
 	case errors.Is(err, service.ErrBackupRunning):
 		tab.Notice = sentence{plain("A backup or restore of this service is running. Try again when it ends.")}
 	case errors.Is(err, service.ErrNoRunningCopy):

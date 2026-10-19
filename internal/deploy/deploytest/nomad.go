@@ -81,6 +81,7 @@ type Nomad struct {
 	registrations int
 	warnings      string
 	purged        map[string]bool
+	stops         map[string]int // deregisters without purge, by job ID
 
 	// Allocations have their own index, so the deployments endpoint's
 	// bookkeeping can't wake a blocking query that waits for allocations.
@@ -117,6 +118,12 @@ type Nomad struct {
 	restartStatus int // non-zero: every restart answers it
 	onRestart     func(copyID string)
 	restartStop   time.Duration // how long a restarted main task stays stopped
+
+	// Commands run in copies, and the checks of copies (exec.go).
+	execs      []ExecRequest
+	execStatus int // non-zero: every exec answers it before the upgrade
+	onExec     func(ExecRequest) ExecReply
+	checks     map[string]api.AllocCheckStatuses // by copy ID
 }
 
 // hostVolume is one dynamic host volume and how often it was read.
@@ -142,6 +149,7 @@ func New(t testing.TB) *Nomad {
 		jobs:    map[string][]*api.Job{},
 		scripts: map[string]map[uint64][]api.Deployment{},
 		purged:  map[string]bool{},
+		stops:   map[string]int{},
 
 		allocs:       map[string][]*api.AllocationListStub{},
 		allocIndex:   1,
@@ -156,6 +164,7 @@ func New(t testing.TB) *Nomad {
 
 		files:       map[string]map[string]string{},
 		restartStop: 2 * time.Second,
+		checks:      map[string]api.AllocCheckStatuses{},
 	}
 	n.srv = httptest.NewServer(http.HandlerFunc(n.serve))
 	t.Cleanup(n.srv.Close)
@@ -328,6 +337,10 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.serveLogs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/logs/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/cat/"):
 		n.serveCat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/cat/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/exec"):
+		n.serveExec(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/exec"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/checks"):
+		n.serveChecks(w, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/checks"))
 	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/restart"):
 		n.serveRestart(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/restart"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/stats"):
@@ -409,13 +422,11 @@ func (n *Nomad) Purged(jobID string) bool {
 }
 
 // purge answers DELETE /v1/job/{id}. Like Nomad, a job it doesn't have is a
-// 404. Without purge=true the job would only be stopped, which Caravana never
-// asks for, so the fake refuses it instead of pretending.
+// 404. With purge=true the job is erased. Without it the job is only stopped,
+// as "nomad job stop" does (feature 020.5): its latest version keeps its place
+// with Stop set, and its copies end (client status "complete"). Stops(jobID)
+// counts the stops that reached the fake.
 func (n *Nomad) purge(w http.ResponseWriter, r *http.Request, id string) {
-	if r.URL.Query().Get("purge") != "true" {
-		http.Error(w, "the fake only purges: purge=true is required", http.StatusBadRequest)
-		return
-	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if len(n.jobs[id]) == 0 {
@@ -423,6 +434,18 @@ func (n *Nomad) purge(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	n.index++
+	if r.URL.Query().Get("purge") != "true" {
+		versions := n.jobs[id]
+		stopped := *versions[len(versions)-1]
+		stopped.Stop = new(true)
+		stopped.JobModifyIndex = new(n.index)
+		stopped.ModifyIndex = new(n.index)
+		versions[len(versions)-1] = &stopped
+		n.stopCopies(id)
+		n.stops[id]++
+		n.writeJSON(w, api.JobDeregisterResponse{EvalID: fmt.Sprintf("eval-%d", n.index), JobModifyIndex: n.index})
+		return
+	}
 	delete(n.jobs, id)
 	delete(n.scripts, id)
 	if len(n.allocs[id]) > 0 {
@@ -432,6 +455,32 @@ func (n *Nomad) purge(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	n.purged[id] = true
 	n.writeJSON(w, api.JobDeregisterResponse{EvalID: fmt.Sprintf("eval-%d", n.index), JobModifyIndex: n.index})
+}
+
+// stopCopies ends every copy of the job, as Nomad does when it is stopped.
+// n.mu must be held.
+func (n *Nomad) stopCopies(jobID string) {
+	list := n.allocs[jobID]
+	if len(list) == 0 {
+		return
+	}
+	n.allocIndex++
+	for i, s := range list {
+		next := *s
+		next.ClientStatus = api.AllocClientStatusComplete
+		next.DesiredStatus = api.AllocDesiredStatusStop
+		next.ModifyIndex = n.allocIndex
+		list[i] = &next
+	}
+	n.wake()
+}
+
+// Stops counts the stops (a deregister without purge) the fake answered for
+// jobID. A stopped job has Job(jobID).Stop true until it is registered again.
+func (n *Nomad) Stops(jobID string) int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.stops[jobID]
 }
 
 func (n *Nomad) info(w http.ResponseWriter, id string) {

@@ -86,6 +86,8 @@ func promotionRefusal(err error, n promoNames) (status int, text sentence, ok bo
 	case errors.Is(err, service.ErrDefinitionNotRecorded):
 		return http.StatusConflict, sentence{plain("The newest deployment of "), mono(n.App), plain(" in "), mono(n.From),
 			plain(" was made before caravana recorded what each deployment deployed. Deploy it there again, then promote.")}, true
+	case errors.Is(err, service.ErrAppStopped):
+		return http.StatusConflict, sentence{mono(n.App), plain(" in "), mono(n.To), plain(" is stopped: start it there first.")}, true
 	case errors.Is(err, service.ErrAppNotInEnvironment):
 		return http.StatusNotFound, sentence{mono(n.To), plain(" has no app called "), mono(n.App), plain(". Copy it there first.")}, true
 	case errors.Is(err, service.ErrAppExists):

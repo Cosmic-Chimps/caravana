@@ -1,0 +1,28 @@
+{{/* The Stop confirmation page (feature 020.5): what stopping an app does and what waits until it
+     starts again, and the one button that stops it. A refusal takes the button's place and says
+     why. Takes a stopPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    {{with .Start}}<form method="post" action="{{.}}"><button type="submit" class="cv-btn cv-btn-primary">Start {{$.Name}}</button></form>{{end}}
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Back to {{.Name}}</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">Every copy stops ({{.Copies}} now) and the app stops answering. Deploys{{if .Backups}}, the webhook and scheduled backups{{else}} and the webhook{{end}} wait until you start it.</p>
+    <p class="text-base text-fg-1">Nothing is deleted: its definition, secrets, volumes, webhook token and history stay. Start runs it again exactly as it was, without looking up its images again.</p>
+  </div>
+  <form method="post" action="{{.Action}}" class="cv-actions">
+    <button type="submit" class="cv-btn cv-btn-danger">Stop {{.Name}}</button>
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

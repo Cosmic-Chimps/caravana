@@ -55,6 +55,11 @@ From the internet only ports 22, 80 and 443 answer. Nomad, Caravana's own port a
 dashboard listen on loopback. Apps' ports are on a private interface, `caravana0`, and reach the
 internet only through Traefik.
 
+Apps on one host are not isolated from each other: any app's container can reach another app's
+port directly. An app that believes `X-Forwarded-*` headers should believe them only from
+`10.99.0.1`, the address Traefik's requests come from, never from the bridge gateway. A network
+per app comes with Phase 3.
+
 On the host:
 
 ```bash

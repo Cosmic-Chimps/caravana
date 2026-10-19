@@ -31,6 +31,7 @@ const (
 	StateDegraded   AppState = "degraded"    // some, but not all, wanted copies are healthy
 	StateNotRunning AppState = "not_running" // no healthy copy, at least one wanted
 	StateUnknown    AppState = "unknown"     // Nomad couldn't be read
+	StateStopped    AppState = "stopped"     // the owner stopped the app (feature 020.5); it wins over every other state
 )
 
 // AppStatus is what is true about an app right now, from the store and
@@ -72,9 +73,11 @@ func wantedCopies(a app.App) int {
 // unreadable Nomad is unknown; healthy >= wanted is healthy; healthy > 0 is
 // degraded; otherwise not_running.
 //
-// A copy is healthy when deploy marked it so. The live version is the newest
-// version that has a healthy copy, and only copies of that version count, so
-// a healthy copy of an old version never hides a broken new one.
+// A copy is healthy when deploy marked it so, and Nomad hasn't told it to stop
+// (a copy on its way out, after a Stop or while a Start replaces it, serves
+// nothing for long). The live version is the newest version that has a
+// healthy copy, and only copies of that version count, so a healthy copy of
+// an old version never hides a broken new one.
 func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
 	st := AppStatus{WantedCopies: wantedCopies(a)}
 	if nomadErr != nil {
@@ -83,7 +86,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	}
 
 	for _, c := range copies {
-		if c.Status != deploy.CopyHealthy {
+		if c.Status != deploy.CopyHealthy || c.Stopping {
 			continue
 		}
 		if st.LiveVersion == nil || c.Version > *st.LiveVersion {
@@ -106,6 +109,17 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 		st.State = StateDegraded
 	default:
 		st.State = StateNotRunning
+	}
+	return st
+}
+
+// statusOfRecord is statusOf for a stored app: a stopped app (feature 020.5) is
+// stopped whatever its copies or Nomad say, since stopping is the owner's
+// decision and the store knows it. The counts stay as statusOf made them.
+func statusOfRecord(rec store.AppRecord, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
+	st := statusOf(rec.App, latest, copies, nomadErr)
+	if rec.StoppedAt != nil {
+		st.State = StateStopped
 	}
 	return st
 }
@@ -153,7 +167,7 @@ func (s *Service) ListAppsIn(ctx context.Context, project, environment string) (
 			sum.LastDeployment = &d
 		}
 		// The job ID is the app ID (constitution II). A missing key is a nil slice.
-		sum.Status = statusOf(rec.App, sum.LastDeployment, byJob[rec.App.ID], nomadErr)
+		sum.Status = statusOfRecord(rec, sum.LastDeployment, byJob[rec.App.ID], nomadErr)
 		out = append(out, sum)
 	}
 	return out, nil
@@ -177,7 +191,7 @@ func (s *Service) AppSummary(ctx context.Context, id string) (AppSummary, error)
 	if nomadErr != nil {
 		s.log.Warn("can't read copies from Nomad; app shows as unknown", "app", id, "error", nomadErr)
 	}
-	sum.Status = statusOf(rec.App, sum.LastDeployment, copies, nomadErr)
+	sum.Status = statusOfRecord(rec, sum.LastDeployment, copies, nomadErr)
 	return sum, nil
 }
 

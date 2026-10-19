@@ -31,6 +31,9 @@ func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID strin
 	if !stored.App.Defined() {
 		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppNotDefined)
 	}
+	if stored.StoppedAt != nil { // before the registry is asked about the images
+		return store.DeploymentRecord{}, fmt.Errorf("app %q: %w", appID, ErrAppStopped)
+	}
 	rec, err := s.version(ctx, appID, deploymentID)
 	if err != nil {
 		return store.DeploymentRecord{}, err

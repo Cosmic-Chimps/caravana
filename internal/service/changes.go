@@ -19,6 +19,7 @@ const (
 	ChangeCopies      ChangeKind = "copies"      // one app's running copies
 	ChangeDeleted     ChangeKind = "deleted"     // one app is gone
 	ChangeAttention   ChangeKind = "attention"   // what needs the owner, across apps
+	ChangeActions     ChangeKind = "actions"     // one app's list of actions (stop, start, restart, run); never their content
 )
 
 // Change is a notice that something changed. It says what, never the new

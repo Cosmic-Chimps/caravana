@@ -7,6 +7,7 @@ tool honnef.co/go/tools/cmd/staticcheck
 require (
 	github.com/compose-spec/compose-go/v2 v2.16.1
 	github.com/getkin/kin-openapi v0.149.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/cronexpr v1.1.3
 	github.com/hashicorp/nomad/api v0.0.0-20260917172403-9dcbdc5e64ec
 	github.com/sirupsen/logrus v1.10.1
@@ -24,7 +25,6 @@ require (
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

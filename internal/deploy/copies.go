@@ -43,6 +43,10 @@ type Copy struct {
 	FinishedAt        *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
 	OutOfMemory       bool       // the service's last stop was the kernel killing it for passing its memory ceiling
 	Terminal          bool       // true for stopped and failed: it will never run again
+	// Stopping is true when Nomad has told the copy to stop (its desired
+	// status isn't "run") while it may still say it is running. Nomad refuses
+	// to restart or exec into such a copy, so the app actions skip it.
+	Stopping bool
 }
 
 // copyOf maps one allocation to a Copy (research R8):
@@ -87,6 +91,7 @@ func copyOf(a *api.AllocationListStub) Copy {
 		c.Status = CopyUnhealthy
 	}
 	c.Terminal = c.Status == CopyStopped || c.Status == CopyFailed
+	c.Stopping = a.DesiredStatus != "" && a.DesiredStatus != api.AllocDesiredStatusRun
 
 	for _, ts := range a.TaskStates {
 		if ts == nil {

@@ -7,6 +7,7 @@ import "net/http"
 // sign-in page and the plain messages have none and stand alone.
 type shellView struct {
 	Host    string  // shown in mono under the wordmark
+	Version string  // Caravana's version, after the host; "" for none
 	Email   string  // the admin, in the account row
 	Current string  // "apps" or "settings": the nav link marked as current
 	Crumbs  []crumb // the top bar's breadcrumbs, the last one being this page
@@ -51,6 +52,16 @@ func (s *server) shellPage(r *http.Request, title, current string, crumbs ...cru
 		host = r.Host
 	}
 	d := s.page(title)
-	d.Shell = &shellView{Host: host, Email: email, Current: current, Crumbs: crumbs}
+	d.Shell = &shellView{Host: host, Version: s.versionLabel(), Email: email, Current: current, Crumbs: crumbs}
 	return d, nil
+}
+
+// versionLabel is Caravana's version as the sidebar shows it: "v0.7.0" for a
+// release, "dev" for any other build, "" when the server wasn't told.
+func (s *server) versionLabel() string {
+	switch s.version {
+	case "", "dev":
+		return s.version
+	}
+	return "v" + s.version
 }

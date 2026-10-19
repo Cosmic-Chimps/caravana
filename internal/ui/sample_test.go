@@ -356,8 +356,10 @@ func TestNoSampleData(t *testing.T) {
 					t.Errorf("page %q links to app %q, which isn't in the store", name, m[1])
 				}
 			}
-			// "/v1/" is the API's path, not a version.
-			for _, m := range versionText.FindAllString(strings.ReplaceAll(text(body), "/v1/", "/"), -1) {
+			// "/v1/" is the API's path, and "v0.7.0" in the sidebar is Caravana's
+			// own version: neither is a deployment's.
+			plain := strings.ReplaceAll(strings.ReplaceAll(text(body), "/v1/", "/"), "v0.7.0", "")
+			for _, m := range versionText.FindAllString(plain, -1) {
 				if !data.Versions[m] {
 					t.Errorf("page %q shows version %s, which no deployment has", name, m)
 				}

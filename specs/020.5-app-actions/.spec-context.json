@@ -1,0 +1,23 @@
+{
+  "workflow": "speckit",
+  "specName": "App actions and Run a command",
+  "branch": "020.5-app-actions",
+  "currentStep": "implement",
+  "status": "implemented",
+  "history": [
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-18T21:45:01.241Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-19T00:55:04.316Z"
+    }
+  ]
+}

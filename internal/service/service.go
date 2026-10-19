@@ -59,6 +59,10 @@ type Service struct {
 	notifyGap    time.Duration // between two checks of the needs-you list, see notifier.go
 	senderGap    time.Duration // between two looks for due deliveries, see sender.go
 	queue        *deliveryQueue
+
+	// App actions (feature 020.5), see actions.go.
+	commandTimeout time.Duration // how long a command may run
+	restartWait    time.Duration // how long a restart waits for one copy to come back
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -108,6 +112,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		notifyGap:    30 * time.Second,
 		senderGap:    defaultSenderGap,
 		queue:        newDeliveryQueue(),
+
+		commandTimeout: defaultCommandTimeout,
+		restartWait:    defaultRestartWait,
 	}
 }
 
@@ -149,6 +156,11 @@ func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	s.bg = ctx
 	s.mu.Unlock()
+	// A restart or a command that was running when the last process ended has
+	// nobody left to finish it.
+	if err := s.failInterruptedActions(ctx); err != nil {
+		return err
+	}
 	if err := s.resume(ctx); err != nil {
 		return err
 	}

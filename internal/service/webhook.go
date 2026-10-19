@@ -115,6 +115,11 @@ func (s *Service) Webhook(ctx context.Context, appID, token string) (WebhookResu
 // Redeploy with trigger webhook, errors included. Call it only after
 // CheckWebhookToken.
 func (s *Service) WebhookRedeploy(ctx context.Context, appID string) (WebhookResult, error) {
+	// Before "nothing changed": a stopped app answers the same refusal whatever
+	// the registry says (feature 020.5).
+	if err := s.refuseIfStopped(ctx, appID); err != nil {
+		return WebhookResult{}, err
+	}
 	if live, ok := s.unchanged(ctx, appID); ok {
 		return WebhookResult{Changed: false, Deployment: live}, nil
 	}
