@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.8.0 - 2026-10-19
+
 ### Added
 - Deploy from CI. Your GitHub workflow builds the image and a new step,
   `Cosmic-Chimps/caravana-action@v1`, deploys it: it waits until the app is healthy, prints the
