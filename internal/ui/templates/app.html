@@ -461,6 +461,7 @@
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
+  {{with .Origin}}<p class="cv-data-muted">from CI:{{with .Commit}} <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Branch}} on <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Actor}} by {{.}}{{end}}{{with .Run}} · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a>{{end}}</p>{{end}}
   {{with .Promoted}}<p class="cv-data-muted"><a href="{{.Href}}">Promoted from <span class="cv-inline-mono">{{.Environment}}</span> · deployment <span class="cv-inline-mono">{{.Short}}</span></a></p>{{end}}
   {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
   {{if or .Redeploy .ExportHref .ComposeHref}}
@@ -770,6 +771,22 @@
     {{end}}
     {{if .Define}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
     {{else if .Webhook.Never}}<p class="text-sm text-fg-3">The app was never deployed: the webhook's first call deploys it as stored.</p>{{end}}
+  </div>
+</section>
+
+<section id="deploy-token" aria-labelledby="deploy-token-title" class="flex flex-col gap-2">
+  <h2 id="deploy-token-title" class="cv-label">Deploy token</h2>
+  <div class="cv-panel p-4 flex flex-col gap-4">
+    {{with .Deploy.Token}}
+    <div class="flex flex-col gap-3" role="status">
+      <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
+      <code class="cv-cmd" id="deploy-token-value">{{.Value}}</code>
+      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="deploy-token-value" hidden>Copy token</button></div>
+      <p class="text-sm text-fg-3">Add it to your repository's secrets as <span class="font-mono">CARAVANA_TOKEN</span> and deploy with <span class="font-mono">Cosmic-Chimps/caravana-action@v1</span> (<span class="font-mono">url: {{$.Deploy.URL}}</span>, <span class="font-mono">app: {{$.Delete.ID}}</span>).</p>
+    </div>
+    {{end}}
+    <p class="text-sm text-fg-3">A token for CI. It can deploy <span class="cv-inline-mono">{{.Deploy.Scope.Name}}</span> in any environment of project <span class="cv-inline-mono">{{.Deploy.Scope.Project}}</span>, read its deployments and promote it, and nothing else: not other apps, not settings, not tokens.</p>
+    <form method="post" action="/apps/{{.Delete.ID}}/deploy-token"><button type="submit" class="cv-btn cv-btn-secondary">Create a deploy token for this app</button></form>
   </div>
 </section>
 

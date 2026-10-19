@@ -129,6 +129,10 @@ func (s *Service) SetPublicURL(u string) {
 	s.publicURL = strings.TrimRight(u, "/")
 }
 
+// PublicURL is the console's own address as SetPublicURL was given it, without
+// a trailing slash, or "" when none was set.
+func (s *Service) PublicURL() string { return s.publicURL }
+
 // SetNotifyResolveAfter sets how long a problem must be gone before "resolved"
 // is sent (CARAVANA_NOTIFY_RESOLVE_AFTER, 5 minutes by default). Call it
 // before Start; a value that isn't positive keeps the default.

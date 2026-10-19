@@ -7,7 +7,7 @@
 - [X] T003 API 0.19.0: `scope` on createApiToken/listApiTokens, the scope middleware with the
   allowlist and a default-deny test over every route, origin headers (422 on bad ones),
   `Deployment.origin`; openapi sync.
-- [ ] T004 Console: Settings › API tokens "Only for one app", Configure's "Create a deploy token for
+- [X] T004 Console: Settings › API tokens "Only for one app", Configure's "Create a deploy token for
   this app", the history's origin line, New app › "From a GitHub repository" (create, token, the
   workflow page); handler tests; parity; `tools/ui-css.sh build`.
 - [ ] T005 Lab: gate step `deploy-from-ci` (plan.md "Lab").

@@ -24,12 +24,34 @@ type tokenRow struct {
 	LastUsed when
 	Expires  when
 	Revoked  when
+	// Scope says what a deploy token is limited to ("app web of project shop");
+	// "" for a full token.
+	Scope string
 }
 
-// newToken is the token just created, shown once.
+// newToken is the token just created, shown once. ExampleID is the app a deploy
+// token's example reads, "" for a full token.
 type newToken struct {
-	Name  string
-	Value string
+	Name      string
+	Value     string
+	ExampleID string
+}
+
+// scopeForm is the "Only for one app" part of the new-token form: what was
+// typed, and what is wrong with it. Projects lists the projects to choose from.
+type scopeForm struct {
+	Open     bool // the <details> is open: something was typed, or something is wrong
+	Project  string
+	App      string
+	Projects []scopeProject
+	AppErr   *fieldError
+	ProjErr  *fieldError
+}
+
+// scopeProject is one project in the select.
+type scopeProject struct {
+	ID, Label string
+	Selected  bool
 }
 
 type settingsData struct {
@@ -44,6 +66,7 @@ type settingsData struct {
 	TokenExpires    string
 	NameErr         *fieldError
 	ExpiresErr      *fieldError
+	Scope           scopeForm
 	NewToken        *newToken
 	Dest            destinationForm
 	Registries      registriesData
@@ -168,15 +191,30 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data set
 			return
 		}
 	}
+	if s.svc != nil {
+		pl, err := s.loadPlaces(r.Context())
+		if err != nil {
+			s.serverError(w, "list projects", err)
+			return
+		}
+		data.Scope.Projects = nil
+		for _, pr := range pl.Projects {
+			data.Scope.Projects = append(data.Scope.Projects, scopeProject{ID: pr.ID, Label: pr.DisplayName, Selected: pr.ID == data.Scope.Project})
+		}
+	}
 	data.Tokens = make([]tokenRow, 0, len(infos))
 	for _, i := range infos {
-		data.Tokens = append(data.Tokens, tokenRow{
+		row := tokenRow{
 			ID: i.ID, Name: i.Name, State: i.State,
 			Created:  whenOf(now, &i.CreatedAt, "never"),
 			LastUsed: whenOf(now, i.LastUsedAt, "never"),
 			Expires:  whenOf(now, i.ExpiresAt, "never"),
 			Revoked:  whenOf(now, i.RevokedAt, ""),
-		})
+		}
+		if i.Scope != nil {
+			row.Scope = "deploys app " + i.Scope.App + " of project " + i.Scope.Project
+		}
+		data.Tokens = append(data.Tokens, row)
 	}
 	s.render(w, http.StatusOK, "settings", data)
 }
@@ -210,6 +248,18 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 	}
 	name, expires := strings.TrimSpace(r.PostFormValue("name")), r.PostFormValue("expires")
 	data := settingsData{TokenName: name, TokenExpires: expires}
+	// "Only for one app" (a deploy token): an app name makes it one, in the chosen
+	// project (Default's when the form had no select).
+	var scope *service.TokenScope
+	data.Scope = scopeForm{Project: r.PostFormValue("scopeProject"), App: strings.TrimSpace(r.PostFormValue("scopeApp"))}
+	data.Scope.Open = data.Scope.App != ""
+	if data.Scope.App != "" {
+		project := data.Scope.Project
+		if project == "" {
+			project = app.DefaultProject
+		}
+		scope = &service.TokenScope{Project: project, App: data.Scope.App}
+	}
 
 	var expiresAt *time.Time
 	if expires != "" {
@@ -223,11 +273,15 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		expiresAt = new(day.Add(24*time.Hour - time.Second))
 	}
 
-	created, err := s.auth.CreateAPIToken(r.Context(), name, expiresAt)
+	created, err := s.auth.CreateScopedAPIToken(r.Context(), name, expiresAt, scope)
 	var fieldErr *app.FieldError
 	switch {
 	case err == nil:
-		s.renderSettings(w, r, settingsData{NewToken: &newToken{Name: created.Info.Name, Value: created.Token}})
+		nt := &newToken{Name: created.Info.Name, Value: created.Token}
+		if scope != nil {
+			nt.ExampleID = app.Place{Project: scope.Project, Environment: app.DefaultEnvironment, Name: scope.App}.ID()
+		}
+		s.renderSettings(w, r, settingsData{NewToken: nt})
 	case errors.Is(err, service.ErrTokenNameTaken):
 		data.NameErr = &fieldError{Text: "An active token already has that name."}
 		s.renderSettings(w, r, data)
@@ -236,6 +290,12 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		s.renderSettings(w, r, data)
 	case errors.As(err, &fieldErr) && fieldErr.Field == "expiresAt":
 		data.ExpiresErr = &fieldError{Text: "The expiry " + fieldErr.Message + "."}
+		s.renderSettings(w, r, data)
+	case errors.As(err, &fieldErr) && fieldErr.Field == "scope.project":
+		data.Scope.Open, data.Scope.ProjErr = true, &fieldError{Text: "The project " + strings.TrimPrefix(fieldErr.Message, "project ") + "."}
+		s.renderSettings(w, r, data)
+	case errors.As(err, &fieldErr) && fieldErr.Field == "scope.app":
+		data.Scope.Open, data.Scope.AppErr = true, &fieldError{Text: "The app name " + strings.TrimPrefix(fieldErr.Message, `"`+data.Scope.App+`" `) + "."}
 		s.renderSettings(w, r, data)
 	default:
 		s.serverError(w, "create api token", err)

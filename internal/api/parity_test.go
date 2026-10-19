@@ -76,6 +76,9 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}/deployments/{deploymentId}/compose": {ops: []string{"getDeploymentCompose"}},
 	"POST /apps/{id}/webhook":                           {ops: []string{"createWebhookToken"}},
 	"POST /apps/{id}/webhook/revoke":                    {ops: []string{"deleteWebhookToken"}},
+	// Deploy tokens (feature 020): a token scoped to this app's name in its project; the GitHub tab creates the app without deploying, then the token.
+	"POST /apps/{id}/deploy-token": {ops: []string{"createToken"}},
+	"POST /apps/new/github":        {ops: []string{"createApp", "createEnvironmentApp", "createToken"}},
 	// Setting or removing one secret is a deploy of the app with its secrets
 	// listed, the others without a value (keep).
 	"POST /apps/{id}/secrets":        {ops: []string{"deployApp"}},
