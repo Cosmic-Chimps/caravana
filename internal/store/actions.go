@@ -19,6 +19,10 @@ const (
 	ActionStart   = "start"
 	ActionRestart = "restart"
 	ActionRun     = "run"
+	// ActionTerminal is an interactive shell in a copy (feature 020.6). Its
+	// record holds the shell asked for, its exit code and a fixed end reason,
+	// never what was typed or printed.
+	ActionTerminal = "terminal"
 )
 
 // The statuses of an action. running is the only one that changes.
@@ -32,7 +36,7 @@ const (
 type ActionRecord struct {
 	ID      string // "act_" and 12 random hex digits
 	AppID   string
-	Action  string // ActionStop, ActionStart, ActionRestart or ActionRun
+	Action  string // ActionStop, ActionStart, ActionRestart, ActionRun or ActionTerminal
 	Trigger string // "console" or "manual", as deployments name them
 	Status  string
 	// CopyID and Service say where a run happened; empty for the others.
