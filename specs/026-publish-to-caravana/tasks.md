@@ -5,7 +5,7 @@
   file, the network refusal's message fixed; tests.
 - [X] T002 `entrypoint`: `app.Service.Entrypoint`, Compose mapping, Translate (docker
   `entrypoint`), HCL export, validation, goldens, openapi 0.21.0, console read-only; tests.
-- [ ] T003 Fixtures `internal/compose/testdata/aspire/` (as generated: fails naming the variable;
+- [X] T003 Fixtures `internal/compose/testdata/aspire/` (as generated: fails naming the variable;
   resolved: translates, golden app, expected warnings).
 - [ ] T004 Docs: CHANGELOG, CLAUDE.md 026 paragraph, docs/plan.md 026 row.
 - [ ] T005 Full check (+ TestLab if anything outside compose/app/nomadjob changed).

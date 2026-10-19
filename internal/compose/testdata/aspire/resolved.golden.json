@@ -1,0 +1,181 @@
+{
+  "app": {
+    "id": "demo",
+    "source": {
+      "kind": "compose"
+    },
+    "services": [
+      {
+        "name": "apiservice",
+        "image": "ghcr.io/example/apiservice@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "env": [
+          {
+            "name": "ASPNETCORE_FORWARDEDHEADERS_ENABLED",
+            "value": "true"
+          },
+          {
+            "name": "ConnectionStrings__seq",
+            "value": "http://seq:80"
+          },
+          {
+            "name": "HTTP_PORTS",
+            "value": "8080"
+          },
+          {
+            "name": "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY",
+            "value": "in_memory"
+          },
+          {
+            "name": "OTEL_SERVICE_NAME",
+            "value": "apiservice"
+          },
+          {
+            "name": "SEQ_HOST",
+            "value": "seq"
+          },
+          {
+            "name": "SEQ_PORT",
+            "value": "80"
+          },
+          {
+            "name": "SEQ_URI",
+            "value": "http://seq:80"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p8080",
+            "containerPort": 8080
+          }
+        ],
+        "health": {}
+      },
+      {
+        "name": "cache",
+        "image": "docker.io/library/redis:8.6",
+        "entrypoint": [
+          "/bin/sh"
+        ],
+        "command": "-c",
+        "args": [
+          "redis-server --requirepass $REDIS_PASSWORD"
+        ],
+        "secrets": [
+          {
+            "name": "REDIS_PASSWORD"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p6379",
+            "containerPort": 6379
+          }
+        ],
+        "health": {}
+      },
+      {
+        "name": "seq",
+        "image": "docker.io/datalust/seq:2025.2",
+        "env": [
+          {
+            "name": "ACCEPT_EULA",
+            "value": "Y"
+          },
+          {
+            "name": "SEQ_FIRSTRUN_NOAUTHENTICATION",
+            "value": "True"
+          }
+        ],
+        "volumes": [
+          {
+            "name": "seq-data",
+            "path": "/data"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p80",
+            "containerPort": 80
+          }
+        ],
+        "health": {}
+      },
+      {
+        "name": "webfrontend",
+        "image": "ghcr.io/example/webfrontend@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "env": [
+          {
+            "name": "APISERVICE_HTTP",
+            "value": "http://apiservice:8080"
+          },
+          {
+            "name": "APISERVICE_HTTPS",
+            "value": "https://apiservice:8080"
+          },
+          {
+            "name": "ASPNETCORE_FORWARDEDHEADERS_ENABLED",
+            "value": "true"
+          },
+          {
+            "name": "CACHE_HOST",
+            "value": "cache"
+          },
+          {
+            "name": "CACHE_PORT",
+            "value": "6379"
+          },
+          {
+            "name": "HTTP_PORTS",
+            "value": "8080"
+          },
+          {
+            "name": "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY",
+            "value": "in_memory"
+          },
+          {
+            "name": "OTEL_SERVICE_NAME",
+            "value": "webfrontend"
+          },
+          {
+            "name": "services__apiservice__http__0",
+            "value": "http://apiservice:8080"
+          }
+        ],
+        "secrets": [
+          {
+            "name": "CACHE_PASSWORD"
+          },
+          {
+            "name": "CACHE_URI"
+          },
+          {
+            "name": "ConnectionStrings__cache"
+          }
+        ],
+        "ports": [
+          {
+            "name": "p8080",
+            "containerPort": 8080
+          }
+        ],
+        "domains": [
+          {
+            "host": "shop.example.com",
+            "port": "p8080"
+          }
+        ],
+        "health": {}
+      }
+    ]
+  },
+  "warnings": [
+    {
+      "field": "networks",
+      "message": "networks don't separate services here: every service of the app reaches the others by name"
+    },
+    {
+      "field": "services.webfrontend.depends_on",
+      "message": "services start together: Nomad restarts a service that fails until what it needs answers"
+    }
+  ]
+}

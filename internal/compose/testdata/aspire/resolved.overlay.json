@@ -1,0 +1,1 @@
+{"services":{"cache":{"secrets":[{"name":"REDIS_PASSWORD","value":"s3cret-fixture"}]},"webfrontend":{"domains":[{"host":"shop.example.com","port":8080}],"secrets":[{"name":"CACHE_PASSWORD","value":"s3cret-fixture"},{"name":"CACHE_URI","value":"redis://:s3cret-fixture@cache:6379"},{"name":"ConnectionStrings__cache","value":"cache:6379,password=s3cret-fixture"}]}}}
