@@ -10,7 +10,7 @@
 - [X] T004 Console: Settings › API tokens "Only for one app", Configure's "Create a deploy token for
   this app", the history's origin line, New app › "From a GitHub repository" (create, token, the
   workflow page); handler tests; parity; `tools/ui-css.sh build`.
-- [ ] T005 Lab: gate step `deploy-from-ci` (plan.md "Lab").
+- [X] T005 Lab: gate step `deploy-from-ci` (plan.md "Lab").
 - [ ] T006 Docs: CHANGELOG Unreleased, CLAUDE.md 020 paragraph, docs/plan.md 020 row Done.
 - [ ] T007 Full check and full TestLab (main session).
 
