@@ -9,8 +9,6 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
-## 0.8.0 - 2026-10-19
-
 ### Added
 - Deploy from CI. Your GitHub workflow builds the image and a new step,
   `Cosmic-Chimps/caravana-action@v1`, deploys it: it waits until the app is healthy, prints the
@@ -32,6 +30,10 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `promoteApp` and the webhook accept optional `Caravana-Origin-Commit`, `-Ref`, `-Actor`, `-Run`
   and `-Repository` headers (422 naming one that breaks its rule), and `Deployment` gains
   `origin`.
+
+## 0.8.0 - 2026-10-19
+
+### Added
 - The console's sidebar shows which Caravana it is, under the host name: `v0.7.0` for a release,
   `dev` for a build of your own.
 - Run a command in a running app: the Running tab has a "Run a command" form for each copy. Type
