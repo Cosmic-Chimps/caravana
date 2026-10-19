@@ -554,6 +554,30 @@ Feature 020.6 (`specs/020.6-terminal`, Phase 2.6) is implemented on branch `020.
   assets, the socket with the cookie and the console's Origin, a foreign Origin and no Origin both
   403). Neither had been run in the lab when this was written.
 
+Feature 026 (`specs/026-publish-to-caravana`, Phase 2.75) has its Caravana side implemented on
+branch `026-publish-to-caravana`; the publisher is its own repo, `Cosmic-Chimps/aspire-hosting-caravana`
+(sibling `../aspire-hosting-caravana`, in progress), which sends Aspire's Compose output plus an
+overlay to `POST /v1/apps/{id}/compose`. What real Aspire 13.6.1 output (the fixture in
+`specs/026-publish-to-caravana/fixtures/`) needed here:
+- `internal/compose` accepts `networks.*.driver` = `bridge` and `volumes.*.driver` = `local`, the
+  defaults Aspire writes (`checkDrivers` in `fields.go`; any other driver is still refused, naming
+  networks for a network and volumes for a volume). A file with networks gets one warning, on
+  `networks`, not one per service.
+- `app.Service.Entrypoint []string` (`entrypoint`, omitempty; validation: no empty item, at most 64
+  items of 4096 bytes, no NUL): Compose's `services.*.entrypoint` (list, or the string split like a
+  shell by compose-go) maps to it, `Translate` sets the docker driver's `entrypoint`, the HCL export
+  writes it (golden `entrypoint`), Configure keeps it (`applyEdit` leaves what the form doesn't offer)
+  and shows it read-only, and a promotion takes the source's (`"entrypoint"` in `Changed`). API
+  0.21.0.
+- Fixtures in `internal/compose/testdata/aspire/` (`aspire_test.go`): `generated.compose.yaml` is the
+  file as Aspire writes it and fails naming `APISERVICE_IMAGE`; `resolved.compose.yaml` is what the
+  publisher sends (variables resolved, dashboard dropped, volume renamed `seq-data`, secret values
+  removed from the file and given in `resolved.overlay.json`) and becomes 4 services with a golden
+  app (no secret value in it) and two warnings (networks, `depends_on`).
+- Findings that need no Caravana change: Aspire's references are already `http://<service>:<port>`,
+  which resolve by service name inside one app. The publisher resolves `${VAR}`, renames volumes
+  (dots aren't allowed in a volume name) and moves values that contain a secret into the overlay.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

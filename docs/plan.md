@@ -171,6 +171,10 @@ review stays at its end, and the publisher, which we maintain too, follows the A
   output in `internal/compose/testdata/aspire/`, and whatever they show missing. Aspire's
   references already arrive as `services__<name>__<endpoint>__0=http://<service>:<port>`, which
   resolve inside one app by service name, so rendering them from Nomad may not be needed.
+  **Status (2026-10-19): Caravana side done** (branch `026-publish-to-caravana`: Compose accepts the
+  default network and volume drivers and warns about networks once, `entrypoint` in the app model,
+  Translate, the export and the console, API 0.21.0, the Aspire fixtures). **The publisher is in
+  progress** in `../aspire-hosting-caravana`.
 - 026.5: **an MCP server for Caravana**, so agents (Claude Code and others) can read and act on an
   installation through the API: list apps, deployments and copies, read logs, the needs-you list,
   backups; deploy, promote, restart. Read-only tools first; a deploy token limits it to one app.

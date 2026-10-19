@@ -10,6 +10,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 ## Unreleased
 
 ### Added
+- A service may set its `entrypoint`: the program and its first arguments, replacing the
+  image's own, with `command` and `args` after it. A Compose file's `entrypoint` (list or
+  string form) is now honored instead of refused. Configure shows it beside the command and
+  keeps it when you save, a promotion takes the source's, and the exported jobspec writes it.
+  Nothing to do when upgrading beyond rerunning the installer.
+- API 0.21.0: `Service.entrypoint` (an array of strings, at most 64 items of at most 4096
+  bytes, none empty), and `entrypoint` among the parts a promotion preview can list as changed.
 - A terminal in a running app: the Running tab has a Terminal link for each copy, and it opens
   an interactive shell in that copy, drawn in the page (it needs JavaScript; Run a command stays
   for the cases that don't). Pick the shell: Automatic starts bash when the image has it and sh
@@ -24,6 +31,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   came with 0.8.0.
 - API 0.20.0: `openTerminal` (`GET /v1/apps/{id}/copies/{copyId}/terminal`, a websocket; its
   messages are described in the operation). A new code, `too_many_terminals` (429).
+
+### Changed
+- A Compose file as Aspire generates it is accepted: `networks.*.driver: bridge` and
+  `volumes.*.driver: local` (the defaults, which Aspire writes out) no longer fail. Another
+  driver is still refused, and a refused network driver now says it is about networks, not
+  volumes. A file with networks gets one warning about them ("networks don't separate services
+  here"), on `networks`, instead of one per service plus one for the file.
 
 ## 0.8.1 - 2026-10-19
 
