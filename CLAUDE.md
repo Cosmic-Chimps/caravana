@@ -458,6 +458,53 @@ Restart per app.
   same job shape, delete) and `TestConsoleLab` a step `console-app-actions`
   (`console_actions_test.go`). Neither had been run in the lab when this was written.
 
+Feature 020 (`specs/020-deploy-from-ci`, Phase 2.5's CI piece) is implemented on branch
+`020-deploy-from-ci` (stacked on 020.5): deploy tokens, the origin of a deploy, and New app › "From
+a GitHub repository". CI builds the image; the GitHub Action `Cosmic-Chimps/caravana-action`
+(its own repo, cloned beside this one at `../caravana-action`, a composite action over
+`caravana-deploy.sh` with curl and jq) deploys it through the public API.
+- Deploy tokens: an API token with a scope, one app name in one project (migration
+  `0013_deploy_from_ci.sql`: `api_tokens.scope_project`/`scope_app`, `deployments.origin`).
+  `Auth.CreateScopedAPIToken` (the project must exist, the app is `app.ValidName` and needn't exist
+  yet); `Auth.CheckAPIToken` now returns the `*TokenScope` (nil for a full token; a session has
+  none). The API checks it in `authenticate` (`internal/api/scope.go`) after the 401 and before any
+  handler: DEFAULT DENY, `scopeRules` lists the eleven operations a deploy token may use, each with
+  how to find the app (path `{id}`, the body's `id`, path project plus the body's `appName` or the
+  path's `{name}`); anything else, or another app, is 403 `token_scope` with "this token can only
+  deploy app web of project shop". The body is read once and put back for the handler, a body that
+  can't be read counts as out of scope. `TestScopedTokenWalksEveryRoute` tries every route of the
+  table with a scoped token and checks it against `allowedForDeployTokens` (written out in the
+  test, apart from `scopeRules`, so allowing a route takes two edits). Tokens are still SHA-256
+  hashed and shown once.
+- Origin: `app.Origin{Commit, Ref, Actor, Run, Repository}` with `Validate` (commit 7-64 hex, run
+  `https://` only, the rest printable, each with its limit) and `Deployment.Origin`.
+  `deployApp`, `deployCompose`, `promoteApp` and the webhook read the optional `Caravana-Origin-*`
+  headers (`internal/api/origin.go`; 422 `invalid_field` naming the header, none required, the
+  webhook reads them after its token) and put the origin in the request context with
+  `service.WithOrigin`; `deployWarned` records it on the deployment, so every entry point shares
+  it without a new argument. `notify.Event.Origin` carries it (the webhook JSON has the object, Slack,
+  Discord and ntfy get a "From CI: abc1234 on main by ana, run <url>" line).
+- API 0.19.0: `scope` on `createToken`/`listTokens` (schema `TokenScope`), `Deployment.origin`
+  (schema `Origin`), the origin header parameters, response `TokenScope`, code `token_scope`.
+- Console: Settings › API tokens has "Only for one app" (a project select and an app name; the new
+  token's example reads that app); Configure has "Create a deploy token for this app" (answered
+  200 with the token, like the webhook's); each history entry made with an origin says "from CI:
+  `abc1234` on `main` by ana · run" (the run a link). New app has a third tab, "From a GitHub
+  repository" (`/apps/new?from=github`, `githubapp.go`): name, place, an image on `ghcr.io`, port,
+  domain, health path; `POST /apps/new/github` creates the app without deploying
+  (`CreateAppOnly`), makes a token named `<app id>-ci` (a number is added when an active token has
+  the name) scoped to the app's project and name, and answers 200 `no-store` with the token (once),
+  the secret to add (`CARAVANA_TOKEN`) and the workflow to commit, with the app, the console
+  address (`CARAVANA_PUBLIC_URL`, else the request's) and the image filled in. `Service.PublicURL`
+  was added for it.
+- The gate has a step `deploy-from-ci` (`gate_deploy_ci_test.go`): it runs the action's script from
+  `$CARAVANA_ACTION_DIR` (default `../caravana-action` beside the repository, else the step skips
+  with a note) with a deploy token for `lab020`/`web`: define and deploy, a new image, create
+  production with the token and promote, a missing image, the origin on each deployment, no token
+  in any log or summary, and 403 `token_scope` for everything else. It had not been run in the lab
+  when this was written. Running the script against the in-process API found that it must send
+  `If-Match` quoted (`"<revision>"`), as `getApp`'s ETag has it.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -478,6 +525,7 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
 - 020 Deploy from CI: CI builds the image, the GitHub Action `Cosmic-Chimps/caravana-action`
   (its own repo, cloned beside this one at `../caravana-action`) deploys, waits and promotes;
   per-app deploy tokens; New app › "From a GitHub repo". Building on the host moved to Phase 3.
+  (Caravana's side done, branch `020-deploy-from-ci`.)
 
 Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a
 staging environment, is promoted to production, and a failure during it reaches the owner as a
