@@ -252,24 +252,58 @@ func TestVolumeBackupRun(t *testing.T) {
 		}
 	})
 
-	t.Run("a request the copy never rendered fails the run without a restart", func(t *testing.T) {
-		l := newVolumeLab(t) // nothing renders the request
+	// The console's request ended while the run waited for the copy (the
+	// browser left): the run goes on to its end all the same.
+	t.Run("a caller that goes away doesn't cancel the run", func(t *testing.T) {
+		l := newVolumeLab(t)
+		id := l.id(0)
+		l.answer(id, labSuccess)
+		// Cancel the moment the request is in the variable, while the run
+		// waits for the copy to show it (nothing renders it here).
+		reqCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			for range 2000 {
+				if v := l.nomad.Variable(labVar); v != nil && v["REQUEST"] != "" {
+					cancel()
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+		if _, err := l.svc.BackUpNow(reqCtx, "whoami", "web"); err != nil {
+			t.Fatalf("BackUpNow with a cancelled request = %v, want the run started", err)
+		}
+		if got := l.settled(id); got.Status != store.BackupSucceeded {
+			t.Errorf("settled = %+v, want succeeded", got)
+		}
+		l.released()
+	})
+
+	// After a Nomad agent restart, a finished prestart task's template is no
+	// longer rendered (lab 2026-10-19), but a restart of the copy renders it
+	// as the task starts. So a request the file never showed still restarts
+	// the copy, and the result file named after the request decides.
+	t.Run("a request the copy never rendered still restarts the copy, which runs it", func(t *testing.T) {
+		l := newVolumeLab(t) // nothing renders the request before the restart
+		id := l.id(0)
+		l.answer(id, labSuccess)
 		rec, err := l.svc.BackUpNow(ctx, "whoami", "web")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rec.Status != store.BackupFailed || !strings.Contains(rec.Message, "didn't pick up the request") || rec.FinishedAt == nil {
-			t.Errorf("record = %+v, want failed because the copy didn't pick up the request", rec)
+		if rec.Status != store.BackupRunning {
+			t.Errorf("record = %+v, want running", rec)
 		}
-		if got, err := l.store.GetBackup(ctx, "whoami", rec.ID); err != nil || got.Status != store.BackupFailed {
-			t.Errorf("stored record = %+v, %v; want failed", got, err)
+		if got := l.settled(id); got.Status != store.BackupSucceeded {
+			t.Errorf("settled = %+v, want succeeded", got)
 		}
-		if rs := l.nomad.Restarts(); len(rs) != 0 {
-			t.Errorf("restarts = %+v, want none: the copy would run nothing", rs)
+		if rs := l.nomad.Restarts(); len(rs) != 1 || !rs[0].AllTasks {
+			t.Errorf("restarts = %+v, want one restart of all the copy's tasks", rs)
 		}
 		l.released()
 		if l.request() != "" {
-			t.Errorf("request = %q, want it cleared", l.request())
+			t.Errorf("request = %q, want it cleared once the run ended", l.request())
 		}
 	})
 

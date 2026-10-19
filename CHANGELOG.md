@@ -9,6 +9,15 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+- Volume backups and restores failed with "the copy didn't pick up the request" once Nomad had
+  been restarted on the host (as rerunning the installer does) after the app's copy started:
+  Nomad then stops handing new requests to the copy's backup task until the copy restarts. A
+  backup or restore now restarts the copy anyway when the request isn't picked up, which hands
+  it over, so it works again without restarting the app by hand.
+- A "Back up now" or a restore from the console no longer fails with an error when you leave the
+  page while it starts; it goes on to its end.
+
 ## 0.8.0 - 2026-10-19
 
 ### Added

@@ -159,22 +159,25 @@ func TestVolumeRestoreRun(t *testing.T) {
 		}
 	})
 
-	t.Run("a request the copy never rendered fails the restore without a restart", func(t *testing.T) {
-		l := newVolumeLab(t) // nothing renders the request
+	// As for a backup: a request the file never showed still restarts the
+	// copy, which renders it as the task starts (lab 2026-10-19).
+	t.Run("a request the copy never rendered still restarts the copy, which runs it", func(t *testing.T) {
+		l := newVolumeLab(t) // nothing renders the request before the restart
 		backupID := l.saveBackupToRestore()
+		l.answer(l.id(0), "status=succeeded\n")
 		rec, err := l.svc.Restore(ctx, "whoami", backupID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rec.Status != store.BackupFailed || !strings.Contains(rec.Message, "didn't pick up the request") || rec.FinishedAt == nil {
-			t.Errorf("record = %+v, want failed because the copy didn't pick up the request", rec)
+		if got := l.settledRestore(rec.ID); got.Status != store.BackupSucceeded {
+			t.Errorf("settled = %+v, want succeeded", got)
 		}
-		if rs := l.nomad.Restarts(); len(rs) != 0 {
-			t.Errorf("restarts = %+v, want none", rs)
+		if rs := l.nomad.Restarts(); len(rs) != 1 || !rs[0].AllTasks {
+			t.Errorf("restarts = %+v, want one restart of all the copy's tasks", rs)
 		}
 		l.released()
 		if l.request() != "" {
-			t.Errorf("request = %q, want it cleared", l.request())
+			t.Errorf("request = %q, want it cleared once the run ended", l.request())
 		}
 	})
 
