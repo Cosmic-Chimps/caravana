@@ -190,6 +190,9 @@ func load(appID, src string) (*types.Project, error) {
 	if len(unsupported) > 0 {
 		return nil, refused(unsupported[0])
 	}
+	if err := checkDrivers(p); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 

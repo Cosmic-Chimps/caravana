@@ -5,7 +5,6 @@ import (
 	"math"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -220,16 +219,6 @@ func serviceWarnings(sc types.ServiceConfig, warn func(string, string, ...any)) 
 	}
 	if len(sc.Labels) > 0 {
 		warn(".labels", "aren't applied: routing comes from the request's domains")
-	}
-	var nets []string
-	for name := range sc.Networks {
-		if name != "default" {
-			nets = append(nets, name)
-		}
-	}
-	if len(nets) > 0 {
-		sort.Strings(nets)
-		warn(".networks", "networks don't separate services here: every service of the app reaches the others by name")
 	}
 	if sc.PullPolicy != "" {
 		warn(".pull_policy", "is ignored: every deploy pins the image to its current digest")

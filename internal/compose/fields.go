@@ -51,9 +51,10 @@ var supported = concat(
 	subtree("services.*.labels"),
 	subtree("services.*.logging"),
 
-	// Top-level volumes and networks: declared, with nothing but a name.
-	paths("volumes", "volumes.*", "volumes.*.name"),
-	paths("networks", "networks.*", "networks.*.name"),
+	// Top-level volumes and networks: declared, with a name and the default
+	// driver (checkDrivers refuses any other). Aspire writes the drivers.
+	paths("volumes", "volumes.*", "volumes.*.name", "volumes.*.driver"),
+	paths("networks", "networks.*", "networks.*.name", "networks.*.driver"),
 )
 
 func paths(ps ...string) []tree.Path {
@@ -96,10 +97,35 @@ var hints = map[string]string{
 	"extra_hosts":  "isn't supported: Caravana manages the hosts file so services find each other by name",
 	"user":         "isn't supported yet: set the user in the image",
 	"working_dir":  "isn't supported yet: set the working directory in the image",
-	"driver":       "isn't supported: volumes are directories on the node, created by Caravana",
 	"driver_opts":  "isn't supported: volumes are directories on the node, created by Caravana",
 	"external":     "isn't supported: Caravana creates every volume of the app",
 	"nocopy":       "isn't supported: a new volume starts empty",
+}
+
+// networkHints are the hints for the attributes of a top-level network that
+// would otherwise get a hint written for volumes.
+var networkHints = map[string]string{
+	"driver_opts": "isn't supported: networks don't separate services here; every service of the app reaches the others by name",
+	"external":    "isn't supported: networks don't separate services here; every service of the app reaches the others by name",
+}
+
+// checkDrivers refuses a top-level network or volume with a driver other than
+// the default one. Compose writes the defaults ("bridge", "local") out in full
+// (Aspire does), and they say nothing new here, so they are accepted.
+func checkDrivers(p *types.Project) error {
+	for _, name := range sortedKeys(p.Networks) {
+		if d := p.Networks[name].Driver; d != "" && d != "bridge" {
+			return app.NewFieldError("networks."+name+".driver",
+				"%q isn't supported: only the default bridge driver is; every service of the app reaches the others by name", d)
+		}
+	}
+	for _, name := range sortedKeys(p.Volumes) {
+		if d := p.Volumes[name].Driver; d != "" && d != "local" {
+			return app.NewFieldError("volumes."+name+".driver",
+				"%q isn't supported: only the default local driver is; volumes are directories on the node, created by Caravana", d)
+		}
+	}
+	return nil
 }
 
 // refused is the error for an attribute outside the allowlist.
@@ -107,7 +133,11 @@ func refused(u loader.UnsupportedAttribute) error {
 	field := filePath(u.Path)
 	parts := u.Path.Parts()
 	name := parts[len(parts)-1]
-	if hint, ok := hints[name]; ok {
+	if parts[0] == "networks" {
+		if hint, ok := networkHints[name]; ok {
+			return app.NewFieldError(field, "%s", hint)
+		}
+	} else if hint, ok := hints[name]; ok {
 		return app.NewFieldError(field, "%s", hint)
 	}
 	return app.NewFieldError(field, "isn't supported by Caravana")
@@ -122,10 +152,12 @@ func filePath(p tree.Path) string {
 // projectWarnings are the warnings about the file as a whole.
 func projectWarnings(p *types.Project) []app.Warning {
 	var out []app.Warning
+	// One warning for the file, however many networks and services use them.
 	for _, name := range sortedKeys(p.Networks) {
 		if name != "default" {
-			out = append(out, app.Warning{Field: "networks." + name,
+			out = append(out, app.Warning{Field: "networks",
 				Message: "networks don't separate services here: every service of the app reaches the others by name"})
+			break
 		}
 	}
 	for _, key := range sortedKeys(p.Volumes) {

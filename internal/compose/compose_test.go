@@ -111,7 +111,11 @@ func TestRefused(t *testing.T) {
 		{"absolute bind mount", "services:\n  web:\n    image: x\n    volumes: [\"/srv:/data\"]\n", nil, "services.web.volumes[0]", "named volumes"},
 		{"tmpfs", "services:\n  web:\n    image: x\n    volumes: [{type: tmpfs, target: /tmp}]\n", nil, "services.web.volumes[0]", "named volumes"},
 		{"anonymous volume", "services:\n  web:\n    image: x\n    volumes: [\"/data\"]\n", nil, "services.web.volumes[0]", "name the volume"},
-		{"volume driver", "services:\n  web:\n    image: x\nvolumes:\n  d:\n    driver: local\n", nil, "volumes.d.driver", ""},
+		{"volume driver", "services:\n  web:\n    image: x\nvolumes:\n  d:\n    driver: nfs\n", nil, "volumes.d.driver", "volumes are directories"},
+		{"volume driver options", "services:\n  web:\n    image: x\nvolumes:\n  d:\n    driver_opts: {type: nfs}\n", nil, "volumes.d.driver_opts", "volumes are directories"},
+		{"network driver", "services:\n  web:\n    image: x\n    networks: [n]\nnetworks:\n  n:\n    driver: overlay\n", nil, "networks.n.driver", "the others by name"},
+		{"network driver options", "services:\n  web:\n    image: x\n    networks: [n]\nnetworks:\n  n:\n    driver_opts: {a: b}\n", nil, "networks.n.driver_opts", "the others by name"},
+		{"external network", "services:\n  web:\n    image: x\n    networks: [n]\nnetworks:\n  n:\n    external: true\n", nil, "networks.n.external", "the others by name"},
 		{"external volume", "services:\n  web:\n    image: x\nvolumes:\n  d:\n    external: true\n", nil, "volumes.d.external", ""},
 		{"privileged", "services:\n  web:\n    image: x\n    privileged: true\n", nil, "services.web.privileged", "privileges"},
 		{"profiles", "services:\n  web:\n    image: x\n    profiles: [dev]\n", nil, "services.web.profiles", ""},
@@ -186,14 +190,66 @@ networks:
 	}
 	for _, f := range []string{
 		"services.web.ports[0]", "services.web.depends_on", "services.web.restart", "services.web.container_name",
-		"services.web.hostname", "services.web.labels", "services.web.networks", "services.web.pull_policy",
+		"services.web.hostname", "services.web.labels", "services.web.pull_policy",
 		"services.web.logging", "services.web.stop_grace_period", "services.web.healthcheck",
-		"services.web.deploy.resources.limits.cpus", "networks.front",
+		"services.web.deploy.resources.limits.cpus", "networks",
 	} {
 		if !got[f] {
 			t.Errorf("no warning on %s; warnings: %+v", f, warnings)
 		}
 	}
+}
+
+// TestDefaultDrivers checks the drivers Compose writes out in full are
+// accepted without a word, and that networks warn once per file however many
+// networks and services there are.
+func TestDefaultDrivers(t *testing.T) {
+	t.Run("volumes.*.driver local is silent", func(t *testing.T) {
+		file := "services:\n  db:\n    image: x\n    volumes: [\"data:/d\"]\nvolumes:\n  data:\n    driver: local\n"
+		a, warnings, err := Translate("blog", Request{Compose: file})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(warnings) != 0 {
+			t.Errorf("warnings = %+v, want none", warnings)
+		}
+		if v := a.Services[0].Volumes; len(v) != 1 || v[0].Name != "data" {
+			t.Errorf("volumes = %+v", v)
+		}
+	})
+
+	t.Run("networks.*.driver bridge is accepted, with the one warning", func(t *testing.T) {
+		file := `services:
+  a:
+    image: x
+    networks: [front, back]
+  b:
+    image: x
+    networks: [front]
+  c:
+    image: x
+    networks: [back]
+networks:
+  front:
+    driver: bridge
+  back:
+    driver: bridge
+`
+		_, warnings, err := Translate("blog", Request{Compose: file})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(warnings) != 1 || warnings[0].Field != "networks" {
+			t.Errorf("warnings = %+v, want one on networks", warnings)
+		}
+	})
+
+	t.Run("no networks, no warning", func(t *testing.T) {
+		_, warnings, err := Translate("blog", Request{Compose: "services:\n  a:\n    image: x\n"})
+		if err != nil || len(warnings) != 0 {
+			t.Errorf("warnings = %+v, err = %v", warnings, err)
+		}
+	})
 }
 
 // TestVariables checks variables take only the file's defaults: never the

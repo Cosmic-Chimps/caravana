@@ -1,7 +1,7 @@
 # Tasks: PublishToCaravana (026)
 
 ## Caravana (this repository)
-- [ ] T001 Compose: default `driver` on networks and volumes accepted, one networks warning per
+- [X] T001 Compose: default `driver` on networks and volumes accepted, one networks warning per
   file, the network refusal's message fixed; tests.
 - [ ] T002 `entrypoint`: `app.Service.Entrypoint`, Compose mapping, Translate (docker
   `entrypoint`), HCL export, validation, goldens, openapi 0.21.0, console read-only; tests.
