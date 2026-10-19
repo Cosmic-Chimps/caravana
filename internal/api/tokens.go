@@ -17,6 +17,15 @@ type tokenInfoJSON struct {
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
 	State      string     `json:"state"`
+	// Scope is set for a deploy token: the one app it may deploy (schema TokenScope).
+	Scope *tokenScopeJSON `json:"scope,omitempty"`
+}
+
+// tokenScopeJSON is the app a deploy token is limited to: the app named App in
+// any environment of Project (schema TokenScope).
+type tokenScopeJSON struct {
+	Project string `json:"project"`
+	App     string `json:"app"`
 }
 
 // createdTokenJSON is a new token (schema CreatedToken): the TokenInfo
@@ -27,17 +36,23 @@ type createdTokenJSON struct {
 }
 
 func toTokenInfoJSON(i service.APITokenInfo) tokenInfoJSON {
-	return tokenInfoJSON{
+	j := tokenInfoJSON{
 		ID: i.ID, Name: i.Name, CreatedAt: i.CreatedAt,
 		LastUsedAt: i.LastUsedAt, ExpiresAt: i.ExpiresAt, RevokedAt: i.RevokedAt,
 		State: i.State,
 	}
+	if i.Scope != nil {
+		j.Scope = &tokenScopeJSON{Project: i.Scope.Project, App: i.Scope.App}
+	}
+	return j
 }
 
 // createTokenRequest is schema CreateTokenRequest.
 type createTokenRequest struct {
 	Name      string     `json:"name"`
 	ExpiresAt *time.Time `json:"expiresAt"`
+	// Scope, when set, makes a deploy token: it can only deploy that app.
+	Scope *tokenScopeJSON `json:"scope"`
 }
 
 // createToken answers POST /v1/tokens: a new API token, shown only in this
@@ -47,7 +62,11 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	created, err := s.auth.CreateAPIToken(r.Context(), req.Name, req.ExpiresAt)
+	var scope *service.TokenScope
+	if req.Scope != nil {
+		scope = &service.TokenScope{Project: req.Scope.Project, App: req.Scope.App}
+	}
+	created, err := s.auth.CreateScopedAPIToken(r.Context(), req.Name, req.ExpiresAt, scope)
 	if err != nil {
 		return err
 	}

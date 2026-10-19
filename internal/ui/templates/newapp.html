@@ -5,7 +5,7 @@
      "Compose file" tab (?from=compose) draws compose.html's form instead. */}}
 
 {{define "newapp-form"}}
-<form method="post" action="/apps" hx-post="/apps" hx-target="this" hx-swap="outerHTML" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+<form method="post"{{if .GitHub}} action="/apps/new/github"{{else}} action="/apps" hx-post="/apps" hx-target="this" hx-swap="outerHTML"{{end}} class="cv-panel cv-newapp p-5 flex flex-col gap-5">
   {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{with .SavedID}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.}}</span> was saved, but its first deploy didn't start. Change what is wrong on its <a href="/apps/{{.}}/deployments">Deployments tab</a> and deploy again.</span></div>{{end}}
 
@@ -21,7 +21,8 @@
   <label class="flex flex-col gap-2" for="image">
     <span class="cv-label">Image</span>
     <input class="cv-field" id="image" type="text" name="image" value="{{.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Focus "image"}} autofocus{{end}}>
-    <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span>. To deploy now it must exist. Create the app without deploying to name an image your CI hasn't pushed yet, or to leave the image out.</span>
+    {{if .GitHub}}<span class="cv-data-muted cv-hint">The image your workflow pushes, e.g. <span class="cv-inline-mono">ghcr.io/you/app</span>. It doesn't have to exist yet: nothing is deployed until the workflow runs.</span>
+    {{else}}<span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span>. To deploy now it must exist. Create the app without deploying to name an image your CI hasn't pushed yet, or to leave the image out.</span>{{end}}
     {{template "field-error" .Image}}
   </label>
 
@@ -47,23 +48,68 @@
   </label>
 
   <div class="cv-actions">
-    <button type="submit" name="action" value="deploy" class="cv-btn cv-btn-primary">Create and deploy</button>
-    <button type="submit" name="action" value="create" class="cv-btn cv-btn-secondary">Create without deploying</button>
+    {{if .GitHub}}<button type="submit" class="cv-btn cv-btn-primary">Create the app and its deploy token</button>
+    {{else}}<button type="submit" name="action" value="deploy" class="cv-btn cv-btn-primary">Create and deploy</button>
+    <button type="submit" name="action" value="create" class="cv-btn cv-btn-secondary">Create without deploying</button>{{end}}
   </div>
 </form>
 {{end}}
 
+{{/* The answer to a created GitHub app: the token, shown once, the secret to add, and the workflow. */}}
+{{define "github-result"}}
+<section class="cv-main cv-narrow">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Created <span class="font-mono">{{.AppID}}</span></h1>
+    <p class="cv-lede">Nothing is deployed yet. Add the token to your repository, commit the workflow, and your next push deploys it.</p>
+  </header>
+
+  <div class="flex flex-col gap-7">
+    <section aria-labelledby="gh-token" class="flex flex-col gap-2">
+      <h2 id="gh-token" class="cv-label">1. Deploy token</h2>
+      <div class="cv-panel p-4 flex flex-col gap-3" role="status">
+        <p class="text-base text-fg-1">Token <span class="font-mono">{{.TokenName}}</span> can deploy <span class="font-mono">{{.AppID}}</span> and nothing else. Copy it now. It won't be shown again.</p>
+        <code class="cv-cmd" id="gh-token-value">{{.Token}}</code>
+        <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="gh-token-value" hidden>Copy token</button></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="gh-secret" class="flex flex-col gap-2">
+      <h2 id="gh-secret" class="cv-label">2. Repository secret</h2>
+      <div class="cv-panel p-4 flex flex-col gap-3">
+        <p class="text-base text-fg-1">In your repository, open Settings › Secrets and variables › Actions and add a secret named <span class="font-mono">{{.Secret}}</span> with that token.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="gh-workflow" class="flex flex-col gap-2">
+      <h2 id="gh-workflow" class="cv-label">3. Workflow</h2>
+      <div class="cv-panel p-4 flex flex-col gap-3">
+        <p class="text-base text-fg-1">Commit this as <span class="font-mono">.github/workflows/deploy.yml</span>. It builds the repository's Dockerfile, pushes <span class="font-mono">{{.Image}}</span>, and deploys the exact image it built.</p>
+        <code class="cv-cmd" id="gh-workflow-text">{{.Workflow}}</code>
+        <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="gh-workflow-text" hidden>Copy workflow</button></div>
+        <p class="text-sm text-fg-3">The first run deploys the app as defined here. The package must be readable by Caravana: make it public, or add credentials for <span class="font-mono">ghcr.io</span> in Settings › Registries.</p>
+      </div>
+    </section>
+
+    <div class="cv-actions"><a href="/apps/{{.AppID}}" class="cv-btn cv-btn-secondary">Open the app</a></div>
+  </div>
+</section>
+{{end}}
+
 {{define "content"}}
+{{if .Result}}{{template "github-result" .Result}}{{else}}
 <section class="cv-main{{if not .Compose}} cv-narrow{{end}}">
   <header class="cv-pagehead">
     <h1 class="cv-headline">New app</h1>
     {{if .Compose}}<p class="cv-lede">Deploy a Compose file. caravana shows what it becomes before anything is saved.</p>
+    {{else if .Form.GitHub}}<p class="cv-lede">Deploy from a GitHub repository. Your workflow builds the image and pushes it to ghcr.io. caravana creates the app and a token that can deploy only that app, and shows you the workflow to commit.</p>
     {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it. Or create the app now and deploy it later, from a webhook or the API.</p>{{end}}
   </header>
   <nav aria-label="What to deploy" class="cv-tabs">
-    <a href="{{.ImageHref}}" class="cv-tab"{{if not .Compose}} aria-current="page"{{end}}>Image</a>
+    <a href="{{.ImageHref}}" class="cv-tab"{{if and (not .Compose) (not .Form.GitHub)}} aria-current="page"{{end}}>Image</a>
     <a href="{{.ComposeHref}}" class="cv-tab"{{if .Compose}} aria-current="page"{{end}}>Compose file</a>
+    <a href="{{.GitHubHref}}" class="cv-tab"{{if .Form.GitHub}} aria-current="page"{{end}}>From a GitHub repository</a>
   </nav>
   {{if .Compose}}{{template "compose-form" .Compose}}{{else}}{{template "newapp-form" .Form}}{{end}}
 </section>
+{{end}}
 {{end}}

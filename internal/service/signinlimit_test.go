@@ -167,7 +167,7 @@ func TestSigninLimit(t *testing.T) {
 		for range 6 {
 			e.fail(addrA)
 		}
-		if err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("CheckAPIToken while the address is locked = %v", err)
 		}
 		if _, err := e.auth.CreateAPIToken(ctx, "ci-2", nil); err != nil {

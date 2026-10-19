@@ -9,6 +9,28 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- Deploy from CI. Your GitHub workflow builds the image and a new step,
+  `Cosmic-Chimps/caravana-action@v1`, deploys it: it waits until the app is healthy, prints the
+  deploy's warnings, fails the workflow with the reason when the deploy fails or is reverted, and
+  can promote to another environment afterwards. The action is its own repository; Caravana
+  never builds an image.
+- Deploy tokens: a token that can deploy only one app (its name, in every environment of one
+  project). If it leaks it can deploy and promote that app, read its deployments and create it,
+  and nothing else: not other apps, not Settings, not tokens. Make one in Settings › API tokens
+  ("Only for one app") or on an app's Configure tab ("Create a deploy token for this app"). Like
+  every token it is shown once.
+- Where a deploy came from: a deploy started by the action records the commit, the branch or tag,
+  who pushed and the workflow run. The history says "from CI" with a link to the run, and Slack,
+  Discord, ntfy and webhook notifications of that deploy carry it too.
+- New app › "From a GitHub repository": create the app without deploying it, get a deploy token
+  for it, and copy the workflow and the repository secret to add. Your next push deploys it.
+- API 0.19.0: `createToken` takes a `scope` (`{project, app}`) and `listTokens` shows it; a deploy
+  token gets 403 `token_scope` for anything outside its app. `deployApp`, `deployCompose`,
+  `promoteApp` and the webhook accept optional `Caravana-Origin-Commit`, `-Ref`, `-Actor`, `-Run`
+  and `-Repository` headers (422 naming one that breaks its rule), and `Deployment` gains
+  `origin`.
+
 ### Fixed
 - Volume backups and restores failed with "the copy didn't pick up the request" once Nomad had
   been restarted on the host (as rerunning the installer does) after the app's copy started:

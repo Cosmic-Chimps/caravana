@@ -75,6 +75,21 @@ type webhookView struct {
 	URL     string
 }
 
+// deployTokenView is a deploy token just made, shown once.
+type deployTokenView struct {
+	Name  string
+	Value string
+}
+
+// deployTokenSection is the Configure tab's "Deploy token" section. Token is set
+// only in the response that made one. Scope is where the app is (the token covers
+// its name in its project) and URL the console's address for the example.
+type deployTokenSection struct {
+	Token *deployTokenView
+	Scope app.Place
+	URL   string
+}
+
 // deleteView is the delete section. Goes says what will be removed; Error is
 // about the name field, Notice about the delete as a whole (Nomad could not
 // do its part). Either one opens the confirmation, so the message is in view.
@@ -106,6 +121,7 @@ type configureTab struct {
 	Edit    editView
 	Secrets secretsView
 	Webhook webhookView
+	Deploy  deployTokenSection
 	Export  exportView
 	Delete  deleteView
 }

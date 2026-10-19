@@ -26,4 +26,7 @@ type Deployment struct {
 	// Digests maps each service name to its resolved image, in the form
 	// "repo@sha256:<64 hex>". Exactly one entry per service.
 	Digests map[string]string `json:"digests"`
+	// Origin says where the deploy came from (a CI run); nil when nobody said.
+	// The translator ignores it: it is recorded with the deployment only.
+	Origin *Origin `json:"origin,omitempty"`
 }

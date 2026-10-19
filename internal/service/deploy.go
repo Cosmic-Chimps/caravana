@@ -252,7 +252,7 @@ func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (s
 // file is the one the deployment records. pin is set for a redeploy of a past
 // deployment.
 func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (store.DeploymentRecord, error) {
-	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}}
+	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}, Origin: originFrom(ctx)}
 	source := ""
 	if pin != nil {
 		source = pin.source

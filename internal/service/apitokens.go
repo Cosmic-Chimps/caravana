@@ -38,6 +38,21 @@ type APITokenInfo struct {
 	ExpiresAt  *time.Time
 	RevokedAt  *time.Time
 	State      string // active | expired | revoked
+	// Scope is set for a deploy token (feature 020); nil for a full token.
+	Scope *TokenScope
+}
+
+// TokenScope is what a deploy token is limited to: the app named App in any
+// environment of project Project. The app need not exist yet.
+type TokenScope struct {
+	Project string
+	App     string
+}
+
+// Describe is what a deploy token may do, in words, for the refusal of
+// anything else: "this token can only deploy app web of project shop".
+func (sc TokenScope) Describe() string {
+	return fmt.Sprintf("this token can only deploy app %s of project %s", sc.App, sc.Project)
 }
 
 // Token states.
@@ -59,8 +74,16 @@ func tokenInfo(r store.APITokenRecord, now time.Time) APITokenInfo {
 	return APITokenInfo{
 		ID: r.ID, Name: r.Name, CreatedAt: r.CreatedAt,
 		LastUsedAt: r.LastUsedAt, ExpiresAt: r.ExpiresAt, RevokedAt: r.RevokedAt,
-		State: state,
+		State: state, Scope: scopeOf(r),
 	}
+}
+
+// scopeOf is the scope a stored token carries, or nil for a full token.
+func scopeOf(r store.APITokenRecord) *TokenScope {
+	if r.ScopeProject == "" && r.ScopeApp == "" {
+		return nil
+	}
+	return &TokenScope{Project: r.ScopeProject, App: r.ScopeApp}
 }
 
 // newAPIToken returns a fresh token: the prefix, then 32 random bytes in
@@ -97,6 +120,15 @@ func checkTokenName(name string) error {
 // a past expiry is an *app.FieldError; a name an active token already has is
 // ErrTokenNameTaken.
 func (a *Auth) CreateAPIToken(ctx context.Context, name string, expiresAt *time.Time) (CreatedAPIToken, error) {
+	return a.CreateScopedAPIToken(ctx, name, expiresAt, nil)
+}
+
+// CreateScopedAPIToken is CreateAPIToken for a token that may be limited to one
+// app (a deploy token, feature 020); a nil scope makes a full token. The
+// project must exist and the app must be a valid app name, but the app itself
+// need not exist yet: the token is made before the app's first deploy. A bad
+// scope is an *app.FieldError naming scope.project or scope.app.
+func (a *Auth) CreateScopedAPIToken(ctx context.Context, name string, expiresAt *time.Time, scope *TokenScope) (CreatedAPIToken, error) {
 	if _, err := a.store.GetAdmin(ctx); errors.Is(err, store.ErrNotFound) {
 		return CreatedAPIToken{}, ErrNoAdmin
 	} else if err != nil {
@@ -109,12 +141,20 @@ func (a *Auth) CreateAPIToken(ctx context.Context, name string, expiresAt *time.
 	if expiresAt != nil && !expiresAt.After(now) {
 		return CreatedAPIToken{}, app.NewFieldError("expiresAt", "must be in the future")
 	}
+	if scope != nil {
+		if err := a.checkScope(ctx, *scope); err != nil {
+			return CreatedAPIToken{}, err
+		}
+	}
 
 	token, err := newAPIToken()
 	if err != nil {
 		return CreatedAPIToken{}, err
 	}
 	rec := store.APITokenRecord{ID: newTokenID(), Name: name, Hash: hashToken(token), CreatedAt: now}
+	if scope != nil {
+		rec.ScopeProject, rec.ScopeApp = scope.Project, scope.App
+	}
 	if expiresAt != nil {
 		exp := expiresAt.UTC()
 		rec.ExpiresAt = &exp
@@ -124,32 +164,55 @@ func (a *Auth) CreateAPIToken(ctx context.Context, name string, expiresAt *time.
 	} else if err != nil {
 		return CreatedAPIToken{}, fmt.Errorf("create api token %q: %w", name, err)
 	}
-	a.event("token_created", "tokenName", name)
+	if scope != nil {
+		a.event("token_created", "tokenName", name, "scopeProject", scope.Project, "scopeApp", scope.App)
+	} else {
+		a.event("token_created", "tokenName", name)
+	}
 	return CreatedAPIToken{Token: token, Info: tokenInfo(rec, now)}, nil
 }
 
-// CheckAPIToken returns nil when token is an active API token and an admin
-// exists, else ErrNotAuthenticated, whatever the reason. A value without the
-// cvat_ prefix (a webhook token, a typo) is refused before any store lookup.
-// It records the token's use at most once a minute.
-func (a *Auth) CheckAPIToken(ctx context.Context, token string) error {
+// checkScope validates a deploy token's scope: the project is a valid name that
+// exists, and the app is a valid app name.
+func (a *Auth) checkScope(ctx context.Context, sc TokenScope) error {
+	if err := app.ValidName("scope.project", sc.Project); err != nil {
+		return err
+	}
+	if err := app.ValidName("scope.app", sc.App); err != nil {
+		return err
+	}
+	if _, err := a.store.GetProject(ctx, sc.Project); errors.Is(err, store.ErrNotFound) {
+		return app.NewFieldError("scope.project", "project %q doesn't exist", sc.Project)
+	} else if err != nil {
+		return fmt.Errorf("check token scope: %w", err)
+	}
+	return nil
+}
+
+// CheckAPIToken returns the token's scope (nil for a full token) when token is
+// an active API token and an admin exists, else ErrNotAuthenticated, whatever
+// the reason. A value without the cvat_ prefix (a webhook token, a typo) is
+// refused before any store lookup. It records the token's use at most once a
+// minute. Holding a deploy token to its scope is the caller's job (the API's
+// scope middleware); a session has no scope and never reaches this.
+func (a *Auth) CheckAPIToken(ctx context.Context, token string) (*TokenScope, error) {
 	if !strings.HasPrefix(token, apiTokenPrefix) {
-		return ErrNotAuthenticated
+		return nil, ErrNotAuthenticated
 	}
 	rec, err := a.store.GetAPITokenByHash(ctx, hashToken(token))
 	if errors.Is(err, store.ErrNotFound) {
-		return ErrNotAuthenticated
+		return nil, ErrNotAuthenticated
 	} else if err != nil {
-		return fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
+		return nil, fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
 	}
 	now := a.now().UTC()
 	if tokenInfo(rec, now).State != TokenActive {
-		return ErrNotAuthenticated
+		return nil, ErrNotAuthenticated
 	}
 	if _, err := a.store.GetAdmin(ctx); errors.Is(err, store.ErrNotFound) {
-		return ErrNotAuthenticated
+		return nil, ErrNotAuthenticated
 	} else if err != nil {
-		return fmt.Errorf("check api token: %w", err)
+		return nil, fmt.Errorf("check api token: %w", err)
 	}
 	if rec.LastUsedAt == nil || now.Sub(*rec.LastUsedAt) >= touchEvery {
 		// A failed touch must not fail the request that was authorized.
@@ -157,7 +220,7 @@ func (a *Auth) CheckAPIToken(ctx context.Context, token string) error {
 			a.log.Warn("could not record api token use", "tokenName", rec.Name, "error", err)
 		}
 	}
-	return nil
+	return scopeOf(rec), nil
 }
 
 // ListAPITokens returns every token, newest first, with its state as of now.

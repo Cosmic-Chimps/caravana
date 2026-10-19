@@ -594,6 +594,24 @@ type historyEntry struct {
 	// ComposeHref downloads the Compose file this deployment was made from
 	// (feature 015); "" when it wasn't made from one.
 	ComposeHref string
+	// Origin says where a deploy came from (feature 020: a CI run); nil for a
+	// deploy that didn't say.
+	Origin *originView
+}
+
+// originView is an entry's "from CI" line: the short commit, the branch or tag,
+// who pushed, and the run's address (https only, checked when it was recorded).
+// Any part may be empty.
+type originView struct {
+	Commit, Branch, Actor, Run string
+}
+
+// originViewOf is the line for a deployment's recorded origin, or nil.
+func originViewOf(o *app.Origin) *originView {
+	if o == nil || o.IsZero() {
+		return nil
+	}
+	return &originView{Commit: o.ShortCommit(), Branch: o.BranchOrTag(), Actor: o.Actor, Run: o.Run}
 }
 
 // historyRegion is what the "deployments" region draws: the history, newest
@@ -685,6 +703,7 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 		Error:    rec.Error,
 		Action:   failedAction(rec, f),
 		Warnings: rec.Warnings,
+		Origin:   originViewOf(rec.Deployment.Origin),
 	}
 	multi := len(rec.Deployment.Digests) > 1
 	for service, ref := range rec.Deployment.Digests {
@@ -945,7 +964,9 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 // webhook URL just made (shown once), the refusals of a delete, and the form
 // when a refused save draws it again.
 type configureExtras struct {
-	WebhookURL   string
+	WebhookURL string
+	// DeployToken is the deploy token just made (shown once); nil otherwise.
+	DeployToken  *deployTokenView
 	DeleteError  sentence
 	DeleteNotice sentence
 	Secret       secretForm
@@ -1009,6 +1030,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Secrets: secretsOf(sum.App, extra.Secret),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
+		Deploy:  deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
 		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
@@ -1060,6 +1082,30 @@ func (s *server) createWebhook(w http.ResponseWriter, r *http.Request, session s
 	default:
 		s.configurePage(w, r, http.StatusOK, id, configureExtras{WebhookURL: s.origin(r) + tok.Path})
 	}
+}
+
+// createDeployToken answers POST /apps/{id}/deploy-token (feature 020): it makes
+// a token that can deploy only this app's name in its project, and answers the
+// Configure tab itself, status 200, with the token: it is shown once, so a
+// redirect would lose it.
+func (s *server) createDeployToken(w http.ResponseWriter, r *http.Request, session string) {
+	id := r.PathValue("id")
+	sum, err := s.svc.AppSummary(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, "read app", err)
+		return
+	}
+	created, err := s.makeDeployToken(r, id, sum.Place)
+	if err != nil {
+		s.serverError(w, "create deploy token", err)
+		return
+	}
+	s.configurePage(w, r, http.StatusOK, id, configureExtras{
+		DeployToken: &deployTokenView{Name: created.Info.Name, Value: created.Token}})
 }
 
 // revokeWebhook answers POST /apps/{id}/webhook/revoke: the webhook refuses

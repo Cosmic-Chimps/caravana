@@ -22,6 +22,10 @@ type composePreviewJSON struct {
 func (s *server) deployCompose(w http.ResponseWriter, r *http.Request) error {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
 
+	ctx, err := withOrigin(r)
+	if err != nil {
+		return err
+	}
 	id := r.PathValue("id")
 	cond, err := ifMatch(r)
 	if err != nil {
@@ -40,7 +44,7 @@ func (s *server) deployCompose(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	rec, err := s.svc.DeployComposeIf(r.Context(), id, req, cond, app.TriggerManual)
+	rec, err := s.svc.DeployComposeIf(ctx, id, req, cond, app.TriggerManual)
 	if err != nil {
 		return err
 	}

@@ -168,7 +168,7 @@ func (s *server) handler(routes []route) http.Handler {
 	for _, rt := range routes {
 		h := rt.handle
 		if !rt.public {
-			h = s.authenticate(h, rt.quiet)
+			h = s.authenticate(rt)
 		}
 		mux.Handle(rt.method+" "+rt.path, s.handle(h))
 	}

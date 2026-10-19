@@ -49,9 +49,11 @@ type deploymentJSON struct {
 	DefinitionRecorded bool `json:"definitionRecorded"`
 	// ComposeKept says getDeploymentCompose has a file to answer: the
 	// deployment was made from a Compose file.
-	ComposeKept bool      `json:"composeKept"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ComposeKept bool `json:"composeKept"`
+	// Origin says where the deploy came from (a CI run), when its caller said.
+	Origin    *originJSON `json:"origin,omitempty"`
+	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
@@ -119,6 +121,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	}
 	d.DefinitionRecorded = rec.Definition != nil
 	d.ComposeKept = rec.Compose != nil
+	d.Origin = toOriginJSON(rec.Deployment.Origin)
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}
@@ -186,6 +189,10 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 	// Best effort: a writer that can't change deadlines keeps the server's.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
 
+	ctx, err := withOrigin(r)
+	if err != nil {
+		return err
+	}
 	id := r.PathValue("id")
 	var a app.App
 	present, err := decodeOptionalJSON(r, &a)
@@ -207,9 +214,9 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 			return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "id",
 				Message: fmt.Sprintf("%q doesn't match the app ID in the path (%q)", a.ID, id)}
 		}
-		rec, err = s.svc.DeployIf(r.Context(), a, cond, app.TriggerManual)
+		rec, err = s.svc.DeployIf(ctx, a, cond, app.TriggerManual)
 	} else {
-		rec, err = s.svc.Redeploy(r.Context(), id, app.TriggerManual)
+		rec, err = s.svc.Redeploy(ctx, id, app.TriggerManual)
 	}
 	if err != nil {
 		return err

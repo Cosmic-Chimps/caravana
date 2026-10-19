@@ -75,11 +75,16 @@ func (s *server) callWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err := s.svc.CheckWebhookToken(r.Context(), id, webhookToken(r)); err != nil {
 		return err
 	}
+	// After the token, so a caller without one learns nothing about the headers.
+	ctx, err := withOrigin(r)
+	if err != nil {
+		return err
+	}
 	if err := drainBody(w, r); err != nil {
 		return err
 	}
 
-	res, err := s.svc.WebhookRedeploy(r.Context(), id)
+	res, err := s.svc.WebhookRedeploy(ctx, id)
 	if err != nil {
 		return err
 	}

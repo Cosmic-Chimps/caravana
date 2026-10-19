@@ -18,6 +18,11 @@ type APITokenRecord struct {
 	LastUsedAt *time.Time
 	ExpiresAt  *time.Time
 	RevokedAt  *time.Time
+	// ScopeProject and ScopeApp, both set or both empty, make this a deploy
+	// token: it may only deploy the app named ScopeApp in project ScopeProject
+	// (in any of its environments). Empty: a full token.
+	ScopeProject string
+	ScopeApp     string
 }
 
 // active reports whether the token can authenticate at now.
@@ -28,7 +33,7 @@ func (r APITokenRecord) active(now time.Time) bool {
 	return r.ExpiresAt == nil || now.Before(*r.ExpiresAt)
 }
 
-const apiTokenColumns = "id, name, token_hash, created_at, last_used_at, expires_at, revoked_at"
+const apiTokenColumns = "id, name, token_hash, created_at, last_used_at, expires_at, revoked_at, scope_project, scope_app"
 
 // CreateAPIToken inserts r unless an active token (not revoked, not expired
 // at now) already has the same name: then it is ErrAlreadyExists. The check
@@ -66,9 +71,10 @@ func (s *Store) CreateAPIToken(ctx context.Context, r APITokenRecord, now time.T
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO api_tokens ("+apiTokenColumns+") VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO api_tokens ("+apiTokenColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		r.ID, r.Name, r.Hash, formatTime(r.CreatedAt),
-		nullTime(r.LastUsedAt), nullTime(r.ExpiresAt), nullTime(r.RevokedAt)); err != nil {
+		nullTime(r.LastUsedAt), nullTime(r.ExpiresAt), nullTime(r.RevokedAt),
+		nullString(r.ScopeProject), nullString(r.ScopeApp)); err != nil {
 		return fmt.Errorf("create api token %q: %w", r.Name, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -170,10 +176,12 @@ func scanAPIToken(sc scanner) (APITokenRecord, error) {
 		r                          APITokenRecord
 		created                    string
 		lastUsed, expires, revoked sql.NullString
+		scopeProject, scopeApp     sql.NullString
 	)
-	if err := sc.Scan(&r.ID, &r.Name, &r.Hash, &created, &lastUsed, &expires, &revoked); err != nil {
+	if err := sc.Scan(&r.ID, &r.Name, &r.Hash, &created, &lastUsed, &expires, &revoked, &scopeProject, &scopeApp); err != nil {
 		return APITokenRecord{}, err
 	}
+	r.ScopeProject, r.ScopeApp = scopeProject.String, scopeApp.String
 	var err error
 	if r.CreatedAt, err = parseTime(created); err != nil {
 		return APITokenRecord{}, err
@@ -196,6 +204,14 @@ func nullTime(t *time.Time) any {
 		return nil
 	}
 	return formatTime(*t)
+}
+
+// nullString is the value to store for an optional text: NULL when empty.
+func nullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func parseNullTime(s sql.NullString) (*time.Time, error) {

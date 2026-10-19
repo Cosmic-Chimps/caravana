@@ -38,6 +38,9 @@ type newAppForm struct {
 	Notice  sentence
 	SavedID string
 	Focus   string
+	// GitHub makes this the "From a GitHub repository" form (feature 020): it
+	// posts to /apps/new/github, asks for an image on ghcr.io and has one button.
+	GitHub bool
 }
 
 // newForm is an empty form: every input has its ID, and the health check
@@ -91,7 +94,8 @@ func (f *newAppForm) fieldFor(path string) *formField {
 type newAppPage struct {
 	pageData
 	Form    newAppForm
-	Compose *composeView // set on the Compose file tab
+	Compose *composeView  // set on the Compose file tab
+	Result  *githubResult // set on the answer to a created GitHub app: the token and the workflow
 }
 
 // query is what the tabs add to their links so the chosen environment stays
@@ -119,6 +123,13 @@ func (p newAppPage) ComposeHref() string {
 	return "/apps/new?from=compose"
 }
 
+func (p newAppPage) GitHubHref() string {
+	if q := p.query(); q != "" {
+		return "/apps/new?from=github&" + q
+	}
+	return "/apps/new?from=github"
+}
+
 // showNewApp answers GET /apps/new.
 func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session string) {
 	asked := placeAsked(r.URL.Query())
@@ -130,6 +141,7 @@ func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session stri
 	}
 	form := newForm()
 	form.Place.Value = asked
+	form.GitHub = r.URL.Query().Get("from") == "github"
 	s.renderNewApp(w, r, http.StatusOK, form)
 }
 

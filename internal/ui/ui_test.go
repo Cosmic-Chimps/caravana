@@ -825,7 +825,7 @@ func TestTokensOnThePage(t *testing.T) {
 		if !strings.Contains(body, `-H "Authorization: Bearer `+token+`"`) || !strings.Contains(body, e.URL+"/v1/tokens") {
 			t.Errorf("the curl example is missing:\n%s", body)
 		}
-		if err := e.Auth.CheckAPIToken(ctx, token); err != nil {
+		if _, err := e.Auth.CheckAPIToken(ctx, token); err != nil {
 			t.Errorf("the token shown does not work: %v", err)
 		}
 
@@ -880,7 +880,7 @@ func TestTokensOnThePage(t *testing.T) {
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings" {
 			t.Fatalf("revoke = %d to %q, want 303 to /settings", resp.StatusCode, location(t, resp))
 		}
-		if err := e.Auth.CheckAPIToken(ctx, created.Token); err == nil {
+		if _, err := e.Auth.CheckAPIToken(ctx, created.Token); err == nil {
 			t.Error("the revoked token still works")
 		}
 		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
@@ -1268,7 +1268,7 @@ func TestAccountPostsAreProtected(t *testing.T) {
 		}
 	}
 	// Nothing changed.
-	if err := e.Auth.CheckAPIToken(ctx, victim.Token); err != nil {
+	if _, err := e.Auth.CheckAPIToken(ctx, victim.Token); err != nil {
 		t.Errorf("a cross-site post revoked the token: %v", err)
 	}
 	infos, _ := e.Auth.ListAPITokens(ctx)
