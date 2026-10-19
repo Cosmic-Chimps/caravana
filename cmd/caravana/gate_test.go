@@ -611,7 +611,10 @@ func (g *gate) backupRestoreStep(t *testing.T) {
 		}
 		return strings.TrimSpace(out)
 	}
-	psql("create table gate(v text); insert into gate values ('A')")
+	// Safe to run twice: psql is retried until the database answers, and an
+	// exec whose output went missing is asked again, so this may have run once
+	// already ("relation gate already exists", seen in the lab 2026-10-19).
+	psql("create table if not exists gate(v text); delete from gate; insert into gate values ('A')")
 
 	// Back up, change, restore.
 	type listing struct {
