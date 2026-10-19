@@ -104,7 +104,7 @@ func TestRefused(t *testing.T) {
 		{"a CPU reservation", "services:\n  web:\n    image: x\n    deploy:\n      resources:\n        reservations:\n          cpus: \"0.5\"\n", nil, "services.web.deploy.resources.reservations.cpus", ""},
 		{"a reservation above the limit", "services:\n  web:\n    image: x\n    mem_limit: 256m\n    mem_reservation: 512m\n", nil, "services.web.resources.memoryMB", "ceiling"},
 		{"build next to image", "services:\n  web:\n    image: x\n    build: .\n", nil, "services.web.build", "prebuilt images"},
-		{"entrypoint", "services:\n  web:\n    image: x\n    entrypoint: [sh]\n", nil, "services.web.entrypoint", ""},
+		{"empty entrypoint item", "services:\n  web:\n    image: x\n    entrypoint: [sh, \"\"]\n", nil, "services.web.entrypoint[1]", "empty"},
 		{"env_file", "services:\n  web:\n    image: x\n    env_file: web.env\n", nil, "services.web.env_file", "files from your disk"},
 		{"service secrets", "services:\n  web:\n    image: x\n    secrets: [k]\nsecrets:\n  k:\n    file: k.txt\n", nil, "secrets", ""},
 		{"relative bind mount", "services:\n  web:\n    image: x\n    volumes: [\"./data:/data\"]\n", nil, "services.web.volumes[0]", "named volumes"},
@@ -250,6 +250,39 @@ networks:
 			t.Errorf("warnings = %+v, err = %v", warnings, err)
 		}
 	})
+}
+
+// TestEntrypoint checks both forms of Compose's entrypoint become the
+// service's entrypoint, apart from its command.
+func TestEntrypoint(t *testing.T) {
+	tests := []struct {
+		name, entrypoint string
+		want             []string
+	}{
+		{"list", `["/bin/sh"]`, []string{"/bin/sh"}},
+		{"list of several", `["/docker-entrypoint.sh", "--flag"]`, []string{"/docker-entrypoint.sh", "--flag"}},
+		{"string, split like a shell", `"/bin/sh -c 'echo hi there'"`, []string{"/bin/sh", "-c", "echo hi there"}},
+		{"none", `[]`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := "services:\n  web:\n    image: x\n    command: [\"serve\", \"--port\", \"80\"]\n    entrypoint: " + tt.entrypoint + "\n"
+			a, warnings, err := Translate("blog", Request{Compose: file})
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc := a.Services[0]
+			if !reflect.DeepEqual(svc.Entrypoint, tt.want) {
+				t.Errorf("entrypoint = %q, want %q", svc.Entrypoint, tt.want)
+			}
+			if svc.Command != "serve" || !reflect.DeepEqual(svc.Args, []string{"--port", "80"}) {
+				t.Errorf("command = %q %q: entrypoint must not change it", svc.Command, svc.Args)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("warnings = %+v, want none", warnings)
+			}
+		})
+	}
 }
 
 // TestVariables checks variables take only the file's defaults: never the

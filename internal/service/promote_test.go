@@ -160,6 +160,34 @@ func TestPromote(t *testing.T) {
 	}
 }
 
+// Feature 026: the entrypoint is part of how the image runs, so a promotion
+// takes the source's, and says so when it differs.
+func TestPromotedTakesTheEntrypoint(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Entrypoint = []string{"/bin/sh", "-c"}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Services[0].Entrypoint, []string{"/bin/sh", "-c"}) {
+		t.Errorf("entrypoint = %q, want staging's", got.Services[0].Entrypoint)
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "entrypoint") {
+		t.Errorf("changed = %+v, want entrypoint among them", changes)
+	}
+	got.Services[0].Entrypoint[0] = "changed"
+	if source.Services[0].Entrypoint[0] != "/bin/sh" {
+		t.Error("the promoted service shares its entrypoint with the source")
+	}
+
+	// Both without one: nothing to say.
+	_, changes, _, _ = promoted(production(), staging())
+	if slices.Contains(changes[0].Changed, "entrypoint") {
+		t.Errorf("changed = %v, no entrypoint differs", changes[0].Changed)
+	}
+}
+
 func TestPreviewPromotion(t *testing.T) {
 	ctx := context.Background()
 	e := shopEnv(t)

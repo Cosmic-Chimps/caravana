@@ -10,6 +10,7 @@ package nomadjob
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -516,6 +517,9 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 	auth, isPrivate := pullAuth(image, private)
 	if isPrivate {
 		config["auth"] = auth
+	}
+	if len(svc.Entrypoint) > 0 {
+		config["entrypoint"] = slices.Clone(svc.Entrypoint)
 	}
 	if svc.Command != "" {
 		config["command"] = svc.Command

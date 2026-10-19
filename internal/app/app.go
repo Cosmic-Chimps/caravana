@@ -57,6 +57,9 @@ type Service struct {
 	// Image is the reference the user wrote, e.g. "traefik/whoami:latest".
 	// It is never put in the job: the deployment's resolved digest is.
 	Image string `json:"image"`
+	// Entrypoint overrides the image's entrypoint: the program and its first
+	// arguments, in full. Empty keeps the image's. Command and Args follow it.
+	Entrypoint []string `json:"entrypoint,omitempty"`
 	// Command overrides the image's default command. Empty keeps it.
 	Command string `json:"command,omitempty"`
 	// Args are passed to the container, with or without Command.

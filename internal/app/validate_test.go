@@ -58,6 +58,13 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Command = ""
 			a.Services[1].Args = []string{"--once"}
 		}, ""},
+		{"valid entrypoint", func(a *App, d *Deployment) { a.Services[1].Entrypoint = []string{"/bin/sh", "-c"} }, ""},
+		{"valid entrypoint at the limits", func(a *App, d *Deployment) {
+			a.Services[1].Entrypoint = make([]string, 64)
+			for i := range a.Services[1].Entrypoint {
+				a.Services[1].Entrypoint[i] = strings.Repeat("a", 4096)
+			}
+		}, ""},
 		{"valid webhook trigger", func(a *App, d *Deployment) { d.Trigger = TriggerWebhook }, ""},
 		{"valid console trigger", func(a *App, d *Deployment) { d.Trigger = TriggerConsole }, ""},
 		{"valid replicas", func(a *App, d *Deployment) { a.Services[0].Replicas = new(3) }, ""},
@@ -102,6 +109,19 @@ func TestValidate(t *testing.T) {
 		{"reservation above the ceiling", func(a *App, d *Deployment) {
 			a.Services[0].Resources = Resources{MemoryMB: 512, MemoryMaxMB: 256}
 		}, "services[0].resources.memoryMB"},
+
+		// Entrypoint.
+		{"entrypoint with an empty item", func(a *App, d *Deployment) { a.Services[1].Entrypoint = []string{"sh", ""} }, "services[1].entrypoint[1]"},
+		{"entrypoint item too long", func(a *App, d *Deployment) {
+			a.Services[1].Entrypoint = []string{strings.Repeat("a", 4097)}
+		}, "services[1].entrypoint[0]"},
+		{"entrypoint item with NUL", func(a *App, d *Deployment) { a.Services[1].Entrypoint = []string{"a\x00b"} }, "services[1].entrypoint[0]"},
+		{"entrypoint with too many items", func(a *App, d *Deployment) {
+			a.Services[1].Entrypoint = make([]string, 65)
+			for i := range a.Services[1].Entrypoint {
+				a.Services[1].Entrypoint[i] = "a"
+			}
+		}, "services[1].entrypoint"},
 
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},

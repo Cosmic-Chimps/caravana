@@ -26,7 +26,7 @@ func shopApp() app.App {
 	return app.App{
 		ID: "shop", Name: "The Shop", Source: app.Source{Kind: app.SourceImage},
 		Services: []app.Service{
-			{Name: "web", Image: "ghcr.io/example/shop:2.1", Command: "/bin/server", Args: []string{"--port", "8080"},
+			{Name: "web", Image: "ghcr.io/example/shop:2.1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
 				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug-value-x1"}, {Name: "API_KEY", Value: "s3cr3t-value-9f2"}},
 				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}},
 				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}},
@@ -73,7 +73,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 
 	// The app's own facts, and what the web service keeps that the form can't change.
 	got := text(body)
-	for _, want := range []string{"Display name The Shop", "Source image", "Command /bin/server", "Arguments --port 8080"} {
+	for _, want := range []string{"Display name The Shop", "Source image", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the definition lacks %q:\n%s", want, got)
 		}

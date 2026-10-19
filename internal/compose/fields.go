@@ -24,6 +24,7 @@ var supported = concat(
 	paths(
 		"services.*.image",
 		"services.*.command", "services.*.command.*",
+		"services.*.entrypoint", "services.*.entrypoint.*",
 		"services.*.environment", "services.*.environment.*",
 		"services.*.ports", "services.*.ports.*",
 		"services.*.ports.*.name", "services.*.ports.*.target", "services.*.ports.*.published",
@@ -82,7 +83,6 @@ func concat(lists ...[]tree.Path) []tree.Path {
 // the attribute's name (the last part of its path).
 var hints = map[string]string{
 	"build":        "Caravana deploys prebuilt images: push the image to a registry and use image:",
-	"entrypoint":   "isn't supported yet: bake it into the image, or use command:",
 	"env_file":     "Caravana doesn't read files from your disk: put the values in environment:, or send secret values in the request's secrets",
 	"secrets":      "Caravana doesn't read files from your disk: send secret values in the request's services.<name>.secrets",
 	"configs":      "Caravana doesn't read files from your disk: bake the file into the image",

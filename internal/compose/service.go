@@ -29,6 +29,10 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 	if sc.Image == "" {
 		return app.Service{}, nil, app.NewFieldError(field+".image", "is required: Caravana deploys prebuilt images")
 	}
+	if len(sc.Entrypoint) > 0 {
+		// compose-go has already split the string form the way a shell would.
+		svc.Entrypoint = slices.Clone(sc.Entrypoint)
+	}
 	if len(sc.Command) > 0 {
 		svc.Command, svc.Args = sc.Command[0], slices.Clone(sc.Command[1:])
 	}

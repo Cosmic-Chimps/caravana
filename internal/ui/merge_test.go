@@ -100,6 +100,7 @@ func TestApplyEditKeepsWhatTheFormDoesNotShow(t *testing.T) {
 	for i, want := range stored.Services {
 		svc := got.Services[i]
 		if svc.Name != want.Name || svc.Command != want.Command || !reflect.DeepEqual(svc.Args, want.Args) ||
+			!reflect.DeepEqual(svc.Entrypoint, want.Entrypoint) ||
 			!reflect.DeepEqual(svc.Secrets, want.Secrets) || !reflect.DeepEqual(svc.Volumes, want.Volumes) ||
 			!reflect.DeepEqual(svc.Backup, want.Backup) {
 			t.Errorf("service %s lost something the form doesn't show:\n got: %+v\nwant: %+v", want.Name, svc, want)

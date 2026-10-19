@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.20.0
+  version: 0.21.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -2759,6 +2759,13 @@ components:
           description: |
             A Docker Hub or GHCR image: `traefik/whoami:latest`, `nginx`,
             `ghcr.io/owner/repo:tag`, or a reference pinned by digest. No tag means `latest`.
+        entrypoint:
+          type: array
+          maxItems: 64
+          items: {type: string, minLength: 1, maxLength: 4096}
+          description: |
+            Replaces the image's entrypoint: the program and its first arguments, in full.
+            `command` and `args` follow it. Empty keeps the image's entrypoint.
         command:
           type: string
         args:
@@ -4112,7 +4119,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [command, args, ports, health, volumes]
+            enum: [entrypoint, command, args, ports, health, volumes]
 
     PromotionPreview:
       type: object

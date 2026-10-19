@@ -223,6 +223,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return NewFieldError(field+".resources.memoryMB", "reserves %d MB, more than the service's ceiling of %d MB (memoryMaxMB)", r.MemoryMB, r.MemoryMaxMB)
 	}
 
+	if err := validateEntrypoint(field, svc.Entrypoint); err != nil {
+		return err
+	}
 	envNames, err := validateEnv(field, svc.Env)
 	if err != nil {
 		return err
@@ -238,6 +241,32 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return err
 	}
 	return validateHealth(field, svc, ports)
+}
+
+// Limits of an entrypoint: generous for any real one, small enough that a
+// request can't make a job body of any size.
+const (
+	maxEntrypointItems = 64
+	maxEntrypointBytes = 4096
+)
+
+// validateEntrypoint checks a service's entrypoint list.
+func validateEntrypoint(field string, entrypoint []string) error {
+	if len(entrypoint) > maxEntrypointItems {
+		return NewFieldError(field+".entrypoint", "has %d items; at most %d are allowed", len(entrypoint), maxEntrypointItems)
+	}
+	for j, item := range entrypoint {
+		f := fmt.Sprintf("%s.entrypoint[%d]", field, j)
+		switch {
+		case item == "":
+			return NewFieldError(f, "must not be empty")
+		case len(item) > maxEntrypointBytes:
+			return NewFieldError(f, "is %d bytes; at most %d are allowed", len(item), maxEntrypointBytes)
+		case strings.ContainsRune(item, 0):
+			return NewFieldError(f, "must not contain a NUL byte")
+		}
+	}
+	return nil
 }
 
 // validateEnv checks the plain env and returns the names it sets.

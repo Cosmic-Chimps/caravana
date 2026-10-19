@@ -301,6 +301,9 @@ func appFacts(a app.App) defPanel {
 // Environment values are in the form; secrets have their own section.
 func keptRows(svc app.Service, s editService) []defRow {
 	var rows []defRow
+	if len(svc.Entrypoint) > 0 {
+		rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
+	}
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 	}
@@ -350,6 +353,9 @@ func servicePanels(a app.App) []defPanel {
 				env = append(env, v.Name+"="+v.Value)
 			}
 			rows = append(rows, defRow{Label: "Environment", Values: env})
+		}
+		if len(svc.Entrypoint) > 0 {
+			rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
 		}
 		if svc.Command != "" {
 			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})

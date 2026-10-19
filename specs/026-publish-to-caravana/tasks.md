@@ -3,7 +3,7 @@
 ## Caravana (this repository)
 - [X] T001 Compose: default `driver` on networks and volumes accepted, one networks warning per
   file, the network refusal's message fixed; tests.
-- [ ] T002 `entrypoint`: `app.Service.Entrypoint`, Compose mapping, Translate (docker
+- [X] T002 `entrypoint`: `app.Service.Entrypoint`, Compose mapping, Translate (docker
   `entrypoint`), HCL export, validation, goldens, openapi 0.21.0, console read-only; tests.
 - [ ] T003 Fixtures `internal/compose/testdata/aspire/` (as generated: fails naming the variable;
   resolved: translates, golden app, expected warnings).

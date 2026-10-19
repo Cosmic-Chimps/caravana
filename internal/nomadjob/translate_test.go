@@ -71,6 +71,7 @@ func goldenCases() []goldenCase {
 	w := apptest.Whoami()
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 	cases = append(cases, volumeBackupCases()...)
+	cases = append(cases, entrypointCases()...)
 	return append(cases, privateRegistryCases()...)
 }
 
@@ -122,6 +123,37 @@ func volumeBackupCases() []goldenCase {
 			settings:   labSettings(),
 		},
 	}
+}
+
+// entrypointCases is a service that overrides the image's entrypoint (feature
+// 026), with and without a command and arguments after it. They live here, not
+// in apptest, like the volume backup cases.
+func entrypointCases() []goldenCase {
+	cache := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceCompose},
+		Services: []app.Service{
+			{
+				Name:       "cache",
+				Image:      "docker.io/library/redis:8.6",
+				Entrypoint: []string{"/bin/sh"},
+				Command:    "-c",
+				Args:       []string{"redis-server --requirepass $REDIS_PASSWORD"},
+				Ports:      []app.Port{{Name: "p6379", ContainerPort: 6379}},
+				Health:     &app.HealthCheck{},
+			},
+			{
+				Name:       "tool",
+				Image:      "ghcr.io/acme/tool:main",
+				Entrypoint: []string{"/usr/bin/tool", "--serve"},
+			},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"cache": "redis@sha256:" + strings.Repeat("a", 64),
+		"tool":  "ghcr.io/acme/tool@sha256:" + strings.Repeat("b", 64),
+	}}
+	return []goldenCase{{name: "entrypoint", app: cache, deployment: dep, settings: labSettings()}}
 }
 
 func TestTranslate(t *testing.T) {

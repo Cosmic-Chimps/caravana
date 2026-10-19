@@ -33,7 +33,7 @@ func richApp() app.App {
 		ID: "shop", Name: "The Shop", Source: app.Source{Kind: app.SourceCompose},
 		Services: []app.Service{
 			{
-				Name: "web", Image: "ghcr.io/acme/shop:1", Command: "/bin/server", Args: []string{"--port", "8080"},
+				Name: "web", Image: "ghcr.io/acme/shop:1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
 				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}, {Name: "FEATURES", Value: "a=1,b=2"}},
 				Secrets:   []app.Secret{{Name: "API_KEY"}},
 				Volumes:   []app.Volume{{Name: "uploads", Path: "/uploads"}},
