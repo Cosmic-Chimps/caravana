@@ -157,9 +157,26 @@ two screens.
 
 ## Phase 2.75: Aspire + Bella Baxter
 
-- 026: Aspire compose fixtures, and service discovery env (`services__<name>__<endpoint>__0`)
-  rendered from Nomad services. `PublishToCaravana` targets a project and environment (019), and
-  can create an app without deploying it (019.5).
+Reordered 2026-10-19 with the maintainer: 026 starts now, before the rest of Phase 2.6, because
+real apps (Frunchy, an F# Aspire AppHost) want to deploy from their AppHost instead of a
+hand-written definition. 026.5 follows it. The rest of 2.6 resumes after them; the API 1.0
+review stays at its end, and the publisher, which we maintain too, follows the API until then.
+
+- 026: `PublishToCaravana`, `builder.PublishToCaravana(...)` for `aspire deploy`, in its own repo
+  `Cosmic-Chimps/aspire-hosting-caravana` (package `CosmicChimps.Aspire.Hosting.Caravana`), a
+  sibling of the Dokploy publisher (`Cosmic-Chimps/aspire-hosting-dokploy`). Smaller than that one:
+  Aspire's own Compose output plus an overlay (domains, health, secrets, volumes, backups) goes to
+  `POST /v1/apps/{id}/compose` as one Caravana app in a project and environment (019); then it
+  waits for the deploy like caravana-action. On Caravana's side: fixtures of real Aspire Compose
+  output in `internal/compose/testdata/aspire/`, and whatever they show missing. Aspire's
+  references already arrive as `services__<name>__<endpoint>__0=http://<service>:<port>`, which
+  resolve inside one app by service name, so rendering them from Nomad may not be needed.
+- 026.5: **an MCP server for Caravana**, so agents (Claude Code and others) can read and act on an
+  installation through the API: list apps, deployments and copies, read logs, the needs-you list,
+  backups; deploy, promote, restart. Read-only tools first; a deploy token limits it to one app.
+  It goes through the API only (constitution V), as `caravana mcp` over stdio (the binary run
+  where the agent is, with an API URL and token), so nothing new runs on the host. Settles in its
+  spec: whether it is that subcommand or an `/mcp` endpoint on the API, and the Go MCP module.
 - 027: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
   Drawn as `VariablesScreen`'s "Where secrets come from" panel with one external source, not the
   handoff's provider gallery: the constitution keeps Caravana whole without any provider and names
