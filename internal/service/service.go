@@ -63,6 +63,13 @@ type Service struct {
 	// App actions (feature 020.5), see actions.go.
 	commandTimeout time.Duration // how long a command may run
 	restartWait    time.Duration // how long a restart waits for one copy to come back
+
+	// Terminals (feature 020.6), see terminal.go.
+	termMu        sync.Mutex
+	terminalsOpen int           // sessions open now
+	maxTerminals  int           // sessions that may be open at once
+	terminalIdle  time.Duration // how long a session may go without input
+	terminalLimit time.Duration // how long a session may stay open
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -115,6 +122,10 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		commandTimeout: defaultCommandTimeout,
 		restartWait:    defaultRestartWait,
+
+		maxTerminals:  defaultMaxTerminals,
+		terminalIdle:  defaultTerminalIdle,
+		terminalLimit: defaultTerminalLimit,
 	}
 }
 

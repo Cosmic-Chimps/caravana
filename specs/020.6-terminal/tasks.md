@@ -3,7 +3,7 @@
 - [X] T001 store: migration `0014_terminal.sql` (`terminal` action); tests incl. rows kept.
 - [X] T002 httpx: `statusRecorder.Hijack` (101 recorded) + test; deploy: `OpenTerminal` over
   Exec with TTY and resizes; deploytest fake supports TTY/resize; tests.
-- [ ] T003 service: `OpenTerminal` sessions (limits 5, idle 15 min, max 60 min, records, sentinel
+- [X] T003 service: `OpenTerminal` sessions (limits 5, idle 15 min, max 60 min, records, sentinel
   test that typed input and output are in no row and no log line).
 - [ ] T004 API 0.20.0: `openTerminal` websocket endpoint per contracts/terminal.md (auth, Origin,
   scope, validation, upgrade, deadlines cleared, protocol, pings); tests with a Go websocket
