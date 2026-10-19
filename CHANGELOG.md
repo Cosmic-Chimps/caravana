@@ -9,6 +9,12 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+- The terminal opens on a host behind HTTPS. It said "Couldn't connect" every time: Traefik
+  marks a websocket request as `wss`, not `https`, so Caravana read the request as plain HTTP,
+  looked for the wrong session cookie and answered 401. Caravana now takes `wss` from a trusted
+  proxy as HTTPS. When the session is the reason a terminal can't connect, the page now says so.
+
 ## 0.9.0 - 2026-10-19
 
 ### Added

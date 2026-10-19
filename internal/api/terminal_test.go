@@ -354,6 +354,39 @@ func TestTerminalSessionCookie(t *testing.T) {
 	})
 }
 
+// Behind Traefik over HTTPS (the installed host), the upgrade arrives from the
+// trusted proxy with X-Forwarded-Proto "wss" and the browser sends the
+// __Host- cookie and an https Origin. It used to read as plain HTTP: the
+// cookie wasn't found (401) and the Origin wouldn't have matched.
+func TestTerminalBehindTraefikOverHTTPS(t *testing.T) {
+	e := deployedWithCopies(t)
+	proxies, err := httpx.ParseProxies("127.0.0.1,::1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := terminalServer(t, e, func(s *server) { s.proxies = proxies })
+	host := strings.TrimPrefix(base, "http://")
+	session := sessionCookie(t, e)
+	header := func(proto, cookieName, origin string) http.Header {
+		return http.Header{
+			"X-Forwarded-Proto": {proto},
+			"Cookie":            {(&http.Cookie{Name: cookieName, Value: session.Value}).String()},
+			"Origin":            {origin},
+		}
+	}
+
+	c := openTerm(t, base, terminalPath, header("wss", "__Host-caravana_session", "https://"+host))
+	c.input("echo $((6*7))\r")
+	c.readUntil("42\r\n")
+
+	// Over plain ws the console's cookie has no prefix, and an https Origin is
+	// another site's.
+	status, body := dialFails(t, base, terminalPath, header("ws", "caravana_session", "https://"+host))
+	if status != http.StatusForbidden || body.Error.Code != "cross_origin" {
+		t.Errorf("ws with an https origin = %d %+v, want 403 cross_origin", status, body.Error)
+	}
+}
+
 func TestTerminalDeployTokenIsRefused(t *testing.T) {
 	e := deployedWithCopies(t)
 	auth := scopedToken(t, e, "default", "whoami") // the very app it may deploy

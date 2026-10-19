@@ -140,5 +140,9 @@ func (p Proxies) HTTPS(r *http.Request) bool {
 	if i := strings.LastIndex(last, ","); i >= 0 {
 		last = last[i+1:]
 	}
-	return strings.EqualFold(strings.TrimSpace(last), "https")
+	// A websocket upgrade arrives with "wss" from Traefik, not "https": the
+	// terminal's request over TLS (seen on a host, 2026-10-19, where it read as
+	// plain HTTP and lost its __Host- cookie).
+	proto := strings.TrimSpace(last)
+	return strings.EqualFold(proto, "https") || strings.EqualFold(proto, "wss")
 }

@@ -131,6 +131,13 @@ func TestHTTPS(t *testing.T) {
 		{"trusted proxy, chain ends in http", traefik,
 			request("10.0.0.5:1", "X-Forwarded-Proto", "https, http"), false},
 		{"trusted proxy, no header", traefik, request("10.0.0.5:1"), false},
+		// Traefik writes the websocket scheme on an upgrade (the terminal).
+		{"trusted proxy says wss", traefik,
+			request("10.0.0.5:1", "X-Forwarded-Proto", "wss"), true},
+		{"trusted proxy says ws", traefik,
+			request("10.0.0.5:1", "X-Forwarded-Proto", "ws"), false},
+		{"untrusted peer claiming wss", traefik,
+			request("203.0.113.9:1", "X-Forwarded-Proto", "wss"), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

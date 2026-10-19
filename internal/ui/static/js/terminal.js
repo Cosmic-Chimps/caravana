@@ -133,9 +133,19 @@
       current = null;
       if (finished) return; // the exit message already said why
       finished = true;
-      setStatus(opened
-        ? "Connection lost"
-        : "Couldn't connect: the copy may have stopped, the app may be stopped, or five terminals are already open");
+      if (opened) {
+        setStatus("Connection lost");
+        return;
+      }
+      setStatus("Couldn't connect: the copy may have stopped, the app may be stopped, or five terminals are already open");
+      // A browser hides why a handshake failed. The same address as a plain GET
+      // opens nothing (no upgrade) but answers 401 when the session is the
+      // reason, which the words above would not say.
+      fetch(socketPath, { credentials: "same-origin", cache: "no-store" }).then(function (res) {
+        if (res.status === 401 && current === null && finished) {
+          setStatus("Couldn't connect: your session isn't valid here. Sign in again, then open the terminal.");
+        }
+      }).catch(function () {});
     };
     // An error is always followed by a close, which says it.
     socket.onerror = function () {};
