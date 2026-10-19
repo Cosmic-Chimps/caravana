@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Deploy from CI (caravana-action)",
+  "branch": "020-deploy-from-ci",
+  "currentStep": "tasks",
+  "status": "tasked",
+  "history": [
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-19T01:11:18.083Z"
+    }
+  ]
+}
