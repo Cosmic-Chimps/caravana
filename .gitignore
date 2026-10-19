@@ -69,3 +69,5 @@ __pycache__/
 
 # Claude Code worktrees (local)
 /.claude/worktrees/
+
+.bella
