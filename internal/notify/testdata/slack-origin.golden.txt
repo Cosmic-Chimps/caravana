@@ -1,0 +1,4 @@
+POST https://hooks.slack.com/services/T000/B000/XXXX
+Content-Type: application/json
+
+{"text":"*shop--staging--web: deployed v4*\nshop--staging--web's deploy v4 is healthy, started by the API.\nFrom CI: abc1234 on main by ana, run https://github.com/acme/shop/actions/runs/212\nhttps://caravana.example.com/apps/shop--staging--web/deployments#deployment-dep_5c4d3e"}

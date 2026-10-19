@@ -34,7 +34,8 @@ func (s *server) checkCredentials(r *http.Request, quiet bool) error {
 	switch len(r.Header.Values("Authorization")) {
 	case 0:
 	case 1:
-		return s.auth.CheckAPIToken(r.Context(), bearerToken(r))
+		_, err := s.auth.CheckAPIToken(r.Context(), bearerToken(r))
+		return err
 	default:
 		return service.ErrNotAuthenticated
 	}
@@ -79,7 +80,10 @@ func bearerToken(r *http.Request) string {
 func (s *server) credentialCheck(r *http.Request) func(context.Context) error {
 	if len(r.Header.Values("Authorization")) == 1 {
 		token := bearerToken(r)
-		return func(ctx context.Context) error { return s.auth.CheckAPIToken(ctx, token) }
+		return func(ctx context.Context) error {
+			_, err := s.auth.CheckAPIToken(ctx, token)
+			return err
+		}
 	}
 	value, _ := httpx.SessionCookie(r, s.proxies.HTTPS(r))
 	return func(ctx context.Context) error { return s.auth.CheckSessionQuiet(ctx, value) }

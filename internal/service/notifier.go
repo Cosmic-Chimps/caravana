@@ -143,7 +143,7 @@ func deployEvent(rec store.DeploymentRecord, base string) (ev notify.Event, ok b
 		Text:       fmt.Sprintf("%s's deploy%s %s%s%s.", rec.AppID, label, long, promoted, startedBy(rec.Deployment.Trigger)),
 		Detail:     limitDetail(rec.Error),
 		Deployment: rec.Deployment.ID, Version: rec.JobVersion, Outcome: string(rec.Status),
-		Trigger: string(rec.Deployment.Trigger), PromotedFrom: promotedFrom(rec),
+		Trigger: string(rec.Deployment.Trigger), PromotedFrom: promotedFrom(rec), Origin: notifyOrigin(rec.Deployment.Origin),
 		URL: consoleLink(base, deploymentPath(rec.AppID, rec.Deployment.ID)),
 		At:  rec.UpdatedAt,
 	}, rec.Place), true

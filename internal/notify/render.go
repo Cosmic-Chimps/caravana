@@ -146,18 +146,50 @@ func marshal(v any) ([]byte, error) {
 const maxDetail = 500
 
 // withDetail is the text of a Slack, Discord or ntfy message: the event's text,
-// then the raw reason on a line of its own ("Detail: ..."), so the message
-// says what went wrong and not only that something did (FR-006). The detail is
-// put on one line and cut at maxDetail characters.
+// then, for a deploy that came from CI, a line saying from where ("From CI:
+// ..."), then the raw reason on a line of its own ("Detail: ..."), so the
+// message says what went wrong and not only that something did (FR-006). The
+// detail is put on one line and cut at maxDetail characters.
 func withDetail(ev Event) string {
+	text := ev.Text
+	if line := originLine(ev.Origin); line != "" {
+		text += "\n" + line
+	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
 	if detail == "" {
-		return ev.Text
+		return text
 	}
 	if r := []rune(detail); len(r) > maxDetail {
 		detail = string(r[:maxDetail]) + "…"
 	}
-	return ev.Text + "\nDetail: " + detail
+	return text + "\nDetail: " + detail
+}
+
+// originLine is "From CI: abc1234 on main by ana, run https://...": the short
+// commit, the branch or tag, who pushed and the run, whichever were sent. It is
+// "" for no origin.
+func originLine(o *Origin) string {
+	if o == nil {
+		return ""
+	}
+	line := "From CI:"
+	if o.Commit != "" {
+		line += " " + o.Commit[:min(len(o.Commit), 7)]
+	}
+	ref := strings.TrimPrefix(strings.TrimPrefix(o.Ref, "refs/heads/"), "refs/tags/")
+	if ref != "" {
+		line += " on " + oneLine(ref)
+	}
+	if o.Actor != "" {
+		line += " by " + oneLine(o.Actor)
+	}
+	if o.Run != "" {
+		line += ", run " + oneLine(o.Run)
+	}
+	if line == "From CI:" {
+		return ""
+	}
+	return line
 }
 
 // oneLine replaces line breaks with spaces, for values that go into headers.

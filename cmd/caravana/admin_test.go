@@ -39,7 +39,8 @@ func tokenIsActive(t *testing.T, dir, token string) bool {
 	}
 	defer st.Close()
 	auth := service.NewAuth(st, slog.New(slog.DiscardHandler), service.AuthOptions{})
-	return auth.CheckAPIToken(context.Background(), token) == nil
+	_, err = auth.CheckAPIToken(context.Background(), token)
+	return err == nil
 }
 
 func TestAdminInitStatusReset(t *testing.T) {

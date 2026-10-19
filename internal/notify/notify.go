@@ -58,9 +58,23 @@ type Event struct {
 	Trigger     string  `json:"trigger,omitempty"`
 	// PromotedFrom is the environment a promotion came from, for deploy events
 	// of a deployment made by promoting another environment's.
-	PromotedFrom string    `json:"promotedFrom,omitempty"`
-	URL          string    `json:"url,omitempty"` // the console page about it, when its address is known
-	At           time.Time `json:"at"`
+	PromotedFrom string `json:"promotedFrom,omitempty"`
+	// Origin is where a deploy came from, when its caller said (feature 020: a
+	// CI run). Absent for deploys without it and for every other event.
+	Origin *Origin   `json:"origin,omitempty"`
+	URL    string    `json:"url,omitempty"` // the console page about it, when its address is known
+	At     time.Time `json:"at"`
+}
+
+// Origin is where a deploy came from, as a CI step told Caravana. It has the
+// shape of app.Origin; this package depends on no other of Caravana's, so it
+// has its own copy.
+type Origin struct {
+	Commit     string `json:"commit,omitempty"`
+	Ref        string `json:"ref,omitempty"` // e.g. refs/heads/main
+	Actor      string `json:"actor,omitempty"`
+	Run        string `json:"run,omitempty"` // the CI run's URL
+	Repository string `json:"repository,omitempty"`
 }
 
 // Channel is what sending to one channel needs, with its secret part read from

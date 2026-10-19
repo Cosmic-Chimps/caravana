@@ -125,7 +125,7 @@ func TestCheckAPIToken(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
 
-		if err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("CheckAPIToken(valid) = %v", err)
 		}
 		for name, token := range map[string]string{
@@ -137,7 +137,7 @@ func TestCheckAPIToken(t *testing.T) {
 			"wrong prefix":   "cvat-" + created.Token[len("cvat_"):],
 			"extra trailing": created.Token + " ",
 		} {
-			if err := e.auth.CheckAPIToken(ctx, token); !errors.Is(err, ErrNotAuthenticated) {
+			if _, err := e.auth.CheckAPIToken(ctx, token); !errors.Is(err, ErrNotAuthenticated) {
 				t.Errorf("CheckAPIToken(%s) = %v, want ErrNotAuthenticated", name, err)
 			}
 		}
@@ -148,10 +148,10 @@ func TestCheckAPIToken(t *testing.T) {
 		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
 		e.store.Close() // any lookup would now fail with a store error, not a 401
 
-		if err := e.auth.CheckAPIToken(ctx, "cvwh_abc"); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckAPIToken(ctx, "cvwh_abc"); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken(cvwh_) with a closed store = %v, want ErrNotAuthenticated", err)
 		}
-		err := e.auth.CheckAPIToken(ctx, created.Token)
+		_, err := e.auth.CheckAPIToken(ctx, created.Token)
 		if err == nil || errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken(cvat_) with a closed store = %v, want a store error", err)
 		}
@@ -163,11 +163,11 @@ func TestCheckAPIToken(t *testing.T) {
 		created, _ := e.auth.CreateAPIToken(ctx, "ci", &exp)
 
 		e.clock.Advance(59 * time.Minute)
-		if err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("CheckAPIToken before expiry = %v", err)
 		}
 		e.clock.Advance(time.Minute)
-		if err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken at expiry = %v, want ErrNotAuthenticated", err)
 		}
 	})
@@ -178,7 +178,7 @@ func TestCheckAPIToken(t *testing.T) {
 		if _, err := e.store.RevokeAPIToken(ctx, created.Info.ID, e.clock.Now()); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken(revoked) = %v, want ErrNotAuthenticated", err)
 		}
 	})
@@ -198,17 +198,17 @@ func TestCheckAPIToken(t *testing.T) {
 		}
 
 		start := e.clock.Now()
-		e.auth.CheckAPIToken(ctx, created.Token)
+		_, _ = e.auth.CheckAPIToken(ctx, created.Token)
 		if got := lastUsed(); got == nil || !got.Equal(start) {
 			t.Fatalf("last used = %v after the first use, want %v", got, start)
 		}
 		e.clock.Advance(30 * time.Second)
-		e.auth.CheckAPIToken(ctx, created.Token)
+		_, _ = e.auth.CheckAPIToken(ctx, created.Token)
 		if got := lastUsed(); !got.Equal(start) {
 			t.Errorf("last used = %v after 30 s, want it unchanged (%v)", got, start)
 		}
 		e.clock.Advance(30 * time.Second)
-		e.auth.CheckAPIToken(ctx, created.Token)
+		_, _ = e.auth.CheckAPIToken(ctx, created.Token)
 		if got := lastUsed(); !got.Equal(start.Add(time.Minute)) {
 			t.Errorf("last used = %v after a minute, want %v", got, start.Add(time.Minute))
 		}
@@ -271,13 +271,13 @@ func TestRevokeAPIToken(t *testing.T) {
 	t.Run("then the check fails; twice is fine; unknown ID is not found", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 		created, _ := e.auth.CreateAPIToken(ctx, "ci", nil)
-		if err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Fatal(err)
 		}
 		if err := e.auth.RevokeAPIToken(ctx, created.Info.ID); err != nil {
 			t.Fatalf("RevokeAPIToken: %v", err)
 		}
-		if err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken after revoke = %v, want ErrNotAuthenticated", err)
 		}
 		if err := e.auth.RevokeAPIToken(ctx, created.Info.ID); err != nil {
@@ -294,7 +294,7 @@ func TestRevokeAPIToken(t *testing.T) {
 		if err := e.auth.RevokeAPITokenByName(ctx, "ci"); err != nil {
 			t.Fatalf("RevokeAPITokenByName: %v", err)
 		}
-		if err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("CheckAPIToken after revoke by name = %v, want ErrNotAuthenticated", err)
 		}
 		if err := e.auth.RevokeAPITokenByName(ctx, "ci"); !errors.Is(err, store.ErrNotFound) {

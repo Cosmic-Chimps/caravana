@@ -22,6 +22,7 @@ var (
 	fixedNow = time.Date(2026, 10, 17, 3, 0, 41, 0, time.UTC)
 	version8 = uint64(8)
 	version3 = uint64(3)
+	version4 = uint64(4)
 )
 
 // backupFailed is a problem event with a link.
@@ -73,6 +74,25 @@ var promoted = Event{
 	At:           fixedNow,
 }
 
+// fromCI is a deploy event of a deploy that a CI run started.
+var fromCI = Event{
+	Type:        EventDeploySucceeded,
+	AppID:       "shop--staging--web",
+	Project:     "shop",
+	Environment: "staging",
+	AppName:     "web",
+	Title:       "shop--staging--web: deployed v4",
+	Text:        "shop--staging--web's deploy v4 is healthy, started by the API.",
+	Deployment:  "dep_5c4d3e",
+	Version:     &version4,
+	Outcome:     "healthy",
+	Trigger:     "manual",
+	Origin: &Origin{Commit: "abc1234def5678", Ref: "refs/heads/main", Actor: "ana",
+		Run: "https://github.com/acme/shop/actions/runs/212", Repository: "acme/shop"},
+	URL: "https://caravana.example.com/apps/shop--staging--web/deployments#deployment-dep_5c4d3e",
+	At:  fixedNow,
+}
+
 // resolvedNoLink is a resolved problem on a host without a public address.
 var resolvedNoLink = Event{
 	Type:  EventProblemResolved,
@@ -91,6 +111,9 @@ func TestRender(t *testing.T) {
 	}{
 		{"webhook", Channel{KindWebhook, "https://hooks.example.com/caravana?x=1", "whsec_test"}, deployFailed},
 		{"webhook-promoted", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, promoted},
+		{"webhook-origin", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, fromCI},
+		{"slack-origin", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, fromCI},
+		{"ntfy-origin", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, fromCI},
 		{"webhook-problem", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, backupFailed},
 		{"slack", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, backupFailed},
 		{"slack-no-link", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, resolvedNoLink},

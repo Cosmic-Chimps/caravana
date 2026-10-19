@@ -321,7 +321,7 @@ func TestResetPassword(t *testing.T) {
 				t.Errorf("session %s after reset = %v, want it deleted", id, err)
 			}
 		}
-		if err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, created.Token); err != nil {
 			t.Errorf("the API token stopped working after a reset: %v", err)
 		}
 		out := e.logs.String()
@@ -421,7 +421,7 @@ func TestChangePassword(t *testing.T) {
 		if err := e.auth.CheckSession(ctx, other.Value); !errors.Is(err, ErrNotAuthenticated) {
 			t.Errorf("another session survived: %v", err)
 		}
-		if err := e.auth.CheckAPIToken(ctx, token.Token); err != nil {
+		if _, err := e.auth.CheckAPIToken(ctx, token.Token); err != nil {
 			t.Errorf("the API token stopped working: %v", err)
 		}
 		if _, err := e.auth.SignIn(ctx, testEmail, newPassword, "203.0.113.9"); err != nil {
