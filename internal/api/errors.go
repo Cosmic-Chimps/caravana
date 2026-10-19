@@ -43,6 +43,7 @@ const (
 	codeEnvironmentExists     = "environment_exists"
 	codeNotEmpty              = "not_empty"
 	codeProtected             = "protected"
+	codeTokenScope            = "token_scope"
 )
 
 // Error is what every failed request returns, as {"error": {...}} with

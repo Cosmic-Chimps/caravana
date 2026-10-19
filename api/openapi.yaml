@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.18.0
+  version: 0.19.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -27,6 +27,17 @@ info:
     `cross_origin`. A request without valid credentials gets 401 `unauthorized`, the same for
     every reason (missing, malformed, wrong, expired or revoked token, no admin yet), and is
     never redirected.
+
+    A token made with a `scope` (`createToken`) is a deploy token: it can only deploy one app
+    name of one project, in any environment. With it, only `getApp`, `getCompose`,
+    `listDeployments`, `getDeployment`, `deployApp`, `deployCompose`, `previewPromotion` and
+    `promoteApp` (for that app's ID), `createApp` (for an ID in scope), and
+    `createEnvironmentApp` and `getEnvironmentApp` (for that project and app name) answer.
+    Every other request, and those about another app, is 403 `token_scope`, before any work.
+
+    `deployApp`, `deployCompose`, `promoteApp` and `callWebhook` accept optional
+    `Caravana-Origin-*` headers saying where the deploy came from (a CI run); see
+    `Deployment.origin`.
 
     `POST /v1/webhooks/{id}` needs the app's webhook token instead, and is also served, alone,
     on the optional webhook-only listener. Webhook tokens and API tokens never stand in for
@@ -535,6 +546,8 @@ paths:
                 $ref: "#/components/schemas/AppRecord"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "404":
           $ref: "#/components/responses/PlaceNotFound"
         "422":
@@ -565,6 +578,8 @@ paths:
                 $ref: "#/components/schemas/AppRecord"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -980,6 +995,8 @@ paths:
                 $ref: "#/components/schemas/ComposeRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "404":
           description: No such app (`not_found`), or it has no kept file (`compose_not_kept`).
           content:
@@ -1012,6 +1029,11 @@ paths:
       parameters:
         - $ref: "#/components/parameters/IfMatch"
         - $ref: "#/components/parameters/IfNoneMatch"
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
       requestBody:
         required: true
         content:
@@ -1616,6 +1638,11 @@ paths:
       tags: [deployments]
       parameters:
         - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
       requestBody:
         required: false
         content:
@@ -1692,6 +1719,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -1719,6 +1748,8 @@ paths:
                 $ref: "#/components/schemas/Deployment"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "404":
           description: No such app, or no such deployment of this app.
           content:
@@ -1916,6 +1947,11 @@ paths:
       tags: [deployments]
       parameters:
         - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
       requestBody:
         required: true
         content:
@@ -2178,6 +2214,12 @@ paths:
       security:
         - webhookBearer: []
         - webhookQuery: []
+      parameters:
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
       requestBody:
         required: false
         content:
@@ -2251,6 +2293,12 @@ paths:
         Returns a new token, shown only in this response. It grants the whole API, as the
         admin, until it is revoked or its `expiresAt` passes. `name` must be unique among the
         tokens that are still active.
+
+        With a `scope` it is a deploy token for CI: it can only deploy the one app named
+        `scope.app` in project `scope.project` (in any of that project's environments), read
+        it and its deployments, create it without deploying, and promote it. Everything else is
+        `403 token_scope`. The project must exist (`400 invalid_field`, `scope.project`); the
+        app, a valid app name, need not exist yet (`scope.app`).
       tags: [tokens]
       requestBody:
         required: true
@@ -2382,6 +2430,55 @@ components:
       schema:
         type: string
         examples: ['"0123456789abcdef"']
+    OriginCommit:
+      name: Caravana-Origin-Commit
+      in: header
+      required: false
+      description: |
+        The commit that was built, 7 to 64 hexadecimal digits. Recorded in the deployment's
+        `origin`. Any `Caravana-Origin-*` header that breaks its rule, or is sent twice, is
+        `422 invalid_field` with `field` naming the header, and nothing is deployed.
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F]{7,64}$"
+        examples: [abc1234def5678]
+    OriginRef:
+      name: Caravana-Origin-Ref
+      in: header
+      required: false
+      description: The branch or tag, as CI writes it. At most 255 printable characters.
+      schema:
+        type: string
+        maxLength: 255
+        examples: [refs/heads/main]
+    OriginActor:
+      name: Caravana-Origin-Actor
+      in: header
+      required: false
+      description: Who pushed it. At most 100 printable characters.
+      schema:
+        type: string
+        maxLength: 100
+        examples: [ana]
+    OriginRun:
+      name: Caravana-Origin-Run
+      in: header
+      required: false
+      description: The CI run's address; `https://` only, at most 500 characters. The console links it.
+      schema:
+        type: string
+        maxLength: 500
+        pattern: "^https://"
+        examples: ["https://github.com/acme/shop/actions/runs/212"]
+    OriginRepository:
+      name: Caravana-Origin-Repository
+      in: header
+      required: false
+      description: The repository, as `owner/name`. At most 200 printable characters.
+      schema:
+        type: string
+        maxLength: 200
+        examples: [acme/shop]
     DeployFlag:
       name: deploy
       in: query
@@ -3773,10 +3870,37 @@ components:
             The deployment was made from a Compose file, and `getDeploymentCompose` answers
             200. False for deployments from an image or a definition, and from before version
             0.12.0.
+        origin:
+          $ref: "#/components/schemas/Origin"
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         progress:
           $ref: "#/components/schemas/Progress"
+
+    Origin:
+      type: object
+      additionalProperties: false
+      description: |
+        Where a deploy came from, as the `Caravana-Origin-*` headers of `deployApp`,
+        `deployCompose`, `promoteApp` or `callWebhook` said. Each part is optional; the whole
+        is absent when none was sent. The history shows it as "from CI".
+      properties:
+        commit:
+          type: string
+          description: The commit, in lowercase.
+          examples: [abc1234def5678]
+        ref:
+          type: string
+          examples: [refs/heads/main]
+        actor:
+          type: string
+          examples: [ana]
+        run:
+          type: string
+          description: The CI run's `https://` address.
+        repository:
+          type: string
+          examples: [acme/shop]
 
     Progress:
       type: object
@@ -4016,7 +4140,7 @@ components:
                 `project_not_found`, `environment_not_found`, `project_exists`,
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
-                `copy_not_running`.
+                `copy_not_running`, `token_scope`.
               examples: [invalid_field]
             message:
               type: string
@@ -4060,6 +4184,8 @@ components:
           type: string
           format: date-time
           description: When the token stops working. Must be in the future. Absent means never.
+        scope:
+          $ref: "#/components/schemas/TokenScope"
 
     TokenInfo:
       type: object
@@ -4090,6 +4216,21 @@ components:
         state:
           type: string
           enum: [active, expired, revoked]
+        scope:
+          $ref: "#/components/schemas/TokenScope"
+
+    TokenScope:
+      type: object
+      additionalProperties: false
+      description: |
+        What a deploy token is limited to: the app named `app` in any environment of `project`.
+        Absent on a full token.
+      required: [project, app]
+      properties:
+        project:
+          $ref: "#/components/schemas/Name"
+        app:
+          $ref: "#/components/schemas/Name"
 
     CreatedToken:
       allOf:
@@ -4381,7 +4522,18 @@ components:
     CrossOrigin:
       description: |
         `cross_origin`: a state-changing request authenticated by the session cookie came from
-        another site. Nothing was changed. Requests with an API token never get this.
+        another site. Nothing was changed. Requests with an API token never get this. A deploy
+        token (an API token with a `scope`) gets `token_scope` here instead for anything outside
+        its app, as `components/responses/TokenScope` says.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TokenScope:
+      description: |
+        `token_scope`: the request was made with a deploy token (an API token with a `scope`)
+        and is not one that token may make, or is about another app than its own. `message`
+        says what the token can do. Nothing was changed.
       content:
         application/json:
           schema:

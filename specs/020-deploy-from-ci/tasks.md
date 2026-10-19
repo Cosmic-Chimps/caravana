@@ -4,7 +4,7 @@
 - [X] T001 Migration 0013, store: token scope columns, `deployments.origin`; tests.
 - [X] T002 Service/auth: scoped tokens (create, list, check returns the scope), `app.Origin` and its
   recording on deploys, promote and the webhook; notify event origin; tests.
-- [ ] T003 API 0.19.0: `scope` on createApiToken/listApiTokens, the scope middleware with the
+- [X] T003 API 0.19.0: `scope` on createApiToken/listApiTokens, the scope middleware with the
   allowlist and a default-deny test over every route, origin headers (422 on bad ones),
   `Deployment.origin`; openapi sync.
 - [ ] T004 Console: Settings › API tokens "Only for one app", Configure's "Create a deploy token for

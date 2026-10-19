@@ -131,6 +131,10 @@ func (s *server) promoteApp(w http.ResponseWriter, r *http.Request) error {
 	// Best effort, as for deployApp: a writer that can't change deadlines keeps the server's.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deployWriteDeadline))
 
+	ctx, err := withOrigin(r)
+	if err != nil {
+		return err
+	}
 	var in promotionRequest
 	if err := decodeJSON(r, &in); err != nil {
 		return err
@@ -139,7 +143,7 @@ func (s *server) promoteApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	rec, err := s.svc.Promote(r.Context(), r.PathValue("id"), in.To, cond, app.TriggerManual)
+	rec, err := s.svc.Promote(ctx, r.PathValue("id"), in.To, cond, app.TriggerManual)
 	if err != nil {
 		return promotionFailure(err)
 	}

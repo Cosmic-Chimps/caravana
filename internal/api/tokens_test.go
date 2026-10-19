@@ -122,14 +122,15 @@ func TestCreateToken(t *testing.T) {
 		for name, tc := range map[string]struct {
 			body, code, field string
 		}{
-			"no name":        {`{}`, "invalid_field", "name"},
-			"empty name":     {`{"name":""}`, "invalid_field", "name"},
-			"bad characters": {`{"name":"has space"}`, "invalid_field", "name"},
-			"too long":       {`{"name":"` + strings.Repeat("a", 65) + `"}`, "invalid_field", "name"},
-			"past expiry":    {`{"name":"x","expiresAt":"` + past + `"}`, "invalid_field", "expiresAt"},
-			"bad expiry":     {`{"name":"x","expiresAt":"tomorrow"}`, "invalid_field", "expiresAt"},
-			"unknown field":  {`{"name":"x","scope":"all"}`, "unknown_field", "scope"},
-			"not JSON":       {`{"name":`, "bad_request", ""},
+			"no name":          {`{}`, "invalid_field", "name"},
+			"empty name":       {`{"name":""}`, "invalid_field", "name"},
+			"bad characters":   {`{"name":"has space"}`, "invalid_field", "name"},
+			"too long":         {`{"name":"` + strings.Repeat("a", 65) + `"}`, "invalid_field", "name"},
+			"past expiry":      {`{"name":"x","expiresAt":"` + past + `"}`, "invalid_field", "expiresAt"},
+			"bad expiry":       {`{"name":"x","expiresAt":"tomorrow"}`, "invalid_field", "expiresAt"},
+			"unknown field":    {`{"name":"x","color":"red"}`, "unknown_field", "color"},
+			"scope wrong type": {`{"name":"x","scope":"all"}`, "invalid_field", "scope"},
+			"not JSON":         {`{"name":`, "bad_request", ""},
 		} {
 			status, _, raw := call(t, http.MethodPost, e.URL+"/v1/tokens", "application/json", tc.body)
 			if status != http.StatusBadRequest {
