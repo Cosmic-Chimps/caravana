@@ -149,6 +149,8 @@ type runForm struct {
 	Service string
 	Value   string
 	Error   sentence
+	// Terminal is the link to the copy's terminal page; "" for a copy Nomad is stopping.
+	Terminal string
 }
 
 // runResult is the answer to one command: what it printed and how it ended.
@@ -192,9 +194,11 @@ type actionRow struct {
 	Copy    string // a run's copy, short
 	CopyID  string
 	Status  statusView
-	Error   string // why it failed, in Caravana's words
-	Trigger string // "from the console", "through the API"
-	When    when
+	// Duration is how long a terminal session lasted ("4 min"); "" for the other actions.
+	Duration string
+	Error    string // why it failed, in Caravana's words
+	Trigger  string // "from the console", "through the API"
+	When     when
 }
 
 // actionsRegion is what the "actions" region draws: the newest actions, or
@@ -239,6 +243,11 @@ func actionRowOf(now time.Time, a store.ActionRecord) actionRow {
 		row.Label = "Restart"
 	case store.ActionRun:
 		row.Label = "Run"
+	case store.ActionTerminal:
+		row.Label = "Terminal"
+		if a.FinishedAt != nil {
+			row.Duration = durationText(a.FinishedAt.Sub(a.StartedAt))
+		}
 	default:
 		row.Label = a.Action
 	}
@@ -251,6 +260,10 @@ func actionRowOf(now time.Time, a store.ActionRecord) actionRow {
 		row.Status = statusView{"warning", fmt.Sprintf("exit %d", *a.ExitCode)}
 	case a.ExitCode != nil:
 		row.Status = statusView{"healthy", "exit 0"}
+	case a.Action == store.ActionTerminal:
+		// A session closed by the browser, the idle timer or the time limit has no exit code; the
+		// detail line says which.
+		row.Status = statusView{"healthy", "ended"}
 	default:
 		row.Status = statusView{"healthy", "done"}
 	}

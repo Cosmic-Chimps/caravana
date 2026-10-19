@@ -294,12 +294,13 @@
         <span class="flex flex-wrap items-start gap-2">
           <input class="cv-field cv-runfield" id="{{$id}}" type="text" name="command" value="{{.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
           <button type="submit" class="cv-btn cv-btn-secondary">Run</button>
+          {{with .Terminal}}<a href="{{.}}" class="cv-btn cv-btn-secondary" title="An interactive shell in this copy">Terminal</a>{{end}}
         </span>
       </label>
       {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
     </form>
     {{end}}
-    <p class="px-3 py-3 text-sm text-fg-3">One command, run in that copy without a shell or a terminal. Quote like a shell, with single or double quotes. Pipes, variables and redirects aren't understood: for those, run <span class="cv-inline-mono">sh -c '...'</span>. It stops after a minute. What it prints is shown once and isn't kept; only that it ran, its first word and its exit code are.</p>
+    <p class="px-3 py-3 text-sm text-fg-3">One command, run in that copy without a shell or a terminal. Quote like a shell, with single or double quotes. Pipes, variables and redirects aren't understood: for those, run <span class="cv-inline-mono">sh -c '...'</span>. It stops after a minute. What it prints is shown once and isn't kept; only that it ran, its first word and its exit code are. Terminal opens an interactive shell in the copy (it needs JavaScript); nothing typed or printed there is kept either.</p>
   </div>
   {{end}}
 </section>
@@ -324,13 +325,14 @@
     <span class="cv-data text-fg-1">{{.Label}}</span>
     {{with .Program}}<span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}
     {{if .Copy}}<span class="cv-data-muted" title="{{.CopyID}}">in copy {{.Copy}}</span>{{end}}
+    {{with .Duration}}<span class="cv-data-muted">{{.}}</span>{{end}}
     <span class="cv-data-muted">{{.Trigger}}</span>
     <span class="cv-data-muted">{{template "time" .When}}</span>
   </div>
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
 </div>
 {{else}}
-<p class="px-4 py-4 text-sm text-fg-3">Nothing yet. Restarts, stops, starts and commands are listed here.</p>
+<p class="px-4 py-4 text-sm text-fg-3">Nothing yet. Restarts, stops, starts, commands and terminals are listed here.</p>
 {{end}}
 {{end}}
 {{end}}

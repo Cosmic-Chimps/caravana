@@ -177,6 +177,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/start", s.protected(s.requireSession(s.startApp))},
 		{"POST", "/apps/{id}/restart", s.protected(s.requireSession(s.restartApp))},
 		{"POST", "/apps/{id}/copies/{copyId}/run", s.protected(s.requireSession(s.runCommand))},
+		{"GET", "/apps/{id}/copies/{copyId}/terminal", s.requireSession(s.showTerminal)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/attention", s.requirePart(s.partAttention)},
@@ -264,7 +265,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -366,7 +367,7 @@ func (s *server) serverError(w http.ResponseWriter, what string, err error) {
 func (s *server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
+		h.Set("Content-Security-Policy", consoleCSP)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)

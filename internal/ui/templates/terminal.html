@@ -1,0 +1,38 @@
+{{/* The terminal page (feature 020.6): an interactive shell in one copy. xterm.js draws it and
+     static/js/terminal.js connects it to the API's websocket; the page has no inline script, so
+     everything the script needs is in data- attributes. The controls stay hidden until the script
+     runs, since none of them works without it. Takes a terminalPage. */}}
+
+{{define "head"}}
+<link rel="stylesheet" href="{{asset "js/xterm.css"}}">
+<script src="{{asset "js/xterm.js"}}" defer></script>
+<script src="{{asset "js/addon-fit.js"}}" defer></script>
+<script src="{{asset "js/terminal.js"}}" defer></script>
+{{end}}
+
+{{define "content"}}
+<section class="cv-main" data-terminal data-socket="{{.Socket}}">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">Terminal in <span class="cv-inline-mono">{{.AppID}}</span></h1>
+    <p class="cv-data-muted">Service <span class="cv-inline-mono text-fg-1">{{.Service}}</span>, copy <span class="cv-inline-mono text-fg-1" title="{{.CopyID}}">{{.Short}}</span>. <a href="{{.Back}}">Back to the Running tab</a></p>
+  </header>
+
+  <noscript>
+    <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>The terminal needs JavaScript. Run a command (on the Running tab) works without it.</span></div>
+  </noscript>
+
+  <div class="flex flex-wrap items-center gap-3" data-terminal-controls hidden>
+    <label class="flex items-center gap-2" for="terminal-shell">
+      <span class="cv-label">Shell</span>
+      <select class="cv-field cv-select" id="terminal-shell" data-terminal-shell>{{range .Shells}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    </label>
+    <button type="button" class="cv-btn cv-btn-secondary" data-terminal-new>New session</button>
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary" data-terminal-close>Close</a>
+    <p class="cv-data-muted" role="status" aria-live="polite" data-terminal-status>Connecting…</p>
+  </div>
+
+  <div class="cv-terminal"><div class="cv-terminal-screen" data-terminal-screen></div></div>
+
+  <p class="text-sm text-fg-3">A shell inside the copy, as its own user. What is typed and printed isn't kept: only that a session happened, its shell, how long it lasted and how it ended. It closes after 15 idle minutes, or after one hour.</p>
+</section>
+{{end}}

@@ -153,6 +153,14 @@
   .cv-output { margin: 0; padding: 10px 12px; max-height: 24rem; overflow: auto; background: var(--color-ink-2); border: 1px solid var(--color-line-2); border-radius: 4px; font: 400 12.5px/1.55 var(--font-mono); color: var(--color-fg-1); white-space: pre-wrap; overflow-wrap: anywhere; }
   .cv-output:focus-visible { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
 
+  /* The terminal page (feature 020.6): xterm.js fills the screen box. The box has the border and
+     the height, the inner one none, because the fit addon measures the inner one; the padding is
+     on xterm's own element, which the addon subtracts. The colors are set in static/js/terminal.js. */
+  .cv-terminal { height: clamp(16rem, 68vh, 44rem); background: var(--color-ink-0); border: 1px solid var(--color-line-2); border-radius: 4px; overflow: hidden; }
+  .cv-terminal-screen { height: 100%; }
+  .cv-terminal-screen .xterm { padding: 10px 12px; }
+  .cv-terminal:focus-within { border-color: var(--color-line-3); }
+
   /* Tabs by intent: 46px, 26px apart, on a hairline. The current one is bright and underlined. */
   .cv-tabs { display: flex; gap: 26px; margin-top: 6px; border-bottom: 1px solid var(--color-line-1); overflow-x: auto; }
   .cv-tab { display: inline-flex; align-items: center; gap: 8px; height: 46px; margin-bottom: -1px; border-bottom: 2px solid transparent; font: 500 13.5px/1 var(--font-sans); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; transition: color 120ms var(--ease-cv); }

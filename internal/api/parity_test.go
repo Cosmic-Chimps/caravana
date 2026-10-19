@@ -106,6 +106,8 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/start":               {ops: []string{"startApp"}},
 	"POST /apps/{id}/restart":             {ops: []string{"restartApp"}},
 	"POST /apps/{id}/copies/{copyId}/run": {ops: []string{"runCommand"}},
+	// The terminal page (feature 020.6) holds xterm.js, which connects to the websocket.
+	"GET /apps/{id}/copies/{copyId}/terminal": {ops: []string{"openTerminal"}},
 	// Projects and environments (feature 019).
 	"GET /projects/new":                                          {why: "a blank form; creating the project is POST /projects"},
 	"POST /projects":                                             {ops: []string{"createProject"}},

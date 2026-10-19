@@ -9,7 +9,7 @@
   scope, validation, upgrade, deadlines cleared, protocol, pings); tests with a Go websocket
   client against the fake (echo, resize, exit code, idle with short timers, cross-origin 403,
   deploy token 403, 429); openapi.
-- [ ] T005 Console: vendor xterm 6.0.0 + addon-fit 0.11.0 (ui-vendor.versions, LICENSES.md), the
+- [X] T005 Console: vendor xterm 6.0.0 + addon-fit 0.11.0 (ui-vendor.versions, LICENSES.md), the
   terminal page with its CSP, `static/js/terminal.js`, the Running tab link, Recent actions;
   handler tests (page, CSP header, noscript); `tools/ui-css.sh build` if styles change.
 - [ ] T006 Lab: gate step `terminal`, console step `console-terminal` (plan.md "Lab").

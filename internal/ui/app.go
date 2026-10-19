@@ -279,6 +279,9 @@ func runSectionOf(id string, copies copiesRegion, extra runningExtras) *runSecti
 		}
 		f := runForm{Action: "/apps/" + url.PathEscape(id) + "/copies/" + url.PathEscape(c.ID) + "/run",
 			ID: "run-" + c.Short, CopyID: c.ID, Short: c.Short, Service: c.Service}
+		if !c.Stopping {
+			f.Terminal = terminalHref(id, c.ID)
+		}
 		if extra.Typed != nil && extra.Typed.CopyID == c.ID {
 			f.Value, f.Error = extra.Typed.Line, extra.Typed.Error
 		}
@@ -379,6 +382,8 @@ type copyEntry struct {
 	Usage       usageView
 	// Live says the copy hasn't ended, so a command can be run in it.
 	Live bool
+	// Stopping says Nomad has told the copy to stop: a terminal can't be opened into it.
+	Stopping bool
 }
 
 // usageView is a copy's CPU and memory cells. A copy that isn't running has
@@ -495,7 +500,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 
 func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 	e := copyEntry{ID: c.ID, Short: shortID(c.ID), Service: c.Service, Status: copyStatusView(c.Status),
-		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory, Live: !c.Terminal}
+		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory, Live: !c.Terminal, Stopping: c.Stopping}
 	switch {
 	case c.Terminal:
 		e.UpFor = "not running"
