@@ -170,10 +170,6 @@
   },
   "warnings": [
     {
-      "field": "networks",
-      "message": "networks don't separate services here: every service of the app reaches the others by name"
-    },
-    {
       "field": "services.webfrontend.depends_on",
       "message": "services start together: Nomad restarts a service that fails until what it needs answers"
     }

@@ -36,8 +36,10 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - A Compose file as Aspire generates it is accepted: `networks.*.driver: bridge` and
   `volumes.*.driver: local` (the defaults, which Aspire writes out) no longer fail. Another
   driver is still refused, and a refused network driver now says it is about networks, not
-  volumes. A file with networks gets one warning about them ("networks don't separate services
-  here"), on `networks`, instead of one per service plus one for the file.
+  volumes. Networks are warned about only when a file declares more than one ("networks don't
+  separate services here", once, on `networks`), since that is when someone meant to keep services
+  apart; a single network, like the one Aspire always writes, joins every service already and
+  gets no warning. It used to be one warning per service plus one for the file.
 
 ## 0.8.1 - 2026-10-19
 

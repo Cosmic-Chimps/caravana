@@ -152,13 +152,19 @@ func filePath(p tree.Path) string {
 // projectWarnings are the warnings about the file as a whole.
 func projectWarnings(p *types.Project) []app.Warning {
 	var out []app.Warning
-	// One warning for the file, however many networks and services use them.
+	// One warning for the file, and only when it declares more than one
+	// network: then someone meant to keep services apart, which Caravana
+	// doesn't. A single network (Compose's default, or the one Aspire always
+	// writes) already joins every service, so nothing changes meaning.
+	named := 0
 	for _, name := range sortedKeys(p.Networks) {
 		if name != "default" {
-			out = append(out, app.Warning{Field: "networks",
-				Message: "networks don't separate services here: every service of the app reaches the others by name"})
-			break
+			named++
 		}
+	}
+	if named > 1 {
+		out = append(out, app.Warning{Field: "networks",
+			Message: "networks don't separate services here: every service of the app reaches the others by name"})
 	}
 	for _, key := range sortedKeys(p.Volumes) {
 		v := p.Volumes[key]

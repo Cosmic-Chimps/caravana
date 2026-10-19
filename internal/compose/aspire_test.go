@@ -119,8 +119,9 @@ func TestAspireResolved(t *testing.T) {
 	for _, w := range warnings {
 		byField[w.Field]++
 	}
-	if len(warnings) != 2 || byField["networks"] != 1 || byField["services.webfrontend.depends_on"] != 1 {
-		t.Errorf("warnings = %+v, want one on networks and one on services.webfrontend.depends_on", warnings)
+	// Aspire's one network joins every service already, so it gets no warning.
+	if len(warnings) != 1 || byField["services.webfrontend.depends_on"] != 1 {
+		t.Errorf("warnings = %+v, want only one, on services.webfrontend.depends_on", warnings)
 	}
 }
 

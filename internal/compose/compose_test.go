@@ -174,8 +174,10 @@ func TestWarnings(t *testing.T) {
     cpus: 1.5
   db:
     image: x
+    networks: [back]
 networks:
   front: {}
+  back: {}
 `
 	_, warnings, err := Translate("blog", Request{Compose: file})
 	if err != nil {
@@ -241,6 +243,16 @@ networks:
 		}
 		if len(warnings) != 1 || warnings[0].Field != "networks" {
 			t.Errorf("warnings = %+v, want one on networks", warnings)
+		}
+	})
+
+	// One network joins every service already (Aspire always writes one), so
+	// nothing changes meaning and nothing is said.
+	t.Run("one network, no warning", func(t *testing.T) {
+		file := "services:\n  a:\n    image: x\n    networks: [aspire]\n  b:\n    image: x\n    networks: [aspire]\nnetworks:\n  aspire:\n    driver: bridge\n"
+		_, warnings, err := Translate("blog", Request{Compose: file})
+		if err != nil || len(warnings) != 0 {
+			t.Errorf("warnings = %+v, err = %v; want none for a single network", warnings, err)
 		}
 	})
 

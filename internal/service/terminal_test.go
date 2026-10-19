@@ -200,6 +200,9 @@ func TestOpenTerminal(t *testing.T) {
 		if err := open("whoami", "c1", "auto", TerminalSize{Cols: 1000, Rows: 1}); err != nil {
 			t.Errorf("the largest and smallest sizes = %v, want ok", err)
 		}
+		// The session dials Nomad from its own goroutine: wait for that one exec
+		// now, before the steps below (a Stop) could end the copy under it.
+		waitFor(t, "the largest-size terminal's exec", func() bool { return len(l.nomad.Execs()) >= 1 })
 		if err := open("ghost", "c1", "auto", ok); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("an unknown app = %v, want store.ErrNotFound", err)
 		}
@@ -221,10 +224,7 @@ func TestOpenTerminal(t *testing.T) {
 		if err := open("whoami", "c1", "auto", ok); !errors.Is(err, ErrAppStopped) {
 			t.Errorf("a stopped app = %v, want ErrAppStopped", err)
 		}
-		// The session dials Nomad from its own goroutine, so the one terminal
-		// that opened may not have reached the fake yet: wait for it, then
-		// check no refusal added another.
-		waitFor(t, "the largest-size terminal's exec", func() bool { return len(l.nomad.Execs()) >= 1 })
+		// No refusal added an exec to the one waited for above.
 		if got := len(l.nomad.Execs()); got != 1 {
 			t.Errorf("exec requests = %d; only the one of the largest-size check should have opened a terminal", got)
 		}
