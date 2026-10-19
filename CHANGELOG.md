@@ -28,7 +28,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   is stopped: start it first." Its scheduled backups are skipped, not failed. Start runs exactly
   what ran before, with no new image lookup. Restart restarts the copies one at a time, waiting
   for each to be running (and healthy) before the next, so an app with two copies keeps
-  answering; restarts you ask for never count as "keeps restarting". Stop, Start and Restart are
+  answering (a request that reaches a copy in the second it restarts can still fail); restarts
+  you ask for never count as "keeps restarting". Stop, Start and Restart are
   refused while a deploy or a volume backup of the app is running.
 - A list of recent actions on the Running tab: restarts, stops, starts and commands, with how
   each ended and whether it came from the console or the API.

@@ -382,6 +382,16 @@ and by `Accept` header, between the app and Fediproxy. Until then, an app ships 
 Traefik tags. More than one router per service needs a constitution amendment, because VI names
 the router `<app>-<service>`.
 
+### Hitless restart (Phase 2.6 or later, on demand)
+
+Added 2026-10-18, from 020.5's lab run. Restart restarts each copy in place, one at a time; the
+copy stays registered with Traefik while its process restarts, so a request that reaches it in
+that second fails (2 of 103 in the lab), though the app never goes dark. A hitless restart would
+replace copies the way a deploy does: register the same version with a restart marker in the job's
+meta, so Nomad starts new copies as canaries hidden from Traefik until healthy, promotes them and
+stops the old ones. That is a new job version per restart, and an app with a volume (one copy,
+stop-then-start) can't be hitless either way.
+
 ### Updates from the console (the notice: Phase 2.6; updating: Phase 3)
 
 Added 2026-10-11. Today Caravana is updated by running the install command again on the

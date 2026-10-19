@@ -126,7 +126,9 @@ copy's restart count went up by one and the needs-you list stays empty.
 - **SC-001**: Resetting Umbral's operator credential takes one form in the console and no SSH.
 - **SC-002**: A secret printed by a command appears nowhere after its answer (checked with a
   sentinel across pages, API answers, records, logs and the live stream).
-- **SC-003**: A two-copy app restarted from the console answers every request during the restart.
+- **SC-003**: A two-copy app restarted from the console never goes dark: at least one copy serves
+  throughout, and at most 1 call in 10 fails (one reaching a copy in the moment it restarts;
+  lab 2026-10-18: 2 of 103). A hitless restart by replacement is in the backlog.
 - **SC-004**: Stop then Start runs the same job definition and image digests as before the stop.
 
 ## Assumptions

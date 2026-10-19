@@ -59,6 +59,14 @@ a crash loop), then wait until the copy is running again and, when the service h
 healthy (Nomad's alloc health / service checks as `Copies` reads them), up to 2 minutes per copy.
 Runs in the background after the API answers 202; its outcome goes in `app_actions`.
 
+**Lab, 2026-10-18:** a two-copy app polled every 200 ms during a restart: 2 of 103 calls got a 502.
+A copy restarted in place stays registered with Traefik while its process restarts, so a call that
+reaches it in that second fails; the other copy serves throughout, so the app never goes dark. A
+hitless restart would replace copies the way a deploy does (new copies hidden from Traefik as
+canaries until healthy, then the old ones stop), a new job version per restart: kept for later
+(docs/plan.md backlog, "Hitless restart"). Also seen: Nomad's exec answers a program that isn't in
+the image with the runtime's "executable file not found" and exit 127, not an exec error.
+
 ## R5. Busy
 
 Stop, Start and Restart take the app's per-app lock (the one deploys and volume backups hold) with
