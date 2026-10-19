@@ -34,6 +34,10 @@ type ExecReply struct {
 	// Fail closes the websocket with this text before any exit code, as Nomad
 	// does when the program can't be started.
 	Fail string
+	// Shell runs the fake interactive shell instead of the scripted output
+	// (see runShell). A terminal request (TTY) with no OnExec hook set gets it
+	// too, so a test of the terminal needs no script.
+	Shell bool
 }
 
 // OnExec sets what a command does: fn is called with the request, without the
@@ -119,6 +123,11 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	defer conn.Close()
+
+	if reply.Fail == "" && (reply.Shell || (hook == nil && req.TTY)) {
+		runShell(conn)
+		return
+	}
 
 	// Read the client's frames (stdin, heartbeats) so its close is noticed.
 	gone := make(chan struct{})

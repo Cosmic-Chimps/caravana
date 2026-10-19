@@ -1,7 +1,9 @@
 package httpx
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -40,3 +42,17 @@ func (r *statusRecorder) WriteHeader(status int) {
 // Unwrap lets http.ResponseController reach the real ResponseWriter, so a
 // handler can change its own write deadline.
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// Hijack lets a handler take over the connection, which a websocket upgrade
+// does. The recorder embeds the ResponseWriter as an interface, so without
+// this method the writer would no longer be an http.Hijacker and every upgrade
+// would fail. The log line says 101 (Switching Protocols) for a connection
+// taken over, since the handler then writes its own answer to the connection
+// and WriteHeader never runs.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(r.ResponseWriter).Hijack()
+	if err == nil {
+		r.status = http.StatusSwitchingProtocols
+	}
+	return conn, rw, err
+}
