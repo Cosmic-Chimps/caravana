@@ -221,7 +221,15 @@ func (g *gate) deployFromCIStep(t *testing.T) {
 
 	noToken := func(what string, run actionRun) {
 		t.Helper()
-		if strings.Contains(run.Log, token) || strings.Contains(run.Summary, token) {
+		// The one line that must hold it is "::add-mask::<token>": that is how
+		// the action tells GitHub to hide it, and GitHub never shows that line.
+		var log []string
+		for _, line := range strings.Split(run.Log, "\n") {
+			if line != "::add-mask::"+token {
+				log = append(log, line)
+			}
+		}
+		if strings.Contains(strings.Join(log, "\n"), token) || strings.Contains(run.Summary, token) {
 			t.Errorf("%s: the token is in the script's log or summary", what)
 		}
 	}
