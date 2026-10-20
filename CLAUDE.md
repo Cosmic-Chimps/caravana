@@ -602,7 +602,8 @@ real apps. Reordered with the maintainer on 2026-10-16. Scope right now, in the 
 
 Gate to finish Phase 2.5: on the maintainer's host, an app built from a git repo deploys to a
 staging environment, is promoted to production, and a failure during it reaches the owner as a
-notification.
+notification. Passed 2026-10-20 with the `lacalabaza` blog: staging → production by caravana-action,
+a broken commit reverted on staging and reported to ntfy (see `docs/plan.md`).
 
 After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
 per screen (020.5 app actions and Run a command (done, branch `020.5-app-actions`), 020.6 terminal into a copy (done, branch `020.6-terminal`), 021 console IA, 022 Schedules, 023 Domains, 024

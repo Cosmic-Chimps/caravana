@@ -119,6 +119,15 @@ building from source. Aspire and Bella Baxter move to Phase 2.75.
 is promoted to production, and a failure during it reaches the owner as a notification. Built by
 CI and deployed by caravana-action (020).
 
+**Passed 2026-10-20** on the maintainer's host (0.9.1) with the `lacalabaza` blog (Eleventy into an
+nginx image on GHCR):
+- caravana-action deploys `default--staging--lacalabaza` and promotes it to production.
+- A commit whose container exits at start (`8355583`) failed staging's rollout on the progress
+  deadline and was reverted, production was untouched and nothing was promoted, and ntfy received
+  the failed deploy and the "needs you" problem.
+- The fix (`7412885`) went healthy on staging and was promoted to production, with "from CI" and
+  the run link in each notification.
+
 ## Phase 2.6: The Developer view, complete (single node)
 
 Added 2026-10-18. From here on the plan follows the design handoff ("caravana console",
