@@ -47,12 +47,16 @@ func main() {
 
 // run starts the control plane and blocks until ctx is cancelled or the
 // server fails. It returns the process exit code. `caravana admin ...` is the
-// host CLI instead (admin.go). Taking its inputs as arguments lets tests run
+// host CLI instead (admin.go), and `caravana mcp` the agent's MCP server
+// (mcp.go). Taking its inputs as arguments lets tests run
 // it in-process.
 func run(ctx context.Context, args []string, getenv func(string) string,
 	stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "admin" {
 		return runAdmin(ctx, args[1:], getenv, stdin, stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "mcp" {
+		return runMCP(ctx, args[1:], getenv, stdin, stdout, stderr)
 	}
 	if len(args) == 1 && args[0] == "version" {
 		fmt.Fprintln(stdout, version)
