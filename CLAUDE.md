@@ -578,6 +578,34 @@ overlay to `POST /v1/apps/{id}/compose`. What real Aspire 13.6.1 output (the fix
   which resolve by service name inside one app. The publisher resolves `${VAR}`, renames volumes
   (dots aren't allowed in a volume name) and moves values that contain a secret into the overlay.
 
+Feature 026.5 (`specs/026.5-mcp-server`, Phase 2.75) is implemented on branch `026.5-mcp-server`:
+`caravana mcp`, a Model Context Protocol server over stdio that runs where the agent is and calls
+only the public API (no API change; openapi stays 0.21.0).
+- `internal/mcpserver` is an API client only. A test fails if it imports `service`, `store`,
+  `deploy` or Nomad. `github.com/modelcontextprotocol/go-sdk` v1.8.0 is a new direct dependency,
+  the official SDK (plan R2), and `google/jsonschema-go` is now direct for the input schemas.
+- Settings: `CARAVANA_URL` (https, or http for loopback only), and `CARAVANA_TOKEN` or
+  `CARAVANA_TOKEN_FILE`. Exactly one token setting is allowed, there is never a flag for it, and
+  its alphabet is checked. Redirects are not followed, each call has a 30 s timeout, and the
+  token is redacted from every text.
+- Tools: read tools always (`contracts/tools.md`), including `wait_for_deployment`, which polls
+  every 5 s with progress. Action tools only with `--allow-actions`:
+  - `deploy_image` reads the app, replaces one service's image in `record.app` and deploys with
+    a quoted `If-Match`, retrying once on 412;
+  - `promote_app` previews, then promotes with the preview's `targetRevision`.
+  Never offered: delete, restore, Run a command, the terminal, tokens or secret-bearing settings,
+  or a whole-definition deploy. No `Caravana-Origin-*` headers are sent.
+- Each tool's answer is the API's body as it came; an API refusal is a tool error
+  `Caravana refused: <code>: <message> (field …) (HTTP n)`. stderr gets one JSON line per call
+  (tool, outcome, code, duration), never the token or an answer. A contract test checks every
+  request against `api/openapi.yaml`, and the deploy body against the `App` schema.
+- `tools/release.sh build` adds `caravana_<v>_darwin_{arm64,amd64}.tar.gz` (the binary alone) to
+  each release. Setup for agents: `docs/mcp.md`.
+- `TestConsoleLab` has a step `console-mcp` (`console_mcp_test.go`): read tools with a full token,
+  then `deploy_image` and `wait_for_deployment` and `restart_app` with `--allow-actions`, a
+  deploy token's `token_scope` refusals, a wrong token's 401, and no token in any stderr line or
+  answer.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

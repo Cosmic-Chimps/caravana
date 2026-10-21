@@ -190,6 +190,12 @@ review stays at its end, and the publisher, which we maintain too, follows the A
   It goes through the API only (constitution V), as `caravana mcp` over stdio (the binary run
   where the agent is, with an API URL and token), so nothing new runs on the host. Settles in its
   spec: whether it is that subcommand or an `/mcp` endpoint on the API, and the Go MCP module.
+  **Status (2026-10-20): done** (specs/026.5-mcp-server). It is the stdio subcommand, with the
+  official `modelcontextprotocol/go-sdk`. It offers 18 read tools by default and 8 action tools
+  with `--allow-actions`. It never offers delete, restore, Run a command, the terminal or
+  secret-bearing settings. A deploy token keeps it to one app by the API's own scope. Releases
+  carry macOS binaries, and the setup is in `docs/mcp.md`. An `/mcp` endpoint for remote agents
+  waits until someone asks.
 - 027: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
   Drawn as `VariablesScreen`'s "Where secrets come from" panel with one external source, not the
   handoff's provider gallery: the constitution keeps Caravana whole without any provider and names

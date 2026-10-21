@@ -9,6 +9,21 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- Coding agents can read and act on an installation: `caravana mcp` is an MCP server that an
+  agent such as Claude Code starts on your machine. Give it the console's address and an API
+  token (`CARAVANA_URL`, and `CARAVANA_TOKEN` or `CARAVANA_TOKEN_FILE`). The agent can then answer
+  "is umbral healthy?" or "why did the last deploy fail?" itself.
+  - It reads projects, apps, deployments, copies, logs, volumes, backups, recent actions and the
+    needs-you list, and it can wait for a deployment to end.
+  - With `--allow-actions` it can also redeploy, deploy a new image to a service, roll back,
+    promote, restart, stop, start and back up now.
+  - A deploy token keeps it to one app. It never offers deleting, restoring, Run a command, the
+    terminal, or any setting that holds a secret, and it never logs the token or an answer.
+  - Setup: [docs/mcp.md](docs/mcp.md).
+- Releases include the `caravana` binary for macOS (`darwin_arm64` and `darwin_amd64`), for
+  running `caravana mcp` where the agent is.
+
 ## 0.9.1 - 2026-10-19
 
 ### Fixed
