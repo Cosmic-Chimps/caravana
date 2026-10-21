@@ -42,6 +42,17 @@ type AppStatus struct {
 	HealthyCopies int     // healthy copies of the live version; 0 when Nomad is unreadable
 	LiveVersion   *uint64 // the job version the healthy copies run; nil if none is healthy
 	NomadError    string  // why the state is unknown (also set while rolling out, if Nomad is unreadable)
+	// Services is the same two counts per service, in the app's service order,
+	// so a page can say which service is short. Empty for an app with no services.
+	Services []ServiceStatus
+}
+
+// ServiceStatus is one service's share of an AppStatus: the copies it asks
+// for and the healthy ones of the live version.
+type ServiceStatus struct {
+	Name    string
+	Wanted  int
+	Healthy int
 }
 
 // AppSummary is an app with its status and newest deployment, for lists and
@@ -56,13 +67,17 @@ type AppSummary struct {
 func wantedCopies(a app.App) int {
 	n := 0
 	for _, svc := range a.Services {
-		if svc.Replicas == nil {
-			n++
-		} else {
-			n += *svc.Replicas
-		}
+		n += serviceCopies(svc)
 	}
 	return n
+}
+
+// serviceCopies is how many copies one service asks for (nil replicas = 1).
+func serviceCopies(svc app.Service) int {
+	if svc.Replicas == nil {
+		return 1
+	}
+	return *svc.Replicas
 }
 
 // statusOf derives an app's status (data-model "App status"). It is pure: no
@@ -96,6 +111,19 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 		if c.Version == *st.LiveVersion {
 			st.HealthyCopies++
 		}
+	}
+
+	// The same count per service: healthy copies of the live version, as above.
+	for _, svc := range a.Services {
+		ss := ServiceStatus{Name: svc.Name, Wanted: serviceCopies(svc)}
+		if st.LiveVersion != nil {
+			for _, c := range copies {
+				if c.Service == svc.Name && c.Status == deploy.CopyHealthy && !c.Stopping && c.Version == *st.LiveVersion {
+					ss.Healthy++
+				}
+			}
+		}
+		st.Services = append(st.Services, ss)
 	}
 
 	switch {

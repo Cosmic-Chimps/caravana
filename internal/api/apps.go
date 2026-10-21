@@ -88,6 +88,23 @@ type appStatusJSON struct {
 	WantedCopies  int              `json:"wantedCopies"`
 	HealthyCopies int              `json:"healthyCopies"`
 	LiveVersion   *uint64          `json:"liveVersion,omitempty"`
+	// Services is the same two counts per service, in the app's order.
+	Services []serviceStatusJSON `json:"services,omitempty"`
+}
+
+// serviceStatusJSON is one service's copies (schema ServiceStatus).
+type serviceStatusJSON struct {
+	Name          string `json:"name"`
+	WantedCopies  int    `json:"wantedCopies"`
+	HealthyCopies int    `json:"healthyCopies"`
+}
+
+func toAppStatusJSON(st service.AppStatus) appStatusJSON {
+	j := appStatusJSON{State: st.State, WantedCopies: st.WantedCopies, HealthyCopies: st.HealthyCopies, LiveVersion: st.LiveVersion}
+	for _, s := range st.Services {
+		j.Services = append(j.Services, serviceStatusJSON{Name: s.Name, WantedCopies: s.Wanted, HealthyCopies: s.Healthy})
+	}
+	return j
 }
 
 // appSummaryJSON is an app with its status (schema AppSummary).
@@ -116,12 +133,7 @@ func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
 		Environment: sum.Place.Environment,
 		AppName:     sum.Place.Name,
 		StoppedAt:   sum.StoppedAt,
-		Status: appStatusJSON{
-			State:         sum.Status.State,
-			WantedCopies:  sum.Status.WantedCopies,
-			HealthyCopies: sum.Status.HealthyCopies,
-			LiveVersion:   sum.Status.LiveVersion,
-		},
+		Status:      toAppStatusJSON(sum.Status),
 	}
 	if sum.LastDeployment != nil {
 		d := toDeploymentJSON(*sum.LastDeployment)

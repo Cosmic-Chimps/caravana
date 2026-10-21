@@ -79,6 +79,11 @@ type appSummary struct {
 		WantedCopies  int     `json:"wantedCopies"`
 		HealthyCopies int     `json:"healthyCopies"`
 		LiveVersion   *uint64 `json:"liveVersion"`
+		Services      []struct {
+			Name          string `json:"name"`
+			WantedCopies  int    `json:"wantedCopies"`
+			HealthyCopies int    `json:"healthyCopies"`
+		} `json:"services"`
 	} `json:"status"`
 	LastDeployment *deployment `json:"lastDeployment"`
 }
@@ -146,6 +151,14 @@ func TestListApps(t *testing.T) {
 		if who.Status.State != "healthy" || who.Status.WantedCopies != 2 || who.Status.HealthyCopies != 2 ||
 			who.Status.LiveVersion == nil || *who.Status.LiveVersion != 4 {
 			t.Errorf("whoami status = %+v, want healthy 2 of 2 at v4", who.Status)
+		}
+		// The per-service counts are in the order of the app's services.
+		if len(who.Status.Services) != 1 || who.Status.Services[0].Name != "web" ||
+			who.Status.Services[0].WantedCopies != 2 || who.Status.Services[0].HealthyCopies != 2 {
+			t.Errorf("whoami status.services = %+v, want web 2 of 2", who.Status.Services)
+		}
+		if len(blog.Status.Services) != 1 || blog.Status.Services[0].HealthyCopies != 0 || blog.Status.Services[0].WantedCopies != 1 {
+			t.Errorf("blog status.services = %+v, want web 0 of 1", blog.Status.Services)
 		}
 		if who.LastDeployment == nil || who.LastDeployment.ID != "whoami-d1" || who.LastDeployment.Status != "healthy" {
 			t.Errorf("whoami lastDeployment = %+v, want whoami-d1 healthy", who.LastDeployment)

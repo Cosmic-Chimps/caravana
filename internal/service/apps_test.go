@@ -147,6 +147,46 @@ func TestStatusOf(t *testing.T) {
 	}
 }
 
+// TestStatusOfServices checks the per-service counts: in the app's service
+// order, healthy copies of the live version only, and a count of 0 for a
+// service with no healthy copy or when no version is live.
+func TestStatusOfServices(t *testing.T) {
+	healthy := deploy.CopyHealthy
+	tests := []struct {
+		name     string
+		app      app.App
+		copies   []deploy.Copy
+		nomadErr error
+		want     []ServiceStatus
+	}{
+		{"in the app's order", appWith("a", 2, 1),
+			[]deploy.Copy{copyOfVersion("worker", 7, healthy), copyOfVersion("web", 7, healthy), copyOfVersion("web", 7, healthy)}, nil,
+			[]ServiceStatus{{"web", 2, 2}, {"worker", 1, 1}}},
+		{"a short service", appWith("a", 2, 1),
+			[]deploy.Copy{copyOfVersion("web", 7, healthy), copyOfVersion("web", 7, deploy.CopyUnhealthy), copyOfVersion("worker", 7, healthy)}, nil,
+			[]ServiceStatus{{"web", 2, 1}, {"worker", 1, 1}}},
+		{"only the live version counts", appWith("a", 2),
+			[]deploy.Copy{copyOfVersion("web", 6, healthy), copyOfVersion("web", 7, healthy)}, nil,
+			[]ServiceStatus{{"web", 2, 1}}},
+		{"a copy being stopped doesn't count", appWith("a", 1, 1),
+			[]deploy.Copy{{Service: "web", Version: 7, Status: healthy, Stopping: true}, copyOfVersion("worker", 7, healthy)}, nil,
+			[]ServiceStatus{{"web", 1, 0}, {"worker", 1, 1}}},
+		{"nothing live", appWith("a", 1, 1), nil, nil,
+			[]ServiceStatus{{"web", 1, 0}, {"worker", 1, 0}}},
+		{"Nomad unreadable", appWith("a", 1), []deploy.Copy{copyOfVersion("web", 7, healthy)}, errors.New("down"),
+			[]ServiceStatus{{"web", 1, 0}}},
+		{"no services", app.App{}, nil, nil, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := statusOf(tc.app, latest(store.StatusHealthy), tc.copies, tc.nomadErr).Services
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Services = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 // loggedEnv is newEnv with a service that logs into a buffer.
 func loggedEnv(t *testing.T) (*env, *lockedBuffer) {
 	t.Helper()

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.21.0
+  version: 0.22.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -3683,6 +3683,22 @@ components:
           type: integer
           minimum: 0
           description: The job version the healthy copies run. Absent when no copy is healthy.
+        services:
+          type: array
+          description: |
+            The same two counts per service, in the app's service order, so a client can say which
+            service is short. Absent for an app with no services.
+          items:
+            $ref: "#/components/schemas/ServiceStatus"
+
+    ServiceStatus:
+      type: object
+      additionalProperties: false
+      required: [name, wantedCopies, healthyCopies]
+      properties:
+        name: {type: string}
+        wantedCopies: {type: integer, minimum: 0}
+        healthyCopies: {type: integer, minimum: 0, description: Healthy copies of the live version.}
 
     AppAction:
       type: object
