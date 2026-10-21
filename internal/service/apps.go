@@ -244,6 +244,9 @@ func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger)
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	if err := s.checkConsoleDomain(a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	if err := s.checkPlace(ctx, a.ID); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -276,6 +279,9 @@ var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with
 func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
 	if a.Defined() {
 		if err := s.deployer.Validate(a); err != nil {
+			return store.AppRecord{}, err
+		}
+		if err := s.checkConsoleDomain(a); err != nil {
 			return store.AppRecord{}, err
 		}
 	} else {

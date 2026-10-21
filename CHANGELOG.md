@@ -9,6 +9,16 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+- An app can no longer take the console's own domain. Giving an app the domain in
+  `CARAVANA_PUBLIC_URL` made Traefik hold two routes for it, and the console answered 502 while
+  that app rolled out. Every way of saving or deploying an app (the API, the console's forms,
+  Compose, Promote) now refuses it, naming the domain, and so does a redeploy or webhook of an
+  app that already has it. The console's own route in Traefik also now has top priority, so no
+  app's route can win over it.
+  - **Upgrade:** rerun the installer on an existing host to put the route change in place. If an
+    app uses the console's domain today, give it another one first (Configure).
+
 ## 0.10.0 - 2026-10-21
 
 ### Added

@@ -37,3 +37,36 @@ func TestInstallerMatchesLab(t *testing.T) {
 		t.Errorf("the installer downloads %d files but checks checksums %d times; want a check for Nomad, CNI and the release", downloads, checks)
 	}
 }
+
+// The console's route is the one static route in Traefik, and it must beat any
+// app's router for the same host (an app that was given the console's domain
+// once made the console answer 502). Traefik's default priority is the rule's
+// length, so the router sets a priority far above it. The file's template is
+// YAML inside HCL, which nothing here parses, so this checks the key is where
+// Traefik's file provider reads it: a router's own key, beside its rule.
+func TestTraefikConsoleRouteHasTopPriority(t *testing.T) {
+	b, err := os.ReadFile("../../deploy/install/traefik.nomad.hcl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(b), "\n")
+	for i, line := range lines {
+		rule, ok := strings.CutPrefix(strings.TrimLeft(line, " "), "rule: ")
+		if !ok || !strings.Contains(rule, "${var.console_domain}") {
+			continue
+		}
+		indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
+		if i+1 >= len(lines) {
+			break
+		}
+		priority, ok := strings.CutPrefix(lines[i+1], indent+"priority: ")
+		if !ok {
+			break
+		}
+		if len(priority) < 4 || strings.Trim(priority, "0123456789") != "" {
+			t.Errorf("priority = %q, want a whole number of at least 1000, far above a rule's length", priority)
+		}
+		return
+	}
+	t.Fatal("traefik.nomad.hcl: the console's router has no priority right after its rule")
+}
