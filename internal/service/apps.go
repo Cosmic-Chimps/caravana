@@ -85,8 +85,9 @@ func serviceCopies(svc app.Service) int {
 // couldn't be read; copies is then ignored.
 //
 // Rules, in order: latest deployment pending or running is rolling_out;
-// unreadable Nomad is unknown; healthy >= wanted is healthy; healthy > 0 is
-// degraded; otherwise not_running.
+// unreadable Nomad is unknown; healthy >= wanted, with no service short of its
+// own copies, is healthy (a surplus in one service must not hide a missing
+// copy in another); healthy > 0 is degraded; otherwise not_running.
 //
 // A copy is healthy when deploy marked it so, and Nomad hasn't told it to stop
 // (a copy on its way out, after a Stop or while a Start replaces it, serves
@@ -114,6 +115,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	}
 
 	// The same count per service: healthy copies of the live version, as above.
+	anyShort := false
 	for _, svc := range a.Services {
 		ss := ServiceStatus{Name: svc.Name, Wanted: serviceCopies(svc)}
 		if st.LiveVersion != nil {
@@ -123,6 +125,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 				}
 			}
 		}
+		anyShort = anyShort || ss.Healthy < ss.Wanted
 		st.Services = append(st.Services, ss)
 	}
 
@@ -131,7 +134,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 		st.State = StateRollingOut
 	case nomadErr != nil:
 		st.State = StateUnknown
-	case st.WantedCopies > 0 && st.HealthyCopies >= st.WantedCopies:
+	case st.WantedCopies > 0 && st.HealthyCopies >= st.WantedCopies && !anyShort:
 		st.State = StateHealthy
 	case st.HealthyCopies > 0:
 		st.State = StateDegraded

@@ -389,6 +389,71 @@ func troubleWords(sum service.AppSummary) string {
 	return words
 }
 
+// copiesSentence says what runs now, for a healthy or degraded app, with the
+// version in mono. One service is "2 copies running v7." (or, when short,
+// "1 of 2 copies healthy, running v7."). Several services name each one, so
+// "2 copies" never reads as two replicas of one thing:
+//
+//	2 services running v2: hollo 2 copies, postgres 1.
+//	2 services running v2: hollo and postgres, 1 copy each.
+//	2 services running v2: hollo 1 of 2 copies healthy, postgres 1.
+//
+// The noun is said once, by the first service; a short service always says
+// its own ("1 of 2 copies healthy"). The counts are the healthy copies of the
+// live version, as in AppStatus.
+func copiesSentence(st service.AppStatus, live string) sentence {
+	if len(st.Services) < 2 {
+		if st.State == service.StateDegraded {
+			return sentence{plain(fmt.Sprintf("%d of %d copies healthy, running ", st.HealthyCopies, st.WantedCopies)), mono(live), plain(".")}
+		}
+		out := sentence{plain(copyCount(st.HealthyCopies) + " running")}
+		if live != "" {
+			out = append(out, plain(" "), mono(live))
+		}
+		return append(out, plain("."))
+	}
+
+	same, short := true, false
+	for _, svc := range st.Services {
+		same = same && svc.Healthy == st.Services[0].Healthy
+		short = short || svc.Healthy < svc.Wanted
+	}
+	var tail string
+	if same && !short {
+		names := make([]string, len(st.Services))
+		for i, svc := range st.Services {
+			names[i] = svc.Name
+		}
+		tail = nameList(names) + ", " + copyCount(st.Services[0].Healthy) + " each"
+	} else {
+		parts := make([]string, len(st.Services))
+		for i, svc := range st.Services {
+			switch {
+			case svc.Healthy < svc.Wanted:
+				parts[i] = fmt.Sprintf("%s %d of %s healthy", svc.Name, svc.Healthy, copyCount(svc.Wanted))
+			case i == 0:
+				parts[i] = svc.Name + " " + copyCount(svc.Healthy)
+			default:
+				parts[i] = fmt.Sprintf("%s %d", svc.Name, svc.Healthy)
+			}
+		}
+		tail = strings.Join(parts, ", ")
+	}
+	out := sentence{plain(fmt.Sprintf("%d services running", len(st.Services)))}
+	if live != "" {
+		out = append(out, plain(" "), mono(live))
+	}
+	return append(out, plain(": "+tail+"."))
+}
+
+// nameList is names as a sentence's list: "a", "a and b", "a, b and c".
+func nameList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 // summaryOf is the app page's one-line summary: what runs now, and when and
 // how it was last deployed ("2 copies running v7. Last deployed 3 minutes ago
 // from the console.").
@@ -403,14 +468,8 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 			out = append(out, plain(" "+relative(now, *sum.StoppedAt)))
 		}
 		out = append(out, plain(". Start it to run what ran before."))
-	case service.StateHealthy:
-		out = sentence{plain(copyCount(st.HealthyCopies) + " running ")}
-		if live != "" {
-			out = append(out, mono(live))
-		}
-		out = append(out, plain("."))
-	case service.StateDegraded:
-		out = sentence{plain(fmt.Sprintf("%d of %d copies healthy, running ", st.HealthyCopies, st.WantedCopies)), mono(live), plain(".")}
+	case service.StateHealthy, service.StateDegraded:
+		out = copiesSentence(st, live)
 	case service.StateRollingOut:
 		var next string
 		if sum.LastDeployment != nil {

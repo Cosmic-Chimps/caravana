@@ -179,6 +179,79 @@ func TestSummaryOf(t *testing.T) {
 	}
 }
 
+// TestCopiesSentence covers the five shapes of the app header's copies line
+// (contracts/page1-shell.md), and which part of it is set in mono.
+func TestCopiesSentence(t *testing.T) {
+	v2 := "v2"
+	svc := func(name string, wanted, healthy int) service.ServiceStatus {
+		return service.ServiceStatus{Name: name, Wanted: wanted, Healthy: healthy}
+	}
+	status := func(state service.AppState, services ...service.ServiceStatus) service.AppStatus {
+		st := service.AppStatus{State: state, Services: services}
+		for _, s := range services {
+			st.WantedCopies += s.Wanted
+			st.HealthyCopies += s.Healthy
+		}
+		return st
+	}
+	tests := []struct {
+		name string
+		in   service.AppStatus
+		want string
+	}{
+		{"one service, one copy", status(service.StateHealthy, svc("web", 1, 1)), "1 copy running v2."},
+		{"one service, two copies", status(service.StateHealthy, svc("web", 2, 2)), "2 copies running v2."},
+		{"one service, short", status(service.StateDegraded, svc("web", 2, 1)), "1 of 2 copies healthy, running v2."},
+		{"no per-service counts", service.AppStatus{State: service.StateHealthy, WantedCopies: 2, HealthyCopies: 2}, "2 copies running v2."},
+		{"several, different counts", status(service.StateHealthy, svc("hollo", 2, 2), svc("postgres", 1, 1)),
+			"2 services running v2: hollo 2 copies, postgres 1."},
+		{"several, different counts, the small one first", status(service.StateHealthy, svc("hollo", 1, 1), svc("postgres", 2, 2)),
+			"2 services running v2: hollo 1 copy, postgres 2."},
+		{"two, the same count", status(service.StateHealthy, svc("hollo", 1, 1), svc("postgres", 1, 1)),
+			"2 services running v2: hollo and postgres, 1 copy each."},
+		{"two, the same count of two", status(service.StateHealthy, svc("hollo", 2, 2), svc("postgres", 2, 2)),
+			"2 services running v2: hollo and postgres, 2 copies each."},
+		{"three, the same count", status(service.StateHealthy, svc("a", 1, 1), svc("b", 1, 1), svc("c", 1, 1)),
+			"3 services running v2: a, b and c, 1 copy each."},
+		{"three, different counts", status(service.StateHealthy, svc("a", 2, 2), svc("b", 1, 1), svc("c", 3, 3)),
+			"3 services running v2: a 2 copies, b 1, c 3."},
+		{"several, the first is short", status(service.StateDegraded, svc("hollo", 2, 1), svc("postgres", 1, 1)),
+			"2 services running v2: hollo 1 of 2 copies healthy, postgres 1."},
+		{"several, a later one is short", status(service.StateDegraded, svc("hollo", 2, 2), svc("postgres", 2, 1)),
+			"2 services running v2: hollo 2 copies, postgres 1 of 2 copies healthy."},
+		{"several, same healthy count but one is short", status(service.StateDegraded, svc("hollo", 1, 1), svc("postgres", 2, 1)),
+			"2 services running v2: hollo 1 copy, postgres 1 of 2 copies healthy."},
+		{"several, one has none", status(service.StateDegraded, svc("hollo", 1, 1), svc("postgres", 1, 0)),
+			"2 services running v2: hollo 1 copy, postgres 0 of 1 copy healthy."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := copiesSentence(tc.in, v2)
+			if got.String() != tc.want {
+				t.Errorf("sentence = %q, want %q", got.String(), tc.want)
+			}
+			// Only the version is mono.
+			for _, p := range got {
+				if p.Mono && p.Text != v2 {
+					t.Errorf("mono part %q, want only %q", p.Text, v2)
+				}
+			}
+		})
+	}
+
+	t.Run("summaryOf uses it, with the last deploy after", func(t *testing.T) {
+		now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
+		last := &store.DeploymentRecord{CreatedAt: now.Add(-3 * time.Minute), Deployment: app.Deployment{Trigger: app.TriggerManual}}
+		sum := summary("hollo", service.StateHealthy, 2, 2, new(uint64(2)), last)
+		sum.Status = status(service.StateHealthy, svc("hollo", 1, 1), svc("postgres", 1, 1))
+		sum.Status.LiveVersion = new(uint64(2))
+		want := "2 services running v2: hollo and postgres, 1 copy each. Last deployed 3 minutes ago through the API."
+		if got := summaryOf(sum, now).String(); got != want {
+			t.Errorf("summary = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestStatusViews(t *testing.T) {
 	deployed := &store.DeploymentRecord{Status: store.StatusHealthy}
 	apps := []struct {
