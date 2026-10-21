@@ -6,6 +6,29 @@ handoff's `Shell.jsx`, `AppScreen.jsx`, `Tabs.jsx`, `StatusPill.jsx`, `Button.js
 Where this list and the handoff disagree, this list wins: it records the decisions the console
 made.
 
+## Corrections after rendering the handoff (designer, 2026-10-21)
+
+The designer rendered the prototype (screenshots in `design/console/_shots/`, gitignored). These
+override the sections below where they disagree:
+1. **Crumbs on an app page:** `project / environment` only, as on its project page. The app's name
+   is not a crumb; the h1 carries it. Projects stays the active sidebar item.
+2. **The back link above the title:** "← Home", to `/apps`, in 400 13px mono fg-3. The handoff's
+   "← Now" is the Operator home.
+3. **Tab counts:** "Running" carries the copies count. "Deployments" (the handoff's Ship tab)
+   carries the live version as its count, `v31`, in 400 12px mono fg-3. The status mark before
+   "Running" is a 6px rolling ◐ or warning ◆, with no mark when healthy.
+4. **The domain link in the title row** is underlined: the theme's `a` rule, fg-1, underline offset
+   3px, healthy blue on hover, 400 13px mono. Today's bare `cv-data` links are not the model.
+
+The render confirmed the rest:
+- the sidebar ground is ink-0, like the page, separated only by the 1px line-1;
+- the active item's bar is the accent;
+- Settings has its own block above the account row;
+- the email is ellipsized, with the log-out icon at the right;
+- "New app" is at the top bar's right edge;
+- the live indicator is a 6px dot plus "live";
+- the title row's order: name, pill, domain, spacer, actions.
+
 ## Scope notes
 
 - **Sidebar entries:** only entries that have a page:
@@ -81,8 +104,9 @@ made.
   - the last crumb is fg-1; the others are fg-2 links, with an ink-2 ground on hover;
   - the separator is "/" in 400 16px mono fg-4, with 6px gaps;
   - no chevrons: the handoff's crumbs are switchers, the console's are links;
-  - **examples:** an app page reads `Default / production / whoami`, and its tabs add no crumb.
-    Settings reads `Settings`, and New app reads `New app`;
+  - **examples:** an app page reads `Default / production`, the same as its project page. The
+    app's name is not a crumb (the h1 carries it), and its tabs add none. Settings reads
+    `Settings`, and New app reads `New app`;
   - today's "›" separators and 14px sans go.
 - **Live indicator:**
   - a 6px healthy dot (not 8), gap 10, 400 12px mono fg-3, and the word "live";
@@ -99,14 +123,15 @@ made.
   stack gap. The other pages keep 36/64/28.
 - **Header block:** 16px gap.
 - **Back link:**
-  - 400 13px mono fg-3, "← production" (the environment's name), to the app's project page;
+  - 400 13px mono fg-3, "← Home", to `/apps` (the handoff's "← Now" is the Operator home);
   - it replaces today's `cv-where` line, which duplicates the top bar's crumbs.
 - **Title row:**
   - flex, align center, gap 18;
   - **h1:** 500 24px mono fg-1;
   - **status pill md:** 22px, padding 0 8px, radius 2, tinted ground plus a 1px tinted line,
     500 12px mono, a 7px mark, gap 6; idle reads "stopped";
-  - **domains:** each a link in 400 13px mono;
+  - **domains:** each a link in 400 13px mono, underlined: the theme's `a` rule, fg-1, underline
+    offset 3px, healthy blue on hover (not today's bare `cv-data` links);
   - then a spacer, then right-aligned sm buttons:
     - **Restart:** secondary, rotate-ccw icon;
     - **Stop…:** secondary, no icon (the console's addition);
@@ -134,8 +159,10 @@ made.
 - **Tabs:**
   - gap 26, 46px tall, 500 13.5px sans, margin-bottom -1 over a 1px line-1 rule;
   - **active:** fg-1 with a 2px fg-1 underline; **inactive:** fg-3; **hover:** fg-2;
-  - **count:** 400 12px mono fg-3, gap 9;
-  - add the handoff's 6px status mark before "Running" when the app's state isn't healthy.
+  - **count:** 400 12px mono fg-3, gap 9. "Running" carries the copies count; "Deployments" (the
+    handoff's Ship tab) carries the live version, e.g. `v31`;
+  - add the handoff's 6px status mark before "Running" when the app's state isn't healthy: rolling
+    ◐ or warning ◆, none when healthy.
 
 ## May differ (server-rendered, no JavaScript)
 
