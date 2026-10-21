@@ -636,10 +636,12 @@ a broken commit reverted on staging and reported to ntfy (see `docs/plan.md`).
 After 020 comes Phase 2.6 (added 2026-10-18): the design handoff's Developer view, one feature
 per screen (020.5 app actions and Run a command (done, branch `020.5-app-actions`), 020.6 terminal into a copy (done, branch `020.6-terminal`), 021 console IA, 022 Schedules, 023 Domains, 024
 Logs, 025 Monitoring and capacity; also a sqlite backup engine and an "update available" notice),
-ending with the API at 1.0, then Aspire in 2.75. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
+ending with the API at 1.0. Phase 2.75 (Aspire: 026 `PublishToCaravana` and 026.5 `caravana mcp`)
+was done out of order and passed its gate on 2026-10-21 with Frunchy. Bella Baxter won't run on
+Caravana; its secrets provider (was 027) is in the backlog. Phase 2.6 resumes with 021. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
 and ends Phase 4 with "The handoff, screen by screen".
 
-Out of scope for now: multi-node, WireGuard, teams and roles, Aspire/Bella Baxter (Phase 2.75),
+Out of scope for now: multi-node, WireGuard, teams and roles, secrets from Bella Baxter (backlog),
 GPUs and binaries, Amazon ECR (backlog).
 
 ## Architecture
