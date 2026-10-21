@@ -16,5 +16,17 @@
 - [X] T005 Lab: `TestConsoleLab` step `console-mcp` (plan.md "Lab").
 - [ ] T006 Docs: CHANGELOG Unreleased (Added), CLAUDE.md 026.5 paragraph, docs/plan.md 026.5
   status.
-- [ ] T007 Full check (CI's list), `TestConsoleLab`, and a real agent: `claude mcp add` against the
+- [X] T007 Full check (CI's list), `TestConsoleLab`, and a real agent: `claude mcp add` against the
   lab Caravana, ask for an app's status (main session).
+  - 2026-10-20: all of CI's checks pass, including the whole suite under `-race`, shellcheck, the
+    UI checks and the darwin cross-compile. `TestConsoleLab` passed (509 s, 21 steps;
+    `console-mcp` 27.5 s).
+  - The built binary was driven over real stdio with raw JSON-RPC against a throwaway Caravana on
+    the lab:
+    - handshake: server `caravana`, protocol 2025-06-18; 18 read tools listed;
+    - reads answer the API's JSON, and a missing app is Caravana's 404 refusal;
+    - `../etc` is rejected by the schema, and `deploy_image` is unknown without the flag;
+    - stderr has one line per call, and the token appears in no output;
+    - a remote `http://` address and both token settings exit 2 with the usage.
+  - Not done: `claude mcp add` in a real agent, since it changes the maintainer's agent
+    configuration. It is left for the maintainer (docs/mcp.md has the command).
