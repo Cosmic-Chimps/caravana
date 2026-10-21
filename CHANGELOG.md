@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.11.0 - 2026-10-21
+
 ### Fixed
 - An app can no longer take the console's own domain. Giving an app the domain in
   `CARAVANA_PUBLIC_URL` made Traefik hold two routes for it, and the console answered 502 while
