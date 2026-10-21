@@ -29,4 +29,10 @@ read and act on an installation through `caravana mcp`: [docs/mcp.md](docs/mcp.m
 
 Go 1.27+, no CGO. The Nomad lab runs in a Lima VM (`deploy/dev/lab.sh up`). The commands and
 the state of each feature are in [CLAUDE.md](CLAUDE.md), and the rules every change follows are
-in [.specify/memory/constitution.md](.specify/memory/constitution.md).
+in [.specify/memory/constitution.md](.specify/memory/constitution.md). To contribute, read
+[CONTRIBUTING.md](CONTRIBUTING.md) first: contributions are made under its agreement.
+
+## License and name
+
+Caravana is © Cosmic Chimps S.L., licensed under the [GNU AGPL v3](LICENSE). "Caravana" and its
+logo identify the official project: forks are welcome under the AGPL, under another name.
