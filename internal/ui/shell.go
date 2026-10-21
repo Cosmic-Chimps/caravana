@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // shellView is what shell.html needs to draw the sidebar and the top bar
@@ -77,12 +78,14 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 	return d, nil
 }
 
-// initialOf is the first letter of s, upper case, for the brand's mark.
+// initialOf is the first letter of the host s, upper case, for the brand's
+// mark. A host that doesn't start with a letter (an IP address such as
+// 127.0.0.1) gets "C", for caravana, since a digit reads as a count.
 func initialOf(s string) string {
-	if r := []rune(s); len(r) > 0 {
+	if r := []rune(s); len(r) > 0 && unicode.IsLetter(r[0]) {
 		return strings.ToUpper(string(r[0]))
 	}
-	return "?"
+	return "C"
 }
 
 // initialsOf is the first two letters of an email's local part, upper case:

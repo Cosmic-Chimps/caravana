@@ -199,7 +199,9 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		Summary:    summaryOf(sum, s.now()),
 		NomadError: sum.Status.NomadError,
 	}
-	if sum.StoppedAt == nil && s.hasTab("deployments") {
+	// An app with no definition can't be deployed, so it gets no Deploy: the
+	// Running tab's "define it in Configure" is its next step.
+	if sum.StoppedAt == nil && sum.App.Defined() && s.hasTab("deployments") {
 		h.DeployHref = "/apps/" + sum.App.ID + "/deployments#deploy"
 	}
 	for _, t := range s.tabs {

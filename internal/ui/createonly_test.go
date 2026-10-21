@@ -185,6 +185,30 @@ func TestAppListShowsAppsThatWereNeverDeployed(t *testing.T) {
 	}
 }
 
+// TestHeaderDeployNeedsADefinition: the app header's Deploy is a link to the deploy form, which can
+// deploy nothing for an app with no services, so such an app has no Deploy; a defined app that was
+// never deployed keeps it (the designer's review of 021 page 1).
+func TestHeaderDeployNeedsADefinition(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	if _, err := e.Svc.CreateAppOnly(ctx, app.App{ID: "shop"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Svc.CreateAppOnly(ctx, duoApp()); err != nil {
+		t.Fatal(err)
+	}
+	for id, wantDeploy := range map[string]bool{"shop": false, "duo": true} {
+		resp, body := e.get(t, "/apps/"+id)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /apps/%s = %d:\n%s", id, resp.StatusCode, body)
+		}
+		link := `<a href="/apps/` + id + `/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`
+		if got := strings.Contains(body, link); got != wantDeploy {
+			t.Errorf("/apps/%s: header Deploy present = %v, want %v", id, got, wantDeploy)
+		}
+	}
+}
+
 func TestConfigureDefinesAnAppWithNoDefinition(t *testing.T) {
 	ctx := context.Background()
 	// shop is the app made by name only; its Configure tab holds the form that defines it.

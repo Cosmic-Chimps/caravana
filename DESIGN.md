@@ -277,7 +277,9 @@ in grayscale and for people with color vision deficiency.
 ### Named Rules
 **The Shape-and-Color Rule.** Status is never color alone. Every status shows its mark next to
 its color: ● healthy, ◐ rolling, ◆ warning, ■ failed, ○ idle. Hide the color and the status must
-still read.
+still read. A mark is 7px, in pills and rows alike; the warning diamond is a 5.46px square turned
+45°, with a 0.77px margin (0.78 and 0.11 of 7), so it fills the same box. A tab's mark is 6px,
+by the same ratios.
 
 **The Status-Only Color Rule.** The four status hues mean status and nothing else. Buttons, links,
 tabs and decoration stay neutral. When a screen is fully healthy, the only color on it is Signal

@@ -142,10 +142,10 @@
   /* Status marks: a shape each, so status never depends on color alone.
      healthy is a disc, rolling a half-filled disc, warning a tilted square,
      failed a square, idle a ring. Drawn in CSS, so they don't depend on a font. */
-  .cv-mark { display: inline-block; width: 8px; height: 8px; flex: none; box-sizing: border-box; }
+  .cv-mark { display: inline-block; width: 7px; height: 7px; flex: none; box-sizing: border-box; }
   .cv-mark-healthy { border-radius: 50%; background: var(--color-healthy); }
   .cv-mark-rolling { border-radius: 50%; border: 1.5px solid var(--color-rolling); background: linear-gradient(90deg, var(--color-rolling) 50%, transparent 50%); }
-  .cv-mark-warning { width: 6.24px; height: 6.24px; margin: 0.88px; transform: rotate(45deg); background: var(--color-warn); }
+  .cv-mark-warning { width: 5.46px; height: 5.46px; margin: 0.77px; transform: rotate(45deg); background: var(--color-warn); }
   .cv-mark-failed { border-radius: 1px; background: var(--color-failed); }
   .cv-mark-idle { border-radius: 50%; border: 1.5px solid var(--color-fg-3); }
 
