@@ -281,9 +281,9 @@ func TestAppsListsEveryApp(t *testing.T) {
 		t.Errorf("a service's image isn't labelled with its name:\n%s", body)
 	}
 
-	// The Problems-First Rule: the app that needs a human is on top, then the rest by name.
+	// The Problems-First Rule: the failed apps are on top (blog, whose newest deploy was reverted, is "deploy failed"), then the degraded one, then the rest.
 	at := func(id string) int { return strings.Index(body, `href="/apps/`+id+`" class="cv-app-name"`) }
-	if at("api") < 0 || !(at("api") < at("blog") && at("blog") < at("whoami")) {
+	if at("api") < 0 || !(at("blog") < at("api") && at("api") < at("whoami")) {
 		t.Errorf("rows are not sorted problems first (api %d, blog %d, whoami %d)", at("api"), at("blog"), at("whoami"))
 	}
 }
@@ -474,8 +474,8 @@ func TestAppPage(t *testing.T) {
 		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago from the console.`,
 		// the breadcrumbs (project / environment, not the app: the h1 carries its name), the back link,
 		// and the stream and the region of this app
-		`<a href="/projects/default" class="cv-crumb">Default</a>`, `aria-current="page">production</span>`,
-		`<a href="/apps" class="cv-backlink">← Home</a>`,
+		`<a href="/projects/default" class="cv-crumb">Default</a>`, `cv-crumb-current">production</span>`,
+		`<a href="/apps" class="cv-backlink" id="app-home">← Home</a>`,
 		`hx-ext="sse" sse-connect="/live/apps/whoami?tab=running" sse-close="ended" data-live`,
 		`hx-get="/parts/apps/whoami/header" hx-trigger="sse:app, sse:deleted, sse:sync"`,
 	} {
@@ -493,8 +493,8 @@ func TestAppPage(t *testing.T) {
 	t.Run("summaries by state", func(t *testing.T) {
 		for path, want := range map[string]string{
 			"/parts/apps/api/header": "1 of 2 copies healthy, running v3.",
-			// blog has two services, web and worker, one copy each
-			"/parts/apps/blog/header": "2 services running v7: web and worker, 1 copy each. Last deployed 3 minutes ago by webhook.",
+			// blog: its newest deploy (v8) was reverted, and v7 keeps running
+			"/parts/apps/blog/header": "v8 failed its health checks. v7 keeps running. Last deployed 3 minutes ago by webhook.",
 		} {
 			_, part := e.get(t, path)
 			if text := strings.Join(strings.Fields(html.UnescapeString(tagPattern.ReplaceAllString(part, ""))), " "); !strings.Contains(text, want) {
@@ -519,10 +519,10 @@ func TestAppPage(t *testing.T) {
 		_, body := e.get(t, "/apps/whoami")
 		for _, want := range []string{
 			`<nav aria-label="App sections" class="cv-tabs">`,
-			`<a href="/apps/whoami" class="cv-tab" aria-current="page">Running<span class="cv-tab-count">2</span></a>`,
-			`<a href="/apps/whoami/deployments" class="cv-tab">Deployments<span class="cv-tab-count">v7</span></a>`,
+			`<a href="/apps/whoami" class="cv-tab" id="tab-running" aria-current="page">Running<span class="cv-tab-count">2</span></a>`,
+			`<a href="/apps/whoami/deployments" class="cv-tab" id="tab-deployments">Deployments<span class="cv-tab-count">v7</span></a>`,
 			// the header's Deploy is a link to the deploy form, once the Deployments tab is built
-			`<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`,
+			`<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the app page lacks %q:\n%s", want, body)

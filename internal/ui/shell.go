@@ -26,6 +26,10 @@ type shellView struct {
 type crumb struct {
 	Label string
 	Href  string
+	// Container says the crumb names a place that holds the page (an app's
+	// environment), not the page itself: as the last crumb it is plain text, but not
+	// "the current page" to a screen reader.
+	Container bool
 }
 
 // statusView is a status as a page shows it: a mark and a word, never color

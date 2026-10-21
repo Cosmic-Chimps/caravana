@@ -190,6 +190,25 @@ func TestStatusOfServices(t *testing.T) {
 	}
 }
 
+// ReportedCopies counts the copies Nomad reports that haven't ended, so a page can say "0 of 1
+// copies healthy" for a copy that is starting or failing its checks, and "no copies" for none.
+func TestStatusOfReportedCopies(t *testing.T) {
+	copies := []deploy.Copy{
+		copyOfVersion("web", 7, deploy.CopyStarting), copyOfVersion("web", 7, deploy.CopyUnhealthy),
+		copyOfVersion("web", 6, deploy.CopyHealthy), copyOfVersion("web", 7, deploy.CopyFailed),
+		copyOfVersion("web", 5, deploy.CopyStopped), {Service: "web", Version: 6, Status: deploy.CopyHealthy, Stopping: true},
+	}
+	if got := statusOf(appWith("a", 3), latest(store.StatusHealthy), copies, nil).ReportedCopies; got != 3 {
+		t.Errorf("ReportedCopies = %d, want 3 (starting, unhealthy, healthy; not failed, stopped or stopping)", got)
+	}
+	if got := statusOf(appWith("a", 1), latest(store.StatusHealthy), nil, nil).ReportedCopies; got != 0 {
+		t.Errorf("ReportedCopies without copies = %d, want 0", got)
+	}
+	if got := statusOf(appWith("a", 1), latest(store.StatusHealthy), copies, errors.New("down")).ReportedCopies; got != 0 {
+		t.Errorf("ReportedCopies with Nomad unreadable = %d, want 0", got)
+	}
+}
+
 // loggedEnv is newEnv with a service that logs into a buffer.
 func loggedEnv(t *testing.T) (*env, *lockedBuffer) {
 	t.Helper()

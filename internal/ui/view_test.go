@@ -252,6 +252,85 @@ func TestCopiesSentence(t *testing.T) {
 	})
 }
 
+// The sentence for a deployment that failed is written once, for the app's summary and the
+// needs-you list: what failed, and what keeps running (or that nothing does).
+func TestDeployFailedSentence(t *testing.T) {
+	v2, v3 := new(uint64(2)), new(uint64(3))
+	tests := []struct {
+		name    string
+		rec     store.DeploymentRecord
+		running *uint64
+		known   bool
+		want    string
+	}{
+		{"reverted, the old version keeps running", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, v2, true,
+			"v3 failed its health checks. v2 keeps running."},
+		{"reverted, no healthy copies", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: new(uint64(0))}, nil, true,
+			"v0 failed its health checks. No copies are running."},
+		{"failed during its rollout", store.DeploymentRecord{Status: store.StatusFailed, JobVersion: v3}, v2, true,
+			"v3 failed during its rollout. v2 keeps running."},
+		{"never registered", store.DeploymentRecord{Status: store.StatusFailed}, v2, true,
+			"This deploy didn't start. v2 keeps running."},
+		{"never registered, the cause is known", store.DeploymentRecord{Status: store.StatusFailed, Error: "ghcr.io: x:1: image not found"}, nil, true,
+			"This deploy didn't start: the image wasn't found. No copies are running."},
+		{"Nomad unreadable: nothing is said about what runs", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, nil, false,
+			"v3 failed its health checks."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := deployFailedSentence(tc.rec, tc.running, tc.known)
+			if got.String() != tc.want {
+				t.Errorf("sentence = %q, want %q", got.String(), tc.want)
+			}
+			for _, p := range got {
+				if p.Mono && !strings.HasPrefix(p.Text, "v") {
+					t.Errorf("mono part %q: only versions are mono", p.Text)
+				}
+			}
+		})
+	}
+}
+
+// The app's summary leads with that sentence when the newest deployment failed or was reverted,
+// and says "0 of 1 copies healthy" only when Nomad reports copies and none is healthy.
+func TestSummaryOfFailedDeploysAndUnhealthyCopies(t *testing.T) {
+	now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
+	v2, v3 := new(uint64(2)), new(uint64(3))
+	deploy := func(status store.Status, version *uint64) *store.DeploymentRecord {
+		return &store.DeploymentRecord{Status: status, JobVersion: version, CreatedAt: now.Add(-3 * time.Minute), Deployment: app.Deployment{Trigger: app.TriggerWebhook}}
+	}
+	notRunning := func(last *store.DeploymentRecord, reported int) service.AppSummary {
+		s := summary("a", service.StateNotRunning, 0, 1, nil, last)
+		s.Status.ReportedCopies = reported
+		return s
+	}
+	tests := []struct {
+		name string
+		in   service.AppSummary
+		want string
+	}{
+		{"reverted, healthy copies of the old version", summary("a", service.StateHealthy, 1, 1, v2, deploy(store.StatusReverted, v3)),
+			"v3 failed its health checks. v2 keeps running. Last deployed 3 minutes ago by webhook."},
+		{"failed, degraded", summary("a", service.StateDegraded, 1, 2, v2, deploy(store.StatusFailed, v3)),
+			"v3 failed during its rollout. v2 keeps running. Last deployed 3 minutes ago by webhook."},
+		{"failed, nothing healthy", notRunning(deploy(store.StatusReverted, new(uint64(0))), 0),
+			"v0 failed its health checks. No copies are running. Last deployed 3 minutes ago by webhook."},
+		{"copies exist and none is healthy", notRunning(deploy(store.StatusHealthy, v2), 1),
+			"0 of 1 copies healthy. Last deployed 3 minutes ago by webhook."},
+		{"no copies at all", notRunning(deploy(store.StatusHealthy, v2), 0),
+			"No copies are running. Last deployed 3 minutes ago by webhook."},
+		{"an older failure doesn't lead", summary("a", service.StateHealthy, 1, 1, v2, deploy(store.StatusHealthy, v2)),
+			"1 copy running v2. Last deployed 3 minutes ago by webhook."},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := summaryOf(tc.in, now).String(); got != tc.want {
+				t.Errorf("summary = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStatusViews(t *testing.T) {
 	deployed := &store.DeploymentRecord{Status: store.StatusHealthy}
 	apps := []struct {
@@ -266,6 +345,17 @@ func TestStatusViews(t *testing.T) {
 		{"not running without a deploy is idle", summary("a", service.StateNotRunning, 0, 1, nil, nil), statusView{"idle", "never deployed"}},
 		{"no services is not defined yet", undefinedSummary("a"), statusView{"idle", "not defined yet"}},
 		{"unknown", summary("a", service.StateUnknown, 0, 1, nil, deployed), statusView{"idle", "unknown"}},
+		// A newest deployment that failed or was reverted makes the app failed even while
+		// copies run; with none running it stays "not running".
+		{"healthy copies, newest deploy failed", summary("a", service.StateHealthy, 2, 2, nil, &store.DeploymentRecord{Status: store.StatusFailed}), statusView{"failed", "deploy failed"}},
+		{"healthy copies, newest deploy reverted", summary("a", service.StateHealthy, 2, 2, nil, &store.DeploymentRecord{Status: store.StatusReverted}), statusView{"failed", "deploy failed"}},
+		{"degraded, newest deploy reverted", summary("a", service.StateDegraded, 1, 2, nil, &store.DeploymentRecord{Status: store.StatusReverted}), statusView{"failed", "deploy failed"}},
+		{"nothing running, newest deploy failed", summary("a", service.StateNotRunning, 0, 1, nil, &store.DeploymentRecord{Status: store.StatusFailed}), statusView{"failed", "not running"}},
+		{"healthy, an older deploy failed", summary("a", service.StateHealthy, 1, 1, nil, &store.DeploymentRecord{Status: store.StatusHealthy}), statusView{"healthy", "healthy"}},
+		{"stopped wins", func() service.AppSummary {
+			s := summary("a", service.StateStopped, 0, 1, nil, &store.DeploymentRecord{Status: store.StatusFailed})
+			return s
+		}(), statusView{"idle", "stopped"}},
 	}
 	for _, tc := range apps {
 		t.Run("app "+tc.name, func(t *testing.T) {

@@ -23,7 +23,12 @@ func TestAttentionRows(t *testing.T) {
 	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerConsole, Status: store.StatusFailed, Error: "no such image.\n"})
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	then := now.Add(-5 * time.Minute)
-	v8 := uint64(8)
+	v8, v7 := uint64(8), uint64(7)
+	// What Nomad says runs now, for the deploy item's second sentence: blog keeps v7, whoami has nothing.
+	sums := map[string]service.AppSummary{
+		"blog":   {AppRecord: store.AppRecord{App: app.App{ID: "blog"}}, Status: service.AppStatus{State: service.StateHealthy, HealthyCopies: 1, WantedCopies: 1, LiveVersion: &v7}},
+		"whoami": {AppRecord: store.AppRecord{App: app.App{ID: "whoami"}}, Status: service.AppStatus{State: service.StateNotRunning, WantedCopies: 1}},
+	}
 
 	tests := []struct {
 		name   string
@@ -34,11 +39,13 @@ func TestAttentionRows(t *testing.T) {
 		href   string
 	}{
 		{"a reverted deploy", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusReverted, Version: &v8, Detail: "health checks failed"},
-			"failed", "blog's deploy v8 was reverted: health checks failed.", "View deployment", "/apps/blog/deployments#deployment-b2"},
-		{"a failed deploy that never got a version, a trailing full stop in the detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed, Detail: "no such image.\n"},
-			"failed", "whoami's deploy failed: no such image.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
-		{"a failed deploy without a detail", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed},
-			"failed", "whoami's deploy failed.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
+			"failed", "blog: v8 failed its health checks. v7 keeps running.", "View deployment", "/apps/blog/deployments#deployment-b2"},
+		{"a failed deploy that never got a version, with nothing running", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed, Detail: "no such image.\n"},
+			"failed", "whoami: This deploy didn't start. No copies are running.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
+		{"a failed deploy whose cause is known", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "whoami", Deployment: "w1", DeploymentStatus: store.StatusFailed, Detail: "ghcr.io: x:1: image not found"},
+			"failed", "whoami: This deploy didn't start: the image wasn't found. No copies are running.", "View deployment", "/apps/whoami/deployments#deployment-w1"},
+		{"a failed rollout", service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusFailed, Version: &v8},
+			"failed", "blog: v8 failed during its rollout. v7 keeps running.", "View deployment", "/apps/blog/deployments#deployment-b2"},
 		{"one copy out of memory", service.AttentionItem{Kind: service.AttentionOutOfMemory, AppID: "blog", Service: "web", Copies: []string{"c1"}},
 			"failed", "1 copy of blog/web ran out of memory.", "Raise memory", "/apps/blog/configure#svc-web-memory"},
 		{"two copies out of memory", service.AttentionItem{Kind: service.AttentionOutOfMemory, AppID: "blog", Service: "web", Copies: []string{"c1", "c2"}},
@@ -61,7 +68,7 @@ func TestAttentionRows(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.item.When = then
-			row := e.Server.attentionRow(now, tc.item, places{})
+			row := e.Server.attentionRow(now, tc.item, places{}, sums)
 			if got := row.Text.String(); got != tc.text {
 				t.Errorf("text = %q, want %q", got, tc.text)
 			}
@@ -75,7 +82,7 @@ func TestAttentionRows(t *testing.T) {
 	}
 
 	t.Run("names are set apart as mono", func(t *testing.T) {
-		row := e.Server.attentionRow(now, tests[3].item, places{})
+		row := e.Server.attentionRow(now, tests[4].item, places{}, sums)
 		var monos []string
 		for _, p := range row.Text {
 			if p.Mono {
@@ -87,11 +94,18 @@ func TestAttentionRows(t *testing.T) {
 		}
 	})
 
-	t.Run("a long detail is cut to one line", func(t *testing.T) {
+	t.Run("Nomad unreadable: the sentence doesn't say what runs", func(t *testing.T) {
+		down := map[string]service.AppSummary{"blog": {Status: service.AppStatus{State: service.StateUnknown}}}
+		got := e.Server.attentionRow(now, tests[0].item, places{}, down).Text.String()
+		if got != "blog: v8 failed its health checks." {
+			t.Errorf("text = %q", got)
+		}
+	})
+
+	t.Run("the raw error is not in the row", func(t *testing.T) {
 		item := service.AttentionItem{Kind: service.AttentionDeployFailed, AppID: "blog", Deployment: "b2", DeploymentStatus: store.StatusFailed, Detail: strings.Repeat("x ", 300)}
-		got := e.Server.attentionRow(now, item, places{}).Text.String()
-		if len([]rune(got)) > 260 || strings.Contains(got, "\n") || !strings.Contains(got, "…") {
-			t.Errorf("text = %q, want one cut line", got)
+		if got := e.Server.attentionRow(now, item, places{}, nil).Text.String(); strings.Contains(got, "x x") {
+			t.Errorf("text = %q, want the sentence only: the error is on the deployment", got)
 		}
 	})
 }
@@ -120,7 +134,7 @@ func TestAppsNeedsYou(t *testing.T) {
 		`href="/apps/blog/logs?copy=k1"`,
 		`>Raise memory</a>`, `>View logs</a>`, `>View deployment</a>`,
 		`cv-mark cv-mark-failed`, `cv-mark cv-mark-warning`,
-		"ran out of memory.", "keeps restarting.", "deploy failed: no such image.",
+		"ran out of memory.", "keeps restarting.",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the Apps page lacks %q:\n%s", want, page)
@@ -128,6 +142,10 @@ func TestAppsNeedsYou(t *testing.T) {
 	}
 	if strings.Contains(page, "Nothing needs you.") {
 		t.Error("the page says nothing needs the owner")
+	}
+	// The failed deploy says what runs now: nothing, here.
+	if got := text(page); !strings.Contains(got, "whoami: This deploy didn't start. No copies are running.") {
+		t.Errorf("the needs-you list lacks the failed deploy's sentence:\n%s", got)
 	}
 	// The headline counts the apps on the list.
 	if got, want := h1Text(t, page), "2 apps need you: blog, whoami."; got != want {
@@ -205,7 +223,7 @@ func TestAppsNeedsYouWhenNomadIsDown(t *testing.T) {
 			!strings.Contains(body, "Copies couldn't be checked: Nomad can't be reached.") {
 			t.Errorf("GET %s doesn't say copies couldn't be checked:\n%s", path, body)
 		}
-		if !strings.Contains(body, "deploy failed: no such image.") {
+		if got := text(body); !strings.Contains(got, "whoami: This deploy didn't start.") || strings.Contains(got, "No copies are running.") {
 			t.Errorf("GET %s lost the stored item:\n%s", path, body)
 		}
 	}

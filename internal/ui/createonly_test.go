@@ -202,7 +202,7 @@ func TestHeaderDeployNeedsADefinition(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET /apps/%s = %d:\n%s", id, resp.StatusCode, body)
 		}
-		link := `<a href="/apps/` + id + `/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`
+		link := `<a href="/apps/` + id + `/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">`
 		if got := strings.Contains(body, link); got != wantDeploy {
 			t.Errorf("/apps/%s: header Deploy present = %v, want %v", id, got, wantDeploy)
 		}

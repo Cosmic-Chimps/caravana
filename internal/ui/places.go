@@ -87,7 +87,7 @@ func (s *server) appCrumbs(ctx context.Context, id string, more ...crumb) []crum
 		label = pl.display(project)
 	}
 	href := "/projects/" + url.PathEscape(project)
-	return append([]crumb{{Label: label, Href: href}, {Label: environment, Href: href}}, more...)
+	return append([]crumb{{Label: label, Href: href}, {Label: environment, Href: href, Container: true}}, more...)
 }
 
 // label writes where an app is, as the console says it: the app's ID for an

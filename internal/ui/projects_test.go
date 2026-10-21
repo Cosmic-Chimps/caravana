@@ -105,8 +105,8 @@ func TestNeedsYouAndActivityNameWhereAnAppIs(t *testing.T) {
 	_, body := e.get(t, "/apps")
 	got := text(body)
 	for _, want := range []string{
-		"whoami's deploy failed", // at home: the ID, as before projects
-		"Shop Floor › staging › web's deploy failed",
+		"whoami: This deploy didn't start: the image wasn't found.", // at home: the ID, as before projects
+		"Shop Floor › staging › web: This deploy didn't start: the image wasn't found.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the needs-you list lacks %q:\n%s", want, got)
@@ -532,7 +532,7 @@ func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 		t.Errorf("headline = %q, want the app's name", h1Text(t, body))
 	}
 	got := text(body)
-	for _, want := range []string{"Environments", "production", "Copy to production"} {
+	for _, want := range []string{"Other environments", "production", "Copy to production"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the header lacks %q:\n%s", want, got)
 		}
@@ -551,7 +551,7 @@ func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 		e.deploy(t, shopWeb("production", "latest"))
 		_, body := e.get(t, "/apps/shop--staging--web")
 		for _, want := range []string{`<a href="/apps/shop--production--web" class="cv-data">production</a>`,
-			`<a href="/apps/shop--staging--web/promote?to=production" class="cv-btn cv-btn-secondary cv-btn-sm">Promote to production</a>`} {
+			`<a href="/apps/shop--staging--web/promote?to=production" class="cv-btn cv-btn-secondary cv-btn-sm" id="promote-production">Promote to production</a>`} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the header lacks %s:\n%s", want, body)
 			}

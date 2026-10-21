@@ -1,11 +1,18 @@
 package ui
 
 import (
+	"context"
+	"io/fs"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // The three parts of the frame, cut from a page, for the shell tests.
@@ -178,7 +185,7 @@ func TestAppHeaderActions(t *testing.T) {
 				t.Errorf("GET %s: the header still has %s", path, gone)
 			}
 		}
-		if !strings.Contains(h, `<a href="/apps" class="cv-backlink">← Home</a>`) {
+		if !strings.Contains(h, `<a href="/apps" class="cv-backlink" id="app-home">← Home</a>`) {
 			t.Errorf("GET %s: no back link to Home:\n%s", path, h)
 		}
 		return h
@@ -187,9 +194,9 @@ func TestAppHeaderActions(t *testing.T) {
 	t.Run("a running app", func(t *testing.T) {
 		h := header(e, "/apps/whoami")
 		for _, want := range []string{
-			`<form method="post" action="/apps/whoami/restart"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">`,
-			`<a href="/apps/whoami/stop" class="cv-btn cv-btn-secondary cv-btn-sm">Stop…</a>`,
-			`<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`,
+			`<form method="post" action="/apps/whoami/restart"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-restart">`,
+			`<a href="/apps/whoami/stop" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-stop">Stop…</a>`,
+			`<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">`,
 			`class="cv-domain"`,
 		} {
 			if !strings.Contains(h, want) {
@@ -222,7 +229,7 @@ func TestAppHeaderActions(t *testing.T) {
 		}
 		s.Nomad.SetCopies("whoami")
 		h := header(s, "/apps/whoami")
-		if !strings.Contains(h, `<form method="post" action="/apps/whoami/start"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Start</button></form>`) {
+		if !strings.Contains(h, `<form method="post" action="/apps/whoami/start"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm" id="app-start">Start</button></form>`) {
 			t.Errorf("a stopped app has no primary Start:\n%s", h)
 		}
 		for _, absent := range []string{"</svg>Deploy</a>", "Restart", "Stop…", "/deployments#deploy"} {
@@ -240,7 +247,7 @@ func TestAppTabsCountsAndMark(t *testing.T) {
 	e.seedStandard(t)
 
 	_, healthy := e.get(t, "/apps/whoami")
-	if !strings.Contains(healthy, `<a href="/apps/whoami" class="cv-tab" aria-current="page">Running<span class="cv-tab-count">2</span></a>`) ||
+	if !strings.Contains(healthy, `<a href="/apps/whoami" class="cv-tab" id="tab-running" aria-current="page">Running<span class="cv-tab-count">2</span></a>`) ||
 		!strings.Contains(healthy, `>Deployments<span class="cv-tab-count">v7</span>`) {
 		t.Errorf("tab counts, healthy app:\n%s", appHeadRegion.FindString(healthy))
 	}
@@ -250,7 +257,285 @@ func TestAppTabsCountsAndMark(t *testing.T) {
 
 	// api has one of its two copies healthy.
 	_, degraded := e.get(t, "/apps/api")
-	if !strings.Contains(degraded, `<span class="cv-mark cv-mark-warning cv-tab-mark" aria-hidden="true"></span>Running`) {
+	if !strings.Contains(degraded, `<span class="cv-mark cv-mark-warning cv-tab-mark" aria-hidden="true"></span><span class="sr-only">1 of 2 healthy: </span>Running`) {
 		t.Errorf("a degraded app's Running tab has no warning mark:\n%s", appHeadRegion.FindString(degraded))
+	}
+}
+
+// Under 900px the top bar's crumbs are hidden, so the back-link row says where an app is:
+// "← Home · Shop / staging", the project a link and the environment plain text. An app in
+// Default › production reads "← Home" alone. The markup is always there; the stylesheet shows it
+// only on narrow screens.
+func TestAppHeaderBackRowForNarrowScreens(t *testing.T) {
+	e := shopConsole(t)
+	e.seed(t, shopWeb("staging", "latest"), seedDeploy{ID: "s1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+
+	backRow := regexp.MustCompile(`(?s)<div class="cv-backrow">.*?</div>`)
+	_, body := e.get(t, "/apps/shop--staging--web")
+	row := backRow.FindString(body)
+	if got := text(row); got != "← Home · Shop Floor / staging" {
+		t.Errorf("the back-link row reads %q, want the home link and the place", got)
+	}
+	for _, want := range []string{`<a href="/apps" class="cv-backlink" id="app-home">← Home</a>`,
+		`<span class="cv-backplace">`, `<a href="/projects/shop" class="cv-backlink">Shop Floor</a>`, `<span>staging</span>`} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the back-link row lacks %q:\n%s", want, row)
+		}
+	}
+	// The environment is plain text, not a link.
+	if strings.Contains(row, `>staging</a>`) {
+		t.Error("the environment is a link")
+	}
+
+	_, home := e.get(t, "/apps/whoami")
+	if got := text(backRow.FindString(home)); got != "← Home" || strings.Contains(home, "cv-backplace") {
+		t.Errorf("an app in Default › production has the row %q, want ← Home alone", got)
+	}
+
+	// The class hides the place everywhere but under 900px.
+	src, err := os.ReadFile("style/input.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(src)
+	narrow := strings.Index(css, "@media (max-width: 899.98px)")
+	if narrow < 0 || !strings.Contains(css[:narrow], ".cv-backplace { display: none;") || !strings.Contains(css[narrow:], ".cv-backplace { display: inline-flex; }") {
+		t.Error("the stylesheet doesn't hide .cv-backplace by default and show it under 900px")
+	}
+	if built, err := fs.ReadFile(staticFS, "static/app.css"); err != nil || !strings.Contains(string(built), ".cv-backplace") {
+		t.Errorf("the built stylesheet lacks .cv-backplace (run tools/ui-css.sh build): %v", err)
+	}
+}
+
+// The line about the app's other environments is labeled "Other environments".
+func TestAppHeaderOtherEnvironmentsLabel(t *testing.T) {
+	e := shopConsole(t)
+	e.seed(t, shopWeb("staging", "latest"), seedDeploy{ID: "s1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	_, body := e.get(t, "/apps/shop--staging--web")
+	if !strings.Contains(body, `<span class="cv-label">Other environments</span>`) || strings.Contains(body, `>Environments</span>`) {
+		t.Errorf("the line isn't labeled Other environments:\n%s", appHeadRegion.FindString(body))
+	}
+}
+
+// "Promote to <env>" is offered only when the cheap facts a page holds say it could work: the
+// app is defined and not stopped, its newest deployment is healthy with a recorded definition,
+// and the app exists there. Otherwise the environment's name is a plain link. The preview, which
+// asks the registry, is never run to draw the header.
+func TestHeaderPromoteNeedsItsPreconditions(t *testing.T) {
+	staging := shopWeb("staging", "latest")
+	deployed := func(id string, status store.Status, def *app.App) seedDeploy {
+		return seedDeploy{ID: id, Trigger: app.TriggerManual, Status: status, Version: 1, Definition: def}
+	}
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, e *consoleEnv)
+		promote bool
+	}{
+		{"healthy with a recorded definition", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusHealthy, &staging))
+		}, true},
+		{"no definition recorded", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusHealthy, nil))
+		}, false},
+		{"newest deployment failed", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusHealthy, &staging), deployed("s2", store.StatusFailed, &staging))
+		}, false},
+		{"newest deployment reverted", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusHealthy, &staging), deployed("s2", store.StatusReverted, &staging))
+		}, false},
+		{"still rolling out", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusRunning, &staging))
+		}, false},
+		{"never deployed", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging)
+		}, false},
+		{"stopped", func(t *testing.T, e *consoleEnv) {
+			e.seed(t, staging, deployed("s1", store.StatusHealthy, &staging))
+			now := time.Now()
+			if err := e.Store.SetAppStopped(context.Background(), staging.ID, &now); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := shopConsole(t)
+			production := shopWeb("production", "latest")
+			e.seed(t, production, deployed("p1", store.StatusHealthy, &production))
+			tc.setup(t, e)
+
+			regs := e.Nomad.Registrations()
+			_, body := e.get(t, "/apps/"+staging.ID)
+			header := appHeadRegion.FindString(body)
+			if !strings.Contains(header, `<a href="/apps/shop--production--web" class="cv-data">production</a>`) {
+				t.Errorf("the other environment isn't a link:\n%s", header)
+			}
+			if got := strings.Contains(header, `id="promote-production"`); got != tc.promote {
+				t.Errorf("Promote offered = %v, want %v", got, tc.promote)
+			}
+			if strings.Contains(header, "Promote to production") != tc.promote {
+				t.Errorf("Promote's label is shown = %v, want %v", !tc.promote, tc.promote)
+			}
+			if e.Nomad.Registrations() != regs {
+				t.Error("drawing the header registered a job")
+			}
+		})
+	}
+}
+
+// Restart and Stop… only with a live version: without one they could only be refused.
+func TestHeaderRestartAndStopNeedALiveVersion(t *testing.T) {
+	e := newConsoleEnv(t)
+	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 7})
+
+	// Deployed, but Nomad has no healthy copy: nothing to restart or stop; Deploy is still there.
+	_, body := e.get(t, "/apps/whoami")
+	header := appHeadRegion.FindString(body)
+	for _, absent := range []string{`id="app-restart"`, `id="app-stop"`, "Stop…"} {
+		if strings.Contains(header, absent) {
+			t.Errorf("an app with no live version offers %q:\n%s", absent, header)
+		}
+	}
+	if !strings.Contains(header, `id="app-deploy"`) {
+		t.Error("an app with no live version lost Deploy")
+	}
+
+	e.copies("whoami", "web", 7, 2, 0)
+	_, body = e.get(t, "/apps/whoami")
+	header = appHeadRegion.FindString(body)
+	for _, want := range []string{`id="app-restart"`, `id="app-stop"`, `id="app-deploy"`} {
+		if !strings.Contains(header, want) {
+			t.Errorf("an app with a live version lacks %q", want)
+		}
+	}
+}
+
+// The header's buttons and the tabs have stable element IDs, so htmx puts focus back on the same
+// one when the live region is swapped. IDs are unique in the header.
+func TestAppHeaderStableIDs(t *testing.T) {
+	e := shopConsole(t)
+	e.seedStandard(t)
+	e.seed(t, shopWeb("staging", "latest"), seedDeploy{ID: "s1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+
+	_, body := e.get(t, "/apps/whoami")
+	header := appHeadRegion.FindString(body)
+	for _, want := range []string{`id="app-restart"`, `id="app-stop"`, `id="app-deploy"`, `id="app-home"`,
+		`id="tab-running"`, `id="tab-deployments"`, `id="tab-configure"`, `id="tab-logs"`, `id="tab-backups"`} {
+		if !strings.Contains(header, want) {
+			t.Errorf("the header lacks %s", want)
+		}
+	}
+	// The part htmx fetches draws the same IDs.
+	_, part := e.get(t, "/parts/apps/whoami/header")
+	for _, id := range []string{"app-restart", "app-stop", "app-deploy", "tab-running", "tab-logs"} {
+		if !strings.Contains(part, `id="`+id+`"`) {
+			t.Errorf("the header part lacks id %q", id)
+		}
+	}
+	ids := regexp.MustCompile(` id="([^"]+)"`).FindAllStringSubmatch(header, -1)
+	seen := map[string]bool{}
+	for _, m := range ids {
+		if seen[m[1]] {
+			t.Errorf("the id %q is used twice in the header", m[1])
+		}
+		seen[m[1]] = true
+	}
+
+	// The environment buttons too.
+	_, staging := e.get(t, "/apps/shop--staging--web")
+	if !strings.Contains(staging, `id="copy-production"`) {
+		t.Errorf("the Copy button has no id:\n%s", appHeadRegion.FindString(staging))
+	}
+}
+
+// An app page's last crumb is its environment, which isn't "the current page": no aria-current.
+// The page itself (Stop, a project) still is.
+func TestCrumbsMarkOnlyThePageAsCurrent(t *testing.T) {
+	e := shopConsole(t)
+	e.seedStandard(t)
+
+	for _, tc := range []struct {
+		path    string
+		current bool
+	}{{"/apps/whoami", false}, {"/apps/whoami/logs", false}, {"/apps/whoami/stop", true}, {"/projects/shop", true}, {"/settings", true}} {
+		_, body := e.get(t, tc.path)
+		crumbs := crumbLine.FindString(body)
+		if got := strings.Contains(crumbs, `aria-current="page"`); got != tc.current {
+			t.Errorf("GET %s: a crumb is aria-current = %v, want %v:\n%s", tc.path, got, tc.current, crumbs)
+		}
+	}
+}
+
+// The "App actions" group is drawn only when it holds a button.
+func TestNoEmptyAppActionsGroup(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	if _, err := e.Svc.CreateAppOnly(ctx, app.App{ID: "bare"}); err != nil { // no definition: no Deploy, nothing to restart
+		t.Fatal(err)
+	}
+	_, body := e.get(t, "/apps/bare")
+	if strings.Contains(body, `aria-label="App actions"`) {
+		t.Errorf("an app with no actions has an empty group:\n%s", appHeadRegion.FindString(body))
+	}
+	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 7})
+	if _, body = e.get(t, "/apps/whoami"); !strings.Contains(body, `aria-label="App actions"`) {
+		t.Error("an app with Deploy has no group")
+	}
+}
+
+// The Running tab's status mark has hidden text in the pill's words, so a screen reader hears
+// what the mark means.
+func TestTabMarkHasHiddenText(t *testing.T) {
+	e := newConsoleEnv(t)
+	e.seedStandard(t) // blog: healthy copies, newest deploy reverted; api: 1 of 2 healthy
+	e.seed(t, blogApp2(), seedDeploy{ID: "d1", Trigger: app.TriggerManual, Status: store.StatusFailed, Version: 1})
+
+	for path, word := range map[string]string{
+		"/apps/blog":  "deploy failed",
+		"/apps/api":   "1 of 2 healthy",
+		"/apps/gone2": "not running",
+	} {
+		_, body := e.get(t, path)
+		want := `aria-hidden="true"></span><span class="sr-only">` + word + `: </span>Running`
+		if !strings.Contains(body, want) {
+			t.Errorf("GET %s: the Running tab lacks %q:\n%s", path, want, appHeadRegion.FindString(body))
+		}
+	}
+	// A healthy app has no mark and no hidden text.
+	_, body := e.get(t, "/apps/whoami")
+	if strings.Contains(body, "sr-only") {
+		t.Error("a healthy app's tab has hidden text")
+	}
+}
+
+// blogApp2 is a one-service app named gone2, whose only deployment failed after it registered.
+func blogApp2() app.App {
+	a := whoamiApp()
+	a.ID = "gone2"
+	a.Services[0].Domains[0].Host = "gone2.example.com"
+	return a
+}
+
+// A deploy-failed app is failed in the Apps list too: the same pill, sorted first.
+func TestAppsListDeployFailedRow(t *testing.T) {
+	e := newConsoleEnv(t)
+	e.seedStandard(t) // blog is healthy and its newest deploy (v8) was reverted; api is degraded
+	pill := `cv-pill cv-pill-failed cv-pill-quiet"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>deploy failed`
+	for _, path := range []string{"/apps", "/parts/apps"} {
+		_, body := e.get(t, path)
+		if !strings.Contains(body, pill) {
+			t.Errorf("GET %s: no deploy failed pill:\n%s", path, body)
+		}
+		at := func(id string) int { return strings.Index(body, `href="/apps/`+id+`" class="cv-app-name"`) }
+		if !(at("blog") < at("api") && at("api") < at("whoami")) {
+			t.Errorf("GET %s: rows aren't sorted failed, warning, healthy (blog %d, api %d, whoami %d)", path, at("blog"), at("api"), at("whoami"))
+		}
+	}
+	// The app's own header says the same.
+	_, body := e.get(t, "/apps/blog")
+	if !strings.Contains(body, `cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>deploy failed`) ||
+		!strings.Contains(text(appHeadRegion.FindString(body)), "v8 failed its health checks. v7 keeps running.") {
+		t.Errorf("the header of blog:\n%s", text(appHeadRegion.FindString(body)))
 	}
 }

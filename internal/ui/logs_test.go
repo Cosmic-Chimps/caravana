@@ -170,9 +170,9 @@ func TestLogsTabRendersTheToolbarAndTheTail(t *testing.T) {
 
 	for _, want := range []string{
 		// the tab, in the header and the breadcrumbs
-		`<a href="/apps/whoami/logs" class="cv-tab" aria-current="page">Logs`,
+		`<a href="/apps/whoami/logs" class="cv-tab" id="tab-logs" aria-current="page">Logs`,
 		`hx-get="/parts/apps/whoami/header?tab=logs"`,
-		`aria-current="page">production</span>`,
+		`cv-crumb-current">production</span>`,
 		// the toolbar is a GET form, so it works without script
 		`<form method="get" action="/apps/whoami/logs"`,
 		`<select`, `name="copy"`, `name="stream"`,

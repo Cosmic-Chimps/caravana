@@ -97,7 +97,7 @@ func TestComposeDeployForm(t *testing.T) {
 	}
 	for _, want := range []string{
 		// under the Configure tab, with the app's header
-		`class="cv-tab" aria-current="page">Configure</a>`, `aria-current="page">Deploy from Compose</span>`,
+		`class="cv-tab" id="tab-configure" aria-current="page">Configure</a>`, `aria-current="page">Deploy from Compose</span>`,
 		`<form id="compose-form" method="post" action="/apps/shop/compose/preview"`,
 		`<input type="hidden" name="revision" value="` + revision + `">`,
 		`<textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose"`,

@@ -62,9 +62,9 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 
 	// The tab is in the header, marked as the current one, and the breadcrumbs end here.
 	for _, want := range []string{
-		`<a href="/apps/shop/configure" class="cv-tab" aria-current="page">Configure</a>`,
+		`<a href="/apps/shop/configure" class="cv-tab" id="tab-configure" aria-current="page">Configure</a>`,
 		`hx-get="/parts/apps/shop/header?tab=configure"`,
-		`aria-current="page">production</span>`,
+		`cv-crumb-current">production</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, body)

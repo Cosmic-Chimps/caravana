@@ -103,9 +103,9 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 
 	// The app's header with its tabs, the Deployments tab marked as the current one.
 	for _, want := range []string{
-		`<a href="/apps/blog/deployments" class="cv-tab" aria-current="page">Deployments`,
+		`<a href="/apps/blog/deployments" class="cv-tab" id="tab-deployments" aria-current="page">Deployments`,
 		`hx-get="/parts/apps/blog/header?tab=deployments"`,
-		`aria-current="page">production</span>`, // the breadcrumbs: project / environment, no tab
+		`cv-crumb-current">production</span>`, // the breadcrumbs: project / environment, no tab
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, body)
@@ -724,8 +724,8 @@ func TestRunningTabListsTheCopies(t *testing.T) {
 	}
 
 	t.Run("the tabs: Running first and current, with the count of healthy copies", func(t *testing.T) {
-		running := `<a href="/apps/whoami" class="cv-tab" aria-current="page">Running<span class="cv-tab-count">2</span></a>`
-		deployments := `<a href="/apps/whoami/deployments" class="cv-tab">Deployments<span class="cv-tab-count">v7</span></a>`
+		running := `<a href="/apps/whoami" class="cv-tab" id="tab-running" aria-current="page">Running<span class="cv-tab-count">2</span></a>`
+		deployments := `<a href="/apps/whoami/deployments" class="cv-tab" id="tab-deployments">Deployments<span class="cv-tab-count">v7</span></a>`
 		r, d := strings.Index(body, running), strings.Index(body, deployments)
 		if r < 0 || d < 0 || r > d {
 			t.Errorf("tabs: Running at %d, Deployments at %d; want both, Running first:\n%s", r, d, body)
@@ -1018,7 +1018,7 @@ func TestAppTabsDeployOnlyFromTheirForm(t *testing.T) {
 		if strings.Contains(body, "cv-top-action") {
 			t.Errorf("tab %q has a page action slot in the top bar", tab)
 		}
-		if !strings.Contains(body, `<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`) {
+		if !strings.Contains(body, `<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">`) {
 			t.Errorf("tab %q has no Deploy link in the app header", tab)
 		}
 		if got := len(primaryDeploy.FindAllString(body, -1)); got != n {

@@ -185,7 +185,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	if err != nil {
 		return appsRegion{}, err
 	}
-	attention, items, err := s.loadAttention(r, pl)
+	attention, items, err := s.loadAttention(r, pl, sums)
 	if err != nil {
 		return appsRegion{}, err
 	}

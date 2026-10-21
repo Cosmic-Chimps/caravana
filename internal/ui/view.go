@@ -168,7 +168,9 @@ var statusRank = map[string]int{"failed": 4, "warning": 3, "rolling": 2, "health
 
 // appStatusView is an app's status as the Apps table and the app header show it.
 // An app Nomad runs nothing of is a failure when something was deployed (it
-// should be running), and just idle when nothing ever was.
+// should be running), and just idle when nothing ever was. The app is also a
+// failure ("deploy failed") when its newest deployment failed or was reverted
+// but copies still run, so the list sorts it with the problems.
 func appStatusView(sum service.AppSummary) statusView {
 	st := sum.Status
 	switch st.State {
@@ -176,9 +178,15 @@ func appStatusView(sum service.AppSummary) statusView {
 		return statusView{"idle", "stopped"}
 	case service.StateRollingOut:
 		return statusView{"rolling", "rolling out"}
-	case service.StateHealthy:
-		return statusView{"healthy", "healthy"}
-	case service.StateDegraded:
+	case service.StateHealthy, service.StateDegraded:
+		// Healthy copies don't hide a deploy that failed or was reverted: the app is
+		// failed, and the old version that keeps running is in its summary.
+		if deployEnded(sum) {
+			return statusView{"failed", "deploy failed"}
+		}
+		if st.State == service.StateHealthy {
+			return statusView{"healthy", "healthy"}
+		}
 		return statusView{"warning", fmt.Sprintf("%d of %d healthy", st.HealthyCopies, st.WantedCopies)}
 	case service.StateNotRunning:
 		switch {
@@ -369,6 +377,51 @@ func lastDeployFailed(sum service.AppSummary) bool {
 	return sum.LastDeployment != nil && sum.LastDeployment.Status == store.StatusFailed
 }
 
+// deployEnded says whether the app's newest deployment failed or was reverted.
+// It is the condition of the needs-you list's deploy item, and of the "deploy
+// failed" pill. (lastDeployFailed, which the Apps headline uses, leaves
+// reverted ones out: the headline gets those from the list.)
+func deployEnded(sum service.AppSummary) bool {
+	d := sum.LastDeployment
+	return d != nil && (d.Status == store.StatusFailed || d.Status == store.StatusReverted)
+}
+
+// deployFailedSentence says a deployment failed, and what runs now: "v3 failed
+// its health checks. v2 keeps running." or, when nothing does, "... No copies are
+// running." It is the one sentence the app's summary and the needs-you list share, so
+// the pages never disagree. running is the version of the healthy copies (nil for
+// none); known is false when Nomad couldn't be read, and the second sentence is then left out.
+//
+// The first sentence says why as far as it is known, as the Deployments tab does: a
+// reverted deployment failed its health checks, one that registered and failed
+// went wrong during its rollout, and one that never registered didn't start.
+func deployFailedSentence(rec store.DeploymentRecord, running *uint64, known bool) sentence {
+	v := plain("This deploy")
+	if rec.JobVersion != nil {
+		v = mono(versionLabel(rec.JobVersion))
+	}
+	var out sentence
+	switch {
+	case rec.Status == store.StatusReverted:
+		out = sentence{v, plain(" failed its health checks.")}
+	case rec.JobVersion != nil:
+		out = sentence{v, plain(" failed during its rollout.")}
+	default:
+		out = sentence{v, plain(" didn't start")}
+		if cause := failureCause(rec.Error); cause != "" {
+			out = append(out, plain(": "+cause))
+		}
+		out = append(out, plain("."))
+	}
+	switch {
+	case running != nil:
+		out = append(out, plain(" "), mono(versionLabel(running)), plain(" keeps running."))
+	case known:
+		out = append(out, plain(" No copies are running."))
+	}
+	return out
+}
+
 // troubleWords says in a few words what is wrong with an app that needs the
 // user, to follow its name: "isn't running", "has 1 of 2 copies healthy", "has a
 // failed deploy". A failed deploy is added to the others.
@@ -469,7 +522,11 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		}
 		out = append(out, plain(". Start it to run what ran before."))
 	case service.StateHealthy, service.StateDegraded:
-		out = copiesSentence(st, live)
+		if deployEnded(sum) {
+			out = deployFailedSentence(*sum.LastDeployment, st.LiveVersion, true)
+		} else {
+			out = copiesSentence(st, live)
+		}
 	case service.StateRollingOut:
 		var next string
 		if sum.LastDeployment != nil {
@@ -490,7 +547,15 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		case neverDeployed(sum):
 			return sentence{plain("Nothing is deployed yet.")}
 		}
-		out = sentence{plain("No copies are running.")}
+		switch {
+		case deployEnded(sum):
+			out = deployFailedSentence(*sum.LastDeployment, nil, true)
+		case st.ReportedCopies > 0:
+			// Nomad has copies and none is healthy: say so, not "none are running".
+			out = sentence{plain(fmt.Sprintf("0 of %d copies healthy.", st.WantedCopies))}
+		default:
+			out = sentence{plain("No copies are running.")}
+		}
 	default:
 		out = sentence{plain("Nomad can't be reached right now, so caravana can't say what's running.")}
 	}

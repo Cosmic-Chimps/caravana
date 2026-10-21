@@ -13,34 +13,40 @@
 </header>
 {{else}}
 <header class="cv-apphead">
-  <a href="/apps" class="cv-backlink">← Home</a>
+  <div class="cv-backrow">
+    <a href="/apps" class="cv-backlink" id="app-home">← Home</a>
+    {{with .Place}}<span class="cv-backplace"><span aria-hidden="true">·</span> <a href="{{.Href}}" class="cv-backlink">{{.Project}}</a> <span aria-hidden="true">/</span> <span>{{.Environment}}</span></span>{{end}}
+  </div>
   <div class="cv-apphead-top">
     <h1 class="cv-apptitle">{{or .Heading .ID}}</h1>
     {{template "status-pill" .Status}}
     {{range .Domains}}<a href="{{.URL}}" class="cv-domain">{{.Host}}</a>{{end}}
+    {{if or .Buttons .DeployHref}}
     <div class="cv-apphead-actions" role="group" aria-label="App actions">
-      {{with .Buttons}}{{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Start</button></form>
-      {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "rotate-ccw" 14}}Restart</button></form>
-      <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Stop…</a>{{end}}{{end}}
-      {{with .DeployHref}}<a href="{{.}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "rocket" 14}}Deploy</a>{{end}}
+      {{with .Buttons}}{{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm" id="app-start">Start</button></form>
+      {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-restart">{{icon "rotate-ccw" 14}}Restart</button></form>
+      <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm" id="app-stop">Stop…</a>{{end}}{{end}}
+      {{with .DeployHref}}<a href="{{.}}" class="cv-btn cv-btn-primary cv-btn-sm" id="app-deploy">{{icon "rocket" 14}}Deploy</a>{{end}}
     </div>
+    {{end}}
   </div>
   <p class="cv-lede">{{template "sentence" .Summary}}</p>
   {{with .NomadError}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Envs}}
   <div class="cv-envs">
-    <span class="cv-label">Environments</span>
+    <span class="cv-label">Other environments</span>
     <ul class="cv-envs-list">
       {{range .}}
       <li>
-        {{if .Exists}}<a href="{{.Href}}" class="cv-data">{{.Name}}</a><a href="{{.PromoteHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Promote to {{.Name}}</a>
-        {{else}}<span class="cv-data text-fg-1">{{.Name}}</span><form method="post" action="{{.CopyAction}}"><input type="hidden" name="to" value="{{.Name}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Copy to {{.Name}}</button></form>{{end}}
+        {{$name := .Name}}
+        {{if .Exists}}<a href="{{.Href}}" class="cv-data">{{$name}}</a>{{with .PromoteHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" id="promote-{{$name}}">Promote to {{$name}}</a>{{end}}
+        {{else}}<span class="cv-data text-fg-1">{{$name}}</span><form method="post" action="{{.CopyAction}}"><input type="hidden" name="to" value="{{$name}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" id="copy-{{$name}}">Copy to {{$name}}</button></form>{{end}}
       </li>
       {{end}}
     </ul>
   </div>
   {{end}}
-  {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}<a href="{{.Href}}" class="cv-tab"{{if .Current}} aria-current="page"{{end}}>{{with .Mark}}<span class="cv-mark cv-mark-{{.}} cv-tab-mark" aria-hidden="true"></span>{{end}}{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
+  {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}{{$tab := .}}<a href="{{.Href}}" class="cv-tab" id="tab-{{.Key}}"{{if .Current}} aria-current="page"{{end}}>{{with .Mark}}<span class="cv-mark cv-mark-{{.}} cv-tab-mark" aria-hidden="true"></span><span class="sr-only">{{$tab.MarkText}}: </span>{{end}}{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
 </header>
 {{end}}
 {{end}}

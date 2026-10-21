@@ -334,8 +334,15 @@ in place never shifts its neighbors.
   padding. It's a vertical stack, sections 28px apart. An app's page is tighter, as the design
   draws it: 26px top, 62px bottom, sections 23px apart.
 - **Page header:** the headline and its lede, stacked, 900px wide at most. An app's header is
-  different: its name (24px mono), the status pill and the addresses on one wrapping line, then the
-  summary sentence, then the tabs.
+  different: a back-link row ("← Home" in 13px mono; under 900px, where the top bar's crumbs are
+  hidden, it continues "· Shop / staging": the project a link, the environment plain text, and
+  nothing for an app in Default › production), then the name (24px mono), the status pill, the
+  addresses and, at the right, the actions on one wrapping line, then the summary sentence, the
+  "Other environments" line when the project has another, and the tabs. The actions are shown only
+  when they can work: Restart and Stop… need a live version, and "Promote to <env>" needs a defined,
+  running app whose newest deployment is healthy with its definition recorded; otherwise the
+  environment's name is a plain link. The header's buttons and tabs have stable IDs, so the live
+  swap keeps the focus.
 - **Sections:** a mono label as the section's own heading over a panel. Rows inside panels are CSS
   grid with 1px dividers between them, 46-50px tall for list rows and 36px for table heads.
 - **Apps page:** a main column plus a 400px right rail holding Activity (one deployment per row, the
@@ -452,6 +459,12 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   (`cv-pill-quiet`) drops the tinted ground, edge and padding inside the Apps, copies and Activity
   tables; the mark and the word stay. The words are the status's own: healthy, failed, reverted,
   not running. A reverted deployment wears the failed look.
+- **An app whose newest deployment failed or was reverted** is failed even while copies of an older
+  version run: its pill reads "deploy failed" in the failed look, in the app's header and in the
+  Apps list, where the row sorts first. With no healthy copy it stays "not running". The summary
+  then leads with the one shared sentence, "v3 failed its health checks. v2 keeps running." (or
+  "… No copies are running."), which the needs-you list says too. The Running tab's mark carries
+  the pill's words as visually hidden text.
 
 ### Panels
 - **Corner Style:** 6px.
@@ -504,7 +517,7 @@ Times are relative, with the exact time in the `title`. Only an active row has "
   icon button, which stays a POST form.
 - **Menu (under 900px):** a `<details>` whose summary is a small secondary button, opening a panel
   of the same three blocks on Panel Face with 6px corners and the overlay shadow, 360px at most.
-- **Tabs:** four, by intent. They are links to their own pages, 46px tall, 26px apart, sans 500 at
+- **Tabs:** five, by intent (Running, Deployments, Configure, Logs, Backups). They are links to their own pages, 46px tall, 26px apart, sans 500 at
   13.5px, over a Hairline rule. Inactive tabs use Label Text, turn Body Text on hover, and the
   current one (`aria-current="page"`) is Readout White with a 2px Readout White underline. A mono
   count may follow a label: Running carries its copies, Deployments the live version. Running

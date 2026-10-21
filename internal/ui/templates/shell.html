@@ -67,7 +67,7 @@
       <nav aria-label="Breadcrumb" class="cv-crumbs">
         <ol>
           {{range $i, $c := .Shell.Crumbs}}
-          <li>{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">/</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}" class="cv-crumb">{{$c.Label}}</a>{{else}}<span class="cv-crumb cv-crumb-current" aria-current="page">{{$c.Label}}</span>{{end}}</li>
+          <li>{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">/</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}" class="cv-crumb">{{$c.Label}}</a>{{else}}<span class="cv-crumb cv-crumb-current"{{if not $c.Container}} aria-current="page"{{end}}>{{$c.Label}}</span>{{end}}</li>
           {{end}}
         </ol>
       </nav>

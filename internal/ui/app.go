@@ -43,11 +43,14 @@ var builtTabs = []tabSpec{
 
 // tabLink is a tab as the header draws it.
 type tabLink struct {
-	Label   string
-	Href    string
-	Count   string // a number or version after the label; "" for none
-	Mark    string // a status mark before the label (rolling, warning or failed); "" for none
-	Current bool
+	Label string
+	Href  string
+	Count string // a number or version after the label; "" for none
+	Mark  string // a status mark before the label (rolling, warning or failed); "" for none
+	// MarkText is the mark's meaning in the status pill's words, for screen readers.
+	MarkText string
+	Key      string // the tab's key, for its stable element ID
+	Current  bool
 }
 
 // appHeader is what the "app" region draws: the app's name, status,
@@ -58,6 +61,10 @@ type appHeader struct {
 	// Heading is the app's name in its environment, which the header's headline
 	// shows (the ID at home).
 	Heading string
+	// Place is where the app is, for the narrow screens' back-link row ("← Home ·
+	// Shop / staging", the top bar's crumbs being hidden there); nil for an app in
+	// Default › production, which reads "← Home" alone.
+	Place *backPlace
 	// Envs are the project's other environments with what the app can do there
 	// (feature 019); empty while the project has only this one.
 	Envs   []envLink
@@ -125,6 +132,32 @@ func tabCount(key string, sum service.AppSummary) string {
 	return ""
 }
 
+// backPlace is the project (a link) and the environment (plain text) of the
+// narrow back-link row.
+type backPlace struct {
+	Project, Href, Environment string
+}
+
+// promotable says whether the app could be promoted, as far as what a page
+// already holds says: it is defined and running by its owner's wish, and its
+// newest deployment is healthy with the definition recorded. The preview itself
+// (which asks the registry) is never run to draw a header.
+func promotable(sum service.AppSummary) bool {
+	d := sum.LastDeployment
+	return sum.App.Defined() && sum.StoppedAt == nil && d != nil && d.Status == store.StatusHealthy && d.Definition != nil
+}
+
+// headerActionsOf is what the header offers: Start for a stopped app, Restart
+// and Stop… only while some version is live (without one, both would be refused
+// or lead to a refusal), nothing for an app with nothing deployed.
+func headerActionsOf(sum service.AppSummary) *headerActions {
+	a := actionsOf(sum)
+	if a != nil && !a.Stopped && sum.Status.LiveVersion == nil {
+		return nil
+	}
+	return a
+}
+
 // envLink is another environment of the app's project. Where the app exists,
 // Href leads to it and PromoteHref to the promotion's preview; where it doesn't,
 // CopyAction is what the Copy button posts to.
@@ -147,8 +180,8 @@ func tabMark(st statusView) string {
 	return ""
 }
 
-// placeParts fills the header's name in its environment and its Environments
-// line (feature 019) from the projects. A failure to read them is logged and
+// placeParts fills the header's name in its environment, its narrow back-link
+// row and its "Other environments" line (feature 019) from the projects. A failure to read them is logged and
 // leaves both out: the rest of the header doesn't depend on them.
 func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSummary) {
 	pl, err := s.loadPlaces(ctx)
@@ -161,6 +194,9 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 		return
 	}
 	h.Heading = cmp.Or(place.Name, sum.App.ID)
+	if !atHome(place) {
+		h.Place = &backPlace{Project: pl.display(place.Project), Href: "/projects/" + url.PathEscape(place.Project), Environment: place.Environment}
+	}
 	if atHome(place) && pl.single() {
 		return
 	}
@@ -180,7 +216,9 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 			if rec, err := s.svc.GetApp(ctx, there.ID()); err == nil && rec.Place == there {
 				link.Exists = true
 				link.Href = "/apps/" + url.PathEscape(there.ID())
-				link.PromoteHref = "/apps/" + url.PathEscape(sum.App.ID) + "/promote?to=" + url.QueryEscape(env.Name)
+				if promotable(sum) {
+					link.PromoteHref = "/apps/" + url.PathEscape(sum.App.ID) + "/promote?to=" + url.QueryEscape(env.Name)
+				}
 			}
 			h.Envs = append(h.Envs, link)
 		}
@@ -194,7 +232,7 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		ID:         sum.App.ID,
 		Heading:    sum.App.ID,
 		Status:     appStatusView(sum),
-		Buttons:    actionsOf(sum),
+		Buttons:    headerActionsOf(sum),
 		Domains:    domainLinks(sum.App),
 		Summary:    summaryOf(sum, s.now()),
 		NomadError: sum.Status.NomadError,
@@ -206,11 +244,14 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 	}
 	for _, t := range s.tabs {
 		tab := tabLink{
-			Label: t.Label, Href: "/apps/" + sum.App.ID + t.Path,
+			Key: t.Key, Label: t.Label, Href: "/apps/" + sum.App.ID + t.Path,
 			Count: tabCount(t.Key, sum), Current: t.Key == current,
 		}
 		if t.Key == "running" {
 			tab.Mark = tabMark(h.Status)
+			if tab.Mark != "" {
+				tab.MarkText = h.Status.Word
+			}
 		}
 		h.Tabs = append(h.Tabs, tab)
 	}

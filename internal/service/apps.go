@@ -42,6 +42,11 @@ type AppStatus struct {
 	HealthyCopies int     // healthy copies of the live version; 0 when Nomad is unreadable
 	LiveVersion   *uint64 // the job version the healthy copies run; nil if none is healthy
 	NomadError    string  // why the state is unknown (also set while rolling out, if Nomad is unreadable)
+	// ReportedCopies is how many copies Nomad reports that haven't ended (starting,
+	// healthy or failing their checks), whatever their version; 0 when Nomad is
+	// unreadable. It tells "none of them is healthy" from "there are none". Not in
+	// the API: a console sentence needs it.
+	ReportedCopies int
 	// Services is the same two counts per service, in the app's service order,
 	// so a page can say which service is short. Empty for an app with no services.
 	Services []ServiceStatus
@@ -102,6 +107,9 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	}
 
 	for _, c := range copies {
+		if !c.Terminal && !c.Stopping {
+			st.ReportedCopies++
+		}
 		if c.Status != deploy.CopyHealthy || c.Stopping {
 			continue
 		}

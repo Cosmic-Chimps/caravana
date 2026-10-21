@@ -27,6 +27,14 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - An app with several services names each one and its copies, such as "2 services running v2:
   hollo and postgres, 1 copy each", instead of "2 copies running". A service short of its own
   copies now makes the app degraded even when another has a surplus.
+- An app whose newest deployment failed or was reverted shows a "deploy failed" pill even while an
+  older version still runs, and the Apps list sorts it first. Its summary and the needs-you list
+  say the same sentence, "v3 failed its health checks. v2 keeps running." (or "No copies are
+  running."). "0 of 1 copies healthy" now says so when copies exist and none is healthy.
+- The app header offers only what can work: Restart and Stop… need a live version, and "Promote
+  to <environment>" needs a healthy newest deployment with its definition recorded; the line is
+  labeled "Other environments". On narrow screens the back link also names the project and
+  environment.
 
 ## 0.11.0 - 2026-10-21
 

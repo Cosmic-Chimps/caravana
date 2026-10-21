@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -33,22 +32,27 @@ type attentionRegion struct {
 
 // loadAttention reads the needs-you list and turns it into the region. The
 // items come back too, for the Apps headline, which counts the apps in them.
-func (s *server) loadAttention(r *http.Request, pl places) (attentionRegion, []service.AttentionItem, error) {
+func (s *server) loadAttention(r *http.Request, pl places, sums []service.AppSummary) (attentionRegion, []service.AttentionItem, error) {
 	att, err := s.svc.Attention(r.Context())
 	if err != nil {
 		return attentionRegion{}, nil, err
 	}
 	now := s.now()
+	byID := make(map[string]service.AppSummary, len(sums))
+	for _, sum := range sums {
+		byID[sum.App.ID] = sum
+	}
 	region := attentionRegion{Unknown: att.CopiesUnknown}
 	for _, it := range att.Items {
-		region.Rows = append(region.Rows, s.attentionRow(now, it, pl))
+		region.Rows = append(region.Rows, s.attentionRow(now, it, pl, byID))
 	}
 	return region, att.Items, nil
 }
 
 // attentionRow says one item in the console's words. The API sends facts;
-// the sentence, the mark and the link are the console's (research R9, R12).
-func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places) attentionRow {
+// the sentence, the mark and the link are the console's (research R9, R12). sums
+// are the apps' summaries by ID, for what runs now (nil knows nothing).
+func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places, sums map[string]service.AppSummary) attentionRow {
 	row := attentionRow{Mark: "failed"}
 	if !it.When.IsZero() {
 		row.When = whenOf(now, &it.When, "")
@@ -59,15 +63,16 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places
 
 	switch it.Kind {
 	case service.AttentionDeployFailed:
-		verb := "failed"
-		if it.DeploymentStatus == store.StatusReverted {
-			verb = "was reverted"
+		// The sentence is the one the app's summary says, with the app in front. What runs
+		// now comes from the app's summary, when Nomad could be read.
+		rec := store.DeploymentRecord{Status: it.DeploymentStatus, JobVersion: it.Version, Error: it.Detail}
+		var running *uint64
+		sum, known := sums[it.AppID]
+		known = known && sum.Status.State != service.StateUnknown
+		if known {
+			running = sum.Status.LiveVersion
 		}
-		row.Text = append(pl.label(place, it.AppID, ""), plain("'s deploy "))
-		if v := versionLabel(it.Version); v != "" {
-			row.Text = append(row.Text, mono(v), plain(" "))
-		}
-		row.Text = append(row.Text, plain(verb+detailTail(it.Detail)))
+		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "), deployFailedSentence(rec, running, known))
 		row.Action = "View deployment"
 		row.Href = s.deploymentsHref(it.AppID)
 		if s.hasTab("deployments") {
@@ -115,23 +120,6 @@ func logsQuery(it service.AttentionItem) string {
 	return "/logs?copy=" + url.QueryEscape(it.Copies[0])
 }
 
-// maxDetail is how much of a raw error the sentence carries; the whole of it
-// is on the deployment the action leads to.
-const maxDetail = 200
-
-// detailTail is ": <detail>." for a deploy's error, on one line and cut when
-// long, or "." when there is none.
-func detailTail(detail string) string {
-	d := strings.Join(strings.Fields(detail), " ")
-	if d == "" {
-		return "."
-	}
-	if r := []rune(d); len(r) > maxDetail {
-		d = string(r[:maxDetail]) + "…"
-	}
-	return ": " + strings.TrimRight(d, ".") + "."
-}
-
 // headlineWords says in a few words what is wrong with an app whose only
 // trouble is an item on the list, to follow its name in the Apps headline.
 func headlineWords(it service.AttentionItem) string {
@@ -160,7 +148,13 @@ func (s *server) partAttention(w http.ResponseWriter, r *http.Request, session s
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	region, _, err := s.loadAttention(r, pl)
+	sums, err := s.svc.ListApps(r.Context())
+	if err != nil {
+		s.log.Error("list apps", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	region, _, err := s.loadAttention(r, pl, sums)
 	if err != nil {
 		s.log.Error("read what needs you", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

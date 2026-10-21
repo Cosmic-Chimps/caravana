@@ -562,10 +562,13 @@ func (c *console) needsYou(t *testing.T) {
 		t.Errorf("deploy_failed item = %+v, want the failed deployment %s and its error", item, failed.ID)
 	}
 	_, part := c.get(t, "/parts/attention")
-	for _, want := range []string{"deploy failed", `href="/apps/whoami/deployments#deployment-` + failed.ID + `"`} {
-		if !strings.Contains(part, want) {
-			t.Errorf("/parts/attention lacks %q:\n%s", want, part)
-		}
+	// The row says the shared failed-deploy sentence (it never registered, the image wasn't found,
+	// and whoami's earlier version keeps running), and links to the deployment.
+	if got := pageText(part); !strings.Contains(got, "This deploy didn't start: the image wasn't found.") || !strings.Contains(got, "keeps running.") {
+		t.Errorf("/parts/attention lacks the failed deploy's sentence:\n%s", got)
+	}
+	if want := `href="/apps/whoami/deployments#deployment-` + failed.ID + `"`; !strings.Contains(part, want) {
+		t.Errorf("/parts/attention lacks %q:\n%s", want, part)
 	}
 	if _, apps := c.get(t, "/apps"); !strings.Contains(apps, "whoami") || !strings.Contains(apps, "needs you") {
 		t.Errorf("the Apps page doesn't say whoami needs you")

@@ -165,8 +165,11 @@
      actions at the right), the summary, and the tabs 23px under it (the 16px gap plus 7). */
   .cv-apphead { display: flex; flex-direction: column; gap: 16px; }
   .cv-apphead .cv-tabs { margin-top: 7px; }
-  .cv-backlink { align-self: flex-start; font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; }
+  .cv-backrow { align-self: flex-start; display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); }
+  .cv-backlink { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; }
   .cv-backlink:hover { color: var(--color-fg-2); }
+  /* Where the app is, "· Shop / staging": only where the top bar's crumbs are hidden (under 900px). */
+  .cv-backplace { display: none; align-items: center; gap: 6px; }
   .cv-apphead-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
   .cv-apphead-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-left: auto; }
   /* An address: the theme's link (readout white, underlined, blue on hover) at 13px mono. */
@@ -380,6 +383,7 @@
   /* Anchored to the top bar (sticky, so positioned), inside the 16px gutters. */
   .cv-menu-panel { position: absolute; left: 16px; right: 16px; max-width: 360px; top: calc(100% + 8px); z-index: 20; display: flex; flex-direction: column; background: var(--color-ink-1); border-radius: 6px; box-shadow: var(--shadow-overlay); }
   .cv-crumbs { display: none; }
+  .cv-backplace { display: inline-flex; }
   .cv-project-row { grid-template-columns: minmax(0, 1fr); }
   .cv-apphead-actions { margin-left: 0; }
   .cv-page { padding: 24px 16px 40px; gap: 24px; }
