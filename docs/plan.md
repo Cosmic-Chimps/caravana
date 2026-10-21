@@ -164,7 +164,7 @@ changes need a new version path" holds in earnest.
 there, a schedule runs and fails visibly, and Configure for a two-service Compose app fits on
 two screens.
 
-## Phase 2.75: Aspire + Bella Baxter
+## Phase 2.75: Aspire (done 2026-10-21)
 
 Reordered 2026-10-19 with the maintainer: 026 starts now, before the rest of Phase 2.6, because
 real apps (Frunchy, an F# Aspire AppHost) want to deploy from their AppHost instead of a
@@ -182,8 +182,9 @@ review stays at its end, and the publisher, which we maintain too, follows the A
   resolve inside one app by service name, so rendering them from Nomad may not be needed.
   **Status (2026-10-19): Caravana side done** (branch `026-publish-to-caravana`: Compose accepts the
   default network and volume drivers and warns about networks once, `entrypoint` in the app model,
-  Translate, the export and the console, API 0.21.0, the Aspire fixtures). **The publisher is in
-  progress** in `../aspire-hosting-caravana`.
+  Translate, the export and the console, API 0.21.0, the Aspire fixtures). **The publisher shipped
+  as `CosmicChimps.Aspire.Hosting.Caravana` 0.1.0 on NuGet (2026-10-20).** Frunchy, the first real
+  AppHost, deploys with it from CI.
 - 026.5: **an MCP server for Caravana**, so agents (Claude Code and others) can read and act on an
   installation through the API: list apps, deployments and copies, read logs, the needs-you list,
   backups; deploy, promote, restart. Read-only tools first; a deploy token limits it to one app.
@@ -196,13 +197,26 @@ review stays at its end, and the publisher, which we maintain too, follows the A
   secret-bearing settings. A deploy token keeps it to one app by the API's own scope. Releases
   carry macOS binaries, and the setup is in `docs/mcp.md`. An `/mcp` endpoint for remote agents
   waits until someone asks.
-- 027: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
-  Drawn as `VariablesScreen`'s "Where secrets come from" panel with one external source, not the
-  handoff's provider gallery: the constitution keeps Caravana whole without any provider and names
-  Bella Baxter first.
+- 027, the Bella Baxter secrets provider, moved to the Backlog on 2026-10-21 with the maintainer
+  ("Secrets from Bella Baxter"). Bella Baxter itself won't run on Caravana, so the gate is a real
+  Aspire app instead.
 - The `PublishToCaravana` integration (separate C# repo) is generated from `api/openapi.yaml`.
 
-**Gate:** Bella Baxter deploys to Caravana through `PublishToCaravana`.
+**Gate:** a real Aspire AppHost deploys to Caravana from CI through `PublishToCaravana`, with
+secrets, a database on a volume and a nightly backup. (It was "Bella Baxter deploys through
+`PublishToCaravana`" until 2026-10-21, when the maintainer decided Bella Baxter won't run on
+Caravana.)
+
+**Passed 2026-10-21** with Frunchy, an F# Aspire AppHost, on the maintainer's host (0.10.0). Its app
+`frunchy--production--frunchy` was read through `caravana mcp`:
+- two services: `frunchy` (HTTP check on `/healthz`, domain `frunchy.lacalabaza.xyz`) and `pg`
+  (Postgres 18.3 on the volume `frunchy-pg`, TCP check);
+- deployed by `aspire deploy` from GitHub Actions: deployment v6, commit `fb19216`, healthy, with
+  the expected `depends_on` warning;
+- five secrets, carried as Caravana secrets and none in the Compose file;
+- the nightly Postgres backup succeeded on 2026-10-21 at 03:00.
+The first run (tag v0.1.0) ended `superseded`, because the owner fixed a wrong secret from the
+console during the rollout. The publisher should name what superseded it (a CodeAlta task).
 
 ## Phase 3: Cluster
 
@@ -287,7 +301,7 @@ sense, even where the layout differs (007 and 014 record the differences).
 | `AppScreen` | Running, Deployments, Configure, Logs, Backups | Restart and Stop in 020.5; Configure's short form in 021 |
 | `DeployScreen` | a progress line in the deployment entry | 021 (stages); the Build stage with the build server in Phase 3 |
 | `NewAppScreen` | image and Compose sources | "From a GitHub repo" (CI builds) in 020, examples in 2.6, binary in 3.5, git built on a build server in Phase 3 |
-| `VariablesScreen` | per service, inside Configure | its own app page in 021; Bella Baxter source in 027; the cross-environment grid in Phase 4 |
+| `VariablesScreen` | per service, inside Configure | its own app page in 021; an external source (Bella Baxter) in the Backlog; the cross-environment grid in Phase 4 |
 | `LogsScreen` | per app: copy, stream, pause, wrap | 024; Operator mode in Phase 3 |
 | `DomainsScreen` | domains inside Configure | 023 |
 | `SchedulesScreen` | backups only | 022 |
@@ -314,6 +328,17 @@ a shell or "run a command" into a copy, exposing a TCP port, a light theme.
 ## Backlog (found while running real apps, not scheduled yet)
 
 Each item names the phase it belongs to. Its feature spec settles the details.
+
+### Secrets from Bella Baxter (was 027; on demand)
+
+Moved here from Phase 2.75 on 2026-10-21 with the maintainer. Caravana would read a service's
+secret values from Bella Baxter instead of keeping them in Nomad Variables:
+- workload identity auth, and the secret-change webhook to redeploy when a value changes;
+- drawn as `VariablesScreen`'s "Where secrets come from" panel, with one external source and not
+  the handoff's provider gallery.
+The constitution (VII) already allows it as optional. Caravana must work fully without it, a cold
+start must never wait on it, and running apps keep their last rendered env when it is down. Only
+Caravana reading secrets from it is planned; Bella Baxter itself won't run on Caravana.
 
 ### Memory per service (done: feature 013, release v0.1.1)
 
