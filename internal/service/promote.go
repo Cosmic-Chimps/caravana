@@ -211,6 +211,12 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 	if err := s.deployer.Validate(result); err != nil {
 		return promotion{}, err
 	}
+	// A promotion keeps the target's own domains and adds services without any,
+	// so it can't bring the console's address in. The target may already have it
+	// (saved before this check), and the preview should say so before Promote does.
+	if err := s.checkConsoleDomain(result); err != nil {
+		return promotion{}, err
+	}
 	if err := s.checkSecrets(ctx, result); err != nil {
 		return promotion{}, err
 	}

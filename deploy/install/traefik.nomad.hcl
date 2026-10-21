@@ -61,7 +61,9 @@ job "traefik" {
       # The one route not made from Nomad service tags: the console domain, to Caravana's
       # listener on loopback (console, API and webhooks). Traefik runs in the host's network,
       # so 127.0.0.1 is the host's loopback, which Caravana trusts as its proxy. The installer
-      # adds the domain only once the admin exists.
+      # adds the domain only once the admin exists. The router's priority is far above any
+      # app's (Traefik's default is the rule's length), so an app that was given the console's
+      # domain can never take the console's requests; Caravana also refuses such a domain.
       template {
         destination = "local/caravana.yml"
         data        = var.console_domain == "" ? "{}\n" : <<-YAML
@@ -69,6 +71,7 @@ job "traefik" {
             routers:
               caravana:
                 rule: "Host(`${var.console_domain}`)"
+                priority: 10000
                 entryPoints: [websecure]
                 tls: ${local.resolver}
                 service: caravana

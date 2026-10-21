@@ -44,6 +44,9 @@ func (s *Service) PreviewCompose(ctx context.Context, appID string, req compose.
 	if err := s.deployer.Validate(a); err != nil {
 		return app.App{}, nil, compose.InFile(err, a)
 	}
+	if err := s.checkConsoleDomain(a); err != nil {
+		return app.App{}, nil, compose.InFile(err, a)
+	}
 	if warnings == nil {
 		warnings = []app.Warning{}
 	}

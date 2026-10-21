@@ -117,6 +117,9 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
+	if err := s.checkConsoleDomain(a); err != nil {
+		return store.DeploymentRecord{}, err
+	}
 	// A new app is placed by its ID (feature 019), so its project and
 	// environment must exist; an app that exists is not checked.
 	if err := s.checkPlace(ctx, a.ID); err != nil {
@@ -234,6 +237,11 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	}
 	// The settings may have changed since the app was saved.
 	if err := s.deployer.Validate(rec.App); err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	// An app saved before the console's address was refused as a domain is
+	// refused here too, on its next redeploy (and so on its webhook's).
+	if err := s.checkConsoleDomain(rec.App); err != nil {
 		return store.DeploymentRecord{}, err
 	}
 	// The app isn't saved again, so its kept file stays; the deployment records
