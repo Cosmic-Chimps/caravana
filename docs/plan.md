@@ -403,6 +403,25 @@ and by `Accept` header, between the app and Fediproxy. Until then, an app ships 
 Traefik tags. More than one router per service needs a constitution amendment, because VI names
 the router `<app>-<service>`.
 
+### Sign-in in front of apps, through Umbral (with 023 Domains, or on demand)
+
+Added 2026-10-19 with the maintainer. Apps with their own logins (Uptime Kuma, Seq, the Aspire
+dashboard) could share one social login through Umbral: oauth2-proxy (PKCE, which Umbral requires)
+as a Traefik forward-auth middleware. Caravana can't attach a middleware today: it writes router
+tags only from `domains`. The smallest piece: a per-domain `signIn` option (Configure and the
+definition) that adds the middleware to that router, plus `deploy/examples/oauth2-proxy/` (Umbral
+as the issuer, one cookie for the parent domain, its own redirect domain, allowed emails, the
+middleware defined in its tags, reached through its own HTTPS domain since app ports move). It is
+the better form of 023's "Team only" switch. To settle in its spec:
+- machine endpoints must stay open (Uptime Kuma's `/api/push/*`, status pages and badges,
+  Caravana webhooks, ntfy's phone app): per-domain exemptions (`skip_auth_routes`) or no sign-in;
+- apps still ask for their own password unless their auth is turned off, and then they are open
+  to any other container on the host until Phase 3 isolates apps;
+- never the console's own domain: Caravana's sign-in must not depend on an app.
+Related, and small enough to do first: refuse an app domain equal to the console's (an app took
+it on 2026-10-19 and the console answered 502s during its rollout), and give the console's
+Traefik route the highest priority.
+
 ### Hitless restart (Phase 2.6 or later, on demand)
 
 Added 2026-10-18, from 020.5's lab run. Restart restarts each copy in place, one at a time; the
