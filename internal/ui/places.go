@@ -66,6 +66,30 @@ func atHome(pl app.Place) bool {
 	return pl.Project == "" || (pl.Project == app.DefaultProject && pl.Environment == app.DefaultEnvironment)
 }
 
+// appCrumbs are the top bar's crumbs for a page of an app: its project, then
+// its environment, then more (a page that isn't one of the app's tabs adds the
+// app and itself). The app's own name is not a crumb when the page is a tab:
+// the header's h1 carries it. A project or environment is always named, also
+// at home ("Default / production"). The project links to its page; so does the
+// environment, which has none of its own. An app that can't be read is a
+// "Projects" crumb before more.
+func (s *server) appCrumbs(ctx context.Context, id string, more ...crumb) []crumb {
+	rec, err := s.svc.GetApp(ctx, id)
+	if err != nil {
+		return append([]crumb{{Label: "Projects", Href: "/projects"}}, more...)
+	}
+	project, environment := rec.Place.Project, rec.Place.Environment
+	if project == "" {
+		project, environment = app.DefaultProject, app.DefaultEnvironment
+	}
+	label := project
+	if pl, err := s.loadPlaces(ctx); err == nil {
+		label = pl.display(project)
+	}
+	href := "/projects/" + url.PathEscape(project)
+	return append([]crumb{{Label: label, Href: href}, {Label: environment, Href: href}}, more...)
+}
+
 // label writes where an app is, as the console says it: the app's ID for an
 // app at home, else "<project display> › <environment> › <app name>" with the
 // names in mono. suffix, when given, is glued to the app's name inside its mono

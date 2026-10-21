@@ -1,6 +1,9 @@
 {{/* An app's page (/apps/{id}): the header region, and below it the tab's own
-     content (each tab adds its define here as its story lands). The top bar has no action
-     here (shell.html's empty one): each tab's Deploy is its own form's button. */}}
+     content (each tab adds its define here as its story lands). The header holds the app's
+     actions (Restart, Stop…, Deploy, or Start); the top bar has none. The app's page has its
+     own page padding and stack gap (page-class). */}}
+
+{{define "page-class"}} cv-page-app{{end}}
 
 {{define "app-header"}}
 {{if .Gone}}
@@ -10,24 +13,19 @@
 </header>
 {{else}}
 <header class="cv-apphead">
-  {{with .Where}}
-  <nav aria-label="Where this app is" class="cv-where">
-    {{range $i, $step := .}}{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">›</span>{{end}}{{if $step.Href}}<a href="{{$step.Href}}">{{$step.Label}}</a>{{else}}<span class="{{if $step.Mono}}cv-data text-fg-1{{else}}text-fg-1{{end}}">{{$step.Label}}</span>{{end}}{{end}}
-  </nav>
-  {{end}}
+  <a href="/apps" class="cv-backlink">← Home</a>
   <div class="cv-apphead-top">
     <h1 class="cv-apptitle">{{or .Heading .ID}}</h1>
     {{template "status-pill" .Status}}
-    {{range .Domains}}<a href="{{.URL}}" class="cv-data">{{.Host}}</a>{{end}}
+    {{range .Domains}}<a href="{{.URL}}" class="cv-domain">{{.Host}}</a>{{end}}
+    <div class="cv-apphead-actions" role="group" aria-label="App actions">
+      {{with .Buttons}}{{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Start</button></form>
+      {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "rotate-ccw" 14}}Restart</button></form>
+      <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Stop…</a>{{end}}{{end}}
+      {{with .DeployHref}}<a href="{{.}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "rocket" 14}}Deploy</a>{{end}}
+    </div>
   </div>
   <p class="cv-lede">{{template "sentence" .Summary}}</p>
-  {{with .Buttons}}
-  <div class="cv-actions" role="group" aria-label="App actions">
-    {{if .Stopped}}<form method="post" action="{{.Start}}"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Start</button></form>
-    {{else}}<form method="post" action="{{.Restart}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Restart</button></form>
-    <a href="{{.StopHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Stop…</a>{{end}}
-  </div>
-  {{end}}
   {{with .NomadError}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Envs}}
   <div class="cv-envs">
@@ -42,7 +40,7 @@
     </ul>
   </div>
   {{end}}
-  {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}<a href="{{.Href}}" class="cv-tab"{{if .Current}} aria-current="page"{{end}}>{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
+  {{with .Tabs}}<nav aria-label="App sections" class="cv-tabs">{{range .}}<a href="{{.Href}}" class="cv-tab"{{if .Current}} aria-current="page"{{end}}>{{with .Mark}}<span class="cv-mark cv-mark-{{.}} cv-tab-mark" aria-hidden="true"></span>{{end}}{{.Label}}{{with .Count}}<span class="cv-tab-count">{{.}}</span>{{end}}</a>{{end}}</nav>{{end}}
 </header>
 {{end}}
 {{end}}

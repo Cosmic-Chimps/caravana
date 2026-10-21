@@ -46,6 +46,7 @@ type tabLink struct {
 	Label   string
 	Href    string
 	Count   string // a number or version after the label; "" for none
+	Mark    string // a status mark before the label (rolling, warning or failed); "" for none
 	Current bool
 }
 
@@ -57,16 +58,16 @@ type appHeader struct {
 	// Heading is the app's name in its environment, which the header's headline
 	// shows (the ID at home).
 	Heading string
-	// Where is "<project> › <environment> › <app>", each step a link or not; empty
-	// for an app at home while the installation has no other environment.
-	Where []placeStep
 	// Envs are the project's other environments with what the app can do there
 	// (feature 019); empty while the project has only this one.
 	Envs   []envLink
 	Status statusView
 	// Actions are the Restart, Stop and Start buttons (feature 020.5); nil
 	// while nothing is deployed.
-	Buttons    *headerActions
+	Buttons *headerActions
+	// DeployHref is the Deploy button's link, to the deploy form of the
+	// Deployments tab; "" for a stopped app, which offers Start instead.
+	DeployHref string
 	Domains    []domainLink
 	Summary    sentence
 	NomadError string // why the status is unknown, as Nomad said it; mono detail
@@ -124,14 +125,6 @@ func tabCount(key string, sum service.AppSummary) string {
 	return ""
 }
 
-// placeStep is one step of an app's place line: a project, an environment, the
-// app. The project links to its page.
-type placeStep struct {
-	Label string
-	Href  string
-	Mono  bool
-}
-
 // envLink is another environment of the app's project. Where the app exists,
 // Href leads to it and PromoteHref to the promotion's preview; where it doesn't,
 // CopyAction is what the Copy button posts to.
@@ -143,9 +136,20 @@ type envLink struct {
 	CopyAction  string
 }
 
-// placeParts fills the header's place line and Environments line (feature 019)
-// from the projects. A failure to read them is logged and leaves both out: the
-// rest of the header doesn't depend on them.
+// tabMark is the status mark the Running tab carries when the app isn't well:
+// rolling out, short of copies or not running. A healthy app has none, and an
+// idle one (stopped, never deployed) is not a problem to point at.
+func tabMark(st statusView) string {
+	switch st.Kind {
+	case "rolling", "warning", "failed":
+		return st.Kind
+	}
+	return ""
+}
+
+// placeParts fills the header's name in its environment and its Environments
+// line (feature 019) from the projects. A failure to read them is logged and
+// leaves both out: the rest of the header doesn't depend on them.
 func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSummary) {
 	pl, err := s.loadPlaces(ctx)
 	if err != nil {
@@ -159,11 +163,6 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 	h.Heading = cmp.Or(place.Name, sum.App.ID)
 	if atHome(place) && pl.single() {
 		return
-	}
-	h.Where = []placeStep{
-		{Label: pl.display(place.Project), Href: "/projects/" + url.PathEscape(place.Project)},
-		{Label: place.Environment, Mono: true},
-		{Label: place.Name, Mono: true},
 	}
 	for _, pr := range pl.Projects {
 		if pr.ID != place.Project || len(pr.Environments) < 2 {
@@ -200,11 +199,18 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		Summary:    summaryOf(sum, s.now()),
 		NomadError: sum.Status.NomadError,
 	}
+	if sum.StoppedAt == nil && s.hasTab("deployments") {
+		h.DeployHref = "/apps/" + sum.App.ID + "/deployments#deploy"
+	}
 	for _, t := range s.tabs {
-		h.Tabs = append(h.Tabs, tabLink{
+		tab := tabLink{
 			Label: t.Label, Href: "/apps/" + sum.App.ID + t.Path,
 			Count: tabCount(t.Key, sum), Current: t.Key == current,
-		})
+		}
+		if t.Key == "running" {
+			tab.Mark = tabMark(h.Status)
+		}
+		h.Tabs = append(h.Tabs, tab)
 	}
 	h.HeaderHref = "/parts/apps/" + sum.App.ID + "/header"
 	if current != "running" {
@@ -240,7 +246,7 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 		s.appNotFound(w, r, id)
 		return
 	}
-	head, err := s.shellPage(r, id, "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Mono: true})
+	head, err := s.shellPage(r, id, navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -753,7 +759,7 @@ func deployFormOf(a app.App) deployForm {
 // appNotFound is the shell with "There's no app called x." (404), the page
 // every app route answers for an unknown app.
 func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) {
-	head, err := s.shellPage(r, id, "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Mono: true})
+	head, err := s.shellPage(r, id, navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: id})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -798,8 +804,7 @@ func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status 
 		s.serverError(w, "list deployments", err)
 		return
 	}
-	head, err := s.shellPage(r, id+" deployments", "apps",
-		crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Href: "/apps/" + id, Mono: true}, crumb{Label: "Deployments"})
+	head, err := s.shellPage(r, id+" deployments", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -1012,8 +1017,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		s.serverError(w, "list deployments", err)
 		return
 	}
-	head, err := s.shellPage(r, id+" configure", "apps",
-		crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Href: "/apps/" + id, Mono: true}, crumb{Label: "Configure"})
+	head, err := s.shellPage(r, id+" configure", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

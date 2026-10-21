@@ -53,9 +53,10 @@ func TestAppsStayFlatWhileThereIsOneEnvironment(t *testing.T) {
 			t.Errorf("GET %s should have one table", path)
 		}
 	}
-	_, page := e.get(t, "/apps")
+	// New project is on the Projects page, not in the Apps page's top bar.
+	_, page := e.get(t, "/projects")
 	if !strings.Contains(page, `<a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>`) {
-		t.Errorf("the Apps page doesn't offer New project:\n%s", page)
+		t.Errorf("the Projects page doesn't offer New project:\n%s", page)
 	}
 }
 
@@ -508,19 +509,24 @@ func TestNewComposeAppPlace(t *testing.T) {
 	}
 }
 
-var whereLine = regexp.MustCompile(`(?s)<nav aria-label="Where this app is".*?</nav>`)
+// crumbLine is the top bar's breadcrumbs of a page, as the text a reader sees.
+var crumbLine = regexp.MustCompile(`(?s)<nav aria-label="Breadcrumb".*?</nav>`)
 
 func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 	e := shopConsole(t)
 	e.deploy(t, shopWeb("staging", "latest"))
 
+	// The place is in the top bar: project / environment. The app's name is the h1, not a crumb.
 	_, body := e.get(t, "/apps/shop--staging--web")
-	where := text(whereLine.FindString(body))
-	if where != "Shop Floor›staging›web" {
-		t.Errorf("the place line = %q, want the project, environment and app", where)
+	where := text(crumbLine.FindString(body))
+	if where != "Shop Floor /staging" {
+		t.Errorf("the crumbs = %q, want the project and the environment", where)
 	}
-	if !strings.Contains(body, `<a href="/projects/shop">Shop Floor</a>`) {
+	if !strings.Contains(body, `<a href="/projects/shop" class="cv-crumb">Shop Floor</a>`) {
 		t.Error("the project doesn't link to its page")
+	}
+	if strings.Contains(body, "cv-where") {
+		t.Error("the header still has its place line")
 	}
 	if h1Text(t, body) != "web" {
 		t.Errorf("headline = %q, want the app's name", h1Text(t, body))
@@ -537,7 +543,7 @@ func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 	}
 	// The header region refreshes with the same line.
 	_, part := e.get(t, "/parts/apps/shop--staging--web/header")
-	if text(whereLine.FindString(part)) != where || !strings.Contains(part, "Copy to production") {
+	if !strings.Contains(part, "Copy to production") || strings.Contains(part, "cv-where") {
 		t.Errorf("the header part differs:\n%s", text(part))
 	}
 
@@ -555,17 +561,17 @@ func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 		}
 	})
 
-	t.Run("an app at home shows its place only when there is another environment", func(t *testing.T) {
+	t.Run("an app at home has its crumbs always, its Environments line only when there is another environment", func(t *testing.T) {
 		single := newConsoleEnv(t)
 		single.deploy(t, whoamiApp())
 		_, body := single.get(t, "/apps/whoami")
-		if whereLine.MatchString(body) || strings.Contains(body, "cv-envs") {
-			t.Error("a flat installation's app shows a place")
+		if text(crumbLine.FindString(body)) != "Default /production" || strings.Contains(body, "cv-envs") {
+			t.Errorf("a flat installation's app: crumbs %q, want Default /production and no Environments line", text(crumbLine.FindString(body)))
 		}
 		e.deploy(t, whoamiApp())
 		_, body = e.get(t, "/apps/whoami")
-		if text(whereLine.FindString(body)) != "Default›production›whoami" {
-			t.Errorf("the place line = %q", text(whereLine.FindString(body)))
+		if text(crumbLine.FindString(body)) != "Default /production" {
+			t.Errorf("the crumbs = %q", text(crumbLine.FindString(body)))
 		}
 		if strings.Contains(body, "cv-envs") {
 			t.Error("Default has one environment: nothing to promote or copy to")

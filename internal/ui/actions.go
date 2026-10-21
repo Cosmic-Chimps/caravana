@@ -378,8 +378,7 @@ func (s *server) showStop(w http.ResponseWriter, r *http.Request, session string
 		status = http.StatusConflict
 		v.Refusal = sentence{plain("Nothing is deployed yet, so there is nothing to stop.")}
 	}
-	head, err := s.shellPage(r, "Stop "+name, "apps", crumb{Label: "Apps", Href: "/apps"},
-		crumb{Label: name, Href: v.Back, Mono: true}, crumb{Label: "Stop"})
+	head, err := s.shellPage(r, "Stop "+name, navProjects, s.appCrumbs(r.Context(), id, crumb{Label: name, Href: v.Back}, crumb{Label: "Stop"})...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

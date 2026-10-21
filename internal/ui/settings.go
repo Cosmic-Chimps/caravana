@@ -161,7 +161,7 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data set
 		return
 	}
 	now := s.now()
-	head, err := s.shellPage(r, "Settings", "settings", crumb{Label: "Settings"})
+	head, err := s.shellPage(r, "Settings", navSettings, crumb{Label: "Settings"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

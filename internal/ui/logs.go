@@ -191,8 +191,7 @@ func (s *server) showLogs(w http.ResponseWriter, r *http.Request, session string
 		s.serverError(w, "read logs", err)
 		return
 	}
-	head, err := s.shellPage(r, id+" logs", "apps",
-		crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Href: "/apps/" + id, Mono: true}, crumb{Label: "Logs"})
+	head, err := s.shellPage(r, id+" logs", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

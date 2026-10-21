@@ -114,8 +114,7 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, "read backup destination", destErr)
 		return
 	}
-	head, err := s.shellPage(r, id+" backups", "apps",
-		crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Href: "/apps/" + id, Mono: true}, crumb{Label: "Backups"})
+	head, err := s.shellPage(r, id+" backups", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

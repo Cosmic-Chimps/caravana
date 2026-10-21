@@ -107,8 +107,8 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 		v.Shells = append(v.Shells, c)
 	}
 
-	head, err := s.shellPage(r, "Terminal "+v.Short, "apps", crumb{Label: "Apps", Href: "/apps"},
-		crumb{Label: id, Href: v.Back, Mono: true}, crumb{Label: "Terminal"})
+	head, err := s.shellPage(r, "Terminal "+v.Short, navProjects, s.appCrumbs(r.Context(), id,
+		crumb{Label: id, Href: v.Back}, crumb{Label: "Terminal"})...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

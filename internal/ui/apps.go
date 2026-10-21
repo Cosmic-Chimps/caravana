@@ -107,7 +107,6 @@ type appsPage struct {
 	pageData
 	appsRegion
 	activityRegion
-	NewApp  bool   // the top bar offers "New app"
 	Deleted string // an app ID to say was deleted, from ?deleted=
 	// ProjectDeleted is a project name to say was deleted, from ?projectDeleted=.
 	ProjectDeleted string
@@ -129,13 +128,13 @@ func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string
 		s.serverError(w, "list recent deployments", err)
 		return
 	}
-	head, err := s.shellPage(r, "Apps", "apps", crumb{Label: "Apps"})
+	head, err := s.shellPage(r, "Apps", navHome, crumb{Label: "Home"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live"
-	page := appsPage{pageData: head, appsRegion: region, activityRegion: activity, NewApp: s.newApp}
+	page := appsPage{pageData: head, appsRegion: region, activityRegion: activity}
 	if id := r.URL.Query().Get("deleted"); deletedID.MatchString(id) {
 		page.Deleted = id
 	}
@@ -193,9 +192,8 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	now := s.now()
 	region := appsRegion{Headline: headlineOf(sums, items), Attention: attention,
 		Empty: emptyView{Title: "Deploy an image and it shows up here."}}
-	if s.newApp {
-		region.Empty.ActionLabel, region.Empty.ActionHref = "New app", "/apps/new"
-	}
+	// The top bar's "New app" is the page's one primary action, so the empty
+	// state doesn't repeat it.
 
 	if pl.single() {
 		rows := make([]appRow, 0, len(sums))

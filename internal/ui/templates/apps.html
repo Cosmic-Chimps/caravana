@@ -2,8 +2,6 @@
      activity rail in another. Each region is a define that the page draws
      and /parts/... draws alone, so a refresh and a load can't differ. */}}
 
-{{define "action"}}<a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>{{if and .NewApp (or .Rows .Groups)}} <a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>{{end}}{{end}}
-
 {{/* apps-table: the table of apps of one list (the whole installation, or one environment). Takes []appRow. */}}
 {{define "apps-table"}}
 <div class="cv-panel cv-apps" role="table" aria-label="Apps">

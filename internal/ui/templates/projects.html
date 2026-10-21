@@ -10,6 +10,27 @@
     <p><a href="/apps">Back to Apps</a></p>
   </header>
 </section>
+{{else if .Index}}
+<section class="cv-main">
+  <header class="cv-pagehead cv-pagehead-row">
+    <div class="cv-pagehead-text">
+      <h1 class="cv-headline">Projects</h1>
+      <p class="cv-lede">Each project groups the environments of one product, and the apps in them.</p>
+    </div>
+    <a href="/projects/new" class="cv-btn cv-btn-secondary cv-btn-sm">New project</a>
+  </header>
+  <div class="cv-panel" role="list" aria-label="Projects">
+    {{range .Index.Rows}}
+    <div class="cv-row" role="listitem">
+      <a href="{{.Href}}" class="cv-project-row">
+        <span class="cv-project-name">{{.Name}}</span>
+        <span class="cv-project-envs">{{range .Envs}}<span class="cv-chip">{{.}}</span> {{end}}</span>
+        <span class="cv-data-muted cv-project-count">{{.Apps}}</span>
+      </a>
+    </div>
+    {{end}}
+  </div>
+</section>
 {{else if .New}}
 <section class="cv-main cv-narrow">
   <header class="cv-pagehead">

@@ -64,7 +64,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 	for _, want := range []string{
 		`<a href="/apps/shop/configure" class="cv-tab" aria-current="page">Configure</a>`,
 		`hx-get="/parts/apps/shop/header?tab=configure"`,
-		`aria-current="page">Configure</span>`,
+		`aria-current="page">production</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, body)

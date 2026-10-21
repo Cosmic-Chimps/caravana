@@ -40,44 +40,64 @@
   .cv-skip:focus { top: 8px; }
 
   /* The frame: a fixed 248px sidebar and, beside it, the page column. */
-  .cv-side { position: fixed; inset: 0 auto 0 0; z-index: 6; width: 248px; display: flex; flex-direction: column; background: var(--color-ink-1); border-right: 1px solid var(--color-line-1); }
+  .cv-side { position: fixed; inset: 0 auto 0 0; z-index: 6; width: 248px; display: flex; flex-direction: column; background: var(--color-ink-0); border-right: 1px solid var(--color-line-1); }
   .cv-frame { margin-left: 248px; min-width: 0; }
-  .cv-brand { display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 16px; border-bottom: 1px solid var(--color-line-1); }
+  /* The brand block, the handoff's organization switcher as a link to Home: no chevron, no open state. */
+  .cv-side-top { padding: 14px 14px 12px; border-bottom: 1px solid var(--color-line-1); }
+  .cv-brand { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px; border-radius: 4px; text-decoration: none; transition: background-color 120ms var(--ease-cv); }
+  .cv-brand:hover { background: var(--color-ink-2); }
+  .cv-brand-mark { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 4px; background: var(--color-ink-3); font: 600 13px/1 var(--font-mono); color: var(--color-fg-1); }
+  .cv-brand-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+  .cv-brand-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px/1 var(--font-sans); color: var(--color-fg-1); }
+  .cv-brand-version { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); }
   a.cv-wordmark { text-decoration: none; }
   a.cv-wordmark:hover { color: var(--color-fg-1); }
-  .cv-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 14px 10px; overflow-y: auto; }
-  .cv-nav-link { position: relative; display: flex; align-items: center; height: 34px; padding: 0 10px; border-radius: 4px; color: var(--color-fg-2); font-size: 14px; text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
-  .cv-nav-link:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
-  .cv-nav-link[aria-current="page"] { background: var(--color-ink-2); color: var(--color-fg-1); }
-  /* The current page is marked by a bar, not a hue: color is kept for status. */
-  .cv-nav-link[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--color-fg-1); }
-  .cv-account { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--color-line-1); }
-  .cv-account-who { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cv-nav { flex: 1; display: flex; flex-direction: column; gap: 22px; padding: 16px 10px; overflow-y: auto; }
+  .cv-nav-group { display: flex; flex-direction: column; gap: 2px; }
+  .cv-nav-title { padding: 0 10px 8px; }
+  .cv-nav-item { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 10px; border-radius: 4px; color: var(--color-fg-2); font: 400 14px/1 var(--font-sans); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-nav-item .cv-icon { color: var(--color-fg-3); }
+  .cv-nav-item:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-nav-item[aria-current="page"] { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-nav-item[aria-current="page"] .cv-icon { color: var(--color-fg-1); }
+  /* The current page is marked by a bar in the accent, which is kept for this and focus: status has its own hues. */
+  .cv-nav-item[aria-current="page"] { box-shadow: inset 2px 0 0 var(--color-accent); }
+  /* Settings stands apart above the account row. */
+  .cv-nav-foot { display: flex; flex-direction: column; padding: 8px 10px; border-top: 1px solid var(--color-line-1); }
+  .cv-account { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--color-line-1); }
+  .cv-account-avatar { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--color-ink-3); font: 500 12px/1 var(--font-mono); color: var(--color-fg-2); }
+  .cv-account-who { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+  .cv-account-name { font: 500 13px/1 var(--font-sans); color: var(--color-fg-1); }
+  .cv-account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); }
+  /* A square icon-only button (Sign out): its name is its aria-label. */
+  .cv-iconbtn { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border: 0; border-radius: 4px; background: transparent; color: var(--color-fg-3); cursor: pointer; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-iconbtn:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
+  .cv-icon { display: block; flex: none; }
 
-  /* The top bar: sticky, 52px; breadcrumbs left, the live indicator and the page's action right. */
+  /* The top bar: sticky, 52px; breadcrumbs left, the live indicator and "New app" right. */
   .cv-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 20px; height: 52px; padding: 0 26px; background: var(--color-ink-0); border-bottom: 1px solid var(--color-line-1); }
   .cv-top-brand, .cv-menu { display: none; }
-  .cv-top-action { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-  .cv-top-action:empty { display: none; }
+  .cv-top-new { gap: 7px; }
   .cv-crumbs { min-width: 0; flex: 1; overflow: hidden; }
-  .cv-crumbs ol { display: flex; align-items: center; gap: 2px; margin: 0; padding: 0; list-style: none; }
-  .cv-crumbs li { display: inline-flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; font-size: 14px; }
-  .cv-crumbs li:last-child { overflow: hidden; text-overflow: ellipsis; }
-  .cv-crumbs a { color: var(--color-fg-3); text-decoration: none; }
-  .cv-crumbs a:hover { color: var(--color-fg-1); text-decoration: underline; }
-  .cv-crumb-sep { color: var(--color-fg-4); font: 400 14px/1 var(--font-mono); }
+  .cv-crumbs ol { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .cv-crumbs li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+  .cv-crumb { display: inline-flex; align-items: center; height: 30px; padding: 0 8px; border-radius: 4px; color: var(--color-fg-2); font: 500 14px/1 var(--font-mono); text-decoration: none; transition: background-color 120ms var(--ease-cv); }
+  a.cv-crumb:hover { background: var(--color-ink-2); color: var(--color-fg-2); }
+  .cv-crumb-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-1); }
+  .cv-crumb-sep { color: var(--color-fg-4); font: 400 16px/1 var(--font-mono); }
 
-  /* The page column: centered, 1440px at most. */
+  /* The page column: centered, 1440px at most. An app's page is tighter, as the handoff draws it. */
   .cv-page { max-width: 1440px; margin: 0 auto; padding: 36px 26px 60px; display: flex; flex-direction: column; gap: 28px; }
+  .cv-page-app { padding: 26px 26px 62px; gap: 23px; }
 
   /* The live indicator. It shows only once script has said what the stream is
      doing (data-state), and its shape changes with the state, not just its color:
      live is a disc, reconnecting a tilted square, signed out a ring. */
-  .cv-live { display: inline-flex; align-items: center; gap: 8px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
+  .cv-live { display: inline-flex; align-items: center; gap: 10px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
   .cv-live:not([data-state]) { display: none; }
-  .cv-live-mark { display: inline-block; width: 8px; height: 8px; flex: none; box-sizing: border-box; }
+  .cv-live-mark { display: inline-block; width: 6px; height: 6px; flex: none; box-sizing: border-box; }
   .cv-live[data-state="live"] .cv-live-mark { border-radius: 50%; background: var(--color-healthy); animation: var(--animate-ping-live); }
-  .cv-live[data-state="reconnecting"] .cv-live-mark { width: 6.24px; height: 6.24px; margin: 0.88px; transform: rotate(45deg); background: var(--color-warn); }
+  .cv-live[data-state="reconnecting"] .cv-live-mark { width: 4.68px; height: 4.68px; margin: 0.66px; transform: rotate(45deg); background: var(--color-warn); }
   .cv-live[data-state="signed-out"] .cv-live-mark { border-radius: 50%; border: 1.5px solid var(--color-fg-3); }
   .cv-live a { color: var(--color-fg-1); }
 
@@ -141,9 +161,16 @@
   .cv-newapp a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-hint { font-family: var(--font-sans); font-size: 12.5px; line-height: 1.45; text-wrap: pretty; }
 
-  /* An app's header: name, status and addresses on one line, then the summary, then the tabs. */
-  .cv-apphead { display: flex; flex-direction: column; gap: 14px; }
+  /* An app's header, as the handoff's AppScreen: a back link, a title row (name, status, addresses, then the
+     actions at the right), the summary, and the tabs 23px under it (the 16px gap plus 7). */
+  .cv-apphead { display: flex; flex-direction: column; gap: 16px; }
+  .cv-apphead .cv-tabs { margin-top: 7px; }
+  .cv-backlink { align-self: flex-start; font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; }
+  .cv-backlink:hover { color: var(--color-fg-2); }
   .cv-apphead-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+  .cv-apphead-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-left: auto; }
+  /* An address: the theme's link (readout white, underlined, blue on hover) at 13px mono. */
+  .cv-domain { font: 400 13px/1.35 var(--font-mono); text-decoration: underline; overflow-wrap: anywhere; }
   .cv-apptitle { font: 500 24px/1.15 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
   .cv-detail { overflow-wrap: anywhere; }
 
@@ -163,10 +190,15 @@
 
   /* Tabs by intent: 46px, 26px apart, on a hairline. The current one is bright and underlined. */
   .cv-tabs { display: flex; gap: 26px; margin-top: 6px; border-bottom: 1px solid var(--color-line-1); overflow-x: auto; }
-  .cv-tab { display: inline-flex; align-items: center; gap: 8px; height: 46px; margin-bottom: -1px; border-bottom: 2px solid transparent; font: 500 13.5px/1 var(--font-sans); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; transition: color 120ms var(--ease-cv); }
+  .cv-tab { display: inline-flex; align-items: center; gap: 9px; height: 46px; margin-bottom: -1px; border-bottom: 2px solid transparent; font: 500 13.5px/1 var(--font-sans); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; transition: color 120ms var(--ease-cv); }
   .cv-tab:hover { color: var(--color-fg-2); }
   .cv-tab[aria-current="page"] { color: var(--color-fg-1); border-bottom-color: var(--color-fg-1); }
   .cv-tab-count { font: 400 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
+  /* The Running tab's status mark, 6px (the status marks are 8px elsewhere); the tilted square is
+     scaled the same way, so its corners still fit the box. */
+  .cv-tab-mark { width: 6px; height: 6px; }
+  .cv-tab-mark.cv-mark-warning { width: 4.68px; height: 4.68px; margin: 0.66px; }
+  .cv-tab-mark.cv-mark-rolling { border-width: 1px; }
 
   /* The Running tab's table: six columns of mono facts in grid rows, like the apps table. A
      copy that restarted has its count in the warning color; the number is there either way. */
@@ -306,11 +338,19 @@
   .cv-env-row { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
   .cv-env-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
   .cv-env-apps { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; padding: 0; list-style: none; }
+  /* The Projects page: a row for each project, the whole row a link to it. */
+  .cv-pagehead-row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; max-width: none; }
+  .cv-pagehead-text { display: flex; flex-direction: column; gap: 12px; max-width: 900px; min-width: 0; }
+  .cv-project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 24px; padding: 16px 18px; color: var(--color-fg-1); text-decoration: none; }
+  .cv-project-row:hover { color: var(--color-fg-1); }
+  .cv-project-row:focus-visible { outline-offset: -2px; }
+  .cv-project-name { font: 500 15px/1.3 var(--font-mono); overflow-wrap: anywhere; }
+  .cv-project-envs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cv-project-count { white-space: nowrap; }
+  /* A small pill for a name (an environment): not a status, so no mark and no hue. */
+  .cv-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
   .cv-promote-row { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; }
-  /* An app's header: where it is, above its name, and its other environments under the summary. */
-  .cv-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: var(--color-fg-3); }
-  .cv-where a { color: var(--color-fg-3); text-decoration: none; }
-  .cv-where a:hover { color: var(--color-fg-1); text-decoration: underline; }
+  /* An app's other environments, under the summary. */
   .cv-envs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
   .cv-envs-list { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; }
   .cv-envs-list li { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
@@ -339,8 +379,9 @@
   .cv-menu summary::-webkit-details-marker { display: none; }
   /* Anchored to the top bar (sticky, so positioned), inside the 16px gutters. */
   .cv-menu-panel { position: absolute; left: 16px; right: 16px; max-width: 360px; top: calc(100% + 8px); z-index: 20; display: flex; flex-direction: column; background: var(--color-ink-1); border-radius: 6px; box-shadow: var(--shadow-overlay); }
-  .cv-menu-panel .cv-brand { border-bottom: 1px solid var(--color-line-1); }
   .cv-crumbs { display: none; }
+  .cv-project-row { grid-template-columns: minmax(0, 1fr); }
+  .cv-apphead-actions { margin-left: 0; }
   .cv-page { padding: 24px 16px 40px; gap: 24px; }
 }
 
@@ -408,6 +449,7 @@
 /* Touch screens: a link that stands alone (an address, an app's name, the skip link) is a 44px
    target like the buttons. Links inside a sentence keep the line's height. */
 @media (pointer: coarse) {
-  .cv-skip, a.cv-data, a.cv-app-name, a.cv-wordmark { display: inline-flex; align-items: center; min-height: 44px; }
-  .cv-nav-link { min-height: 44px; }
+  .cv-skip, a.cv-data, a.cv-app-name, a.cv-wordmark, a.cv-backlink, a.cv-domain { display: inline-flex; align-items: center; min-height: 44px; }
+  .cv-nav-item, .cv-brand, a.cv-crumb { min-height: 44px; }
+  .cv-iconbtn { min-width: 44px; min-height: 44px; }
 }

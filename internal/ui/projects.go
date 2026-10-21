@@ -65,10 +65,25 @@ type projectView struct {
 	Delete      projectDelete
 }
 
-// projectsPage is the New project page, or a project's page, or the sentence
-// that there is no such project (only one is set).
+// projectRow is one project on the Projects page: where it leads, its
+// environments as pills, and how many apps are in them.
+type projectRow struct {
+	Name string // the display name
+	Href string
+	Envs []string
+	Apps string // "3 apps"
+}
+
+// projectsIndex is the Projects page (GET /projects): every project, one row each.
+type projectsIndex struct {
+	Rows []projectRow
+}
+
+// projectsPage is the Projects page, the New project page, or a project's page,
+// or the sentence that there is no such project (only one is set).
 type projectsPage struct {
 	pageData
+	Index   *projectsIndex
 	New     *newProjectForm
 	Project *projectView
 	Gone    sentence
@@ -82,6 +97,35 @@ var labelName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 // form.
 const reservedProject = "new"
 
+// ---- Projects -----------------------------------------------------------------------
+
+// showProjects answers GET /projects: the sidebar's Projects, a row for each
+// project that leads to its page.
+func (s *server) showProjects(w http.ResponseWriter, r *http.Request, session string) {
+	projects, err := s.svc.Projects(r.Context())
+	if err != nil {
+		s.serverError(w, "list projects", err)
+		return
+	}
+	idx := &projectsIndex{Rows: make([]projectRow, 0, len(projects))}
+	for _, p := range projects {
+		row := projectRow{Name: p.DisplayName, Href: "/projects/" + url.PathEscape(p.ID)}
+		apps := 0
+		for _, e := range p.Environments {
+			row.Envs = append(row.Envs, e.Name)
+			apps += e.Apps
+		}
+		row.Apps = appCount(apps)
+		idx.Rows = append(idx.Rows, row)
+	}
+	head, err := s.shellPage(r, "Projects", navProjects, crumb{Label: "Projects"})
+	if err != nil {
+		s.serverError(w, "read admin", err)
+		return
+	}
+	s.render(w, http.StatusOK, "projects", projectsPage{pageData: head, Index: idx})
+}
+
 // ---- New project --------------------------------------------------------------------
 
 // showNewProject answers GET /projects/new.
@@ -90,7 +134,7 @@ func (s *server) showNewProject(w http.ResponseWriter, r *http.Request, session 
 }
 
 func (s *server) renderNewProject(w http.ResponseWriter, r *http.Request, status int, form newProjectForm) {
-	head, err := s.shellPage(r, "New project", "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: "New project"})
+	head, err := s.shellPage(r, "New project", navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: "New project"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -197,7 +241,7 @@ func (s *server) projectPage(w http.ResponseWriter, r *http.Request, status int,
 		v.Envs = append(v.Envs, ev)
 	}
 
-	head, err := s.shellPage(r, p.DisplayName, "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: p.DisplayName})
+	head, err := s.shellPage(r, p.DisplayName, navProjects, crumb{Label: p.DisplayName})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -215,7 +259,7 @@ func cmpName(sum service.AppSummary) string {
 
 // projectGone is the shell with "There's no project called x." (404).
 func (s *server) projectGone(w http.ResponseWriter, r *http.Request, id string) {
-	head, err := s.shellPage(r, id, "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: id, Mono: true})
+	head, err := s.shellPage(r, id, navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: id})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

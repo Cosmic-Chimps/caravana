@@ -213,9 +213,9 @@ func TestAppsEmptyState(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Deploy an image and it shows up here.",
-		`<a href="/apps/new" class="cv-btn cv-btn-primary">New app</a>`,
-		`aria-current="page">Apps</span>`, // the breadcrumb of this page
-		`<a href="/apps" class="cv-nav-link" aria-current="page">Apps</a>`,
+		`<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm cv-top-new">`, // the top bar's New app
+		`aria-current="page">Home</span>`,                                         // the breadcrumb of this page
+		`<a href="/apps" class="cv-nav-item" aria-current="page">`,
 		`hx-ext="sse" sse-connect="/live" sse-close="ended" data-live`,
 		"Nothing has been deployed yet.", // the activity rail
 	} {
@@ -226,7 +226,7 @@ func TestAppsEmptyState(t *testing.T) {
 	if strings.Contains(body, `role="table"`) {
 		t.Error("the empty page draws a table")
 	}
-	// One primary action in view: the page's own button, not a second one in the top bar.
+	// One primary action in view: the top bar's New app, which the empty state doesn't repeat.
 	if got := strings.Count(body, "New app"); got != 1 {
 		t.Errorf(`"New app" appears %d times, want 1`, got)
 	}
@@ -270,7 +270,7 @@ func TestAppsListsEveryApp(t *testing.T) {
 		`<a href="https://blog.example.com" class="cv-data">blog.example.com</a>`,
 		// the apps' own refresh, and the activity rail's
 		`hx-get="/parts/apps" hx-trigger="sse:apps, sse:sync"`, `hx-get="/parts/activity" hx-trigger="sse:activity, sse:sync"`,
-		`<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>`, // the top bar action, with apps listed
+		`<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm cv-top-new">`, // the top bar's New app, with apps listed
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the Apps page lacks %q:\n%s", want, body)
@@ -470,10 +470,12 @@ func TestAppPage(t *testing.T) {
 	}
 	for _, want := range []string{
 		// the status, the address, the summary sentence
-		`cv-pill cv-pill-healthy`, `<a href="https://whoami.example.com" class="cv-data">whoami.example.com</a>`,
+		`cv-pill cv-pill-healthy`, `<a href="https://whoami.example.com" class="cv-domain">whoami.example.com</a>`,
 		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago from the console.`,
-		// the breadcrumbs, and the stream and the region of this app
-		`<a href="/apps">Apps</a>`, `aria-current="page">whoami</span>`,
+		// the breadcrumbs (project / environment, not the app: the h1 carries its name), the back link,
+		// and the stream and the region of this app
+		`<a href="/projects/default" class="cv-crumb">Default</a>`, `aria-current="page">production</span>`,
+		`<a href="/apps" class="cv-backlink">← Home</a>`,
 		`hx-ext="sse" sse-connect="/live/apps/whoami?tab=running" sse-close="ended" data-live`,
 		`hx-get="/parts/apps/whoami/header" hx-trigger="sse:app, sse:deleted, sse:sync"`,
 	} {
@@ -490,8 +492,9 @@ func TestAppPage(t *testing.T) {
 
 	t.Run("summaries by state", func(t *testing.T) {
 		for path, want := range map[string]string{
-			"/parts/apps/api/header":  "1 of 2 copies healthy, running v3.",
-			"/parts/apps/blog/header": "2 copies running v7. Last deployed 3 minutes ago by webhook.",
+			"/parts/apps/api/header": "1 of 2 copies healthy, running v3.",
+			// blog has two services, web and worker, one copy each
+			"/parts/apps/blog/header": "2 services running v7: web and worker, 1 copy each. Last deployed 3 minutes ago by webhook.",
 		} {
 			_, part := e.get(t, path)
 			if text := strings.Join(strings.Fields(html.UnescapeString(tagPattern.ReplaceAllString(part, ""))), " "); !strings.Contains(text, want) {
@@ -518,11 +521,15 @@ func TestAppPage(t *testing.T) {
 			`<nav aria-label="App sections" class="cv-tabs">`,
 			`<a href="/apps/whoami" class="cv-tab" aria-current="page">Running<span class="cv-tab-count">2</span></a>`,
 			`<a href="/apps/whoami/deployments" class="cv-tab">Deployments<span class="cv-tab-count">v7</span></a>`,
-			`<div class="cv-top-action"></div>`,
+			// the header's Deploy is a link to the deploy form, once the Deployments tab is built
+			`<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the app page lacks %q:\n%s", want, body)
 			}
+		}
+		if strings.Contains(body, "cv-top-action") {
+			t.Error("the top bar has a page action slot")
 		}
 	})
 }

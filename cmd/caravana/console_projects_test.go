@@ -124,12 +124,13 @@ func (c *console) projects(t *testing.T) {
 		t.Errorf("POST /apps for the same name and place = %d, want 422 saying it exists there", resp.StatusCode)
 	}
 
-	// The app page: where it is, and the other environment.
+	// The app page: where it is (the top bar's crumbs, project / environment; the h1 carries
+	// the app's name), and the other environment.
 	resp, body = c.get(t, "/apps/"+stagingID)
-	where := regexp.MustCompile(`(?s)<nav aria-label="Where this app is".*?</nav>`).FindString(body)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(where, `<a href="/projects/`+project+`">`+display+`</a>`) ||
-		!strings.Contains(pageText(where), display+" › staging › web") {
-		t.Fatalf("GET /apps/%s = %d; its place line is %q, want %q linked to the project", stagingID, resp.StatusCode, pageText(where), display+" › staging › web")
+	where := regexp.MustCompile(`(?s)<nav aria-label="Breadcrumb".*?</nav>`).FindString(body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(where, `<a href="/projects/`+project+`" class="cv-crumb">`+display+`</a>`) ||
+		!strings.Contains(pageText(where), display+" /staging") {
+		t.Fatalf("GET /apps/%s = %d; its crumbs are %q, want %q linked to the project", stagingID, resp.StatusCode, pageText(where), display+" /staging")
 	}
 	if !strings.Contains(pageText(body), "Copy to production") {
 		t.Errorf("the app page of %s has no Copy to production", stagingID)

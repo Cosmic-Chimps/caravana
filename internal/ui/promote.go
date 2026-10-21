@@ -177,8 +177,8 @@ func (s *server) drawPromote(w http.ResponseWriter, r *http.Request, status int,
 		}
 	}
 
-	head, err := s.shellPage(r, "Promote "+names.App, "apps", crumb{Label: "Apps", Href: "/apps"},
-		crumb{Label: names.App, Href: "/apps/" + url.PathEscape(id), Mono: true}, crumb{Label: "Promote"})
+	head, err := s.shellPage(r, "Promote "+names.App, navProjects, s.appCrumbs(r.Context(), id,
+		crumb{Label: names.App, Href: "/apps/" + url.PathEscape(id)}, crumb{Label: "Promote"})...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

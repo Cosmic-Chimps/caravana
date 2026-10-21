@@ -1,34 +1,47 @@
 {{/* The console's frame: a sidebar on wide screens, and under 900 px a top bar
-     whose "Menu" disclosure holds the same links. A page fills "content" (the
-     page itself) and may fill "action" (the one primary action, in the top
-     bar). pageData.Shell says who is signed in and where we are. */}}
+     whose "Menu" disclosure holds the same blocks. A page fills "content" (the
+     page itself). The top bar has no per-page action: "New app" is global, and an
+     app's own actions are in its header. pageData.Shell says who is signed in and
+     where we are. */}}
 
-{{define "action"}}{{end}}
-
-{{define "shell-nav"}}
-<nav aria-label="Main" class="cv-nav">
-  <a href="/apps" class="cv-nav-link"{{if eq .Current "apps"}} aria-current="page"{{end}}>Apps</a>
-  <a href="/settings" class="cv-nav-link"{{if eq .Current "settings"}} aria-current="page"{{end}}>Settings</a>
-</nav>
-{{end}}
-
-{{define "shell-account"}}
-<div class="cv-account">
-  <span class="cv-account-who">
-    <span class="cv-label">Signed in</span>
-    <span class="cv-data text-fg-1 truncate" title="{{.Email}}">{{.Email}}</span>
-  </span>
-  <form method="post" action="/logout">
-    <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Sign out</button>
-  </form>
+{{/* shell-brand: the host's mark, the host and the version, as a link to Home. */}}
+{{define "shell-brand"}}
+<div class="cv-side-top">
+  <a href="/apps" class="cv-brand">
+    <span class="cv-brand-mark" aria-hidden="true">{{.Initial}}</span>
+    <span class="cv-brand-text">
+      <span class="cv-brand-host" title="{{.Host}}">{{.Host}}</span>
+      <span class="cv-brand-version" title="Caravana's version">caravana{{with .Version}} {{.}}{{end}}</span>
+    </span>
+  </a>
 </div>
 {{end}}
 
-{{define "shell-brand"}}
-<div class="cv-brand">
-  <a href="/apps" class="cv-wordmark">caravana</a>
-  <span class="cv-data-muted truncate" title="{{.Host}}">{{.Host}}</span>
-  {{with .Version}}<span class="cv-data-muted" title="Caravana's version">{{.}}</span>{{end}}
+{{/* shell-nav: the Workspace group. Only pages that exist are linked. */}}
+{{define "shell-nav"}}
+<nav aria-label="Main" class="cv-nav">
+  <div class="cv-nav-group">
+    <span class="cv-label cv-nav-title">Workspace</span>
+    <a href="/apps" class="cv-nav-item"{{if eq .Active "home"}} aria-current="page"{{end}}>{{icon "house"}}<span>Home</span></a>
+    <a href="/projects" class="cv-nav-item"{{if eq .Active "projects"}} aria-current="page"{{end}}>{{icon "folder"}}<span>Projects</span></a>
+  </div>
+</nav>
+<nav aria-label="Settings" class="cv-nav-foot">
+  <a href="/settings" class="cv-nav-item"{{if eq .Active "settings"}} aria-current="page"{{end}}>{{icon "settings"}}<span>Settings</span></a>
+</nav>
+{{end}}
+
+{{/* shell-account: who is signed in, and Sign out, which stays a POST. */}}
+{{define "shell-account"}}
+<div class="cv-account">
+  <span class="cv-account-avatar" aria-hidden="true">{{.Initials}}</span>
+  <span class="cv-account-who">
+    <span class="cv-account-name">Account</span>
+    <span class="cv-account-email" title="{{.Email}}">{{.Email}}</span>
+  </span>
+  <form method="post" action="/logout">
+    <button type="submit" class="cv-iconbtn" aria-label="Sign out" title="Sign out">{{icon "log-out" 15}}</button>
+  </form>
 </div>
 {{end}}
 
@@ -54,14 +67,14 @@
       <nav aria-label="Breadcrumb" class="cv-crumbs">
         <ol>
           {{range $i, $c := .Shell.Crumbs}}
-          <li>{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">›</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}"{{if $c.Mono}} class="cv-data"{{end}}>{{$c.Label}}</a>{{else}}<span class="{{if $c.Mono}}cv-data text-fg-1{{else}}text-fg-1{{end}}" aria-current="page">{{$c.Label}}</span>{{end}}</li>
+          <li>{{if $i}}<span class="cv-crumb-sep" aria-hidden="true">/</span>{{end}}{{if $c.Href}}<a href="{{$c.Href}}" class="cv-crumb">{{$c.Label}}</a>{{else}}<span class="cv-crumb cv-crumb-current" aria-current="page">{{$c.Label}}</span>{{end}}</li>
           {{end}}
         </ol>
       </nav>
       {{if .LiveURL}}<span id="live" role="status" aria-live="polite" data-live-indicator class="cv-live"><span class="cv-live-mark" aria-hidden="true"></span><span class="cv-live-text" data-live-text></span></span>{{end}}
-      <div class="cv-top-action">{{template "action" .}}</div>
+      {{if .Shell.NewApp}}<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm cv-top-new">{{icon "plus" 14}}New app</a>{{end}}
     </header>
-    <main id="main" class="cv-page">
+    <main id="main" class="cv-page{{block "page-class" .}}{{end}}">
       {{template "content" .}}
     </main>
   </div>

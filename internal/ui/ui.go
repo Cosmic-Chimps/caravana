@@ -135,6 +135,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/logout", s.protected(s.signOut)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
+		{"GET", "/projects", s.requireSession(s.showProjects)},
 		{"GET", "/projects/new", s.requireSession(s.showNewProject)},
 		{"POST", "/projects", s.protected(s.requireSession(s.createProject))},
 		{"GET", "/projects/{project}", s.requireSession(s.showProject)},
@@ -276,7 +277,7 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "destField": destField, "regField": regField, "notifyForm": notifyFormFor}).ParseFS(templatesFS,
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor}).ParseFS(templatesFS,
 			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)

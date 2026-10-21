@@ -961,8 +961,8 @@ func TestSettingsPage(t *testing.T) {
 		c := e.signIn(t, nil)
 		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
 		for _, want := range []string{
-			`<a href="/settings" class="cv-nav-link" aria-current="page">Settings</a>`,
-			`<a href="/apps" class="cv-nav-link">Apps</a>`, // not current
+			`<a href="/settings" class="cv-nav-item" aria-current="page">`,
+			`<a href="/apps" class="cv-nav-item">`, // not current
 			`class="cv-shell"`,
 			`aria-current="page">Settings</span>`, // the breadcrumb
 			`action="/logout"`,                    // Sign out stays in the sidebar's account row

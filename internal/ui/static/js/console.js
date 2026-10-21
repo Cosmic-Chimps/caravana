@@ -60,7 +60,7 @@
   }
 
   document.addEventListener("htmx:sseOpen", function () {
-    setLive("live", "Live");
+    setLive("live", "live");
   });
 
   document.addEventListener("htmx:sseError", function () {

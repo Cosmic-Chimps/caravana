@@ -44,8 +44,8 @@ func TestNewAppFormRenders(t *testing.T) {
 		"Needs a port. HTTPS is set up for it.",
 		"Without a port this runs as a worker: no address, no health check.",
 		`>Create and deploy</button>`,
-		// the shell: Apps stays the current nav entry, breadcrumbs end here
-		`<a href="/apps" class="cv-nav-link" aria-current="page">Apps</a>`, `aria-current="page">New app</span>`,
+		// the shell: Home stays the current nav entry, breadcrumbs end here
+		`<a href="/apps" class="cv-nav-item" aria-current="page">`, `aria-current="page">New app</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the form lacks %q:\n%s", want, body)
@@ -67,13 +67,16 @@ func TestNewAppActionIsOffered(t *testing.T) {
 	}
 
 	_, empty := e.get(t, "/apps")
-	if !strings.Contains(empty, `<a href="/apps/new" class="cv-btn cv-btn-primary">New app</a>`) {
-		t.Errorf("the empty Apps page doesn't offer New app:\n%s", empty)
+	// New app is in the top bar of every page, empty or not.
+	topBar := regexp.MustCompile(`<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm cv-top-new">.*?New app</a>`)
+	if !topBar.MatchString(empty) {
+		t.Errorf("the empty Apps page doesn't offer New app in its top bar:\n%s", empty)
 	}
 	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 1})
-	_, listed := e.get(t, "/apps")
-	if !strings.Contains(listed, `<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm">New app</a>`) {
-		t.Errorf("the Apps page doesn't offer New app in its top bar:\n%s", listed)
+	for _, path := range []string{"/apps", "/projects", "/projects/default", "/apps/whoami", "/settings", "/apps/new"} {
+		if _, body := e.get(t, path); !topBar.MatchString(body) {
+			t.Errorf("GET %s doesn't offer New app in its top bar:\n%s", path, body)
+		}
 	}
 }
 

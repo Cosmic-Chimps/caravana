@@ -132,7 +132,7 @@ func (s *server) createFromGitHub(w http.ResponseWriter, r *http.Request, sessio
 // renderGitHubResult draws the answer of a created GitHub app: the New app page
 // with the result in place of the form.
 func (s *server) renderGitHubResult(w http.ResponseWriter, r *http.Request, res githubResult) {
-	head, err := s.shellPage(r, "New app", "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: "New app"})
+	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

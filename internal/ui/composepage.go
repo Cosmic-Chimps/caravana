@@ -414,7 +414,7 @@ func (s *server) drawCompose(w http.ResponseWriter, r *http.Request, status int,
 		s.composeAppPage(w, r, status, v)
 		return
 	}
-	head, err := s.shellPage(r, "New app", "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: "New app"})
+	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -435,9 +435,8 @@ func (s *server) composeAppPage(w http.ResponseWriter, r *http.Request, status i
 		s.serverError(w, "read app", err)
 		return
 	}
-	head, err := s.shellPage(r, id+" compose", "apps", crumb{Label: "Apps", Href: "/apps"},
-		crumb{Label: id, Href: "/apps/" + id, Mono: true}, crumb{Label: "Configure", Href: "/apps/" + id + "/configure"},
-		crumb{Label: "Deploy from Compose"})
+	head, err := s.shellPage(r, id+" compose", navProjects, s.appCrumbs(r.Context(), id,
+		crumb{Label: id, Href: "/apps/" + id}, crumb{Label: "Deploy from Compose"})...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

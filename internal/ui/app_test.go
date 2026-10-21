@@ -105,7 +105,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 	for _, want := range []string{
 		`<a href="/apps/blog/deployments" class="cv-tab" aria-current="page">Deployments`,
 		`hx-get="/parts/apps/blog/header?tab=deployments"`,
-		`aria-current="page">Deployments</span>`, // the breadcrumb
+		`aria-current="page">production</span>`, // the breadcrumbs: project / environment, no tab
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, body)
@@ -268,8 +268,9 @@ func TestDeploymentsTabIsTheDeployForm(t *testing.T) {
 	if strings.Contains(form, "hx-") || strings.Contains(form, "onsubmit") {
 		t.Errorf("the deploy form depends on script:\n%s", form)
 	}
-	if n := strings.Count(body, "cv-btn-primary"); n != 1 {
-		t.Errorf("the page has %d primary buttons, want 1 (DESIGN.md: at most one per view)", n)
+	// The frame has its two (New app, and the header's Deploy link); the tab's own content has one.
+	if n := strings.Count(body[strings.Index(body, `class="cv-tabs"`):], "cv-btn-primary"); n != 1 {
+		t.Errorf("the tab has %d primary buttons, want 1 (DESIGN.md: at most one per view's content)", n)
 	}
 }
 
@@ -1003,9 +1004,9 @@ func TestDeployRefusedForAJobCaravanaDidNotCreate(t *testing.T) {
 	}
 }
 
-// DESIGN.md: an app's top bar has no Deploy; a tab's Deploy is its own form's
-// button, so pressing it deploys what the page holds. Deployments has exactly
-// one; the other tabs have none in the top bar and at most one of their own.
+// DESIGN.md: the header's Deploy is a link to the deploy form, never a button
+// that deploys; a tab's Deploy is its own form's button, so pressing it deploys
+// what the page holds. Deployments has exactly one; the other tabs have none.
 func TestAppTabsDeployOnlyFromTheirForm(t *testing.T) {
 	e := runningEnv(t)
 	primaryDeploy := regexp.MustCompile(`class="cv-btn cv-btn-primary[^"]*"[^>]*>Deploy</`)
@@ -1014,8 +1015,11 @@ func TestAppTabsDeployOnlyFromTheirForm(t *testing.T) {
 	want := map[string]int{"": 0, "/deployments": 1, "/configure": 0, "/logs": 0}
 	for tab, n := range want {
 		_, body := e.get(t, "/apps/whoami"+tab)
-		if !strings.Contains(body, `<div class="cv-top-action"></div>`) {
-			t.Errorf("tab %q has an action in the top bar", tab)
+		if strings.Contains(body, "cv-top-action") {
+			t.Errorf("tab %q has a page action slot in the top bar", tab)
+		}
+		if !strings.Contains(body, `<a href="/apps/whoami/deployments#deploy" class="cv-btn cv-btn-primary cv-btn-sm">`) {
+			t.Errorf("tab %q has no Deploy link in the app header", tab)
 		}
 		if got := len(primaryDeploy.FindAllString(body, -1)); got != n {
 			t.Errorf("tab %q has %d primary Deploy buttons, want %d", tab, got, n)

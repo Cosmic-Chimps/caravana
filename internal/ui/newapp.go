@@ -168,7 +168,7 @@ func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int
 		_, _ = w.Write(buf.Bytes())
 		return
 	}
-	head, err := s.shellPage(r, "New app", "apps", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: "New app"})
+	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return

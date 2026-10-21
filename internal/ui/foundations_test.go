@@ -173,11 +173,10 @@ func TestRequirePart(t *testing.T) {
 }
 
 // shellTestPage is a console page as the later screens will write them: it
-// fills "content" and "action" and starts from shellPage.
+// fills "content" and starts from shellPage.
 const shellTestPage = `{{define "content"}}<h1>Test page</h1>
 {{template "status-pill" .Pill}} {{template "status-mark" "rolling"}} {{template "time" .When}} {{template "time" .Never}}
-{{template "empty" .Empty}}{{template "empty" .EmptyBare}}{{end}}
-{{define "action"}}<a href="/apps/new" class="cv-btn cv-btn-primary">New app</a>{{end}}`
+{{template "empty" .Empty}}{{template "empty" .EmptyBare}}{{end}}`
 
 type shellTestData struct {
 	pageData
@@ -191,7 +190,7 @@ type shellTestData struct {
 func TestShellAndParts(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	s := newTestServer(t, e)
-	tmpl := template.Must(template.New("base.html").Funcs(template.FuncMap{"asset": s.asset}).ParseFS(templatesFS,
+	tmpl := template.Must(template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon}).ParseFS(templatesFS,
 		"templates/base.html", "templates/shell.html", "templates/parts.html"))
 	template.Must(tmpl.Parse(shellTestPage))
 	s.pages["shelltest"] = tmpl
@@ -199,7 +198,7 @@ func TestShellAndParts(t *testing.T) {
 	render := func(t *testing.T, live string) string {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		page, err := s.shellPage(req, "Test", "settings", crumb{Label: "Apps", Href: "/apps"}, crumb{Label: "whoami", Mono: true})
+		page, err := s.shellPage(req, "Test", navSettings, crumb{Label: "Default", Href: "/projects/default"}, crumb{Label: "whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,15 +221,18 @@ func TestShellAndParts(t *testing.T) {
 
 	body := render(t, "")
 	for _, want := range []string{
-		// the sidebar: wordmark, host in mono, the two links with the current one marked, the account row
-		`class="cv-wordmark">caravana</a>`, `caravana.example.com`, `title="Caravana's version">v0.7.0</span>`,
-		`<a href="/apps" class="cv-nav-link">Apps</a>`, `<a href="/settings" class="cv-nav-link" aria-current="page">Settings</a>`,
-		testEmail, `<form method="post" action="/logout">`, `>Sign out</button>`,
-		// the narrow-screen menu, the skip link, the page and its action slot
+		// the sidebar: the brand block (the host's initial, the host, the version), the Workspace group
+		// and Settings with the current one marked, the account row with its sign-out form
+		`class="cv-wordmark cv-top-brand">caravana</a>`, `<span class="cv-brand-mark" aria-hidden="true">C</span>`,
+		`title="caravana.example.com">caravana.example.com</span>`, `title="Caravana's version">caravana v0.7.0</span>`,
+		`cv-nav-title">Workspace</span>`, `<a href="/apps" class="cv-nav-item">`, `<a href="/projects" class="cv-nav-item">`,
+		`<a href="/settings" class="cv-nav-item" aria-current="page">`,
+		testEmail, `>YO</span>`, `<form method="post" action="/logout">`, `aria-label="Sign out" title="Sign out"`,
+		// the narrow-screen menu, the skip link, the page; the top bar's New app, on every page
 		`<details class="cv-menu">`, `>Menu</summary>`, `href="#main"`, `<main id="main" class="cv-page">`, `<h1>Test page</h1>`,
-		`<div class="cv-top-action"><a href="/apps/new" class="cv-btn cv-btn-primary">New app</a></div>`,
-		// breadcrumbs: links, and the page itself as current
-		`<a href="/apps">Apps</a>`, `aria-current="page">whoami</span>`,
+		`<a href="/apps/new" class="cv-btn cv-btn-primary cv-btn-sm cv-top-new">`,
+		// breadcrumbs: a link, and the page itself as current
+		`<a href="/projects/default" class="cv-crumb">Default</a>`, `aria-current="page">whoami</span>`,
 		// the parts
 		`cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>healthy`,
 		`cv-mark cv-mark-rolling`, `title="2026-10-04 08:55:00 UTC">5 minutes ago</time>`, `datetime="2026-10-04T08:55:00Z"`,
@@ -242,7 +244,7 @@ func TestShellAndParts(t *testing.T) {
 		}
 	}
 	// Both nav lists (sidebar and menu) mark the current link; the bare empty state has no button.
-	if got := strings.Count(body, `aria-current="page">Settings</a>`); got != 2 {
+	if got := strings.Count(body, `<a href="/settings" class="cv-nav-item" aria-current="page">`); got != 2 {
 		t.Errorf("Settings is marked current %d times, want 2 (sidebar and menu)", got)
 	}
 	if strings.Contains(body, `id="live"`) {
