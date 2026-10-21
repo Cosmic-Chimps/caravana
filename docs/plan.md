@@ -119,6 +119,15 @@ building from source. Aspire and Bella Baxter move to Phase 2.75.
 is promoted to production, and a failure during it reaches the owner as a notification. Built by
 CI and deployed by caravana-action (020).
 
+**Passed 2026-10-20** on the maintainer's host (0.9.1) with the `lacalabaza` blog (Eleventy into an
+nginx image on GHCR):
+- caravana-action deploys `default--staging--lacalabaza` and promotes it to production.
+- A commit whose container exits at start (`8355583`) failed staging's rollout on the progress
+  deadline and was reverted, production was untouched and nothing was promoted, and ntfy received
+  the failed deploy and the "needs you" problem.
+- The fix (`7412885`) went healthy on staging and was promoted to production, with "from CI" and
+  the run link in each notification.
+
 ## Phase 2.6: The Developer view, complete (single node)
 
 Added 2026-10-18. From here on the plan follows the design handoff ("caravana console",
@@ -181,6 +190,12 @@ review stays at its end, and the publisher, which we maintain too, follows the A
   It goes through the API only (constitution V), as `caravana mcp` over stdio (the binary run
   where the agent is, with an API URL and token), so nothing new runs on the host. Settles in its
   spec: whether it is that subcommand or an `/mcp` endpoint on the API, and the Go MCP module.
+  **Status (2026-10-20): done** (specs/026.5-mcp-server). It is the stdio subcommand, with the
+  official `modelcontextprotocol/go-sdk`. It offers 18 read tools by default and 8 action tools
+  with `--allow-actions`. It never offers delete, restore, Run a command, the terminal or
+  secret-bearing settings. A deploy token keeps it to one app by the API's own scope. Releases
+  carry macOS binaries, and the setup is in `docs/mcp.md`. An `/mcp` endpoint for remote agents
+  waits until someone asks.
 - 027: Bella Baxter secrets provider (workload identity auth) and the secret-change webhook.
   Drawn as `VariablesScreen`'s "Where secrets come from" panel with one external source, not the
   handoff's provider gallery: the constitution keeps Caravana whole without any provider and names

@@ -22,7 +22,8 @@ Caravana and leaves your apps running. Details: [deploy/install/README.md](deplo
 
 Sign in to the console to create apps, deploy, follow rollouts, read logs, set secrets and
 back up databases. Everything the console does is also in the HTTP API
-([api/openapi.yaml](api/openapi.yaml)), with API tokens made under Settings.
+([api/openapi.yaml](api/openapi.yaml)), with API tokens made under Settings. Coding agents can
+read and act on an installation through `caravana mcp`: [docs/mcp.md](docs/mcp.md).
 
 ## Develop
 
