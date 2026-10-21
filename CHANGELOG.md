@@ -9,6 +9,25 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- API 0.22.0: `AppStatus.services` lists, for each service of an app, its wanted and healthy
+  copies (`name`, `wantedCopies`, `healthyCopies`), in the app's service order. It is absent for
+  an app with no services.
+- A Projects page (`/projects`) lists every project with its environments and app count, each row
+  a link to the project. "New project" is on it.
+
+### Changed
+- The console's sidebar and top bar follow the design. The sidebar links Home, Projects and
+  Settings (the pages that exist), with the host's initial, the host and the version at the top
+  and the account row at the foot, where Sign out is now an icon button. The top bar's
+  breadcrumbs read `project / environment` and "New app" is on every page.
+- An app's header has its actions in the title row: Restart, Stop… and Deploy (a link to the
+  deploy form), or Start when the app is stopped. A "← Home" link sits above the name, and the
+  Running tab has a status mark when the app isn't healthy.
+- An app with several services names each one and its copies, such as "2 services running v2:
+  hollo and postgres, 1 copy each", instead of "2 copies running". A service short of its own
+  copies now makes the app degraded even when another has a surplus.
+
 ## 0.11.0 - 2026-10-21
 
 ### Fixed

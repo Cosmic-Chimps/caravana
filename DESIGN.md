@@ -187,7 +187,7 @@ components:
   tab-active:
     textColor: "{colors.readout-white}"
   sidebar:
-    backgroundColor: "{colors.panel-face}"
+    backgroundColor: "{colors.unlit-panel}"
     width: "248px"
   top-bar:
     backgroundColor: "{colors.unlit-panel}"
@@ -248,7 +248,7 @@ alone.
 
 ### Neutral
 - **Unlit Panel** (oklch 0.165 0.006 255): the page ground, behind everything.
-- **Panel Face** (oklch 0.195 0.007 255): panels, the sidebar, the Menu panel.
+- **Panel Face** (oklch 0.195 0.007 255): panels, the Menu panel.
 - **Raised Control** (oklch 0.225 0.008 255): inputs, chips, secondary buttons, table headers,
   row hover inside a panel.
 - **Lit Control** (oklch 0.260 0.009 255): hover on raised controls, selected rows, ghost-button
@@ -265,8 +265,8 @@ alone.
 Each status has a full-strength color, a tinted ground and an edge. They differ in lightness as
 well as hue (failed 0.68 < healthy 0.76 < rolling 0.84 < warning 0.90), so they still separate
 in grayscale and for people with color vision deficiency.
-- **Signal Blue** (oklch 0.76 0.12 245), healthy ●. It's also the focus ring (at 55%) and the
-  live-tick flash (at 16%). Healthy is blue, not green.
+- **Signal Blue** (oklch 0.76 0.12 245), healthy ●. It's also the focus ring (at 55%), the current
+  sidebar item's bar and the live-tick flash (at 16%). Healthy is blue, not green.
 - **Transit Lilac** (oklch 0.84 0.09 300), rolling ◐: a deploy in progress, a copy starting or
   draining.
 - **Caution Amber** (oklch 0.90 0.13 88), warning ◆: a human should look soon: a restarted copy's count, a deploy
@@ -321,14 +321,16 @@ in place never shifts its neighbors.
 
 ## Layout
 
-- **Shell:** a fixed left sidebar (248px) with the wordmark and the host in mono on top, the two
-  links (Apps, Settings) and, at the foot, the signed-in email in mono with a Sign out button. A
-  sticky top bar (52px, Unlit Panel, a Hairline under it) holds the breadcrumbs on the left (Apps ›
-  whoami › Configure), then the live indicator, then the primary-action slot at the right edge. The
-  slot is empty, and takes no room, when the page has no action. A skip link to the page sits above
-  all of it.
+- **Shell:** a fixed left sidebar (248px, Unlit Panel, a Hairline at its edge) with the brand block
+  on top (the host's initial, the host and `caravana <version>`, a link to Home), a Workspace group
+  (Home, Projects), Settings in a block of its own and, at the foot, the account row: initials,
+  "Account", the email in mono and a Sign out icon button. A sticky top bar (52px, Unlit Panel, a
+  Hairline under it) holds the breadcrumbs on the left (`Default / production`: project and
+  environment, never the app, whose name is the page's h1), then the live indicator, then "New app"
+  at the right edge on every page. A skip link to the page sits above all of it.
 - **Content:** a centered column, max 1440px, with 26px side gutters, 36px top and 60px bottom
-  padding. It's a vertical stack, sections 28px apart.
+  padding. It's a vertical stack, sections 28px apart. An app's page is tighter, as the design
+  draws it: 26px top, 62px bottom, sections 23px apart.
 - **Page header:** the headline and its lede, stacked, 900px wide at most. An app's header is
   different: its name (24px mono), the status pill and the addresses on one wrapping line, then the
   summary sentence, then the tabs.
@@ -347,12 +349,13 @@ in place never shifts its neighbors.
 - **Settings:** inside the shell like every other page, left-aligned at the shared content width,
   not a centered column and not a narrower one: the headline ("Signed in as <email>."), then one
   labeled section per job (Password, API tokens), each a flat panel.
-- **The page's one primary action:** each view shows one primary (Readout White) button. An app's
-  tabs share one rule: the top bar holds no action. A tab's primary belongs to its own form ("Deploy"
-  on Deployments, "Deploy" or "Save" on Configure), so pressing it deploys what that page holds; a
-  top-bar Deploy that only led elsewhere read as this page's button and lost an edit. The Apps
-  page's top bar has "New app" only while the list isn't empty; an empty list puts its one primary
-  inside the empty panel. Everything else on a page is secondary, danger or ghost-weight.
+- **Primary actions:** the frame has two, as the design draws it: "New app" in the top bar, and on an
+  app's page the header's "Deploy" (a link to the Deployments tab's deploy form, or "Start" for a
+  stopped app). A page's own content adds at most one more, in the form it submits ("Deploy" on
+  Deployments, "Deploy" or "Save" on Configure), so pressing it deploys what that page holds. The
+  header's Deploy never deploys by itself: a one-click redeploy from the header would be a surprise,
+  and it would deploy without the edit in the form. An empty list doesn't repeat the top bar's New
+  app. Everything else on a page is secondary, danger or ghost-weight.
 - **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is 14-16px,
   gaps inside a grid 8-16px.
 - **Narrow screens:**
@@ -423,11 +426,14 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
 - **Shipped as:** `cv-btn` with `cv-btn-primary`, `-secondary`, `-danger`, and the sizes `cv-btn-sm`
   (28px) and `cv-btn-lg` (42px, the sign-in button). A link that does a button's job (Deploy, Show
   older, Deploy again) is an `<a>` with the same classes. A `<summary>` that opens a confirmation
-  wears them too. There are no ghost or icon buttons in the build, and no icons at all.
+  wears them too. Icons are Lucide, inline `<svg>` from the `icon` template function (`icons.go`),
+  and only in buttons and the sidebar: plus (New app, 14px), rotate-ccw (Restart) and rocket
+  (Deploy) before a label, house, folder and settings in the sidebar, log-out in the one icon-only
+  button (Sign out, 30×30, with an `aria-label`). There are no ghost buttons in the build.
 - **Toggle:** a secondary button with `aria-pressed`; on, it shows the pressed state described
   under Elevation & Depth. Its label changes with the state only for Pause / Resume.
 - **Labels:** a verb that names the outcome ("Revert to v22", "Raise to 2 GB"). An optional
-  16px Lucide icon at 1.5px stroke may sit before the label (none ships yet).
+  Lucide icon at 1.5px stroke may sit before the label (14px in a small button).
 
 ### Status pill and mark
 - **Marks in the build:** ● healthy, ◐ rolling (a ring with its left half filled: a deploy copy
@@ -485,23 +491,31 @@ then the action. The pill and the action sit in fixed columns, so they line up f
 Times are relative, with the exact time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
 
 ### Navigation
-- **Sidebar:** two links in Body, 34px tall with 4px corners. The current page sits on Raised Control
-  in Readout White with a 2px Readout White bar at its left edge (a bar, not a hue); the other
-  link is Body Text. The brand block above shows the host in mono; the account row below shows
-  "Signed in" in Label, the email in mono and a Sign out button.
+- **Sidebar:** only pages that exist are linked: Home and Projects under a "Workspace" Label, and
+  Settings below. Each item is 34px tall with 4px corners, a 16px Lucide icon in Label Text and the
+  name in Body. The current one sits on Raised Control with its text and icon in Readout White and a
+  2px bar inside its left edge in Signal Blue (a bar, not a fill: the accent is kept for this and
+  focus). Home is current on the Apps list, Projects on the Projects pages and on every page of an
+  app, Settings on Settings. The brand block above links to Home (a 26px mark with the host's
+  initial, the host in 14px sans, `caravana <version>` in mono); the account row below shows
+  initials in a 30px disc, "Account", the email in mono (cut with an ellipsis) and a Sign out
+  icon button, which stays a POST form.
 - **Menu (under 900px):** a `<details>` whose summary is a small secondary button, opening a panel
   of the same three blocks on Panel Face with 6px corners and the overlay shadow, 360px at most.
 - **Tabs:** four, by intent. They are links to their own pages, 46px tall, 26px apart, sans 500 at
   13.5px, over a Hairline rule. Inactive tabs use Label Text, turn Body Text on hover, and the
   current one (`aria-current="page"`) is Readout White with a 2px Readout White underline. A mono
-  count may follow a label.
-- **Breadcrumbs:** in the top bar, segments in mono where they're literal names (an app's id),
-  separated by ›, the last one current and cut with an ellipsis if long.
+  count may follow a label: Running carries its copies, Deployments the live version. Running
+  also carries a 6px status mark before its label (rolling ◐ or warning ◆) while the app isn't
+  healthy, and none when it is.
+- **Breadcrumbs:** in the top bar, every segment a 30px mono 500 link (Body Text, Raised Control
+  ground on hover), separated by a "/" in 16px mono, the last one current in Readout White and cut
+  with an ellipsis if long. An app's pages read `project / environment`; its tabs add no segment.
 
 ### Live indicator
 The top bar's readout of the page's event stream (`cv-live`). It is hidden until the script knows
 the stream's state, and each state has its own shape and words, so none depends on color:
-- **Live:** the 8px healthy disc and the word "Live". The disc pings once when the stream opens.
+- **Live:** the 6px healthy disc and the word "live". The disc pings once when the stream opens.
 - **Reconnecting:** the tilted warning square and "Reconnecting…". The browser retries by itself.
 - **Signed out:** the idle ring and "Signed out. Sign in again.", the second sentence a link back to
   the page the admin was on.
@@ -608,8 +622,8 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Do** sort lists failed → warning → rolling → healthy → idle.
 - **Do** explain a problem in a sentence plus one fix button, and put the raw Nomad error under it in
   muted mono.
-- **Do** give each view at most one primary button, and put it in the form it submits; an app's top
-  bar has none.
+- **Do** give a view's content at most one primary button, and put it in the form it submits; the
+  frame's New app and an app header's Deploy link are the only others.
 - **Do** confirm a consequence in a `<details>` disclosure under its button, and make Delete app ask
   for the app's name.
 - **Do** label stacked-row facts with their column's name (`data-label`) and give every standalone
@@ -635,7 +649,7 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Don't** put a label above a page headline or a panel title. The mono label is a section's own
   heading, never a kicker.
 - **Don't** use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a
-  separator. Icons are Lucide line icons, and only in buttons and toolbars.
+  separator. Icons are Lucide line icons, and only in buttons, toolbars and the sidebar.
 - **Don't** draw a logo mark. The wordmark is the word "caravana" in Plex Mono 600.
 - **Don't** run a command into a sentence, or let a long one break at a hyphen mid-line.
 - **Don't** show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS.
