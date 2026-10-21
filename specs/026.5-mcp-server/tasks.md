@@ -13,7 +13,7 @@
 - [ ] T004 Release and docs: darwin tarballs in `tools/release.sh build` and `SHA256SUMS`;
   `docs/mcp.md` (setup for Claude Code and others, tokens, `--allow-actions`, never offered);
   link it from `README.md`.
-- [ ] T005 Lab: `TestConsoleLab` step `console-mcp` (plan.md "Lab").
+- [X] T005 Lab: `TestConsoleLab` step `console-mcp` (plan.md "Lab").
 - [ ] T006 Docs: CHANGELOG Unreleased (Added), CLAUDE.md 026.5 paragraph, docs/plan.md 026.5
   status.
 - [ ] T007 Full check (CI's list), `TestConsoleLab`, and a real agent: `claude mcp add` against the

@@ -106,6 +106,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-create-only", c.createOnly},
 		{"console-app-actions", c.appActions},
 		{"console-terminal", c.terminal},
+		{"console-mcp", c.mcpServer},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {
