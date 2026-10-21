@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.10.0 - 2026-10-21
+
 ### Added
 - Coding agents can read and act on an installation: `caravana mcp` is an MCP server that an
   agent such as Claude Code starts on your machine. Give it the console's address and an API
