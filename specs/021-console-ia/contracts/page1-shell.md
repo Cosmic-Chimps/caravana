@@ -181,3 +181,49 @@ The render confirmed the rest:
 The designer checks the page live at 127.0.0.1:7070, state by state:
 - healthy, rolling, degraded, failed, stopped, never deployed;
 - narrow.
+
+## After the critique (designer's rulings, 2026-10-21)
+
+The impeccable critique (snapshot in `.impeccable/critique/`, local) found these, and the designer
+ruled:
+
+1. **Narrow environment.**
+   - Under 900px the back-link row reads "← Home · Shop / staging", all in 400 13px mono fg-3.
+   - "Shop" links to the project page; the environment's name is plain text, as in the top bar.
+   - The row keeps the "·" and the "/", so it reads like the crumbs it stands in for.
+   - Apps in Default › production read "← Home" alone, as on wide screens.
+   - The Environments line is labeled **"Other environments"** everywhere.
+2. **Failed or reverted header.**
+   - **(a)** The lede leads with the exact sentence Home's headline and the needs-you item use,
+     written once and shared, so the pages never disagree. It is two plain sentences, with no
+     semicolon:
+     - "`v3` failed its health checks. `v2` keeps running." then " Last deployed …";
+     - with no healthy copies: "`v0` failed its health checks. No copies are running."
+     The lede may wrap to two lines.
+   - **(b)** When the newest deployment failed or reverted, the app is failed even with healthy
+     copies (the handoff's search-indexer: ■ failed while "v8 still running"):
+     - the pill reads **"deploy failed"**, in the failed look, not "reverted";
+     - the same pill appears in the header and the list rows, sorted first;
+     - with no healthy copies it stays "not running".
+   - **(c)** "0 of 1 copies healthy" when Nomad has copies and none is healthy; "No copies are
+     running." only when there are none.
+3. **No action that can only be refused.**
+   - "Promote to <env>" shows only on the cheap preconditions already in hand: the app is defined,
+     not stopped, its newest deployment is healthy with a recorded definition, and the target
+     environment exists. Otherwise the environment's name is a plain link.
+   - Never run the full promotion plan on page render (`CheckDigests` calls the registry).
+   - Restart and Stop… show only with a live version.
+4. **Focus:** stable ids on the header's buttons and tabs, so htmx keeps focus across the live
+   swap.
+5. **Semantics.**
+   - No `aria-current="page"` on the environment crumb of an app page.
+   - No empty "App actions" group.
+   - The tab's status mark has visually hidden text in the pill's words: "deploy failed",
+     "rolling out", "not running".
+6. **DESIGN.md:** the app has five tabs (Backups included); update the text.
+
+Declined for now:
+- capping the title row's domains (023 decides);
+- a scroll hint on the narrow tabs (the cut word is the hint);
+- "api 1 copy" (keep "api 1");
+- back to the project, a needs-you count on Projects, and the mark following the cause.
