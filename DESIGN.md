@@ -351,7 +351,7 @@ in place never shifts its neighbors.
 - **App pages:** five tabs by intent, in this order: Running, Deployments, Configure, Logs, Backups. The tab
   is named "Deployments", never "Ship". Running is the app's own page (the copies in a live
   table), Deployments holds the deploy form and the history, Configure the grid of Copies & size and
-  Shipping, the Domains and Secrets panels, the webhook and Delete app, Logs the output of the copies,
+  Deploy, the Domains and Secrets panels, the webhook and Delete app, Logs the output of the copies,
   Backups the app's backed-up services. Each tab is its own URL. Variables & secrets
   (`/apps/{id}/variables`) and Domains (`/apps/{id}/domains`) are Configure's own pages: they draw the
   app header with the Configure tab current, and no second back link.
@@ -626,9 +626,9 @@ edited through its Compose file." (secrets can still be set and removed). A secr
 drawn, not its length either: ten dots and a lock icon.
 - **Configure:** per service a grid of two panels (`cv-grid2`, gap 16, one column under 860px of room), each
   `cv-panel` with 18px padding and a Label head: Copies & size (Copies, CPU in MHz, Memory in MB, Ceiling in
-  MB, in four columns) and Shipping (Image, Container port, then the health check as a path with a `GET`
+  MB, in four columns) and Deploy (Image, Container port, then the health check as a path with a `GET`
   prefix, Every in s and Timeout in s, and one sentence that new copies must pass it or the deploy is
-  reverted). "Also set" is a read-only panel under Shipping for what the form leaves alone (entrypoint,
+  reverted). "Also set" is a read-only panel under Deploy for what the form leaves alone (entrypoint,
   command, arguments, volumes, backup). With several services the grid is drawn once per service under
   its name in mono. Domains and Secrets follow, once per app, each a panel with its link ("Manage
   domains", "Manage variables and secrets"); a service whose image can't be pulled for want of credentials

@@ -18,7 +18,7 @@ import (
 // Notice is an error that isn't about one field, Focus names the input that
 // gets the cursor: the first one with an error.
 //
-// The form is Copies & size and Shipping (feature 021). A service's environment
+// The form is Copies & size and Deploy (feature 021). A service's environment
 // and domains are not in it: they have their own pages (Variables & secrets,
 // Domains), so saving this form leaves them as stored.
 type editForm struct {

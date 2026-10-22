@@ -63,7 +63,7 @@ not draw, in one column.
   for the two form panels, gap 13 for Domains and Secrets. The panel's head is a `.cv-label`.
 - **Several services:** the grid is drawn once per service, under a row with the service's
   name (`.cv-label` "web" as today, mono 500 14px fg-1 is also fine), Copies & size left and
-  Shipping right; one `<form>` per service with a button row at its end: **Save and deploy**
+  Deploy right; one `<form>` per service with a button row at its end: **Save and deploy**
   (primary sm). Domains and Secrets come once, after the last service, listing by service.
   With one service the service row is not drawn (the handoff).
 - **Copies & size** (head "Copies & size"): a 4-column field grid, gap 13: **Copies** (mono,
@@ -75,14 +75,14 @@ not draw, in one column.
   `registry_auth_failed` or a missing image: the `InlinePrereq` shape (warning mark, title
   500 14px fg-1, reason 14px/1.5 fg-2, dashed warn-line border, radius 4, padding 14px 16px)
   with one action, a link "Add credentials in Settings" (secondary sm). Otherwise nothing.
-- **Shipping** (head "Shipping"): **Image** (mono, wide), **Container port** (mono, narrow),
+- **Deploy** (head "Deploy"; the handoff's "Shipping": the console never says "ship", since feature 007): **Image** (mono, wide), **Container port** (mono, narrow),
   then **Health check**: one row of three fields, gap 13: the path (mono, prefix "GET",
   placeholder "TCP port", hint "Empty checks the TCP port."), **Every** (mono, suffix "s",
   placeholder 10), **Timeout** (mono, suffix "s", placeholder 2). Under the row one sentence,
   13px fg-3: "New copies must pass this check before they take traffic; if they don't, the
   deploy is reverted." The handoff's Auto-revert and Canary-first switches are **not drawn**:
   neither is a choice here (constitution III), and a switch that can't be flipped is a lie.
-- **Advanced** (per service, only when any is set): a read-only panel after Shipping, head
+- **Advanced** (per service, only when any is set): a read-only panel after Deploy, head
   "Also set", rows `.cv-label` + value in 13px mono fg-2: Entrypoint, Command, Arguments,
   Volumes (mount → name), Backup (engine, schedule, keep). One line under it, 13px fg-3: "Edited
   through the API or a Compose file." This is where the handoff's "Advanced settings" goes.

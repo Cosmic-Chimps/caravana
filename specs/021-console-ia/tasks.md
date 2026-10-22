@@ -30,7 +30,7 @@ definition edit the API already takes.
 
 - [X] T009 [US2] Cross-cutting: fields to 32px (`cv-field`, sign-in keeps 42px), the select, the
   new icons (lock, external-link, file-text, history, play, chevron-right, chevron-down).
-- [X] T010 [US2] Configure: the two-column grid per service (Copies & size, Shipping with the
+- [X] T010 [US2] Configure: the two-column grid per service (Copies & size, Deploy with the
   health check row and the revert sentence, "Also set"), the Domains and Secrets panels with
   their links, the registry prerequisite, the console's own panels after the grid; Environment
   and the secret forms move out; kept-file, undefined and stopped rules unchanged.

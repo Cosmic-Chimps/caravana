@@ -617,7 +617,7 @@
 </section>
 {{end}}
 
-{{/* The Configure tab (feature 021): per service the grid of Copies & size and Shipping, as one form
+{{/* The Configure tab (feature 021): per service the grid of Copies & size and Deploy, as one form
      (a save is a deploy); per app the Domains and Secrets panels, with the links to their pages; then
      the webhook, the deploy token, the export and, last and apart, Delete app. Everything is a plain
      form post; the confirmations are <details>, so they work without script. Takes a configureTab. */}}
@@ -706,7 +706,7 @@
         </div>
         <div class="cv-col">
           <div class="cv-panel cv-gpanel">
-            <h3 class="cv-label">Shipping</h3>
+            <h3 class="cv-label">Deploy</h3>
             {{template "field" (.F "image")}}
             {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
             {{if .ShowHealth}}

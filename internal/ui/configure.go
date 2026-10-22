@@ -104,7 +104,7 @@ type deleteView struct {
 func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 
 // configureTab is the body of the Configure tab (feature 021): per service the
-// grid of Copies & size and Shipping, then per app the Domains and Secrets
+// grid of Copies & size and Deploy, then per app the Domains and Secrets
 // panels, then the panels the console needs besides.
 type configureTab struct {
 	ID      string

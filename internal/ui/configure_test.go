@@ -127,7 +127,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 
 	// The panels of the contract, with its words.
 	got := text(body)
-	for _, want := range []string{"Copies & size", "Shipping", "Copies", "CPU MHz", "Memory MB", "Ceiling MB", "Image", "Container port",
+	for _, want := range []string{"Copies & size", "Deploy", "Copies", "CPU MHz", "Memory MB", "Ceiling MB", "Image", "Container port",
 		"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
 		"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
 		"Also set", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",

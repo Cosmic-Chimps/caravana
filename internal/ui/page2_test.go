@@ -105,7 +105,7 @@ func TestPage2Shapes(t *testing.T) {
 			"web :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at Caravana", "Add domain and deploy",
 			"The root of a domain needs an A record. A subdomain can use one too."},
 			[]string{`id="domain-service"`, "Sends traffic to"})
-		check(t, e, "whoami", "/configure", []string{"Copies & size", "Shipping"}, []string{`id="svc-web-title"`})
+		check(t, e, "whoami", "/configure", []string{"Copies & size", "Deploy"}, []string{`id="svc-web-title"`})
 	})
 
 	t.Run("two services", func(t *testing.T) {

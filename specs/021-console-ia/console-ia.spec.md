@@ -15,7 +15,7 @@
   - Configure becomes the short form, and Variables and secrets, Domains and Backups become their
     own app pages;
   - Settings gets a grouped nav;
-  - the Apps home gets "Shipping now";
+  - the Apps home gets "Deploying now";
   - the deployment entry gets its stages.
 - **Found while running real apps:**
   - the project pages can't be reached from the console's navigation;
@@ -82,7 +82,7 @@ postgres, 1 copy each. Last deployed … through the API." A stopped app shows S
 
 ### User Story 2 - Page 2: the app's short Configure and its own pages (Priority: P2)
 
-Configure becomes the handoff's short form: copies and size, shipping, the list of domains, and
+Configure becomes the handoff's short form: copies and size, deploy (image, port, health check), the list of domains, and
 the secret names. Variables and secrets, Domains and Backups become pages of the app. Open
 question for its contract: seven tabs, or Configure linking to the three pages.
 
@@ -93,7 +93,7 @@ warning marks per entry.
 
 ### User Story 4 - Page 4: the Apps home and the deployment stages (Priority: P3)
 
-The Apps home gets "Shipping now" for a rollout in progress, a kind word per row and an app filter.
+The Apps home gets "Deploying now" for a rollout in progress, a kind word per row and an app filter.
 A deployment entry shows its stages (Queued, Roll out, Live) and who deployed it.
 
 ### Edge Cases
