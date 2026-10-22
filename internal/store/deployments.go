@@ -62,7 +62,11 @@ type DeploymentRecord struct {
 	// environment without a lookup per row.
 	Place     app.Place
 	CreatedAt time.Time
-	UpdatedAt time.Time
+	// RegisteredAt is when Nomad accepted the job (the first update that gave
+	// the deployment its job version); nil until then, and for deployments
+	// recorded before feature 021.
+	RegisteredAt *time.Time
+	UpdatedAt    time.Time
 }
 
 // DeploymentUpdate changes a deployment. Zero values keep what's stored.
@@ -194,11 +198,19 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, u DeploymentUpd
 		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
 	}
 
+	// The first update that brings a job version is the moment Nomad accepted the job.
+	now := formatTime(s.now())
+	registered := sql.NullString{}
+	if cur.RegisteredAt != nil {
+		registered = sql.NullString{String: formatTime(*cur.RegisteredAt), Valid: true}
+	} else if cur.JobVersion == nil && jobVersion != nil {
+		registered = sql.NullString{String: now, Valid: true}
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE deployments
-		SET status = ?, job_version = ?, digests = ?, warnings = ?, error = ?, updated_at = ?
+		SET status = ?, job_version = ?, digests = ?, warnings = ?, error = ?, registered_at = ?, updated_at = ?
 		WHERE id = ?`,
-		string(u.Status), jobVersion, string(digestsJSON), string(warningsJSON), errText, formatTime(s.now()), id); err != nil {
+		string(u.Status), jobVersion, string(digestsJSON), string(warningsJSON), errText, registered, now, id); err != nil {
 		return DeploymentRecord{}, fmt.Errorf("update deployment %q: %w", id, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -349,7 +361,7 @@ func (s *Store) queryDeployments(ctx context.Context, query string, args ...any)
 	return out, rows.Err()
 }
 
-const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name"
+const deploymentColumns = "id, app_id, trigger, digests, status, job_version, warnings, error, definition, compose, source_deployment, created_at, updated_at, source_app, source_environment, project, environment, app_name, origin, token_name, registered_at"
 
 // deploymentSource is what every read of deployments selects from: the table
 // plus
@@ -399,11 +411,11 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		created, updated                   string
 		jobVersion                         sql.NullInt64
 		definition, kept, source, origin   sql.NullString
-		tokenName                          sql.NullString
+		tokenName, registered              sql.NullString
 	)
 	if err := row.Scan(&rec.Deployment.ID, &rec.AppID, &trigger, &digests, &status, &jobVersion,
 		&warnings, &rec.Error, &definition, &kept, &source, &created, &updated, &rec.SourceApp, &rec.SourceEnvironment,
-		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName); err != nil {
+		&rec.Place.Project, &rec.Place.Environment, &rec.Place.Name, &origin, &tokenName, &registered); err != nil {
 		return DeploymentRecord{}, err
 	}
 	rec.Deployment.Trigger = app.Trigger(trigger)
@@ -436,6 +448,13 @@ func scanDeployment(row interface{ Scan(...any) error }) (DeploymentRecord, erro
 		}
 	}
 	rec.Deployment.TokenName = tokenName.String
+	if registered.Valid {
+		t, err := parseTime(registered.String)
+		if err != nil {
+			return DeploymentRecord{}, err
+		}
+		rec.RegisteredAt = &t
+	}
 	rec.Source = source.String
 	var err error
 	if rec.CreatedAt, err = parseTime(created); err != nil {
