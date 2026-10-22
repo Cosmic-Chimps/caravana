@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.12.0 - 2026-10-22
+
 ### Added
 - API 0.23.0: `Deployment.tokenName` is the name of the API token that made a deploy (`deployApp`,
   `deployCompose`, `promoteApp`, `redeployDeployment`), as it was then. It is absent for a deploy from
