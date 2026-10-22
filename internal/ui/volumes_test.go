@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"net/http"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,60 +13,6 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
-
-// Feature 016, US3: the Volumes section's rows, as a table of the cases the
-// section must tell apart.
-func TestVolumeRows(t *testing.T) {
-	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	measured := now.Add(-2 * time.Hour)
-	ran := now.Add(-26 * time.Hour)
-	tests := []struct {
-		name     string
-		in       []service.VolumeView
-		want     []volumeRow
-		wantHint bool
-	}{
-		{name: "no volumes: no rows, no hint"},
-		{
-			name: "backed up, measured, last run succeeded",
-			in: []service.VolumeView{{Name: "data", Mounted: true, Mounts: []service.VolumeMount{{Service: "kuma", Path: "/app/data"}},
-				HostPath: "/h/data", Size: &service.VolumeSize{Bytes: 312 << 20, MeasuredAt: measured}, BackedUp: true, Schedule: "0 3 * * *", Keep: 7,
-				LastBackup: &service.VolumeBackup{ID: "kuma-1", Status: store.BackupSucceeded, StartedAt: ran}}},
-			want: []volumeRow{{Name: "data", Mounts: []string{"kuma:/app/data"}, HostPath: "/h/data", Size: "312 MB",
-				Measured: whenOf(now, &measured, ""), BackedUp: true, Schedule: "every day at 03:00 UTC",
-				HasLast: true, Last: whenOf(now, &ran, ""), LastStatus: statusView{"healthy", "succeeded"}}},
-		},
-		{
-			name: "not measured, not backed up: the hint",
-			in:   []service.VolumeView{{Name: "data", Mounted: true, Mounts: []service.VolumeMount{{Service: "web", Path: "/d", ReadOnly: true}}}},
-			want: []volumeRow{{Name: "data", Mounts: []string{"web:/d (read-only)"}}}, wantHint: true,
-		},
-		{
-			name: "backed up, never run, and a failed run's mark",
-			in: []service.VolumeView{
-				{Name: "a", Mounted: true, BackedUp: true, Schedule: "15 * * * *"},
-				{Name: "b", Mounted: true, BackedUp: true, Schedule: "0 3 * * *", LastBackup: &service.VolumeBackup{Status: store.BackupFailed, StartedAt: ran}},
-			},
-			want: []volumeRow{
-				{Name: "a", BackedUp: true, Schedule: "every hour at :15"},
-				{Name: "b", BackedUp: true, Schedule: "every day at 03:00 UTC", HasLast: true, Last: whenOf(now, &ran, ""), LastStatus: statusView{"failed", "failed"}},
-			},
-		},
-		{
-			name: "a volume no service mounts is not a reason for the hint",
-			in:   []service.VolumeView{{Name: "old", HostPath: "/h/old"}},
-			want: []volumeRow{{Name: "old", Unmounted: true, HostPath: "/h/old"}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, hint := volumeRows(now, tt.in)
-			if !reflect.DeepEqual(got, tt.want) || hint != tt.wantHint {
-				t.Errorf("volumeRows =\n %+v, hint %v\nwant\n %+v, hint %v", got, hint, tt.want, tt.wantHint)
-			}
-		})
-	}
-}
 
 func TestHumanBytes(t *testing.T) {
 	tests := []struct {
@@ -94,9 +39,9 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
-// Feature 016, US3: the Volumes section is first on the Backups tab, shows
-// every column with its copy, and is plain HTML. It answers while Nomad can't
-// be read.
+// Feature 016's facts, re-homed into the rows of the Backups tab (feature 021): a volume
+// service's mounts, its host path, its size and its last backup are all on the page, and
+// it answers while Nomad can't be read.
 func TestBackupsTabVolumes(t *testing.T) {
 	ctx := context.Background()
 	e := volumeBackupsEnv(t)
@@ -104,8 +49,9 @@ func TestBackupsTabVolumes(t *testing.T) {
 	// set from it, a minute past the hour they should read as.
 	clockNow := e.Clock.Now()
 	ran := clockNow.Add(-2*time.Hour - time.Minute).UTC()
+	finished := ran.Add(4 * time.Second)
 	if err := e.Store.SaveBackup(ctx, store.BackupRecord{AppID: "kuma", ID: "uptime-kuma-1000", Service: "uptime-kuma", Engine: "volume",
-		Status: store.BackupSucceeded, Bytes: 2048, StartedAt: ran, Stopped: new(4 * time.Second)}); err != nil {
+		Status: store.BackupSucceeded, Bytes: 2048, StartedAt: ran, FinishedAt: &finished, Stopped: new(4 * time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	started := clockNow.Add(-3*time.Hour - time.Minute)
@@ -120,56 +66,48 @@ func TestBackupsTabVolumes(t *testing.T) {
 	_, body := e.get(t, "/apps/kuma/backups")
 	got := text(body)
 	for _, want := range []string{
-		"Volumes", "Mounted at", "On the host", "Size", "Backup",
-		"uptime-kuma:/app/data", "312 MB", "measured 3 hours ago",
-		"every day at 03:00 UTC", "succeeded, last 2 hours ago",
-		"old", "not mounted", "5 KB",
+		"Volume · /app/data",                  // what the row backs up, by mount
+		"Every day at 03:00 UTC", "3 backups", // how often, and how many are kept
+		"The service stops while it runs.",      // what a volume run does
+		"2 hours ago", "took 4 s · stopped 4 s", // the last backup, and the stop
+		"2 KB", "2 KB all", // its size, and the kept runs' sum
+		"/host_volumes/", "on this host · 312 MB, measured 3 hours ago", // where the volume lives, and its size
+		"Volumes no service mounts", "old", "5 KB", // the volume Nomad has that nothing mounts
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("the Volumes section lacks %q:\n%s", want, got)
+			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
 	}
-	// The lab's console-volumes step (cmd/caravana/console_lab_test.go) reads
-	// the page by these patterns, so the markup stays in step with it.
+	// The lab's console-volumes step (cmd/caravana/console_lab_test.go) reads the page by
+	// these patterns, so the markup stays in step with it.
 	for _, pattern := range []string{
-		`>(\d+(?:\.\d)? (?:B|KB|MB|GB))</span>\s*<span class="cv-usage-of">measured `,
-		`<span class="cv-data text-fg-1">data</span>`,
-		`succeeded</span>, last <time`,
-		`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="(/apps/kuma/backups)"[^>]*>(.*?)</form>`,
-		`stopped (?:under 1|\d+) s`,
+		`<span class="cv-bname">uptime-kuma</span>`,
+		`<span class="cv-bmeta">Volume · /app/data</span>`,
+		`<span class="cv-bmeta">took \d+(?: s| min[^<]*)(?: · stopped (?:under 1|\d+) s)?</span>`,
+		`(?s)<details class="cv-confirm">\s*<summary[^>]*>.*?Back up now</summary>\s*<form method="post" action="(/apps/kuma/backups)"[^>]*>(.*?)</form>`,
+		`class="cv-bpath">[^<]*on this host · (\d+(?:\.\d)? (?:B|KB|MB|GB)), measured [^<]*</p>`,
 	} {
 		if !regexp.MustCompile(pattern).MatchString(body) {
 			t.Errorf("the page doesn't match the lab step's pattern %s", pattern)
 		}
 	}
-	if !strings.Contains(body, "/host_volumes/") {
-		t.Errorf("the host path isn't shown:\n%s", body)
-	}
-	volumes, services := strings.Index(body, `id="volumes-title"`), strings.Index(body, `id="databases-title"`)
-	if volumes < 0 || volumes > services {
-		t.Error("the Volumes section isn't first on the tab")
-	}
-	// The backed-up volume needs no hint; the unmounted one never does.
-	if strings.Contains(got, "Set a backup on the service in Configure") {
-		t.Error("the hint shows although the only mounted volume is backed up")
-	}
-	if section := body[volumes:services]; strings.Contains(section, "<script") || strings.Contains(section, "hx-") {
-		t.Errorf("the Volumes section needs scripting:\n%s", section)
+	if tab := body[strings.Index(body, `id="backups-title"`):]; strings.Contains(tab[:strings.Index(tab, "</main>")], "<script") || strings.Contains(tab[:strings.Index(tab, "</main>")], "hx-") {
+		t.Error("the tab needs scripting")
 	}
 
-	t.Run("Nomad can't be read: the section still answers", func(t *testing.T) {
+	t.Run("Nomad can't be read: the tab still answers", func(t *testing.T) {
 		e.Nomad.Down()
 		resp, body := e.get(t, "/apps/kuma/backups")
 		got := text(body)
-		if resp.StatusCode != http.StatusOK || !strings.Contains(got, "uptime-kuma:/app/data") || !strings.Contains(got, "312 MB") ||
-			strings.Contains(got, "not mounted") {
+		if resp.StatusCode != http.StatusOK || !strings.Contains(got, "Volume · /app/data") || !strings.Contains(got, "2 KB") ||
+			strings.Contains(got, "Volumes no service mounts") {
 			t.Errorf("the tab with Nomad down = %d:\n%s", resp.StatusCode, got)
 		}
 	})
 }
 
-// A volume that isn't backed up shows "not backed up" and the hint with a
-// link to Configure; an app without a volume has no section at all.
+// A service with a volume and no backup gets a gap row, with the volume's size when it
+// is known; an app with nothing to back up says so.
 func TestBackupsTabVolumesNotBackedUp(t *testing.T) {
 	e := newConsoleEnv(t)
 	a := kumaApp()
@@ -177,15 +115,28 @@ func TestBackupsTabVolumesNotBackedUp(t *testing.T) {
 	e.seed(t, a)
 	_, body := e.get(t, "/apps/plain/backups")
 	got := text(body)
-	if !strings.Contains(got, "not backed up") || !strings.Contains(got, "not measured yet") ||
-		!strings.Contains(got, "Set a backup on the service in Configure to keep a copy off this server.") ||
-		!strings.Contains(body, `<a href="/apps/plain/configure">Configure</a>`) {
+	if !strings.Contains(got, "uptime-kuma · /app/data has no backup.") || !strings.Contains(got, "Volume") || !strings.Contains(got, "0 backed up · 1 not") {
 		t.Errorf("the tab of a volume without a backup:\n%s", got)
 	}
 
 	e.seed(t, whoamiApp())
 	_, body = e.get(t, "/apps/whoami/backups")
-	if strings.Contains(body, `id="volumes-title"`) {
-		t.Error("an app with no volume has a Volumes section")
+	if got := text(body); !strings.Contains(got, "Nothing to back up.") || strings.Contains(got, "has no backup.") {
+		t.Errorf("the tab of an app with nothing to back up:\n%s", got)
+	}
+}
+
+// serviceVolumeBytes sums what the service's volumes measured, and says when none was.
+func TestServiceVolumeBytes(t *testing.T) {
+	vols := []service.VolumeView{
+		{Name: "a", Mounted: true, Mounts: []service.VolumeMount{{Service: "web", Path: "/a"}}, Size: &service.VolumeSize{Bytes: 100}},
+		{Name: "b", Mounted: true, Mounts: []service.VolumeMount{{Service: "web", Path: "/b"}}, Size: &service.VolumeSize{Bytes: 50}},
+		{Name: "c", Mounted: true, Mounts: []service.VolumeMount{{Service: "db", Path: "/c"}}},
+	}
+	if got, ok := serviceVolumeBytes("web", vols); !ok || got != 150 {
+		t.Errorf("web = %d, %v; want 150, true", got, ok)
+	}
+	if _, ok := serviceVolumeBytes("db", vols); ok {
+		t.Error("db's volume was never measured, and the sum says it was")
 	}
 }

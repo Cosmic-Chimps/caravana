@@ -100,7 +100,7 @@ func TestComposeDeployForm(t *testing.T) {
 		`class="cv-tab" id="tab-configure" aria-current="page">Configure</a>`, `aria-current="page">Deploy from Compose</span>`,
 		`<form id="compose-form" method="post" action="/apps/shop/compose/preview"`,
 		`<input type="hidden" name="revision" value="` + revision + `">`,
-		`<textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose"`,
+		`<textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose"`,
 		`>Preview</button>`,
 	} {
 		if !strings.Contains(body, want) {

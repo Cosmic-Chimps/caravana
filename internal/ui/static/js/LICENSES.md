@@ -105,7 +105,8 @@ THE SOFTWARE.
 ## Lucide icons (`internal/ui/icons.go`)
 
 Not a script: the shapes of the icons the sidebar and buttons draw inline (house, folder, settings,
-log-out, plus, rotate-ccw, rocket), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
+log-out, plus, rotate-ccw, rocket, lock, external-link, file-text, history, play, chevron-right,
+chevron-down), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
 License: ISC.
 
 ```text

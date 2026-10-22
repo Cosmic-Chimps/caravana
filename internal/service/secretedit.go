@@ -16,7 +16,13 @@ import (
 // secret's value and the other names without one. An unknown app is
 // store.ErrNotFound; an unknown service is an *app.FieldError on "service".
 func (s *Service) SetSecret(ctx context.Context, appID, service, name, value string, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.editSecrets(ctx, appID, service, trigger, func(list []app.Secret) ([]app.Secret, error) {
+	return s.SetSecretIf(ctx, appID, service, name, value, Condition{}, trigger)
+}
+
+// SetSecretIf is SetSecret on the condition that the stored app still has the
+// revision the caller read (ErrAppChanged otherwise), as DeployIf does.
+func (s *Service) SetSecretIf(ctx context.Context, appID, service, name, value string, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.editSecrets(ctx, appID, service, cond, trigger, func(list []app.Secret) ([]app.Secret, error) {
 		i := slices.IndexFunc(list, func(sec app.Secret) bool { return sec.Name == name })
 		if i < 0 {
 			return append(list, app.Secret{Name: name, Value: &value}), nil
@@ -30,7 +36,13 @@ func (s *Service) SetSecret(ctx context.Context, appID, service, name, value str
 // every other secret. A secret the service doesn't have is an
 // *app.FieldError on "name".
 func (s *Service) RemoveSecret(ctx context.Context, appID, service, name string, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.editSecrets(ctx, appID, service, trigger, func(list []app.Secret) ([]app.Secret, error) {
+	return s.RemoveSecretIf(ctx, appID, service, name, Condition{}, trigger)
+}
+
+// RemoveSecretIf is RemoveSecret with a condition on the stored app's
+// revision, as SetSecretIf has.
+func (s *Service) RemoveSecretIf(ctx context.Context, appID, service, name string, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.editSecrets(ctx, appID, service, cond, trigger, func(list []app.Secret) ([]app.Secret, error) {
 		i := slices.IndexFunc(list, func(sec app.Secret) bool { return sec.Name == name })
 		if i < 0 {
 			return nil, app.NewFieldError("name", "service %q has no secret %q", service, name)
@@ -41,7 +53,7 @@ func (s *Service) RemoveSecret(ctx context.Context, appID, service, name string,
 
 // editSecrets deploys the stored app with service's secrets changed by edit.
 // The stored secrets have no values, so every other secret is kept.
-func (s *Service) editSecrets(ctx context.Context, appID, service string, trigger app.Trigger,
+func (s *Service) editSecrets(ctx context.Context, appID, service string, cond Condition, trigger app.Trigger,
 	edit func([]app.Secret) ([]app.Secret, error)) (store.DeploymentRecord, error) {
 	rec, err := s.store.GetApp(ctx, appID)
 	if err != nil {
@@ -68,7 +80,7 @@ func (s *Service) editSecrets(ctx context.Context, appID, service string, trigge
 		file := withSecretNames(*rec.Compose, service, list)
 		m.file = &file
 	}
-	return s.saveAndDeploy(ctx, a, Condition{}, trigger, m, nil)
+	return s.saveAndDeploy(ctx, a, cond, trigger, m, nil)
 }
 
 // withSecretNames returns a copy of file whose overlay for service lists the

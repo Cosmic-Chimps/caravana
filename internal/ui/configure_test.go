@@ -71,29 +71,27 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		}
 	}
 
-	// The app's own facts, and what the web service keeps that the form can't change.
-	got := text(body)
-	for _, want := range []string{"Display name The Shop", "Source image", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the definition lacks %q:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, "Made from a Compose file") {
-		t.Error("an image app says it was made from a Compose file")
-	}
-
-	// The form holds every editable value, one panel per service, in order, drawn from the stored app.
-	f := formWith(t, body, "/apps/shop/configure")
+	// One form per service, each with its own revision: only that service's inputs are in it.
 	rec, err := e.Store.GetApp(context.Background(), "shop")
 	if err != nil {
 		t.Fatal(err)
 	}
+	var web, worker plainForm
+	for _, f := range formsIn(body) {
+		if f.Action != "/apps/shop/configure" {
+			continue
+		}
+		if f.Values.Has("svc.web.image") {
+			web = f
+		}
+		if f.Values.Has("svc.worker.image") {
+			worker = f
+		}
+	}
 	for name, want := range map[string]string{
 		"revision":               rec.Revision,
 		"svc.web.image":          "ghcr.io/example/shop:2.1",
-		"svc.web.env":            "LOG_LEVEL=debug-value-x1\nAPI_KEY=s3cr3t-value-9f2",
 		"svc.web.port":           "8080",
-		"svc.web.domains":        "shop.example.com",
 		"svc.web.copies":         "2",
 		"svc.web.healthPath":     "/healthz",
 		"svc.web.healthInterval": "15",
@@ -101,34 +99,96 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		"svc.web.cpu":            "250",
 		"svc.web.memory":         "256",
 		"svc.web.memoryMax":      "1024",
-		"svc.worker.image":       "ghcr.io/example/shop-worker:2.1",
-		"svc.worker.env":         "",
-		"svc.worker.copies":      "",
-		"svc.worker.memory":      "",
 	} {
-		if got := f.Values.Get(name); got != want {
-			t.Errorf("input %s = %q, want %q", name, got, want)
+		if got := web.Values.Get(name); got != want {
+			t.Errorf("web form: input %s = %q, want %q", name, got, want)
 		}
 	}
-	// A worker has no port, domains or health check to edit.
-	for _, name := range []string{"svc.worker.port", "svc.worker.domains", "svc.worker.healthPath"} {
-		if _, has := f.Values[name]; has {
-			t.Errorf("the worker has an input %s", name)
+	for name, want := range map[string]string{"revision": rec.Revision, "svc.worker.image": "ghcr.io/example/shop-worker:2.1", "svc.worker.copies": "", "svc.worker.memory": ""} {
+		if got := worker.Values.Get(name); got != want {
+			t.Errorf("worker form: input %s = %q, want %q", name, got, want)
 		}
 	}
-	for _, want := range []string{"Image", "Environment", "Container port", "Domains", "Copies", "Health check", "CPU (MHz)",
-		"Memory reserved (MB)", "Memory ceiling (MB)", "Save and deploy"} {
+	if web.Values.Has("svc.worker.image") || worker.Values.Has("svc.web.image") {
+		t.Error("a service's form holds another service's inputs")
+	}
+	// The environment and the domains left Configure: they are on their own pages. A worker has
+	// no port or health check to edit.
+	for _, name := range []string{"svc.web.env", "svc.web.domains", "svc.worker.env", "svc.worker.port", "svc.worker.healthPath"} {
+		if web.Values.Has(name) || worker.Values.Has(name) {
+			t.Errorf("Configure has an input %s", name)
+		}
+	}
+	for _, secretish := range []string{"debug-value-x1", "s3cr3t-value-9f2"} {
+		if strings.Contains(body, secretish) {
+			t.Errorf("Configure draws the value %q of an environment variable", secretish)
+		}
+	}
+
+	// The panels of the contract, with its words.
+	got := text(body)
+	for _, want := range []string{"Copies & size", "Shipping", "Copies", "CPU MHz", "Memory MB", "Ceiling MB", "Image", "Container port",
+		"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
+		"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
+		"Also set", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+		"Domains shop.example.com → web :8080", "Manage domains", "Add domain",
+		"Secrets", "No secrets.", "Manage variables and secrets",
+		"Save and deploy"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("the form lacks %q:\n%s", want, got)
+			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
 	}
-	web, worker := strings.Index(body, `<h3 id="svc-web-title"`), strings.Index(body, `<h3 id="svc-worker-title"`)
-	if web < 0 || worker < web {
-		t.Errorf("service panels: web at %d, worker at %d", web, worker)
+	for _, want := range []string{`href="/apps/shop/domains"`, `href="/apps/shop/domains#add"`, `href="/apps/shop/variables"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the tab lacks the link %s", want)
+		}
+	}
+	// The handoff's switches are not drawn: neither Auto-revert nor Canary first is a choice here.
+	for _, gone := range []string{"Auto-revert", "Canary", `type="checkbox"`, "Peak 7 d", "Display name", "Needs a container registry"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the tab draws %q", gone)
+		}
+	}
+	// Several services: a heading each, in order, the grid once per service.
+	webAt, workerAt := strings.Index(body, `id="svc-web-title"`), strings.Index(body, `id="svc-worker-title"`)
+	if webAt < 0 || workerAt < webAt {
+		t.Errorf("service headings: web at %d, worker at %d", webAt, workerAt)
+	}
+	if n := strings.Count(body, "Save and deploy"); n != 2 {
+		t.Errorf("%d Save and deploy buttons, want one per service", n)
+	}
+	// Domains and Secrets come once, after the last service.
+	if n := strings.Count(body, `id="domains-title"`); n != 1 || strings.Index(body, `id="domains-title"`) < workerAt {
+		t.Errorf("the Domains panel isn't once, after the last service")
 	}
 	// The memory input has the anchor the needs-you list links to.
 	if !strings.Contains(body, `id="svc-web-memory"`) {
 		t.Error("the memory input has no id svc-web-memory")
+	}
+	// The panels after the grid, in their order.
+	last := -1
+	for _, id := range []string{`id="compose-deploy-title"`, `id="webhook-title"`, `id="deploy-token-title"`, `id="export-title"`, `id="delete-title"`} {
+		at := strings.Index(body, id)
+		if at < 0 || at < last {
+			t.Errorf("%s is at %d, after %d?", id, at, last)
+		}
+		last = at
+	}
+}
+
+// With one service the service row isn't drawn (the handoff), and the panel shows no "→ web" for a domain.
+func TestConfigureOneService(t *testing.T) {
+	e := newConsoleEnv(t)
+	a := shopApp()
+	a.Services = a.Services[:1]
+	e.seed(t, a)
+	_, body := e.get(t, "/apps/shop/configure")
+	got := text(body)
+	if strings.Contains(body, `id="svc-web-title"`) || strings.Contains(got, "→ web") {
+		t.Errorf("a one-service app draws the service's name:\n%s", got)
+	}
+	if !strings.Contains(got, "Domains shop.example.com Manage domains") {
+		t.Errorf("the Domains panel: %s", got)
 	}
 }
 
@@ -207,12 +267,12 @@ func TestConfigureKeptFile(t *testing.T) {
 
 	// The definition is read-only: facts, no inputs, no save.
 	got := text(body)
-	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Domains shop.example.com"} {
+	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Domains shop.example.com", "Manage variables and secrets"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks %q:\n%s", want, got)
 		}
 	}
-	for _, gone := range []string{`name="svc.web.image"`, `name="svc.web.env"`, `id="edit-form"`, "Save and deploy", "Made from a Compose file", "Deploy from Compose"} {
+	for _, gone := range []string{`name="svc.web.image"`, `name="svc.web.env"`, `class="cv-svcform"`, "Save and deploy", "Made from a Compose file", "Deploy from Compose"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("the page still has %q", gone)
 		}
@@ -238,7 +298,7 @@ func TestConfigureImageAppIsAsBefore(t *testing.T) {
 			t.Errorf("the page has %q", gone)
 		}
 	}
-	for _, want := range []string{`id="edit-form"`, "Save and deploy"} {
+	for _, want := range []string{`class="cv-svcform"`, "Save and deploy"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
 		}
@@ -285,7 +345,7 @@ func TestConfigureNotKeptFile(t *testing.T) {
 	}
 
 	// The per-field form is editable as in 014, with its note and the link.
-	for _, want := range []string{`id="edit-form"`, "Save and deploy", `name="svc.web.image"`,
+	for _, want := range []string{`class="cv-svcform"`, "Save and deploy", `name="svc.web.image"`,
 		"Made from a Compose file. Deploying a file again replaces these edits.", ">Deploy from Compose</a>"} {
 		if !strings.Contains(body, want) && !strings.Contains(got, want) {
 			t.Errorf("the page lacks %q", want)
@@ -321,7 +381,7 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 		t.Errorf("the Compose form: file %q, domains %q; want an empty file and the overlay from the app",
 			f.Values.Get("compose"), f.Values.Get("svc.web.domains"))
 	}
-	for _, want := range []string{`id="edit-form"`, "Save and deploy", `name="svc.web.image"`} {
+	for _, want := range []string{`class="cv-svcform"`, "Save and deploy", `name="svc.web.image"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the per-field form lacks %q", want)
 		}
@@ -378,8 +438,7 @@ func TestConfigureShowsVolumes(t *testing.T) {
 	_, body := e.get(t, "/apps/shop/configure")
 	got := text(body)
 	for _, want := range []string{
-		"Source compose",
-		"Volumes db-data → /var/lib/postgresql/data seed → /seed (read-only) Kept across deploys, erased with the app.",
+		"Also set Volumes /var/lib/postgresql/data → db-data /seed → seed (read-only)",
 		"Its volumes db-data and seed and the data in them are erased.",
 	} {
 		if !strings.Contains(got, want) {

@@ -52,9 +52,8 @@ func TestSaveConfigure(t *testing.T) {
 
 		f := e.configureForm(t, "duo")
 		resp, body := e.submit(t, f, url.Values{
-			"svc.web.env":     {"# the new list\r\nNEW=1\r\nOTHER=a=b\r\n"}, // MODE is removed
-			"svc.web.memory":  {"192"},
-			"svc.web.domains": {"duo.example.com\r\nwww.duo.example.com"},
+			"svc.web.memory": {"192"},
+			"svc.web.copies": {"3"},
 		})
 		recs := e.deployments(t, "duo")
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/apps/duo/deployments#deployment-"+recs[0].Deployment.ID {
@@ -67,15 +66,41 @@ func TestSaveConfigure(t *testing.T) {
 
 		want := before
 		want.Services = append([]app.Service(nil), before.Services...)
-		want.Services[0].Env = []app.EnvVar{{Name: "NEW", Value: "1"}, {Name: "OTHER", Value: "a=b"}}
+		want.Services[0].Replicas = new(3)
 		want.Services[0].Resources.MemoryMB = 192
-		want.Services[0].Domains = []app.Domain{{Host: "duo.example.com", Port: "http"}, {Host: "www.duo.example.com", Port: "http"}}
 		if got := e.storedApp(t, "duo"); !reflect.DeepEqual(got, want) {
 			t.Errorf("the stored app\n got: %+v\nwant: %+v", got, want)
 		}
 		// The deployment records what it deployed.
 		if recs[0].Definition == nil || !reflect.DeepEqual(*recs[0].Definition, want) {
 			t.Errorf("the deployment's definition = %+v, want the edited app", recs[0].Definition)
+		}
+	})
+
+	// The environment and the domains have their own pages: saving this form leaves them as
+	// stored, whatever else it changes, even when a post names them.
+	t.Run("env, domains and secrets survive a save", func(t *testing.T) {
+		e := backupsEnv(t, true)
+		a := e.storedApp(t, "duo")
+		a.Services[0].Replicas = nil
+		a.Services[0].Secrets = []app.Secret{{Name: "TOKEN", Value: new("secret-two")}}
+		e.deploy(t, a)
+		before := e.storedApp(t, "duo")
+		if len(before.Services[0].Env) == 0 || len(before.Services[0].Domains) == 0 {
+			t.Fatalf("the test app has no env or domains to keep: %+v", before.Services[0])
+		}
+
+		resp, body := e.submit(t, e.configureForm(t, "duo"), url.Values{"svc.web.memory": {"210"}, "svc.web.env": {"ONLY=this"}, "svc.web.domains": {"other.example.com"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST = %d:\n%s", resp.StatusCode, text(body))
+		}
+		web := e.storedApp(t, "duo").Services[0]
+		if !reflect.DeepEqual(web.Env, before.Services[0].Env) || !reflect.DeepEqual(web.Domains, before.Services[0].Domains) ||
+			!reflect.DeepEqual(web.Secrets, before.Services[0].Secrets) || web.Resources.MemoryMB != 210 {
+			t.Errorf("web = %+v, want env, domains and secret names as before and 210 MB", web)
+		}
+		if v := e.Nomad.Variable("nomad/jobs/duo/web"); v["TOKEN"] != "secret-two" {
+			t.Errorf("the secret's value didn't survive a save: %v", v)
 		}
 	})
 
@@ -112,7 +137,7 @@ func TestSaveConfigure(t *testing.T) {
 		f := e.configureForm(t, "duo")
 
 		// One value the form can't read, and one the model refuses (a reservation above the ceiling).
-		resp, body := e.submit(t, f, url.Values{"svc.web.copies": {"two"}, "svc.web.image": {"traefik/whoami:latest "}, "svc.web.env": {"A=1\nB=2"}})
+		resp, body := e.submit(t, f, url.Values{"svc.web.copies": {"two"}, "svc.web.image": {"traefik/whoami:latest "}})
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Fatalf("POST = %d, want 422:\n%s", resp.StatusCode, text(body))
 		}
@@ -120,7 +145,6 @@ func TestSaveConfigure(t *testing.T) {
 			`aria-invalid="true" aria-describedby="svc-web-copies-error"`,
 			`id="svc-web-copies-error" role="alert"`, // the first error is announced
 			`value="two"`,                            // what was typed, kept
-			"A=1\nB=2",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the page lacks %q:\n%s", want, body)
@@ -163,19 +187,19 @@ func TestSaveConfigure(t *testing.T) {
 		other := e.storedApp(t, "duo")
 		other.Services[0].Resources.MemoryMB = 300
 		other.Services[0].Env = []app.EnvVar{{Name: "MODE", Value: "someone-else"}}
+		other.Services[0].Domains = nil
 		e.deploy(t, other)
 		regs, deployments := e.Nomad.Registrations(), len(e.deployments(t, "duo"))
 		stored := e.storedApp(t, "duo")
 
-		resp, body := e.submit(t, f, url.Values{"svc.web.copies": {"3"}, "svc.web.env": {"MODE=mine"}})
+		resp, body := e.submit(t, f, url.Values{"svc.web.copies": {"3"}})
 		if resp.StatusCode != http.StatusConflict {
 			t.Fatalf("POST = %d, want 409:\n%s", resp.StatusCode, text(body))
 		}
 		got := text(body)
 		for _, want := range []string{
 			"This app changed since you opened the form.",
-			"web Memory reserved (MB) 300", // the current value, where it differs from what was typed
-			"web Environment MODE=someone-else",
+			"web Memory 300", // the current value, where it differs from what was typed
 			"Save again to deploy what is typed below",
 		} {
 			if !strings.Contains(got, want) {
@@ -185,9 +209,9 @@ func TestSaveConfigure(t *testing.T) {
 		// What was typed is kept, and the form carries the current revision.
 		fresh := formWith(t, body, "/apps/duo/configure")
 		rec, _ := e.Store.GetApp(context.Background(), "duo")
-		if fresh.Values.Get("svc.web.copies") != "3" || fresh.Values.Get("svc.web.env") != "MODE=mine" || fresh.Values.Get("revision") != rec.Revision {
-			t.Errorf("the form came back with copies %q, env %q, revision %q (now %q)",
-				fresh.Values.Get("svc.web.copies"), fresh.Values.Get("svc.web.env"), fresh.Values.Get("revision"), rec.Revision)
+		if fresh.Values.Get("svc.web.copies") != "3" || fresh.Values.Get("revision") != rec.Revision {
+			t.Errorf("the form came back with copies %q, revision %q (now %q)",
+				fresh.Values.Get("svc.web.copies"), fresh.Values.Get("revision"), rec.Revision)
 		}
 		if e.Nomad.Registrations() != regs || len(e.deployments(t, "duo")) != deployments || !reflect.DeepEqual(e.storedApp(t, "duo"), stored) {
 			t.Error("a refused stale save changed something")
@@ -202,8 +226,8 @@ func TestSaveConfigure(t *testing.T) {
 		}
 		after := e.storedApp(t, "duo")
 		if after.Services[0].Replicas == nil || *after.Services[0].Replicas != 3 || after.Services[0].Resources.MemoryMB != 300 ||
-			!reflect.DeepEqual(after.Services[0].Env, []app.EnvVar{{Name: "MODE", Value: "mine"}}) {
-			t.Errorf("web = %+v, want 3 copies, 300 MB and MODE=mine", after.Services[0])
+			!reflect.DeepEqual(after.Services[0].Env, []app.EnvVar{{Name: "MODE", Value: "someone-else"}}) || len(after.Services[0].Domains) != 0 {
+			t.Errorf("web = %+v, want 3 copies, 300 MB, and the other writer's env and domains left alone", after.Services[0])
 		}
 	})
 
@@ -240,29 +264,34 @@ func TestSaveConfigure(t *testing.T) {
 		}
 	})
 
-	t.Run("a plain post and an htmx post", func(t *testing.T) {
+	t.Run("each service has its own form: saving one leaves the other as stored", func(t *testing.T) {
 		e := editEnv(t)
-		f := e.configureForm(t, "duo")
-		if !f.HTMX {
-			t.Error("the form doesn't post in place when script runs")
+		_, page := e.get(t, "/apps/duo/configure")
+		var forms []plainForm
+		for _, f := range formsIn(page) {
+			if f.Action == "/apps/duo/configure" {
+				forms = append(forms, f)
+			}
 		}
-		// htmx: the answer to a good post is a redirect it follows, to the entry.
-		values := url.Values{}
-		for k, v := range f.Values {
-			values[k] = v
+		if len(forms) != 2 || forms[0].HTMX || forms[1].HTMX || !forms[0].Values.Has("svc.web.image") || !forms[1].Values.Has("svc.worker.image") {
+			t.Fatalf("forms = %+v, want two plain forms, web's and worker's", forms)
 		}
-		resp, _ := e.do(t, request{method: http.MethodPost, path: f.Action, form: values, cookies: []*http.Cookie{e.Cookie},
-			headers: map[string]string{"Sec-Fetch-Site": "same-origin", "HX-Request": "true"}})
-		if resp.StatusCode != http.StatusNoContent || !strings.HasPrefix(resp.Header.Get("HX-Redirect"), "/apps/duo/deployments#deployment-") {
-			t.Errorf("htmx POST = %d with HX-Redirect %q, want 204 and the entry", resp.StatusCode, resp.Header.Get("HX-Redirect"))
+		before := e.storedApp(t, "duo")
+		resp, body := e.submit(t, forms[1], url.Values{"svc.worker.memory": {"140"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST = %d:\n%s", resp.StatusCode, text(body))
 		}
-		// htmx: a refusal is the form alone, to swap in place.
-		values.Set("svc.web.copies", "zero")
-		resp, body := e.do(t, request{method: http.MethodPost, path: f.Action, form: values, cookies: []*http.Cookie{e.Cookie},
-			headers: map[string]string{"Sec-Fetch-Site": "same-origin", "HX-Request": "true"}})
-		if resp.StatusCode != http.StatusUnprocessableEntity || strings.Contains(body, "<html") || !strings.HasPrefix(strings.TrimSpace(body), "<form") ||
-			!strings.Contains(body, `aria-describedby="svc-web-copies-error"`) {
-			t.Errorf("htmx refusal = %d, want 422 with the form alone:\n%s", resp.StatusCode, body)
+		after := e.storedApp(t, "duo")
+		want := before
+		want.Services = append([]app.Service(nil), before.Services...)
+		want.Services[1].Resources.MemoryMB = 140
+		if !reflect.DeepEqual(after, want) {
+			t.Errorf("the stored app\n got: %+v\nwant: %+v", after, want)
+		}
+		// A refusal is the page again, not a fragment.
+		resp, body = e.submit(t, forms[0], url.Values{"svc.web.copies": {"zero"}})
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "<html") || !strings.Contains(body, `aria-describedby="svc-web-copies-error"`) {
+			t.Errorf("refusal = %d, want 422 with the page and the message at the input:\n%s", resp.StatusCode, text(body))
 		}
 	})
 
@@ -277,7 +306,7 @@ func TestSaveConfigure(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("POST for an unknown app = %d, want 404", resp.StatusCode)
 		}
-		resp, _ = e.postForm(t, "/apps/duo/configure", url.Values{"revision": {"x"}, "svc.web.env": {strings.Repeat("A=1\n", 80_000)}})
+		resp, _ = e.postForm(t, "/apps/duo/configure", url.Values{"revision": {"x"}, "svc.web.image": {strings.Repeat("a", 320_000)}})
 		if resp.StatusCode != http.StatusRequestEntityTooLarge {
 			t.Errorf("POST of 320 KB = %d, want 413", resp.StatusCode)
 		}

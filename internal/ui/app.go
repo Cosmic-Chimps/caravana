@@ -105,6 +105,9 @@ type appPage struct {
 	Compose     *composeView // Deploy from Compose, under the Configure tab
 	Logs        *logsTab
 	Backups     *backupsTab
+	// Variables and Domains are Configure's own pages (feature 021); the Configure tab is current on both.
+	VariablesTab *variablesTab
+	DomainsTab   *domainsTab
 }
 
 // hasTab says whether the named tab's page exists yet.
@@ -1022,7 +1025,6 @@ type configureExtras struct {
 	DeployToken  *deployTokenView
 	DeleteError  sentence
 	DeleteNotice sentence
-	Secret       secretForm
 	// Form, when set, is the edit form to draw (what was typed, with its
 	// errors) instead of one made from the stored app. Stale is the panel of
 	// a save refused because the app changed.
@@ -1075,18 +1077,23 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		extra.Notice = sentence{plain(appStoppedText)}
 	}
 	tab := &configureTab{
-		App:     appFacts(sum.App),
+		ID:      id,
 		Compose: sum.App.Source.Kind == app.SourceCompose,
 		Notice:  extra.Notice,
 		Copied:  copiedNotice(r, sum),
+		Stopped: sum.StoppedAt != nil,
 		Edit:    editViewOf(sum.App, form, extra.Stale),
-		Secrets: secretsOf(sum.App, extra.Secret),
+		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1,
+			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
+		Secrets: secretsPanelOf(sum.App),
 		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
 		Deploy:  deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
 		Export:  exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
 	}
+	tab.Secrets.Href = "/apps/" + id + "/variables"
+	s.addRegistryPrereqs(ctx, tab, sum)
 	if sum.Compose != nil {
 		// The file is the app's source of truth: its form comes first, and the
 		// definition it makes is shown, not edited (feature 015, research R6).
@@ -1208,74 +1215,4 @@ func (s *server) deleteApp(w http.ResponseWriter, r *http.Request, session strin
 	default:
 		s.serverError(w, "delete app", err)
 	}
-}
-
-// setSecret answers POST /apps/{id}/secrets: it sets one secret of one
-// service and deploys, keeping the others (service.SetSecret). Success goes
-// to Deployments, where the rollout shows. A refusal draws Configure again
-// with the service and name filled back in, never the value.
-func (s *server) setSecret(w http.ResponseWriter, r *http.Request, session string) {
-	id := r.PathValue("id")
-	if !s.readForm(w, r) {
-		return
-	}
-	form := secretForm{Service: r.PostForm.Get("service"), Name: strings.TrimSpace(r.PostForm.Get("name"))}
-	// A textarea sends its line breaks as CRLF; secrets (keys, certificates)
-	// expect LF.
-	value := strings.ReplaceAll(r.PostForm.Get("value"), "\r\n", "\n")
-	_, err := s.svc.SetSecret(r.Context(), id, form.Service, form.Name, value, app.TriggerConsole)
-	s.afterSecretChange(w, r, id, form, err)
-}
-
-// removeSecret answers POST /apps/{id}/secrets/remove: it deploys without
-// one secret, keeping the others (service.RemoveSecret).
-func (s *server) removeSecret(w http.ResponseWriter, r *http.Request, session string) {
-	id := r.PathValue("id")
-	if !s.readForm(w, r) {
-		return
-	}
-	_, err := s.svc.RemoveSecret(r.Context(), id, r.PostForm.Get("service"), r.PostForm.Get("name"), app.TriggerConsole)
-	s.afterSecretChange(w, r, id, secretForm{}, err)
-}
-
-// secretValueField matches an error about a secret's value, or about a
-// service's secrets as a whole (their size).
-var secretValueField = regexp.MustCompile(`^services\[\d+\]\.secrets(\[\d+\]\.value)?$`)
-
-// afterSecretChange answers a set or remove: Deployments on success, else
-// Configure with what went wrong.
-func (s *server) afterSecretChange(w http.ResponseWriter, r *http.Request, id string, form secretForm, err error) {
-	if err == nil {
-		http.Redirect(w, r, "/apps/"+id+"/deployments", http.StatusSeeOther)
-		return
-	}
-	var fieldErr *app.FieldError
-	status := http.StatusUnprocessableEntity
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.appNotFound(w, r, id)
-		return
-	case errors.As(err, &fieldErr):
-		switch {
-		case fieldErr.Field == "name" || strings.HasSuffix(fieldErr.Field, ".name"):
-			form.NameError = sentence{plain(fieldErr.Message)}
-		case secretValueField.MatchString(fieldErr.Field):
-			form.ValueError = sentence{plain(fieldErr.Message)}
-		default:
-			form.Notice = sentence{plain("caravana can't deploy this app: "), mono(fieldErr.Field), plain(" " + fieldErr.Message)}
-		}
-	case errors.Is(err, secrets.ErrUnavailable) && !errors.Is(err, deploy.ErrNomadUnavailable):
-		status = http.StatusBadGateway
-		form.Notice = sentence{plain("The secret store refused the change, so nothing was deployed. The running copies keep their secrets.")}
-		s.log.Warn("can't change a secret: the secret store refused", "app", id, "error", err)
-	default:
-		var notice sentence
-		var ok bool
-		if status, notice, ok = refuseDeploy(&deployForm{}, err); !ok {
-			s.serverError(w, "change a secret", err)
-			return
-		}
-		form.Notice = notice
-	}
-	s.configurePage(w, r, status, id, configureExtras{Secret: form})
 }

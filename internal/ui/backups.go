@@ -5,95 +5,425 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// The Backups tab (feature 010): each backed-up database with "Back up now",
-// its backups with "Restore", and the recent restores. Plain forms; a restore
-// asks for the service's name first, in a <details>.
+// The Backups tab (features 010, 016 and 021): the app's backed-up services as
+// rows that open (the last 30 days as a strip, the runs, Restore…, Back up now),
+// the services that could be backed up and aren't, with the one action that
+// fixes it, and the recent restores. Plain forms; a restore asks for the
+// service's name first, in a <details>.
+
+const (
+	// backupRunsShown is how many runs a service's row lists before "Show older".
+	backupRunsShown = 10
+	// stripDays is how many days the restore-points strip covers, today last.
+	stripDays = 30
+)
 
 // backupsTab is the body of the Backups tab.
 type backupsTab struct {
-	ID          string
-	Destination bool // a destination is set
-	// Volumes is the Volumes section (feature 016), first on the tab; none when
-	// the app has no volume, and then the section isn't drawn.
-	Volumes []volumeRow
-	// VolumeHint says a mounted volume isn't backed up, which the section
-	// answers with a link to Configure.
-	VolumeHint bool
-	Services   []backupService
-	Backups    []backupRow
-	Restores   []restoreRow
-	Notice     sentence
-	ConfirmErr string // the backup whose restore confirmation was wrong
+	ID       string
+	Revision string
+	Defined  bool
+	Stopped  bool
+	// Destination says a destination is set; Bucket is its bucket's name.
+	Destination bool
+	Bucket      string
+	BackedUp    int // services with a policy
+	// Gaps are the services that could be backed up and have no policy.
+	Gaps []backupGap
+	// Rows are the services with a policy, in the order of the definition.
+	Rows []backupSvcRow
+	// Unmounted are volumes Nomad still has for the app that no service mounts.
+	Unmounted []unmountedVolume
+	Restores  []restoreRow
+	Notice    sentence
+	// ConfirmErr is the backup whose restore confirmation was wrong; its row opens.
+	ConfirmErr string
+	// ShowAll is the service whose whole run list is shown ("Show older").
+	ShowAll string
 }
 
-// volumeRow is one row of the Volumes section.
-type volumeRow struct {
-	Name string
-	// Mounts is "service:/path" for each mount, with "(read-only)" when so. A
-	// volume no service mounts has none, and says so.
-	Mounts    []string
-	Unmounted bool
-	// HostPath is empty when Nomad couldn't be read.
-	HostPath string
-	// Size is "312 MB", empty while the volume has never been measured; then
-	// Measured says when it was.
-	Size     string
-	Measured when
-	// BackedUp says a volume backup covers it, on Schedule (in words). Last is
-	// when its newest run started and LastStatus how it went; HasLast is false
-	// until one ran.
-	BackedUp   bool
-	Schedule   string
-	HasLast    bool
-	Last       when
-	LastStatus statusView
+// Counts is the line under the head: "2 backed up · 1 not · stored in <bucket>".
+func (t backupsTab) Counts() string {
+	where := "no destination"
+	if t.Destination {
+		where = "stored in " + t.Bucket
+	}
+	return fmt.Sprintf("%d backed up · %d not · %s", t.BackedUp, len(t.Gaps), where)
 }
 
-// backupService is one service with a backup policy: a database, or (feature
-// 016) a service whose volumes are archived while it is stopped.
-type backupService struct {
-	Name, Schedule string
-	Keep           int
-	// Volume says the engine is "volume". Its words differ: the schedule is
-	// told as a sentence, and the service stops while a run lasts.
+// backupGap is a service with something to back up and no policy: a database
+// image, or a volume. Engine is the policy "Back up daily" sets.
+type backupGap struct {
+	Service string
+	Label   string // the name as the sentence says it: "postgres", or "web · /data"
+	Meta    string // "PostgreSQL · 0 copies kept", "Volume · 210 MB"
+	Engine  string
+}
+
+// backupSvcRow is one backed-up service: the row, and what opens under it.
+type backupSvcRow struct {
+	Name   string
 	Volume bool
-	// ScheduleText is the schedule in words, for a volume service.
-	ScheduleText string
-	// LastStopped is how long the service was stopped by its newest measured
-	// run, as "4 s"; empty until a run has been measured.
-	LastStopped string
+	Open   bool
+	What   string // "PostgreSQL", "Volume · /data, /cache"
+	// Mark is the row's mark: rolling while a run is going, failed when the
+	// newest failed, healthy otherwise, idle when it never ran.
+	Mark     string
+	MarkText string // the mark's meaning, for a screen reader
+	Schedule string // in words, "Every day at 03:00 UTC"
+	Keep     string // "7 backups"
+	// LastWhen is when the newest run started; LastNow says it is running, and
+	// LastNever that nothing ran yet. Took and Stopped are its facts.
+	LastWhen  when
+	LastNow   bool
+	LastNever bool
+	Took      string
+	Stopped   string
+	Size      string // the newest healthy run's size
+	SizeAll   string // the kept runs' sum, "1.4 GB all"
+	Strip     []stripCell
+	Failure   sentence
+	// VolumeFacts say where each volume of a volume service lives and how big it was
+	// measured: "/srv/.../data on this host · 312 MB, measured 3 hours ago".
+	VolumeFacts []string
+	Runs        []backupRun
+	OlderHref   string // "Show older", when there are more runs than are listed
+	// RestoreLast is the newest healthy run, for "Restore from the last backup";
+	// nil when there is none or a restore isn't possible.
+	RestoreLast *backupRun
+	CanBackUp   bool
 }
 
-// backupRow is one backup.
-type backupRow struct {
-	ID, Service, Status, Size, Message string
-	Started                            when
-	CanRestore                         bool
-	// Volume says the backup is of a volume service; Stopped is "stopped 4 s"
-	// once its run was measured.
-	Volume  bool
-	Stopped string
+// backupRun is one backup run of a service, as the row lists it.
+type backupRun struct {
+	ID, Service, Status, Mark, Size, Took, Stopped, Message string
+	When                                                    when
+	CanRestore                                              bool
+	Volume                                                  bool
+}
+
+// stripCell is one day of the restore-points strip. Kind is healthy, failed,
+// running or none (a day with no run: a gap). A day with a run links to it.
+type stripCell struct {
+	Kind  string
+	Href  string
+	Title string
+}
+
+// unmountedVolume is a volume Nomad has for the app that no service mounts.
+type unmountedVolume struct {
+	Name, HostPath, Size string
 }
 
 // restoreRow is one restore. Stopped is "stopped 4 s" for a volume restore
 // once it was measured.
 type restoreRow struct {
-	Service, BackupID, Status, Message string
-	Created                            when
-	Stopped                            string
+	Service, BackupID, Status, Mark, Took, Message string
+	Created                                        when
+	Stopped                                        string
+}
+
+// restoreAskView is what the restore confirmation draws: the run it restores,
+// whose form it is (Prefix keeps the IDs of two forms for one run apart) and
+// whether the last answer said the typed name was wrong.
+type restoreAskView struct {
+	AppID  string
+	Run    backupRun
+	Prefix string
+	Failed bool
+}
+
+// restoreAskFor is the template function {{restoreAsk $ . ""}}.
+func restoreAskFor(tab backupsTab, run backupRun, prefix string) restoreAskView {
+	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID}
+}
+
+// backupEngineFor says how a service could be backed up, from what it is: a
+// database image Caravana can dump (its repository is postgres, and it has a port
+// to dump over), else, with a volume, the volume engine. ok is false for a
+// service with neither, which has nothing the console can offer. A Postgres
+// service on a volume gets the dump, which doesn't stop it.
+func backupEngineFor(svc app.Service) (engine string, ok bool) {
+	if ref, err := registry.Parse(svc.Image); err == nil && len(svc.Ports) > 0 && (ref.Repository == "postgres" || strings.HasSuffix(ref.Repository, "/postgres")) {
+		return app.BackupPostgres, true
+	}
+	if len(svc.Volumes) > 0 {
+		return app.BackupVolume, true
+	}
+	return "", false
+}
+
+// mountsOf is the paths a service mounts its volumes at: "/data, /cache".
+func mountsOf(svc app.Service) string {
+	paths := make([]string, len(svc.Volumes))
+	for i, v := range svc.Volumes {
+		paths[i] = v.Path
+	}
+	return strings.Join(paths, ", ")
+}
+
+// upperFirst is s with its first letter in capitals: "every day" is "Every day".
+func upperFirst(s string) string {
+	for i, r := range s {
+		return string(unicode.ToUpper(r)) + s[i+len(string(r)):]
+	}
+	return s
+}
+
+// backupsTabOf builds the tab's body: the services of the app, its runs and
+// restores (newest first, as ListBackups gives them), its volumes and the
+// destination (nil when none is set). extra carries what the answer to a post
+// adds. It is pure.
+func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupRecord, restores []store.RestoreRecord,
+	volumes []service.VolumeView, dest *store.BackupDestination, extra backupsTab) backupsTab {
+	a := sum.App
+	tab := extra
+	tab.ID, tab.Revision, tab.Defined, tab.Stopped = a.ID, sum.Revision, a.Defined(), sum.StoppedAt != nil
+	if dest != nil {
+		tab.Destination, tab.Bucket = true, dest.Bucket
+	}
+
+	for _, svc := range a.Services {
+		if svc.Backup == nil {
+			engine, ok := backupEngineFor(svc)
+			if !ok {
+				continue
+			}
+			gap := backupGap{Service: svc.Name, Label: svc.Name, Engine: engine}
+			if engine == app.BackupVolume {
+				gap.Label = svc.Name + " · " + mountsOf(svc)
+				gap.Meta = "Volume"
+				if size, ok := serviceVolumeBytes(svc.Name, volumes); ok {
+					gap.Meta += " · " + humanBytes(size)
+				}
+			} else {
+				gap.Meta = "PostgreSQL · 0 copies kept"
+			}
+			tab.Gaps = append(tab.Gaps, gap)
+			continue
+		}
+		tab.BackedUp++
+		var runs []store.BackupRecord
+		for _, b := range backups {
+			if b.Service == svc.Name {
+				runs = append(runs, b)
+			}
+		}
+		row := backupRowOf(now, a.ID, svc, runs, volumes, tab)
+		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
+		tab.Rows = append(tab.Rows, row)
+	}
+
+	for _, v := range volumes {
+		if !v.Mounted {
+			u := unmountedVolume{Name: v.Name, HostPath: v.HostPath}
+			if v.Size != nil {
+				u.Size = humanBytes(v.Size.Bytes)
+			}
+			tab.Unmounted = append(tab.Unmounted, u)
+		}
+	}
+	for _, x := range restores {
+		row := restoreRow{Service: x.Service, BackupID: x.BackupID, Status: x.Status, Message: x.Message, Created: whenOf(now, &x.CreatedAt, "")}
+		row.Mark = runMark(x.Status)
+		if x.FinishedAt != nil {
+			row.Took = durationText(x.FinishedAt.Sub(x.CreatedAt))
+		}
+		if x.Stopped != nil {
+			row.Stopped = "stopped " + stoppedText(*x.Stopped)
+		}
+		tab.Restores = append(tab.Restores, row)
+	}
+	return tab
+}
+
+// serviceVolumeBytes is the measured size of the volumes a service mounts, and
+// whether any of them has been measured.
+func serviceVolumeBytes(svcName string, volumes []service.VolumeView) (int64, bool) {
+	var total int64
+	known := false
+	for _, v := range volumes {
+		if v.Size == nil || !slices.ContainsFunc(v.Mounts, func(m service.VolumeMount) bool { return m.Service == svcName }) {
+			continue
+		}
+		total, known = total+v.Size.Bytes, true
+	}
+	return total, known
+}
+
+// runMark is a run's mark: a disc for one that went well, a square for one that
+// failed, a half disc while it is going.
+func runMark(status string) string {
+	switch status {
+	case store.BackupSucceeded:
+		return "healthy"
+	case store.BackupFailed:
+		return "failed"
+	}
+	return "rolling"
+}
+
+// markText is what a mark says in words, for a screen reader.
+func markText(mark string) string {
+	switch mark {
+	case "healthy":
+		return "healthy"
+	case "failed":
+		return "failed"
+	case "rolling":
+		return "running"
+	}
+	return "never ran"
+}
+
+// backupRowOf builds one backed-up service's row. runs are its backups, newest first.
+func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.BackupRecord, volumes []service.VolumeView, tab backupsTab) backupSvcRow {
+	b := svc.Backup
+	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, Mark: "idle", LastNever: true,
+		Schedule: upperFirst(scheduleText(b.ScheduleOrDefault())), Keep: plural(b.KeepOrDefault(), "backup"),
+		CanBackUp: tab.Destination && !tab.Stopped}
+	if row.Volume {
+		row.What = "Volume · " + mountsOf(svc)
+		for _, v := range volumes {
+			if !slices.ContainsFunc(v.Mounts, func(m service.VolumeMount) bool { return m.Service == svc.Name }) || v.HostPath == "" && v.Size == nil {
+				continue
+			}
+			fact := v.Name
+			if v.HostPath != "" {
+				fact = v.HostPath + " on this host"
+			}
+			if v.Size != nil {
+				fact += " · " + humanBytes(v.Size.Bytes) + ", measured " + relative(now, v.Size.MeasuredAt)
+			}
+			row.VolumeFacts = append(row.VolumeFacts, fact)
+		}
+	} else {
+		row.What = "PostgreSQL"
+	}
+
+	var all int64
+	sawSize := false
+	for _, r := range runs {
+		if r.Status == store.BackupSucceeded {
+			all, sawSize = all+r.Bytes, true
+		}
+	}
+	if sawSize {
+		row.SizeAll = humanBytes(all) + " all"
+	}
+
+	for i, r := range runs {
+		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
+			When: whenOf(now, &r.StartedAt, ""), Volume: r.Engine == app.BackupVolume,
+			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped}
+		if r.Status == store.BackupSucceeded {
+			run.Size = humanBytes(r.Bytes)
+		}
+		if r.FinishedAt != nil {
+			run.Took = durationText(r.FinishedAt.Sub(r.StartedAt))
+		}
+		if r.Stopped != nil {
+			run.Stopped = "stopped " + stoppedText(*r.Stopped)
+		}
+		if i == 0 {
+			row.Mark, row.LastNever, row.LastNow = run.Mark, false, r.Status == store.BackupRunning
+			row.LastWhen, row.Took, row.Stopped = run.When, run.Took, run.Stopped
+			if r.Status == store.BackupFailed {
+				row.Failure = sentence{plain("The last backup failed " + relative(now, r.StartedAt))}
+				if msg := strings.TrimSuffix(strings.TrimSpace(r.Message), "."); msg != "" {
+					row.Failure = append(row.Failure, plain(": "+msg))
+				}
+				row.Failure = append(row.Failure, plain("."))
+			}
+		}
+		if row.Size == "" && r.Status == store.BackupSucceeded {
+			row.Size = run.Size
+		}
+		if row.RestoreLast == nil && run.CanRestore {
+			last := run
+			row.RestoreLast = &last
+		}
+		if i < backupRunsShown || svc.Name == tab.ShowAll {
+			row.Runs = append(row.Runs, run)
+		}
+	}
+	if len(runs) > backupRunsShown && svc.Name != tab.ShowAll {
+		row.OlderHref = "/apps/" + appID + "/backups?all=" + svc.Name + "#svc-" + svc.Name
+	}
+	row.MarkText = markText(row.Mark)
+	row.Strip = restoreStrip(now, runs)
+	return row
+}
+
+// restoreStrip is the last 30 days as cells, oldest first and today last. A day
+// is the UTC day. A day with a run being made is running; else a day with a
+// healthy run is that run (the newest healthy one); else one with only failed
+// runs is failed; a day with none is a gap. A cell with a run links to its row.
+func restoreStrip(now time.Time, runs []store.BackupRecord) []stripCell {
+	cells := make([]stripCell, stripDays)
+	for i := range cells {
+		cells[i].Kind = "none"
+	}
+	day := func(t time.Time) time.Time {
+		y, m, d := t.UTC().Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	}
+	today := day(now)
+	rank := map[string]int{"none": 0, "failed": 1, "healthy": 2, "running": 3}
+	chosen := make([]int, stripDays) // the run each cell shows, by index into runs; runs are newest first
+	for i, r := range runs {
+		ago := int(today.Sub(day(r.StartedAt)) / (24 * time.Hour))
+		if ago < 0 || ago >= stripDays {
+			continue
+		}
+		at := stripDays - 1 - ago
+		kind := runMark(r.Status)
+		if kind == "rolling" {
+			kind = "running"
+		}
+		// Newest first: the first run of a kind is the newest of it, and a better kind replaces a worse one.
+		if rank[kind] > rank[cells[at].Kind] {
+			cells[at].Kind, chosen[at] = kind, i
+		}
+	}
+	for at := range cells {
+		if cells[at].Kind == "none" {
+			continue
+		}
+		r := runs[chosen[at]]
+		cells[at].Href = "#backup-" + r.ID
+		when := "today"
+		if ago := stripDays - 1 - at; ago > 0 {
+			when = strconv.Itoa(ago) + " d ago"
+		}
+		title := when + " · " + r.StartedAt.UTC().Format("15:04")
+		switch cells[at].Kind {
+		case "healthy":
+			title += " · " + humanBytes(r.Bytes)
+		case "failed":
+			title += " · failed"
+		default:
+			title += " · running"
+		}
+		cells[at].Title = title
+	}
+	return cells
 }
 
 // backupsPage draws the Backups tab with the given status.
-func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int, id string, tab backupsTab) {
+func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int, id string, extra backupsTab) {
 	ctx := r.Context()
 	sum, err := s.svc.AppSummary(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -109,12 +439,15 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, "list backups", err)
 		return
 	}
-	_, destErr := s.svc.GetBackupDestination(ctx)
-	if destErr != nil && !errors.Is(destErr, store.ErrNotFound) {
+	var dest *store.BackupDestination
+	switch d, destErr := s.svc.GetBackupDestination(ctx); {
+	case destErr == nil:
+		dest = &d
+	case !errors.Is(destErr, store.ErrNotFound):
 		s.serverError(w, "read backup destination", destErr)
 		return
 	}
-	head, err := s.shellPage(r, id+" backups", navProjects, s.appCrumbs(r.Context(), id)...)
+	head, err := s.shellPage(r, id+" backups", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -126,86 +459,11 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, "read volumes", err)
 		return
 	}
-	tab.Volumes, tab.VolumeHint = volumeRows(s.now(), volumes)
-
-	tab.ID, tab.Destination = id, destErr == nil
-	for _, svc := range sum.App.Services {
-		if svc.Backup == nil {
-			continue
-		}
-		bs := backupService{Name: svc.Name, Schedule: svc.Backup.ScheduleOrDefault(), Keep: svc.Backup.KeepOrDefault()}
-		if svc.Backup.Engine == app.BackupVolume {
-			bs.Volume, bs.ScheduleText = true, scheduleText(bs.Schedule)
-			for _, b := range backups { // newest first
-				if b.Service == svc.Name && b.Stopped != nil {
-					bs.LastStopped = stoppedText(*b.Stopped)
-					break
-				}
-			}
-		}
-		tab.Services = append(tab.Services, bs)
+	if extra.ShowAll == "" {
+		extra.ShowAll = r.URL.Query().Get("all")
 	}
-	now := s.now()
-	for _, b := range backups {
-		row := backupRow{ID: b.ID, Service: b.Service, Status: b.Status, Message: b.Message,
-			Size: sizeText(b.Bytes, b.Status), Started: whenOf(now, &b.StartedAt, ""),
-			CanRestore: b.Status == store.BackupSucceeded && tab.Destination, Volume: b.Engine == app.BackupVolume}
-		if b.Stopped != nil {
-			row.Stopped = "stopped " + stoppedText(*b.Stopped)
-		}
-		tab.Backups = append(tab.Backups, row)
-	}
-	for _, x := range restores {
-		row := restoreRow{Service: x.Service, BackupID: x.BackupID, Status: x.Status,
-			Message: x.Message, Created: whenOf(now, &x.CreatedAt, "")}
-		if x.Stopped != nil {
-			row.Stopped = "stopped " + stoppedText(*x.Stopped)
-		}
-		tab.Restores = append(tab.Restores, row)
-	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "backups"), Backups: &tab})
-}
-
-// volumeRows turns the service's volumes into the section's rows, and says
-// whether to show the hint that a mounted volume isn't backed up. It is pure,
-// so the table test calls it with a fixed now.
-func volumeRows(now time.Time, volumes []service.VolumeView) (rows []volumeRow, hint bool) {
-	for _, v := range volumes {
-		row := volumeRow{Name: v.Name, Unmounted: !v.Mounted, HostPath: v.HostPath, BackedUp: v.BackedUp}
-		for _, m := range v.Mounts {
-			text := m.Service + ":" + m.Path
-			if m.ReadOnly {
-				text += " (read-only)"
-			}
-			row.Mounts = append(row.Mounts, text)
-		}
-		if v.Size != nil {
-			row.Size, row.Measured = humanBytes(v.Size.Bytes), whenOf(now, &v.Size.MeasuredAt, "")
-		}
-		if v.BackedUp {
-			row.Schedule = scheduleText(v.Schedule)
-			if v.LastBackup != nil {
-				row.HasLast = true
-				row.Last = whenOf(now, &v.LastBackup.StartedAt, "")
-				row.LastStatus = backupStatus(v.LastBackup.Status)
-			}
-		} else if v.Mounted {
-			hint = true
-		}
-		rows = append(rows, row)
-	}
-	return rows, hint
-}
-
-// backupStatus is a backup's status as a mark and a word.
-func backupStatus(status string) statusView {
-	switch status {
-	case store.BackupSucceeded:
-		return statusView{Kind: "healthy", Word: "succeeded"}
-	case store.BackupFailed:
-		return statusView{Kind: "failed", Word: "failed"}
-	}
-	return statusView{Kind: "rolling", Word: "running"}
+	tab := backupsTabOf(s.now(), sum, backups, restores, volumes, dest, extra)
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "backups"), Backups: &tab})
 }
 
 // humanBytes is a size as people read it: "312 MB", "1.5 GB", "4 KB". Under 10
@@ -254,22 +512,6 @@ func stoppedText(d time.Duration) string {
 	return fmt.Sprintf("%d s", int(math.Round(d.Seconds())))
 }
 
-// sizeText is a backup's size, or nothing until it has one.
-func sizeText(n int64, status string) string {
-	switch {
-	case status != store.BackupSucceeded:
-		return ""
-	case n < 1<<10:
-		return fmt.Sprintf("%d B", n)
-	case n < 1<<20:
-		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
-	case n < 1<<30:
-		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
-	default:
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	}
-}
-
 // showBackups answers GET /apps/{id}/backups.
 func (s *server) showBackups(w http.ResponseWriter, r *http.Request, session string) {
 	s.backupsPage(w, r, http.StatusOK, r.PathValue("id"), backupsTab{})
@@ -287,6 +529,67 @@ func (s *server) backUpNow(w http.ResponseWriter, r *http.Request, session strin
 		return
 	}
 	s.refuseBackup(w, r, id, err, backupsTab{})
+}
+
+// setBackupPolicy answers POST /apps/{id}/backups/policy: "Back up daily" on a
+// service with something to back up and no policy. It sets the policy the
+// service's kind calls for (an engine, 03:00 UTC, the last 7) and deploys, on the
+// condition that the app still has the revision the page was drawn from.
+func (s *server) setBackupPolicy(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	revision, ok := s.formRevision(w, r, "set the backup")
+	if !ok {
+		return
+	}
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, "read app", err)
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("service"))
+	i, found := serviceNamed(rec.App, name)
+	if !found {
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("This app has no service "), mono(name), plain(".")}})
+		return
+	}
+	engine, can := backupEngineFor(rec.App.Services[i])
+	if !can {
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{mono(name), plain(" has no database or volume to back up.")}})
+		return
+	}
+	policy := app.Backup{Engine: engine, Schedule: app.DefaultBackupSchedule, Keep: app.DefaultBackupKeep}
+	deployment, err := s.svc.SetBackupPolicy(ctx, id, name, policy, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
+		return
+	}
+	edited := rec.App
+	edited.Services = slices.Clone(edited.Services)
+	edited.Services[i].Backup = &policy
+	var fieldErr *app.FieldError
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+	case errors.Is(err, service.ErrAppChanged):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(changedSincePage)}})
+	case errors.As(err, &fieldErr) && fieldErr.Field == "service":
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(fieldErr.Message + ". Reload the page.")}})
+	default:
+		status, notice, ok := refusalOf(edited, err)
+		if !ok {
+			s.serverError(w, "set a backup policy", err)
+			return
+		}
+		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})
+	}
 }
 
 // restoreBackup answers POST /apps/{id}/backups/{backupId}/restore. The form

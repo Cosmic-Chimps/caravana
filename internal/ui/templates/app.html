@@ -67,6 +67,8 @@
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
 {{with .Logs}}{{template "logs" .}}{{end}}
 {{with .Backups}}{{template "backups" .}}{{end}}
+{{with .VariablesTab}}{{template "variables" .}}{{end}}
+{{with .DomainsTab}}{{template "domains" .}}{{end}}
 {{end}}
 {{end}}
 
@@ -79,30 +81,30 @@
   {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{with .Form.Name.Error}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 
-  <label class="flex flex-col gap-2" for="define-image">
+  <label class="cv-fld" for="define-image">
     <span class="cv-label">Image</span>
-    <input class="cv-field" id="define-image" type="text" name="image" value="{{.Form.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Form.Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Form.Focus "image"}} autofocus{{end}}>
+    <input class="cv-field cv-field-mono" id="define-image" type="text" name="image" value="{{.Form.Image.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Form.Image.Error}} aria-invalid="true" aria-describedby="image-error"{{end}}{{if eq .Form.Focus "image"}} autofocus{{end}}>
     <span class="cv-data-muted cv-hint">e.g. <span class="cv-inline-mono">ghcr.io/you/app:1.4</span></span>
     {{template "field-error" .Form.Image}}
   </label>
 
-  <label class="flex flex-col gap-2" for="define-port">
+  <label class="cv-fld" for="define-port">
     <span class="cv-label">Container port</span>
-    <input class="cv-field" id="define-port" type="text" inputmode="numeric" name="port" value="{{.Form.Port.Value}}" autocomplete="off" spellcheck="false"{{if .Form.Port.Error}} aria-invalid="true" aria-describedby="port-error"{{end}}{{if eq .Form.Focus "port"}} autofocus{{end}}>
+    <input class="cv-field cv-field-mono" id="define-port" type="text" inputmode="numeric" name="port" value="{{.Form.Port.Value}}" autocomplete="off" spellcheck="false"{{if .Form.Port.Error}} aria-invalid="true" aria-describedby="port-error"{{end}}{{if eq .Form.Focus "port"}} autofocus{{end}}>
     <span class="cv-data-muted cv-hint">Optional. Without a port this runs as a worker: no address, no health check.</span>
     {{template "field-error" .Form.Port}}
   </label>
 
-  <label class="flex flex-col gap-2" for="define-domain">
+  <label class="cv-fld" for="define-domain">
     <span class="cv-label">Domain</span>
-    <input class="cv-field" id="define-domain" type="text" name="domain" value="{{.Form.Domain.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Domain.Error}} aria-invalid="true" aria-describedby="domain-error"{{end}}{{if eq .Form.Focus "domain"}} autofocus{{end}}>
+    <input class="cv-field cv-field-mono" id="define-domain" type="text" name="domain" value="{{.Form.Domain.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Domain.Error}} aria-invalid="true" aria-describedby="domain-error"{{end}}{{if eq .Form.Focus "domain"}} autofocus{{end}}>
     <span class="cv-data-muted cv-hint">Optional. Needs a port. HTTPS is set up for it.</span>
     {{template "field-error" .Form.Domain}}
   </label>
 
-  <label class="flex flex-col gap-2" for="define-healthPath">
+  <label class="cv-fld" for="define-healthPath">
     <span class="cv-label">Health check path</span>
-    <input class="cv-field" id="define-healthPath" type="text" name="healthPath" value="{{.Form.Health.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Health.Error}} aria-invalid="true" aria-describedby="healthPath-error"{{end}}{{if eq .Form.Focus "healthPath"}} autofocus{{end}}>
+    <input class="cv-field cv-field-mono" id="define-healthPath" type="text" name="healthPath" value="{{.Form.Health.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Form.Health.Error}} aria-invalid="true" aria-describedby="healthPath-error"{{end}}{{if eq .Form.Focus "healthPath"}} autofocus{{end}}>
     <span class="cv-data-muted cv-hint">Used with a port. Leave it empty for a TCP check instead of an HTTP one.</span>
     {{template "field-error" .Form.Health}}
   </label>
@@ -111,144 +113,203 @@
 </form>
 {{end}}
 
-{{/* The Backups tab (feature 010). Takes a backupsTab. */}}
+{{/* The Backups tab (features 010, 016 and 021). Takes a backupsTab. */}}
 {{define "backups"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-{{if .Volumes}}
-<section aria-labelledby="volumes-title" class="flex flex-col gap-2">
-  <h2 id="volumes-title" class="cv-label">Volumes</h2>
-  <div class="cv-panel">
-    <div class="cv-volumes" role="table" aria-label="Volumes">
-      <div class="cv-volumes-head cv-label" role="row">
-        <span role="columnheader">Volume</span>
-        <span role="columnheader">Mounted at</span>
-        <span role="columnheader">On the host</span>
-        <span role="columnheader">Size</span>
-        <span role="columnheader">Backup</span>
-      </div>
-      {{range .Volumes}}
-      <div class="cv-row cv-volumes-row" role="row">
-        <div role="cell"><span class="cv-data text-fg-1">{{.Name}}</span></div>
-        <div role="cell" data-label="Mounted at">
-          {{range .Mounts}}<span class="cv-data">{{.}}</span>{{else}}<span class="cv-data-muted">not mounted</span>{{end}}
-        </div>
-        <div role="cell" data-label="On the host">
-          {{if .HostPath}}<span class="cv-data-muted">{{.HostPath}}</span>{{else}}<span class="cv-data-muted" title="Nomad couldn't be read">&mdash;</span>{{end}}
-        </div>
-        <div role="cell" data-label="Size">
-          {{if .Size}}<span class="cv-data text-fg-1">{{.Size}}</span>
-          <span class="cv-usage-of">measured {{template "time" .Measured}}</span>
-          {{else}}<span class="cv-data-muted">not measured yet</span>{{end}}
-        </div>
-        <div role="cell" data-label="Backup">
-          {{if .BackedUp}}<span class="cv-data text-fg-1">{{.Schedule}}</span>
-          {{if .HasLast}}<span class="cv-usage-of">{{template "status-quiet" .LastStatus}}, last {{template "time" .Last}}</span>
-          {{else}}<span class="cv-usage-of">no backup yet</span>{{end}}
-          {{else}}<span class="cv-data-muted">not backed up</span>{{end}}
-        </div>
-      </div>
-      {{end}}
+<section aria-labelledby="backups-title" class="cv-pgsec">
+  <div class="cv-pghead">
+    <div class="cv-pghead-text">
+      <h2 id="backups-title" class="cv-pgtitle">Backups</h2>
+      <p class="cv-pgsub">Databases and volumes, and where their copies are.</p>
     </div>
   </div>
-  {{if $.VolumeHint}}<p class="text-sm text-fg-3">Set a backup on the service in <a href="/apps/{{$.ID}}/configure">Configure</a> to keep a copy off this server.</p>{{end}}
-</section>
-{{end}}
-<section aria-labelledby="databases-title" class="flex flex-col gap-2">
-  <h2 id="databases-title" class="cv-label">Backed-up services</h2>
-  <div class="cv-panel p-4 flex flex-col gap-4">
-    {{if not .Destination}}<p class="text-base text-fg-1">No backup destination is set. <a href="/settings#backups">Set one in Settings</a> before backups can run.</p>{{end}}
-    {{range .Services}}
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <div class="cv-data text-fg-1">{{.Name}}</div>
-        {{if .Volume}}<p class="cv-data-muted">Volume backup, {{.ScheduleText}}, keeping {{.Keep}}. The service stops while a backup runs{{with .LastStopped}} (last time {{.}}){{end}}.</p>
-        {{else}}<p class="cv-data-muted">PostgreSQL, on <span class="cv-inline-mono">{{.Schedule}}</span> (UTC), keeping the last {{.Keep}}.</p>{{end}}
-      </div>
-      {{if $.Destination}}
-      {{if .Volume}}
-      <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Back up now…</summary>
-        <form method="post" action="/apps/{{$.ID}}/backups" class="cv-confirm-body">
-          <p>The service stops for a few seconds while the backup runs.</p>
-          <input type="hidden" name="service" value="{{.Name}}">
-          <div><button type="submit" class="cv-btn cv-btn-secondary">Back up now</button></div>
-        </form>
-      </details>
-      {{else}}
-      <form method="post" action="/apps/{{$.ID}}/backups">
-        <input type="hidden" name="service" value="{{.Name}}">
-        <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Back up now</button>
-      </form>
-      {{end}}
-      {{end}}
-    </div>
-    {{else}}
-    <p class="text-base text-fg-1">No service of this app is backed up.</p>
-    <p class="text-sm text-fg-3">Give a service a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume), through the API or the Compose request.</p>
-    {{end}}
-  </div>
+  {{if .Defined}}<p class="cv-count">{{.Counts}}</p>{{end}}
 </section>
 
-<section aria-labelledby="backups-title" class="flex flex-col gap-2">
-  <h2 id="backups-title" class="cv-label">Backups</h2>
-  <div class="cv-panel">
-    {{range .Backups}}
-    <div class="cv-row flex flex-col gap-2 p-3">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-3">
-          {{if eq .Status "succeeded"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>succeeded</span>
-          {{else if eq .Status "failed"}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>failed</span>
-          {{else}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span>running</span>{{end}}
-          <span class="cv-data text-fg-1">{{.Service}}</span>
-          <span class="cv-data-muted">{{template "time" .Started}}</span>
-          {{with .Size}}<span class="cv-data-muted">{{.}}</span>{{end}}
-          {{with .Stopped}}<span class="cv-data-muted">{{.}}</span>{{end}}
+{{if not .Defined}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">Nothing to back up.</p>
+  <p class="cv-empty-text">This app has no definition yet. Once it has services, a database or a volume can be backed up here.</p>
+</div></div>
+{{else}}
+{{if not .Destination}}
+<div class="cv-panel cv-banner">
+  <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+  <p class="cv-banner-text">No backup destination is set. Backups can't run until there is one.</p>
+  <a href="/settings#backups" class="cv-btn cv-btn-secondary cv-btn-sm">Set the destination</a>
+</div>
+{{end}}
+
+{{if .Gaps}}
+<div class="cv-panel" role="list" aria-label="Services with no backup">
+  {{range .Gaps}}
+  <div class="cv-row cv-gap" role="listitem">
+    <span class="cv-mark cv-mark-warning cv-gap-mark" aria-hidden="true"></span>
+    <div class="cv-gap-body">
+      <p class="cv-gap-text"><span class="cv-gap-name">{{.Label}}</span> has no backup.</p>
+      <p class="cv-gap-meta">{{.Meta}}</p>
+    </div>
+    {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
+    {{else}}
+    <form method="post" action="/apps/{{$.ID}}/backups/policy">
+      <input type="hidden" name="revision" value="{{$.Revision}}">
+      <input type="hidden" name="service" value="{{.Service}}">
+      <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up daily</button>
+    </form>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{if .Rows}}
+<div class="cv-panel cv-backups" role="table" aria-label="Backed-up services">
+  <div class="cv-bhead cv-label" role="row">
+    <span role="columnheader" class="cv-bhead-gap"></span>
+    <span role="columnheader" class="cv-bhead-gap"></span>
+    <span role="columnheader">What</span>
+    <span role="columnheader">How often · kept</span>
+    <span role="columnheader">Last backup</span>
+    <span role="columnheader" class="cv-bsize">Size</span>
+  </div>
+  {{range .Rows}}
+  {{$row := .}}
+  <details class="cv-bdetails" id="svc-{{.Name}}"{{if .Open}} open{{end}}>
+    <summary class="cv-bsum" role="row">
+      <span role="cell" class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
+      <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.MarkText}}</span></span>
+      <span role="cell" class="cv-bwhat"><span class="cv-bname">{{.Name}}</span> <span class="cv-bmeta">{{.What}}</span></span>
+      <span role="cell" class="cv-bwhen">
+        <span class="cv-bline">{{.Schedule}}</span>
+        {{if .Volume}}<span class="cv-bnote">The service stops while it runs.</span>{{end}}
+        <span class="cv-bmeta">{{.Keep}}</span>
+      </span>
+      <span role="cell" class="cv-blast">
+        {{if .LastNow}}<span class="cv-blast-now">running now</span>
+        {{else if .LastNever}}<span class="cv-blast-never">never</span>
+        {{else}}<span class="cv-blast-when">{{template "time" .LastWhen}}</span>{{end}}
+        {{if .Took}}<span class="cv-bmeta">took {{.Took}}{{with .Stopped}} · {{.}}{{end}}</span>{{end}}
+      </span>
+      <span role="cell" class="cv-bsize">
+        {{with .Size}}<span class="cv-blast-when">{{.}}</span>{{end}}
+        {{with .SizeAll}}<span class="cv-bmeta">{{.}}</span>{{end}}
+      </span>
+    </summary>
+    <div class="cv-bdetail">
+      <div class="cv-bstrip-wrap">
+        <h3 class="cv-label">Restore points · last 30 days</h3>
+        <div class="cv-strip" role="list" aria-label="Backups of {{.Name}} in the last 30 days">
+          {{range .Strip}}{{if .Href}}<a href="{{.Href}}" class="cv-bar cv-bar-{{.Kind}}" role="listitem" title="{{.Title}}" aria-label="{{.Title}}"></a>{{else}}<span class="cv-bar cv-bar-none" role="listitem" aria-label="no backup that day"></span>{{end}}{{end}}
         </div>
-        {{if .CanRestore}}
-        <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>
-          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore…</summary>
-          <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/restore" class="cv-confirm-body">
-            {{if .Volume}}<p>The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.</p>
-            {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
-            <label class="flex flex-col gap-2">
-              <span class="cv-label">Type <span class="cv-inline-mono">{{.Service}}</span> to confirm</span>
-              <input class="cv-field" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if eq $.ConfirmErr .ID}} autofocus aria-invalid="true"{{end}}>
-              {{if eq $.ConfirmErr .ID}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>Type {{.Service}} to confirm.</span></span>{{end}}
-            </label>
-            <div><button type="submit" class="cv-btn cv-btn-danger">Restore {{.Service}}</button></div>
-          </form>
-        </details>
+        <div class="cv-strip-ends"><span>30 d ago</span> <span>today</span></div>
+      </div>
+      {{with .Failure}}<p class="cv-bfail">{{template "sentence" .}}</p>{{end}}
+      {{range .VolumeFacts}}<p class="cv-bpath">{{.}}</p>{{end}}
+      {{if .Runs}}
+      <div class="cv-runs" role="table" aria-label="Runs of {{.Name}}">
+        {{range .Runs}}
+        <div class="cv-brun cv-confirm-row" id="backup-{{.ID}}" role="row">
+          <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
+          <span role="cell" class="cv-brun-when">{{template "time" .When}}</span>
+          <span role="cell" class="cv-brun-fact">{{.Size}}</span>
+          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
+          <span role="cell" class="cv-brun-act">
+            {{if .CanRestore}}
+            <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>
+              <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore…</summary>
+              {{template "restore-confirm" (restoreAsk $ . "")}}
+            </details>
+            {{end}}
+          </span>
+          {{with .Message}}<p class="cv-brun-msg">{{.}}</p>{{end}}
+        </div>
         {{end}}
       </div>
-      {{with .Message}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+      {{with .OlderHref}}<div class="cv-deploy-more"><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Show older</a></div>{{end}}
+      {{else}}
+      <p class="cv-note">No backups yet.</p>
+      {{end}}
+      <div class="cv-btnrow">
+        {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
+        {{else if $.Destination}}
+        {{with .RestoreLast}}
+        <details class="cv-confirm">
+          <summary class="cv-btn cv-btn-primary cv-btn-sm">{{icon "history" 14}}Restore from the last backup</summary>
+          {{template "restore-confirm" (restoreAsk $ . "last-")}}
+        </details>
+        {{end}}
+        {{if .Volume}}
+        <details class="cv-confirm">
+          <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Back up now</summary>
+          <form method="post" action="/apps/{{$.ID}}/backups" class="cv-confirm-body">
+            <p>The service stops for a few seconds while the backup runs.</p>
+            <input type="hidden" name="service" value="{{.Name}}">
+            <div><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Back up now</button></div>
+          </form>
+        </details>
+        {{else}}
+        <form method="post" action="/apps/{{$.ID}}/backups">
+          <input type="hidden" name="service" value="{{.Name}}">
+          <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Back up now</button>
+        </form>
+        {{end}}
+        {{end}}
+      </div>
     </div>
-    {{else}}
-    <p class="px-3 py-4 text-sm text-fg-3">No backups yet.</p>
-    {{end}}
+  </details>
+  {{end}}
+</div>
+{{else if not .Gaps}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">Nothing to back up.</p>
+  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume), through the API or the Compose request.</p>
+</div></div>
+{{end}}
+
+{{with .Unmounted}}
+<section aria-labelledby="unmounted-title" class="cv-pgsec">
+  <h2 id="unmounted-title" class="cv-label">Volumes no service mounts</h2>
+  <div class="cv-panel cv-gpanel cv-gpanel-tight">
+    {{range .}}<p class="cv-data"><span class="text-fg-1">{{.Name}}</span>{{with .HostPath}} · {{.}} on this host{{end}}{{with .Size}} · {{.}}{{end}}</p>{{end}}
+    <p class="cv-note">They stay until the app is deleted, or a service mounts them again.</p>
   </div>
 </section>
+{{end}}
 
 {{with .Restores}}
-<section aria-labelledby="restores-title" class="flex flex-col gap-2">
+<section aria-labelledby="restores-title" class="cv-pgsec">
   <h2 id="restores-title" class="cv-label">Restores</h2>
-  <div class="cv-panel">
+  <div class="cv-panel cv-runs" role="table" aria-label="Restores">
     {{range .}}
-    <div class="cv-row flex flex-col gap-1 p-3">
-      <div class="flex flex-wrap items-center gap-3">
-        {{if eq .Status "succeeded"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>restored</span>
-        {{else if eq .Status "failed"}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>failed</span>
-        {{else}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span>restoring</span>{{end}}
-        <span class="cv-data text-fg-1">{{.Service}}</span>
-        <span class="cv-data-muted">from {{.BackupID}}, {{template "time" .Created}}</span>
-        {{with .Stopped}}<span class="cv-data-muted">{{.}}</span>{{end}}
-      </div>
-      {{with .Message}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+    <div class="cv-brun cv-brun-restore" role="row">
+      <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span></span>
+      <span role="cell" class="cv-brun-when">{{template "time" .Created}}</span>
+      <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span> from {{.BackupID}}</span>
+      <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
+      <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span>
+      {{with .Message}}<p class="cv-brun-msg">{{.}}</p>{{end}}
     </div>
     {{end}}
   </div>
 </section>
 {{end}}
-<p class="text-sm text-fg-3"><a href="/apps/{{.ID}}/backups">Refresh</a> to follow a backup or a restore.</p>
+<p class="cv-foot"><a href="/apps/{{.ID}}/backups">Refresh</a> to follow a backup or a restore.</p>
+{{end}}
+{{end}}
+
+{{/* restore-confirm: the form a Restore… opens: it names what happens and asks for the service's name.
+     Takes a restoreAskView. */}}
+{{define "restore-confirm"}}
+<form method="post" action="/apps/{{.AppID}}/backups/{{.Run.ID}}/restore" class="cv-confirm-body">
+  {{if .Run.Volume}}<p>The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.</p>
+  {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
+  <label class="cv-fld" for="confirm-{{.Prefix}}{{.Run.ID}}">
+    <span class="cv-label">Type <span class="cv-inline-mono">{{.Run.Service}}</span> to confirm</span>
+    <input class="cv-field cv-field-mono" id="confirm-{{.Prefix}}{{.Run.ID}}" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Failed}} autofocus aria-invalid="true"{{end}}>
+    {{if .Failed}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>Type {{.Run.Service}} to confirm.</span></span>{{end}}
+  </label>
+  <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">{{if .Run.Volume}}Restore and stop the service while it runs{{else}}Restore {{.Run.Service}}{{end}}</button></div>
+</form>
 {{end}}
 
 {{/* The Running tab: the app's copies in a live region. Takes a copiesRegion. */}}
@@ -293,10 +354,10 @@
     {{range .Forms}}
     {{$id := .ID}}
     <form method="post" action="{{.Action}}" class="cv-row cv-runform p-3 flex flex-col gap-2">
-      <label class="flex flex-col gap-2" for="{{$id}}">
+      <label class="cv-fld" for="{{$id}}">
         <span class="cv-label">Copy <span class="cv-inline-mono" title="{{.CopyID}}">{{.Short}}</span> of <span class="cv-inline-mono">{{.Service}}</span></span>
         <span class="flex flex-wrap items-start gap-2">
-          <input class="cv-field cv-runfield" id="{{$id}}" type="text" name="command" value="{{.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
+          <input class="cv-field cv-field-mono cv-runfield" id="{{$id}}" type="text" name="command" value="{{.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
           <button type="submit" class="cv-btn cv-btn-secondary">Run</button>
           {{with .Terminal}}<a href="{{.}}" class="cv-btn cv-btn-secondary" title="An interactive shell in this copy">Terminal</a>{{end}}
         </span>
@@ -433,9 +494,9 @@
     {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
     {{range .Form.Fields}}
     {{$id := .ID}}
-    <label class="flex flex-col gap-2" for="{{$id}}">
+    <label class="cv-fld" for="{{$id}}">
       <span class="cv-label">{{.Label}}</span>
-      <input class="cv-field" id="{{$id}}" type="text" name="{{.Name}}" value="{{.Value}}" autocomplete="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
+      <input class="cv-field cv-field-mono" id="{{$id}}" type="text" name="{{.Name}}" value="{{.Value}}" autocomplete="off" spellcheck="false" required{{if .Error}} aria-invalid="true" aria-describedby="{{$id}}-error"{{end}}>
       {{with .Error}}<span id="{{$id}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
     </label>
     {{end}}
@@ -550,69 +611,10 @@
 </section>
 {{end}}
 
-{{/* configure-form: the edit form of the Configure tab, one panel per service. It is a
-     plain post (the revision it was drawn from travels in a hidden input); when script
-     runs, htmx posts it in place, so a refusal swaps this form for the same form with its
-     errors. Takes an editView. */}}
-{{define "configure-form"}}
-<form id="edit-form" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="this" hx-swap="outerHTML" class="cv-newapp flex flex-col gap-3">
-  <input type="hidden" name="revision" value="{{.Form.Revision}}">
-  {{with .Stale}}
-  <div role="alert" class="cv-panel cv-stale">
-    <p class="cv-stale-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app changed since you opened the form.</span></p>
-    {{if .Diffs}}
-    <p>It now has these values where they differ from what is typed below:</p>
-    <ul class="cv-stale-list">{{range .Diffs}}
-      <li><span class="cv-data text-fg-1">{{.Service}}</span> <span class="cv-label">{{.Label}}</span> <span class="cv-data">{{.Current}}</span></li>{{end}}
-    </ul>
-    {{else}}
-    <p>What changed is not in this form: a secret, a volume, a backup or a Compose deploy.</p>
-    {{end}}
-    <p>Save again to deploy what is typed below over the current app.</p>
-  </div>
-  {{end}}
-  {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-  {{range .Services}}
-  {{$svc := .}}
-  <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">
-    <h3 id="svc-{{.Name}}-title" class="cv-data text-fg-1">{{.Name}}</h3>
-    <div class="cv-edit-fields">
-      {{range .Inputs}}
-      <label class="flex flex-col gap-2{{if .Wide}} cv-edit-wide{{end}}" for="{{.Field.ID}}">
-        <span class="cv-label">{{.Label}}</span>
-        {{if .Area}}<textarea class="cv-field cv-field-area" id="{{.Field.ID}}" name="svc.{{$svc.Name}}.{{.Name}}" rows="{{if eq .Name "env"}}6{{else}}3{{end}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
-{{.Field.Value}}</textarea>
-        {{else}}<input class="cv-field" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{end}}
-        {{with .Hint}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
-        {{template "field-error" .Field}}
-      </label>
-      {{end}}
-    </div>
-    {{with .Kept}}
-    <dl class="cv-def-rows">
-      {{range .}}
-      <div class="cv-def-row">
-        <dt class="cv-label">{{.Label}}</dt>
-        <dd>
-          <ul class="cv-def-values">{{range .Values}}
-            <li class="cv-data text-fg-1">{{.}}</li>{{end}}
-          </ul>
-          {{with .Note}}<p class="cv-hint cv-data-muted">{{.}}</p>{{end}}
-        </dd>
-      </div>
-      {{end}}
-    </dl>
-    {{end}}
-  </div>
-  {{end}}
-  <div><button type="submit" class="cv-btn cv-btn-primary">Save and deploy</button></div>
-</form>
-{{end}}
-
-{{/* The Configure tab: the app's facts and the definition as a form (a save is a deploy),
-     then the secrets, the webhook, the export and, last and apart, Delete app. Everything
-     is a plain form post; the confirmations are <details>, so they work without script.
-     Takes a configureTab. */}}
+{{/* The Configure tab (feature 021): per service the grid of Copies & size and Shipping, as one form
+     (a save is a deploy); per app the Domains and Secrets panels, with the links to their pages; then
+     the webhook, the deploy token, the export and, last and apart, Delete app. Everything is a plain
+     form post; the confirmations are <details>, so they work without script. Takes a configureTab. */}}
 {{define "configure"}}
 {{/* An app that keeps its Compose file edits it here first (feature 015): the same form as
      Deploy from Compose, filled from the file. The definition below is then read-only. The
@@ -630,27 +632,13 @@
 <section aria-labelledby="define-title" class="flex flex-col gap-2">
   <h2 id="define-title" class="cv-label">Define the app</h2>
   {{template "define-form" .}}
-  <p class="text-sm text-fg-3">Saving deploys the app. <a href="/apps/{{$.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Define it with a Compose file instead.</p>
+  <p class="text-sm text-fg-3">Saving deploys the app. <a href="/apps/{{$.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Define it with a Compose file instead.</p>
 </section>
 {{end}}
+
+{{if .Edit.ReadOnly}}
 <section aria-labelledby="definition-title" class="flex flex-col gap-2">
   <h2 id="definition-title" class="cv-label">Definition</h2>
-  <div class="cv-panel cv-def">
-    <h3 class="cv-data text-fg-1">{{.App.Title}}</h3>
-    <dl class="cv-def-rows">
-      {{range .App.Rows}}
-      <div class="cv-def-row">
-        <dt class="cv-label">{{.Label}}</dt>
-        <dd>
-          <ul class="cv-def-values">{{range .Values}}
-            <li class="cv-data text-fg-1">{{.}}</li>{{end}}
-          </ul>
-        </dd>
-      </div>
-      {{end}}
-    </dl>
-  </div>
-  {{if .Edit.ReadOnly}}
   <p class="text-sm text-fg-3">This app is edited through its Compose file.</p>
   {{range .Edit.Panels}}
   <div class="cv-panel cv-def">
@@ -669,160 +657,423 @@
     </dl>
   </div>
   {{end}}
-  {{else if .Define}}
-  <p class="text-sm text-fg-3">No services yet.</p>
-  {{else}}
-  {{if .Compose}}<p class="text-sm text-fg-3">Made from a Compose file. Deploying a file again replaces these edits.</p>{{end}}
-  <p class="text-sm text-fg-3"><a href="/apps/{{.Delete.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a> Replace the app with a Compose file.</p>
-  {{template "configure-form" .Edit}}
-  <p class="text-sm text-fg-3">Saving deploys the app with these values. Copies that are running keep the old ones until the new ones are healthy.</p>
-  {{end}}
 </section>
-
-{{/* Secrets: names only. Setting or removing one is a deploy; a value is never in the page,
-     not even after a refused save. */}}
-<section aria-labelledby="secrets-title" class="flex flex-col gap-2">
-  <h2 id="secrets-title" class="cv-label">Secrets</h2>
-  {{if .Define}}
-  <div class="cv-panel p-4"><p class="text-sm text-fg-3">A secret belongs to a service. Define the app first, then add its secrets here.</p></div>
+{{else if not .Define}}
+{{with .Edit.Stale}}
+<div role="alert" class="cv-panel cv-stale">
+  <p class="cv-stale-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app changed since you opened the form.</span></p>
+  {{if .Diffs}}
+  <p>It now has these values where they differ from what is typed below:</p>
+  <ul class="cv-stale-list">{{range .Diffs}}
+    <li><span class="cv-data text-fg-1">{{.Service}}</span> <span class="cv-label">{{.Label}}</span> <span class="cv-data">{{.Current}}</span></li>{{end}}
+  </ul>
   {{else}}
-  <div class="cv-panel p-4 flex flex-col gap-4">
-    {{with .Secrets.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-    {{range $svc := .Secrets.Services}}
-    <div class="flex flex-col gap-2">
-      {{if $.Secrets.Many}}<h3 class="cv-label">{{$svc.Name}}</h3>{{end}}
-      {{if $svc.Names}}
-      <ul class="flex flex-col gap-2">
-        {{range $svc.Names}}
-        <li class="flex flex-wrap items-start justify-between gap-2">
-          <span class="cv-data text-fg-1">{{.}}</span>
-          <details class="cv-confirm">
-            <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
-            <form method="post" action="/apps/{{$.Delete.ID}}/secrets/remove" class="cv-confirm-body">
-              <input type="hidden" name="service" value="{{$svc.Name}}">
-              <input type="hidden" name="name" value="{{.}}">
-              <p>This deploys the app without <span class="cv-inline-mono">{{.}}</span>. Running copies keep it until the new ones are healthy.</p>
-              <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
-            </form>
-          </details>
-        </li>
-        {{end}}
-      </ul>
-      {{else}}
-      <p class="text-sm text-fg-3">No secrets{{if $.Secrets.Many}} for {{$svc.Name}}{{end}}.</p>
-      {{end}}
-    </div>
-    {{end}}
-    {{with .Secrets.Form}}
-    <form method="post" action="/apps/{{$.Delete.ID}}/secrets" class="flex flex-col gap-3" autocomplete="off">
-      {{if $.Secrets.Many}}
-      <label class="flex flex-col gap-2" for="secret-service">
-        <span class="cv-label">Service</span>
-        <select class="cv-field" id="secret-service" name="service">
-          {{range $.Secrets.Services}}<option value="{{.Name}}"{{if eq .Name $.Secrets.Form.Service}} selected{{end}}>{{.Name}}</option>{{end}}
-        </select>
-      </label>
-      {{else}}{{range $.Secrets.Services}}<input type="hidden" name="service" value="{{.Name}}">{{end}}{{end}}
-      <label class="flex flex-col gap-2" for="secret-name">
-        <span class="cv-label">Name</span>
-        <input class="cv-field" id="secret-name" type="text" name="name" value="{{.Name}}" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .NameError}} aria-invalid="true" aria-describedby="secret-name-error"{{end}}>
-        {{with .NameError}}<span id="secret-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
-      </label>
-      <label class="flex flex-col gap-2" for="secret-value">
-        <span class="cv-label">Value</span>
-        <textarea class="cv-field cv-field-area" id="secret-value" name="value" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .ValueError}} aria-invalid="true" aria-describedby="secret-value-error"{{end}}></textarea>
-        {{with .ValueError}}<span id="secret-value-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
-      </label>
-      <p class="text-sm text-fg-3">Setting a secret, or giving one a new value, deploys the app. Values can't be read back.</p>
-      <div><button type="submit" class="cv-btn cv-btn-primary">Set and deploy</button></div>
-    </form>
-    {{end}}
-  </div>
+  <p>What changed is not in this form: a variable, a secret, a domain, a volume, a backup or a Compose deploy.</p>
   {{end}}
+  <p>Save again to deploy what is typed below over the current app.</p>
+</div>
+{{end}}
+{{with .Edit.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{range .Edit.Services}}
+<section class="cv-svc cv-gridbox"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Settings"{{end}}>
+  {{if $.Edit.Many}}<h2 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h2>{{end}}
+  <form method="post" action="{{$.Edit.Action}}" class="cv-svcform">
+    <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
+    <fieldset class="cv-fieldset"{{if $.Stopped}} disabled{{end}}>
+      <div class="cv-grid2">
+        <div class="cv-panel cv-gpanel">
+          <h3 class="cv-label">Copies &amp; size</h3>
+          <div class="cv-fields4">
+            {{template "field" (.F "copies")}}
+            {{template "field" (.F "cpu")}}
+            {{template "field" (.F "memory")}}
+            {{template "field" (.F "memoryMax")}}
+          </div>
+          {{with .Prereq}}
+          <div class="cv-prereq">
+            <p class="cv-prereq-title"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Needs a container registry</span></p>
+            <p class="cv-prereq-reason">{{template "sentence" .Reason}}</p>
+            <div><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a></div>
+          </div>
+          {{end}}
+        </div>
+        <div class="cv-col">
+          <div class="cv-panel cv-gpanel">
+            <h3 class="cv-label">Shipping</h3>
+            {{template "field" (.F "image")}}
+            {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
+            {{if .ShowHealth}}
+            <div class="cv-fields3">
+              {{template "field" (.F "healthPath")}}
+              {{template "field" (.F "healthInterval")}}
+              {{template "field" (.F "healthTimeout")}}
+            </div>
+            <p class="cv-note">New copies must pass this check before they take traffic; if they don't, the deploy is reverted.</p>
+            {{end}}
+          </div>
+          {{with .Also}}
+          <div class="cv-panel cv-gpanel cv-gpanel-tight">
+            <h3 class="cv-label">Also set</h3>
+            <dl class="cv-also">
+              {{range .}}
+              <div class="cv-also-row">
+                <dt class="cv-label">{{.Label}}</dt>
+                <dd>{{range .Values}}<span class="cv-also-val">{{.}}</span> {{end}}</dd>
+              </div>
+              {{end}}
+            </dl>
+            <p class="cv-note">Edited through the API or a Compose file.</p>
+          </div>
+          {{end}}
+        </div>
+      </div>
+    </fieldset>
+    <div class="cv-btnrow">
+      {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
+      {{else}}<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button>{{end}}
+    </div>
+  </form>
 </section>
+{{end}}
+{{end}}
 
-<section id="webhook" aria-labelledby="webhook-title" class="flex flex-col gap-2">
-  <h2 id="webhook-title" class="cv-label">Webhook</h2>
-  <div class="cv-panel p-4 flex flex-col gap-4">
-    {{with .Webhook.URL}}
-    <div class="flex flex-col gap-3" role="status">
-      <p class="text-base text-fg-1">Copy it now. It won't be shown again.</p>
-      <code class="cv-cmd" id="webhook-url">{{.}}</code>
-      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="webhook-url" hidden>Copy</button></div>
-    </div>
-    {{end}}
-    {{if .Webhook.Enabled}}
-    <p class="text-base text-fg-1">Token created {{template "time" .Webhook.Created}}.</p>
-    <p class="text-sm text-fg-3">A registry or CI posts to the webhook address to redeploy this app when its image has changed.</p>
-    <div class="cv-actions">
-      <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Replace token</summary>
-        <form method="post" action="/apps/{{.Delete.ID}}/webhook" class="cv-confirm-body">
-          <p>The current token stops working at once. The new address is shown once.</p>
-          <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Replace token</button></div>
-        </form>
-      </details>
-      <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Revoke token</summary>
-        <form method="post" action="/apps/{{.Delete.ID}}/webhook/revoke" class="cv-confirm-body">
-          <p>The current token stops working at once. The webhook refuses every call until you create a new token.</p>
-          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Revoke token</button></div>
-        </form>
-      </details>
-    </div>
+{{if not .Define}}
+<div class="cv-gridbox"><div class="cv-grid2">
+  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="domains-title">
+    <h2 id="domains-title" class="cv-label">Domains</h2>
+    {{range .Domains.Rows}}
+    <div class="cv-domrow"><span class="cv-domhost">{{.Host}}</span> {{if $.Domains.Many}}<span class="cv-domto">→ {{.Service}} :{{.Port}}</span>{{end}}</div>
     {{else}}
-    <p class="text-base text-fg-1">No webhook token.</p>
-    <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
-    <form method="post" action="/apps/{{.Delete.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></form>
+    <p class="cv-note">No domains. Copies are reachable only inside the app.</p>
     {{end}}
-    {{if .Define}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
-    {{else if .Webhook.Never}}<p class="text-sm text-fg-3">The app was never deployed: the webhook's first call deploys it as stored.</p>{{end}}
-  </div>
-</section>
-
-<section id="deploy-token" aria-labelledby="deploy-token-title" class="flex flex-col gap-2">
-  <h2 id="deploy-token-title" class="cv-label">Deploy token</h2>
-  <div class="cv-panel p-4 flex flex-col gap-4">
-    {{with .Deploy.Token}}
-    <div class="flex flex-col gap-3" role="status">
-      <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
-      <code class="cv-cmd" id="deploy-token-value">{{.Value}}</code>
-      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="deploy-token-value" hidden>Copy token</button></div>
-      <p class="text-sm text-fg-3">Add it to your repository's secrets as <span class="font-mono">CARAVANA_TOKEN</span> and deploy with <span class="font-mono">Cosmic-Chimps/caravana-action@v1</span> (<span class="font-mono">url: {{$.Deploy.URL}}</span>, <span class="font-mono">app: {{$.Delete.ID}}</span>).</p>
+    <div class="cv-btnrow">
+      <a href="{{.Domains.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage domains</a>
+      <a href="{{.Domains.AddHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Add domain</a>
     </div>
+  </section>
+  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="secrets-title">
+    <h2 id="secrets-title" class="cv-label">Secrets</h2>
+    {{range .Secrets.Lines}}
+    <p class="cv-secnames">{{if $.Secrets.Many}}<span class="cv-secsvc">{{.Service}}</span> {{end}}{{range $i, $name := .Names}}{{if $i}} · {{end}}{{$name}}{{end}}</p>
     {{end}}
-    <p class="text-sm text-fg-3">A token for CI. It can deploy <span class="cv-inline-mono">{{.Deploy.Scope.Name}}</span> in any environment of project <span class="cv-inline-mono">{{.Deploy.Scope.Project}}</span>, read its deployments and promote it, and nothing else: not other apps, not settings, not tokens.</p>
-    <form method="post" action="/apps/{{.Delete.ID}}/deploy-token"><button type="submit" class="cv-btn cv-btn-secondary">Create a deploy token for this app</button></form>
-  </div>
-</section>
+    <p class="cv-note">{{.Secrets.Summary}}</p>
+    <div class="cv-btnrow"><a href="{{.Secrets.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage variables and secrets</a></div>
+  </section>
+</div></div>
+{{end}}
 
-<section aria-labelledby="export-title" class="flex flex-col gap-2">
-  <h2 id="export-title" class="cv-label">Export</h2>
-  <div class="cv-panel p-4 flex flex-col gap-4">
-    <p class="text-sm text-fg-3">The live version as a plain Nomad jobspec. <span class="cv-inline-mono">nomad job run</span> runs it without caravana. It names the secrets it needs but never holds their values.</p>
-    {{with .Export.Href}}<div><a href="{{.}}" class="cv-btn cv-btn-secondary" download>Export jobspec</a></div>{{end}}
-    {{with .Export.Note}}<p class="text-base text-fg-1">{{.}}</p>{{end}}
-  </div>
+{{if and (not .Edit.ReadOnly) (not .Define)}}
+<section aria-labelledby="compose-deploy-title" class="cv-panel cv-gpanel">
+  <h2 id="compose-deploy-title" class="cv-label">Deploy from Compose</h2>
+  {{if .Compose}}<p class="text-sm text-fg-3">Made from a Compose file. Deploying a file again replaces these edits.</p>{{end}}
+  <p class="text-sm text-fg-3">Replace the app with a Compose file.</p>
+  <div><a href="/apps/{{.ID}}/compose" class="cv-btn cv-btn-secondary cv-btn-sm">Deploy from Compose</a></div>
 </section>
+{{end}}
 
-<section aria-labelledby="delete-title" class="cv-danger flex flex-col gap-2">
-  <h2 id="delete-title" class="cv-label">Delete app</h2>
-  <div class="cv-panel cv-danger-panel p-4">
-    <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
-      <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
-      {{with .Delete}}
-      <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
-        {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-        <p>{{template "sentence" .Goes}}</p>
-        <label class="flex flex-col gap-2" for="delete-confirm">
-          <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
-          <input class="cv-field" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
-          {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
-        </label>
-        <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
+<section id="webhook" aria-labelledby="webhook-title" class="cv-panel cv-gpanel">
+  <h2 id="webhook-title" class="cv-label">Webhook</h2>
+  {{with .Webhook.URL}}
+  <div class="flex flex-col gap-3" role="status">
+    <p class="text-base text-fg-1">Copy it now. It won't be shown again.</p>
+    <code class="cv-cmd" id="webhook-url">{{.}}</code>
+    <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="webhook-url" hidden>Copy</button></div>
+  </div>
+  {{end}}
+  {{if .Webhook.Enabled}}
+  <p class="text-base text-fg-1">Token created {{template "time" .Webhook.Created}}.</p>
+  <p class="text-sm text-fg-3">A registry or CI posts to the webhook address to redeploy this app when its image has changed.</p>
+  <div class="cv-actions">
+    <details class="cv-confirm">
+      <summary class="cv-btn cv-btn-secondary cv-btn-sm">Replace token</summary>
+      <form method="post" action="/apps/{{.ID}}/webhook" class="cv-confirm-body">
+        <p>The current token stops working at once. The new address is shown once.</p>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Replace token</button></div>
       </form>
-      {{end}}
+    </details>
+    <details class="cv-confirm">
+      <summary class="cv-btn cv-btn-secondary cv-btn-sm">Revoke token</summary>
+      <form method="post" action="/apps/{{.ID}}/webhook/revoke" class="cv-confirm-body">
+        <p>The current token stops working at once. The webhook refuses every call until you create a new token.</p>
+        <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Revoke token</button></div>
+      </form>
     </details>
   </div>
+  {{else}}
+  <p class="text-base text-fg-1">No webhook token.</p>
+  <p class="text-sm text-fg-3">With a token, a registry or CI can redeploy this app by posting to its webhook address.</p>
+  <form method="post" action="/apps/{{.ID}}/webhook"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create token</button></form>
+  {{end}}
+  {{if .Define}}<p class="text-sm text-fg-3">The webhook deploys what is stored and never picks an image, so it is refused until the app has a definition.</p>
+  {{else if .Webhook.Never}}<p class="text-sm text-fg-3">The app was never deployed: the webhook's first call deploys it as stored.</p>{{end}}
 </section>
+
+<section id="deploy-token" aria-labelledby="deploy-token-title" class="cv-panel cv-gpanel">
+  <h2 id="deploy-token-title" class="cv-label">Deploy token</h2>
+  {{with .Deploy.Token}}
+  <div class="flex flex-col gap-3" role="status">
+    <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
+    <code class="cv-cmd" id="deploy-token-value">{{.Value}}</code>
+    <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="deploy-token-value" hidden>Copy token</button></div>
+    <p class="text-sm text-fg-3">Add it to your repository's secrets as <span class="font-mono">CARAVANA_TOKEN</span> and deploy with <span class="font-mono">Cosmic-Chimps/caravana-action@v1</span> (<span class="font-mono">url: {{$.Deploy.URL}}</span>, <span class="font-mono">app: {{$.ID}}</span>).</p>
+  </div>
+  {{end}}
+  <p class="text-sm text-fg-3">A token for CI. It can deploy <span class="cv-inline-mono">{{.Deploy.Scope.Name}}</span> in any environment of project <span class="cv-inline-mono">{{.Deploy.Scope.Project}}</span>, read its deployments and promote it, and nothing else: not other apps, not settings, not tokens.</p>
+  <form method="post" action="/apps/{{.ID}}/deploy-token"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Create a deploy token for this app</button></form>
+</section>
+
+<section aria-labelledby="export-title" class="cv-panel cv-gpanel">
+  <h2 id="export-title" class="cv-label">Export</h2>
+  <p class="text-sm text-fg-3">The live version as a plain Nomad jobspec. <span class="cv-inline-mono">nomad job run</span> runs it without caravana. It names the secrets it needs but never holds their values.</p>
+  {{with .Export.Href}}<div><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm" download>Export jobspec</a></div>{{end}}
+  {{with .Export.Note}}<p class="text-base text-fg-1">{{.}}</p>{{end}}
+</section>
+
+<section aria-labelledby="delete-title" class="cv-panel cv-gpanel cv-danger-panel">
+  <h2 id="delete-title" class="cv-label">Delete app</h2>
+  <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
+    <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete app…</summary>
+    {{with .Delete}}
+    <form method="post" action="/apps/{{.ID}}/delete" class="cv-confirm-body">
+      {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+      <p>{{template "sentence" .Goes}}</p>
+      <label class="cv-fld" for="delete-confirm">
+        <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
+        <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+        {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+      </label>
+      <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>
+    </form>
+    {{end}}
+  </details>
+</section>
+{{end}}
+
+{{/* The Variables & secrets page (feature 021): the table of names, the form that sets one, and the
+     .env editor. Takes a variablesTab. A secret's value is never drawn. */}}
+{{define "variables"}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Add.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if not .Defined}}
+<section aria-labelledby="vars-title" class="cv-pgsec">
+  <div class="cv-pghead"><div class="cv-pghead-text">
+    <h2 id="vars-title" class="cv-pgtitle">Variables &amp; secrets</h2>
+    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure">Configure</a> has the form for it.</p>
+  </div></div>
+</section>
+{{else}}
+<section aria-labelledby="vars-title" class="cv-pgsec">
+  <div class="cv-pghead">
+    <div class="cv-pghead-text">
+      <h2 id="vars-title" class="cv-pgtitle">Variables &amp; secrets</h2>
+      <p class="cv-pgsub">One row per name. A change deploys the app.</p>
+    </div>
+    <span class="cv-spacer"></span>
+    {{if .CanEdit}}<a href="#env-editor" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "file-text" 14}}Edit as .env</a>{{end}}
+    {{if .CanSet}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add {{if .Kept}}secret{{else}}variable{{end}}</a>{{end}}
+  </div>
+  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Its variables are read-only here; change the file in <a href="/apps/{{.ID}}/configure">Configure</a>. Secrets can still be set and removed.</p>{{end}}
+</section>
+
+<div class="cv-panel cv-vars{{if .Many}} cv-vars-many{{end}}" role="table" aria-label="Variables and secrets">
+  <div class="cv-vhead cv-label" role="row">
+    <span role="columnheader">Name</span>
+    <span role="columnheader">Value</span>
+    {{if .Many}}<span role="columnheader">Used by</span>{{end}}
+    <span role="columnheader"><span class="sr-only">Actions</span></span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-vrow cv-confirm-row" role="row">
+    <div role="cell" class="cv-vname">{{if .Secret}}{{icon "lock" 13}}<span class="sr-only">secret </span>{{else}}<span class="cv-vblank" aria-hidden="true"></span>{{end}}<span class="cv-vname-text">{{.Name}}</span></div>
+    <div role="cell" class="cv-vvalue">{{if .Secret}}<span class="cv-dots" aria-hidden="true">••••••••••</span><span class="sr-only">hidden</span>{{else}}<span title="{{.Value}}">{{.Value}}</span>{{end}}</div>
+    {{if $.Many}}<div role="cell" class="cv-vused">{{.Service}}</div>{{end}}
+    <div role="cell" class="cv-vact">
+      {{if and .Secret $.CanRemove}}
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
+        <form method="post" action="/apps/{{$.ID}}/secrets/remove" class="cv-confirm-body">
+          <input type="hidden" name="revision" value="{{$.Revision}}">
+          <input type="hidden" name="service" value="{{.Service}}">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <p>This deploys the app without <span class="cv-inline-mono">{{.Name}}</span>. Running copies keep it until the new ones are healthy.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
+        </form>
+      </details>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <div class="cv-empty">
+    <p class="cv-empty-title">No variables or secrets yet.</p>
+    {{if .CanSet}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add variable</a>{{end}}
+  </div>
+  {{end}}
+</div>
+<p class="cv-foot">Secret values live in Nomad Variables, readable only by this service's copies. Caravana never shows a secret again.</p>
+
+<section id="add" class="cv-panel cv-gpanel" aria-labelledby="add-title">
+  <h2 id="add-title" class="cv-label">Add or change</h2>
+  <form method="post" action="/apps/{{.ID}}/variables" class="cv-formcol cv-formcol-narrow" autocomplete="off">
+    <input type="hidden" name="revision" value="{{.Revision}}">
+    <fieldset class="cv-fieldset cv-formcol"{{if .Stopped}} disabled{{end}}>
+      {{if .Many}}
+      <label class="cv-fld" for="var-service">
+        <span class="cv-label">Service</span>
+        <select class="cv-field cv-select" id="var-service" name="service">{{range .Add.Services}}<option value="{{.}}"{{if eq . $.Add.Service}} selected{{end}}>{{.}}</option>{{end}}</select>
+      </label>
+      {{else}}<input type="hidden" name="service" value="{{.Add.Service}}">{{end}}
+      <label class="cv-fld" for="var-name">
+        <span class="cv-label">Name</span>
+        <input class="cv-field cv-field-mono" id="var-name" type="text" name="name" value="{{.Add.Name.Value}}" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Name.Error}} aria-invalid="true" aria-describedby="var-name-error"{{end}}{{if .Add.Name.Alert}} autofocus{{end}}>
+        {{template "field-error" .Add.Name}}
+      </label>
+      <label class="cv-fld" for="var-value">
+        <span class="cv-label">Value</span>
+        <textarea class="cv-field cv-field-area cv-field-mono" id="var-value" name="value" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Value.Error}} aria-invalid="true" aria-describedby="var-value-error"{{end}}>{{.Add.Value.Value}}</textarea>
+        {{template "field-error" .Add.Value}}
+      </label>
+      {{if .Kept}}
+      <input type="hidden" name="secret" value="1">
+      <p class="cv-note">The value is set as a secret and never shown again.</p>
+      {{else}}
+      <label class="cv-check" for="var-secret">
+        <input type="checkbox" id="var-secret" name="secret" value="1"{{if .Add.Secret}} checked{{end}}>
+        <span>Keep as a secret (the value is never shown again)</span>
+      </label>
+      <p class="cv-note">Without this, the value is part of the app's definition and shows in the table.</p>
+      {{end}}
+    </fieldset>
+    <div class="cv-btnrow">
+      {{if .Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
+      {{else}}<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Set and deploy</button>{{end}}
+    </div>
+  </form>
+</section>
+
+{{if .CanEdit}}
+<div id="env-editor" class="cv-stack">
+  {{range .Editors}}
+  <section class="cv-panel cv-gpanel" aria-label="Variables of {{.Service}} as .env">
+    <form method="post" action="/apps/{{$.ID}}/variables/env" class="cv-formcol">
+      <input type="hidden" name="revision" value="{{$.Revision}}">
+      <input type="hidden" name="service" value="{{.Service}}">
+      <label class="cv-fld" for="{{.Field.ID}}">
+        <span class="cv-label">Variables as .env{{if $.Many}} · <span class="cv-inline-mono">{{.Service}}</span>{{end}}</span>
+        <textarea class="cv-field cv-field-area cv-field-env" id="{{.Field.ID}}" name="env" rows="12" placeholder="# {{.Service}} · paste a .env file to add or update many at once" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+{{.Field.Value}}</textarea>
+        <span class="cv-hint">One NAME=value per line. Lines starting with # are ignored. This list replaces the current one. Secrets are set above.</span>
+        {{template "field-error" .Field}}
+      </label>
+      <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>
+    </form>
+  </section>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* The Domains page (feature 021): every address the app answers on, and the form that adds one.
+     Takes a domainsTab. */}}
+{{define "domains"}}
+{{with .Add.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if not .Defined}}
+<section aria-labelledby="domains-page-title" class="cv-pgsec">
+  <div class="cv-pghead"><div class="cv-pghead-text">
+    <h2 id="domains-page-title" class="cv-pgtitle">Domains</h2>
+    <p class="cv-pgsub">Define the app first. <a href="/apps/{{.ID}}/configure">Configure</a> has the form for it.</p>
+  </div></div>
+</section>
+{{else}}
+<section aria-labelledby="domains-page-title" class="cv-pgsec">
+  <div class="cv-pghead">
+    <div class="cv-pghead-text">
+      <h2 id="domains-page-title" class="cv-pgtitle">Domains</h2>
+      <p class="cv-pgsub">Every address people use to reach this app. HTTPS is set up for each.</p>
+    </div>
+    <span class="cv-spacer"></span>
+    {{if .CanEdit}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
+  </div>
+  <p class="cv-count">{{.Count}}</p>
+  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Change its domains in the file, in <a href="/apps/{{.ID}}/configure">Configure</a>.</p>{{end}}
+</section>
+
+<div class="cv-panel cv-domains" role="table" aria-label="Domains">
+  <div class="cv-dhead cv-label" role="row">
+    <span role="columnheader">Domain</span>
+    <span role="columnheader">Goes to</span>
+    <span role="columnheader"><span class="sr-only">Actions</span></span>
+  </div>
+  {{range .Rows}}
+  <div class="cv-drow cv-confirm-row" role="row">
+    <div role="cell" class="cv-dhost" title="{{.Host}}">{{.Host}}</div>
+    <div role="cell" class="cv-dgoes">{{.Service}} <span class="cv-dgoes-meta">:{{.Port}} · {{$.Environment}}</span></div>
+    <div role="cell" class="cv-dact">
+      <a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a>
+      {{if $.CanEdit}}
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
+        <form method="post" action="/apps/{{$.ID}}/domains/remove" class="cv-confirm-body">
+          <input type="hidden" name="revision" value="{{$.Revision}}">
+          <input type="hidden" name="service" value="{{.Service}}">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <p>This deploys the app without <span class="cv-inline-mono">{{.Host}}</span>. It stops answering on it once the new copies are healthy.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
+        </form>
+      </details>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <div class="cv-empty">
+    <p class="cv-empty-title">No domains.</p>
+    <p class="cv-empty-text">Copies are reachable only inside the app.</p>
+    {{if .CanEdit}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
+  </div>
+  {{end}}
+</div>
+
+{{if .CanEdit}}
+<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide" aria-labelledby="add-title">
+  <h2 id="add-title" class="cv-pgtitle">Add a domain</h2>
+  {{if .Targets}}
+  <form method="post" action="/apps/{{.ID}}/domains" class="cv-formcol cv-formcol-wide" autocomplete="off">
+    <input type="hidden" name="revision" value="{{.Revision}}">
+    <label class="cv-fld" for="domain-host">
+      <span class="cv-label">Domain</span>
+      <input class="cv-field cv-field-mono" id="domain-host" type="text" name="host" value="{{.Add.Host.Value}}" placeholder="app.example.com" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Host.Error}} aria-invalid="true" aria-describedby="domain-host-error"{{end}}{{if .Add.Host.Alert}} autofocus{{end}}>
+      {{template "field-error" .Add.Host}}
+    </label>
+    {{if .Many}}
+    <label class="cv-fld" for="domain-service">
+      <span class="cv-label">Sends traffic to</span>
+      <select class="cv-field cv-select" id="domain-service" name="service">{{range .Targets}}<option value="{{.Service}}"{{if eq .Service $.Add.Service}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    </label>
+    {{else}}<input type="hidden" name="service" value="{{.Add.Service}}">{{end}}
+    <div class="cv-fld">
+      <span class="cv-label">Point it at Caravana</span>
+      <p class="cv-dnsintro">Add this record where you manage DNS for the domain:</p>
+      <dl class="cv-dnsbox">
+        <div class="cv-dnsrow"><dt class="cv-label">Type</dt> <dd>{{.Record.Type}}</dd></div>
+        <div class="cv-dnsrow"><dt class="cv-label">Name</dt> <dd>{{with .Record.Name}}{{.}}{{else}}@ or the first label{{end}}</dd></div>
+        <div class="cv-dnsrow"><dt class="cv-label">Value</dt> <dd>{{.Record.Value}}</dd></div>
+      </dl>
+      <p class="cv-note">The root of a domain needs an A record. A subdomain can use one too.</p>
+    </div>
+    <div class="cv-formfoot">
+      <span class="cv-spacer"></span>
+      <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Add domain and deploy</button>
+    </div>
+  </form>
+  {{else}}
+  <p class="cv-note">No service of this app has a port, so there is nothing for a domain to go to. Give a service a port in <a href="/apps/{{.ID}}/configure">Configure</a> first.</p>
+  {{end}}
+</section>
+{{else if .Stopped}}
+<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide" aria-labelledby="add-title">
+  <h2 id="add-title" class="cv-pgtitle">Add a domain</h2>
+  <p class="cv-note">The app is stopped: start it first.</p>
+</section>
+{{end}}
+{{end}}
 {{end}}

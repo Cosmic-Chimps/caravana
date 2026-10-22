@@ -285,7 +285,7 @@ func consolePages(t *testing.T, e *consoleEnv, ids ...string) map[string]string 
 		get(path, path)
 	}
 	for _, id := range append(append([]string{}, ids...), "nope") {
-		for _, tab := range []string{"", "/deployments", "/configure", "/logs"} {
+		for _, tab := range []string{"", "/deployments", "/configure", "/logs", "/variables", "/domains", "/backups"} {
 			get("/apps/"+id+tab, "/apps/"+id+tab)
 		}
 		for _, part := range []string{"header", "copies", "deployments"} {

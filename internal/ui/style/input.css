@@ -159,7 +159,7 @@
   /* The New app form: a narrow column, hints under the inputs in the muted mono. */
   .cv-narrow { max-width: 640px; }
   .cv-newapp a { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
-  .cv-hint { font-family: var(--font-sans); font-size: 12.5px; line-height: 1.45; text-wrap: pretty; }
+  .cv-hint { font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; }
 
   /* An app's header, as the handoff's AppScreen: a back link, a title row (name, status, addresses, then the
      actions at the right), the summary, and the tabs 23px under it (the 16px gap plus 7). */
@@ -261,7 +261,7 @@
   .cv-logbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
   .cv-logform { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .cv-logpick { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .cv-select { width: auto; min-width: 11rem; max-width: 100%; cursor: pointer; color-scheme: dark; }
+  .cv-select { width: auto; min-width: 11rem; max-width: 100%; height: 38px; border-radius: 2px; font: 400 14px/1 var(--font-mono); cursor: pointer; color-scheme: dark; }
 
   /* A checkbox with its label (Settings > Notifications: what a channel sends). The box takes
      the accent colour and sits on the first line of the label. */
@@ -456,4 +456,197 @@
   .cv-skip, a.cv-data, a.cv-app-name, a.cv-wordmark, a.cv-backlink, a.cv-domain { display: inline-flex; align-items: center; min-height: 44px; }
   .cv-nav-item, .cv-brand, a.cv-crumb { min-height: 44px; }
   .cv-iconbtn { min-width: 44px; min-height: 44px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Page 2 (feature 021): Configure's grid, and the Variables, Domains and Backups pages.
+   The values are contracts/page2-app-pages.md's. Containers (container-type) are what the
+   narrow rules at the end look at, so a page narrows by the room it has, not the screen.
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* A field with its label above (7px) and a hint or error under it. */
+  .cv-fld { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .cv-note { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .cv-formcol { display: flex; flex-direction: column; gap: 16px; }
+  .cv-formcol-wide { gap: 22px; max-width: 560px; }
+  .cv-formcol-narrow { max-width: 560px; }
+  .cv-formfoot { display: flex; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid var(--color-line-1); }
+  .cv-btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cv-spacer { flex: 1; }
+  .cv-stack { display: flex; flex-direction: column; gap: 16px; }
+  .cv-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* A field with a prefix or a suffix inside it (GET, MB, s): the box is the field, the input is bare. */
+  .cv-field-box { display: flex; align-items: center; padding: 0; }
+  .cv-field-box:focus-within { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
+  .cv-field-box:has([aria-invalid="true"]) { border-color: var(--color-failed-line); }
+  .cv-field-input { flex: 1; min-width: 0; height: 100%; padding: 0 12px; background: transparent; border: 0; outline: 0; color: var(--color-fg-1); font: inherit; }
+  .cv-affix { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
+  .cv-affix-pre { padding-left: 12px; }
+  .cv-affix-suf { padding-right: 12px; }
+  .cv-field-narrow { max-width: 160px; }
+  /* The .env editor: the darkest ground, 24px lines. */
+  .cv-field-env { min-height: 300px; background: var(--color-ink-0); font: 400 13px/24px var(--font-mono); }
+
+  /* A page's head under the tabs: the title (18px, the app header owns the h1) and its sentence, the actions right. */
+  .cv-pgsec { display: flex; flex-direction: column; gap: 10px; }
+  .cv-pghead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  .cv-pghead-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cv-pgtitle { font: 500 18px/1.35 var(--font-sans); color: var(--color-fg-1); }
+  .cv-pgsub { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-count { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-foot { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+
+  /* Configure: a service's two panels side by side, then Domains and Secrets. */
+  .cv-svc { display: flex; flex-direction: column; gap: 12px; }
+  .cv-svc-title { font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-svcform { display: flex; flex-direction: column; gap: 16px; }
+  .cv-gridbox { container-type: inline-size; }
+  .cv-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  .cv-gpanel { container-type: inline-size; display: flex; flex-direction: column; gap: 16px; padding: 18px; }
+  .cv-gpanel-tight { gap: 13px; }
+  .cv-gpanel-wide { gap: 22px; padding: 22px; }
+  .cv-fields4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+  .cv-fields3 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 13px; align-items: start; }
+  /* The registry notice: the handoff's InlinePrereq, a warning mark, why, and the one way out. */
+  .cv-prereq { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px dashed var(--color-warn-line); border-radius: 4px; }
+  .cv-prereq-title { display: flex; align-items: center; gap: 10px; font: 500 14px/1.35 var(--font-sans); color: var(--color-fg-1); }
+  .cv-prereq-reason { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-also { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+  .cv-also-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+  .cv-also-row dd { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 0; }
+  .cv-also-val { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-domrow { display: flex; align-items: center; gap: 13px; }
+  .cv-domhost { flex: 1; min-width: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-domto { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
+  .cv-secnames { font: 400 13px/1.8 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-secsvc { color: var(--color-fg-3); }
+
+  /* Tables of rows with a confirmation that opens under a button: they don't clip it, and the head and
+     last row keep the panel's corners themselves. The rows are the positioned boxes the overlay hangs from. */
+  .cv-vars, .cv-domains, .cv-backups, .cv-runs { overflow: visible; container-type: inline-size; }
+  .cv-vhead, .cv-dhead, .cv-bhead { display: grid; column-gap: 18px; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-vrow, .cv-drow { position: relative; display: grid; column-gap: 18px; align-items: center; min-height: 52px; padding: 0 18px; }
+  .cv-vrow + .cv-vrow, .cv-drow + .cv-drow { border-top: 1px solid var(--color-line-1); }
+  .cv-vrow:hover, .cv-drow:hover { background: var(--color-ink-2); }
+  .cv-vrow:last-child, .cv-drow:last-child { border-radius: 0 0 5px 5px; }
+  .cv-vars, .cv-vars-many { --cols: minmax(220px, 1fr) minmax(0, 1.15fr) 92px; }
+  .cv-vars-many { --cols: minmax(220px, 1fr) minmax(0, 1.15fr) 140px 92px; }
+  .cv-vhead, .cv-vrow { grid-template-columns: var(--cols); }
+  .cv-vname { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cv-vname .cv-icon { color: var(--color-fg-3); }
+  .cv-vblank { flex: none; width: 13px; }
+  .cv-vname-text { font: 500 13px/1.3 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-vvalue { min-width: 0; font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-1); }
+  .cv-vvalue > span:not(.sr-only) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-dots { color: var(--color-fg-3); letter-spacing: 0.1em; }
+  .cv-vused { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-vact, .cv-dact { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+
+  .cv-domains { --cols: minmax(0, 1.6fr) minmax(0, 1.2fr) 124px; }
+  .cv-dhead, .cv-drow { grid-template-columns: var(--cols); }
+  .cv-dhost { min-width: 0; font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-dgoes { min-width: 0; font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-dgoes-meta { color: var(--color-fg-3); }
+  .cv-iconlink { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 4px; color: var(--color-fg-3); }
+  .cv-iconlink:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
+  /* The record to add at the DNS provider. */
+  .cv-dnsintro { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-dnsbox { margin: 0; border: 1px solid var(--color-line-2); border-radius: 4px; background: var(--color-ink-0); }
+  .cv-dnsrow { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 10px 14px; }
+  .cv-dnsrow + .cv-dnsrow { border-top: 1px solid var(--color-line-1); }
+  .cv-dnsrow dd { margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); word-break: break-all; }
+
+  /* Backups: the banner and the rows of what has no backup. */
+  .cv-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 18px; }
+  .cv-banner-text { flex: 1; min-width: 12rem; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }
+  .cv-gap { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px; }
+  .cv-gap-mark.cv-mark-warning { width: 6.4px; height: 6.4px; margin: 5.3px 1.3px 1.3px; }
+  .cv-gap-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cv-gap-text { font-size: 15px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; }
+  .cv-gap-name { font-family: var(--font-mono); font-size: 0.93em; overflow-wrap: anywhere; }
+  .cv-gap-meta { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+
+  /* A backed-up service: a row that opens (native details), its detail under it. */
+  .cv-bhead, .cv-bsum { grid-template-columns: 14px 14px minmax(0, 1.3fr) minmax(0, 1.3fr) 150px 110px; }
+  .cv-bsum { display: grid; column-gap: 18px; align-items: center; min-height: 60px; padding: 8px 18px; list-style: none; cursor: pointer; border-top: 1px solid var(--color-line-1); }
+  .cv-bsum::-webkit-details-marker { display: none; }
+  .cv-bsum:hover, .cv-bdetails[open] > .cv-bsum { background: var(--color-ink-2); }
+  .cv-bdetails[open] > .cv-bsum { border-top-color: transparent; }
+  .cv-bchev { display: grid; place-items: center; color: var(--color-fg-3); }
+  .cv-chev-open, .cv-bdetails[open] .cv-chev-closed { display: none; }
+  .cv-bdetails[open] .cv-chev-open { display: block; }
+  .cv-bwhat, .cv-bwhen, .cv-blast, .cv-bsize { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cv-bname { font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-bmeta { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-bline { font-size: 14px; line-height: 1.4; color: var(--color-fg-1); }
+  .cv-bnote { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  .cv-blast, .cv-bsize { font: 400 12px/1.2 var(--font-mono); }
+  .cv-bsize { align-items: flex-end; text-align: right; }
+  .cv-blast-when, .cv-blast-when time { color: var(--color-fg-2); font-size: 12px; }
+  .cv-blast-never { color: var(--color-fg-3); }
+  .cv-blast-now { color: var(--color-rolling); }
+  .cv-bdetail { display: flex; flex-direction: column; gap: 16px; padding: 16px 18px 20px 82px; background: var(--color-ink-0); border-bottom: 1px solid var(--color-line-1); }
+  .cv-bdetails:last-child .cv-bdetail { border-radius: 0 0 5px 5px; border-bottom: 0; }
+  .cv-bstrip-wrap { display: flex; flex-direction: column; gap: 10px; }
+  .cv-strip { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); gap: 3px; align-items: end; height: 40px; max-width: 900px; }
+  .cv-bar { display: block; height: 26px; border-radius: 2px; }
+  .cv-bar-healthy { background: var(--color-fg-4); }
+  a.cv-bar:hover { background: var(--color-fg-3); }
+  .cv-bar-failed { background: var(--color-failed); }
+  .cv-bar-running { background: var(--color-rolling); }
+  .cv-bar-none { height: 4px; background: transparent; }
+  .cv-strip-ends { display: flex; justify-content: space-between; max-width: 900px; font: 400 11px/1 var(--font-mono); color: var(--color-fg-4); }
+  .cv-bfail { font-size: 13px; line-height: 1.5; color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-bpath { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  /* The runs, and the restores: mark, when, facts, and the action at the right. */
+  .cv-brun { position: relative; display: grid; grid-template-columns: 14px 150px 110px minmax(110px, 1fr) auto; column-gap: 12px; align-items: center; min-height: 46px; border-top: 1px solid var(--color-line-1); }
+  .cv-brun:first-child { border-top: 0; }
+  .cv-panel > .cv-brun { padding: 0 18px; }
+  .cv-brun-restore { grid-template-columns: 14px 150px minmax(0, 1fr) 110px auto; }
+  .cv-brun-when time { font-size: 12px; color: var(--color-fg-2); }
+  .cv-brun-fact { min-width: 0; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-brun-act { justify-self: end; }
+  .cv-brun-status { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); }
+  .cv-brun-msg { grid-column: 1 / -1; padding-bottom: 10px; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-panel > .cv-brun .cv-brun-msg { padding-left: 26px; }
+}
+
+/* Configure's grid: one column when the page has less than 860px, and the fields stack with their panel. */
+@container (max-width: 859.98px) {
+  .cv-grid2 { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 479.98px) {
+  .cv-fields4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cv-fields3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cv-fields3 > :first-child { grid-column: 1 / -1; }
+}
+
+/* The variables table stacks its cells when it is narrow: the name and Remove, then the value, then Used by. */
+@container (max-width: 639.98px) {
+  .cv-vhead, .cv-dhead { display: none; }
+  .cv-vrow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name act" "value value" "used used"; row-gap: 4px; padding-block: 12px; }
+  .cv-vname { grid-area: name; }
+  .cv-vvalue { grid-area: value; }
+  .cv-vused { grid-area: used; }
+  .cv-vact { grid-area: act; }
+  .cv-drow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "host act" "goes goes"; row-gap: 4px; padding-block: 12px; }
+  .cv-dhost { grid-area: host; }
+  .cv-dgoes { grid-area: goes; }
+  .cv-dact { grid-area: act; }
+}
+
+/* A backed-up service's row stacks its facts; its detail loses the indent; a run's facts go under it. */
+@container (max-width: 859.98px) {
+  .cv-bhead { display: none; }
+  .cv-bsum { grid-template-columns: 14px 14px minmax(0, 1fr); row-gap: 6px; padding-block: 12px; }
+  .cv-bsum > .cv-bwhen, .cv-bsum > .cv-blast, .cv-bsum > .cv-bsize { grid-column: 3; }
+  .cv-bsize { align-items: flex-start; text-align: left; }
+  .cv-bdetail { padding-left: 18px; }
+}
+@container (max-width: 599.98px) {
+  .cv-brun, .cv-brun-restore { grid-template-columns: 14px minmax(0, 1fr) auto; row-gap: 2px; padding-block: 8px; }
+  .cv-brun-act { grid-column: 3; grid-row: 1; }
+  .cv-brun-fact { grid-column: 2; }
 }

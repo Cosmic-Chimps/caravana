@@ -19,13 +19,13 @@
     {{else}}
     <form method="post" action="/login" class="flex flex-col gap-4">
       <input type="hidden" name="next" value="{{.Next}}">
-      <label class="flex flex-col gap-2">
+      <label class="cv-fld">
         <span class="cv-label">Email</span>
-        <input class="cv-field cv-field-lg" type="email" name="email" value="{{.Email}}" autocomplete="username" autocapitalize="off" spellcheck="false" required{{if not .Email}} autofocus{{end}}>
+        <input class="cv-field cv-field-lg cv-field-mono" type="email" name="email" value="{{.Email}}" autocomplete="username" autocapitalize="off" spellcheck="false" required{{if not .Email}} autofocus{{end}}>
       </label>
-      <label class="flex flex-col gap-2">
+      <label class="cv-fld">
         <span class="cv-label">Password</span>
-        <input class="cv-field cv-field-lg" type="password" name="password" autocomplete="current-password" required{{if .Email}} autofocus{{end}}>
+        <input class="cv-field cv-field-lg cv-field-mono" type="password" name="password" autocomplete="current-password" required{{if .Email}} autofocus{{end}}>
       </label>
       {{with .Notice}}
       <div {{if eq .Kind "idle"}}role="status"{{else}}role="alert"{{end}} class="cv-notice">

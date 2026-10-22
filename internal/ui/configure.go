@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -102,28 +103,108 @@ type deleteView struct {
 
 func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 
-// configureTab is the body of the Configure tab.
+// configureTab is the body of the Configure tab (feature 021): per service the
+// grid of Copies & size and Shipping, then per app the Domains and Secrets
+// panels, then the panels the console needs besides.
 type configureTab struct {
-	App     defPanel // the app's own facts
-	Compose bool     // the app was made from a Compose file: a note says a file replaces edits
+	ID      string
+	Compose bool // the app was made from a Compose file: a note says a file replaces edits
 	// ComposeForm is the Compose form drawn first when the app keeps its file
 	// (feature 015); the definition is then read-only (Edit.ReadOnly).
 	ComposeForm *composeView
 	// Notice is a refusal of the tab as a whole: a per-field save that an app
-	// edited through its file doesn't take.
+	// edited through its Compose file doesn't take.
 	Notice sentence
 	// Copied says the app was just copied here from another environment and what
 	// it still needs (feature 019); empty otherwise.
 	Copied sentence
 	// Define is the "Define the app" form of an app with no services yet
 	// (feature 019.5); nil once it has a definition.
-	Define  *defineView
+	Define *defineView
+	// Stopped says the owner stopped the app: the forms have no submit, and the
+	// Notice says to start it first.
+	Stopped bool
 	Edit    editView
-	Secrets secretsView
+	Domains domainsPanel
+	Secrets secretsPanel
 	Webhook webhookView
 	Deploy  deployTokenSection
 	Export  exportView
 	Delete  deleteView
+}
+
+// domainsPanel is Configure's Domains panel: each host the app answers on, with
+// the service it goes to (drawn when the app has several services), and the links
+// to the page that manages them.
+type domainsPanel struct {
+	Rows       []domainRow
+	Many       bool
+	ManageHref string
+	AddHref    string
+}
+
+// domainRow is one domain of the app: the host, the service it goes to, and
+// that service's container port, by name and number.
+type domainRow struct {
+	Host, Service, PortName string
+	Port                    int
+}
+
+// domainRowsOf lists the app's domains in the order of its services.
+func domainRowsOf(a app.App) []domainRow {
+	var rows []domainRow
+	for _, svc := range a.Services {
+		for _, d := range svc.Domains {
+			row := domainRow{Host: d.Host, Service: svc.Name, PortName: d.Port}
+			for _, p := range svc.Ports {
+				if p.Name == d.Port {
+					row.Port = p.ContainerPort
+				}
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+// secretsPanel is Configure's Secrets panel: the names of each service's
+// secrets, never a value, and the link to the page that manages them.
+type secretsPanel struct {
+	Lines []secretLine // the services that have a secret
+	Many  bool         // more than one service: each line starts with its name
+	Count int
+	Href  string
+}
+
+// secretLine is one service's secret names, in their stored order.
+type secretLine struct {
+	Service string
+	Names   []string
+}
+
+// Summary is the sentence under the names.
+func (p secretsPanel) Summary() string {
+	if p.Count == 0 {
+		return "No secrets."
+	}
+	return plural(p.Count, "secret") + " in Nomad Variables. Values are never shown here."
+}
+
+// secretsPanelOf lays out the stored app's secret names for the panel.
+func secretsPanelOf(a app.App) secretsPanel {
+	p := secretsPanel{Many: len(a.Services) > 1}
+	for _, svc := range a.Services {
+		if len(svc.Secrets) == 0 {
+			continue
+		}
+		line := secretLine{Service: svc.Name}
+		for _, sec := range svc.Secrets {
+			line.Names = append(line.Names, sec.Name)
+		}
+		p.Count += len(line.Names)
+		p.Lines = append(p.Lines, line)
+	}
+	return p
 }
 
 // defineView is the form that gives an app with no definition its first one:
@@ -135,8 +216,8 @@ type defineView struct {
 }
 
 // editView is the form of the Configure tab: the inputs with what was typed
-// (or what is stored), one section per service, and, after a refused stale
-// save, what changed under the owner.
+// (or what is stored), one form per service, and, after a refused stale save,
+// what changed under the owner.
 //
 // An app that keeps its Compose file has no form to edit: ReadOnly is set, and
 // Panels hold what its services are, one panel each (feature 015).
@@ -144,15 +225,26 @@ type editView struct {
 	Action   string
 	Form     editForm
 	Services []editServiceView
+	Many     bool // several services: each grid has a heading with its name
 	Stale    *staleView
 	ReadOnly bool
 	Panels   []defPanel
 }
 
 // editServiceView is a service's inputs with the facts of it the form keeps.
+// Also lists those facts (the grid's "Also set" panel); Prereq is set when the
+// service's image can't be pulled for want of credentials.
 type editServiceView struct {
 	editService
-	Kept []defRow
+	Also   []defRow
+	Prereq *registryPrereq
+}
+
+// registryPrereq is the grid's "Needs a container registry" notice (the
+// handoff's InlinePrereq): what failed, and the link to where credentials go.
+type registryPrereq struct {
+	Reason sentence
+	Href   string
 }
 
 // staleView is the panel after a save refused because the app changed since
@@ -170,12 +262,12 @@ type staleDiff struct {
 // editViewOf joins the form with the stored app it edits: the facts a service
 // keeps come from the stored service of the same name.
 func editViewOf(stored app.App, form editForm, stale *staleView) editView {
-	v := editView{Action: "/apps/" + stored.ID + "/configure", Form: form, Stale: stale}
+	v := editView{Action: "/apps/" + stored.ID + "/configure", Form: form, Stale: stale, Many: len(form.Services) > 1}
 	for _, s := range form.Services {
 		sv := editServiceView{editService: s}
 		for _, svc := range stored.Services {
 			if svc.Name == s.Name {
-				sv.Kept = keptRows(svc, s)
+				sv.Also = alsoSet(svc, s)
 			}
 		}
 		v.Services = append(v.Services, sv)
@@ -250,72 +342,27 @@ func exportOf(appID string, deployments []store.DeploymentRecord) exportView {
 	return exportView{Note: "Nothing to export yet: the app has no healthy deployment."}
 }
 
-// secretsView is the Secrets section: each service's secret names, and the
-// one form that sets a secret. No value is ever in it (FR-016).
-type secretsView struct {
-	Services []secretService
-	Many     bool // more than one service: the form asks which
-	Form     secretForm
-}
-
-// secretService is one service's secret names, in their stored order.
-type secretService struct {
-	Name  string
-	Names []string
-}
-
-// secretForm is what the set form shows after a refusal: the service and
-// name typed (never the value), and what was wrong.
-type secretForm struct {
-	Service, Name         string
-	NameError, ValueError sentence
-	Notice                sentence
-}
-
-// secretsOf lays out the stored app's secret names for the Secrets section.
-func secretsOf(a app.App, form secretForm) secretsView {
-	v := secretsView{Many: len(a.Services) > 1, Form: form}
-	for _, svc := range a.Services {
-		s := secretService{Name: svc.Name}
-		for _, sec := range svc.Secrets {
-			s.Names = append(s.Names, sec.Name)
-		}
-		v.Services = append(v.Services, s)
-	}
-	return v
-}
-
-// appFacts lays out the app's own facts, above the form: what the form
-// doesn't edit and the owner may want to read.
-func appFacts(a app.App) defPanel {
-	rows := []defRow{{Label: "ID", Values: []string{a.ID}}}
-	if a.Name != "" {
-		rows = append(rows, defRow{Label: "Display name", Values: []string{a.Name}})
-	}
-	rows = append(rows, defRow{Label: "Source", Values: []string{string(a.Source.Kind)}})
-	return defPanelOf("App", rows)
-}
-
-// keptRows are the facts of a service the form can't change and a save keeps:
-// shown under its inputs so the owner sees what else the service is.
-// Environment values are in the form; secrets have their own section.
-func keptRows(svc app.Service, s editService) []defRow {
+// alsoSet lists the facts of a service the form can't change and a save keeps,
+// for the grid's "Also set" panel: the entrypoint, the command and its
+// arguments, the volumes (mount → name), the backup, and the ports and health
+// check port the form has no input for. Nothing when none is set.
+func alsoSet(svc app.Service, s editService) []defRow {
 	var rows []defRow
 	if len(svc.Entrypoint) > 0 {
-		rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
+		rows = append(rows, defRow{Label: "Entrypoint", Values: []string{strings.Join(svc.Entrypoint, " ")}})
 	}
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 	}
 	if len(svc.Args) > 0 {
-		rows = append(rows, defRow{Label: "Arguments", Values: svc.Args})
+		rows = append(rows, defRow{Label: "Arguments", Values: []string{strings.Join(svc.Args, " ")}})
 	}
 	if len(svc.Ports) > 0 && !s.ShowPort {
 		var ports []string
 		for _, p := range svc.Ports {
 			ports = append(ports, p.Name+" → "+strconv.Itoa(p.ContainerPort))
 		}
-		rows = append(rows, defRow{Label: "Ports", Values: ports, Note: "A service with several ports changes them through the API."})
+		rows = append(rows, defRow{Label: "Ports", Values: ports})
 	}
 	if svc.Health != nil && svc.Health.Port != "" {
 		rows = append(rows, defRow{Label: "Health check port", Values: []string{svc.Health.Port}})
@@ -323,17 +370,17 @@ func keptRows(svc app.Service, s editService) []defRow {
 	if len(svc.Volumes) > 0 {
 		var volumes []string
 		for _, v := range svc.Volumes {
-			text := v.Name + " → " + v.Path
+			text := v.Path + " → " + v.Name
 			if v.ReadOnly {
 				text += " (read-only)"
 			}
 			volumes = append(volumes, text)
 		}
-		rows = append(rows, defRow{Label: "Volumes", Values: volumes, Note: "Kept across deploys, erased with the app."})
+		rows = append(rows, defRow{Label: "Volumes", Values: volumes})
 	}
 	if b := svc.Backup; b != nil {
 		rows = append(rows, defRow{Label: "Backup", Values: []string{
-			fmt.Sprintf("%s, %s (UTC), keeping the last %d", b.Engine, b.ScheduleOrDefault(), b.KeepOrDefault())}})
+			fmt.Sprintf("%s, %s, keeping %d", b.Engine, scheduleText(b.ScheduleOrDefault()), b.KeepOrDefault())}})
 	}
 	return rows
 }
@@ -564,13 +611,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	edited := applyEdit(rec.App, form)
 	deployment, err := s.svc.DeployIf(ctx, edited, service.Condition{IfRevision: revision}, app.TriggerConsole)
 	if err == nil {
-		to := "/apps/" + id + "/deployments#deployment-" + deployment.Deployment.ID
-		if r.Header.Get("HX-Request") == "true" {
-			w.Header().Set("HX-Redirect", to)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.Redirect(w, r, to, http.StatusSeeOther)
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
 		return
 	}
 
@@ -602,22 +643,10 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	s.drawEdit(w, r, status, fresh.App, form, nil)
 }
 
-// drawEdit answers a refused save: the whole Configure tab, or, for an htmx
-// post, the form alone to swap in place.
+// drawEdit answers a refused save: the whole Configure tab, with what was typed
+// and the message at its input. The forms are plain posts, so a refusal is a page.
 func (s *server) drawEdit(w http.ResponseWriter, r *http.Request, status int, stored app.App, form editForm, stale *staleView) {
-	if r.Header.Get("HX-Request") != "true" {
-		s.configurePage(w, r, status, stored.ID, configureExtras{Form: &form, Stale: stale})
-		return
-	}
-	var buf bytes.Buffer
-	if err := s.pages["app"].ExecuteTemplate(&buf, "configure-form", editViewOf(stored, form, stale)); err != nil {
-		s.serverError(w, "render edit form", err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_, _ = w.Write(buf.Bytes())
+	s.configurePage(w, r, status, stored.ID, configureExtras{Form: &form, Stale: stale})
 }
 
 // refuseEdit says what a failed save looks like on the form: the message on
@@ -782,4 +811,51 @@ func (f *newAppForm) firstProblem() sentence {
 		}
 	}
 	return nil
+}
+
+// addRegistryPrereqs gives a service the "Needs a container registry" notice
+// when its image host has no credentials in Settings › Registries and the app's
+// last deploy failed on the image: the registry refused the credentials, or the
+// image wasn't found (the registry's own words name the host, so a failure of
+// another host's image doesn't point at this one). A read that fails leaves the
+// notice out: it is a hint, not a fact the page rests on.
+func (s *server) addRegistryPrereqs(ctx context.Context, tab *configureTab, sum service.AppSummary) {
+	last := sum.LastDeployment
+	if last == nil || (last.Status != store.StatusFailed && last.Status != store.StatusReverted) {
+		return
+	}
+	regs, err := s.svc.Registries(ctx)
+	if err != nil {
+		s.log.Error("read registries for the Configure tab", "app", sum.App.ID, "error", err)
+		return
+	}
+	have := map[string]bool{}
+	for _, r := range regs {
+		have[r.Host] = true
+	}
+	for i := range tab.Edit.Services {
+		for _, svc := range sum.App.Services {
+			if svc.Name == tab.Edit.Services[i].Name {
+				tab.Edit.Services[i].Prereq = registryPrereqFor(svc.Image, have, last.Error)
+			}
+		}
+	}
+}
+
+// registryPrereqFor is the notice for an image, or nil when there is no reason
+// to show it: the host has credentials, or the failure wasn't about the image
+// of that host.
+func registryPrereqFor(image string, have map[string]bool, deployError string) *registryPrereq {
+	ref, err := registry.Parse(image)
+	if err != nil || have[ref.Registry] {
+		return nil
+	}
+	msg := strings.ToLower(deployError)
+	if !strings.Contains(msg, ref.Registry) || !(registryRefused(deployError) || strings.Contains(msg, "image not found")) {
+		return nil
+	}
+	return &registryPrereq{
+		Reason: sentence{plain("The last deploy couldn't pull "), mono(image), plain(". If the image is private, add credentials for "), mono(ref.Registry), plain(" and deploy again.")},
+		Href:   registriesHref,
+	}
 }

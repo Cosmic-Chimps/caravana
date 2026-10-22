@@ -162,7 +162,7 @@
   /* Even lines, so a sentence doesn't leave one word (or half of "15-minute") alone. */
   .cv-notice > span:last-child, .cv-error > span:last-child { text-wrap: balance; }
   /* A field's error: below it, the failed mark first, a sentence about what is wrong. */
-  .cv-error { display: flex; gap: 8px; align-items: baseline; margin-top: 6px; font-size: 13px; line-height: 1.45; color: var(--color-failed); }
+  .cv-error { display: flex; gap: 8px; align-items: baseline; margin-top: 6px; font-size: 13px; line-height: 1.4; color: var(--color-failed); }
 
   /* Buttons: the design's heights, corners and states. */
   .cv-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; white-space: nowrap; font: 500 14px/1 var(--font-sans); transition: background-color 120ms var(--ease-cv), border-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
@@ -176,11 +176,14 @@
   .cv-btn-danger:hover { background: var(--color-danger-press); border-color: var(--color-failed); }
   .cv-btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
 
-  /* Field: raised control, mono values, the label above it. */
-  .cv-field { display: block; width: 100%; height: 36px; padding: 0 12px; background: var(--color-ink-1); border: 1px solid var(--color-line-2); border-radius: 4px; color: var(--color-fg-1); font: 400 14px/1 var(--font-mono); transition: border-color 120ms var(--ease-cv); }
+  /* Field (the handoff's Input md): raised control, 32px, sans values; a name, a path or a number
+     adds .cv-field-mono (12.5px). The label above it is .cv-label. The sign-in's field is 42px. */
+  .cv-field { display: block; width: 100%; height: 32px; padding: 0 12px; background: var(--color-ink-2); border: 1px solid var(--color-line-2); border-radius: 4px; color: var(--color-fg-1); font: 400 13px/1 var(--font-sans); transition: border-color 120ms var(--ease-cv); }
+  .cv-field-mono { font: 400 12.5px/1 var(--font-mono); }
+  .cv-field::placeholder, .cv-field-input::placeholder { color: var(--color-fg-4); opacity: 1; }
   .cv-field:hover { border-color: var(--color-line-3); }
   .cv-field:focus { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
-  .cv-field-lg { height: 42px; }
+  .cv-field-lg { height: 42px; background: var(--color-ink-1); font: 400 14px/1 var(--font-mono); }
   /* A multi-line field (a secret's value): grows with its content, the same mono readout. */
   .cv-field-area { height: auto; min-height: 72px; padding: 8px 12px; line-height: 1.45; resize: vertical; }
   .cv-field[aria-invalid="true"] { border-color: var(--color-failed-line); }

@@ -39,12 +39,6 @@ func TestApplyEditOneField(t *testing.T) {
 		change             func(a *app.App) // what the stored app becomes
 	}{
 		{"image", "web.image", "ghcr.io/acme/shop:2", func(a *app.App) { a.Services[0].Image = "ghcr.io/acme/shop:2" }},
-		{"env", "web.env", "ONLY=this", func(a *app.App) { a.Services[0].Env = []app.EnvVar{{Name: "ONLY", Value: "this"}} }},
-		{"env emptied", "web.env", "", func(a *app.App) { a.Services[0].Env = nil }},
-		{"domains", "web.domains", "one.example.com\ntwo.example.com\nthree.example.com", func(a *app.App) {
-			a.Services[0].Domains = []app.Domain{{Host: "one.example.com", Port: "http"}, {Host: "two.example.com", Port: "http"}, {Host: "three.example.com", Port: "http"}}
-		}},
-		{"domains emptied", "web.domains", "", func(a *app.App) { a.Services[0].Domains = nil }},
 		{"port", "db.port", "5433", func(a *app.App) { a.Services[1].Ports[0].ContainerPort = 5433 }},
 		{"copies", "web.copies", "4", func(a *app.App) { a.Services[0].Replicas = new(4) }},
 		{"copies default", "web.copies", "", func(a *app.App) { a.Services[0].Replicas = nil }},
@@ -81,7 +75,6 @@ func TestApplyEditKeepsWhatTheFormDoesNotShow(t *testing.T) {
 	post := postOf(formOf(stored, "r"))
 	for _, svc := range stored.Services {
 		post.Set(inputName(svc.Name, "image"), "other/image:9")
-		post.Set(inputName(svc.Name, "env"), "X=1")
 		post.Set(inputName(svc.Name, "copies"), "1")
 		post.Set(inputName(svc.Name, "cpu"), "999")
 		post.Set(inputName(svc.Name, "memory"), "999")
@@ -100,6 +93,7 @@ func TestApplyEditKeepsWhatTheFormDoesNotShow(t *testing.T) {
 	for i, want := range stored.Services {
 		svc := got.Services[i]
 		if svc.Name != want.Name || svc.Command != want.Command || !reflect.DeepEqual(svc.Args, want.Args) ||
+			!reflect.DeepEqual(svc.Env, want.Env) || !reflect.DeepEqual(svc.Domains, want.Domains) ||
 			!reflect.DeepEqual(svc.Entrypoint, want.Entrypoint) ||
 			!reflect.DeepEqual(svc.Secrets, want.Secrets) || !reflect.DeepEqual(svc.Volumes, want.Volumes) ||
 			!reflect.DeepEqual(svc.Backup, want.Backup) {
@@ -125,25 +119,26 @@ func TestApplyEditKeepsWhatTheFormDoesNotShow(t *testing.T) {
 	}
 }
 
-// New domains go on the port the service's domains already use, else on its
-// only port.
-func TestApplyEditDomainPort(t *testing.T) {
-	a := richApp()
-	a.Services[0].Domains = []app.Domain{{Host: "old.example.com", Port: "metrics"}}
-	a.Services[1].Domains = nil
-	post := postOf(formOf(a, "r"))
+// Environment variables and domains have their own pages: saving the Configure form, whatever it
+// carries, leaves them as stored, even when a post names them (an old form, a hand-made one).
+func TestApplyEditLeavesEnvAndDomains(t *testing.T) {
+	stored := richApp()
+	post := postOf(formOf(stored, "r"))
+	post.Set(inputName("web", "env"), "ONLY=this")
 	post.Set(inputName("web", "domains"), "new.example.com")
-	post.Set(inputName("db", "domains"), "db.example.com")
-	f, ok := parseEditForm(post, a)
+	post.Set(inputName("web", "memory"), "512")
+	f, ok := parseEditForm(post, stored)
 	if !ok {
 		t.Fatalf("parse failed: %+v", f)
 	}
-	got := applyEdit(a, f)
-	if want := []app.Domain{{Host: "new.example.com", Port: "metrics"}}; !reflect.DeepEqual(got.Services[0].Domains, want) {
-		t.Errorf("web domains = %+v, want %+v", got.Services[0].Domains, want)
+	got := applyEdit(stored, f)
+	web := got.Services[0]
+	if !reflect.DeepEqual(web.Env, stored.Services[0].Env) || !reflect.DeepEqual(web.Domains, stored.Services[0].Domains) ||
+		!reflect.DeepEqual(web.Secrets, stored.Services[0].Secrets) {
+		t.Errorf("web lost its env, domains or secrets: %+v", web)
 	}
-	if want := []app.Domain{{Host: "db.example.com", Port: "pg"}}; !reflect.DeepEqual(got.Services[1].Domains, want) {
-		t.Errorf("db domains = %+v, want %+v", got.Services[1].Domains, want)
+	if web.Resources.MemoryMB != 512 {
+		t.Errorf("web memory = %d, want the edit's 512", web.Resources.MemoryMB)
 	}
 }
 
@@ -154,12 +149,8 @@ func TestFieldFor(t *testing.T) {
 		want string // "" for no input
 	}{
 		{"services[0].image", "svc.web.image"},
-		{"services[0].env[1].name", "svc.web.env"},
-		{"services[2].env[0].name", "svc.worker.env"},
 		{"services[1].ports[0].containerPort", "svc.db.port"},
 		{"services[1].ports[0].name", "svc.db.port"},
-		{"services[0].domains[1].host", "svc.web.domains"},
-		{"services[0].domains[0].port", "svc.web.domains"},
 		{"services[0].replicas", "svc.web.copies"},
 		{"services[0].health", "svc.web.healthPath"},
 		{"services[0].health.path", "svc.web.healthPath"},
@@ -174,6 +165,8 @@ func TestFieldFor(t *testing.T) {
 		{"services[0].health.port", ""},
 		{"services[2].health.path", ""}, // worker has no ports
 		{"services[2].domains[0].host", ""},
+		{"services[0].env[1].name", ""},     // the Variables page has these
+		{"services[0].domains[1].host", ""}, // and the Domains page these
 		{"services[0].volumes[0].path", ""},
 		{"services[0].secrets[0].name", ""},
 		{"services[1].backup.keep", ""},

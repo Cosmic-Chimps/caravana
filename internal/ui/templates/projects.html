@@ -39,15 +39,15 @@
   </header>
   <form method="post" action="/projects" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
     {{with .New.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
-    <label class="flex flex-col gap-2" for="name">
+    <label class="cv-fld" for="name">
       <span class="cv-label">Name</span>
-      <input class="cv-field" id="name" type="text" name="name" value="{{.New.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .New.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .New.Name.Alert}} autofocus{{end}}>
+      <input class="cv-field cv-field-mono" id="name" type="text" name="name" value="{{.New.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .New.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .New.Name.Alert}} autofocus{{end}}>
       <span class="cv-data-muted cv-hint">Lowercase letters, digits and single dashes; part of each app's address in Caravana.</span>
       {{template "field-error" .New.Name}}
     </label>
-    <label class="flex flex-col gap-2" for="displayName">
+    <label class="cv-fld" for="displayName">
       <span class="cv-label">Display name</span>
-      <input class="cv-field" id="displayName" type="text" name="displayName" value="{{.New.DisplayName.Value}}" autocomplete="off" maxlength="100"{{if .New.DisplayName.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .New.DisplayName.Alert}} autofocus{{end}}>
+      <input class="cv-field cv-field-mono" id="displayName" type="text" name="displayName" value="{{.New.DisplayName.Value}}" autocomplete="off" maxlength="100"{{if .New.DisplayName.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .New.DisplayName.Alert}} autofocus{{end}}>
       <span class="cv-data-muted cv-hint">Optional. What the console calls the project; the name is used when this is empty.</span>
       {{template "field-error" .New.DisplayName}}
     </label>
@@ -67,9 +67,9 @@
   <section aria-labelledby="display-title" class="flex flex-col gap-2">
     <h2 id="display-title" class="cv-label">Display name</h2>
     <form method="post" action="/projects/{{.ID}}" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
-      <label class="flex flex-col gap-2" for="displayName">
+      <label class="cv-fld" for="displayName">
         <span class="cv-label">Display name</span>
-        <input class="cv-field" id="displayName" type="text" name="displayName" value="{{.Name.Value}}" autocomplete="off" maxlength="100" required{{if .Name.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .Name.Alert}} autofocus{{end}}>
+        <input class="cv-field cv-field-mono" id="displayName" type="text" name="displayName" value="{{.Name.Value}}" autocomplete="off" maxlength="100" required{{if .Name.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .Name.Alert}} autofocus{{end}}>
         <span class="cv-data-muted cv-hint">The project's name, <span class="cv-inline-mono">{{.ID}}</span>, can't change: it is part of each app's address.</span>
         {{template "field-error" .Name}}
       </label>
@@ -102,9 +102,9 @@
   <section aria-labelledby="add-env-title" class="flex flex-col gap-2">
     <h2 id="add-env-title" class="cv-label">Add environment</h2>
     <form method="post" action="/projects/{{.ID}}/environments" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
-      <label class="flex flex-col gap-2" for="environment">
+      <label class="cv-fld" for="environment">
         <span class="cv-label">Name</span>
-        <input class="cv-field" id="environment" type="text" name="environment" value="{{.AddEnv.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .AddEnv.Error}} aria-invalid="true" aria-describedby="environment-error"{{end}}{{if .AddEnv.Alert}} autofocus{{end}}>
+        <input class="cv-field cv-field-mono" id="environment" type="text" name="environment" value="{{.AddEnv.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .AddEnv.Error}} aria-invalid="true" aria-describedby="environment-error"{{end}}{{if .AddEnv.Alert}} autofocus{{end}}>
         <span class="cv-data-muted cv-hint">Such as staging. Lowercase letters, digits and single dashes; part of each app's address in Caravana.</span>
         {{template "field-error" .AddEnv}}
       </label>
@@ -123,9 +123,9 @@
           {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
           {{with .Apps}}<ul class="cv-env-apps">{{range .}}<li><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></li>{{end}}</ul>{{end}}
           <p>This deletes the project and its environments. It has to be empty first: no app is deleted for you.</p>
-          <label class="flex flex-col gap-2" for="delete-confirm">
+          <label class="cv-fld" for="delete-confirm">
             <span class="cv-label">Type <span class="cv-inline-mono">{{.ID}}</span> to confirm</span>
-            <input class="cv-field" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+            <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" data-confirm-name="{{.ID}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
             {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
           </label>
           <div><button type="submit" class="cv-btn cv-btn-danger">Delete {{.ID}}</button></div>

@@ -16,6 +16,18 @@
 {{/* field-error: the message under an input, announced when it is the form's first. Takes a formField. */}}
 {{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}
 
+{{/* field: one input of the Configure grid with its label above, an optional prefix or suffix inside
+     (GET, MB), a hint and an error below. Takes a fieldView. */}}
+{{define "field"}}
+<label class="cv-fld" for="{{.Field.ID}}">
+  <span class="cv-label">{{.Label}}</span>
+  {{if or .Prefix .Suffix}}<span class="cv-field cv-field-box cv-field-mono">{{with .Prefix}}<span class="cv-affix cv-affix-pre">{{.}}</span>{{end}}<input class="cv-field-input" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="{{.InputName}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{with .Suffix}}<span class="cv-affix cv-affix-suf">{{.}}</span>{{end}}</span>
+  {{else}}<input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="{{.InputName}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{end}}
+  {{with .Hint}}<span class="cv-hint">{{.}}</span>{{end}}
+  {{template "field-error" .Field}}
+</label>
+{{end}}
+
 {{/* time: a relative phrase ("5 minutes ago") with the exact time on hover. Takes a when. */}}
 {{define "time"}}<time class="cv-data"{{with .ISO}} datetime="{{.}}"{{end}}{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}
 
@@ -32,7 +44,7 @@
      Default's production exists. Takes a placeChoice. */}}
 {{define "place-select"}}
 {{if .Visible}}
-<label class="flex flex-col gap-2" for="place">
+<label class="cv-fld" for="place">
   <span class="cv-label">Project and environment</span>
   <select class="cv-field cv-select" id="place" name="place"{{if .Error}} aria-invalid="true" aria-describedby="place-error"{{end}}>
     {{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}

@@ -17,6 +17,10 @@ import (
 // travels in a hidden input and comes back as the deploy's condition.
 // Notice is an error that isn't about one field, Focus names the input that
 // gets the cursor: the first one with an error.
+//
+// The form is Copies & size and Shipping (feature 021). A service's environment
+// and domains are not in it: they have their own pages (Variables & secrets,
+// Domains), so saving this form leaves them as stored.
 type editForm struct {
 	Revision string
 	Services []editService
@@ -28,15 +32,15 @@ type editForm struct {
 // typed (for drawing the form again); Edit holds the same values as the
 // model wants them, set only when the text parsed. The Show flags say which
 // inputs the service has: a service with several ports has no port input (the
-// form can't tell which one to change), and one without ports has no
-// domains and no health check.
+// form can't tell which one to change), and one without ports has no health
+// check.
 type editService struct {
 	Name string
 	Edit serviceEdit
 
-	ShowPort, ShowDomains, ShowHealth bool
+	ShowPort, ShowHealth bool
 
-	Image, Env, Port, Domains, Copies         formField
+	Image, Port, Copies                       formField
 	HealthPath, HealthInterval, HealthTimeout formField
 	CPU, Memory, MemoryMax                    formField
 }
@@ -46,11 +50,9 @@ type editService struct {
 // everything else of the service stays as stored.
 type serviceEdit struct {
 	Image          string
-	Env            []app.EnvVar // nil when there are none
-	Port           int          // only meaningful when ShowPort
-	Domains        []string     // hosts; only meaningful when ShowDomains
-	Replicas       *int         // nil: the default, one copy
-	HealthPath     string       // empty: a TCP check
+	Port           int    // only meaningful when ShowPort
+	Replicas       *int   // nil: the default, one copy
+	HealthPath     string // empty: a TCP check
 	HealthInterval time.Duration
 	HealthTimeout  time.Duration
 	CPUMHz         int // zero: the default
@@ -77,44 +79,39 @@ func (s *editService) fields() []struct {
 		Name  string
 		Field *formField
 	}{
-		{"image", &s.Image}, {"env", &s.Env}, {"port", &s.Port}, {"domains", &s.Domains},
-		{"copies", &s.Copies}, {"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval},
-		{"healthTimeout", &s.HealthTimeout}, {"cpu", &s.CPU}, {"memory", &s.Memory}, {"memoryMax", &s.MemoryMax},
+		{"copies", &s.Copies}, {"cpu", &s.CPU}, {"memory", &s.Memory}, {"memoryMax", &s.MemoryMax},
+		{"image", &s.Image}, {"port", &s.Port},
+		{"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval}, {"healthTimeout", &s.HealthTimeout},
 	}
 }
 
-// inputSpec is how one input is drawn: its label above, a hint below, the
-// placeholder that says what an empty value means, and its shape. The specs
-// are in the order the inputs show.
+// inputSpec is how one input is drawn: its label above, a prefix or suffix
+// inside it ("GET", "MB"), a hint below, the placeholder that says what an empty
+// value means, and its shape. All of them are mono, as the handoff has them.
 type inputSpec struct {
 	Name        string // the field part of the posted name
 	Label       string
+	Prefix      string
+	Suffix      string
 	Hint        string
 	Placeholder string
-	Area        bool // a textarea
+	Area        bool // a textarea (the Compose form's)
 	Wide        bool // takes the whole row
 	Numeric     bool // a number: phones show their number pad
 }
 
+// inputSpecs are the inputs of the form, by name (Label is also what the stale
+// panel calls the field).
 var inputSpecs = []inputSpec{
-	{Name: "image", Label: "Image", Wide: true},
-	{Name: "env", Label: "Environment", Area: true, Wide: true,
-		Hint: "One NAME=value per line. Lines starting with # are ignored. This list replaces the current one. Values show here; put passwords and keys in Secrets."},
-	{Name: "port", Numeric: true, Label: "Container port"},
-	{Name: "domains", Label: "Domains", Area: true, Wide: true, Hint: "One host per line. HTTPS is set up for each."},
 	{Name: "copies", Numeric: true, Label: "Copies", Placeholder: "1"},
-	{Name: "healthPath", Label: "Health check", Placeholder: "TCP", Hint: "A path such as /healthz. Empty checks the TCP port."},
-	{Name: "healthInterval", Numeric: true, Label: "Check every (seconds)", Placeholder: "10"},
-	{Name: "healthTimeout", Numeric: true, Label: "Check timeout (seconds)", Placeholder: "2"},
-	{Name: "cpu", Numeric: true, Label: "CPU (MHz)", Placeholder: "default"},
-	{Name: "memory", Numeric: true, Label: "Memory reserved (MB)", Placeholder: "default"},
-	{Name: "memoryMax", Numeric: true, Label: "Memory ceiling (MB)", Placeholder: "default"},
-}
-
-// editInput is one input of a service as the page draws it.
-type editInput struct {
-	inputSpec
-	Field *formField
+	{Name: "cpu", Numeric: true, Label: "CPU", Suffix: "MHz", Placeholder: "default"},
+	{Name: "memory", Numeric: true, Label: "Memory", Suffix: "MB", Placeholder: "default"},
+	{Name: "memoryMax", Numeric: true, Label: "Ceiling", Suffix: "MB", Placeholder: "default"},
+	{Name: "image", Label: "Image", Wide: true},
+	{Name: "port", Numeric: true, Label: "Container port"},
+	{Name: "healthPath", Label: "Health check", Prefix: "GET", Placeholder: "TCP port", Hint: "Empty checks the TCP port."},
+	{Name: "healthInterval", Numeric: true, Label: "Every", Suffix: "s", Placeholder: "10"},
+	{Name: "healthTimeout", Numeric: true, Label: "Timeout", Suffix: "s", Placeholder: "2"},
 }
 
 // shows reports whether the service has this input: see the Show flags.
@@ -122,37 +119,52 @@ func (s editService) shows(field string) bool {
 	switch field {
 	case "port":
 		return s.ShowPort
-	case "domains":
-		return s.ShowDomains
 	case "healthPath", "healthInterval", "healthTimeout":
 		return s.ShowHealth
 	}
 	return true
 }
 
-// Inputs lists the inputs the service has, in the order they show.
-func (s editService) Inputs() []editInput {
-	byName := map[string]*formField{}
+// editInput is one input of the Compose form's overlay as its page draws it.
+type editInput struct {
+	inputSpec
+	Field *formField
+}
+
+// fieldView is one input as the "field" template draws it: the spec and the text
+// as typed, with its error.
+type fieldView struct {
+	inputSpec
+	Field   *formField
+	Service string
+}
+
+// F returns the named input of the service, ready to draw: the "field" template
+// takes it ({{template "field" (.F "copies")}}).
+func (s editService) F(name string) fieldView {
 	for _, in := range s.fields() {
-		byName[in.Name] = in.Field
-	}
-	var out []editInput
-	for _, spec := range inputSpecs {
-		if s.shows(spec.Name) {
-			out = append(out, editInput{inputSpec: spec, Field: byName[spec.Name]})
+		if in.Name != name {
+			continue
+		}
+		for _, spec := range inputSpecs {
+			if spec.Name == name {
+				return fieldView{inputSpec: spec, Field: in.Field, Service: s.Name}
+			}
 		}
 	}
-	return out
+	return fieldView{}
 }
+
+// InputName is the name the input has in the posted form.
+func (f fieldView) InputName() string { return inputName(f.Service, f.Name) }
 
 // newEditService makes a service's section with its IDs set and its Show
 // flags worked out from the stored service.
 func newEditService(svc app.Service) editService {
 	s := editService{
-		Name:        svc.Name,
-		ShowPort:    len(svc.Ports) == 1,
-		ShowDomains: len(svc.Ports) > 0,
-		ShowHealth:  len(svc.Ports) > 0,
+		Name:       svc.Name,
+		ShowPort:   len(svc.Ports) == 1,
+		ShowHealth: len(svc.Ports) > 0,
 	}
 	for _, in := range s.fields() {
 		in.Field.ID = inputID(svc.Name, in.Name)
@@ -207,7 +219,7 @@ func (f *editForm) markFirstError() {
 
 // domainPort is the port name the service's domains go to: the one its
 // domains already use, else its only port. ok is false when the service has
-// several ports and no domain yet, so the form can't know which port a new
+// several ports and no domain yet, so a page can't know which port a new
 // domain is for.
 func domainPort(svc app.Service) (name string, ok bool) {
 	switch {
@@ -227,16 +239,8 @@ func formOf(stored app.App, revision string) editForm {
 		s := newEditService(svc)
 		e := &s.Edit
 		e.Image = svc.Image
-		if len(svc.Env) > 0 {
-			e.Env = append([]app.EnvVar(nil), svc.Env...)
-		}
 		if s.ShowPort {
 			e.Port = svc.Ports[0].ContainerPort
-		}
-		if s.ShowDomains {
-			for _, d := range svc.Domains {
-				e.Domains = append(e.Domains, d.Host)
-			}
 		}
 		if svc.Replicas != nil {
 			e.Replicas = new(*svc.Replicas)
@@ -247,11 +251,9 @@ func formOf(stored app.App, revision string) editForm {
 		e.CPUMHz, e.MemoryMB, e.MemoryMaxMB = svc.Resources.CPUMHz, svc.Resources.MemoryMB, svc.Resources.MemoryMaxMB
 
 		s.Image.Value = e.Image
-		s.Env.Value = envText(e.Env)
 		if s.ShowPort {
 			s.Port.Value = strconv.Itoa(e.Port)
 		}
-		s.Domains.Value = strings.Join(e.Domains, "\n")
 		if e.Replicas != nil {
 			s.Copies.Value = strconv.Itoa(*e.Replicas)
 		}
@@ -263,9 +265,9 @@ func formOf(stored app.App, revision string) editForm {
 	return f
 }
 
-// envText writes variables as the Environment textarea has them: one
-// NAME=value per line. A value with a line break can't be written this way;
-// it comes back as a line without "=" and is refused, never changed silently.
+// envText writes variables as the .env editor has them: one NAME=value per
+// line. A value with a line break can't be written this way; it comes back as a
+// line without "=" and is refused, never changed silently.
 func envText(env []app.EnvVar) string {
 	lines := make([]string, len(env))
 	for i, v := range env {
@@ -295,8 +297,8 @@ func secondsText(d time.Duration) string {
 // parseEditForm reads the posted form for the stored app's services. It
 // always returns the form with every value as typed; ok is false when some
 // input has an error, which sits on that input. A service the post says
-// nothing about (its image input is absent: a form drawn before the service
-// was added) is taken as stored, never as emptied.
+// nothing about (its image input is absent: another service's form, or a form
+// drawn before the service was added) is taken as stored, never as emptied.
 func parseEditForm(post url.Values, stored app.App) (editForm, bool) {
 	f := formOf(stored, strings.TrimSpace(post.Get("revision")))
 	ok := true
@@ -305,7 +307,7 @@ func parseEditForm(post url.Values, stored app.App) (editForm, bool) {
 		if !post.Has(inputName(svc.Name, "image")) {
 			continue
 		}
-		if !s.parse(post, svc) {
+		if !s.parse(post) {
 			ok = false
 		}
 	}
@@ -314,16 +316,12 @@ func parseEditForm(post url.Values, stored app.App) (editForm, bool) {
 
 // parse reads one service's inputs from the post, setting Edit and any
 // errors, and reports whether every input was good.
-func (s *editService) parse(post url.Values, svc app.Service) bool {
+func (s *editService) parse(post url.Values) bool {
 	ok := true
 	refuse := func(field *formField, text string) {
 		field.Error, ok = sentence{plain(text)}, false
 	}
 	text := func(name string) string { return strings.TrimSpace(post.Get(inputName(s.Name, name))) }
-	// lines is a textarea's value with the browser's CRLF line breaks as LF.
-	lines := func(name string) string {
-		return strings.ReplaceAll(post.Get(inputName(s.Name, name)), "\r\n", "\n")
-	}
 	// whole parses an optional whole number from min up; empty is zero.
 	whole := func(field *formField, min int, what string) int {
 		field.Value = strings.TrimSpace(field.Value)
@@ -359,31 +357,12 @@ func (s *editService) parse(post url.Values, svc app.Service) bool {
 	}
 	e.Image = s.Image.Value
 
-	s.Env.Value = lines("env")
-	env, problem := parseEnv(s.Env.Value)
-	if problem != "" {
-		refuse(&s.Env, problem)
-	}
-	e.Env = env
-
 	if s.ShowPort {
 		s.Port.Value = text("port")
 		if n, err := strconv.Atoi(s.Port.Value); err != nil || n < 1 || n > 65535 {
 			refuse(&s.Port, "Enter a number from 1 to 65535.")
 		} else {
 			e.Port = n
-		}
-	}
-
-	if s.ShowDomains {
-		s.Domains.Value = lines("domains")
-		for _, host := range strings.Split(s.Domains.Value, "\n") {
-			if host = strings.TrimSpace(host); host != "" {
-				e.Domains = append(e.Domains, host)
-			}
-		}
-		if _, hasPort := domainPort(svc); len(e.Domains) > 0 && !hasPort {
-			refuse(&s.Domains, "This service has several ports, and the form can't tell which one a new domain is for. Add the first domain with the API.")
 		}
 	}
 
@@ -407,11 +386,11 @@ func (s *editService) parse(post url.Values, svc app.Service) bool {
 	return ok
 }
 
-// parseEnv reads the Environment textarea: one NAME=value per line, the value
-// being everything after the first "=". Blank lines and lines starting with
-// "#" are skipped. A line without "=", or with no name, is a problem: a
-// sentence naming its line number (counting every line, so it matches the
-// textarea). problem is empty when every line is good.
+// parseEnv reads the .env editor: one NAME=value per line, the value being
+// everything after the first "=". Blank lines and lines starting with "#" are
+// skipped. A line without "=", or with no name, is a problem: a sentence naming
+// its line number (counting every line, so it matches the textarea). problem is
+// empty when every line is good.
 func parseEnv(text string) (env []app.EnvVar, problem string) {
 	for i, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)

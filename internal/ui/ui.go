@@ -72,6 +72,11 @@ type server struct {
 	newApp bool
 	// tabs are the app page's tabs built so far, in order (see app.go).
 	tabs []tabSpec
+	// hostIP finds the address the console's host answers on, for the Domains
+	// page's DNS record (see domains.go); tests give it their own lookup.
+	hostIP *hostIP
+	// publicURL is the console's own address (CARAVANA_PUBLIC_URL); tests give it their own.
+	publicURL func() string
 	// deployPage is how many deployments the Deployments tab shows before
 	// "Show older"; tests make it small.
 	deployPage int
@@ -97,7 +102,8 @@ func New(d Deps) (http.Handler, error) {
 // parsed templates. Tests use it to reach the server itself.
 func newServer(d Deps) (*server, error) {
 	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, version: d.Version, proxies: d.Proxies, log: d.Log, now: d.Now,
-		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
+		csrf: http.NewCrossOriginProtection(), hostIP: newHostIP(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
+	s.publicURL = func() string { return d.Service.PublicURL() }
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -167,10 +173,16 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/webhook", s.protected(s.requireSession(s.createWebhook))},
 		{"POST", "/apps/{id}/webhook/revoke", s.protected(s.requireSession(s.revokeWebhook))},
 		{"POST", "/apps/{id}/deploy-token", s.protected(s.requireSession(s.createDeployToken))},
+		{"GET", "/apps/{id}/variables", s.requireSession(s.showVariables)},
+		{"POST", "/apps/{id}/variables", s.protected(s.requireSession(s.setVariable))},
+		{"POST", "/apps/{id}/variables/env", s.protected(s.requireSession(s.saveEnvText))},
+		{"GET", "/apps/{id}/domains", s.requireSession(s.showDomains)},
+		{"POST", "/apps/{id}/domains", s.protected(s.requireSession(s.addDomain))},
+		{"POST", "/apps/{id}/domains/remove", s.protected(s.requireSession(s.removeDomain))},
 		{"GET", "/apps/{id}/backups", s.requireSession(s.showBackups)},
 		{"POST", "/apps/{id}/backups", s.protected(s.requireSession(s.backUpNow))},
+		{"POST", "/apps/{id}/backups/policy", s.protected(s.requireSession(s.setBackupPolicy))},
 		{"POST", "/apps/{id}/backups/{backupId}/restore", s.protected(s.requireSession(s.restoreBackup))},
-		{"POST", "/apps/{id}/secrets", s.protected(s.requireSession(s.setSecret))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/apps/{id}/stop", s.requireSession(s.showStop)},
@@ -277,7 +289,7 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor}).ParseFS(templatesFS,
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS,
 			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)

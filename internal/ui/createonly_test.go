@@ -240,12 +240,12 @@ func TestConfigureDefinesAnAppWithNoDefinition(t *testing.T) {
 			}
 		}
 		got := text(body)
-		for _, want := range []string{"Define the app", "Deploy from Compose", "A secret belongs to a service", "refused until the app has a definition"} {
+		for _, want := range []string{"Define the app", "Deploy from Compose", "refused until the app has a definition"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the tab lacks %q: %s", want, got)
 			}
 		}
-		if strings.Contains(body, `action="/apps/shop/secrets"`) || strings.Contains(body, `action="/apps/shop/configure"`) {
+		if strings.Contains(body, `action="/apps/shop/variables"`) || strings.Contains(body, `id="secrets-title"`) || strings.Contains(body, `action="/apps/shop/configure"`) {
 			t.Error("the tab offers the secret or the per-service edit form for an app with no services")
 		}
 		if !strings.Contains(got, "It was never deployed, so nothing is running.") {

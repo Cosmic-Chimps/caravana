@@ -298,29 +298,35 @@ func (c *console) deployChanged(t *testing.T) {
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
 }
 
-// secrets: setting a secret from Configure is a deploy that ends healthy with
-// the value in Nomad Variables and only the name on the page; removing it is
-// another deploy, and the variable is gone (feature 008).
+// secrets: setting a secret from the Variables & secrets page (feature 021; it
+// was Configure's before) is a deploy that ends healthy with the value in Nomad
+// Variables and only the name on the page; removing it is another deploy, and
+// the variable is gone (feature 008).
 func (c *console) secrets(t *testing.T) {
 	value := "console " + c.g.run
 	path := "nomad/jobs/whoami/whoami"
 	change := func(route string, form url.Values) {
 		t.Helper()
 		c.prev = c.summary(t).LastDeployment.ID
+		// Both forms carry the revision of the page they were drawn on.
+		_, page := c.get(t, "/apps/whoami/variables")
+		form.Set("revision", formValuesAction(t, page, "/apps/whoami/variables").Get("revision"))
 		resp, body := c.post(t, route, form)
-		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/apps/whoami/deployments" {
+		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/apps/whoami/deployments#deployment-") {
 			t.Fatalf("POST %s = %d → %q: %s", route, resp.StatusCode, resp.Header.Get("Location"), body)
 		}
 		c.waitDeployment(t, 3*time.Minute, c.prev)
 	}
 
-	change("/apps/whoami/secrets", url.Values{"service": {"whoami"}, "name": {"CONSOLE_SECRET"}, "value": {value}})
+	change("/apps/whoami/variables", url.Values{"service": {"whoami"}, "name": {"CONSOLE_SECRET"}, "value": {value}, "secret": {"1"}})
 	v, _, err := c.g.target.Nomad.Variables().Read(path, nil)
 	if err != nil || v.Items["CONSOLE_SECRET"] != value {
 		t.Fatalf("Nomad variable %s = %v, %v; want CONSOLE_SECRET set", path, v, err)
 	}
-	if _, body := c.get(t, "/apps/whoami/configure"); !strings.Contains(body, "CONSOLE_SECRET") || strings.Contains(body, value) {
-		t.Errorf("Configure should list CONSOLE_SECRET and never its value")
+	for _, page := range []string{"/apps/whoami/configure", "/apps/whoami/variables"} {
+		if _, body := c.get(t, page); !strings.Contains(body, "CONSOLE_SECRET") || strings.Contains(body, value) {
+			t.Errorf("%s should list CONSOLE_SECRET and never its value", page)
+		}
 	}
 
 	change("/apps/whoami/secrets/remove", url.Values{"service": {"whoami"}, "name": {"CONSOLE_SECRET"}})
@@ -329,12 +335,14 @@ func (c *console) secrets(t *testing.T) {
 	}
 }
 
-// edit: the Configure form (feature 014) changes the environment and the
-// memory of whoami in one save: one deployment that ends healthy, Nomad's job
-// has the new env and memory, and the stored app kept what the form doesn't
-// touch. A second post from the same form, now stale, is refused with 409 and
-// registers nothing. (Volumes and backup are kept by the same merge; a volume
-// needs a host volume plugin, which the unit tests cover.)
+// edit: the Configure form (feature 014) changes the memory of whoami in one
+// save and the .env editor of the Variables page (feature 021) its environment
+// in another: each is one deployment that ends healthy, Nomad's job has the new
+// env and memory, and the stored app kept what the form doesn't touch (saving
+// Configure leaves the env, as the .env editor leaves the memory). A post from
+// the Configure form drawn before, now stale, is refused with 409 and registers
+// nothing. (Volumes and backup are kept by the same merge; a volume needs a host
+// volume plugin, which the unit tests cover.)
 func (c *console) edit(t *testing.T) {
 	value := "edit " + c.g.run
 	_, page := c.get(t, "/apps/whoami/configure")
@@ -347,13 +355,26 @@ func (c *console) edit(t *testing.T) {
 		stale[k] = v
 	}
 
-	form.Set("svc.whoami.env", "CONSOLE_EDIT="+value)
 	form.Set("svc.whoami.memory", "200")
 	form.Set("svc.whoami.memoryMax", "300")
 	c.prev = c.summary(t).LastDeployment.ID
 	resp, body := c.post(t, "/apps/whoami/configure", form)
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/apps/whoami/deployments#deployment-") {
 		t.Fatalf("POST /apps/whoami/configure = %d → %q, want 303 to the new deployment: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+	c.waitDeployment(t, 3*time.Minute, c.prev)
+
+	// The environment: the .env editor, on the page's own revision.
+	_, vars := c.get(t, "/apps/whoami/variables")
+	editor := formValuesAction(t, vars, "/apps/whoami/variables/env")
+	if editor.Get("service") != "whoami" || editor.Get("revision") == "" {
+		t.Fatalf("the .env editor = %v, want the service and a revision", editor)
+	}
+	editor.Set("env", "CONSOLE_EDIT="+value)
+	c.prev = c.summary(t).LastDeployment.ID
+	resp, body = c.post(t, "/apps/whoami/variables/env", editor)
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), "/apps/whoami/deployments#deployment-") {
+		t.Fatalf("POST the .env editor = %d → %q, want 303 to the new deployment: %s", resp.StatusCode, resp.Header.Get("Location"), body)
 	}
 	c.waitDeployment(t, 3*time.Minute, c.prev)
 	deployed := c.summary(t).LastDeployment.ID
@@ -389,7 +410,7 @@ func (c *console) edit(t *testing.T) {
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
 
 	// The form opened before the save is stale now.
-	stale.Set("svc.whoami.env", "SHOULD_NOT=land")
+	stale.Set("svc.whoami.memory", "250")
 	resp, body = c.post(t, "/apps/whoami/configure", stale)
 	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "This app changed since you opened the form.") {
 		t.Errorf("POST from a stale form = %d, want 409 with the stale panel", resp.StatusCode)
@@ -403,11 +424,23 @@ func (c *console) edit(t *testing.T) {
 	}
 }
 
-// editFormValues reads the values of the Configure form from its page, as a
-// browser without script would send them: every named input and textarea.
+// editFormValues reads the values of the Configure form of the app's first
+// service from its page, as a browser without script would send them: every
+// named input and textarea.
 func editFormValues(t *testing.T, page string) url.Values {
 	t.Helper()
-	return formValuesOf(t, page, "edit-form")
+	return formValuesAction(t, page, "/apps/whoami/configure")
+}
+
+// formValuesAction is formValuesOf for the first form that posts to action (the
+// pages of feature 021 have forms with no ID).
+func formValuesAction(t *testing.T, page, action string) url.Values {
+	t.Helper()
+	m := regexp.MustCompile(`(?s)<form method="post" action="` + regexp.QuoteMeta(action) + `"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no form posts to %q on the page:\n%s", action, page)
+	}
+	return valuesIn(m[1])
 }
 
 // formValuesOf is editFormValues for the form with that ID: the Compose
@@ -419,6 +452,12 @@ func formValuesOf(t *testing.T, page, id string) url.Values {
 	if m == nil {
 		t.Fatalf("no form %q on the page:\n%s", id, page)
 	}
+	return valuesIn(m[1])
+}
+
+// valuesIn reads the named inputs and textareas of a form's markup. A checkbox
+// counts as sent, as the unit tests' forms do: a step that doesn't want it deletes it.
+func valuesIn(markup string) url.Values {
 	attr := func(tag, name string) string {
 		v := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
 		if v == nil {
@@ -427,12 +466,12 @@ func formValuesOf(t *testing.T, page, id string) url.Values {
 		return html.UnescapeString(v[1])
 	}
 	values := url.Values{}
-	for _, in := range regexp.MustCompile(`<input\b[^>]*>`).FindAllString(m[1], -1) {
+	for _, in := range regexp.MustCompile(`<input\b[^>]*>`).FindAllString(markup, -1) {
 		if name := attr(in, "name"); name != "" {
 			values.Set(name, attr(in, "value"))
 		}
 	}
-	for _, ta := range regexp.MustCompile(`(?s)<textarea\b([^>]*)>(.*?)</textarea>`).FindAllStringSubmatch(m[1], -1) {
+	for _, ta := range regexp.MustCompile(`(?s)<textarea\b([^>]*)>(.*?)</textarea>`).FindAllStringSubmatch(markup, -1) {
 		values.Set(attr(ta[1], "name"), strings.TrimPrefix(html.UnescapeString(ta[2]), "\n"))
 	}
 	return values
@@ -895,7 +934,7 @@ func (c *console) composeFileEdit(t *testing.T) {
 	if kept.Get("compose") != v10 || kept.Get("revision") == "" || kept.Get("svc.web.domains") != id+".localhost" || kept.Get("svc.web.healthPath") != "/" {
 		t.Fatalf("Configure's Compose form = %v, want the file as typed, a revision, and the overlay", kept)
 	}
-	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `id="edit-form"`) {
+	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `class="cv-svcform"`) {
 		t.Errorf("Configure draws the per-field form of an app edited through its file")
 	}
 
@@ -976,15 +1015,15 @@ volumes:
   data: {}
 `
 
-// volumes: the Volumes section and a volume backup, through the console
-// (feature 016, US3). The app is made from the Compose form with the overlay's
-// backup engine set to "Volume (stops the service while it runs)". Once it is
-// healthy, Backups lists the volume with its mount, host path and a size (the
+// volumes: the volume's facts and a volume backup, through the console
+// (feature 016, US3; the Backups tab was redrawn in feature 021). The app is
+// made from the Compose form with the overlay's backup engine set to "Volume
+// (stops the service while it runs)". Once it is healthy, Backups lists the
+// service's row with its mount, the volume's host path and a size (the
 // caravana-volumes task measures at the copy's start, so the page is asked again
 // for up to 30 s), and says there is no backup yet. "Back up now", in its
-// <details>, starts a run; when it has succeeded the backup's row says how long
-// the service was stopped and the Volumes row shows the last backup. Then the
-// app is deleted through the console.
+// <details>, starts a run; when it has succeeded the row's last backup says how
+// long the service was stopped. Then the app is deleted through the console.
 //
 // The backup needs a destination. The console steps run first, on a Caravana
 // whose data directory is new, so none is set: the step starts the gate's S3
@@ -1027,11 +1066,11 @@ func (c *console) volumes(t *testing.T) {
 	resp, body := c.post(t, "/apps/new/compose", form)
 	c.deployedFrom(t, id, resp, body)
 
-	// The Volumes row: the volume, its mount, its host path and, once the task has
+	// The service's row: its mount, the volume's host path and, once the task has
 	// measured it, a size ("4 KB", with when it was measured).
-	size := regexp.MustCompile(`>(\d+(?:\.\d)? (?:B|KB|MB|GB))</span>\s*<span class="cv-usage-of">measured `)
+	size := regexp.MustCompile(`class="cv-bpath">[^<]*on this host · (\d+(?:\.\d)? (?:B|KB|MB|GB)), measured [^<]*</p>`)
 	var page string
-	waitFor(t, "the Volumes row to show a size", 30*time.Second, func() bool {
+	waitFor(t, "the volume's row to show a size", 30*time.Second, func() bool {
 		resp, page = c.get(t, "/apps/"+id+"/backups")
 		return resp.StatusCode == http.StatusOK && size.MatchString(page)
 	})
@@ -1049,10 +1088,9 @@ func (c *console) volumes(t *testing.T) {
 		volumes[0].HostPath == "" || volumes[0].Size == nil || volumes[0].Size.Bytes <= 0 {
 		t.Fatalf("GET /v1/apps/%s/volumes = %+v, want data, mounted, backed up, with a host path and a size", id, volumes)
 	}
-	for _, want := range []string{`id="volumes-title"`, `<span class="cv-data text-fg-1">data</span>`, "web:/data",
-		volumes[0].HostPath, "every day at 03:00 UTC", "no backup yet"} {
+	for _, want := range []string{`<span class="cv-bname">web</span>`, "Volume · /data", volumes[0].HostPath, "Every day at 03:00 UTC", "No backups yet."} {
 		if !strings.Contains(page, want) {
-			t.Errorf("the Volumes section lacks %q:\n%s", want, page)
+			t.Errorf("the service's row lacks %q:\n%s", want, page)
 		}
 	}
 	if !canBackUp {
@@ -1060,7 +1098,7 @@ func (c *console) volumes(t *testing.T) {
 	}
 
 	// "Back up now" is a form inside a <details>; it posts the service's name.
-	m := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="(/apps/` + id + `/backups)"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	m := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>.*?Back up now</summary>\s*<form method="post" action="(/apps/` + id + `/backups)"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
 	if m == nil {
 		t.Fatalf("the Backups tab has no Back up now confirmation for %s:\n%s", id, page)
 	}
@@ -1103,13 +1141,13 @@ func (c *console) volumes(t *testing.T) {
 		t.Fatalf("the volume backup ended %s (%s) as engine %s, want succeeded as volume", run.Status, run.Message, run.Engine)
 	}
 
-	// The backup's row says the service was stopped, and the Volumes row its last backup.
+	// The row says the service was stopped and shows the last backup.
 	_, page = c.get(t, "/apps/"+id+"/backups")
 	if !regexp.MustCompile(`stopped (?:under 1|\d+) s`).MatchString(page) {
 		t.Errorf("the backup's row doesn't say how long the service was stopped:\n%s", page)
 	}
-	if !regexp.MustCompile(`succeeded</span>, last <time`).MatchString(page) || strings.Contains(page, "no backup yet") {
-		t.Errorf("the Volumes row doesn't show the last backup:\n%s", page)
+	if !strings.Contains(page, `class="cv-blast-when"`) || strings.Contains(page, `class="cv-blast-never"`) || strings.Contains(page, "No backups yet.") {
+		t.Errorf("the row doesn't show the last backup:\n%s", page)
 	}
 
 	// Delete it through the console: the app and its Nomad job go.

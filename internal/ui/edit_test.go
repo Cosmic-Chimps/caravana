@@ -82,22 +82,20 @@ func TestFormRoundTrip(t *testing.T) {
 
 func TestFormShowsWhatTheServiceHas(t *testing.T) {
 	f := formOf(richApp(), "r")
-	want := map[string][3]bool{ // port, domains, health
-		"web":    {false, true, true}, // two ports: no port input
-		"db":     {true, true, true},
-		"worker": {false, false, false}, // no ports
+	want := map[string][2]bool{ // port, health
+		"web":    {false, true}, // two ports: no port input
+		"db":     {true, true},
+		"worker": {false, false}, // no ports
 	}
 	for _, s := range f.Services {
-		if got := [3]bool{s.ShowPort, s.ShowDomains, s.ShowHealth}; got != want[s.Name] {
-			t.Errorf("%s shows port/domains/health = %v, want %v", s.Name, got, want[s.Name])
+		if got := [2]bool{s.ShowPort, s.ShowHealth}; got != want[s.Name] {
+			t.Errorf("%s shows port/health = %v, want %v", s.Name, got, want[s.Name])
 		}
 	}
 
 	web, _ := f.service("web")
 	for field, want := range map[string]string{
 		"image":          "ghcr.io/acme/shop:1",
-		"env":            "LOG_LEVEL=debug\nFEATURES=a=1,b=2",
-		"domains":        "shop.example.com\nwww.shop.example.com",
 		"copies":         "1",
 		"healthPath":     "/healthz",
 		"healthInterval": "15",
@@ -129,8 +127,6 @@ func TestParseEditFormErrors(t *testing.T) {
 		wantText           string // what the message says
 	}{
 		{"empty image", "image", "  ", "image", "Enter an image"},
-		{"env line without =", "env", "A=1\n\nB", "env", "Line 3 has no"},
-		{"env line without a name", "env", "# note\n=x", "env", "Line 2 has no name"},
 		{"copies zero", "copies", "0", "copies", "1 or more"},
 		{"copies text", "copies", "two", "copies", "whole number"},
 		{"interval text", "healthInterval", "soon", "healthInterval", "seconds"},
@@ -165,7 +161,7 @@ func TestParseEditFormErrors(t *testing.T) {
 				t.Errorf("inputs with errors = %v, want [%s]", withErrors, want)
 			}
 			// The typed value is kept, untouched but for surrounding spaces.
-			if in, _ := f.field(inputName("web", tc.field)); in.Value != strings.TrimSpace(tc.value) && tc.field != "env" {
+			if in, _ := f.field(inputName("web", tc.field)); in.Value != strings.TrimSpace(tc.value) {
 				t.Errorf("kept value = %q, want what was typed (%q)", in.Value, tc.value)
 			}
 		})
@@ -182,26 +178,11 @@ func TestParseEditFormErrors(t *testing.T) {
 			}
 		}
 	})
-
-	t.Run("a domain for a service with several ports and none yet", func(t *testing.T) {
-		a := richApp()
-		a.Services[0].Domains = nil
-		post := postOf(formOf(a, "r"))
-		post.Set(inputName("web", "domains"), "new.example.com")
-		f, ok := parseEditForm(post, a)
-		web, _ := f.service("web")
-		if ok || len(web.Domains.Error) == 0 {
-			t.Errorf("ok = %v, error = %q; want an error on the domains", ok, web.Domains.Error)
-		}
-	})
 }
 
 func TestParseEditFormValues(t *testing.T) {
 	stored := richApp()
 	post := postOf(formOf(stored, "r"))
-	// A browser posts textarea line breaks as CRLF.
-	post.Set(inputName("web", "env"), "# comment\r\nNEW=a=b\r\n\r\n  SPACED = padded value \r\nEMPTY=\r\n")
-	post.Set(inputName("web", "domains"), " a.example.com \r\n\r\nb.example.com\r\n")
 	post.Set(inputName("web", "image"), "  ghcr.io/acme/shop:2  ")
 	post.Set(inputName("web", "copies"), "3")
 	post.Set(inputName("web", "healthInterval"), "30")
@@ -213,11 +194,7 @@ func TestParseEditFormValues(t *testing.T) {
 	}
 	web, _ := f.service("web")
 	want := serviceEdit{
-		Image: "ghcr.io/acme/shop:2",
-		Env: []app.EnvVar{
-			{Name: "NEW", Value: "a=b"}, {Name: "SPACED", Value: " padded value "}, {Name: "EMPTY", Value: ""},
-		},
-		Domains:        []string{"a.example.com", "b.example.com"},
+		Image:          "ghcr.io/acme/shop:2",
 		Replicas:       new(3),
 		HealthPath:     "/healthz",
 		HealthInterval: 30 * time.Second,
@@ -263,5 +240,24 @@ func TestEditFormField(t *testing.T) {
 	f.markFirstError()
 	if f.Focus != "svc.web.memory" || !f.Services[0].Memory.Alert || f.Services[1].Port.Alert {
 		t.Errorf("Focus = %q; want the first error in form order, announced alone", f.Focus)
+	}
+}
+
+// The .env editor's text: NAME=value lines, the value being everything after the first "=".
+func TestParseEnv(t *testing.T) {
+	// A browser posts textarea line breaks as CRLF; the page turns them into LF first.
+	env, problem := parseEnv("# comment\nNEW=a=b\n\n  SPACED = padded value \nEMPTY=\n")
+	want := []app.EnvVar{{Name: "NEW", Value: "a=b"}, {Name: "SPACED", Value: " padded value "}, {Name: "EMPTY", Value: ""}}
+	if problem != "" || !reflect.DeepEqual(env, want) {
+		t.Errorf("parseEnv = %+v, %q; want %+v", env, problem, want)
+	}
+	for text, wantText := range map[string]string{
+		"A=1\n\nB":      "Line 3 has no",
+		"# note\n=x":    "Line 2 has no name",
+		"A=1\n  =\nB=2": "Line 2 has no name",
+	} {
+		if _, problem := parseEnv(text); !strings.Contains(problem, wantText) {
+			t.Errorf("parseEnv(%q) problem = %q, want it to mention %q", text, problem, wantText)
+		}
 	}
 }

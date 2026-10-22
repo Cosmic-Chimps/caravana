@@ -1137,7 +1137,7 @@ func (e *consoleEnv) submit(t *testing.T, f plainForm, set url.Values) (*http.Re
 }
 
 // Every form of the console is a plain post: the page's own markup is enough to
-// create an app, deploy, edit its definition, make and revoke a webhook token, delete an app and
+// create an app, deploy, edit its definition, set a variable, a secret and a domain, make and revoke a webhook token, delete an app and
 // change the Settings, with no script and with nothing but same-site headers.
 func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	e := newConsoleEnv(t)
@@ -1175,20 +1175,61 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	t.Run("Configure", func(t *testing.T) {
 		_, page := e.get(t, "/apps/plain/configure")
 		f := formWith(t, page, "/apps/plain/configure")
-		if !f.HTMX || f.Values.Get("revision") == "" {
-			t.Errorf("the Configure form posts in place when script runs: %v, revision %q", f.HTMX, f.Values.Get("revision"))
+		if f.HTMX || f.Values.Get("revision") == "" {
+			t.Errorf("the Configure form is a plain post with a revision: htmx %v, revision %q", f.HTMX, f.Values.Get("revision"))
 		}
-		resp, body := e.submit(t, f, url.Values{"svc.plain.env": {"MODE=plain"}})
+		resp, body := e.submit(t, f, url.Values{"svc.plain.memory": {"100"}})
 		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/apps/plain/deployments#deployment-") {
 			t.Fatalf("POST configure = %d to %q, want 303 to the new deployment's entry:\n%s", resp.StatusCode, location(t, resp), body)
 		}
-		if got := e.storedApp(t, "plain").Services[0].Env; len(got) != 1 || got[0].Name != "MODE" {
-			t.Errorf("env = %+v, want MODE", got)
+		if got := e.storedApp(t, "plain").Services[0].Resources.MemoryMB; got != 100 {
+			t.Errorf("memory = %d, want 100", got)
 		}
 		// The same form again is stale now: refused with the page, not lost.
 		resp, body = e.submit(t, f, nil)
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "This app changed since you opened the form.") {
 			t.Errorf("a stale POST = %d, want 409 with the page:\n%s", resp.StatusCode, text(body))
+		}
+	})
+
+	// Configure's other pages, as plain posts too: a variable, then a secret, then a domain added and removed.
+	t.Run("Variables", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/variables")
+		f := formWith(t, page, "/apps/plain/variables")
+		if f.HTMX || f.Values.Get("revision") == "" {
+			t.Errorf("the Variables form is a plain post with a revision: htmx %v, revision %q", f.HTMX, f.Values.Get("revision"))
+		}
+		resp, body := e.submit(t, f, url.Values{"name": {"MODE"}, "value": {"plain"}, "secret": {""}}) // formsIn sends a checkbox whether or not it is checked
+		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/apps/plain/deployments#deployment-") {
+			t.Fatalf("POST variables = %d to %q, want 303 to the new deployment's entry:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+		if got := e.storedApp(t, "plain").Services[0].Env; len(got) != 1 || got[0].Name != "MODE" || got[0].Value != "plain" {
+			t.Errorf("env = %+v, want MODE=plain", got)
+		}
+		_, page = e.get(t, "/apps/plain/variables")
+		editor := formWith(t, page, "/apps/plain/variables/env")
+		resp, body = e.submit(t, editor, url.Values{"env": {"MODE=plain\nLEVEL=info"}})
+		if resp.StatusCode != http.StatusSeeOther || len(e.storedApp(t, "plain").Services[0].Env) != 2 {
+			t.Errorf("POST the .env editor = %d, env %+v:\n%s", resp.StatusCode, e.storedApp(t, "plain").Services[0].Env, text(body))
+		}
+	})
+
+	t.Run("Domains", func(t *testing.T) {
+		_, page := e.get(t, "/apps/plain/domains")
+		resp, body := e.submit(t, formWith(t, page, "/apps/plain/domains"), url.Values{"host": {"www.plain.example.com"}})
+		if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(location(t, resp), "/apps/plain/deployments#deployment-") {
+			t.Fatalf("POST domains = %d to %q, want 303 to the new deployment's entry:\n%s", resp.StatusCode, location(t, resp), body)
+		}
+		_, page = e.get(t, "/apps/plain/domains")
+		remove := formWith(t, page, "/apps/plain/domains/remove")
+		resp, body = e.submit(t, remove, url.Values{"host": {"www.plain.example.com"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST domains/remove = %d:\n%s", resp.StatusCode, text(body))
+		}
+		for _, d := range e.storedApp(t, "plain").Services[0].Domains {
+			if d.Host == "www.plain.example.com" {
+				t.Error("the domain wasn't removed")
+			}
 		}
 	})
 

@@ -88,7 +88,7 @@ func TestNewAppTabs(t *testing.T) {
 	_, body := e.get(t, "/apps/new?from=compose")
 	for _, want := range []string{
 		`<form id="compose-form" method="post" action="/apps/new/compose/preview"`,
-		`name="name"`, `<textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose"`,
+		`name="name"`, `<textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose"`,
 		`>Preview</button>`,
 	} {
 		if !strings.Contains(body, want) {

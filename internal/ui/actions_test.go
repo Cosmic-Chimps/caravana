@@ -435,11 +435,12 @@ func TestStopAndStartInTheConsole(t *testing.T) {
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), want) {
 			t.Errorf("deploy = %d: %s", resp.StatusCode, text(body))
 		}
-		resp, body = e.postForm(t, "/apps/whoami/secrets", url.Values{"service": {"web"}, "name": {"K"}, "value": {"v"}})
+		_, vars := e.get(t, "/apps/whoami/variables")
+		resp, body = e.submit(t, formWith(t, vars, "/apps/whoami/variables"), url.Values{"service": {"web"}, "name": {"K"}, "value": {"v"}, "secret": {"1"}})
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), want) {
 			t.Errorf("set a secret = %d: %s", resp.StatusCode, text(body))
 		}
-		for _, tab := range []string{"/apps/whoami/deployments", "/apps/whoami/configure"} {
+		for _, tab := range []string{"/apps/whoami/deployments", "/apps/whoami/configure", "/apps/whoami/variables", "/apps/whoami/domains"} {
 			if _, body := e.get(t, tab); !strings.Contains(text(body), want) {
 				t.Errorf("%s doesn't say it before anyone tries: %s", tab, text(body))
 			}

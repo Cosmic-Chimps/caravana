@@ -33,14 +33,14 @@
         <span>Password changed. Other browsers were signed out.</span>
       </div>
       {{end}}
-      <label class="flex flex-col gap-2">
+      <label class="cv-fld">
         <span class="cv-label">Current password</span>
-        <input class="cv-field" type="password" name="currentPassword" autocomplete="current-password" required{{if .CurrentErr}} autofocus aria-invalid="true" aria-describedby="current-error"{{end}}>
+        <input class="cv-field cv-field-mono" type="password" name="currentPassword" autocomplete="current-password" required{{if .CurrentErr}} autofocus aria-invalid="true" aria-describedby="current-error"{{end}}>
         {{with .CurrentErr}}<span id="current-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
       </label>
-      <label class="flex flex-col gap-2">
+      <label class="cv-fld">
         <span class="cv-label">New password</span>
-        <input class="cv-field" type="password" name="newPassword" autocomplete="new-password" minlength="12" required{{if .NewErr}} autofocus aria-invalid="true" aria-describedby="new-error"{{else}} aria-describedby="new-hint"{{end}}>
+        <input class="cv-field cv-field-mono" type="password" name="newPassword" autocomplete="new-password" minlength="12" required{{if .NewErr}} autofocus aria-invalid="true" aria-describedby="new-error"{{else}} aria-describedby="new-hint"{{end}}>
         {{with .NewErr}}<span id="new-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="new-hint" class="cv-data-muted">At least 12 characters.</span>{{end}}
       </label>
       <div><button type="submit" class="cv-btn cv-btn-primary">Change password</button></div>
@@ -86,14 +86,14 @@
 
       <form method="post" action="/settings/tokens" class="cv-row flex flex-col gap-4 p-4">
         <div class="flex flex-wrap gap-4">
-          <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+          <label class="cv-fld min-w-[12rem] flex-1">
             <span class="cv-label">Name</span>
-            <input class="cv-field" type="text" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="name-error"{{else}} aria-describedby="name-hint"{{end}}>
+            <input class="cv-field cv-field-mono" type="text" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="name-error"{{else}} aria-describedby="name-hint"{{end}}>
             {{with .NameErr}}<span id="name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="name-hint" class="cv-data-muted">Where it is used, e.g. ci-github.</span>{{end}}
           </label>
-          <label class="flex flex-col gap-2">
+          <label class="cv-fld">
             <span class="cv-label">Expires (optional)</span>
-            <input class="cv-field" type="date" name="expires" value="{{.TokenExpires}}"{{if .ExpiresErr}} autofocus aria-invalid="true" aria-describedby="expires-error"{{else}} aria-describedby="expires-hint"{{end}}>
+            <input class="cv-field cv-field-mono" type="date" name="expires" value="{{.TokenExpires}}"{{if .ExpiresErr}} autofocus aria-invalid="true" aria-describedby="expires-error"{{else}} aria-describedby="expires-hint"{{end}}>
             {{with .ExpiresErr}}<span id="expires-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="expires-hint" class="cv-data-muted">End of that day, UTC.</span>{{end}}
           </label>
         </div>
@@ -104,7 +104,7 @@
             <p>A token for CI. It can deploy this app in every environment of its project, read its deployments and promote it, and nothing else. The app doesn't have to exist yet.</p>
             <div class="flex flex-wrap gap-4">
               {{if .Scope.Projects}}
-              <label class="flex flex-col gap-2 min-w-[12rem]">
+              <label class="cv-fld min-w-[12rem]">
                 <span class="cv-label">Project</span>
                 <select class="cv-field cv-select" name="scopeProject"{{if .Scope.ProjErr}} aria-invalid="true" aria-describedby="scope-project-error"{{end}}>
                   {{range .Scope.Projects}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
@@ -112,9 +112,9 @@
                 {{with .Scope.ProjErr}}<span id="scope-project-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
               </label>
               {{end}}
-              <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+              <label class="cv-fld min-w-[12rem] flex-1">
                 <span class="cv-label">App name</span>
-                <input class="cv-field" type="text" name="scopeApp" value="{{.Scope.App}}" maxlength="63" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Scope.AppErr}} aria-invalid="true" aria-describedby="scope-app-error"{{end}}>
+                <input class="cv-field cv-field-mono" type="text" name="scopeApp" value="{{.Scope.App}}" maxlength="63" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Scope.AppErr}} aria-invalid="true" aria-describedby="scope-app-error"{{end}}>
                 {{with .Scope.AppErr}}<span id="scope-app-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span class="cv-data-muted">The app's name, like <span class="cv-inline-mono">web</span>. Leave it empty for a token that can do everything.</span>{{end}}
               </label>
             </div>
@@ -146,9 +146,9 @@
       </div>
       <div class="flex flex-wrap gap-4">
         {{template "dest-field" (destField . "accessKeyId" "Access key ID" .AccessKeyID "")}}
-        <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+        <label class="cv-fld min-w-[12rem] flex-1">
           <span class="cv-label">Secret access key</span>
-          <input class="cv-field" type="password" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secret-error"{{end}}>
+          <input class="cv-field cv-field-mono" type="password" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secret-error"{{end}}>
           {{if eq .Field "secretAccessKey"}}<span id="dest-secret-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></span>
           {{else if .HasSecret}}<span class="cv-data-muted">Saved. Leave it empty to keep it.</span>{{end}}
         </label>
@@ -363,27 +363,27 @@
 {{define "notify-fields"}}
 {{if .Editing}}<input type="hidden" name="kind" value="{{.Kind}}">
 {{else}}
-<label class="flex flex-col gap-2 min-w-[12rem]">
+<label class="cv-fld min-w-[12rem]">
   <span class="cv-label">Kind</span>
   <select class="cv-field cv-select" id="{{.Prefix}}-kind" name="kind">{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
 </label>
 {{end}}
 <div class="flex flex-wrap gap-4">
-  <label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+  <label class="cv-fld min-w-[12rem] flex-1">
     <span class="cv-label">Name</span>
-    <input class="cv-field" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
+    <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
     {{with .Error "name"}}<span id="{{$.Prefix}}-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
   </label>
-  <label class="flex flex-col gap-2 min-w-[12rem] flex-[2]">
+  <label class="cv-fld min-w-[12rem] flex-[2]">
     <span class="cv-label">URL</span>
-    <input class="cv-field" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
+    <input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
     {{with .Error "url"}}<span id="{{$.Prefix}}-url-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{else}}{{with .URLHint}}<span id="{{$.Prefix}}-url-hint" class="cv-data-muted">{{.}}</span>{{end}}{{end}}
   </label>
 </div>
 {{if or (not .Editing) (eq .Kind "ntfy")}}
-<label class="flex flex-col gap-2 min-w-[12rem]">
+<label class="cv-fld min-w-[12rem]">
   <span class="cv-label">ntfy access token</span>
-  <input class="cv-field" type="password" id="{{.Prefix}}-token" name="token" autocomplete="new-password"{{with .Error "token"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-token-error"{{else}} aria-describedby="{{.Prefix}}-token-hint"{{end}}>
+  <input class="cv-field cv-field-mono" type="password" id="{{.Prefix}}-token" name="token" autocomplete="new-password"{{with .Error "token"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-token-error"{{else}} aria-describedby="{{.Prefix}}-token-hint"{{end}}>
   {{with .Error "token"}}<span id="{{$.Prefix}}-token-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{else}}<span id="{{.Prefix}}-token-hint" class="cv-data-muted">{{.TokenHint}}</span>{{end}}
 </label>
 {{end}}
@@ -399,9 +399,9 @@
 {{/* One input of a Registries form. Takes a registryFieldView. The password input never
      has a value; a refusal replaces the hint. */}}
 {{define "registry-field"}}
-<label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+<label class="cv-fld min-w-[12rem] flex-1">
   <span class="cv-label">{{.Label}}</span>
-  <input class="cv-field" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{else if .Hint}} aria-describedby="{{.ID}}-hint"{{end}}>
+  <input class="cv-field cv-field-mono" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{else if .Hint}} aria-describedby="{{.ID}}-hint"{{end}}>
   {{if .Err}}<span id="{{.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err}}</span></span>
   {{else if .Hint}}<span id="{{.ID}}-hint" class="cv-data-muted">{{.Hint}}</span>{{end}}
 </label>
@@ -409,9 +409,9 @@
 
 {{/* One text field of the destination form. Takes a destFieldView. */}}
 {{define "dest-field"}}
-<label class="flex flex-col gap-2 min-w-[12rem] flex-1">
+<label class="cv-fld min-w-[12rem] flex-1">
   <span class="cv-label">{{.Label}}</span>
-  <input class="cv-field" type="text" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
+  <input class="cv-field cv-field-mono" type="text" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
   {{with .Err}}<span id="dest-{{$.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 </label>
 {{end}}

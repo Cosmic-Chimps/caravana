@@ -19,18 +19,18 @@
   {{if .SecretsNote}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Secret values aren't kept; type them again.</span></div>{{end}}
 
   {{if not .Existing}}
-  <label class="flex flex-col gap-2" for="name">
+  <label class="cv-fld" for="name">
     <span class="cv-label">Name</span>
-    <input class="cv-field" id="name" type="text" name="name" value="{{.Draft.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .Draft.Name.Alert}} autofocus{{end}}>
+    <input class="cv-field cv-field-mono" id="name" type="text" name="name" value="{{.Draft.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if .Draft.Name.Alert}} autofocus{{end}}>
     <span class="cv-data-muted cv-hint">Lowercase letters, digits and dashes. It names the app and its job.</span>
     {{template "field-error" .Draft.Name}}
   </label>
   {{template "place-select" .Place}}
   {{end}}
 
-  <label class="flex flex-col gap-2" for="compose">
+  <label class="cv-fld" for="compose">
     <span class="cv-label">Compose file</span>
-    <textarea class="cv-field cv-field-area cv-field-file" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
+    <textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
 {{.Draft.File.Value}}</textarea>
     <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Domains, health checks and secrets are set below, after the preview.</span>
     <span class="cv-data-muted cv-hint">Put passwords and keys in secrets below, not in the file.</span>
@@ -92,11 +92,11 @@
       {{with .Inputs}}
       <div class="cv-edit-fields">
         {{range .}}
-        <label class="flex flex-col gap-2{{if .Wide}} cv-edit-wide{{end}}" for="{{.Field.ID}}">
+        <label class="cv-fld{{if .Wide}} cv-edit-wide{{end}}" for="{{.Field.ID}}">
           <span class="cv-label">{{.Label}}</span>
-          {{if .Area}}<textarea class="cv-field cv-field-area" id="{{.Field.ID}}" name="svc.{{$svc.Name}}.{{.Name}}" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+          {{if .Area}}<textarea class="cv-field cv-field-area cv-field-mono" id="{{.Field.ID}}" name="svc.{{$svc.Name}}.{{.Name}}" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
 {{.Field.Value}}</textarea>
-          {{else}}<input class="cv-field" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{end}}
+          {{else}}<input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>{{end}}
           {{with .Hint}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
           {{template "field-error" .Field}}
         </label>
@@ -108,9 +108,9 @@
         <legend class="cv-label">Secrets</legend>
         <div class="cv-edit-fields">
           {{range .Secrets}}
-          <label class="flex flex-col gap-2" for="{{.Field.ID}}">
+          <label class="cv-fld" for="{{.Field.ID}}">
             <span class="cv-data text-fg-1">{{.Name}}</span>
-            <input class="cv-field" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+            <input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
             <span class="cv-data-muted cv-hint">{{if .Exists}}Empty keeps the current value.{{else}}Type its value.{{end}}</span>
             {{template "field-error" .Field}}
           </label>
@@ -120,13 +120,13 @@
         <div class="cv-edit-fields">
           {{range $i, $row := .NewSecrets}}
           <div class="flex flex-col gap-2">
-            <label class="flex flex-col gap-2" for="{{$row.ID}}">
+            <label class="cv-fld" for="{{$row.ID}}">
               <span class="cv-label">Name</span>
-              <input class="cv-field" id="{{$row.ID}}" type="text" name="svc.{{$svc.Name}}.newSecret.{{$i}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if $row.Error}} aria-invalid="true" aria-describedby="{{$row.ID}}-error"{{end}}{{if $row.Alert}} autofocus{{end}}>
+              <input class="cv-field cv-field-mono" id="{{$row.ID}}" type="text" name="svc.{{$svc.Name}}.newSecret.{{$i}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if $row.Error}} aria-invalid="true" aria-describedby="{{$row.ID}}-error"{{end}}{{if $row.Alert}} autofocus{{end}}>
             </label>
-            <label class="flex flex-col gap-2" for="{{$row.ID}}-value">
+            <label class="cv-fld" for="{{$row.ID}}-value">
               <span class="cv-label">Value</span>
-              <input class="cv-field" id="{{$row.ID}}-value" type="password" name="svc.{{$svc.Name}}.newSecretValue.{{$i}}" autocomplete="new-password">
+              <input class="cv-field cv-field-mono" id="{{$row.ID}}-value" type="password" name="svc.{{$svc.Name}}.newSecretValue.{{$i}}" autocomplete="new-password">
             </label>
             {{template "field-error" $row}}
           </div>
@@ -138,7 +138,7 @@
       <fieldset class="flex flex-col gap-3">
         <legend class="cv-label">Backup</legend>
         <div class="cv-edit-fields">
-          <label class="flex flex-col gap-2" for="{{.BackupEngine.ID}}">
+          <label class="cv-fld" for="{{.BackupEngine.ID}}">
             <span class="cv-label">Engine</span>
             <select class="cv-field cv-select" id="{{.BackupEngine.ID}}" name="svc.{{.Name}}.backupEngine"{{if .BackupEngine.Error}} aria-invalid="true" aria-describedby="{{.BackupEngine.ID}}-error"{{end}}{{if .BackupEngine.Alert}} autofocus{{end}}>
               <option value=""{{if eq .BackupEngine.Value ""}} selected{{end}}>None</option>
@@ -148,9 +148,9 @@
             {{template "field-error" .BackupEngine}}
           </label>
           {{range .BackupInputs}}
-          <label class="flex flex-col gap-2" for="{{.Field.ID}}">
+          <label class="cv-fld" for="{{.Field.ID}}">
             <span class="cv-label">{{.Label}}</span>
-            <input class="cv-field" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+            <input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="text"{{if .Numeric}} inputmode="numeric"{{end}} name="svc.{{$svc.Name}}.{{.Name}}" value="{{.Field.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
             {{with .Hint}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
             {{template "field-error" .Field}}
           </label>

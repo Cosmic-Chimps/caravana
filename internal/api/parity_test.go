@@ -79,10 +79,19 @@ var consoleParity = map[string]parity{
 	// Deploy tokens (feature 020): a token scoped to this app's name in its project; the GitHub tab creates the app without deploying, then the token.
 	"POST /apps/{id}/deploy-token": {ops: []string{"createToken"}},
 	"POST /apps/new/github":        {ops: []string{"createApp", "createEnvironmentApp", "createToken"}},
-	// Setting or removing one secret is a deploy of the app with its secrets
-	// listed, the others without a value (keep).
-	"POST /apps/{id}/secrets":        {ops: []string{"deployApp"}},
+	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
 	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
+	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
+	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
+	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains.
+	"GET /apps/{id}/variables":       {ops: []string{"getApp"}},
+	"POST /apps/{id}/variables":      {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/variables/env":  {ops: []string{"getApp", "deployApp"}},
+	"GET /apps/{id}/domains":         {ops: []string{"getApp"}},
+	"POST /apps/{id}/domains":        {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/domains/remove": {ops: []string{"getApp", "deployApp"}},
+	// "Back up daily" sets a service's backup policy: a deploy of the app with backup {engine, schedule, keep}.
+	"POST /apps/{id}/backups/policy": {ops: []string{"getApp", "deployApp"}},
 	// Backups (feature 010).
 	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination"}},
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},

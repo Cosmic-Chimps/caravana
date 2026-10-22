@@ -82,7 +82,9 @@ func TestBackupsTab(t *testing.T) {
 	t.Run("without a destination", func(t *testing.T) {
 		e := backupsEnv(t, false)
 		_, body := e.get(t, "/apps/duo/backups")
-		if got := text(body); !strings.Contains(got, "No backup destination is set.") || strings.Contains(got, "Back up now") {
+		got := text(body)
+		if !strings.Contains(got, "No backup destination is set. Backups can't run until there is one. Set the destination") || strings.Contains(got, "Back up now") ||
+			!strings.Contains(got, "1 backed up · 0 not · no destination") || !strings.Contains(body, `href="/settings#backups"`) {
 			t.Errorf("the tab without a destination:\n%s", got)
 		}
 	})
@@ -90,7 +92,8 @@ func TestBackupsTab(t *testing.T) {
 	e := backupsEnv(t, true)
 	_, body := e.get(t, "/apps/duo/backups")
 	got := text(body)
-	for _, want := range []string{"Backups", "web", "PostgreSQL, on 0 3 * * * (UTC), keeping the last 7.", "No backups yet."} {
+	for _, want := range []string{"Backups", "Databases and volumes, and where their copies are.", "1 backed up · 0 not · stored in backups",
+		"web PostgreSQL", "Every day at 03:00 UTC 7 backups", "never", "Restore points · last 30 days", "No backups yet.", "Back up now"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
@@ -123,7 +126,8 @@ func TestBackupsTab(t *testing.T) {
 		t.Fatal("the backup wasn't recorded")
 	}
 	_, body = e.get(t, "/apps/duo/backups")
-	if got := text(body); !strings.Contains(got, "succeeded web") || !strings.Contains(got, "2.0 KB") || !strings.Contains(body, "/backups/"+backupID+"/restore") {
+	if got := text(body); !strings.Contains(got, "2 KB") || !strings.Contains(got, "2 KB all") || !strings.Contains(got, "Restore…") || !strings.Contains(got, "Restore from the last backup") ||
+		!strings.Contains(body, "/backups/"+backupID+"/restore") || !strings.Contains(body, `href="#backup-`+backupID+`"`) {
 		t.Errorf("the tab after the backup:\n%s", got)
 	}
 
@@ -136,8 +140,8 @@ func TestBackupsTab(t *testing.T) {
 		t.Errorf("restore = %d, restore job %v", resp.StatusCode, e.Nomad.Job("duo_web_restore") != nil)
 	}
 	_, body = e.get(t, "/apps/duo/backups")
-	if !strings.Contains(text(body), "restoring web") {
-		t.Errorf("the tab lacks the running restore:\n%s", text(body))
+	if got := text(body); !strings.Contains(got, "Restores") || !strings.Contains(got, "web from "+backupID) || !strings.Contains(got, "restoring") {
+		t.Errorf("the tab lacks the running restore:\n%s", got)
 	}
 
 	_, body = e.get(t, "/apps/duo/configure")
@@ -196,18 +200,18 @@ func TestBackupsTabVolume(t *testing.T) {
 	_, body := e.get(t, "/apps/kuma/backups")
 	got := text(body)
 	for _, want := range []string{
-		"Volume backup, every day at 03:00 UTC, keeping 3. The service stops while a backup runs (last time 4 s).",
-		"succeeded uptime-kuma", "2.0 KB", "stopped 4 s",
+		"uptime-kuma Volume · /app/data", "Every day at 03:00 UTC The service stops while it runs. 3 backups",
+		"2 KB", "took 4 s · stopped 4 s",
 		"The service stops for a few seconds while the backup runs.",
 		"The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.",
-		"Type uptime-kuma to confirm",
+		"Type uptime-kuma to confirm", "Restore and stop the service while it runs",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
 	}
 	// Back up now sits in a <details>, and its form posts the service's name.
-	details := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>Back up now…</summary>\s*<form method="post" action="/apps/kuma/backups"[^>]*>.*?name="service" value="uptime-kuma".*?</form>`)
+	details := regexp.MustCompile(`(?s)<details class="cv-confirm">\s*<summary[^>]*>.*?Back up now</summary>\s*<form method="post" action="/apps/kuma/backups"[^>]*>.*?name="service" value="uptime-kuma".*?</form>`)
 	if !details.MatchString(body) {
 		t.Errorf("Back up now isn't a confirmation with its own form:\n%s", body)
 	}
