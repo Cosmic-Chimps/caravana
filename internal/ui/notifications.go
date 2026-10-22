@@ -72,9 +72,11 @@ func (v notifyFormView) Kinds() []kindOption {
 }
 
 // SlackLike says whether the channel's URL is a secret that is never shown: in
-// an edit form that means the field starts empty and an empty field keeps it.
+// an edit form that means the field starts empty and an empty field keeps it. An
+// ntfy topic is one too (anyone who knows it can read and post to it); only a
+// webhook's address is shown whole.
 func (v notifyFormView) SlackLike() bool {
-	return v.Kind == notify.KindSlack || v.Kind == notify.KindDiscord
+	return v.Kind == notify.KindSlack || v.Kind == notify.KindDiscord || v.Kind == notify.KindNtfy
 }
 
 // URLHint is the hint under the URL input: the whole story when adding, and in
@@ -206,10 +208,10 @@ func readNotificationForm(r *http.Request, kind string) notificationForm {
 	return formFromEvents(f, r.PostForm["events"])
 }
 
-// echoable is the form to draw again after a refusal: a Slack or Discord URL
-// is a secret and doesn't come back, so the owner types it again.
+// echoable is the form to draw again after a refusal: a Slack, Discord or ntfy
+// address is a secret and doesn't come back, so the owner types it again.
 func echoable(f notificationForm) notificationForm {
-	if f.Kind == notify.KindSlack || f.Kind == notify.KindDiscord {
+	if f.Kind != notify.KindWebhook {
 		f.URL = ""
 	}
 	return f
@@ -441,6 +443,21 @@ func kindLine(kind string, events []string) string {
 	return kindLabel(kind)
 }
 
+// shownAddress is a channel's address as the row shows it. The service already
+// masks a Slack or Discord URL before it stores it; an ntfy topic is stored whole
+// (the sender needs it), so the page shows the host only, as it does for the
+// others, and the topic never reaches a page.
+func shownAddress(kind, address string) string {
+	if kind != notify.KindNtfy {
+		return address
+	}
+	u, err := url.Parse(address)
+	if err != nil || u.Host == "" {
+		return "••••"
+	}
+	return u.Host + "/••••"
+}
+
 // kindIcon is the icon a channel's kind is drawn with.
 func kindIcon(kind string) string {
 	switch kind {
@@ -462,13 +479,13 @@ func notificationsSection(now time.Time, facts settingsFacts, st entryState, dat
 	data.Rows = make([]notificationRow, 0, len(facts.Channels))
 	for i, c := range facts.Channels {
 		row := notificationRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), KindLine: kindLine(c.Kind, c.Events), Address: c.Address, Icon: kindIcon(c.Kind),
+			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), KindLine: kindLine(c.Kind, c.Events), Address: shownAddress(c.Kind, c.Address), Icon: kindIcon(c.Kind),
 			Mark: st.Rows[i], Paused: c.Paused, HasToken: c.HasToken, Sends: sendsLine(c.Events),
 		}
 		// A webhook's or ntfy topic's URL is shown, so it fills the edit form; a
-		// Slack or Discord URL is a secret, so that field starts empty.
+		// Slack, Discord or ntfy address is a secret, so that field starts empty.
 		row.Edit = formFromEvents(notificationForm{Kind: c.Kind, Name: c.Name}, c.Events)
-		if c.Kind == notify.KindWebhook || c.Kind == notify.KindNtfy {
+		if c.Kind == notify.KindWebhook {
 			row.Edit.URL = c.Address
 		}
 		if c.ID == data.EditID {

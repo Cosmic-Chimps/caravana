@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -139,7 +140,8 @@ func TestSettingsEntryRules(t *testing.T) {
 			{"no destination with a policy", backupFacts{Policies: 2}, nil, "warning"},
 			{"a destination, nothing ran", backupFacts{Destination: true, Policies: 1}, []string{"idle"}, ""},
 			{"a destination, the last run worked", backupFacts{Destination: true, Last: ok}, []string{"healthy"}, ""},
-			{"a destination, the last run failed", backupFacts{Destination: true, Last: bad}, []string{"failed"}, "warning"},
+			// The same ■ in the nav and on the row (ruling 9); no destination with a policy is a ◆.
+			{"a destination, the last run failed", backupFacts{Destination: true, Last: bad}, []string{"failed"}, "failed"},
 		} {
 			got := backupStorageState(tc.f)
 			if strings.Join(got.Rows, ",") != strings.Join(tc.rows, ",") || got.Mark != tc.mark || got.Count != 0 {
@@ -162,10 +164,14 @@ func TestSettingsEntryRules(t *testing.T) {
 			{"nothing sent yet", []channelFacts{{}}, []string{"idle"}, "", 1},
 			{"sent", []channelFacts{{Last: sent}}, []string{"healthy"}, "", 1},
 			{"the last delivery failed", []channelFacts{{Last: failed}}, []string{"warning"}, "warning", 1},
-			{"paused", []channelFacts{{Paused: true, Last: sent}}, []string{"warning"}, "warning", 1},
-			{"paused with nothing sent", []channelFacts{{Paused: true}}, []string{"warning"}, "warning", 1},
+			// A paused channel was the owner's choice: its row is ◆, the nav shows the count.
+			{"paused", []channelFacts{{Paused: true, Last: sent}}, []string{"warning"}, "", 1},
+			{"paused with nothing sent", []channelFacts{{Paused: true}}, []string{"warning"}, "", 1},
+			{"paused, and its last delivery had failed", []channelFacts{{Paused: true, Last: failed}}, []string{"warning"}, "warning", 1},
 			{"a mix counts every channel, paused ones included", []channelFacts{{Last: sent}, {Paused: true}, {}},
-				[]string{"healthy", "warning", "idle"}, "warning", 3},
+				[]string{"healthy", "warning", "idle"}, "", 3},
+			{"a failed one among them is the nav's mark", []channelFacts{{Last: sent}, {Paused: true}, {Last: failed}},
+				[]string{"healthy", "warning", "warning"}, "warning", 3},
 		} {
 			got := notificationsState(tc.chs)
 			if strings.Join(got.Rows, ",") != strings.Join(tc.rows, ",") || got.Mark != tc.mark || got.Count != tc.count {
@@ -204,9 +210,11 @@ func TestSettingsEntryRules(t *testing.T) {
 			if got.Rows[0] != tc.row || len(tokenNotes(now, tc.tok)) != tc.notes {
 				t.Errorf("%s: row %q with %d notes, want %q with %d", tc.name, got.Rows[0], len(tokenNotes(now, tc.tok)), tc.row, tc.notes)
 			}
-			// The nav's mark and the row's agree.
-			if (got.Mark == "warning") != (tc.row == "warning") {
-				t.Errorf("%s: nav mark %q, row %q", tc.name, got.Mark, tc.row)
+			// Rows mark more than the nav: a full token with no end date marks its row, and only a token
+			// unused for 90 days marks the nav.
+			wantNav := map[string]bool{"unused for 94 days": true, "never used, made 100 days ago": true, "never used, made 91 days ago": true, "both problems": true}[tc.name]
+			if (got.Mark == "warning") != wantNav {
+				t.Errorf("%s: nav mark %q, want one: %v", tc.name, got.Mark, wantNav)
 			}
 		}
 		// The count is of active tokens only, and a mark wins over it.
@@ -218,8 +226,12 @@ func TestSettingsEntryRules(t *testing.T) {
 			t.Errorf("one active token among three: %+v, want count 1 and no mark", got)
 		}
 		toks = append(toks, active(service.APITokenInfo{CreatedAt: *ago(day), LastUsedAt: ago(time.Hour)}))
-		if got := tokensState(now, toks); got.Mark != "warning" || got.Count != 2 {
-			t.Errorf("a token with no expiry: %+v, want the warning mark and count 2", got)
+		if got := tokensState(now, toks); got.Mark != "" || got.Count != 2 || got.Rows[3] != "warning" {
+			t.Errorf("a token with no expiry: %+v, want its row marked, no nav mark and count 2", got)
+		}
+		toks = append(toks, active(service.APITokenInfo{CreatedAt: *ago(300 * day), LastUsedAt: ago(95 * day), ExpiresAt: &later}))
+		if got := tokensState(now, toks); got.Mark != "warning" || got.Count != 3 {
+			t.Errorf("a token unused for 95 days: %+v, want the warning mark and count 3", got)
 		}
 	})
 
@@ -396,7 +408,7 @@ func TestSettingsPagesHoldNoSecret(t *testing.T) {
 	if _, err := e.Svc.SaveRegistry(ctx, "ghcr.io", "acme", new(sentinel)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Svc.CreateNotificationChannel(ctx, service.NotificationChannelInput{Kind: "ntfy", Name: "phone", URL: rcv.URL + "/topic",
+	if _, err := e.Svc.CreateNotificationChannel(ctx, service.NotificationChannelInput{Kind: "ntfy", Name: "phone", URL: rcv.URL + "/topic-" + sentinel,
 		Token: "tk_" + sentinel, Events: []string{service.EventProblems}}); err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +476,8 @@ func TestSettingsRegistryRows(t *testing.T) {
 		t.Errorf("rows not ordered refused first, then by host (%d, %d, %d):\n%s", quay, docker, ghcr, got)
 	}
 	for _, want := range []string{
-		"refused · tested 2 hours ago", "401 unauthorized: the user name or password is wrong", "not tested yet", "works · tested just now",
+		"refused tested 2 hours ago", "Deploys of private images from this registry fail until it accepts the credentials.", "401 unauthorized: the user name or password is wrong",
+		"not tested yet added", "works tested just now",
 		"used by 2 apps", "used by 1 app", "not used", "Update password",
 	} {
 		if !strings.Contains(got, want) {
@@ -548,8 +561,22 @@ func TestSettingsBackupStorageStates(t *testing.T) {
 	check("a failed run", "last backup failed 29 minutes ago")
 	page = e.mustGet(t, "/settings/backup-storage")
 	if !strings.Contains(page, `cv-mark cv-mark-lg cv-mark-failed`) || !strings.Contains(page, `cv-conn-st cv-conn-st-failed`) ||
-		!strings.Contains(page, `cv-mark cv-mark-warning" aria-hidden="true"></span><span class="sr-only">the last backup failed`) {
-		t.Error("a failed last run isn't a square on the row and a diamond in the nav")
+		!strings.Contains(page, `cv-mark cv-mark-failed" aria-hidden="true"></span><span class="sr-only">the last backup failed`) {
+		t.Error("a failed last run isn't a square on the row and the same square in the nav")
+	}
+	// The note under the row: which service of which app, page 2's plain cause, the raw message in
+	// mono, and the way to its Backups tab.
+	got := text(page)
+	for _, want := range []string{"web of duo: The destination refused the access key.", "AccessDenied", "Open its backups"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the failure note lacks %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(page, `<p class="cv-conn-detail">AccessDenied</p>`) || !strings.Contains(page, `<a href="/apps/duo/backups" class="cv-conn-link">Open its backups</a>`) {
+		t.Error("the raw message isn't its own mono line, or the link doesn't go to the app's Backups tab")
+	}
+	if !strings.Contains(page, `aria-label="Edit backup storage"`) {
+		t.Error("the destination's row has no short accessible name")
 	}
 }
 
@@ -609,7 +636,8 @@ func TestSettingsNotificationRows(t *testing.T) {
 	}
 	for _, want := range []string{
 		"failed just now", "sent just now", "nothing sent yet", "paused",
-		"Every channel gets what needs you and how deploys end, as ticked in its form. Repeats of the same problem are sent once.",
+		"Each channel gets the events ticked in its form. Repeats of the same problem are sent once.",
+		"Messages to this channel aren't getting through.", "Remove zeta? Messages stop at once.",
 		"Recent deliveries", "Send a test", "Resume", "Pause", "New signing secret",
 	} {
 		if !strings.Contains(got, want) {
@@ -619,8 +647,13 @@ func TestSettingsNotificationRows(t *testing.T) {
 	if n := strings.Count(page, `class="cv-conn-icon"><svg`); n != 4 {
 		t.Errorf("%d kind icons drawn, want one per channel", n)
 	}
-	if !regexp.MustCompile(`cv-conn-note">[^<]+</p>`).MatchString(page) {
-		t.Error("the failed delivery's error isn't the row's note")
+	// The note leads with the consequence in words, then the raw error in mono.
+	if !regexp.MustCompile(`cv-conn-note">Messages to this channel aren't getting through\.<span class="cv-conn-detail">[^<]+</span></p>`).MatchString(page) {
+		t.Error("the failed delivery's error isn't the row's note, after its sentence")
+	}
+	// Recent deliveries mark a failure with the row's ◆, not a square.
+	if strings.Contains(page, `cv-deliveries`) && strings.Contains(page[strings.Index(page, `cv-deliveries`):], `cv-mark-failed`) {
+		t.Error("a failed delivery in Recent deliveries is marked with a square, not the row's diamond")
 	}
 	if strings.Contains(got, "What goes where") {
 		t.Error("the rules grid is drawn")
@@ -666,8 +699,9 @@ func TestSettingsTokenRows(t *testing.T) {
 	for _, want := range []string{
 		"TokenCan doLast usedExpiry", // the head, whose cells touch in the text
 		"Deploy · app api of project default", "Everything", "never expires",
-		"A token that can do everything and never expires. Give it an end date, or make one that only deploys an app.",
+		"A token that can do everything and never expires. Make one with an end date, or one that only deploys an app, then revoke this one.",
 		"Not used in 95 days. Revoke it if nothing needs it.",
+		"Can do Everything", "Expiry never expires",
 		"expired " + soon.UTC().Format("2006-01-02"), "revoked " + start.UTC().Format("2006-01-02"),
 	} {
 		if !strings.Contains(got, want) {
@@ -693,7 +727,10 @@ func TestSettingsTokenRows(t *testing.T) {
 		t.Errorf("%d Revoke buttons, want 4", n)
 	}
 	// The nav shows the warning, not the count.
-	if !strings.Contains(page, `cv-mark cv-mark-warning" aria-hidden="true"></span><span class="sr-only">a token needs a look`) {
+	if !strings.Contains(page, `<a href="#new" class="cv-conn-link">Make one</a>`) {
+		t.Error("the no-expiry note doesn't link Make one to the New token form")
+	}
+	if !strings.Contains(page, `cv-mark cv-mark-warning" aria-hidden="true"></span><span class="sr-only">a token went unused for 90 days`) {
 		t.Error("the nav lacks the warning mark")
 	}
 }
@@ -807,4 +844,121 @@ func TestSettingsAfterTheReview(t *testing.T) {
 	if !strings.Contains(css, "@media (max-width:899.98px){") || !strings.Contains(css, ".cv-page-settings{padding:0}") {
 		t.Error(".cv-page-settings doesn't drop the shell's narrow padding after the layer")
 	}
+}
+
+// The critique's rulings (2026-10-22): the nav marks only what is breaking, rows mark more; "Update password"
+// opens Edit with the cursor in the password field; the narrow nav puts the current entry first and fades;
+// the last five expired or revoked tokens, then "Show older".
+func TestSettingsAfterTheCritique(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	rcv := newNotifyReceiver(t)
+
+	t.Run("a paused channel and a full token without an end date mark their rows, not the nav", func(t *testing.T) {
+		ch, err := e.Svc.CreateNotificationChannel(ctx, serviceInput("webhook", "ci", rcv.URL+"/h"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		yes := true
+		if _, err := e.Svc.UpdateNotificationChannel(ctx, ch.ID, service.NotificationChannelPatch{Paused: &yes}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.Auth.CreateAPIToken(ctx, "forever", nil); err != nil {
+			t.Fatal(err)
+		}
+		notify, tokens := e.mustGet(t, "/settings/notifications"), e.mustGet(t, "/settings/tokens")
+		if !strings.Contains(notify, `cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-warning"`) || !strings.Contains(tokens, `cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-warning"`) {
+			t.Error("a paused channel or a token without an end date doesn't mark its row")
+		}
+		for name, page := range map[string]string{"notifications": notify, "tokens": tokens} {
+			nav := regexp.MustCompile(`(?s)<nav aria-label="Settings".*?</nav>`).FindString(page)
+			if strings.Contains(nav, "cv-mark-warning") || strings.Contains(nav, "cv-mark-failed") {
+				t.Errorf("%s: the nav is marked for a chosen or chronic state:\n%s", name, nav)
+			}
+		}
+		if !strings.Contains(text(settingsNavText(e.mustGet(t, "/settings"))), "Notifications1") || !strings.Contains(text(settingsNavText(e.mustGet(t, "/settings"))), "API tokens1") {
+			t.Error("the nav doesn't fall back to the counts")
+		}
+	})
+
+	t.Run("Update password opens Edit with the cursor in the password", func(t *testing.T) {
+		if _, err := e.Svc.SaveRegistry(ctx, "quay.io", "bot", new("p")); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Store.SaveRegistryTest(ctx, "quay.io", store.RegistryTest{At: e.Clock.Now(), Message: "401"}); err != nil {
+			t.Fatal(err)
+		}
+		focused := regexp.MustCompile(`<input[^>]*name="password"[^>]* autofocus`)
+		if page := e.mustGet(t, "/settings/registries?edit=quay.io"); !focused.MatchString(page) {
+			t.Errorf("?edit=quay.io doesn't focus the password:\n%s", text(page))
+		}
+		if page := e.mustGet(t, "/settings/registries"); focused.MatchString(page) {
+			t.Error("a page that wasn't asked to open Edit focuses a password field")
+		}
+		// The nav's ■ for the refused one, until a save forgets the test.
+		if page := e.mustGet(t, "/settings/registries"); !strings.Contains(page, `cv-mark cv-mark-failed" aria-hidden="true"></span><span class="sr-only">a registry refused its credentials`) {
+			t.Error("a refused registry doesn't mark the nav with a square")
+		}
+		if resp, body := e.postForm(t, "/settings/registries", url.Values{"host": {"quay.io"}, "username": {"bot"}, "password": {"new"}, "edit": {"1"}}); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST = %d:\n%s", resp.StatusCode, text(body))
+		}
+		page := e.mustGet(t, "/settings/registries?registries=saved")
+		if strings.Contains(page, "sr-only\">a registry refused") || !strings.Contains(text(page), "Saved. Test them to clear the warning.") || !strings.Contains(text(page), "changed · not tested since") {
+			t.Errorf("after a save that changed the credentials:\n%s", text(page))
+		}
+	})
+
+	t.Run("the narrow nav puts the current entry first and fades at the edge", func(t *testing.T) {
+		_, css := e.get(t, "/static/app.css")
+		css = strings.Join(strings.Fields(css), " ")
+		for _, want := range []string{".cv-snav-group{display:contents}", ".cv-snav-item[aria-current=page]{order:0}", ".cv-snav-item{white-space:nowrap;flex:none;order:1}",
+			"mask-image:linear-gradient("} {
+			if !strings.Contains(css, want) {
+				t.Errorf("the stylesheet lacks %q", want)
+			}
+		}
+		// One HTML list for both orders: the wide nav keeps the contract's order, in its groups.
+		got := settingsNavOf(t, e.mustGet(t, "/settings/tokens"))
+		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Backup storage=/settings/backup-storage Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "API tokens=/settings/tokens*" {
+			t.Errorf("the nav's order changed: %v", got)
+		}
+	})
+
+	t.Run("the last five expired or revoked tokens, then Show older", func(t *testing.T) {
+		later := e.Clock.Now().Add(1000 * 24 * time.Hour)
+		for i := range 8 {
+			made, err := e.Auth.CreateAPIToken(ctx, "old-"+strconv.Itoa(i), &later)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.Clock.Advance(time.Minute)
+			if err := e.Auth.RevokeAPIToken(ctx, made.Info.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		page := e.mustGet(t, "/settings/tokens")
+		// old-7 .. old-3 were revoked last.
+		for i := 3; i < 8; i++ {
+			if !strings.Contains(page, `title="old-`+strconv.Itoa(i)+`">`) {
+				t.Errorf("old-%d, one of the last five, isn't listed", i)
+			}
+		}
+		for i := range 3 {
+			if strings.Contains(page, `title="old-`+strconv.Itoa(i)+`">`) {
+				t.Errorf("old-%d is listed before Show older", i)
+			}
+		}
+		if !strings.Contains(page, `<a href="/settings/tokens?older=1" class="cv-conn-link">Show older (3 expired or revoked)</a>`) {
+			t.Errorf("no Show older link:\n%s", text(page))
+		}
+		all := e.mustGet(t, "/settings/tokens?older=1")
+		if strings.Count(all, `title="old-`) != 8 || strings.Contains(all, "Show older") {
+			t.Errorf("?older=1 lists %d of the 8 revoked tokens, or still offers Show older", strings.Count(all, `title="old-`))
+		}
+	})
+}
+
+// settingsNavText is the Settings nav of a page, for reading its words.
+func settingsNavText(body string) string {
+	return regexp.MustCompile(`(?s)<nav aria-label="Settings" class="cv-snav">.*?</nav>`).FindString(body)
 }

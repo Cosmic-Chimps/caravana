@@ -85,7 +85,7 @@ func TestSettingsRegistries(t *testing.T) {
 		}
 		_, page := e.get(t, "/settings/registries?registries=saved")
 		got := text(page)
-		for _, want := range []string{"Saved. The next deploy uses them; running apps pick them up the next time they start.", "ghcr.io", "acme-bot", "not tested yet"} {
+		for _, want := range []string{"Saved. Test them to clear the warning.", "ghcr.io", "acme-bot", "not tested yet"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("after the save the page lacks %q:\n%s", want, got)
 			}
@@ -163,7 +163,7 @@ func TestSettingsRegistries(t *testing.T) {
 		}
 		_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
 		got := text(page)
-		if !strings.Contains(got, host+" refused the credentials: ") || !strings.Contains(got, "refused · tested just now") {
+		if !strings.Contains(got, host+" refused the credentials: ") || !strings.Contains(got, "refused tested just now") {
 			t.Errorf("after a refused test the page says:\n%s", got)
 		}
 		if !strings.Contains(page, `role="alert" class="cv-notice"`) {
@@ -178,13 +178,16 @@ func TestSettingsRegistries(t *testing.T) {
 			t.Fatalf("POST edit = %d", resp.StatusCode)
 		}
 		_, page = e.get(t, "/settings/registries")
-		if !strings.Contains(text(page), "not tested yet") {
-			t.Error("a changed secret kept the old check")
+		if !strings.Contains(text(page), "changed · not tested since") || strings.Contains(text(page), "refused") {
+			t.Errorf("a changed secret kept the old check, or doesn't say it changed:\n%s", text(page))
+		}
+		if !strings.Contains(page, `cv-mark cv-mark-lg cv-mark-idle`) || strings.Contains(page, `sr-only">a registry refused`) {
+			t.Error("a changed secret leaves the refused mark on the row or the nav")
 		}
 		resp, _ = e.submit(t, formWith(t, page, "/settings/registries/"+host+"/test"), nil)
 		_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
 		got = text(page)
-		if !strings.Contains(got, host+" accepted the credentials.") || !strings.Contains(got, "works · tested just now") {
+		if !strings.Contains(got, host+" accepted the credentials.") || !strings.Contains(got, "works tested just now") {
 			t.Errorf("after an ok test the page says:\n%s", got)
 		}
 		leaks(t, "ok test", page, e.Logs.String())

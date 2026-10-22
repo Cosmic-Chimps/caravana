@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ type tokenRow struct {
 	// CanDo is "Everything" for a full token, or "Deploy · app web of project shop".
 	CanDo string
 	// Notes are the sentences under a row marked with a warning (tokenNotes).
-	Notes []string
+	Notes []tokenNote
 }
 
 // newToken is the token just created, shown once. ExampleID is the app a deploy
@@ -81,6 +82,8 @@ type settingsData struct {
 	CurrentErr      *fieldError
 	NewErr          *fieldError
 	Tokens          []tokenRow
+	OlderHidden     int    // expired or revoked tokens left out of the table, until "Show older"
+	ShowOlder       bool   // ?older=1: every expired and revoked token is listed
 	TokenName       string // kept after a refused create
 	TokenExpires    string
 	NameErr         *fieldError
@@ -113,6 +116,15 @@ type destRow struct {
 	Mark, Name, Kind, State string
 	StateFailed             bool
 	UsedBy                  string
+	// Failure is the note under a row whose last backup failed; nil otherwise.
+	Failure *backupFailure
+}
+
+// backupFailure says which run failed and why: the service and app, the plain cause
+// (page 2's table; "" when the message matches none), the raw message in mono and
+// where to look.
+type backupFailure struct {
+	Service, App, Cause, Detail, Href string
 }
 
 // destFieldView is one text field of the destination form.
@@ -149,9 +161,9 @@ func (s *server) showBackupStorage(w http.ResponseWriter, r *http.Request, sessi
 	s.renderSettings(w, r, entryBackupStorage, data)
 }
 
-// showTokens answers GET /settings/tokens.
+// showTokens answers GET /settings/tokens. ?older=1 lists every expired and revoked token.
 func (s *server) showTokens(w http.ResponseWriter, r *http.Request, session string) {
-	s.renderSettings(w, r, entryTokens, settingsData{})
+	s.renderSettings(w, r, entryTokens, settingsData{ShowOlder: r.URL.Query().Get("older") == "1"})
 }
 
 // setBackupDestination answers POST /settings/backups (feature 010). An
@@ -259,7 +271,7 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 	case entryNotifications:
 		data.Notifications = notificationsSection(now, facts, states[entryNotifications], data.Notifications)
 	case entryTokens:
-		data.Tokens = tokenRows(now, facts.Tokens, states[entryTokens])
+		data.Tokens, data.OlderHidden = tokenRows(now, facts.Tokens, states[entryTokens], data.ShowOlder)
 		if s.svc != nil {
 			pl, err := s.loadPlaces(r.Context())
 			if err != nil {
@@ -304,16 +316,27 @@ func destinationSection(now time.Time, f settingsFacts, st entryState, form dest
 			at = *last.FinishedAt
 		}
 		row.State, row.StateFailed = "last backup failed "+relative(now, at), true
+		row.Failure = &backupFailure{Service: last.Service, App: last.AppID, Cause: causeOf(last.Message), Detail: last.Message,
+			Href: "/apps/" + last.AppID + "/backups"}
 	}
 	form.Row = row
 	return form
 }
 
+// olderTokensShown is how many expired or revoked tokens the table lists before "Show older".
+const olderTokensShown = 5
+
 // tokenRows builds the token table from the tokens (newest first) and
 // tokensState: active ones first, those with a problem at the top of them, then
-// expired, then revoked.
-func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState) []tokenRow {
-	rows := make([]tokenRow, 0, len(tokens))
+// expired, then revoked. Of the expired and revoked ones only the last
+// olderTokensShown (by when they ended) are listed unless all is set; hidden says
+// how many were left out.
+func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState, all bool) (rows []tokenRow, hidden int) {
+	type ended struct {
+		row tokenRow
+		at  time.Time
+	}
+	var inactive []ended
 	for i, t := range tokens {
 		row := tokenRow{
 			ID: t.ID, Name: t.Name, State: t.State, Mark: st.Rows[i],
@@ -325,13 +348,14 @@ func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState) []to
 		if t.Scope != nil {
 			row.CanDo = "Deploy · app " + t.Scope.App + " of project " + t.Scope.Project
 		}
+		var at time.Time
 		switch t.State {
 		case service.TokenRevoked:
 			w := whenOf(now, t.RevokedAt, "")
-			row.Expiry, row.Exact = "revoked "+w.Text, w.Exact
+			row.Expiry, row.Exact, at = "revoked "+w.Text, w.Exact, *t.RevokedAt
 		case service.TokenExpired:
 			w := whenOf(now, t.ExpiresAt, "")
-			row.Expiry, row.Exact = "expired "+w.Text, w.Exact
+			row.Expiry, row.Exact, at = "expired "+w.Text, w.Exact, *t.ExpiresAt
 		case service.TokenActive:
 			if t.ExpiresAt == nil {
 				row.Expiry = "never expires"
@@ -342,7 +366,19 @@ func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState) []to
 				row.Expiry, row.Exact = "expires "+w.Text, w.Exact
 			}
 		}
-		rows = append(rows, row)
+		if t.State == service.TokenActive {
+			rows = append(rows, row)
+		} else {
+			inactive = append(inactive, ended{row, at})
+		}
+	}
+	// The most recently ended first; the cut keeps those, and the table keeps its order.
+	slices.SortStableFunc(inactive, func(a, b ended) int { return b.at.Compare(a.at) })
+	if !all && len(inactive) > olderTokensShown {
+		hidden, inactive = len(inactive)-olderTokensShown, inactive[:olderTokensShown]
+	}
+	for _, in := range inactive {
+		rows = append(rows, in.row)
 	}
 	rank := func(r tokenRow) int {
 		switch {
@@ -356,7 +392,7 @@ func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState) []to
 		return 3
 	}
 	sortStable(rows, rank)
-	return rows
+	return rows, hidden
 }
 
 // changePassword answers POST /settings/password. Success goes back to the

@@ -31,16 +31,24 @@ type registryForm struct {
 	Host, Username string
 	Field          string // the field at fault, after a refusal
 	Err            *fieldError
+	// Focus puts the cursor in the password field when the form is drawn open: the
+	// owner came by "Update password".
+	Focus bool
 }
 
 // registryRow is one registry, one connection row.
 type registryRow struct {
 	Host, Username string
-	Mark           string         // registriesState's: failed, healthy or idle
-	UsedBy         string         // "used by 3 apps", or "not used"
-	Check          *registryCheck // nil until the credentials were tested
-	Edit           registryForm   // what the row's edit form shows
-	Open           bool           // the edit form is shown open: it was refused, or asked for with ?edit=
+	Mark           string // registriesState's: failed, healthy or idle
+	UsedBy         string // "used by 3 apps", or "not used"
+	// State and Event are the row's two lines: how the credentials stand ("works",
+	// "refused", "changed · not tested since", "not tested yet") and the last
+	// thing that happened to them ("tested 2 hours ago", "saved 5 minutes ago").
+	State, Event string
+	StateFailed  bool
+	Check        *registryCheck // nil until the credentials were tested
+	Edit         registryForm   // what the row's edit form shows
+	Open         bool           // the edit form is shown open: it was refused, or asked for with ?edit=
 	// EditHref is where "Update password" goes: this page with the row's edit
 	// form open, which needs no script.
 	EditHref string
@@ -71,6 +79,7 @@ type registriesData struct {
 // registryFieldView is one input of a Registries form.
 type registryFieldView struct {
 	ID, Name, Label, Type, Value, Placeholder, Hint, Err string
+	Focus                                                bool
 }
 
 // regField builds an input of a Registries form for the template. idPrefix
@@ -86,6 +95,7 @@ func regField(f registryForm, idPrefix, name, label, placeholder, hint string) r
 		v.Value = f.Username
 	case "password":
 		v.Type = "password"
+		v.Focus = f.Focus
 	}
 	if f.Field == name && f.Err != nil {
 		v.Err = f.Err.Text
@@ -205,13 +215,26 @@ func registriesSection(now time.Time, facts settingsFacts, st entryState, data r
 	for i, reg := range facts.Registries {
 		row := registryRow{Host: reg.Host, Username: reg.Username, Mark: st.Rows[i], UsedBy: usedBy(use[reg.Host], "app"),
 			Edit: registryForm{Host: reg.Host, Username: reg.Username}}
-		if reg.LastTest != nil {
-			row.Check = &registryCheck{OK: reg.LastTest.OK, Message: reg.LastTest.Message, When: whenOf(now, &reg.LastTest.At, "")}
+		switch t := reg.LastTest; {
+		case t != nil && t.OK:
+			row.Check = &registryCheck{OK: true, When: whenOf(now, &t.At, "")}
+			row.State, row.Event = "works", "tested "+row.Check.When.Text
+		case t != nil:
+			row.Check = &registryCheck{Message: t.Message, When: whenOf(now, &t.At, "")}
+			row.State, row.StateFailed, row.Event = "refused", true, "tested "+row.Check.When.Text
+		case reg.UpdatedAt.After(reg.CreatedAt):
+			// A save that changed the credentials forgot the last test (the service does that), so
+			// nothing says whether they work: that is not a problem, and not a mark on the nav.
+			row.State, row.Event = "changed · not tested since", "saved "+whenOf(now, &reg.UpdatedAt, "").Text
+		default:
+			row.State, row.Event = "not tested yet", "added "+whenOf(now, &reg.CreatedAt, "").Text
 		}
 		if reg.Host == data.EditHost {
 			row.Open = true
 			if data.Edit.Host != "" {
 				row.Edit = data.Edit
+			} else {
+				row.Edit.Focus = true // "Update password": ready to type it
 			}
 		}
 		data.Rows = append(data.Rows, row)
@@ -223,7 +246,7 @@ func registriesSection(now time.Time, facts settingsFacts, st entryState, data r
 
 	switch {
 	case data.Saved:
-		data.Notice = &registryNotice{Text: "Saved. The next deploy uses them; running apps pick them up the next time they start."}
+		data.Notice = &registryNotice{Text: "Saved. Test them to clear the warning."}
 	case data.Tested != "":
 		for _, row := range data.Rows {
 			switch {

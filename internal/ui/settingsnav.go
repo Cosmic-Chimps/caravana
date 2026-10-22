@@ -57,9 +57,12 @@ func settingsLabel(id string) string {
 
 // entryState is what one entry says about itself on every render. Count is the
 // nav's number when Mark is "" (0 draws nothing). Mark is "warning" or "failed"
-// when something is wrong, and wins over the count; Why says what, for a screen
-// reader. Rows are the marks of the entry's rows, in the order they were given
-// (healthy, warning, failed or idle).
+// when something is breaking, and wins over the count; Why says what, for a
+// screen reader (a failure first, and both when both hold). Rows are the marks of
+// the entry's rows, in the order they were given (healthy, warning, failed or
+// idle). Rows mark more than the nav: a state the owner chose (a paused channel)
+// or one that is chronic (a full token that never expires) marks its row and has
+// a note there, but doesn't call the owner from the nav.
 type entryState struct {
 	Count int
 	Mark  string
@@ -68,8 +71,9 @@ type entryState struct {
 }
 
 // registriesState: a registry's mark is ■ when its last test was refused, ●
-// when it passed and ○ when it was never tested; the nav shows ■ when any is
-// refused, else the number of registries.
+// when it passed and ○ when it was never tested or its credentials changed since
+// (the service forgets the last test when a save changes them); the nav shows ■
+// when any is refused, else the number of registries.
 func registriesState(regs []store.Registry) entryState {
 	st := entryState{Count: len(regs), Rows: make([]string, len(regs))}
 	for i, r := range regs {
@@ -97,8 +101,8 @@ type backupFacts struct {
 
 // backupStorageState: the destination's row is ● when the last run that used it
 // succeeded, ■ when it failed and ○ when none ran. The nav, which has no count
-// (there is one destination), shows ◆ when no destination is set and a service
-// has a policy, or when the last run failed.
+// (there is one destination), shows the same ■ for a failed last run, and ◆ when
+// no destination is set while a service has a policy.
 func backupStorageState(f backupFacts) entryState {
 	var st entryState
 	if !f.Destination {
@@ -114,7 +118,7 @@ func backupStorageState(f backupFacts) entryState {
 		st.Rows = []string{"healthy"}
 	default:
 		st.Rows = []string{"failed"}
-		st.Mark, st.Why = "warning", "the last backup failed"
+		st.Mark, st.Why = "failed", "the last backup failed"
 	}
 	return st
 }
@@ -127,22 +131,23 @@ type channelFacts struct {
 }
 
 // notificationsState: a channel's mark is ◆ when its last delivery failed or it
-// is paused, ○ when nothing was sent yet and ● otherwise; the nav shows ◆ when
-// any channel has one, else the number of channels (paused ones included).
+// is paused, ○ when nothing was sent yet and ● otherwise; the nav shows ◆ only
+// when a delivery failed (a paused channel was the owner's choice), else the
+// number of channels (paused ones included).
 func notificationsState(chs []channelFacts) entryState {
 	st := entryState{Count: len(chs), Rows: make([]string, len(chs))}
 	for i, c := range chs {
+		failed := c.Last != nil && !c.Last.OK
 		switch {
-		case c.Paused:
+		case c.Paused || failed:
 			st.Rows[i] = "warning"
-			st.Mark, st.Why = "warning", "a channel is paused"
-		case c.Last != nil && !c.Last.OK:
-			st.Rows[i] = "warning"
-			st.Mark, st.Why = "warning", "a channel's last delivery failed"
 		case c.Last == nil:
 			st.Rows[i] = "idle"
 		default:
 			st.Rows[i] = "healthy"
+		}
+		if failed {
+			st.Mark, st.Why = "warning", "a channel's last delivery failed"
 		}
 	}
 	return st
@@ -151,44 +156,62 @@ func notificationsState(chs []channelFacts) entryState {
 // staleTokenDays is how long an active token may go unused before it is flagged.
 const staleTokenDays = 90
 
+// tokenNote is a sentence under a token's row. Link, when set, is a phrase of the
+// sentence that links to the New token form ("Make one"), Before and After being
+// the text around it.
+type tokenNote struct {
+	Kind          string // noexpiry or unused
+	Before, After string
+	Link          string
+}
+
+// Text is the note as a plain sentence.
+func (n tokenNote) Text() string { return n.Before + n.Link + n.After }
+
 // tokenNotes says what is wrong with a token, in the sentences the row shows
-// under it: an active full token with no expiry, and an active token unused for
-// 90 days (a token never used is counted from when it was made). A token that
-// isn't active has none. A row is marked ◆ exactly when this has a sentence.
-func tokenNotes(now time.Time, t service.APITokenInfo) []string {
+// under it: an active full token with no expiry (chronic: it marks its row, not
+// the nav), and an active token unused for more than 90 days (a token never used
+// is counted from when it was made, so a fresh token is never flagged). A token
+// that isn't active has none. A row is marked ◆ exactly when this has a sentence.
+func tokenNotes(now time.Time, t service.APITokenInfo) []tokenNote {
 	if t.State != service.TokenActive {
 		return nil
 	}
-	var notes []string
+	var notes []tokenNote
 	if t.Scope == nil && t.ExpiresAt == nil {
-		notes = append(notes, "A token that can do everything and never expires. Give it an end date, or make one that only deploys an app.")
+		notes = append(notes, tokenNote{Kind: "noexpiry", Before: "A token that can do everything and never expires. ", Link: "Make one",
+			After: " with an end date, or one that only deploys an app, then revoke this one."})
 	}
 	since := t.CreatedAt
 	if t.LastUsedAt != nil {
 		since = *t.LastUsedAt
 	}
 	if days := int(now.Sub(since) / (24 * time.Hour)); days > staleTokenDays {
-		notes = append(notes, fmt.Sprintf("Not used in %d days. Revoke it if nothing needs it.", days))
+		notes = append(notes, tokenNote{Kind: "unused", Before: fmt.Sprintf("Not used in %d days. Revoke it if nothing needs it.", days)})
 	}
 	return notes
 }
 
 // tokensState: a token's mark is ◆ when it is active and tokenNotes has
 // something to say, ○ when it expired or was revoked and ● otherwise; the nav
-// shows ◆ when any active token has one, else the number of active tokens.
+// shows ◆ only when an active token went unused for 90 days (a full token
+// without an end date is chronic, and noted on its row), else the number of
+// active tokens.
 func tokensState(now time.Time, tokens []service.APITokenInfo) entryState {
 	st := entryState{Rows: make([]string, len(tokens))}
 	for i, t := range tokens {
-		switch {
-		case t.State != service.TokenActive:
+		if t.State != service.TokenActive {
 			st.Rows[i] = "idle"
-		case len(tokenNotes(now, t)) > 0:
+			continue
+		}
+		st.Count++
+		notes := tokenNotes(now, t)
+		st.Rows[i] = "healthy"
+		if len(notes) > 0 {
 			st.Rows[i] = "warning"
-			st.Mark, st.Why = "warning", "a token needs a look"
-			st.Count++
-		default:
-			st.Rows[i] = "healthy"
-			st.Count++
+		}
+		if slices.ContainsFunc(notes, func(n tokenNote) bool { return n.Kind == "unused" }) {
+			st.Mark, st.Why = "warning", "a token went unused for 90 days"
 		}
 	}
 	return st

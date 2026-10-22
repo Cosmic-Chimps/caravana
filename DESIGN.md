@@ -662,19 +662,25 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
   Control ground and no left bar (the bar is the sidebar's). Under 900px the shell's own narrow rule applies
-  (no sidebar, the Menu bar) and the nav is a row of links above the content, scrolling sideways; it is
+  (no sidebar, the Menu bar) and the nav is a row of links above the content, scrolling sideways, with the
+  current entry first (CSS `order` on the same links, the groups dissolved with `display: contents`) and a
+  fade at the right edge (`mask-image`); it is
   positioned so its screen-reader-only spans stay inside the scroller, and `.cv-page-settings` drops the
   shell's narrow padding after the layer, which would otherwise win. The sidebar's Settings stays current on every Settings page, and the crumbs
   read "Settings / <entry>".
 - **The count-or-mark rule.** Each entry has one function (`registriesState`, `backupStorageState`,
-  `notificationsState`, `tokensState`) that gives its count, its mark, and the mark of each of its rows; the
-  nav and the page's rows both read it, so they never disagree. A mark wins over the count. Registries: ■ when
-  a registry's last test was refused (○ never tested, ● passed), else how many. Backup storage has no count:
-  ◆ when no destination is set and a service has a backup policy, or when the last backup failed (the row
-  itself is ■). Notifications: ◆ when a channel's last delivery failed or it is paused, else how many (paused
-  ones included). API tokens: ◆ when an active full token never expires, or any active token was unused for
-  more than 90 days (a token never used counts from when it was made), else how many are active; an expired or
-  revoked token is ○.
+  `notificationsState`, `tokensState`) that gives its count, its nav mark, and the mark of each of its rows; the
+  nav and the page's rows both read it. The nav marks only what is breaking, and a mark wins over the count;
+  the rows mark more: a state the owner chose (a paused channel) or one that is chronic (a full token that
+  never expires) marks its row and has its note there, and leaves the nav showing the count. Registries: ■
+  when a registry's last test was refused (○ never tested, or changed since: a save that changes the
+  credentials forgets the last test; ● passed), else how many. Backup storage has no count: ■ in the nav and
+  on the row when the last backup failed, ◆ when no destination is set while a service has a backup policy.
+  Notifications: ◆ when a channel's last delivery failed, else how many (paused ones included; a paused
+  channel's row is ◆). API tokens: ◆ when an active token went unused for more than 90 days (a token never used
+  counts from when it was made, so a fresh one is never flagged), else how many are active; a full token with
+  no end date is ◆ on its row only; an expired or revoked token is ○. The nav's spoken reason puts a failure
+  first and names both when both hold.
 - **Content:** 1180px at most, padding 36px 32px 64px, 22px between blocks. The head is the headline
   (30px, 400) over a 15px sentence, and the page's one primary action at the right (small, with a plus).
 - **Setting rows** (Account, the add and edit forms): a panel of rows, a 220px label with its 13px hint at
@@ -690,7 +696,8 @@ and the content, in the shell's frame; the shell's own page padding is off for t
 - **Add panels** (Registries, Notifications, API tokens) open with a Label row naming what they add, so `#add`
   and `#new` land on a named thing.
 - **Token table:** a 38px head (Expiry column 170px), then rows of mark, name over "made …", what it can do, last used, expiry, and
-  Revoke; sorted active (problems first), expired, revoked. "never expires" is in the warning hue for a full
+  Revoke; sorted active (problems first), expired, revoked, the last five expired or revoked and then a "Show
+  older" link (`?older=1`). "never expires" is in the warning hue for a full
   token.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in

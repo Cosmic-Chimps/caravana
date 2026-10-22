@@ -115,10 +115,8 @@
         <span class="cv-conn-kind">user <span class="cv-inline-mono">{{.Username}}</span></span>
       </div>
       <div class="cv-conn-state">
-        {{with .Check}}
-        {{if .OK}}<span class="cv-conn-st" title="{{.When.Exact}}">works · tested {{.When.Text}}</span>
-        {{else}}<span class="cv-conn-st cv-conn-st-failed" title="{{.When.Exact}}">refused · tested {{.When.Text}}</span>{{end}}
-        {{else}}<span class="cv-conn-st">not tested yet</span>{{end}}
+        <span class="cv-conn-st{{if .StateFailed}} cv-conn-st-failed{{end}}">{{.State}}</span>
+        <span class="cv-conn-ev"{{with .Check}} title="{{.When.Exact}}"{{end}}>{{.Event}}</span>
       </div>
       <span class="cv-conn-used">{{.UsedBy}}</span>
       <div class="cv-conn-acts">
@@ -145,7 +143,7 @@
         </details>
       </div>
     </div>
-    {{with .Check}}{{if and (not .OK) .Message}}<p class="cv-conn-note">{{.Message}}</p>{{end}}{{end}}
+    {{if .StateFailed}}<p class="cv-conn-note">Deploys of private images from this registry fail until it accepts the credentials.{{with .Check}}{{with .Message}}<span class="cv-conn-detail">{{.}}</span>{{end}}{{end}}</p>{{end}}
   </div>
   {{end}}
 </div>
@@ -190,8 +188,9 @@
 
 {{if .Row}}
 <div class="cv-panel cv-conns">
-  <details class="cv-conn"{{if .Open}} open{{end}}>
-    <summary class="cv-conn-row cv-conn-sum">
+  <div class="cv-conn">
+  <details class="cv-conn-det"{{if .Open}} open{{end}}>
+    <summary class="cv-conn-row cv-conn-sum" aria-label="Edit backup storage">
       <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Row.Mark}}" aria-hidden="true"></span></span>
       <div class="cv-conn-name">
         <span class="cv-conn-title" title="{{.Row.Name}}">{{.Row.Name}}</span>
@@ -205,6 +204,14 @@
       {{template "dest-rows" .}}
     </form>
   </details>
+  {{with .Row.Failure}}
+  <div class="cv-conn-note">
+    <p><span class="cv-inline-mono">{{.Service}}</span> of <span class="cv-inline-mono">{{.App}}</span>: {{if .Cause}}{{.Cause}}{{else}}the last backup failed.{{end}}</p>
+    {{with .Detail}}<p class="cv-conn-detail">{{.}}</p>{{end}}
+    <p><a href="{{.Href}}" class="cv-conn-link">Open its backups</a></p>
+  </div>
+  {{end}}
+  </div>
 </div>
 {{else}}
 {{if .Problem}}
@@ -315,7 +322,7 @@
               <details class="cv-confirm">
                 <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
                 <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
-                  <p>The old secret stops working at once.</p>
+                  <p>The old secret stops working at once. Receivers that check Caravana-Signature reject messages until they have the new one.</p>
                   <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
                 </form>
               </details>
@@ -326,13 +333,13 @@
           <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
             <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
             <form method="post" action="/settings/notifications/{{.ID}}/remove" class="cv-confirm-body">
-              <p>Messages stop at once. Deliveries already listed are removed with it.</p>
+              <p>Remove <span class="cv-inline-mono">{{.Name}}</span>? Messages stop at once. Deliveries already listed are removed with it.</p>
               <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
             </form>
           </details>
         </div>
       </div>
-      {{with .Last}}{{if and (not .OK) .Error}}<p class="cv-conn-note">{{.Error}}</p>{{end}}{{end}}
+      {{with .Last}}{{if not .OK}}<p class="cv-conn-note">Messages to this channel aren't getting through.{{with .Error}}<span class="cv-conn-detail">{{.}}</span>{{end}}</p>{{end}}{{end}}
       <details class="cv-conn-deliveries">
         <summary class="cv-data-muted">Recent deliveries</summary>
         {{if .Deliveries}}
@@ -341,7 +348,7 @@
           <li>
             <span class="cv-data-muted" title="{{.When.Exact}}">{{.When.Text}}</span>
             <span class="text-fg-1 [overflow-wrap:anywhere]">{{.Title}}</span>
-            <span class="inline-flex items-baseline gap-1.5">{{if .OK}}<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>{{else if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}<span class="[overflow-wrap:anywhere]">{{.Detail}}</span></span>
+            <span class="inline-flex items-baseline gap-1.5">{{if .OK}}<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>{{else if .Failed}}<span class="cv-mark cv-mark-warning" aria-hidden="true"></span>{{end}}<span class="[overflow-wrap:anywhere]">{{.Detail}}</span></span>
           </li>
           {{end}}
         </ul>
@@ -350,7 +357,7 @@
     </div>
     {{end}}
   </div>
-  <p class="cv-foot">Every channel gets what needs you and how deploys end, as ticked in its form. Repeats of the same problem are sent once.</p>
+  <p class="cv-foot">Each channel gets the events ticked in its form. Repeats of the same problem are sent once.</p>
   {{else}}
   <div class="cv-panel"><div class="cv-empty">
     <p class="cv-empty-title">No channels yet. Add one and Caravana tells you when something needs you.</p>
@@ -407,9 +414,9 @@
         <span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>
         <span class="cv-conn-meta" title="{{.Made.Exact}}">made {{.Made.Text}}</span>
       </div>
-      <span class="cv-tok-cando" data-label="Can do">{{.CanDo}}</span>
+      <span class="cv-tok-cando" data-label="Can do"><span class="sr-only">Can do </span>{{.CanDo}}</span>
       <span class="cv-conn-meta" data-label="Last used"{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}><span class="sr-only">Last used </span>{{.LastUsed.Text}}</span>
-      <span class="cv-conn-meta{{if .ExpiryWarn}} cv-conn-st-warn{{end}}" data-label="Expiry"{{if .Exact}} title="{{.Exact}}"{{end}}>{{.Expiry}}</span>
+      <span class="cv-conn-meta{{if .ExpiryWarn}} cv-conn-st-warn{{end}}" data-label="Expiry"{{if .Exact}} title="{{.Exact}}"{{end}}><span class="sr-only">Expiry </span>{{.Expiry}}</span>
       <div class="cv-conn-acts">
         {{if eq .State "active"}}
         <details class="cv-confirm cv-confirm-row">
@@ -422,10 +429,11 @@
         {{end}}
       </div>
     </div>
-    {{range .Notes}}<p class="cv-conn-note">{{.}}</p>{{end}}
+    {{range .Notes}}<p class="cv-conn-note">{{.Before}}{{with .Link}}<a href="#new" class="cv-conn-link">{{.}}</a>{{end}}{{.After}}</p>{{end}}
   </div>
   {{end}}
 </div>
+{{if .OlderHidden}}<p class="cv-foot"><a href="/settings/tokens?older=1" class="cv-conn-link">Show older ({{.OlderHidden}} expired or revoked)</a></p>{{end}}
 {{else}}
 <div class="cv-panel"><div class="cv-empty">
   <p class="cv-empty-title">No API tokens yet.</p>
@@ -538,7 +546,7 @@
 {{define "registry-field"}}
 <label class="cv-fld min-w-[12rem] flex-1">
   <span class="cv-label">{{.Label}}</span>
-  <input class="cv-field cv-field-mono" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{else if .Hint}} aria-describedby="{{.ID}}-hint"{{end}}>
+  <input class="cv-field cv-field-mono" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{else if .Hint}}{{if .Focus}} autofocus{{end}} aria-describedby="{{.ID}}-hint"{{end}}>
   {{if .Err}}<span id="{{.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err}}</span></span>
   {{else if .Hint}}<span id="{{.ID}}-hint" class="cv-data-muted">{{.Hint}}</span>{{end}}
 </label>

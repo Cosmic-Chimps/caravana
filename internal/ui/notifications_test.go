@@ -195,10 +195,14 @@ func TestSettingsNotifications(t *testing.T) {
 		}
 		_, page := e.get(t, "/settings/notifications?notifications=saved")
 		got := text(page)
-		for _, want := range []string{"Saved.", "phone", "ntfy", okRcv.URL + "/topic", "nothing sent yet"} {
+		// The topic is a secret like a Slack URL: the host is shown, the topic isn't.
+		for _, want := range []string{"Saved.", "phone", "ntfy", strings.TrimPrefix(okRcv.URL, "http://") + "/••••", "nothing sent yet"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("after the add the page lacks %q:\n%s", want, got)
 			}
+		}
+		if strings.Contains(page, "/topic") {
+			t.Errorf("the page shows the ntfy topic:\n%s", got)
 		}
 		// What a channel sends is the kind's tooltip, and ticked in its edit form.
 		if !strings.Contains(page, `title="Problems, failed deploys"`) {
@@ -335,8 +339,8 @@ func TestSettingsNotifications(t *testing.T) {
 	t.Run("edit keeps the secrets when the fields are empty", func(t *testing.T) {
 		_, page := e.get(t, "/settings/notifications")
 		f := notifyEditForm(t, page, ntfyID)
-		if f.Values.Get("name") != "phone" || f.Values.Get("url") != okRcv.URL+"/topic" {
-			t.Errorf("the ntfy edit form holds name %q and url %q", f.Values.Get("name"), f.Values.Get("url"))
+		if f.Values.Get("name") != "phone" || f.Values.Get("url") != "" {
+			t.Errorf("the ntfy edit form holds name %q and url %q, want the name and an empty URL: the topic is a secret", f.Values.Get("name"), f.Values.Get("url"))
 		}
 		if v, has := f.Values["token"]; !has || v[0] != "" {
 			t.Errorf("the token field is %v, want present and empty", v)
@@ -363,6 +367,9 @@ func TestSettingsNotifications(t *testing.T) {
 			t.Errorf("the edit didn't show:\n%s", got)
 		}
 		channels, err := e.Svc.NotificationChannels(context.Background())
+		if err == nil && channels[0].Address != okRcv.URL+"/topic" {
+			t.Errorf("an edit with an empty URL changed the ntfy topic to %q", channels[0].Address)
+		}
 		if err != nil || channels[0].Name != "my phone" || len(channels[0].Events) != 1 || channels[0].Events[0] != "deploy_failed" {
 			t.Errorf("the edit stored %+v, %v; want the new name and only failed deploys", channels[0], err)
 		}
