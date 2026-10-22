@@ -28,22 +28,22 @@ pages make (an env variable, a secret, a domain, a backup policy) is also possib
 API's `deployApp`, so no API change is needed. "Back up daily" is a console shortcut for a
 definition edit the API already takes.
 
-- [ ] T009 [US2] Cross-cutting: fields to 32px (`cv-field`, sign-in keeps 42px), the select, the
+- [X] T009 [US2] Cross-cutting: fields to 32px (`cv-field`, sign-in keeps 42px), the select, the
   new icons (lock, external-link, file-text, history, play, chevron-right, chevron-down).
-- [ ] T010 [US2] Configure: the two-column grid per service (Copies & size, Shipping with the
+- [X] T010 [US2] Configure: the two-column grid per service (Copies & size, Shipping with the
   health check row and the revert sentence, "Also set"), the Domains and Secrets panels with
   their links, the registry prerequisite, the console's own panels after the grid; Environment
   and the secret forms move out; kept-file, undefined and stopped rules unchanged.
-- [ ] T011 [US2] Variables page `GET /apps/{id}/variables`: head, table, footnote, "Add or change"
+- [X] T011 [US2] Variables page `GET /apps/{id}/variables`: head, table, footnote, "Add or change"
   (variable or secret, Set and deploy), the .env editor per service; kept-file read-only with
   secrets still editable; undefined and stopped rules.
-- [ ] T012 [US2] Domains page `GET /apps/{id}/domains`: head and count, table with open link and
+- [X] T012 [US2] Domains page `GET /apps/{id}/domains`: head and count, table with open link and
   Remove, "Add a domain" with the DNS record box (A, apex or first label, the public IP resolved
   from CARAVANA_PUBLIC_URL with a 2 s timeout and a process cache); add and remove deploy.
-- [ ] T013 [US2] Backups tab in the handoff's shape: head, no-destination banner, gap rows with
+- [X] T013 [US2] Backups tab in the handoff's shape: head, no-destination banner, gap rows with
   "Back up daily" (`POST /apps/{id}/backups/policy`), the `<details>` rows with the 30-day strip,
   runs, Restore… and Back up now, Restores after.
-- [ ] T014 [US2] DESIGN.md, CHANGELOG, tests (handler tests per page and per rule; no secret value
+- [X] T014 [US2] DESIGN.md, CHANGELOG, tests (handler tests per page and per rule; no secret value
   on any page, a sentinel test), lab test selectors.
 - [ ] T015 [US2] Checks, TestConsoleLab, the review instance seeded for the designer, the
   designer's review, the impeccable critique agent (no detector), fixes.

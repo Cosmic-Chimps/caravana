@@ -129,7 +129,7 @@ components:
     typography: "{typography.data}"
     rounded: "{rounded.sm}"
     padding: "0 12px"
-    height: "36px"
+    height: "32px"
   input-sign-in:
     backgroundColor: "{colors.panel-face}"
     textColor: "{colors.readout-white}"
@@ -348,10 +348,13 @@ in place never shifts its neighbors.
 - **Apps page:** a main column plus a 400px right rail holding Activity (one deployment per row, the
   whole row a link to its app). What needs a human is said in the headline, not in a rail panel.
   The rail drops below the main column under 1452px, when the column beside it would be under 720px.
-- **App pages:** four tabs by intent, in this order: Running, Deployments, Configure, Logs. The tab
+- **App pages:** five tabs by intent, in this order: Running, Deployments, Configure, Logs, Backups. The tab
   is named "Deployments", never "Ship". Running is the app's own page (the copies in a live
-  table), Deployments holds the deploy form and the history, Configure the stored definition, the
-  webhook and Delete app, Logs the output of the copies. Each tab is its own URL.
+  table), Deployments holds the deploy form and the history, Configure the grid of Copies & size and
+  Shipping, the Domains and Secrets panels, the webhook and Delete app, Logs the output of the copies,
+  Backups the app's backed-up services. Each tab is its own URL. Variables & secrets
+  (`/apps/{id}/variables`) and Domains (`/apps/{id}/domains`) are Configure's own pages: they draw the
+  app header with the Configure tab current, and no second back link.
 - **Login:** the only page without the shell. A centered 380px column on the bare ground: wordmark,
   the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
   own block under it.
@@ -438,7 +441,9 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   wears them too. Icons are Lucide, inline `<svg>` from the `icon` template function (`icons.go`),
   and only in buttons and the sidebar: plus (New app, 14px), rotate-ccw (Restart) and rocket
   (Deploy) before a label, house, folder and settings in the sidebar, log-out in the one icon-only
-  button (Sign out, 30×30, with an `aria-label`). There are no ghost buttons in the build.
+  button (Sign out, 30×30, with an `aria-label`). The app pages add lock (a secret's name), external-link
+  (open a domain, 30×30, with an `aria-label`), file-text (Edit as .env), history (Restore), play (Back up
+  now) and chevron-right and chevron-down (a `<details>` row's marker). There are no ghost buttons in the build.
 - **Toggle:** a secondary button with `aria-pressed`; on, it shows the pressed state described
   under Elevation & Depth. Its label changes with the state only for Pause / Resume.
 - **Labels:** a verb that names the outcome ("Revert to v22", "Raise to 2 GB"). An optional
@@ -473,18 +478,25 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
 - **Rows:** a 1px Hairline divider between rows. A row turns Raised Control on hover.
 
 ### Inputs / Fields
-- **Style:** Raised Control fill, Control Edge border, 4px corners, Readout White text (mono at
-  14px for values), 12px side padding, 36px tall (`cv-field`). The sign-in page uses a 42px field on
-  Panel Face (`cv-field-lg`). The label sits above in Label style. A prefix or suffix (`https://`,
-  `MB`) sits inside the field in Label Text.
+- **Style:** Raised Control fill, Control Edge border, 4px corners, Readout White text, 12px side
+  padding, **32px** tall (`cv-field`, the handoff's Input md). Values are sans 400 at 13px; a name, a
+  path, a host or a number adds `cv-field-mono` (mono 400 at 12.5px). The sign-in page uses a 42px
+  field on Panel Face (`cv-field-lg`, mono 14px). The label sits above in Label style, 7px over the
+  field (`cv-fld`). A prefix or suffix (`GET`, `MB`, `s`) sits inside the field in Label Text, mono
+  13px with 12px of padding on its side: the box is the field (`cv-field-box`) and its input is bare
+  (`cv-field-input`), so focus and error draw around the whole.
 - **Focus:** the border moves to Strong Edge and the 2px Signal Blue ring appears around it.
-- **Hint / Error:** a hint below in Label Text (`cv-data-muted`). An error below in Fault Ember with
-  the failed mark first, written as a sentence about what's wrong ("The new password must be at
+- **Hint / Error:** a hint below in 13px/1.4 Label Text (`cv-hint`). An error below in Fault Ember
+  with the failed mark first, written as a sentence about what's wrong ("The new password must be at
   least 12 characters."). The field's border turns Fault Ember Edge (`aria-invalid="true"`), the
   error is announced (`role="alert"`), and the field is autofocused so the page lands on it.
 - **Date:** the same field, its value in mono and centered in the box, in the dark color scheme.
-- **Select:** the same field with a native menu in the dark color scheme (`cv-select`), 11rem at
-  least, label above. Used for the Logs toolbar (Copy, Stream).
+- **Select:** the same ground and edge with a native menu in the dark color scheme (`cv-select`),
+  38px tall, 2px corners, mono 14px, 11rem at least, label above. Used for the Logs toolbar (Copy,
+  Stream), the Variables page's Service and the Domains page's "Sends traffic to".
+- **The .env editor:** a textarea on the darkest ground (Unlit Panel), Control Edge border, mono 13px
+  on 24px lines, 300px tall at least (`cv-field-env`).
+- **Checkbox:** `cv-check`, the accent on the box, the sentence in Readout White beside it.
 
 ### Notice
 One line of status, in the voice of the screen: the mark first, then a plain sentence in Readout
@@ -607,11 +619,35 @@ so it works without script. The summary is the button; the body opens below it o
   checks the name again. After a refusal the disclosure opens by itself with the error under the
   field.
 
-### Configure definition
-The stored definition is facts, not a form: one panel per service, its name in mono, then rows of a
-11rem Label column and mono values (several values wrap side by side). Facts nobody set go in one
-muted line at the foot ("Using defaults: …") rather than one "none" each. No environment value is
-ever shown.
+### Configure, Variables, Domains and Backups (feature 021)
+The handoff's app pages, with what the console can do today. Every change on them is a deploy, so each
+submit says so ("Save and deploy", "Set and deploy", "Remove and deploy", "Add domain and deploy"); there is
+no pending state and no Discard. A stopped app's forms say "The app is stopped: start it first." where the
+submit would be, and an app edited through its Compose file shows its tables read-only with "This app is
+edited through its Compose file." (secrets can still be set and removed). A secret's value is never
+drawn, not its length either: ten dots and a lock icon.
+- **Configure:** per service a grid of two panels (`cv-grid2`, gap 16, one column under 860px of room), each
+  `cv-panel` with 18px padding and a Label head: Copies & size (Copies, CPU in MHz, Memory in MB, Ceiling in
+  MB, in four columns) and Shipping (Image, Container port, then the health check as a path with a `GET`
+  prefix, Every in s and Timeout in s, and one sentence that new copies must pass it or the deploy is
+  reverted). "Also set" is a read-only panel under Shipping for what the form leaves alone (entrypoint,
+  command, arguments, volumes, backup). With several services the grid is drawn once per service under
+  its name in mono. Domains and Secrets follow, once per app, each a panel with its link ("Manage
+  domains", "Manage variables and secrets"); a service whose image can't be pulled for want of credentials
+  gets the dashed "Needs a container registry" notice. Neither of the handoff's switches (auto-revert,
+  canary) is drawn: they are not choices here.
+- **Page head** (Variables, Domains, Backups): the title in sans 500 at 18px (the app header owns the h1),
+  one sentence in Body, the page's actions at the right, secondary small buttons and one primary
+  (`cv-pghead`).
+- **Tables** (Variables, Domains): a `cv-panel` of grid rows, a 38px Raised Control head in Label style,
+  rows 52px at least with 1px dividers, Raised Control on hover. A confirmation opens as an overlay under
+  its row's button, so these panels don't clip. A narrow table stacks its cells by its own width.
+- **Backups:** a banner when there is no destination (Panel shape, warning mark, one button), a row for
+  each service that could be backed up and isn't (warning mark, a sentence, "Back up daily"), then one
+  `<details>` per backed-up service: the summary row (chevron, status mark, what, how often and kept, last
+  backup, size), and under it the restore-points strip (30 days, a bar for a healthy run linking to its
+  row, a gap for none), the host path and size of a volume, the last ten runs with "Restore…", and the
+  buttons. Restores come after.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

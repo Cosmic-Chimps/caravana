@@ -15,6 +15,16 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   an app with no services.
 - A Projects page (`/projects`) lists every project with its environments and app count, each row
   a link to the project. "New project" is on it.
+- "Back up daily" on the Backups tab: a service with a database image (PostgreSQL, with a port) or a
+  volume and no backup gets a row offering it. One click sets the backup (every day at 03:00 UTC,
+  the last 7) and deploys; an app that keeps its Compose file keeps it, with the backup in its
+  overlay.
+- Variables & secrets (`/apps/{id}/variables`) and Domains (`/apps/{id}/domains`), two pages of
+  Configure. Variables lists every secret (a lock and ten dots, never a value) and variable of the
+  app, sets or replaces one (a secret with "Keep as a secret"), edits a service's variables as a
+  `.env` text, and removes a secret. Domains lists the app's domains with a link to open each,
+  adds one (with the DNS record to create) and removes one. Each change is a deploy, refused with
+  the page again if the app changed since the page was drawn.
 
 ### Changed
 - The console's sidebar and top bar follow the design. The sidebar links Home, Projects and
@@ -31,6 +41,15 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   older version still runs, and the Apps list sorts it first. Its summary and the needs-you list
   say the same sentence, "v3 failed its health checks. v2 keeps running." (or "No copies are
   running."). "0 of 1 copies healthy" now says so when copies exist and none is healthy.
+- Configure is a short form: per service, Copies & size (copies, CPU, memory, ceiling) and Shipping
+  (image, port and the health check), a read-only "Also set" for what the form leaves alone, then
+  Domains and Secrets panels that link to their pages. The environment, the domains and the secrets
+  left the form, and saving it keeps them as they are. The registry notice shows when an image
+  can't be pulled for want of credentials.
+- The Backups tab is redrawn: a row for each backed-up service that opens to its last 30 days (one
+  bar per day, each a link to its run), its last ten runs with Restore…, "Restore from the last
+  backup" and "Back up now", and the volume's host path and size; the restores follow. The
+  console's fields are 32px tall (the sign-in's stays 42px) and a select is 38px.
 - The app header offers only what can work: Restart and Stop… need a live version, and "Promote
   to <environment>" needs a healthy newest deployment with its definition recorded; the line is
   labeled "Other environments". On narrow screens the back link also names the project and
