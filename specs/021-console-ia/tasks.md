@@ -48,9 +48,17 @@ definition edit the API already takes.
 - [ ] T015 [US2] Checks, TestConsoleLab, the review instance seeded for the designer, the
   designer's review, the impeccable critique agent (no detector), fixes.
 
-## Page 3 (US3), Page 4 (US4)
+## Page 3: Settings with its grouped nav (US3)
 
-Tasks are written when each page's contract is approved.
+Contract: `contracts/page3-settings.md` (the designer, 2026-10-22). Tasks are written when page 2
+is done. Already decided:
+- **No Remove on Backup storage.** The API has no delete of the backup destination
+  (`/v1/backups/destination` offers GET and PUT only, API 0.22.0). Adding one is a separate
+  change (API and service, then the button); it is not part of page 3.
+
+## Page 4 (US4)
+
+Tasks are written when its contract is approved.
 
 Carried to page 4, the deployment stages (the designer, 2026-10-21): after Nomad reverts, the live
 job version (`v2`) is a copy of an older one (`v0`). Say what the owner deployed, from the stored
