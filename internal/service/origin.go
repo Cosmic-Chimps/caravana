@@ -35,6 +35,27 @@ func originFrom(ctx context.Context) *app.Origin {
 	return nil
 }
 
+// tokenNameKey is the context key of WithTokenName.
+type tokenNameKey struct{}
+
+// WithTokenName returns a context that says which API token the request came
+// with, so the deploy it starts records the token's name (feature 021: the
+// Activity rail says which CI deployed). The API sets it for a request
+// authenticated by a token and never for a session or the webhook. It travels
+// in the context for the same reason the origin does.
+func WithTokenName(ctx context.Context, name string) context.Context {
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, tokenNameKey{}, name)
+}
+
+// tokenNameFrom is the name WithTokenName put in ctx, or "".
+func tokenNameFrom(ctx context.Context) string {
+	name, _ := ctx.Value(tokenNameKey{}).(string)
+	return name
+}
+
 // notifyOrigin is o as a notification event carries it, or nil for none.
 func notifyOrigin(o *app.Origin) *notify.Origin {
 	if o == nil {

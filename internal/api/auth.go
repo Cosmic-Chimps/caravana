@@ -20,9 +20,13 @@ import (
 // scope is 403 token_scope. A full token and a session pass as before.
 func (s *server) authenticate(rt route) handlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		scope, err := s.checkCredentials(r, rt.quiet)
+		scope, tokenName, err := s.checkCredentials(r, rt.quiet)
 		if err != nil {
 			return err
+		}
+		// A deploy made with a token records its name; a session has none.
+		if tokenName != "" {
+			r = r.WithContext(service.WithTokenName(r.Context(), tokenName))
 		}
 		if scope != nil {
 			if err := scopeAllows(r, rt, *scope); err != nil {
@@ -34,32 +38,33 @@ func (s *server) authenticate(rt route) handlerFunc {
 }
 
 // checkCredentials returns nil when r may use the API, with the scope of the
-// token it came with: nil for a session and for a full token.
+// token it came with (nil for a session and for a full token) and the token's
+// name ("" for a session).
 //
 // An Authorization header means an API token, and only that: it must be
 // exactly one header with a valid token, and a session cookie sent along
 // doesn't rescue it. Without the
 // header, a valid session cookie (the web UI's calls) is enough, but then a
 // state-changing request must not come from another site (research R7).
-func (s *server) checkCredentials(r *http.Request, quiet bool) (*service.TokenScope, error) {
+func (s *server) checkCredentials(r *http.Request, quiet bool) (*service.TokenScope, string, error) {
 	switch len(r.Header.Values("Authorization")) {
 	case 0:
 	case 1:
-		return s.auth.CheckAPIToken(r.Context(), bearerToken(r))
+		return s.auth.CheckAPITokenNamed(r.Context(), bearerToken(r))
 	default:
-		return nil, service.ErrNotAuthenticated
+		return nil, "", service.ErrNotAuthenticated
 	}
 
 	value, ok := httpx.SessionCookie(r, s.proxies.HTTPS(r))
 	if !ok {
-		return nil, service.ErrNotAuthenticated
+		return nil, "", service.ErrNotAuthenticated
 	}
 	check := s.auth.CheckSession
 	if quiet {
 		check = s.auth.CheckSessionQuiet
 	}
 	if err := check(r.Context(), value); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// A browser tells whether the request came from another site, in headers a
 	// page on another site can't forge; http.CrossOriginProtection reads them.
@@ -67,10 +72,10 @@ func (s *server) checkCredentials(r *http.Request, quiet bool) (*service.TokenSc
 	// pass, and so do GET, HEAD and OPTIONS, which change nothing. A Bearer
 	// token never reaches this check.
 	if err := s.csrf.Check(r); err != nil {
-		return nil, &Error{Status: http.StatusForbidden, Code: codeCrossOrigin,
+		return nil, "", &Error{Status: http.StatusForbidden, Code: codeCrossOrigin,
 			Message: "this request came from another site, so it was refused; nothing was changed"}
 	}
-	return nil, nil
+	return nil, "", nil
 }
 
 // bearerToken returns the value after "Bearer " in the Authorization header,

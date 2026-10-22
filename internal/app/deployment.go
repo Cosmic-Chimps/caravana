@@ -29,4 +29,8 @@ type Deployment struct {
 	// Origin says where the deploy came from (a CI run); nil when nobody said.
 	// The translator ignores it: it is recorded with the deployment only.
 	Origin *Origin `json:"origin,omitempty"`
+	// TokenName is the name of the API token that made the deploy (feature 021);
+	// "" for a session, the webhook and a deploy that wasn't asked for. Like
+	// Origin it is recorded with the deployment only.
+	TokenName string `json:"tokenName,omitempty"`
 }

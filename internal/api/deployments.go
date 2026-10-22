@@ -51,9 +51,12 @@ type deploymentJSON struct {
 	// deployment was made from a Compose file.
 	ComposeKept bool `json:"composeKept"`
 	// Origin says where the deploy came from (a CI run), when its caller said.
-	Origin    *originJSON `json:"origin,omitempty"`
-	CreatedAt time.Time   `json:"createdAt"`
-	UpdatedAt time.Time   `json:"updatedAt"`
+	Origin *originJSON `json:"origin,omitempty"`
+	// TokenName is the name of the API token that made the deploy; absent for
+	// the console, the webhook and deployments recorded before 0.23.0.
+	TokenName string    `json:"tokenName,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
@@ -122,6 +125,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	d.DefinitionRecorded = rec.Definition != nil
 	d.ComposeKept = rec.Compose != nil
 	d.Origin = toOriginJSON(rec.Deployment.Origin)
+	d.TokenName = rec.Deployment.TokenName
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}

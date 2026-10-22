@@ -196,23 +196,31 @@ func (a *Auth) checkScope(ctx context.Context, sc TokenScope) error {
 // minute. Holding a deploy token to its scope is the caller's job (the API's
 // scope middleware); a session has no scope and never reaches this.
 func (a *Auth) CheckAPIToken(ctx context.Context, token string) (*TokenScope, error) {
+	scope, _, err := a.CheckAPITokenNamed(ctx, token)
+	return scope, err
+}
+
+// CheckAPITokenNamed is CheckAPIToken that also returns the token's name, which
+// the API puts in the request's context (WithTokenName) so a deploy records
+// which token made it.
+func (a *Auth) CheckAPITokenNamed(ctx context.Context, token string) (*TokenScope, string, error) {
 	if !strings.HasPrefix(token, apiTokenPrefix) {
-		return nil, ErrNotAuthenticated
+		return nil, "", ErrNotAuthenticated
 	}
 	rec, err := a.store.GetAPITokenByHash(ctx, hashToken(token))
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, ErrNotAuthenticated
+		return nil, "", ErrNotAuthenticated
 	} else if err != nil {
-		return nil, fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
+		return nil, "", fmt.Errorf("check api token: %w", err) // the store failed: a 500, not a 401
 	}
 	now := a.now().UTC()
 	if tokenInfo(rec, now).State != TokenActive {
-		return nil, ErrNotAuthenticated
+		return nil, "", ErrNotAuthenticated
 	}
 	if _, err := a.store.GetAdmin(ctx); errors.Is(err, store.ErrNotFound) {
-		return nil, ErrNotAuthenticated
+		return nil, "", ErrNotAuthenticated
 	} else if err != nil {
-		return nil, fmt.Errorf("check api token: %w", err)
+		return nil, "", fmt.Errorf("check api token: %w", err)
 	}
 	if rec.LastUsedAt == nil || now.Sub(*rec.LastUsedAt) >= touchEvery {
 		// A failed touch must not fail the request that was authorized.
@@ -220,7 +228,7 @@ func (a *Auth) CheckAPIToken(ctx context.Context, token string) (*TokenScope, er
 			a.log.Warn("could not record api token use", "tokenName", rec.Name, "error", err)
 		}
 	}
-	return scopeOf(rec), nil
+	return scopeOf(rec), rec.Name, nil
 }
 
 // ListAPITokens returns every token, newest first, with its state as of now.
