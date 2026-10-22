@@ -211,3 +211,19 @@ The designer checks each page live at 127.0.0.1:7070 against `p3-*.png`:
   channel, and empty; API tokens with a full token without expiry, a deploy token, an expired
   and a revoked one, and the shown-once panel;
 - the crumbs on each page; narrow (390px) for two of them.
+
+## After the designer's review (2026-10-22)
+
+Fixes:
+1. **Narrow (under 900px).** Settings pages follow the shell's narrow rule like every other page: no sidebar, and the Menu bar instead. The Settings nav becomes a horizontally scrolling row of the same items above the content. Check at 390px and 800px.
+2. **Notifications.** "New signing secret" moves inside the Edit `<details>` (under the fields, before Save), so a row has at most four buttons on one line.
+3. **API tokens.** The Expiry column is 170px, so "expired 9 minutes ago" stays on one line.
+4. **Add panels.** Each opens with a `.cv-label` first row, so `#add` and `#new` land on a named thing:
+   - "Add a registry";
+   - "Add a channel";
+   - "New token".
+
+Rulings on the build's departures, all yes, with these details:
+- **Per-channel events** are kept, with the sentence "…as ticked in its form" and the events as a tooltip on the kind. When a channel has fewer than all three events, the kind line also says them in words, e.g. "Webhook · problems only".
+- **Unused for 90 days:** a never-used token counts from its creation, and only after 90 days, so a fresh token is never ◆.
+- **Also yes:** the address under the name; relative words, with a date past 60 days; the nav inside `<main>`; "Only for one app" as a plain row; `<label for>`; the four Backup storage choices; the "Settings · <entry>" titles; shown-once values only in the 200 answer, with no-store.
