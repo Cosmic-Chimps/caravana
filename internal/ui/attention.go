@@ -66,13 +66,11 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places
 		// The sentence is the one the app's summary says, with the app in front. What runs
 		// now comes from the app's summary, when Nomad could be read.
 		rec := store.DeploymentRecord{Status: it.DeploymentStatus, JobVersion: it.Version, Error: it.Detail}
-		var running *uint64
-		sum, known := sums[it.AppID]
-		known = known && sum.Status.State != service.StateUnknown
-		if known {
-			running = sum.Status.LiveVersion
+		var now runningNow // an app missing from the summaries: nothing is said about what runs
+		if sum, ok := sums[it.AppID]; ok {
+			now = runningOf(sum.Status)
 		}
-		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "), deployFailedSentence(rec, running, known))
+		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "), deployFailedSentence(rec, now))
 		row.Action = "View deployment"
 		row.Href = s.deploymentsHref(it.AppID)
 		if s.hasTab("deployments") {

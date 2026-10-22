@@ -386,16 +386,26 @@ func deployEnded(sum service.AppSummary) bool {
 	return d != nil && (d.Status == store.StatusFailed || d.Status == store.StatusReverted)
 }
 
+// runningNow is what Nomad says runs while a deployment's failure is told: the
+// version of the healthy copies (nil for none), how many copies it reports that
+// haven't ended and how many are wanted. Known is false when Nomad couldn't be read.
+type runningNow struct {
+	Version  *uint64
+	Reported int
+	Wanted   int
+	Known    bool
+}
+
 // deployFailedSentence says a deployment failed, and what runs now: "v3 failed
-// its health checks. v2 keeps running." or, when nothing does, "... No copies are
-// running." It is the one sentence the app's summary and the needs-you list share, so
-// the pages never disagree. running is the version of the healthy copies (nil for
-// none); known is false when Nomad couldn't be read, and the second sentence is then left out.
+// its health checks. v2 keeps running.", "... 0 of 1 copies healthy." when Nomad
+// has copies and none is healthy, or "... No copies are running." when it has
+// none. It is the one sentence the app's summary and the needs-you list share, so
+// the pages never disagree. When Nomad couldn't be read the second sentence is left out.
 //
 // The first sentence says why as far as it is known, as the Deployments tab does: a
 // reverted deployment failed its health checks, one that registered and failed
 // went wrong during its rollout, and one that never registered didn't start.
-func deployFailedSentence(rec store.DeploymentRecord, running *uint64, known bool) sentence {
+func deployFailedSentence(rec store.DeploymentRecord, now runningNow) sentence {
 	v := plain("This deploy")
 	if rec.JobVersion != nil {
 		v = mono(versionLabel(rec.JobVersion))
@@ -414,12 +424,21 @@ func deployFailedSentence(rec store.DeploymentRecord, running *uint64, known boo
 		out = append(out, plain("."))
 	}
 	switch {
-	case running != nil:
-		out = append(out, plain(" "), mono(versionLabel(running)), plain(" keeps running."))
-	case known:
+	case !now.Known:
+	case now.Version != nil:
+		out = append(out, plain(" "), mono(versionLabel(now.Version)), plain(" keeps running."))
+	case now.Reported > 0:
+		out = append(out, plain(fmt.Sprintf(" 0 of %d copies healthy.", max(now.Wanted, now.Reported))))
+	default:
 		out = append(out, plain(" No copies are running."))
 	}
 	return out
+}
+
+// runningOf is what an app's status says runs now, for deployFailedSentence.
+func runningOf(st service.AppStatus) runningNow {
+	return runningNow{Version: st.LiveVersion, Reported: st.ReportedCopies, Wanted: st.WantedCopies,
+		Known: st.State != service.StateUnknown}
 }
 
 // troubleWords says in a few words what is wrong with an app that needs the
@@ -523,7 +542,7 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		out = append(out, plain(". Start it to run what ran before."))
 	case service.StateHealthy, service.StateDegraded:
 		if deployEnded(sum) {
-			out = deployFailedSentence(*sum.LastDeployment, st.LiveVersion, true)
+			out = deployFailedSentence(*sum.LastDeployment, runningOf(st))
 		} else {
 			out = copiesSentence(st, live)
 		}
@@ -549,7 +568,7 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		}
 		switch {
 		case deployEnded(sum):
-			out = deployFailedSentence(*sum.LastDeployment, nil, true)
+			out = deployFailedSentence(*sum.LastDeployment, runningOf(st))
 		case st.ReportedCopies > 0:
 			// Nomad has copies and none is healthy: say so, not "none are running".
 			out = sentence{plain(fmt.Sprintf("0 of %d copies healthy.", st.WantedCopies))}

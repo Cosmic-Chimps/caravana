@@ -256,29 +256,34 @@ func TestCopiesSentence(t *testing.T) {
 // needs-you list: what failed, and what keeps running (or that nothing does).
 func TestDeployFailedSentence(t *testing.T) {
 	v2, v3 := new(uint64(2)), new(uint64(3))
+	runs := func(v *uint64) runningNow { return runningNow{Version: v, Reported: 1, Wanted: 1, Known: true} }
+	none := runningNow{Wanted: 1, Known: true}
 	tests := []struct {
-		name    string
-		rec     store.DeploymentRecord
-		running *uint64
-		known   bool
-		want    string
+		name string
+		rec  store.DeploymentRecord
+		now  runningNow
+		want string
 	}{
-		{"reverted, the old version keeps running", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, v2, true,
+		{"reverted, the old version keeps running", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, runs(v2),
 			"v3 failed its health checks. v2 keeps running."},
-		{"reverted, no healthy copies", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: new(uint64(0))}, nil, true,
+		{"reverted, no copies at all", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: new(uint64(0))}, none,
 			"v0 failed its health checks. No copies are running."},
-		{"failed during its rollout", store.DeploymentRecord{Status: store.StatusFailed, JobVersion: v3}, v2, true,
+		{"failed during its rollout", store.DeploymentRecord{Status: store.StatusFailed, JobVersion: v3}, runs(v2),
 			"v3 failed during its rollout. v2 keeps running."},
-		{"never registered", store.DeploymentRecord{Status: store.StatusFailed}, v2, true,
+		{"failed, a copy is there but none is healthy", store.DeploymentRecord{Status: store.StatusFailed, JobVersion: new(uint64(0))},
+			runningNow{Reported: 1, Wanted: 1, Known: true}, "v0 failed during its rollout. 0 of 1 copies healthy."},
+		{"failed, two wanted, one unhealthy copy there", store.DeploymentRecord{Status: store.StatusFailed, JobVersion: v3},
+			runningNow{Reported: 1, Wanted: 2, Known: true}, "v3 failed during its rollout. 0 of 2 copies healthy."},
+		{"never registered", store.DeploymentRecord{Status: store.StatusFailed}, runs(v2),
 			"This deploy didn't start. v2 keeps running."},
-		{"never registered, the cause is known", store.DeploymentRecord{Status: store.StatusFailed, Error: "ghcr.io: x:1: image not found"}, nil, true,
+		{"never registered, the cause is known", store.DeploymentRecord{Status: store.StatusFailed, Error: "ghcr.io: x:1: image not found"}, none,
 			"This deploy didn't start: the image wasn't found. No copies are running."},
-		{"Nomad unreadable: nothing is said about what runs", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, nil, false,
+		{"Nomad unreadable: nothing is said about what runs", store.DeploymentRecord{Status: store.StatusReverted, JobVersion: v3}, runningNow{},
 			"v3 failed its health checks."},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := deployFailedSentence(tc.rec, tc.running, tc.known)
+			got := deployFailedSentence(tc.rec, tc.now)
 			if got.String() != tc.want {
 				t.Errorf("sentence = %q, want %q", got.String(), tc.want)
 			}
@@ -315,6 +320,9 @@ func TestSummaryOfFailedDeploysAndUnhealthyCopies(t *testing.T) {
 			"v3 failed during its rollout. v2 keeps running. Last deployed 3 minutes ago by webhook."},
 		{"failed, nothing healthy", notRunning(deploy(store.StatusReverted, new(uint64(0))), 0),
 			"v0 failed its health checks. No copies are running. Last deployed 3 minutes ago by webhook."},
+		// The failed app of the review (broken): its one copy is there, unhealthy.
+		{"failed, a copy is there and none is healthy", notRunning(deploy(store.StatusFailed, new(uint64(0))), 1),
+			"v0 failed during its rollout. 0 of 1 copies healthy. Last deployed 3 minutes ago by webhook."},
 		{"copies exist and none is healthy", notRunning(deploy(store.StatusHealthy, v2), 1),
 			"0 of 1 copies healthy. Last deployed 3 minutes ago by webhook."},
 		{"no copies at all", notRunning(deploy(store.StatusHealthy, v2), 0),
