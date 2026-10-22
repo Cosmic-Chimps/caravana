@@ -606,6 +606,23 @@ only the public API (no API change; openapi stays 0.21.0).
   deploy token's `token_scope` refusals, a wrong token's 401, and no token in any stderr line or
   answer.
 
+Feature 021 (`specs/021-console-ia`, Phase 2.6) is implemented on branch `021-console-ia`: the console
+in the design handoff's shape. It was built page by page; each page has a contract written by the
+designer session (`contracts/pageN-*.md`, with its rulings) and was approved after a live review, an
+impeccable critique (critique only, no detector, which gave only false positives on Go templates) and a
+last look.
+- Page 1: the shell, `/projects` and the app header (`AppStatus.services`, API 0.22.0).
+- Page 2: the short Configure, plus Variables, Domains and Backups.
+- Page 3: Settings with a grouped nav (`/settings/registries`, `backup-storage`, `notifications`, `tokens`).
+- Page 4: the Apps home, with "Deploying now", the filter, kind words and "by <who>", and the stages strip
+  in each history entry, including "(v0 again)".
+- Page 4 records `deployments.token_name` (`Deployment.tokenName`, API 0.23.0) and `registered_at`
+  (UI only), migrations 0015 and 0016.
+- One set of who-words (`deployWho`) serves the rail, the entries and the lede. The console has one
+  32px select.
+- `TestConsoleLab` gained `console-domains` and `console-backup-daily`; `TestNoShipWords` keeps "ship"
+  off every page.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

@@ -45,7 +45,7 @@ definition edit the API already takes.
   runs, Restore… and Back up now, Restores after.
 - [X] T014 [US2] DESIGN.md, CHANGELOG, tests (handler tests per page and per rule; no secret value
   on any page, a sentinel test), lab test selectors.
-- [ ] T015 [US2] Checks, TestConsoleLab, the review instance seeded for the designer, the
+- [X] T015 [US2] Checks, TestConsoleLab, the review instance seeded for the designer, the
   designer's review, the impeccable critique agent (no detector), fixes.
 
 ## Page 3: Settings with its grouped nav (US3)
@@ -68,7 +68,7 @@ through `internal/service` as today; no API change.
   app"; the shown-once panel).
 - [X] T020 [US3] DESIGN.md, CHANGELOG, tests (each page, each mark rule, the redirects, no secret or
   token value on any page), lab-test selectors and form posts.
-- [ ] T021 [US3] Checks, TestConsoleLab, the review instance staged, the designer's review, the
+- [X] T021 [US3] Checks, TestConsoleLab, the review instance staged, the designer's review, the
   critique agent, fixes.
 
 Already decided:
@@ -99,7 +99,7 @@ pause to after page 4. The one backend addition is the token's name on a deploym
   marks and values, superseded and failed-before-register, narrow stacking), and the "v2 (v0
   again)" wording in the entry and the lede (match by digests, the definition as tie-breaker).
 - [X] T027 [US4] DESIGN.md, CHANGELOG, tests, lab-test selectors.
-- [ ] T028 [US4] Checks, TestConsoleLab, the review instance staged, the designer's review, the
+- [X] T028 [US4] Checks, TestConsoleLab, the review instance staged, the designer's review, the
   critique agent, fixes, the last look; then the pause.
 
 Carried to page 4, the deployment stages (the designer, 2026-10-21): after Nomad reverts, the live

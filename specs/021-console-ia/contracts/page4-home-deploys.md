@@ -220,3 +220,7 @@ All five accepted:
 10. **The card's height shift** is accepted: the card inserts above the filter and moves it down by its height while a rollout runs.
 11. **The reverted entry's raw Nomad line** is prefixed "Nomad said: …".
 12. **The rail at 1440** stacks under the tables (page 1's 1452px breakpoint). No change for page 4; filed in CodeAlta.
+
+## Last look (designer, 2026-10-22)
+
+Approved with nothing to change. Pages 1 to 4 of 021 are approved.
