@@ -299,3 +299,52 @@ Rulings on the build's departures, all yes:
 - plain forms per service, disabled fieldsets on a stopped app, and Add secret only on a kept-file app.
 
 One addition: a refusal of a per-service form draws the page scrolled to that service's error. Use an `id` on the field and a `#` in the answer's form action, or `autofocus` on the first field in error.
+
+## After the critique (designer's rulings, 2026-10-22)
+
+The impeccable critique (snapshot in `.impeccable/critique/`, local) and the designer's rulings:
+
+1. **Secret by default.**
+   - "Keep as a secret" is **checked by default**.
+   - The note under it: "Untick only for a value anyone signed in may read: it is stored in the app's definition, its deploy history and the export."
+   - No guessing from names, no second submit. A refused submit still clears Value.
+2. **"Back up daily"** is a `<details>` confirmation with the submit "Back up daily and deploy". Its text:
+   - volume: "Backs up `/cache` every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app.";
+   - postgres: "Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app."
+   With no destination the summary button is secondary, and "Set the destination" is the only primary action.
+3. **Per-service save** with several services: "Save web and deploy" and "Save api and deploy", in a full-width button row directly under that service's grid. With one service it stays "Save and deploy". There is no extra line.
+4. **Backups accessibility.**
+   - No `row` or `cell` roles on the `<summary>`.
+   - A leading `<span class="sr-only">` such as "postgres, last backup failed", and the visible text kept: no `aria-label` replacing it.
+   - The strip is `role="img"` with one aria-label, e.g. "30 days: 2 backups, 1 failed, the last 26 minutes ago". Its cells are `aria-hidden`; the bars that are links keep their `title` as their accessible name.
+   - The summary's when line reads "25 minutes ago · failed", with "failed" in the failed hue.
+   - The head line reads "1 backed up · 1 failing · 0 not".
+5. **Can't-act states.**
+   - `fieldset:disabled` fields are fg-3 with `cursor: not-allowed`.
+   - No "Add domain" link where the Domains page can't add one (kept-file and stopped apps).
+   - Variables' stopped sentence is at the top, with the ○ mark.
+6. **Accessibility details.**
+   - Each Remove control has `aria-label="Remove <name>"`, per variable and per domain.
+   - Field hints are in `aria-describedby`, not inside the `<label>`.
+   - One-service Configure's heading levels don't skip.
+7. **Copy and accuracy.**
+   - (a) After a refused .env edit: "Your text is kept below; the table shows what the app has now. Compare before saving."
+   - (b) A failed run's row leads with a plain cause from a fixed table, then the mono detail. Anything else keeps the mono detail alone. The table:
+     - connection refused;
+     - timed out;
+     - no such host;
+     - access denied;
+     - bucket not found.
+   - (c) "Restore from 26 minutes ago" names its run, and so does its confirmation.
+   - (d) The summary's size is that of the same run as its time.
+   - (e) The bucket name is in mono: "stored in `backups`".
+8. **Small things.**
+   - Fields with a prefix or suffix are 32px: the prefix and suffix sit inside the box, and the input has no border of its own.
+   - "Also set"'s "Health check port" becomes "Check port", in the 120px column.
+9. **The strip.**
+   - A day with any healthy run is restorable: an fg-4 bar.
+   - A 3px failed cap on top when that day's newest run failed.
+   - Title: "today · 2 runs, the last failed".
+10. **Configure's panel head** becomes "Variables & secrets". It counts both: "5 variables · 3 secrets. Values of secrets are never shown here.", or "No variables or secrets."
+11. **After a failed run,** "Restore from …" is secondary and "Back up now" is primary. Otherwise as before.
+12. **Kept-file Configure** still lists the same domain three times. Left for the 015 form's redraw (a CodeAlta task).
