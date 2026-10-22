@@ -17,9 +17,14 @@
   `cv-where` and `cv-actions`; handler tests.
 - [X] T007 [US1] Styles in `internal/ui/style/`, `tools/ui-css.sh build`; DESIGN.md's Shell,
   Navigation and icons sentences updated; CHANGELOG Unreleased.
-- [ ] T008 [US1] Checks (CI list), `TestConsoleLab` (fix selectors that moved), a local run for the
+- [X] T008 [US1] Checks (CI list), `TestConsoleLab` (fix selectors that moved), a local run for the
   designer's live review, then an `impeccable` critique pass and the fixes it brings.
 
 ## Page 2 (US2), Page 3 (US3), Page 4 (US4)
 
 Tasks are written when each page's contract is approved.
+
+Carried to page 4, the deployment stages (the designer, 2026-10-21): after Nomad reverts, the live
+job version (`v2`) is a copy of an older one (`v0`). Say what the owner deployed, from the stored
+definition match: "`v2` (`v0` again) keeps running" in the lede, and "rolled back to `v2` (`v0`
+again)" in the history, changed in both places together.
