@@ -270,3 +270,32 @@ The designer checks each page live at 127.0.0.1:7070 against the prototype rende
 - Backups: a Postgres service backed up (runs, a failed run), a volume service backed up, a
   volume service without a policy (gap row), no destination, and the restore confirmation;
 - narrow (390px) for all four.
+
+## After the designer's review (2026-10-22)
+
+Fixes:
+1. **A failed run's error, drawn once.**
+   - The sentence under the strip is "The last backup failed 12 minutes ago." alone.
+   - The run row keeps the error once, in 12px mono fg-3, wrapped.
+   - The same holds for a volume run.
+2. **A day's bar in the strip** takes that day's newest run: failed if that run failed.
+3. **The schedule in words** (`ScheduleText`) gains the handoff's forms:
+   - "Sundays at 04:00 UTC";
+   - "Every 6 hours";
+   - "Every day at 03:00 UTC", as now.
+   "On <cron> (UTC)" stays only as the last resort.
+4. **A stopped app's Configure** says "The app is stopped: start it first." once, at the top, with the ○ idle mark, not ■. The disabled fieldsets stay.
+5. **"Also set"** has a 120px key column that doesn't wrap. The health check's port shows only when the service has more than one port.
+6. **Domains with no domains:** no table head; the `.cv-empty` block stands alone in the panel.
+
+Rulings on the build's departures, all yes:
+- a stale form answers 409;
+- the column widths (92px, 124px, took `minmax(110px,1fr)`);
+- the Value textarea, with line breaks refused for a variable;
+- "Back up daily" picks postgres first, when the image is postgres and the service has a port, otherwise volume;
+- the two restore confirmations;
+- the DNS box's "@ or the first label" until a submit, with an apex being exactly one dot (023 replaces the box);
+- "Also set" Ports, the App facts panel gone, and 016's unmounted volumes and host paths kept on Backups;
+- plain forms per service, disabled fieldsets on a stopped app, and Add secret only on a kept-file app.
+
+One addition: a refusal of a per-service form draws the page scrolled to that service's error. Use an `id` on the field and a `#` in the answer's form action, or `autofocus` on the first field in error.
