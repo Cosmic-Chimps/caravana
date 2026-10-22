@@ -794,6 +794,9 @@
 @media (max-width: 899.98px) {
   .cv-settings { grid-template-columns: minmax(0, 1fr); }
   .cv-snav { position: relative; top: auto; /* relative, not static: the containing block of the sr-only spans, so the scroller clips them */ height: auto; flex-direction: row; align-items: center; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--color-line-1); }
+  /* The head stacks: title, sentence, then the primary action on its own line, left-aligned. */
+  .cv-sthead { flex-direction: column; align-items: flex-start; }
+  .cv-sthead-text { flex: none; width: 100%; }
   .cv-snav-title, .cv-snav-label { display: none; }
   /* The groups dissolve so the items are one row: the current entry first (CSS order, no script), then
      the others in the nav's order. A fade at the right edge says the row goes on. */
@@ -804,4 +807,64 @@
   .cv-settings-main { padding: 24px 16px 40px; }
   /* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page 16px of padding. */
   .cv-page-settings { padding: 0; }
+}
+
+/* ---------------------------------------------------------------------------
+   Page 4 (feature 021): the Apps home's "Deploying now" card, its filter and kind words, and the
+   deployment entry's stages strip. The values are contracts/page4-home-deploys.md's.
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* "Deploying now": a label, then one panel per rollout, its edge in rolling-line. The region is empty,
+     and so gone, when nothing rolls out. */
+  .cv-deploying { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cv-deploying:empty { display: none; }
+  .cv-dcard { display: flex; flex-direction: column; gap: 16px; padding: 20px; border-color: var(--color-rolling-line); }
+  .cv-dcard-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+  .cv-dcard-name { font: 500 18px/1 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow-wrap: anywhere; }
+  a.cv-dcard-name:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-dcard-place { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); }
+  .cv-dcard .cv-btn { text-decoration: none; }
+  .cv-dcard-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; align-items: center; margin: 0; font-size: 14px; color: var(--color-fg-2); }
+  .cv-dcard-facts > dd { margin: 0; min-width: 0; }
+  .cv-dcard-copies { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .cv-dcard-sum { margin-left: 6px; color: var(--color-fg-3); }
+  .cv-dcard-sum:first-child { margin-left: 0; }
+  /* A copy: the handoff's AllocChip. Starting is dashed in rolling-line with the half mark; draining is
+     dashed, quiet and struck through. */
+  .cv-copychip { display: inline-flex; align-items: center; gap: 8px; height: 26px; padding: 0 9px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); white-space: nowrap; }
+  .cv-copychip .cv-mark { width: 6px; height: 6px; margin: 0; }
+  .cv-copychip-name { color: var(--color-fg-1); }
+  .cv-copychip-id { color: var(--color-fg-3); }
+  .cv-copychip-starting { border-style: dashed; border-color: var(--color-rolling-line); }
+  .cv-copychip-draining { border-style: dashed; }
+  .cv-copychip-draining .cv-copychip-name, .cv-copychip-draining .cv-copychip-id { color: var(--color-fg-3); text-decoration: line-through; }
+
+  /* The filter row between the needs-you list and the groups. */
+  .cv-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cv-filter-q { width: 280px; max-width: 100%; }
+  .cv-filter .cv-btn { text-decoration: none; }
+
+  /* The word after an app's name when it isn't a plain image app. */
+  .cv-namecell { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .cv-kind { font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); }
+
+  /* The stages strip: three cells in a panel. The active one has an underline in rolling. */
+  .cv-stageswrap { container-type: inline-size; }
+  .cv-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+  .cv-stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 20px; border-left: 1px solid var(--color-line-1); }
+  .cv-stage:first-child { border-left: 0; }
+  .cv-stage-active { box-shadow: inset 0 -2px 0 var(--color-rolling); }
+  .cv-stage-name { display: flex; align-items: center; gap: 10px; font: 500 15px/1 var(--font-sans); color: var(--color-fg-1); }
+  .cv-stage-name .cv-mark { width: 8px; height: 8px; margin: 0; }
+  .cv-stage-todo { color: var(--color-fg-3); }
+  .cv-stage-value { font: 400 13px/1.2 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+}
+
+/* Under 660px of room the three cells stack, each one line: the mark, the name, the value. */
+@container (max-width: 659.98px) {
+  .cv-stages { grid-template-columns: minmax(0, 1fr); }
+  .cv-stage { flex-direction: row; align-items: center; gap: 14px; padding: 12px 16px; border-left: 0; border-top: 1px solid var(--color-line-1); }
+  .cv-stage:first-child { border-top: 0; }
+  .cv-stage-name { flex: none; min-width: 6.5rem; }
+  .cv-stage-active { box-shadow: inset 0 -2px 0 var(--color-rolling); }
 }

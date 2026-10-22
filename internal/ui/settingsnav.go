@@ -96,13 +96,17 @@ func registriesState(regs []store.Registry) entryState {
 type backupFacts struct {
 	Destination bool
 	Last        *store.BackupRecord
-	Policies    int
+	// Failing is the newest of the services' newest runs that failed (nil for none): it can be
+	// another service's than Last, when a later run of that one went well.
+	Failing  *store.BackupRecord
+	Policies int
 }
 
 // backupStorageState: the destination's row is ● when the last run that used it
-// succeeded, ■ when it failed and ○ when none ran. The nav, which has no count
-// (there is one destination), shows the same ■ for a failed last run, and ◆ when
-// no destination is set while a service has a policy.
+// succeeded, ■ when it failed and ○ when none ran, and ◆ when that run went well
+// but some service's own newest run failed. The nav, which has no count (there is
+// one destination), follows the row, and shows ◆ when no destination is set while
+// a service has a policy.
 func backupStorageState(f backupFacts) entryState {
 	var st entryState
 	if !f.Destination {
@@ -114,11 +118,14 @@ func backupStorageState(f backupFacts) entryState {
 	switch {
 	case f.Last == nil:
 		st.Rows = []string{"idle"}
-	case f.Last.Status == store.BackupSucceeded:
-		st.Rows = []string{"healthy"}
-	default:
+	case f.Last.Status != store.BackupSucceeded:
 		st.Rows = []string{"failed"}
 		st.Mark, st.Why = "failed", "the last backup failed"
+	case f.Failing != nil:
+		st.Rows = []string{"warning"}
+		st.Mark, st.Why = "warning", "a service's last backup failed"
+	default:
+		st.Rows = []string{"healthy"}
 	}
 	return st
 }
@@ -226,7 +233,9 @@ type settingsFacts struct {
 	Tokens     []service.APITokenInfo
 	Dest       *store.BackupDestination
 	LastBackup *store.BackupRecord
-	Apps       []store.AppRecord
+	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
+	FailingBackup *store.BackupRecord
+	Apps          []store.AppRecord
 }
 
 // lastOf is a channel's newest delivery that ended, as "Last delivery" says it.
@@ -252,7 +261,7 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 	}
 	return map[string]entryState{
 		entryRegistries:    registriesState(f.Registries),
-		entryBackupStorage: backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Policies: policyServices(f.Apps)}),
+		entryBackupStorage: backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
 		entryNotifications: notificationsState(chs),
 		entryTokens:        tokensState(now, f.Tokens),
 	}

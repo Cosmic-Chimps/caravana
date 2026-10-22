@@ -141,7 +141,9 @@ func TestSettingsEntryRules(t *testing.T) {
 			{"a destination, nothing ran", backupFacts{Destination: true, Policies: 1}, []string{"idle"}, ""},
 			{"a destination, the last run worked", backupFacts{Destination: true, Last: ok}, []string{"healthy"}, ""},
 			// The same ■ in the nav and on the row (ruling 9); no destination with a policy is a ◆.
-			{"a destination, the last run failed", backupFacts{Destination: true, Last: bad}, []string{"failed"}, "failed"},
+			{"a destination, the last run failed", backupFacts{Destination: true, Last: bad, Failing: bad}, []string{"failed"}, "failed"},
+			// A later run of another service went well: the row and the nav follow with a ◆, not a ■.
+			{"the last run worked but a service's newest failed", backupFacts{Destination: true, Last: ok, Failing: bad}, []string{"warning"}, "warning"},
 		} {
 			got := backupStorageState(tc.f)
 			if strings.Join(got.Rows, ",") != strings.Join(tc.rows, ",") || got.Mark != tc.mark || got.Count != 0 {
@@ -961,4 +963,56 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 // settingsNavText is the Settings nav of a page, for reading its words.
 func settingsNavText(body string) string {
 	return regexp.MustCompile(`(?s)<nav aria-label="Settings" class="cv-snav">.*?</nav>`).FindString(body)
+}
+
+// A service whose newest run failed is named even when another service's later run succeeded: the row
+// and the nav are ◆ then, not ■ (the destination's own newest run failing is what makes ■).
+func TestSettingsBackupStorageFailingService(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	a := duoApp()
+	a.Services[0].Backup = &app.Backup{Engine: app.BackupPostgres}
+	e.seed(t, a)
+	if resp, body := e.postForm(t, "/settings/backups", url.Values{"endpoint": {"https://hel1.example.com"}, "region": {"eu"}, "bucket": {"vee-backups"},
+		"accessKeyId": {"AK"}, "secretAccessKey": {"s"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST = %d:\n%s", resp.StatusCode, text(body))
+	}
+	now := e.Clock.Now()
+	run := func(id, svc, status, message string, ago time.Duration) {
+		t.Helper()
+		rec := store.BackupRecord{AppID: "duo", ID: id, Service: svc, JobID: "j", Status: status, Message: message, Bytes: 1 << 20,
+			StartedAt: now.Add(-ago), FinishedAt: new(now.Add(-ago + time.Minute))}
+		if err := e.Store.SaveBackup(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("db-1", "db", store.BackupFailed, "AccessDenied", 3*time.Hour)
+	run("files-vol-1", "files-vol", store.BackupSucceeded, "", time.Hour) // newer, and it went well
+
+	page := e.mustGet(t, "/settings/backup-storage")
+	got := text(page)
+	if !strings.Contains(page, `cv-mark cv-mark-lg cv-mark-warning`) || strings.Contains(page, `cv-mark-lg cv-mark-failed`) || strings.Contains(page, `cv-conn-st-failed`) {
+		t.Errorf("the row isn't a ◆ with the destination's newest run drawn as it went (well):\n%s", got)
+	}
+	if !strings.Contains(got, "db of duo: The destination refused the access key.") || !strings.Contains(got, "AccessDenied") ||
+		!strings.Contains(page, `<a href="/apps/duo/backups" class="cv-conn-link">Open its backups</a>`) {
+		t.Errorf("the note doesn't name db of duo, its cause and the way to its backups:\n%s", got)
+	}
+	if !strings.Contains(page, `cv-mark cv-mark-warning" aria-hidden="true"></span><span class="sr-only">a service&#39;s last backup failed`) {
+		t.Error("the nav doesn't follow the row with a ◆")
+	}
+
+	// The destination's own newest run failing is the ■, in the row and the nav.
+	run("files-vol-2", "files-vol", store.BackupFailed, "AccessDenied", 10*time.Minute)
+	page = e.mustGet(t, "/settings/backup-storage")
+	if !strings.Contains(page, `cv-mark cv-mark-lg cv-mark-failed`) || !strings.Contains(page, `cv-conn-st cv-conn-st-failed`) ||
+		!strings.Contains(page, `cv-mark cv-mark-failed" aria-hidden="true"></span><span class="sr-only">the last backup failed`) {
+		t.Error("the destination's own newest run failing isn't a ■ in the row and the nav")
+	}
+
+	// Under 900px the page head stacks, so the primary action sits on its own line under the sentence.
+	_, css := e.get(t, "/static/app.css")
+	if !regexp.MustCompile(`\.cv-sthead\{[^}]*flex-direction:column`).MatchString(css) {
+		t.Error("the Settings head doesn't stack under 900px")
+	}
 }

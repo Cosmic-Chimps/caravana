@@ -233,7 +233,7 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 	case !errors.Is(err, store.ErrNotFound):
 		return f, err
 	}
-	if f.LastBackup, err = s.svc.LastBackupRun(ctx); err != nil {
+	if f.LastBackup, f.FailingBackup, err = s.svc.BackupOutcome(ctx); err != nil {
 		return f, err
 	}
 	f.Apps, err = s.svc.StoredApps(ctx)
@@ -316,8 +316,12 @@ func destinationSection(now time.Time, f settingsFacts, st entryState, form dest
 			at = *last.FinishedAt
 		}
 		row.State, row.StateFailed = "last backup failed "+relative(now, at), true
-		row.Failure = &backupFailure{Service: last.Service, App: last.AppID, Cause: causeOf(last.Message), Detail: last.Message,
-			Href: "/apps/" + last.AppID + "/backups"}
+	}
+	// The note names the failing service: the destination's own newest run when that failed, or
+	// another service's newest run that failed while a later run of a service went well.
+	if fail := f.FailingBackup; fail != nil {
+		row.Failure = &backupFailure{Service: fail.Service, App: fail.AppID, Cause: causeOf(fail.Message), Detail: fail.Message,
+			Href: "/apps/" + fail.AppID + "/backups"}
 	}
 	form.Row = row
 	return form
