@@ -647,7 +647,13 @@ drawn, not its length either: ten dots and a lock icon.
   `<details>` per backed-up service: the summary row (chevron, status mark, what, how often and kept, last
   backup, size), and under it the restore-points strip (30 days, a bar for a healthy run linking to its
   row, a gap for none), the host path and size of a volume, the last ten runs with "Restore…", and the
-  buttons. Restores come after.
+  buttons. Restores come after. "Back up daily" is a confirmation that says what it will do; a failed run's row
+  leads with a plain cause (from a fixed table) before the mono detail; the strip's bar is restorable when
+  the day has any healthy run, with a failed cap when its newest run failed. A summary row is read to a
+  screen reader as "<service>, last backup failed" before its visible text.
+- **Variables:** "Keep as a secret" is ticked when the form is drawn, because most values are secrets; the
+  form sends a hidden `secretChoice` so an unticked box (which sends nothing) differs from a post that
+  isn't this form, which is read as a secret.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

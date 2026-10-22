@@ -43,7 +43,7 @@ func TestSecretsAreNamesOnly(t *testing.T) {
 		t.Fatalf("GET configure = %d", resp.StatusCode)
 	}
 	got := text(body)
-	for _, want := range []string{"Secrets", "DATABASE_URL", "1 secret in Nomad Variables. Values are never shown here.", "Manage variables and secrets"} {
+	for _, want := range []string{"Variables & secrets", "DATABASE_URL", "1 variable · 1 secret. Values of secrets are never shown here.", "Manage variables and secrets"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Configure lacks %q:\n%s", want, got)
 		}

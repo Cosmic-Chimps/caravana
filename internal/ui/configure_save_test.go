@@ -142,7 +142,7 @@ func TestSaveConfigure(t *testing.T) {
 			t.Fatalf("POST = %d, want 422:\n%s", resp.StatusCode, text(body))
 		}
 		for _, want := range []string{
-			`aria-invalid="true" aria-describedby="svc-web-copies-error"`,
+			`aria-describedby="svc-web-copies-error" aria-invalid="true"`,
 			`id="svc-web-copies-error" role="alert"`, // the first error is announced
 			`value="two"`,                            // what was typed, kept
 		} {

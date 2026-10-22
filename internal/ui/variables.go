@@ -67,6 +67,9 @@ type addVariableForm struct {
 type envEditor struct {
 	Service string
 	Field   formField
+	// Refused says the edit was refused: the text is kept in the box, and the table above
+	// shows what the app has now.
+	Refused bool
 }
 
 // CanEdit says the page offers the forms that change variables.
@@ -112,7 +115,7 @@ func variablesTabOf(sum service.AppSummary, extra variablesExtras) *variablesTab
 	a := sum.App
 	tab := &variablesTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Kept: sum.Compose != nil,
 		Stopped: sum.StoppedAt != nil, Many: len(a.Services) > 1, Rows: variableRowsOf(a), Notice: extra.Notice}
-	tab.Add = addVariableForm{Name: formField{ID: "var-name"}, Value: formField{ID: "var-value"}}
+	tab.Add = addVariableForm{Name: formField{ID: "var-name"}, Value: formField{ID: "var-value"}, Secret: true}
 	if extra.Add != nil {
 		tab.Add = *extra.Add
 		tab.Add.Name.ID, tab.Add.Value.ID = "var-name", "var-value"
@@ -122,6 +125,7 @@ func variablesTabOf(sum service.AppSummary, extra variablesExtras) *variablesTab
 		ed := envEditor{Service: svc.Name, Field: formField{ID: "env-" + svc.Name, Value: envText(svc.Env)}}
 		if typed, ok := extra.Env[svc.Name]; ok {
 			ed.Field.Value, ed.Field.Error, ed.Field.Alert = typed.Value, typed.Error, typed.Alert
+			ed.Refused = true
 		}
 		tab.Editors = append(tab.Editors, ed)
 	}
@@ -200,7 +204,11 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 
-	form := addVariableForm{Service: strings.TrimSpace(r.PostForm.Get("service")), Secret: r.PostForm.Get("secret") != ""}
+	// "Keep as a secret" is ticked when the form is drawn, and an unticked box sends nothing, so the
+	// form also sends secretChoice: with it, the box says what is meant; without it (a form that
+	// isn't this one) the value is kept as a secret, the side that shows nothing.
+	form := addVariableForm{Service: strings.TrimSpace(r.PostForm.Get("service")),
+		Secret: !r.PostForm.Has("secretChoice") || r.PostForm.Get("secret") != ""}
 	form.Name.Value = strings.TrimSpace(r.PostForm.Get("name"))
 	// A textarea sends its line breaks as CRLF; values (keys, certificates) expect LF.
 	value := strings.ReplaceAll(r.PostForm.Get("value"), "\r\n", "\n")

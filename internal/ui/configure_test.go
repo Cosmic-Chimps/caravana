@@ -132,8 +132,8 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 		"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
 		"Also set", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 		"Domains shop.example.com → web :8080", "Manage domains", "Add domain",
-		"Secrets", "No secrets.", "Manage variables and secrets",
-		"Save and deploy"} {
+		"Variables & secrets", "2 variables · 0 secrets. Values of secrets are never shown here.", "Manage variables and secrets",
+		"Save web and deploy", "Save worker and deploy"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
@@ -154,8 +154,9 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 	if webAt < 0 || workerAt < webAt {
 		t.Errorf("service headings: web at %d, worker at %d", webAt, workerAt)
 	}
-	if n := strings.Count(body, "Save and deploy"); n != 2 {
-		t.Errorf("%d Save and deploy buttons, want one per service", n)
+	// With several services each button names its service, in a row directly under its grid.
+	if n := strings.Count(body, `and deploy</button></div>`); n != 2 || strings.Contains(body, "Save and deploy") {
+		t.Errorf("%d per-service save buttons, want one per service, each naming its service", n)
 	}
 	// Domains and Secrets come once, after the last service.
 	if n := strings.Count(body, `id="domains-title"`); n != 1 || strings.Index(body, `id="domains-title"`) < workerAt {
@@ -298,7 +299,7 @@ func TestConfigureImageAppIsAsBefore(t *testing.T) {
 			t.Errorf("the page has %q", gone)
 		}
 	}
-	for _, want := range []string{`class="cv-svcform"`, "Save and deploy"} {
+	for _, want := range []string{`class="cv-svcform"`, "and deploy"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
 		}
@@ -345,7 +346,7 @@ func TestConfigureNotKeptFile(t *testing.T) {
 	}
 
 	// The per-field form is editable as in 014, with its note and the link.
-	for _, want := range []string{`class="cv-svcform"`, "Save and deploy", `name="svc.web.image"`,
+	for _, want := range []string{`class="cv-svcform"`, "and deploy", `name="svc.web.image"`,
 		"Made from a Compose file. Deploying a file again replaces these edits.", ">Deploy from Compose</a>"} {
 		if !strings.Contains(body, want) && !strings.Contains(got, want) {
 			t.Errorf("the page lacks %q", want)
@@ -381,7 +382,7 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 		t.Errorf("the Compose form: file %q, domains %q; want an empty file and the overlay from the app",
 			f.Values.Get("compose"), f.Values.Get("svc.web.domains"))
 	}
-	for _, want := range []string{`class="cv-svcform"`, "Save and deploy", `name="svc.web.image"`} {
+	for _, want := range []string{`class="cv-svcform"`, "and deploy", `name="svc.web.image"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the per-field form lacks %q", want)
 		}

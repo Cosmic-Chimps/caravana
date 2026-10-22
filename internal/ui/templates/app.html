@@ -123,7 +123,7 @@
       <p class="cv-pgsub">Databases and volumes, and where their copies are.</p>
     </div>
   </div>
-  {{if .Defined}}<p class="cv-count">{{.Counts}}</p>{{end}}
+  {{if .Defined}}<p class="cv-count cv-count-sans">{{.BackedUp}} backed up · {{.Failing}} failing · {{.Not}} not · {{if .Destination}}stored in <span class="cv-inline-mono text-fg-2">{{.Bucket}}</span>{{else}}no destination{{end}}</p>{{end}}
 </section>
 
 {{if not .Defined}}
@@ -136,14 +136,14 @@
 <div class="cv-panel cv-banner">
   <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
   <p class="cv-banner-text">No backup destination is set. Backups can't run until there is one.</p>
-  <a href="/settings#backups" class="cv-btn cv-btn-secondary cv-btn-sm">Set the destination</a>
+  <a href="/settings#backups" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination</a>
 </div>
 {{end}}
 
 {{if .Gaps}}
-<div class="cv-panel" role="list" aria-label="Services with no backup">
+<div class="cv-panel cv-gaps" role="list" aria-label="Services with no backup">
   {{range .Gaps}}
-  <div class="cv-row cv-gap" role="listitem">
+  <div class="cv-row cv-gap cv-confirm-row" role="listitem">
     <span class="cv-mark cv-mark-warning cv-gap-mark" aria-hidden="true"></span>
     <div class="cv-gap-body">
       <p class="cv-gap-text"><span class="cv-gap-name">{{.Label}}</span> has no backup.</p>
@@ -151,11 +151,15 @@
     </div>
     {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
     {{else}}
-    <form method="post" action="/apps/{{$.ID}}/backups/policy">
-      <input type="hidden" name="revision" value="{{$.Revision}}">
-      <input type="hidden" name="service" value="{{.Service}}">
-      <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up daily</button>
-    </form>
+    <details class="cv-confirm">
+      <summary class="cv-btn {{if $.Destination}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">Back up daily</summary>
+      <form method="post" action="/apps/{{$.ID}}/backups/policy" class="cv-confirm-body">
+        <input type="hidden" name="revision" value="{{$.Revision}}">
+        <input type="hidden" name="service" value="{{.Service}}">
+        <p>{{template "sentence" .Confirm}}</p>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up daily and deploy</button></div>
+      </form>
+    </details>
     {{end}}
   </div>
   {{end}}
@@ -163,34 +167,35 @@
 {{end}}
 
 {{if .Rows}}
-<div class="cv-panel cv-backups" role="table" aria-label="Backed-up services">
-  <div class="cv-bhead cv-label" role="row">
-    <span role="columnheader" class="cv-bhead-gap"></span>
-    <span role="columnheader" class="cv-bhead-gap"></span>
-    <span role="columnheader">What</span>
-    <span role="columnheader">How often · kept</span>
-    <span role="columnheader">Last backup</span>
-    <span role="columnheader" class="cv-bsize">Size</span>
+<div class="cv-panel cv-backups">
+  <div class="cv-bhead cv-label" aria-hidden="true">
+    <span></span>
+    <span></span>
+    <span>What</span>
+    <span>How often · kept</span>
+    <span>Last backup</span>
+    <span class="cv-bsize">Size</span>
   </div>
   {{range .Rows}}
   {{$row := .}}
   <details class="cv-bdetails" id="svc-{{.Name}}"{{if .Open}} open{{end}}>
-    <summary class="cv-bsum" role="row">
-      <span role="cell" class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
-      <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.MarkText}}</span></span>
-      <span role="cell" class="cv-bwhat"><span class="cv-bname">{{.Name}}</span> <span class="cv-bmeta">{{.What}}</span></span>
-      <span role="cell" class="cv-bwhen">
+    <summary class="cv-bsum">
+      <span class="sr-only">{{.State}}. </span>
+      <span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
+      <span><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <span class="cv-bwhat"><span class="cv-bname">{{.Name}}</span> <span class="cv-bmeta">{{.What}}</span></span>
+      <span class="cv-bwhen">
         <span class="cv-bline">{{.Schedule}}</span>
         {{if .Volume}}<span class="cv-bnote">The service stops while it runs.</span>{{end}}
         <span class="cv-bmeta">{{.Keep}}</span>
       </span>
-      <span role="cell" class="cv-blast">
+      <span class="cv-blast">
         {{if .LastNow}}<span class="cv-blast-now">running now</span>
         {{else if .LastNever}}<span class="cv-blast-never">never</span>
-        {{else}}<span class="cv-blast-when">{{template "time" .LastWhen}}</span>{{end}}
+        {{else}}<span class="cv-blast-when">{{template "time" .LastWhen}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
         {{if .Took}}<span class="cv-bmeta">took {{.Took}}{{with .Stopped}} · {{.}}{{end}}</span>{{end}}
       </span>
-      <span role="cell" class="cv-bsize">
+      <span class="cv-bsize">
         {{with .Size}}<span class="cv-blast-when">{{.}}</span>{{end}}
         {{with .SizeAll}}<span class="cv-bmeta">{{.}}</span>{{end}}
       </span>
@@ -198,8 +203,8 @@
     <div class="cv-bdetail">
       <div class="cv-bstrip-wrap">
         <h3 class="cv-label">Restore points · last 30 days</h3>
-        <div class="cv-strip" role="list" aria-label="Backups of {{.Name}} in the last 30 days">
-          {{range .Strip}}{{if .Href}}<a href="{{.Href}}" class="cv-bar cv-bar-{{.Kind}}" role="listitem" title="{{.Title}}" aria-label="{{.Title}}"></a>{{else}}<span class="cv-bar cv-bar-none" role="listitem" aria-label="no backup that day"></span>{{end}}{{end}}
+        <div class="cv-strip" role="img" aria-label="{{.StripLabel}}">
+          {{range .Strip}}{{if .Href}}<a href="{{.Href}}" class="cv-bar cv-bar-{{.Kind}}{{if .Capped}} cv-bar-capped{{end}}" title="{{.Title}}"></a>{{else}}<span class="cv-bar cv-bar-none" aria-hidden="true"></span>{{end}}{{end}}
         </div>
         <div class="cv-strip-ends"><span>30 d ago</span> <span>today</span></div>
       </div>
@@ -221,7 +226,7 @@
             </details>
             {{end}}
           </span>
-          {{with .Message}}<p class="cv-brun-msg">{{.}}</p>{{end}}
+          {{if or .Cause .Message}}<p class="cv-brun-msg">{{with .Cause}}<span class="cv-brun-cause">{{.}}</span>{{end}}{{with .Message}}<span class="cv-brun-detail">{{.}}</span>{{end}}</p>{{end}}
         </div>
         {{end}}
       </div>
@@ -234,23 +239,23 @@
         {{else if $.Destination}}
         {{with .RestoreLast}}
         <details class="cv-confirm">
-          <summary class="cv-btn cv-btn-primary cv-btn-sm">{{icon "history" 14}}Restore from the last backup</summary>
+          <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-secondary{{else}}cv-btn-primary{{end}} cv-btn-sm">{{icon "history" 14}}Restore from {{.When.Text}}</summary>
           {{template "restore-confirm" (restoreAsk $ . "last-")}}
         </details>
         {{end}}
         {{if .Volume}}
         <details class="cv-confirm">
-          <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Back up now</summary>
+          <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Back up now</summary>
           <form method="post" action="/apps/{{$.ID}}/backups" class="cv-confirm-body">
             <p>The service stops for a few seconds while the backup runs.</p>
             <input type="hidden" name="service" value="{{.Name}}">
-            <div><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Back up now</button></div>
+            <div><button type="submit" class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">Back up now</button></div>
           </form>
         </details>
         {{else}}
         <form method="post" action="/apps/{{$.ID}}/backups">
           <input type="hidden" name="service" value="{{.Name}}">
-          <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Back up now</button>
+          <button type="submit" class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Back up now</button>
         </form>
         {{end}}
         {{end}}
@@ -301,8 +306,8 @@
      Takes a restoreAskView. */}}
 {{define "restore-confirm"}}
 <form method="post" action="/apps/{{.AppID}}/backups/{{.Run.ID}}/restore" class="cv-confirm-body">
-  {{if .Run.Volume}}<p>The service stops, its volumes are replaced by this backup's files, and it starts again. Files added since the backup are deleted.</p>
-  {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with this backup. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
+  {{if .Run.Volume}}<p>The service stops, its volumes are replaced by the files of the backup from {{.When}}, and it starts again. Files added since the backup are deleted.</p>
+  {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with the backup from {{.When}}. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
   <label class="cv-fld" for="confirm-{{.Prefix}}{{.Run.ID}}">
     <span class="cv-label">Type <span class="cv-inline-mono">{{.Run.Service}}</span> to confirm</span>
     <input class="cv-field cv-field-mono" id="confirm-{{.Prefix}}{{.Run.ID}}" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Failed}} autofocus aria-invalid="true"{{end}}>
@@ -677,7 +682,7 @@
 {{with .Edit.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{range .Edit.Services}}
 <section id="service-{{.Name}}" class="cv-svc cv-gridbox"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Settings"{{end}}>
-  {{if $.Edit.Many}}<h2 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h2>{{end}}
+  {{if $.Edit.Many}}<h2 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h2>{{else}}<h2 class="sr-only">Settings</h2>{{end}}
   <form method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
     <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
     <fieldset class="cv-fieldset"{{if $.Stopped}} disabled{{end}}>
@@ -729,7 +734,7 @@
         </div>
       </div>
     </fieldset>
-    {{if not $.Stopped}}<div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>{{end}}
+    {{if not $.Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save {{if $.Edit.Many}}{{.Name}} {{end}}and deploy</button></div>{{end}}
   </form>
 </section>
 {{end}}
@@ -746,11 +751,11 @@
     {{end}}
     <div class="cv-btnrow">
       <a href="{{.Domains.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage domains</a>
-      <a href="{{.Domains.AddHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Add domain</a>
+      {{if .Domains.CanAdd}}<a href="{{.Domains.AddHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
     </div>
   </section>
   <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="secrets-title">
-    <h2 id="secrets-title" class="cv-label">Secrets</h2>
+    <h2 id="secrets-title" class="cv-label">Variables &amp; secrets</h2>
     {{range .Secrets.Lines}}
     <p class="cv-secnames">{{if $.Secrets.Many}}<span class="cv-secsvc">{{.Service}}</span> {{end}}{{range $i, $name := .Names}}{{if $i}} · {{end}}{{$name}}{{end}}</p>
     {{end}}
@@ -852,6 +857,7 @@
 {{define "variables"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Add.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{if and .Stopped .Defined}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}
 {{if not .Defined}}
 <section aria-labelledby="vars-title" class="cv-pgsec">
   <div class="cv-pghead"><div class="cv-pghead-text">
@@ -888,7 +894,7 @@
     <div role="cell" class="cv-vact">
       {{if and .Secret $.CanRemove}}
       <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Name}}">Remove</summary>
         <form method="post" action="/apps/{{$.ID}}/secrets/remove" class="cv-confirm-body">
           <input type="hidden" name="revision" value="{{$.Revision}}">
           <input type="hidden" name="service" value="{{.Service}}">
@@ -934,17 +940,15 @@
       <input type="hidden" name="secret" value="1">
       <p class="cv-note">The value is set as a secret and never shown again.</p>
       {{else}}
+      <input type="hidden" name="secretChoice" value="1">
       <label class="cv-check" for="var-secret">
         <input type="checkbox" id="var-secret" name="secret" value="1"{{if .Add.Secret}} checked{{end}}>
         <span>Keep as a secret (the value is never shown again)</span>
       </label>
-      <p class="cv-note">Without this, the value is part of the app's definition and shows in the table.</p>
+      <p class="cv-note">Untick only for a value anyone signed in may read: it is stored in the app's definition, its deploy history and the export.</p>
       {{end}}
     </fieldset>
-    <div class="cv-btnrow">
-      {{if .Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
-      {{else}}<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Set and deploy</button>{{end}}
-    </div>
+    {{if not .Stopped}}<div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Set and deploy</button></div>{{end}}
   </form>
 </section>
 
@@ -955,13 +959,16 @@
     <form method="post" action="/apps/{{$.ID}}/variables/env" class="cv-formcol">
       <input type="hidden" name="revision" value="{{$.Revision}}">
       <input type="hidden" name="service" value="{{.Service}}">
-      <label class="cv-fld" for="{{.Field.ID}}">
-        <span class="cv-label">Variables as .env{{if $.Many}} · <span class="cv-inline-mono">{{.Service}}</span>{{end}}</span>
-        <textarea class="cv-field cv-field-area cv-field-env" id="{{.Field.ID}}" name="env" rows="12" placeholder="# {{.Service}} · paste a .env file to add or update many at once" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
+      <div class="cv-fld">
+        <label class="cv-fld" for="{{.Field.ID}}">
+          <span class="cv-label">Variables as .env{{if $.Many}} · <span class="cv-inline-mono">{{.Service}}</span>{{end}}</span>
+          <textarea class="cv-field cv-field-area cv-field-env" id="{{.Field.ID}}" name="env" rows="12" placeholder="# {{.Service}} · paste a .env file to add or update many at once" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="{{.Field.ID}}-hint{{if .Field.Error}} {{.Field.ID}}-error{{end}}"{{if .Field.Error}} aria-invalid="true"{{end}}{{if .Field.Alert}} autofocus{{end}}>
 {{.Field.Value}}</textarea>
-        <span class="cv-hint">One NAME=value per line. Lines starting with # are ignored. This list replaces the current one. Secrets are set above.</span>
+        </label>
+        <span class="cv-hint" id="{{.Field.ID}}-hint">One NAME=value per line. Lines starting with # are ignored. This list replaces the current one. Secrets are set above.</span>
         {{template "field-error" .Field}}
-      </label>
+        {{if .Refused}}<p class="cv-note">Your text is kept below; the table shows what the app has now. Compare before saving.</p>{{end}}
+      </div>
       <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>
     </form>
   </section>
@@ -1010,7 +1017,7 @@
       <a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a>
       {{if $.CanEdit}}
       <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Remove</summary>
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Host}}">Remove</summary>
         <form method="post" action="/apps/{{$.ID}}/domains/remove" class="cv-confirm-body">
           <input type="hidden" name="revision" value="{{$.Revision}}">
           <input type="hidden" name="service" value="{{.Service}}">

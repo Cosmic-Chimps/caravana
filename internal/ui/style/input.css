@@ -468,6 +468,10 @@
   .cv-fld { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
   .cv-note { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); text-wrap: pretty; }
   .cv-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  /* A form that can't act: its fields read as inert, and say so under the pointer. */
+  .cv-fieldset:disabled .cv-field, .cv-fieldset:disabled .cv-field-input { color: var(--color-fg-3); cursor: not-allowed; }
+  .cv-fieldset:disabled .cv-check { cursor: not-allowed; }
+  .cv-saverow { width: 100%; }
   .cv-formcol { display: flex; flex-direction: column; gap: 16px; }
   .cv-formcol-wide { gap: 22px; max-width: 560px; }
   .cv-formcol-narrow { max-width: 560px; }
@@ -478,10 +482,10 @@
   .cv-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
   /* A field with a prefix or a suffix inside it (GET, MB, s): the box is the field, the input is bare. */
-  .cv-field-box { display: flex; align-items: center; padding: 0; }
+  .cv-field-box { display: flex; align-items: center; box-sizing: border-box; height: 32px; padding: 0; overflow: hidden; }
   .cv-field-box:focus-within { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
   .cv-field-box:has([aria-invalid="true"]) { border-color: var(--color-failed-line); }
-  .cv-field-input { flex: 1; min-width: 0; height: 100%; padding: 0 12px; background: transparent; border: 0; outline: 0; color: var(--color-fg-1); font: inherit; }
+  .cv-field-input { flex: 1; align-self: stretch; min-width: 0; height: auto; margin: 0; padding: 0 12px; background: transparent; border: 0; outline: 0; color: var(--color-fg-1); font: inherit; }
   .cv-affix { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
   .cv-affix-pre { padding-left: 12px; }
   .cv-affix-suf { padding-right: 12px; }
@@ -496,6 +500,7 @@
   .cv-pgtitle { font: 500 18px/1.35 var(--font-sans); color: var(--color-fg-1); }
   .cv-pgsub { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
   .cv-count { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-count-sans { font-family: var(--font-sans); }
   .cv-foot { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
 
   /* Configure: a service's two panels side by side, then Domains and Secrets. */
@@ -562,7 +567,8 @@
   /* Backups: the banner and the rows of what has no backup. */
   .cv-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 18px; }
   .cv-banner-text { flex: 1; min-width: 12rem; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }
-  .cv-gap { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px; }
+  .cv-gaps { overflow: visible; }
+  .cv-gap { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px; }
   .cv-gap-mark.cv-mark-warning { width: 6.4px; height: 6.4px; margin: 5.3px 1.3px 1.3px; }
   .cv-gap-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .cv-gap-text { font-size: 15px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; }
@@ -588,6 +594,7 @@
   .cv-blast-when, .cv-blast-when time { color: var(--color-fg-2); font-size: 12px; }
   .cv-blast-never { color: var(--color-fg-3); }
   .cv-blast-now { color: var(--color-rolling); }
+  .cv-blast-failed { color: var(--color-failed); }
   .cv-bdetail { display: flex; flex-direction: column; gap: 16px; padding: 16px 18px 20px 82px; background: var(--color-ink-0); border-bottom: 1px solid var(--color-line-1); }
   .cv-bdetails:last-child .cv-bdetail { border-radius: 0 0 5px 5px; border-bottom: 0; }
   .cv-bstrip-wrap { display: flex; flex-direction: column; gap: 10px; }
@@ -598,6 +605,8 @@
   .cv-bar-failed { background: var(--color-failed); }
   .cv-bar-running { background: var(--color-rolling); }
   .cv-bar-none { height: 4px; background: transparent; }
+  /* A restorable day whose newest run failed: the bar keeps its restore point and wears a failed cap. */
+  .cv-bar-capped { box-shadow: inset 0 3px 0 var(--color-failed); }
   .cv-strip-ends { display: flex; justify-content: space-between; max-width: 900px; font: 400 11px/1 var(--font-mono); color: var(--color-fg-4); }
   .cv-bfail { font-size: 13px; line-height: 1.5; color: var(--color-fg-2); overflow-wrap: anywhere; }
   .cv-bpath { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
@@ -610,7 +619,8 @@
   .cv-brun-fact { min-width: 0; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
   .cv-brun-act { justify-self: end; }
   .cv-brun-status { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); }
-  .cv-brun-msg { grid-column: 1 / -1; padding-bottom: 10px; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-brun-msg { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-brun-cause { font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-2); }
   .cv-panel > .cv-brun .cv-brun-msg { padding-left: 26px; }
 }
 

@@ -46,6 +46,7 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   Domains and Secrets panels that link to their pages. The environment, the domains and the secrets
   left the form, and saving it keeps them as they are. The registry notice shows when an image
   can't be pulled for want of credentials.
+- On the Variables page "Keep as a secret" is ticked by default.
 - The Backups tab is redrawn: a row for each backed-up service that opens to its last 30 days (one
   bar per day, each a link to its run), its last ten runs with Restore…, "Restore from the last
   backup" and "Back up now", and the volume's host path and size; the restores follow. The

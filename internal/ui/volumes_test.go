@@ -115,7 +115,7 @@ func TestBackupsTabVolumesNotBackedUp(t *testing.T) {
 	e.seed(t, a)
 	_, body := e.get(t, "/apps/plain/backups")
 	got := text(body)
-	if !strings.Contains(got, "uptime-kuma · /app/data has no backup.") || !strings.Contains(got, "Volume") || !strings.Contains(got, "0 backed up · 1 not") {
+	if !strings.Contains(got, "uptime-kuma · /app/data has no backup.") || !strings.Contains(got, "Volume") || !strings.Contains(got, "0 backed up · 0 failing · 1 not") {
 		t.Errorf("the tab of a volume without a backup:\n%s", got)
 	}
 

@@ -137,8 +137,11 @@ type configureTab struct {
 // the service it goes to (drawn when the app has several services), and the links
 // to the page that manages them.
 type domainsPanel struct {
-	Rows       []domainRow
-	Many       bool
+	Rows []domainRow
+	Many bool
+	// CanAdd says the Domains page has a form to add one: not for an app that keeps its
+	// Compose file or is stopped, which would link to a page that can't.
+	CanAdd     bool
 	ManageHref string
 	AddHref    string
 }
@@ -173,7 +176,9 @@ type secretsPanel struct {
 	Lines []secretLine // the services that have a secret
 	Many  bool         // more than one service: each line starts with its name
 	Count int
-	Href  string
+	// Variables is how many environment variables the app has, over all its services.
+	Variables int
+	Href      string
 }
 
 // secretLine is one service's secret names, in their stored order.
@@ -182,18 +187,19 @@ type secretLine struct {
 	Names   []string
 }
 
-// Summary is the sentence under the names.
+// Summary is the sentence under the names: both counts, and that a secret's value is never here.
 func (p secretsPanel) Summary() string {
-	if p.Count == 0 {
-		return "No secrets."
+	if p.Count == 0 && p.Variables == 0 {
+		return "No variables or secrets."
 	}
-	return plural(p.Count, "secret") + " in Nomad Variables. Values are never shown here."
+	return plural(p.Variables, "variable") + " · " + plural(p.Count, "secret") + ". Values of secrets are never shown here."
 }
 
 // secretsPanelOf lays out the stored app's secret names for the panel.
 func secretsPanelOf(a app.App) secretsPanel {
 	p := secretsPanel{Many: len(a.Services) > 1}
 	for _, svc := range a.Services {
+		p.Variables += len(svc.Env)
 		if len(svc.Secrets) == 0 {
 			continue
 		}
@@ -365,7 +371,7 @@ func alsoSet(svc app.Service, s editService) []defRow {
 		rows = append(rows, defRow{Label: "Ports", Values: ports})
 	}
 	if svc.Health != nil && svc.Health.Port != "" && len(svc.Ports) > 1 {
-		rows = append(rows, defRow{Label: "Health check port", Values: []string{svc.Health.Port}})
+		rows = append(rows, defRow{Label: "Check port", Values: []string{svc.Health.Port}})
 	}
 	if len(svc.Volumes) > 0 {
 		var volumes []string

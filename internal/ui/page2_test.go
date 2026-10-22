@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func TestPage2Shapes(t *testing.T) {
 			t.Error("the kept-file Add form doesn't set a secret")
 		}
 		check(t, e, "shop", "/domains", []string{"This app is edited through its Compose file.", "shop.example.com"}, []string{"Add a domain", "Remove", "Add domain and deploy"})
-		check(t, e, "shop", "/backups", []string{"1 backed up · 0 not"}, nil)
+		check(t, e, "shop", "/backups", []string{"1 backed up · 0 failing · 0 not"}, nil)
 	})
 
 	t.Run("no definition yet", func(t *testing.T) {
@@ -284,7 +285,7 @@ func TestSetVariable(t *testing.T) {
 		e, _ := keptShopEnv(t)
 		before := e.storedApp(t, "shop")
 		f := e.variablesForm(t, "shop")
-		resp, body := e.submit(t, f, url.Values{"service": {"web"}, "name": {"MODE"}, "value": {"1"}, "secret": {""}})
+		resp, body := e.submit(t, f, url.Values{"service": {"web"}, "name": {"MODE"}, "value": {"1"}, "secret": {}, "secretChoice": {"1"}})
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "This app is edited through its Compose file.") {
 			t.Errorf("a variable on a kept-file app = %d:\n%s", resp.StatusCode, text(body))
 		}
@@ -344,7 +345,7 @@ func TestSaveEnvText(t *testing.T) {
 	n := e.deployCount(t, "duet")
 	for text0, wantText := range map[string]string{"A=1\nB": "Line 2 has no", "TOKEN=1": "TOKEN is a secret of this service."} {
 		resp, body = e.submit(t, web, url.Values{"env": {text0}})
-		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), wantText) || !strings.Contains(body, `aria-describedby="env-api-error"`) {
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), wantText) || !strings.Contains(body, `aria-describedby="env-api-hint env-api-error"`) {
 			t.Errorf("env %q = %d, want 422 with %q at the textarea:\n%s", text0, resp.StatusCode, wantText, text(body))
 		}
 	}
@@ -591,7 +592,7 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 
 	body := e.pageOf(t, "/apps/gaps/backups")
 	got := text(body)
-	for _, want := range []string{"db has no backup. PostgreSQL · 0 copies kept", "files · /files, /cache has no backup. Volume", "0 backed up · 2 not · stored in backups", "Back up daily"} {
+	for _, want := range []string{"db has no backup. PostgreSQL · 0 copies kept", "files · /files, /cache has no backup. Volume", "0 backed up · 0 failing · 2 not · stored in backups", "Back up daily"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
@@ -631,7 +632,7 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 		}
 	}
 	got = text(e.pageOf(t, "/apps/gaps/backups"))
-	if !strings.Contains(got, "2 backed up · 0 not") || strings.Contains(got, "has no backup.") {
+	if !strings.Contains(got, "2 backed up · 0 failing · 0 not") || strings.Contains(got, "has no backup.") {
 		t.Errorf("after both policies:\n%s", got)
 	}
 
@@ -725,7 +726,7 @@ func TestRestoreStrip(t *testing.T) {
 	if len(cells) != 30 {
 		t.Fatalf("%d cells, want 30", len(cells))
 	}
-	kinds := map[int]string{29: "running", 28: "failed", 26: "healthy"}
+	kinds := map[int]string{29: "running", 28: "healthy", 26: "healthy"}
 	links := 0
 	for i, c := range cells {
 		want := kinds[i]
@@ -742,13 +743,22 @@ func TestRestoreStrip(t *testing.T) {
 	if links != 3 {
 		t.Errorf("%d cells link to a run, want 3", links)
 	}
-	if cells[28].Href != "#backup-r-fail" || cells[28].Title != "1 d ago · 14:00 · failed" {
-		t.Errorf("yesterday's cell = %+v, want the day's newest run, the failed one", cells[28])
+	// A day with a healthy run is restorable: its bar is healthy and links to that run, with a failed
+	// cap because the day's newest run failed.
+	if c := cells[28]; c.Href != "#backup-r-ok-yday" || !c.Capped || c.Title != "1 d ago · 2 runs, the last failed" {
+		t.Errorf("yesterday's cell = %+v, want the healthy run, capped, titled for two runs", c)
 	}
-	// The other way round: a healthy run after a failed one is a healthy bar.
+	if cells[26].Capped || cells[29].Capped {
+		t.Error("a day whose newest run didn't fail has a failed cap")
+	}
+	// The other way round: a healthy run after a failed one is a healthy bar without a cap.
 	back := restoreStrip(now, []store.BackupRecord{run("ok", time.Hour, store.BackupSucceeded, 2<<20), run("bad", 2*time.Hour, store.BackupFailed, 0)})
-	if back[29].Kind != "healthy" || back[29].Href != "#backup-ok" {
-		t.Errorf("a healthy run after a failed one = %+v, want healthy", back[29])
+	if back[29].Kind != "healthy" || back[29].Href != "#backup-ok" || back[29].Capped || back[29].Title != "today · 2 runs, the last healthy" {
+		t.Errorf("a healthy run after a failed one = %+v, want healthy, uncapped", back[29])
+	}
+	lateFail := restoreStrip(now, []store.BackupRecord{run("bad", time.Hour, store.BackupFailed, 0), run("ok", 2*time.Hour, store.BackupSucceeded, 2<<20)})
+	if lateFail[29].Kind != "healthy" || !lateFail[29].Capped || lateFail[29].Title != "today · 2 runs, the last failed" {
+		t.Errorf("a failed run after a healthy one = %+v", lateFail[29])
 	}
 	if cells[26].Title != "3 d ago · 12:00 · 1.9 GB" || cells[26].Href != "#backup-r-3" {
 		t.Errorf("the cell of three days ago = %+v", cells[26])
@@ -786,7 +796,7 @@ func TestBackupsRows(t *testing.T) {
 	}
 	body := e.pageOf(t, "/apps/duo/backups")
 	got := text(body)
-	for _, want := range []string{"2 backed up · 0 not · stored in backups", "Every day at 14:30 UTC 2 backups", "The last backup failed 5 hours ago.",
+	for _, want := range []string{"2 backed up · 1 failing · 0 not · stored in backups", "Every day at 14:30 UTC 2 backups", "The last backup failed 5 hours ago.",
 		"took 1 min", "5 MB 5 MB all", "30 d ago today"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
@@ -939,6 +949,13 @@ func TestFieldsAre32px(t *testing.T) {
 	if m := regexp.MustCompile(`\.cv-field\{[^}]*\}`).FindString(flat); !strings.Contains(m, "height:32px") || strings.Contains(m, "36px") {
 		t.Errorf(".cv-field = %s, want 32px", m)
 	}
+	// A field with a prefix or a suffix is 32px too: the box has the height and the edge, its input neither.
+	if m := regexp.MustCompile(`\.cv-field-box\{[^}]*\}`).FindString(flat); !strings.Contains(m, "height:32px") || !strings.Contains(m, "box-sizing:border-box") {
+		t.Errorf(".cv-field-box = %s, want a 32px border box", m)
+	}
+	if all := strings.Join(regexp.MustCompile(`\.cv-field-input\{[^}]*\}`).FindAllString(flat, -1), ""); !strings.Contains(all, "border:0") {
+		t.Errorf(".cv-field-input = %s, want no border of its own", all)
+	}
 	for _, name := range []string{"lock", "external-link", "file-text", "history", "play", "chevron-right", "chevron-down"} {
 		if _, ok := icons[name]; !ok {
 			t.Errorf("no icon %q", name)
@@ -994,7 +1011,7 @@ func TestFailedRunErrorIsDrawnOnce(t *testing.T) {
 	if !strings.Contains(text(body), "The last backup failed 12 minutes ago.") {
 		t.Errorf("the sentence under the strip:\n%s", text(body))
 	}
-	if !strings.Contains(body, `<p class="cv-brun-msg">`+msg+`</p>`) {
+	if !strings.Contains(body, `<span class="cv-brun-detail">`+msg+`</span>`) {
 		t.Error("the run's row lacks the error")
 	}
 }
@@ -1026,7 +1043,7 @@ func TestStoppedConfigureSaysItOnce(t *testing.T) {
 func TestAlsoSetHealthPort(t *testing.T) {
 	svc := app.Service{Name: "web", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Command: "/run", Health: &app.HealthCheck{Port: "http"}}
 	for _, r := range alsoSet(svc, newEditService(svc)) {
-		if r.Label == "Health check port" {
+		if r.Label == "Check port" {
 			t.Errorf("a one-port service shows the health check's port: %+v", r)
 		}
 	}
@@ -1034,7 +1051,7 @@ func TestAlsoSetHealthPort(t *testing.T) {
 	svc.Health.Port = "metrics"
 	found := false
 	for _, r := range alsoSet(svc, newEditService(svc)) {
-		found = found || r.Label == "Health check port" && r.Values[0] == "metrics"
+		found = found || r.Label == "Check port" && r.Values[0] == "metrics"
 	}
 	if !found {
 		t.Error("a two-port service doesn't show the health check's port")
@@ -1083,5 +1100,304 @@ func TestConfigureRefusalScrollsToTheService(t *testing.T) {
 		if f.Action == "/apps/duet/configure" && f.Fragment == "" {
 			t.Errorf("a form of the refused page has no fragment: %+v", f)
 		}
+	}
+}
+
+// The strip as one phrase for a screen reader.
+func TestStripLabel(t *testing.T) {
+	now := time.Date(2026, 10, 22, 15, 0, 0, 0, time.UTC)
+	run := func(ago time.Duration, status string) store.BackupRecord {
+		return store.BackupRecord{Status: status, StartedAt: now.Add(-ago)}
+	}
+	for name, tc := range map[string]struct {
+		runs []store.BackupRecord
+		want string
+	}{
+		"none":            {nil, "30 days: no backups"},
+		"one":             {[]store.BackupRecord{run(26*time.Minute, store.BackupSucceeded)}, "30 days: 1 backup, the last 26 minutes ago"},
+		"two, one failed": {[]store.BackupRecord{run(26*time.Minute, store.BackupFailed), run(3*time.Hour, store.BackupSucceeded)}, "30 days: 2 backups, 1 failed, the last 26 minutes ago"},
+		"old ones aren't": {[]store.BackupRecord{run(time.Hour, store.BackupSucceeded), run(40*24*time.Hour, store.BackupFailed)}, "30 days: 1 backup, the last 1 hour ago"},
+	} {
+		if got := stripLabel(now, tc.runs); got != tc.want {
+			t.Errorf("%s: stripLabel = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+// causeOf: a plain reason from a fixed table for what rclone and the S3 SDK say, in the order of the
+// table (a specific cause beats the retries around it), and nothing for anything else.
+func TestCauseOf(t *testing.T) {
+	const (
+		refused = "The destination refused the connection."
+		host    = "The destination's host name wasn't found."
+		denied  = "The destination refused the access key."
+		bucket  = "The bucket wasn't found at the destination."
+		late    = "The destination didn't answer in time."
+	)
+	for _, tc := range []struct{ name, msg, want string }{
+		{"rclone: connection refused", "Failed to copyto: RequestError: send request failed\ncaused by: Put \"http://10.0.0.5:9000/backups/x\": dial tcp 10.0.0.5:9000: connect: connection refused", refused},
+		{"SDK: refused inside the retries", "failed upload: NOTICE: Failed to copyto: operation error S3: PutObject, exceeded maximum number of attempts, 3, https response error StatusCode: 0, RequestID: , HostID: , request send failed, Put \"https://s3.example.com/b\": dial tcp 192.0.2.1:443: connect: connection refused", refused},
+		{"no such host", "Failed to create file system for \"dest:backups\": dial tcp: lookup s3.nowhere.example: no such host", host},
+		{"AccessDenied", "operation error S3: PutObject, https response error StatusCode: 403, RequestID: 1, api error AccessDenied: Access Denied", denied},
+		{"InvalidAccessKeyId", "api error InvalidAccessKeyId: The AWS Access Key Id you provided does not exist in our records.", denied},
+		{"SignatureDoesNotMatch", "api error SignatureDoesNotMatch: The request signature we calculated does not match", denied},
+		{"NoSuchBucket", "operation error S3: HeadBucket, https response error StatusCode: 404, api error NoSuchBucket: The specified bucket does not exist", bucket},
+		{"i/o timeout", "Failed to copyto: Put \"https://s3.example.com/b/x\": dial tcp 192.0.2.1:443: i/o timeout", late},
+		{"context deadline", "Failed to copyto: context deadline exceeded", late},
+		// The review's db: the SDK gave up after its retries, and the stored message stops there. It is
+		// the timed-out entry: the destination never answered well within the retries. A cause named in
+		// the message (the cases above) wins over it.
+		{"the review's db", "failed upload: ... NOTICE: Failed to copyto: operation error S3: HeadObject, exceeded maximum number of attempt", late},
+		{"anything else", "pg_dump: error: connection to server on socket failed: FATAL: role \"x\" does not exist", ""},
+		{"empty", "", ""},
+		{"a 403 that is only a number", "bytes=1403 written", ""},
+	} {
+		if got := causeOf(tc.msg); got != tc.want {
+			t.Errorf("%s: causeOf = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A failed run's row leads with the plain cause, then the detail in mono; a message with no known cause
+// has the detail alone.
+func TestFailedRunRowLeadsWithTheCause(t *testing.T) {
+	e := volumeBackupsEnv(t)
+	started := e.Clock.Now().Add(-time.Hour).UTC()
+	for id, msg := range map[string]string{
+		"uptime-kuma-1": "Put \"https://s3.example.com\": dial tcp 192.0.2.1:443: connect: connection refused",
+		"uptime-kuma-2": "some other failure",
+	} {
+		at := started
+		if id == "uptime-kuma-2" {
+			at = started.Add(-time.Hour)
+		}
+		if err := e.Store.SaveBackup(context.Background(), store.BackupRecord{AppID: "kuma", ID: id, Service: "uptime-kuma", Engine: app.BackupVolume,
+			Status: store.BackupFailed, Message: msg, StartedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := e.pageOf(t, "/apps/kuma/backups")
+	if !strings.Contains(body, `<p class="cv-brun-msg"><span class="cv-brun-cause">The destination refused the connection.</span><span class="cv-brun-detail">Put &#34;https://s3.example.com&#34;: dial tcp 192.0.2.1:443: connect: connection refused</span></p>`) {
+		t.Errorf("the cause isn't before the detail:\n%s", text(body))
+	}
+	if !strings.Contains(body, `<p class="cv-brun-msg"><span class="cv-brun-detail">some other failure</span></p>`) {
+		t.Errorf("a message with no known cause isn't the detail alone:\n%s", text(body))
+	}
+}
+
+// The summary row, accessibly and with its facts from the newest run: no row or cell roles, a leading
+// sr-only state, "· failed" in the failed hue, and a size only from a run that has one. After a failed
+// run "Restore from …" is secondary and "Back up now" primary; the head counts the failing.
+func TestBackupsFailedRow(t *testing.T) {
+	e := volumeBackupsEnv(t)
+	now := e.Clock.Now().UTC()
+	// Both runs on one UTC day, so the strip has one cell for them; not testable in the first minutes of a day.
+	if now.Hour() == 0 && now.Minute() < 40 {
+		t.Skip("too close to midnight UTC for two runs on one day")
+	}
+	good, bad := now.Add(-35*time.Minute), now.Add(-25*time.Minute)
+	fin := good.Add(time.Minute)
+	for _, b := range []store.BackupRecord{
+		{AppID: "kuma", ID: "uptime-kuma-1", Service: "uptime-kuma", Engine: app.BackupVolume, Status: store.BackupSucceeded, Bytes: 5 << 20, StartedAt: good, FinishedAt: &fin},
+		{AppID: "kuma", ID: "uptime-kuma-2", Service: "uptime-kuma", Engine: app.BackupVolume, Status: store.BackupFailed, Message: "boom", StartedAt: bad},
+	} {
+		if err := e.Store.SaveBackup(context.Background(), b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := e.pageOf(t, "/apps/kuma/backups")
+	got := text(body)
+	for _, want := range []string{"1 backed up · 1 failing · 0 not · stored in backups", "uptime-kuma, last backup failed.", "25 minutes ago · failed",
+		"Restore from 35 minutes ago", "The last backup failed 25 minutes ago."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the tab lacks %q:\n%s", want, got)
+		}
+	}
+	sum := body[strings.Index(body, `<summary class="cv-bsum"`):]
+	sum = sum[:strings.Index(sum, "</summary>")]
+	for _, gone := range []string{`role="row"`, `role="cell"`, "aria-label"} {
+		if strings.Contains(sum, gone) {
+			t.Errorf("the summary has %s", gone)
+		}
+	}
+	if !strings.Contains(sum, `<span class="sr-only">uptime-kuma, last backup failed. </span>`) || !strings.Contains(sum, `<span class="cv-blast-failed">· failed</span>`) {
+		t.Errorf("the summary's leading state or its failed word:\n%s", sum)
+	}
+	// The newest run failed, so the summary shows no size: that of an older run would be of another time.
+	if strings.Contains(sum, `<span class="cv-blast-when">5 MB</span>`) {
+		t.Errorf("the summary's size is of an older run:\n%s", sum)
+	}
+	if !strings.Contains(body, `<summary class="cv-btn cv-btn-secondary cv-btn-sm">`+"<svg") || !strings.Contains(body, `cv-btn-primary cv-btn-sm"><svg class="cv-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon`) {
+		t.Errorf("after a failed run Restore from… should be secondary and Back up now primary:\n%s", body)
+	}
+	// The strip is one image with a label; its cells are hidden from readers; a link bar keeps its title.
+	if !strings.Contains(body, `role="img" aria-label="30 days: 2 backups, 1 failed, the last 25 minutes ago"`) || strings.Contains(body, `role="listitem" aria-label="no backup that day"`) {
+		t.Errorf("the strip's label:\n%s", body)
+	}
+	if !strings.Contains(body, `class="cv-bar cv-bar-none" aria-hidden="true"`) || !strings.Contains(body, `class="cv-bar cv-bar-healthy cv-bar-capped" title="today · 2 runs, the last failed"`) {
+		t.Errorf("the strip's cells:\n%s", body)
+	}
+}
+
+// "Back up daily" is a confirmation that says what it will do; with no destination its summary is secondary
+// and "Set the destination" is the one primary action.
+func TestBackUpDailyConfirmation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func() app.App
+		want  string
+	}{
+		{"volume", func() app.App { return kumaApp() }, "Backs up /app/data every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app."},
+		{"postgres", nil, "Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := backupsEnv(t, true)
+			a := duoApp()
+			if tc.build != nil {
+				a = tc.build()
+				a.Services[0].Backup = nil
+			} else {
+				a.Services = a.Services[:1]
+				a.Services[0].Image = "postgres:17"
+				a.Services[0].Ports = []app.Port{{Name: "pg", ContainerPort: 5432}}
+				a.Services[0].Health = &app.HealthCheck{}
+				a.Services[0].Domains = nil
+			}
+			e.seed(t, a)
+			body := e.pageOf(t, "/apps/"+a.ID+"/backups")
+			if !strings.Contains(text(body), tc.want) || !strings.Contains(text(body), "Back up daily and deploy") || !strings.Contains(body, `cv-btn cv-btn-primary cv-btn-sm">Back up daily</summary>`) {
+				t.Errorf("the confirmation:\n%s", text(body))
+			}
+			f := formWith(t, body, "/apps/"+a.ID+"/backups/policy")
+			if f.Values.Get("revision") == "" || f.Values.Get("service") == "" {
+				t.Errorf("the form = %v", f.Values)
+			}
+		})
+	}
+	// No destination: secondary summary, a primary "Set the destination".
+	e := newConsoleEnv(t)
+	k := kumaApp()
+	k.Services[0].Backup = nil
+	e.seed(t, k)
+	body := e.pageOf(t, "/apps/kuma/backups")
+	if !strings.Contains(body, `cv-btn cv-btn-secondary cv-btn-sm">Back up daily</summary>`) || !strings.Contains(body, `href="/settings#backups" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination`) {
+		t.Errorf("without a destination:\n%s", text(body))
+	}
+}
+
+// "Keep as a secret" is ticked when the form is drawn. An unticked box sends nothing, so the form also
+// sends secretChoice: with it, the box says what is meant; without it the value is a secret, the side
+// that shows nothing. A refused submit clears the value and keeps the choice.
+func TestKeepAsASecretIsTheDefault(t *testing.T) {
+	e := duetEnv(t)
+	body := e.pageOf(t, "/apps/duet/variables")
+	if !strings.Contains(body, `<input type="checkbox" id="var-secret" name="secret" value="1" checked>`) || !strings.Contains(body, `<input type="hidden" name="secretChoice" value="1">`) {
+		t.Errorf("the box isn't ticked by default, or the form doesn't send its choice:\n%s", body)
+	}
+	if !strings.Contains(text(body), "Untick only for a value anyone signed in may read: it is stored in the app's definition, its deploy history and the export.") {
+		t.Errorf("the note is missing:\n%s", text(body))
+	}
+	f := formWith(t, body, "/apps/duet/variables")
+	stored := func() app.Service { return e.storedApp(t, "duet").Services[0] }
+
+	// Ticked: the box is in the post. A secret, whatever the name.
+	resp, _ := e.submit(t, f, url.Values{"service": {"web"}, "name": {"PLAIN_LOOKING"}, "value": {"v1"}})
+	if resp.StatusCode != http.StatusSeeOther || len(stored().Secrets) != 1 || stored().Secrets[0].Name != "PLAIN_LOOKING" {
+		t.Fatalf("a ticked box = %d, secrets %+v, want a secret", resp.StatusCode, stored().Secrets)
+	}
+	// Unticked: the browser sends the marker and no box.
+	f = formWith(t, e.pageOf(t, "/apps/duet/variables"), "/apps/duet/variables")
+	resp, _ = e.submit(t, f, url.Values{"service": {"web"}, "name": {"VISIBLE"}, "value": {"v2"}, "secret": {}})
+	found := false
+	for _, v := range stored().Env {
+		found = found || v.Name == "VISIBLE" && v.Value == "v2"
+	}
+	if resp.StatusCode != http.StatusSeeOther || !found || slices.ContainsFunc(stored().Secrets, func(s app.Secret) bool { return s.Name == "VISIBLE" }) {
+		t.Fatalf("an unticked box = %d, env %+v, want a variable", resp.StatusCode, stored().Env)
+	}
+	// No marker and no box (a post that isn't this form): the value is a secret.
+	rev := e.revisionOf(t, "duet")
+	resp, _ = e.postForm(t, "/apps/duet/variables", url.Values{"revision": {rev}, "service": {"web"}, "name": {"BARE_POST"}, "value": {"v3"}})
+	if resp.StatusCode != http.StatusSeeOther || !slices.ContainsFunc(stored().Secrets, func(s app.Secret) bool { return s.Name == "BARE_POST" }) ||
+		slices.ContainsFunc(stored().Env, func(v app.EnvVar) bool { return v.Name == "BARE_POST" }) {
+		t.Errorf("a post with neither the marker nor the box = %d, want a secret", resp.StatusCode)
+	}
+
+	// A refusal: the value is cleared when it's a secret, kept (it's shown anyway) when unticked, and the box stays as chosen.
+	f = formWith(t, e.pageOf(t, "/apps/duet/variables"), "/apps/duet/variables")
+	_, refused := e.submit(t, f, url.Values{"service": {"web"}, "name": {"1BAD"}, "value": {"s3cret-021p2-typed"}})
+	if strings.Contains(refused, "s3cret-021p2-typed") || !strings.Contains(refused, `id="var-secret" name="secret" value="1" checked>`) {
+		t.Errorf("a refused secret: the value must be cleared and the box still ticked:\n%s", text(refused))
+	}
+	_, refused = e.submit(t, f, url.Values{"service": {"web"}, "name": {"BAD=NAME"}, "value": {"typed-variable"}, "secret": {}})
+	if !strings.Contains(refused, "typed-variable") || strings.Contains(refused, `id="var-secret" name="secret" value="1" checked>`) {
+		t.Errorf("a refused variable: the value is kept and the box stays unticked:\n%s", text(refused))
+	}
+}
+
+// Configure's panel is "Variables & secrets" and counts both; a stopped Variables page says so once at the
+// top with the idle mark; no "Add domain" where the Domains page can't add; a refused .env says to compare.
+func TestCritiqueRulings(t *testing.T) {
+	e := duetEnv(t)
+	got := text(e.pageOf(t, "/apps/duet/configure"))
+	if !strings.Contains(got, "Variables & secrets") || !strings.Contains(got, "2 variables · 1 secret. Values of secrets are never shown here.") || !strings.Contains(got, "Add domain") {
+		t.Errorf("Configure's panel:\n%s", got)
+	}
+	// aria-labels on every Remove control.
+	vars := e.pageOf(t, "/apps/duet/variables")
+	doms := e.pageOf(t, "/apps/duet/domains")
+	if !strings.Contains(vars, `aria-label="Remove TOKEN"`) || !strings.Contains(doms, `aria-label="Remove web.duet.example.com"`) || !strings.Contains(doms, `aria-label="Remove api.duet.example.com"`) {
+		t.Error("a Remove control has no name of its own")
+	}
+	// A refused .env edit.
+	_, page := e.get(t, "/apps/duet/variables")
+	var web plainForm
+	for _, f := range formsIn(page) {
+		if f.Action == "/apps/duet/variables/env" && f.Values.Get("service") == "web" {
+			web = f
+		}
+	}
+	_, refused := e.submit(t, web, url.Values{"env": {"BROKEN"}})
+	if !strings.Contains(text(refused), "Your text is kept below; the table shows what the app has now. Compare before saving.") {
+		t.Errorf("a refused .env doesn't say to compare:\n%s", text(refused))
+	}
+	if strings.Contains(vars, "Your text is kept below") {
+		t.Error("the note is on a page nothing was refused on")
+	}
+	// Hints are not inside labels, and name themselves in aria-describedby.
+	conf := e.pageOf(t, "/apps/duet/configure")
+	if !strings.Contains(conf, `aria-describedby="svc-web-healthPath-hint"`) || !strings.Contains(conf, `<span class="cv-hint" id="svc-web-healthPath-hint">Empty checks the TCP port.</span>`) {
+		t.Error("the health check's hint isn't described by id")
+	}
+	for _, m := range regexp.MustCompile(`(?s)<label[^>]*>.*?</label>`).FindAllString(conf, -1) {
+		if strings.Contains(m, `class="cv-hint"`) {
+			t.Errorf("a hint is inside a label: %s", m)
+		}
+	}
+	// A kept-file app and a stopped one have no Add domain link in Configure.
+	k, _ := keptShopEnv(t)
+	if strings.Contains(text(k.pageOf(t, "/apps/shop/configure")), "Add domain") {
+		t.Error("Configure of a kept-file app links to a form that isn't there")
+	}
+	if resp, _ := e.postAction(t, "/apps/duet/stop"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatal("stop")
+	}
+	if strings.Contains(text(e.pageOf(t, "/apps/duet/configure")), "Add domain") {
+		t.Error("Configure of a stopped app links to a form that isn't there")
+	}
+	stopped := e.pageOf(t, "/apps/duet/variables")
+	if n := strings.Count(stopped, "The app is stopped: start it first."); n != 1 || !strings.Contains(stopped, `<span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span>`) {
+		t.Errorf("Variables of a stopped app says it %d times", n)
+	}
+}
+
+// One-service Configure has no skipped heading level: an h2 stands before the panels' h3.
+func TestOneServiceConfigureHeadings(t *testing.T) {
+	e := newConsoleEnv(t)
+	e.seed(t, whoamiApp(), seedDeploy{ID: "w1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	body := e.pageOf(t, "/apps/whoami/configure")
+	first3, first2 := strings.Index(body, "<h3"), strings.Index(body, `<h2 class="sr-only">Settings</h2>`)
+	if first2 < 0 || first3 < first2 {
+		t.Errorf("the first h3 is at %d, the h2 before it at %d", first3, first2)
 	}
 }

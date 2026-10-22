@@ -40,6 +40,7 @@ type backupsTab struct {
 	Destination bool
 	Bucket      string
 	BackedUp    int // services with a policy
+	Failing     int // of those, the ones whose newest run failed
 	// Gaps are the services that could be backed up and have no policy.
 	Gaps []backupGap
 	// Rows are the services with a policy, in the order of the definition.
@@ -54,14 +55,8 @@ type backupsTab struct {
 	ShowAll string
 }
 
-// Counts is the line under the head: "2 backed up · 1 not · stored in <bucket>".
-func (t backupsTab) Counts() string {
-	where := "no destination"
-	if t.Destination {
-		where = "stored in " + t.Bucket
-	}
-	return fmt.Sprintf("%d backed up · %d not · %s", t.BackedUp, len(t.Gaps), where)
-}
+// Not is how many services could be backed up and aren't.
+func (t backupsTab) Not() int { return len(t.Gaps) }
 
 // backupGap is a service with something to back up and no policy: a database
 // image, or a volume. Engine is the policy "Back up daily" sets.
@@ -70,6 +65,8 @@ type backupGap struct {
 	Label   string // the name as the sentence says it: "postgres", or "web · /data"
 	Meta    string // "PostgreSQL · 0 copies kept", "Volume · 210 MB"
 	Engine  string
+	// Confirm is what "Back up daily" says it will do, before it does it.
+	Confirm sentence
 }
 
 // backupSvcRow is one backed-up service: the row, and what opens under it.
@@ -80,8 +77,9 @@ type backupSvcRow struct {
 	What   string // "PostgreSQL", "Volume · /data, /cache"
 	// Mark is the row's mark: rolling while a run is going, failed when the
 	// newest failed, healthy otherwise, idle when it never ran.
-	Mark     string
-	MarkText string // the mark's meaning, for a screen reader
+	Mark string
+	// State is what the row says to a screen reader first: "postgres, last backup failed".
+	State    string
 	Schedule string // in words, "Every day at 03:00 UTC"
 	Keep     string // "7 backups"
 	// LastWhen is when the newest run started; LastNow says it is running, and
@@ -89,12 +87,16 @@ type backupSvcRow struct {
 	LastWhen  when
 	LastNow   bool
 	LastNever bool
-	Took      string
-	Stopped   string
-	Size      string // the newest healthy run's size
-	SizeAll   string // the kept runs' sum, "1.4 GB all"
-	Strip     []stripCell
-	Failure   sentence
+	// LastFailed says the newest run failed: its time is followed by "· failed".
+	LastFailed bool
+	Took       string
+	Stopped    string
+	Size       string // the newest run's size, the run the time is of; none when it failed
+	SizeAll    string // the kept runs' sum, "1.4 GB all"
+	Strip      []stripCell
+	// StripLabel is the strip as one phrase, for a screen reader.
+	StripLabel string
+	Failure    sentence
 	// VolumeFacts say where each volume of a volume service lives and how big it was
 	// measured: "/srv/.../data on this host · 312 MB, measured 3 hours ago".
 	VolumeFacts []string
@@ -109,17 +111,23 @@ type backupSvcRow struct {
 // backupRun is one backup run of a service, as the row lists it.
 type backupRun struct {
 	ID, Service, Status, Mark, Size, Took, Stopped, Message string
-	When                                                    when
-	CanRestore                                              bool
-	Volume                                                  bool
+	// Cause is a plain reason for a failed run (causeOf), led before the detail in Message.
+	Cause      string
+	When       when
+	CanRestore bool
+	Volume     bool
 }
 
-// stripCell is one day of the restore-points strip. Kind is healthy, failed,
-// running or none (a day with no run: a gap). A day with a run links to it.
+// stripCell is one day of the restore-points strip. Kind is healthy (a day with
+// a healthy run is restorable), failed (only failed runs), running (the day's
+// newest run is going) or none (a day with no run: a gap). Capped says a healthy
+// day's newest run failed: its bar has a failed cap. A day with a run links to
+// the run the bar stands for.
 type stripCell struct {
-	Kind  string
-	Href  string
-	Title string
+	Kind   string
+	Capped bool
+	Href   string
+	Title  string
 }
 
 // unmountedVolume is a volume Nomad has for the app that no service mounts.
@@ -143,11 +151,13 @@ type restoreAskView struct {
 	Run    backupRun
 	Prefix string
 	Failed bool
+	// When is the run's time, as the button says it: "26 minutes ago".
+	When string
 }
 
 // restoreAskFor is the template function {{restoreAsk $ . ""}}.
 func restoreAskFor(tab backupsTab, run backupRun, prefix string) restoreAskView {
-	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID}
+	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.When.Text}
 }
 
 // backupEngineFor says how a service could be backed up, from what it is: a
@@ -204,11 +214,13 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			gap := backupGap{Service: svc.Name, Label: svc.Name, Engine: engine}
 			if engine == app.BackupVolume {
 				gap.Label = svc.Name + " · " + mountsOf(svc)
+				gap.Confirm = sentence{plain("Backs up "), mono(mountsOf(svc)), plain(" every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app.")}
 				gap.Meta = "Volume"
 				if size, ok := serviceVolumeBytes(svc.Name, volumes); ok {
 					gap.Meta += " · " + humanBytes(size)
 				}
 			} else {
+				gap.Confirm = sentence{plain("Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app.")}
 				gap.Meta = "PostgreSQL · 0 copies kept"
 			}
 			tab.Gaps = append(tab.Gaps, gap)
@@ -222,6 +234,9 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			}
 		}
 		row := backupRowOf(now, a.ID, svc, runs, volumes, tab)
+		if row.Mark == "failed" {
+			tab.Failing++
+		}
 		row.Open = len(tab.Rows) == 0 || svc.Name == tab.ShowAll || slices.ContainsFunc(row.Runs, func(r backupRun) bool { return r.ID == tab.ConfirmErr })
 		tab.Rows = append(tab.Rows, row)
 	}
@@ -275,17 +290,47 @@ func runMark(status string) string {
 	return "rolling"
 }
 
-// markText is what a mark says in words, for a screen reader.
-func markText(mark string) string {
+// stateText is what a row says to a screen reader before its visible text: the
+// service and how its last backup went.
+func stateText(name, mark string) string {
 	switch mark {
 	case "healthy":
-		return "healthy"
+		return name + ", last backup succeeded"
 	case "failed":
-		return "failed"
+		return name + ", last backup failed"
 	case "rolling":
-		return "running"
+		return name + ", backup running"
 	}
-	return "never ran"
+	return name + ", never backed up"
+}
+
+// causeTable is the plain reasons a backup run fails for, as the rclone and S3
+// errors say them: the first entry with a word in the message wins, so a
+// specific cause beats the retries that ran out around it. A message with none
+// of these words has no cause: its detail stands alone.
+var causeTable = []struct {
+	cause string
+	words []string
+}{
+	{"The destination refused the connection.", []string{"connection refused"}},
+	{"The destination's host name wasn't found.", []string{"no such host"}},
+	{"The destination refused the access key.", []string{"accessdenied", "access denied", "invalidaccesskeyid", "signaturedoesnotmatch", "statuscode: 403", "status code: 403", "403 forbidden"}},
+	{"The bucket wasn't found at the destination.", []string{"nosuchbucket", "bucket does not exist", "specified bucket"}},
+	// The SDK gives up after its retries when the destination never answers well: a timeout, or no answer at all.
+	{"The destination didn't answer in time.", []string{"i/o timeout", "timed out", "timeout", "deadline exceeded", "exceeded maximum number of attempt"}},
+}
+
+// causeOf is the plain reason for a failed run's message, or "".
+func causeOf(message string) string {
+	msg := strings.ToLower(message)
+	for _, c := range causeTable {
+		for _, w := range c.words {
+			if strings.Contains(msg, w) {
+				return c.cause
+			}
+		}
+	}
+	return ""
 }
 
 // backupRowOf builds one backed-up service's row. runs are its backups, newest first.
@@ -331,6 +376,9 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		if r.Status == store.BackupSucceeded {
 			run.Size = humanBytes(r.Bytes)
 		}
+		if r.Status == store.BackupFailed {
+			run.Cause = causeOf(r.Message)
+		}
 		if r.FinishedAt != nil {
 			run.Took = durationText(r.FinishedAt.Sub(r.StartedAt))
 		}
@@ -339,14 +387,12 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		}
 		if i == 0 {
 			row.Mark, row.LastNever, row.LastNow = run.Mark, false, r.Status == store.BackupRunning
-			row.LastWhen, row.Took, row.Stopped = run.When, run.Took, run.Stopped
+			row.LastWhen, row.Took, row.Stopped, row.Size = run.When, run.Took, run.Stopped, run.Size
+			row.LastFailed = r.Status == store.BackupFailed
 			if r.Status == store.BackupFailed {
 				// The error is in the run's row, once.
 				row.Failure = sentence{plain("The last backup failed " + relative(now, r.StartedAt) + ".")}
 			}
-		}
-		if row.Size == "" && r.Status == store.BackupSucceeded {
-			row.Size = run.Size
 		}
 		if row.RestoreLast == nil && run.CanRestore {
 			last := run
@@ -359,62 +405,110 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	if len(runs) > backupRunsShown && svc.Name != tab.ShowAll {
 		row.OlderHref = "/apps/" + appID + "/backups?all=" + svc.Name + "#svc-" + svc.Name
 	}
-	row.MarkText = markText(row.Mark)
+	row.State = stateText(svc.Name, row.Mark)
 	row.Strip = restoreStrip(now, runs)
+	row.StripLabel = stripLabel(now, runs)
 	return row
 }
 
+// stripDay is the UTC day of t, as its midnight.
+func stripDay(t time.Time) time.Time {
+	y, m, d := t.UTC().Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// daysAgo is how many UTC days before now t is.
+func daysAgo(now, t time.Time) int { return int(stripDay(now).Sub(stripDay(t)) / (24 * time.Hour)) }
+
 // restoreStrip is the last 30 days as cells, oldest first and today last. A day
-// is the UTC day, and its cell is that day's newest run: healthy, failed or
-// running; a day with none is a gap. A cell with a run links to its row.
+// is the UTC day. A day whose newest run is going is running; a day with any
+// healthy run is restorable, a healthy bar (capped in failed when that day's
+// newest run failed); a day with only failed runs is failed; a day with none is
+// a gap. A cell with a run links to its row: the newest healthy one for a healthy
+// bar. Runs are newest first.
 func restoreStrip(now time.Time, runs []store.BackupRecord) []stripCell {
 	cells := make([]stripCell, stripDays)
+	newest := make([]int, stripDays)  // index into runs of the day's newest run, -1 for none
+	healthy := make([]int, stripDays) // and of its newest healthy one
+	count := make([]int, stripDays)
 	for i := range cells {
-		cells[i].Kind = "none"
+		cells[i].Kind, newest[i], healthy[i] = "none", -1, -1
 	}
-	day := func(t time.Time) time.Time {
-		y, m, d := t.UTC().Date()
-		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-	}
-	today := day(now)
-	chosen := make([]int, stripDays) // the run each cell shows, by index into runs; runs are newest first
 	for i, r := range runs {
-		ago := int(today.Sub(day(r.StartedAt)) / (24 * time.Hour))
+		ago := daysAgo(now, r.StartedAt)
 		if ago < 0 || ago >= stripDays {
 			continue
 		}
 		at := stripDays - 1 - ago
-		kind := runMark(r.Status)
-		if kind == "rolling" {
-			kind = "running"
+		count[at]++
+		if newest[at] < 0 {
+			newest[at] = i
 		}
-		// Newest first: the first run of a day is that day's newest.
-		if cells[at].Kind == "none" {
-			cells[at].Kind, chosen[at] = kind, i
+		if healthy[at] < 0 && r.Status == store.BackupSucceeded {
+			healthy[at] = i
 		}
 	}
 	for at := range cells {
-		if cells[at].Kind == "none" {
+		if newest[at] < 0 {
 			continue
 		}
-		r := runs[chosen[at]]
-		cells[at].Href = "#backup-" + r.ID
+		last := runs[newest[at]]
+		shown := newest[at]
+		switch {
+		case last.Status == store.BackupRunning:
+			cells[at].Kind = "running"
+		case healthy[at] >= 0:
+			cells[at].Kind, shown = "healthy", healthy[at]
+			cells[at].Capped = last.Status == store.BackupFailed
+		default:
+			cells[at].Kind = "failed"
+		}
+		cells[at].Href = "#backup-" + runs[shown].ID
 		when := "today"
 		if ago := stripDays - 1 - at; ago > 0 {
 			when = strconv.Itoa(ago) + " d ago"
 		}
-		title := when + " · " + r.StartedAt.UTC().Format("15:04")
-		switch cells[at].Kind {
-		case "healthy":
-			title += " · " + humanBytes(r.Bytes)
-		case "failed":
-			title += " · failed"
-		default:
-			title += " · running"
+		title := when + " · " + runs[shown].StartedAt.UTC().Format("15:04")
+		if count[at] > 1 {
+			// More than one run that day: say how many and how the last went.
+			how := map[string]string{store.BackupSucceeded: "healthy", store.BackupFailed: "failed", store.BackupRunning: "running"}[last.Status]
+			title = when + " · " + strconv.Itoa(count[at]) + " runs, the last " + how
+		} else {
+			switch cells[at].Kind {
+			case "healthy":
+				title += " · " + humanBytes(last.Bytes)
+			case "failed":
+				title += " · failed"
+			default:
+				title += " · running"
+			}
 		}
 		cells[at].Title = title
 	}
 	return cells
+}
+
+// stripLabel is the strip as one phrase: "30 days: 2 backups, 1 failed, the last 26
+// minutes ago". Runs are newest first.
+func stripLabel(now time.Time, runs []store.BackupRecord) string {
+	total, failed := 0, 0
+	for _, r := range runs {
+		if ago := daysAgo(now, r.StartedAt); ago < 0 || ago >= stripDays {
+			continue
+		}
+		total++
+		if r.Status == store.BackupFailed {
+			failed++
+		}
+	}
+	if total == 0 {
+		return "30 days: no backups"
+	}
+	label := "30 days: " + plural(total, "backup")
+	if failed > 0 {
+		label += ", " + strconv.Itoa(failed) + " failed"
+	}
+	return label + ", the last " + relative(now, runs[0].StartedAt)
 }
 
 // backupsPage draws the Backups tab with the given status.
