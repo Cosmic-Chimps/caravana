@@ -148,7 +148,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 		if !strings.Contains(entry("d2"), `title="traefik/whoami@`+sampleDigest+`"`) {
 			t.Errorf("the full digest isn't in a title:\n%s", entry("d2"))
 		}
-		for id, want := range map[string]string{"d1": "from the console", "d3": "by webhook"} {
+		for id, want := range map[string]string{"d1": "from the console", "d3": "by the webhook"} {
 			if got := text(entry(id)); !strings.Contains(got, want) {
 				t.Errorf("entry %s lacks %q: %s", id, want, got)
 			}

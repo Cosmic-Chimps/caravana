@@ -169,3 +169,19 @@ The designer checks at 127.0.0.1:7070 against `p4-home.png` and `p4-deploy.png`:
   reverted one (■ Roll out, Live ○), a failed-before-register one (■ Queued), a superseded
   one; and the "(v0 again)" wording on the reverted app's lede and entry;
 - narrow (390px) for the home and the entry.
+
+## Rulings on the build's departures (designer, 2026-10-22)
+
+All five accepted:
+
+1. **Place on the card.** As the rail: drawn only outside Default › production. The home's groups already say where an app is.
+2. **Stored `registered_at`.** It gives the Queued and Roll out spans and is not in the API. Deployments recorded before it show "—" for both.
+3. **The "(v0 again)" match.** This rule replaces the one under "The entry's rollback wording": the repeated version is the newest earlier deployment that ended healthy with a recorded definition and pinned digests. When Nomad's revert message names a version that a healthy deployment has, that one wins. No match keeps today's wording.
+4. **The reverted entry's wording.** The newest reverted entry says "rolled back to `v3` (`v1` again)", the live version, as the lede does. Older reverted entries keep the version in Nomad's message. The needs-you item uses the same wording as the lede.
+5. **Strip edge cases.**
+   - The strip sits after the head line, before the entry's sentence.
+   - A running rollout with no progress yet reads Roll out "waiting".
+   - A deployment superseded after it registered shows Queued ● and Roll out ○ "superseded".
+   - Each mark and chip has screen-reader words.
+
+**One set of trigger words everywhere** (the rail, the card, the history entry and the lede): "from the console", "through the API", "through the API by `ci-github`", "by the webhook", "promoted from staging", "deployed again".

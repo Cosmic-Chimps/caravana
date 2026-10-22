@@ -81,6 +81,16 @@ func TestWaitSendsProgressWhenAsked(t *testing.T) {
 		if err != nil || res.IsError {
 			t.Fatalf("call: %v %v", err, res)
 		}
+		// Notifications reach the handler on their own goroutine, so the last
+		// one can land just after the answer: give it a moment when one is due.
+		for deadline := time.Now().Add(2 * time.Second); withToken && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			mu.Lock()
+			n := len(seen)
+			mu.Unlock()
+			if n >= 3 {
+				break
+			}
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		return slices.Clone(seen)

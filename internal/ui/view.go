@@ -157,7 +157,7 @@ func triggerWords(t app.Trigger) string {
 	case app.TriggerManual:
 		return "through the API"
 	case app.TriggerWebhook:
-		return "by webhook"
+		return "by the webhook"
 	}
 	return "by " + string(t)
 }

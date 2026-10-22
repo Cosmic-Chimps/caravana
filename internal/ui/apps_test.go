@@ -497,7 +497,7 @@ func TestAppPage(t *testing.T) {
 		for path, want := range map[string]string{
 			"/parts/apps/api/header": "1 of 2 copies healthy, running v3.",
 			// blog: its newest deploy (v8) was reverted, and v7 keeps running
-			"/parts/apps/blog/header": "v8 failed its health checks. v7 keeps running. Last deployed 3 minutes ago by webhook.",
+			"/parts/apps/blog/header": "v8 failed its health checks. v7 keeps running. Last deployed 3 minutes ago by the webhook.",
 		} {
 			_, part := e.get(t, path)
 			if text := strings.Join(strings.Fields(html.UnescapeString(tagPattern.ReplaceAllString(part, ""))), " "); !strings.Contains(text, want) {
