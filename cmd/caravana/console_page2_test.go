@@ -248,6 +248,9 @@ func (c *console) domains(t *testing.T) {
 	resp, body = c.post(t, domainsPath+"/remove", remove)
 	c.deployedFrom(t, id, resp, body)
 
+	// A fresh value: decoding into the one read before would keep api's old domains, since an
+	// empty list is left out of the JSON and the decoder then leaves the field as it was.
+	stored = storedApp{}
 	c.g.getJSON(t, "/v1/apps/"+id, &stored)
 	if got := stored.domainsOf("api"); len(got) != 0 {
 		t.Errorf("api's stored domains after the remove = %v, want none", got)
