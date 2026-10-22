@@ -140,7 +140,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 
 	t.Run("each entry says what started it, which version, and which digest", func(t *testing.T) {
 		d2 := text(entry("d2"))
-		for _, want := range []string{"v2", "healthy", "through the API", "sha256:c4717a8d1f01", "took "} {
+		for _, want := range []string{"v2", "healthy", "through the API", "sha256:c4717a8d1f01"} {
 			if !strings.Contains(d2, want) {
 				t.Errorf("entry d2 lacks %q: %s", want, d2)
 			}
@@ -178,7 +178,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 			}
 		}
 		// The raw error is mono detail, not prose.
-		if !regexp.MustCompile(`<[a-z]+ class="cv-data-muted[^"]*"[^>]*>\s*Failed due to unhealthy allocations`).MatchString(entry("d3")) {
+		if !regexp.MustCompile(`<[a-z]+ class="cv-data-muted[^"]*"[^>]*>\s*(?:<span class="cv-detail-lead">Nomad said: </span>)?Failed due to unhealthy allocations`).MatchString(entry("d3")) {
 			t.Errorf("the raw error isn't set in mono:\n%s", entry("d3"))
 		}
 	})

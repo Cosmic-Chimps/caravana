@@ -381,17 +381,18 @@ func TestHistoryShowsOrigin(t *testing.T) {
 	}
 	ci := entry("ci")
 	for _, want := range []string{
-		`Pushed to <span class="cv-inline-mono">main</span> by ana · <span class="cv-inline-mono">abc1234</span>`,
-		`<a href="https://github.com/acme/shop/actions/runs/212" rel="noopener noreferrer" target="_blank">run</a>`,
+		// One meta line: who (the rail's words), the run's link, then when.
+		`pushed to <span class="cv-inline-mono text-fg-1">main</span> by ana · <span class="cv-inline-mono text-fg-1">abc1234</span>` +
+			` · <a href="https://github.com/acme/shop/actions/runs/212" rel="noopener noreferrer" target="_blank">run</a> · <time`,
 	} {
 		if !strings.Contains(ci, want) {
 			t.Errorf("the CI deployment lacks %q:\n%s", want, ci)
 		}
 	}
-	if tag := entry("tag"); !strings.Contains(tag, `Pushed to <span class="cv-inline-mono">v1.2</span> · <span class="cv-inline-mono">9999999</span></p>`) {
+	if tag := entry("tag"); !strings.Contains(tag, `pushed to <span class="cv-inline-mono text-fg-1">v1.2</span> · <span class="cv-inline-mono text-fg-1">9999999</span> · <time`) {
 		t.Errorf("a tag with no actor or run reads wrongly:\n%s", tag)
 	}
-	if plain := entry("plain"); strings.Contains(plain, "Pushed") {
+	if plain := entry("plain"); strings.Contains(plain, "pushed to") {
 		t.Errorf("a deploy without an origin says it came from CI:\n%s", plain)
 	}
 }

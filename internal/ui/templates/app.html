@@ -528,8 +528,9 @@
   <div class="cv-deploy-head">
     <span class="cv-deploy-version">{{with .Version}}<span class="cv-data text-fg-1">{{.}}</span>{{else}}<span class="cv-data-muted">no version</span>{{end}}</span>
     {{template "status-pill" .Status}}
-    <span class="cv-deploy-meta cv-data-muted">{{.Trigger}} · {{template "time" .Started}} · {{.Timing}}</span>
+    <span class="cv-deploy-meta cv-data-muted">{{template "sentence" .Who}}{{with .Run}} · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a>{{end}} · {{template "time" .Started}}{{with .Timing}} · {{.}}{{end}}</span>
   </div>
+  {{if .FullStrip}}
   <div class="cv-stageswrap">
     <ol class="cv-panel cv-stages" aria-label="Stages">
       {{range .Stages}}<li class="cv-stage{{if .Active}} cv-stage-active{{end}}"{{if .Active}} aria-current="step"{{end}}>
@@ -539,11 +540,16 @@
       {{end}}
     </ol>
   </div>
+  {{else}}
+  <ol class="cv-stageline cv-data-muted" aria-label="Stages">
+    {{range .Stages}}<li><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.Word}}: </span>{{.Name}} <span{{with .Title}} title="{{.}}"{{end}}>{{.Value}}</span></li>
+    {{end}}
+  </ol>
+  {{end}}
   <p class="cv-deploy-sentence">{{template "sentence" .Sentence}}</p>
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
-  {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
+  {{if .Error}}<p class="cv-data-muted cv-detail">{{with .ErrorLead}}<span class="cv-detail-lead">{{.}}</span>{{end}}{{.Error}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
-  {{with .Origin}}<p class="cv-data-muted">{{if or .Branch .Actor .Commit}}Pushed{{with .Branch}} to <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Actor}} by {{.}}{{end}}{{with .Commit}} · <span class="cv-inline-mono">{{.}}</span>{{end}}{{else}}From CI{{end}}{{with .Run}} · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a>{{end}}</p>{{end}}
   {{with .Promoted}}<p class="cv-data-muted"><a href="{{.Href}}">Promoted from <span class="cv-inline-mono">{{.Environment}}</span> · deployment <span class="cv-inline-mono">{{.Short}}</span></a></p>{{end}}
   {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
   {{if or .Redeploy .ExportHref .ComposeHref}}

@@ -155,20 +155,20 @@ func TestSummaryOf(t *testing.T) {
 		in   service.AppSummary
 		want string
 	}{
-		{"healthy", summary("a", service.StateHealthy, 2, 2, v7, at(3*time.Minute)), "2 copies running v7. Last deployed 3 minutes ago from the console."},
-		{"healthy, one copy", summary("a", service.StateHealthy, 1, 1, v7, webhook), "1 copy running v7. Last deployed 2 hours ago by the webhook."},
-		{"healthy, through the API, just now", summary("a", service.StateHealthy, 1, 1, v7, manual), "1 copy running v7. Last deployed just now through the API."},
+		{"healthy", summary("a", service.StateHealthy, 2, 2, v7, at(3*time.Minute)), "2 copies running v7. Last deployed 3 minutes ago, from the console."},
+		{"healthy, one copy", summary("a", service.StateHealthy, 1, 1, v7, webhook), "1 copy running v7. Last deployed 2 hours ago, by the webhook."},
+		{"healthy, through the API, just now", summary("a", service.StateHealthy, 1, 1, v7, manual), "1 copy running v7. Last deployed just now, through the API."},
 		{"healthy, never deployed through caravana", summary("a", service.StateHealthy, 1, 1, v7, nil), "1 copy running v7. Never deployed."},
-		{"degraded", summary("a", service.StateDegraded, 1, 2, v7, at(time.Hour)), "1 of 2 copies healthy, running v7. Last deployed 1 hour ago from the console."},
+		{"degraded", summary("a", service.StateDegraded, 1, 2, v7, at(time.Hour)), "1 of 2 copies healthy, running v7. Last deployed 1 hour ago, from the console."},
 		{"rolling out, old copies serve", summary("a", service.StateRollingOut, 2, 2, v7, running(v8, time.Minute)),
-			"Rolling out v8. 2 copies still run v7. Last deployed 1 minute ago from the console."},
+			"Rolling out v8. 2 copies still run v7. Last deployed 1 minute ago, from the console."},
 		{"rolling out, nothing serving, not registered yet", summary("a", service.StateRollingOut, 0, 1, nil, running(nil, 5*time.Second)),
-			"Rolling out a new version. Last deployed just now from the console."},
-		{"not running", summary("a", service.StateNotRunning, 0, 2, nil, at(48*time.Hour)), "No copies are running. Last deployed 2 days ago from the console."},
+			"Rolling out a new version. Last deployed just now, from the console."},
+		{"not running", summary("a", service.StateNotRunning, 0, 2, nil, at(48*time.Hour)), "No copies are running. Last deployed 2 days ago, from the console."},
 		{"created and never deployed", summary("a", service.StateNotRunning, 0, 1, nil, nil), "Nothing is deployed yet."},
 		{"created with no definition", undefinedSummary("a"), "No definition yet, so nothing can be deployed."},
 		{"unknown", summary("a", service.StateUnknown, 0, 1, nil, at(time.Hour)),
-			"Nomad can't be reached right now, so caravana can't say what's running. Last deployed 1 hour ago from the console."},
+			"Nomad can't be reached right now, so caravana can't say what's running. Last deployed 1 hour ago, from the console."},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -245,7 +245,7 @@ func TestCopiesSentence(t *testing.T) {
 		sum := summary("hollo", service.StateHealthy, 2, 2, new(uint64(2)), last)
 		sum.Status = status(service.StateHealthy, svc("hollo", 1, 1), svc("postgres", 1, 1))
 		sum.Status.LiveVersion = new(uint64(2))
-		want := "2 services running v2: hollo and postgres, 1 copy each. Last deployed 3 minutes ago through the API."
+		want := "2 services running v2: hollo and postgres, 1 copy each. Last deployed 3 minutes ago, through the API."
 		if got := summaryOf(sum, now).String(); got != want {
 			t.Errorf("summary = %q, want %q", got, want)
 		}
@@ -315,20 +315,20 @@ func TestSummaryOfFailedDeploysAndUnhealthyCopies(t *testing.T) {
 		want string
 	}{
 		{"reverted, healthy copies of the old version", summary("a", service.StateHealthy, 1, 1, v2, deploy(store.StatusReverted, v3)),
-			"v3 failed its health checks. v2 keeps running. Last deployed 3 minutes ago by the webhook."},
+			"v3 failed its health checks. v2 keeps running. Last deployed 3 minutes ago, by the webhook."},
 		{"failed, degraded", summary("a", service.StateDegraded, 1, 2, v2, deploy(store.StatusFailed, v3)),
-			"v3 failed during its rollout. v2 keeps running. Last deployed 3 minutes ago by the webhook."},
+			"v3 failed during its rollout. v2 keeps running. Last deployed 3 minutes ago, by the webhook."},
 		{"failed, nothing healthy", notRunning(deploy(store.StatusReverted, new(uint64(0))), 0),
-			"v0 failed its health checks. No copies are running. Last deployed 3 minutes ago by the webhook."},
+			"v0 failed its health checks. No copies are running. Last deployed 3 minutes ago, by the webhook."},
 		// The failed app of the review (broken): its one copy is there, unhealthy.
 		{"failed, a copy is there and none is healthy", notRunning(deploy(store.StatusFailed, new(uint64(0))), 1),
-			"v0 failed during its rollout. 0 of 1 copies healthy. Last deployed 3 minutes ago by the webhook."},
+			"v0 failed during its rollout. 0 of 1 copies healthy. Last deployed 3 minutes ago, by the webhook."},
 		{"copies exist and none is healthy", notRunning(deploy(store.StatusHealthy, v2), 1),
-			"0 of 1 copies healthy. Last deployed 3 minutes ago by the webhook."},
+			"0 of 1 copies healthy. Last deployed 3 minutes ago, by the webhook."},
 		{"no copies at all", notRunning(deploy(store.StatusHealthy, v2), 0),
-			"No copies are running. Last deployed 3 minutes ago by the webhook."},
+			"No copies are running. Last deployed 3 minutes ago, by the webhook."},
 		{"an older failure doesn't lead", summary("a", service.StateHealthy, 1, 1, v2, deploy(store.StatusHealthy, v2)),
-			"1 copy running v2. Last deployed 3 minutes ago by the webhook."},
+			"1 copy running v2. Last deployed 3 minutes ago, by the webhook."},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

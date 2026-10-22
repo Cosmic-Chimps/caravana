@@ -52,7 +52,7 @@ const noValue = "—"
 //     took; failed ("didn't start") when the deploy failed before it was
 //     registered (a missing image, a refused registry, a validation error),
 //     and "superseded" when a newer deploy won before it registered.
-//   - Roll out: active while it runs ("1 of 2 copies healthy"), done with its
+//   - Roll out: active while it runs ("1 of 2 new copies healthy"), done with its
 //     duration, failed when it failed or was reverted.
 //   - Live: done with the time the deployment ended healthy.
 func stagesOf(rec store.DeploymentRecord, p *service.Progress) [3]stageView {
@@ -71,7 +71,7 @@ func stagesOf(rec store.DeploymentRecord, p *service.Progress) [3]stageView {
 		roll.Mark, roll.Active = "rolling", true
 		roll.Value = "waiting"
 		if p != nil && (p.Wanted > 0 || p.Healthy > 0) {
-			roll.Value = fmt.Sprintf("%d of %d %s healthy", p.Healthy, p.Wanted, copyNoun(p.Wanted))
+			roll.Value = newCopiesHealthy(*p)
 		}
 	case store.StatusHealthy:
 		roll.Mark, roll.Value = "healthy", noValue
@@ -98,12 +98,29 @@ func stagesOf(rec store.DeploymentRecord, p *service.Progress) [3]stageView {
 	return [3]stageView{queued, roll, live}
 }
 
-// copyNoun is "copy" for one and "copies" for more, for "1 of 1 copy healthy".
+// newCopiesHealthy is how far a rollout has got, in the one wording the strip and
+// the card share: "1 of 2 new copies healthy", "0 of 1 new copy healthy".
+func newCopiesHealthy(p service.Progress) string {
+	return fmt.Sprintf("%d of %d new %s healthy", p.Healthy, p.Wanted, copyNoun(p.Wanted))
+}
+
+// copyNoun is "copy" for one and "copies" for more, for "1 of 1 new copy healthy".
 func copyNoun(n int) string {
 	if n == 1 {
 		return "copy"
 	}
 	return "copies"
+}
+
+// fullStrip says a history entry draws its three cells: one still in progress, the
+// app's newest, and any that failed or was reverted, whose failed cell is what
+// explains it. The older healthy and superseded ones get stageLine instead.
+func fullStrip(rec store.DeploymentRecord, current bool) bool {
+	switch rec.Status {
+	case store.StatusPending, store.StatusRunning, store.StatusFailed, store.StatusReverted:
+		return true
+	}
+	return current
 }
 
 // spanText is the time from one moment to the next as the strip writes it, or

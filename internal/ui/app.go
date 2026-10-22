@@ -646,20 +646,31 @@ type digestView struct {
 
 // historyEntry is one deployment in the history.
 type historyEntry struct {
-	ID       string
-	Version  string // "v7"; "" until Nomad registered the job
-	Status   statusView
-	Trigger  string // in words: "from the console"
-	Started  when
-	Timing   string // "took 42 s", "running for 40 s"
+	ID      string
+	Version string // "v7"; "" until Nomad registered the job
+	Status  statusView
+	// Who is who deployed, in the words the rail and the lede use: "from the console",
+	// "pushed to main by ana · 4e0a77a". Run is the CI run's address (https only,
+	// checked when it was recorded), drawn as a "run" link after it; "" for none.
+	Who     sentence
+	Run     string
+	Started when
+	// Timing is "took 42 s" or "running for 40 s" for an entry with a full strip; the
+	// one-line strip of an older entry carries the times, so it is "".
+	Timing   string
 	Sentence sentence
-	// Stages is the strip under the head line: Queued, Roll out, Live.
-	Stages   [3]stageView
-	Progress string      // a running deployment's progress line; "" for the others
-	Error    string      // the raw error, shown in mono under the sentence
-	Action   *actionLink // the one fix a failed newest deployment offers; nil for the rest
-	Warnings []app.Warning
-	Digests  []digestView
+	// Stages are Queued, Roll out and Live. FullStrip draws them as the panel under the
+	// head line; otherwise as one line in its place (older healthy and superseded entries).
+	Stages    [3]stageView
+	FullStrip bool
+	Progress  string // a running deployment's progress line; "" for the others
+	Error     string // the raw error, shown in mono under the sentence
+	// ErrorLead is what the raw error is, said before it ("Nomad said: ") for a reverted
+	// deployment, whose error is Nomad's own message; "" for the others.
+	ErrorLead string
+	Action    *actionLink // the one fix a failed newest deployment offers; nil for the rest
+	Warnings  []app.Warning
+	Digests   []digestView
 	// Source is the deployment this one redeployed; nil for the others.
 	Source *sourceLink
 	// Promoted is the deployment of another environment's app this one
@@ -672,24 +683,6 @@ type historyEntry struct {
 	// ComposeHref downloads the Compose file this deployment was made from
 	// (feature 015); "" when it wasn't made from one.
 	ComposeHref string
-	// Origin says where a deploy came from (feature 020: a CI run); nil for a
-	// deploy that didn't say.
-	Origin *originView
-}
-
-// originView is an entry's "from CI" line: the short commit, the branch or tag,
-// who pushed, and the run's address (https only, checked when it was recorded).
-// Any part may be empty.
-type originView struct {
-	Commit, Branch, Actor, Run string
-}
-
-// originViewOf is the line for a deployment's recorded origin, or nil.
-func originViewOf(o *app.Origin) *originView {
-	if o == nil || o.IsZero() {
-		return nil
-	}
-	return &originView{Commit: o.ShortCommit(), Branch: o.BranchOrTag(), Actor: o.Actor, Run: o.Run}
 }
 
 // historyRegion is what the "deployments" region draws: the history, newest
@@ -777,17 +770,25 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 
 func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.DeploymentRecord, f deployFacts) historyEntry {
 	e := historyEntry{
-		ID:       rec.Deployment.ID,
-		Version:  versionLabel(rec.JobVersion),
-		Status:   deploymentStatusView(rec.Status),
-		Trigger:  triggerWords(rec.Deployment.Trigger),
-		Started:  whenOf(now, &rec.CreatedAt, ""),
-		Timing:   deploymentTiming(rec, now),
-		Sentence: deploymentSentence(rec, f),
-		Error:    rec.Error,
-		Action:   failedAction(rec, f),
-		Warnings: rec.Warnings,
-		Origin:   originViewOf(rec.Deployment.Origin),
+		ID:        rec.Deployment.ID,
+		Version:   versionLabel(rec.JobVersion),
+		Status:    deploymentStatusView(rec.Status),
+		Who:       deployWho(rec, true),
+		Started:   whenOf(now, &rec.CreatedAt, ""),
+		Sentence:  deploymentSentence(rec, f),
+		Error:     rec.Error,
+		Action:    failedAction(rec, f),
+		Warnings:  rec.Warnings,
+		FullStrip: fullStrip(rec, f.Current),
+	}
+	if o := rec.Deployment.Origin; o != nil {
+		e.Run = o.Run
+	}
+	if e.FullStrip {
+		e.Timing = deploymentTiming(rec, now)
+	}
+	if rec.Status == store.StatusReverted && rec.Error != "" {
+		e.ErrorLead = "Nomad said: "
 	}
 	multi := len(rec.Deployment.Digests) > 1
 	for service, ref := range rec.Deployment.Digests {

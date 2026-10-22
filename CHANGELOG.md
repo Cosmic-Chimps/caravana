@@ -15,16 +15,23 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   the console, by the webhook, and for deployments from before. Deployments also keep when Nomad
   accepted their job, which the console reads.
 - The Apps home shows **Deploying now**: a card for each app with a rollout in progress, with what it
-  carries (who pushed it, a promotion, a redeploy), its copies as chips (starting and draining ones
-  marked) and how many new copies are healthy. It updates live and is gone when the rollout ends.
+  carries (who pushed it, a promotion, a redeploy), its copies as chips (each with the version it runs,
+  the new version's first; starting and stopping ones marked) and, under them, how many new copies are
+  healthy. It updates live and is gone when the rollout ends. While an app rolls out its Version cell
+  reads `v5 → v6`.
 - A filter on the Apps home, once there are more than 5 apps: by name, project, environment, image or
-  address, by state and by kind. An app that isn't a plain image app has its kind (compose, database,
-  volume) after its name.
-- The Activity rail says who deployed: "Pushed to main by ana · 4e0a77a", "Promoted from staging",
-  "through the API by ci-github", "by the webhook".
-- Every deployment in the history has a stages strip: Queued, Roll out and Live, with the wait, the
-  rollout's progress or duration, and the time it went live. After a rollback the app and its entry say
-  what the running version repeats: "v3 (v1 again) keeps running."
+  address, by state and by kind. "Needs you" is the apps with an item in the needs-you list. An app that
+  isn't a plain image app has its kind (compose, database, volume) after its name.
+- The Activity rail, a deployment's entry and the app's summary say who deployed in the same words:
+  "pushed to main by ana · 4e0a77a", "promoted from staging", "through the API by ci-github", "by the
+  webhook", "from the console" ("Last deployed 26 minutes ago, promoted from staging."). An entry's run
+  link is on the same line.
+- Deployments in the history have a stages strip: Queued, Roll out and Live, with the wait, the
+  rollout's progress ("1 of 2 new copies healthy") or duration, and the time it went live. The panel is
+  drawn for a rollout in progress, the newest deployment and any that failed or was reverted; older
+  ones get the same stages as one line. A reverted deployment's raw line from Nomad is prefixed "Nomad
+  said:". After a rollback the app and its entry say what the running version repeats: "v3 (v1 again)
+  keeps running."
 - API 0.22.0: `AppStatus.services` lists, for each service of an app, its wanted and healthy
   copies (`name`, `wantedCopies`, `healthyCopies`), in the app's service order. It is absent for
   an app with no services.
@@ -42,6 +49,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   the page again if the app changed since the page was drawn.
 
 ### Changed
+- The console has one select, 32px tall with the field's 13px mono (it was 38px and 14px); the filter's
+  and the Logs toolbar's buttons match it.
 - Settings is one page per entry under a grouped nav: Account (`/settings`), Registries
   (`/settings/registries`), Backup storage (`/settings/backup-storage`), Notifications
   (`/settings/notifications`) and API tokens (`/settings/tokens`). The nav shows each entry's count, or a

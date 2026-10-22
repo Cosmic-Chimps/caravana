@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -70,46 +72,111 @@ func TestKindOf(t *testing.T) {
 	}
 }
 
-func TestOriginActivityAndChangeWords(t *testing.T) {
+// The one set of who-words: the rail and the history entry's meta line say them in
+// lowercase with the commit, the lede without the commit, and the card starts a
+// sentence with them ("Pushed ...", "Deployed from the console").
+func TestWhoWords(t *testing.T) {
 	origin := &app.Origin{Commit: "4e0a77aabbcc", Ref: "refs/heads/main", Actor: "ana"}
 	tests := []struct {
 		name         string
 		rec          store.DeploymentRecord
-		wantWho      string
-		wantChange   string
+		wantWho      string // the rail and the meta line
+		wantLede     string // without the commit
+		wantChange   string // the card
 		againVersion string
 	}{
 		{"an origin", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual, Origin: origin}},
-			"Pushed to main by ana · 4e0a77a", "Pushed to main by ana · 4e0a77a", ""},
+			"pushed to main by ana · 4e0a77a", "pushed to main by ana", "Pushed to main by ana · 4e0a77a", ""},
 		{"an origin with a tag and no actor", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual,
 			Origin: &app.Origin{Ref: "refs/tags/v1.2.0", Commit: "abcdef0"}}},
-			"Pushed to v1.2.0 · abcdef0", "Pushed to v1.2.0 · abcdef0", ""},
+			"pushed to v1.2.0 · abcdef0", "pushed to v1.2.0", "Pushed to v1.2.0 · abcdef0", ""},
 		{"an origin with only a run says nothing of its own", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual,
 			Origin: &app.Origin{Run: "https://github.com/a/b/actions/runs/1"}}},
-			"through the API", "Deployed through the API", ""},
+			"through the API", "through the API", "Deployed through the API", ""},
 		{"the console", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerConsole}},
-			"from the console", "Deployed from the console", ""},
+			"from the console", "from the console", "Deployed from the console", ""},
 		{"the API", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual}},
-			"through the API", "Deployed through the API", ""},
+			"through the API", "through the API", "Deployed through the API", ""},
 		{"the API with a token's name", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual, TokenName: "ci-github"}},
-			"through the API by ci-github", "Deployed through the API by ci-github", ""},
+			"through the API by ci-github", "through the API by ci-github", "Deployed through the API by ci-github", ""},
 		{"the webhook", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerWebhook}},
-			"by the webhook", "Deployed by the webhook", ""},
+			"by the webhook", "by the webhook", "Deployed by the webhook", ""},
 		{"a promotion", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerManual, TokenName: "ci", Origin: origin},
 			SourceApp: "shop--staging--web", SourceEnvironment: "staging", Source: "d9"},
-			"Promoted from staging", "Promoted from staging", ""},
+			"promoted from staging", "promoted from staging", "Promoted from staging", ""},
 		{"a redeploy of a past version", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerConsole}, Source: "d3"},
-			"from the console", "v3 deployed again", "v3"},
+			"from the console", "from the console", "v3 deployed again", "v3"},
 		{"a redeploy whose source can't be named", store.DeploymentRecord{Deployment: app.Deployment{Trigger: app.TriggerConsole}, Source: "d3"},
-			"from the console", "A past version deployed again", ""},
+			"from the console", "from the console", "A past version deployed again", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := activityWho(tt.rec).String(); got != tt.wantWho {
-				t.Errorf("activityWho = %q, want %q", got, tt.wantWho)
+			if got := deployWho(tt.rec, true).String(); got != tt.wantWho {
+				t.Errorf("deployWho = %q, want %q", got, tt.wantWho)
+			}
+			if got := deployWho(tt.rec, false).String(); got != tt.wantLede {
+				t.Errorf("deployWho without the commit = %q, want %q", got, tt.wantLede)
 			}
 			if got := changeLine(tt.rec, tt.againVersion).String(); got != tt.wantChange {
 				t.Errorf("changeLine = %q, want %q", got, tt.wantChange)
+			}
+		})
+	}
+}
+
+// The three places that say who deployed use the same words: the lede after "Last deployed",
+// the Activity rail, and the history entry's meta line, which also carries the run link.
+func TestWhoWordsAreTheSameEverywhere(t *testing.T) {
+	origin := &app.Origin{Commit: "4e0a77aabb", Ref: "refs/heads/main", Actor: "ana", Run: "https://github.com/a/b/actions/runs/7"}
+	staging := whoamiApp()
+	staging.ID = "stg"
+	staging.Services[0].Domains[0].Host = "stg.example.com"
+	tests := []struct {
+		name     string
+		seed     seedDeploy
+		lede     string // after "Last deployed 0 minutes ago" ("just now")
+		railMeta string
+		entry    string // the entry's meta line, up to its time
+	}{
+		{"console", seedDeploy{Trigger: app.TriggerConsole}, "just now, from the console.", "from the console · ", "from the console · "},
+		{"webhook", seedDeploy{Trigger: app.TriggerWebhook}, "just now, by the webhook.", "by the webhook · ", "by the webhook · "},
+		{"API with a token", seedDeploy{Trigger: app.TriggerManual, TokenName: "ci-github"}, "just now, through the API by ci-github.",
+			"through the API by ci-github · ", "through the API by ci-github · "},
+		{"CI", seedDeploy{Trigger: app.TriggerManual, Origin: origin}, "just now, pushed to main by ana.",
+			"pushed to main by ana · 4e0a77a · ", "pushed to main by ana · 4e0a77a · run · "},
+		{"promotion", seedDeploy{Trigger: app.TriggerManual, Source: "s1"}, "just now, promoted from production.",
+			"promoted from production · ", "promoted from production · "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newConsoleEnv(t)
+			e.seed(t, staging, seedDeploy{ID: "s1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+			tt.seed.ID, tt.seed.Status, tt.seed.Version = "w1", store.StatusHealthy, 1
+			e.seed(t, whoamiApp(), tt.seed)
+			e.copies("whoami", "web", 1, 2, 0)
+
+			_, part := e.get(t, "/parts/apps/whoami/header")
+			if got := text(part); !strings.Contains(got, "Last deployed "+tt.lede) {
+				t.Errorf("the lede lacks %q: %s", tt.lede, got)
+			}
+			_, rail := e.get(t, "/parts/activity")
+			if got := text(rail); !strings.Contains(got, tt.railMeta) {
+				t.Errorf("the rail lacks %q: %s", tt.railMeta, got)
+			}
+			_, body := e.get(t, "/apps/whoami/deployments")
+			entry := entryOf(t, body, "w1")
+			meta := entry[strings.Index(entry, `class="cv-deploy-meta`):]
+			meta = text(meta[strings.Index(meta, ">")+1 : strings.Index(meta, "</span>\n")+7])
+			if !strings.HasPrefix(meta, tt.entry) {
+				t.Errorf("the entry's meta line = %q, want it to start with %q", meta, tt.entry)
+			}
+			// The run is the one https link, opened safely; the old separate origin line is gone.
+			hasRun := strings.Contains(entry, `<a href="https://github.com/a/b/actions/runs/7" rel="noopener noreferrer" target="_blank">run</a>`)
+			if hasRun != (tt.seed.Origin != nil) {
+				t.Errorf("run link present = %v, want %v:\n%s", hasRun, tt.seed.Origin != nil, entry)
+			}
+			if strings.Contains(entry, "Pushed to") || strings.Contains(entry, "From CI") {
+				t.Errorf("the entry still has an origin line of its own:\n%s", entry)
 			}
 		})
 	}
@@ -135,9 +202,9 @@ func TestStagesOf(t *testing.T) {
 		{"waiting to register", rec(store.StatusPending, nil, nil), nil,
 			[3]stageView{cell("rolling", "waiting", true), cell("idle", "—", false), cell("idle", "—", false)}},
 		{"rolling out with Nomad's progress", rec(store.StatusRunning, v, &reg), &service.Progress{Wanted: 2, Healthy: 1},
-			[3]stageView{cell("healthy", "2 s", false), cell("rolling", "1 of 2 copies healthy", true), cell("idle", "—", false)}},
+			[3]stageView{cell("healthy", "2 s", false), cell("rolling", "1 of 2 new copies healthy", true), cell("idle", "—", false)}},
 		{"rolling out, one copy wanted", rec(store.StatusRunning, v, &reg), &service.Progress{Wanted: 1},
-			[3]stageView{cell("healthy", "2 s", false), cell("rolling", "0 of 1 copy healthy", true), cell("idle", "—", false)}},
+			[3]stageView{cell("healthy", "2 s", false), cell("rolling", "0 of 1 new copy healthy", true), cell("idle", "—", false)}},
 		{"rolling out with no progress yet", rec(store.StatusRunning, v, &reg), nil,
 			[3]stageView{cell("healthy", "2 s", false), cell("rolling", "waiting", true), cell("idle", "—", false)}},
 		{"healthy", rec(store.StatusHealthy, v, &reg), nil,
@@ -168,6 +235,99 @@ func TestStagesOf(t *testing.T) {
 	}
 	if w := (stageView{Mark: "failed"}).Word(); w != "failed" {
 		t.Errorf("Word = %q", w)
+	}
+}
+
+// The strip and the card say the same thing about a rollout: "N of M new copies healthy".
+func TestNewCopiesHealthy(t *testing.T) {
+	for _, tt := range []struct {
+		p    service.Progress
+		want string
+	}{
+		{service.Progress{Wanted: 2, Healthy: 1}, "1 of 2 new copies healthy"},
+		{service.Progress{Wanted: 1, Healthy: 0}, "0 of 1 new copy healthy"},
+		{service.Progress{Wanted: 3, Healthy: 3}, "3 of 3 new copies healthy"},
+	} {
+		if got := newCopiesHealthy(tt.p); got != tt.want {
+			t.Errorf("newCopiesHealthy(%+v) = %q, want %q", tt.p, got, tt.want)
+		}
+	}
+}
+
+// A full strip is for what is going on, the newest entry and what failed; the rest get one line.
+func TestFullStrip(t *testing.T) {
+	for _, tt := range []struct {
+		status  store.Status
+		current bool
+		want    bool
+	}{
+		{store.StatusPending, false, true},
+		{store.StatusRunning, false, true},
+		{store.StatusFailed, false, true},
+		{store.StatusReverted, false, true},
+		{store.StatusHealthy, true, true},
+		{store.StatusSuperseded, true, true},
+		{store.StatusHealthy, false, false},
+		{store.StatusSuperseded, false, false},
+	} {
+		name := fmt.Sprintf("%s newest=%v", tt.status, tt.current)
+		if got := fullStrip(store.DeploymentRecord{Status: tt.status}, tt.current); got != tt.want {
+			t.Errorf("%s: fullStrip = %v, want %v", name, got, tt.want)
+		}
+	}
+}
+
+func TestChipsOf(t *testing.T) {
+	v1, v2 := new(uint64(1)), new(uint64(2))
+	mk := func(id, svc string, version uint64, status deploy.CopyStatus, stopping bool) deploy.Copy {
+		return deploy.Copy{ID: id, Service: svc, Version: version, Status: status, Stopping: stopping}
+	}
+	tests := []struct {
+		name     string
+		services int
+		copies   []deploy.Copy
+		newV     *uint64
+		want     []string // each chip as "name version short role"
+	}{
+		{"new copies first, then the old ones that still serve", 1, []deploy.Copy{
+			mk("aaaaaaaa-1", "web", 1, deploy.CopyHealthy, false),
+			mk("bbbbbbbb-2", "web", 2, deploy.CopyStarting, false),
+			mk("cccccccc-3", "web", 2, deploy.CopyHealthy, false),
+			mk("dddddddd-4", "web", 1, deploy.CopyHealthy, false),
+		}, v2, []string{
+			"app v2 bbbbbbbb new, starting", "app v2 cccccccc new, healthy",
+			"app v1 aaaaaaaa serving, v1", "app v1 dddddddd serving, v1",
+		}},
+		{"draining is only for a copy Nomad is stopping, and comes last", 1, []deploy.Copy{
+			mk("aaaaaaaa-1", "web", 1, deploy.CopyHealthy, true),
+			mk("bbbbbbbb-2", "web", 1, deploy.CopyHealthy, false),
+			mk("cccccccc-3", "web", 2, deploy.CopyHealthy, false),
+		}, v2, []string{"app v2 cccccccc new, healthy", "app v1 bbbbbbbb serving, v1", "app v1 aaaaaaaa draining, v1"}},
+		{"an unhealthy new copy", 1, []deploy.Copy{mk("aaaaaaaa-1", "web", 2, deploy.CopyUnhealthy, false)}, v2,
+			[]string{"app v2 aaaaaaaa new, unhealthy"}},
+		{"ended copies are not chips", 1, []deploy.Copy{
+			{ID: "aaaaaaaa-1", Service: "web", Version: 1, Status: deploy.CopyStopped, Terminal: true},
+			mk("bbbbbbbb-2", "web", 2, deploy.CopyHealthy, false),
+		}, v2, []string{"app v2 bbbbbbbb new, healthy"}},
+		{"several services name each chip's service, the new ones first", 2, []deploy.Copy{
+			mk("aaaaaaaa-1", "web", 1, deploy.CopyHealthy, false),
+			mk("bbbbbbbb-2", "worker", 2, deploy.CopyStarting, false),
+		}, v2, []string{"worker v2 bbbbbbbb new, starting", "web v1 aaaaaaaa serving, v1"}},
+		{"no version to compare: nothing is new", 1, []deploy.Copy{mk("aaaaaaaa-1", "web", 1, deploy.CopyHealthy, false)}, nil,
+			[]string{"app v1 aaaaaaaa serving, v1"}},
+		{"the first deploy: all new", 1, []deploy.Copy{mk("aaaaaaaa-1", "web", 1, deploy.CopyStarting, false)}, v1,
+			[]string{"app v1 aaaaaaaa new, starting"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, c := range chipsOf("app", tt.services, tt.copies, tt.newV) {
+				got = append(got, c.Name+" "+c.Version+" "+c.Short+" "+c.Role)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("chips = %q\nwant    %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -303,7 +463,7 @@ func TestDeployingNowCard(t *testing.T) {
 		for _, want := range []string{
 			"Deploying now", "whoami", "v2 rolling out", "View deployment",
 			"Change Pushed to main by ana · 4e0a77a",
-			"Copies whoami 4b2e0000 whoami c81e0000 (starting) whoami 77b00000 (draining) 1 of 2 new copies healthy",
+			"Copies whoami v2 4b2e0000 (new, healthy) whoami v2 c81e0000 (new, starting) whoami v1 77b00000 (draining, v1) 1 of 2 new copies healthy",
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the card lacks %q:\n%s", want, got)
@@ -335,8 +495,16 @@ func TestDeployingNowCard(t *testing.T) {
 				t.Errorf("the chips lack the mark %s", want)
 			}
 		}
-		if !strings.Contains(got, "(starting)") || !strings.Contains(got, "(draining)") {
+		if !strings.Contains(got, "(new, starting)") || !strings.Contains(got, "(draining, v1)") || !strings.Contains(got, "(new, healthy)") {
 			t.Errorf("the states aren't said in words for a reader that doesn't see the style: %s", got)
+		}
+		// The versions are drawn in mono of their own, and "N of M new copies healthy" is under the chips, not among them.
+		if strings.Count(card, `class="cv-copychip-ver">v2<`) != 2 || strings.Count(card, `class="cv-copychip-ver">v1<`) != 1 {
+			t.Errorf("the chips don't carry their versions:\n%s", card)
+		}
+		if !strings.Contains(card, `</div><span class="cv-dcard-sum">1 of 2 new copies healthy</span>`) &&
+			!strings.Contains(card, "</div>\n      <span class=\"cv-dcard-sum\">1 of 2 new copies healthy</span>") {
+			t.Errorf("the summary isn't on its own line under the chips:\n%s", card)
 		}
 	})
 
@@ -582,7 +750,10 @@ func TestAppsFilter(t *testing.T) {
 	t.Run("by project and environment", func(t *testing.T) {
 		sameSet(t, "?q=production", "whoami", "blog", "api", "shop", "pgdata", "files", "idle")
 	})
-	t.Run("by state: needs you", func(t *testing.T) { sameSet(t, "?state=needs", "api", "blog") })
+	// "Needs you" is the apps with an item in the needs-you list, the list the headline counts:
+	// blog's newest deploy was reverted. (api has 1 of 2 copies healthy, but none of its copies
+	// is unhealthy, restarting or out of memory, so the list has nothing for it.)
+	t.Run("by state: needs you", func(t *testing.T) { sameSet(t, "?state=needs", "blog") })
 	t.Run("by state: healthy", func(t *testing.T) { sameSet(t, "?state=healthy", "whoami", "shop", "pgdata", "files") })
 	t.Run("by state: not deployed", func(t *testing.T) { sameSet(t, "?state=notdeployed", "idle") })
 	t.Run("by kind: compose", func(t *testing.T) { sameSet(t, "?kind=compose", "shop") })
@@ -733,10 +904,10 @@ func TestActivityRailSaysWho(t *testing.T) {
 	got := text(part)
 	for _, want := range []string{
 		"from the console · ",
-		"Pushed to main by ana · 4e0a77a · ",
+		"pushed to main by ana · 4e0a77a · ",
 		"through the API by ci-github · ",
 		"by the webhook · ",
-		"Promoted from production · ",
+		"promoted from production · ",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the rail lacks %q:\n%s", want, got)
@@ -787,12 +958,11 @@ func TestDeploymentEntriesHaveStages(t *testing.T) {
 		}
 		return text(entry[i:strings.Index(entry, `class="cv-deploy-sentence"`)])
 	}
+	// The entries that get the panel: the running one, the newest, and what failed or was reverted.
 	for id, want := range map[string][]string{
-		"d2": {"Queued done:", "Roll out done:", "Live done:"},
 		"d3": {"Queued done:", "Roll out failed: failed", "Live not reached: —"},
 		"d4": {"Queued failed: didn't start", "Roll out not reached: —", "Live not reached: —"},
-		"d5": {"Queued done:", "Roll out not reached: superseded", "Live not reached: —"},
-		"d6": {"Queued done:", "Roll out in progress: 1 of 2 copies healthy", "Live not reached: —"},
+		"d6": {"Queued done:", "Roll out in progress: 1 of 2 new copies healthy", "Live not reached: —"},
 	} {
 		got := strip(id)
 		for _, w := range want {
@@ -809,6 +979,9 @@ func TestDeploymentEntriesHaveStages(t *testing.T) {
 	if strings.Contains(entryOf(t, body, "d2"), "cv-stage-active") {
 		t.Error("a healthy entry has an active cell")
 	}
+	if strings.Contains(entryOf(t, body, "d5"), "cv-stage-active") {
+		t.Error("a superseded entry has an active cell")
+	}
 	if e4 := entryOf(t, body, "d4"); !strings.Contains(e4, `cv-mark cv-mark-failed`) || !strings.Contains(e4, "cv-stage-todo") {
 		t.Errorf("the failed-before-register entry lacks its failed mark or quiet names:\n%s", e4)
 	}
@@ -816,13 +989,9 @@ func TestDeploymentEntriesHaveStages(t *testing.T) {
 	if got := text(entryOf(t, body, "d4")); !strings.Contains(got, "This deploy didn't start: the image wasn't found.") {
 		t.Errorf("d4's sentence changed: %s", got)
 	}
-	// A healthy entry's Live cell holds the time it ended, with the date on hover.
-	if d2 := entryOf(t, body, "d2"); !strings.Contains(d2, `UTC"><span class="sr-only">done: </span>`) {
-		t.Errorf("a healthy entry's Live cell has no exact time:\n%s", d2)
-	}
 	// Narrow: the strip is a container the cells stack in; the rule is in the stylesheet.
 	css := mustGet(t, e, "/static/app.css")
-	for _, want := range []string{".cv-stageswrap", "659.98px"} {
+	for _, want := range []string{".cv-stageswrap", "659.98px", ".cv-stageline"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("the stylesheet lacks %q", want)
 		}
@@ -903,5 +1072,213 @@ func TestPage4PartsAreNotWholePages(t *testing.T) {
 	resp, _ := e.do(t, request{path: "/parts/deploying", headers: map[string]string{"HX-Current-URL": e.URL + "/apps"}})
 	if resp.StatusCode != http.StatusUnauthorized || resp.Header.Get("HX-Redirect") == "" {
 		t.Errorf("GET /parts/deploying without a session = %d", resp.StatusCode)
+	}
+}
+
+// Older healthy and superseded entries get their stages as one line in place of the panel, and
+// drop "took ..." from the meta, which the line carries; the newest entry keeps the panel.
+func TestOlderEntriesGetAOneLineStrip(t *testing.T) {
+	e := historyEnv(t) // d1, d2 healthy; d3 reverted; d4 failed; d5 superseded; d6 running
+	_, body := e.get(t, "/apps/blog/deployments")
+	for _, id := range []string{"d1", "d2", "d5"} {
+		entry := entryOf(t, body, id)
+		if strings.Contains(entry, "cv-stageswrap") || !strings.Contains(entry, `<ol class="cv-stageline cv-data-muted" aria-label="Stages">`) {
+			t.Errorf("entry %s isn't a one-line strip:\n%s", id, entry)
+		}
+		meta := entry[strings.Index(entry, `class="cv-deploy-meta`):]
+		if meta = meta[:strings.Index(meta, "</span>\n")]; strings.Contains(meta, "took") {
+			t.Errorf("entry %s's meta still says how long it took: %s", id, meta)
+		}
+	}
+	// The marks and their words are the panel's, in one line.
+	d2 := text(entryOf(t, body, "d2"))
+	for _, want := range []string{"done: Queued", "done: Roll out", "done: Live"} {
+		if !strings.Contains(d2, want) {
+			t.Errorf("d2's line lacks %q: %s", want, d2)
+		}
+	}
+	d5 := text(entryOf(t, body, "d5"))
+	for _, want := range []string{"done: Queued", "not reached: Roll out superseded", "not reached: Live"} {
+		if !strings.Contains(d5, want) {
+			t.Errorf("d5's line lacks %q: %s", want, d5)
+		}
+	}
+	if !strings.Contains(entryOf(t, body, "d2"), `<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span class="sr-only">done: </span>Queued`) {
+		t.Errorf("the line's marks lack their screen-reader words:\n%s", entryOf(t, body, "d2"))
+	}
+	// The ones that explain themselves, and the running one, keep the panel and their "took" or "running for".
+	for _, id := range []string{"d3", "d4", "d6"} {
+		if entry := entryOf(t, body, id); !strings.Contains(entry, "cv-stageswrap") || strings.Contains(entry, "cv-stageline") {
+			t.Errorf("entry %s lacks the full strip:\n%s", id, entry)
+		}
+	}
+	for id, want := range map[string]string{"d3": "took ", "d6": "running for "} {
+		if !strings.Contains(text(entryOf(t, body, id)), want) {
+			t.Errorf("entry %s's meta lacks %q", id, want)
+		}
+	}
+
+	t.Run("the newest entry, healthy, keeps the panel and its time", func(t *testing.T) {
+		e := newConsoleEnv(t)
+		e.seed(t, whoamiApp(),
+			seedDeploy{ID: "d1", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 1},
+			seedDeploy{ID: "d2", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 2})
+		e.copies("whoami", "web", 2, 2, 0)
+		_, body := e.get(t, "/apps/whoami/deployments")
+		d2, d1 := entryOf(t, body, "d2"), entryOf(t, body, "d1")
+		if !strings.Contains(d2, "cv-stageswrap") || !strings.Contains(d2, `UTC"><span class="sr-only">done: </span>`) || !strings.Contains(text(d2), "took ") {
+			t.Errorf("the newest healthy entry lacks its panel, the Live time or 'took':\n%s", d2)
+		}
+		if strings.Contains(d1, "cv-stageswrap") || !strings.Contains(d1, "cv-stageline") || strings.Contains(text(d1), "took ") {
+			t.Errorf("the older healthy entry isn't one line:\n%s", d1)
+		}
+		// The line keeps the Live time, with the date on hover, too.
+		if !strings.Contains(d1, `<span title="`) || !strings.Contains(text(d1), "UTC") {
+			t.Errorf("the line's Live time is missing:\n%s", d1)
+		}
+	})
+}
+
+// The strip, the card and the running entry's progress line agree on how many new copies are healthy.
+func TestProgressWordingAgrees(t *testing.T) {
+	e := rolloutEnv(t, nil) // v2 rolling out: 2 copies wanted, 2 placed, 1 healthy
+	_, body := e.get(t, "/apps/whoami/deployments")
+	d2 := text(entryOf(t, body, "d2"))
+	for _, want := range []string{
+		"Roll out in progress: 1 of 2 new copies healthy",
+		"2 of 2 new copies started, 1 healthy. Old copies keep serving until the new ones pass their checks.",
+	} {
+		if !strings.Contains(d2, want) {
+			t.Errorf("the running entry lacks %q: %s", want, d2)
+		}
+	}
+	if card := text(cardOf(t, mustGet(t, e, "/apps"))); !strings.Contains(card, "1 of 2 new copies healthy") {
+		t.Errorf("the card doesn't use the shared wording: %s", card)
+	}
+}
+
+// A reverted entry's raw line says whose words it is; the other entries' raw lines don't.
+func TestRevertedEntryRawLineSaysNomadSaid(t *testing.T) {
+	e := historyEnv(t)
+	_, body := e.get(t, "/apps/blog/deployments")
+	d3 := entryOf(t, body, "d3")
+	if want := `<span class="cv-detail-lead">Nomad said: </span>Failed due to unhealthy allocations - rolling back to job version 2</p>`; !strings.Contains(d3, want) {
+		t.Errorf("the reverted entry's raw line lacks %q:\n%s", want, d3)
+	}
+	for _, id := range []string{"d4", "d5"} {
+		if entry := entryOf(t, body, id); strings.Contains(entry, "Nomad said") {
+			t.Errorf("entry %s says 'Nomad said':\n%s", id, entry)
+		}
+	}
+}
+
+// While an app rolls out its Version cell reads "v1 → v2", the arrow and the new version quiet.
+func TestVersionCellShowsTheRollout(t *testing.T) {
+	cell := func(body string) string {
+		i := strings.Index(body, `class="cv-c-version" data-label="Version">`)
+		if i < 0 {
+			t.Fatalf("no Version cell:\n%s", body)
+		}
+		rest := body[i:]
+		return rest[:strings.Index(rest, "</div>")]
+	}
+	t.Run("a rollout over a live version", func(t *testing.T) {
+		// v1 still serves (healthy, asked to run) while v2 starts: blue/green keeps the old copies until promotion.
+		e := rolloutEnv(t, nil)
+		yes := true
+		e.Nomad.SetCopies("whoami",
+			api.AllocationListStub{ID: "77b00000-0000-4000-8000-000000000001", TaskGroup: "web", JobVersion: 1, ClientStatus: "running", NodeName: "n1",
+				DeploymentStatus: &api.AllocDeploymentStatus{Healthy: &yes}},
+			api.AllocationListStub{ID: "c81e0000-0000-4000-8000-000000000003", TaskGroup: "web", JobVersion: 2, ClientStatus: "pending", NodeName: "n1"})
+		got := cell(appsTable(mustGet(t, e, "/apps")))
+		want := `<span class="cv-data text-fg-1">v1</span> <span class="cv-data text-fg-3"><span aria-hidden="true">→ </span><span class="sr-only">rolling out </span>v2</span>`
+		if !strings.Contains(got, want) {
+			t.Errorf("the Version cell = %s, want it to contain %s", got, want)
+		}
+		if txt := text(got); !strings.Contains(txt, "v1") || !strings.Contains(txt, "→ rolling out v2") {
+			t.Errorf("text = %q", txt)
+		}
+	})
+	t.Run("a settled app shows its version alone", func(t *testing.T) {
+		e := newConsoleEnv(t)
+		e.seed(t, whoamiApp(), seedDeploy{ID: "d1", Trigger: app.TriggerConsole, Status: store.StatusHealthy, Version: 1})
+		e.copies("whoami", "web", 1, 2, 0)
+		got := cell(appsTable(mustGet(t, e, "/apps")))
+		if strings.Contains(got, "→") || !strings.Contains(got, "v1") {
+			t.Errorf("the Version cell = %s", got)
+		}
+	})
+}
+
+// The state filter's "Needs you" is the apps with an item in the needs-you list, whatever the item
+// is: a failed backup counts as a failed deploy does, and an app that is stopped is only stopped.
+func TestNeedsYouFilterFollowsTheNeedsYouList(t *testing.T) {
+	e := filterEnv(t) // whoami, blog (reverted), api, shop, pgdata, files, idle
+	db := whoamiApp()
+	db.ID = "dbapp"
+	db.Services[0].Domains[0].Host = "db.example.com"
+	db.Services[0].Backup = &app.Backup{Engine: app.BackupPostgres, Schedule: "30 14 * * *", Keep: 2}
+	e.seed(t, db, seedDeploy{ID: "db1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	e.copies("dbapp", "web", 1, 2, 0)
+	// shop has a failed backup too, but it is stopped on purpose.
+	shop := e.storedApp(t, "shop")
+	shop.Services[0].Backup = &app.Backup{Engine: app.BackupPostgres, Schedule: "30 14 * * *", Keep: 2}
+	if _, err := e.Store.SaveApp(context.Background(), shop, nil); err != nil {
+		t.Fatal(err)
+	}
+	at := e.Clock.Now()
+	if err := e.Store.SetAppStopped(context.Background(), "shop", &at); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"dbapp", "shop"} {
+		fin := at.Add(-time.Hour)
+		if err := e.Store.SaveBackup(context.Background(), store.BackupRecord{AppID: id, ID: id + "-1", Service: "web", Engine: "postgres",
+			Status: store.BackupFailed, Message: "pg_dump: connection refused", StartedAt: at.Add(-time.Hour - time.Minute), FinishedAt: &fin}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := mustGet(t, e, "/apps?state=needs")
+	got := rowsOf(appsTable(body))
+	slices.Sort(got)
+	if want := []string{"blog", "dbapp"}; !slices.Equal(got, want) {
+		t.Errorf("state=needs lists %v, want %v", got, want)
+	}
+	// Each is in the needs-you list above the filter, which says why.
+	list := text(body[strings.Index(body, `aria-label="Needs you"`):strings.Index(body, `class="cv-deploying"`)])
+	for _, want := range []string{"The latest backup of dbapp/web failed.", "blog"} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the needs-you list lacks %q: %s", want, list)
+		}
+	}
+	if got := rowsOf(appsTable(mustGet(t, e, "/apps?state=stopped"))); !slices.Equal(got, []string{"shop"}) {
+		t.Errorf("state=stopped lists %v, want only shop", got)
+	}
+}
+
+func TestStateKey(t *testing.T) {
+	now := time.Now()
+	deployed := &store.DeploymentRecord{Status: store.StatusHealthy}
+	tests := []struct {
+		name     string
+		sum      service.AppSummary
+		st       statusView
+		needsYou bool
+		want     string
+	}{
+		{"an item in the needs-you list", service.AppSummary{LastDeployment: deployed}, statusView{"healthy", "healthy"}, true, stateNeeds},
+		{"an item beats a rollout", service.AppSummary{LastDeployment: deployed}, statusView{"rolling", "rolling out"}, true, stateNeeds},
+		{"stopped beats an item", service.AppSummary{StoppedAt: &now, LastDeployment: deployed}, statusView{"idle", "stopped"}, true, stateStopped},
+		{"a warning status with no item is not on the list", service.AppSummary{LastDeployment: deployed}, statusView{"warning", "degraded"}, false, ""},
+		{"rolling out", service.AppSummary{LastDeployment: deployed}, statusView{"rolling", "rolling out"}, false, stateRolling},
+		{"healthy", service.AppSummary{LastDeployment: deployed}, statusView{"healthy", "healthy"}, false, stateHealthy},
+		{"never deployed", service.AppSummary{Status: service.AppStatus{State: service.StateNotRunning}}, statusView{"idle", "not running"}, false, stateNotDeployed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stateKey(tt.sum, tt.st, tt.needsYou); got != tt.want {
+				t.Errorf("stateKey = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

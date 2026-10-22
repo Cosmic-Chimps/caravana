@@ -44,6 +44,7 @@ type appRow struct {
 	Status  statusView
 	Sort    string // the kind the table sorts by: the status, or failed when the newest deploy failed
 	Version string // the live version, "v7"; "" when none is running
+	Next    string // the version rolling out, "v8", while the app rolls out; else ""
 	Images  []serviceImage
 	Domains []domainLink
 	Deploy  *deployCell // nil if never deployed
@@ -62,7 +63,7 @@ type activityRow struct {
 	Href    string
 	Version string
 	Outcome statusView
-	Who     sentence // "from the console", "Pushed to main by ana · 4e0a77", "through the API by ci-github"
+	Who     sentence // "from the console", "pushed to main by ana · 4e0a77", "through the API by ci-github"
 	When    when
 }
 
@@ -202,6 +203,11 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 		return appsRegion{}, err
 	}
 	now := s.now()
+	// The apps with an item in the needs-you list: the state filter's "Needs you".
+	needs := map[string]bool{}
+	for _, it := range items {
+		needs[it.AppID] = true
+	}
 	// The filter is drawn, and obeyed, only with more than a few apps.
 	filter := filterOf(r)
 	if len(sums) <= filterMinApps {
@@ -220,7 +226,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	if pl.single() {
 		rows := make([]appRow, 0, len(sums))
 		for _, sum := range sums {
-			if row := s.appRow(now, sum); filter.matches(sum, row) {
+			if row := s.appRow(now, sum, needs[sum.App.ID]); filter.matches(sum, row) {
 				rows = append(rows, row)
 			}
 		}
@@ -233,7 +239,7 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	matched := 0
 	byEnv := map[app.Place][]appRow{} // keyed by project and environment: the name is left empty
 	for _, sum := range sums {
-		row := s.appRow(now, sum)
+		row := s.appRow(now, sum, needs[sum.App.ID])
 		if !filter.matches(sum, row) {
 			continue
 		}
@@ -264,7 +270,9 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 	return region, nil
 }
 
-func (s *server) appRow(now time.Time, sum service.AppSummary) appRow {
+// appRow is an app's line of the table. needsYou says the app has an item in the
+// needs-you list.
+func (s *server) appRow(now time.Time, sum service.AppSummary, needsYou bool) appRow {
 	row := appRow{
 		ID:      sum.App.ID,
 		Name:    cmp.Or(sum.Place.Name, sum.App.ID),
@@ -274,7 +282,12 @@ func (s *server) appRow(now time.Time, sum service.AppSummary) appRow {
 		Domains: domainLinks(sum.App),
 		Kind:    kindOf(sum.App, sum.Compose != nil),
 	}
-	row.State = stateKey(sum, row.Status)
+	row.State = stateKey(sum, row.Status, needsYou)
+	if isRollingOut(sum) {
+		if next := versionLabel(sum.LastDeployment.JobVersion); next != row.Version {
+			row.Next = next
+		}
+	}
 	// Healthy copies don't hide a failed deploy: the row sorts with the problems.
 	row.Sort = row.Status.Kind
 	if lastDeployFailed(sum) {
@@ -343,7 +356,7 @@ func (s *server) activityRowOf(now time.Time, rec store.DeploymentRecord) activi
 		Href:    s.deploymentsHref(rec.AppID),
 		Version: versionLabel(rec.JobVersion),
 		Outcome: deploymentStatusView(rec.Status),
-		Who:     activityWho(rec),
+		Who:     deployWho(rec, true),
 		When:    whenOf(now, &rec.CreatedAt, ""),
 	}
 }

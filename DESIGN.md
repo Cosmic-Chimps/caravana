@@ -491,8 +491,11 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   error is announced (`role="alert"`), and the field is autofocused so the page lands on it.
 - **Date:** the same field, its value in mono and centered in the box, in the dark color scheme.
 - **Select:** the same ground and edge with a native menu in the dark color scheme (`cv-select`),
-  38px tall, 2px corners, mono 14px, 11rem at least, label above. Used for the Logs toolbar (Copy,
-  Stream), the Variables page's Service and the Domains page's "Sends traffic to".
+  **32px** tall like the field, 2px corners, mono 13px (the field's size), 11rem at least, label above.
+  It is the console's only select: the Apps filter's State and Kind, the Logs toolbar (Copy, Stream), the
+  Variables page's Service, the Domains page's "Sends traffic to", Settings' Kind and Project. The
+  buttons that sit in a row with selects (the filter's Apply and Clear, the Logs toolbar's) are 32px
+  too, so the row is one height.
 - **The .env editor:** a textarea on the darkest ground (Unlit Panel), Control Edge border, mono 13px
   on 24px lines, 300px tall at least (`cv-field-env`).
 - **Checkbox:** `cv-check`, the accent on the box, the sentence in Readout White beside it.
@@ -710,18 +713,25 @@ Deploying now, the filter, the groups.
   gap 16, the border in Rolling Line. Head row (gap 14, wraps): the app's name in mono 500 18px, its
   `project / environment` in muted mono 13px (left out in Default / production, like the rail's), the
   rolling pill ("v24 rolling out"), a spacer, "View deployment" (secondary small). No Roll back: Nomad
-  reverts a failed rollout itself. Facts grid (`auto 1fr`, gap 10/20): **Change** (what the deploy
-  carries: "Pushed to `main` by ana · `4e0a77a`", "Promoted from `staging`", "`v3` deployed again",
-  "Deployed from the console", "through the API", "by the webhook") and **Copies**: chips, then "1 of 2
-  new copies healthy". A chip is 26px tall, ink-2 ground, 1px line-2 edge, radius 2, mono 12px: a 6px
-  mark, the app's name (the service's, with several), the copy's short ID. A starting copy has a dashed
-  Rolling Line edge and the half mark; a draining one a dashed edge, the idle ring and struck-through
-  quiet text; both say their state to a screen reader. No chips: "Waiting for Nomad to place the first
-  copy." The region is its own live region on the deployments and copies notices and is empty (hidden)
-  when nothing rolls out.
+  reverts a failed rollout itself. Facts grid (`auto 1fr`, gap 10/20, aligned to the start, every row's
+  first line 26px so a label sits level with the first chip): **Change** (what the deploy carries:
+  "Pushed to `main` by ana · `4e0a77a`", "Promoted from `staging`", "`v3` deployed again", "Deployed from
+  the console", "Deployed through the API by `ci-github`", "Deployed by the webhook") and **Copies**: the
+  chips, and under them, always on a line of its own, "1 of 2 new copies healthy". A chip is 26px tall,
+  ink-2 ground, 1px line-2 edge, radius 2, mono 12px: a 6px mark, the app's name (the service's, with
+  several), the version the copy runs (`v6`, a step brighter than the ID) and the copy's short ID
+  (`slow v6 89038f01`). The new version's copies come first, then the ones still serving the old
+  version, then the ones Nomad is stopping. A starting copy has a dashed Rolling Line edge and the half
+  mark; a stopping one ("draining": only a copy told to stop, never an old copy that still serves) a
+  dashed edge, the idle ring and struck-through quiet text. Each chip says its role to a screen reader:
+  "new, healthy", "new, starting", "serving, v5", "draining, v5". No chips: "Waiting for Nomad to place
+  the first copy." The region is its own live region on the deployments and copies notices and is empty
+  (hidden when nothing rolls out).
 - **The filter.** A GET form between the needs-you list and the groups: a search (32px mono, 280 wide),
   a state select (All states, Needs you, Rolling out, Healthy, Stopped, Not deployed), a kind select (All
-  kinds, Image, Compose, Database, Volume), Apply, and Clear when any is set. Drawn only with more than
+  kinds, Image, Compose, Database, Volume), Apply, and Clear when any is set; the whole row is 32px.
+  "Needs you" is the apps with an item in the needs-you list above (a failed or reverted deploy, a failed
+  backup or restore, a crash loop, unhealthy copies, ...); a stopped app is only Stopped. Drawn only with more than
   5 apps, and ignored under that. It matches name, project, environment, images and domains in any case.
   The groups hold only what matches, an empty group isn't drawn, and nothing matching is "No app matches."
   with Clear. The headline and the needs-you list are about the whole caravana and never filtered. The form
@@ -732,19 +742,29 @@ Deploying now, the filter, the groups.
   file), **database** (a Postgres backup, or an image named postgres, mysql, mariadb, redis or valkey: the
   last path segment before the tag or digest), **volume** (any volume), else nothing: an image app has no
   word.
-- **Who deployed**, the second line of an Activity row: "`<who>` · when". An origin says "Pushed to `main`
-  by ana · `4e0a77a`"; a promotion "Promoted from `staging`"; the console "from the console"; the API
-  "through the API" and, when the deployment recorded the token, "by `ci-github`"; the webhook "by the
-  webhook".
-- **The stages strip.** In every history entry, under the head line: a panel of three cells (Queued, Roll
-  out, Live), 18/20 padding, 1px line-1 between them. A cell is an 8px mark and the stage's name (500 15px;
+- **Who deployed**: one set of words (`deployWho`), lowercase, for the second line of an Activity row
+  ("`<who>` · when"), the history entry's meta line and the app's lede. An origin says "pushed to `main`
+  by ana · `4e0a77a`"; a promotion "promoted from `staging`"; the console "from the console"; the API
+  "through the API" and, when the deployment recorded the token, "through the API by `ci-github`"; the
+  webhook "by the webhook". The entry's meta reads "pushed to `main` by ana · `4e0a77a` · run · 3 minutes
+  ago · took 42 s", the run a link (https only). The lede reads "Last deployed 26 minutes ago, promoted
+  from `staging`." (no commit). Only the card capitalizes them or puts "Deployed" in front.
+- **The stages strip.** Under the head line of a history entry that is going on (pending or running), is
+  the app's newest, or failed or was reverted (its failed cell explains it): a panel of three cells
+  (Queued, Roll out, Live), 18/20 padding, 1px line-1 between them. A cell is an 8px mark and the stage's name (500 15px;
   Readout White when done or active, quiet when still to come), and under it a mono 13px value, "—" when
   nothing. Marks: done disc, active half mark, to come ring, failed square. The active cell has a 2px
   Rolling underline. Queued: the wait ("2 s"), "waiting", or a failed square and "didn't start" when the
-  deploy failed before Nomad had it ("superseded" when a newer one won). Roll out: "1 of 2 copies healthy"
-  while it runs, its duration, or "failed". Live: the time it ended ("14:03:05", the date in the `title`),
+  deploy failed before Nomad had it ("superseded" when a newer one won). Roll out: "1 of 2 new copies
+  healthy" while it runs (the card says the same; the running entry's progress line keeps both numbers:
+  "2 of 2 new copies started, 1 healthy."), its duration, or "failed". Live: the time it ended ("14:03:05", the date in the `title`),
   and a ring and "—" for a deployment that failed or was reverted. Under 660px of room the cells stack, one
-  line each. Each mark also says its meaning in words for a screen reader.
+  line each. Each mark also says its meaning in words for a screen reader. An older healthy or superseded
+  entry gets the same three stages as one line of quiet mono ("● Queued under 1 s · ● Roll out 28 s ·
+  ● Live 06:28:21 UTC", wrapping) in the panel's place, and drops "took ..." from its meta, which the line
+  carries. A reverted entry's raw Nomad line is prefixed "Nomad said: " (the words after it stay mono).
+- **The Version cell** of an app that is rolling out reads `v5 → v6`: the arrow and the new version in
+  quiet text (the arrow is for the eye; a screen reader hears "rolling out v6").
 - **A rollback says what was deployed again.** After a revert Nomad's live version is a copy of an older
   one: "`v3` (`v1` again) keeps running." on the app, "rolled back to `v3` (`v1` again)" in the entry,
   and the same in the needs-you list. The older deployment is the newest healthy one before the failed

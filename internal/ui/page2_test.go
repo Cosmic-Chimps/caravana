@@ -936,12 +936,21 @@ func TestRegistryPrereq(t *testing.T) {
 	}
 }
 
-// The one field rule is 32px; the sign-in's stays 42px; a select is 38px.
+// The one field rule is 32px; the sign-in's stays 42px; the one select is 32px too, with the field's 13px mono.
 func TestFieldsAre32px(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	_, css := e.do(t, request{path: "/static/app.css"})
 	flat := strings.ReplaceAll(strings.ReplaceAll(css, " ", ""), "\n", "")
-	for _, want := range []string{".cv-field{", "height:32px", ".cv-field-lg{", "height:42px", ".cv-select{", "height:38px"} {
+	for _, want := range []string{".cv-field{", "height:32px", ".cv-field-lg{", "height:42px", ".cv-select{"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("app.css lacks %q", want)
+		}
+	}
+	if m := regexp.MustCompile(`\.cv-select\{[^}]*\}`).FindString(flat); !strings.Contains(m, "height:32px") || !strings.Contains(m, "font:40013px/1var(--font-mono)") || strings.Contains(m, "38px") {
+		t.Errorf(".cv-select = %s, want 32px with 13px mono", m)
+	}
+	// The filter's Apply and Clear and the Logs toolbar's buttons are as tall as the selects beside them.
+	for _, want := range []string{".cv-filter.cv-btn{height:32px", ".cv-logbar.cv-btn{height:32px"} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("app.css lacks %q", want)
 		}

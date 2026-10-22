@@ -148,8 +148,9 @@ func shortDigest(ref string) string {
 	return algo + ":" + hex[:12]
 }
 
-// triggerWords says what started a deployment, in words for a sentence:
-// "Last deployed 3 minutes ago from the console."
+// triggerWords says what started something, in lowercase words that follow a
+// lead: "from the console". deployWho builds on it for deployments, which also
+// know their origin, token and promotion; the Recent actions list uses it alone.
 func triggerWords(t app.Trigger) string {
 	switch t {
 	case app.TriggerConsole:
@@ -587,7 +588,7 @@ func nameList(names []string) string {
 }
 
 // summaryOf is the app page's one-line summary: what runs now, and when and
-// how it was last deployed ("2 copies running v7. Last deployed 3 minutes ago
+// how it was last deployed ("2 copies running v7. Last deployed 3 minutes ago,
 // from the console.").
 func summaryOf(sum service.AppSummary, now time.Time) sentence {
 	return summaryOfAgain(sum, now, nil)
@@ -647,7 +648,11 @@ func summaryOfAgain(sum service.AppSummary, now time.Time, again *uint64) senten
 	}
 
 	if d := sum.LastDeployment; d != nil {
-		out = append(out, plain(" Last deployed "+relative(now, d.CreatedAt)+" "+triggerWords(d.Deployment.Trigger)+"."))
+		// "Last deployed 26 minutes ago, promoted from staging." The same who-words as the rail
+		// and the history entry, without the commit.
+		out = append(out, plain(" Last deployed "+relative(now, d.CreatedAt)+", "))
+		out = append(out, deployWho(*d, false)...)
+		out = append(out, plain("."))
 	} else {
 		out = append(out, plain(" Never deployed."))
 	}

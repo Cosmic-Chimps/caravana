@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -22,10 +24,11 @@ import (
 
 // ---- who deployed --------------------------------------------------------------------
 
-// originSentence is a CI deploy's one line: "Pushed to main by ana · 4e0a77", the
-// branch and the commit in mono, "by <actor>" only when known. Nil when the origin
-// says none of the three (a run address alone has nothing to say here).
-func originSentence(o *app.Origin) sentence {
+// originWords is a CI deploy's words: "pushed to main by ana · 4e0a77", the branch
+// and the commit in mono, "by <actor>" only when known, and the commit only when
+// withCommit says so. Nil when the origin says none of the three (a run address
+// alone has nothing to say here).
+func originWords(o *app.Origin, withCommit bool) sentence {
 	if o == nil {
 		return nil
 	}
@@ -33,28 +36,31 @@ func originSentence(o *app.Origin) sentence {
 	if branch == "" && o.Actor == "" && commit == "" {
 		return nil
 	}
-	out := sentence{plain("Pushed")}
+	out := sentence{plain("pushed")}
 	if branch != "" {
 		out = append(out, plain(" to "), mono(branch))
 	}
 	if o.Actor != "" {
 		out = append(out, plain(" by "+o.Actor))
 	}
-	if commit != "" {
+	if commit != "" && withCommit {
 		out = append(out, plain(" · "), mono(commit))
 	}
 	return out
 }
 
-// activityWho is what the Activity rail's second line says about a deployment,
-// before the time: an origin's "Pushed to main by ana · 4e0a77", "Promoted from
-// staging", "from the console", "through the API" (and "by <token>" when the
-// deployment recorded which token), "by the webhook".
-func activityWho(rec store.DeploymentRecord) sentence {
+// deployWho says who deployed, in lowercase words that follow a lead of the
+// caller's: "pushed to main by ana · 4e0a77", "promoted from staging", "through the
+// API" (and "by <token>" when the deployment recorded which token), "by the
+// webhook", "from the console". It is the one set of words the Activity rail, the
+// history entry's meta line and the app's lede share (021 page 4, critique ruling
+// 1); the card capitalizes them ("Pushed to ...") or puts "Deployed" first. The
+// commit is left out when withCommit is false (the lede has no room for it).
+func deployWho(rec store.DeploymentRecord, withCommit bool) sentence {
 	if rec.SourceApp != "" {
-		return sentence{plain("Promoted from "), mono(rec.SourceEnvironment)}
+		return sentence{plain("promoted from "), mono(rec.SourceEnvironment)}
 	}
-	if o := originSentence(rec.Deployment.Origin); o != nil {
+	if o := originWords(rec.Deployment.Origin, withCommit); o != nil {
 		return o
 	}
 	switch rec.Deployment.Trigger {
@@ -70,46 +76,53 @@ func activityWho(rec store.DeploymentRecord) sentence {
 	return plainS(triggerWords(rec.Deployment.Trigger))
 }
 
+// capitalized is s with its first letter upper-cased, for a sentence that starts
+// with it (the card's Change line).
+func capitalized(s sentence) sentence {
+	if len(s) == 0 || s[0].Text == "" {
+		return s
+	}
+	out := slices.Clone(s)
+	r, n := utf8.DecodeRuneInString(out[0].Text)
+	out[0].Text = string(unicode.ToUpper(r)) + out[0].Text[n:]
+	return out
+}
+
 // changeLine is the Change row of a "Deploying now" card: what the deployment
-// carries, in one line. again is the version label a redeploy repeats ("" when
-// it can't be said).
+// carries, in one line, with the same who-words as the rest. again is the
+// version label a redeploy repeats ("" when it can't be said).
 func changeLine(rec store.DeploymentRecord, again string) sentence {
 	switch {
 	case rec.SourceApp != "":
-		return sentence{plain("Promoted from "), mono(rec.SourceEnvironment)}
+		return capitalized(deployWho(rec, true))
 	case rec.Source != "":
 		if again == "" {
 			return plainS("A past version deployed again")
 		}
 		return sentence{mono(again), plain(" deployed again")}
 	}
-	if o := originSentence(rec.Deployment.Origin); o != nil {
-		return o
+	who := deployWho(rec, true)
+	if originWords(rec.Deployment.Origin, true) != nil {
+		return capitalized(who) // "Pushed to main by ana", not "Deployed pushed ..."
 	}
-	switch rec.Deployment.Trigger {
-	case app.TriggerConsole:
-		return plainS("Deployed from the console")
-	case app.TriggerWebhook:
-		return plainS("Deployed by the webhook")
-	}
-	out := plainS("Deployed through the API")
-	if name := rec.Deployment.TokenName; name != "" {
-		out = append(out, plain(" by "), mono(name))
-	}
-	return out
+	return join(plainS("Deployed "), who)
 }
 
 // ---- Deploying now -------------------------------------------------------------------
 
 // chipView is one copy on a card: the app's name (the service's, when the app has
-// several) and the copy's short ID. State is "starting" (dashed edge, a half
-// mark), "draining" (dashed, struck through) or "" for a copy that serves.
+// several), the version the copy runs and the copy's short ID. State is "starting"
+// (dashed edge, a half mark), "draining" (dashed, struck through) or "" for a copy
+// that serves. Role is the same in words for a reader that doesn't see the style:
+// "new, healthy", "new, starting", "serving, v5", "draining, v5".
 type chipView struct {
-	Name  string
-	Short string
-	Full  string
-	Mark  string // the status kind of the mark: healthy, warning, rolling, idle
-	State string
+	Name    string
+	Version string // "v6"
+	Short   string
+	Full    string
+	Mark    string // the status kind of the mark: healthy, warning, rolling, idle
+	State   string
+	Role    string
 }
 
 // deployingCard is one app with a rollout in progress.
@@ -194,7 +207,7 @@ func (s *server) deployingCardOf(ctx context.Context, sum service.AppSummary, pl
 		card.Summary = "Nomad can't be reached right now, so the copies aren't shown."
 		return card
 	}
-	card.Chips = chipsOf(card.Name, len(sum.App.Services), copies)
+	card.Chips = chipsOf(card.Name, len(sum.App.Services), copies, rec.JobVersion)
 	if len(card.Chips) == 0 {
 		card.Summary = "Waiting for Nomad to place the first copy."
 		return card
@@ -203,28 +216,36 @@ func (s *server) deployingCardOf(ctx context.Context, sum service.AppSummary, pl
 	case err != nil:
 		s.log.Warn("can't read rollout progress", "deployment", rec.Deployment.ID, "error", err)
 	case p != nil && (p.Wanted > 0 || p.Healthy > 0):
-		noun := "new copies"
-		if p.Wanted == 1 {
-			noun = "new copy"
-		}
-		card.Summary = fmt.Sprintf("%d of %d %s healthy", p.Healthy, p.Wanted, noun)
+		card.Summary = newCopiesHealthy(*p)
 	default:
 		card.Summary = "Nomad hasn't started this rollout yet."
 	}
 	return card
 }
 
-// chipsOf is the copies of the app that haven't ended: the live ones and the new ones
-// starting, and the old ones Nomad is draining. The newest version comes first.
-func chipsOf(appName string, services int, copies []service.Copy) []chipView {
+// chipsOf is the copies of the app that haven't ended, as chips: the new version's
+// copies first (newVersion is the version the rollout registered), then the ones that
+// still serve the old version, then the ones Nomad is stopping. Within a group, by
+// service and then by copy.
+func chipsOf(appName string, services int, copies []service.Copy, newVersion *uint64) []chipView {
 	var live []service.Copy
 	for _, c := range copies {
 		if !c.Terminal {
 			live = append(live, c)
 		}
 	}
+	isNew := func(c service.Copy) bool { return newVersion != nil && c.Version == *newVersion && !c.Stopping }
+	rank := func(c service.Copy) int {
+		switch {
+		case c.Stopping:
+			return 2
+		case isNew(c):
+			return 0
+		}
+		return 1
+	}
 	slices.SortStableFunc(live, func(x, y service.Copy) int {
-		return cmp.Or(strings.Compare(x.Service, y.Service), cmp.Compare(y.Version, x.Version), strings.Compare(x.ID, y.ID))
+		return cmp.Or(cmp.Compare(rank(x), rank(y)), strings.Compare(x.Service, y.Service), cmp.Compare(y.Version, x.Version), strings.Compare(x.ID, y.ID))
 	})
 	var out []chipView
 	for _, c := range live {
@@ -232,11 +253,21 @@ func chipsOf(appName string, services int, copies []service.Copy) []chipView {
 		if services > 1 {
 			name = c.Service
 		}
-		chip := chipView{Name: name, Short: shortID(c.ID), Full: c.ID, Mark: copyStatusView(c.Status).Kind}
+		version := fmt.Sprintf("v%d", c.Version)
+		status := copyStatusView(c.Status)
+		chip := chipView{Name: name, Version: version, Short: shortID(c.ID), Full: c.ID, Mark: status.Kind}
 		switch {
 		case c.Stopping:
-			chip.State, chip.Mark = "draining", "idle"
-		case c.Status == deploy.CopyStarting:
+			// Only a copy Nomad has told to stop is draining; an old copy that still serves isn't.
+			chip.State, chip.Mark, chip.Role = "draining", "idle", "draining, "+version
+		case isNew(c):
+			chip.Role = "new, " + status.Word
+		case c.Status == deploy.CopyHealthy:
+			chip.Role = "serving, " + version
+		default:
+			chip.Role = status.Word + ", " + version
+		}
+		if !c.Stopping && c.Status == deploy.CopyStarting {
 			chip.State = "starting"
 		}
 		out = append(out, chip)
@@ -398,13 +429,14 @@ func filterViewOf(f appsFilter, apps int) filterView {
 }
 
 // stateKey is the filter's state of an app: the first that applies. An app that
-// needs you is one whose status is failed or a warning (so also one whose newest
-// deploy failed).
-func stateKey(sum service.AppSummary, st statusView) string {
+// needs you is one with an item in the needs-you list (needsYou), the same list the
+// headline counts: a failed or reverted deploy, a failed backup or restore, a crash
+// loop, unhealthy copies, and so on.
+func stateKey(sum service.AppSummary, st statusView, needsYou bool) string {
 	switch {
 	case sum.StoppedAt != nil:
 		return stateStopped
-	case st.Kind == "failed" || st.Kind == "warning" || lastDeployFailed(sum):
+	case needsYou:
 		return stateNeeds
 	case st.Kind == "rolling":
 		return stateRolling

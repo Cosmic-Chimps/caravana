@@ -261,7 +261,10 @@
   .cv-logbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
   .cv-logform { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .cv-logpick { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .cv-select { width: auto; min-width: 11rem; max-width: 100%; height: 38px; border-radius: 2px; font: 400 14px/1 var(--font-mono); cursor: pointer; color-scheme: dark; }
+  /* The console's one select: 32px like the field, with the field's 13px mono. */
+  .cv-select { width: auto; min-width: 11rem; max-width: 100%; height: 32px; border-radius: 2px; font: 400 13px/1 var(--font-mono); cursor: pointer; color-scheme: dark; }
+  /* The toolbar's buttons are as tall as its selects, so the row is one height. */
+  .cv-logbar .cv-btn { height: 32px; }
 
   /* A checkbox with its label (Settings > Notifications: what a channel sends). The box takes
      the accent colour and sits on the first line of the label. */
@@ -824,25 +827,29 @@
   a.cv-dcard-name:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-dcard-place { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); }
   .cv-dcard .cv-btn { text-decoration: none; }
-  .cv-dcard-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; align-items: center; margin: 0; font-size: 14px; color: var(--color-fg-2); }
+  /* The grid aligns to the start, and every row's first line is 26px (a chip's height), so a label sits
+     level with the first chip or the first line of text. */
+  .cv-dcard-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; align-items: start; margin: 0; font-size: 14px; color: var(--color-fg-2); }
+  .cv-dcard-facts > dt, .cv-dcard-facts > dd { line-height: 26px; }
   .cv-dcard-facts > dd { margin: 0; min-width: 0; }
-  .cv-dcard-copies { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .cv-dcard-sum { margin-left: 6px; color: var(--color-fg-3); }
-  .cv-dcard-sum:first-child { margin-left: 0; }
+  .cv-dcard-copies { display: flex; flex-direction: column; gap: 6px; }
+  .cv-dcard-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .cv-dcard-sum { color: var(--color-fg-3); }
   /* A copy: the handoff's AllocChip. Starting is dashed in rolling-line with the half mark; draining is
      dashed, quiet and struck through. */
   .cv-copychip { display: inline-flex; align-items: center; gap: 8px; height: 26px; padding: 0 9px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); white-space: nowrap; }
   .cv-copychip .cv-mark { width: 6px; height: 6px; margin: 0; }
   .cv-copychip-name { color: var(--color-fg-1); }
+  .cv-copychip-ver { color: var(--color-fg-2); }
   .cv-copychip-id { color: var(--color-fg-3); }
   .cv-copychip-starting { border-style: dashed; border-color: var(--color-rolling-line); }
   .cv-copychip-draining { border-style: dashed; }
-  .cv-copychip-draining .cv-copychip-name, .cv-copychip-draining .cv-copychip-id { color: var(--color-fg-3); text-decoration: line-through; }
+  .cv-copychip-draining .cv-copychip-name, .cv-copychip-draining .cv-copychip-ver, .cv-copychip-draining .cv-copychip-id { color: var(--color-fg-3); text-decoration: line-through; }
 
   /* The filter row between the needs-you list and the groups. */
   .cv-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .cv-filter-q { width: 280px; max-width: 100%; }
-  .cv-filter .cv-btn { text-decoration: none; }
+  .cv-filter .cv-btn { height: 32px; text-decoration: none; }
 
   /* The word after an app's name when it isn't a plain image app. */
   .cv-namecell { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
@@ -858,6 +865,12 @@
   .cv-stage-name .cv-mark { width: 8px; height: 8px; margin: 0; }
   .cv-stage-todo { color: var(--color-fg-3); }
   .cv-stage-value { font: 400 13px/1.2 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  /* An older entry's strip is one line of the same three stages, in the entry's quiet mono; it wraps. */
+  .cv-stageline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0; padding: 0; list-style: none; }
+  .cv-stageline li + li::before { content: "·"; margin-right: 10px; }
+  .cv-stageline .cv-mark { width: 8px; height: 8px; margin: 0 6px 0 0; }
+  /* "Nomad said: " says whose words the raw line is; the words themselves stay mono. */
+  .cv-detail-lead { font-family: var(--font-sans); }
 }
 
 /* Under 660px of room the three cells stack, each one line: the mark, the name, the value. */

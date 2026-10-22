@@ -474,7 +474,7 @@ func TestAppPage(t *testing.T) {
 	for _, want := range []string{
 		// the status, the address, the summary sentence
 		`cv-pill cv-pill-healthy`, `<a href="https://whoami.example.com" class="cv-domain">whoami.example.com</a>`,
-		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago from the console.`,
+		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago, from the console.`,
 		// the breadcrumbs (project / environment, not the app: the h1 carries its name), the back link,
 		// and the stream and the region of this app
 		`<a href="/projects/default" class="cv-crumb">Default</a>`, `cv-crumb-current">production</span>`,
@@ -497,7 +497,7 @@ func TestAppPage(t *testing.T) {
 		for path, want := range map[string]string{
 			"/parts/apps/api/header": "1 of 2 copies healthy, running v3.",
 			// blog: its newest deploy (v8) was reverted, and v7 keeps running
-			"/parts/apps/blog/header": "v8 failed its health checks. v7 keeps running. Last deployed 3 minutes ago by the webhook.",
+			"/parts/apps/blog/header": "v8 failed its health checks. v7 keeps running. Last deployed 3 minutes ago, by the webhook.",
 		} {
 			_, part := e.get(t, path)
 			if text := strings.Join(strings.Fields(html.UnescapeString(tagPattern.ReplaceAllString(part, ""))), " "); !strings.Contains(text, want) {
