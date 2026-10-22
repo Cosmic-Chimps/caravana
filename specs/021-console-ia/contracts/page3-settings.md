@@ -227,3 +227,47 @@ Rulings on the build's departures, all yes, with these details:
 - **Per-channel events** are kept, with the sentence "…as ticked in its form" and the events as a tooltip on the kind. When a channel has fewer than all three events, the kind line also says them in words, e.g. "Webhook · problems only".
 - **Unused for 90 days:** a never-used token counts from its creation, and only after 90 days, so a fresh token is never ◆.
 - **Also yes:** the address under the name; relative words, with a date past 60 days; the nav inside `<main>`; "Only for one app" as a plain row; `<label for>`; the four Backup storage choices; the "Settings · <entry>" titles; shown-once values only in the 200 answer, with no-store.
+
+## After the critique (designer's rulings, 2026-10-22)
+
+The impeccable critique (snapshot in `.impeccable/critique/`, local) and the designer's rulings:
+
+1. **A failed backup on Backup storage** gets a note under the row:
+   - "`postgres` of `db`: The destination didn't answer in time." (page 2's plain-cause table);
+   - the mono detail on a second line;
+   - then a link "Open its backups" to that app's Backups tab.
+2. **Registries.**
+   - Save runs no network test. It answers "Saved. Test them to clear the warning."
+   - The row then reads "changed · not tested since", in fg-2 (not a problem hue), and the nav's mark is cleared.
+   - "Update password" opens Edit with autofocus on the password field.
+   - The state is two lines: the state, then the last event.
+3. **The narrow nav.**
+   - Under 900px the current entry comes first, then the others in contract order, all drawn by the server.
+   - A right-edge fade shows the overflow.
+   - No script.
+4. **API tokens.**
+   - "never expires" really gets the warn hue (fix the rule order).
+   - The note reads "A token that can do everything and never expires. Make one with an end date, or one that only deploys an app, then revoke this one.", with "Make one" linking to `#new`.
+5. **The nav's spoken reason** puts a failure first, and names both when both hold.
+6. **The New signing secret confirmation** adds: "Receivers that check Caravana-Signature reject messages until they have the new one."
+7. **Minor:**
+   - (a) row notes lead with the consequence in words, then the raw error in mono;
+   - (b) Recent deliveries marks a failure with the row's ◆;
+   - (c) the footer reads "Each channel gets the events ticked in its form. Repeats of the same problem are sent once.";
+   - (d) the Remove confirmation names the channel visibly;
+   - (e) token rows have sr-only "Can do" and "Expiry" labels;
+   - (f) the backup row's `<summary>` has a short accessible name.
+8. **The nav marks only what is breaking:**
+   - a refused registry;
+   - a failed last backup;
+   - no destination while a service has a policy;
+   - a failed delivery;
+   - a token unused for 90 days.
+
+   Chosen or chronic states keep their ◆ and note on the row only: a paused channel, and a full token without expiry. **Rows mark more than the nav**; this replaces "the same rule marks the rows".
+9. **Backup storage, the same mark in both places:**
+   - a failed last backup is ■ in both the nav and the row;
+   - no destination while a policy exists is ◆.
+10. **The ntfy topic is masked like a Slack URL:** the host is shown and the topic hidden. An empty Edit field keeps it.
+11. **Expired and revoked tokens:** the last 5, then "Show older".
+12. **The 200 answers with shown-once values stay.** A reload's resubmit warning is the browser's own, and both outcomes are safe.
