@@ -185,3 +185,38 @@ All five accepted:
    - Each mark and chip has screen-reader words.
 
 **One set of trigger words everywhere** (the rail, the card, the history entry and the lede): "from the console", "through the API", "through the API by `ci-github`", "by the webhook", "promoted from staging", "deployed again".
+
+## Review fixes (designer, 2026-10-22)
+
+- The card's Change line says "Deployed through the API by `ci-github`" when the token is known.
+- The entry's origin line is the rail's words: "Pushed to `main` by ana · `4e0a77c` · run".
+- Live's time is "06:13:29 UTC", with the full date in `title`.
+
+## Critique rulings (designer, 2026-10-22)
+
+1. **One set of who-words.** One function serves the rail, the entry's meta line and the lede.
+   - The words start lowercase everywhere except on the card and at the start of a sentence.
+   - The lede: "Last deployed 26 minutes ago, promoted from `staging`." Likewise "…, pushed to `main` by ana.", "…, through the API by `ci-github`.", "…, from the console." and "…, by the webhook."
+   - The rail and the entry meta use the same words, without "Last deployed".
+2. **"Needs you" in the state filter** means the app has a needs-you item: the same list the headline counts (failed or reverted deploys, failed backups, crash loops, unhealthy copies, …).
+3. **The card's chips carry the version.** The new version's copies come first.
+   - Screen-reader words: "new, healthy", "new, starting", "serving, v5".
+   - "Draining" is only for a copy that is stopping. Blue/green keeps old copies serving until promotion.
+4. **The strip, re-ruled.** The full strip is drawn for:
+   - a pending or running entry;
+   - the newest entry;
+   - any entry that failed or was reverted (its ■ cell is what explains it).
+
+   Older healthy and superseded entries get a one-line strip in the meta's place ("● Queued under 1 s · ● Roll out 28 s · ● Live 06:28:21 UTC") and drop "took …" there.
+5. **One wording for progress.**
+   - The strip and the card say "N of M new copies healthy".
+   - The running entry's progress line keeps the healthy count too, so all three say the same number: "2 of 2 new copies started, 1 healthy. Old copies keep serving until the new ones pass their checks."
+6. Live in UTC: done with the review fixes.
+7. **One 32px filter row.**
+   - The 32px select, with the field's 13px mono, becomes the console's only select: Variables' Service, Domains' "Sends traffic to", Settings' Kind and Project. The 38px select goes.
+   - Apply and Clear are 32px. DESIGN.md records it.
+8. **The card's facts grid aligns to start.** "N of M new copies healthy" goes on its own line when the chips wrap.
+9. **While a rollout runs,** the Apps row's Version cell reads `v5 → v6`, with the arrow and v6 in fg-3.
+10. **The card's height shift** is accepted: the card inserts above the filter and moves it down by its height while a rollout runs.
+11. **The reverted entry's raw Nomad line** is prefixed "Nomad said: …".
+12. **The rail at 1440** stacks under the tables (page 1's 1452px breakpoint). No change for page 4; filed in CodeAlta.
