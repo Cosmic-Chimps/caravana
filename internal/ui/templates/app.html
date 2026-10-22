@@ -543,7 +543,7 @@
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
-  {{with .Origin}}<p class="cv-data-muted">from CI:{{with .Commit}} <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Branch}} on <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Actor}} by {{.}}{{end}}{{with .Run}} · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a>{{end}}</p>{{end}}
+  {{with .Origin}}<p class="cv-data-muted">{{if or .Branch .Actor .Commit}}Pushed{{with .Branch}} to <span class="cv-inline-mono">{{.}}</span>{{end}}{{with .Actor}} by {{.}}{{end}}{{with .Commit}} · <span class="cv-inline-mono">{{.}}</span>{{end}}{{else}}From CI{{end}}{{with .Run}} · <a href="{{.}}" rel="noopener noreferrer" target="_blank">run</a>{{end}}</p>{{end}}
   {{with .Promoted}}<p class="cv-data-muted"><a href="{{.Href}}">Promoted from <span class="cv-inline-mono">{{.Environment}}</span> · deployment <span class="cv-inline-mono">{{.Short}}</span></a></p>{{end}}
   {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
   {{if or .Redeploy .ExportHref .ComposeHref}}

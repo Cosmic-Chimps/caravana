@@ -92,7 +92,11 @@ func changeLine(rec store.DeploymentRecord, again string) sentence {
 	case app.TriggerWebhook:
 		return plainS("Deployed by the webhook")
 	}
-	return plainS("Deployed through the API")
+	out := plainS("Deployed through the API")
+	if name := rec.Deployment.TokenName; name != "" {
+		out = append(out, plain(" by "), mono(name))
+	}
+	return out
 }
 
 // ---- Deploying now -------------------------------------------------------------------

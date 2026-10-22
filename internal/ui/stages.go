@@ -78,7 +78,7 @@ func stagesOf(rec store.DeploymentRecord, p *service.Progress) [3]stageView {
 		if rec.RegisteredAt != nil {
 			roll.Value = spanText(*rec.RegisteredAt, &rec.UpdatedAt)
 		}
-		live.Mark, live.Value = "healthy", rec.UpdatedAt.UTC().Format("15:04:05")
+		live.Mark, live.Value = "healthy", rec.UpdatedAt.UTC().Format("15:04:05 UTC")
 		live.Title = rec.UpdatedAt.UTC().Format("2006-01-02 15:04:05 UTC")
 	case store.StatusReverted:
 		roll.Mark, roll.Value = "failed", "failed"
