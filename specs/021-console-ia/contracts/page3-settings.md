@@ -271,3 +271,12 @@ The impeccable critique (snapshot in `.impeccable/critique/`, local) and the des
 10. **The ntfy topic is masked like a Slack URL:** the host is shown and the topic hidden. An empty Edit field keeps it.
 11. **Expired and revoked tokens:** the last 5, then "Show older".
 12. **The 200 answers with shown-once values stay.** A reload's resubmit warning is the browser's own, and both outcomes are safe.
+
+## Last look (designer, 2026-10-22): approved, with two small fixes
+
+1. **The narrow page head.** Under 900px the head stacks: title, sentence, then the primary action on its own line, left-aligned. The action no longer sits beside the title column.
+2. **Backup storage, a failing service.**
+   - The row's state stays the destination's newest run.
+   - When any service's newest run failed, the failing-service note is drawn ("`postgres` of `db`: …" with "Open its backups", as critique ruling 1), even when another service's later run succeeded.
+   - In that case the row is ◆, not ■, and the nav follows the row.
+   - ■ stays for the destination's own newest run failing.
