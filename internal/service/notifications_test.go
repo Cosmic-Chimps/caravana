@@ -437,7 +437,7 @@ func TestTestNotificationChannel(t *testing.T) {
 		if err := notify.Verify(hook.SigningSecret, req.Header.Get(notify.SignatureHeader), []byte(rcv.bodies[0]), time.Now(), time.Minute); err != nil {
 			t.Errorf("signature does not verify with the secret shown at creation: %v", err)
 		}
-		if !strings.Contains(rcv.bodies[0], "https://caravana.example.com/settings#notifications") {
+		if !strings.Contains(rcv.bodies[0], "https://caravana.example.com/settings/notifications") {
 			t.Errorf("body has no link: %s", rcv.bodies[0])
 		}
 

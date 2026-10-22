@@ -59,9 +59,10 @@ func (e *consoleEnv) waitDeploy(t *testing.T, id string) {
 // US3: the destination form keeps its secret out of the page.
 func TestSettingsBackupDestination(t *testing.T) {
 	e := backupsEnv(t, true)
-	_, body := e.get(t, "/settings?backups=saved")
+	_, body := e.get(t, "/settings/backup-storage?backups=saved")
 	got := text(body)
-	for _, want := range []string{"Backup destination", "Saved. Every database's next backup goes here.", "Saved. Leave it empty to keep it."} {
+	for _, want := range []string{"Backup storage", "One S3-compatible bucket for database and volume backups.", "Saved. Every database's next backup goes here.",
+		"Leave it empty to keep the current one.", "10.0.0.5:9000/backups", "S3-compatible · region us-east-1", "no backup yet", "used by 1 service"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Settings lacks %q:\n%s", want, got)
 		}
@@ -84,7 +85,7 @@ func TestBackupsTab(t *testing.T) {
 		_, body := e.get(t, "/apps/duo/backups")
 		got := text(body)
 		if !strings.Contains(got, "No backup destination is set. Backups can't run until there is one. Set the destination") || strings.Contains(got, "Back up now") ||
-			!strings.Contains(got, "1 backed up · 0 failing · 0 not · no destination") || !strings.Contains(body, `href="/settings#backups"`) {
+			!strings.Contains(got, "1 backed up · 0 failing · 0 not · no destination") || !strings.Contains(body, `href="/settings/backup-storage"`) {
 			t.Errorf("the tab without a destination:\n%s", got)
 		}
 	})
@@ -126,7 +127,10 @@ func TestBackupsTab(t *testing.T) {
 		t.Fatal("the backup wasn't recorded")
 	}
 	_, body = e.get(t, "/apps/duo/backups")
-	if got := text(body); !strings.Contains(got, "2 KB") || !strings.Contains(got, "2 KB all") || !strings.Contains(got, "Restore…") || !strings.Contains(got, "Restore from 14 days ago") ||
+	// The run is recorded at the real time and the page reads it against the test's fixed clock, so
+	// how long ago it was changes with the calendar: any "Restore from … ago" is right.
+	restoreFrom := regexp.MustCompile(`Restore from [0-9a-z ]+ ago`)
+	if got := text(body); !strings.Contains(got, "2 KB") || !strings.Contains(got, "2 KB all") || !strings.Contains(got, "Restore…") || !restoreFrom.MatchString(got) ||
 		!strings.Contains(body, "/backups/"+backupID+"/restore") || !strings.Contains(body, `href="#backup-`+backupID+`"`) {
 		t.Errorf("the tab after the backup:\n%s", got)
 	}

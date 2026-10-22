@@ -302,10 +302,10 @@ func TestSettingsDeployToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, page := e.get(t, "/settings")
+	_, page := e.get(t, "/settings/tokens")
 	for _, want := range []string{"Only for one app", `name="scopeApp"`, `<option value="shop">`} {
 		if !strings.Contains(page, want) {
-			t.Errorf("Settings lacks %q", want)
+			t.Errorf("API tokens lacks %q", want)
 		}
 	}
 
@@ -321,8 +321,8 @@ func TestSettingsDeployToken(t *testing.T) {
 	if !strings.Contains(body, "/v1/apps/shop--production--web") {
 		t.Errorf("the example doesn't read the app:\n%s", text(body))
 	}
-	_, list := e.get(t, "/settings")
-	if !strings.Contains(text(list), "deploys app web of project shop") || strings.Contains(list, token) {
+	_, list := e.get(t, "/settings/tokens")
+	if !strings.Contains(text(list), "Deploy · app web of project shop") || strings.Contains(list, token) {
 		t.Errorf("the token's row doesn't show its scope, or shows the token:\n%s", text(list))
 	}
 
@@ -347,8 +347,8 @@ func TestSettingsDeployToken(t *testing.T) {
 			if resp.StatusCode != http.StatusOK || !strings.Contains(text(body), tc.want) {
 				t.Errorf("POST = %d, want the page saying %q:\n%s", resp.StatusCode, tc.want, text(body))
 			}
-			if !strings.Contains(body, "<details class=\"cv-confirm\" open>") || deployTokenPattern.MatchString(body) {
-				t.Errorf("the scope section must stay open, with no token:\n%s", body)
+			if !strings.Contains(body, `name="scopeApp" value="`) || deployTokenPattern.MatchString(body) {
+				t.Errorf("the page must keep what was typed, with no token:\n%s", body)
 			}
 		})
 	}

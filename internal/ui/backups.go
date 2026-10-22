@@ -94,7 +94,8 @@ type backupSvcRow struct {
 	Size       string // the newest run's size, the run the time is of; none when it failed
 	SizeAll    string // the kept runs' sum, "1.4 GB all"
 	Strip      []stripCell
-	// StripLabel is the strip as one phrase, for a screen reader.
+	// StripLabel is the strip as one phrase, read before it by a screen reader (the strip has
+	// no role, so its link bars stay reachable).
 	StripLabel string
 	Failure    sentence
 	// VolumeFacts say where each volume of a volume service lives and how big it was

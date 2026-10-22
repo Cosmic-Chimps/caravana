@@ -737,7 +737,7 @@ const deployFormHref = "#deploy"
 
 // registriesHref is Settings' Registries section, where the stored credentials
 // are checked and fixed.
-const registriesHref = "/settings#registries"
+const registriesHref = "/settings/registries"
 
 // registryRefused says whether a stored deploy error is the registry turning
 // down the credentials Caravana sent (deploy.ErrRegistryAuth), which every such

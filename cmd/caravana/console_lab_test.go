@@ -169,18 +169,22 @@ func (c *console) healthy(t *testing.T) {
 	waitFor(t, "whoami to answer over HTTPS", time.Minute, func() bool { return c.g.callApp() == nil })
 }
 
-// reads: the tabs render for a signed-in admin, /account lands on /settings,
+// reads: the tabs and the Settings pages render for a signed-in admin, /account and
+// /settings/account land on /settings,
 // and the console's reads of copies and logs work (a log line shows up after
 // calling the app).
 func (c *console) reads(t *testing.T) {
 	for _, path := range []string{"/apps", "/apps/whoami", "/apps/whoami/deployments", "/apps/whoami/configure",
-		"/apps/whoami/logs", "/apps/new", "/settings"} {
+		"/apps/whoami/logs", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage",
+		"/settings/notifications", "/settings/tokens"} {
 		if resp, _ := c.get(t, path); resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, resp.StatusCode)
 		}
 	}
-	if resp, _ := c.get(t, "/account"); resp.StatusCode != http.StatusMovedPermanently || resp.Header.Get("Location") != "/settings" {
-		t.Errorf("GET /account = %d → %q, want 301 to /settings", resp.StatusCode, resp.Header.Get("Location"))
+	for _, old := range []string{"/account", "/settings/account"} {
+		if resp, _ := c.get(t, old); resp.StatusCode != http.StatusMovedPermanently || resp.Header.Get("Location") != "/settings" {
+			t.Errorf("GET %s = %d → %q, want 301 to /settings", old, resp.StatusCode, resp.Header.Get("Location"))
+		}
 	}
 
 	var copies struct {
@@ -1314,8 +1318,8 @@ func (c *console) notifications(t *testing.T) {
 			t.Errorf("the API's channel list shows the signing secret")
 		}
 	}
-	if _, page := c.get(t, "/settings"); strings.Contains(page, secret) || !strings.Contains(page, name) {
-		t.Errorf("Settings after adding the channel should list %q and never show the signing secret again", name)
+	if _, page := c.get(t, "/settings/notifications"); strings.Contains(page, secret) || !strings.Contains(page, name) {
+		t.Errorf("Settings › Notifications after adding the channel should list %q and never show the signing secret again", name)
 	}
 
 	// Send a test: the page says it was accepted, and the receiver got a message

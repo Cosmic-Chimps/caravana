@@ -136,7 +136,7 @@
 <div class="cv-panel cv-banner">
   <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
   <p class="cv-banner-text">No backup destination is set. Backups can't run until there is one.</p>
-  <a href="/settings#backups" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination</a>
+  <a href="/settings/backup-storage" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination</a>
 </div>
 {{end}}
 
@@ -203,7 +203,8 @@
     <div class="cv-bdetail">
       <div class="cv-bstrip-wrap">
         <h3 class="cv-label">Restore points · last 30 days</h3>
-        <div class="cv-strip" role="img" aria-label="{{.StripLabel}}">
+        <p class="sr-only">{{.StripLabel}}.</p>
+        <div class="cv-strip">
           {{range .Strip}}{{if .Href}}<a href="{{.Href}}" class="cv-bar cv-bar-{{.Kind}}{{if .Capped}} cv-bar-capped{{end}}" title="{{.Title}}"></a>{{else}}<span class="cv-bar cv-bar-none" aria-hidden="true"></span>{{end}}{{end}}
         </div>
         <div class="cv-strip-ends"><span>30 d ago</span> <span>today</span></div>

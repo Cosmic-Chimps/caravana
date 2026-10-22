@@ -201,6 +201,11 @@ func (s *server) routeTable() []route {
 		{"GET", "/live", s.liveApps},
 		{"GET", "/live/apps/{id}", s.liveApp},
 		{"GET", "/settings", s.requireSession(s.showSettings)},
+		{"GET", "/settings/account", s.showSettingsAccount},
+		{"GET", "/settings/registries", s.requireSession(s.showRegistries)},
+		{"GET", "/settings/backup-storage", s.requireSession(s.showBackupStorage)},
+		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
+		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
@@ -289,7 +294,7 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS,
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS,
 			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)

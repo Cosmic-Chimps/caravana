@@ -32,7 +32,7 @@ func TestRefusedCredentialsInTheHistory(t *testing.T) {
 	if n := strings.Count(body, `class="cv-deploy-action"`); n != 1 {
 		t.Errorf("%d actions on the entry, want 1", n)
 	}
-	if !strings.Contains(body, `<a href="/settings#registries" class="cv-btn cv-btn-secondary cv-btn-sm">Check the registry&#39;s credentials</a>`) {
+	if !strings.Contains(body, `<a href="/settings/registries" class="cv-btn cv-btn-secondary cv-btn-sm">Check the registry&#39;s credentials</a>`) {
 		t.Errorf("no action to Settings > Registries:\n%s", body)
 	}
 	if strings.Contains(body, ">Deploy again</a>") || strings.Contains(body, ">Change the image</a>") {
@@ -65,7 +65,7 @@ func TestDeployFormRefusedCredentials(t *testing.T) {
 	if got := text(field[:strings.Index(field, "</label>")]); !strings.Contains(got, "refused the stored credentials") {
 		t.Errorf("the image field has no error about the credentials: %s", got)
 	}
-	if !strings.Contains(body, `<a href="/settings#registries"`) {
+	if !strings.Contains(body, `<a href="/settings/registries"`) {
 		t.Errorf("the attempt in the history doesn't send the owner to the registries:\n%s", body)
 	}
 	if recs := e.deployments(t, "duo"); len(recs) != 2 || recs[0].Status != store.StatusFailed {

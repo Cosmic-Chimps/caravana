@@ -85,7 +85,7 @@ func TestProblemEvent(t *testing.T) {
 		{
 			name:  "no backup destination",
 			item:  AttentionItem{Kind: AttentionNoBackupDestination},
-			title: "Backups have nowhere to go", text: "Backups are set up, but no backup destination is.", path: "/settings#backup-destination",
+			title: "Backups have nowhere to go", text: "Backups are set up, but no backup destination is.", path: "/settings/backup-storage",
 		},
 		{
 			name:  "a kind added later still says something",
@@ -142,7 +142,7 @@ func TestResolvedEvent(t *testing.T) {
 		{"deploy", store.SentProblem{Key: "deploy_failed|hollo||dep_1", Kind: "deploy_failed", AppID: "hollo", Summary: "hollo: deploy v8 failed"}, "/apps/hollo/deployments#deployment-dep_1"},
 		{"copies", store.SentProblem{Key: "restarting|blog|web|", Kind: "restarting", AppID: "blog", Service: "web", Summary: "blog/web: keeps restarting"}, "/apps/blog"},
 		{"backup", store.SentProblem{Key: "backup_failed|kuma|db|", Kind: "backup_failed", AppID: "kuma", Service: "db", Summary: "kuma: the backup of db failed"}, "/apps/kuma/backups"},
-		{"destination", store.SentProblem{Key: "no_backup_destination|||", Kind: "no_backup_destination", Summary: "Backups have nowhere to go"}, "/settings#backup-destination"},
+		{"destination", store.SentProblem{Key: "no_backup_destination|||", Kind: "no_backup_destination", Summary: "Backups have nowhere to go"}, "/settings/backup-storage"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -4,16 +4,18 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Settings › Registries (feature 017): the credentials Caravana uses to read
-// private images. Every form is a plain post, so the section works without
-// script. The password is write-only: no struct here has a field for it, so no
+// Settings › Registries (feature 017, and 021 page 3): the credentials Caravana
+// uses to read private images, one connection row each. Every form is a plain
+// post, so the page works without script. The password is write-only: no struct here has a field for it, so no
 // page can show it.
 
 // registryCheck is the outcome of the last "Test" of a registry's credentials.
@@ -31,12 +33,17 @@ type registryForm struct {
 	Err            *fieldError
 }
 
-// registryRow is one registry in the table.
+// registryRow is one registry, one connection row.
 type registryRow struct {
 	Host, Username string
+	Mark           string         // registriesState's: failed, healthy or idle
+	UsedBy         string         // "used by 3 apps", or "not used"
 	Check          *registryCheck // nil until the credentials were tested
 	Edit           registryForm   // what the row's edit form shows
-	Open           bool           // the edit form was refused, so it is shown open
+	Open           bool           // the edit form is shown open: it was refused, or asked for with ?edit=
+	// EditHref is where "Update password" goes: this page with the row's edit
+	// form open, which needs no script.
+	EditHref string
 }
 
 // registryNotice is a sentence under the section's heading.
@@ -51,7 +58,8 @@ type registriesData struct {
 	Notice *registryNotice
 	Alert  *fieldError // a refusal that names no field, such as Nomad being down
 	Add    registryForm
-	// EditHost and Edit say which row's edit form was refused, and how.
+	// EditHost says which row's edit form is open; Edit is what it was refused with
+	// (its Host is empty when it wasn't refused).
 	EditHost string
 	Edit     registryForm
 	// Saved and Tested come from the redirect after a save or a test: Tested is
@@ -85,6 +93,15 @@ func regField(f registryForm, idPrefix, name, label, placeholder, hint string) r
 	return v
 }
 
+// showRegistries answers GET /settings/registries. The notice comes from the
+// redirect after a save or a test; ?edit=<host> opens that registry's edit form.
+func (s *server) showRegistries(w http.ResponseWriter, r *http.Request, session string) {
+	q := r.URL.Query()
+	s.renderSettings(w, r, entryRegistries, settingsData{Registries: registriesData{
+		Saved: q.Get("registries") == "saved", Tested: q.Get("tested"), EditHost: q.Get("edit"),
+	}})
+}
+
 // saveRegistry answers POST /settings/registries, for the add form and for a
 // row's edit form (which also posts the registry's host and edit=1). An empty
 // password keeps the one stored. A refusal draws the page again with what was
@@ -102,7 +119,7 @@ func (s *server) saveRegistry(w http.ResponseWriter, r *http.Request, session st
 
 	reg, err := s.svc.SaveRegistry(r.Context(), host, user, password)
 	if err == nil {
-		http.Redirect(w, r, "/settings?registries=saved#registries", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/registries?registries=saved", http.StatusSeeOther)
 		return
 	}
 
@@ -133,7 +150,7 @@ func (s *server) saveRegistry(w http.ResponseWriter, r *http.Request, session st
 		s.serverError(w, "save registry", err)
 		return
 	}
-	s.renderSettings(w, r, settingsData{Registries: data})
+	s.renderSettings(w, r, entryRegistries, settingsData{Registries: data})
 }
 
 // registryFieldMessage is a field error as a sentence for the input it names: the
@@ -154,9 +171,9 @@ func (s *server) testRegistry(w http.ResponseWriter, r *http.Request, session st
 	reg, err := s.svc.TestRegistry(r.Context(), r.PathValue("host"))
 	switch {
 	case err == nil:
-		http.Redirect(w, r, "/settings?tested="+url.QueryEscape(reg.Host)+"#registries", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/registries?tested="+url.QueryEscape(reg.Host), http.StatusSeeOther)
 	case errors.Is(err, store.ErrNotFound):
-		http.Redirect(w, r, "/settings#registries", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/registries", http.StatusSeeOther)
 	default:
 		s.serverError(w, "test registry", err)
 	}
@@ -169,33 +186,39 @@ func (s *server) removeRegistry(w http.ResponseWriter, r *http.Request, session 
 	err := s.svc.DeleteRegistry(r.Context(), r.PathValue("host"))
 	switch {
 	case err == nil, errors.Is(err, store.ErrNotFound):
-		http.Redirect(w, r, "/settings#registries", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/registries", http.StatusSeeOther)
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
 		s.log.Warn("can't remove the registry credentials", "registry", r.PathValue("host"), "error", err)
-		s.renderSettings(w, r, settingsData{Registries: registriesData{Alert: &fieldError{Text: err.Error()}}})
+		s.renderSettings(w, r, entryRegistries, settingsData{Registries: registriesData{Alert: &fieldError{Text: err.Error()}}})
 	default:
 		s.serverError(w, "remove registry", err)
 	}
 }
 
-// registriesSection fills in the rows of the section and the notice the
-// request carries, keeping what the handler set.
-func (s *server) registriesSection(r *http.Request, data registriesData) (registriesData, error) {
-	regs, err := s.svc.Registries(r.Context())
-	if err != nil {
-		return data, err
-	}
-	now := s.now()
-	data.Rows = make([]registryRow, 0, len(regs))
-	for _, reg := range regs {
-		row := registryRow{Host: reg.Host, Username: reg.Username, Edit: registryForm{Host: reg.Host, Username: reg.Username}}
+// registriesSection fills in the rows of the page and the notice the request
+// carries, keeping what the handler set. The rows' marks are registriesState's,
+// the same function the nav counts with; refused registries come first, then
+// the others by host.
+func registriesSection(now time.Time, facts settingsFacts, st entryState, data registriesData) registriesData {
+	use := registryUse(facts.Apps)
+	data.Rows = make([]registryRow, 0, len(facts.Registries))
+	for i, reg := range facts.Registries {
+		row := registryRow{Host: reg.Host, Username: reg.Username, Mark: st.Rows[i], UsedBy: usedBy(use[reg.Host], "app"),
+			Edit: registryForm{Host: reg.Host, Username: reg.Username}}
 		if reg.LastTest != nil {
 			row.Check = &registryCheck{OK: reg.LastTest.OK, Message: reg.LastTest.Message, When: whenOf(now, &reg.LastTest.At, "")}
 		}
 		if reg.Host == data.EditHost {
-			row.Edit, row.Open = data.Edit, true
+			row.Open = true
+			if data.Edit.Host != "" {
+				row.Edit = data.Edit
+			}
 		}
 		data.Rows = append(data.Rows, row)
+	}
+	sortStable(data.Rows, func(r registryRow) int { return markRank(r.Mark) })
+	for i := range data.Rows {
+		data.Rows[i].EditHref = "/settings/registries?edit=" + url.QueryEscape(data.Rows[i].Host) + "#registry-edit-" + strconv.Itoa(i)
 	}
 
 	switch {
@@ -212,5 +235,5 @@ func (s *server) registriesSection(r *http.Request, data registriesData) (regist
 			}
 		}
 	}
-	return data, nil
+	return data
 }

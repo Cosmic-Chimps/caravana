@@ -65,7 +65,11 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/apps/whoami/configure", "Projects", "Default /production"},
 		{"/apps/whoami/logs", "Projects", "Default /production"},
 		{"/apps/whoami/stop", "Projects", "Default /production /whoami /Stop"},
-		{"/settings", "Settings", "Settings"},
+		{"/settings", "Settings", "Settings /Account"},
+		{"/settings/registries", "Settings", "Settings /Registries"},
+		{"/settings/backup-storage", "Settings", "Settings /Backup storage"},
+		{"/settings/notifications", "Settings", "Settings /Notifications"},
+		{"/settings/tokens", "Settings", "Settings /API tokens"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {

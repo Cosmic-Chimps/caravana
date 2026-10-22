@@ -299,7 +299,7 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id string) (store
 		At:    now,
 	}
 	if s.publicURL != "" {
-		ev.URL = s.publicURL + "/settings#notifications"
+		ev.URL = s.publicURL + "/settings/notifications"
 	}
 	payload, err := json.Marshal(ev)
 	if err != nil {

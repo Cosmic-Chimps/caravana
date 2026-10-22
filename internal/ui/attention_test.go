@@ -63,7 +63,7 @@ func TestAttentionRows(t *testing.T) {
 		{"a failed restore", service.AttentionItem{Kind: service.AttentionRestoreFailed, AppID: "blog", Service: "db"},
 			"failed", "The latest restore of blog/db failed.", "Open backups", "/apps/blog/backups"},
 		{"no destination", service.AttentionItem{Kind: service.AttentionNoBackupDestination},
-			"warning", "Backups are set up, but no backup destination is.", "Set destination", "/settings#backup-destination"},
+			"warning", "Backups are set up, but no backup destination is.", "Set destination", "/settings/backup-storage"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -269,11 +269,11 @@ func TestLiveAppsSendsAttention(t *testing.T) {
 	}
 }
 
-// The no-destination item's action leads to a place on the Settings page.
-func TestSettingsHasTheBackupDestinationAnchor(t *testing.T) {
+// The no-destination item's action leads to the Backup storage page, which has the form.
+func TestSettingsHasTheBackupDestinationPage(t *testing.T) {
 	e := newConsoleEnv(t)
-	_, body := e.get(t, "/settings")
-	if !strings.Contains(body, `id="backup-destination"`) {
-		t.Errorf("Settings has no element with id backup-destination:\n%s", body)
+	resp, body := e.get(t, "/settings/backup-storage")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `action="/settings/backups"`) {
+		t.Errorf("GET /settings/backup-storage = %d, want the destination form:\n%s", resp.StatusCode, body)
 	}
 }

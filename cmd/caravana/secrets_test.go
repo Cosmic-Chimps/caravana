@@ -172,9 +172,13 @@ func TestNoSecretReachesLogsOrResponses(t *testing.T) {
 	cookie := map[string]string{"Cookie": "caravana_session=" + session}
 
 	call("account page", http.MethodGet, "/settings", cookie, nil, "")
+	call("registries page", http.MethodGet, "/settings/registries", cookie, nil, "")
+	call("backup storage page", http.MethodGet, "/settings/backup-storage", cookie, nil, "")
+	call("notifications page", http.MethodGet, "/settings/notifications", cookie, nil, "")
+	call("tokens page", http.MethodGet, "/settings/tokens", cookie, nil, "")
 	_, raw = call("ui create token", http.MethodPost, "/settings/tokens", cookie, url.Values{"name": {"made-by-ui"}}, "", "API token 3")
 	secrets["API token 3"] = regexp.MustCompile(`cvat_[A-Za-z0-9_-]{43}`).FindString(raw)
-	call("account with the token listed", http.MethodGet, "/settings", cookie, nil, "")
+	call("account with the token listed", http.MethodGet, "/settings/tokens", cookie, nil, "")
 	call("ui wrong current password", http.MethodPost, "/settings/password", cookie,
 		url.Values{"currentPassword": {wrongPass}, "newPassword": {newPassword}}, "")
 	call("api with the session cookie", http.MethodGet, "/v1/tokens", cookie, nil, "")

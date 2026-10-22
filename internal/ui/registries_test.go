@@ -56,11 +56,12 @@ func TestSettingsRegistries(t *testing.T) {
 	e.Reg.RequireLogin("deploy", registrySecret)
 	host := e.Reg.Host() // 127.0.0.1:<port>: a host with a port in the route
 
-	_, page := e.get(t, "/settings")
+	_, page := e.get(t, "/settings/registries")
 	got := text(page)
 	for _, want := range []string{
 		"Registries",
-		"Credentials Caravana uses to read private images. Use a token that can only read images: it reaches each private app's own container as CARAVANA_REGISTRY_USERNAME and CARAVANA_REGISTRY_PASSWORD.",
+		"Credentials Caravana uses to read private images.",
+		"Use a token that can only read images: it reaches each private app's own container as CARAVANA_REGISTRY_USERNAME and CARAVANA_REGISTRY_PASSWORD.",
 		"No registries yet. Public images from any registry deploy without one.",
 		"The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub.",
 		"Password or token",
@@ -69,8 +70,8 @@ func TestSettingsRegistries(t *testing.T) {
 			t.Errorf("Settings lacks %q:\n%s", want, got)
 		}
 	}
-	if !strings.Contains(page, `<section id="registries"`) || !strings.Contains(page, `placeholder="ghcr.io"`) {
-		t.Error("the section lacks its anchor or the host placeholder")
+	if !strings.Contains(page, `<form method="post" action="/settings/registries" id="add"`) || !strings.Contains(page, `placeholder="ghcr.io"`) {
+		t.Error("the page lacks the add form's anchor or the host placeholder")
 	}
 	add, _ := registryForms(page)
 	if add.Action == "" || add.Method != "post" {
@@ -79,12 +80,12 @@ func TestSettingsRegistries(t *testing.T) {
 
 	t.Run("add, with a host in capitals", func(t *testing.T) {
 		resp, body := e.submit(t, add, url.Values{"host": {"GHCR.io"}, "username": {"acme-bot"}, "password": {registrySecret}})
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings?registries=saved#registries" {
-			t.Fatalf("POST = %d to %q, want 303 to /settings?registries=saved#registries:\n%s", resp.StatusCode, location(t, resp), body)
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/registries?registries=saved" {
+			t.Fatalf("POST = %d to %q, want 303 to /settings/registries?registries=saved:\n%s", resp.StatusCode, location(t, resp), body)
 		}
-		_, page := e.get(t, "/settings?registries=saved")
+		_, page := e.get(t, "/settings/registries?registries=saved")
 		got := text(page)
-		for _, want := range []string{"Saved. The next deploy uses them; running apps pick them up the next time they start.", "ghcr.io", "acme-bot", "not checked yet"} {
+		for _, want := range []string{"Saved. The next deploy uses them; running apps pick them up the next time they start.", "ghcr.io", "acme-bot", "not tested yet"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("after the save the page lacks %q:\n%s", want, got)
 			}
@@ -119,7 +120,7 @@ func TestSettingsRegistries(t *testing.T) {
 	})
 
 	t.Run("edit keeps the secret when the field is empty", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/registries")
 		_, edits := registryForms(page)
 		edit, ok := edits["ghcr.io"]
 		if !ok || edit.Values.Get("username") != "acme-bot" {
@@ -142,7 +143,7 @@ func TestSettingsRegistries(t *testing.T) {
 		// A refused edit shows that row's form open, with the error under its field.
 		resp, body = e.submit(t, edit, url.Values{"username": {""}})
 		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `id="registry-edit-0-username-error"`) ||
-			!regexp.MustCompile(`<details class="cv-confirm" open>`).MatchString(body) {
+			!regexp.MustCompile(`<details class="cv-confirm cv-confirm-row" id="registry-edit-0"[^>]* open>`).MatchString(body) {
 			t.Errorf("a refused edit = %d, want the page with the edit form open and the error under the user name:\n%s", resp.StatusCode, text(body))
 		}
 		leaks(t, "edit", body)
@@ -154,15 +155,15 @@ func TestSettingsRegistries(t *testing.T) {
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST add = %d", resp.StatusCode)
 		}
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/registries")
 		resp, body := e.submit(t, formWith(t, page, "/settings/registries/"+host+"/test"), nil)
-		want := "/settings?tested=" + url.QueryEscape(host) + "#registries"
+		want := "/settings/registries?tested=" + url.QueryEscape(host)
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != want {
 			t.Fatalf("POST test = %d to %q, want 303 to %q:\n%s", resp.StatusCode, location(t, resp), want, body)
 		}
 		_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
 		got := text(page)
-		if !strings.Contains(got, host+" refused the credentials: ") || !strings.Contains(got, "refused, just now") {
+		if !strings.Contains(got, host+" refused the credentials: ") || !strings.Contains(got, "refused · tested just now") {
 			t.Errorf("after a refused test the page says:\n%s", got)
 		}
 		if !strings.Contains(page, `role="alert" class="cv-notice"`) {
@@ -176,35 +177,35 @@ func TestSettingsRegistries(t *testing.T) {
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST edit = %d", resp.StatusCode)
 		}
-		_, page = e.get(t, "/settings")
-		if !strings.Contains(text(page), "not checked yet") {
+		_, page = e.get(t, "/settings/registries")
+		if !strings.Contains(text(page), "not tested yet") {
 			t.Error("a changed secret kept the old check")
 		}
 		resp, _ = e.submit(t, formWith(t, page, "/settings/registries/"+host+"/test"), nil)
 		_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
 		got = text(page)
-		if !strings.Contains(got, host+" accepted the credentials.") || !strings.Contains(got, "works, just now") {
+		if !strings.Contains(got, host+" accepted the credentials.") || !strings.Contains(got, "works · tested just now") {
 			t.Errorf("after an ok test the page says:\n%s", got)
 		}
 		leaks(t, "ok test", page, e.Logs.String())
 	})
 
 	t.Run("remove asks first and forgets the credentials", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/registries")
 		if !strings.Contains(text(page), "Apps already running keep running. The next deploy of a private image from this registry fails until you add credentials again.") {
 			t.Errorf("the Remove confirmation lacks its sentence:\n%s", text(page))
 		}
-		if !strings.Contains(page, `<details class="cv-confirm">`) {
+		if !regexp.MustCompile(`<details class="cv-confirm cv-confirm-row" name="conn-\d+">\s*<summary[^>]*aria-label="Remove credentials for ghcr.io"`).MatchString(page) {
 			t.Error("Remove isn't a <details>")
 		}
 		resp, body := e.submit(t, formWith(t, page, "/settings/registries/ghcr.io/remove"), nil)
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings#registries" {
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/registries" {
 			t.Fatalf("POST remove = %d to %q:\n%s", resp.StatusCode, location(t, resp), body)
 		}
 		if _, _, ok := e.storedCredentials("ghcr.io"); ok {
 			t.Error("the credentials are still in Nomad")
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/registries")
 		if strings.Contains(text(page), "other-bot") {
 			t.Error("the row is still listed")
 		}

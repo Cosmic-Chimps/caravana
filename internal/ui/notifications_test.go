@@ -153,12 +153,12 @@ func TestSettingsNotifications(t *testing.T) {
 	failRcv.setStatus(http.StatusInternalServerError)
 	secrets := []string{notifyTestSecret, "tk_" + notifyTestSecret}
 
-	_, page := e.get(t, "/settings")
+	_, page := e.get(t, "/settings/notifications")
 	got := text(page)
 	for _, want := range []string{
 		"Notifications",
-		"Caravana tells you when something needs you and when a deploy ends, even when nobody has this page open.",
-		"No channels yet. Add ntfy, Slack, Discord or a webhook to hear about problems.",
+		"Where Caravana tells you about problems and how deploys end.",
+		"No channels yet. Add one and Caravana tells you when something needs you.",
 		"ntfy: the topic URL, like https://ntfy.sh/my-topic. Slack and Discord: the incoming webhook URL. Webhook: where Caravana posts signed JSON.",
 		"ntfy access token", "Only for a protected topic.",
 		"Problems (opened and resolved)", "Failed deploys", "Successful deploys", "Add channel",
@@ -167,8 +167,8 @@ func TestSettingsNotifications(t *testing.T) {
 			t.Errorf("Settings lacks %q:\n%s", want, got)
 		}
 	}
-	if !strings.Contains(page, `<section id="notifications"`) || !strings.Contains(page, `placeholder="phone"`) {
-		t.Error("the section lacks its anchor or the name placeholder")
+	if !strings.Contains(page, `<form method="post" action="/settings/notifications" id="add"`) || !strings.Contains(page, `placeholder="phone"`) {
+		t.Error("the page lacks the add form's anchor or the name placeholder")
 	}
 	for _, opt := range []string{">ntfy</option>", ">Slack</option>", ">Discord</option>", ">Webhook</option>"} {
 		if !strings.Contains(page, opt) {
@@ -190,15 +190,19 @@ func TestSettingsNotifications(t *testing.T) {
 
 	t.Run("add ntfy with a token", func(t *testing.T) {
 		resp, body := e.submit(t, add, addValues("ntfy", "phone", okRcv.URL+"/topic", "tk_"+notifyTestSecret, "problems", "deploy_failed"))
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings?notifications=saved#notifications" {
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/notifications?notifications=saved" {
 			t.Fatalf("POST = %d to %q:\n%s", resp.StatusCode, location(t, resp), body)
 		}
-		_, page := e.get(t, "/settings?notifications=saved")
+		_, page := e.get(t, "/settings/notifications?notifications=saved")
 		got := text(page)
-		for _, want := range []string{"Saved.", "phone", "ntfy", "Problems, failed deploys", okRcv.URL + "/topic", "nothing sent yet"} {
+		for _, want := range []string{"Saved.", "phone", "ntfy", okRcv.URL + "/topic", "nothing sent yet"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("after the add the page lacks %q:\n%s", want, got)
 			}
+		}
+		// What a channel sends is the kind's tooltip, and ticked in its edit form.
+		if !strings.Contains(page, `title="Problems, failed deploys"`) {
+			t.Errorf("the row doesn't say what it sends:\n%s", got)
 		}
 		if got := e.notifySecretItems(e.channelIDs(t)[0]); got["token"] != "tk_"+notifyTestSecret {
 			t.Error("the token wasn't kept in the Nomad Variable")
@@ -211,9 +215,9 @@ func TestSettingsNotifications(t *testing.T) {
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST = %d:\n%s", resp.StatusCode, body)
 		}
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		got := text(page)
-		if !strings.Contains(got, "Problems, successful deploys") || !strings.Contains(got, "/services/T…/••••") {
+		if !strings.Contains(page, `title="Problems, successful deploys"`) || !strings.Contains(got, "/services/T…/••••") {
 			t.Errorf("the Slack row lacks its events or masked address:\n%s", got)
 		}
 		noSecret(t, "after add slack", secrets, body, page, e.Logs.String())
@@ -229,11 +233,11 @@ func TestSettingsNotifications(t *testing.T) {
 		if len(secret) != 64 {
 			t.Fatalf("stored signing secret = %q", secret)
 		}
-		want := "Signing secret for ci: " + secret + ". Copy it now: it isn't shown again. Receivers check each message's Caravana-Signature header with it."
-		if !strings.Contains(text(body), want) {
-			t.Errorf("the page lacks %q:\n%s", want, text(body))
+		want := "Signing secret for ci. Copy it now: it isn't shown again. Receivers check each message's Caravana-Signature header with it."
+		if !strings.Contains(text(body), want) || !strings.Contains(body, `<code class="cv-once-value" id="new-signing-secret">`+secret+`</code>`) {
+			t.Errorf("the page lacks %q and the secret:\n%s", want, text(body))
 		}
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		if strings.Contains(page, secret) {
 			t.Error("a later page shows the signing secret again")
 		}
@@ -273,10 +277,10 @@ func TestSettingsNotifications(t *testing.T) {
 	ntfyID, slackID, hookID = ids[0], ids[1], ids[2]
 
 	t.Run("test: accepted, signed, announced and listed", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		f := formWith(t, page, "/settings/notifications/"+hookID+"/test")
 		resp, body := e.submit(t, f, nil)
-		want := "/settings?notified=" + url.QueryEscape(hookID) + "#notifications"
+		want := "/settings/notifications?notified=" + url.QueryEscape(hookID)
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != want {
 			t.Fatalf("POST test = %d to %q, want 303 to %q:\n%s", resp.StatusCode, location(t, resp), want, body)
 		}
@@ -305,12 +309,12 @@ func TestSettingsNotifications(t *testing.T) {
 
 	t.Run("test: a refusing receiver is announced with its status", func(t *testing.T) {
 		// Point the Slack channel at the failing receiver, through its edit form.
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		resp, _ := e.submit(t, notifyEditForm(t, page, slackID), url.Values{"url": {failRcv.URL + "/services/T0/B0/" + notifyTestSecret}, "events": {"problems"}})
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST edit = %d", resp.StatusCode)
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/notifications")
 		resp, body := e.submit(t, formWith(t, page, "/settings/notifications/"+slackID+"/test"), nil)
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST test = %d:\n%s", resp.StatusCode, body)
@@ -329,7 +333,7 @@ func TestSettingsNotifications(t *testing.T) {
 	})
 
 	t.Run("edit keeps the secrets when the fields are empty", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		f := notifyEditForm(t, page, ntfyID)
 		if f.Values.Get("name") != "phone" || f.Values.Get("url") != okRcv.URL+"/topic" {
 			t.Errorf("the ntfy edit form holds name %q and url %q", f.Values.Get("name"), f.Values.Get("url"))
@@ -354,7 +358,7 @@ func TestSettingsNotifications(t *testing.T) {
 		if got := e.notifySecretItems(ntfyID)["token"]; got != "tk_"+notifyTestSecret {
 			t.Error("an edit with an empty token field didn't keep the token")
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/notifications")
 		if got := text(page); !strings.Contains(got, "my phone") {
 			t.Errorf("the edit didn't show:\n%s", got)
 		}
@@ -369,15 +373,15 @@ func TestSettingsNotifications(t *testing.T) {
 
 		// A refused edit shows that row's form open, with the error under its field.
 		resp, body = e.submit(t, notifyEditForm(t, page, ntfyID), url.Values{"name": {""}, "events": {"problems"}})
-		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `id="notify-edit-0-name-error"`) ||
-			!regexp.MustCompile(`<details class="cv-confirm" open>`).MatchString(body) {
+		if resp.StatusCode != http.StatusOK || !regexp.MustCompile(`id="notify-edit-\d+-name-error"`).MatchString(body) ||
+			!regexp.MustCompile(`<details class="cv-confirm cv-confirm-row cv-confirm-wide" name="conn-\d+" open>`).MatchString(body) {
 			t.Errorf("a refused edit = %d, want the page with the edit form open and the error under the name:\n%s", resp.StatusCode, text(body))
 		}
 		noSecret(t, "edit", secrets, body, page, e.Logs.String())
 	})
 
 	t.Run("a refused Slack edit doesn't give the typed URL back", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		resp, body := e.submit(t, notifyEditForm(t, page, slackID), url.Values{"name": {""}, "url": {"https://hooks.slack.com/services/T1/B1/" + notifyTestSecret}, "events": {"problems"}})
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("POST edit = %d", resp.StatusCode)
@@ -386,13 +390,13 @@ func TestSettingsNotifications(t *testing.T) {
 	})
 
 	t.Run("pause and resume", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		resp, body := e.submit(t, pauseForm(t, page, hookID), nil)
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST pause = %d:\n%s", resp.StatusCode, body)
 		}
-		_, page = e.get(t, "/settings")
-		if got := text(page); !strings.Contains(got, "ci paused") || !strings.Contains(got, "Resume") {
+		_, page = e.get(t, "/settings/notifications")
+		if got := text(page); !strings.Contains(page, `<span class="cv-conn-paused">paused</span>`) || !strings.Contains(got, "Resume") {
 			t.Errorf("a paused channel isn't marked:\n%s", got)
 		}
 		// Pausing left its other settings alone.
@@ -403,15 +407,15 @@ func TestSettingsNotifications(t *testing.T) {
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST resume = %d", resp.StatusCode)
 		}
-		_, page = e.get(t, "/settings")
-		if strings.Contains(text(page), "ci paused") {
+		_, page = e.get(t, "/settings/notifications")
+		if strings.Contains(page, `cv-conn-paused`) {
 			t.Error("a resumed channel is still marked paused")
 		}
 	})
 
 	t.Run("a new signing secret shows once and replaces the old", func(t *testing.T) {
 		old := e.notifySecretItems(hookID)["signing_secret"]
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		if !strings.Contains(text(page), "The old secret stops working at once.") {
 			t.Error("the rotate confirmation lacks its sentence")
 		}
@@ -423,15 +427,15 @@ func TestSettingsNotifications(t *testing.T) {
 		if fresh == old || len(fresh) != 64 {
 			t.Fatalf("the secret wasn't replaced: %q", fresh)
 		}
-		if !strings.Contains(text(body), "Signing secret for ci: "+fresh+". Copy it now: it isn't shown again.") {
+		if !strings.Contains(text(body), "Signing secret for ci. Copy it now: it isn't shown again.") || !strings.Contains(body, `id="new-signing-secret">`+fresh+`</code>`) {
 			t.Errorf("the page lacks the new secret:\n%s", text(body))
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/notifications")
 		noSecret(t, "after rotate", []string{old, fresh}, page, e.Logs.String())
 	})
 
 	t.Run("only a webhook has the rotate form", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		_, forms := notifyForms(page)
 		for _, id := range []string{ntfyID, slackID} {
 			if len(forms["/settings/notifications/"+id+"/secret"]) != 0 {
@@ -447,18 +451,18 @@ func TestSettingsNotifications(t *testing.T) {
 	})
 
 	t.Run("remove asks first and forgets the channel and its secret", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/notifications")
 		if !strings.Contains(text(page), "Messages stop at once. Deliveries already listed are removed with it.") {
 			t.Errorf("the Remove confirmation lacks its sentence:\n%s", text(page))
 		}
 		resp, body := e.submit(t, formWith(t, page, "/settings/notifications/"+slackID+"/remove"), nil)
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings#notifications" {
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/notifications" {
 			t.Fatalf("POST remove = %d to %q:\n%s", resp.StatusCode, location(t, resp), body)
 		}
 		if e.notifySecretItems(slackID) != nil {
 			t.Error("the secret is still in Nomad")
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/notifications")
 		if strings.Contains(text(page), "team") && strings.Contains(page, "/settings/notifications/"+slackID) {
 			t.Error("the row is still listed")
 		}
@@ -487,7 +491,7 @@ func TestSettingsNotificationDeliveriesList(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, page := e.get(t, "/settings")
+	_, page := e.get(t, "/settings/notifications")
 	got := text(page)
 	failed := strings.Index(got, "failed (1 attempt): ")
 	sent := strings.Index(got, "Test message from Caravana sent")

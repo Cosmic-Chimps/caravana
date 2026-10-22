@@ -316,7 +316,7 @@ The impeccable critique (snapshot in `.impeccable/critique/`, local) and the des
 4. **Backups accessibility.**
    - No `row` or `cell` roles on the `<summary>`.
    - A leading `<span class="sr-only">` such as "postgres, last backup failed", and the visible text kept: no `aria-label` replacing it.
-   - The strip is `role="img"` with one aria-label, e.g. "30 days: 2 backups, 1 failed, the last 26 minutes ago". Its cells are `aria-hidden`; the bars that are links keep their `title` as their accessible name.
+   - The strip has **no role** (corrected at the last look: `role="img"` made its links unreachable). A visually hidden sentence comes before it, e.g. "30 days: 2 backups, 1 failed, the last 26 minutes ago.". Its empty cells are `aria-hidden`; the bars that are links keep their `title` as their accessible name.
    - The summary's when line reads "25 minutes ago · failed", with "failed" in the failed hue.
    - The head line reads "1 backed up · 1 failing · 0 not".
 5. **Can't-act states.**

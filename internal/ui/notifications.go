@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -14,9 +15,9 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// Settings › Notifications (feature 018): where Caravana tells the owner what
-// needs them and how deploys end. Every form is a plain post, so the section
-// works without script. The secret parts of a channel (a Slack or Discord URL,
+// Settings › Notifications (feature 018, and 021 page 3): where Caravana tells
+// the owner what needs them and how deploys end, one connection row per channel.
+// Every form is a plain post, so the page works without script. The secret parts of a channel (a Slack or Discord URL,
 // an ntfy token, a webhook's signing secret) are write-only: no struct here has
 // a field for one, except the notice that shows a signing secret once, and a
 // refused form never gives a typed Slack or Discord URL or token back.
@@ -130,9 +131,11 @@ type deliveryRow struct {
 	Detail string // "sent", "failed (3 attempts): <error>" or "queued"
 }
 
-// notificationRow is one channel in the table.
+// notificationRow is one channel, one connection row.
 type notificationRow struct {
 	ID, Name, Kind, KindLabel, Address string
+	Icon                               string // the kind's icon: hash, message-square, bell or webhook
+	Mark                               string // notificationsState's: healthy, warning or idle
 	Paused                             bool
 	HasToken                           bool
 	Sends                              string
@@ -228,6 +231,15 @@ func notificationFieldMessage(fe *app.FieldError) string {
 	return name + " " + strings.TrimSuffix(fe.Message, ".") + "."
 }
 
+// showNotifications answers GET /settings/notifications. The notice comes from
+// the redirect after a save or a test.
+func (s *server) showNotifications(w http.ResponseWriter, r *http.Request, session string) {
+	q := r.URL.Query()
+	s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
+		Saved: q.Get("notifications") == "saved", Notified: q.Get("notified"),
+	}})
+}
+
 // addNotification answers POST /settings/notifications. A webhook's signing
 // secret is shown once, in this very response, because a redirect would lose
 // it (as a new API token is). Every other kind goes back to the page.
@@ -241,11 +253,11 @@ func (s *server) addNotification(w http.ResponseWriter, r *http.Request, session
 	})
 	switch {
 	case err == nil && created.SigningSecret != "":
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
 			Secret: &signingSecretNotice{Name: created.Name, Value: created.SigningSecret},
 		}})
 	case err == nil:
-		http.Redirect(w, r, "/settings?notifications=saved#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications?notifications=saved", http.StatusSeeOther)
 	default:
 		s.refuseNotification(w, r, err, "add notification channel", "", form)
 	}
@@ -280,7 +292,7 @@ func (s *server) updateNotification(w http.ResponseWriter, r *http.Request, sess
 
 	_, err := s.svc.UpdateNotificationChannel(r.Context(), id, patch)
 	if err == nil {
-		http.Redirect(w, r, "/settings?notifications=saved#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications?notifications=saved", http.StatusSeeOther)
 		return
 	}
 	s.refuseNotification(w, r, err, "update notification channel", id, form)
@@ -295,7 +307,7 @@ func (s *server) refuseNotification(w http.ResponseWriter, r *http.Request, err 
 	var fieldErr *app.FieldError
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, service.ErrNotAWebhook):
-		http.Redirect(w, r, "/settings#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications", http.StatusSeeOther)
 	case errors.As(err, &fieldErr):
 		form = echoable(form)
 		form.Field, form.Err = fieldErr.Field, &fieldError{Text: notificationFieldMessage(fieldErr)}
@@ -303,10 +315,10 @@ func (s *server) refuseNotification(w http.ResponseWriter, r *http.Request, err 
 		if editID != "" {
 			data = notificationsData{EditID: editID, Edit: form}
 		}
-		s.renderSettings(w, r, settingsData{Notifications: data})
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: data})
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
 		s.log.Warn("can't keep the notification channel's secrets", "error", err)
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
 			Alert: &fieldError{Text: "Nomad couldn't keep the channel's secret, so nothing was saved: " + err.Error()},
 		}})
 	default:
@@ -321,12 +333,12 @@ func (s *server) testNotification(w http.ResponseWriter, r *http.Request, sessio
 	_, err := s.svc.TestNotificationChannel(r.Context(), id)
 	switch {
 	case err == nil:
-		http.Redirect(w, r, "/settings?notified="+url.QueryEscape(id)+"#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications?notified="+url.QueryEscape(id), http.StatusSeeOther)
 	case errors.Is(err, store.ErrNotFound):
-		http.Redirect(w, r, "/settings#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications", http.StatusSeeOther)
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
 		s.log.Warn("can't read the notification channel's secrets", "error", err)
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
 			Alert: &fieldError{Text: "Nomad couldn't give the channel's secret, so no message was sent: " + err.Error()},
 		}})
 	default:
@@ -349,12 +361,12 @@ func (s *server) rotateNotification(w http.ResponseWriter, r *http.Request, sess
 				}
 			}
 		}
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{Secret: &signingSecretNotice{Name: name, Value: secret}}})
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{Secret: &signingSecretNotice{Name: name, Value: secret}}})
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, service.ErrNotAWebhook):
-		http.Redirect(w, r, "/settings#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications", http.StatusSeeOther)
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
 		s.log.Warn("can't keep the new signing secret", "error", err)
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{
 			Alert: &fieldError{Text: "Nomad couldn't keep the new secret, so the old one still works: " + err.Error()},
 		}})
 	default:
@@ -368,10 +380,10 @@ func (s *server) removeNotification(w http.ResponseWriter, r *http.Request, sess
 	err := s.svc.DeleteNotificationChannel(r.Context(), r.PathValue("id"))
 	switch {
 	case err == nil, errors.Is(err, store.ErrNotFound):
-		http.Redirect(w, r, "/settings#notifications", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/notifications", http.StatusSeeOther)
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
 		s.log.Warn("can't remove the notification channel's secrets", "error", err)
-		s.renderSettings(w, r, settingsData{Notifications: notificationsData{Alert: &fieldError{Text: err.Error()}}})
+		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{Alert: &fieldError{Text: err.Error()}}})
 	default:
 		s.serverError(w, "remove notification channel", err)
 	}
@@ -395,19 +407,29 @@ func sendsLine(events []string) string {
 	return strings.Join(parts, ", ")
 }
 
-// notificationsSection fills in the rows of the section and the notice the
-// request carries, keeping what the handler set.
-func (s *server) notificationsSection(r *http.Request, data notificationsData) (notificationsData, error) {
-	channels, err := s.svc.NotificationChannels(r.Context())
-	if err != nil {
-		return data, err
+// kindIcon is the icon a channel's kind is drawn with.
+func kindIcon(kind string) string {
+	switch kind {
+	case notify.KindSlack:
+		return "hash"
+	case notify.KindDiscord:
+		return "message-square"
+	case notify.KindNtfy:
+		return "bell"
 	}
-	now := s.now()
-	data.Rows = make([]notificationRow, 0, len(channels))
-	for _, c := range channels {
+	return "webhook"
+}
+
+// notificationsSection fills in the rows of the page and the notice the request
+// carries, keeping what the handler set. The rows' marks are
+// notificationsState's, the same function the nav counts with; channels with a
+// problem come first, then the others by name.
+func notificationsSection(now time.Time, facts settingsFacts, st entryState, data notificationsData) notificationsData {
+	data.Rows = make([]notificationRow, 0, len(facts.Channels))
+	for i, c := range facts.Channels {
 		row := notificationRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), Address: c.Address,
-			Paused: c.Paused, HasToken: c.HasToken, Sends: sendsLine(c.Events),
+			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), Address: c.Address, Icon: kindIcon(c.Kind),
+			Mark: st.Rows[i], Paused: c.Paused, HasToken: c.HasToken, Sends: sendsLine(c.Events),
 		}
 		// A webhook's or ntfy topic's URL is shown, so it fills the edit form; a
 		// Slack or Discord URL is a secret, so that field starts empty.
@@ -420,11 +442,7 @@ func (s *server) notificationsSection(r *http.Request, data notificationsData) (
 			row.Edit.Kind = c.Kind
 		}
 
-		deliveries, err := s.svc.NotificationDeliveries(r.Context(), c.ID)
-		if err != nil {
-			return data, err
-		}
-		for _, d := range deliveries {
+		for _, d := range facts.Deliveries[c.ID] {
 			at := d.CreatedAt
 			if d.FinishedAt != nil {
 				at = *d.FinishedAt
@@ -442,13 +460,16 @@ func (s *server) notificationsSection(r *http.Request, data notificationsData) (
 				line.Detail = "queued"
 			}
 			row.Deliveries = append(row.Deliveries, line)
-			// The list is newest first, so the first one that ended is the last.
-			if row.Last == nil && d.Status != store.DeliveryPending {
-				row.Last = &lastDelivery{OK: line.OK, Kind: d.Status, When: line.When, Error: d.Error}
-			}
 		}
+		row.Last = lastOf(now, facts.Deliveries[c.ID])
 		data.Rows = append(data.Rows, row)
 	}
+	slices.SortStableFunc(data.Rows, func(a, b notificationRow) int {
+		if d := markRank(a.Mark) - markRank(b.Mark); d != 0 {
+			return d
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	// The notice the redirect after a save or a test asks for.
 	switch {
@@ -472,5 +493,5 @@ func (s *server) notificationsSection(r *http.Request, data notificationsData) (
 	if data.Add.Kind == "" {
 		data.Add = notificationForm{Kind: notify.KindNtfy, Problems: true, DeployFailed: true}
 	}
-	return data, nil
+	return data
 }

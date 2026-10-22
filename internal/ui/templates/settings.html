@@ -1,32 +1,66 @@
-{{/* Settings (/settings): the 006 account page, inside the shell. Password, then API
-     tokens. Every form is a plain post; revoking asks first, in a <details>. */}}
+{{/* Settings (feature 021 page 3): one page per entry under a grouped nav, drawn by this
+     one template set. .Entry says which: account (/settings), registries, backup-storage,
+     notifications, tokens. Every form is a plain post; Edit, Remove and Revoke ask first, in a
+     <details>, so nothing needs script. A secret (a new token, a new signing secret) is drawn
+     once, in the response of the post that made it. No field of the page data holds any other
+     secret: a registry's password, a channel's URL or token and the backup destination's secret
+     key are write-only. The page's own layout and widths are in contracts/page3-settings.md. */}}
+{{define "page-class"}} cv-page-settings{{end}}
+
 {{define "content"}}
-<div class="flex flex-col gap-7">
-  <header class="cv-pagehead">
-    <h1 class="cv-headline">Signed in as <span class="font-mono">{{.Email}}</span>.</h1>
-  </header>
-
-  {{with .NewToken}}
-  <section aria-labelledby="new-token" class="flex flex-col gap-2">
-    <h2 id="new-token" class="cv-label">New token</h2>
-    <div class="cv-panel p-4 flex flex-col gap-3" role="status">
-      <p class="text-base text-fg-1">Token <span class="font-mono">{{.Name}}</span> is ready. Copy it now. It won't be shown again.</p>
-      <code class="cv-cmd" id="new-token-value">{{.Value}}</code>
-      <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="new-token-value" hidden>Copy token</button></div>
-      <p class="text-sm text-fg-3">Use it like this:</p>
-      {{if .ExampleID}}<code class="cv-cmd cv-cmd-quiet">curl \
-  -H "Authorization: Bearer {{.Value}}" \
-  {{$.Origin}}/v1/apps/{{.ExampleID}}</code>
-      {{else}}<code class="cv-cmd cv-cmd-quiet">curl \
-  -H "Authorization: Bearer {{.Value}}" \
-  {{$.Origin}}/v1/tokens</code>{{end}}
+<div class="cv-settings">
+  <nav aria-label="Settings" class="cv-snav">
+    <span class="cv-snav-title">Settings</span>
+    {{range .Nav}}
+    <div class="cv-snav-group">
+      {{with .Title}}<span class="cv-label cv-snav-label">{{.}}</span>{{end}}
+      {{range .Items}}
+      <a href="{{.Href}}" class="cv-snav-item"{{if .Current}} aria-current="page"{{end}}>{{icon .Icon 15}}<span class="cv-snav-text">{{.Label}}</span>{{if .Mark}}<span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.Why}}</span>{{else if .Count}}<span class="cv-snav-count">{{.Count}}</span>{{end}}</a>
+      {{end}}
     </div>
-  </section>
-  {{end}}
+    {{end}}
+  </nav>
+  <div class="cv-settings-main">
+    {{if eq .Entry "account"}}{{template "settings-account" .}}
+    {{else if eq .Entry "registries"}}{{template "settings-registries" .}}
+    {{else if eq .Entry "backup-storage"}}{{template "settings-backup-storage" .}}
+    {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
+    {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
+    {{end}}
+  </div>
+</div>
+{{end}}
 
-  <section aria-labelledby="password" class="flex flex-col gap-2">
-    <h2 id="password" class="cv-label">Password</h2>
-    <form method="post" action="/settings/password" class="cv-panel p-4 flex flex-col gap-4">
+{{/* srow-open and srow-close: a setting row (label and hint at the left, the controls at the
+     right) around whatever sits between them. Takes a setRow: srow "Label" "Hint" "input-id". */}}
+{{define "srow-open"}}<div class="cv-setrow">
+  <div class="cv-setrow-text">
+    {{if .For}}<label class="cv-setrow-label" for="{{.For}}">{{.Label}}</label>{{else}}<span class="cv-setrow-label">{{.Label}}</span>{{end}}
+    {{with .Hint}}<p class="cv-setrow-hint" id="{{$.For}}-hint">{{.}}</p>{{end}}
+  </div>
+  <div class="cv-setrow-ctl">{{end}}
+{{define "srow-close"}}</div>
+</div>{{end}}
+
+{{/* ---------------------------------------------------------------- Account */}}
+{{define "settings-account"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Account</h1>
+    <p class="cv-lede">Who you are on this caravana, and your password.</p>
+  </div>
+</header>
+<div class="cv-panel">
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Email</span>
+      <p class="cv-setrow-hint">The one admin. Teams come later.</p>
+    </div>
+    <div class="cv-setrow-ctl"><span class="cv-setrow-value">{{.Email}}</span></div>
+  </div>
+  <form method="post" action="/settings/password" class="cv-setrow">
+    <div class="cv-setrow-text"><h2 class="cv-setrow-label" id="password-label">Password</h2></div>
+    <div class="cv-setrow-ctl">
       {{if .PasswordChanged}}
       <div role="status" class="cv-notice">
         <span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>
@@ -43,323 +77,419 @@
         <input class="cv-field cv-field-mono" type="password" name="newPassword" autocomplete="new-password" minlength="12" required{{if .NewErr}} autofocus aria-invalid="true" aria-describedby="new-error"{{else}} aria-describedby="new-hint"{{end}}>
         {{with .NewErr}}<span id="new-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="new-hint" class="cv-data-muted">At least 12 characters.</span>{{end}}
       </label>
-      <div><button type="submit" class="cv-btn cv-btn-primary">Change password</button></div>
-    </form>
-  </section>
-
-  <section aria-labelledby="tokens" class="flex flex-col gap-2">
-    <h2 id="tokens" class="cv-label">API tokens</h2>
-    <div class="cv-panel">
-      {{range .Tokens}}
-      <div class="cv-row cv-token-row">
-        <div class="min-w-0">
-          <div class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Name}}</div>
-          <dl class="cv-data-muted mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5">
-            <div class="flex gap-1.5"><dt>created</dt><dd title="{{.Created.Exact}}">{{.Created.Text}}</dd></div>
-            {{with .Scope}}<div class="flex gap-1.5"><dt>scope</dt><dd>{{.}}</dd></div>{{end}}
-            <div class="flex gap-1.5"><dt>used</dt><dd{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}>{{.LastUsed.Text}}</dd></div>
-            {{if eq .State "revoked"}}<div class="flex gap-1.5"><dt>revoked</dt><dd title="{{.Revoked.Exact}}">{{.Revoked.Text}}</dd></div>
-            {{else if eq .State "expired"}}<div class="flex gap-1.5"><dt>expired</dt><dd title="{{.Expires.Exact}}">{{.Expires.Text}}</dd></div>
-            {{else}}<div class="flex gap-1.5"><dt>expires</dt><dd{{if .Expires.Exact}} title="{{.Expires.Exact}}"{{end}}>{{.Expires.Text}}</dd></div>{{end}}
-          </dl>
-        </div>
-        <div>
-          {{if eq .State "active"}}<span class="cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>active</span>
-          {{else if eq .State "expired"}}<span class="cv-pill cv-pill-idle"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span>expired</span>
-          {{else}}<span class="cv-pill cv-pill-failed"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span>revoked</span>{{end}}
-        </div>
-        <div>
-          {{if eq .State "active"}}
-          <details class="cv-confirm cv-confirm-row">
-            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Revoke token {{.Name}}">Revoke</summary>
-            <form method="post" action="/settings/tokens/{{.ID}}/revoke" class="cv-confirm-body">
-              <p>This token can't be used again. Anything that still uses it will be refused.</p>
-              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Revoke token</button></div>
-            </form>
-          </details>
-          {{end}}
-        </div>
-      </div>
-      {{else}}
-      <p class="px-3 py-4 text-sm leading-normal text-fg-3">No API tokens yet. Create one below, or on the host with <code class="cv-data">caravana admin create-token --name ci</code>.</p>
-      {{end}}
-
-      <form method="post" action="/settings/tokens" class="cv-row flex flex-col gap-4 p-4">
-        <div class="flex flex-wrap gap-4">
-          <label class="cv-fld min-w-[12rem] flex-1">
-            <span class="cv-label">Name</span>
-            <input class="cv-field cv-field-mono" type="text" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="name-error"{{else}} aria-describedby="name-hint"{{end}}>
-            {{with .NameErr}}<span id="name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="name-hint" class="cv-data-muted">Where it is used, e.g. ci-github.</span>{{end}}
-          </label>
-          <label class="cv-fld">
-            <span class="cv-label">Expires (optional)</span>
-            <input class="cv-field cv-field-mono" type="date" name="expires" value="{{.TokenExpires}}"{{if .ExpiresErr}} autofocus aria-invalid="true" aria-describedby="expires-error"{{else}} aria-describedby="expires-hint"{{end}}>
-            {{with .ExpiresErr}}<span id="expires-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span id="expires-hint" class="cv-data-muted">End of that day, UTC.</span>{{end}}
-          </label>
-        </div>
-        {{/* A deploy token (feature 020): an app name makes it one. The details stays open when something about it is wrong. */}}
-        <details class="cv-confirm"{{if .Scope.Open}} open{{end}}>
-          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Only for one app</summary>
-          <div class="cv-confirm-body">
-            <p>A token for CI. It can deploy this app in every environment of its project, read its deployments and promote it, and nothing else. The app doesn't have to exist yet.</p>
-            <div class="flex flex-wrap gap-4">
-              {{if .Scope.Projects}}
-              <label class="cv-fld min-w-[12rem]">
-                <span class="cv-label">Project</span>
-                <select class="cv-field cv-select" name="scopeProject"{{if .Scope.ProjErr}} aria-invalid="true" aria-describedby="scope-project-error"{{end}}>
-                  {{range .Scope.Projects}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
-                </select>
-                {{with .Scope.ProjErr}}<span id="scope-project-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
-              </label>
-              {{end}}
-              <label class="cv-fld min-w-[12rem] flex-1">
-                <span class="cv-label">App name</span>
-                <input class="cv-field cv-field-mono" type="text" name="scopeApp" value="{{.Scope.App}}" maxlength="63" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Scope.AppErr}} aria-invalid="true" aria-describedby="scope-app-error"{{end}}>
-                {{with .Scope.AppErr}}<span id="scope-app-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span class="cv-data-muted">The app's name, like <span class="cv-inline-mono">web</span>. Leave it empty for a token that can do everything.</span>{{end}}
-              </label>
-            </div>
-          </div>
-        </details>
-        <div><button type="submit" class="cv-btn cv-btn-secondary">Create token</button></div>
-      </form>
+      <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Change password</button>
     </div>
-  </section>
-
-  {{/* Backup destination (feature 010): one S3-compatible bucket for every database. The
-       secret key is never shown; an empty field keeps the saved one. */}}
-  <section id="backup-destination" aria-labelledby="backups" class="flex flex-col gap-2">
-    <h2 id="backups" class="cv-label">Backup destination</h2>
-    {{with .Dest}}
-    <form method="post" action="/settings/backups" class="cv-panel p-4 flex flex-col gap-4" autocomplete="off">
-      {{if .Saved}}
-      <div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved. Every database's next backup goes here.</span></div>
-      {{end}}
-      {{if and .Err (not .Field)}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></div>{{end}}
-      <p class="text-sm text-fg-3">An S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, or one you run. Databases with a backup policy are dumped there on their schedule.</p>
-      <div class="flex flex-wrap gap-4">
-        {{template "dest-field" (destField . "endpoint" "Endpoint" .Endpoint "https://s3.eu-west-1.amazonaws.com")}}
-        {{template "dest-field" (destField . "region" "Region" .Region "us-east-1")}}
-      </div>
-      <div class="flex flex-wrap gap-4">
-        {{template "dest-field" (destField . "bucket" "Bucket" .Bucket "")}}
-        {{template "dest-field" (destField . "prefix" "Prefix (optional)" .Prefix "caravana")}}
-      </div>
-      <div class="flex flex-wrap gap-4">
-        {{template "dest-field" (destField . "accessKeyId" "Access key ID" .AccessKeyID "")}}
-        <label class="cv-fld min-w-[12rem] flex-1">
-          <span class="cv-label">Secret access key</span>
-          <input class="cv-field cv-field-mono" type="password" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secret-error"{{end}}>
-          {{if eq .Field "secretAccessKey"}}<span id="dest-secret-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></span>
-          {{else if .HasSecret}}<span class="cv-data-muted">Saved. Leave it empty to keep it.</span>{{end}}
-        </label>
-      </div>
-      <div><button type="submit" class="cv-btn cv-btn-secondary">Save destination</button></div>
-    </form>
-    {{end}}
-  </section>
-
-  {{/* Registries (feature 017): credentials for private images. The password is write-only:
-       no field of the page data holds it, and an empty field keeps the stored one. Test, Edit
-       and Remove sit on each row; Edit and Remove open a <details>, so none needs script. */}}
-  <section id="registries" aria-labelledby="registries-heading" class="flex flex-col gap-2">
-    <h2 id="registries-heading" class="cv-label">Registries</h2>
-    {{with .Registries}}
-    <p class="text-sm text-fg-3">Credentials Caravana uses to read private images. Use a token that can only read images: it reaches each private app's own container as <span class="font-mono">CARAVANA_REGISTRY_USERNAME</span> and <span class="font-mono">CARAVANA_REGISTRY_PASSWORD</span>.</p>
-    {{with .Notice}}
-    {{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
-    {{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
-    {{end}}
-    {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
-
-    <div class="cv-panel">
-      {{if .Rows}}
-      <div class="overflow-x-auto">
-      <table class="w-full text-left">
-        <thead>
-          <tr class="border-b border-line-1">
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Registry</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium">User</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Last check</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {{range $i, $row := .Rows}}
-          <tr class="cv-row align-top">
-            <td class="px-4 py-3"><span class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Host}}</span></td>
-            <td class="px-4 py-3"><span class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Username}}</span></td>
-            <td class="px-4 py-3">
-              {{with .Check}}
-              {{if .OK}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span title="{{.When.Exact}}">works, {{.When.Text}}</span></span>
-              {{else}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span title="{{.When.Exact}}">refused, {{.When.Text}}</span></span>
-              {{if .Message}}<span class="cv-data-muted mt-1 block [overflow-wrap:anywhere]">{{.Message}}</span>{{end}}{{end}}
-              {{else}}<span class="cv-data-muted">not checked yet</span>{{end}}
-            </td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap items-start justify-end gap-2">
-                <form method="post" action="/settings/registries/{{.Host}}/test">
-                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test credentials for {{.Host}}">Test</button>
-                </form>
-                <details class="cv-confirm"{{if .Open}} open{{end}}>
-                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit credentials for {{.Host}}">Edit</summary>
-                  <form method="post" action="/settings/registries" class="cv-confirm-body" autocomplete="off">
-                    <input type="hidden" name="host" value="{{.Host}}">
-                    <input type="hidden" name="edit" value="1">
-                    {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "username" "User name" "" "")}}
-                    {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "password" "Password or token" "" "Leave empty to keep the current one.")}}
-                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
-                  </form>
-                </details>
-                <details class="cv-confirm">
-                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove credentials for {{.Host}}">Remove</summary>
-                  <form method="post" action="/settings/registries/{{.Host}}/remove" class="cv-confirm-body">
-                    <p>Apps already running keep running. The next deploy of a private image from this registry fails until you add credentials again.</p>
-                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
-                  </form>
-                </details>
-              </div>
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-      </div>
-      {{else}}
-      <p class="px-4 py-4 text-sm leading-normal text-fg-3">No registries yet. Public images from any registry deploy without one.</p>
-      {{end}}
-
-      <form method="post" action="/settings/registries" class="cv-row flex flex-col gap-4 p-4" autocomplete="off">
-        <div class="flex flex-wrap gap-4">
-          {{template "registry-field" (regField .Add "registry-add" "host" "Registry" "ghcr.io" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub.")}}
-          {{template "registry-field" (regField .Add "registry-add" "username" "User name" "" "")}}
-          {{template "registry-field" (regField .Add "registry-add" "password" "Password or token" "" "")}}
-        </div>
-        <div><button type="submit" class="cv-btn cv-btn-primary">Save</button></div>
-      </form>
-    </div>
-    {{end}}
-  </section>
-
-  {{/* Notifications (feature 018): where Caravana tells the owner what needs them and how
-       deploys end. A channel's secrets (a Slack or Discord URL, an ntfy token, a webhook's
-       signing secret) are write-only: no field of the page data holds one, and an empty field
-       keeps the stored one. The signing secret shows once, in .Secret. Test, Pause and Resume
-       are plain posts; Edit, Remove and Recent deliveries are <details>, so none needs script. */}}
-  <section id="notifications" aria-labelledby="notifications-heading" class="flex flex-col gap-2">
-    <h2 id="notifications-heading" class="cv-label">Notifications</h2>
-    {{with .Notifications}}
-    <p class="text-sm text-fg-3">Caravana tells you when something needs you and when a deploy ends, even when nobody has this page open.</p>
-    {{with .Secret}}
-    <div class="cv-panel p-4 flex flex-col gap-2" role="status">
-      <p class="text-base text-fg-1">Signing secret for <span class="font-mono">{{.Name}}</span>: <span class="cv-data text-fg-1 select-all [overflow-wrap:anywhere]" id="new-signing-secret">{{.Value}}</span>. Copy it now: it isn't shown again. Receivers check each message's Caravana-Signature header with it.</p>
-    </div>
-    {{end}}
-    {{with .Notice}}
-    {{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
-    {{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
-    {{end}}
-    {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
-
-    <div class="cv-panel">
-      {{if .Rows}}
-      <div class="overflow-x-auto">
-      <table class="w-full text-left">
-        <thead>
-          <tr class="border-b border-line-1">
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Channel</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Sends</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Address</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium">Last delivery</th>
-            <th scope="col" class="cv-label px-4 py-3 font-medium"><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {{range $i, $row := .Rows}}
-          <tr class="cv-row align-top">
-            <td class="px-4 py-3">
-              <div class="cv-data text-fg-1 [overflow-wrap:anywhere]">{{.Name}}{{if .Paused}} <span class="cv-data-muted">paused</span>{{end}}</div>
-              <div class="cv-data-muted">{{.KindLabel}}</div>
-              <details class="mt-2">
-                <summary class="cv-data-muted cursor-pointer">Recent deliveries</summary>
-                {{if .Deliveries}}
-                <ul class="mt-1.5 flex flex-col gap-1.5">
-                  {{range .Deliveries}}
-                  <li class="text-sm text-fg-2">
-                    <span class="cv-data-muted" title="{{.When.Exact}}">{{.When.Text}}</span>
-                    <span class="text-fg-1 [overflow-wrap:anywhere]">{{.Title}}</span>
-                    <span class="inline-flex items-baseline gap-1.5">{{if .OK}}<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>{{else if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}<span class="[overflow-wrap:anywhere]">{{.Detail}}</span></span>
-                  </li>
-                  {{end}}
-                </ul>
-                {{else}}<p class="mt-1.5 text-sm text-fg-3">Nothing sent yet.</p>{{end}}
-              </details>
-            </td>
-            <td class="px-4 py-3 text-sm text-fg-1">{{.Sends}}</td>
-            <td class="px-4 py-3"><span class="cv-data-muted [overflow-wrap:anywhere]">{{.Address}}</span></td>
-            <td class="px-4 py-3">
-              {{with .Last}}
-              {{if .OK}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span title="{{.When.Exact}}">sent {{.When.Text}}</span></span>
-              {{else}}<span class="inline-flex items-baseline gap-2 text-sm text-fg-1"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span title="{{.When.Exact}}">failed {{.When.Text}}</span></span>
-              {{if .Error}}<span class="cv-data-muted mt-1 block [overflow-wrap:anywhere]">{{.Error}}</span>{{end}}{{end}}
-              {{else}}<span class="cv-data-muted">nothing sent yet</span>{{end}}
-            </td>
-            <td class="px-4 py-3">
-              <div class="flex flex-wrap items-start justify-end gap-2">
-                <form method="post" action="/settings/notifications/{{.ID}}/test">
-                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Send a test to {{.Name}}">Send a test</button>
-                </form>
-                <details class="cv-confirm"{{if .Open}} open{{end}}>
-                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
-                  <div class="cv-confirm-body">
-                    <form method="post" action="/settings/notifications/{{.ID}}" class="flex flex-col gap-4" autocomplete="off">
-                      {{template "notify-fields" (notifyForm .Edit (printf "notify-edit-%d" $i) true .Kind .HasToken)}}
-                      <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
-                    </form>
-                    {{if eq .Kind "webhook"}}
-                    <details class="cv-confirm">
-                      <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
-                      <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
-                        <p>The old secret stops working at once.</p>
-                        <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
-                      </form>
-                    </details>
-                    {{end}}
-                  </div>
-                </details>
-                <form method="post" action="/settings/notifications/{{.ID}}">
-                  <input type="hidden" name="paused" value="{{if .Paused}}0{{else}}1{{end}}">
-                  <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="{{if .Paused}}Resume{{else}}Pause{{end}} {{.Name}}">{{if .Paused}}Resume{{else}}Pause{{end}}</button>
-                </form>
-                <details class="cv-confirm">
-                  <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
-                  <form method="post" action="/settings/notifications/{{.ID}}/remove" class="cv-confirm-body">
-                    <p>Messages stop at once. Deliveries already listed are removed with it.</p>
-                    <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
-                  </form>
-                </details>
-              </div>
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-      </div>
-      {{else}}
-      <p class="px-4 py-4 text-sm leading-normal text-fg-3">No channels yet. Add ntfy, Slack, Discord or a webhook to hear about problems.</p>
-      {{end}}
-
-      <form method="post" action="/settings/notifications" class="cv-row flex flex-col gap-4 p-4" autocomplete="off">
-        {{template "notify-fields" (notifyForm .Add "notify-add" false "" false)}}
-        <div><button type="submit" class="cv-btn cv-btn-primary">Add channel</button></div>
-      </form>
-    </div>
-    {{end}}
-  </section>
+  </form>
 </div>
 {{end}}
 
-{{/* The inputs of a Notifications add or edit form. Takes a notifyFormView. An edit form
-     keeps the kind in a hidden input. A token or Slack or Discord URL never has a value. */}}
+{{/* ------------------------------------------------------------- Registries
+     Credentials for private images (feature 017). The password is write-only: no field of the
+     page data holds it, and an empty field keeps the stored one. Test is a post; Edit and
+     Remove open a <details>. "Update password" on a refused row is a link to this page with
+     that row's Edit open. */}}
+{{define "settings-registries"}}
+{{with .Registries}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Registries</h1>
+    <p class="cv-lede">Credentials Caravana uses to read private images.</p>
+  </div>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add registry</a>
+</header>
+<p class="cv-hint">Use a token that can only read images: it reaches each private app's own container as <span class="cv-inline-mono">CARAVANA_REGISTRY_USERNAME</span> and <span class="cv-inline-mono">CARAVANA_REGISTRY_PASSWORD</span>.</p>
+{{with .Notice}}
+{{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+{{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+{{if .Rows}}
+<div class="cv-panel cv-conns">
+  {{range $i, $row := .Rows}}
+  <div class="cv-conn">
+    <div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Host}}">{{.Host}}</span>
+        <span class="cv-conn-kind">user <span class="cv-inline-mono">{{.Username}}</span></span>
+      </div>
+      <div class="cv-conn-state">
+        {{with .Check}}
+        {{if .OK}}<span class="cv-conn-st" title="{{.When.Exact}}">works · tested {{.When.Text}}</span>
+        {{else}}<span class="cv-conn-st cv-conn-st-failed" title="{{.When.Exact}}">refused · tested {{.When.Text}}</span>{{end}}
+        {{else}}<span class="cv-conn-st">not tested yet</span>{{end}}
+      </div>
+      <span class="cv-conn-used">{{.UsedBy}}</span>
+      <div class="cv-conn-acts">
+        {{if eq .Mark "failed"}}<a href="{{.EditHref}}" class="cv-btn cv-btn-primary cv-btn-sm">Update password</a>{{end}}
+        <form method="post" action="/settings/registries/{{.Host}}/test">
+          <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test credentials for {{.Host}}">Test</button>
+        </form>
+        <details class="cv-confirm cv-confirm-row" id="registry-edit-{{$i}}" name="conn-{{$i}}"{{if .Open}} open{{end}}>
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit credentials for {{.Host}}">Edit</summary>
+          <form method="post" action="/settings/registries" class="cv-confirm-body" autocomplete="off">
+            <input type="hidden" name="host" value="{{.Host}}">
+            <input type="hidden" name="edit" value="1">
+            {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "username" "User name" "" "")}}
+            {{template "registry-field" (regField .Edit (printf "registry-edit-%d" $i) "password" "Password or token" "" "Leave empty to keep the current one.")}}
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+          </form>
+        </details>
+        <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove credentials for {{.Host}}">Remove</summary>
+          <form method="post" action="/settings/registries/{{.Host}}/remove" class="cv-confirm-body">
+            <p>Apps already running keep running. The next deploy of a private image from this registry fails until you add credentials again.</p>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+          </form>
+        </details>
+      </div>
+    </div>
+    {{with .Check}}{{if and (not .OK) .Message}}<p class="cv-conn-note">{{.Message}}</p>{{end}}{{end}}
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">No registries yet. Public images from any registry deploy without one.</p>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add registry</a>
+</div></div>
+{{end}}
+
+<form method="post" action="/settings/registries" id="add" class="cv-panel" autocomplete="off">
+  {{template "srow-open" (srow "Registry" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub." "registry-add-host")}}
+  {{template "registry-input" (regField .Add "registry-add" "host" "Registry" "ghcr.io" "")}}
+  {{template "srow-close"}}
+  {{template "srow-open" (srow "User name" "" "registry-add-username")}}
+  {{template "registry-input" (regField .Add "registry-add" "username" "User name" "" "")}}
+  {{template "srow-close"}}
+  {{template "srow-open" (srow "Password or token" "" "registry-add-password")}}
+  {{template "registry-input" (regField .Add "registry-add" "password" "Password or token" "" "")}}
+  <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save</button>
+  {{template "srow-close"}}
+</form>
+{{end}}
+{{end}}
+
+{{/* ---------------------------------------------------------- Backup storage
+     One S3-compatible bucket (feature 010). The secret key is never shown; an empty field keeps
+     the saved one. The API has no delete of the destination, so there is no Remove. */}}
+{{define "settings-backup-storage"}}
+{{with .Dest}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Backup storage</h1>
+    <p class="cv-lede">One S3-compatible bucket for database and volume backups.</p>
+  </div>
+</header>
+{{if .Saved}}
+<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved. Every database's next backup goes here.</span></div>
+{{end}}
+{{if and .Err (not .Field)}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></div>{{end}}
+
+{{if .Row}}
+<div class="cv-panel cv-conns">
+  <details class="cv-conn"{{if .Open}} open{{end}}>
+    <summary class="cv-conn-row cv-conn-sum">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Row.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Row.Name}}">{{.Row.Name}}</span>
+        <span class="cv-conn-kind">{{.Row.Kind}}</span>
+      </div>
+      <div class="cv-conn-state"><span class="cv-conn-st{{if .Row.StateFailed}} cv-conn-st-failed{{end}}">{{.Row.State}}</span></div>
+      <span class="cv-conn-used">{{.Row.UsedBy}}</span>
+      <div class="cv-conn-acts"><span class="cv-btn cv-btn-sm cv-btn-secondary">Edit</span></div>
+    </summary>
+    <form method="post" action="/settings/backups" class="cv-conn-form" autocomplete="off">
+      {{template "dest-rows" .}}
+    </form>
+  </details>
+</div>
+{{else}}
+{{if .Problem}}
+<div class="cv-panel cv-banner">
+  <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+  <p class="cv-banner-text">No backup destination is set. Backups can't run until there is one.</p>
+</div>
+{{end}}
+<form method="post" action="/settings/backups" id="destination" class="cv-panel" autocomplete="off">
+  {{template "dest-rows" .}}
+</form>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* dest-rows: the destination form's setting rows and its Save. Takes the destinationForm. */}}
+{{define "dest-rows"}}
+{{template "srow-open" (srow "Endpoint" "AWS S3, Cloudflare R2, Backblaze B2, or one you run." "dest-endpoint")}}
+{{template "dest-input" (destField . "endpoint" "Endpoint" .Endpoint "https://s3.eu-west-1.amazonaws.com")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Region" "us-east-1 when the provider doesn't care." "dest-region")}}
+{{template "dest-input" (destField . "region" "Region" .Region "us-east-1")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Bucket" "" "dest-bucket")}}
+{{template "dest-input" (destField . "bucket" "Bucket" .Bucket "")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Prefix (optional)" "" "dest-prefix")}}
+{{template "dest-input" (destField . "prefix" "Prefix (optional)" .Prefix "caravana")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Access key ID" "" "dest-accessKeyId")}}
+{{template "dest-input" (destField . "accessKeyId" "Access key ID" .AccessKeyID "")}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Secret access key" "" "dest-secretAccessKey")}}
+<input class="cv-field cv-field-mono" type="password" id="dest-secretAccessKey" name="secretAccessKey" autocomplete="new-password"{{if eq .Field "secretAccessKey"}} autofocus aria-invalid="true" aria-describedby="dest-secretAccessKey-error"{{else if .HasSecret}} aria-describedby="dest-secretAccessKey-keep"{{end}}>
+{{if eq .Field "secretAccessKey"}}<span id="dest-secretAccessKey-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Err.Text}}</span></span>
+{{else if .HasSecret}}<span id="dest-secretAccessKey-keep" class="cv-data-muted">Leave it empty to keep the current one.</span>{{end}}
+<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save destination</button>
+{{template "srow-close"}}
+{{end}}
+
+{{/* ------------------------------------------------------------ Notifications
+     Where Caravana tells the owner what needs them and how deploys end (feature 018). A
+     channel's secrets (a Slack or Discord URL, an ntfy token, a webhook's signing secret) are
+     write-only: no field of the page data holds one, and an empty field keeps the stored one.
+     The signing secret shows once, in .Secret. Test, Pause and Resume are plain posts; Edit,
+     New signing secret, Remove and Recent deliveries are <details>. */}}
+{{define "settings-notifications"}}
+{{with .Notifications}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Notifications</h1>
+    <p class="cv-lede">Where Caravana tells you about problems and how deploys end.</p>
+  </div>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add channel</a>
+</header>
+{{with .Secret}}
+<div class="cv-panel cv-once" role="status">
+  <p class="cv-once-text">Signing secret for <span class="cv-inline-mono">{{.Name}}</span>. Copy it now: it isn't shown again. Receivers check each message's Caravana-Signature header with it.</p>
+  <div class="cv-once-row">
+    <code class="cv-once-value" id="new-signing-secret">{{.Value}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="new-signing-secret" hidden>Copy secret</button>
+  </div>
+</div>
+{{end}}
+{{with .Notice}}
+{{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+{{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+<section aria-labelledby="channels-heading" class="cv-pgsec">
+  <h2 id="channels-heading" class="cv-label">Channels</h2>
+  {{if .Rows}}
+  <div class="cv-panel cv-conns">
+    {{range $i, $row := .Rows}}
+    <div class="cv-conn">
+      <div class="cv-conn-row cv-conn-row-ch">
+        <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+        <span class="cv-conn-icon">{{icon .Icon 15}}</span>
+        <div class="cv-conn-name">
+          <span class="cv-conn-titlerow"><span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>{{if .Paused}}<span class="cv-conn-paused">paused</span>{{end}}</span>
+          <span class="cv-conn-addr" title="{{.Address}}">{{.Address}}</span>
+        </div>
+        <span class="cv-conn-kind" title="{{.Sends}}">{{.KindLabel}}</span>
+        <div class="cv-conn-state">
+          {{with .Last}}
+          {{if .OK}}<span class="cv-conn-st cv-conn-st-quiet" title="{{.When.Exact}}">sent {{.When.Text}}</span>
+          {{else}}<span class="cv-conn-st cv-conn-st-warn" title="{{.When.Exact}}">failed {{.When.Text}}</span>{{end}}
+          {{else}}<span class="cv-conn-st cv-conn-st-quiet">nothing sent yet</span>{{end}}
+        </div>
+        <div class="cv-conn-acts">
+          <form method="post" action="/settings/notifications/{{.ID}}/test">
+            <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Send a test to {{.Name}}">Send a test</button>
+          </form>
+          <form method="post" action="/settings/notifications/{{.ID}}">
+            <input type="hidden" name="paused" value="{{if .Paused}}0{{else}}1{{end}}">
+            <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="{{if .Paused}}Resume{{else}}Pause{{end}} {{.Name}}">{{if .Paused}}Resume{{else}}Pause{{end}}</button>
+          </form>
+          <details class="cv-confirm cv-confirm-row cv-confirm-wide" name="conn-{{$i}}"{{if .Open}} open{{end}}>
+            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
+            <form method="post" action="/settings/notifications/{{.ID}}" class="cv-confirm-body" autocomplete="off">
+              {{template "notify-fields" (notifyForm .Edit (printf "notify-edit-%d" $i) true .Kind .HasToken)}}
+              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+            </form>
+          </details>
+          {{if eq .Kind "webhook"}}
+          <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
+            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
+            <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
+              <p>The old secret stops working at once.</p>
+              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
+            </form>
+          </details>
+          {{end}}
+          <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
+            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
+            <form method="post" action="/settings/notifications/{{.ID}}/remove" class="cv-confirm-body">
+              <p>Messages stop at once. Deliveries already listed are removed with it.</p>
+              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+            </form>
+          </details>
+        </div>
+      </div>
+      {{with .Last}}{{if and (not .OK) .Error}}<p class="cv-conn-note">{{.Error}}</p>{{end}}{{end}}
+      <details class="cv-conn-deliveries">
+        <summary class="cv-data-muted">Recent deliveries</summary>
+        {{if .Deliveries}}
+        <ul class="cv-deliveries">
+          {{range .Deliveries}}
+          <li>
+            <span class="cv-data-muted" title="{{.When.Exact}}">{{.When.Text}}</span>
+            <span class="text-fg-1 [overflow-wrap:anywhere]">{{.Title}}</span>
+            <span class="inline-flex items-baseline gap-1.5">{{if .OK}}<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>{{else if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}<span class="[overflow-wrap:anywhere]">{{.Detail}}</span></span>
+          </li>
+          {{end}}
+        </ul>
+        {{else}}<p class="cv-deliveries-none">Nothing sent yet.</p>{{end}}
+      </details>
+    </div>
+    {{end}}
+  </div>
+  <p class="cv-foot">Every channel gets what needs you and how deploys end, as ticked in its form. Repeats of the same problem are sent once.</p>
+  {{else}}
+  <div class="cv-panel"><div class="cv-empty">
+    <p class="cv-empty-title">No channels yet. Add one and Caravana tells you when something needs you.</p>
+    <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add channel</a>
+  </div></div>
+  {{end}}
+</section>
+
+<form method="post" action="/settings/notifications" id="add" class="cv-panel" autocomplete="off">
+  {{template "notify-rows" (notifyForm .Add "notify-add" false "" false)}}
+</form>
+{{end}}
+{{end}}
+
+{{/* ----------------------------------------------------------------- API tokens
+     Full tokens and deploy tokens (feature 020). A token's value is shown once, in .NewToken,
+     in the response of the post that made it; a list never has one. */}}
+{{define "settings-tokens"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">API tokens</h1>
+    <p class="cv-lede">For CI, scripts and <span class="cv-inline-mono">caravana mcp</span>. A token can do everything, or deploy one app.</p>
+  </div>
+  <a href="#new" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}New token</a>
+</header>
+
+{{with .NewToken}}
+<div class="cv-panel cv-once" role="status">
+  <p class="cv-once-text">Copy <span class="cv-inline-mono">{{.Name}}</span> now. Caravana only keeps a hash and can't show it again.</p>
+  <div class="cv-once-row">
+    <code class="cv-once-value" id="new-token-value">{{.Value}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="new-token-value" hidden>Copy token</button>
+  </div>
+  {{if .ExampleID}}<code class="cv-cmd cv-cmd-quiet">curl \
+  -H "Authorization: Bearer {{.Value}}" \
+  {{$.Origin}}/v1/apps/{{.ExampleID}}</code>
+  {{else}}<code class="cv-cmd cv-cmd-quiet">curl \
+  -H "Authorization: Bearer {{.Value}}" \
+  {{$.Origin}}/v1/tokens</code>{{end}}
+</div>
+{{end}}
+
+{{if .Tokens}}
+<div class="cv-panel cv-conns">
+  <div class="cv-thead" aria-hidden="true">
+    <span></span><span class="cv-label">Token</span><span class="cv-label">Can do</span><span class="cv-label">Last used</span><span class="cv-label">Expiry</span><span></span>
+  </div>
+  {{range .Tokens}}
+  <div class="cv-conn">
+    <div class="cv-conn-row cv-conn-row-tok">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>
+        <span class="cv-conn-meta" title="{{.Made.Exact}}">made {{.Made.Text}}</span>
+      </div>
+      <span class="cv-tok-cando">{{.CanDo}}</span>
+      <span class="cv-conn-meta"{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}><span class="sr-only">Last used </span>{{.LastUsed.Text}}</span>
+      <span class="cv-conn-meta{{if .ExpiryWarn}} cv-conn-st-warn{{end}}"{{if .Exact}} title="{{.Exact}}"{{end}}>{{.Expiry}}</span>
+      <div class="cv-conn-acts">
+        {{if eq .State "active"}}
+        <details class="cv-confirm cv-confirm-row">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Revoke token {{.Name}}">Revoke</summary>
+          <form method="post" action="/settings/tokens/{{.ID}}/revoke" class="cv-confirm-body">
+            <p>This token can't be used again. Anything that still uses it will be refused.</p>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Revoke token</button></div>
+          </form>
+        </details>
+        {{end}}
+      </div>
+    </div>
+    {{range .Notes}}<p class="cv-conn-note">{{.}}</p>{{end}}
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">No API tokens yet.</p>
+  <p class="cv-empty-text">Make one below, or on the host with <span class="cv-inline-mono">caravana admin create-token --name ci</span>.</p>
+</div></div>
+{{end}}
+
+<form method="post" action="/settings/tokens" id="new" class="cv-panel" autocomplete="off">
+  {{template "srow-open" (srow "Name" "Where it is used, e.g. ci-github." "token-name")}}
+  <input class="cv-field cv-field-mono" type="text" id="token-name" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="token-name-error"{{else}} aria-describedby="token-name-hint"{{end}}>
+  {{with .NameErr}}<span id="token-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+  {{template "srow-close"}}
+  {{template "srow-open" (srow "Expires (optional)" "End of that day, UTC." "token-expires")}}
+  <input class="cv-field cv-field-mono" type="date" id="token-expires" name="expires" value="{{.TokenExpires}}"{{if .ExpiresErr}} autofocus aria-invalid="true" aria-describedby="token-expires-error"{{else}} aria-describedby="token-expires-hint"{{end}}>
+  {{with .ExpiresErr}}<span id="token-expires-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+  {{template "srow-close"}}
+  {{/* A deploy token (feature 020): an app name makes it one. */}}
+  {{template "srow-open" (srow "Only for one app" "A token for CI. It can deploy this app in every environment of its project, read its deployments and promote it, and nothing else. The app doesn't have to exist yet." "token-app")}}
+  {{if .Scope.Projects}}
+  <label class="cv-fld">
+    <span class="cv-label">Project</span>
+    <select class="cv-field cv-select" name="scopeProject"{{if .Scope.ProjErr}} aria-invalid="true" aria-describedby="scope-project-error"{{end}}>
+      {{range .Scope.Projects}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    {{with .Scope.ProjErr}}<span id="scope-project-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+  </label>
+  {{end}}
+  <label class="cv-fld">
+    <span class="cv-label">App name</span>
+    <input class="cv-field cv-field-mono" type="text" id="token-app" name="scopeApp" value="{{.Scope.App}}" maxlength="63" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Scope.AppErr}} aria-invalid="true" aria-describedby="scope-app-error"{{end}}>
+    {{with .Scope.AppErr}}<span id="scope-app-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{else}}<span class="cv-data-muted">The app's name, like <span class="cv-inline-mono">web</span>. Leave it empty for a token that can do everything.</span>{{end}}
+  </label>
+  <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Create token</button>
+  {{template "srow-close"}}
+</form>
+{{end}}
+
+{{/* notify-rows: the add form's setting rows. Takes a notifyFormView. A token or Slack or
+     Discord URL never has a value. */}}
+{{define "notify-rows"}}
+{{template "srow-open" (srow "Kind" "" (print .Prefix "-kind"))}}
+<select class="cv-field cv-select" id="{{.Prefix}}-kind" name="kind">{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+{{template "srow-close"}}
+{{template "srow-open" (srow "Name" "" (print .Prefix "-name"))}}
+<input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-name" name="name" value="{{.Form.Name}}" placeholder="phone" maxlength="80" autocapitalize="off" spellcheck="false"{{with .Error "name"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-name-error"{{end}}>
+{{with .Error "name"}}<span id="{{$.Prefix}}-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "URL" .URLHint (print .Prefix "-url"))}}
+<input class="cv-field cv-field-mono" type="text" id="{{.Prefix}}-url" name="url" value="{{.Form.URL}}" autocapitalize="off" spellcheck="false" autocomplete="off"{{with .Error "url"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-url-error"{{else}}{{if .URLHint}} aria-describedby="{{.Prefix}}-url-hint"{{end}}{{end}}>
+{{with .Error "url"}}<span id="{{$.Prefix}}-url-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "ntfy access token" .TokenHint (print .Prefix "-token"))}}
+<input class="cv-field cv-field-mono" type="password" id="{{.Prefix}}-token" name="token" autocomplete="new-password"{{with .Error "token"}} autofocus aria-invalid="true" aria-describedby="{{$.Prefix}}-token-error"{{else}} aria-describedby="{{.Prefix}}-token-hint"{{end}}>
+{{with .Error "token"}}<span id="{{$.Prefix}}-token-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{template "srow-close"}}
+{{template "srow-open" (srow "Send" "" "")}}
+<fieldset class="cv-fieldset flex flex-col gap-2"{{with .Error "events"}} aria-invalid="true" aria-describedby="{{$.Prefix}}-events-error"{{end}}>
+  <legend class="sr-only">Send</legend>
+  <label class="cv-check"><input type="checkbox" name="events" value="problems"{{if .Form.Problems}} checked{{end}}><span>Problems (opened and resolved)</span></label>
+  <label class="cv-check"><input type="checkbox" name="events" value="deploy_failed"{{if .Form.DeployFailed}} checked{{end}}><span>Failed deploys</span></label>
+  <label class="cv-check"><input type="checkbox" name="events" value="deploy_succeeded"{{if .Form.DeploySucceeded}} checked{{end}}><span>Successful deploys</span></label>
+  {{with .Error "events"}}<span id="{{$.Prefix}}-events-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+</fieldset>
+<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Add channel</button>
+{{template "srow-close"}}
+{{end}}
+
+{{/* The inputs of a Notifications edit form (in a row's confirmation). Takes a notifyFormView.
+     An edit form keeps the kind in a hidden input. A token or Slack or Discord URL never has a
+     value. */}}
 {{define "notify-fields"}}
 {{if .Editing}}<input type="hidden" name="kind" value="{{.Kind}}">
 {{else}}
@@ -396,8 +526,8 @@
 </fieldset>
 {{end}}
 
-{{/* One input of a Registries form. Takes a registryFieldView. The password input never
-     has a value; a refusal replaces the hint. */}}
+{{/* One input of a Registries confirmation form. Takes a registryFieldView. The password input
+     never has a value; a refusal replaces the hint. */}}
 {{define "registry-field"}}
 <label class="cv-fld min-w-[12rem] flex-1">
   <span class="cv-label">{{.Label}}</span>
@@ -407,11 +537,15 @@
 </label>
 {{end}}
 
-{{/* One text field of the destination form. Takes a destFieldView. */}}
-{{define "dest-field"}}
-<label class="cv-fld min-w-[12rem] flex-1">
-  <span class="cv-label">{{.Label}}</span>
-  <input class="cv-field cv-field-mono" type="text" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
-  {{with .Err}}<span id="dest-{{$.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
-</label>
+{{/* registry-input: the input of a Registries add row, its label and hint being the row's.
+     Takes a registryFieldView. */}}
+{{define "registry-input"}}
+<input class="cv-field cv-field-mono" type="{{.Type}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Type "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Type "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}>
+{{with .Err}}<span id="{{$.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
+{{end}}
+
+{{/* dest-input: a text input of the destination form, its label being the row's. Takes a destFieldView. */}}
+{{define "dest-input"}}
+<input class="cv-field cv-field-mono" type="text" id="dest-{{.Name}}" name="{{.Name}}" value="{{.Value}}"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false"{{if .Err}} autofocus aria-invalid="true" aria-describedby="dest-{{.Name}}-error"{{end}}>
+{{with .Err}}<span id="dest-{{$.Name}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 {{end}}

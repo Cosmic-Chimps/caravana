@@ -12,6 +12,10 @@ import (
 // api/openapi.yaml that do the same thing, or, for a route that reads and
 // changes nothing, why (every page of chrome has a reason, so an entry with
 // no operation and no reason is a mistake, not a decision).
+// settingsReads are what every Settings page reads for its nav.
+var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
+	"getBackupDestination", "listApps", "listBackups"}
+
 type parity struct {
 	ops []string
 	why string
@@ -30,8 +34,16 @@ var consoleParity = map[string]parity{
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
 	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
-	"GET /settings": {ops: []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries"}},
-	"GET /apps":     {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
+	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
+	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
+	"GET /settings":                {ops: settingsReads},
+	"GET /settings/account":        {why: "a redirect to /settings"},
+	"GET /settings/registries":     {ops: settingsReads},
+	"GET /settings/backup-storage": {ops: settingsReads},
+	"GET /settings/notifications":  {ops: settingsReads},
+	"GET /settings/tokens":         {ops: append([]string{"listProjects"}, settingsReads...)},
+	"GET /apps":                    {ops: []string{"listProjects", "listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).

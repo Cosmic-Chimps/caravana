@@ -661,3 +661,125 @@
   .cv-brun-act { grid-column: 3; grid-row: 1; }
   .cv-brun-fact { grid-column: 2; }
 }
+
+/* ---------------------------------------------------------------------------
+   Page 3 (feature 021): Settings, one page per entry under a grouped nav. The values are
+   contracts/page3-settings.md's. The main column is a container, so rows narrow by the room
+   they have; under 900px the nav becomes a row of links above the content.
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* The page has no padding of its own: the nav runs edge to edge under the top bar. */
+  .cv-page-settings { max-width: none; margin: 0; padding: 0; display: block; }
+  .cv-settings { display: grid; grid-template-columns: 232px minmax(0, 1fr); align-items: start; }
+
+  .cv-snav { position: sticky; top: 52px; height: calc(100vh - 52px); overflow: auto; display: flex; flex-direction: column; gap: 20px; padding: 28px 12px; border-right: 1px solid var(--color-line-1); }
+  .cv-snav-title { padding: 0 10px; font: 500 18px/1 var(--font-sans); color: var(--color-fg-1); }
+  .cv-snav-group { display: flex; flex-direction: column; gap: 2px; }
+  .cv-snav-label { padding: 0 10px 8px; }
+  .cv-snav-item { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 4px; color: var(--color-fg-2); font: 400 14px/1 var(--font-sans); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-snav-item .cv-icon { width: 15px; color: var(--color-fg-3); }
+  .cv-snav-item:hover, .cv-snav-item[aria-current="page"] { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-snav-item[aria-current="page"] .cv-icon { color: var(--color-fg-1); }
+  .cv-snav-text { flex: 1; min-width: 0; }
+  .cv-snav-count { font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+
+  .cv-settings-main { container-type: inline-size; display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 1180px; min-width: 0; padding: 36px 32px 64px; }
+  .cv-sthead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  .cv-sthead-text { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; }
+
+  /* A 9px mark in the connection rows; the diamond is drawn smaller inside its box, as everywhere. */
+  .cv-mark-lg { width: 9px; height: 9px; }
+  .cv-mark-lg.cv-mark-warning { width: 7.02px; height: 7.02px; margin: 0.99px; }
+  .cv-mark-lg.cv-mark-rolling { border-width: 2px; }
+
+  /* Setting rows: the label and its hint at the left, the controls at the right. */
+  .cv-setrow { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; padding: 18px 20px; border-top: 1px solid var(--color-line-1); }
+  .cv-setrow:first-child { border-top: 0; }
+  .cv-setrow-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cv-setrow-label { font: 500 14px/1.2 var(--font-sans); color: var(--color-fg-1); }
+  .cv-setrow-hint { font: 400 13px/1.45 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-setrow-ctl { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+  .cv-setrow-ctl > .cv-field, .cv-setrow-ctl > .cv-fld { width: 100%; max-width: 360px; }
+  .cv-setrow-ctl > .cv-fieldset { width: 100%; }
+  .cv-setrow-value { font: 400 14px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+
+  /* Connection rows: mark, name over kind, state, used by, actions. Panels of them don't clip, so a
+     confirmation can open over the rows under it; the first and last row keep the panel's corners. */
+  .cv-conns { overflow: visible; }
+  .cv-conn { position: relative; border-top: 1px solid var(--color-line-1); }
+  .cv-conn:first-child { border-top: 0; border-radius: 5px 5px 0 0; }
+  .cv-conn:last-child { border-radius: 0 0 5px 5px; }
+  .cv-conn-row { display: grid; grid-template-columns: 14px minmax(0, 1.5fr) minmax(0, 1fr) 150px fit-content(48%); gap: 18px; align-items: center; min-height: 64px; padding: 10px 18px; }
+  .cv-conn-mark { display: grid; place-items: center; }
+  .cv-conn-name { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .cv-conn-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px/1.2 var(--font-mono); color: var(--color-fg-1); }
+  .cv-conn-titlerow { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .cv-conn-titlerow .cv-conn-title { flex: 0 1 auto; min-width: 0; }
+  .cv-conn-addr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-conn-paused { flex: none; font: 400 12px/1.2 var(--font-mono); color: var(--color-fg-3); }
+  .cv-conn-kind { font: 400 13px/1.3 var(--font-sans); color: var(--color-fg-3); }
+  .cv-conn-state { display: flex; flex-direction: column; gap: 3px; min-width: 0; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-conn-st { color: var(--color-fg-2); }
+  .cv-conn-st-quiet { color: var(--color-fg-3); }
+  .cv-conn-st-failed { color: var(--color-failed); }
+  .cv-conn-st-warn { color: var(--color-warn); }
+  .cv-conn-used, .cv-conn-meta { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-conn-acts { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 6px; }
+  .cv-conn-note { margin: 0; padding: 0 18px 14px 50px; font: 400 13px/1.5 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; overflow-wrap: anywhere; }
+  .cv-conn .cv-confirm-row .cv-confirm-body { right: 0; }
+  .cv-conn .cv-confirm-wide .cv-confirm-body { width: min(34rem, calc(100% - 24px)); max-width: none; }
+
+  /* The backup destination's row opens its form in place: the row is the summary. */
+  .cv-conn-sum { list-style: none; cursor: pointer; }
+  .cv-conn-sum::-webkit-details-marker { display: none; }
+  .cv-conn-sum:hover, .cv-conn[open] > .cv-conn-sum { background: var(--color-ink-2); }
+  .cv-conn-form { border-top: 1px solid var(--color-line-1); background: var(--color-ink-0); border-radius: 0 0 5px 5px; }
+
+  /* A channel's row has the kind's icon after the mark, and a narrower grid. */
+  .cv-conn-row-ch { grid-template-columns: 14px 20px minmax(8rem, 1fr) 90px 200px fit-content(46%); gap: 14px; min-height: 52px; padding-block: 8px; }
+  .cv-conn-icon { display: grid; place-items: center; color: var(--color-fg-3); }
+  .cv-conn-deliveries { padding: 0 18px 14px 50px; }
+  .cv-conn-deliveries > summary { cursor: pointer; }
+  .cv-deliveries { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+  .cv-deliveries li { font-size: 13px; line-height: 1.45; color: var(--color-fg-2); }
+  .cv-deliveries-none { margin: 8px 0 0; font-size: 13px; color: var(--color-fg-3); }
+
+  /* The token table: a head of labels, then rows on the same columns. */
+  .cv-thead, .cv-conn-row-tok { grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.2fr) 110px 150px 76px; gap: 18px; }
+  .cv-thead { display: grid; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-thead > .cv-label:last-of-type { grid-column: 5; }
+  .cv-conn-row-tok { min-height: 54px; padding-block: 8px; }
+  .cv-conns > .cv-thead + .cv-conn { border-top: 0; }
+  .cv-tok-cando { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+
+  /* A secret shown once: the sentence, the value in a box, then the example. */
+  .cv-once { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+  .cv-once-text { font-size: 14px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; }
+  .cv-once-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cv-once-value { flex: 1; min-width: 14rem; padding: 10px 12px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-0); font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); user-select: all; overflow-wrap: anywhere; }
+}
+
+/* The main column narrows by the room it has. */
+@container (max-width: 639.98px) {
+  .cv-setrow { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+@container (max-width: 759.98px) {
+  .cv-conn-row { grid-template-columns: 14px minmax(0, 1fr); row-gap: 8px; }
+  .cv-conn-row > :not(.cv-conn-mark) { grid-column: 2; }
+  .cv-conn-row-ch { grid-template-columns: 14px 20px minmax(0, 1fr); }
+  .cv-conn-row-ch > :not(.cv-conn-mark):not(.cv-conn-icon) { grid-column: 3; }
+  .cv-conn-row-ch > .cv-conn-icon { grid-column: 2; grid-row: 1; }
+  .cv-conn-acts { justify-content: flex-start; }
+  .cv-thead { display: none; }
+  .cv-conn .cv-confirm-row .cv-confirm-body { left: 0; right: auto; }
+}
+
+/* Under 900px the nav is a row of links above the content, scrolling sideways. */
+@media (max-width: 899.98px) {
+  .cv-settings { grid-template-columns: minmax(0, 1fr); }
+  .cv-snav { position: static; height: auto; flex-direction: row; align-items: center; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-snav-title, .cv-snav-label { display: none; }
+  .cv-snav-group { flex-direction: row; flex: none; }
+  .cv-snav-item { flex: none; white-space: nowrap; }
+  .cv-settings-main { padding: 24px 16px 40px; }
+}

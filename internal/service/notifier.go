@@ -176,7 +176,7 @@ func startedBy(t app.Trigger) string {
 func problemPath(kind AttentionKind, appID, deployment string) string {
 	switch kind {
 	case AttentionNoBackupDestination:
-		return "/settings#backup-destination"
+		return "/settings/backup-storage"
 	case AttentionDeployFailed:
 		return deploymentPath(appID, deployment)
 	case AttentionBackupFailed, AttentionRestoreFailed:

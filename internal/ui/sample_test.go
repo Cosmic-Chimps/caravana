@@ -281,7 +281,7 @@ func consolePages(t *testing.T, e *consoleEnv, ids ...string) map[string]string 
 		pages[name] = body
 		return body
 	}
-	for _, path := range []string{"/apps", "/apps/new", "/settings", "/parts/apps", "/parts/activity", "/apps?deleted=gone"} {
+	for _, path := range []string{"/apps", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens", "/parts/apps", "/parts/activity", "/apps?deleted=gone"} {
 		get(path, path)
 	}
 	for _, id := range append(append([]string{}, ids...), "nope") {
@@ -322,6 +322,9 @@ func formPages(t *testing.T, e *consoleEnv, id string) map[string]string {
 	post("new token", "/settings/tokens", url.Values{"name": {"ci"}})
 	post("password, errors", "/settings/password", url.Values{"currentPassword": {"x"}, "newPassword": {"y"}})
 	post("registry, errors", "/settings/registries", url.Values{"host": {"acme"}, "username": {"u"}})
+	post("backup destination, errors", "/settings/backups", url.Values{"endpoint": {"ftp://x"}, "region": {"r"}, "bucket": {"backups"}, "accessKeyId": {"AK"}})
+	post("new signing secret", "/settings/notifications", url.Values{"kind": {"webhook"}, "name": {"hook"}, "url": {"https://example.com/hook"}, "events": {"problems"}})
+	post("channel, errors", "/settings/notifications", url.Values{"kind": {"ntfy"}, "name": {""}, "url": {"nope"}})
 	return pages
 }
 

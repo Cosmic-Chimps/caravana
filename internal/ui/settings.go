@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,21 +13,35 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
+// Settings (feature 006, and 021 page 3): one page per entry under a grouped
+// nav. Account is /settings; Registries, Backup storage, Notifications and API
+// tokens have their own addresses. Every form posts to the path it always had
+// and a success answers 303 to its entry's page, where the notice is drawn from
+// a query flag. A shown-once secret (a new token, a new signing secret) is never
+// in a redirect or an address: the post answers 200 with the entry's page and the
+// secret drawn once, so a reload or a visit later doesn't have it.
+
 // fieldError is a sentence about one form field, shown under it.
 type fieldError struct{ Text string }
 
-// tokenRow is one API token in the list. Never the token's value.
+// tokenRow is one API token in the table. Never the token's value.
 type tokenRow struct {
 	ID       string
 	Name     string
-	State    string // active | expired | revoked: picks the mark and pill
-	Created  when
+	State    string // active | expired | revoked
+	Mark     string // healthy, warning or idle: tokensState's, the same the nav counts
+	Made     when
 	LastUsed when
-	Expires  when
-	Revoked  when
-	// Scope says what a deploy token is limited to ("app web of project shop");
-	// "" for a full token.
-	Scope string
+	// Expiry is the Expiry cell's words ("expires in 80 days", "never expires",
+	// "expired 3 days ago", "revoked 3 days ago"); ExpiryWarn says it is drawn in
+	// the warning hue (a full token that never expires).
+	Expiry     string
+	ExpiryWarn bool
+	Exact      string // the exact time behind Expiry, for a tooltip
+	// CanDo is "Everything" for a full token, or "Deploy · app web of project shop".
+	CanDo string
+	// Notes are the sentences under a row marked with a warning (tokenNotes).
+	Notes []string
 }
 
 // newToken is the token just created, shown once. ExampleID is the app a deploy
@@ -40,7 +55,6 @@ type newToken struct {
 // scopeForm is the "Only for one app" part of the new-token form: what was
 // typed, and what is wrong with it. Projects lists the projects to choose from.
 type scopeForm struct {
-	Open     bool // the <details> is open: something was typed, or something is wrong
 	Project  string
 	App      string
 	Projects []scopeProject
@@ -54,8 +68,13 @@ type scopeProject struct {
 	Selected  bool
 }
 
+// settingsData is every Settings page: Entry says which, and the fields of the
+// other entries stay empty. The handler of a refused form sets the fields of
+// its own entry; renderSettings fills in the rest.
 type settingsData struct {
 	pageData
+	Entry           string
+	Nav             []settingsNavGroup
 	Email           string
 	Origin          string // scheme://host, for the curl example
 	PasswordChanged bool
@@ -73,14 +92,27 @@ type settingsData struct {
 	Notifications   notificationsData
 }
 
-// destinationForm is the backup destination section: the saved destination
-// (or what was typed, after a refusal), never the secret key.
+// destinationForm is the Backup storage page: the saved destination (or what
+// was typed, after a refusal), never the secret key.
 type destinationForm struct {
 	Endpoint, Region, Bucket, Prefix, AccessKeyID string
 	HasSecret                                     bool // a secret key is kept: the field may stay empty
 	Saved                                         bool
 	Field                                         string // the field at fault, after a refusal
 	Err                                           *fieldError
+	// Row is the destination as the page's one connection row says it; nil when none is set.
+	Row *destRow
+	// Problem says no destination is set while a service has a backup policy.
+	Problem bool
+	// Open says the form under the row is shown open: it was refused.
+	Open bool
+}
+
+// destRow is the backup destination's connection row. Mark is backupStorageState's.
+type destRow struct {
+	Mark, Name, Kind, State string
+	StateFailed             bool
+	UsedBy                  string
 }
 
 // destFieldView is one text field of the destination form.
@@ -98,15 +130,28 @@ func destField(f destinationForm, name, label, value, placeholder string) destFi
 	return v
 }
 
-// showSettings answers GET /settings: the 006 account page, inside the console's shell.
+// setRow is the label and hint of a setting row, and the input the label is for
+// ("" when it labels no single input).
+type setRow struct{ Label, Hint, For string }
+
+// srowFor is the template function {{srow "Label" "Hint" "input-id"}}.
+func srowFor(label, hint, forID string) setRow { return setRow{Label: label, Hint: hint, For: forID} }
+
+// showSettings answers GET /settings: Account.
 func (s *server) showSettings(w http.ResponseWriter, r *http.Request, session string) {
-	data := settingsData{PasswordChanged: r.URL.Query().Get("password") == "changed"}
+	s.renderSettings(w, r, entryAccount, settingsData{PasswordChanged: r.URL.Query().Get("password") == "changed"})
+}
+
+// showBackupStorage answers GET /settings/backup-storage.
+func (s *server) showBackupStorage(w http.ResponseWriter, r *http.Request, session string) {
+	data := settingsData{}
 	data.Dest.Saved = r.URL.Query().Get("backups") == "saved"
-	data.Registries.Saved = r.URL.Query().Get("registries") == "saved"
-	data.Registries.Tested = r.URL.Query().Get("tested")
-	data.Notifications.Saved = r.URL.Query().Get("notifications") == "saved"
-	data.Notifications.Notified = r.URL.Query().Get("notified")
-	s.renderSettings(w, r, data)
+	s.renderSettings(w, r, entryBackupStorage, data)
+}
+
+// showTokens answers GET /settings/tokens.
+func (s *server) showTokens(w http.ResponseWriter, r *http.Request, session string) {
+	s.renderSettings(w, r, entryTokens, settingsData{})
 }
 
 // setBackupDestination answers POST /settings/backups (feature 010). An
@@ -126,10 +171,10 @@ func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, se
 	}
 	_, err := s.svc.SetBackupDestination(r.Context(), in)
 	if err == nil {
-		http.Redirect(w, r, "/settings?backups=saved#backups", http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/backup-storage?backups=saved", http.StatusSeeOther)
 		return
 	}
-	form := destinationForm{Endpoint: in.Endpoint, Region: in.Region, Bucket: in.Bucket, Prefix: in.Prefix, AccessKeyID: in.AccessKeyID}
+	form := destinationForm{Endpoint: in.Endpoint, Region: in.Region, Bucket: in.Bucket, Prefix: in.Prefix, AccessKeyID: in.AccessKeyID, Open: true}
 	if _, err := s.svc.GetBackupDestination(r.Context()); err == nil {
 		form.HasSecret = true
 	}
@@ -144,79 +189,174 @@ func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, se
 		s.serverError(w, "set backup destination", err)
 		return
 	}
-	s.renderSettings(w, r, settingsData{Dest: form})
+	s.renderSettings(w, r, entryBackupStorage, settingsData{Dest: form})
 }
 
-// renderSettings fills in what every Settings response shows (who, and the
-// token list) and writes it inside the shell, with Settings marked current.
-func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, data settingsData) {
-	email, err := s.auth.AdminEmail(r.Context())
-	if err != nil {
-		s.serverError(w, "read admin", err)
-		return
+// settingsFacts reads what the nav and the pages are decided from. Some tests
+// serve the account pages without a deploy service: then only the tokens are known.
+func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
+	var f settingsFacts
+	var err error
+	if f.Tokens, err = s.auth.ListAPITokens(ctx); err != nil {
+		return f, err
 	}
-	infos, err := s.auth.ListAPITokens(r.Context())
+	if s.svc == nil {
+		return f, nil
+	}
+	if f.Registries, err = s.svc.Registries(ctx); err != nil {
+		return f, err
+	}
+	if f.Channels, err = s.svc.NotificationChannels(ctx); err != nil {
+		return f, err
+	}
+	f.Deliveries = map[string][]store.Delivery{}
+	for _, c := range f.Channels {
+		if f.Deliveries[c.ID], err = s.svc.NotificationDeliveries(ctx, c.ID); err != nil {
+			return f, err
+		}
+	}
+	switch d, err := s.svc.GetBackupDestination(ctx); {
+	case err == nil:
+		f.Dest = &d
+	case !errors.Is(err, store.ErrNotFound):
+		return f, err
+	}
+	if f.LastBackup, err = s.svc.LastBackupRun(ctx); err != nil {
+		return f, err
+	}
+	f.Apps, err = s.svc.StoredApps(ctx)
+	return f, err
+}
+
+// renderSettings fills in what every Settings response shows (who, the nav with
+// its counts and marks, and the entry's own rows) and writes the page of entry
+// inside the shell, with Settings marked current.
+func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry string, data settingsData) {
+	facts, err := s.settingsFacts(r.Context())
 	if err != nil {
-		s.serverError(w, "list api tokens", err)
+		s.serverError(w, "read settings", err)
 		return
 	}
 	now := s.now()
-	head, err := s.shellPage(r, "Settings", navSettings, crumb{Label: "Settings"})
+	label := settingsLabel(entry)
+	head, err := s.shellPage(r, "Settings · "+label, navSettings, crumb{Label: "Settings", Href: "/settings"}, crumb{Label: label})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
 	}
+	states := facts.states(now)
 	data.pageData = head
-	data.Email = email
+	data.Entry = entry
+	data.Nav = settingsNav(entry, states)
+	data.Email = head.Shell.Email
 	data.Origin = s.origin(r)
-	// Some tests serve the account pages without a deploy service.
-	if data.Dest.Err == nil && s.svc != nil {
-		d, err := s.svc.GetBackupDestination(r.Context())
-		switch {
-		case err == nil:
-			data.Dest = destinationForm{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
-				AccessKeyID: d.AccessKeyID, HasSecret: true, Saved: data.Dest.Saved}
-		case !errors.Is(err, store.ErrNotFound):
-			s.serverError(w, "read backup destination", err)
-			return
+
+	switch entry {
+	case entryRegistries:
+		data.Registries = registriesSection(now, facts, states[entryRegistries], data.Registries)
+	case entryBackupStorage:
+		data.Dest = destinationSection(now, facts, states[entryBackupStorage], data.Dest)
+	case entryNotifications:
+		data.Notifications = notificationsSection(now, facts, states[entryNotifications], data.Notifications)
+	case entryTokens:
+		data.Tokens = tokenRows(now, facts.Tokens, states[entryTokens])
+		if s.svc != nil {
+			pl, err := s.loadPlaces(r.Context())
+			if err != nil {
+				s.serverError(w, "list projects", err)
+				return
+			}
+			data.Scope.Projects = nil
+			for _, pr := range pl.Projects {
+				data.Scope.Projects = append(data.Scope.Projects, scopeProject{ID: pr.ID, Label: pr.DisplayName, Selected: pr.ID == data.Scope.Project})
+			}
 		}
-	}
-	if s.svc != nil {
-		if data.Registries, err = s.registriesSection(r, data.Registries); err != nil {
-			s.serverError(w, "list registries", err)
-			return
-		}
-		if data.Notifications, err = s.notificationsSection(r, data.Notifications); err != nil {
-			s.serverError(w, "list notification channels", err)
-			return
-		}
-	}
-	if s.svc != nil {
-		pl, err := s.loadPlaces(r.Context())
-		if err != nil {
-			s.serverError(w, "list projects", err)
-			return
-		}
-		data.Scope.Projects = nil
-		for _, pr := range pl.Projects {
-			data.Scope.Projects = append(data.Scope.Projects, scopeProject{ID: pr.ID, Label: pr.DisplayName, Selected: pr.ID == data.Scope.Project})
-		}
-	}
-	data.Tokens = make([]tokenRow, 0, len(infos))
-	for _, i := range infos {
-		row := tokenRow{
-			ID: i.ID, Name: i.Name, State: i.State,
-			Created:  whenOf(now, &i.CreatedAt, "never"),
-			LastUsed: whenOf(now, i.LastUsedAt, "never"),
-			Expires:  whenOf(now, i.ExpiresAt, "never"),
-			Revoked:  whenOf(now, i.RevokedAt, ""),
-		}
-		if i.Scope != nil {
-			row.Scope = "deploys app " + i.Scope.App + " of project " + i.Scope.Project
-		}
-		data.Tokens = append(data.Tokens, row)
 	}
 	s.render(w, http.StatusOK, "settings", data)
+}
+
+// destinationSection fills in the Backup storage page: the connection row and the
+// form's values. A refused form (Err set) keeps what was typed.
+func destinationSection(now time.Time, f settingsFacts, st entryState, form destinationForm) destinationForm {
+	if f.Dest == nil {
+		form.Problem = policyServices(f.Apps) > 0
+		return form
+	}
+	d := *f.Dest
+	if form.Err == nil {
+		saved := form.Saved
+		form = destinationForm{Endpoint: d.Endpoint, Region: d.Region, Bucket: d.Bucket, Prefix: d.Prefix,
+			AccessKeyID: d.AccessKeyID, HasSecret: true, Saved: saved}
+	}
+	row := &destRow{Mark: st.Rows[0], Name: endpointName(d), Kind: "S3-compatible · region " + d.Region,
+		UsedBy: usedBy(policyServices(f.Apps), "service")}
+	switch last := f.LastBackup; {
+	case last == nil:
+		row.State = "no backup yet"
+	case last.Status == store.BackupSucceeded:
+		row.State = "last backup " + backupWhen(now, last.StartedAt)
+		if last.Bytes > 0 {
+			row.State += " · " + humanBytes(last.Bytes)
+		}
+	default:
+		at := last.StartedAt
+		if last.FinishedAt != nil {
+			at = *last.FinishedAt
+		}
+		row.State, row.StateFailed = "last backup failed "+relative(now, at), true
+	}
+	form.Row = row
+	return form
+}
+
+// tokenRows builds the token table from the tokens (newest first) and
+// tokensState: active ones first, those with a problem at the top of them, then
+// expired, then revoked.
+func tokenRows(now time.Time, tokens []service.APITokenInfo, st entryState) []tokenRow {
+	rows := make([]tokenRow, 0, len(tokens))
+	for i, t := range tokens {
+		row := tokenRow{
+			ID: t.ID, Name: t.Name, State: t.State, Mark: st.Rows[i],
+			Made:     whenOf(now, &t.CreatedAt, ""),
+			LastUsed: whenOf(now, t.LastUsedAt, "never"),
+			CanDo:    "Everything",
+			Notes:    tokenNotes(now, t),
+		}
+		if t.Scope != nil {
+			row.CanDo = "Deploy · app " + t.Scope.App + " of project " + t.Scope.Project
+		}
+		switch t.State {
+		case service.TokenRevoked:
+			w := whenOf(now, t.RevokedAt, "")
+			row.Expiry, row.Exact = "revoked "+w.Text, w.Exact
+		case service.TokenExpired:
+			w := whenOf(now, t.ExpiresAt, "")
+			row.Expiry, row.Exact = "expired "+w.Text, w.Exact
+		case service.TokenActive:
+			if t.ExpiresAt == nil {
+				row.Expiry = "never expires"
+				// The warning hue is for the token the note is about.
+				row.ExpiryWarn = t.Scope == nil
+			} else {
+				w := whenOf(now, t.ExpiresAt, "")
+				row.Expiry, row.Exact = "expires "+w.Text, w.Exact
+			}
+		}
+		rows = append(rows, row)
+	}
+	rank := func(r tokenRow) int {
+		switch {
+		case r.State == service.TokenActive && r.Mark == "warning":
+			return 0
+		case r.State == service.TokenActive:
+			return 1
+		case r.State == service.TokenExpired:
+			return 2
+		}
+		return 3
+	}
+	sortStable(rows, rank)
+	return rows
 }
 
 // changePassword answers POST /settings/password. Success goes back to the
@@ -232,9 +372,9 @@ func (s *server) changePassword(w http.ResponseWriter, r *http.Request, session 
 	case err == nil:
 		http.Redirect(w, r, "/settings?password=changed", http.StatusSeeOther)
 	case errors.Is(err, service.ErrWrongPassword):
-		s.renderSettings(w, r, settingsData{CurrentErr: &fieldError{Text: "That isn't the current password."}})
+		s.renderSettings(w, r, entryAccount, settingsData{CurrentErr: &fieldError{Text: "That isn't the current password."}})
 	case errors.As(err, &fieldErr) && fieldErr.Field == "newPassword":
-		s.renderSettings(w, r, settingsData{NewErr: &fieldError{Text: "The new password " + fieldErr.Message + "."}})
+		s.renderSettings(w, r, entryAccount, settingsData{NewErr: &fieldError{Text: "The new password " + fieldErr.Message + "."}})
 	default:
 		s.serverError(w, "change password", err)
 	}
@@ -252,7 +392,6 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 	// project (Default's when the form had no select).
 	var scope *service.TokenScope
 	data.Scope = scopeForm{Project: r.PostFormValue("scopeProject"), App: strings.TrimSpace(r.PostFormValue("scopeApp"))}
-	data.Scope.Open = data.Scope.App != ""
 	if data.Scope.App != "" {
 		project := data.Scope.Project
 		if project == "" {
@@ -267,7 +406,7 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		day, err := time.Parse("2006-01-02", expires)
 		if err != nil {
 			data.ExpiresErr = &fieldError{Text: "The expiry must be a date."}
-			s.renderSettings(w, r, data)
+			s.renderSettings(w, r, entryTokens, data)
 			return
 		}
 		expiresAt = new(day.Add(24*time.Hour - time.Second))
@@ -281,22 +420,22 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		if scope != nil {
 			nt.ExampleID = app.Place{Project: scope.Project, Environment: app.DefaultEnvironment, Name: scope.App}.ID()
 		}
-		s.renderSettings(w, r, settingsData{NewToken: nt})
+		s.renderSettings(w, r, entryTokens, settingsData{NewToken: nt})
 	case errors.Is(err, service.ErrTokenNameTaken):
 		data.NameErr = &fieldError{Text: "An active token already has that name."}
-		s.renderSettings(w, r, data)
+		s.renderSettings(w, r, entryTokens, data)
 	case errors.As(err, &fieldErr) && fieldErr.Field == "name":
 		data.NameErr = &fieldError{Text: "The name " + fieldErr.Message + "."}
-		s.renderSettings(w, r, data)
+		s.renderSettings(w, r, entryTokens, data)
 	case errors.As(err, &fieldErr) && fieldErr.Field == "expiresAt":
 		data.ExpiresErr = &fieldError{Text: "The expiry " + fieldErr.Message + "."}
-		s.renderSettings(w, r, data)
+		s.renderSettings(w, r, entryTokens, data)
 	case errors.As(err, &fieldErr) && fieldErr.Field == "scope.project":
-		data.Scope.Open, data.Scope.ProjErr = true, &fieldError{Text: "The project " + strings.TrimPrefix(fieldErr.Message, "project ") + "."}
-		s.renderSettings(w, r, data)
+		data.Scope.ProjErr = &fieldError{Text: "The project " + strings.TrimPrefix(fieldErr.Message, "project ") + "."}
+		s.renderSettings(w, r, entryTokens, data)
 	case errors.As(err, &fieldErr) && fieldErr.Field == "scope.app":
-		data.Scope.Open, data.Scope.AppErr = true, &fieldError{Text: "The app name " + strings.TrimPrefix(fieldErr.Message, `"`+data.Scope.App+`" `) + "."}
-		s.renderSettings(w, r, data)
+		data.Scope.AppErr = &fieldError{Text: "The app name " + strings.TrimPrefix(fieldErr.Message, `"`+data.Scope.App+`" `) + "."}
+		s.renderSettings(w, r, entryTokens, data)
 	default:
 		s.serverError(w, "create api token", err)
 	}
@@ -311,7 +450,7 @@ func (s *server) revokeToken(w http.ResponseWriter, r *http.Request, session str
 		s.serverError(w, "revoke api token", err)
 		return
 	}
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/tokens", http.StatusSeeOther)
 }
 
 // readForm parses a posted form with a size limit. It answers 400 itself and
@@ -329,5 +468,11 @@ func (s *server) readForm(w http.ResponseWriter, r *http.Request) bool {
 // permanent redirect, so bookmarks and old links move over. It needs no
 // session; /settings asks for one.
 func (s *server) showAccount(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings", http.StatusMovedPermanently)
+}
+
+// showSettingsAccount answers GET /settings/account, the address Account had
+// for a moment in 021: it is /settings, the first entry. Permanent, no session.
+func (s *server) showSettingsAccount(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings", http.StatusMovedPermanently)
 }

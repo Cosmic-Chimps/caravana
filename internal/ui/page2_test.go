@@ -911,7 +911,7 @@ func TestRegistryPrereq(t *testing.T) {
 		if (got != nil) != tc.want {
 			t.Errorf("%s: prereq = %+v, want shown %v", tc.name, got, tc.want)
 		}
-		if got != nil && got.Href != "/settings#registries" {
+		if got != nil && got.Href != "/settings/registries" {
 			t.Errorf("%s: href = %q", tc.name, got.Href)
 		}
 	}
@@ -926,7 +926,7 @@ func TestRegistryPrereq(t *testing.T) {
 	body := e.pageOf(t, "/apps/shop/configure")
 	got := text(body)
 	if !strings.Contains(got, "Needs a container registry") || !strings.Contains(got, "add credentials for ghcr.io and deploy again") ||
-		!strings.Contains(body, `<a href="/settings#registries" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a>`) {
+		!strings.Contains(body, `<a href="/settings/registries" class="cv-btn cv-btn-secondary cv-btn-sm">Add credentials in Settings</a>`) {
 		t.Errorf("the notice is missing:\n%s", got)
 	}
 	// A healthy newest deployment shows none.
@@ -1231,9 +1231,11 @@ func TestBackupsFailedRow(t *testing.T) {
 	if !strings.Contains(body, `<summary class="cv-btn cv-btn-secondary cv-btn-sm">`+"<svg") || !strings.Contains(body, `cv-btn-primary cv-btn-sm"><svg class="cv-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon`) {
 		t.Errorf("after a failed run Restore from… should be secondary and Back up now primary:\n%s", body)
 	}
-	// The strip is one image with a label; its cells are hidden from readers; a link bar keeps its title.
-	if !strings.Contains(body, `role="img" aria-label="30 days: 2 backups, 1 failed, the last 25 minutes ago"`) || strings.Contains(body, `role="listitem" aria-label="no backup that day"`) {
-		t.Errorf("the strip's label:\n%s", body)
+	// A visually hidden sentence says the strip in one phrase; the strip has no role, so its link
+	// bars stay reachable with their titles as names, and its empty cells are hidden from readers.
+	if !strings.Contains(body, `<p class="sr-only">30 days: 2 backups, 1 failed, the last 25 minutes ago.</p>`) ||
+		strings.Contains(body, `role="img"`) || strings.Contains(body, `role="listitem" aria-label="no backup that day"`) {
+		t.Errorf("the strip's sentence:\n%s", body)
 	}
 	if !strings.Contains(body, `class="cv-bar cv-bar-none" aria-hidden="true"`) || !strings.Contains(body, `class="cv-bar cv-bar-healthy cv-bar-capped" title="today · 2 runs, the last failed"`) {
 		t.Errorf("the strip's cells:\n%s", body)
@@ -1281,7 +1283,7 @@ func TestBackUpDailyConfirmation(t *testing.T) {
 	k.Services[0].Backup = nil
 	e.seed(t, k)
 	body := e.pageOf(t, "/apps/kuma/backups")
-	if !strings.Contains(body, `cv-btn cv-btn-secondary cv-btn-sm">Back up daily</summary>`) || !strings.Contains(body, `href="/settings#backups" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination`) {
+	if !strings.Contains(body, `cv-btn cv-btn-secondary cv-btn-sm">Back up daily</summary>`) || !strings.Contains(body, `href="/settings/backup-storage" class="cv-btn cv-btn-primary cv-btn-sm">Set the destination`) {
 		t.Errorf("without a destination:\n%s", text(body))
 	}
 }

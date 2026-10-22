@@ -681,7 +681,7 @@ func TestFailedAction(t *testing.T) {
 		{"reverted, the newest", rec(store.StatusReverted, "unhealthy"), current, "Deploy again", ""},
 		{"the image wasn't found: the fix is the image", rec(store.StatusFailed, "ghcr.io: x:1: image not found, or private"), current, "Change the image", ""},
 		{"the credentials were refused: the fix is in Settings", rec(store.StatusFailed, "ghcr.io: ghcr.io/acme/x:1: the registry refused the stored credentials (ghcr.io answered 401)"), current,
-			"Check the registry's credentials", "/settings#registries"},
+			"Check the registry's credentials", "/settings/registries"},
 		{"the image isn't there with credentials: still the image", rec(store.StatusFailed, "ghcr.io: x:1: image not found, or the stored credentials for ghcr.io can't read it"), current, "Change the image", ""},
 		{"failed, but a newer deploy came after", rec(store.StatusFailed, "x"), older, "", ""},
 		{"healthy", rec(store.StatusHealthy, ""), current, "", ""},

@@ -317,7 +317,7 @@ func TestAccountNeedsASession(t *testing.T) {
 
 	c := e.signIn(t, nil)
 	resp, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Signed in as") || !strings.Contains(body, testEmail) {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "Who you are on this caravana, and your password.") || !strings.Contains(body, testEmail) {
 		t.Errorf("GET /settings with a session = %d:\n%s", resp.StatusCode, body)
 	}
 
@@ -819,7 +819,7 @@ func TestTokensOnThePage(t *testing.T) {
 			t.Fatalf("POST /settings/tokens = %d, want 200 (no redirect)", resp.StatusCode)
 		}
 		token := tokenInPage.FindString(body)
-		if token == "" || !strings.Contains(body, "It won't be shown again.") {
+		if token == "" || !strings.Contains(body, "Caravana only keeps a hash and can't show it again.") {
 			t.Fatalf("the new token is not shown with its warning:\n%s", body)
 		}
 		if !strings.Contains(body, `-H "Authorization: Bearer `+token+`"`) || !strings.Contains(body, e.URL+"/v1/tokens") {
@@ -829,12 +829,15 @@ func TestTokensOnThePage(t *testing.T) {
 			t.Errorf("the token shown does not work: %v", err)
 		}
 
-		_, body = e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
-		if tokenInPage.MatchString(body) || strings.Contains(body, "be shown again") {
+		if resp.Header.Get("Location") != "" || resp.Header.Get("Cache-Control") != "no-store" {
+			t.Errorf("the answer that shows the token redirects (%q) or can be cached (%q)", resp.Header.Get("Location"), resp.Header.Get("Cache-Control"))
+		}
+		resp, body = e.do(t, request{path: "/settings/tokens", cookies: []*http.Cookie{c}})
+		if resp.Request.URL.RawQuery != "" || tokenInPage.MatchString(body) || strings.Contains(body, "show it again") {
 			t.Errorf("a reload shows the token again:\n%s", body)
 		}
-		if !strings.Contains(body, "ci-github") || !strings.Contains(body, "cv-pill-healthy") {
-			t.Errorf("the token is not listed as active:\n%s", body)
+		if !strings.Contains(body, "ci-github") || !strings.Contains(body, "cv-mark-lg cv-mark-warning") {
+			t.Errorf("the token is not listed (a full token that never expires is marked with a warning):\n%s", body)
 		}
 	})
 
@@ -854,16 +857,22 @@ func TestTokensOnThePage(t *testing.T) {
 		}
 		e.Clock.Advance(2 * time.Hour)
 
-		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+		_, body := e.do(t, request{path: "/settings/tokens", cookies: []*http.Cookie{c}})
+		got := text(body)
 		for _, want := range []string{
-			"cv-pill-healthy", "cv-mark-healthy", ">active<",
-			"cv-pill-idle", "cv-mark-idle", ">expired<",
-			"cv-pill-failed", "cv-mark-failed", ">revoked<",
-			"2 hours ago", // created, relative
+			"cv-mark-lg cv-mark-warning", // live: a full token that never expires
+			"cv-mark-lg cv-mark-idle",    // expired and revoked
+			"expired 1 hour ago", "revoked 2 hours ago", "never expires",
+			"made 2 hours ago", // created, relative
 		} {
-			if !strings.Contains(body, want) {
-				t.Errorf("the token list lacks %q:\n%s", want, body)
+			if !strings.Contains(body, want) && !strings.Contains(got, want) {
+				t.Errorf("the token list lacks %q:\n%s", want, got)
 			}
+		}
+		// Active first, then expired, then revoked.
+		live, expired, revoked := strings.Index(got, "live"), strings.Index(got, "will-expire"), strings.Index(got, "gone")
+		if !(live >= 0 && live < expired && expired < revoked) {
+			t.Errorf("the tokens aren't sorted active, expired, revoked (%d, %d, %d):\n%s", live, expired, revoked, got)
 		}
 		// Only active rows offer Revoke.
 		if got := strings.Count(body, ">Revoke<"); got != 1 {
@@ -877,14 +886,14 @@ func TestTokensOnThePage(t *testing.T) {
 		created, _ := e.Auth.CreateAPIToken(ctx, "victim", nil)
 
 		resp, _ := e.post(t, c, "/settings/tokens/"+created.Info.ID+"/revoke", url.Values{})
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings" {
-			t.Fatalf("revoke = %d to %q, want 303 to /settings", resp.StatusCode, location(t, resp))
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/tokens" {
+			t.Fatalf("revoke = %d to %q, want 303 to /settings/tokens", resp.StatusCode, location(t, resp))
 		}
 		if _, err := e.Auth.CheckAPIToken(ctx, created.Token); err == nil {
 			t.Error("the revoked token still works")
 		}
-		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
-		if !strings.Contains(body, "cv-pill-failed") || strings.Contains(body, ">Revoke<") {
+		_, body := e.do(t, request{path: "/settings/tokens", cookies: []*http.Cookie{c}})
+		if !strings.Contains(text(body), "revoked just now") || strings.Contains(body, ">Revoke<") {
 			t.Errorf("the row does not show revoked:\n%s", body)
 		}
 		// An unknown ID is not an error page: the list is simply unchanged.
@@ -964,9 +973,9 @@ func TestSettingsPage(t *testing.T) {
 			`<a href="/settings" class="cv-nav-item" aria-current="page">`,
 			`<a href="/apps" class="cv-nav-item">`, // not current
 			`class="cv-shell"`,
-			`aria-current="page">Settings</span>`, // the breadcrumb
-			`action="/logout"`,                    // Sign out stays in the sidebar's account row
-			"Signed in as",
+			`aria-current="page">Account</span>`, // the breadcrumb: Settings / Account
+			`action="/logout"`,                   // Sign out stays in the sidebar's account row
+			"The one admin. Teams come later.",
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the page lacks %q:\n%s", want, body)
@@ -997,7 +1006,7 @@ func TestSettingsPage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
+		_, body := e.do(t, request{path: "/settings/tokens", cookies: []*http.Cookie{c}})
 		form := `<form method="post" action="/settings/tokens/` + created.Info.ID + `/revoke"`
 		i := strings.Index(body, form)
 		if i < 0 {
@@ -1039,24 +1048,26 @@ func TestSettingsPage(t *testing.T) {
 func TestAccountFormsWorkWithoutJavaScript(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	c := e.signIn(t, nil)
-	_, body := e.do(t, request{path: "/settings", cookies: []*http.Cookie{c}})
-	// Scripts only enhance (the shared ones, from /static/js); no inline script, no onclick.
-	for _, tag := range regexp.MustCompile(`(?i)<script\b[^>]*>`).FindAllString(body, -1) {
-		if !strings.Contains(tag, ` src="/static/js/`) {
-			t.Errorf("the account page has an inline script: %s", tag)
+	for _, path := range []string{"/settings", "/settings/tokens"} {
+		_, body := e.do(t, request{path: path, cookies: []*http.Cookie{c}})
+		// Scripts only enhance (the shared ones, from /static/js); no inline script, no onclick.
+		for _, tag := range regexp.MustCompile(`(?i)<script\b[^>]*>`).FindAllString(body, -1) {
+			if !strings.Contains(tag, ` src="/static/js/`) {
+				t.Errorf("%s has an inline script: %s", path, tag)
+			}
 		}
-	}
-	if strings.Contains(strings.ToLower(body), " onclick=") {
-		t.Errorf("the account page has an onclick handler:\n%s", body)
-	}
-	// Every form is a plain post to a path this server serves.
-	forms := regexp.MustCompile(`<form method="post" action="([^"]+)"`).FindAllStringSubmatch(body, -1)
-	if len(forms) < 3 {
-		t.Fatalf("found %d forms, want sign out, password and create token at least", len(forms))
-	}
-	for _, f := range forms {
-		if !strings.HasPrefix(f[1], "/") {
-			t.Errorf("form action %q is not a path on this server", f[1])
+		if strings.Contains(strings.ToLower(body), " onclick=") {
+			t.Errorf("%s has an onclick handler:\n%s", path, body)
+		}
+		// Every form is a plain post to a path this server serves.
+		forms := regexp.MustCompile(`<form method="post" action="([^"]+)"`).FindAllStringSubmatch(body, -1)
+		if len(forms) < 2 {
+			t.Fatalf("%s: found %d forms, want sign out and its own at least", path, len(forms))
+		}
+		for _, f := range forms {
+			if !strings.HasPrefix(f[1], "/") {
+				t.Errorf("%s: form action %q is not a path on this server", path, f[1])
+			}
 		}
 	}
 }
@@ -1252,12 +1263,12 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 	})
 
 	t.Run("Settings", func(t *testing.T) {
-		_, page := e.get(t, "/settings")
+		_, page := e.get(t, "/settings/tokens")
 		resp, body := e.submit(t, formWith(t, page, "/settings/tokens"), url.Values{"name": {"plain-ci"}})
 		if resp.StatusCode != http.StatusOK || !strings.Contains(body, "cvat_") {
 			t.Fatalf("POST /settings/tokens = %d, want 200 with the token:\n%s", resp.StatusCode, body)
 		}
-		_, page = e.get(t, "/settings")
+		_, page = e.get(t, "/settings/tokens")
 		var revoke plainForm
 		for _, f := range formsIn(page) {
 			if strings.HasSuffix(f.Action, "/revoke") {
@@ -1270,6 +1281,7 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 		if resp, body := e.submit(t, revoke, nil); resp.StatusCode >= 400 {
 			t.Errorf("POST %s = %d:\n%s", revoke.Action, resp.StatusCode, body)
 		}
+		_, page = e.get(t, "/settings")
 		resp, body = e.submit(t, formWith(t, page, "/settings/password"), url.Values{"currentPassword": {testPassword}, "newPassword": {"another long password"}})
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings?password=changed" {
 			t.Errorf("POST /settings/password = %d to %q, want 303 to /settings?password=changed:\n%s", resp.StatusCode, location(t, resp), body)
@@ -1455,10 +1467,14 @@ func TestPagesAreAccessible(t *testing.T) {
 		if isPart(name) {
 			continue
 		}
-		// Every visible input sits inside a <label> (hidden inputs have none).
+		// Every visible input sits inside a <label>, or has one that names it with for= (a
+		// Settings row keeps its label beside the controls). Hidden inputs have none.
 		labelled := strings.Join(label.FindAllString(body, -1), "\n")
 		for _, in := range input.FindAllString(body, -1) {
 			if strings.Contains(in, `type="hidden"`) {
+				continue
+			}
+			if id := regexp.MustCompile(`\bid="([^"]+)"`).FindStringSubmatch(in); id != nil && strings.Contains(body, `<label class="cv-setrow-label" for="`+id[1]+`"`) {
 				continue
 			}
 			if !strings.Contains(labelled, in) {

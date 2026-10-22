@@ -97,7 +97,7 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places
 	case service.AttentionNoBackupDestination:
 		row.Mark = "warning"
 		row.Text = sentence{plain("Backups are set up, but no backup destination is.")}
-		row.Action, row.Href = "Set destination", "/settings#backup-destination"
+		row.Action, row.Href = "Set destination", "/settings/backup-storage"
 	}
 	return row
 }
