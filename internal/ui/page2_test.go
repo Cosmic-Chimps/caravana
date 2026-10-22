@@ -1190,11 +1190,12 @@ func TestFailedRunRowLeadsWithTheCause(t *testing.T) {
 // run "Restore from …" is secondary and "Back up now" primary; the head counts the failing.
 func TestBackupsFailedRow(t *testing.T) {
 	e := volumeBackupsEnv(t)
-	now := e.Clock.Now().UTC()
-	// Both runs on one UTC day, so the strip has one cell for them; not testable in the first minutes of a day.
-	if now.Hour() == 0 && now.Minute() < 40 {
-		t.Skip("too close to midnight UTC for two runs on one day")
+	// Both runs fall on one UTC day, so the strip has one cell for them: in the first minutes of a
+	// day the test clock is moved an hour on, so the test never depends on when it runs.
+	if now := e.Clock.Now().UTC(); now.Hour() == 0 && now.Minute() < 40 {
+		e.Clock.Advance(time.Hour)
 	}
+	now := e.Clock.Now().UTC()
 	good, bad := now.Add(-35*time.Minute), now.Add(-25*time.Minute)
 	fin := good.Add(time.Minute)
 	for _, b := range []store.BackupRecord{
