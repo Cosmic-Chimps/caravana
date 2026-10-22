@@ -323,6 +323,21 @@ func deployOutcome(rec *store.DeploymentRecord) string {
 	return ""
 }
 
+// needsYouOf says an app is one the headline names as needing the user: its
+// status says so, its last deploy failed, or listed (the needs-you list has an
+// item for it). The state filter's "Needs you" uses it, so both name the same apps.
+func needsYouOf(sum service.AppSummary, listed bool) bool {
+	switch sum.Status.State {
+	case service.StateHealthy, service.StateRollingOut:
+		return lastDeployFailed(sum) || listed
+	case service.StateNotRunning:
+		return !neverDeployed(sum)
+	case service.StateDegraded:
+		return true
+	}
+	return false
+}
+
 // headlineOf is the one sentence the Apps page opens with: how things stand
 // right now (research R7). Apps that need a human come first, named; the rest
 // are counted. An app needs a human when its status says so, or when the

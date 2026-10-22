@@ -203,10 +203,14 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 		return appsRegion{}, err
 	}
 	now := s.now()
-	// The apps with an item in the needs-you list: the state filter's "Needs you".
-	needs := map[string]bool{}
+	// The apps the headline names as needing the user: the state filter's "Needs you".
+	listed := map[string]bool{}
 	for _, it := range items {
-		needs[it.AppID] = true
+		listed[it.AppID] = true
+	}
+	needs := map[string]bool{}
+	for _, sum := range sums {
+		needs[sum.App.ID] = needsYouOf(sum, listed[sum.App.ID])
 	}
 	// The filter is drawn, and obeyed, only with more than a few apps.
 	filter := filterOf(r)

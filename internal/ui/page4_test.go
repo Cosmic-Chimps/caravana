@@ -750,10 +750,9 @@ func TestAppsFilter(t *testing.T) {
 	t.Run("by project and environment", func(t *testing.T) {
 		sameSet(t, "?q=production", "whoami", "blog", "api", "shop", "pgdata", "files", "idle")
 	})
-	// "Needs you" is the apps with an item in the needs-you list, the list the headline counts:
-	// blog's newest deploy was reverted. (api has 1 of 2 copies healthy, but none of its copies
-	// is unhealthy, restarting or out of memory, so the list has nothing for it.)
-	t.Run("by state: needs you", func(t *testing.T) { sameSet(t, "?state=needs", "blog") })
+	// "Needs you" is the apps the headline names: blog's newest deploy was reverted, and api has
+	// 1 of 2 copies healthy.
+	t.Run("by state: needs you", func(t *testing.T) { sameSet(t, "?state=needs", "blog", "api") })
 	t.Run("by state: healthy", func(t *testing.T) { sameSet(t, "?state=healthy", "whoami", "shop", "pgdata", "files") })
 	t.Run("by state: not deployed", func(t *testing.T) { sameSet(t, "?state=notdeployed", "idle") })
 	t.Run("by kind: compose", func(t *testing.T) { sameSet(t, "?kind=compose", "shop") })
@@ -1210,8 +1209,8 @@ func TestVersionCellShowsTheRollout(t *testing.T) {
 	})
 }
 
-// The state filter's "Needs you" is the apps with an item in the needs-you list, whatever the item
-// is: a failed backup counts as a failed deploy does, and an app that is stopped is only stopped.
+// The state filter's "Needs you" is the apps the headline names as needing the user, whatever the
+// reason: a failed backup counts as a failed deploy does, and an app that is stopped is only stopped.
 func TestNeedsYouFilterFollowsTheNeedsYouList(t *testing.T) {
 	e := filterEnv(t) // whoami, blog (reverted), api, shop, pgdata, files, idle
 	db := whoamiApp()
@@ -1241,8 +1240,12 @@ func TestNeedsYouFilterFollowsTheNeedsYouList(t *testing.T) {
 	body := mustGet(t, e, "/apps?state=needs")
 	got := rowsOf(appsTable(body))
 	slices.Sort(got)
-	if want := []string{"blog", "dbapp"}; !slices.Equal(got, want) {
+	if want := []string{"api", "blog", "dbapp"}; !slices.Equal(got, want) {
 		t.Errorf("state=needs lists %v, want %v", got, want)
+	}
+	// The headline names the same apps.
+	if head := text(body[:strings.Index(body, `aria-label="Needs you"`)]); !strings.Contains(head, "3 apps need you") {
+		t.Errorf("the headline doesn't name the filter's three apps: %s", head)
 	}
 	// Each is in the needs-you list above the filter, which says why.
 	list := text(body[strings.Index(body, `aria-label="Needs you"`):strings.Index(body, `class="cv-deploying"`)])
