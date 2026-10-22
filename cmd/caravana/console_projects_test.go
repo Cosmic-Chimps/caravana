@@ -128,9 +128,12 @@ func (c *console) projects(t *testing.T) {
 	// the app's name), and the other environment.
 	resp, body = c.get(t, "/apps/"+stagingID)
 	where := regexp.MustCompile(`(?s)<nav aria-label="Breadcrumb".*?</nav>`).FindString(body)
+	// The "/" between crumbs is its own element, so the spaces around it are the template's, not
+	// the page's meaning: any amount is fine.
+	crumbText := regexp.MustCompile(regexp.QuoteMeta(display) + `\s*/\s*staging`)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(where, `<a href="/projects/`+project+`" class="cv-crumb">`+display+`</a>`) ||
-		!strings.Contains(pageText(where), display+" /staging") {
-		t.Fatalf("GET /apps/%s = %d; its crumbs are %q, want %q linked to the project", stagingID, resp.StatusCode, pageText(where), display+" /staging")
+		!crumbText.MatchString(pageText(where)) {
+		t.Fatalf("GET /apps/%s = %d; its crumbs are %q, want %q linked to the project", stagingID, resp.StatusCode, pageText(where), display+" / staging")
 	}
 	if !strings.Contains(pageText(body), "Copy to production") {
 		t.Errorf("the app page of %s has no Copy to production", stagingID)
