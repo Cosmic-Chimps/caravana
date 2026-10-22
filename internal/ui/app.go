@@ -1073,9 +1073,6 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	if extra.Form != nil {
 		form = *extra.Form
 	}
-	if sum.StoppedAt != nil && len(extra.Notice) == 0 {
-		extra.Notice = sentence{plain(appStoppedText)}
-	}
 	tab := &configureTab{
 		ID:      id,
 		Compose: sum.App.Source.Kind == app.SourceCompose,

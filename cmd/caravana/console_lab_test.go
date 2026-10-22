@@ -436,7 +436,7 @@ func editFormValues(t *testing.T, page string) url.Values {
 // pages of feature 021 have forms with no ID).
 func formValuesAction(t *testing.T, page, action string) url.Values {
 	t.Helper()
-	m := regexp.MustCompile(`(?s)<form method="post" action="` + regexp.QuoteMeta(action) + `"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
+	m := regexp.MustCompile(`(?s)<form method="post" action="` + regexp.QuoteMeta(action) + `(?:#[^"]*)?"[^>]*>(.*?)</form>`).FindStringSubmatch(page)
 	if m == nil {
 		t.Fatalf("no form posts to %q on the page:\n%s", action, page)
 	}

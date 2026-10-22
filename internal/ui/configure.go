@@ -364,7 +364,7 @@ func alsoSet(svc app.Service, s editService) []defRow {
 		}
 		rows = append(rows, defRow{Label: "Ports", Values: ports})
 	}
-	if svc.Health != nil && svc.Health.Port != "" {
+	if svc.Health != nil && svc.Health.Port != "" && len(svc.Ports) > 1 {
 		rows = append(rows, defRow{Label: "Health check port", Values: []string{svc.Health.Port}})
 	}
 	if len(svc.Volumes) > 0 {

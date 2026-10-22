@@ -341,11 +341,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			row.Mark, row.LastNever, row.LastNow = run.Mark, false, r.Status == store.BackupRunning
 			row.LastWhen, row.Took, row.Stopped = run.When, run.Took, run.Stopped
 			if r.Status == store.BackupFailed {
-				row.Failure = sentence{plain("The last backup failed " + relative(now, r.StartedAt))}
-				if msg := strings.TrimSuffix(strings.TrimSpace(r.Message), "."); msg != "" {
-					row.Failure = append(row.Failure, plain(": "+msg))
-				}
-				row.Failure = append(row.Failure, plain("."))
+				// The error is in the run's row, once.
+				row.Failure = sentence{plain("The last backup failed " + relative(now, r.StartedAt) + ".")}
 			}
 		}
 		if row.Size == "" && r.Status == store.BackupSucceeded {
@@ -368,9 +365,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 }
 
 // restoreStrip is the last 30 days as cells, oldest first and today last. A day
-// is the UTC day. A day with a run being made is running; else a day with a
-// healthy run is that run (the newest healthy one); else one with only failed
-// runs is failed; a day with none is a gap. A cell with a run links to its row.
+// is the UTC day, and its cell is that day's newest run: healthy, failed or
+// running; a day with none is a gap. A cell with a run links to its row.
 func restoreStrip(now time.Time, runs []store.BackupRecord) []stripCell {
 	cells := make([]stripCell, stripDays)
 	for i := range cells {
@@ -381,7 +377,6 @@ func restoreStrip(now time.Time, runs []store.BackupRecord) []stripCell {
 		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 	}
 	today := day(now)
-	rank := map[string]int{"none": 0, "failed": 1, "healthy": 2, "running": 3}
 	chosen := make([]int, stripDays) // the run each cell shows, by index into runs; runs are newest first
 	for i, r := range runs {
 		ago := int(today.Sub(day(r.StartedAt)) / (24 * time.Hour))
@@ -393,8 +388,8 @@ func restoreStrip(now time.Time, runs []store.BackupRecord) []stripCell {
 		if kind == "rolling" {
 			kind = "running"
 		}
-		// Newest first: the first run of a kind is the newest of it, and a better kind replaces a worse one.
-		if rank[kind] > rank[cells[at].Kind] {
+		// Newest first: the first run of a day is that day's newest.
+		if cells[at].Kind == "none" {
 			cells[at].Kind, chosen[at] = kind, i
 		}
 	}
@@ -484,20 +479,34 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.0f %s", v, units[i])
 }
 
+// weekdays are the days of a cron expression's fifth field, 0 (or 7) being Sunday.
+var weekdays = [...]string{"Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"}
+
 // scheduleText tells a cron expression in words when it is a plain one: "every
-// day at 03:00 UTC" for "0 3 * * *", "every hour at :15" for "15 * * * *". Any
+// day at 03:00 UTC" for "0 3 * * *", "Sundays at 04:00 UTC" for "0 4 * * 0",
+// "every 6 hours" for "0 */6 * * *", "every hour at :15" for "15 * * * *". Any
 // other expression is shown as it is, so nothing is ever described wrongly.
 func scheduleText(spec string) string {
 	f := strings.Fields(spec)
-	if len(f) == 5 && f[2] == "*" && f[3] == "*" && f[4] == "*" {
+	if len(f) == 5 && f[2] == "*" && f[3] == "*" {
 		minute, errMinute := strconv.Atoi(f[0])
 		hour, errHour := strconv.Atoi(f[1])
+		goodMinute := errMinute == nil && minute >= 0 && minute <= 59
+		goodHour := errHour == nil && hour >= 0 && hour <= 23
 		switch {
-		case errMinute != nil || minute < 0 || minute > 59:
-		case f[1] == "*":
+		case !goodMinute:
+		case f[4] == "*" && f[1] == "*":
 			return fmt.Sprintf("every hour at :%02d", minute)
-		case errHour == nil && hour >= 0 && hour <= 23:
+		case f[4] == "*" && goodHour:
 			return fmt.Sprintf("every day at %02d:%02d UTC", hour, minute)
+		case f[4] == "*" && minute == 0 && strings.HasPrefix(f[1], "*/"):
+			if n, err := strconv.Atoi(f[1][2:]); err == nil && n >= 2 && n <= 23 {
+				return fmt.Sprintf("every %d hours", n)
+			}
+		case goodHour:
+			if day, err := strconv.Atoi(f[4]); err == nil && day >= 0 && day <= 7 {
+				return fmt.Sprintf("%s at %02d:%02d UTC", weekdays[day%7], hour, minute)
+			}
 		}
 	}
 	return "on " + spec + " (UTC)"

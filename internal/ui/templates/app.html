@@ -619,7 +619,8 @@
 {{/* An app that keeps its Compose file edits it here first (feature 015): the same form as
      Deploy from Compose, filled from the file. The definition below is then read-only. The
      heading says "Edit", not "Compose file": the form's own field is labelled that already. */}}
-{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>
+{{else}}{{if .Stopped}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}{{end}}
 {{with .Copied}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .ComposeForm}}
 <section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
@@ -675,9 +676,9 @@
 {{end}}
 {{with .Edit.Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{range .Edit.Services}}
-<section class="cv-svc cv-gridbox"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Settings"{{end}}>
+<section id="service-{{.Name}}" class="cv-svc cv-gridbox"{{if $.Edit.Many}} aria-labelledby="svc-{{.Name}}-title"{{else}} aria-label="Settings"{{end}}>
   {{if $.Edit.Many}}<h2 id="svc-{{.Name}}-title" class="cv-svc-title">{{.Name}}</h2>{{end}}
-  <form method="post" action="{{$.Edit.Action}}" class="cv-svcform">
+  <form method="post" action="{{$.Edit.Action}}#service-{{.Name}}" class="cv-svcform">
     <input type="hidden" name="revision" value="{{$.Edit.Form.Revision}}">
     <fieldset class="cv-fieldset"{{if $.Stopped}} disabled{{end}}>
       <div class="cv-grid2">
@@ -728,10 +729,7 @@
         </div>
       </div>
     </fieldset>
-    <div class="cv-btnrow">
-      {{if $.Stopped}}<p class="cv-note">The app is stopped: start it first.</p>
-      {{else}}<button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button>{{end}}
-    </div>
+    {{if not $.Stopped}}<div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>{{end}}
   </form>
 </section>
 {{end}}
@@ -999,11 +997,11 @@
 </section>
 
 <div class="cv-panel cv-domains" role="table" aria-label="Domains">
-  <div class="cv-dhead cv-label" role="row">
+  {{if .Rows}}<div class="cv-dhead cv-label" role="row">
     <span role="columnheader">Domain</span>
     <span role="columnheader">Goes to</span>
     <span role="columnheader"><span class="sr-only">Actions</span></span>
-  </div>
+  </div>{{end}}
   {{range .Rows}}
   <div class="cv-drow cv-confirm-row" role="row">
     <div role="cell" class="cv-dhost" title="{{.Host}}">{{.Host}}</div>

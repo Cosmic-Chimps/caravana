@@ -1065,6 +1065,7 @@ func TestAccountFormsWorkWithoutJavaScript(t *testing.T) {
 // the action and the value of every named field, as it stands in the markup.
 type plainForm struct {
 	Method, Action string
+	Fragment       string // what follows "#" in the action: where the answer scrolls to
 	Values         url.Values
 	Disabled       []string // fields or buttons the markup itself disables
 	HTMX           bool     // has hx-post, which only enhances the plain post
@@ -1082,7 +1083,8 @@ func formsIn(body string) []plainForm {
 			}
 			return html.UnescapeString(v[1])
 		}
-		f := plainForm{Method: strings.ToLower(attr(m[1], "method")), Action: attr(m[1], "action"), Values: url.Values{}, HTMX: strings.Contains(m[1], "hx-post")}
+		action, fragment, _ := strings.Cut(attr(m[1], "action"), "#")
+		f := plainForm{Method: strings.ToLower(attr(m[1], "method")), Action: action, Fragment: fragment, Values: url.Values{}, HTMX: strings.Contains(m[1], "hx-post")}
 		for _, in := range regexp.MustCompile(`(?i)<(?:input|button)\b[^>]*>`).FindAllString(m[2], -1) {
 			if regexp.MustCompile(`\sdisabled\b`).MatchString(in) {
 				f.Disabled = append(f.Disabled, in)

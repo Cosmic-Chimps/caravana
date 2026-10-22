@@ -716,8 +716,8 @@ func TestRestoreStrip(t *testing.T) {
 	}
 	runs := []store.BackupRecord{ // newest first
 		run("r-now", time.Hour, store.BackupRunning, 0),              // today, running
-		run("r-fail", 25*time.Hour, store.BackupFailed, 0),           // yesterday: failed, and a good one earlier that day
-		run("r-ok-yday", 26*time.Hour, store.BackupSucceeded, 3<<20), // the same day: the good one is the restore point
+		run("r-fail", 25*time.Hour, store.BackupFailed, 0),           // yesterday: the newest run failed, a good one ran earlier
+		run("r-ok-yday", 26*time.Hour, store.BackupSucceeded, 3<<20), // the same day, earlier
 		run("r-3", 3*24*time.Hour+3*time.Hour, store.BackupSucceeded, 1900<<20),
 		run("r-old", 40*24*time.Hour, store.BackupSucceeded, 1), // beyond 30 days: not drawn
 	}
@@ -725,7 +725,7 @@ func TestRestoreStrip(t *testing.T) {
 	if len(cells) != 30 {
 		t.Fatalf("%d cells, want 30", len(cells))
 	}
-	kinds := map[int]string{29: "running", 28: "healthy", 26: "healthy"}
+	kinds := map[int]string{29: "running", 28: "failed", 26: "healthy"}
 	links := 0
 	for i, c := range cells {
 		want := kinds[i]
@@ -742,8 +742,13 @@ func TestRestoreStrip(t *testing.T) {
 	if links != 3 {
 		t.Errorf("%d cells link to a run, want 3", links)
 	}
-	if cells[28].Href != "#backup-r-ok-yday" || cells[28].Title != "1 d ago · 13:00 · 3 MB" {
-		t.Errorf("yesterday's cell = %+v, want the good run, not the failed one", cells[28])
+	if cells[28].Href != "#backup-r-fail" || cells[28].Title != "1 d ago · 14:00 · failed" {
+		t.Errorf("yesterday's cell = %+v, want the day's newest run, the failed one", cells[28])
+	}
+	// The other way round: a healthy run after a failed one is a healthy bar.
+	back := restoreStrip(now, []store.BackupRecord{run("ok", time.Hour, store.BackupSucceeded, 2<<20), run("bad", 2*time.Hour, store.BackupFailed, 0)})
+	if back[29].Kind != "healthy" || back[29].Href != "#backup-ok" {
+		t.Errorf("a healthy run after a failed one = %+v, want healthy", back[29])
 	}
 	if cells[26].Title != "3 d ago · 12:00 · 1.9 GB" || cells[26].Href != "#backup-r-3" {
 		t.Errorf("the cell of three days ago = %+v", cells[26])
@@ -781,7 +786,7 @@ func TestBackupsRows(t *testing.T) {
 	}
 	body := e.pageOf(t, "/apps/duo/backups")
 	got := text(body)
-	for _, want := range []string{"2 backed up · 0 not · stored in backups", "Every day at 14:30 UTC 2 backups", "The last backup failed 5 hours ago: pg_dump: connection refused.",
+	for _, want := range []string{"2 backed up · 0 not · stored in backups", "Every day at 14:30 UTC 2 backups", "The last backup failed 5 hours ago.",
 		"took 1 min", "5 MB 5 MB all", "30 d ago today"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
@@ -966,6 +971,117 @@ func TestBackupEngineFor(t *testing.T) {
 		got, ok := backupEngineFor(tc.svc)
 		if got != tc.want || ok != (tc.want != "") {
 			t.Errorf("%s: backupEngineFor = %q, %v; want %q", tc.name, got, ok, tc.want)
+		}
+	}
+}
+
+// A failed run's error is drawn once, in its run row; the sentence under the strip says only when.
+func TestFailedRunErrorIsDrawnOnce(t *testing.T) {
+	e := volumeBackupsEnv(t)
+	const msg = "rclone: exit 1: the destination refused the upload of the archive"
+	started := e.Clock.Now().Add(-12 * time.Minute).UTC()
+	for _, b := range []store.BackupRecord{
+		{AppID: "kuma", ID: "uptime-kuma-1000", Service: "uptime-kuma", Engine: app.BackupVolume, Status: store.BackupFailed, Message: msg, StartedAt: started},
+	} {
+		if err := e.Store.SaveBackup(context.Background(), b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := e.pageOf(t, "/apps/kuma/backups")
+	if n := strings.Count(body, msg); n != 1 {
+		t.Errorf("the error is in the page %d times, want once:\n%s", n, text(body))
+	}
+	if !strings.Contains(text(body), "The last backup failed 12 minutes ago.") {
+		t.Errorf("the sentence under the strip:\n%s", text(body))
+	}
+	if !strings.Contains(body, `<p class="cv-brun-msg">`+msg+`</p>`) {
+		t.Error("the run's row lacks the error")
+	}
+}
+
+// Stopped Configure says it once, at the top, with the idle mark; the forms are disabled.
+func TestStoppedConfigureSaysItOnce(t *testing.T) {
+	e := duetEnv(t)
+	if resp, body := e.postAction(t, "/apps/duet/stop"); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("stop = %d:\n%s", resp.StatusCode, text(body))
+	}
+	body := e.pageOf(t, "/apps/duet/configure")
+	if n := strings.Count(body, "The app is stopped: start it first."); n != 1 {
+		t.Errorf("the sentence is drawn %d times, want once", n)
+	}
+	if !strings.Contains(body, `<span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span>`) {
+		t.Error("the sentence lacks the idle mark")
+	}
+	if n := strings.Count(body, "<fieldset class=\"cv-fieldset\" disabled>"); n != 2 || strings.Contains(body, "Save and deploy") {
+		t.Errorf("%d disabled fieldsets, and a submit: %v", n, strings.Contains(body, "Save and deploy"))
+	}
+	// A refusal of a post on a stopped app is one failed notice, not that and the idle one.
+	resp, refused := e.postForm(t, "/apps/duet/configure", url.Values{"revision": {e.revisionOf(t, "duet")}, "svc.web.image": {"traefik/whoami:latest"}})
+	if resp.StatusCode >= 500 || strings.Count(refused, "The app is stopped: start it first.") != 1 {
+		t.Errorf("a post on a stopped app = %d, the sentence %d times", resp.StatusCode, strings.Count(refused, "The app is stopped: start it first."))
+	}
+}
+
+// "Also set": the health check's port only for a service with several ports; the key column doesn't wrap.
+func TestAlsoSetHealthPort(t *testing.T) {
+	svc := app.Service{Name: "web", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Command: "/run", Health: &app.HealthCheck{Port: "http"}}
+	for _, r := range alsoSet(svc, newEditService(svc)) {
+		if r.Label == "Health check port" {
+			t.Errorf("a one-port service shows the health check's port: %+v", r)
+		}
+	}
+	svc.Ports = append(svc.Ports, app.Port{Name: "metrics", ContainerPort: 9100})
+	svc.Health.Port = "metrics"
+	found := false
+	for _, r := range alsoSet(svc, newEditService(svc)) {
+		found = found || r.Label == "Health check port" && r.Values[0] == "metrics"
+	}
+	if !found {
+		t.Error("a two-port service doesn't show the health check's port")
+	}
+	e := newUIEnv(t, true, "")
+	_, css := e.do(t, request{path: "/static/app.css"})
+	flat := strings.ReplaceAll(strings.ReplaceAll(css, " ", ""), "\n", "")
+	if !strings.Contains(flat, ".cv-also-row{display:grid;grid-template-columns:120pxminmax(0,1fr)") && !strings.Contains(flat, "grid-template-columns:120px") || !strings.Contains(flat, ".cv-also-rowdt{white-space:nowrap") {
+		t.Error("the key column isn't a fixed 120px that doesn't wrap")
+	}
+}
+
+// Domains with none: no table head, the empty block alone.
+func TestDomainsEmptyHasNoHead(t *testing.T) {
+	e := newConsoleEnv(t)
+	a := whoamiApp()
+	a.ID = "bare"
+	a.Services[0].Domains = nil
+	e.seed(t, a, seedDeploy{ID: "b1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	body := e.pageOf(t, "/apps/bare/domains")
+	if strings.Contains(body, `class="cv-dhead`) || !strings.Contains(text(body), "No domains. Copies are reachable only inside the app.") {
+		t.Errorf("the empty Domains page:\n%s", text(body))
+	}
+}
+
+// A refused per-service Configure form draws the page scrolled to that service: the form's action
+// names the service's section, and the first field in error is autofocused.
+func TestConfigureRefusalScrollsToTheService(t *testing.T) {
+	e := duetEnv(t)
+	_, page := e.get(t, "/apps/duet/configure")
+	var api plainForm
+	for _, f := range formsIn(page) {
+		if f.Action == "/apps/duet/configure" && f.Values.Has("svc.api.image") {
+			api = f
+		}
+	}
+	if api.Fragment != "service-api" || !strings.Contains(page, `<section id="service-api"`) {
+		t.Fatalf("the api form's fragment = %q, want service-api, with a section of that id", api.Fragment)
+	}
+	resp, body := e.submit(t, api, url.Values{"svc.api.copies": {"zero"}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || strings.Count(body, " autofocus") != 1 || !strings.Contains(body, `id="svc-api-copies" type="text" inputmode="numeric" name="svc.api.copies" value="zero"`) && !strings.Contains(body, `id="svc-api-copies"`) {
+		t.Errorf("refusal = %d, want 422 with one autofocused field:\n%s", resp.StatusCode, text(body))
+	}
+	// The refused page's forms still name their sections, so the next refusal scrolls too.
+	for _, f := range formsIn(body) {
+		if f.Action == "/apps/duet/configure" && f.Fragment == "" {
+			t.Errorf("a form of the refused page has no fragment: %+v", f)
 		}
 	}
 }

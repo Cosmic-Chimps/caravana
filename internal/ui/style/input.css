@@ -514,7 +514,8 @@
   .cv-prereq-title { display: flex; align-items: center; gap: 10px; font: 500 14px/1.35 var(--font-sans); color: var(--color-fg-1); }
   .cv-prereq-reason { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
   .cv-also { display: flex; flex-direction: column; gap: 8px; margin: 0; }
-  .cv-also-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+  .cv-also-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: baseline; }
+  .cv-also-row dt { white-space: nowrap; }
   .cv-also-row dd { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 0; }
   .cv-also-val { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
   .cv-domrow { display: flex; align-items: center; gap: 13px; }
