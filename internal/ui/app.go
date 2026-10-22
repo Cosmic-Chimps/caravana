@@ -228,6 +228,25 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 	}
 }
 
+// repeatedFor is the deployment of the owner's that a reverted deployment's
+// rollback put back (repeatedVersion), read from the app's history; nil for any
+// other deployment, and when the history can't be read.
+func (s *server) repeatedFor(ctx context.Context, rec *store.DeploymentRecord) *uint64 {
+	if rec == nil || rec.Status != store.StatusReverted {
+		return nil
+	}
+	recs, err := s.svc.ListDeployments(ctx, rec.AppID, deployPageSize)
+	if err != nil {
+		return nil
+	}
+	for i, r := range recs {
+		if r.Deployment.ID == rec.Deployment.ID {
+			return repeatedVersion(r, recs[i+1:])
+		}
+	}
+	return nil
+}
+
 // header builds the app's header from its summary. current is the key of the
 // tab being shown.
 func (s *server) header(ctx context.Context, sum service.AppSummary, current string) appHeader {
@@ -237,7 +256,7 @@ func (s *server) header(ctx context.Context, sum service.AppSummary, current str
 		Status:     appStatusView(sum),
 		Buttons:    headerActionsOf(sum),
 		Domains:    domainLinks(sum.App),
-		Summary:    summaryOf(sum, s.now()),
+		Summary:    summaryOfAgain(sum, s.now(), s.repeatedFor(ctx, sum.LastDeployment)),
 		NomadError: sum.Status.NomadError,
 	}
 	// An app with no definition can't be deployed, so it gets no Deploy: the
@@ -634,6 +653,8 @@ type historyEntry struct {
 	Started  when
 	Timing   string // "took 42 s", "running for 40 s"
 	Sentence sentence
+	// Stages is the strip under the head line: Queued, Roll out, Live.
+	Stages   [3]stageView
 	Progress string      // a running deployment's progress line; "" for the others
 	Error    string      // the raw error, shown in mono under the sentence
 	Action   *actionLink // the one fix a failed newest deployment offers; nil for the rest
@@ -725,6 +746,12 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 		return historyRegion{}, err
 	}
 	facts := deployFactsOf(recs, first)
+	if first && len(recs) > 0 && recs[0].Status == store.StatusReverted {
+		// The rollback registered the version that runs now; the entry says it.
+		if sum, err := s.svc.AppSummary(ctx, appID); err == nil {
+			facts[0].Live = sum.Status.LiveVersion
+		}
+	}
 	more := len(recs) > limit
 	if more {
 		recs = recs[:limit]
@@ -772,6 +799,7 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 	}
 	sort.Slice(e.Digests, func(i, j int) bool { return e.Digests[i].Service < e.Digests[j].Service })
 
+	var progress *service.Progress
 	if rec.Status == store.StatusRunning {
 		switch p, err := s.svc.Progress(ctx, rec); {
 		case err != nil:
@@ -780,9 +808,11 @@ func (s *server) historyEntry(ctx context.Context, now time.Time, rec store.Depl
 		case p == nil:
 			e.Progress = "Nomad hasn't started this rollout yet."
 		default:
+			progress = p
 			e.Progress = progressLine(*p)
 		}
 	}
+	e.Stages = stagesOf(rec, progress)
 	return e
 }
 

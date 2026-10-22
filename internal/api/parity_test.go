@@ -58,6 +58,7 @@ var consoleParity = map[string]parity{
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
 	"GET /parts/attention":        {ops: []string{"listAttention"}},
+	"GET /parts/deploying":        {ops: []string{"listApps", "listCopies"}},
 	"GET /parts/apps/{id}/header": {ops: []string{"getApp", "getProject", "getEnvironmentApp"}},
 	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},

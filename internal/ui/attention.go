@@ -44,7 +44,13 @@ func (s *server) loadAttention(r *http.Request, pl places, sums []service.AppSum
 	}
 	region := attentionRegion{Unknown: att.CopiesUnknown}
 	for _, it := range att.Items {
-		region.Rows = append(region.Rows, s.attentionRow(now, it, pl, byID))
+		var again *uint64
+		if sum, ok := byID[it.AppID]; ok && it.Kind == service.AttentionDeployFailed && sum.LastDeployment != nil &&
+			sum.LastDeployment.Deployment.ID == it.Deployment {
+			// A reverted deploy says what the version that runs repeats, as the app's page does.
+			again = s.repeatedFor(r.Context(), sum.LastDeployment)
+		}
+		region.Rows = append(region.Rows, s.attentionRowAgain(now, it, pl, byID, again))
 	}
 	return region, att.Items, nil
 }
@@ -53,6 +59,12 @@ func (s *server) loadAttention(r *http.Request, pl places, sums []service.AppSum
 // the sentence, the mark and the link are the console's (research R9, R12). sums
 // are the apps' summaries by ID, for what runs now (nil knows nothing).
 func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places, sums map[string]service.AppSummary) attentionRow {
+	return s.attentionRowAgain(now, it, pl, sums, nil)
+}
+
+// attentionRowAgain is attentionRow for an item whose deployment was reverted:
+// again is the deployment of the owner's that the running version repeats, or nil.
+func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl places, sums map[string]service.AppSummary, again *uint64) attentionRow {
 	row := attentionRow{Mark: "failed"}
 	if !it.When.IsZero() {
 		row.When = whenOf(now, &it.When, "")
@@ -68,7 +80,7 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places
 		rec := store.DeploymentRecord{Status: it.DeploymentStatus, JobVersion: it.Version, Error: it.Detail}
 		var now runningNow // an app missing from the summaries: nothing is said about what runs
 		if sum, ok := sums[it.AppID]; ok {
-			now = runningOf(sum.Status)
+			now = runningOf(sum.Status).repeating(again)
 		}
 		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "), deployFailedSentence(rec, now))
 		row.Action = "View deployment"

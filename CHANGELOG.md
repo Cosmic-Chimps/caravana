@@ -10,6 +10,21 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 ## Unreleased
 
 ### Added
+- API 0.23.0: `Deployment.tokenName` is the name of the API token that made a deploy (`deployApp`,
+  `deployCompose`, `promoteApp`, `redeployDeployment`), as it was then. It is absent for a deploy from
+  the console, by the webhook, and for deployments from before. Deployments also keep when Nomad
+  accepted their job, which the console reads.
+- The Apps home shows **Deploying now**: a card for each app with a rollout in progress, with what it
+  carries (who pushed it, a promotion, a redeploy), its copies as chips (starting and draining ones
+  marked) and how many new copies are healthy. It updates live and is gone when the rollout ends.
+- A filter on the Apps home, once there are more than 5 apps: by name, project, environment, image or
+  address, by state and by kind. An app that isn't a plain image app has its kind (compose, database,
+  volume) after its name.
+- The Activity rail says who deployed: "Pushed to main by ana · 4e0a77a", "Promoted from staging",
+  "through the API by ci-github", "by the webhook".
+- Every deployment in the history has a stages strip: Queued, Roll out and Live, with the wait, the
+  rollout's progress or duration, and the time it went live. After a rollback the app and its entry say
+  what the running version repeats: "v3 (v1 again) keeps running."
 - API 0.22.0: `AppStatus.services` lists, for each service of an app, its wanted and healthy
   copies (`name`, `wantedCopies`, `healthyCopies`), in the app's service order. It is absent for
   an app with no services.

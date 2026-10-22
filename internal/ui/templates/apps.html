@@ -16,7 +16,7 @@
   {{range .}}
   <div class="cv-row cv-apps-row" role="row">
     <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}}</div>
-    <div role="cell" class="cv-c-name"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a></div>
+    <div role="cell" class="cv-c-name cv-namecell"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-c-version" data-label="Version">{{if .Version}}<span class="cv-data text-fg-1">{{.Version}}</span>{{else}}<span class="cv-data-muted">none</span>{{end}}</div>
     <div role="cell" class="cv-c-image cv-lines" data-label="Image">{{range .Images}}<span class="cv-data" title="{{.Image}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Image}}</span>{{end}}</div>
     <div role="cell" class="cv-c-deploy cv-lines" data-label="Last deploy">{{with .Deploy}}{{template "time" .When}}{{if .Outcome}}<a href="{{.Href}}" class="cv-outcome">{{if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}{{.Outcome}}</a>{{end}}{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</div>
@@ -32,7 +32,16 @@
   <p class="cv-lede">Every app on this caravana, live.</p>
 </header>
 <section aria-label="Needs you" hx-get="/parts/attention" hx-trigger="sse:attention" hx-swap="innerHTML">{{template "attention-region" .Attention}}</section>
-{{if .Groups}}
+<section class="cv-deploying" aria-label="Deploying now" hx-get="/parts/deploying" hx-trigger="sse:deployments, sse:copies" hx-swap="innerHTML">{{template "deploying-region" .Deploying}}</section>
+{{template "apps-filter" .Filter}}
+{{if .NoMatch}}
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">No app matches.</p>
+    <a href="/apps" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>
+  </div>
+</div>
+{{else if .Groups}}
 {{range .Groups}}
 <section class="cv-project" aria-label="{{.Display}}">
   <h2 class="cv-project-title"><a href="{{.Href}}">{{.Display}}</a></h2>
@@ -55,6 +64,43 @@
 <div class="cv-panel">{{template "empty" .Empty}}</div>
 {{end}}
 {{end}}
+
+{{/* deploying-region: a card for each app with a rollout in progress, under a label; nothing at all
+     when none runs, so its section is empty and hidden. Takes a deployingRegion. */}}
+{{define "deploying-region"}}{{with .Cards}}<span class="cv-label">Deploying now</span>
+{{range .}}
+<article class="cv-panel cv-dcard" aria-label="{{.Name}} is rolling out">
+  <div class="cv-dcard-head">
+    <a href="{{.Href}}" class="cv-dcard-name">{{.Name}}</a>
+    {{with .Place}}<span class="cv-dcard-place">{{.}}</span>{{end}}
+    {{template "status-pill" .Status}}
+    <span class="cv-spacer"></span>
+    <a href="{{.DeployHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">View deployment</a>
+  </div>
+  <dl class="cv-dcard-facts">
+    <dt class="cv-label">Change</dt>
+    <dd>{{template "sentence" .Change}}</dd>
+    <dt class="cv-label">Copies</dt>
+    <dd class="cv-dcard-copies">
+      {{range .Chips}}<span class="cv-copychip{{with .State}} cv-copychip-{{.}}{{end}}" title="copy {{.Full}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-copychip-name">{{.Name}}</span> <span class="cv-copychip-id">{{.Short}}</span>{{with .State}} <span class="sr-only">({{.}})</span>{{end}}</span>
+      {{end}}
+      <span class="cv-dcard-sum">{{.Summary}}</span>
+    </dd>
+  </dl>
+</article>
+{{end}}{{end}}{{end}}
+
+{{/* apps-filter: the search and the two selects, a plain GET form. It is kept as it is when the
+     region reloads (hx-preserve), so a refresh never takes away what is being typed. Takes a filterView. */}}
+{{define "apps-filter"}}{{if .Show}}
+<form id="apps-filter" class="cv-filter" method="get" action="/apps" role="search" hx-preserve="true">
+  <input class="cv-field cv-field-mono cv-filter-q" type="search" name="q" value="{{.Q}}" placeholder="Filter apps" aria-label="Filter apps by name, image or address" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <select class="cv-field cv-select" name="state" aria-label="State">{{range .States}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <select class="cv-field cv-select" name="kind" aria-label="Kind">{{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Apply</button>
+  {{if .Clear}}<a href="/apps" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>{{end}}
+</form>
+{{end}}{{end}}
 
 {{/* attention-region: what needs the owner (FR-018..FR-021): one row per item, newest first,
      or one line saying nothing does. When Nomad can't be read the line is not said: copy
@@ -88,7 +134,7 @@
   <a href="{{.Href}}" class="cv-feed-link">
     <span class="cv-feed-main">{{with .Where}}<span class="cv-data-muted">{{.}} ›</span>{{end}}<span class="cv-app-name">{{.App}}</span>{{with .Version}} <span class="cv-data">{{.}}</span>{{end}}</span>
     {{template "status-quiet" .Outcome}}
-    <span class="cv-feed-meta cv-data-muted">{{.Trigger}} · {{template "time" .When}}</span>
+    <span class="cv-feed-meta cv-data-muted">{{template "sentence" .Who}} · {{template "time" .When}}</span>
   </a>
 </div>
 {{else}}
@@ -110,7 +156,7 @@
 </div>
 {{end}}
 <div class="cv-split">
-  <section class="cv-main" aria-label="Apps" hx-get="/parts/apps" hx-trigger="sse:apps, sse:sync" hx-swap="innerHTML">{{template "apps-region" .}}</section>
+  <section class="cv-main" aria-label="Apps" hx-get="{{.RefreshHref}}" hx-trigger="sse:apps, sse:sync" hx-swap="innerHTML">{{template "apps-region" .}}</section>
   <aside class="cv-rail" aria-labelledby="activity-title">
     <h2 id="activity-title" class="cv-label">Activity</h2>
     <div class="cv-panel" hx-get="/parts/activity" hx-trigger="sse:activity, sse:sync" hx-swap="innerHTML">{{template "activity-region" .}}</div>

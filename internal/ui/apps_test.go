@@ -105,6 +105,9 @@ type seedDeploy struct {
 	// Definition is what it deployed; nil records none, as before feature 011.
 	Definition *app.App
 	Source     string
+	// Origin and TokenName are what the deploy said about itself (features 020, 021).
+	Origin    *app.Origin
+	TokenName string
 }
 
 // seed stores the app and its deployments, oldest first, each ending in its status.
@@ -119,7 +122,7 @@ func (e *consoleEnv) seed(t *testing.T, a app.App, ds ...seedDeploy) {
 		digests[svc.Name] = "traefik/whoami@" + sampleDigest
 	}
 	for _, d := range ds {
-		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests}, d.Definition, nil, d.Source); err != nil {
+		if _, err := e.Store.CreateDeployment(ctx, a.ID, app.Deployment{ID: d.ID, Trigger: d.Trigger, Digests: digests, Origin: d.Origin, TokenName: d.TokenName}, d.Definition, nil, d.Source); err != nil {
 			t.Fatalf("CreateDeployment(%s): %v", d.ID, err)
 		}
 		if d.Version != 0 {
@@ -356,7 +359,7 @@ func TestAppsActivity(t *testing.T) {
 	_, body := e.get(t, "/apps")
 
 	// The triggers, in words, and every outcome with its mark.
-	for _, want := range []string{"from the console", "through the API", "by webhook", "reverted", "just now"} {
+	for _, want := range []string{"from the console", "through the API", "by the webhook", "reverted", "just now"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the activity lacks %q:\n%s", want, body)
 		}
@@ -580,7 +583,7 @@ func TestAppsNoticeAfterDelete(t *testing.T) {
 func TestLiveStreamsOfTheConsole(t *testing.T) {
 	e := newConsoleEnv(t)
 
-	t.Run("/live sends apps, activity and attention, and nothing about one app", func(t *testing.T) {
+	t.Run("/live sends apps, activity, attention, deployments and copies, and nothing about one app", func(t *testing.T) {
 		ls := openStream(t, e.URL, "/live", e.Cookie.Value)
 		ls.expect("sync")
 		if _, err := e.Svc.Deploy(context.Background(), whoamiApp(), app.TriggerManual); err != nil {
@@ -589,8 +592,9 @@ func TestLiveStreamsOfTheConsole(t *testing.T) {
 		seen := map[string]bool{}
 		for !(seen["apps"] && seen["activity"]) {
 			name := ls.next()
-			if name != "apps" && name != "activity" && name != "attention" {
-				t.Fatalf("event %q on /live, want only apps, activity and attention", name)
+			// The "Deploying now" card refreshes on deployments and copies (feature 021).
+			if name != "apps" && name != "activity" && name != "attention" && name != "deployments" && name != "copies" {
+				t.Fatalf("event %q on /live, want only apps, activity, attention, deployments and copies", name)
 			}
 			seen[name] = true
 		}

@@ -193,6 +193,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps/{id}/copies/{copyId}/terminal", s.requireSession(s.showTerminal)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
+		{"GET", "/parts/deploying", s.requirePart(s.partDeploying)},
 		{"GET", "/parts/attention", s.requirePart(s.partAttention)},
 		{"GET", "/parts/apps/{id}/header", s.requirePart(s.partAppHeader)},
 		{"GET", "/parts/apps/{id}/copies", s.requirePart(s.partCopies)},

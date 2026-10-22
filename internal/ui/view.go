@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -161,6 +160,56 @@ func triggerWords(t app.Trigger) string {
 		return "by webhook"
 	}
 	return "by " + string(t)
+}
+
+// The kinds the Apps home tells apart (feature 021, page 4). An image app is the
+// plain case and has no word.
+const (
+	kindImage    = ""
+	kindCompose  = "compose"
+	kindDatabase = "database"
+	kindVolume   = "volume"
+)
+
+// databaseImages are the image repositories that make an app a database: the
+// last path segment of the image, before its tag or digest.
+var databaseImages = []string{"postgres", "mysql", "mariadb", "redis", "valkey"}
+
+// imageName is the last path segment of an image reference before its tag or
+// digest, in lowercase: "ghcr.io/acme/postgres:16" and "postgres@sha256:..." are
+// both "postgres".
+func imageName(image string) string {
+	ref, _, _ := strings.Cut(image, "@")
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	name, _, _ := strings.Cut(ref, ":")
+	return strings.ToLower(name)
+}
+
+// kindOf is the word the Apps home puts after an app's name, and what its kind
+// filter selects: the first rule that applies. compose is an app whose source is
+// Compose or that keeps its Compose file; database is an app with a service
+// backed up as Postgres or whose image is one of databaseImages; volume is an
+// app with any volume; an image app is kindImage ("").
+func kindOf(a app.App, keptFile bool) string {
+	if a.Source.Kind == app.SourceCompose || keptFile {
+		return kindCompose
+	}
+	for _, svc := range a.Services {
+		if svc.Backup != nil && svc.Backup.Engine == app.BackupPostgres {
+			return kindDatabase
+		}
+		if slices.Contains(databaseImages, imageName(svc.Image)) {
+			return kindDatabase
+		}
+	}
+	for _, svc := range a.Services {
+		if len(svc.Volumes) > 0 {
+			return kindVolume
+		}
+	}
+	return kindImage
 }
 
 // statusRank orders kinds for The Problems-First Rule: failed first, idle last.
@@ -394,6 +443,9 @@ type runningNow struct {
 	Reported int
 	Wanted   int
 	Known    bool
+	// Again is the deployment of the owner's that Version repeats after a revert
+	// (repeatedVersion); nil says nothing.
+	Again *uint64
 }
 
 // deployFailedSentence says a deployment failed, and what runs now: "v3 failed
@@ -426,7 +478,9 @@ func deployFailedSentence(rec store.DeploymentRecord, now runningNow) sentence {
 	switch {
 	case !now.Known:
 	case now.Version != nil:
-		out = append(out, plain(" "), mono(versionLabel(now.Version)), plain(" keeps running."))
+		out = append(out, plain(" "), mono(versionLabel(now.Version)))
+		out = append(out, againWords(now.Version, now.Again)...)
+		out = append(out, plain(" keeps running."))
 	case now.Reported > 0:
 		out = append(out, plain(fmt.Sprintf(" 0 of %d copies healthy.", max(now.Wanted, now.Reported))))
 	default:
@@ -439,6 +493,12 @@ func deployFailedSentence(rec store.DeploymentRecord, now runningNow) sentence {
 func runningOf(st service.AppStatus) runningNow {
 	return runningNow{Version: st.LiveVersion, Reported: st.ReportedCopies, Wanted: st.WantedCopies,
 		Known: st.State != service.StateUnknown}
+}
+
+// repeating is r with the deployment its version repeats after a revert.
+func (r runningNow) repeating(again *uint64) runningNow {
+	r.Again = again
+	return r
 }
 
 // troubleWords says in a few words what is wrong with an app that needs the
@@ -530,6 +590,13 @@ func nameList(names []string) string {
 // how it was last deployed ("2 copies running v7. Last deployed 3 minutes ago
 // from the console.").
 func summaryOf(sum service.AppSummary, now time.Time) sentence {
+	return summaryOfAgain(sum, now, nil)
+}
+
+// summaryOfAgain is summaryOf for an app whose newest deployment was reverted:
+// again is the deployment of the owner's that the running version repeats
+// ("v2 (v0 again) keeps running"), or nil.
+func summaryOfAgain(sum service.AppSummary, now time.Time, again *uint64) sentence {
 	st := sum.Status
 	var out sentence
 	live := versionLabel(st.LiveVersion)
@@ -542,7 +609,7 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		out = append(out, plain(". Start it to run what ran before."))
 	case service.StateHealthy, service.StateDegraded:
 		if deployEnded(sum) {
-			out = deployFailedSentence(*sum.LastDeployment, runningOf(st))
+			out = deployFailedSentence(*sum.LastDeployment, runningOf(st).repeating(again))
 		} else {
 			out = copiesSentence(st, live)
 		}
@@ -568,7 +635,7 @@ func summaryOf(sum service.AppSummary, now time.Time) sentence {
 		}
 		switch {
 		case deployEnded(sum):
-			out = deployFailedSentence(*sum.LastDeployment, runningOf(st))
+			out = deployFailedSentence(*sum.LastDeployment, runningOf(st).repeating(again))
 		case st.ReportedCopies > 0:
 			// Nomad has copies and none is healthy: say so, not "none are running".
 			out = sentence{plain(fmt.Sprintf("0 of %d copies healthy.", st.WantedCopies))}
@@ -661,6 +728,13 @@ type deployFacts struct {
 	Previous *uint64
 	// ReplacedBy is the job version of the deployment that came after this one.
 	ReplacedBy *uint64
+	// Again is, for a reverted deployment, the version of the owner's that
+	// Nomad's rollback put back (repeatedVersion); nil for the others and when
+	// the history doesn't say.
+	Again *uint64
+	// Live is the version that runs now, set only for the newest deployment of
+	// an app that was reverted: the rollback registered it as a new job version.
+	Live *uint64
 }
 
 // deployFactsOf gives each entry of a page of the history (newest first) its
@@ -675,6 +749,7 @@ func deployFactsOf(page []store.DeploymentRecord, first bool) []deployFacts {
 				break
 			}
 		}
+		facts[i].Again = repeatedVersion(page[i], page[i+1:])
 		for j := i - 1; j >= 0; j-- {
 			if page[j].JobVersion != nil {
 				facts[i].ReplacedBy = page[j].JobVersion
@@ -788,16 +863,23 @@ func deploymentSentence(rec store.DeploymentRecord, f deployFacts) sentence {
 		return sentence{v, plain(" rolled out healthy.")}
 
 	case store.StatusReverted:
-		target := plain("the previous version")
-		switch m := rolledBackTo.FindStringSubmatch(rec.Error); {
-		case m != nil:
-			if n, err := strconv.ParseUint(m[1], 10, 64); err == nil {
-				target = mono(versionLabel(&n))
-			}
+		// The version Nomad's message names, else the last healthy one. For the newest
+		// deployment the version that runs now is the one the rollback registered, so
+		// it is the one said, with the deployment of the owner's it repeats.
+		target, shown := plain("the previous version"), (*uint64)(nil)
+		switch n := revertTarget(rec.Error); {
+		case f.Live != nil:
+			shown = f.Live
+		case n != nil:
+			shown = n
 		case f.Previous != nil:
-			target = mono(versionLabel(f.Previous))
+			shown = f.Previous
+		}
+		if shown != nil {
+			target = mono(versionLabel(shown))
 		}
 		out := sentence{v, plain(" failed its health checks. Nomad rolled back to "), target}
+		out = append(out, againWords(shown, f.Again)...)
 		if f.Current {
 			return append(out, plain(", which is serving."))
 		}

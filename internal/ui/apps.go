@@ -47,6 +47,10 @@ type appRow struct {
 	Images  []serviceImage
 	Domains []domainLink
 	Deploy  *deployCell // nil if never deployed
+	// Kind is the word after the name (compose, database, volume; "" for an image
+	// app) and State the filter's state of the app (stateNeeds, ...; "").
+	Kind  string
+	State string
 }
 
 // activityRow is one entry of the activity rail: a deployment of some app.
@@ -58,7 +62,7 @@ type activityRow struct {
 	Href    string
 	Version string
 	Outcome statusView
-	Trigger string // in words: "from the console"
+	Who     sentence // "from the console", "Pushed to main by ana · 4e0a77", "through the API by ci-github"
 	When    when
 }
 
@@ -73,9 +77,16 @@ type activityRow struct {
 type appsRegion struct {
 	Headline  sentence
 	Attention attentionRegion
-	Rows      []appRow
-	Groups    []projectGroup
-	Empty     emptyView
+	// Deploying is the "Deploying now" cards, a live region of its own inside this one.
+	Deploying deployingRegion
+	// Filter is the filter row (drawn with more than 5 apps); NoMatch says it left
+	// nothing. RefreshHref is where the region reloads itself from, with the filter.
+	Filter      filterView
+	NoMatch     bool
+	RefreshHref string
+	Rows        []appRow
+	Groups      []projectGroup
+	Empty       emptyView
 }
 
 // projectGroup is a project's section of the grouped Apps page.
@@ -168,7 +179,8 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 
 // liveApps answers GET /live: the stream of the Apps page.
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
-	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention}})
+	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
+		service.ChangeDeployments, service.ChangeCopies}})
 }
 
 // loadApps reads every app and builds the headline, the needs-you list and
@@ -190,30 +202,52 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 		return appsRegion{}, err
 	}
 	now := s.now()
+	// The filter is drawn, and obeyed, only with more than a few apps.
+	filter := filterOf(r)
+	if len(sums) <= filterMinApps {
+		filter = appsFilter{}
+	}
 	region := appsRegion{Headline: headlineOf(sums, items), Attention: attention,
-		Empty: emptyView{Title: "Deploy an image and it shows up here."}}
+		Deploying:   s.loadDeploying(ctx, sums, pl),
+		Filter:      filterViewOf(filter, len(sums)),
+		RefreshHref: "/parts/apps" + filter.Query(),
+		Empty:       emptyView{Title: "Deploy an image and it shows up here."}}
 	// The top bar's "New app" is the page's one primary action, so the empty
 	// state doesn't repeat it.
 
+	// The rows that pass the filter. The headline and the needs-you list above
+	// are about the whole caravana and never filtered.
 	if pl.single() {
 		rows := make([]appRow, 0, len(sums))
 		for _, sum := range sums {
-			rows = append(rows, s.appRow(now, sum))
+			if row := s.appRow(now, sum); filter.matches(sum, row) {
+				rows = append(rows, row)
+			}
 		}
 		sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
 		region.Rows = rows
+		region.NoMatch = filter.Active() && len(rows) == 0
 		return region, nil
 	}
 
+	matched := 0
 	byEnv := map[app.Place][]appRow{} // keyed by project and environment: the name is left empty
 	for _, sum := range sums {
+		row := s.appRow(now, sum)
+		if !filter.matches(sum, row) {
+			continue
+		}
+		matched++
 		key := app.Place{Project: sum.Place.Project, Environment: sum.Place.Environment}
-		byEnv[key] = append(byEnv[key], s.appRow(now, sum))
+		byEnv[key] = append(byEnv[key], row)
 	}
 	for _, pr := range pl.Projects {
 		group := projectGroup{Display: pr.DisplayName, Href: "/projects/" + url.PathEscape(pr.ID)}
 		for _, env := range pr.Environments {
 			rows := byEnv[app.Place{Project: pr.ID, Environment: env.Name}]
+			if filter.Active() && len(rows) == 0 {
+				continue // the groups hold only what matches
+			}
 			sortProblemsFirst(rows, func(row appRow) string { return row.Sort })
 			eg := envGroup{Name: env.Name, Rows: rows}
 			if s.newApp {
@@ -221,8 +255,12 @@ func (s *server) loadApps(r *http.Request) (appsRegion, error) {
 			}
 			group.Envs = append(group.Envs, eg)
 		}
+		if filter.Active() && len(group.Envs) == 0 {
+			continue
+		}
 		region.Groups = append(region.Groups, group)
 	}
+	region.NoMatch = filter.Active() && matched == 0
 	return region, nil
 }
 
@@ -234,7 +272,9 @@ func (s *server) appRow(now time.Time, sum service.AppSummary) appRow {
 		Status:  appStatusView(sum),
 		Version: versionLabel(sum.Status.LiveVersion),
 		Domains: domainLinks(sum.App),
+		Kind:    kindOf(sum.App, sum.Compose != nil),
 	}
+	row.State = stateKey(sum, row.Status)
 	// Healthy copies don't hide a failed deploy: the row sorts with the problems.
 	row.Sort = row.Status.Kind
 	if lastDeployFailed(sum) {
@@ -303,7 +343,7 @@ func (s *server) activityRowOf(now time.Time, rec store.DeploymentRecord) activi
 		Href:    s.deploymentsHref(rec.AppID),
 		Version: versionLabel(rec.JobVersion),
 		Outcome: deploymentStatusView(rec.Status),
-		Trigger: triggerWords(rec.Deployment.Trigger),
+		Who:     activityWho(rec),
 		When:    whenOf(now, &rec.CreatedAt, ""),
 	}
 }

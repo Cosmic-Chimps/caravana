@@ -703,6 +703,54 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
   no address and no later page; the Copy button stays hidden without script.
 
+### The Apps home and the deployment's stages (feature 021, page 4)
+Values from `contracts/page4-home-deploys.md`. The home's main column reads: headline, needs-you,
+Deploying now, the filter, the groups.
+- **Deploying now.** A Label, then one panel per app with a rollout in progress, newest first, padding 20,
+  gap 16, the border in Rolling Line. Head row (gap 14, wraps): the app's name in mono 500 18px, its
+  `project / environment` in muted mono 13px (left out in Default / production, like the rail's), the
+  rolling pill ("v24 rolling out"), a spacer, "View deployment" (secondary small). No Roll back: Nomad
+  reverts a failed rollout itself. Facts grid (`auto 1fr`, gap 10/20): **Change** (what the deploy
+  carries: "Pushed to `main` by ana · `4e0a77a`", "Promoted from `staging`", "`v3` deployed again",
+  "Deployed from the console", "through the API", "by the webhook") and **Copies**: chips, then "1 of 2
+  new copies healthy". A chip is 26px tall, ink-2 ground, 1px line-2 edge, radius 2, mono 12px: a 6px
+  mark, the app's name (the service's, with several), the copy's short ID. A starting copy has a dashed
+  Rolling Line edge and the half mark; a draining one a dashed edge, the idle ring and struck-through
+  quiet text; both say their state to a screen reader. No chips: "Waiting for Nomad to place the first
+  copy." The region is its own live region on the deployments and copies notices and is empty (hidden)
+  when nothing rolls out.
+- **The filter.** A GET form between the needs-you list and the groups: a search (32px mono, 280 wide),
+  a state select (All states, Needs you, Rolling out, Healthy, Stopped, Not deployed), a kind select (All
+  kinds, Image, Compose, Database, Volume), Apply, and Clear when any is set. Drawn only with more than
+  5 apps, and ignored under that. It matches name, project, environment, images and domains in any case.
+  The groups hold only what matches, an empty group isn't drawn, and nothing matching is "No app matches."
+  with Clear. The headline and the needs-you list are about the whole caravana and never filtered. The form
+  sits outside the reload's way (`hx-preserve`), so a refresh never takes away what is being typed, and
+  the region's refresh address carries the query.
+- **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned. One rule
+  (`kindOf`), shared with the kind filter, the first that applies: **compose** (source Compose or a kept
+  file), **database** (a Postgres backup, or an image named postgres, mysql, mariadb, redis or valkey: the
+  last path segment before the tag or digest), **volume** (any volume), else nothing: an image app has no
+  word.
+- **Who deployed**, the second line of an Activity row: "`<who>` · when". An origin says "Pushed to `main`
+  by ana · `4e0a77a`"; a promotion "Promoted from `staging`"; the console "from the console"; the API
+  "through the API" and, when the deployment recorded the token, "by `ci-github`"; the webhook "by the
+  webhook".
+- **The stages strip.** In every history entry, under the head line: a panel of three cells (Queued, Roll
+  out, Live), 18/20 padding, 1px line-1 between them. A cell is an 8px mark and the stage's name (500 15px;
+  Readout White when done or active, quiet when still to come), and under it a mono 13px value, "—" when
+  nothing. Marks: done disc, active half mark, to come ring, failed square. The active cell has a 2px
+  Rolling underline. Queued: the wait ("2 s"), "waiting", or a failed square and "didn't start" when the
+  deploy failed before Nomad had it ("superseded" when a newer one won). Roll out: "1 of 2 copies healthy"
+  while it runs, its duration, or "failed". Live: the time it ended ("14:03:05", the date in the `title`),
+  and a ring and "—" for a deployment that failed or was reverted. Under 660px of room the cells stack, one
+  line each. Each mark also says its meaning in words for a screen reader.
+- **A rollback says what was deployed again.** After a revert Nomad's live version is a copy of an older
+  one: "`v3` (`v1` again) keeps running." on the app, "rolled back to `v3` (`v1` again)" in the entry,
+  and the same in the needs-you list. The older deployment is the newest healthy one before the failed
+  one with a recorded definition and pinned images (the one Nomad's message names, when the history has
+  it). When none matches, the wording stays "v3".
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

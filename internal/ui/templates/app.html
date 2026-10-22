@@ -530,6 +530,15 @@
     {{template "status-pill" .Status}}
     <span class="cv-deploy-meta cv-data-muted">{{.Trigger}} · {{template "time" .Started}} · {{.Timing}}</span>
   </div>
+  <div class="cv-stageswrap">
+    <ol class="cv-panel cv-stages" aria-label="Stages">
+      {{range .Stages}}<li class="cv-stage{{if .Active}} cv-stage-active{{end}}"{{if .Active}} aria-current="step"{{end}}>
+        <span class="cv-stage-name{{if .ToCome}} cv-stage-todo{{end}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>{{.Name}}</span>
+        <span class="cv-stage-value"{{with .Title}} title="{{.}}"{{end}}><span class="sr-only">{{.Word}}: </span>{{.Value}}</span>
+      </li>
+      {{end}}
+    </ol>
+  </div>
   <p class="cv-deploy-sentence">{{template "sentence" .Sentence}}</p>
   {{with .Progress}}<p class="cv-deploy-progress"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
