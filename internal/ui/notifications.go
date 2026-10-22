@@ -134,6 +134,7 @@ type deliveryRow struct {
 // notificationRow is one channel, one connection row.
 type notificationRow struct {
 	ID, Name, Kind, KindLabel, Address string
+	KindLine                           string // the kind, then what the channel sends when that isn't everything
 	Icon                               string // the kind's icon: hash, message-square, bell or webhook
 	Mark                               string // notificationsState's: healthy, warning or idle
 	Paused                             bool
@@ -407,6 +408,39 @@ func sendsLine(events []string) string {
 	return strings.Join(parts, ", ")
 }
 
+// eventsWords says in plain English what a channel sends when it doesn't ask for all
+// three events; "" when it asks for all of them (the kind alone says enough).
+func eventsWords(events []string) string {
+	problems := slices.Contains(events, service.EventProblems)
+	failed := slices.Contains(events, service.EventDeployFailed)
+	succeeded := slices.Contains(events, service.EventDeploySucceeded)
+	switch {
+	case problems && failed && succeeded:
+		return ""
+	case problems && failed:
+		return "deploy failures and problems"
+	case problems && succeeded:
+		return "deploy successes and problems"
+	case failed && succeeded:
+		return "deploy failures and successes"
+	case problems:
+		return "problems only"
+	case failed:
+		return "deploy failures only"
+	case succeeded:
+		return "deploy successes only"
+	}
+	return "" // none: the service refuses that, so there is nothing to say
+}
+
+// kindLine is "Webhook", or "Webhook · problems only" when the channel sends less than everything.
+func kindLine(kind string, events []string) string {
+	if words := eventsWords(events); words != "" {
+		return kindLabel(kind) + " · " + words
+	}
+	return kindLabel(kind)
+}
+
 // kindIcon is the icon a channel's kind is drawn with.
 func kindIcon(kind string) string {
 	switch kind {
@@ -428,7 +462,7 @@ func notificationsSection(now time.Time, facts settingsFacts, st entryState, dat
 	data.Rows = make([]notificationRow, 0, len(facts.Channels))
 	for i, c := range facts.Channels {
 		row := notificationRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), Address: c.Address, Icon: kindIcon(c.Kind),
+			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), KindLine: kindLine(c.Kind, c.Events), Address: c.Address, Icon: kindIcon(c.Kind),
 			Mark: st.Rows[i], Paused: c.Paused, HasToken: c.HasToken, Sends: sendsLine(c.Events),
 		}
 		// A webhook's or ntfy topic's URL is shown, so it fills the edit form; a

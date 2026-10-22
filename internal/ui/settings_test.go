@@ -191,6 +191,11 @@ func TestSettingsEntryRules(t *testing.T) {
 			{"used 90 days ago is not yet", active(service.APITokenInfo{CreatedAt: *ago(200 * day), LastUsedAt: ago(90 * day), ExpiresAt: &later}), "healthy", 0},
 			{"never used, made 100 days ago", active(service.APITokenInfo{CreatedAt: *ago(100 * day), ExpiresAt: &later}), "warning", 1},
 			{"never used, made yesterday", active(service.APITokenInfo{CreatedAt: *ago(day), ExpiresAt: &later}), "healthy", 0},
+			{"never used, made just now: a fresh token is never flagged", active(service.APITokenInfo{CreatedAt: now, ExpiresAt: &later}), "healthy", 0},
+			{"never used, made 89 days ago", active(service.APITokenInfo{CreatedAt: *ago(89 * day), ExpiresAt: &later}), "healthy", 0},
+			{"never used, made 90 days ago: not yet, it takes more than 90", active(service.APITokenInfo{CreatedAt: *ago(90 * day), ExpiresAt: &later}), "healthy", 0},
+			{"never used, made 91 days ago", active(service.APITokenInfo{CreatedAt: *ago(91 * day), ExpiresAt: &later}), "warning", 1},
+			{"used a minute ago, made long ago", active(service.APITokenInfo{CreatedAt: *ago(300 * day), LastUsedAt: ago(time.Minute), ExpiresAt: &later}), "healthy", 0},
 			{"both problems", active(service.APITokenInfo{CreatedAt: *ago(200 * day), LastUsedAt: ago(100 * day)}), "warning", 2},
 			{"expired", service.APITokenInfo{State: service.TokenExpired, CreatedAt: *ago(200 * day)}, "idle", 0},
 			{"revoked", service.APITokenInfo{State: service.TokenRevoked, CreatedAt: *ago(200 * day)}, "idle", 0},
@@ -690,5 +695,116 @@ func TestSettingsTokenRows(t *testing.T) {
 	// The nav shows the warning, not the count.
 	if !strings.Contains(page, `cv-mark cv-mark-warning" aria-hidden="true"></span><span class="sr-only">a token needs a look`) {
 		t.Error("the nav lacks the warning mark")
+	}
+}
+
+// What a channel sends, in words, for each combination of the three events.
+func TestEventsWords(t *testing.T) {
+	p, f, ok := service.EventProblems, service.EventDeployFailed, service.EventDeploySucceeded
+	for _, tc := range []struct {
+		events []string
+		want   string
+	}{
+		{[]string{p, f, ok}, ""},
+		{[]string{ok, p, f}, ""},
+		{[]string{p}, "problems only"},
+		{[]string{f}, "deploy failures only"},
+		{[]string{ok}, "deploy successes only"},
+		{[]string{p, f}, "deploy failures and problems"},
+		{[]string{f, p}, "deploy failures and problems"},
+		{[]string{p, ok}, "deploy successes and problems"},
+		{[]string{f, ok}, "deploy failures and successes"},
+		{nil, ""},
+	} {
+		if got := eventsWords(tc.events); got != tc.want {
+			t.Errorf("eventsWords(%v) = %q, want %q", tc.events, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		kind   string
+		events []string
+		want   string
+	}{
+		{"webhook", []string{p}, "Webhook · problems only"},
+		{"slack", []string{f, p}, "Slack · deploy failures and problems"},
+		{"ntfy", []string{p, f, ok}, "ntfy"},
+		{"discord", []string{ok}, "Discord · deploy successes only"},
+	} {
+		if got := kindLine(tc.kind, tc.events); got != tc.want {
+			t.Errorf("kindLine(%s, %v) = %q, want %q", tc.kind, tc.events, got, tc.want)
+		}
+	}
+}
+
+// The review's fixes: the kind line says what a channel sends when that isn't all, New signing secret sits inside
+// Edit before Save (so a row has four buttons), the add panels open with a label, and the Expiry column is 170px.
+func TestSettingsAfterTheReview(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	rcv := newNotifyReceiver(t)
+	hook, err := e.Svc.CreateNotificationChannel(ctx, service.NotificationChannelInput{Kind: "webhook", Name: "ci", URL: rcv.URL + "/h",
+		Events: []string{service.EventProblems}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Svc.CreateNotificationChannel(ctx, service.NotificationChannelInput{Kind: "slack", Name: "team", URL: rcv.URL + "/services/T0/B0/x",
+		Events: []string{service.EventProblems, service.EventDeployFailed}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Svc.CreateNotificationChannel(ctx, service.NotificationChannelInput{Kind: "ntfy", Name: "phone", URL: rcv.URL + "/t",
+		Events: []string{service.EventProblems, service.EventDeployFailed, service.EventDeploySucceeded}}); err != nil {
+		t.Fatal(err)
+	}
+
+	page := e.mustGet(t, "/settings/notifications")
+	got := text(page)
+	for _, want := range []string{"Webhook · problems only", "Slack · deploy failures and problems", "Add a channel"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Notifications lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ntfy ·") {
+		t.Errorf("a channel that sends everything says so in words:\n%s", got)
+	}
+	// "New signing secret" is in the Edit details, after the fields and before Save, for the webhook only.
+	row := page[strings.Index(page, `title="ci">`):]
+	row = row[:strings.Index(row, `Recent deliveries`)]
+	fields, secret, save := strings.Index(row, `id="notify-edit-form-`), strings.Index(row, `>New signing secret</summary>`), strings.Index(row, `form="notify-edit-form-`)
+	editOpen, editClose := strings.Index(row, `aria-label="Edit ci"`), strings.Index(row, `aria-label="Remove ci"`)
+	if !(editOpen < fields && fields < secret && secret < save && save < editClose) {
+		t.Errorf("New signing secret isn't inside Edit between the fields and Save (%d, %d, %d, %d, %d)", editOpen, fields, secret, save, editClose)
+	}
+	if n := strings.Count(row, `<summary class="cv-btn`) + strings.Count(row, `<button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label`); n != 5 {
+		// Send a test, Pause, Edit, Remove, and the nested New signing secret summary
+		t.Errorf("the row has %d buttons and summaries, want 5 (four on the row, one inside Edit)", n)
+	}
+	if n := strings.Count(page, `>New signing secret</summary>`); n != 1 {
+		t.Errorf("%d New signing secret controls, want only the webhook's", n)
+	}
+	if !strings.Contains(page, `/settings/notifications/`+hook.ID+`/secret`) {
+		t.Error("the webhook has no signing secret form")
+	}
+
+	// The add panels open with a label, so #add and #new land on a named thing.
+	for path, want := range map[string]string{"/settings/registries": "Add a registry", "/settings/notifications": "Add a channel", "/settings/tokens": "New token"} {
+		body := e.mustGet(t, path)
+		if !regexp.MustCompile(`<h2 class="cv-label cv-addhead">` + want + `</h2>`).MatchString(body) {
+			t.Errorf("%s: the add panel has no %q label", path, want)
+		}
+	}
+
+	// The stylesheet: the token table's Expiry column is 170px, and Settings drops the shell's narrow padding.
+	_, css := e.get(t, "/static/app.css")
+	css = strings.Join(strings.Fields(css), " ")
+	if !strings.Contains(css, "110px 170px 76px") {
+		t.Error("the token table's Expiry column isn't 170px")
+	}
+	// The narrow nav scrolls and must contain its sr-only spans (absolute), or they widen the page.
+	if !regexp.MustCompile(`\.cv-snav\{[^}]*position:relative`).MatchString(css) {
+		t.Error("the narrow Settings nav isn't positioned, so its sr-only spans would widen the page")
+	}
+	// Outside the layer, so it outranks the shell's own narrow padding for .cv-page.
+	if !strings.Contains(css, "@media (max-width:899.98px){") || !strings.Contains(css, ".cv-page-settings{padding:0}") {
+		t.Error(".cv-page-settings doesn't drop the shell's narrow padding after the layer")
 	}
 }

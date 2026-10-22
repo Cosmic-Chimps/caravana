@@ -661,8 +661,10 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   alone, **Connections** (Registries, Backup storage, Notifications) and **Security** (API tokens). A group
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
-  Control ground and no left bar (the bar is the sidebar's). Under 900px the nav is a row of links above the
-  content, scrolling sideways. The sidebar's Settings stays current on every Settings page, and the crumbs
+  Control ground and no left bar (the bar is the sidebar's). Under 900px the shell's own narrow rule applies
+  (no sidebar, the Menu bar) and the nav is a row of links above the content, scrolling sideways; it is
+  positioned so its screen-reader-only spans stay inside the scroller, and `.cv-page-settings` drops the
+  shell's narrow padding after the layer, which would otherwise win. The sidebar's Settings stays current on every Settings page, and the crumbs
   read "Settings / <entry>".
 - **The count-or-mark rule.** Each entry has one function (`registriesState`, `backupStorageState`,
   `notificationsState`, `tokensState`) that gives its count, its mark, and the mark of each of its rows; the
@@ -679,12 +681,15 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   the left and the controls at the right, 24px between, 18px 20px of padding, a Hairline between rows. Fields
   are the 32px field at 360px. The form's primary button ends its last row.
 - **Connection rows** (Registries, Backup storage, Notifications): a 9px mark, the name in mono over its kind,
-  the state in two lines of mono, "used by N", and the actions as small buttons (Update password is the one
+  the state in two lines of mono, "used by N", and the actions as small buttons (a channel's kind line also
+  says in words what it sends when that isn't everything: "Webhook · problems only") (Update password is the one
   primary, only on a refused registry). A row that needs the owner has its note under it, indented past the
   mark. Edit, Remove, New signing secret and Revoke are `<details>` confirmations that open over the rows
   below, so these panels don't clip; a row's confirmations close each other. The backup destination's row is
   itself the summary of the details that opens its form. A narrow panel stacks a row's cells.
-- **Token table:** a 38px head, then rows of mark, name over "made …", what it can do, last used, expiry, and
+- **Add panels** (Registries, Notifications, API tokens) open with a Label row naming what they add, so `#add`
+  and `#new` land on a named thing.
+- **Token table:** a 38px head (Expiry column 170px), then rows of mark, name over "made …", what it can do, last used, expiry, and
   Revoke; sorted active (problems first), expired, revoked. "never expires" is in the warning hue for a full
   token.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that

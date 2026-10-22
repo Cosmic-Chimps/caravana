@@ -727,6 +727,8 @@
   .cv-conn-acts { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 6px; }
   .cv-conn-note { margin: 0; padding: 0 18px 14px 50px; font: 400 13px/1.5 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; overflow-wrap: anywhere; }
   .cv-conn .cv-confirm-row .cv-confirm-body { right: 0; }
+  /* A confirmation inside a confirmation (New signing secret in Edit) opens in place, not as a second overlay. */
+  .cv-conn .cv-confirm-row .cv-confirm .cv-confirm-body { position: static; width: auto; margin-top: 12px; background: var(--color-ink-1); box-shadow: none; }
   .cv-conn .cv-confirm-wide .cv-confirm-body { width: min(34rem, calc(100% - 24px)); max-width: none; }
 
   /* The backup destination's row opens its form in place: the row is the summary. */
@@ -745,12 +747,16 @@
   .cv-deliveries-none { margin: 8px 0 0; font-size: 13px; color: var(--color-fg-3); }
 
   /* The token table: a head of labels, then rows on the same columns. */
-  .cv-thead, .cv-conn-row-tok { grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.2fr) 110px 150px 76px; gap: 18px; }
+  .cv-thead, .cv-conn-row-tok { grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.2fr) 110px 170px 76px; gap: 18px; }
   .cv-thead { display: grid; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
   .cv-thead > .cv-label:last-of-type { grid-column: 5; }
   .cv-conn-row-tok { min-height: 54px; padding-block: 8px; }
   .cv-conns > .cv-thead + .cv-conn { border-top: 0; }
   .cv-tok-cando { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+
+  /* An add form's first row: what it adds. */
+  .cv-addhead { margin: 0; padding: 16px 20px 0; }
+  .cv-addhead + .cv-setrow { border-top: 0; }
 
   /* A secret shown once: the sentence, the value in a box, then the example. */
   .cv-once { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
@@ -771,15 +777,20 @@
   .cv-conn-row-ch > .cv-conn-icon { grid-column: 2; grid-row: 1; }
   .cv-conn-acts { justify-content: flex-start; }
   .cv-thead { display: none; }
+  /* A stacked token row names its facts, since the head is gone. */
+  .cv-conn-row-tok > [data-label]::before { content: attr(data-label) " "; color: var(--color-fg-4); }
+  .cv-conn-row-tok > [data-label] > .sr-only { display: none; }
   .cv-conn .cv-confirm-row .cv-confirm-body { left: 0; right: auto; }
 }
 
 /* Under 900px the nav is a row of links above the content, scrolling sideways. */
 @media (max-width: 899.98px) {
   .cv-settings { grid-template-columns: minmax(0, 1fr); }
-  .cv-snav { position: static; height: auto; flex-direction: row; align-items: center; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-snav { position: relative; top: auto; /* relative, not static: the containing block of the sr-only spans, so the scroller clips them */ height: auto; flex-direction: row; align-items: center; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--color-line-1); }
   .cv-snav-title, .cv-snav-label { display: none; }
   .cv-snav-group { flex-direction: row; flex: none; }
   .cv-snav-item { flex: none; white-space: nowrap; }
   .cv-settings-main { padding: 24px 16px 40px; }
+  /* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page 16px of padding. */
+  .cv-page-settings { padding: 0; }
 }

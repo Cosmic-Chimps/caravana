@@ -157,6 +157,7 @@
 {{end}}
 
 <form method="post" action="/settings/registries" id="add" class="cv-panel" autocomplete="off">
+  <h2 class="cv-label cv-addhead">Add a registry</h2>
   {{template "srow-open" (srow "Registry" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub." "registry-add-host")}}
   {{template "registry-input" (regField .Add "registry-add" "host" "Registry" "ghcr.io" "")}}
   {{template "srow-close"}}
@@ -287,7 +288,7 @@
           <span class="cv-conn-titlerow"><span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>{{if .Paused}}<span class="cv-conn-paused">paused</span>{{end}}</span>
           <span class="cv-conn-addr" title="{{.Address}}">{{.Address}}</span>
         </div>
-        <span class="cv-conn-kind" title="{{.Sends}}">{{.KindLabel}}</span>
+        <span class="cv-conn-kind" title="{{.Sends}}">{{.KindLine}}</span>
         <div class="cv-conn-state">
           {{with .Last}}
           {{if .OK}}<span class="cv-conn-st cv-conn-st-quiet" title="{{.When.Exact}}">sent {{.When.Text}}</span>
@@ -304,20 +305,24 @@
           </form>
           <details class="cv-confirm cv-confirm-row cv-confirm-wide" name="conn-{{$i}}"{{if .Open}} open{{end}}>
             <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
-            <form method="post" action="/settings/notifications/{{.ID}}" class="cv-confirm-body" autocomplete="off">
-              {{template "notify-fields" (notifyForm .Edit (printf "notify-edit-%d" $i) true .Kind .HasToken)}}
-              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
-            </form>
+            {{/* The fields are one form, the new signing secret another (a form can't hold a form),
+                 and Save, last in the body, belongs to the first through form=. */}}
+            <div class="cv-confirm-body">
+              <form method="post" action="/settings/notifications/{{.ID}}" id="notify-edit-form-{{$i}}" class="cv-formcol" autocomplete="off">
+                {{template "notify-fields" (notifyForm .Edit (printf "notify-edit-%d" $i) true .Kind .HasToken)}}
+              </form>
+              {{if eq .Kind "webhook"}}
+              <details class="cv-confirm">
+                <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
+                <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
+                  <p>The old secret stops working at once.</p>
+                  <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
+                </form>
+              </details>
+              {{end}}
+              <div><button type="submit" form="notify-edit-form-{{$i}}" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+            </div>
           </details>
-          {{if eq .Kind "webhook"}}
-          <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
-            <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="New signing secret for {{.Name}}">New signing secret</summary>
-            <form method="post" action="/settings/notifications/{{.ID}}/secret" class="cv-confirm-body">
-              <p>The old secret stops working at once.</p>
-              <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary">New signing secret</button></div>
-            </form>
-          </details>
-          {{end}}
           <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
             <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
             <form method="post" action="/settings/notifications/{{.ID}}/remove" class="cv-confirm-body">
@@ -355,6 +360,7 @@
 </section>
 
 <form method="post" action="/settings/notifications" id="add" class="cv-panel" autocomplete="off">
+  <h2 class="cv-label cv-addhead">Add a channel</h2>
   {{template "notify-rows" (notifyForm .Add "notify-add" false "" false)}}
 </form>
 {{end}}
@@ -401,9 +407,9 @@
         <span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>
         <span class="cv-conn-meta" title="{{.Made.Exact}}">made {{.Made.Text}}</span>
       </div>
-      <span class="cv-tok-cando">{{.CanDo}}</span>
-      <span class="cv-conn-meta"{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}><span class="sr-only">Last used </span>{{.LastUsed.Text}}</span>
-      <span class="cv-conn-meta{{if .ExpiryWarn}} cv-conn-st-warn{{end}}"{{if .Exact}} title="{{.Exact}}"{{end}}>{{.Expiry}}</span>
+      <span class="cv-tok-cando" data-label="Can do">{{.CanDo}}</span>
+      <span class="cv-conn-meta" data-label="Last used"{{if .LastUsed.Exact}} title="{{.LastUsed.Exact}}"{{end}}><span class="sr-only">Last used </span>{{.LastUsed.Text}}</span>
+      <span class="cv-conn-meta{{if .ExpiryWarn}} cv-conn-st-warn{{end}}" data-label="Expiry"{{if .Exact}} title="{{.Exact}}"{{end}}>{{.Expiry}}</span>
       <div class="cv-conn-acts">
         {{if eq .State "active"}}
         <details class="cv-confirm cv-confirm-row">
@@ -428,6 +434,7 @@
 {{end}}
 
 <form method="post" action="/settings/tokens" id="new" class="cv-panel" autocomplete="off">
+  <h2 class="cv-label cv-addhead">New token</h2>
   {{template "srow-open" (srow "Name" "Where it is used, e.g. ci-github." "token-name")}}
   <input class="cv-field cv-field-mono" type="text" id="token-name" name="name" value="{{.TokenName}}" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="token-name-error"{{else}} aria-describedby="token-name-hint"{{end}}>
   {{with .NameErr}}<span id="token-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
