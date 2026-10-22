@@ -358,9 +358,8 @@ in place never shifts its neighbors.
 - **Login:** the only page without the shell. A centered 380px column on the bare ground: wordmark,
   the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
   own block under it.
-- **Settings:** inside the shell like every other page, left-aligned at the shared content width,
-  not a centered column and not a narrower one: the headline ("Signed in as <email>."), then one
-  labeled section per job (Password, API tokens), each a flat panel.
+- **Settings:** one page per entry under a sticky 232px nav of its own, inside the shell (see
+  "Settings (feature 021)" under Components). Account is `/settings`; the others have their own addresses.
 - **Primary actions:** the frame has two, as the design draws it: "New app" in the top bar, and on an
   app's page the header's "Deploy" (a link to the Deployments tab's deploy form, or "Start" for a
   stopped app). A page's own content adds at most one more, in the form it submits ("Deploy" on
@@ -511,11 +510,10 @@ is never run into a sentence, where it would break across lines. A quiet variant
 drops the fill and uses Label Text for secondary examples such as a `curl` line.
 
 ### Token row
-The shipped list row (`cv-token-row`): a grid of three columns inside a Panel. The name in Data
-mono with its facts under it in muted mono ("created 2 minutes ago", "used never", "expires never";
-for an expired or revoked token the last fact is "expired …" or "revoked …"), then the status pill,
-then the action. The pill and the action sit in fixed columns, so they line up from row to row.
-Times are relative, with the exact time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
+The API tokens page's table (see Settings, feature 021): a grid row inside a Panel with a 9px mark, the name in
+Data mono with "made …" under it, what the token can do, when it was last used and its expiry ("expires in
+80 days", "never expires", "expired …", "revoked …"), then the action. Times are relative, with the exact
+time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
 
 ### Navigation
 - **Sidebar:** only pages that exist are linked: Home and Projects under a "Workspace" Label, and
@@ -654,6 +652,44 @@ drawn, not its length either: ten dots and a lock icon.
 - **Variables:** "Keep as a secret" is ticked when the form is drawn, because most values are secrets; the
   form sends a hidden `secretChoice` so an unticked box (which sends nothing) differs from a post that
   isn't this form, which is read as a secret.
+
+### Settings (feature 021)
+One page per entry, as the handoff draws Settings, with what the console has today. A grid of a 232px nav
+and the content, in the shell's frame; the shell's own page padding is off for these pages (`cv-page-settings`).
+- **Nav:** `<nav aria-label="Settings">`, sticky under the top bar (`top: 52px`, the rest of the window
+  tall, scrolling by itself), a Hairline at its right. The word "Settings" at 18px, then the groups: Account
+  alone, **Connections** (Registries, Backup storage, Notifications) and **Security** (API tokens). A group
+  with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
+  32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
+  Control ground and no left bar (the bar is the sidebar's). Under 900px the nav is a row of links above the
+  content, scrolling sideways. The sidebar's Settings stays current on every Settings page, and the crumbs
+  read "Settings / <entry>".
+- **The count-or-mark rule.** Each entry has one function (`registriesState`, `backupStorageState`,
+  `notificationsState`, `tokensState`) that gives its count, its mark, and the mark of each of its rows; the
+  nav and the page's rows both read it, so they never disagree. A mark wins over the count. Registries: ■ when
+  a registry's last test was refused (○ never tested, ● passed), else how many. Backup storage has no count:
+  ◆ when no destination is set and a service has a backup policy, or when the last backup failed (the row
+  itself is ■). Notifications: ◆ when a channel's last delivery failed or it is paused, else how many (paused
+  ones included). API tokens: ◆ when an active full token never expires, or any active token was unused for
+  more than 90 days (a token never used counts from when it was made), else how many are active; an expired or
+  revoked token is ○.
+- **Content:** 1180px at most, padding 36px 32px 64px, 22px between blocks. The head is the headline
+  (30px, 400) over a 15px sentence, and the page's one primary action at the right (small, with a plus).
+- **Setting rows** (Account, the add and edit forms): a panel of rows, a 220px label with its 13px hint at
+  the left and the controls at the right, 24px between, 18px 20px of padding, a Hairline between rows. Fields
+  are the 32px field at 360px. The form's primary button ends its last row.
+- **Connection rows** (Registries, Backup storage, Notifications): a 9px mark, the name in mono over its kind,
+  the state in two lines of mono, "used by N", and the actions as small buttons (Update password is the one
+  primary, only on a refused registry). A row that needs the owner has its note under it, indented past the
+  mark. Edit, Remove, New signing secret and Revoke are `<details>` confirmations that open over the rows
+  below, so these panels don't clip; a row's confirmations close each other. The backup destination's row is
+  itself the summary of the details that opens its form. A narrow panel stacks a row's cells.
+- **Token table:** a 38px head, then rows of mark, name over "made …", what it can do, last used, expiry, and
+  Revoke; sorted active (problems first), expired, revoked. "never expires" is in the warning hue for a full
+  token.
+- **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
+  made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
+  no address and no later page; the Copy button stays hidden without script.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

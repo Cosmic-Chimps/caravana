@@ -53,20 +53,20 @@ definition edit the API already takes.
 Contract: `contracts/page3-settings.md` (the designer, 2026-10-22). Every page and form goes
 through `internal/service` as today; no API change.
 
-- [ ] T016 [US3] Routes and layout: `/settings` (Account), `/settings/registries`,
+- [X] T016 [US3] Routes and layout: `/settings` (Account), `/settings/registries`,
   `/settings/backup-storage`, `/settings/notifications`, `/settings/tokens`; `/settings/account` 301;
   existing POST routes answer 303 to their entry; the sticky Settings nav with groups, icons
   (user, package, hard-drive, bell, key, hash, message-square, webhook) and the count-or-mark rule
   (one function per entry, shared by the nav and the rows); crumbs `Settings / <entry>`; the content
   column and page head; under 900px the nav as a scrolling row.
-- [ ] T017 [US3] Account and Registries pages (setting rows; connection rows with marks, state,
+- [X] T017 [US3] Account and Registries pages (setting rows; connection rows with marks, state,
   used by, actions, the refused note; Add).
-- [ ] T018 [US3] Backup storage (the one connection row or the problem panel, the form; no Remove)
+- [X] T018 [US3] Backup storage (the one connection row or the problem panel, the form; no Remove)
   and Notifications (channel rows with kind icons, marks, Send a test, Pause/Resume, Edit, New
   signing secret, Remove, Recent deliveries; the sentence instead of the rules grid; Add).
-- [ ] T019 [US3] API tokens (the token table with marks and notes, sorted; New with "Only for one
+- [X] T019 [US3] API tokens (the token table with marks and notes, sorted; New with "Only for one
   app"; the shown-once panel).
-- [ ] T020 [US3] DESIGN.md, CHANGELOG, tests (each page, each mark rule, the redirects, no secret or
+- [X] T020 [US3] DESIGN.md, CHANGELOG, tests (each page, each mark rule, the redirects, no secret or
   token value on any page), lab-test selectors and form posts.
 - [ ] T021 [US3] Checks, TestConsoleLab, the review instance staged, the designer's review, the
   critique agent, fixes.

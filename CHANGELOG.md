@@ -27,6 +27,15 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   the page again if the app changed since the page was drawn.
 
 ### Changed
+- Settings is one page per entry under a grouped nav: Account (`/settings`), Registries
+  (`/settings/registries`), Backup storage (`/settings/backup-storage`), Notifications
+  (`/settings/notifications`) and API tokens (`/settings/tokens`). The nav shows each entry's count, or a
+  mark when something needs you (a refused registry, a missing or failing backup destination, a failed or
+  paused channel, a token that never expires or went unused for 90 days), and the rows show the same marks.
+  Registries say how many apps use each; Notifications and API tokens lead with what needs a look.
+  `/settings/account` and `/account` redirect to `/settings`; every form posts where it did, and
+  answers with the entry's own page. Links to `/settings#registries` and the like now land on Account:
+  use the new addresses.
 - The console's sidebar and top bar follow the design. The sidebar links Home, Projects and
   Settings (the pages that exist), with the host's initial, the host and the version at the top
   and the account row at the foot, where Sign out is now an icon button. The top bar's
