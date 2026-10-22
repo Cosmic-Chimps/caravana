@@ -76,9 +76,31 @@ Already decided:
   (`/v1/backups/destination` offers GET and PUT only, API 0.22.0). Adding one is a separate
   change (API and service, then the button); it is not part of page 3.
 
-## Page 4 (US4)
+## Page 4: the Apps home and the deployment's stages (US4)
 
-Tasks are written when its contract is approved.
+Contract: `contracts/page4-home-deploys.md` (the designer, 2026-10-22). The maintainer moved the
+pause to after page 4. The one backend addition is the token's name on a deployment (API 0.23.0).
+
+- [ ] T022 [US4] Backend: migration `deployments.token_name` (nullable), set from the
+  authenticated token in `deployApp`, `deployCompose`, `promoteApp` and `redeployDeployment` (a
+  session or the webhook leave it null; through the request context as the origin is);
+  `Deployment.tokenName` in `api/openapi.yaml` 0.23.0 (optional); tests (store, service, API,
+  contract).
+- [ ] T023 [US4] "Deploying now" cards on the Apps home: one per rollout in progress, the head
+  row, the Change line from the deployment (origin, trigger, promotion, redeploy), the Copies
+  chips from the live copies, the "1 of 2 new copies healthy" sentence or "Waiting for Nomad…";
+  its live region on the deployments and copies notices.
+- [ ] T024 [US4] The filter (GET form, more than 5 apps only, q/state/kind, Apply and Clear,
+  groups filtered, headline and needs-you not, live refresh keeps the query) and the kind word per
+  row (compose, database, volume) with one rule shared by the word and the kind filter.
+- [ ] T025 [US4] Activity rail's second line "<trigger> by <who> · <when>", including the token's
+  name for API deploys.
+- [ ] T026 [US4] The stages strip in every Deployments history entry (Queued, Roll out, Live, the
+  marks and values, superseded and failed-before-register, narrow stacking), and the "v2 (v0
+  again)" wording in the entry and the lede (match by digests, the definition as tie-breaker).
+- [ ] T027 [US4] DESIGN.md, CHANGELOG, tests, lab-test selectors.
+- [ ] T028 [US4] Checks, TestConsoleLab, the review instance staged, the designer's review, the
+  critique agent, fixes, the last look; then the pause.
 
 Carried to page 4, the deployment stages (the designer, 2026-10-21): after Nomad reverts, the live
 job version (`v2`) is a copy of an older one (`v0`). Say what the owner deployed, from the stored
