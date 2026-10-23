@@ -1,0 +1,186 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "shop_run-r1",
+  "Name": "shop_run-r1",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "web",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "web",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "scripts/sync-rates.js",
+              "--full"
+            ],
+            "auth": [
+              {
+                "password": "${CARAVANA_REGISTRY_PASSWORD}",
+                "server_address": "ghcr.io",
+                "username": "${CARAVANA_REGISTRY_USERNAME}"
+              }
+            ],
+            "entrypoint": [
+              "node"
+            ],
+            "image": "ghcr.io/acme/shop@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "LOG_LEVEL": "info",
+            "REGION": "eu"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 200,
+            "Cores": null,
+            "MemoryMB": 512,
+            "MemoryMaxMB": 512,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": 10000000000,
+          "LogConfig": {
+            "MaxFiles": 2,
+            "MaxFileSizeMB": 1,
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/shop_run-r1\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": null,
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": null,
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.app": "shop",
+    "caravana.run": "r1",
+    "caravana.service": "web"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

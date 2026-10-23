@@ -13,7 +13,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
 
 ## Phase 1: Foundation (no story label; everything below needs it)
 
-- [ ] T001 [P] `internal/cronwords/cronwords.go` + `cronwords_test.go`: `Parse(text) (cron, error)`
+- [X] T001 [P] `internal/cronwords/cronwords.go` + `cronwords_test.go`: `Parse(text) (cron, error)`
   (five-field cron by shape; the contract's words: "every N minutes/hours", "every hour", "every
   day at HH:MM", "weekdays at HH:MM", "<weekday>s at HH:MM", "first of the month [at HH:MM]"; the
   error text is the contract's "Couldn't read that. Try "every 2 hours" or paste a cron line."),
@@ -32,7 +32,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   `SkipStreak(scheduleID)` (cap 3), `PruneRuns(scheduleID, keep)`; `DeleteApp` deletes both
   tables. Tests: round-trips, the cascade, the prune, the latest-run query with skipped and
   stopped rows in between.
-- [ ] T003 [P] `internal/nomadjob/schedule.go` + `schedule_test.go` +
+- [X] T003 [P] `internal/nomadjob/schedule.go` + `schedule_test.go` +
   `testdata/schedule-run.golden.json`: `ScheduleRunJobID`, `ScheduleRunVariablePath`,
   `ScheduleRunJob(appID, svc, image, command, memoryMB, s, private, names)` per plan.md (batch
   job and group, task named after the service, `entrypoint`/`args`, env, `variableTemplate`,
