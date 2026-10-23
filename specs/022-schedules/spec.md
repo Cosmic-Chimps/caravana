@@ -151,29 +151,32 @@ edit, pause or remove action.
 
 ---
 
-### User Story 5 - One timezone, said everywhere (Priority: P2)
+### User Story 5 - UTC and the viewer's local time, side by side (Priority: P2)
 
-Every time a schedule or a backup shows ("every day at 03:00", "next run in 4 hours, at
-03:00", a run's start) is in one timezone the owner can see, and the pages name it. The owner
-writes schedule times in that zone and backups are shown in it too, so the two pages never
-disagree.
+Every time a schedule or a backup shows ("every day at 03:00", "next run in 4 hours", a run's
+start) is written in UTC, the zone backups already use, and beside it the owner reads the same
+moment in their own local time, taken from their browser. The two pages, Schedules and Backups,
+say times the same way, so they never disagree, and nothing the owner wrote before moves.
 
 **Why this priority**: a timer in an unknown zone runs at the wrong time; the handoff shows
-local time while backups say UTC today.
+local time while backups say UTC today. The maintainer's call (2026-10-23): "we should show
+UTC and localtime".
 
-**Independent Test**: with the installation's zone set to Europe/Madrid, a schedule written as
-"every day at 03:00" runs at 03:00 Madrid time (01:00 UTC in winter), the Schedules and Backups
-pages say "03:00 (Europe/Madrid)", and the API answers the zone with every schedule.
+**Independent Test**: a schedule written as "every day at 03:00" runs at 03:00 UTC; the row
+reads "03:00 UTC" and, in a browser set to Madrid, "05:00 your time" beside it; with scripts
+off, the row reads "03:00 UTC" alone and is still right; the API answers every time in UTC.
 
 **Acceptance Scenarios**:
 
-1. **Given** an installation, **Then** it has one timezone (UTC unless the owner sets another),
-   visible in Settings and named on every page that shows a timer's time.
-2. **Given** a schedule written as a time of day, **When** the zone changes, **Then** the
-   schedule keeps its wall-clock time ("03:00") in the new zone, and the owner is told that the
-   next run moved.
-3. **Given** a backup policy written before this feature (a cron line in UTC), **Then** it keeps
-   running at the same instant and is shown in the installation's zone with the zone named.
+1. **Given** any clock time on Schedules or Backups (a next run, a run's start or end, the
+   preview of the next runs), **Then** it is drawn in UTC, named as such, and the viewer's local
+   time is drawn beside it when their browser can say it.
+2. **Given** a browser without JavaScript, **Then** every time still reads correctly in UTC and
+   nothing else is missing from the page.
+3. **Given** the New schedule form, **When** the owner types a time of day, **Then** it is taken
+   as UTC, and the page says what that is in the viewer's time before they save.
+4. **Given** a backup policy written before this feature, **Then** it keeps running at the same
+   instant and is drawn the same way as a schedule's time.
 
 ---
 
@@ -247,11 +250,12 @@ pages say "03:00 (Europe/Madrid)", and the API answers the zone with every sched
 - **FR-013**: Each service's backup policy MUST appear in the schedules list as a built-in
   schedule with its time, next run and last runs, read-only here and linking to Backups; the
   schedule forms MUST refuse a built-in name.
-- **FR-014**: The installation MUST have one timezone (UTC unless the owner sets another),
-  visible in Settings and named wherever a timer's time, next run or run time is shown, on the
-  Schedules and the Backups pages alike. Schedule times of day are written and shown in that
-  zone; a zone change keeps each schedule's wall-clock time and says that the next run moved.
-  Existing backup policies keep their instant.
+- **FR-014**: Every timer's time (a schedule's or a backup's time, next run, run start and end,
+  the preview of the next runs) MUST be written, stored and drawn in UTC, named as such, with
+  the viewer's local time drawn beside it when the browser can say it; without JavaScript the
+  UTC time MUST stand alone and be correct. The New schedule form MUST take a time of day as
+  UTC and say what that is in the viewer's time. There is no installation timezone setting,
+  and existing backup policies keep their instant.
 - **FR-015**: The API MUST offer the schedules, their runs (with output) and every action the
   console has, and the console MUST use the same service layer (constitution V). A deploy token
   scoped to an app MUST NOT manage its schedules (default deny stays).
@@ -272,8 +276,6 @@ pages say "03:00 (Europe/Madrid)", and the API answers the zone with every sched
   output (bounded) and whether it was cut or not kept.
 - **Built-in schedule**: a service's backup policy, drawn in the list from Backups' own records;
   not stored twice.
-- **Installation timezone**: one setting of the installation, an IANA zone name, UTC by
-  default.
 
 ## Success Criteria *(mandatory)*
 
@@ -298,11 +300,11 @@ pages say "03:00 (Europe/Madrid)", and the API answers the zone with every sched
 
 - A schedule belongs to one app and runs in that app's live version; the service it uses is
   chosen when the app has several. Schedules without an app are out of scope.
-- Where the list lives (an app tab, the handoff's environment-wide page, or both) is the
-  designer's contract call; the records and the API support either.
-- The installation's timezone is one setting for the whole installation, an IANA zone name,
-  set in Settings and through the API, UTC by default. Whether it is also read from the host
-  is a plan decision.
+- Where the list lives is the designer's contract call (`contracts/schedules-screen.md`: a
+  workspace page `/schedules`, a Schedules panel on Configure, no new app tab).
+- Times are UTC throughout, as backups already are; the viewer's local time is a display
+  addition from their browser, never stored. There is no installation timezone setting (the
+  maintainer, 2026-10-23).
 - Run output is kept up to a bounded size (the same order as Run a command's 64 KiB cap) and
   the history is bounded per schedule (about 100 runs); the exact numbers are the plan's.
 - A run's "fresh copy" has the app's memory settings; a schedule needing more memory than the
