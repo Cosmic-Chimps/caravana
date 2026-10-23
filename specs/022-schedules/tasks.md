@@ -223,7 +223,7 @@ Independent test: quickstart §6.
   deploy token, and `RestartCaravana` (new on `gateTarget` in `lab_test.go`: cancel `runServer`'s
   context, run it again on the same data dir, wait healthy) during a `sleep 20` run that then
   ends `ok`.
-- [ ] T023 [P] Docs: `CHANGELOG.md` Unreleased (Added: schedules, the API, the needs-you kinds,
+- [X] T023 [P] Docs: `CHANGELOG.md` Unreleased (Added: schedules, the API, the needs-you kinds,
   UTC with local time; Changed: Backups' times drawn as clock elements), `docs/plan.md` row 022
   ("one batch job per run on Caravana's clock" instead of "a Nomad periodic batch job", and the
   time ruling), the CLAUDE.md "Where we are" paragraph for 022, `api/openapi.yaml` info text.

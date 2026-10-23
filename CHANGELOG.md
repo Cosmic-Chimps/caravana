@@ -9,6 +9,37 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- **Schedules**: a command on a timer in a fresh copy of an app. A schedule names an app and one
+  of its services, a command (no shell implied: use `sh -c '…'`), when it runs (words such as
+  "every day at 03:00" or "weekdays at 09:00", or a cron line), a stop-after limit (5 min to
+  2 h), the memory of the run, and whether a run is skipped while the last one is still going.
+  Each run starts a copy from the service's newest healthy deployment (the same image, variables
+  and secret values), receives no traffic, and ends with the command; it is recorded with its
+  exit code and the last 64 KiB of each output stream, with the service's secret values masked.
+  Run now, Stop this run, Pause and Resume, Edit and Delete. A failed run (an exit code, the
+  limit, couldn't start) is on the needs-you list and goes to the notification channels as a
+  problem; three skipped runs in a row are a warning. Each service's backup appears in the same
+  list as a built-in schedule. A service that mounts a volume can't have a schedule (its volume
+  allows one copy). The Schedules page is in the sidebar; an app's Configure page lists its
+  schedules.
+- API 0.24.0: `listSchedules`, `createSchedule`, `getSchedule`, `updateSchedule`,
+  `deleteSchedule`, `runSchedule`, `pauseSchedule`, `resumeSchedule`, `listScheduleRuns`,
+  `getScheduleRun`, `stopScheduleRun` and `getScheduleRunOutput` (`text/plain`, never cached);
+  `AttentionItem.kind` gains `schedule_failed` and `schedule_skipping` with `schedule` and
+  `scheduleId`; the notification event gains `schedule` and `exitCode`, and documents `origin`,
+  which it has sent since 0.8.1. Deploy tokens can't use any of it.
+- Every clock time the console shows (a schedule's next run, a run's start, a backup's time, a
+  deployment's Live time) reads in UTC with the viewer's local time beside it ("14:15 UTC ·
+  16:15 local"), added in the browser; without JavaScript the UTC time stands. Schedules and
+  backups are written in UTC; there is no timezone setting.
+
+### Changed
+- The Backups tab's run and next-backup times are drawn as clock times (UTC, local beside them).
+
+**Upgrade**: rerun nothing. The scoped Nomad policy needs no new capability; a schedule run's job
+is one more batch job while it runs and is purged after.
+
 ## 0.12.0 - 2026-10-22
 
 ### Added

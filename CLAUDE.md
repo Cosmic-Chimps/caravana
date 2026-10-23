@@ -623,6 +623,48 @@ last look.
 - `TestConsoleLab` gained `console-domains` and `console-backup-daily`; `TestNoShipWords` keeps "ship"
   off every page.
 
+Feature 022 (`specs/022-schedules`, Phase 2.6) is implemented on branch `022-schedules`: a
+command on a timer in a fresh copy of one service of an app.
+- A schedule (`schedules`, migration `0017_schedules.sql`) names an app, a service without
+  volumes, a command (program and arguments, no shell), a five-field cron line in UTC
+  (`internal/cronwords`: words ⇄ cron, `Validate`, `Next`), a stop-after limit, the run's
+  `memoryMB` and `skipIfRunning`. Caravana keeps the clock (`service/scheduleclock.go`, the
+  volume-backup `dueSlot` generalised with `armed_at`; every 10 s, `SetScheduleScanGap`) and
+  registers **one one-off batch job per run** (`nomadjob.ScheduleRunJob`, built by
+  `deploy.ScheduleRunJob` from the newest healthy deployment's digest; job ID
+  `<app>_run-<runId>`; no Services, no ports; the `names` sidecar in multi-service apps). The
+  run's secrets and registry credentials are a copy in the job's own variable
+  `nomad/jobs/<jobId>`, written before `Register` and deleted at settle; a job can read only its
+  own path (research R1), so a run can't read the app's. A slot whose app is stopped, undefined,
+  without a healthy deployment or mid-rollout waits; one refused by skip-if-running or the cap of
+  3 is a `skipped` row.
+- Runs (`schedule_runs`) are written ahead as `starting`, flipped to `running`, and settled by a
+  stateless watcher every 5 s (`service/schedulewatch.go`): the stop intent first (`owner`,
+  `limit`, `app_stopped`, `schedule_removed` are written before the deregister), then out of
+  memory, exit 0 (`ok`), a start failure (`could_not_start`), a stop from outside Caravana, exit n
+  (`failed`), a lost job after a restart. Stop is `Jobs().Deregister` without purge (never
+  `Allocations().Stop`, which replaces a batch allocation); the job is purged with its variable
+  after the output is read. Output is the last 64 KiB of each stream (`deploy.ScheduleRunOutput`,
+  `Logs` with a cut flag), masked of the service's secret values of 6+ bytes, kept for the last
+  100 runs, returned only by the run's own read (`no-store`) and never in a list, item, event,
+  notice or log line (tests search for sentinels). Stop app stops the app first, then its runs.
+- Attention kinds `schedule_failed` (the newest ended run that isn't skipped or stopped failed)
+  and `schedule_skipping` (3 skipped slots in a row, a warning), key `kind|app|service|scheduleID`;
+  the notification stays `problem.opened/resolved` with `schedule` and `exitCode`. Backups are
+  listed as built-in schedules `backup:<app>:<service>` (read-only; a stored schedule can't take
+  the name `<service>-backup`).
+- Time (the maintainer, 2026-10-23: "we should show UTC and localtime"): no timezone setting;
+  every clock time is `<time datetime="…Z" class="cv-clock">14:15 UTC</time>` (`clockOf` in
+  `ui/view.go`) and `static/js/localtime.js` (ours, listed in `tools/ui-vendor.versions` as
+  `ours` with its checksum) appends "· 16:15 local" in the browser.
+- API 0.24.0: the twelve schedule operations (`contracts/api.md`), `Caravana-Output-Cut` on the
+  output read, codes `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`,
+  `output_not_kept`; deploy tokens denied by the default deny. Console: `/schedules` (list, the
+  row's detail, filter, run page), `/schedules/new` and `/schedules/{id}/edit` (words with preset
+  links and a Check preview), the sidebar's Schedules entry, a Schedules panel on Configure.
+  `TestConsoleLab` has a step `console-schedules` and the gate a step `schedules` (with
+  `RestartCaravana` during a run).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
