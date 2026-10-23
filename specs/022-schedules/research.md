@@ -322,6 +322,13 @@ ignore it and Nomad would not kill it, so no bound); wrapping the command in `ti
 
 ## R4. Timezone
 
+> **Superseded by the maintainer's ruling (2026-10-23): "we should show UTC and localtime".** There
+> is no installation timezone, no `CARAVANA_TIMEZONE` and no `time/tzdata` import. Schedules are
+> written, stored and answered in UTC, as backups are; the console draws the viewer's local time
+> beside each UTC time with a small script (`plan.md`, "Decisions carried"). The findings below
+> still stand as facts (where UTC is assumed, cronexpr's zone behaviour, the static binary's lack
+> of zoneinfo, why backups must not be rewritten); the decision section does not.
+
 ### Where UTC is assumed today
 
 - `internal/app/app.go:151` ("Schedule is a five-field cron expression, in UTC"), `ScheduleOrDefault`

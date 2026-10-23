@@ -1,6 +1,7 @@
 # Contract: 022 Schedules, the `SchedulesScreen`
 
-Written by the caravana_designer session on 2026-10-23, before the spec. The values come from
+Written by the caravana_designer session on 2026-10-23, before the spec; its time rule amended
+the same day to the maintainer's ruling (UTC first, the viewer's local time beside it). The values come from
 the handoff's `SchedulesScreen.jsx` (`SC_JOBS`, `SC_PRESETS`, `ScRunStrip`, `NewSchedulePanel`,
 the row and its detail) and `theme/caravana.css`, rendered from the prototype
 (`design/console/_shots/p5-schedules.png`). Where this list and the handoff disagree, this
@@ -17,7 +18,7 @@ The console never says "ship".
   when the app has several), and its sentence "Uses the live version's image and variables.
   Doesn't take traffic." stays verbatim.
 - **It is a Nomad periodic batch job** `<app>_<service>_<schedule>`, the shape the backups use,
-  `ProhibitOverlap` from the skip setting, the installation's timezone (below), and a
+  `ProhibitOverlap` from the skip setting, `TimeZone` UTC (the time rule below), and a
   `kill_timeout` plus a run limit for "stop after".
 - **A run** is one Nomad dispatch: it starts, ends with an exit code, is stopped at the limit,
   is skipped (the previous run was still going), or couldn't start (no live version, the app
@@ -36,16 +37,16 @@ The console never says "ship".
   `problem.opened` notification, with the same sentence as the row's detail. A skipped run is
   not a failure; three skips in a row are a `warning` item ("`rates-sync` has been skipped 3
   times: each run takes longer than the time between runs.").
-- **Timezone, settled here.** The installation has one timezone, `CARAVANA_TIMEZONE`
-  (`-timezone`, an IANA name, default `UTC`; the installer offers the host's zone from
-  `/etc/timezone` or `timedatectl`, and writes it to the unit's environment, so rerun it to
-  change it). Schedules' cron lines are read in it (Nomad's `TimeZone`), and every clock time
-  the console shows (the Next and Last run cells, the stages' Live time from page 4, backups'
-  run times) is drawn in it, with the zone's name in the Schedules page's lede: "Times are
-  Europe/Madrid." Backups keep their stored UTC cron (the API says UTC and existing policies
-  must not move): their row's words say "Every day at 03:00 UTC" as today, and their Next cell
-  is drawn in the installation zone like every other time. A later change can migrate backup
-  policies to the installation zone; not here.
+- **Time, by the maintainer's ruling (2026-10-23): UTC and the viewer's local time.** There is no
+  installation timezone and no `CARAVANA_TIMEZONE`. Schedules are written, stored and run in UTC
+  (Nomad's `TimeZone` "UTC"), as backups are; nothing moves and nothing migrates. Every clock
+  time the console draws (a schedule's Next, a run's start and end, the Check preview's next
+  three runs, a backup's time, the stages' Live time from page 4) is a `<time datetime="…Z">`
+  whose text reads the UTC time first, named: "14:15 UTC". A small vendored script
+  (`tools/ui-vendor.sh`'s list, no fetch at run time) adds the viewer's local time after it in
+  fg-3: "14:15 UTC · 16:15 local" (the browser's zone; the word "local", not the zone's name).
+  Without JavaScript the UTC time stands alone and is right. Relative words ("tomorrow",
+  "in 2 d", "yesterday") are computed in UTC on the server, as today.
 
 ## Where it lives
 
@@ -63,8 +64,9 @@ The console never says "ship".
 ## The list (`/schedules`)
 
 - **Page head** (page 3's shape): title "Schedules" 30px, the sentence "Commands that run on a
-  timer in a fresh copy of an app, then stop. Times are Europe/Madrid." 15px fg-2, and **New
-  schedule** (primary sm, plus icon). Under it a filter row (page 4's shape, one 32px line):
+  timer in a fresh copy of an app, then stop. Times are UTC; your local time is shown beside
+  them." 15px fg-2 (the second sentence only when the script is present: the server draws
+  "Times are UTC." and the script appends the rest), and **New schedule** (primary sm, plus icon). Under it a filter row (page 4's shape, one 32px line):
   a project select (only when more than one project), an app select (`name="app"`, "All
   apps"), Apply and Clear; then the count line 400 13px mono fg-3: "7 schedules · 1 failing ·
   next run 14:15" ("none failing"; "next run" is the earliest Next among unpaused rows, "no
@@ -85,10 +87,11 @@ The console never says "ship".
     "Weekdays at 09:00", "Sundays at 03:00", "First of the month at 06:00"; page 2's
     `ScheduleText` grows to these, "On `<cron>`" only as the last resort), paused in fg-3; under
     it the cron line 400 12px mono fg-4;
-  - **Next:** 400 13px/1.3 mono fg-2: "14:15" today, "tomorrow 02:00", "in 2 d · Sun 03:00"
-    (the console's relative words, the clock in the installation zone); "paused" fg-4; "—" for
-    a built-in whose app is stopped;
-  - **Last run:** two 12px/1.2 mono lines: running: "started 14:00:02" in rolling over a 120×4
+  - **Next:** 400 13px/1.3 mono: "14:15 UTC" today, "tomorrow 02:00 UTC", "in 2 d · Sun
+    03:00 UTC" (the console's relative words) in fg-2, then the script's "· 16:15 local" in
+    fg-3 on the same line (wrapping to a second line under 900px); "paused" fg-4; "—" for a
+    built-in whose app is stopped;
+  - **Last run:** two 12px/1.2 mono lines: running: "started 14:00:02 UTC" in rolling over a 120×4
     bar (ink-3 track, rolling fill, width = elapsed / usual duration, capped at 100%; no usual
     duration yet: no bar); otherwise the when (failed hue for a failed run, fg-2 otherwise;
     "never" fg-3) over "took 5 min 0 s" fg-3 (`durationText`); a stopped-at-limit run reads
@@ -162,13 +165,16 @@ copy of an app, then stops it." One `<form method="post">`, `max-width 1180`.
   "Uses the live version's image and variables. Doesn't take traffic." Prefilled from `?app=`.
 - **Command** (mono textarea, 2 rows; page 020.5's `splitCommand` rules: quotes and
   backslashes, no pipes or variables, "use `sh -c '…'`"; the hint says so).
-- **When**: a text field (sans) for the words, with the four presets under it as links that
+- **When**: a text field (sans) for the words, in UTC (its hint: "Times of day are UTC."; the
+  script appends what the typed time is in the viewer's local time, "03:00 UTC is 05:00 local"),
+  with the four presets under it as links that
   fill the field (`?preset=`, drawn as 26px chips: 400 12px mono, 1px line-2 edge, radius 3,
   the chosen one on ink-3 fg-1): "every 15 minutes", "every day at 03:00", "weekdays at
   09:00", "first of the month"; or a cron line in the same field (five fields; detected by
   shape). Under it the preview box (1px line-2, radius 4, ink-0, padding 12px 14px, 400
-  13px/1.3 mono): **cron** (fg-1), **next** the next three runs ("14:15 · 14:30 · 14:45", the
-  console's relative-day words), **timezone** (the installation's). It is drawn after a
+  13px/1.3 mono): **cron** (fg-1), **next** the next three runs ("14:15 · 14:30 · 14:45 UTC",
+  the console's relative-day words, each a `<time>` so the script adds the local times once
+  after the three: "· 16:15 · 16:30 · 16:45 local"), **timezone** ("UTC"). It is drawn after a
   **Check** submit (secondary sm, `name="action" value="check"`, redraws the form with the
   preview) and on every refused submit; text it can't read gets the warning line "Couldn't
   read that. Try "every 2 hours" or paste a cron line." in the box. The words it reads: "every
@@ -189,10 +195,11 @@ copy of an app, then stops it." One `<form method="post">`, `max-width 1180`.
 
 - Crumbs `Schedules / rates-sync` (the schedule a link to `/schedules#schedule-<id>`); the app
   header is not drawn (it is not an app page).
-- Head: title "`rates-sync` · yesterday 14:00" (the name mono, 30px), the sentence: the run's
+- Head: title "`rates-sync` · yesterday 14:00 UTC" (the name mono, 30px; a `<time>`, so the
+  script adds "· 16:00 local" in fg-3), the sentence: the run's
   state sentence from the detail ("Stopped at the 5 min limit." / "Exited with code 1." /
   "Finished in 48 s." / "Skipped: the run before was still going." / "Couldn't start: …"),
-  then "started 14:00:02 · took 5 min 0 s · `web` of `booking-api` · v24" 13px mono fg-3.
+  then "started 14:00:02 UTC · took 5 min 0 s · `web` of `booking-api` · v24" 13px mono fg-3.
 - **Output**: a `.cv-panel` with the log lines as the Logs tab draws them (copy ID column
   dropped: one copy), stdout and stderr interleaved by time, stderr marked as on Logs; 13px
   mono; "No output." when empty; a first line in fg-3 when cut: "The first N lines were
@@ -226,8 +233,8 @@ copy of an app, then stops it." One `<form method="post">`, `max-width 1180`.
 cron, words, timezone, stopAfterSeconds, memoryMB, skipIfRunning, paused, builtin,
 nextRunAt, lastRun}`, `ScheduleRun{id, startedAt, endedAt, outcome: ok|failed|stopped_at_limit|
 stopped|skipped|could_not_start, exitCode, error, durationSeconds, outputBytes}`; attention kind
-`schedule_failed` (and the skip `warning`); `GET /v1/health` or the settings answer gains
-`timezone`. Backups appear in `listSchedules` with `builtin: true`.
+`schedule_failed` (and the skip `warning`). All times in the API are RFC 3339 UTC, as
+today. Backups appear in `listSchedules` with `builtin: true`.
 
 ## Review
 
@@ -242,19 +249,7 @@ The designer checks at 127.0.0.1:7070 against `p5-schedules.png`:
 - Run now, Stop this run, Pause and Resume, Delete; the run's page with output, a cut output
   and a skipped run;
 - the needs-you item and a notification for a failed run; the Configure panel;
-- the timezone: an instance with `CARAVANA_TIMEZONE=Europe/Madrid` showing the lede, Next
-  cells and a backup's "03:00 UTC" words side by side;
+- time: every clock time reads "… UTC" and, in Chrome, "· … local" after it; the same pages
+  without script (headless with JavaScript off) show the UTC times alone and nothing broken;
+  the form's hint and the preview's next three runs;
 - narrow at 390px.
-
-## Maintainer's ruling on time (2026-10-23)
-
-"we should show UTC and localtime", with the viewer's browser time as the local one. This replaces
-the contract's "Timezone, settled here" rule and the installation setting:
-- No installation timezone and no `CARAVANA_TIMEZONE`. Schedules are written and stored in UTC, as
-  backups are; nothing moves and nothing is migrated.
-- Every clock time the console draws (next run, run times, the "Check" preview's next three runs,
-  a backup's time) reads UTC first, with the viewer's local time beside it, added by a small
-  vendored script from a `<time datetime="…Z">`; without JavaScript the UTC time stands alone and
-  is still right. The lede says times are UTC and, when the script runs, names the viewer's zone.
-- The New schedule form takes a time of day in UTC and says what that is in the viewer's time.
-The designer amends the affected rows (lede, Next cell, the preview box, the run page) in place.
