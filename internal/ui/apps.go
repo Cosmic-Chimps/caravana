@@ -178,10 +178,11 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 	s.renderPart(w, "apps", "activity-region", region)
 }
 
-// liveApps answers GET /live: the stream of the Apps page.
+// liveApps answers GET /live: the stream of the workspace pages (Apps, and
+// Schedules, which listens for the schedules notice).
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
-		service.ChangeDeployments, service.ChangeCopies}})
+		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules}})
 }
 
 // loadApps reads every app and builds the headline, the needs-you list and

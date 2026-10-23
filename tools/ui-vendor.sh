@@ -2,7 +2,8 @@
 # Vendors the browser scripts the console needs (htmx and its SSE extension)
 # into internal/ui/static/js/, pinned by version and SHA-256 in
 # tools/ui-vendor.versions. No Node, no CDN: the files come from the npm
-# registry's tarballs once, and are committed.
+# registry's tarballs once, and are committed. A file of our own (version
+# "ours", URL "-") is only checked: fetch never writes it.
 #
 #   tools/ui-vendor.sh fetch   download the pinned tarballs, verify the
 #                              extracted files' checksums, write them
@@ -41,6 +42,11 @@ entries() {
 fetch_one() {
   local name="$1" version="$2" url="$3" inner="$4" want="$5"
   local tarball="$cache/${url##*/}" tmp got
+  if [[ "$url" == "-" ]]; then
+    check_one "$@"
+    echo "kept ${dest#"$root"/}/$name (ours)"
+    return
+  fi
   mkdir -p "$cache" "$dest"
   if [[ ! -f "$tarball" ]]; then
     echo "downloading $url" >&2

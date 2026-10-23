@@ -1,0 +1,279 @@
+{{/* Schedules (feature 022): the workspace page /schedules, a run's page and the New / Edit
+     form, drawn by this one template set; .List, .Run or .Form says which. Every clock time is
+     a <time class="cv-clock"> in UTC ("clock" in parts.html); localtime.js adds the viewer's
+     local time beside it. Every form is a plain post: Run now, Pause and Resume post at once,
+     Stop this run and Delete… ask first in a <details>. A run's output is drawn on its own
+     page only. The values are contracts/schedules-screen.md's. */}}
+
+{{define "content"}}
+{{with .List}}{{template "schedules-list" .}}{{end}}
+{{with .Run}}{{template "schedule-run" .}}{{end}}
+{{with .Form}}{{template "schedule-form" .}}{{end}}
+{{end}}
+
+{{/* ------------------------------------------------------------------ The list */}}
+{{define "schedules-list"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Schedules</h1>
+    <p class="cv-lede" data-local-lede>Commands that run on a timer in a fresh copy of an app, then stop. Times are UTC.</p>
+  </div>
+  <a href="{{.NewHref}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}New schedule</a>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<form id="schedules-filter" class="cv-filter" method="get" action="/schedules" role="search">
+  {{with .Filter.Projects}}<select class="cv-field cv-select" name="project" aria-label="Project">{{range .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+  <select class="cv-field cv-select" name="app" aria-label="App">{{range .Filter.Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Apply</button>
+  {{if .Filter.Clear}}<a href="/schedules" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>{{end}}
+</form>
+<section class="cv-sregion" aria-label="Schedules" hx-get="{{.RefreshHref}}" hx-trigger="sse:schedules, sse:sync" hx-swap="innerHTML">{{template "schedules-region" .}}</section>
+{{end}}
+
+{{/* schedules-region: the count line, the table and the footer; /parts/schedules draws it alone.
+     Each row is a <details> with a stable id, which console.js keeps open or closed across a
+     refresh. Takes a schedulesRegion. */}}
+{{define "schedules-region"}}
+<p class="cv-scount">{{.Count.Total}} · {{.Count.Failing}} · {{with .Count.Next}}next run {{template "clock" .}}{{else}}no runs scheduled{{end}}</p>
+{{if .Rows}}
+<div class="cv-panel cv-sched">
+  <div class="cv-shead cv-label" aria-hidden="true">
+    <span></span>
+    <span></span>
+    <span>Schedule</span>
+    <span>Runs</span>
+    <span>Next</span>
+    <span>Last run</span>
+    <span>Last 14 runs</span>
+  </div>
+  {{range .Rows}}
+  <details class="cv-sdetails" id="{{.Anchor}}"{{if .Open}} open{{end}}>
+    <summary class="cv-ssum">
+      <span class="sr-only">{{.State}}. </span>
+      <span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
+      <span class="cv-smark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <span class="cv-swhat">
+        <span class="cv-sname-line"><span class="cv-sname">{{.Name}}</span>{{with .Pill}}<span class="cv-pill cv-pill-{{.Kind}} cv-pill-sm"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}</span>
+        <span class="cv-swhere" title="{{.Command}}">{{.App}}{{with .Service}} · {{.}}{{end}} · {{.Command}}</span>
+      </span>
+      <span class="cv-sruns" data-label="Runs">
+        <span class="cv-swords{{if .Paused}} cv-swords-paused{{end}}">{{template "sentence" .Words}}</span>
+        <span class="cv-scron">{{.Cron}}</span>
+      </span>
+      <span class="cv-snext" data-label="Next">{{with .Next}}{{template "clock" .}}{{else}}<span class="cv-snext-none">{{.NextText}}</span>{{end}}</span>
+      <span class="cv-slast" data-label="Last run">
+        {{with .Last}}
+        {{if .Running}}<span class="cv-slast-now">started {{template "clock" .Started}}</span>{{if .HasBar}}<meter class="cv-runbar" min="0" max="100" value="{{.BarPct}}" aria-hidden="true"></meter>{{end}}
+        {{else if .Never}}<span class="cv-slast-never">never</span>
+        {{else}}<span class="cv-slast-when{{if .Failed}} cv-slast-failed{{end}}">{{template "clock" .When}}</span>{{with .Note}}<span class="cv-slast-note">{{.}}</span>{{end}}{{end}}
+        {{end}}
+      </span>
+      <span class="cv-sstrip-cell">{{with .Strip}}<span class="cv-sstrip" role="group" aria-label="Last runs, oldest first">{{range .}}<a href="{{.Href}}" class="cv-sstrip-mark" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.Title}}</span></a>{{end}}</span>{{end}}</span>
+    </summary>
+    {{template "schedule-detail" .Detail}}
+  </details>
+  {{end}}
+</div>
+<div class="cv-sfoot">
+  <p>Last 14 runs read oldest to newest.</p>
+  {{if .Channels}}<p>Failed runs are sent to your channels. Change them in <a href="/settings/notifications">Settings › Notifications</a>.</p>{{end}}
+</div>
+{{else if .NoMatch}}
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">No schedule matches.</p>
+    <a href="{{.ClearHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>
+  </div>
+</div>
+{{else}}
+<div class="cv-panel">{{template "empty" .Empty}}</div>
+{{end}}
+{{end}}
+
+{{/* schedule-detail: what opens under a row: the state sentence and the bars on the left, the
+     facts and the buttons on the right. A built-in (a service's backup) has no Run now, Pause,
+     Edit or Delete: it is changed in Backups. Takes a schedDetail. */}}
+{{define "schedule-detail"}}
+<div class="cv-sdetail">
+  <div class="cv-sdetail-left">
+    <p class="cv-sstate{{if .StateQuiet}} cv-sstate-quiet{{end}}">{{template "sentence" .State}}</p>
+    <div class="cv-sbars-wrap">
+      <h3 class="cv-label">How long each run took</h3>
+      <div class="cv-sbars">{{range .Bars}}<span class="cv-sbar cv-sbar-{{.Kind}}{{if ne .Kind "skipped"}} cv-sbar-h{{.Step}}{{end}}" title="{{.Title}}"></span>{{end}}</div>
+      <p class="cv-susual">{{.Usual}}</p>
+    </div>
+  </div>
+  <div class="cv-sdetail-right">
+    <dl class="cv-sfacts">
+      {{range .Facts}}<dt>{{.Key}}</dt><dd{{if .Break}} class="cv-sfact-break"{{end}}>{{template "sentence" .Value}}</dd>
+      {{end}}
+    </dl>
+    <div class="cv-sbtns">
+      {{if .StopRun}}
+      <details class="cv-confirm" id="schedule-{{.ID}}-stop">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "square" 14}}Stop this run</summary>
+        <form method="post" action="/schedules/{{.ID}}/runs/{{.StopRun}}/stop" class="cv-confirm-body">
+          <p>The run is stopped and counted as stopped by you.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Stop the run</button></div>
+        </form>
+      </details>
+      {{end}}
+      {{if .RunNow}}<form method="post" action="/schedules/{{.ID}}/run"><button type="submit" class="cv-btn {{if .RunPrimary}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">{{icon "play" 14}}Run now</button></form>{{end}}
+      {{with .LogsHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "scroll-text" 14}}Logs of last run</a>{{end}}
+      {{if .Builtin}}
+      <a href="{{.BackupsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Change in Backups</a>
+      {{else}}
+      {{if .Paused}}<form method="post" action="/schedules/{{.ID}}/resume"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "play" 14}}Resume</button></form>
+      {{else}}<form method="post" action="/schedules/{{.ID}}/pause"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "pause" 14}}Pause</button></form>{{end}}
+      <a href="{{.EditHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "pencil" 14}}Edit</a>
+      <details class="cv-confirm" id="schedule-{{.ID}}-delete">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm">Delete…</summary>
+        <form method="post" action="/schedules/{{.ID}}/delete" class="cv-confirm-body">
+          <p>Its runs' history goes with it.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Delete schedule</button></div>
+        </form>
+      </details>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{/* ------------------------------------------------------------- A run's page
+     A record, not a live view: a run still going says to reload. Its output is drawn here and
+     nowhere else, and the page is never cached. Takes a runView. */}}
+{{define "schedule-run"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline"><span class="cv-inline-mono">{{.Name}}</span> · {{template "clock" .Title}}</h1>
+    <p class="cv-lede">{{template "sentence" .Sentence}}</p>
+    <p class="cv-runmeta">started {{template "clock" .Started}}{{with .Took}} · took {{.}}{{end}} · <span class="text-fg-2">{{.Service}}</span> of <span class="text-fg-2">{{.App}}</span>{{with .Version}} · {{.}}{{end}}</p>
+  </div>
+</header>
+{{if .Running}}<p class="cv-note">Still running: reload for more.</p>{{end}}
+<section aria-labelledby="output-title" class="cv-runout">
+  <h2 id="output-title" class="cv-label">Output</h2>
+  <div class="cv-panel cv-log">
+    {{with .Cut}}<p class="cv-log-note">{{.}}</p>{{end}}
+    {{if .Lines}}<div class="cv-log-lines" tabindex="0" role="log" aria-label="Output of the run">{{range .Lines}}<div class="cv-log-line cv-runline">{{if .Stderr}}<span class="cv-log-stream">stderr</span>{{else}}<span class="cv-log-stream" aria-hidden="true"></span>{{end}}<span class="cv-log-text">{{.Text}}</span></div>{{end}}</div>{{end}}
+    {{with .Empty}}<p class="cv-log-empty">{{.}}</p>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{/* ----------------------------------------------------------------- The form
+     New schedule and Edit: setting rows (Settings' shape) in one post form. "Check" is a submit
+     of its own (action=check) that draws the form again with the preview; the presets are links.
+     Takes a schedForm. */}}
+{{define "schedule-form"}}
+<div class="cv-sform-wrap">
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">{{template "sentence" .Title}}</h1>
+    <p class="cv-lede">Runs a command in a fresh copy of an app, then stops it.</p>
+  </div>
+</header>
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<form method="post" action="{{.Action}}" class="cv-panel cv-sform" autocomplete="off">
+  <input type="hidden" name="skipChoice" value="1">
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="schedule-name">Name</label>
+      <p class="cv-setrow-hint" id="schedule-name-hint">Lowercase letters, digits and dashes, at most 31. Unique in the app.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <input class="cv-field cv-field-mono" id="schedule-name" type="text" name="name" value="{{.Name.Value}}" maxlength="31" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="rates-sync" aria-describedby="schedule-name-hint{{if .Name.Error}} schedule-name-error{{end}}"{{if .Name.Error}} aria-invalid="true"{{end}}{{if .Name.Alert}} autofocus{{end}}>
+      {{template "field-error" .Name}}
+    </div>
+  </div>
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="schedule-app">Run inside</label>
+      <p class="cv-setrow-hint" id="schedule-app-hint">Uses the live version's image and variables. Doesn't take traffic.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <select class="cv-field cv-select" id="schedule-app" name="app" aria-describedby="schedule-app-hint{{if .App.Error}} schedule-app-error{{end}}"{{if .App.Error}} aria-invalid="true"{{end}}{{if .App.Alert}} autofocus{{end}}>
+        {{range .Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      {{template "field-error" .App}}
+      {{if .ServiceShown}}
+      <label class="cv-fld" for="schedule-service">
+        <span class="cv-label">Service</span>
+        <select class="cv-field cv-select" id="schedule-service" name="service"{{if .Service.Error}} aria-invalid="true" aria-describedby="schedule-service-error"{{end}}{{if .Service.Alert}} autofocus{{end}}>
+          {{range .Services}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      {{template "field-error" .Service}}
+      {{if .Pairs}}<p class="cv-hint">Pick the app above and its service here, or only a service: <span class="cv-inline-mono">app › service</span>.</p>{{end}}
+      {{end}}
+      {{if .VolumesHint}}<p class="cv-hint">Every service of this app mounts a volume, and a schedule needs a service without volumes.</p>{{end}}
+    </div>
+  </div>
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="schedule-command">Command</label>
+      <p class="cv-setrow-hint" id="schedule-command-hint">The program, then its arguments, quoted like a shell's words; no shell is implied. Pipes and variables aren't understood: for those, run <span class="cv-inline-mono">sh -c '…'</span>.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <textarea class="cv-field cv-field-mono cv-scommand" id="schedule-command" name="command" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="node scripts/sync-rates.js" aria-describedby="schedule-command-hint{{if .Command.Error}} schedule-command-error{{end}}"{{if .Command.Error}} aria-invalid="true"{{end}}{{if .Command.Alert}} autofocus{{end}}>{{.Command.Value}}</textarea>
+      {{template "field-error" .Command}}
+    </div>
+  </div>
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="schedule-when">When</label>
+      <p class="cv-setrow-hint" id="schedule-when-hint" data-local-hint="schedule-when">Times of day are UTC.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <div class="cv-swhen">
+        <input class="cv-field cv-swhen-input" id="schedule-when" type="text" name="when" value="{{.When.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="every day at 03:00, or a cron line" aria-describedby="schedule-when-hint{{if .When.Error}} schedule-when-error{{end}}"{{if .When.Error}} aria-invalid="true"{{end}}{{if .When.Alert}} autofocus{{end}}>
+        <button type="submit" name="action" value="check" class="cv-btn cv-btn-secondary cv-btn-sm">Check</button>
+      </div>
+      {{if not (and .Preview .Preview.Unreadable)}}{{template "field-error" .When}}{{end}}
+      <nav class="cv-schips" aria-label="Presets">{{range .Presets}}<a href="{{.Href}}" class="cv-schip{{if .Chosen}} cv-schip-chosen{{end}}"{{if .Chosen}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+      {{with .Preview}}
+      <div class="cv-spreview">
+        {{if .Unreadable}}<p class="cv-spreview-warn" id="schedule-when-error"{{if .Alert}} role="alert"{{end}}><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Couldn't read that. Try "every 2 hours" or paste a cron line.</span></p>
+        {{else}}
+        <dl class="cv-spreview-grid">
+          <dt>cron</dt><dd class="cv-spreview-cron">{{.Cron}}</dd>
+          <dt>next</dt><dd><span class="cv-clock-group" data-clock-group>{{range $i, $t := .Next}}{{if $i}} · {{end}}{{template "clock" $t}}{{end}} UTC</span></dd>
+          <dt>timezone</dt><dd>UTC</dd>
+        </dl>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Limits</span>
+    </div>
+    <div class="cv-setrow-ctl">
+      <div class="cv-slimits">
+        <label class="cv-fld" for="schedule-stop">
+          <span class="cv-label">Stop after</span>
+          <select class="cv-field cv-select" id="schedule-stop" name="stopAfter">{{range .StopAfter}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        </label>
+        <label class="cv-fld" for="schedule-memory">
+          <span class="cv-label">Memory</span>
+          <select class="cv-field cv-select" id="schedule-memory" name="memory">{{range .Memory}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        </label>
+      </div>
+      <label class="cv-check"><input type="checkbox" name="skip" value="1"{{if .Skip}} checked{{end}}><span>Skip a run if the last one is still going</span></label>
+    </div>
+  </div>
+
+  <div class="cv-sform-foot">
+    <button type="submit" name="action" value="{{.Verb}}" class="cv-btn cv-btn-primary cv-btn-sm">{{.Submit}}</button>
+    <a href="/schedules" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</a>
+  </div>
+</form>
+</div>
+{{end}}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -127,10 +128,12 @@ type configureTab struct {
 	Edit    editView
 	Domains domainsPanel
 	Secrets secretsPanel
-	Webhook webhookView
-	Deploy  deployTokenSection
-	Export  exportView
-	Delete  deleteView
+	// Schedules is the app's schedules (feature 022), built-in ones included.
+	Schedules schedulesPanel
+	Webhook   webhookView
+	Deploy    deployTokenSection
+	Export    exportView
+	Delete    deleteView
 }
 
 // domainsPanel is Configure's Domains panel: each host the app answers on, with
@@ -179,6 +182,33 @@ type secretsPanel struct {
 	// Variables is how many environment variables the app has, over all its services.
 	Variables int
 	Href      string
+}
+
+// schedulesPanel is Configure's Schedules panel (feature 022): a line per
+// schedule of the app, and the links to the Schedules page.
+type schedulesPanel struct {
+	Lines      []scheduleLine
+	ManageHref string
+	NewHref    string
+}
+
+// scheduleLine is "rates-sync · every 15 minutes".
+type scheduleLine struct {
+	Name  string
+	Words string
+}
+
+// schedulesPanelOf lays out an app's schedules for the panel.
+func schedulesPanelOf(appID string, list []service.Schedule) schedulesPanel {
+	p := schedulesPanel{ManageHref: "/schedules?app=" + url.QueryEscape(appID), NewHref: "/schedules/new?app=" + url.QueryEscape(appID)}
+	for _, sc := range list {
+		words := strings.ReplaceAll(sc.Words, "`", "")
+		if words != "" {
+			words = strings.ToLower(words[:1]) + words[1:]
+		}
+		p.Lines = append(p.Lines, scheduleLine{Name: scheduleName(sc), Words: words})
+	}
+	return p
 }
 
 // secretLine is one service's secret names, in their stored order.

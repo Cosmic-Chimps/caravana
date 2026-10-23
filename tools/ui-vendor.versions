@@ -9,9 +9,15 @@
 # prints the new sum and refuses to write the file), put the sum here, run
 # `fetch` again, and commit the new file. Compare the sum with the registry's
 # own tarball checksum (`npm view <package>@<version> dist.shasum`) first.
+#
+# A file of our own (not from a registry) has "ours" as its version and "-" as
+# its URL and path: `fetch` leaves it alone and `check` verifies its sum, so a
+# change to it is a change to this line too. After editing one, run
+# `shasum -a 256 internal/ui/static/js/<name>` and put the sum here.
 
 htmx.min.js 2.0.11 https://registry.npmjs.org/htmx.org/-/htmx.org-2.0.11.tgz package/dist/htmx.min.js d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717
 sse.min.js 2.2.4 https://registry.npmjs.org/htmx-ext-sse/-/htmx-ext-sse-2.2.4.tgz package/dist/sse.min.js 98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136
 xterm.js 6.0.0 https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz package/lib/xterm.js 14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972
 xterm.css 6.0.0 https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz package/css/xterm.css 854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6
 addon-fit.js 0.11.0 https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz package/lib/addon-fit.js ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527
+localtime.js ours - - da29073062a9d083e22f28c0a5218e1ee8e6777c4ef67239f0dbdae1651e9ef7

@@ -88,7 +88,8 @@ func TestStaticAssetsAreHashed(t *testing.T) {
 }
 
 // The base document configures htmx for our policy (research R3) and loads the
-// three scripts deferred, in the order that works: htmx, its extension, ours.
+// scripts deferred, in the order that works: htmx, its extension, ours, and the
+// local time beside each clock time (feature 022).
 func TestBaseDocumentSetsUpHtmx(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	resp, body := e.do(t, request{path: "/login"})
@@ -102,7 +103,7 @@ func TestBaseDocumentSetsUpHtmx(t *testing.T) {
 	for _, m := range srcs {
 		got = append(got, m[1])
 	}
-	want := []string{"/static/js/htmx.min.js", "/static/js/sse.min.js", "/static/js/console.js"}
+	want := []string{"/static/js/htmx.min.js", "/static/js/sse.min.js", "/static/js/console.js", "/static/js/localtime.js"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("scripts = %v, want %v", got, want)
 	}

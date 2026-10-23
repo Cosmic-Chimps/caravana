@@ -937,3 +937,98 @@ func deploymentSentence(rec store.DeploymentRecord, f deployFacts) sentence {
 	}
 	return sentence{plain(string(rec.Status))}
 }
+
+// clockTime is a moment as the pages write a clock time (feature 022's time
+// rule): UTC first and named, "14:15 UTC", with the console's relative-day
+// words computed in UTC on the server ("tomorrow 02:00 UTC", "in 2 d · Sun
+// 03:00 UTC", "yesterday 14:00 UTC"). The "clock" template in parts.html draws
+// it as <time datetime="…Z" class="cv-clock">; static/js/localtime.js then adds
+// the viewer's local time beside it, in the shape Local names. Without script
+// the UTC text stands alone and is right.
+type clockTime struct {
+	Text  string // "tomorrow 02:00 UTC"
+	ISO   string // "2026-10-24T02:00:00Z", for datetime
+	Title string // "2026-10-24 02:00:00 UTC", for the hover
+	// Local is the shape of the local time localtime.js adds: "time" (14:15),
+	// "time-s" (14:15:02), "weekday" (Sun 14:15) or "date" (2026-10-24 14:15).
+	Local string
+}
+
+// The shapes of a clock's local time (clockTime.Local).
+const (
+	localTime    = "time"
+	localSeconds = "time-s"
+	localWeekday = "weekday"
+	localDate    = "date"
+)
+
+// clockOf is t as a clock time read from now: "14:15 UTC" today, "tomorrow
+// 02:00 UTC", "yesterday 14:00 UTC", "in 2 d · Sun 03:00 UTC" or "3 d ago · Tue
+// 14:00 UTC" within a week, and the date beyond it ("2026-10-12 03:00 UTC").
+func clockOf(now, t time.Time) clockTime {
+	return clockWith(now, t, "15:04", false)
+}
+
+// clockSecondsOf is clockOf with the seconds: "14:00:02 UTC".
+func clockSecondsOf(now, t time.Time) clockTime {
+	return clockWith(now, t, "15:04:05", false)
+}
+
+// clockDateOf is clockOf for a record's own time (the run page's title): the
+// same words, and the viewer's local time with its date.
+func clockDateOf(now, t time.Time) clockTime {
+	c := clockOf(now, t)
+	c.Local = localDate
+	return c
+}
+
+// clockCompactOf is one time of a list of next runs ("14:15", "tomorrow
+// 03:00", "Sun 03:00", "2026-11-01 06:00"): no " UTC" (the list says it once,
+// after its last time) and no "in N d ·", which would read as the list's own
+// separator.
+func clockCompactOf(now, t time.Time) clockTime {
+	return clockWith(now, t, "15:04", true)
+}
+
+// clockAt is a clock time whose text is already written, such as the Live
+// stage's "14:03:05 UTC": only the element and the local shape are added.
+func clockAt(t time.Time, text, local string) clockTime {
+	u := t.UTC()
+	return clockTime{Text: text, ISO: u.Format(time.RFC3339), Title: u.Format("2006-01-02 15:04:05 UTC"), Local: local}
+}
+
+func clockWith(now, t time.Time, layout string, compact bool) clockTime {
+	u := t.UTC()
+	prefix, local := dayWords(now, u, compact)
+	text := prefix + u.Format(layout)
+	if !compact {
+		text += " UTC"
+	}
+	if local == localTime && layout == "15:04:05" {
+		local = localSeconds
+	}
+	return clockTime{Text: text, ISO: u.Format(time.RFC3339), Title: u.Format("2006-01-02 15:04:05 UTC"), Local: local}
+}
+
+// dayWords is what goes before a clock time's hour: nothing for today (in
+// UTC), "tomorrow " or "yesterday ", the weekday within a week, else the
+// date; and the shape of the local time that matches it.
+func dayWords(now, t time.Time, compact bool) (string, string) {
+	days := int(stripDay(t).Sub(stripDay(now)) / (24 * time.Hour))
+	day := t.UTC().Format("Mon")
+	switch {
+	case days == 0:
+		return "", localTime
+	case days == 1:
+		return "tomorrow ", localTime
+	case days == -1:
+		return "yesterday ", localTime
+	case compact && days >= -6 && days <= 6:
+		return day + " ", localWeekday
+	case days >= 2 && days <= 6:
+		return fmt.Sprintf("in %d d · %s ", days, day), localWeekday
+	case days <= -2 && days >= -6:
+		return fmt.Sprintf("%d d ago · %s ", -days, day), localWeekday
+	}
+	return t.UTC().Format("2006-01-02") + " ", localDate
+}

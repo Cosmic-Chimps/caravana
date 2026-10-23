@@ -8,6 +8,7 @@
 //   - let htmx show a form the server refused (422, 502),
 //   - draw the Logs tab's lines as they arrive, with pause and wrapping,
 //   - copy a value to the clipboard,
+//   - keep a live region's open rows open when it is drawn again,
 //   - keep a delete button off until the app's name has been typed.
 //
 // Why it looks like this, for a reader new to browser JavaScript:
@@ -87,6 +88,42 @@
       event.detail.shouldSwap = true;
       event.detail.isError = false;
     }
+  });
+
+  // ---- Rows that stay open ------------------------------------------------
+  //
+  // A live region (the Schedules list) is drawn again by the server on a
+  // notice, and its rows are <details> elements with stable ids. Before htmx
+  // swaps a region in, this remembers which of them are open and which are
+  // closed; after, it puts them back. So a refresh never closes the row being
+  // read, or opens again one the reader closed. A row that is new keeps what
+  // the server drew.
+  let openRows = null;
+
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    const target = event.detail.target;
+    openRows = null;
+    if (!target || !event.detail.shouldSwap) {
+      return;
+    }
+    openRows = new Map();
+    target.querySelectorAll("details[id]").forEach(function (row) {
+      openRows.set(row.id, row.open);
+    });
+  });
+
+  document.addEventListener("htmx:afterSwap", function (event) {
+    const target = event.detail.target;
+    const state = openRows;
+    openRows = null;
+    if (!target || !state) {
+      return;
+    }
+    target.querySelectorAll("details[id]").forEach(function (row) {
+      if (state.has(row.id)) {
+        row.open = state.get(row.id);
+      }
+    });
   });
 
   // ---- The log view ------------------------------------------------------

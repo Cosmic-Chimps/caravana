@@ -192,7 +192,7 @@
       <span class="cv-blast">
         {{if .LastNow}}<span class="cv-blast-now">running now</span>
         {{else if .LastNever}}<span class="cv-blast-never">never</span>
-        {{else}}<span class="cv-blast-when">{{template "time" .LastWhen}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
+        {{else}}<span class="cv-blast-when">{{template "clock" .LastClock}}{{if .LastFailed}} <span class="cv-blast-failed">· failed</span>{{end}}</span>{{end}}
         {{if .Took}}<span class="cv-bmeta">took {{.Took}}{{with .Stopped}} · {{.}}{{end}}</span>{{end}}
       </span>
       <span class="cv-bsize">
@@ -216,7 +216,7 @@
         {{range .Runs}}
         <div class="cv-brun cv-confirm-row" id="backup-{{.ID}}" role="row">
           <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
-          <span role="cell" class="cv-brun-when">{{template "time" .When}}</span>
+          <span role="cell" class="cv-brun-when">{{template "clock" .Clock}}</span>
           <span role="cell" class="cv-brun-fact">{{.Size}}</span>
           <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
           <span role="cell" class="cv-brun-act">
@@ -240,7 +240,7 @@
         {{else if $.Destination}}
         {{with .RestoreLast}}
         <details class="cv-confirm">
-          <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-secondary{{else}}cv-btn-primary{{end}} cv-btn-sm">{{icon "history" 14}}Restore from {{.When.Text}}</summary>
+          <summary class="cv-btn {{if eq $row.Mark "failed"}}cv-btn-secondary{{else}}cv-btn-primary{{end}} cv-btn-sm">{{icon "history" 14}}Restore from {{.Clock.Text}}</summary>
           {{template "restore-confirm" (restoreAsk $ . "last-")}}
         </details>
         {{end}}
@@ -289,7 +289,7 @@
     {{range .}}
     <div class="cv-brun cv-brun-restore" role="row">
       <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span></span>
-      <span role="cell" class="cv-brun-when">{{template "time" .Created}}</span>
+      <span role="cell" class="cv-brun-when">{{template "clock" .CreatedClock}}</span>
       <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span> from {{.BackupID}}</span>
       <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
       <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span>
@@ -535,14 +535,14 @@
     <ol class="cv-panel cv-stages" aria-label="Stages">
       {{range .Stages}}<li class="cv-stage{{if .Active}} cv-stage-active{{end}}"{{if .Active}} aria-current="step"{{end}}>
         <span class="cv-stage-name{{if .ToCome}} cv-stage-todo{{end}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>{{.Name}}</span>
-        <span class="cv-stage-value"{{with .Title}} title="{{.}}"{{end}}><span class="sr-only">{{.Word}}: </span>{{.Value}}</span>
+        <span class="cv-stage-value"{{with .Title}} title="{{.}}"{{end}}><span class="sr-only">{{.Word}}: </span>{{with .Clock}}{{template "clock" .}}{{else}}{{.Value}}{{end}}</span>
       </li>
       {{end}}
     </ol>
   </div>
   {{else}}
   <ol class="cv-stageline cv-data-muted" aria-label="Stages">
-    {{range .Stages}}<li><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.Word}}: </span>{{.Name}} <span{{with .Title}} title="{{.}}"{{end}}>{{.Value}}</span></li>
+    {{range .Stages}}<li><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.Word}}: </span>{{.Name}} <span{{with .Title}} title="{{.}}"{{end}}>{{with .Clock}}{{template "clock" .}}{{else}}{{.Value}}{{end}}</span></li>
     {{end}}
   </ol>
   {{end}}
@@ -777,6 +777,18 @@
     {{end}}
     <p class="cv-note">{{.Secrets.Summary}}</p>
     <div class="cv-btnrow"><a href="{{.Secrets.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage variables and secrets</a></div>
+  </section>
+  <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="schedules-title">
+    <h2 id="schedules-title" class="cv-label">Schedules</h2>
+    {{range .Schedules.Lines}}
+    <p class="cv-schedline"><span class="cv-schedline-name">{{.Name}}</span> <span class="cv-schedline-words">· {{.Words}}</span></p>
+    {{else}}
+    <p class="cv-note">No schedules.</p>
+    {{end}}
+    <div class="cv-btnrow">
+      <a href="{{.Schedules.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage schedules</a>
+      <a href="{{.Schedules.NewHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>
+    </div>
   </section>
 </div></div>
 {{end}}

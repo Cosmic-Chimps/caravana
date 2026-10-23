@@ -41,9 +41,10 @@ func navOf(t *testing.T, body string) []string {
 	return out
 }
 
-// The sidebar has exactly Home, Projects and Settings on every page, nothing
-// that has no page yet, and the right one marked: Home on /apps, Projects on
-// the projects and on every page of an app, Settings on /settings. The top bar
+// The sidebar has exactly Home, Projects, Schedules and Settings on every page,
+// nothing that has no page yet, and the right one marked: Home on /apps, Projects on
+// the projects and on every page of an app, Schedules on /schedules (feature 022),
+// Settings on /settings. The top bar
 // has New app, and the crumbs say where the page is (contracts/page1-shell.md).
 func TestShellOnEveryPage(t *testing.T) {
 	e := shopConsole(t)
@@ -70,6 +71,8 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/settings/backup-storage", "Settings", "Settings /Backup storage"},
 		{"/settings/notifications", "Settings", "Settings /Notifications"},
 		{"/settings/tokens", "Settings", "Settings /API tokens"},
+		{"/schedules", "Schedules", "Schedules"},
+		{"/schedules/new", "Schedules", "Schedules /New schedule"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -78,7 +81,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Fatalf("GET %s = %d:\n%s", tc.path, resp.StatusCode, text(body))
 			}
 
-			want := []string{"Home=/apps", "Projects=/projects", "Settings=/settings"}
+			want := []string{"Home=/apps", "Projects=/projects", "Schedules=/schedules", "Settings=/settings"}
 			for i, item := range want {
 				if strings.HasPrefix(item, tc.active+"=") {
 					want[i] += "*"
@@ -88,7 +91,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Errorf("sidebar = %v, want %v", got, want)
 			}
 			side := text(sidebarRegion.FindString(body))
-			for _, absent := range []string{"Deploys", "Previews", "Logs", "Monitoring", "Schedules", "Domains", "Backups", "Developer", "Operator"} {
+			for _, absent := range []string{"Deploys", "Previews", "Logs", "Monitoring", "Domains", "Backups", "Developer", "Operator"} {
 				if strings.Contains(side, absent) {
 					t.Errorf("the sidebar links %q, which has no page yet: %s", absent, side)
 				}

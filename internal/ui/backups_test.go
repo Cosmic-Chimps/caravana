@@ -128,8 +128,8 @@ func TestBackupsTab(t *testing.T) {
 	}
 	_, body = e.get(t, "/apps/duo/backups")
 	// The run is recorded at the real time and the page reads it against the test's fixed clock, so
-	// how long ago it was changes with the calendar: any "Restore from … ago" is right.
-	restoreFrom := regexp.MustCompile(`Restore from [0-9a-z ]+ ago`)
+	// its day words change with the calendar: any "Restore from … UTC" clock time is right.
+	restoreFrom := regexp.MustCompile(`Restore from [0-9a-zA-Z :·-]+ UTC`)
 	if got := text(body); !strings.Contains(got, "2 KB") || !strings.Contains(got, "2 KB all") || !strings.Contains(got, "Restore…") || !restoreFrom.MatchString(got) ||
 		!strings.Contains(body, "/backups/"+backupID+"/restore") || !strings.Contains(body, `href="#backup-`+backupID+`"`) {
 		t.Errorf("the tab after the backup:\n%s", got)
@@ -207,7 +207,7 @@ func TestBackupsTabVolume(t *testing.T) {
 		"uptime-kuma Volume · /app/data", "Every day at 03:00 UTC The service stops while it runs. 3 backups",
 		"2 KB", "took 4 s · stopped 4 s",
 		"The service stops for a few seconds while the backup runs.",
-		"The service stops, its volumes are replaced by the files of the backup from", "ago, and it starts again. Files added since the backup are deleted.",
+		"The service stops, its volumes are replaced by the files of the backup from", "UTC, and it starts again. Files added since the backup are deleted.",
 		"Type uptime-kuma to confirm", "Restore and stop the service while it runs",
 	} {
 		if !strings.Contains(got, want) {

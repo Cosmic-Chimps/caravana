@@ -33,6 +33,11 @@
 {{/* time: a relative phrase ("5 minutes ago") with the exact time on hover. Takes a when. */}}
 {{define "time"}}<time class="cv-data"{{with .ISO}} datetime="{{.}}"{{end}}{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}
 
+{{/* clock: a clock time, UTC first and named ("tomorrow 02:00 UTC", feature 022). localtime.js adds
+     " · 04:00 local" after it, in the shape data-local names; without script the UTC text stands
+     alone. Takes a clockTime. */}}
+{{define "clock"}}<time class="cv-clock" datetime="{{.ISO}}"{{with .Title}} title="{{.}}"{{end}} data-local="{{.Local}}">{{.Text}}</time>{{end}}
+
 {{/* empty: what is missing, what to do about it, and the one action that does it. Takes an emptyView. */}}
 {{define "empty"}}
 <div class="cv-empty">

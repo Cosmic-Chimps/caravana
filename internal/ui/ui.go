@@ -191,6 +191,18 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/restart", s.protected(s.requireSession(s.restartApp))},
 		{"POST", "/apps/{id}/copies/{copyId}/run", s.protected(s.requireSession(s.runCommand))},
 		{"GET", "/apps/{id}/copies/{copyId}/terminal", s.requireSession(s.showTerminal)},
+		{"GET", "/schedules", s.requireSession(s.showSchedules)},
+		{"GET", "/schedules/new", s.requireSession(s.showNewSchedule)},
+		{"POST", "/schedules", s.protected(s.requireSession(s.createSchedule))},
+		{"GET", "/schedules/{id}/edit", s.requireSession(s.showEditSchedule)},
+		{"POST", "/schedules/{id}", s.protected(s.requireSession(s.saveSchedule))},
+		{"POST", "/schedules/{id}/run", s.protected(s.requireSession(s.runSchedule))},
+		{"POST", "/schedules/{id}/pause", s.protected(s.requireSession(s.pauseSchedule))},
+		{"POST", "/schedules/{id}/resume", s.protected(s.requireSession(s.resumeSchedule))},
+		{"POST", "/schedules/{id}/delete", s.protected(s.requireSession(s.deleteSchedule))},
+		{"GET", "/schedules/{id}/runs/{runId}", s.requireSession(s.showRun)},
+		{"POST", "/schedules/{id}/runs/{runId}/stop", s.protected(s.requireSession(s.stopScheduleRun))},
+		{"GET", "/parts/schedules", s.requirePart(s.partSchedules)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/deploying", s.requirePart(s.partDeploying)},
@@ -284,7 +296,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

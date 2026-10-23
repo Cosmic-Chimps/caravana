@@ -1093,6 +1093,11 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		s.serverError(w, "list deployments", err)
 		return
 	}
+	schedules, err := s.svc.ListSchedules(ctx, service.ScheduleFilter{App: id})
+	if err != nil {
+		s.serverError(w, "list schedules", err)
+		return
+	}
 	head, err := s.shellPage(r, id+" configure", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
@@ -1113,10 +1118,11 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Edit:    editViewOf(sum.App, form, extra.Stale),
 		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.Compose == nil && sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
-		Secrets: secretsPanelOf(sum.App),
-		Webhook: webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
-		Deploy:  deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
-		Export:  exportOf(id, deployments),
+		Secrets:   secretsPanelOf(sum.App),
+		Schedules: schedulesPanelOf(id, schedules),
+		Webhook:   webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
+		Deploy:    deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
+		Export:    exportOf(id, deployments),
 		Delete: deleteView{ID: id, Goes: whatGoes(sum.App, sum, len(deployments), hook.Enabled),
 			Error: extra.DeleteError, Notice: extra.DeleteNotice},
 	}

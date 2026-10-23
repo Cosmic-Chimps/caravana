@@ -771,6 +771,62 @@ Deploying now, the filter, the groups.
   one with a recorded definition and pinned images (the one Nomad's message names, when the history has
   it). When none matches, the wording stays "v3".
 
+### Schedules (feature 022, page 5)
+Values from `specs/022-schedules/contracts/schedules-screen.md`. A workspace page, `/schedules`: the
+sidebar's third Workspace item (`clock` icon), current on every `/schedules…` page.
+- **The time rule.** Every clock time the console draws (a schedule's next run, a run's start, the form's
+  preview, a backup's time, the deployment entry's Live stage) is a `<time class="cv-clock"
+  datetime="…Z">` whose text is UTC first and named: "14:15 UTC", with the console's relative-day words
+  computed in UTC on the server ("tomorrow 02:00 UTC", "yesterday 14:00 UTC", "in 2 d · Sun 03:00 UTC",
+  "3 d ago · Tue 09:30 UTC", the date beyond a week). One helper (`clockOf` in `view.go`, the `clock`
+  template) makes them. `static/js/localtime.js`, ours and listed in `tools/ui-vendor.versions` with its
+  sum, adds the viewer's local time after each in fg-3, " · 16:15 local", in the shape the element's
+  `data-local` names (time, time with seconds, weekday, date; a time whose local day isn't its UTC day
+  gains the weekday). It never names the zone: the word is "local". A list of times (the preview's next
+  three runs) says "UTC" once after the list and gets one " · 16:15 · 16:30 · 16:45 local". Without
+  script the UTC text stands alone and is right. Clock times are mono with tabular figures.
+- **Page head** (Settings' shape): "Schedules" 30px, the sentence "Commands that run on a timer in a
+  fresh copy of an app, then stop. Times are UTC." (the script adds "Your local time is shown beside
+  them."), New schedule (primary small, plus). Then the filter (a project select only with more than
+  one project, the app select, Apply, Clear) and the count line in 13px mono fg-3: "7 schedules · 1
+  failing · next run 14:15 UTC" ("none failing", "no runs scheduled").
+- **The table:** a 38px ink-2 head, columns `14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 150px 160px
+  200px`, gap 18. Each row is a native `<details>` (`id="schedule-<id>"`; `console.js` keeps a
+  refreshed region's rows as open or closed as they were): chevron, a 9px mark (half disc while a run
+  goes, ring when paused or never run, else the newest run's: disc, square, diamond for a skipped slot),
+  the name (500 14px mono) with a small pill ("running now", "paused", "last run failed") over "app ·
+  service · command" (12px mono fg-3, one line), the words over the cron line (fg-4), Next, Last run
+  ("started 14:00:02 UTC" over a 120×4 `<meter>` of the usual time, or the time over "took 48 s" /
+  "stopped at 5 min"), and the last 14 runs as 7px marks 4px apart, oldest first, each a link to its
+  run (`role="group"`, "Last runs, oldest first"). Sorted failed, running, next run, paused. The first
+  row opens by itself when its last run failed; `?open=` and `?created=` open another.
+- **The detail** (ink-0, `minmax(0, 1.2fr) minmax(0, 1fr)`, padding 16 18 20 82): the state sentence
+  (a failure's cause from a fixed table with "3 of the last 4 runs failed the same way.", "Running for 1
+  min 20 s. Usually takes 48 s.", "Paused 3 days ago." and the skip note quieter), "How long each run
+  took" as bars 56px tall at most (fg-3 ok, failed, warn at the limit, a 2px stub for a skip; heights
+  in fourteen 4px classes, since the policy allows no style attribute) over "usually 48 s · stops at 5
+  min"; then the facts grid (130px keys) and the buttons: Stop this run (a confirmation) while a run
+  goes, else Run now (primary after a failure), Logs of last run, Pause or Resume, Edit, Delete… (a
+  confirmation). A confirmation opens over what is below. A built-in (a service's backup, "web backup",
+  "pg_dump → backups") has "Made by Backups…", Logs and Change in Backups, and its marks link to the
+  Backups tab.
+- **A run's page:** the crumbs "Schedules / rates-sync" (both links), the title "`rates-sync` ·
+  yesterday 14:00 UTC" (the local time with its date), the run's sentence, "started … · took … · `web`
+  of `booking-api` · v24", "Still running: reload for more." while it goes, and the output as the Logs
+  tab draws it without the copy column: stdout, then stderr marked, the cut line when a stream lost its
+  start, "No output." It is never cached, and no other page holds a run's output.
+- **The form** (New schedule, Edit): Settings' setting rows in one panel, 1180px at most: Name, Run
+  inside (the app select, stopped apps disabled; the service select of a picked app with several, or
+  every app's services as "app › service" until one is picked), Command (2-row mono textarea), When
+  (a sans field and a Check submit, the four presets as 26px chips that are links, the preview box:
+  cron, next, timezone, or "Couldn't read that…"), Limits (Stop after, Memory, the skip box), Create
+  or Save and Cancel. A refused submit draws the form again with the reason under its field.
+- **Configure** gains a Schedules panel after Variables & secrets: "`name` · words" lines, "No
+  schedules.", Manage schedules and New schedule.
+- **Narrow:** under 900px of room a row folds (mark, name and pill; app and command; Runs, Next and
+  Last run as label and value; the strip on its own line) and the detail stacks; the form's rows stack
+  under 640px (page 3's rule).
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

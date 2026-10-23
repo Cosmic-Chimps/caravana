@@ -1217,8 +1217,9 @@ func TestBackupsFailedRow(t *testing.T) {
 	}
 	body := e.pageOf(t, "/apps/kuma/backups")
 	got := text(body)
-	for _, want := range []string{"1 backed up · 1 failing · 0 not · stored in backups", "uptime-kuma, last backup failed.", "25 minutes ago · failed",
-		"Restore from 35 minutes ago", "The last backup failed 25 minutes ago."} {
+	// The run times are clock times (feature 022): "14:05 UTC" today.
+	for _, want := range []string{"1 backed up · 1 failing · 0 not · stored in backups", "uptime-kuma, last backup failed.", bad.Format("15:04") + " UTC · failed",
+		"Restore from " + good.Format("15:04") + " UTC", "The last backup failed 25 minutes ago."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}

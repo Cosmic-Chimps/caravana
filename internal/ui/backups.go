@@ -85,6 +85,7 @@ type backupSvcRow struct {
 	// LastWhen is when the newest run started; LastNow says it is running, and
 	// LastNever that nothing ran yet. Took and Stopped are its facts.
 	LastWhen  when
+	LastClock clockTime
 	LastNow   bool
 	LastNever bool
 	// LastFailed says the newest run failed: its time is followed by "· failed".
@@ -113,8 +114,11 @@ type backupSvcRow struct {
 type backupRun struct {
 	ID, Service, Status, Mark, Size, Took, Stopped, Message string
 	// Cause is a plain reason for a failed run (causeOf), led before the detail in Message.
-	Cause      string
-	When       when
+	Cause string
+	When  when
+	// Clock is when the run started as a clock time (feature 022): what the
+	// row, the Restore button and its confirmation say.
+	Clock      clockTime
 	CanRestore bool
 	Volume     bool
 }
@@ -141,6 +145,7 @@ type unmountedVolume struct {
 type restoreRow struct {
 	Service, BackupID, Status, Mark, Took, Message string
 	Created                                        when
+	CreatedClock                                   clockTime
 	Stopped                                        string
 }
 
@@ -158,7 +163,7 @@ type restoreAskView struct {
 
 // restoreAskFor is the template function {{restoreAsk $ . ""}}.
 func restoreAskFor(tab backupsTab, run backupRun, prefix string) restoreAskView {
-	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.When.Text}
+	return restoreAskView{AppID: tab.ID, Run: run, Prefix: prefix, Failed: prefix == "" && tab.ConfirmErr == run.ID, When: run.Clock.Text}
 }
 
 // backupEngineFor says how a service could be backed up, from what it is: a
@@ -252,7 +257,8 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		}
 	}
 	for _, x := range restores {
-		row := restoreRow{Service: x.Service, BackupID: x.BackupID, Status: x.Status, Message: x.Message, Created: whenOf(now, &x.CreatedAt, "")}
+		row := restoreRow{Service: x.Service, BackupID: x.BackupID, Status: x.Status, Message: x.Message, Created: whenOf(now, &x.CreatedAt, ""),
+			CreatedClock: clockOf(now, x.CreatedAt)}
 		row.Mark = runMark(x.Status)
 		if x.FinishedAt != nil {
 			row.Took = durationText(x.FinishedAt.Sub(x.CreatedAt))
@@ -372,7 +378,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 
 	for i, r := range runs {
 		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
-			When: whenOf(now, &r.StartedAt, ""), Volume: r.Engine == app.BackupVolume,
+			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
 			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped}
 		if r.Status == store.BackupSucceeded {
 			run.Size = humanBytes(r.Bytes)
@@ -388,7 +394,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		}
 		if i == 0 {
 			row.Mark, row.LastNever, row.LastNow = run.Mark, false, r.Status == store.BackupRunning
-			row.LastWhen, row.Took, row.Stopped, row.Size = run.When, run.Took, run.Stopped, run.Size
+			row.LastWhen, row.LastClock, row.Took, row.Stopped, row.Size = run.When, run.Clock, run.Took, run.Stopped, run.Size
 			row.LastFailed = r.Status == store.BackupFailed
 			if r.Status == store.BackupFailed {
 				// The error is in the run's row, once.

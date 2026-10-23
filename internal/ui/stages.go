@@ -24,6 +24,9 @@ type stageView struct {
 	Value  string
 	Active bool
 	Title  string
+	// Clock, when set, is Value as a clock element (the Live stage's time,
+	// feature 022), so the viewer's local time can be added beside it.
+	Clock *clockTime
 }
 
 // ToCome says the stage hasn't happened, and may never: its name is set quieter.
@@ -80,6 +83,7 @@ func stagesOf(rec store.DeploymentRecord, p *service.Progress) [3]stageView {
 		}
 		live.Mark, live.Value = "healthy", rec.UpdatedAt.UTC().Format("15:04:05 UTC")
 		live.Title = rec.UpdatedAt.UTC().Format("2006-01-02 15:04:05 UTC")
+		live.Clock = new(clockAt(rec.UpdatedAt, live.Value, localSeconds))
 	case store.StatusReverted:
 		roll.Mark, roll.Value = "failed", "failed"
 	case store.StatusFailed:

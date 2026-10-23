@@ -33,7 +33,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention"}}, // notices that these changed
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
@@ -50,7 +50,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
-	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose"}},
+	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules"}},
 	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
 	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
@@ -147,6 +147,22 @@ var consoleParity = map[string]parity{
 	"POST /settings/password":                {ops: []string{"changePassword"}},
 	"POST /settings/tokens":                  {ops: []string{"createToken"}},
 	"POST /settings/tokens/{tokenId}/revoke": {ops: []string{"revokeToken"}},
+	// Schedules (feature 022). The list reads the schedules (built-in ones included) and each one's last
+	// runs, the apps and projects for its filter, the backup destination for a built-in's words and the
+	// channels for its footer; its live region is the same reads. The form lists the apps, and Check
+	// changes nothing; the run's page reads the run and its output.
+	"GET /schedules":                         {ops: []string{"listSchedules", "listScheduleRuns", "listApps", "listProjects", "getBackupDestination", "listNotificationChannels"}},
+	"GET /parts/schedules":                   {ops: []string{"listSchedules", "listScheduleRuns", "listApps", "getBackupDestination", "listNotificationChannels"}},
+	"GET /schedules/new":                     {ops: []string{"listApps"}},
+	"POST /schedules":                        {ops: []string{"listApps", "createSchedule"}},
+	"GET /schedules/{id}/edit":               {ops: []string{"getSchedule", "listApps"}},
+	"POST /schedules/{id}":                   {ops: []string{"getSchedule", "listApps", "updateSchedule"}},
+	"POST /schedules/{id}/run":               {ops: []string{"runSchedule"}},
+	"POST /schedules/{id}/pause":             {ops: []string{"pauseSchedule"}},
+	"POST /schedules/{id}/resume":            {ops: []string{"resumeSchedule"}},
+	"POST /schedules/{id}/delete":            {ops: []string{"getSchedule", "deleteSchedule"}},
+	"GET /schedules/{id}/runs/{runId}":       {ops: []string{"getSchedule", "getScheduleRun", "getScheduleRunOutput"}},
+	"POST /schedules/{id}/runs/{runId}/stop": {ops: []string{"stopScheduleRun"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

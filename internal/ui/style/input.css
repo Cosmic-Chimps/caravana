@@ -881,3 +881,163 @@
   .cv-stage-name { flex: none; min-width: 6.5rem; }
   .cv-stage-active { box-shadow: inset 0 -2px 0 var(--color-rolling); }
 }
+
+/* ---------------------------------------------------------------------------
+   Page 5 (feature 022): Schedules, a run's page and the schedule form, and the clock times
+   every page draws. The values are contracts/schedules-screen.md's. The table and the form
+   are containers, so they narrow by the room they have (the rules at the end).
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* A clock time: "14:15 UTC" in the text around it, and the viewer's local time, which
+     localtime.js adds after it, a step quieter. */
+  .cv-clock, .cv-clock-local { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .cv-clock-local { color: var(--color-fg-3); }
+  /* The Backups tab's run times (they were relative words, set in .cv-data, before 022). */
+  .cv-brun-when { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); }
+  .cv-blast-when .cv-clock-local { font-size: 12px; }
+
+  /* The count line under the filter. */
+  .cv-scount { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-sregion { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  /* The table: a head, then one <details> per schedule whose summary is the row. */
+  .cv-sched { overflow: visible; container-type: inline-size; }
+  .cv-shead, .cv-ssum { grid-template-columns: 14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 150px 160px 200px; }
+  .cv-shead { display: grid; column-gap: 18px; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-ssum { display: grid; column-gap: 18px; align-items: center; min-height: 62px; padding: 8px 18px; list-style: none; cursor: pointer; border-top: 1px solid var(--color-line-1); }
+  .cv-shead + .cv-sdetails > .cv-ssum { border-top: 0; }
+  .cv-ssum::-webkit-details-marker { display: none; }
+  .cv-ssum:hover, .cv-sdetails[open] > .cv-ssum { background: var(--color-ink-2); }
+  .cv-sdetails[open] .cv-chev-closed { display: none; }
+  .cv-sdetails[open] .cv-chev-open { display: block; }
+  .cv-sdetails:last-child:not([open]) > .cv-ssum { border-radius: 0 0 5px 5px; }
+  .cv-ssum > * { min-width: 0; }
+  .cv-smark { display: grid; place-items: center; }
+  .cv-swhat, .cv-sruns, .cv-slast { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cv-sname-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+  .cv-sname { font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-pill-sm { height: 18px; gap: 5px; padding: 0 6px; font-size: 11px; font-weight: 400; }
+  .cv-pill-sm .cv-mark { width: 6px; height: 6px; }
+  .cv-pill-sm .cv-mark-warning { width: 4.68px; height: 4.68px; margin: 0.66px; }
+  .cv-swhere { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cv-swords { font-size: 14px; line-height: 1.35; color: var(--color-fg-1); }
+  .cv-swords-paused { color: var(--color-fg-3); }
+  .cv-scron { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-4); }
+  .cv-snext { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); }
+  .cv-snext-none { color: var(--color-fg-4); }
+  .cv-slast { font: 400 12px/1.2 var(--font-mono); }
+  .cv-slast-now { color: var(--color-rolling); }
+  .cv-slast-when { color: var(--color-fg-2); }
+  .cv-slast-failed { color: var(--color-failed); }
+  .cv-slast-never, .cv-slast-note { color: var(--color-fg-3); }
+  /* How far a run is through its usual time: ink-3 track, rolling fill, drawn at each refresh. */
+  .cv-runbar { appearance: none; display: block; width: 120px; max-width: 100%; height: 4px; border: 0; border-radius: 2px; background: var(--color-ink-3); overflow: hidden; }
+  .cv-runbar::-webkit-meter-bar { height: 4px; border: 0; border-radius: 2px; background: var(--color-ink-3); }
+  .cv-runbar::-webkit-meter-optimum-value, .cv-runbar::-webkit-meter-suboptimum-value, .cv-runbar::-webkit-meter-even-less-good-value { border-radius: 2px; background: var(--color-rolling); }
+  .cv-runbar::-moz-meter-bar { border-radius: 2px; background: var(--color-rolling); }
+  /* The last 14 runs, oldest first: 7px marks 4px apart, each a link to its run. */
+  .cv-sstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 150px; }
+  .cv-sstrip-mark { display: inline-flex; align-items: center; justify-content: center; width: 7px; height: 14px; text-decoration: none; }
+  .cv-sstrip-mark:hover .cv-mark { outline: 1px solid var(--color-line-3); outline-offset: 2px; }
+
+  /* What opens under a row: the state and the bars at the left, the facts and the buttons at the right. */
+  .cv-sdetail { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; padding: 16px 18px 20px 82px; background: var(--color-ink-0); border-bottom: 1px solid var(--color-line-1); }
+  .cv-sdetails:last-child .cv-sdetail { border-radius: 0 0 5px 5px; border-bottom: 0; }
+  .cv-sdetail-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cv-sdetail-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-sstate { font-size: 14px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; }
+  .cv-sstate-quiet { color: var(--color-fg-2); }
+  .cv-sbars-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .cv-sbars { display: flex; align-items: flex-end; gap: 4px; height: 56px; }
+  .cv-sbar { flex: 1; max-width: 22px; border-radius: 1px; background: var(--color-fg-3); }
+  .cv-sbar-failed { background: var(--color-failed); }
+  .cv-sbar-warn { background: var(--color-warn); }
+  .cv-sbar-running { background: var(--color-rolling); }
+  .cv-sbar-skipped { height: 2px; background: var(--color-line-2); }
+  /* A bar's height is its run's time against the longest of the 14, in 4px steps (no style attributes). */
+  .cv-sbar-h1 { height: 4px; }
+  .cv-sbar-h2 { height: 8px; }
+  .cv-sbar-h3 { height: 12px; }
+  .cv-sbar-h4 { height: 16px; }
+  .cv-sbar-h5 { height: 20px; }
+  .cv-sbar-h6 { height: 24px; }
+  .cv-sbar-h7 { height: 28px; }
+  .cv-sbar-h8 { height: 32px; }
+  .cv-sbar-h9 { height: 36px; }
+  .cv-sbar-h10 { height: 40px; }
+  .cv-sbar-h11 { height: 44px; }
+  .cv-sbar-h12 { height: 48px; }
+  .cv-sbar-h13 { height: 52px; }
+  .cv-sbar-h14 { height: 56px; }
+  .cv-susual { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-sfacts { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 14px; margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); }
+  .cv-sfacts > dt { color: var(--color-fg-3); }
+  .cv-sfacts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .cv-sfacts .cv-inline-mono { color: var(--color-fg-1); }
+  .cv-sfact-break { word-break: break-all; }
+  /* The buttons; a confirmation opens over what is below, so the row doesn't move. */
+  .cv-sbtns { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 4px; }
+  .cv-sbtns .cv-btn { text-decoration: none; }
+  .cv-sbtns .cv-confirm-body { position: absolute; z-index: 4; left: 0; top: calc(100% + 6px); width: min(22rem, 100%); margin-top: 0; background: var(--color-ink-1); box-shadow: var(--shadow-overlay); }
+
+  /* Under the table: how to read the strip, and where failed runs go. */
+  .cv-sfoot { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+
+  /* A run's page: the meta line under the sentence, and the output as the Logs tab draws it, without
+     the copy column (a run is one copy). */
+  .cv-runmeta { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-runout { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cv-log-line.cv-runline { grid-template-columns: 3.25rem auto; }
+
+  /* The form: Settings' setting rows in one panel, 1180px at most. */
+  .cv-sform-wrap { container-type: inline-size; display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 1180px; }
+  .cv-sform { overflow: visible; }
+  .cv-sform .cv-setrow-ctl > .cv-select { width: 100%; max-width: 360px; }
+  .cv-sform .cv-setrow-hint .cv-inline-mono { white-space: nowrap; }
+  .cv-scommand { height: auto; min-height: 58px; max-width: 560px; padding: 8px 12px; line-height: 1.5; resize: vertical; }
+  .cv-swhen { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .cv-swhen-input { flex: 1; min-width: 0; }
+  .cv-swhen .cv-btn { height: 32px; }
+  /* The presets: 26px chips; the one the field holds is on a raised ground. */
+  .cv-schips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cv-schip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--color-line-2); border-radius: 3px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); text-decoration: none; }
+  .cv-schip:hover { border-color: var(--color-line-3); color: var(--color-fg-1); }
+  .cv-schip-chosen { background: var(--color-ink-3); color: var(--color-fg-1); }
+  /* What the When field reads as. */
+  .cv-spreview { width: 100%; max-width: 560px; padding: 12px 14px; border: 1px solid var(--color-line-2); border-radius: 4px; background: var(--color-ink-0); font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); }
+  .cv-spreview-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+  .cv-spreview-grid > dt { color: var(--color-fg-3); }
+  .cv-spreview-grid > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .cv-spreview-cron { color: var(--color-fg-1); }
+  .cv-spreview-warn { display: flex; align-items: baseline; gap: 8px; color: var(--color-fg-1); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
+  .cv-spreview-warn .cv-mark { position: relative; top: 0.05em; }
+  .cv-slimits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 560px; }
+  .cv-slimits .cv-select { width: 100%; min-width: 0; }
+  .cv-sform-foot { display: flex; align-items: center; gap: 10px; padding: 18px 20px; border-top: 1px solid var(--color-line-1); }
+  .cv-sform-foot .cv-btn { text-decoration: none; }
+
+  /* Configure's Schedules panel: a line per schedule, its words quieter after the name. */
+  .cv-schedline { font: 400 14px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-schedline-words { font-size: 12px; color: var(--color-fg-3); }
+}
+
+/* The table folds like the home's when it has less than 900px: the mark, the name and its pill;
+   the app and command; then Runs, Next and Last run as label and value; the strip on its own line,
+   wrapping at 14 marks. The detail stacks its two columns. */
+@container (max-width: 899.98px) {
+  .cv-shead { display: none; }
+  .cv-ssum { grid-template-columns: 14px 14px minmax(0, 1fr); row-gap: 8px; padding-block: 12px; align-items: start; }
+  .cv-ssum > .cv-bchev, .cv-ssum > .cv-smark { padding-top: 3px; }
+  .cv-ssum > .cv-sruns, .cv-ssum > .cv-snext, .cv-ssum > .cv-slast, .cv-ssum > .cv-sstrip-cell { grid-column: 3; }
+  .cv-ssum > [data-label] { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 10px; row-gap: 4px; align-items: baseline; }
+  .cv-ssum > [data-label]::before { content: attr(data-label); grid-row: 1 / span 3; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-ssum > [data-label] > * { grid-column: 2; }
+  .cv-sstrip { max-width: none; }
+  .cv-swhere { white-space: normal; overflow-wrap: anywhere; }
+  .cv-sdetail { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-left: 18px; }
+  .cv-sfacts { grid-template-columns: 110px minmax(0, 1fr); }
+}
+/* The form's limits stack when the form is narrow; the setting rows already do (page 3's rule). */
+@container (max-width: 479.98px) {
+  .cv-slimits { grid-template-columns: minmax(0, 1fr); }
+}
