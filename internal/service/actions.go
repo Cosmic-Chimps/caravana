@@ -340,11 +340,11 @@ func (s *Service) setStopped(ctx context.Context, appID string, trigger app.Trig
 	defer cancel()
 	backups := deploy.BackupJobIDs(rec.App)
 	if stop {
-		// The schedules' runs going stop with the app; each is told why first,
-		// so the watcher records it stopped and not failed.
-		var runs []string
-		if runs, err = s.stopAppRuns(ctx, appID); err == nil {
-			err = s.deployer.StopApp(ctx, appID, backups, runs)
+		// The schedules' runs going stop with the app, once the app is stopped:
+		// each is told why before its job is stopped, so the watcher records it
+		// stopped and not failed, and an app Nomad refused to stop keeps its runs.
+		if err = s.deployer.StopApp(ctx, appID, backups, nil); err == nil {
+			err = s.stopAppRuns(ctx, appID)
 		}
 	} else {
 		err = s.deployer.StartApp(ctx, appID, backups)

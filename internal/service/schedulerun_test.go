@@ -193,6 +193,27 @@ func TestStopAppStopsRuns(t *testing.T) {
 	}
 }
 
+// An app Nomad couldn't stop keeps its runs: no intent is written and no run
+// job is stopped, so nothing is later recorded as "the app was stopped" while
+// the app runs on.
+func TestStopAppRefusedKeepsRuns(t *testing.T) {
+	ctx := context.Background()
+	l := newSchedLab(t)
+	sc := l.create("long", "0 3 * * *", "sleep", "600")
+	r := l.runNow(sc.ID)
+	l.nomad.StartRun(job(r.ID))
+	l.nomad.Down()
+	if _, err := l.svc.StopApp(ctx, "whoami", app.TriggerManual); err == nil {
+		t.Fatal("StopApp with Nomad down succeeded")
+	}
+	if l.nomad.Stops(job(r.ID)) != 0 {
+		t.Errorf("the run's job was stopped %d times, want 0", l.nomad.Stops(job(r.ID)))
+	}
+	if row := l.stored(r.ID); row.Status != store.RunRunning || row.StopReason != "" {
+		t.Errorf("run = %s with stop reason %q; want still running with no intent", row.Status, row.StopReason)
+	}
+}
+
 func TestDeleteScheduleEndsItsRuns(t *testing.T) {
 	ctx := context.Background()
 	l := newSchedLab(t)

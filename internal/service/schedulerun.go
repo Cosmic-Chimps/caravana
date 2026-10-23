@@ -284,25 +284,29 @@ func (s *Service) StopScheduleRun(ctx context.Context, scheduleID, runID string)
 	return runOf(stopped), nil
 }
 
-// stopAppRuns writes app_stopped as the stop reason of every run of the app
-// that is going, and returns their jobs, for StopApp to stop with the app.
-func (s *Service) stopAppRuns(ctx context.Context, appID string) ([]string, error) {
+// stopAppRuns ends every run of the app that is going, once the app itself is
+// stopped: app_stopped is written as each run's stop reason, then its job is
+// stopped.
+func (s *Service) stopAppRuns(ctx context.Context, appID string) error {
 	open, err := s.store.AllOpenRuns(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var jobs []string
 	now := s.clock.Now().UTC()
 	for _, r := range open {
 		if r.AppID != appID {
 			continue
 		}
 		if err := s.store.SetRunStopIntent(ctx, r.ID, stopAppStopped, now); err != nil && !errors.Is(err, store.ErrInvalidTransition) {
-			return nil, err
+			return err
 		}
-		jobs = append(jobs, runJobID(r))
+		// A job Nomad doesn't have is settled by the watcher; one it couldn't
+		// stop now is stopped again by the watcher, which sees the intent.
+		if err := s.deployer.StopScheduleRun(ctx, runJobID(r)); err != nil && !errors.Is(err, deploy.ErrRunGone) {
+			s.log.Warn("stop a schedule run with its app; the watcher tries again", "run", r.ID, "error", err)
+		}
 	}
-	return jobs, nil
+	return nil
 }
 
 // minSecretLen is the shortest secret value maskSecrets replaces: replacing
