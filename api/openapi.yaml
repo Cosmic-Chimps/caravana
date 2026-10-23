@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.23.0
+  version: 0.24.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -1618,6 +1618,396 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/schedules:
+    get:
+      operationId: listSchedules
+      summary: List the schedules, the services' backups among them.
+      description: |
+        Every schedule of every app, or of one app (`app`, its ID) or project (`project`). An
+        app or project that doesn't exist has none: the list is empty, not 404. Each service
+        with a backup policy is a built-in schedule here (`builtin: true`, ID
+        `backup:<app>:<service>`), read-only: its time and how many are kept change in the
+        app's backup policy. Sorted: those whose last run failed first, then those running,
+        then by next run, the paused ones last. No schedule holds a run's output.
+      tags: [schedules]
+      parameters:
+        - name: app
+          in: query
+          description: Only this app's schedules (an app ID). Empty means every app.
+          schema: {type: string}
+        - name: project
+          in: query
+          description: Only the schedules of apps in this project. Empty means every project.
+          schema: {type: string}
+      responses:
+        "200":
+          description: The schedules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: createSchedule
+      summary: Create a schedule.
+      description: |
+        A schedule runs `command` on its `cron` line (five fields, in UTC) in a fresh copy of
+        one service of the app: the live version's image, the service's env and its secret
+        values as they are now, no ports and no traffic. The copy ends when the command does,
+        or after `stopAfterSeconds`. The clock starts now: the first run is the first slot
+        after this moment. A deploy token can't create one (403 `token_scope`): a schedule runs
+        any command in the app's containers.
+      tags: [schedules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewSchedule"
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location:
+              description: The schedule's URL, `/v1/schedules/{scheduleId}`.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleAppNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ScheduleInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/schedules/{scheduleId}:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    get:
+      operationId: getSchedule
+      summary: Read one schedule, a built-in one too.
+      tags: [schedules]
+      responses:
+        "200":
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: updateSchedule
+      summary: Change a schedule.
+      description: |
+        The body is the whole schedule, as for `createSchedule`: a field left out takes its
+        default, it doesn't keep its value. `app` may be left out, and may not name another
+        app. A new `cron` takes effect from now: the slots the old line owed are not run. The
+        pause and the runs stay. A built-in schedule is 409 `builtin_schedule`.
+      tags: [schedules]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewSchedule"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/ScheduleInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deleteSchedule
+      summary: Remove a schedule and its runs.
+      description: |
+        A run that is going is stopped first (`stopped`, "the schedule was removed"): its job
+        leaves Nomad with its copy of the secrets. When Nomad can't do that, the schedule stays
+        and the error says why. A built-in schedule is 409 `builtin_schedule`: remove the
+        service's backup policy instead.
+      tags: [schedules]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/schedules/{scheduleId}/run:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    post:
+      operationId: runSchedule
+      summary: Run a schedule once, now.
+      description: |
+        Whatever its clock says, and while it is paused too. The run goes on in the background:
+        follow it with `getScheduleRun`. 409 `run_going` while a run is going and the schedule
+        skips overlapping runs (`skipIfRunning`), or while 3 are going; `app_stopped` while the
+        app is stopped; `no_live_deployment` when the app has no healthy version to run, or a
+        deploy of it is going. A run Nomad refuses is answered 202 too, already
+        `could_not_start`, with the reason in `error`.
+      tags: [schedules]
+      responses:
+        "202":
+          description: Started (`starting` or `running`), or refused by Nomad (`could_not_start`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/schedules/{scheduleId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    post:
+      operationId: pauseSchedule
+      summary: Pause a schedule's clock.
+      description: |
+        No slot starts a run while it is paused; runs going go on, and `runSchedule` still
+        works. Pausing a paused schedule changes nothing.
+      tags: [schedules]
+      responses:
+        "200":
+          description: Paused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/schedules/{scheduleId}/resume:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    post:
+      operationId: resumeSchedule
+      summary: Start a paused schedule's clock again.
+      description: |
+        From now: the slots that passed while it was paused are not run, the next one is
+        (`nextRunAt`). Resuming a schedule that isn't paused changes nothing.
+      tags: [schedules]
+      responses:
+        "200":
+          description: Resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/schedules/{scheduleId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    get:
+      operationId: listScheduleRuns
+      summary: List a schedule's newest runs, without their output.
+      description: |
+        Newest first, skipped slots included. A built-in schedule's runs are its service's
+        backups (`ok`, `failed` or `running`, the backup's message as `error`).
+      tags: [schedules]
+      parameters:
+        - name: limit
+          in: query
+          description: How many, 1 to 100; 14 when absent.
+          schema: {type: integer, minimum: 1, maximum: 100, default: 14}
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRunList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "422":
+          $ref: "#/components/responses/ScheduleInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/schedules/{scheduleId}/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+      - $ref: "#/components/parameters/RunID"
+    get:
+      operationId: getScheduleRun
+      summary: Read one run of a schedule, without its output.
+      tags: [schedules]
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/schedules/{scheduleId}/runs/{runId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+      - $ref: "#/components/parameters/RunID"
+    post:
+      operationId: stopScheduleRun
+      summary: Stop a run that is going.
+      description: |
+        The stop is asked: the command gets 10 seconds to end, then the run settles `stopped`
+        ("stopped by the owner"). 409 `run_not_running` for a run that has ended;
+        `builtin_schedule` for a backup's run.
+      tags: [schedules]
+      responses:
+        "202":
+          description: The stop was asked; the run as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "409":
+          $ref: "#/components/responses/ScheduleConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/schedules/{scheduleId}/runs/{runId}/output:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+      - $ref: "#/components/parameters/RunID"
+    get:
+      operationId: getScheduleRunOutput
+      summary: Read what a run printed on one stream.
+      description: |
+        The last 64 KiB of the stream, with the service's secret values masked
+        (`[secret <NAME>]`). This is the only answer that holds a run's output: no schedule,
+        run, needs-you item, notification or log line does, and it is sent with
+        `Cache-Control: no-store`. 404 `output_not_kept` when there is none to give: the run
+        never ran, its output couldn't be read, or it is a backup's run.
+      tags: [schedules]
+      parameters:
+        - name: stream
+          in: query
+          description: Which stream; `stdout` when absent.
+          schema: {type: string, enum: [stdout, stderr], default: stdout}
+      responses:
+        "200":
+          description: The output, which may be empty.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Caravana-Output-Cut:
+              description: "`true` when the start of the stream was dropped to keep its last 64 KiB."
+              schema: {type: string, enum: ["true", "false"]}
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/ScheduleNotFound"
+        "422":
+          $ref: "#/components/responses/ScheduleInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/backups:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -2647,6 +3037,22 @@ components:
       schema:
         type: string
         pattern: "^[a-z2-7]{26}$"
+    ScheduleID:
+      name: scheduleId
+      in: path
+      required: true
+      description: |
+        The schedule's ID, as `listSchedules` returns it: 12 hex digits, or
+        `backup:<app>:<service>` for a service's backup.
+      schema:
+        type: string
+    RunID:
+      name: runId
+      in: path
+      required: true
+      description: The run's ID, as `listScheduleRuns` returns it (a backup's ID for a built-in schedule).
+      schema:
+        type: string
 
   securitySchemes:
     apiToken:
@@ -3450,6 +3856,184 @@ components:
       description: A Go duration string, e.g. `"10s"` or `"1m30s"`.
       pattern: "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
       examples: ["10s"]
+
+    NewSchedule:
+      type: object
+      additionalProperties: false
+      required: [app, name, command, cron]
+      description: A schedule as `createSchedule` takes it, and, whole, as `updateSchedule` does.
+      properties:
+        app:
+          type: string
+          description: The app's ID. The app must be defined (have services).
+        service:
+          type: string
+          description: |
+            The service whose image, env and secrets a run uses; the app's first when absent. It
+            may not mount a volume.
+        name:
+          type: string
+          maxLength: 31
+          description: A lowercase DNS label, unique in the app.
+          examples: [rates-sync]
+        command:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: {type: string}
+          description: |
+            The program, then its arguments. No shell is implied: use `["sh", "-c", "..."]`
+            for pipes or variables.
+          examples: [["bin/rails", "rates:sync"]]
+        cron:
+          type: string
+          description: |
+            Five fields (minute, hour, day of month, month, day of week), read as UTC. A line
+            that fires more than once a minute, or never, is refused.
+          examples: ["0 3 * * *"]
+        stopAfterSeconds:
+          type: integer
+          enum: [300, 1800, 3600, 7200]
+          default: 1800
+          description: A run still going after this long is stopped (`stopped_at_limit`).
+        memoryMB:
+          type: integer
+          enum: [256, 512, 1024, 2048]
+          description: The run's memory; when absent, the service's reservation rounded up to one of these.
+        skipIfRunning:
+          type: boolean
+          default: true
+          description: |
+            True: a slot that comes while a run is going is skipped. False: runs may overlap, at
+            most 3 at once.
+
+    Schedule:
+      type: object
+      additionalProperties: false
+      required: [id, app, service, name, command, cron, stopAfterSeconds, memoryMB, skipIfRunning, words,
+        paused, pausedAt, builtin, nextRunAt, lastRun, runningNow, usualSeconds, project, environment, appName]
+      description: |
+        A schedule, with what is derived from its clock and its runs on every read. A built-in
+        schedule (`builtin: true`) is a service's backup policy: its `command` is empty and its
+        `stopAfterSeconds` and `memoryMB` are 0, since the backup sets its own. It is changed in
+        the app's backup policy; every change here is 409 `builtin_schedule`. Never holds a
+        run's output.
+      properties:
+        id:
+          type: string
+          description: 12 hex digits, or `backup:<app>:<service>` for a built-in schedule.
+          examples: [3f9a1c2b4d5e, "backup:hollo:db"]
+        app: {type: string, description: The app's ID.}
+        service: {type: string}
+        name: {type: string, description: "A built-in schedule's is `<service>-backup`."}
+        command:
+          type: array
+          items: {type: string}
+        cron: {type: string}
+        stopAfterSeconds: {type: integer, description: "300, 1800, 3600 or 7200; 0 for a built-in schedule."}
+        memoryMB: {type: integer, description: "256, 512, 1024 or 2048; 0 for a built-in schedule."}
+        skipIfRunning: {type: boolean}
+        words:
+          type: string
+          description: The cron line in words.
+          examples: ["Every day at 03:00 UTC"]
+        paused: {type: boolean}
+        pausedAt: {type: [string, "null"], format: date-time}
+        builtin: {type: boolean}
+        nextRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null while paused, and for a built-in schedule while its app is stopped.
+        lastRun:
+          description: The newest run that wasn't a skipped slot; null for none.
+          oneOf:
+            - $ref: "#/components/schemas/ScheduleRun"
+            - type: "null"
+        runningNow: {type: integer, minimum: 0, description: How many runs are going.}
+        usualSeconds:
+          type: [integer, "null"]
+          description: The median duration of the `ok` runs among the newest 14; null when there are none.
+        project: {type: string}
+        environment: {type: string}
+        appName: {type: string}
+
+    ScheduleList:
+      type: object
+      additionalProperties: false
+      required: [schedules]
+      properties:
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Schedule"
+
+    ScheduleRun:
+      type: object
+      additionalProperties: false
+      required: [id, scheduleId, trigger, slotAt, status, exitCode, error, startedAt, taskStartedAt, finishedAt,
+        durationSeconds, command, deploymentId, jobVersion, outputKept, stdoutBytes, stderrBytes, stdoutCut,
+        stderrCut]
+      description: |
+        One run of a schedule, or one slot that was skipped. Never holds the output, which only
+        `getScheduleRunOutput` returns.
+      properties:
+        id: {type: string}
+        scheduleId: {type: string}
+        trigger:
+          type: string
+          enum: [timer, owner]
+          description: "`timer`: a slot of the cron line. `owner`: `runSchedule`."
+        slotAt:
+          type: [string, "null"]
+          format: date-time
+          description: The cron slot a `timer` run answers; null for an `owner` run.
+        status:
+          type: string
+          enum: [starting, running, ok, failed, stopped_at_limit, stopped, skipped, could_not_start]
+          description: |
+            `starting` until Nomad accepts the run's job, then `running`. It ends `ok` (exit
+            0), `failed` (another exit code, out of memory, stopped outside Caravana, lost),
+            `stopped_at_limit`, `stopped` (by the owner, by stopping the app, or by removing the
+            schedule) or `could_not_start`. `skipped` is a slot that didn't run because a run
+            was going.
+        exitCode: {type: [integer, "null"]}
+        error:
+          type: string
+          description: Why, in Caravana's words (`exit 3`, `stopped after 5 minutes`); empty when `ok`. Never the output.
+        startedAt: {type: string, format: date-time}
+        taskStartedAt: {type: [string, "null"], format: date-time}
+        finishedAt: {type: [string, "null"], format: date-time}
+        durationSeconds:
+          type: [integer, "null"]
+          description: From the command's start to the run's end; null while it goes and for a skipped slot.
+        command:
+          type: array
+          items: {type: string}
+          description: The command as the run ran it; empty for a backup's run.
+        deploymentId:
+          type: [string, "null"]
+          description: The deployment whose image the run used.
+        jobVersion: {type: [integer, "null"]}
+        outputKept:
+          type: boolean
+          description: "`getScheduleRunOutput` has the output (never for a backup's run)."
+        stdoutBytes: {type: integer, minimum: 0}
+        stderrBytes: {type: integer, minimum: 0}
+        stdoutCut:
+          type: boolean
+          description: The start of stdout was dropped to keep its last 64 KiB.
+        stderrCut: {type: boolean}
+
+    ScheduleRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          description: Newest first.
+          items:
+            $ref: "#/components/schemas/ScheduleRun"
 
     NewApp:
       type: object
@@ -4294,7 +4878,8 @@ components:
                 `project_not_found`, `environment_not_found`, `project_exists`,
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
-                `copy_not_running`, `token_scope`.
+                `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
+                `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`.
               examples: [invalid_field]
             message:
               type: string
@@ -4698,6 +5283,45 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ScheduleNotFound:
+      description: |
+        `schedule_not_found`: no such schedule (for a built-in one, the service has no backup
+        policy). `run_not_found`: the schedule has no such run. `output_not_kept`
+        (`getScheduleRunOutput`): the run never ran, its output couldn't be read, or it is a
+        backup's run.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ScheduleAppNotFound:
+      description: "`app_not_found` (`field` `app`): no app has this ID."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ScheduleConflict:
+      description: |
+        `builtin_schedule`: the schedule is a service's backup; change it in the app's backup
+        policy. `schedule_exists` (`field` `name`): the app already has a schedule of this
+        name. `run_going` (`runSchedule`): a run is going and the schedule skips overlapping
+        runs, or 3 are going. `run_not_running` (`stopScheduleRun`): the run has ended.
+        `app_stopped` (`runSchedule`): the app is stopped; start it first.
+        `no_live_deployment` (`runSchedule`): the app has no healthy version, or a deploy of it
+        is going. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ScheduleInvalid:
+      description: |
+        `invalid_field`, `field` naming it: `app` (not defined yet, or another app than the
+        schedule's), `name`, `command`, `cron` (not five fields, fires more than once a minute,
+        never fires), `service` (unknown, or it mounts a volume), `stopAfterSeconds`,
+        `memoryMB`, `limit` or `stream`. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Internal:
       description: An unexpected server error. Details are in the server log.
       content:
@@ -4720,6 +5344,8 @@ tags:
     description: Credentials for private container registries.
   - name: notifications
     description: Channels that tell the owner what needs them and how deploys end, and their deliveries.
+  - name: schedules
+    description: Commands run on a timer in a fresh copy of an app, and their runs.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account

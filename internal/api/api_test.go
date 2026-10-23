@@ -99,6 +99,13 @@ type testEnv struct {
 // the token Caravana sends to Nomad.
 func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 	t.Helper()
+	return newTestEnvWith(t, nomadToken, nil)
+}
+
+// newTestEnvWith is newTestEnv with setup called on the service before it
+// starts, for the settings that must be made then (a watcher's gap).
+func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service)) *testEnv {
+	t.Helper()
 	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -129,6 +136,9 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 		t.Fatalf("create token: %v", err)
 	}
 	e.Token = created.Token
+	if setup != nil {
+		setup(svc)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)

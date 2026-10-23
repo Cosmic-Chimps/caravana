@@ -98,7 +98,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
 Goal: a schedule runs a command in a fresh copy at its time and records the run with output.
 Independent test: quickstart §1.
 
-- [ ] T009 [US1] `internal/api/schedules.go` + `schedules_test.go` + `api/openapi.yaml` 0.24.0:
+- [x] T009 [US1] `internal/api/schedules.go` + `schedules_test.go` + `api/openapi.yaml` 0.24.0:
   `listSchedules`, `createSchedule`, `getSchedule`, `updateSchedule`, `deleteSchedule`,
   `listScheduleRuns`, `getScheduleRun`, `getScheduleRunOutput` (text/plain, `Cache-Control:
   no-store`, `Caravana-Output-Cut`), schemas `NewSchedule`, `Schedule`, `ScheduleRun`, codes
@@ -126,7 +126,7 @@ Independent test: quickstart §1.
 Goal: create, edit, pause, resume, run now, stop a run, delete, from the console and the API.
 Independent test: quickstart §3.
 
-- [ ] T012 [US2] API: `runSchedule` (202), `pauseSchedule`, `resumeSchedule`, `stopScheduleRun`
+- [x] T012 [US2] API: `runSchedule` (202), `pauseSchedule`, `resumeSchedule`, `stopScheduleRun`
   (202), codes `run_going`, `run_not_running`, `app_stopped`, `no_live_deployment` on these
   routes, in `internal/api/schedules.go` and `api/openapi.yaml`; tests including a built-in's
   409s and the deploy-token 403s.

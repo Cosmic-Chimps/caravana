@@ -105,6 +105,18 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/notifications/channels/{id}/test", s.testNotificationChannel, false, false},
 		{http.MethodGet, "/v1/notifications/channels/{id}/deliveries", s.listNotificationDeliveries, false, false},
 		{http.MethodPost, "/v1/notifications/channels/{id}/secret", s.rotateNotificationSecret, false, false},
+		{http.MethodGet, "/v1/schedules", s.listSchedules, false, false},
+		{http.MethodPost, "/v1/schedules", s.createSchedule, false, false},
+		{http.MethodGet, "/v1/schedules/{scheduleId}", s.getSchedule, false, false},
+		{http.MethodPut, "/v1/schedules/{scheduleId}", s.updateSchedule, false, false},
+		{http.MethodDelete, "/v1/schedules/{scheduleId}", s.deleteSchedule, false, false},
+		{http.MethodPost, "/v1/schedules/{scheduleId}/run", s.runSchedule, false, false},
+		{http.MethodPost, "/v1/schedules/{scheduleId}/pause", s.pauseSchedule, false, false},
+		{http.MethodPost, "/v1/schedules/{scheduleId}/resume", s.resumeSchedule, false, false},
+		{http.MethodGet, "/v1/schedules/{scheduleId}/runs", s.listScheduleRuns, false, false},
+		{http.MethodGet, "/v1/schedules/{scheduleId}/runs/{runId}", s.getScheduleRun, false, false},
+		{http.MethodPost, "/v1/schedules/{scheduleId}/runs/{runId}/stop", s.stopScheduleRun, false, false},
+		{http.MethodGet, "/v1/schedules/{scheduleId}/runs/{runId}/output", s.getScheduleRunOutput, false, false},
 		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
@@ -267,6 +279,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := placeError(err); e != nil {
+		return e
+	}
+	if e := scheduleError(err); e != nil {
 		return e
 	}
 	switch {
