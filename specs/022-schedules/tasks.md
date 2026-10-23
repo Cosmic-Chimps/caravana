@@ -167,7 +167,7 @@ Independent test: quickstart §2.
   Tests: `attentionOf` tables, `diffProblems` with the new kinds (one opened per failing
   schedule, resolved after a success, a removed schedule resolved), the render of each channel
   kind, no output in any delivery payload.
-- [ ] T016 [US3] Console: the needs-you row wording for both kinds in `internal/ui/attention.go`
+- [X] T016 [US3] Console: the needs-you row wording for both kinds in `internal/ui/attention.go`
   (linking to the schedule), the home's headline counting them, the Apps row's trouble words;
   handler tests.
 

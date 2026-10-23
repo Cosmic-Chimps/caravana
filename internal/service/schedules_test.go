@@ -49,6 +49,30 @@ func newSchedLab(t *testing.T) *schedLab {
 	return &schedLab{env: e, t: t, clock: e.svc.clock.(*fakeClock), dir: dir, logs: logs}
 }
 
+// A schedule can't take the name of a service's built-in backup schedule: the
+// list would show two rows with one name.
+func TestCreateScheduleRefusesABuiltinName(t *testing.T) {
+	ctx := context.Background()
+	l := newSchedLab(t)
+	rec, err := l.store.GetApp(ctx, "whoami")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.App.Services[0].Backup = &app.Backup{Engine: app.BackupPostgres}
+	if _, err := l.store.SaveApp(ctx, rec.App, nil); err != nil {
+		t.Fatal(err)
+	}
+	svc := rec.App.Services[0].Name
+	_, err = l.svc.CreateSchedule(ctx, NewSchedule{App: "whoami", Name: svc + "-backup", Command: []string{"true"}, Cron: "0 3 * * *"})
+	var fe *app.FieldError
+	if !errors.As(err, &fe) || fe.Field != "name" {
+		t.Fatalf("CreateSchedule(%s-backup) = %v, want a field error on name", svc, err)
+	}
+	if _, err := l.svc.CreateSchedule(ctx, NewSchedule{App: "whoami", Name: svc + "-backups", Command: []string{"true"}, Cron: "0 3 * * *"}); err != nil {
+		t.Errorf("a name that only resembles the built-in's was refused: %v", err)
+	}
+}
+
 // create makes a schedule of whoami's web service, failing the test on error.
 func (l *schedLab) create(name, cron string, command ...string) Schedule {
 	l.t.Helper()

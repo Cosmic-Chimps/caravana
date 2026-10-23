@@ -110,6 +110,14 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Mark = "warning"
 		row.Text = sentence{plain("Backups are set up, but no backup destination is.")}
 		row.Action, row.Href = "Set destination", "/settings/backup-storage"
+	case service.AttentionScheduleFailed:
+		// Detail is the run's sentence in Caravana's words ("Exited with code 3."), never its output.
+		row.Text = join(pl.label(place, it.AppID, ""), plainS(": the last run of "), sentence{mono(it.Schedule)}, plainS(" failed. "+it.Detail))
+		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
+	case service.AttentionScheduleSkipping:
+		row.Mark = "warning"
+		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "+it.Detail))
+		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
 	}
 	return row
 }
@@ -146,6 +154,10 @@ func headlineWords(it service.AttentionItem) string {
 		return "has a failed backup"
 	case service.AttentionRestoreFailed:
 		return "has a failed restore"
+	case service.AttentionScheduleFailed:
+		return "has a schedule whose last run failed"
+	case service.AttentionScheduleSkipping:
+		return "has a schedule being skipped"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

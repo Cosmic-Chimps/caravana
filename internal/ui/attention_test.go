@@ -64,6 +64,10 @@ func TestAttentionRows(t *testing.T) {
 			"failed", "The latest restore of blog/db failed.", "Open backups", "/apps/blog/backups"},
 		{"no destination", service.AttentionItem{Kind: service.AttentionNoBackupDestination},
 			"warning", "Backups are set up, but no backup destination is.", "Set destination", "/settings/backup-storage"},
+		{"a failed schedule run", service.AttentionItem{Kind: service.AttentionScheduleFailed, AppID: "blog", Service: "web", Schedule: "nightly", ScheduleID: "abc123", Detail: "Exited with code 3."},
+			"failed", "blog: the last run of nightly failed. Exited with code 3.", "Open schedule", "/schedules?open=abc123#schedule-abc123"},
+		{"a schedule being skipped", service.AttentionItem{Kind: service.AttentionScheduleSkipping, AppID: "blog", Service: "web", Schedule: "sync", ScheduleID: "def456", Detail: "sync has been skipped 3 times: each run takes longer than the time between runs."},
+			"warning", "blog: sync has been skipped 3 times: each run takes longer than the time between runs.", "Open schedule", "/schedules?open=def456#schedule-def456"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

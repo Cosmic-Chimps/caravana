@@ -220,6 +220,13 @@ func (s *Service) checkSchedule(ctx context.Context, in NewSchedule) (checkedSch
 	if len(in.Name) > maxScheduleNameLen {
 		return checkedSchedule{}, app.NewFieldError("name", "%q is longer than %d characters", in.Name, maxScheduleNameLen)
 	}
+	// A service's backup is listed as the built-in schedule "<service>-backup":
+	// a stored schedule of that name would be a second row with the same name.
+	for _, svc := range rec.App.Services {
+		if svc.Backup != nil && in.Name == svc.Name+"-backup" {
+			return checkedSchedule{}, app.NewFieldError("name", "%q is the built-in backup schedule of service %q; choose another name", in.Name, svc.Name)
+		}
+	}
 	if err := checkCommand(in.Command); err != nil {
 		return checkedSchedule{}, err
 	}
