@@ -51,6 +51,20 @@ const maxLogLine = 64 * 1024
 // server's (NewNomadClient keeps the first try short).
 func (d *Deployer) Logs(ctx context.Context, copyID, task string, stream LogStream,
 	tailBytes int64, follow bool, out chan<- LogLine) error {
+	return d.readLogs(ctx, copyID, task, stream, tailBytes, follow, out, nil)
+}
+
+// readLogs is Logs, and when cut isn't nil it also says, in *cut, whether the
+// tail left out the beginning of the output: true when the output had more
+// than tailBytes before its end, so what was sent is not all of it. It is set
+// when the first of the output arrives, before any line is sent. A caller that
+// keeps the last N bytes of a run's output (ScheduleRunOutput) uses it to say
+// the first lines were dropped.
+func (d *Deployer) readLogs(ctx context.Context, copyID, task string, stream LogStream,
+	tailBytes int64, follow bool, out chan<- LogLine, cut *bool) error {
+	if cut != nil {
+		*cut = false
+	}
 	q := (&api.QueryOptions{}).WithContext(ctx)
 	alloc, _, err := d.nomad.Allocations().Info(copyID, q)
 	if err != nil {
@@ -123,6 +137,9 @@ func (d *Deployer) Logs(ctx context.Context, copyID, task string, stream LogStre
 				// A frame's offset is where its data ends. A tail that starts
 				// after the beginning of the file starts inside some line.
 				split.skipToLine = tailBytes > 0 && f.Offset-int64(len(data)) > 0
+				if cut != nil {
+					*cut = split.skipToLine
+				}
 			}
 			if !split.add(data, send) {
 				return nil // ctx ended while sending

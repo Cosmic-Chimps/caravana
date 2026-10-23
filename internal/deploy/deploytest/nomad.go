@@ -467,12 +467,41 @@ func (n *Nomad) stopCopies(jobID string) {
 	n.allocIndex++
 	for i, s := range list {
 		next := *s
+		if killed := n.killedRunStates(jobID, s); killed != nil {
+			next.TaskStates = killed
+		}
 		next.ClientStatus = api.AllocClientStatusComplete
 		next.DesiredStatus = api.AllocDesiredStatusStop
 		next.ModifyIndex = n.allocIndex
 		list[i] = &next
 	}
 	n.wake()
+}
+
+// killedRunStates is the task states of a batch job's copy that was still
+// going when the job was stopped: its service task (the first of the job) is
+// dead with the Terminated event of a killed task (exit code 143). It is nil
+// for any other copy, which is left as it is. n.mu must be held.
+func (n *Nomad) killedRunStates(jobID string, s *api.AllocationListStub) map[string]*api.TaskState {
+	versions := n.jobs[jobID]
+	if len(versions) == 0 || versions[len(versions)-1].Type == nil || *versions[len(versions)-1].Type != "batch" {
+		return nil
+	}
+	switch s.ClientStatus {
+	case api.AllocClientStatusComplete, api.AllocClientStatusFailed, api.AllocClientStatusLost:
+		return nil
+	}
+	group := versions[len(versions)-1].TaskGroups[0]
+	task := group.Tasks[0].Name
+	if s.TaskStates[task] == nil {
+		return nil
+	}
+	states := maps.Clone(s.TaskStates)
+	was := *states[task]
+	was.State = "dead"
+	was.Events = append(slices.Clone(was.Events), terminated(143, false))
+	states[task] = &was
+	return states
 }
 
 // Stops counts the stops (a deregister without purge) the fake answered for
@@ -944,6 +973,117 @@ func (n *Nomad) FinishRun(jobID string, ok bool, failedTask, stdout, stderr stri
 	if stderr != "" {
 		n.WriteLog(allocID, "stderr", stderr)
 	}
+}
+
+// Schedule runs (feature 022) are batch jobs registered like any other. A test
+// plays one's life with StartRun (running), FinishRunExit (ended with an exit
+// code), OOMRun, FailRunStart and SetRunLogs. Each works on the run's newest
+// copy, or makes it ("<job>-alloc"): the service's task is the job's first
+// task, the others (the names sidecar) just end. Deregistering a run (Stops,
+// Purged) ends its copy with the exit code 143 a killed task has.
+
+// runCopy is how a test ends or advances a run: the copy's status and what its
+// service task did.
+type runCopy struct {
+	status  string // the client status
+	state   string // the service task's state: running or dead
+	failed  bool   // the service task failed
+	started bool   // the service task started
+	events  []*api.TaskEvent
+}
+
+// setRunCopy makes jobID's newest copy (or its first one) look like c. The job
+// must exist (the fake panics otherwise: a test bug). n.mu must not be held.
+func (n *Nomad) setRunCopy(jobID string, c runCopy) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	versions := n.jobs[jobID]
+	if len(versions) == 0 {
+		panic("deploytest: the run's job is unknown: " + jobID)
+	}
+	job := versions[len(versions)-1]
+	group := job.TaskGroups[0]
+	if c.status == api.AllocClientStatusComplete || c.status == api.AllocClientStatusFailed {
+		job.Status = new("dead")
+	} else {
+		job.Status = new("running")
+	}
+	states := map[string]*api.TaskState{}
+	for i, t := range group.Tasks {
+		if i > 0 {
+			states[t.Name] = &api.TaskState{State: "dead"}
+			continue
+		}
+		st := &api.TaskState{State: c.state, Failed: c.failed, Events: c.events}
+		if c.started {
+			st.StartedAt = time.Now().Add(-time.Second).UTC()
+		}
+		states[t.Name] = st
+	}
+	id, desired := jobID+"-alloc", api.AllocDesiredStatusRun
+	if list := n.allocs[jobID]; len(list) > 0 {
+		id, desired = list[len(list)-1].ID, list[len(list)-1].DesiredStatus
+	}
+	n.allocIndex++
+	n.allocs[jobID] = []*api.AllocationListStub{{ID: id, JobID: jobID, Namespace: "default", TaskGroup: *group.Name,
+		ClientStatus: c.status, DesiredStatus: desired, TaskStates: states,
+		CreateIndex: n.allocIndex, ModifyIndex: n.allocIndex}}
+	n.wake()
+}
+
+// StartRun makes the run's copy running: its service task started.
+func (n *Nomad) StartRun(jobID string) {
+	n.setRunCopy(jobID, runCopy{status: api.AllocClientStatusRunning, state: "running", started: true,
+		events: []*api.TaskEvent{{Type: api.TaskStarted}}})
+}
+
+// FinishRunExit ends the run with the service task's exit code: its copy is
+// complete when exitCode is 0 and failed otherwise, and its newest Terminated
+// event carries the code as Nomad's does (Details["exit_code"]).
+func (n *Nomad) FinishRunExit(jobID string, exitCode int) {
+	status := api.AllocClientStatusComplete
+	if exitCode != 0 {
+		status = api.AllocClientStatusFailed
+	}
+	n.setRunCopy(jobID, runCopy{status: status, state: "dead", failed: exitCode != 0, started: true,
+		events: []*api.TaskEvent{{Type: api.TaskStarted}, terminated(exitCode, false)}})
+}
+
+// OOMRun ends the run as the kernel ending it for passing its memory ceiling:
+// exit code 137 and oom_killed on the Terminated event.
+func (n *Nomad) OOMRun(jobID string) {
+	n.setRunCopy(jobID, runCopy{status: api.AllocClientStatusFailed, state: "dead", failed: true, started: true,
+		events: []*api.TaskEvent{{Type: api.TaskStarted}, terminated(137, true)}})
+}
+
+// FailRunStart ends the run without its task ever starting: a Driver Failure
+// event and a failed copy.
+func (n *Nomad) FailRunStart(jobID string) {
+	n.setRunCopy(jobID, runCopy{status: api.AllocClientStatusFailed, state: "dead", failed: true,
+		events: []*api.TaskEvent{{Type: api.TaskDriverFailure, DisplayMessage: "Failed to pull image: unauthorized"}}})
+}
+
+// terminated is the event Nomad adds when a task exits.
+func terminated(exitCode int, oom bool) *api.TaskEvent {
+	e := &api.TaskEvent{Type: api.TaskTerminated,
+		Details: map[string]string{"exit_code": strconv.Itoa(exitCode), "signal": "0", "oom_killed": strconv.FormatBool(oom)}}
+	e.DisplayMessage = fmt.Sprintf("Exit Code: %d", exitCode)
+	return e
+}
+
+// SetRunLogs sets what the run's copy printed, replacing what was there. The
+// copy is the one StartRun, FinishRunExit and the others make ("<job>-alloc");
+// it has to exist when the output is read.
+func (n *Nomad) SetRunLogs(jobID string, stdout, stderr []byte) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	id := jobID + "-alloc"
+	if list := n.allocs[jobID]; len(list) > 0 {
+		id = list[len(list)-1].ID
+	}
+	n.logs[logKey{id, "stdout"}] = append([]byte(nil), stdout...)
+	n.logs[logKey{id, "stderr"}] = append([]byte(nil), stderr...)
+	n.wakeLogs()
 }
 
 // HostVolumes returns the names of the host volumes, sorted.

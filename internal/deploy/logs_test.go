@@ -290,3 +290,48 @@ func TestLogsErrors(t *testing.T) {
 		}
 	})
 }
+
+// readLogs says whether the tail left out the beginning of the output.
+func TestReadLogsReportsTheCut(t *testing.T) {
+	const written = "aaaa\nbbbb\ncccc\n" // three 5-byte lines
+	tests := []struct {
+		name    string
+		written string
+		tail    int64
+		want    bool
+	}{
+		{"a tail of part of the output", written, 10, true},
+		{"a tail that starts inside a line", written, 8, true},
+		{"a tail of one byte", written, 1, true},
+		{"a tail that is exactly the output", written, 15, false},
+		{"a tail bigger than the output", written, 1000, false},
+		{"no output", "", 1000, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d, nomad := logsEnv(t)
+			if tc.written != "" {
+				nomad.WriteLog("c1", "stdout", tc.written)
+			}
+			// The cut is reported even when the frames are small.
+			nomad.SetLogFrameSize(4)
+			out := make(chan LogLine, 16)
+			cut := !tc.want // the opposite, so only a write by readLogs makes it right
+			if err := d.readLogs(context.Background(), "c1", "web", LogStdout, tc.tail, false, out, &cut); err != nil {
+				t.Fatalf("readLogs: %v", err)
+			}
+			if cut != tc.want {
+				t.Errorf("cut = %v, want %v", cut, tc.want)
+			}
+		})
+	}
+
+	t.Run("a nil cut is Logs", func(t *testing.T) {
+		d, nomad := logsEnv(t)
+		nomad.WriteLog("c1", "stdout", written)
+		got, err := startLogs(t, d, "c1", LogStdout, 10, false).all()
+		if err != nil || len(got) != 2 {
+			t.Errorf("Logs = %q, %v; want the last two lines", got, err)
+		}
+	})
+}

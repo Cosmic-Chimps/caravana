@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -147,11 +148,14 @@ func (d *Deployer) execError(copyID string, err error) error {
 	return fmt.Errorf("%w: %s", ErrExecFailed, msg)
 }
 
-// StopApp stops the app's job and each of backupJobIDs that Nomad has: a
-// deregister without purge, so Nomad keeps the job and its versions for
-// StartApp. The app's job being gone is ErrJobNotFound; a backup job that
-// isn't there is skipped (the service stores no record of which exist).
-func (d *Deployer) StopApp(ctx context.Context, appID string, backupJobIDs []string) error {
+// StopApp stops the app's job and each of backupJobIDs and runJobIDs that
+// Nomad has: a deregister without purge, so Nomad keeps the job and its
+// versions for StartApp. runJobIDs are the jobs of schedule runs still going
+// (feature 022): they are stopped, not purged, so the service can still read
+// how they ended. The app's job being gone is ErrJobNotFound; a backup or run
+// job that isn't there is skipped (the service stores no record of which
+// backup jobs exist, and a run may have just ended).
+func (d *Deployer) StopApp(ctx context.Context, appID string, backupJobIDs, runJobIDs []string) error {
 	w := (&api.WriteOptions{}).WithContext(ctx)
 	if _, _, err := d.nomad.Jobs().Deregister(appID, false, w); err != nil {
 		if statusOf(err) == http.StatusNotFound {
@@ -159,7 +163,7 @@ func (d *Deployer) StopApp(ctx context.Context, appID string, backupJobIDs []str
 		}
 		return d.callError("stop job "+appID, err)
 	}
-	for _, id := range backupJobIDs {
+	for _, id := range slices.Concat(backupJobIDs, runJobIDs) {
 		if _, _, err := d.nomad.Jobs().Deregister(id, false, w); err != nil && statusOf(err) != http.StatusNotFound {
 			return d.callError("stop job "+id, err)
 		}

@@ -21,7 +21,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   `Validate(cron) error` (five fields, parses, fires within a year, at least 60 s apart; errors
   name what's wrong), `Next(cron, after, n) []time.Time` in UTC. Table tests for each shape, the
   refusals ("0 0 31 2 *" never comes, six fields, "* * * * * *", "*/30 * * * * " seconds) and round-trips.
-- [ ] T002 [P] `internal/store/migrations/0017_schedules.sql` and `internal/store/schedules.go`
+- [X] T002 [P] `internal/store/migrations/0017_schedules.sql` and `internal/store/schedules.go`
   (+ `schedules_test.go`): tables per data-model.md (CHECK on status, UNIQUE(app_id, name),
   indexes); `InsertSchedule`, `UpdateSchedule`, `GetSchedule`, `ListSchedules(appID "" for all)`,
   `DeleteSchedule` (cascades runs), `SetSchedulePaused`, `ArmSchedule(id, at)`; `InsertRun`
@@ -39,7 +39,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   resources from memoryMB with the ceiling max(memoryMB, svc.MemoryMaxMB), KillTimeout 10 s,
   Logs 2×1 MB, Meta, no Services, the `names` sidecar when asked, `withPullAuth`). Golden test
   for a one-service and a multi-service app; a test that the job has no Services and no ports.
-- [ ] T004 `internal/deploy/schedules.go` + `schedules_test.go`: `StartScheduleRun(ctx, job,
+- [X] T004 `internal/deploy/schedules.go` + `schedules_test.go`: `StartScheduleRun(ctx, job,
   secrets map[string]string)` (write the variable with the secret set and `withPullCredentials`,
   then Register; a refused register returns a typed error whose message is in Caravana's words),
   `ScheduleRunState(ctx, jobID) (RunState, error)` (`ErrRunGone` on 404; the newest allocation's

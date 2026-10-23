@@ -340,7 +340,7 @@ func (s *Service) setStopped(ctx context.Context, appID string, trigger app.Trig
 	defer cancel()
 	backups := deploy.BackupJobIDs(rec.App)
 	if stop {
-		err = s.deployer.StopApp(ctx, appID, backups)
+		err = s.deployer.StopApp(ctx, appID, backups, nil)
 	} else {
 		err = s.deployer.StartApp(ctx, appID, backups)
 	}

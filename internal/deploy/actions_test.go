@@ -173,7 +173,7 @@ func TestStopAndStartApp(t *testing.T) {
 	nomad.AddForeignJob(&api.Job{ID: &backup, Name: &backup, Type: new("batch"), Stop: new(false)})
 	nomad.SetCopies("whoami", api.AllocationListStub{ID: "c1", TaskGroup: "web", ClientStatus: "running"})
 
-	if err := d.StopApp(ctx, "whoami", []string{backup, "whoami_gone_backup"}); err != nil {
+	if err := d.StopApp(ctx, "whoami", []string{backup, "whoami_gone_backup"}, nil); err != nil {
 		t.Fatalf("StopApp = %v (a backup job Nomad doesn't have is skipped)", err)
 	}
 	if j := nomad.Job("whoami"); j == nil || j.Stop == nil || !*j.Stop {
@@ -189,7 +189,7 @@ func TestStopAndStartApp(t *testing.T) {
 		t.Errorf("Copies after stop = %+v, %v; want the copy ended", copies, err)
 	}
 	// Stopping twice is fine.
-	if err := d.StopApp(ctx, "whoami", nil); err != nil {
+	if err := d.StopApp(ctx, "whoami", nil, nil); err != nil {
 		t.Errorf("second StopApp = %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestStopAndStartApp(t *testing.T) {
 		t.Error("starting a job that isn't stopped registered it again")
 	}
 
-	if err := d.StopApp(ctx, "ghost", nil); !errors.Is(err, ErrJobNotFound) {
+	if err := d.StopApp(ctx, "ghost", nil, nil); !errors.Is(err, ErrJobNotFound) {
 		t.Errorf("StopApp of a missing job = %v, want ErrJobNotFound", err)
 	}
 	if err := d.StartApp(ctx, "ghost", nil); !errors.Is(err, ErrJobNotFound) {
