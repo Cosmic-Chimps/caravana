@@ -114,6 +114,10 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.clock = &fakeClock{t: time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC)}
 	svc.scheduleGap = time.Hour
 	svc.volume = volumeTiming{limit: time.Minute, grace: 150 * time.Millisecond, poll: 2 * time.Millisecond, comeBack: 150 * time.Millisecond}
+	// Schedules: one pass each at Start, which finds nothing; tests of the
+	// clock and the watcher call runDueSchedules and followScheduleRuns.
+	svc.scheduleScanGap = time.Hour
+	svc.scheduleWatchGap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

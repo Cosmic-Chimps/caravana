@@ -364,16 +364,11 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 // runningImage is the pinned image of the service's newest deployment that
 // has one: what runs now, so the restore's tools match the server.
 func (s *Service) runningImage(ctx context.Context, appID, service string) (string, error) {
-	deps, err := s.store.ListDeployments(ctx, appID, 0)
-	if err != nil {
-		return "", err
+	_, image, err := s.liveVersion(ctx, appID, service)
+	if errors.Is(err, ErrNoLiveDeployment) {
+		return "", fmt.Errorf("service %q of %q has no healthy deployment to restore into: %w", service, appID, store.ErrNotFound)
 	}
-	for _, d := range deps {
-		if d.Status == store.StatusHealthy && d.Deployment.Digests[service] != "" {
-			return d.Deployment.Digests[service], nil
-		}
-	}
-	return "", fmt.Errorf("service %q of %q has no healthy deployment to restore into: %w", service, appID, store.ErrNotFound)
+	return image, err
 }
 
 // runTime is the start time in a run's job ID (<job>/periodic-<ts>).

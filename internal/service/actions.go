@@ -340,7 +340,12 @@ func (s *Service) setStopped(ctx context.Context, appID string, trigger app.Trig
 	defer cancel()
 	backups := deploy.BackupJobIDs(rec.App)
 	if stop {
-		err = s.deployer.StopApp(ctx, appID, backups, nil)
+		// The schedules' runs going stop with the app; each is told why first,
+		// so the watcher records it stopped and not failed.
+		var runs []string
+		if runs, err = s.stopAppRuns(ctx, appID); err == nil {
+			err = s.deployer.StopApp(ctx, appID, backups, runs)
+		}
 	} else {
 		err = s.deployer.StartApp(ctx, appID, backups)
 	}

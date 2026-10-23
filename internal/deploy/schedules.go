@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/nomad/api"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 )
@@ -40,6 +41,23 @@ type RunStartError struct {
 
 func (e *RunStartError) Error() string { return e.Reason + ": " + e.Err.Error() }
 func (e *RunStartError) Unwrap() error { return e.Err }
+
+// ScheduleRunJobID is the Nomad job of run runID of an app, which the service
+// needs to name a run to StopApp, StopScheduleRun and the others without
+// knowing how jobs are named.
+func ScheduleRunJobID(appID, runID string) string { return nomadjob.ScheduleRunJobID(appID, runID) }
+
+// ScheduleRunJob is the job of run runID of schedule scheduleID, built by
+// nomadjob.ScheduleRunJob with this deployer's settings (the defaults the
+// service doesn't hold), with the schedule's ID in its meta. a is the app as
+// its live version was deployed, svc the schedule's service in it, image that
+// version's pinned digest of the service, private the registry hosts with
+// credentials. It is pure.
+func (d *Deployer) ScheduleRunJob(a app.App, scheduleID, runID string, svc app.Service, image string, command []string, memoryMB int, private map[string]bool) *api.Job {
+	job := nomadjob.ScheduleRunJob(a, runID, svc, image, command, memoryMB, d.settings, private)
+	job.Meta["caravana.schedule"] = scheduleID
+	return job
+}
 
 // runMarkerItem is the one item a run's variable gets when it would otherwise
 // have none: Nomad refuses a variable with every item empty, and a template

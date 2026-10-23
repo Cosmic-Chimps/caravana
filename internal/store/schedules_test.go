@@ -226,6 +226,7 @@ func TestScheduleRunRoundTrip(t *testing.T) {
 	want.StopReason, want.StopRequestedAt = "limit", &intentAt
 	want.TaskStartedAt, want.FinishedAt = &taskStart, &done
 	want.Stdout, want.Stderr, want.StdoutCut, want.OutputKept = "out\n", "err\n", true, true
+	want.StdoutBytes, want.StderrBytes = 4, 4
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("settled run\n got: %+v\nwant: %+v", got, want)
 	}
@@ -305,6 +306,10 @@ func TestScheduleRunRoundTrip(t *testing.T) {
 		for _, r := range list {
 			if r.Stdout != "" || r.Stderr != "" {
 				t.Errorf("run %s listed with output", r.ID)
+			}
+			// The sizes come with the list; the settled run kept "out\n" and "err\n".
+			if r.ID == in.ID && (r.StdoutBytes != 4 || r.StderrBytes != 4) {
+				t.Errorf("run %s listed with %d and %d bytes, want 4 and 4", r.ID, r.StdoutBytes, r.StderrBytes)
 			}
 		}
 		if len(list) < 2 || !list[0].StartedAt.After(list[1].StartedAt) {

@@ -64,6 +64,19 @@ type Service struct {
 	commandTimeout time.Duration // how long a command may run
 	restartWait    time.Duration // how long a restart waits for one copy to come back
 
+	// Schedules (feature 022), see schedules.go, schedulerun.go,
+	// scheduleclock.go and schedulewatch.go.
+	scheduleScanGap       time.Duration // between two passes of the schedules' clock
+	scheduleWatchGap      time.Duration // between two passes of the run watcher
+	scheduleStartDeadline time.Duration // how long a run's task may take to start
+	scheduleLimit         time.Duration // when positive, every run's stop-after (the lab's shortcut)
+	// runMu is held while a run is checked against the ones going and its
+	// row is written, so two starts can't both take the last place. It also
+	// guards starting and unpurged.
+	runMu    sync.Mutex
+	starting map[string]bool // runs startRun is registering; the watcher leaves them alone
+	unpurged map[string]bool // run jobs whose purge failed; the watcher tries again
+
 	// Terminals (feature 020.6), see terminal.go.
 	termMu        sync.Mutex
 	terminalsOpen int           // sessions open now
@@ -123,6 +136,12 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		commandTimeout: defaultCommandTimeout,
 		restartWait:    defaultRestartWait,
 
+		scheduleScanGap:       defaultScheduleScanGap,
+		scheduleWatchGap:      defaultScheduleWatchGap,
+		scheduleStartDeadline: defaultScheduleStartDeadline,
+		starting:              map[string]bool{},
+		unpurged:              map[string]bool{},
+
 		maxTerminals:  defaultMaxTerminals,
 		terminalIdle:  defaultTerminalIdle,
 		terminalLimit: defaultTerminalLimit,
@@ -163,6 +182,52 @@ func (s *Service) SetVolumeBackupTimeout(d time.Duration) {
 	}
 }
 
+// The schedules' timing (feature 022).
+const (
+	// defaultScheduleScanGap is how often the clock looks for due slots: a
+	// run starts within this of its time (SC-002 asks for a minute).
+	defaultScheduleScanGap = 10 * time.Second
+	// defaultScheduleWatchGap is how often the watcher reads the runs going.
+	defaultScheduleWatchGap = 5 * time.Second
+	// defaultScheduleStartDeadline is how long a run's task may take to start
+	// (an image pull, a copy Nomad can't place) before the run is given up.
+	defaultScheduleStartDeadline = 5 * time.Minute
+)
+
+// SetScheduleScanGap sets how often the schedules' clock looks for due slots
+// (10 s by default); the lab shortens it. Call it before Start; a value that
+// isn't positive keeps the default.
+func (s *Service) SetScheduleScanGap(d time.Duration) {
+	if d > 0 {
+		s.scheduleScanGap = d
+	}
+}
+
+// SetScheduleWatchGap sets how often the runs going are read (5 s by
+// default). Call it before Start; a value that isn't positive keeps the
+// default.
+func (s *Service) SetScheduleWatchGap(d time.Duration) {
+	if d > 0 {
+		s.scheduleWatchGap = d
+	}
+}
+
+// SetScheduleStartDeadline sets how long a run's task may take to start
+// before the run is given up (5 minutes by default). Call it before Start; a
+// value that isn't positive keeps the default.
+func (s *Service) SetScheduleStartDeadline(d time.Duration) {
+	if d > 0 {
+		s.scheduleStartDeadline = d
+	}
+}
+
+// SetScheduleLimitForTests makes d every run's stop-after, in place of each
+// schedule's own (300 s at the least), so the lab can see a run stopped at its
+// limit in seconds. Zero gives the schedules theirs back. Call it before Start.
+func (s *Service) SetScheduleLimitForTests(d time.Duration) {
+	s.scheduleLimit = max(d, 0)
+}
+
 // Start resumes every deployment a previous run left unfinished (research
 // R10), each in the background, and keeps ctx for the watchers deploys start
 // later. Cancelling ctx stops every watcher; Wait then returns. Start never
@@ -191,6 +256,12 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.scheduleVolumeBackups(ctx, s.scheduleGap)
+	}()
+	// Schedules: the watcher settles the runs a previous process left.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.watchScheduleRuns(ctx, s.scheduleWatchGap, nil)
 	}()
 	// The notifier starts no watchers, so it can live in the same group.
 	s.backupWatcher.Add(1)

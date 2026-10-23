@@ -234,6 +234,8 @@ func scanSchedule(row scanner) (ScheduleRecord, error) {
 // ScheduleRunRecord is one run of a schedule, or one slot that was skipped.
 // The lists (ListRuns, OpenRuns, AllOpenRuns, LatestScheduleRuns) leave
 // Stdout and Stderr empty, since each can be 64 KiB; GetRun returns them.
+// StdoutBytes and StderrBytes are always read, so a list can say how much
+// output a run kept without carrying it.
 type ScheduleRunRecord struct {
 	ID, ScheduleID, AppID, Service string
 	Trigger                        string // "timer" or "owner"
@@ -258,6 +260,9 @@ type ScheduleRunRecord struct {
 	Stdout, Stderr  string
 	StdoutCut       bool
 	StderrCut       bool
+	// StdoutBytes and StderrBytes are the sizes of the kept output; 0 when
+	// none was kept. They are read, never written.
+	StdoutBytes, StderrBytes int
 	// OutputKept is false when the output read failed or the run never ran.
 	OutputKept bool
 }
@@ -281,10 +286,14 @@ type RunSettlement struct {
 	OutputKept           bool
 }
 
-// runColumns is the column order scanRun reads; GetRun adds the output.
+// runColumns is the column order InsertRun writes.
 const runColumns = `id, schedule_id, app_id, service, trigger, slot_at, command, deployment_id, job_version, status,
 	exit_code, error, stop_reason, stop_requested_at, started_at, task_started_at, finished_at,
 	stdout_cut, stderr_cut, output_kept`
+
+// runSelect is the column order scanRun reads: runColumns and the sizes of
+// the output; GetRun adds the output itself.
+const runSelect = runColumns + `, COALESCE(LENGTH(CAST(stdout AS BLOB)), 0), COALESCE(LENGTH(CAST(stderr AS BLOB)), 0)`
 
 // InsertRun stores a run as given: starting, before its job is registered, or
 // skipped with its reason in Error. An ID in use is ErrAlreadyExists.
@@ -387,7 +396,7 @@ func (s *Store) openRunUpdated(ctx context.Context, res sql.Result, id string) e
 
 // GetRun returns one run with its output, or ErrNotFound.
 func (s *Store) GetRun(ctx context.Context, id string) (ScheduleRunRecord, error) {
-	row := s.db.QueryRowContext(ctx, "SELECT "+runColumns+", stdout, stderr FROM schedule_runs WHERE id = ?", id)
+	row := s.db.QueryRowContext(ctx, "SELECT "+runSelect+", stdout, stderr FROM schedule_runs WHERE id = ?", id)
 	r, err := scanRun(row, true)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ScheduleRunRecord{}, fmt.Errorf("run %q: %w", id, ErrNotFound)
@@ -401,7 +410,7 @@ func (s *Store) GetRun(ctx context.Context, id string) (ScheduleRunRecord, error
 // ListRuns returns a schedule's runs, newest first, at most limit (all when
 // limit <= 0), without their output.
 func (s *Store) ListRuns(ctx context.Context, scheduleID string, limit int) ([]ScheduleRunRecord, error) {
-	q := "SELECT " + runColumns + " FROM schedule_runs WHERE schedule_id = ? ORDER BY started_at DESC, id DESC"
+	q := "SELECT " + runSelect + " FROM schedule_runs WHERE schedule_id = ? ORDER BY started_at DESC, id DESC"
 	args := []any{scheduleID}
 	if limit > 0 {
 		q += " LIMIT ?"
@@ -414,7 +423,7 @@ func (s *Store) ListRuns(ctx context.Context, scheduleID string, limit int) ([]S
 // first.
 func (s *Store) OpenRuns(ctx context.Context, scheduleID string) ([]ScheduleRunRecord, error) {
 	return s.queryRuns(ctx, "open runs of schedule "+scheduleID,
-		"SELECT "+runColumns+" FROM schedule_runs WHERE schedule_id = ? AND status IN ('starting', 'running') ORDER BY started_at DESC, id DESC",
+		"SELECT "+runSelect+" FROM schedule_runs WHERE schedule_id = ? AND status IN ('starting', 'running') ORDER BY started_at DESC, id DESC",
 		scheduleID)
 }
 
@@ -422,7 +431,7 @@ func (s *Store) OpenRuns(ctx context.Context, scheduleID string) ([]ScheduleRunR
 // oldest first, for the watcher.
 func (s *Store) AllOpenRuns(ctx context.Context) ([]ScheduleRunRecord, error) {
 	return s.queryRuns(ctx, "open runs",
-		"SELECT "+runColumns+" FROM schedule_runs WHERE status IN ('starting', 'running') ORDER BY started_at, id")
+		"SELECT "+runSelect+" FROM schedule_runs WHERE status IN ('starting', 'running') ORDER BY started_at, id")
 }
 
 // LatestScheduleRuns returns, for every schedule, its newest run that has
@@ -431,7 +440,7 @@ func (s *Store) AllOpenRuns(ctx context.Context) ([]ScheduleRunRecord, error) {
 // stopped rows don't hide an older failure.
 func (s *Store) LatestScheduleRuns(ctx context.Context) ([]ScheduleRunRecord, error) {
 	return s.queryRuns(ctx, "latest runs", `
-		SELECT `+runColumns+` FROM (
+		SELECT `+runSelect+` FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY schedule_id ORDER BY started_at DESC, id DESC) AS n
 			FROM schedule_runs
 			WHERE status NOT IN ('starting', 'running', 'skipped', 'stopped'))
@@ -505,7 +514,7 @@ func (s *Store) queryRuns(ctx context.Context, what, query string, args ...any) 
 	return out, nil
 }
 
-// scanRun reads a row in the order of runColumns, then stdout and stderr when
+// scanRun reads a row in the order of runSelect, then stdout and stderr when
 // withOutput is true.
 func scanRun(row scanner, withOutput bool) (ScheduleRunRecord, error) {
 	var (
@@ -520,7 +529,7 @@ func scanRun(row scanner, withOutput bool) (ScheduleRunRecord, error) {
 	)
 	dest := []any{&r.ID, &r.ScheduleID, &r.AppID, &r.Service, &r.Trigger, &slot, &command, &deployment, &version,
 		&r.Status, &exit, &errText, &reason, &stopAt, &started, &taskStart, &finished,
-		&stdoutCut, &stderrCut, &kept}
+		&stdoutCut, &stderrCut, &kept, &r.StdoutBytes, &r.StderrBytes}
 	if withOutput {
 		dest = append(dest, &stdout, &stderr)
 	}
