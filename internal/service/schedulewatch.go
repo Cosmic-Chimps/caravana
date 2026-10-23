@@ -145,7 +145,17 @@ func (s *Service) stopRun(ctx context.Context, r store.ScheduleRunRecord, jobID 
 // endRun settles a run that ended: its outcome from the table, its output
 // (read, masked of the service's secret values, and kept only when both
 // worked), then purges its job.
+//
+// r was read at the start of the pass, Nomad's state after it: a stop the
+// owner asked for in between left the job stopped and r without its reason.
+// So a stopped job whose row says no reason is read again, and isn't recorded
+// as "stopped outside Caravana" when the reason is there now.
 func (s *Service) endRun(ctx context.Context, r store.ScheduleRunRecord, sched store.ScheduleRecord, st deploy.RunState, now time.Time) {
+	if r.StopReason == "" && st.DesiredStatus == "stop" {
+		if fresh, err := s.store.GetRun(ctx, r.ID); err == nil {
+			r.StopReason, r.StopRequestedAt = fresh.StopReason, fresh.StopRequestedAt
+		}
+	}
 	status, words := runOutcome(r, st, s.runLimit(sched))
 	settlement := store.RunSettlement{Status: status, ExitCode: st.ExitCode, Error: words,
 		TaskStartedAt: st.TaskStartedAt, FinishedAt: now}
