@@ -1,0 +1,7 @@
+POST https://hooks.example.com/caravana
+Caravana-Delivery: ndl_3f9a1c2b4d5e
+Caravana-Event: problem.opened
+Caravana-Signature: t=1792206041,v1=e7966b2f92dd43f603f138c102e8102c221f9f1df517fcbc94eecbfa2a7539e4
+Content-Type: application/json
+
+{"id":"ndl_3f9a1c2b4d5e","type":"problem.opened","kind":"schedule_failed","app":"booking","project":"default","environment":"production","appName":"booking","service":"web","title":"booking: rates-sync failed (exit 3)","text":"The latest run of the schedule rates-sync, on booking/web, failed.","detail":"Exited with code 3.","schedule":"rates-sync","exitCode":3,"url":"https://caravana.example.com/schedules#schedule-3f9a1c2b4d5e","at":"2026-10-17T03:00:41Z"}

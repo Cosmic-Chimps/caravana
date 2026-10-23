@@ -16,6 +16,8 @@ type attentionItemJSON struct {
 	Environment      string    `json:"environment,omitempty"`
 	AppName          string    `json:"appName,omitempty"`
 	Service          string    `json:"service,omitempty"`
+	Schedule         string    `json:"schedule,omitempty"`   // the schedule kinds (feature 022): its name
+	ScheduleID       string    `json:"scheduleId,omitempty"` // and its ID
 	Copies           []string  `json:"copies,omitempty"`
 	DeploymentID     string    `json:"deploymentId,omitempty"`
 	DeploymentStatus string    `json:"deploymentStatus,omitempty"`
@@ -26,7 +28,7 @@ type attentionItemJSON struct {
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
-		Service: it.Service, Copies: it.Copies,
+		Service: it.Service, Schedule: it.Schedule, ScheduleID: it.ScheduleID, Copies: it.Copies,
 		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version, At: it.When, Detail: it.Detail}
 }
 

@@ -1,0 +1,4 @@
+POST https://discord.com/api/webhooks/123/abc
+Content-Type: application/json
+
+{"content":"**booking: rates-sync failed (exit 3)**\nThe latest run of the schedule rates-sync, on booking/web, failed.\nSchedule: rates-sync, exit code 3\nDetail: Exited with code 3.\nhttps://caravana.example.com/schedules#schedule-3f9a1c2b4d5e"}

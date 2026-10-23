@@ -317,7 +317,7 @@ func TestAttentionOfAnAppNeverDeployed(t *testing.T) {
 		{App: app.App{ID: "shop", Services: []app.Service{}}},
 		{App: whoami()},
 	}
-	got := attentionOf(attNow, apps, map[string]store.DeploymentRecord{}, nil, nil, nil, nil, true)
+	got := attentionOf(attNow, apps, map[string]store.DeploymentRecord{}, nil, nil, nil, nil, true, scheduleFacts{})
 	if len(got.Items) != 0 {
 		t.Errorf("items = %+v, want none for apps that were never deployed", got.Items)
 	}

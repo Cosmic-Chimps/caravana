@@ -411,7 +411,7 @@ func TestAttentionOf(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := attentionOf(attNow, tc.apps, tc.latest, tc.copies, tc.copyErr, tc.backups, tc.restores, !tc.noDest)
+			got := attentionOf(attNow, tc.apps, tc.latest, tc.copies, tc.copyErr, tc.backups, tc.restores, !tc.noDest, scheduleFacts{})
 			if got.CopiesUnknown != tc.unknown {
 				t.Errorf("CopiesUnknown = %v, want %v", got.CopiesUnknown, tc.unknown)
 			}
@@ -437,14 +437,14 @@ func TestAttentionOfResolution(t *testing.T) {
 	broken := attentionOf(attNow, apps,
 		map[string]store.DeploymentRecord{"blog": dep("blog", "d1", store.StatusFailed, nil, at(5), "x")},
 		nil, nil,
-		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupFailed, StartedAt: at(1)}}, nil, true)
+		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupFailed, StartedAt: at(1)}}, nil, true, scheduleFacts{})
 	if len(broken.Items) != 2 {
 		t.Fatalf("broken = %+v, want the failed deploy and the failed backup", broken.Items)
 	}
 	fixed := attentionOf(attNow, apps,
 		map[string]store.DeploymentRecord{"blog": dep("blog", "d2", store.StatusHealthy, ver(2), at(8), "")},
 		nil, nil,
-		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupSucceeded, StartedAt: at(9)}}, nil, true)
+		[]store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupSucceeded, StartedAt: at(9)}}, nil, true, scheduleFacts{})
 	if len(fixed.Items) != 0 {
 		t.Errorf("fixed = %+v, want none", fixed.Items)
 	}

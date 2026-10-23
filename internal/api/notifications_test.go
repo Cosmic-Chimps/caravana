@@ -368,4 +368,20 @@ func TestNotificationEventSchema(t *testing.T) {
 	}
 	raw, _ = io.ReadAll(req.Body)
 	checkSchema(t, doc, raw, "NotificationEvent")
+
+	// A problem about a schedule (feature 022) and a deploy from CI (feature 020).
+	for _, ev := range []notify.Event{
+		{Type: notify.EventProblemOpened, Kind: "schedule_failed", AppID: "booking", Service: "web", Title: "t", Text: "x",
+			Detail: "Exited with code 3.", Schedule: "rates-sync", ExitCode: new(3), At: ev.At},
+		{Type: notify.EventDeploySucceeded, AppID: "shop", Title: "t", Text: "x", At: ev.At,
+			Origin: &notify.Origin{Commit: "abc1234", Ref: "refs/heads/main", Actor: "ana", Run: "https://ci.example.com/1"}},
+	} {
+		req, err = notify.Render(notify.Channel{Kind: notify.KindWebhook, Address: "https://hooks.example.com/h", Secret: "s"},
+			ev, "ndl_3f9a1c2b4d5e", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ = io.ReadAll(req.Body)
+		checkSchema(t, doc, raw, "NotificationEvent")
+	}
 }

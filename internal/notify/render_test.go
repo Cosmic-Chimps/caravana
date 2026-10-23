@@ -103,6 +103,25 @@ var resolvedNoLink = Event{
 	At:    fixedNow,
 }
 
+// scheduleFailed is a problem about a schedule (feature 022): its name and
+// the run's exit code, never its output.
+var scheduleFailed = Event{
+	Type:        EventProblemOpened,
+	Kind:        "schedule_failed",
+	AppID:       "booking",
+	Project:     "default",
+	Environment: "production",
+	AppName:     "booking",
+	Service:     "web",
+	Title:       "booking: rates-sync failed (exit 3)",
+	Text:        "The latest run of the schedule rates-sync, on booking/web, failed.",
+	Detail:      "Exited with code 3.",
+	Schedule:    "rates-sync",
+	ExitCode:    new(3),
+	URL:         "https://caravana.example.com/schedules#schedule-3f9a1c2b4d5e",
+	At:          fixedNow,
+}
+
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name string
@@ -121,6 +140,10 @@ func TestRender(t *testing.T) {
 		{"ntfy-token", Channel{KindNtfy, "https://ntfy.sh/my-topic", "tk_secret"}, backupFailed},
 		{"ntfy-resolved", Channel{KindNtfy, "https://ntfy.example.com/alerts", ""}, resolvedNoLink},
 		{"ntfy-deploy-failed", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, deployFailed},
+		{"webhook-schedule", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, scheduleFailed},
+		{"slack-schedule", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, scheduleFailed},
+		{"discord-schedule", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, scheduleFailed},
+		{"ntfy-schedule", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, scheduleFailed},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

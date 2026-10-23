@@ -344,6 +344,42 @@ func TestScheduleOutputOnlyInItsRead(t *testing.T) {
 	}
 }
 
+// T015: the failed run is a schedule_failed item of the needs-you list, with
+// the schedule's name and ID and Caravana's sentence; a later ok run clears it.
+func TestScheduleAttention(t *testing.T) {
+	e := scheduleEnv(t)
+	doc := loadContract(t)
+	sc := createScheduleOK(t, e, nightly)
+	type item struct {
+		Kind, AppID, Service, Schedule, ScheduleID, Detail string
+	}
+	items := func() []item {
+		t.Helper()
+		status, _, raw := call(t, http.MethodGet, e.URL+"/v1/attention", "", "")
+		if status != http.StatusOK {
+			t.Fatalf("listAttention = %d %s", status, raw)
+		}
+		checkSchema(t, doc, raw, "Attention")
+		return decodeAs[struct{ Items []item }](t, raw).Items
+	}
+
+	run := runScheduleOK(t, e, sc.ID)
+	finishRun(e, run, 3)
+	waitRun(t, e, sc.ID, run.ID)
+	want := item{Kind: "schedule_failed", AppID: "whoami", Service: "web", Schedule: "rates-sync", ScheduleID: sc.ID,
+		Detail: "Exited with code 3."}
+	if got := items(); len(got) != 1 || got[0] != want {
+		t.Errorf("items = %+v, want %+v", got, want)
+	}
+
+	run = runScheduleOK(t, e, sc.ID)
+	finishRun(e, run, 0)
+	waitRun(t, e, sc.ID, run.ID)
+	if got := items(); len(got) != 0 {
+		t.Errorf("after an ok run, items = %+v, want none", got)
+	}
+}
+
 // T012: deploy tokens can't use the schedules (default deny, research R7),
 // even for their own app.
 func TestScheduleRoutesDenyDeployTokens(t *testing.T) {

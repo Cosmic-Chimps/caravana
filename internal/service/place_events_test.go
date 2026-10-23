@@ -26,7 +26,7 @@ func TestAttentionItemsCarryThePlace(t *testing.T) {
 	// The apps ask for backups and nowhere to put them.
 	apps[1].App.Services[0].Backup = &app.Backup{Engine: app.BackupPostgres}
 
-	got := attentionOf(attNow, apps, latest, nil, nil, backups, nil, false)
+	got := attentionOf(attNow, apps, latest, nil, nil, backups, nil, false, scheduleFacts{})
 	byKind := map[AttentionKind]AttentionItem{}
 	for _, it := range got.Items {
 		byKind[it.Kind] = it

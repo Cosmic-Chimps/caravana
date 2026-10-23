@@ -147,12 +147,16 @@ const maxDetail = 500
 
 // withDetail is the text of a Slack, Discord or ntfy message: the event's text,
 // then, for a deploy that came from CI, a line saying from where ("From CI:
+// ..."), for a problem about a schedule its name and exit code ("Schedule:
 // ..."), then the raw reason on a line of its own ("Detail: ..."), so the
 // message says what went wrong and not only that something did (FR-006). The
 // detail is put on one line and cut at maxDetail characters.
 func withDetail(ev Event) string {
 	text := ev.Text
 	if line := originLine(ev.Origin); line != "" {
+		text += "\n" + line
+	}
+	if line := scheduleLine(ev); line != "" {
 		text += "\n" + line
 	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
@@ -163,6 +167,19 @@ func withDetail(ev Event) string {
 		detail = string(r[:maxDetail]) + "…"
 	}
 	return text + "\nDetail: " + detail
+}
+
+// scheduleLine is "Schedule: rates-sync, exit code 3" for an event about a
+// schedule (the exit code when its run exited with one), or "" for another.
+func scheduleLine(ev Event) string {
+	if ev.Schedule == "" {
+		return ""
+	}
+	line := "Schedule: " + oneLine(ev.Schedule)
+	if ev.ExitCode != nil {
+		line += fmt.Sprintf(", exit code %d", *ev.ExitCode)
+	}
+	return line
 }
 
 // originLine is "From CI: abc1234 on main by ana, run https://...": the short

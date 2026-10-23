@@ -25,7 +25,13 @@ const (
 	AttentionBackupFailed        AttentionKind = "backup_failed"         // a service's newest backup failed
 	AttentionRestoreFailed       AttentionKind = "restore_failed"        // a service's newest restore failed
 	AttentionNoBackupDestination AttentionKind = "no_backup_destination" // backups are asked for and nowhere to put them
+	AttentionScheduleFailed      AttentionKind = "schedule_failed"       // a schedule's newest real run failed (feature 022)
+	AttentionScheduleSkipping    AttentionKind = "schedule_skipping"     // a schedule's newest 3 slots were skipped: a warning
 )
+
+// skippingAt is how many skipped slots in a row make a schedule an item: each
+// run takes longer than the time between runs.
+const skippingAt = 3
 
 // restartingAt is how many restarts make a copy "keep restarting". One or two
 // are an ordinary hiccup; Nomad's own restart policy stops at a few more.
@@ -52,8 +58,17 @@ type AttentionItem struct {
 	// for deploy_failed.
 	DeploymentStatus store.Status
 	Version          *uint64 // deploy_failed: its job version, when registered
-	When             time.Time
-	Detail           string // the raw fact: Nomad's description, the deploy or backup error
+	// Schedule and ScheduleID name the schedule of the schedule kinds; Service
+	// is then the schedule's service.
+	Schedule, ScheduleID string
+	// ExitCode is a failed run's exit code, when it exited with one
+	// (schedule_failed). Notifications carry it; the API's item doesn't.
+	ExitCode *int
+	When     time.Time
+	// Detail is the raw fact: Nomad's description, the deploy or backup error,
+	// or, for the schedule kinds, a sentence in Caravana's words. Never a
+	// run's output.
+	Detail string
 }
 
 // Attention is the needs-you list.
@@ -84,11 +99,60 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	if destErr != nil && !errors.Is(destErr, store.ErrNotFound) { // not found is "no destination"
 		return Attention{}, fmt.Errorf("attention: %w", destErr)
 	}
+	scheds, err := s.scheduleFactsOf(ctx)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
 	copies, copiesErr := s.deployer.AllCopies(ctx)
 	if copiesErr != nil {
 		s.log.Warn("can't read copies from Nomad; the needs-you list leaves them out", "error", copiesErr)
 	}
-	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil), nil
+	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds), nil
+}
+
+// scheduleFacts is what the schedule kinds are derived from (feature 022,
+// research R5): the stored schedules, each one's newest run that ended and
+// was neither skipped nor stopped (store.LatestScheduleRuns), and when the
+// newest skipped slot was for each schedule whose newest 3 slots were skipped.
+type scheduleFacts struct {
+	Schedules []store.ScheduleRecord
+	Latest    []store.ScheduleRunRecord
+	Skipping  map[string]time.Time // schedule ID → its newest skipped slot
+}
+
+// scheduleFactsOf reads the scheduleFacts: one query for the schedules, one
+// for their newest runs, and one per unpaused schedule for its skip streak
+// (and one more when the streak is 3, for its time).
+func (s *Service) scheduleFactsOf(ctx context.Context) (scheduleFacts, error) {
+	scheds, err := s.store.ListSchedules(ctx, "")
+	if err != nil {
+		return scheduleFacts{}, err
+	}
+	latest, err := s.store.LatestScheduleRuns(ctx)
+	if err != nil {
+		return scheduleFacts{}, err
+	}
+	out := scheduleFacts{Schedules: scheds, Latest: latest, Skipping: map[string]time.Time{}}
+	for _, sc := range scheds {
+		if sc.PausedAt != nil {
+			continue // a paused schedule skips nothing more
+		}
+		n, err := s.store.SkipStreak(ctx, sc.ID)
+		if err != nil {
+			return scheduleFacts{}, err
+		}
+		if n < skippingAt {
+			continue
+		}
+		newest, err := s.store.ListRuns(ctx, sc.ID, 1)
+		if err != nil {
+			return scheduleFacts{}, err
+		}
+		if len(newest) == 1 {
+			out.Skipping[sc.ID] = finishedOr(newest[0].FinishedAt, newest[0].StartedAt)
+		}
+	}
+	return out, nil
 }
 
 // attentionOf applies the rules of data-model "Attention item". It is pure:
@@ -101,7 +165,7 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 // one kind in one service become one item.
 func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.DeploymentRecord,
 	copies map[string][]Copy, copiesErr error,
-	backups []store.BackupRecord, restores []store.RestoreRecord, hasDestination bool) Attention {
+	backups []store.BackupRecord, restores []store.RestoreRecord, hasDestination bool, scheds scheduleFacts) Attention {
 
 	out := Attention{CopiesUnknown: copiesErr != nil}
 	known := map[string]store.AppRecord{} // the apps, by ID
@@ -160,6 +224,7 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 	if noDestination != nil {
 		out.Items = append(out.Items, AttentionItem{Kind: AttentionNoBackupDestination, When: *noDestination})
 	}
+	out.Items = append(out.Items, scheduleItems(known, scheds)...)
 
 	for i, it := range out.Items {
 		if rec, ok := known[it.AppID]; ok {
@@ -173,6 +238,7 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 			strings.Compare(a.AppID, b.AppID),
 			strings.Compare(a.Service, b.Service),
 			strings.Compare(string(a.Kind), string(b.Kind)),
+			strings.Compare(a.ScheduleID, b.ScheduleID),
 		)
 	})
 	return out
@@ -277,6 +343,86 @@ func eventTime(c Copy) time.Time {
 		return *c.StartedAt
 	}
 	return newest
+}
+
+// scheduleItems are the schedule kinds (feature 022, research R5). A schedule
+// whose newest run that ended, and was neither skipped nor stopped, failed (an
+// exit code, its limit, it couldn't start) is schedule_failed: a slot skipped
+// or a run the owner stopped since neither hides nor clears it, and a later ok
+// run clears it. A schedule whose newest 3 slots were skipped is
+// schedule_skipping (facts.Skipping holds unpaused schedules only). A schedule
+// or an app that no longer exists has no item. The words are Caravana's own,
+// never a run's output.
+func scheduleItems(apps map[string]store.AppRecord, facts scheduleFacts) []AttentionItem {
+	byID := make(map[string]store.ScheduleRecord, len(facts.Schedules))
+	for _, sc := range facts.Schedules {
+		byID[sc.ID] = sc
+	}
+	var items []AttentionItem
+	for _, r := range facts.Latest {
+		sc, ok := byID[r.ScheduleID]
+		if _, known := apps[sc.AppID]; !ok || !known || !runFailed(r.Status) {
+			continue
+		}
+		items = append(items, AttentionItem{
+			Kind: AttentionScheduleFailed, AppID: sc.AppID, Service: sc.Service, Schedule: sc.Name, ScheduleID: sc.ID,
+			ExitCode: failedExitCode(r), When: finishedOr(r.FinishedAt, r.StartedAt), Detail: runFailedSentence(r, sc.StopAfter),
+		})
+	}
+	for _, sc := range facts.Schedules {
+		at, skipping := facts.Skipping[sc.ID]
+		if _, known := apps[sc.AppID]; !skipping || !known {
+			continue
+		}
+		items = append(items, AttentionItem{
+			Kind: AttentionScheduleSkipping, AppID: sc.AppID, Service: sc.Service, Schedule: sc.Name, ScheduleID: sc.ID,
+			When: at,
+			Detail: fmt.Sprintf("%s has been skipped %d times: each run takes longer than the time between runs.",
+				sc.Name, skippingAt),
+		})
+	}
+	return items
+}
+
+// failedExitCode is the exit code a failed run exited with, or nil: a run
+// stopped at its limit or that couldn't start has none worth telling, and the
+// code of a run stopped outside Caravana is the signal's, not the command's.
+func failedExitCode(r store.ScheduleRunRecord) *int {
+	if r.Status != store.RunFailed || r.ExitCode == nil || r.Error != fmt.Sprintf("exit %d", *r.ExitCode) {
+		return nil
+	}
+	return r.ExitCode
+}
+
+// runFailedSentence says why a failed run failed, as the schedule's detail on
+// the Schedules page does: "Exited with code 3.", "Stopped at the 5 min
+// limit.", "Couldn't start: Nomad refused the job." Another failure is the
+// run's own words as a sentence ("Ran out of memory.").
+func runFailedSentence(r store.ScheduleRunRecord, limit time.Duration) string {
+	switch {
+	case failedExitCode(r) != nil:
+		return fmt.Sprintf("Exited with code %d.", *r.ExitCode)
+	case r.Status == store.RunStoppedAtLimit:
+		return "Stopped at the " + limitWords(limit) + " limit."
+	case r.Status == store.RunCouldNotStart && (r.Error == "" || r.Error == "could not start"):
+		return "Couldn't start."
+	case r.Status == store.RunCouldNotStart:
+		return "Couldn't start: " + strings.TrimSuffix(r.Error, ".") + "."
+	case r.Error == "":
+		return "Failed."
+	}
+	return strings.ToUpper(r.Error[:1]) + strings.TrimSuffix(r.Error[1:], ".") + "."
+}
+
+// limitWords is a run's limit as the Schedules page writes it: "5 min", "2 h".
+func limitWords(d time.Duration) string {
+	switch {
+	case d >= time.Hour && d%time.Hour == 0:
+		return fmt.Sprintf("%d h", d/time.Hour)
+	case d >= time.Minute && d%time.Minute == 0:
+		return fmt.Sprintf("%d min", d/time.Minute)
+	}
+	return d.String()
 }
 
 // keepsBackups reports whether the app's service still has a backup policy:

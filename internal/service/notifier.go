@@ -49,7 +49,8 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	ev := notify.Event{
 		Type: notify.EventProblemOpened, Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
 		Project: it.Project, Environment: it.Environment, AppName: it.AppName,
-		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, it.Deployment)), At: at,
+		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, problemSubject(it))), At: at,
+		Schedule: it.Schedule, ExitCode: it.ExitCode,
 	}
 	n := len(it.Copies)
 
@@ -80,6 +81,16 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionNoBackupDestination:
 		ev.Title = "Backups have nowhere to go"
 		ev.Text = "Backups are set up, but no backup destination is."
+	case AttentionScheduleFailed:
+		code := ""
+		if it.ExitCode != nil {
+			code = fmt.Sprintf(" (exit %d)", *it.ExitCode)
+		}
+		ev.Title = fmt.Sprintf("%s: %s failed%s", it.AppID, it.Schedule, code)
+		ev.Text = fmt.Sprintf("The latest run of the schedule %s, on %s, failed.", it.Schedule, where)
+	case AttentionScheduleSkipping:
+		ev.Title = fmt.Sprintf("%s: %s has been skipped %d times", it.AppID, it.Schedule, skippingAt)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -91,15 +102,15 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 // needs-you list long enough. It reuses the title that was sent, which the
 // sent problem keeps for this, and finds the page again from the problem's key.
 func resolvedEvent(p store.SentProblem, base string, at time.Time) notify.Event {
-	deployment := ""
+	subject := ""
 	if parts := strings.SplitN(p.Key, "|", 4); len(parts) == 4 {
-		deployment = parts[3]
+		subject = parts[3]
 	}
 	return notify.Event{
 		Type: notify.EventProblemResolved, Kind: p.Kind, AppID: p.AppID, Service: p.Service,
 		Title: "Resolved: " + p.Summary,
 		Text:  "It is no longer on the needs-you list.",
-		URL:   consoleLink(base, problemPath(AttentionKind(p.Kind), p.AppID, deployment)),
+		URL:   consoleLink(base, problemPath(AttentionKind(p.Kind), p.AppID, subject)),
 		At:    at,
 	}
 }
@@ -173,14 +184,18 @@ func startedBy(t app.Trigger) string {
 }
 
 // problemPath is the console page about a needs-you item (research R6).
-func problemPath(kind AttentionKind, appID, deployment string) string {
+// subject is the fourth part of the item's key (problemSubject): the
+// deployment of a failed deploy, the schedule of the schedule kinds.
+func problemPath(kind AttentionKind, appID, subject string) string {
 	switch kind {
 	case AttentionNoBackupDestination:
 		return "/settings/backup-storage"
 	case AttentionDeployFailed:
-		return deploymentPath(appID, deployment)
+		return deploymentPath(appID, subject)
 	case AttentionBackupFailed, AttentionRestoreFailed:
 		return "/apps/" + url.PathEscape(appID) + "/backups"
+	case AttentionScheduleFailed, AttentionScheduleSkipping:
+		return "/schedules#schedule-" + subject
 	}
 	return "/apps/" + url.PathEscape(appID)
 }
@@ -286,11 +301,22 @@ func (s *Service) notifyDeploy(rec store.DeploymentRecord) {
 	}
 }
 
-// problemKey is the identity of a needs-you item: its kind, app, service and,
-// for a failed deploy, the deployment. Copy IDs are left out on purpose: a crash
-// loop swaps its copies and is still one problem.
+// problemKey is the identity of a needs-you item: its kind, app, service and
+// subject (problemSubject). Copy IDs are left out on purpose: a crash loop
+// swaps its copies and is still one problem. So is a schedule's name: a
+// schedule renamed while it fails is still the one problem.
 func problemKey(it AttentionItem) string {
-	return strings.Join([]string{string(it.Kind), it.AppID, it.Service, it.Deployment}, "|")
+	return strings.Join([]string{string(it.Kind), it.AppID, it.Service, problemSubject(it)}, "|")
+}
+
+// problemSubject is the last part of an item's key, what the item is about
+// within its service: the deployment of a failed deploy, the schedule's ID of
+// the schedule kinds, else nothing.
+func problemSubject(it AttentionItem) string {
+	if it.ScheduleID != "" {
+		return it.ScheduleID
+	}
+	return it.Deployment
 }
 
 // isCopyKind says whether a kind of item comes from Nomad's allocations, which

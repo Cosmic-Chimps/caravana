@@ -61,9 +61,15 @@ type Event struct {
 	PromotedFrom string `json:"promotedFrom,omitempty"`
 	// Origin is where a deploy came from, when its caller said (feature 020: a
 	// CI run). Absent for deploys without it and for every other event.
-	Origin *Origin   `json:"origin,omitempty"`
-	URL    string    `json:"url,omitempty"` // the console page about it, when its address is known
-	At     time.Time `json:"at"`
+	Origin *Origin `json:"origin,omitempty"`
+	// Schedule is the schedule's name, for a problem about a schedule (feature
+	// 022: schedule_failed, schedule_skipping) when it opens. ExitCode is the
+	// code its failed run exited with, when it exited with one. Never the
+	// run's output.
+	Schedule string    `json:"schedule,omitempty"`
+	ExitCode *int      `json:"exitCode,omitempty"`
+	URL      string    `json:"url,omitempty"` // the console page about it, when its address is known
+	At       time.Time `json:"at"`
 }
 
 // Origin is where a deploy came from, as a CI step told Caravana. It has the

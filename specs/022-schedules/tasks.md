@@ -155,7 +155,7 @@ Independent test: quickstart §3.
 Goal: a failed run is a needs-you item and a notification; the next success clears it.
 Independent test: quickstart §2.
 
-- [ ] T015 [US3] `internal/service/attention.go`: kinds `AttentionScheduleFailed` and
+- [x] T015 [US3] `internal/service/attention.go`: kinds `AttentionScheduleFailed` and
   `AttentionScheduleSkipping` from `LatestScheduleRuns` and `SkipStreak`, `Schedule`/`ScheduleID`
   on `AttentionItem`, `Detail` from the contract's sentence table ("Stopped at the 5 min limit.",
   "Exited with code 3.", "Couldn't start: …", "`<name>` has been skipped 3 times: each run takes

@@ -1,0 +1,10 @@
+POST https://ntfy.sh/my-topic
+Click: https://caravana.example.com/schedules#schedule-3f9a1c2b4d5e
+Content-Type: text/plain; charset=utf-8
+Priority: high
+Tags: warning
+Title: booking: rates-sync failed (exit 3)
+
+The latest run of the schedule rates-sync, on booking/web, failed.
+Schedule: rates-sync, exit code 3
+Detail: Exited with code 3.

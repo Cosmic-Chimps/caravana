@@ -1,0 +1,4 @@
+POST https://hooks.slack.com/services/T000/B000/XXXX
+Content-Type: application/json
+
+{"text":"*booking: rates-sync failed (exit 3)*\nThe latest run of the schedule rates-sync, on booking/web, failed.\nSchedule: rates-sync, exit code 3\nDetail: Exited with code 3.\nhttps://caravana.example.com/schedules#schedule-3f9a1c2b4d5e"}
