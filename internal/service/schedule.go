@@ -34,23 +34,26 @@ const catchUp = time.Hour
 // one and only stops an odd expression from looping.
 const maxSlots = 10000
 
-// dueSlot says whether a service with the cron schedule spec owes a run at now,
-// given when its newest run started (the zero time for none). Slots are in UTC.
+// dueSlot says whether something on the cron schedule spec owes a run at now,
+// given base: the slots up to base are not owed. Slots are in UTC. The volume
+// backups give the start of the service's newest run (or when the app was
+// saved); a schedule (feature 022) gives the later of when it was armed and
+// its newest slot, run or skipped.
 //
-//   - due: a slot fell in (lastStart, now] and is under catchUp old; slot is
-//     the latest such one.
-//   - skipped: no slot is that recent, but one fell in (lastStart, now-catchUp]:
-//     a backup was missed and is too late to run. It is only for the log.
+//   - due: a slot fell in (base, now] and is under catchUp old; slot is the
+//     latest such one.
+//   - skipped: no slot is that recent, but one fell in (base, now-catchUp]: a
+//     run was missed and is too late to start. It is only for the log.
 //
-// A spec that doesn't parse owes nothing (the app's validation refuses one, so
-// this is a stored app from an older version at worst).
-func dueSlot(spec string, lastStart, now time.Time) (slot time.Time, due, skipped bool) {
+// A spec that doesn't parse owes nothing (validation refuses one, so this is
+// a stored record from an older version at worst).
+func dueSlot(spec string, base, now time.Time) (slot time.Time, due, skipped bool) {
 	expr, err := cronexpr.Parse(spec)
 	if err != nil {
 		return time.Time{}, false, false
 	}
 	now = now.UTC()
-	from := lastStart.UTC()
+	from := base.UTC()
 	window := now.Add(-catchUp)
 	if from.Before(window) {
 		from = window
@@ -64,8 +67,8 @@ func dueSlot(spec string, lastStart, now time.Time) (slot time.Time, due, skippe
 		return slot, true, false
 	}
 	// Nothing recent. Was something missed before the window?
-	if lastStart.UTC().Before(window) {
-		if missed := expr.Next(lastStart.UTC()); !missed.IsZero() && !missed.After(window) {
+	if base.UTC().Before(window) {
+		if missed := expr.Next(base.UTC()); !missed.IsZero() && !missed.After(window) {
 			return time.Time{}, false, true
 		}
 	}

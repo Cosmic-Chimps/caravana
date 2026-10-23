@@ -257,11 +257,23 @@ func (s *Service) Start(ctx context.Context) error {
 		defer s.backupWatcher.Done()
 		s.scheduleVolumeBackups(ctx, s.scheduleGap)
 	}()
-	// Schedules: the watcher settles the runs a previous process left.
+	// Schedules: the watcher first, so the runs a previous process left are
+	// settled before the clock counts the ones going.
+	settled := make(chan struct{})
 	s.backupWatcher.Add(1)
 	go func() {
 		defer s.backupWatcher.Done()
-		s.watchScheduleRuns(ctx, s.scheduleWatchGap, nil)
+		s.watchScheduleRuns(ctx, s.scheduleWatchGap, settled)
+	}()
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		select {
+		case <-settled:
+		case <-ctx.Done():
+			return
+		}
+		s.runScheduleClock(ctx, s.scheduleScanGap)
 	}()
 	// The notifier starts no watchers, so it can live in the same group.
 	s.backupWatcher.Add(1)

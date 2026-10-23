@@ -54,7 +54,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
 
 ## Phase 2: Service core (no story label; US1–US4 build on it)
 
-- [ ] T005 `internal/service/schedules.go` + `schedules_test.go`: types `Schedule`, `ScheduleRun`
+- [X] T005 `internal/service/schedules.go` + `schedules_test.go`: types `Schedule`, `ScheduleRun`
   (API shapes of contracts/api.md), errors `ErrScheduleNotFound`, `ErrRunNotFound`,
   `ErrScheduleExists`, `ErrScheduleBuiltin`, `ErrRunGoing`, `ErrRunNotRunning`,
   `ErrOutputNotKept`; validation (name, command as `RunCommand` validates, `cronwords.Validate`,
@@ -66,7 +66,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   table, each with NextRunAt, LastRun, RunningNow, UsualSeconds, Words; sorted failed, running,
   next run, paused), `ListScheduleRuns`, `GetScheduleRun`, `GetScheduleRunOutput(stream)`; the
   `schedules` live notice. Table tests for validation and the list's sort and built-ins.
-- [ ] T006 `internal/service/schedulerun.go` + tests: `startRun(ctx, sched, trigger, slot)`:
+- [X] T006 `internal/service/schedulerun.go` + tests: `startRun(ctx, sched, trigger, slot)`:
   write-ahead `starting` row, the newest healthy deployment's digest for the service
   (`runningImage`; `ErrNoLiveDeployment` → the run is `could_not_start` "the app has no live
   version" when timer-started, a 409 when owner-started), the service's current secret set,
@@ -75,7 +75,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   (intent `owner`, then deregister; `ErrRunNotRunning`); `maskSecrets(out, values)` (values of
   6+ bytes → `[secret NAME]`, longest first). Tests with deploytest: the variable written then
   removed, the row states, masking.
-- [ ] T007 `internal/service/scheduleclock.go` + tests: `runScheduleClock(ctx, gap)` every
+- [X] T007 `internal/service/scheduleclock.go` + tests: `runScheduleClock(ctx, gap)` every
   `scheduleScanGap` (10 s; `SetScheduleScanGap` for the lab): per unpaused schedule the due slot
   (`dueSlot` generalised in `schedule.go` with base `max(armed_at, newest slot_at)`, catch-up 1 h,
   UTC); skip conditions → a `skipped` row with the reason; deferral (no record) while the app's
@@ -83,7 +83,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   deployment; otherwise `startRun(timer, slot)`. Table tests with a fake clock: a due slot runs
   once, a paused schedule doesn't, resume takes the next slot only, an edit re-arms, the catch-up
   window, skip-if-running, the 3-run cap, deferral.
-- [ ] T008 `internal/service/schedulewatch.go` + tests: `watchScheduleRuns(ctx, gap)` every 5 s
+- [X] T008 `internal/service/schedulewatch.go` + tests: `watchScheduleRuns(ctx, gap)` every 5 s
   over `AllOpenRuns`: `ScheduleRunState`; terminal → capture output (`ScheduleRunOutput`, masked),
   settle by the outcome table of plan.md (ok / failed "exit n" / "ran out of memory" /
   `stopped_at_limit` / `stopped` from the intent / `could_not_start` for driver or setup failure
