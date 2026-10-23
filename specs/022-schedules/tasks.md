@@ -20,7 +20,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
   `Words(cron) string` (the inverse, ending " UTC" for a time of day, "On `<cron>`" last resort),
   `Validate(cron) error` (five fields, parses, fires within a year, at least 60 s apart; errors
   name what's wrong), `Next(cron, after, n) []time.Time` in UTC. Table tests for each shape, the
-  refusals ("31 2 * * *", six fields, "* * * * * *", "*/30 * * * * " seconds) and round-trips.
+  refusals ("0 0 31 2 *" never comes, six fields, "* * * * * *", "*/30 * * * * " seconds) and round-trips.
 - [ ] T002 [P] `internal/store/migrations/0017_schedules.sql` and `internal/store/schedules.go`
   (+ `schedules_test.go`): tables per data-model.md (CHECK on status, UNIQUE(app_id, name),
   indexes); `InsertSchedule`, `UpdateSchedule`, `GetSchedule`, `ListSchedules(appID "" for all)`,
