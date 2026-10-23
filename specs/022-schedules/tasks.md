@@ -176,7 +176,7 @@ Independent test: quickstart §2.
 Goal: each backup policy is a read-only row of the list with its runs and next time.
 Independent test: quickstart §5.
 
-- [ ] T017 [US4] Service and API: built-in rows in `ListSchedules` (T005 placed them; this task
+- [x] T017 [US4] Service and API: built-in rows in `ListSchedules` (T005 placed them; this task
   tests them end to end): `builtin: true`, words from the policy's cron, next from `cronwords.Next`,
   last runs from the backups table mapped to `ok|failed|running`, `getScheduleRunOutput` 404
   `output_not_kept`, the 409 `builtin_schedule` on every mutation; a volume and a Postgres
