@@ -243,3 +243,25 @@ func TestCertificatesReadOnlyRows(t *testing.T) {
 		}
 	}
 }
+
+// The Edit control of "How certificates are issued" is drawn in every state: whatever the issuer,
+// with certificates or none, and its form holds Warn when alone.
+func TestCertificatesEditIsAlwaysDrawn(t *testing.T) {
+	for _, mode := range []string{"", "production", "staging", "none"} {
+		for _, withDomains := range []bool{false, true} {
+			e := newConsoleEnv(t)
+			if mode != "" {
+				e.Svc.SetACME(mode, "ops@example.com")
+			}
+			if withDomains {
+				e.seed(t, domainsApp("shop", "a.example.com"), seedDeploy{ID: "d1", Trigger: "manual", Status: store.StatusHealthy, Version: 1})
+				e.seedCheck(t, checkSeed{host: "a.example.com", app: "shop", dns: edge.DNSOK, seen: []string{"203.0.113.1"}, expected: []string{"203.0.113.1"}, cert: edge.CertSelf, issuer: edge.TraefikOwn})
+			}
+			body := e.pageOf(t, "/settings/certificates")
+			head := regexp.MustCompile(`(?s)<div class="cv-certsechead">.*?</details>`).FindString(body)
+			if !strings.Contains(head, "<summary") || !strings.Contains(head, ">Edit</summary>") || !strings.Contains(head, `name="warnBeforeDays"`) {
+				t.Errorf("acme %q, domains %v: the section head has no Edit:\n%s", mode, withDomains, head)
+			}
+		}
+	}
+}
