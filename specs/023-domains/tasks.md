@@ -79,7 +79,7 @@ Independent test: quickstart §1.
   (`?app=&project=&fresh=`), `getDomain`, `checkDomain` (`no-store`), the `Domain` and
   `DomainCheck` schemas, codes `domain_not_found`; `App.services[].domains[]` gains the three
   fields; the contract test; the scope walk expects 403 on the new routes.
-- [ ] T010 [US1] Console: `internal/ui/domainspage.go`, `templates/domains.html`, the
+- [x] T010 [US1] Console: `internal/ui/domainspage.go`, `templates/domains.html`, the
   sidebar's Domains item (`globe` in `icons.go`, active on `/domains*`), routes `GET /domains`,
   `GET /parts/domains` (live on the `domains` notice; the stream marks the page as watched), the
   app's Domains page (`domains.go`) using the same template filtered with "All domains"; the
@@ -88,7 +88,7 @@ Independent test: quickstart §1.
   open link), the detail's left column per state with the facts grids, the footer, the empty
   state; "Check again" (`POST /domains/{host}/check`); `ui/parity_test.go` entries. Handler
   tests per state and a sentinel test that no hash or password appears.
-- [ ] T011 [US1] Styles "Page 6 (023)" in `internal/ui/style/input.css` (the table columns,
+- [x] T011 [US1] Styles "Page 6 (023)" in `internal/ui/style/input.css` (the table columns,
   the detail grid, the switches, the banner, the record box, narrow rules), `tools/ui-css.sh
   build`, DESIGN.md's Domains section (the states' marks and words, the time rule for expiry).
 
@@ -126,7 +126,7 @@ Independent test: quickstart §2.
 
 Independent test: quickstart §3.
 
-- [ ] T016 [US3] Console: the Add panel (`#add` on `/domains` and the app's page): Domain,
+- [x] T016 [US3] Console: the Add panel (`#add` on `/domains` and the app's page): Domain,
   Sends traffic to (app select, service select when several, the port as text "set in
   Configure"), Path, the record box (A and AAAA from `hostAddresses`, `@` or the first label,
   "this host's public IP address" when unknown), Check now (`action=check`, redraws with the
