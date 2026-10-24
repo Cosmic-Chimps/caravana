@@ -167,22 +167,45 @@ func (s *Service) endRun(ctx context.Context, r store.ScheduleRunRecord, sched s
 	s.purgeRun(ctx, runJobID(r))
 }
 
+// outputTries is how many times the output of a run that just ended is read
+// before it is given up: the job is purged right after, so a read that fails
+// once (the copy's log file still being closed, a blip reading the secrets)
+// would lose the output for good.
+const outputTries = 3
+
 // runOutput reads what a run printed and masks the service's secret values
-// in it. kept is false, and nothing is returned, when either step failed: an
-// output that couldn't be masked isn't kept. Nothing of the output is logged.
+// in it. kept is false, and nothing is returned, when either step failed after
+// outputTries tries: an output that couldn't be masked isn't kept. Nothing of
+// the output is logged.
 func (s *Service) runOutput(ctx context.Context, r store.ScheduleRunRecord, allocID string) (stdout, stderr []byte, stdoutCut, stderrCut, kept bool) {
-	stdout, stderr, stdoutCut, stderrCut, err := s.deployer.ScheduleRunOutput(ctx, allocID, r.Service)
+	var err error
+	for try := 1; ; try++ {
+		if stdout, stderr, stdoutCut, stderrCut, kept, err = s.readRunOutput(ctx, r, allocID); err == nil {
+			return stdout, stderr, stdoutCut, stderrCut, kept
+		}
+		if try == outputTries || ctx.Err() != nil {
+			s.log.Warn("read a schedule run's output; it isn't kept", "run", r.ID, "tries", try, "error", err)
+			return nil, nil, false, false, false
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+		}
+	}
+}
+
+// readRunOutput is one try of runOutput.
+func (s *Service) readRunOutput(ctx context.Context, r store.ScheduleRunRecord, allocID string) (stdout, stderr []byte, stdoutCut, stderrCut, kept bool, err error) {
+	stdout, stderr, stdoutCut, stderrCut, err = s.deployer.ScheduleRunOutput(ctx, allocID, r.Service)
 	if err != nil {
-		s.log.Warn("read a schedule run's output; it isn't kept", "run", r.ID, "error", err)
-		return nil, nil, false, false, false
+		return nil, nil, false, false, false, fmt.Errorf("read the output: %w", err)
 	}
 	sets, err := s.secrets.Read(ctx, r.AppID)
 	if err != nil {
-		s.log.Warn("read the secrets to mask a run's output; it isn't kept", "run", r.ID, "error", err)
-		return nil, nil, false, false, false
+		return nil, nil, false, false, false, fmt.Errorf("read the secrets to mask the output: %w", err)
 	}
 	values := sets[r.Service]
-	return maskSecrets(stdout, values), maskSecrets(stderr, values), stdoutCut, stderrCut, true
+	return maskSecrets(stdout, values), maskSecrets(stderr, values), stdoutCut, stderrCut, true, nil
 }
 
 // runOutcome is how a run that ended is recorded: its status and the words
