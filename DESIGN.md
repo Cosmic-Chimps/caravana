@@ -879,6 +879,9 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   app isn't served, whatever the last check said); ○ "couldn't check", or "not checked yet" for a row never
   checked. The words are `edge.State.Words()`; the console words the redirect target, the not-served reason
   and the never-checked row.
+- **Needs-you items** lead with the app, as every item does (its place first, then a colon): "blog: `example.com`
+  points at 104.20.23.154, which isn't this host." and "blog: the certificate for `example.com` expires in 6 days and
+  hasn't been renewed."; the Domains page's own banners, which are on the domain's page, start with the domain.
 - **Page head** (Settings' shape): "Domains" 30px, "Every address people use to reach your apps.
   Certificates are issued and renewed for you." and Add domain (primary small, plus, a link to `#add`). Then
   the filter (Schedules': a project select only with more than one project, the app select, Apply, Clear)

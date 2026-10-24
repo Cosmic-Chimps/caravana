@@ -119,42 +119,42 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "+it.Detail))
 		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
 	case service.AttentionDomainDNSElsewhere:
-		row.Text = domainElsewhereSentence(it)
+		row.Text = domainElsewhereSentence(pl.label(place, it.AppID, ""), it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	case service.AttentionDomainCertExpiring:
 		row.Mark = "warning"
-		row.Text = domainExpiringSentence(now, it)
+		row.Text = domainExpiringSentence(pl.label(place, it.AppID, ""), now, it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	}
 	return row
 }
 
-// domainElsewhereSentence is "bi.example.com points at 185.199.108.153, which
-// isn't this host." with the names set apart; without an address it says
-// "another host".
-func domainElsewhereSentence(it service.AttentionItem) sentence {
+// domainElsewhereSentence is "blog: bi.example.com points at 185.199.108.153,
+// which isn't this host." (the app first, as every item has it) with the names
+// set apart; without an address it says "another host".
+func domainElsewhereSentence(app sentence, it service.AttentionItem) sentence {
 	if it.AddressSeen == "" {
-		return sentence{mono(it.Domain), plain(" points at another host.")}
+		return join(app, plainS(": "), sentence{mono(it.Domain), plain(" points at another host.")})
 	}
-	return sentence{mono(it.Domain), plain(" points at "), mono(it.AddressSeen), plain(", which isn't this host.")}
+	return join(app, plainS(": "), sentence{mono(it.Domain), plain(" points at "), mono(it.AddressSeen), plain(", which isn't this host.")})
 }
 
-// domainExpiringSentence is "The certificate for bi.example.com expires in 6
-// days and hasn't been renewed." (or "has expired", "expires today").
-func domainExpiringSentence(now time.Time, it service.AttentionItem) sentence {
-	head, tail := plain("The certificate for "), " and hasn't been renewed."
+// domainExpiringSentence is "blog: the certificate for bi.example.com expires
+// in 6 days and hasn't been renewed." (or "has expired", "expires today").
+func domainExpiringSentence(app sentence, now time.Time, it service.AttentionItem) sentence {
+	head, tail := join(app, plainS(": the certificate for ")), " and hasn't been renewed."
 	switch {
 	case it.ExpiresAt == nil:
-		return sentence{head, mono(it.Domain), plain(" is about to expire" + tail)}
+		return join(head, sentence{mono(it.Domain), plain(" is about to expire" + tail)})
 	case !it.ExpiresAt.After(now):
-		return sentence{head, mono(it.Domain), plain(" has expired" + tail)}
+		return join(head, sentence{mono(it.Domain), plain(" has expired" + tail)})
 	}
 	days := int(it.ExpiresAt.Sub(now) / (24 * time.Hour))
 	when := "expires in " + plural(days, "day")
 	if days == 0 {
 		when = "expires today"
 	}
-	return sentence{head, mono(it.Domain), plain(" " + when + tail)}
+	return join(head, sentence{mono(it.Domain), plain(" " + when + tail)})
 }
 
 // verbFor picks the verb for n copies: "keeps" for one, "keep" for more.
