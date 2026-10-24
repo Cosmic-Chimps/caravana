@@ -10,7 +10,10 @@
 // change.
 package app
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // App is one project a user deploys. It becomes one Nomad job.
 type App struct {
@@ -211,6 +214,40 @@ type Domain struct {
 	Host string `json:"host"`
 	// Port is the Name of a Port declared on the same service.
 	Port string `json:"port"`
+	// Path, when set, limits the domain to URLs under that prefix ("/api").
+	Path string `json:"path,omitempty"`
+	// WWWRedirect makes this host the target of its pair (see RedirectPair):
+	// the pair redirects here.
+	WWWRedirect bool `json:"wwwRedirect,omitempty"`
+	// TeamOnly puts HTTP basic auth (user "team") in front of the domain.
+	TeamOnly bool `json:"teamOnly,omitempty"`
+}
+
+// HasOptions reports whether the domain has any option, which gives it a
+// router of its own.
+func (d Domain) HasOptions() bool {
+	return d.Path != "" || d.WWWRedirect || d.TeamOnly
+}
+
+// RedirectPair is the other name a WWWRedirect on this host covers: "<h>" for
+// "www.<h>", "www.<h>" for an apex "<h>", and "" for any other host (a
+// subdomain that isn't "www.").
+func (d Domain) RedirectPair() string {
+	if rest, ok := strings.CutPrefix(d.Host, "www."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	if IsApex(d.Host) {
+		return "www." + d.Host
+	}
+	return ""
+}
+
+// IsApex reports whether host is an apex: exactly one dot ("example.com").
+// Telling a registered domain apart in general ("example.co.uk") needs the
+// public suffix list, which Caravana doesn't carry, so such a host reads as a
+// subdomain. The console's DNS record advice uses the same rule.
+func IsApex(host string) bool {
+	return strings.Count(host, ".") == 1
 }
 
 // HealthCheck tells Nomad how to decide that a service is healthy. Deploys wait

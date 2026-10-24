@@ -92,7 +92,7 @@ func recordName(host string) string {
 	switch {
 	case host == "":
 		return ""
-	case strings.Count(host, ".") == 1:
+	case app.IsApex(host):
 		return "@"
 	}
 	label, _, _ := strings.Cut(host, ".")
