@@ -3478,7 +3478,13 @@ components:
             additionalProperties: false
             required: [host, port]
             properties:
-              host: {type: string}
+              host:
+                type: string
+                description: |
+                  A hostname (`shop.example.com`). DNS names are case-insensitive, so one sent with
+                  capitals (`Shop.Example.COM`) is stored in lowercase; the stored app's document
+                  changes only when a host had capitals. Anything else that isn't a hostname is
+                  refused with `invalid_field` naming the field.
               port:
                 type: string
                 description: The name of a port declared on this service.
@@ -4412,7 +4418,7 @@ components:
       properties:
         host:
           type: string
-          description: A hostname (no scheme, port, path or wildcard), not the console's own.
+          description: A hostname (no scheme, port, path or wildcard), not the console's own. Capitals are read as lowercase (DNS names are case-insensitive), and the answer's `host` is the lowercase name.
         app:
           type: string
           description: An app ID; when set, it must exist. It doesn't change what is checked.

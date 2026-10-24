@@ -947,7 +947,9 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   one for the AAAA when this host has a public IPv6 address, a line-2 rule between groups. Name is "@" for an
   apex (one dot), else the first label, "@ or the first label" before a host is typed; Value is the address,
   or "this host's public IP address" in sans fg-2 when none is known.
-- **Add a domain** (`#add`, a panel, padding 22, gap 22, "Add a domain" 500 18px): Domain (mono), Sends
+- **Add a domain** (`#add`, a panel, padding 22, gap 22, "Add a domain" 500 18px): Domain (mono; capitals are
+  read as lowercase, since DNS names are case-insensitive: "Shop.Example.COM" is `shop.example.com`, never refused for
+  its case, and the API does the same), Sends
   traffic to (the app select, stopped apps disabled; the service select of a picked app with several, or
   every app's services as "app › service · :port" until one is picked; one service's port as text,
   "`:8080`, set in Configure"; on an app's page the app as text), Path (optional, mono), "Point it at

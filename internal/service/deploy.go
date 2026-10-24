@@ -132,6 +132,7 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.refuseIfStopped(ctx, a.ID); err != nil {
 		return DeployResult{}, err
 	}
+	a = a.WithLowercaseHosts() // a host typed with capitals is the same name, not an error
 	if err := s.deployer.Validate(a); err != nil {
 		return DeployResult{}, err
 	}

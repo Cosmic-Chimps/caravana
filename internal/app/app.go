@@ -11,6 +11,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -199,6 +200,39 @@ func (a App) WithoutSecretValues() App {
 	return a
 }
 
+// WithLowercaseHosts returns the app with every domain's host in lowercase. DNS names are
+// case-insensitive, so "WWW.Example.com" and "www.example.com" are the same name: a host typed
+// with capitals is lowercased on the way in rather than refused, and the stored definition
+// only changes when a host had capitals. An app with none is returned as it is (the same
+// slices); otherwise the changed services are copied, never the caller's.
+func (a App) WithLowercaseHosts() App {
+	var services []Service
+	for i, svc := range a.Services {
+		var domains []Domain
+		for j, d := range svc.Domains {
+			lower := strings.ToLower(d.Host)
+			if lower == d.Host {
+				continue
+			}
+			if domains == nil {
+				domains = slices.Clone(svc.Domains)
+			}
+			domains[j].Host = lower
+		}
+		if domains == nil {
+			continue
+		}
+		if services == nil {
+			services = slices.Clone(a.Services)
+		}
+		services[i].Domains = domains
+	}
+	if services != nil {
+		a.Services = services
+	}
+	return a
+}
+
 // Port is a named container port. Nomad maps a dynamic host port to it.
 type Port struct {
 	// Name is the port label, e.g. "http": a lowercase letter, then lowercase
@@ -210,7 +244,8 @@ type Port struct {
 
 // Domain is a public hostname routed over HTTPS to one port of a service.
 type Domain struct {
-	// Host is a lowercase hostname, unique across the whole app.
+	// Host is a lowercase hostname, unique across the whole app. A host sent with capitals is
+	// lowercased by a deploy (WithLowercaseHosts), since DNS names are case-insensitive.
 	Host string `json:"host"`
 	// Port is the Name of a Port declared on the same service.
 	Port string `json:"port"`

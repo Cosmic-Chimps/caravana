@@ -61,6 +61,7 @@ func (s *Service) PreviewCompose(ctx context.Context, appID string, req compose.
 	if err != nil {
 		return app.App{}, nil, err
 	}
+	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return app.App{}, nil, compose.InFile(err, a)
 	}

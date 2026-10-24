@@ -146,3 +146,36 @@ func TestIsApex(t *testing.T) {
 		}
 	}
 }
+
+// A host typed with capitals is the same DNS name: WithLowercaseHosts lowercases it, copies what
+// it changes and leaves an app that needs nothing exactly as it was.
+func TestWithLowercaseHosts(t *testing.T) {
+	a := validApp()
+	a.Services[0].Domains = []Domain{{Host: "WWW.Example.com", Port: "http", Path: "/Api", TeamOnly: true}, {Host: "api.example.com", Port: "http"}}
+	got := a.WithLowercaseHosts()
+	if got.Services[0].Domains[0] != (Domain{Host: "www.example.com", Port: "http", Path: "/Api", TeamOnly: true}) || got.Services[0].Domains[1].Host != "api.example.com" {
+		t.Errorf("lowercased = %+v", got.Services[0].Domains)
+	}
+	if a.Services[0].Domains[0].Host != "WWW.Example.com" {
+		t.Errorf("the caller's app changed: %+v", a.Services[0].Domains)
+	}
+	if err := ValidateApp(got); err != nil {
+		t.Errorf("a lowercased app is refused: %v", err)
+	}
+	if err := ValidateApp(a); err == nil {
+		t.Error("ValidateApp accepts capitals in a host: its rule is lowercase")
+	}
+
+	// Nothing to change: the same slices, no copy, so a stored document is unchanged.
+	b := validApp()
+	b.Services[0].Domains = []Domain{{Host: "shop.example.com", Port: "http"}}
+	same := b.WithLowercaseHosts()
+	if &same.Services[0] != &b.Services[0] || &same.Services[0].Domains[0] != &b.Services[0].Domains[0] {
+		t.Error("an app whose hosts are lowercase was copied")
+	}
+	before, _ := json.Marshal(b)
+	after, _ := json.Marshal(same)
+	if string(before) != string(after) {
+		t.Errorf("document changed:\n%s\n%s", before, after)
+	}
+}

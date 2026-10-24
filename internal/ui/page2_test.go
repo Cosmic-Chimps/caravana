@@ -496,11 +496,11 @@ func TestDomainRecordBox(t *testing.T) {
 		}
 		// A refused add draws the box for the host that was typed: an apex is "@", a subdomain its first label.
 		add := formWith(t, e.pageOf(t, "/apps/whoami/domains"), "/apps/whoami/domains")
-		_, body := e.submit(t, add, url.Values{"host": {"Example.com"}}) // uppercase: refused, and one dot
+		_, body := e.submit(t, add, url.Values{"host": {"Example.com"}, "path": {"no-slash"}}) // capitals are read as lowercase; the path is what is refused
 		if got := box(body); !strings.Contains(got, "Name @") || !strings.Contains(got, "Value 203.0.113.7") {
 			t.Errorf("the box for an apex = %q", got)
 		}
-		_, body = e.submit(t, add, url.Values{"host": {"Sub.example.com"}})
+		_, body = e.submit(t, add, url.Values{"host": {"Sub.example.com"}, "path": {"no-slash"}})
 		if got := box(body); !strings.Contains(got, "Name sub") {
 			t.Errorf("the box for a subdomain = %q", got)
 		}

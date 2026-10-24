@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -223,4 +224,42 @@ func addFormOf(t *testing.T, body string) plainForm {
 	}
 	t.Fatalf("no Add form in:\n%s", text(body))
 	return plainForm{}
+}
+
+// DNS names are case-insensitive, so a host typed with capitals is lowercased, not refused: the
+// Add panel's Check now and its add both read "Shop.Example.COM" as shop.example.com. A host with
+// spaces is still no hostname.
+func TestDomainAddLowercasesTheHost(t *testing.T) {
+	e := addEnv(t)
+	form := addFormOf(t, e.pageOf(t, "/domains"))
+
+	resp, body := e.submit(t, form, url.Values{"action": {"check"}, "host": {"HERE.Example.COM"}, "app": {"whoami"}})
+	if got := text(addPanel(body)); resp.StatusCode != http.StatusOK || !strings.Contains(got, "passed: DNS points at caravana") || !strings.Contains(got, "Name here Value 203.0.113.1") {
+		t.Errorf("check with capitals = %d:\n%s", resp.StatusCode, got)
+	}
+
+	n := e.deployCount(t, "whoami")
+	resp, body = e.submit(t, form, url.Values{"host": {"Shop.Example.COM"}, "app": {"whoami"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("add with capitals = %d:\n%s", resp.StatusCode, text(body))
+	}
+	var hosts []string
+	for _, d := range e.storedApp(t, "whoami").Services[0].Domains {
+		hosts = append(hosts, d.Host)
+	}
+	if !slices.Contains(hosts, "shop.example.com") || slices.Contains(hosts, "Shop.Example.COM") || e.deployCount(t, "whoami") != n+1 {
+		t.Errorf("stored hosts = %v after %d deploys, want shop.example.com stored once", hosts, e.deployCount(t, "whoami")-n)
+	}
+
+	// Taken is judged on the lowercase name too.
+	form = addFormOf(t, e.pageOf(t, "/domains"))
+	resp, body = e.submit(t, form, url.Values{"host": {"WEB.Duet.Example.com"}, "app": {"whoami"}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "web.duet.example.com is already a domain of duet") {
+		t.Errorf("a taken host with capitals = %d:\n%s", resp.StatusCode, text(addPanel(body)))
+	}
+	// A dot at the end is still refused, in its own words.
+	resp, body = e.submit(t, form, url.Values{"host": {"dot.example.com."}, "app": {"whoami"}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "is not a hostname: leave out the final dot") {
+		t.Errorf("a final dot = %d:\n%s", resp.StatusCode, text(addPanel(body)))
+	}
 }

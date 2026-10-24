@@ -280,6 +280,7 @@ var ErrAppExists = errors.New("an app with this ID already exists")
 // once exactly one wins. Once the app is saved, errors are *DeployError, as
 // for Deploy: the app stays, and its failed deployment is recorded.
 func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -316,6 +317,7 @@ var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with
 // only ever sent with a deploy, so one here is refused naming its field, never
 // dropped; secret names are kept. The ID's project and environment must exist.
 func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
+	a = a.WithLowercaseHosts()
 	if a.Defined() {
 		if err := s.deployer.Validate(a); err != nil {
 			return store.AppRecord{}, err

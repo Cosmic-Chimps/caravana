@@ -311,3 +311,50 @@ func TestTeamPasswordCompose(t *testing.T) {
 	}
 	waitHealthy(t, e, "composed", got.ID)
 }
+
+// DNS names are case-insensitive: a host sent with capitals is stored in lowercase, by deployApp
+// and by checkDomain, and an app whose hosts are lowercase is stored as it was sent.
+func TestDomainHostCaseAPI(t *testing.T) {
+	e := domainsEnv(t)
+	body := strings.Replace(whoamiBody, `"host": "whoami.localhost"`, `"host": "WWW.Whoami.LOCALHOST"`, 1)
+	d := deployOK(t, e, "whoami", body)
+	waitHealthy(t, e, "whoami", d.ID)
+
+	status, _, raw := call(t, http.MethodGet, e.URL+"/v1/apps/whoami", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getApp = %d %s", status, raw)
+	}
+	got := decodeAs[struct {
+		App struct {
+			Services []struct {
+				Domains []struct {
+					Host string `json:"host"`
+				} `json:"domains"`
+			} `json:"services"`
+		} `json:"app"`
+	}](t, raw)
+	if len(got.App.Services) != 1 || len(got.App.Services[0].Domains) != 1 || got.App.Services[0].Domains[0].Host != "www.whoami.localhost" {
+		t.Errorf("stored app = %s, want the host www.whoami.localhost", raw)
+	}
+
+	// The same payload again, in lowercase, is the same app: nothing else changes.
+	status, _, raw = call(t, http.MethodPost, e.URL+"/v1/apps/whoami/deployments", "application/json",
+		strings.Replace(whoamiBody, `"host": "whoami.localhost"`, `"host": "www.whoami.localhost"`, 1))
+	if status != http.StatusAccepted {
+		t.Errorf("the lowercase payload = %d %s", status, raw)
+	}
+
+	// A host that is no hostname is still refused, naming the field.
+	status, _, raw = call(t, http.MethodPost, e.URL+"/v1/apps/bad/deployments", "application/json",
+		strings.Replace(whoamiBody, `"host": "whoami.localhost"`, `"host": "Not A Host"`, 1))
+	wantError(t, "a host with spaces", status, raw, http.StatusBadRequest, codeInvalidField, "services[0].domains[0].host")
+
+	status, _, raw = call(t, http.MethodPost, e.URL+"/v1/domains/check", "application/json", `{"host": "NEW.Example.com"}`)
+	if status != http.StatusOK {
+		t.Fatalf("checkDomain with capitals = %d %s", status, raw)
+	}
+	check := decodeAs[map[string]any](t, raw)
+	if check["host"] != "new.example.com" || check["record"].([]any)[0].(map[string]any)["name"] != "new" {
+		t.Errorf("check = %s, want the host new.example.com", raw)
+	}
+}

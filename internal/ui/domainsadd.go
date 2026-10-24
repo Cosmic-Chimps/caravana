@@ -353,7 +353,8 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	}
 
 	// The host: typed, not the console's own, not another app's.
-	host := in.Host
+	// DNS names are case-insensitive: Shop.Example.COM is shop.example.com, not an error.
+	host := strings.ToLower(in.Host)
 	if host == "" && checking {
 		fieldError(&form.Host, plainS("Enter a domain."))
 		return
@@ -437,9 +438,9 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	case host == "":
 		fieldError(&form.Host, plainS("Enter a domain."))
 		return
-	case host != strings.TrimSuffix(strings.ToLower(host), "."):
-		// SetDomainsIf would lowercase it; the definition's rule is that a host is typed as it is.
-		fieldError(&form.Host, plainS(strconv.Quote(host)+" is not a lowercase hostname"))
+	case host != strings.TrimSuffix(host, "."):
+		// SetDomainsIf would drop the dot; the definition's rule is that a host is typed without one.
+		fieldError(&form.Host, plainS(strconv.Quote(host)+" is not a hostname: leave out the final dot"))
 		return
 	}
 
