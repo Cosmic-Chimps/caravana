@@ -138,7 +138,7 @@ Independent test: quickstart §3.
 
 Independent test: quickstart §1's item and delivery.
 
-- [ ] T017 [US4] `internal/service/attention.go`, `notifier.go`, `internal/notify` + tests:
+- [x] T017 [US4] `internal/service/attention.go`, `notifier.go`, `internal/notify` + tests:
   kinds `AttentionDomainDNSElsewhere` and `AttentionDomainCertExpiring` from `domain_checks`
   joined with the stored apps (key `kind|app|service|host`; `Domain`, `AddressSeen`,
   `ExpiresAt` on the item; `Detail` from the contract's sentences), `problemEvent`/`problemPath`

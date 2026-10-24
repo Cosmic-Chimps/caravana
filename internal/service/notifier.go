@@ -51,6 +51,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, problemSubject(it))), At: at,
 		Schedule: it.Schedule, ExitCode: it.ExitCode,
+		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt,
 	}
 	n := len(it.Copies)
 
@@ -91,6 +92,12 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionScheduleSkipping:
 		ev.Title = fmt.Sprintf("%s: %s has been skipped %d times", it.AppID, it.Schedule, skippingAt)
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionDomainDNSElsewhere:
+		ev.Title = fmt.Sprintf("%s: %s points elsewhere", it.AppID, it.Domain)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionDomainCertExpiring:
+		ev.Title = fmt.Sprintf("%s: the certificate for %s is expiring", it.AppID, it.Domain)
+		ev.Text, ev.Detail = it.Detail, ""
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -196,6 +203,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/apps/" + url.PathEscape(appID) + "/backups"
 	case AttentionScheduleFailed, AttentionScheduleSkipping:
 		return "/schedules#schedule-" + subject
+	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
+		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
 	return "/apps/" + url.PathEscape(appID)
 }
@@ -311,10 +320,13 @@ func problemKey(it AttentionItem) string {
 
 // problemSubject is the last part of an item's key, what the item is about
 // within its service: the deployment of a failed deploy, the schedule's ID of
-// the schedule kinds, else nothing.
+// the schedule kinds, the host of the domain kinds, else nothing.
 func problemSubject(it AttentionItem) string {
 	if it.ScheduleID != "" {
 		return it.ScheduleID
+	}
+	if it.Domain != "" {
+		return it.Domain
 	}
 	return it.Deployment
 }

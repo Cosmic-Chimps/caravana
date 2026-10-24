@@ -17,9 +17,9 @@ import (
 // At most domainProbeParallel checks run at once. A domain whose app is
 // stopped or has no healthy deployment isn't probed: its row says not_served.
 // A row whose host no app has anymore is deleted. When a pass changed any
-// row's state, the pages are told (ChangeDomains). Like the other watchers it
-// keeps nothing in memory but when the last pass ran, so a restart only
-// delays the next one.
+// row's state, the pages are told (ChangeDomains), and so is the needs-you
+// list (ChangeAttention). Like the other watchers it keeps nothing in
+// memory but when the last pass ran, so a restart only delays the next one.
 
 const (
 	// defaultDomainIdleGap is how often every domain is checked while no
@@ -233,6 +233,10 @@ func (s *Service) checkDomainTargets(ctx context.Context, f DomainFilter, prune 
 
 	for appID := range changed {
 		s.domainsChanged(appID)
+	}
+	if len(changed) > 0 {
+		// A state is what the needs-you list's domain kinds come from.
+		s.publish(Change{What: ChangeAttention})
 	}
 	return nil
 }

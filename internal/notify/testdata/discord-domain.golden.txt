@@ -1,0 +1,4 @@
+POST https://discord.com/api/webhooks/123/abc
+Content-Type: application/json
+
+{"content":"**shop: the certificate for bi.example.com is expiring**\nThe certificate for bi.example.com expires in 6 days and hasn't been renewed.\nDomain: bi.example.com, certificate expires 2026-10-23 03:00 UTC\nhttps://caravana.example.com/domains?open=bi.example.com#domain-bi.example.com"}

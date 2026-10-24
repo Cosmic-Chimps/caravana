@@ -1,0 +1,4 @@
+POST https://hooks.slack.com/services/T000/B000/XXXX
+Content-Type: application/json
+
+{"text":"*shop: partners.example.com points elsewhere*\npartners.example.com points at 185.199.108.153, which isn't this host.\nDomain: partners.example.com, points at 185.199.108.153\nhttps://caravana.example.com/domains?open=partners.example.com#domain-partners.example.com"}

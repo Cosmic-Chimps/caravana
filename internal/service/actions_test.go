@@ -754,12 +754,12 @@ func TestStatusAndAttentionOfAStoppedApp(t *testing.T) {
 	}
 
 	apps := []store.AppRecord{{App: a, StoppedAt: &at}}
-	got := attentionOf(at.Add(time.Minute), apps, nil, map[string][]Copy{"whoami": ended}, nil, nil, nil, true, scheduleFacts{})
+	got := attentionOf(at.Add(time.Minute), apps, nil, map[string][]Copy{"whoami": ended}, nil, nil, nil, true, scheduleFacts{}, nil)
 	if len(got.Items) != 0 {
 		t.Errorf("a stopped app's copies gave %+v, want nothing", got.Items)
 	}
 	apps[0].StoppedAt = nil
-	got = attentionOf(at.Add(time.Minute), apps, nil, map[string][]Copy{"whoami": ended}, nil, nil, nil, true, scheduleFacts{})
+	got = attentionOf(at.Add(time.Minute), apps, nil, map[string][]Copy{"whoami": ended}, nil, nil, nil, true, scheduleFacts{}, nil)
 	if len(got.Items) == 0 {
 		t.Error("the same copies of a running app gave nothing: the test proves nothing")
 	}

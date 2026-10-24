@@ -3613,10 +3613,12 @@ components:
           description: |
             For problems, what the needs-you list calls it (`AttentionItem.kind`), such as
             `deploy_failed`, `backup_failed`, `restarting`, `out_of_memory`, `schedule_failed`
-            (a schedule's latest run failed) or `schedule_skipping` (its last 3 slots were
-            skipped). A schedule that keeps failing is one problem: one `problem.opened`, then
-            one `problem.resolved` after a run succeeds. Receivers should accept kinds they don't
-            know.
+            (a schedule's latest run failed), `schedule_skipping` (its last 3 slots were
+            skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
+            `domain_cert_expiring` (a domain's certificate is near its end and not renewed). A
+            schedule that keeps failing is one problem: one `problem.opened`, then one
+            `problem.resolved` after a run succeeds; so is a domain, per host. Receivers should
+            accept kinds they don't know.
         app:
           type: string
           description: The app's ID. Absent for installation-wide events.
@@ -3674,10 +3676,23 @@ components:
           description: |
             `problem.opened` of `schedule_failed` only, when the run exited with a code (not
             when it was stopped at its limit or couldn't start). Absent otherwise.
+        domain:
+          type: string
+          description: "`problem.opened` of the domain kinds: the host."
+        addressSeen:
+          type: string
+          description: |
+            `problem.opened` of `domain_dns_elsewhere`: the address the domain's DNS gave that
+            isn't this host's.
+        expiresAt:
+          type: string
+          format: date-time
+          description: "`problem.opened` of `domain_cert_expiring`: when the certificate ends."
         url:
           type: string
           description: |
-            The console page about it (for a schedule, the Schedules page at that schedule).
+            The console page about it (for a schedule, the Schedules page at that schedule; for
+            a domain, the Domains page with it open).
             Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`).
         at: {type: string, format: date-time}
 
@@ -4490,13 +4505,18 @@ components:
         kind:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
-            schedule_failed, schedule_skipping]
+            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
             stopped at its limit, or it couldn't start); a later run that succeeds clears it.
             `schedule_skipping`, a warning: the schedule's last 3 slots were skipped because
-            the run before was still going. Clients should accept kinds they don't know.
+            the run before was still going. `domain_dns_elsewhere`: a domain's DNS answers with
+            an address that isn't this host's. `domain_cert_expiring`: a domain's certificate
+            ends within the warning window (`getCertificateSettings`) and hasn't been renewed,
+            which is how a failing renewal shows. Both come from Caravana's last check of the
+            domain (`listDomains`) and go when a check finds it fixed, or the domain is removed.
+            Clients should accept kinds they don't know.
         appId:
           type: string
           description: Absent for `no_backup_destination`, which is about the installation.
@@ -4511,10 +4531,22 @@ components:
           description: The name of `appId`'s app in its environment. Absent when `appId` is.
         service:
           type: string
-          description: The service, for the copy, backup and schedule kinds.
+          description: The service, for the copy, backup, schedule and domain kinds.
         schedule:
           type: string
           description: The schedule's name, for the schedule kinds.
+        domain:
+          type: string
+          description: The host, for the domain kinds (`getDomain`).
+        addressSeen:
+          type: string
+          description: |
+            For `domain_dns_elsewhere`: the first address the domain's DNS gave that isn't this
+            host's.
+        expiresAt:
+          type: string
+          format: date-time
+          description: For `domain_cert_expiring`, when the certificate ends.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -4540,13 +4572,17 @@ components:
           description: |
             When it happened: the deployment's end, the copy's last restart (an unhealthy copy:
             its start), the backup's or restore's end, the newest change to an app that asks
-            for backups, the failed run's end, or the newest skipped slot.
+            for backups, the failed run's end, the newest skipped slot, or the domain check
+            that found it.
         detail:
           type: string
           description: |
             The raw fact, e.g. Nomad's description or the error of the deploy or backup. For the
             schedule kinds, a sentence in Caravana's words ("Exited with code 3.", "Stopped at
             the 5 min limit.", "Couldn't start: Nomad refused the job."), never the run's output.
+            For the domain kinds, the sentence ("shop.example.com points at 185.199.108.153,
+            which isn't this host.", "The certificate for bi.example.com expires in 6 days and
+            hasn't been renewed.").
 
     LogLine:
       type: object

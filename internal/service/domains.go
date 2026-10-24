@@ -692,6 +692,7 @@ func (s *Service) saveCheck(ctx context.Context, t domainTarget, f edge.Facts) (
 		if had && before.AppID != rec.AppID {
 			s.domainsChanged(before.AppID)
 		}
+		s.publish(Change{What: ChangeAttention})
 	}
 	return changed, nil
 }
