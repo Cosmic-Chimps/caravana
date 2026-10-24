@@ -264,7 +264,7 @@ func (c *console) schedules(t *testing.T) {
 		t.Errorf("hello's run = %+v, want ok with exit code 0", ended)
 	}
 	_, page := c.get(t, "/schedules")
-	if row := pageText(scheduleRow(page, hello)); !strings.Contains(row, "The last run: finished in") {
+	if row := pageText(scheduleRow(page, hello)); !strings.Contains(row, "Last run finished in") {
 		t.Errorf("hello's row after an ok run = %s, want it to say the last run finished", row)
 	}
 	runPage := "/schedules/" + hello + "/runs/" + run.ID
