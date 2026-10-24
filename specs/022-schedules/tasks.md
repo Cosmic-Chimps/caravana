@@ -209,7 +209,7 @@ Independent test: quickstart §6.
 
 ## Phase 8: Lab, docs and the review cycle (no story label)
 
-- [ ] T021 `cmd/caravana/console_schedules_test.go` and the `console-schedules` entry in
+- [X] T021 `cmd/caravana/console_schedules_test.go` and the `console-schedules` entry in
   `console_lab_test.go` after `console-backup-daily`: a busybox app with `labResources`; through
   the forms: create from words, Run now (ok; the run page shows the sentinel; no sentinel in
   any list, item, delivery, log line, notice or the SQLite file), a schedule exiting 3 (item and
@@ -218,7 +218,7 @@ Independent test: quickstart §6.
   Resume, a secret value echoed and masked, a built-in volume-backup row, Delete; the one
   clock-bound check ("every minute" runs on its own within 70 s). `startLab` sets the scan gap
   to 5 s.
-- [ ] T022 `cmd/caravana/gate_schedules_test.go` and the `schedules` step in `gate_test.go` after
+- [X] T022 `cmd/caravana/gate_schedules_test.go` and the `schedules` step in `gate_test.go` after
   `app-actions`: the same through the API with the gate's token, every schedule route 403 for a
   deploy token, and `RestartCaravana` (new on `gateTarget` in `lab_test.go`: cancel `runServer`'s
   context, run it again on the same data dir, wait healthy) during a `sleep 20` run that then

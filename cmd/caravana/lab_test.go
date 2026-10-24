@@ -28,7 +28,14 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/service"
 )
+
+// labRunLimit is how long a schedule's run may go in the lab before Caravana
+// stops it (SetScheduleLimitForTests). The gate's run of sleep 20 must end on
+// its own within it, Caravana's restart included; console-schedules' sleep 180
+// is stopped at it.
+const labRunLimit = 40 * time.Second
 
 // labEnv is Caravana running in-process next to the lab.
 type labEnv struct {
@@ -67,20 +74,41 @@ func startLab(t *testing.T) labEnv {
 		}
 		return os.Getenv(key)
 	}
+	// The schedules' clock looks every 5 s instead of 10, the watcher every 2
+	// s, and every run stops after labRunLimit instead of its schedule's 5
+	// minutes or more, so the schedules steps take seconds (research R8).
+	serviceHook = func(svc *service.Service) {
+		svc.SetScheduleScanGap(5 * time.Second)
+		svc.SetScheduleWatchGap(2 * time.Second)
+		svc.SetScheduleLimitForTests(labRunLimit)
+	}
+	t.Cleanup(func() { serviceHook = nil })
+
 	addr, hookAddr, dataDir := freeAddr(t), freeAddr(t), t.TempDir()
-	ctx, cancel := context.WithCancel(context.Background())
-	var stderr bytes.Buffer
-	exit := make(chan int, 1)
-	go func() {
-		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", dataDir}, getenv, &stderr)
-	}()
-	t.Cleanup(func() {
+	args := []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", dataDir}
+	stderr := &syncBuffer{} // kept across restarts: the steps search it for what must never be logged
+	var (
+		cancel context.CancelFunc
+		exit   chan int
+	)
+	// start runs Caravana on the data directory; stop ends it and checks it
+	// ended cleanly. RestartCaravana is the two.
+	start := func(t *testing.T) {
+		ctx, stopIt := context.WithCancel(context.Background())
+		done := make(chan int, 1)
+		cancel, exit = stopIt, done
+		go func() { done <- runServer(ctx, args, getenv, stderr) }()
+		waitHealthy(t, "http://"+addr)
+	}
+	stop := func(t *testing.T) {
 		cancel()
 		if code := <-exit; code != 0 {
 			t.Errorf("caravana exited %d; stderr:\n%s", code, stderr.String())
 		}
-	})
-	waitHealthy(t, "http://"+addr)
+	}
+	start(t)
+	t.Cleanup(func() { stop(t) })
+	ctx := context.Background()
 
 	return labEnv{
 		nomad: nomad,
@@ -107,6 +135,13 @@ func startLab(t *testing.T) labEnv {
 				})
 				time.Sleep(10 * time.Second) // the client restores its allocations
 			},
+			RestartCaravana: func(t *testing.T) {
+				t.Helper()
+				stop(t)
+				start(t)
+			},
+			ServerLog: stderr.String,
+			DataDir:   dataDir,
 		},
 	}
 }

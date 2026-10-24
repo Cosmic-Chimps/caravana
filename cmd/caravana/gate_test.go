@@ -52,6 +52,15 @@ type gateTarget struct {
 	// only the lab sets it. The volume step uses it to back up a copy that
 	// started before the agent's last restart (a host after an installer rerun).
 	RestartNomad func(t *testing.T)
+	// RestartCaravana stops Caravana and starts it again on the same data
+	// directory, returning once it is healthy; only the lab sets it (the
+	// schedules step restarts it during a run).
+	RestartCaravana func(t *testing.T)
+	// ServerLog is everything Caravana has logged so far, and DataDir its data
+	// directory; only the lab has them, for the checks that nothing secret is
+	// logged or stored.
+	ServerLog func() string
+	DataDir   string
 }
 
 // publicTarget is what only a real host has.
@@ -128,6 +137,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"rollback-export", false, g.rollbackExport},
 		{"projects-promote", false, g.projectsPromoteStep},
 		{"app-actions", false, g.appActionsStep},
+		{"schedules", false, g.schedulesStep},
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},
