@@ -34,6 +34,7 @@ func TestLoad(t *testing.T) {
 		NomadAddr:           "http://127.0.0.1:4646",
 		VolumeBackupTimeout: 30 * time.Minute,
 		NotifyResolveAfter:  5 * time.Minute,
+		EdgeAddress:         "127.0.0.1:443",
 	}
 
 	tests := []struct {
@@ -121,6 +122,19 @@ func TestLoad(t *testing.T) {
 			wantErr: []string{"CARAVANA_VOLUME_BACKUP_TIMEOUT / -volume-backup-timeout", `"30"`}},
 		{name: "volume backup timeout under a minute", args: []string{"-volume-backup-timeout", "10s"},
 			wantErr: []string{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "at least a minute"}},
+		{name: "edge address from env", env: map[string]string{"CARAVANA_EDGE_ADDRESS": "10.0.0.5:8443"},
+			want: func(c *Config) { c.EdgeAddress = "10.0.0.5:8443" }},
+		{name: "edge address flag beats env", args: []string{"-edge-address", "127.0.0.1:8443"},
+			env: map[string]string{"CARAVANA_EDGE_ADDRESS": "10.0.0.5:443"}, want: func(c *Config) { c.EdgeAddress = "127.0.0.1:8443" }},
+		{name: "edge address without a port", env: map[string]string{"CARAVANA_EDGE_ADDRESS": "10.0.0.5"},
+			wantErr: []string{"CARAVANA_EDGE_ADDRESS / -edge-address", `"10.0.0.5"`}},
+		{name: "acme and email from env", env: map[string]string{"CARAVANA_ACME": "staging", "CARAVANA_ACME_EMAIL": " me@example.com "},
+			want: func(c *Config) { c.ACME = "staging"; c.ACMEEmail = "me@example.com" }},
+		{name: "acme flag beats env", args: []string{"-acme", "none"}, env: map[string]string{"CARAVANA_ACME": "production"},
+			want: func(c *Config) { c.ACME = "none" }},
+		{name: "acme production", args: []string{"-acme", "production"}, want: func(c *Config) { c.ACME = "production" }},
+		{name: "acme unknown", env: map[string]string{"CARAVANA_ACME": "yes"},
+			wantErr: []string{"CARAVANA_ACME / -acme", `"yes"`, "production, staging or none"}},
 		{name: "public URL from env", env: map[string]string{"CARAVANA_PUBLIC_URL": "https://caravana.example.com"},
 			want: func(c *Config) { c.PublicURL = "https://caravana.example.com" }},
 		{name: "public URL loses its trailing slash", args: []string{"-public-url", "https://caravana.example.com//"},
