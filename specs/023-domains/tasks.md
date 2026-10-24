@@ -32,7 +32,7 @@ builds each phase; Opus reviews before the next.
   `TeamOnly` (`omitempty`), `Domain.HasOptions()`, `Domain.RedirectPair()`; validation per
   plan.md (path shape and length; `wwwRedirect` only on an apex or `www.` host; errors name
   `services[i].domains[j].<field>`); a test that an app without options marshals as before.
-- [ ] T003 [P] `internal/nomadjob/translate.go` (+ `domains.go` if cleaner) + goldens:
+- [x] T003 [P] `internal/nomadjob/translate.go` (+ `domains.go` if cleaner) + goldens:
   `DomainRouterName(appID, service, host)` (8 hex of SHA-256), `routerTags` keeping only the
   hosts without options on the base router, `optionRouterTags` per domain with options (the
   rule with `PathPrefix` and the redirect pair's `|| Host`, `entrypoints`, `tls`,
@@ -51,7 +51,7 @@ builds each phase; Opus reviews before the next.
   `UpsertDomainCheck`, `ListDomainChecks`, `DeleteDomainCheck(host)`, `DeleteDomainChecks(appID)`;
   `SetTeamPassword`, `TeamPasswords`, `DeleteTeamPassword`, `DeleteTeamPasswords(appID)`;
   `CertificateSettings`, `SetWarnBeforeDays`; `DeleteApp` deletes both per-app tables' rows.
-- [ ] T006 `internal/deploy/domains.go` + tests and deploytest: `SyncTeamPasswords(ctx,
+- [x] T006 `internal/deploy/domains.go` + tests and deploytest: `SyncTeamPasswords(ctx,
   entries map[middleware]htpasswdLine)` writing `nomad/jobs/traefik` (a marker item when empty);
   `internal/config`: `CARAVANA_EDGE_ADDRESS` (`-edge-address`, default `127.0.0.1:443`),
   `CARAVANA_ACME`, `CARAVANA_ACME_EMAIL`; `go.mod`: `golang.org/x/crypto` direct (bcrypt, cost

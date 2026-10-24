@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -339,7 +338,7 @@ func registration(a app.App, svc app.Service, s Settings) *api.Service {
 	}
 	if len(svc.Domains) > 0 {
 		reg.PortLabel = svc.Domains[0].Port
-		reg.Tags = routerTags(name, svc.Domains, s)
+		reg.Tags = routerTags(a.ID, svc.Name, name, svc.Domains, s)
 		reg.CanaryTags = canaryTags
 	}
 	reg.Checks = []api.ServiceCheck{healthCheck(*svc.Health, checkPort, reg.PortLabel)}
@@ -373,27 +372,6 @@ var canaryTags = []string{canaryTag}
 
 // canaryTag marks a registration of an unpromoted canary.
 const canaryTag = "caravana.canary=true"
-
-// routerTags builds one Traefik router for all of a service's domains, with
-// TLS always on. Without a certificate resolver, Traefik serves its default
-// certificate (the local lab); with one, it gets a real certificate.
-func routerTags(router string, domains []app.Domain, s Settings) []string {
-	hosts := make([]string, 0, len(domains))
-	for _, d := range domains {
-		hosts = append(hosts, fmt.Sprintf("Host(`%s`)", d.Host))
-	}
-	prefix := "traefik.http.routers." + router
-	tags := []string{
-		"traefik.enable=true",
-		prefix + ".rule=" + strings.Join(hosts, " || "),
-		prefix + ".entrypoints=" + s.Entrypoint,
-		prefix + ".tls=true",
-	}
-	if s.CertResolver != "" {
-		tags = append(tags, prefix+".tls.certresolver="+s.CertResolver)
-	}
-	return tags
-}
 
 // healthCheck builds the check on checkPort for a registration on
 // servicePort. Nomad checks the registration's port unless told otherwise, so

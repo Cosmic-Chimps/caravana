@@ -103,6 +103,52 @@ func TestExport(t *testing.T) {
 		}
 	})
 
+	t.Run("a Team-only domain names its middleware, never a hash", func(t *testing.T) {
+		a := app.App{
+			ID:     "shop",
+			Source: app.Source{Kind: app.SourceImage},
+			Services: []app.Service{{
+				Name:  "web",
+				Image: "traefik/whoami:v1.10",
+				Ports: []app.Port{{Name: "http", ContainerPort: 80}},
+				Domains: []app.Domain{
+					{Host: "shop.example.com", Port: "http", Path: "/api"},
+					{Host: "example.com", Port: "http", WWWRedirect: true},
+					{Host: "staging.example.com", Port: "http", TeamOnly: true},
+				},
+				Health: &app.HealthCheck{Path: "/"},
+			}},
+		}
+		dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+			"web": "traefik/whoami@sha256:" + strings.Repeat("a", 64),
+		}}
+		got, err := d.Export(a, dep, deployed, nil)
+		if err != nil {
+			t.Fatalf("Export() = %v", err)
+		}
+		router := nomadjob.DomainRouterName("shop", "web", "staging.example.com")
+		for _, want := range []string{
+			"#   shop.example.com -> service web, port http (path /api)",
+			"#   example.com -> service web, port http (redirects www.example.com here)",
+			"#   staging.example.com -> service web, port http (team only)",
+			"# - Traefik file-provider middleware " + router + "-auth@file (basic auth) for staging.example.com",
+			"Nomad Variable nomad/jobs/traefik, item " + router + "-auth = team:<bcrypt hash>",
+		} {
+			if !strings.Contains(string(got), want) {
+				t.Errorf("header lacks %q:\n%s", want, got)
+			}
+		}
+		if strings.Contains(string(got), "$2a$") || strings.Contains(string(got), "$2b$") {
+			t.Error("the export holds a bcrypt hash")
+		}
+		// No Team-only domain: no middleware line.
+		a.Services[0].Domains = a.Services[0].Domains[:2]
+		plain, err := d.Export(a, dep, deployed, nil)
+		if err != nil || strings.Contains(string(plain), "file-provider") {
+			t.Errorf("an export without a Team-only domain mentions a middleware (err %v)", err)
+		}
+	})
+
 	t.Run("a worker needs nothing more", func(t *testing.T) {
 		wk := caseNamed(t, "worker")
 		got, err := d.Export(wk.App, wk.Deployment, deployed, nil)

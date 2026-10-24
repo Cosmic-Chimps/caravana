@@ -218,9 +218,9 @@ type Domain struct {
 	Path string `json:"path,omitempty"`
 	// WWWRedirect makes this host the target of its pair (see RedirectPair):
 	// the pair redirects here.
-	WWWRedirect bool `json:"wwwRedirect,omitempty"`
+	WWWRedirect bool `json:"wwwRedirect,omitzero"`
 	// TeamOnly puts HTTP basic auth (user "team") in front of the domain.
-	TeamOnly bool `json:"teamOnly,omitempty"`
+	TeamOnly bool `json:"teamOnly,omitzero"`
 }
 
 // HasOptions reports whether the domain has any option, which gives it a
