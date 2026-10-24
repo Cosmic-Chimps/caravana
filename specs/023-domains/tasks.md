@@ -157,7 +157,7 @@ Independent test: quickstart §4.
   email, `warnBeforeDays`, `edgeAddress`), `SetWarnBeforeDays` (7, 14, 30), `Certificates()`
   (from `domain_checks`, problems first); `getCertificateSettings`, `putCertificateSettings`,
   `listCertificates` in `internal/api/certificates.go` and `api/openapi.yaml`; tests.
-- [ ] T020 [US5] Console: `/settings/certificates` (`settings.go`, `settingsnav.go`,
+- [x] T020 [US5] Console: `/settings/certificates` (`settings.go`, `settingsnav.go`,
   `templates/settings.html`): the head (the `acme=none` sentence), the banners, the certificates
   table, "How certificates are issued" with the read-only Issuer and Contact email rows and
   Edit holding Warn when alone, `POST /settings/certificates`; the nav entry under Connections

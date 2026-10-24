@@ -219,11 +219,13 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings/registries", s.requireSession(s.showRegistries)},
 		{"GET", "/settings/backup-storage", s.requireSession(s.showBackupStorage)},
 		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
+		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
 		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
 		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
+		{"POST", "/settings/certificates", s.protected(s.requireSession(s.setCertificates))},
 		{"POST", "/settings/registries", s.protected(s.requireSession(s.saveRegistry))},
 		{"POST", "/settings/registries/{host}/test", s.protected(s.requireSession(s.testRegistry))},
 		{"POST", "/settings/registries/{host}/remove", s.protected(s.requireSession(s.removeRegistry))},
@@ -309,9 +311,10 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 	pages := map[string]*template.Template{}
 	for _, name := range names {
 		files := []string{"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html"}
-		// An app's Domains page draws /domains' rows and Add panel (feature 023). domains.html
-		// comes first, so app.html's "content" is the one the set keeps.
-		if name == "app" {
+		// An app's Domains page draws /domains' rows and Add panel, and Settings › Certificates its
+		// banners (feature 023). domains.html comes first, so the page's own "content" is the
+		// one the set keeps.
+		if name == "app" || name == "settings" {
 			files = append(files, "templates/domains.html")
 		}
 		files = append(files, "templates/"+name+".html")

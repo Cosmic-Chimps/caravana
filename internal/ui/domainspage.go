@@ -200,7 +200,12 @@ func certCellOf(now time.Time, v service.DomainView) domainCertCell {
 	if v.State == edge.StateNotServed {
 		return domainCertCell{Text: "—"}
 	}
-	c := v.Certificate
+	return certCellFor(now, v.Certificate)
+}
+
+// certCellFor is the Certificate column's words for a certificate: the same on
+// /domains and in Settings › Certificates.
+func certCellFor(now time.Time, c edge.Certificate) domainCertCell {
 	title := ""
 	if !c.NotAfter.IsZero() {
 		title = "expires " + c.NotAfter.UTC().Format("2006-01-02 15:04 UTC")

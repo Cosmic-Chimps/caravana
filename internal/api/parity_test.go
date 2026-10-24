@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listApps", "listBackups"}
+	"getBackupDestination", "listApps", "listBackups", "listCertificates"}
 
 type parity struct {
 	ops []string
@@ -42,8 +42,11 @@ var consoleParity = map[string]parity{
 	"GET /settings/registries":     {ops: settingsReads},
 	"GET /settings/backup-storage": {ops: settingsReads},
 	"GET /settings/notifications":  {ops: settingsReads},
-	"GET /settings/tokens":         {ops: append([]string{"listProjects"}, settingsReads...)},
-	"GET /apps":                    {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// Certificates (feature 023): the table is listCertificates; the issuer, the contact email and Warn when are getCertificateSettings.
+	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
+	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
+	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
+	"GET /apps":                   {ops: []string{"listProjects", "listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).

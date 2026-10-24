@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -22,6 +23,7 @@ const (
 	entryRegistries    = "registries"
 	entryBackupStorage = "backup-storage"
 	entryNotifications = "notifications"
+	entryCertificates  = "certificates"
 	entryTokens        = "tokens"
 )
 
@@ -38,6 +40,7 @@ var settingsGroups = []struct {
 	{"Connections", []settingsEntry{
 		{entryRegistries, "Registries", "/settings/registries", "package"},
 		{entryBackupStorage, "Backup storage", "/settings/backup-storage", "hard-drive"},
+		{entryCertificates, "Certificates", "/settings/certificates", "lock"},
 		{entryNotifications, "Notifications", "/settings/notifications", "bell"},
 	}},
 	{"Security", []settingsEntry{{entryTokens, "API tokens", "/settings/tokens", "key"}}},
@@ -160,6 +163,37 @@ func notificationsState(chs []channelFacts) entryState {
 	return st
 }
 
+// certRowMark is a certificate's mark: ● issued, ◐ pending, ◆ expiring, and ○
+// Traefik's own, a failed handshake or anything else.
+func certRowMark(status string) string {
+	switch status {
+	case edge.CertIssued:
+		return "healthy"
+	case edge.CertPending:
+		return "rolling"
+	case edge.CertExpiring:
+		return "warning"
+	}
+	return "idle"
+}
+
+// certificatesState: a certificate's mark is certRowMark's; the nav shows ◆ when
+// any certificate is expiring (it wins), else the number of certificates issued
+// (Traefik's own and pending ones aren't counted). Rows follow the order given.
+func certificatesState(certs []service.CertificateView) entryState {
+	st := entryState{Rows: make([]string, len(certs))}
+	for i, c := range certs {
+		st.Rows[i] = certRowMark(c.Status)
+		switch c.Status {
+		case edge.CertIssued:
+			st.Count++
+		case edge.CertExpiring:
+			st.Mark, st.Why = "warning", "a certificate is expiring"
+		}
+	}
+	return st
+}
+
 // staleTokenDays is how long an active token may go unused before it is flagged.
 const staleTokenDays = 90
 
@@ -231,6 +265,7 @@ type settingsFacts struct {
 	Channels   []service.NotificationChannel
 	Deliveries map[string][]store.Delivery // by channel ID, newest first
 	Tokens     []service.APITokenInfo
+	Certs      []service.CertificateView // problems first
 	Dest       *store.BackupDestination
 	LastBackup *store.BackupRecord
 	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
@@ -263,6 +298,7 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 		entryRegistries:    registriesState(f.Registries),
 		entryBackupStorage: backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
 		entryNotifications: notificationsState(chs),
+		entryCertificates:  certificatesState(f.Certs),
 		entryTokens:        tokensState(now, f.Tokens),
 	}
 }

@@ -661,7 +661,7 @@ One page per entry, as the handoff draws Settings, with what the console has tod
 and the content, in the shell's frame; the shell's own page padding is off for these pages (`cv-page-settings`).
 - **Nav:** `<nav aria-label="Settings">`, sticky under the top bar (`top: 52px`, the rest of the window
   tall, scrolling by itself), a Hairline at its right. The word "Settings" at 18px, then the groups: Account
-  alone, **Connections** (Registries, Backup storage, Notifications) and **Security** (API tokens). A group
+  alone, **Connections** (Registries, Backup storage, Certificates, Notifications) and **Security** (API tokens). A group
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
   Control ground and no left bar (the bar is the sidebar's). Under 900px the shell's own narrow rule applies
@@ -672,14 +672,16 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   shell's narrow padding after the layer, which would otherwise win. The sidebar's Settings stays current on every Settings page, and the crumbs
   read "Settings / <entry>".
 - **The count-or-mark rule.** Each entry has one function (`registriesState`, `backupStorageState`,
-  `notificationsState`, `tokensState`) that gives its count, its nav mark, and the mark of each of its rows; the
+  `certificatesState`, `notificationsState`, `tokensState`) that gives its count, its nav mark, and the mark of each of its rows; the
   nav and the page's rows both read it. The nav marks only what is breaking, and a mark wins over the count;
   the rows mark more: a state the owner chose (a paused channel) or one that is chronic (a full token that
   never expires) marks its row and has its note there, and leaves the nav showing the count. Registries: ■
   when a registry's last test was refused (○ never tested, or changed since: a save that changes the
   credentials forgets the last test; ● passed), else how many. Backup storage has no count: ■ in the nav and
   on the row when the last backup failed, ◆ when no destination is set while a service has a backup policy.
-  Notifications: ◆ when a channel's last delivery failed, else how many (paused ones included; a paused
+  Certificates (feature 023): ◆ when any certificate is expiring, else how many are issued (Traefik's own and
+  pending ones aren't counted); a row is ● issued, ◐ pending, ◆ expiring, ○ Traefik's own or a failed
+  handshake. Notifications: ◆ when a channel's last delivery failed, else how many (paused ones included; a paused
   channel's row is ◆). API tokens: ◆ when an active token went unused for more than 90 days (a token never used
   counts from when it was made, so a fresh one is never flagged), else how many are active; a full token with
   no end date is ◆ on its row only; an expired or revoked token is ○. The nav's spoken reason puts a failure
@@ -702,6 +704,21 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   Revoke; sorted active (problems first), expired, revoked, the last five expired or revoked and then a "Show
   older" link (`?older=1`). "never expires" is in the warning hue for a full
   token.
+- **Certificates** (feature 023, `/settings/certificates`; values in `specs/023-domains/contracts/domains-screen.md`):
+  the head "Certificates" over "HTTPS certificates for every domain come from Let's Encrypt and renew 30 days
+  before they expire." (without Let's Encrypt: "This caravana was installed without Let's Encrypt: Traefik serves
+  its own certificate."), no action. The Domains page's banners stand above for each expiring certificate
+  (same markup, Check again). Then a Label "Domain certificates · 12 certificates" over a panel: a 34px ink-2
+  head and rows of 46px, columns `14px minmax(0, 1.4fr) minmax(0, 1fr) 150px minmax(0, 1.1fr)`, gap 18: the 9px
+  mark, the domain (13px mono, a link to its row on `/domains`), the app (mono fg-2), the issuer ("Let's
+  Encrypt", "Traefik's own", fg-3), the expiry (12px mono: "renews in 61 d" fg-3, "expires in 6 d" in the warn hue,
+  "waiting for DNS", "—"); problems first. Under 640px a row folds to label and value. Then the Label "How
+  certificates are issued" with **Edit** at its right, a `<details>` confirmation (the Options form's popover)
+  holding Warn when alone (a select of 7, 14 and 30 days, Save), over a panel of three rows (`220px 260px
+  minmax(0, 1fr)`, gap 24, padding 14 20): **Issuer** ("Let's Encrypt", "none") and **Contact email**, both
+  read-only because they are Traefik's static configuration ("Set when caravana was installed; run the
+  installer again to change it."), and **Warn when** ("14 d before expiry", "Sends to the channels set up in
+  Notifications."). A saved window answers 303 with a notice; the checks already stored are judged again at once.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
   no address and no later page; the Copy button stays hidden without script.
