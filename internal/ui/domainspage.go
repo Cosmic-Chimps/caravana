@@ -630,6 +630,41 @@ func domainOptionsOf(v service.DomainView, info domainAppInfo, appPage bool, dra
 	return opts
 }
 
+// redirectsUnderTargets moves each redirect row (the other half of a www pair)
+// to directly under the row of the host it redirects to, so a pair reads
+// together; the rest keep the service's order (problems first, then by host).
+// A redirect whose target isn't in the list stays where it was.
+func redirectsUnderTargets(list []service.DomainView) []service.DomainView {
+	// A target that is itself a redirect keeps its place, so nothing hangs under a moved row.
+	moves := func(v service.DomainView) bool { return v.RedirectOf != "" && v.RedirectOf != v.Host }
+	targets := make(map[string]bool, len(list))
+	for _, v := range list {
+		if !moves(v) {
+			targets[v.Host] = true
+		}
+	}
+	under := map[string][]service.DomainView{}
+	out := make([]service.DomainView, 0, len(list))
+	for _, v := range list {
+		if moves(v) && targets[v.RedirectOf] {
+			under[v.RedirectOf] = append(under[v.RedirectOf], v)
+			continue
+		}
+		out = append(out, v)
+	}
+	if len(under) == 0 {
+		return list
+	}
+	sorted := make([]service.DomainView, 0, len(list))
+	for _, v := range out {
+		sorted = append(sorted, v)
+		if !moves(v) {
+			sorted = append(sorted, under[v.Host]...)
+		}
+	}
+	return sorted
+}
+
 // domainViewsOf builds the rows and banners from the service's list (already
 // sorted). open is the host the address asks to open ("" for none): without
 // it, the first row whose state needs the owner opens by itself. appPage says
@@ -758,6 +793,7 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	case err != nil:
 		return domainsRegion{}, err
 	}
+	list = redirectsUnderTargets(list)
 	sums, err := s.svc.ListApps(ctx)
 	if err != nil {
 		return domainsRegion{}, err

@@ -641,8 +641,9 @@ drawn, not its length either: ten dots and a lock icon.
   one sentence in Body, the page's actions at the right, secondary small buttons and one primary
   (`cv-pghead`).
 - **Tables** (Variables, Domains): a `cv-panel` of grid rows, a 38px Raised Control head in Label style,
-  rows 52px at least with 1px dividers, Raised Control on hover. A confirmation opens as an overlay under
-  its row's button, so these panels don't clip. A narrow table stacks its cells by its own width.
+  rows 52px at least with 1px dividers, Raised Control on hover. A Variables confirmation opens as an overlay
+  under its row's button, so the panel doesn't clip; a Domains row's (feature 023) opens inline, in the open
+  row's detail (see Domains). A narrow table stacks its cells by its own width.
 - **Backups:** a banner when there is no destination (Panel shape, warning mark, one button), a row for
   each service that could be backed up and isn't (warning mark, a sentence, "Back up daily"), then one
   `<details>` per backed-up service: the summary row (chevron, status mark, what, how often and kept, last
@@ -716,8 +717,9 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   mark, the domain (13px mono, a link to its row on `/domains`), the app (mono fg-2), the issuer ("Let's
   Encrypt", "Traefik's own", fg-3), the expiry (12px mono: "renews in 61 d" fg-3, "expires in 6 d" in the warn hue,
   "waiting for Let's Encrypt", "—"); problems first. Under 640px a row folds to label and value. Then the Label "How
-  certificates are issued" with **Edit** at its right, a `<details>` confirmation (the Options form's popover)
-  holding Warn when alone (a select of 7, 14 and 30 days, Save), over a panel of three rows (`220px 260px
+  certificates are issued" with **Edit** at its right, a `<details>` whose form opens inline under the button
+  and pushes the panel down (the heading and the `<details>` share the head's one grid cell, so the summary
+  stays on the heading's line; no overlay), holding Warn when alone (a select of 7, 14 and 30 days, Save), over a panel of three rows (`220px 260px
   minmax(0, 1fr)`, gap 24, padding 14 20): **Issuer** ("Let's Encrypt", "none") and **Contact email**, both
   read-only because they are Traefik's static configuration ("Set when caravana was installed; run the
   installer again to change it."), and **Warn when** ("14 d before expiry", "Sends to the channels set up in
@@ -878,7 +880,9 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   Encrypt); ○ "redirects to `<host>`" (the other half of a www pair); ○ "app stopped" / "not deployed" (the
   app isn't served, whatever the last check said); ○ "couldn't check", or "not checked yet" for a row never
   checked. The words are `edge.State.Words()`; the console words the redirect target, the not-served reason
-  and the never-checked row.
+  and the never-checked row. **A redirect row sorts directly under the host it redirects to** (a www pair
+  reads together; `redirectsUnderTargets`), whatever its own state; one whose target isn't listed keeps its
+  place.
 - **One state table** (`internal/ui/domainstates.go`, `domainStates`): state → mark, pill words, the Certificate
   column's words when there is no date ("waiting for Let's Encrypt", "Traefik's own", "—"), the Certificates
   table's expiry words, and the fixed detail sentence. The list, the Add panel's check lines and Settings ›
@@ -950,7 +954,10 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   is the target. A refused path draws the row's form again with what was typed and the reason under the field
   (the row opens). Below the form, **Remove…** (a confirmation, "Remove and deploy") and, for a Team-only
   domain, **New password** (a confirmation: "The old password stops working at once. The new one is shown
-  once."); each is a form of its own, since forms don't nest. Turning Team only on, or New password, answers
+  once."); each is a form of its own, since forms don't nest. **Inline confirmations:** both open in the
+  flow, never as an overlay: an open one takes its whole line (`flex-basis: 100%`), its form a block under
+  its button (ink-1, 26rem at most) that pushes the row down, and the other button wraps under it, so
+  nothing clips at any width. Turning Team only on, or New password, answers
   200 with the shown-once panel above the page ("Copy the password for `<host>` now. User name `team`.", the
   value in a box that selects whole, Copy hidden without script): the password is in no address, no later page
   and no log. A Team-only domain says "Visitors sign in as `team`." in 13px fg-3 above New password. The panel and
@@ -959,8 +966,10 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   ("http · :80") after Image; saving sets the port of every one of its domains and nothing else of them. A
   service with one port has the Container port input, as before.
 - **The switch** (the Options form's): a checkbox drawn as one, `.cv-switch`, 30×18, radius 9. Off: ink-2
-  ground, line-2 edge, a 12px fg-3 knob; on: the healthy ground, edge and knob, moved 12px. Disabled keeps its
-  look (Force HTTPS: on, locked, "On for every domain."). Saved by a button, never on toggle.
+  ground, line-2 edge, a 12px fg-3 knob; on: the healthy ground, edge and knob, moved 12px (the handoff's
+  hue, for a real switch). **The locked switch** (Force HTTPS: on, disabled, "On for every domain.") is drawn
+  in fg-3, knob and ground (the ground fg-3 at 22%, the edge at 45%), so it reads as fixed, not as a choice
+  that is on. Saved by a button, never on toggle.
 - **The record box** (page 2's, keys 80px): Type, Name, Value per record, one group for the A record and
   one for the AAAA when this host has a public IPv6 address, a line-2 rule between groups. Name is "@" for an
   apex (one dot), else the first label, "@ or the first label" before a host is typed; Value is the address,
@@ -1003,7 +1012,8 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   the whole region with `HX-Reswap: innerHTML`; console.js puts back which `<details>` were open, by id. Every
   `<details>` on these pages has a stable id (`domain-<host>`, `domain-remove-<host>`, `domain-password-<host>`).
 - **Narrow:** under 900px of room a row folds (chevron, host and the open link; then Status, Goes to and
-  Certificate as label and value) and the detail stacks; the banner keeps its three columns.
+  Certificate as label and value) and the detail stacks. Below 640px the banner stacks too: the mark and the
+  text, then Check again under the text.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
