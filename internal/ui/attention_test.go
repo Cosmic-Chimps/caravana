@@ -68,6 +68,18 @@ func TestAttentionRows(t *testing.T) {
 			"failed", "blog: the last run of nightly failed. Exited with code 3.", "Open schedule", "/schedules?open=abc123#schedule-abc123"},
 		{"a schedule being skipped", service.AttentionItem{Kind: service.AttentionScheduleSkipping, AppID: "blog", Service: "web", Schedule: "sync", ScheduleID: "def456", Detail: "sync has been skipped 3 times: each run takes longer than the time between runs."},
 			"warning", "blog: sync has been skipped 3 times: each run takes longer than the time between runs.", "Open schedule", "/schedules?open=def456#schedule-def456"},
+		{"a domain pointing elsewhere", service.AttentionItem{Kind: service.AttentionDomainDNSElsewhere, AppID: "blog", Service: "web", Domain: "bi.example.com", AddressSeen: "185.199.108.153"},
+			"failed", "bi.example.com points at 185.199.108.153, which isn't this host.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
+		{"a domain pointing elsewhere with no address", service.AttentionItem{Kind: service.AttentionDomainDNSElsewhere, AppID: "blog", Service: "web", Domain: "bi.example.com"},
+			"failed", "bi.example.com points at another host.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
+		{"a certificate expiring in days", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(6*24*time.Hour + time.Hour))},
+			"warning", "The certificate for bi.example.com expires in 6 days and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
+		{"a certificate expiring in a day", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(30 * time.Hour))},
+			"warning", "The certificate for bi.example.com expires in 1 day and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
+		{"a certificate expiring today", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(3 * time.Hour))},
+			"warning", "The certificate for bi.example.com expires today and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
+		{"a certificate that expired", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(-time.Hour))},
+			"warning", "The certificate for bi.example.com has expired and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -279,5 +291,17 @@ func TestSettingsHasTheBackupDestinationPage(t *testing.T) {
 	resp, body := e.get(t, "/settings/backup-storage")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `action="/settings/backups"`) {
 		t.Errorf("GET /settings/backup-storage = %d, want the destination form:\n%s", resp.StatusCode, body)
+	}
+}
+
+// The Apps headline words for the domain kinds follow the app's name.
+func TestHeadlineWordsDomains(t *testing.T) {
+	for kind, want := range map[service.AttentionKind]string{
+		service.AttentionDomainDNSElsewhere: "has a domain pointing elsewhere",
+		service.AttentionDomainCertExpiring: "has a certificate expiring",
+	} {
+		if got := headlineWords(service.AttentionItem{Kind: kind}); got != want {
+			t.Errorf("headlineWords(%s) = %q, want %q", kind, got, want)
+		}
 	}
 }

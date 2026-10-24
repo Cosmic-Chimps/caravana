@@ -146,7 +146,7 @@ Independent test: quickstart §1's item and delivery.
   `expiresAt` in the webhook JSON and the text renders; `api/openapi.yaml` `AttentionItem` and
   `NotificationEvent`; `internal/api/attention.go`. Tests: `attentionOf` tables, `diffProblems`
   (one opened, resolved when the state clears or the domain is removed), the renders.
-- [ ] T018 [US4] Console: the needs-you rows for both kinds (`internal/ui/attention.go`, "Open
+- [x] T018 [US4] Console: the needs-you rows for both kinds (`internal/ui/attention.go`, "Open
   domain"), the Apps headline words; handler tests.
 
 ## Phase 6: US5, certificates in Settings (P3)
