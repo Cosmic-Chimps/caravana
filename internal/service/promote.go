@@ -136,7 +136,7 @@ func (s *Service) Promote(ctx context.Context, appID, to string, cond Condition,
 	default:
 		return store.DeploymentRecord{}, fmt.Errorf("app %q is now at revision %s: %w", p.target.App.ID, p.target.Revision, ErrAppChanged)
 	}
-	return s.saveAndDeploy(ctx, p.result, cond, trigger, made{}, &pinned{digests: p.from.Deployment.Digests, source: p.from.Deployment.ID})
+	return recordOnly(s.saveAndDeploy(ctx, p.result, cond, trigger, made{}, &pinned{digests: p.from.Deployment.Digests, source: p.from.Deployment.ID}))
 }
 
 // targetPlace is the place appID's counterpart has in environment to of the

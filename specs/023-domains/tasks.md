@@ -97,7 +97,7 @@ Independent test: quickstart §1.
 Goal: Team only, the www redirect and a path, saved with a deploy, from the console and the API.
 Independent test: quickstart §2.
 
-- [ ] T012 [US2] `internal/service/deploy.go`, `domains.go` + tests: on a deploy, for each
+- [x] T012 [US2] `internal/service/deploy.go`, `domains.go` + tests: on a deploy, for each
   Team-only domain without a hash generate the password (24 random bytes, base64url), bcrypt it,
   `SetTeamPassword`, and `SyncTeamPasswords` before `Register` (also after any deploy that
   drops the option or the domain: delete the row and sync); the deploy result carries

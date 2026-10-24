@@ -51,7 +51,18 @@ type appState struct {
 // deployment record exists, errors are *DeployError and the record says
 // failed.
 func (s *Service) Deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.saveAndDeploy(ctx, a, Condition{}, trigger, made{}, nil)
+	return recordOnly(s.saveAndDeploy(ctx, a, Condition{}, trigger, made{}, nil))
+}
+
+// recordOnly drops what a deploy shows only once (DeployResult.TeamPasswords),
+// for the callers that answer with the record alone.
+func recordOnly(res DeployResult, err error) (store.DeploymentRecord, error) {
+	return res.DeploymentRecord, err
+}
+
+// asResult is a deploy's record as a DeployResult with nothing shown once.
+func asResult(rec store.DeploymentRecord, err error) (DeployResult, error) {
+	return DeployResult{DeploymentRecord: rec}, err
 }
 
 // made is what an app was made from: the Compose file it keeps (nil for a
@@ -91,6 +102,13 @@ var ErrAppChanged = errors.New("the app changed since it was read")
 // checks and the backup checks come first, so their errors win, and nothing
 // is saved or deployed on any refusal.
 func (s *Service) DeployIf(ctx context.Context, a app.App, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return recordOnly(s.DeployIfResult(ctx, a, cond, trigger))
+}
+
+// DeployIfResult is DeployIf answering a DeployResult: with the password of
+// each domain the deploy turned Team only, the one time it is shown. The API's
+// deployApp and the console's forms that can turn the option on use it.
+func (s *Service) DeployIfResult(ctx context.Context, a app.App, cond Condition, trigger app.Trigger) (DeployResult, error) {
 	return s.saveAndDeploy(ctx, a, cond, trigger, made{}, nil)
 }
 
@@ -104,32 +122,36 @@ type pinned struct {
 // saveAndDeploy is Deploy with a condition on the stored app, m saying what
 // the app was made from (the Compose file to keep and the warnings to record
 // with the deployment), and pin set for a redeploy of a past one.
-func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, trigger app.Trigger, m made, pin *pinned) (store.DeploymentRecord, error) {
+func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, trigger app.Trigger, m made, pin *pinned) (DeployResult, error) {
 	if cond.IfNew && cond.IfRevision != "" {
-		return store.DeploymentRecord{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
+		return DeployResult{}, errors.New("deploy: a condition can't be both IfNew and IfRevision")
 	}
 	// A stopped app takes no deploy of any kind (feature 020.5): a plain deploy,
 	// an edit, a redeploy of a version, a promotion into it. Nothing is saved
 	// or recorded.
 	if err := s.refuseIfStopped(ctx, a.ID); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if err := s.deployer.Validate(a); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if err := s.checkConsoleDomain(a); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
+	}
+	// A host is one app's (feature 023): a deploy may not add another app's.
+	if err := s.checkDomainsTaken(ctx, a); err != nil {
+		return DeployResult{}, err
 	}
 	// A new app is placed by its ID (feature 019), so its project and
 	// environment must exist; an app that exists is not checked.
 	if err := s.checkPlace(ctx, a.ID); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if err := s.checkSecrets(ctx, a); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if err := s.checkBackups(ctx, a); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if old, err := s.store.GetApp(ctx, a.ID); err == nil {
 		m.warnings = append(m.warnings, unmountedVolumes(old.App, a)...)
@@ -138,10 +160,10 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 			m.warnings = append(m.warnings, app.Warning{Message: droppedFileWarning})
 		}
 	} else if !errors.Is(err, store.ErrNotFound) {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	if err := s.saveApp(ctx, a, cond, m.file); err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	s.appChanged(a.ID)
 	return s.deployWarned(ctx, a, trigger, m, pin)
@@ -246,20 +268,20 @@ func (s *Service) Redeploy(ctx context.Context, appID string, trigger app.Trigge
 	}
 	// The app isn't saved again, so its kept file stays; the deployment records
 	// it too, so the history keeps the file this deploy came from.
-	return s.deployWarned(ctx, rec.App, trigger, made{file: rec.Compose}, nil)
+	return recordOnly(s.deployWarned(ctx, rec.App, trigger, made{file: rec.Compose}, nil))
 }
 
 // deploy runs one deploy of a, which was not made from a Compose file. Only
 // CreateApp uses it: a new app has no file yet.
 func (s *Service) deploy(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
-	return s.deployWarned(ctx, a, trigger, made{}, nil)
+	return recordOnly(s.deployWarned(ctx, a, trigger, made{}, nil))
 }
 
 // deployWarned is deploy with m, what a was made from: its warnings (a
 // Compose file's changed meanings) come first in the record, and its Compose
 // file is the one the deployment records. pin is set for a redeploy of a past
 // deployment.
-func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (store.DeploymentRecord, error) {
+func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigger, m made, pin *pinned) (DeployResult, error) {
 	dep := app.Deployment{ID: newDeploymentID(), Trigger: trigger, Digests: map[string]string{}, Origin: originFrom(ctx), TokenName: tokenNameFrom(ctx)}
 	source := ""
 	if pin != nil {
@@ -267,7 +289,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	}
 	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
 	if err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	s.deploymentChanged(a.ID)
 	state := s.markLatest(a.ID, dep.ID)
@@ -283,13 +305,13 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	defer state.mu.Unlock()
 	if state.deleted {
 		// DeleteApp ran while this deploy waited, and erased its record with the app.
-		return store.DeploymentRecord{}, fmt.Errorf("app %q was deleted: %w", a.ID, store.ErrNotFound)
+		return DeployResult{}, fmt.Errorf("app %q was deleted: %w", a.ID, store.ErrNotFound)
 	}
 	// A stop that took the lock while this deploy waited for it: the check at
 	// the door passed before the app was stopped. The record exists, so it ends
 	// failed, saying why.
 	if err := s.refuseIfStopped(ctx, a.ID); err != nil {
-		return s.fail(rec, err)
+		return asResult(s.fail(rec, err))
 	}
 	// The budget starts once the lock is held, so waiting behind another
 	// deploy of the same app doesn't eat into it (research R11).
@@ -303,7 +325,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	if pin != nil {
 		digests = pin.digests
 	} else if digests, warnings, err = s.deployer.Resolve(ctx, a); err != nil {
-		return s.fail(rec, err)
+		return asResult(s.fail(rec, err))
 	}
 	if latest := s.latestOf(a.ID); latest != dep.ID {
 		msg := fmt.Sprintf("replaced by deployment %s before it was registered", latest)
@@ -313,7 +335,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		} else {
 			s.log.Error("record superseded deployment", "deployment", dep.ID, "error", err)
 		}
-		return rec, nil
+		return DeployResult{DeploymentRecord: rec}, nil
 	}
 
 	// The secrets go live before Nomad gets the job, and only for the newest
@@ -321,11 +343,11 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	// Running copies keep the env they started with.
 	sets, err := s.buildSecrets(ctx, a)
 	if err != nil {
-		return s.fail(rec, err)
+		return asResult(s.fail(rec, err))
 	}
 	if err := s.secrets.Replace(ctx, a.ID, dep.ID, sets); err != nil {
 		s.restoreSecrets(a.ID, dep.ID) // Replace may have written some of them
-		return s.fail(rec, err)
+		return asResult(s.fail(rec, err))
 	}
 
 	// The registries Caravana has credentials for: a service whose image is on
@@ -333,14 +355,28 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	private, err := s.privateRegistries(ctx)
 	if err != nil {
 		s.restoreSecrets(a.ID, dep.ID)
-		return s.fail(rec, err)
+		return asResult(s.fail(rec, err))
+	}
+
+	// Team-only domains (feature 023): each gets its password, if it has
+	// none yet, and Traefik its middleware, before a router names it.
+	shown, err := s.ensureTeamPasswords(ctx, a)
+	if err != nil {
+		s.restoreSecrets(a.ID, dep.ID)
+		return asResult(s.fail(rec, err))
 	}
 
 	dep.Digests = digests
 	reg, err := s.deployer.Register(ctx, a, dep, s.owns(a.ID), private)
 	if err != nil {
 		s.restoreSecrets(a.ID, dep.ID)
-		return s.fail(rec, err)
+		s.forgetTeamPasswords(ctx, shown)
+		return asResult(s.fail(rec, err))
+	}
+	// The hosts that are no longer Team only (or no longer this app's) lose
+	// their password now that Nomad has the job without their middleware.
+	if err := s.pruneTeamPasswords(ctx, &a); err != nil {
+		s.log.Warn("delete the passwords of domains no longer Team only; the next deploy tries again", "app", a.ID, "error", err)
 	}
 
 	// Nomad has accepted the job: from now on nothing is returned as an
@@ -367,7 +403,10 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		rec.Status, rec.JobVersion, rec.Deployment.Digests, rec.Warnings = store.StatusRunning, reg.JobVersion, digests, warnings
 	}
 	s.startWatcher(a.ID, dep.ID, reg.JobVersion, running)
-	return rec, nil
+	if len(shown) > 0 {
+		s.domainsChanged(a.ID)
+	}
+	return DeployResult{DeploymentRecord: rec, TeamPasswords: shown}, nil
 }
 
 // fail records a deploy that failed before Nomad accepted the job and

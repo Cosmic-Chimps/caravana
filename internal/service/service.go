@@ -91,6 +91,10 @@ type Service struct {
 	domainIdleGap   time.Duration // between two checks of every domain
 	domainWatchGap  time.Duration // between two checks while a domains page is watched
 	domainsWatching int           // domains pages open now, see MarkDomainsWatched
+	// teamMu is held while team_passwords and the variable nomad/jobs/traefik
+	// change, so two writers never leave the variable behind the table (see
+	// teamonly.go).
+	teamMu sync.Mutex
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.

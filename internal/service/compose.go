@@ -24,13 +24,20 @@ func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.R
 // the file later. The kept copy has no secret values; the request itself, with
 // them, still feeds Translate, so the values reach the secret store.
 func (s *Service) DeployComposeIf(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return recordOnly(s.DeployComposeIfResult(ctx, appID, req, cond, trigger))
+}
+
+// DeployComposeIfResult is DeployComposeIf answering a DeployResult: with the
+// password of each domain the deploy turned Team only, the one time it is
+// shown (the API's deployCompose).
+func (s *Service) DeployComposeIfResult(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (DeployResult, error) {
 	a, warnings, err := compose.Translate(appID, req)
 	if err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	file := req.WithoutSecretValues()
-	rec, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
-	return rec, compose.InFile(err, a)
+	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
+	return res, compose.InFile(err, a)
 }
 
 // PreviewCompose answers what DeployCompose would deploy: the app, with

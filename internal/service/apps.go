@@ -435,10 +435,19 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		state.stopWatchers()
 	}
 	s.mu.Unlock()
+	hadTeamOnly := s.hasTeamPasswords(ctx, id)
 	if err := s.store.DeleteApp(context.WithoutCancel(ctx), id); err != nil {
 		return err
 	}
 	state.deleted = true
+	// The store deleted the app's Team-only passwords with it (feature 023):
+	// Traefik's copy follows. A failure is logged; the next deploy of any app
+	// with a Team-only domain writes the variable again.
+	if hadTeamOnly {
+		if err := s.syncTeamPasswords(context.WithoutCancel(ctx)); err != nil {
+			s.log.Warn("remove a deleted app's Team-only passwords from Traefik", "app", id, "error", err)
+		}
+	}
 
 	s.mu.Lock()
 	if s.apps[id] == state {

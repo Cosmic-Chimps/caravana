@@ -89,7 +89,8 @@ func TestCreateAppWithoutDeploying(t *testing.T) {
 	})
 
 	t.Run("a deploy with a body defines it and deploys", func(t *testing.T) {
-		d := deployOK(t, e, "shop", whoamiBody)
+		// whoami.localhost is the app whoami's: a host is one app's.
+		d := deployOK(t, e, "shop", strings.Replace(whoamiBody, "whoami.localhost", "shop.localhost", 1))
 		if d.AppID != "shop" {
 			t.Errorf("deployment = %+v, want app shop", d)
 		}
