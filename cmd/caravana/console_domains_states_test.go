@@ -257,7 +257,17 @@ func (c *console) domainsStates(t *testing.T) {
 		f := forms[0]
 		f.Set("host", host)
 		f.Set("action", action)
-		return c.post(t, "/apps/"+id+"/domains", f)
+		resp, body := c.post(t, "/apps/"+id+"/domains", f)
+		if action == "check" {
+			// Check now answers 303 to the page at the panel (?checked=<host>#add), which is drawn
+			// from the check's cached result, so the answer the owner reads is that page.
+			want := "/apps/" + id + "/domains?checked=" + host + "#add"
+			if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != want {
+				t.Fatalf("Check now for %s = %d → %q, want 303 to %s: %s", host, resp.StatusCode, resp.Header.Get("Location"), want, text(body))
+			}
+			resp, body = c.get(t, strings.TrimSuffix(want, "#add"))
+		}
+		return resp, body
 	}
 	rowsOf := func() map[string]gateDomain { return c.g.domainRows(t, id, false) }
 
@@ -323,11 +333,14 @@ func (c *console) domainsStates(t *testing.T) {
 		t.Errorf("the DNS line of Check now for %s isn't marked failed", elsewhere)
 	}
 	resp, body = addDomain(nothing, "check")
-	if got = text(body); resp.StatusCode != http.StatusOK || !strings.Contains(got, "no record yet") || !strings.Contains(got, "issued after you add it") {
-		t.Errorf("Check now for %s = %d: %s, want \"no record yet\"", nothing, resp.StatusCode, got)
+	if got = text(body); resp.StatusCode != http.StatusOK || !strings.Contains(got, "no DNS record") || !strings.Contains(got, "issued after you add it") {
+		t.Errorf("Check now for %s = %d: %s, want \"no DNS record\"", nothing, resp.StatusCode, got)
+	}
+	if !regexp.MustCompile(`cv-mark-warning[^>]*></span><span class="cv-dmcheck-text">.{0,120}DNS points at caravana`).MatchString(body) {
+		t.Errorf("the DNS line of Check now for %s isn't marked warning (a missing record is a warning, as the list says)", nothing)
 	}
 	resp, body = addDomain(www, "check")
-	if got = text(body); resp.StatusCode != http.StatusOK || strings.Contains(got, "no record yet") || strings.Contains(got, "points at 203.0.113.9") ||
+	if got = text(body); resp.StatusCode != http.StatusOK || strings.Contains(got, "no DNS record") || strings.Contains(got, "points at 203.0.113.9") ||
 		!strings.Contains(got, "issued after you add it") {
 		t.Errorf("Check now for %s, which points here = %d: %s, want no reason under DNS", www, resp.StatusCode, got)
 	}
@@ -359,12 +372,20 @@ func (c *console) domainsStates(t *testing.T) {
 	if expectElsewhere {
 		expectRow(page, elsewhere, "failed", "DNS points elsewhere", selfCert)
 		row = text(domainRow(page, elsewhere))
+		// The banner above already says what is wrong, so the detail says it once: the record to
+		// change it to, what DNS says now and the last check (the critique's ruling 4).
 		for _, want := range []string{
-			"The domain points at 203.0.113.9, which isn't this host. Until it changes, caravana can't get a certificate and visitors won't reach cd023.",
-			"now A · 203.0.113.9", "should be A · 203.0.113.1", "last check", "checks every minute", "Check again"} {
+			"Change the record to:", "A", "@", "203.0.113.1",
+			"now A · 203.0.113.9", "last check", "checks every minute"} {
 			if !strings.Contains(row, want) {
 				t.Errorf("the row of %s lacks %q:\n%s", elsewhere, want, row)
 			}
+		}
+		if strings.Contains(row, "which isn't this host") {
+			t.Errorf("the row of %s repeats the banner's sentence:\n%s", elsewhere, row)
+		}
+		if strings.Contains(domainRow(page, elsewhere), `aria-label="Open https://`+elsewhere) {
+			t.Errorf("the row of %s has an open link, which would open wherever DNS points today", elsewhere)
 		}
 		banner := regexp.MustCompile(`(?s)<div class="cv-panel cv-dmbanner">.*?</div>\s*</div>`).FindString(page)
 		if got = text(banner); !strings.Contains(got, "elsewhere.test points at 203.0.113.9, which isn't this host.") ||

@@ -172,10 +172,11 @@ var consoleParity = map[string]parity{
 	// ?project= and ?app=), the apps for the filter and the Add panel, and the projects for the filter.
 	// Check again and the Add panel's Check now are checkDomain; Add is a deploy of the app with one more
 	// domain on its revision, refused when another app has the host (listDomains).
-	"GET /domains":               {ops: []string{"listDomains", "listApps", "listProjects"}},
-	"GET /parts/domains":         {ops: []string{"listDomains", "listApps"}},
-	"POST /domains":              {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp"}},
-	"POST /domains/{host}/check": {ops: []string{"checkDomain"}},
+	"GET /domains":                   {ops: []string{"listDomains", "listApps", "listProjects"}},
+	"GET /parts/domains":             {ops: []string{"listDomains", "listApps"}},
+	"GET /parts/domains/add-service": {ops: []string{"getApp"}}, // the Add panel's service field for a picked app
+	"POST /domains":                  {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp"}},
+	"POST /domains/{host}/check":     {ops: []string{"checkDomain"}},
 	// The Options form (feature 023): Team only, the www redirect and the path of one domain, and Remove…, are a
 	// deploy of the app with that service's domains replaced, on the revision getApp gave (deployApp with
 	// If-Match; the Compose-file app goes through deployCompose's overlay). New password is rotateTeamPassword.
