@@ -287,3 +287,30 @@ The designer checks at 127.0.0.1:7070 against `p5-schedules.png`:
 10. Built-in rows' runs always read trigger `timer` (the backups table keeps no trigger): later,
     filed in CodeAlta.
 11. An owner's stop neither opens nor clears a failure item (research R5).
+
+## Critique rulings (designer, 2026-10-23)
+
+The critique (design-review pass, no detector) found twelve things; four were the review's fixes
+1–3 and ruling 8 (whose sentence becomes the critique's "Last run finished in 8 s.", no "The").
+The rest:
+
+4. **The When hint** is derived from the first of the preview's next three runs (else the next
+   occurrence of the time of day), with "today" appended when that date is today, so a DST
+   change never shows two local times for one schedule.
+5. **The detail's project fact** uses the project's display name and is omitted in
+   Default › production, as the rail does.
+6. **A built-in row has one button, "Change in Backups"**; no "Logs of last run" (the Backups
+   tab shows the runs).
+8. **The form's text controls are 560px** (Name, Command, When); the selects stay 360; Limits is
+   two columns of 274.
+9. **Run now is primary only in the row the page opened by itself** (the first failed),
+   secondary in rows the owner opens. A paused schedule keeps Run now.
+10. **Bars are ember for every failed kind** (the limit told in the bar's title and the caption,
+    "stopped at 5 min"); amber only for the skipped stub. This overrides the body's "warn for a
+    stopped-at-limit run": one status, one color.
+11. **Configure's Schedules panel** has a 7px mark before each name (the row's mark), failing
+    lines first, and its note reads "6 schedules · 2 failing", linking to `/schedules?app=<id>`.
+12. **Narrow:** the facts' keys are 130px; the row's command line is `nowrap` with an ellipsis;
+    the stacked Next has no leading dot (fix 1's block form).
+- **Edit's "Run inside"** is text ("`web` of `clock`") when it can't change. The preview's
+  timezone row stays.
