@@ -350,8 +350,11 @@ func TestSchedulesRunningAndStop(t *testing.T) {
 func TestScheduleRunPage(t *testing.T) {
 	e := schedEnv(t)
 	sc := e.schedule(t, "whoami", "hello", "0 3 * * *", "sh", "-c", "echo $X")
+	// r1 started at noon yesterday (UTC): "yesterday" is a calendar day, so a
+	// fixed number of hours ago would read "2 d ago" early in the day.
+	yesterdayNoon := time.Now().UTC().Truncate(24 * time.Hour).Add(-12 * time.Hour)
 	e.runs(t, sc,
-		pastRun{ID: "r1", Status: store.RunFailed, Ago: 26 * time.Hour, Took: 3 * time.Second, Exit: new(2), Error: "exit 2",
+		pastRun{ID: "r1", Status: store.RunFailed, Ago: time.Since(yesterdayNoon), Took: 3 * time.Second, Exit: new(2), Error: "exit 2",
 			Stdout: "first line\n" + runSentinel + "\n", Stderr: "oops <b>not markup</b>\n", Cut: true},
 		pastRun{ID: "r2", Status: store.RunOK, Ago: 2 * time.Hour, Took: 48 * time.Second},
 		pastRun{ID: "r3", Status: store.RunSkipped, Ago: time.Hour, Error: "the run before was still going"})
