@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +21,9 @@ import (
 //
 // The form is Copies & size and Deploy (feature 021). A service's environment
 // and domains are not in it: they have their own pages (Variables & secrets,
-// Domains), so saving this form leaves them as stored.
+// Domains), so saving this form leaves them as stored. The one thing of its
+// domains it holds is the port they go to ("Domains go to", feature 023), for
+// a service with several ports: a port is per service, not per domain.
 type editForm struct {
 	Revision string
 	Services []editService
@@ -39,8 +42,13 @@ type editService struct {
 	Edit serviceEdit
 
 	ShowPort, ShowHealth bool
+	// ShowDomainPort says the service has several ports and domains: the form
+	// offers "Domains go to", a select of the ports by name.
+	ShowDomainPort bool
+	Ports          []app.Port
 
 	Image, Port, Copies                       formField
+	DomainPort                                formField
 	HealthPath, HealthInterval, HealthTimeout formField
 	CPU, Memory, MemoryMax                    formField
 }
@@ -55,7 +63,8 @@ type serviceEdit struct {
 	HealthPath     string // empty: a TCP check
 	HealthInterval time.Duration
 	HealthTimeout  time.Duration
-	CPUMHz         int // zero: the default
+	DomainPort     string // the name of the port every domain goes to; only meaningful when ShowDomainPort
+	CPUMHz         int    // zero: the default
 	MemoryMB       int
 	MemoryMaxMB    int
 }
@@ -80,7 +89,7 @@ func (s *editService) fields() []struct {
 		Field *formField
 	}{
 		{"copies", &s.Copies}, {"cpu", &s.CPU}, {"memory", &s.Memory}, {"memoryMax", &s.MemoryMax},
-		{"image", &s.Image}, {"port", &s.Port},
+		{"image", &s.Image}, {"port", &s.Port}, {"domainPort", &s.DomainPort},
 		{"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval}, {"healthTimeout", &s.HealthTimeout},
 	}
 }
@@ -109,6 +118,7 @@ var inputSpecs = []inputSpec{
 	{Name: "memoryMax", Numeric: true, Label: "Ceiling", Suffix: "MB", Placeholder: "default"},
 	{Name: "image", Label: "Image", Wide: true},
 	{Name: "port", Numeric: true, Label: "Container port"},
+	{Name: "domainPort", Label: "Domains go to"},
 	{Name: "healthPath", Label: "Health check", Prefix: "GET", Placeholder: "TCP port", Hint: "Empty checks the TCP port."},
 	{Name: "healthInterval", Numeric: true, Label: "Every", Suffix: "s", Placeholder: "10"},
 	{Name: "healthTimeout", Numeric: true, Label: "Timeout", Suffix: "s", Placeholder: "2"},
@@ -119,6 +129,8 @@ func (s editService) shows(field string) bool {
 	switch field {
 	case "port":
 		return s.ShowPort
+	case "domainPort":
+		return s.ShowDomainPort
 	case "healthPath", "healthInterval", "healthTimeout":
 		return s.ShowHealth
 	}
@@ -165,11 +177,24 @@ func newEditService(svc app.Service) editService {
 		Name:       svc.Name,
 		ShowPort:   len(svc.Ports) == 1,
 		ShowHealth: len(svc.Ports) > 0,
+		// A port is per service: with several, and a domain to send there, the owner picks which.
+		ShowDomainPort: len(svc.Ports) > 1 && len(svc.Domains) > 0,
+		Ports:          svc.Ports,
 	}
 	for _, in := range s.fields() {
 		in.Field.ID = inputID(svc.Name, in.Name)
 	}
 	return s
+}
+
+// DomainPortOptions are the ports of the service as the "Domains go to" select
+// lists them: "http · :80", the one the field holds selected.
+func (s editService) DomainPortOptions() []formOption {
+	opts := make([]formOption, len(s.Ports))
+	for i, p := range s.Ports {
+		opts[i] = formOption{Value: p.Name, Label: p.Name + " · :" + strconv.Itoa(p.ContainerPort), Selected: p.Name == s.DomainPort.Value}
+	}
+	return opts
 }
 
 // service returns the section for the named service.
@@ -241,6 +266,10 @@ func formOf(stored app.App, revision string) editForm {
 		e.Image = svc.Image
 		if s.ShowPort {
 			e.Port = svc.Ports[0].ContainerPort
+		}
+		if s.ShowDomainPort {
+			e.DomainPort = svc.Domains[0].Port
+			s.DomainPort.Value = e.DomainPort
 		}
 		if svc.Replicas != nil {
 			e.Replicas = new(*svc.Replicas)
@@ -364,6 +393,15 @@ func (s *editService) parse(post url.Values) bool {
 		} else {
 			e.Port = n
 		}
+	}
+
+	// "Domains go to": a form drawn before the service had several ports doesn't have it, and keeps what is stored.
+	if s.ShowDomainPort && post.Has(inputName(s.Name, "domainPort")) {
+		s.DomainPort.Value = text("domainPort")
+		if !slices.ContainsFunc(s.Ports, func(p app.Port) bool { return p.Name == s.DomainPort.Value }) {
+			refuse(&s.DomainPort, "Choose one of the service's ports.")
+		}
+		e.DomainPort = s.DomainPort.Value
 	}
 
 	s.Copies.Value = text("copies")

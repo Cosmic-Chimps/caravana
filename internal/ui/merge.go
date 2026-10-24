@@ -14,7 +14,8 @@ import (
 // container port of a one-port service, copies, the health check's path,
 // interval and timeout, and the resources. Everything else stays as stored:
 // the app's name and source, the service list and its order, environment
-// variables and domains (they have their own pages), command, args, entrypoint,
+// variables, domains (they have their own pages; the port they go to is the one
+// thing the form sets of them, for a service with several ports), command, args, entrypoint,
 // secrets (names; the values live in the secret store), volumes, backup, the
 // other ports and the health check's port (FR-003). A service the form has no
 // section for is left alone.
@@ -31,6 +32,12 @@ func applyEdit(stored app.App, f editForm) app.App {
 		if s.ShowPort && len(svc.Ports) == 1 {
 			svc.Ports = slices.Clone(svc.Ports)
 			svc.Ports[0].ContainerPort = e.Port
+		}
+		if s.ShowDomainPort && e.DomainPort != "" && len(svc.Domains) > 0 {
+			svc.Domains = slices.Clone(svc.Domains)
+			for j := range svc.Domains {
+				svc.Domains[j].Port = e.DomainPort
+			}
 		}
 		svc.Replicas = e.Replicas
 		if s.ShowHealth {

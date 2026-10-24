@@ -1,8 +1,9 @@
 {{/* Domains (feature 023): the workspace page /domains, and the rows, detail and Add panel that an
      app's Domains page (app.html's "domains") draws too, filtered to the app. Every row is a native
      <details> with a stable id, which console.js keeps open or closed across a refresh. Every form
-     is a plain post: Check again, Remove… (a confirmation), and the Add panel's Check now and Add
-     domain and deploy. No row, banner or form holds a password or a hash. The values are
+     is a plain post: Check again, the Options form, Remove… and New password (confirmations), and the
+     Add panel's Check now and Add domain and deploy. A password is drawn once, in the answer of the
+     post that made it (domain-once); no row, banner or form holds a password or a hash. The values are
      contracts/domains-screen.md's. */}}
 
 {{define "content"}}
@@ -18,6 +19,7 @@
   </div>
   <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>
 </header>
+{{with .Once}}{{template "domain-once" .}}{{end}}
 {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <form id="domains-filter" class="cv-filter" method="get" action="/domains" role="search">
@@ -104,20 +106,69 @@
   <div class="cv-dmdetail-right">
     <h3 class="cv-label">Options</h3>
     {{with .Options.Note}}<p class="cv-dmnote">{{template "sentence" .}}</p>{{end}}
-    {{with .Options.Remove}}
+    {{with .Options.Form}}
+    <form method="post" action="{{.Action}}" class="cv-dmform" autocomplete="off">
+      <input type="hidden" name="app" value="{{.App}}">
+      <input type="hidden" name="service" value="{{.Service}}">
+      <input type="hidden" name="revision" value="{{.Revision}}">
+      {{with .Page}}<input type="hidden" name="page" value="{{.}}">{{end}}
+      <div class="cv-dmswitch">
+        <label class="cv-switch-row"><input type="checkbox" class="cv-switch" role="switch" checked disabled><span>Force HTTPS</span></label>
+        <span class="cv-dmnote">On for every domain.</span>
+      </div>
+      <label class="cv-switch-row"><input type="checkbox" class="cv-switch" role="switch" name="teamOnly" value="on"{{if .TeamOnly}} checked{{end}}><span>Team only (a shared password)</span></label>
+      {{with .Redirect}}<label class="cv-switch-row"><input type="checkbox" class="cv-switch" role="switch" name="wwwRedirect" value="on"{{if .On}} checked{{end}}><span>{{template "sentence" .Label}}</span></label>{{end}}
+      <label class="cv-fld" for="{{.Path.ID}}">
+        <span class="cv-label">Path</span>
+        <input class="cv-field cv-field-mono" id="{{.Path.ID}}" type="text" name="path" value="{{.Path.Value}}" placeholder="/api" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="{{.Path.ID}}-hint{{if .Path.Error}} {{.Path.ID}}-error{{end}}"{{if .Path.Error}} aria-invalid="true" autofocus{{end}}>
+        <span class="cv-data-muted cv-hint" id="{{.Path.ID}}-hint">Only requests under this path reach the app; the path is kept.</span>
+        {{template "field-error" .Path}}
+      </label>
+      <div class="cv-dmbtns"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>
+    </form>
+    {{end}}
+    {{if or .Options.Remove .Options.Rotate}}
     <div class="cv-dmbtns">
+      {{with .Options.Remove}}
       <details class="cv-confirm">
         <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Host}}">Remove…</summary>
         <form method="post" action="{{.Action}}" class="cv-confirm-body">
+          <input type="hidden" name="app" value="{{.App}}">
           <input type="hidden" name="revision" value="{{.Revision}}">
           <input type="hidden" name="service" value="{{.Service}}">
-          <input type="hidden" name="host" value="{{.Host}}">
+          {{with .Page}}<input type="hidden" name="page" value="{{.}}">{{end}}
           <p>This deploys the app without <span class="cv-inline-mono">{{.Host}}</span>. It stops answering on it once the new copies are healthy.</p>
           <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
         </form>
       </details>
+      {{end}}
+      {{with .Options.Rotate}}
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="New password for {{.Host}}">New password</summary>
+        <form method="post" action="{{.Action}}" class="cv-confirm-body">
+          <input type="hidden" name="app" value="{{.App}}">
+          <input type="hidden" name="service" value="{{.Service}}">
+          {{with .Page}}<input type="hidden" name="page" value="{{.}}">{{end}}
+          <p>The old password stops working at once. The new one is shown once.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Make a new password</button></div>
+        </form>
+      </details>
+      {{end}}
     </div>
     {{end}}
+  </div>
+</div>
+{{end}}
+
+{{/* domain-once: a Team-only password just made, in the answer of the post that made it. It is in
+     no address and no later page; the Copy button stays hidden without script. Takes a
+     teamPasswordPanel. */}}
+{{define "domain-once"}}
+<div class="cv-panel cv-once" role="status">
+  <p class="cv-once-text">Copy the {{if .New}}new {{end}}password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. Caravana only keeps a hash and can't show it again.</p>
+  <div class="cv-once-row">
+    <code class="cv-once-value" id="team-password-value">{{.Password}}</code>
+    <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="team-password-value" hidden>Copy password</button>
   </div>
 </div>
 {{end}}

@@ -103,12 +103,11 @@ var consoleParity = map[string]parity{
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
 	// the page draws the app's domains with their state (listDomains ?app=, feature 023), and its Add panel's
 	// Check now is checkDomain.
-	"GET /apps/{id}/variables":       {ops: []string{"getApp"}},
-	"POST /apps/{id}/variables":      {ops: []string{"getApp", "deployApp"}},
-	"POST /apps/{id}/variables/env":  {ops: []string{"getApp", "deployApp"}},
-	"GET /apps/{id}/domains":         {ops: []string{"getApp", "listDomains", "listApps"}},
-	"POST /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp"}},
-	"POST /apps/{id}/domains/remove": {ops: []string{"getApp", "deployApp"}},
+	"GET /apps/{id}/variables":      {ops: []string{"getApp"}},
+	"POST /apps/{id}/variables":     {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/variables/env": {ops: []string{"getApp", "deployApp"}},
+	"GET /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "listApps"}},
+	"POST /apps/{id}/domains":       {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp"}},
 	// "Back up daily" sets a service's backup policy: a deploy of the app with backup {engine, schedule, keep}.
 	"POST /apps/{id}/backups/policy": {ops: []string{"getApp", "deployApp"}},
 	// Backups (feature 010).
@@ -177,6 +176,12 @@ var consoleParity = map[string]parity{
 	"GET /parts/domains":         {ops: []string{"listDomains", "listApps"}},
 	"POST /domains":              {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp"}},
 	"POST /domains/{host}/check": {ops: []string{"checkDomain"}},
+	// The Options form (feature 023): Team only, the www redirect and the path of one domain, and Remove…, are a
+	// deploy of the app with that service's domains replaced, on the revision getApp gave (deployApp with
+	// If-Match; the Compose-file app goes through deployCompose's overlay). New password is rotateTeamPassword.
+	"POST /domains/{host}/options":       {ops: []string{"getApp", "deployApp"}},
+	"POST /domains/{host}/remove":        {ops: []string{"getApp", "deployApp"}},
+	"POST /domains/{host}/team-password": {ops: []string{"getApp", "rotateTeamPassword"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

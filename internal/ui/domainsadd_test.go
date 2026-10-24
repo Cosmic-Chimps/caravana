@@ -201,12 +201,13 @@ func TestDomainAddRefusals(t *testing.T) {
 		}
 	})
 
-	t.Run("a kept Compose file", func(t *testing.T) {
+	t.Run("a kept Compose file takes the add", func(t *testing.T) {
 		k, _ := keptShopEnv(t)
 		page := addFormOf(t, k.pageOf(t, "/domains"))
 		n := k.deployCount(t, "shop")
 		resp, body := k.submit(t, page, url.Values{"app": {"shop"}, "service": {"shop/web"}, "host": {"x.shop.example.com"}})
-		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "This app is edited through its Compose file.") || k.deployCount(t, "shop") != n {
+		// A kept-file app takes the add through its overlay, like any app (feature 023).
+		if resp.StatusCode != http.StatusSeeOther || k.deployCount(t, "shop") != n+1 {
 			t.Errorf("add to a kept-file app = %d:\n%s", resp.StatusCode, text(addPanel(body)))
 		}
 	})

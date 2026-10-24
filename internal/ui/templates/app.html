@@ -724,6 +724,18 @@
             <h3 class="cv-label">Deploy</h3>
             {{template "field" (.F "image")}}
             {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
+            {{if .ShowDomainPort}}
+            <div class="cv-fld cv-field-narrow">
+              <label class="cv-fld" for="{{.DomainPort.ID}}">
+                <span class="cv-label">Domains go to</span>
+                <select class="cv-field cv-select" id="{{.DomainPort.ID}}" name="{{(.F "domainPort").InputName}}"{{if .DomainPort.Error}} aria-invalid="true" aria-describedby="{{.DomainPort.ID}}-hint {{.DomainPort.ID}}-error"{{else}} aria-describedby="{{.DomainPort.ID}}-hint"{{end}}>
+                  {{range .DomainPortOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+                </select>
+                <span class="cv-data-muted cv-hint" id="{{.DomainPort.ID}}-hint">Every domain of this service goes to this port.</span>
+                {{template "field-error" .DomainPort}}
+              </label>
+            </div>
+            {{end}}
             {{if .ShowHealth}}
             <div class="cv-fields3">
               {{template "field" (.F "healthPath")}}
@@ -1011,6 +1023,7 @@
      draws them (domains.html's region, filtered to the app), and the Add panel with the app fixed.
      A refused post's notice stands at the top. Takes a domainsTab. */}}
 {{define "domains"}}
+{{with .Once}}{{template "domain-once" .}}{{end}}
 {{with .Add}}{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}{{end}}
 {{if not .Defined}}
 <section aria-labelledby="domains-page-title" class="cv-pgsec">
@@ -1029,7 +1042,6 @@
     <span class="cv-spacer"></span>
     {{if .CanEdit}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
   </div>
-  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Change its domains in the file, in <a href="/apps/{{.ID}}/configure">Configure</a>.</p>{{end}}
 </section>
 
 <section class="cv-sregion" aria-label="Domains of {{.ID}}" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="innerHTML">{{template "domains-region" .Region}}</section>

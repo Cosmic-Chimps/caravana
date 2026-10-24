@@ -47,6 +47,8 @@ type domainsListView struct {
 	Filter schedFilterView
 	Notice sentence
 	Alert  sentence
+	// Once is a Team-only password just made, drawn above everything else.
+	Once   *teamPasswordPanel
 	Region domainsRegion
 	Add    *domainAddView
 }
@@ -141,17 +143,62 @@ type domainDetail struct {
 	Options domainOptions
 }
 
-// domainOptions is the detail's right column. The Options form itself is the
-// second console round's; for now it holds Remove… or why there is none.
+// domainOptions is the detail's right column: the Options form (Force HTTPS
+// locked on, Team only, the www redirect, Path, Save and deploy), Remove… and,
+// for a Team-only domain, New password; or, when the page can't change the
+// domain, the Note that says why.
 type domainOptions struct {
 	Note   sentence
+	Form   *domainOptionsForm
 	Remove *domainRemove
+	Rotate *domainRotate
+}
+
+// domainOptionsForm is the Options form of one row. It posts the row's app,
+// service and the revision the page was drawn from, and Page says where to come
+// back to ("app" on the app's own page).
+type domainOptionsForm struct {
+	Action                       string
+	Host, App, Service, Revision string
+	Page                         string
+	TeamOnly                     bool
+	// Redirect is the www switch: nil for a host that has no pair.
+	Redirect *domainSwitch
+	Path     formField
+}
+
+// domainSwitch is a checkbox drawn as a switch, with its words.
+type domainSwitch struct {
+	Label sentence
+	On    bool
 }
 
 // domainRemove is the Remove… confirmation of a row: a deploy of the app
 // without the host, on the revision the page was drawn from.
 type domainRemove struct {
-	Action, Revision, Service, Host string
+	Action, Revision, App, Service, Host, Page string
+}
+
+// domainRotate is the New password confirmation of a Team-only row.
+type domainRotate struct {
+	Action, App, Service, Host, Page string
+}
+
+// domainDraft is a refused Options post, drawn back in its row: what was
+// typed and what is wrong with the path.
+type domainDraft struct {
+	Host                  string
+	Path                  string
+	TeamOnly, WWWRedirect bool
+	PathErr               sentence
+}
+
+// teamPasswordPanel is a Team-only password just made, shown once in the
+// answer of the post that made it: never in an address or a later page.
+type teamPasswordPanel struct {
+	Host, Password string
+	// New says it replaced an older one (New password).
+	New bool
 }
 
 // recordBox is the DNS records that point a host here: one group of Type, Name
@@ -164,12 +211,11 @@ type recordBox struct {
 // ---- Building the rows (pure) --------------------------------------------------------
 
 // domainAppInfo is what a row needs of its app beyond the view: how many
-// services it has, and what its Remove… needs.
+// services it has, and what its Options need.
 type domainAppInfo struct {
 	services int
 	revision string
 	defined  bool
-	kept     bool
 	stopped  bool
 }
 
@@ -486,28 +532,58 @@ func domainHref(host string) string {
 	return "/domains?open=" + url.QueryEscape(host) + "#" + domainAnchor(host)
 }
 
-// domainOptionsOf is the Options column of a row: Remove… for a domain of an
-// app the page can change, or why it can't.
-func domainOptionsOf(v service.DomainView, info domainAppInfo) domainOptions {
+// redirectSwitchOf is the www switch of a host: "Redirect `example.com` here" on
+// a www host, "Redirect `www.example.com` here" on an apex, the pair always
+// being what redirects. nil for a host that has no pair.
+func redirectSwitchOf(host string, on bool) *domainSwitch {
+	pair := app.Domain{Host: host}.RedirectPair()
+	if pair == "" {
+		return nil
+	}
+	return &domainSwitch{Label: sentence{plain("Redirect "), mono(pair), plain(" here")}, On: on}
+}
+
+// domainOptionsOf is the Options column of a row: the form, Remove… and New
+// password for a domain of an app the page can change, or why it can't. appPage
+// says the row is drawn on the app's own page, so a post comes back to it. draft
+// is a refused post to draw back in its row (nil for none).
+func domainOptionsOf(v service.DomainView, info domainAppInfo, appPage bool, draft *domainDraft) domainOptions {
 	switch {
 	case v.RedirectOf != "":
 		return domainOptions{Note: sentence{plain("Redirects to "), mono(v.RedirectOf), plain(". Change it on that domain's row.")}}
-	case info.kept:
-		return domainOptions{Note: plainS(fileEditedSentence + " Change its domains in the file, in Configure.")}
 	case info.stopped:
-		return domainOptions{Note: plainS("The app is stopped: start it first.")}
+		return domainOptions{Note: plainS(appStoppedText)}
 	case !info.defined || info.revision == "":
 		return domainOptions{}
 	}
-	return domainOptions{Remove: &domainRemove{Action: "/apps/" + url.PathEscape(v.App) + "/domains/remove",
-		Revision: info.revision, Service: v.Service, Host: v.Host}}
+	base := "/domains/" + url.PathEscape(v.Host)
+	page := ""
+	if appPage {
+		page = "app"
+	}
+	form := &domainOptionsForm{Action: base + "/options", Host: v.Host, App: v.App, Service: v.Service, Revision: info.revision,
+		Page: page, TeamOnly: v.TeamOnly, Redirect: redirectSwitchOf(v.Host, v.WWWRedirect),
+		Path: formField{ID: "domain-path-" + v.Host, Value: v.Path}}
+	if draft != nil && draft.Host == v.Host {
+		form.TeamOnly, form.Path.Value, form.Path.Error = draft.TeamOnly, draft.Path, draft.PathErr
+		if form.Redirect != nil {
+			form.Redirect.On = draft.WWWRedirect
+		}
+	}
+	opts := domainOptions{Form: form,
+		Remove: &domainRemove{Action: base + "/remove", Revision: info.revision, App: v.App, Service: v.Service, Host: v.Host, Page: page}}
+	if v.TeamOnly {
+		opts.Rotate = &domainRotate{Action: base + "/team-password", App: v.App, Service: v.Service, Host: v.Host, Page: page}
+	}
+	return opts
 }
 
 // domainViewsOf builds the rows and banners from the service's list (already
 // sorted). open is the host the address asks to open ("" for none): without
 // it, the first row whose state needs the owner opens by itself. appPage says
 // the rows are drawn on the app's own page, so Check again comes back there.
-func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]domainAppInfo, box func(host string) recordBox, open string, appPage bool) ([]domainRowView, []domainBanner, *domainMore) {
+// draft is a refused Options post, drawn back in its row.
+func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]domainAppInfo, box func(host string) recordBox, open string, appPage bool, draft *domainDraft) ([]domainRowView, []domainBanner, *domainMore) {
 	explicit := open != "" && slices.ContainsFunc(list, func(v service.DomainView) bool { return v.Host == open })
 	var rows []domainRowView
 	var banners []domainBanner
@@ -539,7 +615,7 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		case !opened && domainProblem(v.State):
 			row.Open, opened = true, true
 		}
-		row.Detail = domainDetailOf(now, v, box(v.Host), check, domainOptionsOf(v, info))
+		row.Detail = domainDetailOf(now, v, box(v.Host), check, domainOptionsOf(v, info, appPage, draft))
 		if b, ok := bannerOf(now, v, check); ok {
 			if len(banners) < maxDomainBanners {
 				banners = append(banners, b)
@@ -559,6 +635,10 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 // domainsQuery is what ?project=, ?app= and ?open= ask for.
 type domainsQuery struct {
 	Project, App, Open string
+	// Once and Draft are never read from the address: a post's answer sets them, to draw a
+	// password once and a refused Options form back in its row.
+	Once  *teamPasswordPanel
+	Draft *domainDraft
 }
 
 func domainsQueryOf(q url.Values) domainsQuery {
@@ -632,7 +712,7 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	apps := make(map[string]domainAppInfo, len(sums))
 	for _, sum := range sums {
 		apps[sum.App.ID] = domainAppInfo{services: len(sum.App.Services), revision: sum.Revision, defined: sum.App.Defined(),
-			kept: sum.Compose != nil, stopped: sum.StoppedAt != nil}
+			stopped: sum.StoppedAt != nil}
 	}
 	// This host's addresses are read only when a row draws the record box.
 	var addrs []string
@@ -642,7 +722,7 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	box := func(host string) recordBox { return recordBoxFor(host, addrs) }
 
 	region.Count = domainsCount(list)
-	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), list, apps, box, q.Open, appPage)
+	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), list, apps, box, q.Open, appPage, q.Draft)
 	if len(list) == 0 {
 		if q.filterQuery() != "" && !appPage {
 			region.NoMatch, region.ClearHref = true, "/domains"
@@ -670,9 +750,17 @@ func (s *server) showDomainsPage(w http.ResponseWriter, r *http.Request, session
 	s.renderDomains(w, r, http.StatusOK, q, nil, add)
 }
 
-// renderDomains draws /domains with a refusal (nil for none) and the Add panel.
+// renderDomains draws /domains with a refusal (nil for none) and the Add panel
+// (nil draws a fresh one).
 func (s *server) renderDomains(w http.ResponseWriter, r *http.Request, status int, q domainsQuery, alert sentence, add *domainAddView) {
 	ctx := r.Context()
+	if add == nil {
+		var err error
+		if add, err = s.domainAddFor(ctx, domainAddInput{App: q.App}, ""); err != nil {
+			s.serverError(w, "draw the add form", err)
+			return
+		}
+	}
 	region, err := s.loadDomains(ctx, q, domainsEmpty, false)
 	if err != nil {
 		s.serverError(w, "list domains", err)
@@ -689,7 +777,7 @@ func (s *server) renderDomains(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	head.LiveURL = "/live?watch=domains"
-	s.render(w, status, "domains", domainsPage{pageData: head, List: &domainsListView{Filter: filter, Alert: alert, Region: region, Add: add}})
+	s.render(w, status, "domains", domainsPage{pageData: head, List: &domainsListView{Filter: filter, Alert: alert, Once: q.Once, Region: region, Add: add}})
 }
 
 // partDomains answers GET /parts/domains: the count line, the banners, the

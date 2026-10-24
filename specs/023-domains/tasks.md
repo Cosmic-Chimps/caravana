@@ -114,7 +114,7 @@ Independent test: quickstart §2.
   `DeployResult.teamPasswords` (`no-store` on that answer), codes `domain_taken` and the
   `invalid_field` fields, in `internal/api/domains.go`, `deployments.go` and `api/openapi.yaml`;
   tests including a deploy token setting `teamOnly` on its own app and getting the password once.
-- [ ] T015 [US2] Console: the Options form in the row's detail (Force HTTPS locked with "On
+- [x] T015 [US2] Console: the Options form in the row's detail (Force HTTPS locked with "On
   for every domain.", Team only (a shared password), the redirect switch worded per the host,
   Path, Save and deploy with `If-Match` (a 409 redraws), Remove… behind `<details>`, New
   password behind `<details>`), `POST /domains/{host}/options`, `/remove`, `/team-password`;

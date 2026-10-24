@@ -1119,6 +1119,13 @@
   .cv-dmbtns .cv-btn { text-decoration: none; }
   .cv-dmbtns .cv-confirm-body { position: absolute; z-index: 4; left: 0; top: calc(100% + 6px); width: min(22rem, 100%); margin-top: 0; background: var(--color-ink-1); box-shadow: var(--shadow-overlay); }
   .cv-dmcheckform { display: inline-flex; }
+  /* The Options form: switches (Force HTTPS first, locked, with its note under it), the path, Save. */
+  .cv-dmform { display: flex; flex-direction: column; gap: 12px; }
+  .cv-dmswitch { display: flex; flex-direction: column; gap: 4px; }
+  .cv-dmswitch .cv-dmnote { padding-left: 40px; }
+  .cv-dmform .cv-switch-row { cursor: pointer; }
+  .cv-dmform .cv-switch-row:has(:disabled) { cursor: default; }
+  .cv-dmform .cv-fld { max-width: 22rem; }
 
   /* Under the table. */
   .cv-dmfoot { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }

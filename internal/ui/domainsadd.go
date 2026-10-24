@@ -414,11 +414,6 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 			return
 		}
 	}
-	if rec.Compose != nil {
-		form.Notice = sentence{plain(fileEditedSentence + " Change the file in Configure and deploy it.")}
-		refuse(http.StatusConflict)
-		return
-	}
 	// Alone, a service needn't be named.
 	if in.Service == "" {
 		if t := addTargetsOf(rec.App); len(t) > 0 {
@@ -442,12 +437,17 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	case host == "":
 		fieldError(&form.Host, plainS("Enter a domain."))
 		return
+	case host != strings.TrimSuffix(strings.ToLower(host), "."):
+		// SetDomainsIf would lowercase it; the definition's rule is that a host is typed as it is.
+		fieldError(&form.Host, plainS(strconv.Quote(host)+" is not a lowercase hostname"))
+		return
 	}
 
 	edited := rec.App
 	edited.Services = slices.Clone(edited.Services)
 	edited.Services[i].Domains = append(slices.Clone(edited.Services[i].Domains), app.Domain{Host: host, Port: port, Path: in.Path})
-	deployment, err := s.svc.DeployIf(ctx, edited, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	// An app that keeps its Compose file is edited through its overlay: SetDomainsIf does either.
+	deployment, err := s.svc.SetDomainsIf(ctx, in.App, rec.App.Services[i].Name, edited.Services[i].Domains, service.Condition{IfRevision: revision}, app.TriggerConsole)
 	if err == nil {
 		http.Redirect(w, r, "/apps/"+url.PathEscape(in.App)+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
 		return

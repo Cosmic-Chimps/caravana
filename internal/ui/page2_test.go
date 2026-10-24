@@ -125,7 +125,8 @@ func TestPage2Shapes(t *testing.T) {
 		if !strings.Contains(vars, `<input type="hidden" name="secret" value="1">`) {
 			t.Error("the kept-file Add form doesn't set a secret")
 		}
-		check(t, e, "shop", "/domains", []string{"This app is edited through its Compose file.", "shop.example.com"}, []string{"Add a domain", "Remove", "Add domain and deploy"})
+		// Domains are edited through the overlay now, as secrets are: the page has its Add panel and Options.
+		check(t, e, "shop", "/domains", []string{"shop.example.com", "Add a domain", "Add domain and deploy", "Save and deploy", "Remove…"}, []string{"This app is edited through its Compose file."})
 		check(t, e, "shop", "/backups", []string{"1 backed up · 0 failing · 0 not"}, nil)
 	})
 
@@ -159,12 +160,13 @@ func TestPage2Shapes(t *testing.T) {
 		// A hand-made post is refused with the same words, and deploys nothing.
 		n := e.deployCount(t, "duet")
 		for path, form := range map[string]url.Values{
-			"/apps/duet/variables":      {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "name": {"A"}, "value": {"1"}},
-			"/apps/duet/variables/env":  {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "env": {"A=1"}},
-			"/apps/duet/domains":        {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"x.duet.example.com"}},
-			"/apps/duet/domains/remove": {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"web.duet.example.com"}},
-			"/apps/duet/secrets/remove": {"revision": {e.revisionOf(t, "duet")}, "service": {"api"}, "name": {"TOKEN"}},
-			"/apps/duet/backups/policy": {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
+			"/apps/duet/variables":                  {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "name": {"A"}, "value": {"1"}},
+			"/apps/duet/variables/env":              {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "env": {"A=1"}},
+			"/apps/duet/domains":                    {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"x.duet.example.com"}},
+			"/domains/web.duet.example.com/remove":  {"app": {"duet"}, "revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
+			"/domains/web.duet.example.com/options": {"app": {"duet"}, "revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "teamOnly": {"on"}},
+			"/apps/duet/secrets/remove":             {"revision": {e.revisionOf(t, "duet")}, "service": {"api"}, "name": {"TOKEN"}},
+			"/apps/duet/backups/policy":             {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
 		} {
 			resp, body := e.postForm(t, path, form)
 			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusSeeOther || !strings.Contains(text(body), sentence) && path != "/apps/duet/backups/policy" {
@@ -391,7 +393,7 @@ func TestAddAndRemoveDomain(t *testing.T) {
 	_, page = e.get(t, "/apps/duet/domains")
 	var remove plainForm
 	for _, f := range formsIn(page) {
-		if f.Action == "/apps/duet/domains/remove" && f.Values.Get("host") == "v2.duet.example.com" {
+		if f.Action == "/domains/v2.duet.example.com/remove" {
 			remove = f
 		}
 	}
@@ -413,7 +415,7 @@ func TestAddAndRemoveDomain(t *testing.T) {
 		add := formWith(t, page, "/apps/duet/domains")
 		var remove plainForm
 		for _, f := range formsIn(page) {
-			if f.Action == "/apps/duet/domains/remove" && f.Values.Get("host") == "web.duet.example.com" {
+			if f.Action == "/domains/web.duet.example.com/remove" {
 				remove = f
 			}
 		}
@@ -447,12 +449,23 @@ func TestAddAndRemoveDomain(t *testing.T) {
 		}
 	})
 
-	t.Run("a kept Compose file is read-only", func(t *testing.T) {
+	t.Run("a kept Compose file is edited through its overlay", func(t *testing.T) {
 		k, _ := keptShopEnv(t)
 		n := k.deployCount(t, "shop")
 		resp, body := k.postForm(t, "/apps/shop/domains", url.Values{"revision": {k.revisionOf(t, "shop")}, "service": {"web"}, "host": {"x.shop.example.com"}})
-		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "This app is edited through its Compose file.") || k.deployCount(t, "shop") != n {
-			t.Errorf("add on a kept-file app = %d:\n%s", resp.StatusCode, text(body))
+		if resp.StatusCode != http.StatusSeeOther || k.deployCount(t, "shop") != n+1 {
+			t.Fatalf("add on a kept-file app = %d:\n%s", resp.StatusCode, text(body))
+		}
+		rec, err := k.Store.GetApp(context.Background(), "shop")
+		if err != nil || rec.Compose == nil {
+			t.Fatalf("the app lost its kept file: %v", err)
+		}
+		hosts := []string{}
+		for _, d := range rec.Compose.Services["web"].Domains {
+			hosts = append(hosts, d.Host)
+		}
+		if strings.Join(hosts, ",") != "shop.example.com,x.shop.example.com" {
+			t.Errorf("the kept file's overlay domains = %v", hosts)
 		}
 	})
 }

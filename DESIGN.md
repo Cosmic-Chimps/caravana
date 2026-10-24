@@ -908,10 +908,28 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   `<clock time>`", DNS "A → 203.0.113.1", router "`<app>-<service>`" or "`<app>-<service>-<hash8>` (its own,
   for its options)", checked); not served "The app is stopped: start it to serve this domain." / "Nothing
   is deployed yet." with a link. The expiry is a clock time (the time rule); "checked" is relative ("40 s
-  ago" under a minute). The right column is "Options" (a Label): for now Remove… (a confirmation, "Remove and
-  deploy"), or why there is none (a Compose file, a stopped app, a redirect row). A row, banner or detail
-  never holds a password or a hash.
-- **The switch** (for the Options form): a checkbox drawn as one, `.cv-switch`, 30×18, radius 9. Off: ink-2
+  ago" under a minute). The right column is "Options" (a Label), a form of its own (below), then Remove… and
+  New password; or why there is none (a stopped app, a redirect row). A row, banner or detail never holds a
+  password or a hash.
+- **The Options form** (one `<form method="post" action="/domains/<host>/options">` per row, on `/domains` and
+  on the app's page, carrying the app, the service, the page's revision and, on the app's page, `page=app`; it
+  works without script and saves with a button, never on toggle): Force HTTPS first, a locked-on switch with
+  "On for every domain." under it in 13px fg-3 (not a field); **Team only (a shared password)**; the redirect
+  switch, worded by what it redirects: "Redirect `example.com` here" on a `www.` host, "Redirect
+  `www.example.com` here" on an apex, absent on any other host; **Path**, the 32px mono field with "Only
+  requests under this path reach the app; the path is kept." under it; **Save and deploy** (primary small).
+  Each switch is a checkbox with `role="switch"` and `.cv-switch`, its label wrapping it, so the whole line
+  is the target. A refused path draws the row's form again with what was typed and the reason under the field
+  (the row opens). Below the form, **Remove…** (a confirmation, "Remove and deploy") and, for a Team-only
+  domain, **New password** (a confirmation: "The old password stops working at once. The new one is shown
+  once."); each is a form of its own, since forms don't nest. Turning Team only on, or New password, answers
+  200 with the shown-once panel above the page ("Copy the password for `<host>` now. User name `team`.", the
+  value in a box that selects whole, Copy hidden without script): the password is in no address, no later page
+  and no log. A stopped app's rows show "The app is stopped: start it first." in place of the form.
+- **Domains go to** (Configure's Deploy panel): a service with several ports and domains has a select of its ports
+  ("http · :80") after Image; saving sets the port of every one of its domains and nothing else of them. A
+  service with one port has the Container port input, as before.
+- **The switch** (the Options form's): a checkbox drawn as one, `.cv-switch`, 30×18, radius 9. Off: ink-2
   ground, line-2 edge, a 12px fg-3 knob; on: the healthy ground, edge and knob, moved 12px. Disabled keeps its
   look (Force HTTPS: on, locked, "On for every domain."). Saved by a button, never on toggle.
 - **The record box** (page 2's, keys 80px): Type, Name, Value per record, one group for the A record and
