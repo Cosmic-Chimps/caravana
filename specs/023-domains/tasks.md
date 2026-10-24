@@ -181,7 +181,7 @@ Independent test: quickstart §4.
   redirect), Team only's shown-once panel and curl 401/200, New password, the redirect's
   Location, the path, Check now, Settings' warn window, the needs-you item and the delivery, no
   password or hash on any page, answer, export, job or log, and the cleanup.
-- [ ] T023 `cmd/caravana/gate_domains_test.go`, step `domains` in `runGate` after `schedules`:
+- [x] T023 `cmd/caravana/gate_domains_test.go`, step `domains` in `runGate` after `schedules`:
   §1–§3 through the API with the gate's token, a deploy token refused on the seven routes and
   allowed to set `teamOnly` on its own app (the password once, absent from every later answer),
   `listCertificates`; on a real host (`host.sh prove`) the `live` state with Let's Encrypt.

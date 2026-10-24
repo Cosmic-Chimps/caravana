@@ -138,6 +138,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"projects-promote", false, g.projectsPromoteStep},
 		{"app-actions", false, g.appActionsStep},
 		{"schedules", false, g.schedulesStep},
+		{"domains", false, g.domainsStep},
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},
