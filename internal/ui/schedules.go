@@ -129,7 +129,8 @@ type stripMark struct {
 }
 
 // runBar is one run in the detail's "How long each run took": Kind is ok,
-// failed, warn (stopped at the limit), skipped (a stub) or running; Step is its
+// failed (every failed kind, a stop at the limit too: one status, one color;
+// the bar's title tells the limit), skipped (a stub) or running; Step is its
 // height in 4px steps (1-14).
 type runBar struct {
 	Kind  string
@@ -154,7 +155,8 @@ type schedDetail struct {
 	Facts      []fact
 	Builtin    bool
 	// The buttons. StopRun is the run "Stop this run" stops ("" when none goes);
-	// RunNow is offered when no run goes, primary when the last run failed.
+	// RunNow is offered when no run goes, primary when the last run failed and
+	// the page opened the row by itself (a row the owner opens has it secondary).
 	StopRun     string
 	RunNow      bool
 	RunPrimary  bool
@@ -209,6 +211,20 @@ func runWord(status string) string {
 		return "stopped"
 	}
 	return "running"
+}
+
+// scheduleMark is a schedule's mark: rolling while a run goes, idle when
+// paused, else the newest run's (healthy, failed, warning for a skipped one,
+// idle for none or one stopped by the owner). newest is the newest run, nil
+// when there is none. The row and Configure's panel draw the same mark.
+func scheduleMark(sc service.Schedule, newest *service.ScheduleRun) string {
+	switch {
+	case sc.RunningNow > 0:
+		return "rolling"
+	case sc.Paused, newest == nil:
+		return "idle"
+	}
+	return runMarkOf(newest.Status)
 }
 
 // scheduleName is how a schedule is named on the page: a built-in is
@@ -278,8 +294,9 @@ func memoryText(mb int) string {
 	return fmt.Sprintf("%d MB", mb)
 }
 
-// placeText is "booking / production".
-func placeText(sc service.Schedule) string { return sc.Project + " / " + sc.Environment }
+// placeText is the project's display name and the environment as the crumbs
+// say them: "Shop / production".
+func placeText(project string, sc service.Schedule) string { return project + " / " + sc.Environment }
 
 // appText is the app as a schedule's row names it: its name, which is its ID
 // in Default › production.
@@ -440,9 +457,9 @@ func detailState(now time.Time, sc service.Schedule, runs []service.ScheduleRun)
 	if last := sc.LastRun; last != nil {
 		if last.Status == store.RunOK {
 			if d, ok := runDuration(now, *last); ok {
-				return plainS("The last run finished in " + durationText(d) + "."), false
+				return plainS("Last run finished in " + durationText(d) + "."), false
 			}
-			return plainS("The last run finished."), false
+			return plainS("Last run finished."), false
 		}
 		return join(plainS("The last run: "), lowerSentence(runSentence(now, sc, *last))), false
 	}
@@ -477,7 +494,8 @@ func skippedRuns(runs []service.ScheduleRun) []service.ScheduleRun {
 
 // runBars are the runs as bars, oldest first: a bar's height is its duration
 // against the longest of them, at least one step; a skipped slot is a stub.
-func runBars(now time.Time, runs []service.ScheduleRun) []runBar {
+// stopAfter is the schedule's limit, which a run stopped at it names in its title.
+func runBars(now time.Time, runs []service.ScheduleRun, stopAfter time.Duration) []runBar {
 	var longest time.Duration
 	for _, r := range runs {
 		if d, ok := runDuration(now, r); ok && d > longest {
@@ -496,8 +514,6 @@ func runBars(now time.Time, runs []service.ScheduleRun) []runBar {
 			continue
 		case runOpen(r.Status):
 			bar.Kind = "running"
-		case r.Status == store.RunStoppedAtLimit:
-			bar.Kind = "warn"
 		case runFailed(r.Status):
 			bar.Kind = "failed"
 		}
@@ -506,7 +522,11 @@ func runBars(now time.Time, runs []service.ScheduleRun) []runBar {
 			bar.Step = min(max(int((d*barSteps+longest/2)/longest), 1), barSteps)
 		}
 		bar.Title = when + " · " + durationText(d)
-		if bar.Kind != "ok" {
+		switch {
+		case r.Status == store.RunStoppedAtLimit:
+			// The bar is as tall as the run took, which is the limit: say so.
+			bar.Title = when + " · stopped at " + durationText(stopAfter)
+		case bar.Kind != "ok":
 			bar.Title += " · " + runWord(r.Status)
 		}
 		out = append(out, bar)
@@ -515,9 +535,11 @@ func runBars(now time.Time, runs []service.ScheduleRun) []runBar {
 }
 
 // scheduleRowOf builds one schedule's row. runs are its newest 14, newest
-// first; bucket is the backup destination's ("" for none); open says the row
-// is drawn open.
-func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, several bool, bucket string, open bool) schedRow {
+// first; bucket is the backup destination's ("" for none); project is the
+// project's display name, "" for Default's production (the detail's project
+// fact is then left out); open says the row is drawn open, and byItself that
+// the page opened it, not the owner (Run now is then the primary button).
+func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, several bool, bucket, project string, open, byItself bool) schedRow {
 	row := schedRow{ID: sc.ID, Anchor: "schedule-" + sc.ID, Name: scheduleName(sc), Open: open, App: appText(sc),
 		Words: wordsOf(sc.Words), Cron: sc.Cron, Paused: sc.Paused}
 	if several {
@@ -530,15 +552,16 @@ func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRu
 	}
 
 	// The mark and the pill.
+	var newest *service.ScheduleRun
+	if len(runs) > 0 {
+		newest = &runs[0]
+	}
+	row.Mark = scheduleMark(sc, newest)
 	switch {
 	case sc.RunningNow > 0:
-		row.Mark, row.Pill = "rolling", &statusView{Kind: "rolling", Word: "running now"}
+		row.Pill = &statusView{Kind: "rolling", Word: "running now"}
 	case sc.Paused:
-		row.Mark, row.Pill = "idle", &statusView{Kind: "idle", Word: "paused"}
-	case len(runs) == 0:
-		row.Mark = "idle"
-	default:
-		row.Mark = runMarkOf(runs[0].Status)
+		row.Pill = &statusView{Kind: "idle", Word: "paused"}
 	}
 	if row.Pill == nil && sc.LastRun != nil && runFailed(sc.LastRun.Status) {
 		row.Pill = &statusView{Kind: "failed", Word: "last run failed"}
@@ -596,15 +619,16 @@ func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRu
 		row.Strip = append(row.Strip, stripMark{Mark: runMarkOf(r.Status), Href: runHref(sc, r.ID), Title: title, Word: runWord(r.Status)})
 	}
 
-	row.Detail = detailOf(now, sc, runs, bucket)
+	row.Detail = detailOf(now, sc, runs, bucket, project, byItself)
 	return row
 }
 
-// detailOf builds what opens under a schedule's row.
-func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bucket string) schedDetail {
+// detailOf builds what opens under a schedule's row. project and byItself are
+// scheduleRowOf's.
+func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bucket, project string, byItself bool) schedDetail {
 	d := schedDetail{ID: sc.ID, Builtin: sc.Builtin, Paused: sc.Paused}
 	d.State, d.StateQuiet = detailState(now, sc, runs)
-	d.Bars = runBars(now, runs[:min(len(runs), stripRuns)])
+	d.Bars = runBars(now, runs[:min(len(runs), stripRuns)], time.Duration(sc.StopAfterSeconds)*time.Second)
 
 	// "no runs yet" only when there are none; runs that never finished ok leave the usual time unknown.
 	usual := "no runs yet"
@@ -620,35 +644,39 @@ func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bu
 	d.Usual = usual
 
 	runsIn := sentence{mono(sc.Service), plain(" of "), mono(appText(sc))}
+	// The project fact is the crumbs' words ("Shop / production"), and left out in Default's production.
+	var where []fact
+	if project != "" {
+		where = []fact{{Key: "project", Value: plainS(placeText(project, sc))}}
+	}
 	if sc.Builtin {
-		d.Facts = []fact{
+		d.Facts = append([]fact{
 			{Key: "command", Value: plainS(builtinCommand(sc.Engine, bucket))},
 			{Key: "runs in", Value: runsIn},
-			{Key: "project", Value: plainS(placeText(sc))},
-		}
+		}, where...)
 		d.BackupsHref = "/apps/" + url.PathEscape(sc.App) + "/backups#svc-" + sc.Service
 	} else {
 		still := "skip the next run"
 		if !sc.SkipIfRunning {
 			still = "start another"
 		}
-		d.Facts = []fact{
+		d.Facts = append([]fact{
 			{Key: "command", Value: plainS(commandLine(sc.Command)), Break: true},
 			{Key: "runs in", Value: runsIn},
 			{Key: "stops after", Value: plainS(durationText(time.Duration(sc.StopAfterSeconds) * time.Second))},
 			{Key: "if still running", Value: plainS(still)},
 			{Key: "memory", Value: plainS(memoryText(sc.MemoryMB))},
-			{Key: "project", Value: plainS(placeText(sc))},
-		}
+		}, where...)
 		d.EditHref = "/schedules/" + url.PathEscape(sc.ID) + "/edit"
 		if i := slices.IndexFunc(runs, func(r service.ScheduleRun) bool { return runOpen(r.Status) }); i >= 0 {
 			d.StopRun = runs[i].ID
 		} else {
 			d.RunNow = true
-			d.RunPrimary = sc.LastRun != nil && runFailed(sc.LastRun.Status)
+			d.RunPrimary = byItself && sc.LastRun != nil && runFailed(sc.LastRun.Status)
 		}
 	}
-	if sc.LastRun != nil {
+	// A built-in has one button, Change in Backups: its runs are on that tab.
+	if sc.LastRun != nil && !sc.Builtin {
 		d.LogsHref = runHref(sc, sc.LastRun.ID)
 	}
 	return d
@@ -729,6 +757,10 @@ func (s *server) loadSchedules(ctx context.Context, q schedulesQuery) (schedules
 		return schedulesRegion{}, err
 	}
 
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return schedulesRegion{}, err
+	}
 	now := s.now()
 	region := schedulesRegion{Count: countOf(now, list), Channels: len(channels) > 0, RefreshHref: "/parts/schedules"}
 	if fq := q.filterQuery(); fq != "" {
@@ -742,8 +774,12 @@ func (s *server) loadSchedules(ctx context.Context, q schedulesQuery) (schedules
 		}
 		// The first row opens by itself when its last run failed, unless the
 		// address asks for another.
-		open := sc.ID == q.Open || !explicit && i == 0 && sc.LastRun != nil && runFailed(sc.LastRun.Status)
-		region.Rows = append(region.Rows, scheduleRowOf(now, sc, runs, services[sc.App] > 1, bucket, open))
+		byItself := !explicit && i == 0 && sc.LastRun != nil && runFailed(sc.LastRun.Status)
+		project := ""
+		if !atHome(app.Place{Project: sc.Project, Environment: sc.Environment}) {
+			project = pl.display(sc.Project)
+		}
+		region.Rows = append(region.Rows, scheduleRowOf(now, sc, runs, services[sc.App] > 1, bucket, project, sc.ID == q.Open || byItself, byItself))
 	}
 	if len(list) == 0 {
 		if q.filterQuery() != "" {

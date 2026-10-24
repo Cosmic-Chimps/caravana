@@ -185,28 +185,54 @@ type secretsPanel struct {
 }
 
 // schedulesPanel is Configure's Schedules panel (feature 022): a line per
-// schedule of the app, and the links to the Schedules page.
+// schedule of the app (failing ones first), the note "6 schedules · 2
+// failing" that leads to the Schedules page, and the links to it.
 type schedulesPanel struct {
-	Lines      []scheduleLine
+	Lines []scheduleLine
+	// Note is "6 schedules · 2 failing" ("1 schedule", "none failing"); "" when
+	// there are none. It links to ManageHref.
+	Note       string
 	ManageHref string
 	NewHref    string
 }
 
-// scheduleLine is "rates-sync · every 15 minutes".
+// scheduleLine is "● rates-sync · every 15 minutes": Mark is the row's mark
+// on the Schedules page.
 type scheduleLine struct {
+	Mark  string
 	Name  string
 	Words string
 }
 
-// schedulesPanelOf lays out an app's schedules for the panel.
-func schedulesPanelOf(appID string, list []service.Schedule) schedulesPanel {
+// schedulesPanelOf lays out an app's schedules for the panel. newest holds
+// each schedule's newest run by ID (a missing one is none), which its mark
+// reads, as the Schedules page's row does.
+func schedulesPanelOf(appID string, list []service.Schedule, newest map[string]service.ScheduleRun) schedulesPanel {
 	p := schedulesPanel{ManageHref: "/schedules?app=" + url.QueryEscape(appID), NewHref: "/schedules/new?app=" + url.QueryEscape(appID)}
+	var failing, others []scheduleLine
 	for _, sc := range list {
 		words := strings.ReplaceAll(sc.Words, "`", "")
 		if words != "" {
 			words = strings.ToLower(words[:1]) + words[1:]
 		}
-		p.Lines = append(p.Lines, scheduleLine{Name: scheduleName(sc), Words: words})
+		var run *service.ScheduleRun
+		if r, ok := newest[sc.ID]; ok {
+			run = &r
+		}
+		line := scheduleLine{Mark: scheduleMark(sc, run), Name: scheduleName(sc), Words: words}
+		if sc.LastRun != nil && runFailed(sc.LastRun.Status) {
+			failing = append(failing, line)
+		} else {
+			others = append(others, line)
+		}
+	}
+	p.Lines = append(failing, others...)
+	if len(list) > 0 {
+		state := "none failing"
+		if len(failing) > 0 {
+			state = fmt.Sprintf("%d failing", len(failing))
+		}
+		p.Note = plural(len(list), "schedule") + " · " + state
 	}
 	return p
 }

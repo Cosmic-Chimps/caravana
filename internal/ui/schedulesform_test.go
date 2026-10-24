@@ -222,11 +222,17 @@ func TestScheduleFormEdit(t *testing.T) {
 	body := e.pageOf(t, "/schedules/"+sc.ID+"/edit")
 	for _, want := range []string{`value="nightly"`, `>node scripts/sync-rates.js</textarea>`, `value="every day at 03:00"`,
 		`<option value="300" selected>5 min</option>`, `<input type="checkbox" name="skip" value="1" checked>`,
-		`<form method="post" action="/schedules/` + sc.ID + `"`, `name="action" value="save"`, `<option value="web" selected>web</option>`,
+		`<form method="post" action="/schedules/` + sc.ID + `"`, `name="action" value="save"`,
+		`<input type="hidden" name="app" value="blog">`, `<input type="hidden" name="service" value="web">`,
 		`<dd class="cv-spreview-cron">0 3 * * *</dd>`, `href="/schedules/` + sc.ID + `/edit?preset=daily"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the edit form lacks %s", want)
 		}
+	}
+	// Run inside can't change: text ("web of blog"), not selects.
+	if strings.Contains(body, `id="schedule-app"`) || strings.Contains(body, `id="schedule-service"`) ||
+		!strings.Contains(body, `<p class="cv-sfixed" aria-labelledby="schedule-app-label">`) || !strings.Contains(text(body), "web of blog") {
+		t.Errorf("the edit form's Run inside:\n%s", text(body))
 	}
 	if strings.Contains(body, `value="whoami"`) || !strings.Contains(text(body), "Edit nightly") || !strings.Contains(text(body), "Save schedule") {
 		t.Errorf("the edit form's app or title:\n%s", text(body))

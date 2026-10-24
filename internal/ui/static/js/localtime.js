@@ -25,7 +25,13 @@
 //                          " Your local time is shown beside them."
 //   [data-local-hint=ID]   the hint under the field ID says what the time of
 //                          day typed there is locally: "03:00 UTC is 05:00
-//                          local", kept up to date while typing.
+//                          local", kept up to date while typing. The date it
+//                          is worked out on is the first of the preview's next
+//                          runs when the page has them (and they are at the
+//                          typed time), else the next day that time of day
+//                          comes (tomorrow when it has passed today): so a
+//                          clock change never shows two local times for one
+//                          schedule. " today" is added when that day is today.
 //
 // It runs when the page loads and again after htmx settles a swapped region.
 // Each element is done once (data-local-done), so a second pass changes
@@ -133,6 +139,27 @@
   // 9:30"), as the UTC hours and minutes; null for none.
   const TIME_OF_DAY = /(?:^|\D)(\d{1,2}):(\d{2})(?!\d)/;
 
+  // The first of the preview's next runs, as a date; null when the page has no
+  // preview (the Check submit draws it).
+  function previewFirst() {
+    const time = document.querySelector(".cv-spreview [data-clock-group] time.cv-clock");
+    return time ? dateOf(time) : null;
+  }
+
+  // The moment the typed time of day (UTC) is worked out on: the preview's first
+  // run when it is at that time, else the next day the time comes.
+  function momentOf(h, min, now) {
+    const first = previewFirst();
+    if (first && first.getUTCHours() === h && first.getUTCMinutes() === min) {
+      return first;
+    }
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, min));
+    if (date.getTime() <= now.getTime()) {
+      date.setUTCDate(date.getUTCDate() + 1);
+    }
+    return date;
+  }
+
   function hintText(value) {
     const m = TIME_OF_DAY.exec(value);
     if (!m) {
@@ -144,15 +171,18 @@
       return "";
     }
     const now = new Date();
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, min));
+    const date = momentOf(h, min, now);
     const utc = String(h).padStart(2, "0") + ":" + m[2];
     const p = partsOf(date);
     let text = " " + utc + " UTC is " + p.hour + ":" + p.minute + " local";
     const day = p.year + "-" + p.month + "-" + p.day;
     if (day > utcDay(date)) {
-      text += ", the next day";
+      text += " (next day)";
     } else if (day < utcDay(date)) {
-      text += ", the day before";
+      text += " (day before)";
+    }
+    if (utcDay(date) === utcDay(now)) {
+      text += " today";
     }
     return text + ".";
   }

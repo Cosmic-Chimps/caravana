@@ -802,15 +802,21 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
   row opens by itself when its last run failed; `?open=` and `?created=` open another.
 - **The detail** (ink-0, `minmax(0, 1.2fr) minmax(0, 1fr)`, padding 16 18 20 82): the state sentence
   (a failure's cause from a fixed table with "3 of the last 4 runs failed the same way.", "Running for 1
-  min 20 s. Usually takes 48 s.", "Paused 3 days ago.", "The last run finished in 48 s." (no colon), "Couldn't start: no `sh` in the image." (the run's stored reason, a backticked program in mono) and the skip note quieter), "How long each run
-  took" as bars 56px tall at most (fg-3 ok, failed, warn at the limit, a 2px stub for a skip; heights
+  min 20 s. Usually takes 48 s.", "Paused 3 days ago.", "Last run finished in 48 s." (no "The", no colon), "Couldn't start: no `sh` in the image." (the run's stored reason, a backticked program in mono) and the skip note quieter), "How long each run
+  took" as bars 56px tall at most (fg-3 ok, ember for every failed kind, a stop at the limit too (its title and
+  the caption tell the limit: "yesterday 14:00 · stopped at 5 min"), a 2px line-2 stub for a skip, the only
+  other look; heights
   in fourteen 4px classes, since the policy allows no style attribute) over "usually 48 s · stops at 5
   min" ("no completed runs · stops at 5 min" when runs exist but none finished ok, "no runs yet" only
-  when there are none); then the facts grid (130px keys) and the buttons: Stop this run (a confirmation) while a run
-  goes, else Run now (primary after a failure), Logs of last run, Pause or Resume, Edit, Delete… (a
-  confirmation). A confirmation opens over what is below. A built-in (a service's backup, "web backup",
-  "pg_dump → backups") has "Made by Backups…", Logs and Change in Backups, and its marks link to the
-  Backups tab.
+  when there are none); then the facts grid (130px keys at every width; the project fact is the project's
+  display name as the crumbs say it, "Shop / production", and is left out in Default's production) and the
+  buttons: Stop this run (a confirmation) while a run goes, else Run now (primary only in the row the page
+  opened by itself, the first failed one; secondary in a row the owner opens with `?open=`, `?created=` or
+  `?saved=`, and in every other), Logs of last run, Pause or Resume, Edit, Delete… (a confirmation). A
+  confirmation opens over what is below. A built-in (a service's backup, "web backup", "pg_dump →
+  backups") has "Made by Backups…" and one button, Change in Backups (no Logs: the Backups tab shows
+  its runs), and its marks link to that tab. The row's command line is one line with an ellipsis at every
+  width; the detail holds the whole command.
 - **A run's page:** the crumbs "Schedules / rates-sync" (both links), the title "`rates-sync` ·
   yesterday 14:00 UTC" (UTC only; the meta line has the local time), the run's sentence, "started … · took … · `web`
   of `booking-api` · v24", "Still running: reload for more." while it goes, and the output as the Logs
@@ -821,9 +827,17 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
   every app's services as "app › service" until one is picked), Command (2-row mono textarea), When
   (a sans field and a Check submit, the four presets as 26px chips that are links, the preview box:
   cron, next, timezone, or "Couldn't read that…"), Limits (Stop after, Memory, the skip box), Create
-  or Save and Cancel. A refused submit draws the form again with the reason under its field.
-- **Configure** gains a Schedules panel after Variables & secrets: "`name` · words" lines, "No
-  schedules.", Manage schedules and New schedule.
+  or Save and Cancel. A refused submit draws the form again with the reason under its field. The text
+  controls (Name, Command, When, the preview) are 560px and the selects 360, so their right edge is one
+  line; Limits is two columns of 274px (560 with the 12px gap). When the schedule exists (Edit), Run inside
+  is text, "`web` of `clock`" in mono (it can't move; hidden inputs carry the values), not selects. The
+  When hint says what the typed time of day is locally ("09:00 UTC is 11:00 local today"), worked out on the
+  first of the preview's next runs when the page has them, else on the next day that time comes, so a
+  clock change never gives two local times for one schedule.
+- **Configure** gains a Schedules panel after Variables & secrets: "`name` · words" lines, each after a
+  7px mark (the row's mark: disc ok, square failed, half disc running, ring paused or never run; failing
+  lines first, then the list's order), "No schedules." or the note "6 schedules · 2 failing" ("1
+  schedule", "none failing") as a link to `/schedules?app=<id>`, then Manage schedules and New schedule.
 - **Narrow:** under 900px of room a row folds (mark, name and pill; app and command; Runs, Next and
   Last run as label and value; the strip on its own line) and the detail stacks; the form's rows stack
   under 640px (page 3's rule).

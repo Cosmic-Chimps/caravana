@@ -955,8 +955,8 @@
   .cv-sbars-wrap { display: flex; flex-direction: column; gap: 8px; }
   .cv-sbars { display: flex; align-items: flex-end; gap: 4px; height: 56px; }
   .cv-sbar { flex: 1; max-width: 22px; border-radius: 1px; background: var(--color-fg-3); }
+  /* Every failed kind is ember, a stop at the limit too: the bar's title tells which. Amber is for nothing here. */
   .cv-sbar-failed { background: var(--color-failed); }
-  .cv-sbar-warn { background: var(--color-warn); }
   .cv-sbar-running { background: var(--color-rolling); }
   .cv-sbar-skipped { height: 2px; background: var(--color-line-2); }
   /* A bar's height is its run's time against the longest of the 14, in 4px steps (no style attributes). */
@@ -998,6 +998,12 @@
   .cv-sform-wrap { container-type: inline-size; display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 1180px; }
   .cv-sform { overflow: visible; }
   .cv-sform .cv-setrow-ctl > .cv-select { width: 100%; max-width: 360px; }
+  /* The text controls (Name, Command, When) are 560px; the selects stay 360, so the right edge of the
+     text controls, the preview and Limits is one line. */
+  .cv-sform .cv-setrow-ctl > .cv-sw560 { max-width: 560px; }
+  /* Edit's Run inside: the app and service as text, since a schedule can't move. */
+  .cv-sfixed { padding: 6px 0; font: 400 13px/20px var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-sfixed .cv-inline-mono { color: var(--color-fg-1); }
   .cv-sform .cv-setrow-hint .cv-inline-mono { white-space: nowrap; }
   .cv-scommand { height: auto; min-height: 58px; max-width: 560px; padding: 8px 12px; line-height: 1.5; resize: vertical; }
   .cv-swhen { display: flex; gap: 8px; width: 100%; max-width: 560px; }
@@ -1016,14 +1022,21 @@
   .cv-spreview-cron { color: var(--color-fg-1); }
   .cv-spreview-warn { display: flex; align-items: baseline; gap: 8px; color: var(--color-fg-1); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
   .cv-spreview-warn .cv-mark { position: relative; top: 0.05em; }
-  .cv-slimits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 560px; }
+  /* Two columns of 274px: 560px with the gap. */
+  .cv-slimits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 560px; }
   .cv-slimits .cv-select { width: 100%; min-width: 0; }
   .cv-sform-foot { display: flex; align-items: center; gap: 10px; padding: 18px 20px; border-top: 1px solid var(--color-line-1); }
   .cv-sform-foot .cv-btn { text-decoration: none; }
 
   /* Configure's Schedules panel: a line per schedule, its words quieter after the name. */
-  .cv-schedline { font: 400 14px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-schedline { display: flex; align-items: baseline; gap: 9px; font: 400 14px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-schedline > .cv-mark { position: relative; top: -0.06em; }
+  .cv-schedline > span:last-child { min-width: 0; }
   .cv-schedline-words { font-size: 12px; color: var(--color-fg-3); }
+  /* "6 schedules · 2 failing", a link to the list of this app's. */
+  .cv-schednote { font-family: var(--font-mono); }
+  .cv-schednote a { color: inherit; text-decoration: none; }
+  .cv-schednote a:hover { color: var(--color-fg-1); text-decoration: underline; }
 }
 
 /* The table folds like the home's when it has less than 900px: the mark, the name and its pill;
@@ -1038,9 +1051,7 @@
   .cv-ssum > [data-label]::before { content: attr(data-label); grid-row: 1 / span 3; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
   .cv-ssum > [data-label] > * { grid-column: 2; }
   .cv-sstrip { max-width: none; }
-  .cv-swhere { white-space: normal; overflow-wrap: anywhere; }
   .cv-sdetail { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-left: 18px; }
-  .cv-sfacts { grid-template-columns: 110px minmax(0, 1fr); }
 }
 /* The form's limits stack when the form is narrow; the setting rows already do (page 3's rule). */
 @container (max-width: 479.98px) {

@@ -66,6 +66,12 @@ type schedForm struct {
 	// and their errors.
 	Name, App, Service, Command, When formField
 	Apps                              []formOption
+	// Fixed is "web of clock" in mono, drawn instead of the app and service
+	// selects when the schedule exists (Edit): it can't move to another app.
+	// Hidden inputs carry the two values; empty for a new schedule.
+	Fixed    sentence
+	FixedApp string
+	FixedSvc string
 	// Services is the service select: the picked app's services when it has
 	// several (ServiceShown), or every app's as "app › service" (Pairs).
 	Services     []formOption
@@ -379,8 +385,9 @@ func (s *server) editForm(ctx context.Context, sc service.Schedule, in scheduleI
 	f.Editing, f.Action, f.Submit, f.Verb = true, "/schedules/"+url.PathEscape(sc.ID), "Save schedule", "save"
 	f.Title = sentence{plain("Edit "), mono(sc.Name)}
 	f.Presets = presetsFor(url.Values{}, "/schedules/"+url.PathEscape(sc.ID)+"/edit", in.When)
-	// The app is fixed: only it is listed.
-	f.Apps = slices.DeleteFunc(f.Apps, func(o formOption) bool { return o.Value != sc.App })
+	// The app and its service are fixed: drawn as text, carried in hidden inputs.
+	f.Fixed = sentence{mono(sc.Service), plain(" of "), mono(appText(sc))}
+	f.FixedApp, f.FixedSvc = sc.App, sc.Service
 	return f, nil
 }
 

@@ -231,9 +231,9 @@ func TestSchedulesPage(t *testing.T) {
 	}{
 		"never": {never.ID, []string{"cv-mark-idle", "never", "whoami · echo never", "Every day at 03:00 UTC", "0 3 * * *", "It hasn't run yet.", "no runs yet · stops at 5 min", "Run now"}},
 		"good": {good.ID, []string{"cv-mark-healthy", "Every 15 minutes", "took 50 s", "usually 48 s · stops at 5 min",
-			"The last run finished in 50 s.", "Logs of last run", "Pause", "Edit", "Delete…", "Its runs' history goes with it."}},
+			"Last run finished in 50 s.", "Logs of last run", "Pause", "Edit", "Delete…", "Its runs' history goes with it."}},
 		"bad": {bad.ID, []string{"cv-mark-failed", "last run failed", "blog · web · sh -c 'exit 1'", "Exited with code 1. 3 of the last 4 runs failed the same way.",
-			"web of blog", "skip the next run", "256 MB", "default / production"}},
+			"web of blog", "skip the next run", "256 MB"}},
 		"paused":  {paused.ID, []string{"cv-mark-idle", "paused", "Paused just now.", "Resume"}},
 		"skipper": {skipped.ID, []string{"cv-mark-warning", "Skipped once, ", " ago, because the run before was still going."}},
 	}
@@ -253,7 +253,7 @@ func TestSchedulesPage(t *testing.T) {
 		t.Error("the failed first row should be the only one open")
 	}
 	// Run now is primary on the failed one, secondary elsewhere; a paused one has Resume and no Pause.
-	if !strings.Contains(rowOf(body, bad.ID), `cv-btn cv-btn-primary cv-btn-sm"><svg`) || strings.Contains(rowOf(body, good.ID), `cv-btn-primary`) {
+	if !strings.Contains(rowOf(body, bad.ID), `/run"><button type="submit" class="cv-btn cv-btn-primary`) || strings.Contains(rowOf(body, good.ID), `cv-btn-primary`) {
 		t.Error("Run now should be primary only after a failed run")
 	}
 	if p := rowOf(body, paused.ID); !strings.Contains(p, `/schedules/`+paused.ID+`/resume`) || strings.Contains(p, `/pause"`) {
@@ -427,12 +427,12 @@ func TestSchedulesBuiltin(t *testing.T) {
 		t.Fatalf("no built-in row:\n%s", text(body))
 	}
 	for _, want := range []string{"web backup", "duo · web · pg_dump → backups", "Every day at 03:00 UTC",
-		"Made by Backups. Change the time or how many are kept in the app's Backups tab.", "Change in Backups", "Logs of last run", "usually 30 s"} {
+		"Made by Backups. Change the time or how many are kept in the app's Backups tab.", "Change in Backups", "usually 30 s"} {
 		if !strings.Contains(text(row), want) {
 			t.Errorf("the built-in row lacks %q:\n%s", want, text(row))
 		}
 	}
-	for _, gone := range []string{"/run\"", "/pause\"", "/edit\"", "/delete\"", "Delete…", "stops at"} {
+	for _, gone := range []string{"/run\"", "/pause\"", "/edit\"", "/delete\"", "Delete…", "stops at", "Logs of last run", "project"} {
 		if strings.Contains(row, gone) {
 			t.Errorf("the built-in row has %q", gone)
 		}
@@ -570,6 +570,93 @@ func TestConfigureSchedulesPanel(t *testing.T) {
 	}
 }
 
+// The critique's rulings (designer, 2026-10-23): Configure's panel has a mark before each name, failing
+// lines first and the note "2 schedules · 1 failing" linking to the app's list.
+func TestConfigureSchedulesPanelMarksAndNote(t *testing.T) {
+	e := schedEnv(t)
+	good := e.schedule(t, "whoami", "a-good", "*/15 * * * *", "true")
+	e.runs(t, good, pastRun{ID: "g1", Status: store.RunOK, Ago: time.Hour, Took: time.Second})
+	bad := e.schedule(t, "whoami", "z-bad", "0 4 * * *", "false")
+	e.runs(t, bad, pastRun{ID: "b1", Status: store.RunFailed, Ago: time.Hour, Took: time.Second, Exit: new(1), Error: "exit 1"})
+	body := e.pageOf(t, "/apps/whoami/configure")
+	panel := body[strings.Index(body, `id="schedules-title"`):]
+	panel = panel[:strings.Index(panel, "</section>")]
+	badAt := strings.Index(panel, `<span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span><span class="cv-schedline-name">z-bad</span>`)
+	goodAt := strings.Index(panel, `<span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span><span class="cv-schedline-name">a-good</span>`)
+	if badAt < 0 || goodAt < 0 || badAt > goodAt {
+		t.Errorf("the lines don't have the row's marks, or the failing one isn't first:\n%s", panel)
+	}
+	if !strings.Contains(panel, `<a href="/schedules?app=whoami">2 schedules · 1 failing</a>`) {
+		t.Errorf("the note isn't a link to the app's list:\n%s", panel)
+	}
+	// Nothing failing, one schedule: the singular and "none failing".
+	e.runs(t, bad, pastRun{ID: "b2", Status: store.RunOK, Ago: time.Minute, Took: time.Second})
+	if err := e.Svc.DeleteSchedule(context.Background(), good.ID); err != nil {
+		t.Fatal(err)
+	}
+	if body := e.pageOf(t, "/apps/whoami/configure"); !strings.Contains(body, `<a href="/schedules?app=whoami">1 schedule · none failing</a>`) {
+		t.Errorf("the note of one schedule that doesn't fail:\n%s", text(body))
+	}
+}
+
+// The critique's rulings (designer, 2026-10-23): every failed kind is an ember bar (a stop at the limit tells
+// its limit in the title; the skipped stub is the only other look), Run now is primary only in the row
+// the page opened by itself, a built-in has one button, and the project fact is the display name and
+// is left out in Default's production.
+func TestScheduleCritiqueRulings(t *testing.T) {
+	e := schedEnv(t)
+	slow := e.schedule(t, "whoami", "slow", "0 4 * * *", "sleep", "999")
+	e.runs(t, slow, pastRun{ID: "s1", Status: store.RunOK, Ago: 4 * time.Hour, Took: 10 * time.Second},
+		pastRun{ID: "s2", Status: store.RunStoppedAtLimit, Ago: 3 * time.Hour, Took: 5 * time.Minute},
+		pastRun{ID: "s3", Status: store.RunSkipped, Ago: 2 * time.Hour, Error: "the run before was still going"},
+		pastRun{ID: "s4", Status: store.RunFailed, Ago: time.Hour, Took: 20 * time.Second, Exit: new(2), Error: "exit 2"})
+	other := e.schedule(t, "blog", "other", "0 5 * * *", "false")
+	e.runs(t, other, pastRun{ID: "o1", Status: store.RunFailed, Ago: time.Hour, Took: time.Second, Exit: new(1), Error: "exit 1"})
+
+	body := e.pageOf(t, "/schedules")
+	row := rowOf(body, slow.ID)
+	if strings.Contains(row, "cv-sbar-warn") || strings.Count(row, `cv-sbar cv-sbar-failed`) != 2 || !strings.Contains(row, `cv-sbar cv-sbar-skipped"`) {
+		t.Errorf("the bars of a stop at the limit, a failure and a skip:\n%s", row)
+	}
+	if !regexp.MustCompile(`class="cv-sbar cv-sbar-failed cv-sbar-h14" title="[^"]+ · stopped at 5 min"`).MatchString(row) {
+		t.Errorf("the stop at the limit's bar doesn't tell the limit:\n%s", row)
+	}
+	if css, err := fs.ReadFile(staticFS, "static/app.css"); err != nil || strings.Contains(string(css), "cv-sbar-warn") {
+		t.Errorf("the stylesheet still has a warn bar (%v)", err)
+	}
+
+	// Run now: primary in the row the page opened by itself (the first failed one), secondary in every other,
+	// the one the owner opens included. Both failed here; slow sorts first (newest failure aside, by name).
+	first, second := slow.ID, other.ID
+	if strings.Index(body, `id="schedule-`+first+`"`) > strings.Index(body, `id="schedule-`+second+`"`) {
+		first, second = second, first
+	}
+	if !strings.Contains(rowOf(body, first), ` open>`) || !strings.Contains(rowOf(body, first), `/run"><button type="submit" class="cv-btn cv-btn-primary`) ||
+		strings.Contains(rowOf(body, second), `cv-btn-primary`) {
+		t.Error("Run now should be primary only in the first failed row")
+	}
+	for _, q := range []string{"?open=" + first, "?open=" + second, "?created=" + first, "?saved=" + first} {
+		if got := e.pageOf(t, "/schedules"+q); strings.Contains(got, `/run"><button type="submit" class="cv-btn cv-btn-primary`) {
+			t.Errorf("GET /schedules%s: Run now is primary in a row the owner opened", q)
+		}
+	}
+	if part := e.pageOf(t, "/parts/schedules"); !strings.Contains(part, `/run"><button type="submit" class="cv-btn cv-btn-primary`) {
+		t.Error("a refresh of the region loses the primary Run now of the row that opens by itself")
+	}
+
+	// The project fact: not in Default's production, the display name elsewhere.
+	if strings.Contains(text(row), "project") {
+		t.Errorf("a schedule in Default's production has a project fact:\n%s", text(row))
+	}
+	shop := shopConsole(t)
+	shop.seed(t, shopWeb("staging", "1"), seedDeploy{ID: "d1", Status: store.StatusHealthy, Version: 2})
+	shop.copies("shop--staging--web", "web", 2, 1, 0)
+	sc := shop.schedule(t, "shop--staging--web", "tick", "0 3 * * *", "date")
+	if got := text(rowOf(shop.pageOf(t, "/schedules"), sc.ID)); !strings.Contains(got, "projectShop Floor / staging") {
+		t.Errorf("the project fact of an app in another project:\n%s", got)
+	}
+}
+
 // The shell loads localtime.js, which is ours, listed with its sum, and served; and a page without
 // it (what the server sends) already reads right: UTC times, "Times are UTC.".
 func TestLocalTimeScript(t *testing.T) {
@@ -615,7 +702,7 @@ func TestLiveStageIsAClock(t *testing.T) {
 	checkClocks(t, "the Deployments tab", body)
 }
 
-// The designer's review (2026-10-23): the bars panel's words, the "The last run finished in …"
+// The designer's review (2026-10-23): the bars panel's words, the "Last run finished in …"
 // sentence, a run that couldn't start (the service's reason, a program in mono; an older row's
 // "could not start" reads as Nomad's), and the Next and Last run cells asking for the local time on
 // a line of its own.
@@ -639,7 +726,7 @@ func TestScheduleReviewWords(t *testing.T) {
 	if got := text(rowOf(body, failing.ID)); !strings.Contains(got, "no completed runs · stops at 5 min") || strings.Contains(got, "no runs yet") {
 		t.Errorf("a schedule whose runs never finished ok:\n%s", got)
 	}
-	if got := text(rowOf(body, good.ID)); !strings.Contains(got, "The last run finished in 48 s.") || strings.Contains(got, "last run:") {
+	if got := text(rowOf(body, good.ID)); !strings.Contains(got, "Last run finished in 48 s.") || strings.Contains(got, "The last run") || strings.Contains(got, "last run:") {
 		t.Errorf("an ok last run:\n%s", got)
 	}
 	// The detail is the newest run's reason.

@@ -781,10 +781,11 @@
   <section class="cv-panel cv-gpanel cv-gpanel-tight" aria-labelledby="schedules-title">
     <h2 id="schedules-title" class="cv-label">Schedules</h2>
     {{range .Schedules.Lines}}
-    <p class="cv-schedline"><span class="cv-schedline-name">{{.Name}}</span> <span class="cv-schedline-words">· {{.Words}}</span></p>
+    <p class="cv-schedline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span><span class="cv-schedline-name">{{.Name}}</span> <span class="cv-schedline-words">· {{.Words}}</span></span></p>
     {{else}}
     <p class="cv-note">No schedules.</p>
     {{end}}
+    {{with .Schedules.Note}}<p class="cv-note cv-schednote"><a href="{{$.Schedules.ManageHref}}">{{.}}</a></p>{{end}}
     <div class="cv-btnrow">
       <a href="{{.Schedules.ManageHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Manage schedules</a>
       <a href="{{.Schedules.NewHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New schedule</a>

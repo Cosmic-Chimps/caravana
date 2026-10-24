@@ -184,17 +184,23 @@
       <p class="cv-setrow-hint" id="schedule-name-hint">Lowercase letters, digits and dashes, at most 31. Unique in the app.</p>
     </div>
     <div class="cv-setrow-ctl">
-      <input class="cv-field cv-field-mono" id="schedule-name" type="text" name="name" value="{{.Name.Value}}" maxlength="31" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="rates-sync" aria-describedby="schedule-name-hint{{if .Name.Error}} schedule-name-error{{end}}"{{if .Name.Error}} aria-invalid="true"{{end}}{{if .Name.Alert}} autofocus{{end}}>
+      <input class="cv-field cv-field-mono cv-sw560" id="schedule-name" type="text" name="name" value="{{.Name.Value}}" maxlength="31" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="rates-sync" aria-describedby="schedule-name-hint{{if .Name.Error}} schedule-name-error{{end}}"{{if .Name.Error}} aria-invalid="true"{{end}}{{if .Name.Alert}} autofocus{{end}}>
       {{template "field-error" .Name}}
     </div>
   </div>
 
   <div class="cv-setrow">
     <div class="cv-setrow-text">
-      <label class="cv-setrow-label" for="schedule-app">Run inside</label>
+      {{if .Fixed}}<span class="cv-setrow-label" id="schedule-app-label">Run inside</span>{{else}}<label class="cv-setrow-label" for="schedule-app">Run inside</label>{{end}}
       <p class="cv-setrow-hint" id="schedule-app-hint">Uses the live version's image and variables. Doesn't take traffic.</p>
     </div>
     <div class="cv-setrow-ctl">
+      {{if .Fixed}}
+      <p class="cv-sfixed" aria-labelledby="schedule-app-label">{{template "sentence" .Fixed}}</p>
+      <input type="hidden" name="app" value="{{.FixedApp}}">
+      <input type="hidden" name="service" value="{{.FixedSvc}}">
+      {{template "field-error" .App}}
+      {{else}}
       <select class="cv-field cv-select" id="schedule-app" name="app" aria-describedby="schedule-app-hint{{if .App.Error}} schedule-app-error{{end}}"{{if .App.Error}} aria-invalid="true"{{end}}{{if .App.Alert}} autofocus{{end}}>
         {{range .Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
       </select>
@@ -210,6 +216,7 @@
       {{if .Pairs}}<p class="cv-hint">Pick the app above and its service here, or only a service: <span class="cv-inline-mono">app › service</span>.</p>{{end}}
       {{end}}
       {{if .VolumesHint}}<p class="cv-hint">Every service of this app mounts a volume, and a schedule needs a service without volumes.</p>{{end}}
+      {{end}}
     </div>
   </div>
 
@@ -219,7 +226,7 @@
       <p class="cv-setrow-hint" id="schedule-command-hint">The program, then its arguments, quoted like a shell's words; no shell is implied. Pipes and variables aren't understood: for those, run <span class="cv-inline-mono">sh -c '…'</span>.</p>
     </div>
     <div class="cv-setrow-ctl">
-      <textarea class="cv-field cv-field-mono cv-scommand" id="schedule-command" name="command" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="node scripts/sync-rates.js" aria-describedby="schedule-command-hint{{if .Command.Error}} schedule-command-error{{end}}"{{if .Command.Error}} aria-invalid="true"{{end}}{{if .Command.Alert}} autofocus{{end}}>{{.Command.Value}}</textarea>
+      <textarea class="cv-field cv-field-mono cv-sw560 cv-scommand" id="schedule-command" name="command" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="node scripts/sync-rates.js" aria-describedby="schedule-command-hint{{if .Command.Error}} schedule-command-error{{end}}"{{if .Command.Error}} aria-invalid="true"{{end}}{{if .Command.Alert}} autofocus{{end}}>{{.Command.Value}}</textarea>
       {{template "field-error" .Command}}
     </div>
   </div>

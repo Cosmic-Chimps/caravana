@@ -1098,6 +1098,17 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		s.serverError(w, "list schedules", err)
 		return
 	}
+	newestRuns := map[string]service.ScheduleRun{}
+	for _, sc := range schedules {
+		runs, err := s.svc.ListScheduleRuns(ctx, sc.ID, 1)
+		if err != nil {
+			s.serverError(w, "list schedule runs", err)
+			return
+		}
+		if len(runs) > 0 {
+			newestRuns[sc.ID] = runs[0]
+		}
+	}
 	head, err := s.shellPage(r, id+" configure", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
 		s.serverError(w, "read admin", err)
@@ -1119,7 +1130,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.Compose == nil && sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
 		Secrets:   secretsPanelOf(sum.App),
-		Schedules: schedulesPanelOf(id, schedules),
+		Schedules: schedulesPanelOf(id, schedules, newestRuns),
 		Webhook:   webhookView{Enabled: hook.Enabled, URL: extra.WebhookURL, Never: len(deployments) == 0},
 		Deploy:    deployTokenSection{Token: extra.DeployToken, Scope: sum.Place, URL: s.consoleURL(r)},
 		Export:    exportOf(id, deployments),
