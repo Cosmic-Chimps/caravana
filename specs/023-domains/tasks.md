@@ -14,7 +14,7 @@ builds each phase; Opus reviews before the next.
 
 ## Phase 0: The lab spike (no story label)
 
-- [ ] T001 Run the research's six lab checks against the lab's Traefik (no Caravana change: a
+- [x] T001 Run the research's six lab checks against the lab's Traefik (no Caravana change: a
   hand-registered Nomad job with the planned tags, and a throwaway Traefik job copy with a
   file-provider template over a variable): (1) middleware and router tags listed by
   `/api/http/middlewares` and `/api/http/routers` and the router `enabled`; (2) two routers on

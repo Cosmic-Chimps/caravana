@@ -589,3 +589,131 @@ here because this pass was read-only):
 5. A file-provider middleware from a template over `nomad/jobs/traefik`: re-render and apply
    without a restart, and the missing-middleware behavior (router disabled). (R4 option B)
 6. Does Go's pure resolver here answer `x.localhost` (127.0.0.1) the way glibc does? (R3, R7)
+
+## Lab checks (2026-10-24, observed)
+
+Traefik `3.7.13` (`/api/version`: `{"Version":"3.7.13","Codename":"langres",...}`). The default
+certificate on `127.0.0.1:8443` for any SNI: subject and issuer `CN=TRAEFIK DEFAULT CERT`, SAN
+`DNS:<hex>.<hex>.traefik.default`, valid one year from Traefik's last certificate reload
+(`notBefore=Oct 24 17:19:16 2026 GMT`, `notAfter=Oct 24 17:19:16 2027 GMT`).
+
+Setup: a throwaway job `spike023` made by `nomadjob.Translate` itself (a temp `main.go` run with
+`go run -overlay`, so no file in the repo): app `spike023`, service `web`
+(`traefik/whoami@sha256:c4717a8d…`, 32/64 MB), lab `Settings` (entrypoint `websecure`, no
+resolver), domains `a.localhost` plain, `b.localhost` path `/api`, `c.localhost` `wwwRedirect`,
+`d.localhost` `teamOnly`. Registered with Caravana's scoped lab token, then purged
+(`DELETE /v1/job/spike023?purge=true`); Traefik dropped every `spike023` router and middleware.
+The tags as `Translate` emitted them (before the fix in item 3):
+
+```
+traefik.enable=true
+traefik.http.routers.spike023-web.rule=Host(`a.localhost`)
+traefik.http.routers.spike023-web.entrypoints=websecure
+traefik.http.routers.spike023-web.tls=true
+traefik.http.routers.spike023-web-cfcc2bfb.rule=Host(`b.localhost`) && PathPrefix(`/api`)
+traefik.http.routers.spike023-web-cfcc2bfb.entrypoints=websecure
+traefik.http.routers.spike023-web-cfcc2bfb.tls=true
+traefik.http.routers.spike023-web-9e4318f9.rule=Host(`c.localhost`) || Host(`www.c.localhost`)
+traefik.http.routers.spike023-web-9e4318f9.entrypoints=websecure
+traefik.http.routers.spike023-web-9e4318f9.tls=true
+traefik.http.routers.spike023-web-9e4318f9.middlewares=spike023-web-9e4318f9-www
+traefik.http.middlewares.spike023-web-9e4318f9-www.redirectregex.regex=^https://www[.]c[.]localhost/(.*)
+traefik.http.middlewares.spike023-web-9e4318f9-www.redirectregex.replacement=https://c.localhost/$1
+traefik.http.middlewares.spike023-web-9e4318f9-www.redirectregex.permanent=true
+traefik.http.routers.spike023-web-c8147f72.rule=Host(`d.localhost`)
+traefik.http.routers.spike023-web-c8147f72.entrypoints=websecure
+traefik.http.routers.spike023-web-c8147f72.tls=true
+traefik.http.routers.spike023-web-c8147f72.middlewares=spike023-web-c8147f72-auth@file
+```
+
+1. **Tags listed (lab, observed).** `/api/http/routers` lists four routers, all with
+   `"service": "spike023-web"`, `entryPoints: ["websecure"]`, `tls: {"options": "default"}`:
+   - `spike023-web@nomad`: `status: "enabled"`, rule ``Host(`a.localhost`)``, priority 19, no
+     middlewares.
+   - `spike023-web-cfcc2bfb@nomad`: `enabled`, ``Host(`b.localhost`) && PathPrefix(`/api`)``,
+     priority 41.
+   - `spike023-web-9e4318f9@nomad`: `enabled`, ``Host(`c.localhost`) || Host(`www.c.localhost`)``,
+     priority 46, `middlewares: ["spike023-web-9e4318f9-www@nomad"]` (Traefik adds `@nomad` to a
+     name written without a provider).
+   - `spike023-web-c8147f72@nomad`: `status: "disabled"`, priority 19,
+     `middlewares: ["spike023-web-c8147f72-auth@file"]`,
+     `error: ["middleware \"spike023-web-c8147f72-auth@file\" does not exist"]` (item 4).
+
+   `/api/http/middlewares` lists `spike023-web-9e4318f9-www@nomad`, `type: "redirectregex"`,
+   `status: "enabled"`, `usedBy: ["spike023-web-9e4318f9@nomad"]`, options
+   `{"regex": "^https://www[.]c[.]localhost/(.*)", "replacement": "https://c.localhost/$1",
+   "permanent": true}`: the `[.]` and `$1` reach Traefik as written (Nomad left `$1` alone).
+   Every tag key was accepted; no router or middleware had an error other than the missing file
+   middleware. The default priority is the rule's length (19, 41, 46), so a `Host && PathPrefix`
+   rule always outranks a plain ``Host(`h`)`` rule of the same host.
+2. **Two routers on one registration (lab, observed).** Without a `service` tag every router
+   binds to the registration's service: `/api/http/services/spike023-web@nomad` has `usedBy` all
+   four routers, one server, `UP`. `https://a.localhost:8443/hello` → `200`, whoami echoes
+   `GET /hello HTTP/1.1`, `Host: a.localhost:8443`. `https://b.localhost:8443/api/x` → `200`,
+   whoami echoes `GET /api/x HTTP/1.1` (the prefix is kept: nothing is stripped).
+   `https://b.localhost:8443/other` → `404`, body `404 page not found` (Traefik's own; no plain
+   router for `b`), and `https://b.localhost:8443/` → `404`. Rule precedence, with a hand-edited
+   rule ``Host(`b.localhost`) && PathPrefix(`/api`) || Host(`www.b.localhost`)`` (`enabled`,
+   priority 68): `www.b.localhost/other` → `200` and `b.localhost/other` → `404`, so `&&` binds
+   tighter than `||`, as `optionRouterTags` assumes: with a path and a redirect, the pair host is
+   routed on every path and redirected to the same path on the target, where only the prefix is
+   served.
+3. **The redirect (lab, observed): the regex as written missed every request whose Host carries
+   a port.** `curl -skI --resolve www.c.localhost:8443:127.0.0.1 https://www.c.localhost:8443/x`
+   → `HTTP/2 200` from whoami: Traefik matches `redirectregex` against
+   `https://<Host header><request URI>`, and the Host header was `www.c.localhost:8443`, so
+   `^https://www[.]c[.]localhost/(.*)` didn't match and the pair host was served as the app with
+   no redirect and no error. With `-H 'Host: www.c.localhost'` (no port, what a browser sends on
+   443): `GET` → `HTTP/2 301`, `location: https://c.localhost/x`; `HEAD` → `308`, same
+   `location`; `POST /a/b?q=1` → `308`, `location: https://c.localhost/a/b?q=1` (the query is
+   kept). So `permanent=true` answers **301 to a GET and 308 to any other method, HEAD included**.
+   Fixed tags, registered and observed: regex `^https://www[.]c[.]localhost(:[0-9]+)?/(.*)`,
+   replacement `https://c.localhost$1/$2` → with Host `www.c.localhost:8443`, `GET /x?q=1` →
+   `301`, `location: https://c.localhost:8443/x?q=1`; with Host `www.c.localhost` → `301`,
+   `location: https://c.localhost/x`; with Host `www.c.localhost:443` → `301`,
+   `location: https://c.localhost:443/`. `https://c.localhost:8443/x` → `200`, whoami echoes
+   `GET /x HTTP/1.1`.
+4. **Missing file middleware (lab, observed).** The Team-only router names
+   `spike023-web-c8147f72-auth@file`, which the lab's Traefik doesn't have:
+   `/api/http/routers/spike023-web-c8147f72@nomad` is
+   `{"status":"disabled","error":["middleware \"spike023-web-c8147f72-auth@file\" does not exist"]}`,
+   and `https://d.localhost:8443/` answers `HTTP/2 404`, `content-type: text/plain;
+   charset=utf-8`, `x-content-type-options: nosniff`, body `404 page not found`: the same answer
+   as a host with no router. It fails closed, and only that router: the other three on the same
+   registration stayed `enabled`. The file-provider re-render from a changed variable (4a) needs
+   the lab's Traefik job changed (T021): **not run here**.
+5. **HTTP-01 through basic auth (reasoned, not observed).** Traefik answers
+   `/.well-known/acme-challenge/<token>` on the resolver's `httpChallenge.entryPoint` (`web` on a
+   host) with its internal router `acme-http@internal`, whose priority is the largest possible, so
+   it wins over every provider router and over the `web` → `websecure` redirect. Caravana's app
+   routers, Team-only ones included, bind only to `websecure`, so their middlewares never see
+   port-80 traffic at all. Basic auth on a domain can't block issuance or renewal. The lab has no
+   resolver, so this is a **lab check on a host (the gate)**: a Team-only domain gets a trusted
+   certificate.
+6. **Go's pure resolver and `.localhost` (observed).** On this Mac (go1.27.1 darwin/arm64,
+   `GODEBUG=netdns=go+2` confirms `hostLookupOrder(x.localhost) = files,dns`):
+   `net.Resolver{PreferGo: true}` → `lookup x.localhost on 100.100.100.100:53: no such host`
+   (`www.c.localhost` the same; plain `localhost` → `[127.0.0.1 ::1]` from `/etc/hosts`);
+   `PreferGo: false` (the system resolver) → `[::1 127.0.0.1]`. In the lab VM (Ubuntu,
+   `hosts: files dns`, `nameserver 127.0.0.53`, systemd-resolved), a `CGO_ENABLED=0` linux/arm64
+   build: `x.localhost` → `[::1 127.0.0.1]` with either setting (resolved's stub synthesizes
+   `*.localhost`), `nope.invalid` → `no such host`; `getent hosts x.localhost` → `::1`. So the
+   answer for `*.localhost` depends on the machine's DNS server, not on Go: true on an Ubuntu host
+   with systemd-resolved, false on a Mac whose DNS is Tailscale's.
+
+**Consequences for the translator**
+
+- `optionRouterTags` (`internal/nomadjob/domains.go`) now writes the redirect as
+  `redirectregex.regex=^https://<pair with [.]>(:[0-9]+)?/(.*)` and
+  `redirectregex.replacement=https://<host>$1/$2`, keeping the port. Without it the pair host was
+  served as the app whenever the Host header had a port (every lab request through `:8443`, and a
+  client that sends `:443`). Still no `${`. Goldens `domain-www` and `domain-all` (`.json` and
+  `.nomad.hcl`) regenerated; no other golden moved. `plan.md`'s tag line (`/(.*)`, `/$1`) is
+  superseded by this.
+- Tests of the redirect assert `301` for a GET (and `308` for anything else), and `Location`
+  with the port the request had: in the lab `https://<d>:8443/<path>`.
+- Middleware order, tag keys, rule syntax and binding without a `service` tag: as written, no
+  change. A Team-only router with no `<R>-auth@file` yet is disabled and answers 404, so the
+  variable must be written (and Traefik's file rendered) before `Register`, as the plan says.
+- The DNS check must not rely on the resolver for `localhost` and `*.localhost`: treat them as
+  local by name (RFC 6761 §6.3) before any lookup.
