@@ -784,14 +784,14 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
   `data-local` names (time, time with seconds, weekday, date; a time whose local day isn't its UTC day
   gains the weekday). It never names the zone: the word is "local". A list of times (the preview's next
   three runs) says "UTC" once after the list and gets one " · 16:15 · 16:30 · 16:45 local". Without
-  script the UTC text stands alone and is right. Clock times are mono with tabular figures.
+  script the UTC text stands alone and is right. Clock times are mono with tabular figures, and the UTC text never breaks before "UTC" (`white-space: nowrap` on the `<time>`). In the table's Next and Last run cells (`data-local-line`) the local time is a line of its own under the UTC one, fg-3, with no separator ("Mon 03:00 local" under "in 2 d · Mon 09:00 UTC"); the count line keeps its one-line form. A title's clock (`data-local="none"`) gets no local time.
 - **Page head** (Settings' shape): "Schedules" 30px, the sentence "Commands that run on a timer in a
   fresh copy of an app, then stop. Times are UTC." (the script adds "Your local time is shown beside
   them."), New schedule (primary small, plus). Then the filter (a project select only with more than
   one project, the app select, Apply, Clear) and the count line in 13px mono fg-3: "7 schedules · 1
   failing · next run 14:15 UTC" ("none failing", "no runs scheduled").
-- **The table:** a 38px ink-2 head, columns `14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 150px 160px
-  200px`, gap 18. Each row is a native `<details>` (`id="schedule-<id>"`; `console.js` keeps a
+- **The table:** a 38px ink-2 head, columns `14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 170px 170px
+  minmax(120px, 200px)`, gap 18, every cell `min-width: 0` so the grid shrinks (the command line and cron line cut or wrap, never push the page wider). Each row is a native `<details>` (`id="schedule-<id>"`; `console.js` keeps a
   refreshed region's rows as open or closed as they were): chevron, a 9px mark (half disc while a run
   goes, ring when paused or never run, else the newest run's: disc, square, diamond for a skipped slot),
   the name (500 14px mono) with a small pill ("running now", "paused", "last run failed") over "app ·
@@ -802,16 +802,17 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
   row opens by itself when its last run failed; `?open=` and `?created=` open another.
 - **The detail** (ink-0, `minmax(0, 1.2fr) minmax(0, 1fr)`, padding 16 18 20 82): the state sentence
   (a failure's cause from a fixed table with "3 of the last 4 runs failed the same way.", "Running for 1
-  min 20 s. Usually takes 48 s.", "Paused 3 days ago." and the skip note quieter), "How long each run
+  min 20 s. Usually takes 48 s.", "Paused 3 days ago.", "The last run finished in 48 s." (no colon), "Couldn't start: no `sh` in the image." (the run's stored reason, a backticked program in mono) and the skip note quieter), "How long each run
   took" as bars 56px tall at most (fg-3 ok, failed, warn at the limit, a 2px stub for a skip; heights
   in fourteen 4px classes, since the policy allows no style attribute) over "usually 48 s · stops at 5
-  min"; then the facts grid (130px keys) and the buttons: Stop this run (a confirmation) while a run
+  min" ("no completed runs · stops at 5 min" when runs exist but none finished ok, "no runs yet" only
+  when there are none); then the facts grid (130px keys) and the buttons: Stop this run (a confirmation) while a run
   goes, else Run now (primary after a failure), Logs of last run, Pause or Resume, Edit, Delete… (a
   confirmation). A confirmation opens over what is below. A built-in (a service's backup, "web backup",
   "pg_dump → backups") has "Made by Backups…", Logs and Change in Backups, and its marks link to the
   Backups tab.
 - **A run's page:** the crumbs "Schedules / rates-sync" (both links), the title "`rates-sync` ·
-  yesterday 14:00 UTC" (the local time with its date), the run's sentence, "started … · took … · `web`
+  yesterday 14:00 UTC" (UTC only; the meta line has the local time), the run's sentence, "started … · took … · `web`
   of `booking-api` · v24", "Still running: reload for more." while it goes, and the output as the Logs
   tab draws it without the copy column: stdout, then stderr marked, the cut line when a stream lost its
   start, "No output." It is never cached, and no other page holds a run's output.

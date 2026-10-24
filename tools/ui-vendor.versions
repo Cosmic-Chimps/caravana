@@ -20,4 +20,4 @@ sse.min.js 2.2.4 https://registry.npmjs.org/htmx-ext-sse/-/htmx-ext-sse-2.2.4.tg
 xterm.js 6.0.0 https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz package/lib/xterm.js 14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972
 xterm.css 6.0.0 https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz package/css/xterm.css 854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6
 addon-fit.js 0.11.0 https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz package/lib/addon-fit.js ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527
-localtime.js ours - - da29073062a9d083e22f28c0a5218e1ee8e6777c4ef67239f0dbdae1651e9ef7
+localtime.js ours - - 55bc75a11b90da52c8121032a072da3314d64b2fb6ff0028d8d45247fac15b1a

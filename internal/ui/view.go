@@ -960,6 +960,8 @@ const (
 	localSeconds = "time-s"
 	localWeekday = "weekday"
 	localDate    = "date"
+	// localNone is a clock that gets no local time: localtime.js skips it (the run page's title).
+	localNone = "none"
 )
 
 // clockOf is t as a clock time read from now: "14:15 UTC" today, "tomorrow
@@ -974,11 +976,11 @@ func clockSecondsOf(now, t time.Time) clockTime {
 	return clockWith(now, t, "15:04:05", false)
 }
 
-// clockDateOf is clockOf for a record's own time (the run page's title): the
-// same words, and the viewer's local time with its date.
-func clockDateOf(now, t time.Time) clockTime {
+// clockTitleOf is clockOf for a title (the run page's): the same words, and no
+// local time beside them; the page's meta line has it.
+func clockTitleOf(now, t time.Time) clockTime {
 	c := clockOf(now, t)
-	c.Local = localDate
+	c.Local = localNone
 	return c
 }
 

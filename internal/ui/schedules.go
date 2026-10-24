@@ -339,7 +339,7 @@ func runSentence(now time.Time, sc service.Schedule, r service.ScheduleRun) sent
 		if reason == "" || reason == "could not start" {
 			reason = "Nomad couldn't start its copy"
 		}
-		return plainS("Couldn't start: " + strings.TrimSuffix(reason, ".") + ".")
+		return join(plainS("Couldn't start: "), backticked(strings.TrimSuffix(reason, ".")), plainS("."))
 	case store.RunSkipped:
 		reason := r.Error
 		if reason == "" {
@@ -359,6 +359,33 @@ func runSentence(now time.Time, sc service.Schedule, r service.ScheduleRun) sent
 		return plainS("Running for " + durationText(d) + ".")
 	}
 	return plainS("Running.")
+}
+
+// backticked is text in which the service wrote a program between backticks
+// ("no `sh` in the image"), as a sentence that draws the program in mono.
+func backticked(text string) sentence {
+	var out sentence
+	for {
+		before, rest, found := strings.Cut(text, "`")
+		if !found {
+			break
+		}
+		code, after, closed := strings.Cut(rest, "`")
+		if !closed {
+			break
+		}
+		if before != "" {
+			out = append(out, plain(before))
+		}
+		if code != "" {
+			out = append(out, mono(code))
+		}
+		text = after
+	}
+	if text != "" {
+		out = append(out, plain(text))
+	}
+	return out
 }
 
 // detailState is the sentence that opens a row's detail, and whether it is
@@ -411,6 +438,12 @@ func detailState(now time.Time, sc service.Schedule, runs []service.ScheduleRun)
 		return plainS(fmt.Sprintf("Skipped %s %s, because %s.", times, relative(now, newest.StartedAt), reason)), true
 	}
 	if last := sc.LastRun; last != nil {
+		if last.Status == store.RunOK {
+			if d, ok := runDuration(now, *last); ok {
+				return plainS("The last run finished in " + durationText(d) + "."), false
+			}
+			return plainS("The last run finished."), false
+		}
 		return join(plainS("The last run: "), lowerSentence(runSentence(now, sc, *last))), false
 	}
 	if sc.Paused {
@@ -573,7 +606,11 @@ func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bu
 	d.State, d.StateQuiet = detailState(now, sc, runs)
 	d.Bars = runBars(now, runs[:min(len(runs), stripRuns)])
 
+	// "no runs yet" only when there are none; runs that never finished ok leave the usual time unknown.
 	usual := "no runs yet"
+	if len(runs) > 0 || sc.LastRun != nil {
+		usual = "no completed runs"
+	}
 	if sc.UsualSeconds != nil {
 		usual = "usually " + durationText(time.Duration(*sc.UsualSeconds)*time.Second)
 	}
@@ -910,7 +947,7 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 	}
 
 	now := s.now()
-	page := runView{Name: sc.Name, Title: clockDateOf(now, run.StartedAt), Sentence: runSentence(now, sc, run),
+	page := runView{Name: sc.Name, Title: clockTitleOf(now, run.StartedAt), Sentence: runSentence(now, sc, run),
 		Started: clockSecondsOf(now, run.StartedAt), Service: sc.Service, App: appText(sc), Running: runOpen(run.Status)}
 	if d, ok := runDuration(now, run); ok && !page.Running {
 		page.Took = durationText(d)

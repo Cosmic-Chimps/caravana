@@ -61,8 +61,8 @@
         <span class="cv-swords{{if .Paused}} cv-swords-paused{{end}}">{{template "sentence" .Words}}</span>
         <span class="cv-scron">{{.Cron}}</span>
       </span>
-      <span class="cv-snext" data-label="Next">{{with .Next}}{{template "clock" .}}{{else}}<span class="cv-snext-none">{{.NextText}}</span>{{end}}</span>
-      <span class="cv-slast" data-label="Last run">
+      <span class="cv-snext" data-label="Next" data-local-line>{{with .Next}}{{template "clock" .}}{{else}}<span class="cv-snext-none">{{.NextText}}</span>{{end}}</span>
+      <span class="cv-slast" data-label="Last run" data-local-line>
         {{with .Last}}
         {{if .Running}}<span class="cv-slast-now">started {{template "clock" .Started}}</span>{{if .HasBar}}<meter class="cv-runbar" min="0" max="100" value="{{.BarPct}}" aria-hidden="true"></meter>{{end}}
         {{else if .Never}}<span class="cv-slast-never">never</span>

@@ -14,6 +14,11 @@
 //                          (16:15:02), weekday (Sun 16:15) or date
 //                          (2026-10-23 16:15). A "time" whose local day isn't
 //                          its UTC day gets the weekday, so it can't mislead.
+//                          data-local="none" gets nothing (a page's title).
+//   [data-local-line]      a table cell whose times take the local time on a
+//                          line of its own, "Mon 03:00 local" under
+//                          "in 2 d · Mon 09:00 UTC", with no separator, so the
+//                          pair never wraps in the middle of a phrase.
 //   [data-clock-group]     a list of times (the next three runs): one
 //                          " · 16:15 · 16:30 · 16:45 local" after the list.
 //   [data-local-lede]      the sentence that says "Times are UTC." gains
@@ -74,9 +79,9 @@
     return isNaN(date.getTime()) ? null : date;
   }
 
-  function addAfter(element, text) {
+  function addAfter(element, text, ownLine) {
     const span = document.createElement("span");
-    span.className = "cv-clock-local";
+    span.className = ownLine ? "cv-clock-local cv-clock-local-line" : "cv-clock-local";
     span.textContent = text;
     element.after(span);
   }
@@ -87,9 +92,16 @@
         return;
       }
       time.dataset.localDone = "1";
+      if (time.dataset.local === "none") {
+        return;
+      }
       const date = dateOf(time);
       if (date) {
-        addAfter(time, " · " + localText(date, time.dataset.local) + " local");
+        if (time.closest("[data-local-line]")) {
+          addAfter(time, localText(date, time.dataset.local) + " local", true);
+        } else {
+          addAfter(time, " · " + localText(date, time.dataset.local) + " local");
+        }
       }
     });
   }

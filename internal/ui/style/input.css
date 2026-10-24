@@ -892,6 +892,11 @@
      localtime.js adds after it, a step quieter. */
   .cv-clock, .cv-clock-local { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .cv-clock-local { color: var(--color-fg-3); }
+  /* The UTC text never breaks before "UTC". A title may (a phone is narrower than the words). */
+  time.cv-clock { white-space: nowrap; }
+  .cv-headline time.cv-clock { white-space: normal; }
+  /* In the table's Next and Last run cells the local time is a line of its own, no separator. */
+  .cv-clock-local-line { display: block; }
   /* The Backups tab's run times (they were relative words, set in .cv-data, before 022). */
   .cv-brun-when { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-2); }
   .cv-blast-when .cv-clock-local { font-size: 12px; }
@@ -902,7 +907,7 @@
 
   /* The table: a head, then one <details> per schedule whose summary is the row. */
   .cv-sched { overflow: visible; container-type: inline-size; }
-  .cv-shead, .cv-ssum { grid-template-columns: 14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 150px 160px 200px; }
+  .cv-shead, .cv-ssum { grid-template-columns: 14px 14px minmax(0, 1.3fr) minmax(0, 1.2fr) 170px 170px minmax(120px, 200px); }
   .cv-shead { display: grid; column-gap: 18px; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
   .cv-ssum { display: grid; column-gap: 18px; align-items: center; min-height: 62px; padding: 8px 18px; list-style: none; cursor: pointer; border-top: 1px solid var(--color-line-1); }
   .cv-shead + .cv-sdetails > .cv-ssum { border-top: 0; }
@@ -911,7 +916,7 @@
   .cv-sdetails[open] .cv-chev-closed { display: none; }
   .cv-sdetails[open] .cv-chev-open { display: block; }
   .cv-sdetails:last-child:not([open]) > .cv-ssum { border-radius: 0 0 5px 5px; }
-  .cv-ssum > * { min-width: 0; }
+  .cv-ssum > *, .cv-shead > * { min-width: 0; }
   .cv-smark { display: grid; place-items: center; }
   .cv-swhat, .cv-sruns, .cv-slast { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .cv-sname-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
@@ -922,7 +927,7 @@
   .cv-swhere { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cv-swords { font-size: 14px; line-height: 1.35; color: var(--color-fg-1); }
   .cv-swords-paused { color: var(--color-fg-3); }
-  .cv-scron { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-4); }
+  .cv-scron { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-4); overflow-wrap: anywhere; }
   .cv-snext { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); }
   .cv-snext-none { color: var(--color-fg-4); }
   .cv-slast { font: 400 12px/1.2 var(--font-mono); }

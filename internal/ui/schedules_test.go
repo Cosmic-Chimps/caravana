@@ -136,8 +136,8 @@ func TestClockOf(t *testing.T) {
 	if got := clockSecondsOf(now, time.Date(2026, 10, 23, 14, 0, 2, 0, time.UTC)); got.Text != "14:00:02 UTC" || got.Local != localSeconds {
 		t.Errorf("clockSecondsOf = %+v", got)
 	}
-	if got := clockDateOf(now, time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)); got.Text != "yesterday 14:00 UTC" || got.Local != localDate {
-		t.Errorf("clockDateOf = %+v", got)
+	if got := clockTitleOf(now, time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)); got.Text != "yesterday 14:00 UTC" || got.Local != localNone {
+		t.Errorf("clockTitleOf = %+v", got)
 	}
 	for at, want := range map[time.Time]string{
 		time.Date(2026, 10, 23, 14, 15, 0, 0, time.UTC): "14:15",
@@ -231,7 +231,7 @@ func TestSchedulesPage(t *testing.T) {
 	}{
 		"never": {never.ID, []string{"cv-mark-idle", "never", "whoami · echo never", "Every day at 03:00 UTC", "0 3 * * *", "It hasn't run yet.", "no runs yet · stops at 5 min", "Run now"}},
 		"good": {good.ID, []string{"cv-mark-healthy", "Every 15 minutes", "took 50 s", "usually 48 s · stops at 5 min",
-			"The last run: finished in 50 s.", "Logs of last run", "Pause", "Edit", "Delete…", "Its runs' history goes with it."}},
+			"The last run finished in 50 s.", "Logs of last run", "Pause", "Edit", "Delete…", "Its runs' history goes with it."}},
 		"bad": {bad.ID, []string{"cv-mark-failed", "last run failed", "blog · web · sh -c 'exit 1'", "Exited with code 1. 3 of the last 4 runs failed the same way.",
 			"web of blog", "skip the next run", "256 MB", "default / production"}},
 		"paused":  {paused.ID, []string{"cv-mark-idle", "paused", "Paused just now.", "Resume"}},
@@ -378,7 +378,7 @@ func TestScheduleRunPage(t *testing.T) {
 	if !strings.Contains(body, `<a href="/schedules?open=`+sc.ID+`#schedule-`+sc.ID+`" class="cv-crumb">hello</a>`) {
 		t.Error("the crumb doesn't lead back to the schedule's row")
 	}
-	if !regexp.MustCompile(`<h1 class="cv-headline"><span class="cv-inline-mono">hello</span> · <time class="cv-clock" datetime="[^"]+Z"[^>]* data-local="date">yesterday \d\d:\d\d UTC</time></h1>`).MatchString(body) {
+	if !regexp.MustCompile(`<h1 class="cv-headline"><span class="cv-inline-mono">hello</span> · <time class="cv-clock" datetime="[^"]+Z"[^>]* data-local="none">yesterday \d\d:\d\d UTC</time></h1>`).MatchString(body) {
 		t.Errorf("the title isn't the name and a clock:\n%s", body)
 	}
 	checkClocks(t, "the run page", body)
@@ -613,4 +613,54 @@ func TestLiveStageIsAClock(t *testing.T) {
 		t.Errorf("the Live stage isn't a clock with its title:\n%s", d2)
 	}
 	checkClocks(t, "the Deployments tab", body)
+}
+
+// The designer's review (2026-10-23): the bars panel's words, the "The last run finished in …"
+// sentence, a run that couldn't start (the service's reason, a program in mono; an older row's
+// "could not start" reads as Nomad's), and the Next and Last run cells asking for the local time on
+// a line of its own.
+func TestScheduleReviewWords(t *testing.T) {
+	e := schedEnv(t)
+	norun := e.schedule(t, "whoami", "norun", "0 3 * * *", "true")
+	failing := e.schedule(t, "whoami", "failing", "0 4 * * *", "false")
+	e.runs(t, failing, pastRun{ID: "f1", Status: store.RunFailed, Ago: time.Hour, Took: time.Second, Exit: new(1), Error: "exit 1"})
+	cns := e.schedule(t, "whoami", "cns", "0 5 * * *", "true")
+	e.runs(t, cns,
+		pastRun{ID: "c1", Status: store.RunCouldNotStart, Ago: 3 * time.Hour, Error: "no `sh` in the image"},
+		pastRun{ID: "c2", Status: store.RunCouldNotStart, Ago: 2 * time.Hour, Error: "could not start"},
+		pastRun{ID: "c3", Status: store.RunCouldNotStart, Ago: time.Hour, Error: "the image couldn't be pulled"})
+	good := e.schedule(t, "whoami", "good", "0 6 * * *", "true")
+	e.runs(t, good, pastRun{ID: "g1", Status: store.RunOK, Ago: time.Hour, Took: 48 * time.Second})
+
+	body := e.pageOf(t, "/schedules")
+	if got := text(rowOf(body, norun.ID)); !strings.Contains(got, "no runs yet · stops at 5 min") {
+		t.Errorf("a schedule with no runs:\n%s", got)
+	}
+	if got := text(rowOf(body, failing.ID)); !strings.Contains(got, "no completed runs · stops at 5 min") || strings.Contains(got, "no runs yet") {
+		t.Errorf("a schedule whose runs never finished ok:\n%s", got)
+	}
+	if got := text(rowOf(body, good.ID)); !strings.Contains(got, "The last run finished in 48 s.") || strings.Contains(got, "last run:") {
+		t.Errorf("an ok last run:\n%s", got)
+	}
+	// The detail is the newest run's reason.
+	if got := text(rowOf(body, cns.ID)); !strings.Contains(got, "Couldn't start: the image couldn't be pulled.") {
+		t.Errorf("the detail of a run that couldn't start:\n%s", got)
+	}
+	for _, id := range []string{norun.ID, failing.ID, good.ID} {
+		sum := schedSummary(rowOf(body, id))
+		if !strings.Contains(sum, `class="cv-snext" data-label="Next" data-local-line>`) || !strings.Contains(sum, `class="cv-slast" data-label="Last run" data-local-line>`) {
+			t.Errorf("the Next and Last run cells don't ask for the local time on its own line (%s)", id)
+		}
+	}
+
+	run := func(id string) string { return e.pageOf(t, "/schedules/"+cns.ID+"/runs/"+id) }
+	if got := run("c1"); !strings.Contains(got, `Couldn&#39;t start: no <span class="cv-inline-mono text-fg-1">sh</span> in the image.`) || strings.Contains(got, "`") {
+		t.Errorf("a program in backticks isn't mono:\n%s", text(got))
+	}
+	if got := text(run("c2")); !strings.Contains(got, "Couldn't start: Nomad couldn't start its copy.") {
+		t.Errorf("an older row's reason:\n%s", got)
+	}
+	if got := text(run("c3")); !strings.Contains(got, "Couldn't start: the image couldn't be pulled.") {
+		t.Errorf("a pull failure:\n%s", got)
+	}
 }
