@@ -634,12 +634,15 @@ func stateFor(t domainTarget, f edge.Facts) edge.State {
 // added. Records are what points the host here either way.
 //
 // appID, when set, must name a stored app (store.ErrNotFound otherwise); it
-// doesn't change what is checked. A host that isn't a hostname is an
-// *app.FieldError on "host".
+// doesn't change what is checked. A host that isn't a hostname, or is the
+// console's own, is an *app.FieldError on "host".
 func (s *Service) CheckDomain(ctx context.Context, host, appID string) (DomainCheck, error) {
 	host = normalizeHost(host)
 	if !validCheckHost(host) {
 		return DomainCheck{}, app.NewFieldError("host", "%q is not a hostname", host)
+	}
+	if console := s.consoleHost(); console != "" && host == console {
+		return DomainCheck{}, app.NewFieldError("host", "%s is the console's own address (CARAVANA_PUBLIC_URL): an app can't use it", host)
 	}
 	if appID != "" {
 		if _, err := s.store.GetApp(ctx, appID); err != nil {

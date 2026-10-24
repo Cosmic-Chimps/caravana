@@ -44,12 +44,11 @@ func (s *server) deployCompose(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &req); err != nil {
 		return err
 	}
-	rec, err := s.svc.DeployComposeIf(ctx, id, req, cond, app.TriggerManual)
+	res, err := s.svc.DeployComposeIfResult(ctx, id, req, cond, app.TriggerManual)
 	if err != nil {
 		return err
 	}
-	w.Header().Set("Location", deploymentPath(id, rec.Deployment.ID))
-	writeJSON(w, http.StatusAccepted, toDeploymentJSON(rec))
+	writeDeployResult(w, id, res)
 	return nil
 }
 

@@ -75,7 +75,7 @@ Independent test: quickstart §1.
   probes at once, each result upserted, `ChangeDomains` published; stopped or undeployed apps
   not probed; the injectable resolver and dialer (`Service.SetEdge(edge.Resolver, edge.Dialer)`)
   for the lab.
-- [ ] T009 [US1] `internal/api/domains.go` + `api/openapi.yaml` 0.25.0 + tests: `listDomains`
+- [x] T009 [US1] `internal/api/domains.go` + `api/openapi.yaml` 0.25.0 + tests: `listDomains`
   (`?app=&project=&fresh=`), `getDomain`, `checkDomain` (`no-store`), the `Domain` and
   `DomainCheck` schemas, codes `domain_not_found`; `App.services[].domains[]` gains the three
   fields; the contract test; the scope walk expects 403 on the new routes.
@@ -110,7 +110,7 @@ Independent test: quickstart §2.
   `path`, `wwwRedirect`, `teamOnly`; the Aspire fixtures unchanged; `internal/service`'s
   kept-file rewrite: `editDomains(request, …)` rewrites the overlay's domains (as `editSecrets`
   does) so the Domains page edits a kept-file app with `If-Match`.
-- [ ] T014 [US2] API: `rotateTeamPassword` (`no-store`, 409 `not_team_only`, `app_stopped`),
+- [x] T014 [US2] API: `rotateTeamPassword` (`no-store`, 409 `not_team_only`, `app_stopped`),
   `DeployResult.teamPasswords` (`no-store` on that answer), codes `domain_taken` and the
   `invalid_field` fields, in `internal/api/domains.go`, `deployments.go` and `api/openapi.yaml`;
   tests including a deploy token setting `teamOnly` on its own app and getting the password once.

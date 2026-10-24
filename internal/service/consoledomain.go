@@ -38,6 +38,11 @@ func (s *Service) checkConsoleDomain(a app.App) error {
 				return app.NewFieldError(fmt.Sprintf("services[%d].domains[%d].host", i, j),
 					"%s is the console's own address (CARAVANA_PUBLIC_URL): an app can't use it, or the console would stop answering. Use another domain.", dom.Host)
 			}
+			// The pair a wwwRedirect redirects is routed by the app as well.
+			if dom.WWWRedirect && dom.RedirectPair() == console {
+				return app.NewFieldError(fmt.Sprintf("services[%d].domains[%d].wwwRedirect", i, j),
+					"%s is the console's own address (CARAVANA_PUBLIC_URL): redirecting it would stop the console answering.", console)
+			}
 		}
 	}
 	return nil

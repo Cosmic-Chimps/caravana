@@ -117,6 +117,13 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/schedules/{scheduleId}/runs/{runId}", s.getScheduleRun, false, false},
 		{http.MethodPost, "/v1/schedules/{scheduleId}/runs/{runId}/stop", s.stopScheduleRun, false, false},
 		{http.MethodGet, "/v1/schedules/{scheduleId}/runs/{runId}/output", s.getScheduleRunOutput, false, false},
+		{http.MethodGet, "/v1/domains", s.listDomains, false, false},
+		{http.MethodPost, "/v1/domains/check", s.checkDomain, false, false},
+		{http.MethodGet, "/v1/domains/{host}", s.getDomain, false, false},
+		{http.MethodPost, "/v1/apps/{id}/domains/{host}/team-password", s.rotateTeamPassword, false, false},
+		{http.MethodGet, "/v1/settings/certificates", s.getCertificateSettings, false, false},
+		{http.MethodPut, "/v1/settings/certificates", s.putCertificateSettings, false, false},
+		{http.MethodGet, "/v1/certificates", s.listCertificates, false, false},
 		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
@@ -282,6 +289,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := scheduleError(err); e != nil {
+		return e
+	}
+	if e := domainError(err); e != nil {
 		return e
 	}
 	switch {

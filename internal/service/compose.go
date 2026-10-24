@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -37,7 +38,19 @@ func (s *Service) DeployComposeIfResult(ctx context.Context, appID string, req c
 	}
 	file := req.WithoutSecretValues()
 	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
-	return res, compose.InFile(err, a)
+	return res, inFile(err, a)
+}
+
+// inFile is compose.InFile, which names a refused field by its path in the
+// file, for a DomainTakenError too.
+func inFile(err error, a app.App) error {
+	var taken *DomainTakenError
+	if errors.As(err, &taken) {
+		if fe, ok := compose.InFile(app.NewFieldError(taken.Field, ""), a).(*app.FieldError); ok {
+			return &DomainTakenError{Field: fe.Field, Host: taken.Host, App: taken.App}
+		}
+	}
+	return compose.InFile(err, a)
 }
 
 // PreviewCompose answers what DeployCompose would deploy: the app, with

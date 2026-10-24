@@ -61,7 +61,7 @@ func (s *Service) SetDomainsIf(ctx context.Context, appID, service string, domai
 		return DeployResult{}, err
 	}
 	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
-	return res, compose.InFile(err, a)
+	return res, inFile(err, a)
 }
 
 // withDomains returns a copy of file whose overlay for service has domains in
