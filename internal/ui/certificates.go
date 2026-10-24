@@ -32,7 +32,7 @@ type certificatesData struct {
 	// Banners are the certificates that are expiring, at most maxDomainBanners.
 	Banners []domainBanner
 	More    *domainMore
-	// Count is "Domain certificates · 12 certificates".
+	// Count is the Label over the table (certificatesHead).
 	Count string
 	Rows  []certificateRow
 	// The issuer's rows, read-only, and the editable one.
@@ -82,11 +82,37 @@ func certificateRowOf(now time.Time, c service.CertificateView) certificateRow {
 	return row
 }
 
+// certificatesHead is the Label over the table. It counts the certificates
+// that exist, as the nav does (Traefik's own and pending ones aren't
+// certificates yet; an expiring one still is): "Domain certificates · 12
+// certificates". With none, it says how many domains there are and why:
+// installed without Let's Encrypt, or nothing issued yet.
+func certificatesHead(issuer string, certs []service.CertificateView) string {
+	const head = "Domain certificates · "
+	issued := 0
+	for _, c := range certs {
+		if c.Status == edge.CertIssued || c.Status == edge.CertExpiring {
+			issued++
+		}
+	}
+	switch {
+	case len(certs) == 0:
+		return head + "0 certificates"
+	case issued > 0:
+		return head + plural(issued, "certificate")
+	case issuer == service.IssuerNone:
+		return head + plural(len(certs), "domain") + " · no certificates: installed without Let's Encrypt"
+	}
+	return head + plural(len(certs), "domain") + " · none issued yet"
+}
+
 // certificatesLede is the page's sentence, by how certificates are issued.
 func certificatesLede(issuer string) string {
 	switch issuer {
 	case service.IssuerNone:
 		return "This caravana was installed without Let's Encrypt: Traefik serves its own certificate."
+	case service.IssuerLetsEncryptStaging:
+		return "Certificates come from Let's Encrypt's staging issuer: browsers don't trust them. Run the installer with the real issuer when the domains are ready."
 	case service.IssuerUnknown:
 		return "Traefik issues the HTTPS certificates. This caravana was installed before it could say how: run the installer again."
 	}
@@ -124,7 +150,7 @@ func (s *server) certificatesSection(ctx context.Context, now time.Time, f setti
 	for _, d := range warnChoices {
 		data.Warn = append(data.Warn, formOption{Value: strconv.Itoa(d), Label: strconv.Itoa(d) + " d before expiry", Selected: d == cs.WarnBeforeDays})
 	}
-	data.Count = "Domain certificates · " + plural(len(f.Certs), "certificate")
+	data.Count = certificatesHead(cs.Issuer, f.Certs)
 	for _, c := range f.Certs {
 		data.Rows = append(data.Rows, certificateRowOf(now, c))
 		if c.Status != edge.CertExpiring {

@@ -43,6 +43,45 @@ func TestCertificatesEntryRule(t *testing.T) {
 	}
 }
 
+// The Label over the table counts certificates that exist, as the nav does; with none it says
+// how many domains there are and why (the lab's every row is Traefik's own).
+func TestCertificatesHead(t *testing.T) {
+	cv := func(status string) service.CertificateView {
+		return service.CertificateView{Host: status + ".example.com", Status: status}
+	}
+	for _, tc := range []struct {
+		name   string
+		issuer string
+		certs  []service.CertificateView
+		want   string
+	}{
+		{"no domains", service.IssuerLetsEncrypt, nil, "Domain certificates · 0 certificates"},
+		{"issued ones only", service.IssuerLetsEncrypt, []service.CertificateView{cv(edge.CertIssued), cv(edge.CertSelf), cv(edge.CertPending), cv(edge.CertIssued)}, "Domain certificates · 2 certificates"},
+		{"an expiring one is a certificate", service.IssuerLetsEncrypt, []service.CertificateView{cv(edge.CertExpiring), cv(edge.CertSelf)}, "Domain certificates · 1 certificate"},
+		{"none issued yet", service.IssuerLetsEncrypt, []service.CertificateView{cv(edge.CertPending), cv(edge.CertSelf)}, "Domain certificates · 2 domains · none issued yet"},
+		{"one domain, none issued", service.IssuerUnknown, []service.CertificateView{cv(edge.CertError)}, "Domain certificates · 1 domain · none issued yet"},
+		{"installed without Let's Encrypt", service.IssuerNone, []service.CertificateView{cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf), cv(edge.CertSelf)},
+			"Domain certificates · 8 domains · no certificates: installed without Let's Encrypt"},
+	} {
+		if got := certificatesHead(tc.issuer, tc.certs); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The lede says how certificates are issued, for the three issuers.
+func TestCertificatesLede(t *testing.T) {
+	for issuer, want := range map[string]string{
+		service.IssuerLetsEncrypt:        "HTTPS certificates for every domain come from Let's Encrypt and renew 30 days before they expire.",
+		service.IssuerLetsEncryptStaging: "Certificates come from Let's Encrypt's staging issuer: browsers don't trust them. Run the installer with the real issuer when the domains are ready.",
+		service.IssuerNone:               "This caravana was installed without Let's Encrypt: Traefik serves its own certificate.",
+	} {
+		if got := certificatesLede(issuer); got != want {
+			t.Errorf("%s: %q", issuer, got)
+		}
+	}
+}
+
 // navCertificates is the Certificates entry of the nav: its count or mark.
 func navCertificates(t *testing.T, body string) string {
 	t.Helper()
@@ -62,7 +101,7 @@ func TestCertificatesPage(t *testing.T) {
 		"Certificates", "HTTPS certificates for every domain come from Let's Encrypt and renew 30 days before they expire.",
 		// The expiring one has a banner, as /domains draws it.
 		"expiring.example.com expires in 6 days and hasn't been renewed.", "Let's Encrypt renews 30 days before expiry",
-		"Domain certificates · 6 certificates",
+		"Domain certificates · 2 certificates",
 		"How certificates are issued",
 		"Issuer Let's Encrypt Certificates are issued and renewed for you.", "Contact email ops@example.com Gets expiry warnings from the issuer.", "Warn when 14 d before expiry", "Sends to the channels set up in Notifications.",
 		"Set when caravana was installed; run the installer again to change it.",

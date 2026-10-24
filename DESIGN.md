@@ -707,8 +707,11 @@ and the content, in the shell's frame; the shell's own page padding is off for t
 - **Certificates** (feature 023, `/settings/certificates`; values in `specs/023-domains/contracts/domains-screen.md`):
   the head "Certificates" over "HTTPS certificates for every domain come from Let's Encrypt and renew 30 days
   before they expire." (without Let's Encrypt: "This caravana was installed without Let's Encrypt: Traefik serves
-  its own certificate."), no action. The Domains page's banners stand above for each expiring certificate
-  (same markup, Check again). Then a Label "Domain certificates · 12 certificates" over a panel: a 34px ink-2
+  its own certificate."; on the staging issuer: "Certificates come from Let's Encrypt's staging issuer: browsers don't
+  trust them. Run the installer with the real issuer when the domains are ready."), no action. The Domains page's banners stand above for each expiring certificate
+  (same markup, Check again). Then a Label "Domain certificates · 12 certificates" (it counts issued and expiring certificates only, as the nav
+  does; Traefik's own and pending ones are rows but not certificates: with none the Label says "· 8 domains · none issued yet",
+  or "· 8 domains · no certificates: installed without Let's Encrypt" when the issuer is none) over a panel: a 34px ink-2
   head and rows of 46px, columns `14px minmax(0, 1.4fr) minmax(0, 1fr) 150px minmax(0, 1.1fr)`, gap 18: the 9px
   mark, the domain (13px mono, a link to its row on `/domains`), the app (mono fg-2), the issuer ("Let's
   Encrypt", "Traefik's own", fg-3), the expiry (12px mono: "renews in 61 d" fg-3, "expires in 6 d" in the warn hue,
