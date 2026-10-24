@@ -54,9 +54,11 @@ HCL export golden, fakes for the resolver and the TLS dialer, service, API (cont
   host, on the same Nomad registration (no `service` tag); its rule is ``Host(`h`)`` (``&&
   PathPrefix(`/p`)`` with a path; ``|| Host(`o`)`` with a redirect pair), `entrypoints`, `tls`
   and `certresolver` as the base router, `middlewares=<R>-auth@file,<R>-www` in that order.
-  Tags: `traefik.http.middlewares.<R>-www.redirectregex.regex=^https://<o with [.]>/(.*)`,
-  `.replacement=https://<h>/$1`, `.permanent=true`. `$1` and `[.]` because Nomad interpolates
-  `${…}` in tags. The base router's rule drops the hosts that moved to their own routers.
+  Tags: `traefik.http.middlewares.<R>-www.redirectregex.regex=^https://<o with [.]>(:[0-9]+)?/(.*)`,
+  `.replacement=https://<h>$1/$2`, `.permanent=true` (the lab spike: Traefik matches the regex
+  against `https://<Host header><URI>`, and the Host header may carry a port; a GET answers
+  301, other methods 308). `$1`, `$2` and `[.]` because Nomad interpolates `${…}` in tags. The
+  base router's rule drops the hosts that moved to their own routers.
 - **Team only**: `team_passwords(host, app_id, hash, created_at)` in SQLite (the hash only; a
   bcrypt verifier, as API tokens are SHA-256 verifiers); `deploy.SyncTeamPasswords` rewrites the
   variable `nomad/jobs/traefik` (one item per middleware, `<R>-auth` = `team:<hash>`) from the

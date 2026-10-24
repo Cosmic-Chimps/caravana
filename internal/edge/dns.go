@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -107,7 +108,19 @@ func lookupEach(ctx context.Context, r Resolver, host string) []Answer {
 // A resolver that says "no such name" while another has addresses is read as
 // the first one lagging behind a change, and isn't counted either way.
 func checkDNS(ctx context.Context, r Resolver, host string, expected []netip.Addr) DNS {
+	if isLocalhostName(host) {
+		// RFC 6761: localhost names are loopback by definition. Resolvers differ
+		// (the lab spike saw one answer "no such host" and another 127.0.0.1),
+		// so they aren't asked: the name is local, the lab's case.
+		return DNS{Status: DNSOK, Seen: []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.IPv6Loopback()}, Expected: expected}
+	}
 	return classifyDNS(lookupEach(ctx, r, host), expected)
+}
+
+// isLocalhostName says host is "localhost" or ends in ".localhost".
+func isLocalhostName(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
 }
 
 func classifyDNS(answers []Answer, expected []netip.Addr) DNS {

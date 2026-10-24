@@ -147,6 +147,21 @@ func TestCheckDNSWithOneResolver(t *testing.T) {
 	}
 }
 
+// A localhost name is local by definition (RFC 6761): no resolver is asked, and
+// the answer is ok whatever this host's addresses are, the lab's case.
+func TestCheckDNSLocalhostNames(t *testing.T) {
+	r := edgetest.FakeResolver{Errors: map[string]error{"x.localhost": errors.New("resolver asked")}}
+	for _, host := range []string{"x.localhost", "a.b.localhost", "localhost", "X.LOCALHOST", "x.localhost."} {
+		got := checkDNS(context.Background(), r, host, addrs("203.0.113.7"))
+		if got.Status != DNSOK || len(got.Seen) != 2 || !got.Seen[0].IsLoopback() {
+			t.Errorf("%s: %+v, want ok with the loopback addresses", host, got)
+		}
+	}
+	if got := checkDNS(context.Background(), r, "x.localhost.example.com", addrs("203.0.113.7")); got.Status == DNSOK {
+		t.Errorf("x.localhost.example.com was taken for a localhost name: %+v", got)
+	}
+}
+
 func TestSetLookupIPAddr(t *testing.T) {
 	boom := errors.New("boom")
 	set := Set{
