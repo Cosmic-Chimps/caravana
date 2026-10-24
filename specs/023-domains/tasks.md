@@ -106,7 +106,7 @@ Independent test: quickstart §2.
   another app has; `DeleteApp` drops the rows and syncs. Tests search every row, log line, job,
   export and answer for a password sentinel (only the one shown-once answer has it) and for the
   hash (only `team_passwords` and the variable).
-- [ ] T013 [US2] `internal/compose/compose.go`, `service.go` + tests: `compose.Domain` gains
+- [x] T013 [US2] `internal/compose/compose.go`, `service.go` + tests: `compose.Domain` gains
   `path`, `wwwRedirect`, `teamOnly`; the Aspire fixtures unchanged; `internal/service`'s
   kept-file rewrite: `editDomains(request, …)` rewrites the overlay's domains (as `editSecrets`
   does) so the Domains page edits a kept-file app with `If-Match`.
