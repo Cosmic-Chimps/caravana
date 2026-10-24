@@ -27,6 +27,9 @@ const (
 type liveSettings struct {
 	coalesce, keepalive, recheck, logRetry, usageEvery time.Duration
 	subscribe                                          func(appID string) (<-chan service.Change, func())
+	// watchDomains says a domains page is open until the returned done is
+	// called (Service.MarkDomainsWatched when nil).
+	watchDomains func() (done func())
 }
 
 func (l liveSettings) coalesceEvery() time.Duration  { return orDefault(l.coalesce, defaultCoalesce) }
@@ -55,6 +58,9 @@ type liveRoute struct {
 	// and the stream waits for Start to return before it closes, so Start
 	// must stop when ctx does.
 	Start func(ctx context.Context, ev *httpx.EventWriter)
+	// WatchDomains says the page shows domains (feature 023): while the stream
+	// is open the domain watcher checks every minute, not every 15.
+	WatchDomains bool
 }
 
 // stream answers a /live… request. It is the loop every such route shares:
@@ -103,6 +109,14 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 	}
 	changes, unsubscribe := subscribe(route.AppID)
 	defer unsubscribe()
+	if route.WatchDomains {
+		watch := s.live.watchDomains
+		if watch == nil {
+			watch = s.svc.MarkDomainsWatched
+		}
+		done := watch()
+		defer done()
+	}
 
 	if err := ev.Event("sync", nil); err != nil {
 		return

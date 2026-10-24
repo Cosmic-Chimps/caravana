@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -13,10 +12,11 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
-// The Domains page (feature 021, /apps/{id}/domains): every address the app
-// answers on, and the form that adds one. Adding or removing a domain is a
-// deploy of the stored app with that one change, on the page's revision. The
-// page draws only what the console knows today: no certificate or DNS state.
+// The Domains page (features 021 and 023, /apps/{id}/domains): every address
+// the app answers on, drawn as /domains draws them (domainspage.go) and
+// filtered to the app, and the Add panel with the app fixed (domainsadd.go).
+// Adding or removing a domain is a deploy of the stored app with that one
+// change, on the page's revision.
 
 // domainsTab is the body of the Domains page.
 type domainsTab struct {
@@ -25,29 +25,12 @@ type domainsTab struct {
 	Defined  bool
 	Kept     bool // the app keeps its Compose file: the table is read-only
 	Stopped  bool
-	// Environment is the app's environment, said after each domain's port.
-	Environment string
-	Rows        []domainTableRow
-	// Targets are the services that can take a domain: they have a port a new
-	// domain can go to. Many says there is more than one, so the form asks which.
-	Targets []domainTarget
-	Many    bool
-	Add     addDomainForm
-	Record  dnsRecord
+	Region   domainsRegion
+	Add      *domainAddView
 }
-
-// Count is the line under the head: "3 domains".
-func (t domainsTab) Count() string { return plural(len(t.Rows), "domain") }
 
 // CanEdit says the page offers Add and Remove.
 func (t domainsTab) CanEdit() bool { return t.Defined && !t.Kept && !t.Stopped }
-
-// domainTableRow is one domain, in the table.
-type domainTableRow struct {
-	Host, Service string
-	Port          int
-	URL           string
-}
 
 // domainTarget is a service a domain can be sent to.
 type domainTarget struct {
@@ -58,15 +41,9 @@ type domainTarget struct {
 // Label is how the select names it: "web · :80".
 func (t domainTarget) Label() string { return t.Service + " · :" + strconv.Itoa(t.Port) }
 
-// addDomainForm is the "Add a domain" form as typed.
-type addDomainForm struct {
-	Service string
-	Host    formField
-	Notice  sentence
-}
-
-// dnsRecord is the box under "Point it at Caravana": the A record the owner adds
-// where they manage the domain's DNS. Name is empty until a host was typed.
+// dnsRecord is one record of the box under "Point it at caravana": a record the
+// owner adds where they manage the domain's DNS. Name is empty until a host
+// was typed.
 type dnsRecord struct {
 	Type  string
 	Name  string
@@ -78,59 +55,18 @@ type dnsRecord struct {
 // hostIPWords stand where the address would be when the console doesn't know it.
 const hostIPWords = "this host's public IP address"
 
-// recordFor is the DNS box for a host: the A record with this host's IPv4
-// address (service.HostAddresses: the console's own name resolved, kept once
-// found), or the words for it when the address isn't known. The record's name
-// is service.DNSRecordName's.
-func (s *server) recordFor(ctx context.Context, host string) dnsRecord {
-	rec := dnsRecord{Type: "A", Name: service.DNSRecordName(host), Value: hostIPWords}
-	for _, a := range s.svc.HostAddresses(ctx) {
-		if a.Is4() {
-			rec.Value, rec.Known = a.String(), true
-			break
-		}
+// appDomainsEmpty is the app page's empty state: Add domain when the page can add.
+func appDomainsEmpty(canEdit bool) emptyView {
+	e := emptyView{Title: "No domains.", Text: "Copies are reachable only inside the app."}
+	if canEdit {
+		e.ActionLabel, e.ActionHref = "Add domain", "#add"
 	}
-	return rec
+	return e
 }
 
-// domainsTabOf builds the page's body from the app's summary. It is pure but
-// for the record, which the caller works out.
-func domainsTabOf(sum service.AppSummary, typed *addDomainForm, record dnsRecord) *domainsTab {
-	a := sum.App
-	tab := &domainsTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Kept: sum.Compose != nil,
-		Stopped: sum.StoppedAt != nil, Environment: sum.Place.Environment, Record: record}
-	if tab.Environment == "" {
-		tab.Environment = app.DefaultEnvironment
-	}
-	for _, row := range domainRowsOf(a) {
-		tab.Rows = append(tab.Rows, domainTableRow{Host: row.Host, Service: row.Service, Port: row.Port, URL: "https://" + row.Host})
-	}
-	slices.SortStableFunc(tab.Rows, func(x, y domainTableRow) int { return strings.Compare(x.Host, y.Host) })
-	for _, svc := range a.Services {
-		name, ok := domainPort(svc)
-		if !ok {
-			continue
-		}
-		for _, p := range svc.Ports {
-			if p.Name == name {
-				tab.Targets = append(tab.Targets, domainTarget{Service: svc.Name, Port: p.ContainerPort})
-			}
-		}
-	}
-	tab.Many = len(tab.Targets) > 1
-	tab.Add = addDomainForm{Host: formField{ID: "domain-host"}}
-	if typed != nil {
-		tab.Add = *typed
-		tab.Add.Host.ID = "domain-host"
-	}
-	if tab.Add.Service == "" && len(tab.Targets) > 0 {
-		tab.Add.Service = tab.Targets[0].Service
-	}
-	return tab
-}
-
-// domainsPage draws the Domains page with the given status.
-func (s *server) domainsPage(w http.ResponseWriter, r *http.Request, status int, id string, typed *addDomainForm) {
+// domainsPage draws the Domains page with the given status. add is the Add
+// panel as posted (nil draws a fresh one).
+func (s *server) domainsPage(w http.ResponseWriter, r *http.Request, status int, id string, add *domainAddView) {
 	ctx := r.Context()
 	sum, err := s.svc.AppSummary(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -146,17 +82,24 @@ func (s *server) domainsPage(w http.ResponseWriter, r *http.Request, status int,
 		s.serverError(w, "read admin", err)
 		return
 	}
-	head.LiveURL = "/live/apps/" + id
-	host := ""
-	if typed != nil {
-		host = typed.Host.Value
+	head.LiveURL = "/live/apps/" + id + "?tab=domains"
+	a := sum.App
+	tab := &domainsTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Kept: sum.Compose != nil, Stopped: sum.StoppedAt != nil}
+	if tab.Defined {
+		q := domainsQuery{App: id, Open: strings.TrimSpace(r.URL.Query().Get("open"))}
+		if tab.Region, err = s.loadDomains(ctx, q, appDomainsEmpty(tab.CanEdit()), true); err != nil {
+			s.serverError(w, "list domains", err)
+			return
+		}
+		if add == nil {
+			if add, err = s.domainAddFor(ctx, domainAddInput{}, id); err != nil {
+				s.serverError(w, "draw the add form", err)
+				return
+			}
+		}
+		tab.Add = add
 	}
-	// The address is looked up only for a page that draws the box.
-	record := dnsRecord{Type: "A", Name: service.DNSRecordName(host), Value: hostIPWords}
-	if sum.App.Defined() && sum.Compose == nil && sum.StoppedAt == nil {
-		record = s.recordFor(ctx, host)
-	}
-	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), DomainsTab: domainsTabOf(sum, typed, record)})
+	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), DomainsTab: tab})
 }
 
 // showDomains answers GET /apps/{id}/domains.
@@ -164,90 +107,13 @@ func (s *server) showDomains(w http.ResponseWriter, r *http.Request, session str
 	s.domainsPage(w, r, http.StatusOK, r.PathValue("id"), nil)
 }
 
-// addDomain answers POST /apps/{id}/domains: the service gets one more domain,
-// as a deploy on the page's revision. The host is checked as the definition
-// checks it (a lowercase host name, once in the app, not the console's own).
+// addDomain answers POST /apps/{id}/domains: the Add panel of the app's page.
+// Check now draws the page again with the checks; Add gives the service one
+// more domain, as a deploy on the page's revision. The host is checked as the
+// definition checks it (a lowercase host name, once in the app, not the
+// console's own, not another app's).
 func (s *server) addDomain(w http.ResponseWriter, r *http.Request, session string) {
-	ctx := r.Context()
-	id := r.PathValue("id")
-	if !s.readForm(w, r) {
-		return
-	}
-	revision, ok := s.formRevision(w, r, "add the domain")
-	if !ok {
-		return
-	}
-	rec, err := s.svc.GetApp(ctx, id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.appNotFound(w, r, id)
-		return
-	}
-	if err != nil {
-		s.serverError(w, "read app", err)
-		return
-	}
-	form := addDomainForm{Service: strings.TrimSpace(r.PostForm.Get("service")), Host: formField{ID: "domain-host"}}
-	form.Host.Value = strings.TrimSpace(r.PostForm.Get("host"))
-	if rec.Compose != nil {
-		form.Notice = sentence{plain(fileEditedSentence + " Change the file in Configure and deploy it.")}
-		s.domainsPage(w, r, http.StatusConflict, id, &form)
-		return
-	}
-	// Alone, a service needn't be named.
-	if form.Service == "" {
-		for _, svc := range rec.App.Services {
-			if _, can := domainPort(svc); can {
-				form.Service = svc.Name
-				break
-			}
-		}
-	}
-	i, found := serviceNamed(rec.App, form.Service)
-	port, can := "", false
-	if found {
-		port, can = domainPort(rec.App.Services[i])
-	}
-	switch {
-	case !found:
-		form.Notice = sentence{plain("This app has no service "), mono(form.Service), plain(".")}
-	case !can:
-		form.Notice = sentence{plain("The service "), mono(form.Service), plain(" has no port a domain can go to.")}
-	case form.Host.Value == "":
-		form.Host.Error = sentence{plain("Enter a domain.")}
-	}
-	if len(form.Notice) > 0 || len(form.Host.Error) > 0 {
-		form.Host.Alert = len(form.Host.Error) > 0
-		s.domainsPage(w, r, http.StatusUnprocessableEntity, id, &form)
-		return
-	}
-
-	edited := rec.App
-	edited.Services = slices.Clone(edited.Services)
-	edited.Services[i].Domains = append(slices.Clone(edited.Services[i].Domains), app.Domain{Host: form.Host.Value, Port: port})
-	deployment, err := s.svc.DeployIf(ctx, edited, service.Condition{IfRevision: revision}, app.TriggerConsole)
-	if err == nil {
-		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
-		return
-	}
-	var fieldErr *app.FieldError
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.appNotFound(w, r, id)
-	case errors.Is(err, service.ErrAppChanged):
-		form.Notice = sentence{plain(changedSincePage)}
-		s.domainsPage(w, r, http.StatusConflict, id, &form)
-	case errors.As(err, &fieldErr) && strings.Contains(fieldErr.Field, ".domains["):
-		form.Host.Error, form.Host.Alert = sentence{plain(fieldErr.Message)}, true
-		s.domainsPage(w, r, http.StatusUnprocessableEntity, id, &form)
-	default:
-		status, notice, ok := refusalOf(edited, err)
-		if !ok {
-			s.serverError(w, "add a domain", err)
-			return
-		}
-		form.Notice = notice
-		s.domainsPage(w, r, status, id, &form)
-	}
+	s.postDomainAdd(w, r, r.PathValue("id"))
 }
 
 // removeDomain answers POST /apps/{id}/domains/remove: the service stops
@@ -272,7 +138,13 @@ func (s *server) removeDomain(w http.ResponseWriter, r *http.Request, session st
 		return
 	}
 	refuse := func(status int, notice sentence) {
-		s.domainsPage(w, r, status, id, &addDomainForm{Notice: notice, Host: formField{ID: "domain-host"}})
+		form, err := s.domainAddFor(ctx, domainAddInput{}, id)
+		if err != nil {
+			s.serverError(w, "draw the add form", err)
+			return
+		}
+		form.Notice = notice
+		s.domainsPage(w, r, status, id, form)
 	}
 	if rec.Compose != nil {
 		refuse(http.StatusConflict, sentence{plain(fileEditedSentence + " Change the file in Configure and deploy it.")})

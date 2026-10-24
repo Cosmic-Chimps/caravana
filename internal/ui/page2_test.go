@@ -101,9 +101,9 @@ func TestPage2Shapes(t *testing.T) {
 			"Add or change", "Keep as a secret (the value is never shown again)", "Set and deploy", "Secret values live in Nomad Variables"},
 			[]string{"Used by", `id="var-service"`})
 		check(t, e, "whoami", "/domains", []string{"Domains", "Every address people use to reach this app. HTTPS is set up for each.", "1 domain", "whoami.example.com",
-			"web :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at Caravana", "Add domain and deploy",
+			"whoami :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at caravana", "Add domain and deploy", "All domains", "Sends traffic to whoami :80, set in Configure",
 			"The root of a domain needs an A record. A subdomain can use one too."},
-			[]string{`id="domain-service"`, "Sends traffic to"})
+			[]string{`id="domain-service"`})
 		check(t, e, "whoami", "/configure", []string{"Copies & size", "Deploy"}, []string{`id="svc-web-title"`})
 	})
 

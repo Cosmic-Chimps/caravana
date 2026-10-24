@@ -825,6 +825,7 @@ func projectPages(t *testing.T) map[string]string {
 	e.deploy(t, shopWeb("staging", "latest"))
 	st := shopWeb("staging", "latest")
 	st.ID = "shop--staging--solo"
+	st.Services[0].Domains[0].Host = "solo.staging.shop.example.com" // one app per domain (feature 023)
 	e.deploy(t, st)
 
 	pages := map[string]string{}

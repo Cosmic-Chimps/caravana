@@ -1,0 +1,215 @@
+{{/* Domains (feature 023): the workspace page /domains, and the rows, detail and Add panel that an
+     app's Domains page (app.html's "domains") draws too, filtered to the app. Every row is a native
+     <details> with a stable id, which console.js keeps open or closed across a refresh. Every form
+     is a plain post: Check again, Remove… (a confirmation), and the Add panel's Check now and Add
+     domain and deploy. No row, banner or form holds a password or a hash. The values are
+     contracts/domains-screen.md's. */}}
+
+{{define "content"}}
+{{with .List}}{{template "domains-list" .}}{{end}}
+{{end}}
+
+{{/* ------------------------------------------------------------------ The list */}}
+{{define "domains-list"}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Domains</h1>
+    <p class="cv-lede">Every address people use to reach your apps. Certificates are issued and renewed for you.</p>
+  </div>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>
+</header>
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<form id="domains-filter" class="cv-filter" method="get" action="/domains" role="search">
+  {{with .Filter.Projects}}<select class="cv-field cv-select" name="project" aria-label="Project">{{range .}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{end}}
+  <select class="cv-field cv-select" name="app" aria-label="App">{{range .Filter.Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Apply</button>
+  {{if .Filter.Clear}}<a href="/domains" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>{{end}}
+</form>
+<section class="cv-sregion" aria-label="Domains" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="innerHTML">{{template "domains-region" .Region}}</section>
+{{with .Add}}{{template "domain-add" .}}{{end}}
+{{end}}
+
+{{/* domains-region: the count line, the problem banners, the table and the footer; /parts/domains
+     draws it alone. Takes a domainsRegion. */}}
+{{define "domains-region"}}
+<p class="cv-scount">{{.Count}}</p>
+{{range .Banners}}
+<div class="cv-panel cv-dmbanner">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
+    <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
+  </div>
+  {{template "domain-check" .Check}}
+</div>
+{{end}}
+{{with .More}}<p class="cv-dmmore"><a href="{{.Href}}">and {{.N}} more</a></p>{{end}}
+{{if .Rows}}
+<div class="cv-panel cv-dmtable">
+  <div class="cv-dmhead cv-label" aria-hidden="true">
+    <span></span>
+    <span>Domain</span>
+    <span>Status</span>
+    <span>Goes to</span>
+    <span>Certificate</span>
+    <span></span>
+  </div>
+  {{range .Rows}}
+  <details class="cv-dmdetails" id="{{.Anchor}}"{{if .Open}} open{{end}}>
+    <summary class="cv-dmsum">
+      <span class="sr-only">{{.State}}. </span>
+      <span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
+      <span class="cv-dmname"><span class="cv-dmhost" title="{{.Host}}">{{.Host}}</span>{{if .TeamOnly}}<span class="cv-dmlock" title="Team only">{{icon "lock" 12}}<span class="sr-only"> (Team only)</span></span>{{end}}{{with .Path}}<span class="cv-dmpath">{{.}}</span>{{end}}</span>
+      <span class="cv-dmstatus" data-label="Status"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
+      <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
+      <span class="cv-dmcert{{if .Cert.Warn}} cv-dmcert-warn{{end}}" data-label="Certificate"{{with .Cert.Title}} title="{{.}}"{{end}}>{{.Cert.Text}}</span>
+      <span class="cv-dmopen"><a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a></span>
+    </summary>
+    {{template "domain-detail" .Detail}}
+  </details>
+  {{end}}
+</div>
+<p class="cv-dmfoot">Checks run every minute. Certificates come from Let's Encrypt and renew by themselves.</p>
+{{else if .NoMatch}}
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">No domain matches.</p>
+    <a href="{{.ClearHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>
+  </div>
+</div>
+{{else}}
+<div class="cv-panel">{{template "empty" .Empty}}</div>
+{{end}}
+{{end}}
+
+{{/* domain-check: Check again, a post that checks the host now. Takes a domainCheckForm. */}}
+{{define "domain-check"}}<form method="post" action="{{.Action}}" class="cv-dmcheckform">{{with .App}}<input type="hidden" name="app" value="{{.}}">{{end}}<button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Check again</button></form>{{end}}
+
+{{/* domain-detail: what opens under a row: the state's sentence and facts at the left, the Options
+     column at the right. Takes a domainDetail. */}}
+{{define "domain-detail"}}
+<div class="cv-dmdetail">
+  <div class="cv-dmdetail-left">
+    {{with .Sentence}}<p class="cv-dmstate{{if $.Quiet}} cv-dmstate-quiet{{end}}">{{template "sentence" .}}</p>{{end}}
+    {{with .Records}}{{template "domain-records" .}}{{end}}
+    {{if .Facts}}
+    <dl class="cv-dmfacts{{if .Wide}} cv-dmfacts-wide{{end}}">
+      {{range .Facts}}<dt>{{.Key}}</dt> <dd{{if .Failed}} class="cv-dmfact-failed"{{end}}>{{template "sentence" .Value}}{{with .Expires}}{{template "clock" .}}{{end}}{{with .Checked}}<time datetime="{{.ISO}}"{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}{{.After}}</dd>
+      {{end}}
+    </dl>
+    {{end}}
+    {{if or .Check .Link}}<div class="cv-dmbtns">{{with .Check}}{{template "domain-check" .}}{{end}}{{with .Link}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a>{{end}}</div>{{end}}
+  </div>
+  <div class="cv-dmdetail-right">
+    <h3 class="cv-label">Options</h3>
+    {{with .Options.Note}}<p class="cv-dmnote">{{template "sentence" .}}</p>{{end}}
+    {{with .Options.Remove}}
+    <div class="cv-dmbtns">
+      <details class="cv-confirm">
+        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Host}}">Remove…</summary>
+        <form method="post" action="{{.Action}}" class="cv-confirm-body">
+          <input type="hidden" name="revision" value="{{.Revision}}">
+          <input type="hidden" name="service" value="{{.Service}}">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <p>This deploys the app without <span class="cv-inline-mono">{{.Host}}</span>. It stops answering on it once the new copies are healthy.</p>
+          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
+        </form>
+      </details>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{/* domain-records: the DNS records that point a host here, one group of Type, Name and Value per
+     record (A, and AAAA when this host has a public IPv6 address). Takes a recordBox. */}}
+{{define "domain-records"}}
+<dl class="cv-dnsbox">
+  {{range $i, $r := .Records}}
+  <div class="cv-dnsrow{{if $i}} cv-dnsrow-next{{end}}"><dt class="cv-label">Type</dt> <dd>{{$r.Type}}</dd></div>
+  <div class="cv-dnsrow"><dt class="cv-label">Name</dt> <dd>{{with $r.Name}}{{.}}{{else}}@ or the first label{{end}}</dd></div>
+  <div class="cv-dnsrow"><dt class="cv-label">Value</dt> <dd{{if not $r.Known}} class="cv-dnsword"{{end}}>{{$r.Value}}</dd></div>
+  {{end}}
+</dl>
+{{end}}
+
+{{/* domain-checkline: one line of the Add panel's Check: the 8px mark, the words, the reason under
+     them. Takes a checkLine. */}}
+{{define "domain-checkline"}}<li class="cv-dmcheck"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-dmcheck-text"><span class="cv-dmcheck-words{{if eq .Mark "idle"}} cv-dmcheck-quiet{{end}}"><span class="sr-only">{{.Spoken}}: </span>{{.Words}}</span>{{with .Reason}} <span class="cv-dmcheck-reason">{{template "sentence" .}}</span>{{end}}</span></li>{{end}}
+
+{{/* domain-add: the Add panel (#add), on /domains and, with the app fixed, on the app's Domains
+     page. Check now (action=check) draws it again with the checks; Add domain and deploy
+     (action=add) deploys. Takes a domainAddView. */}}
+{{define "domain-add"}}
+<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide cv-dmadd" aria-labelledby="add-title">
+  <h2 id="add-title" class="cv-dmadd-title">Add a domain</h2>
+  {{if not .FixedApp}}{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}{{end}}
+  {{if .NoTargets}}
+  <p class="cv-note">No service has a port yet, so there is nothing for a domain to go to. Give a service a port in {{if .FixedApp}}<a href="/apps/{{.FixedApp}}/configure">Configure</a>{{else}}its app's Configure{{end}} first.</p>
+  {{else}}
+  <form method="post" action="{{.Action}}" class="cv-formcol cv-formcol-wide" autocomplete="off">
+    {{if .FixedApp}}<input type="hidden" name="revision" value="{{.Revision}}">{{else}}{{range .Revisions}}<input type="hidden" name="revision-{{.App}}" value="{{.Revision}}">{{end}}{{end}}
+    <label class="cv-fld" for="domain-host">
+      <span class="cv-label">Domain</span>
+      <input class="cv-field cv-field-mono" id="domain-host" type="text" name="host" value="{{.Host.Value}}" placeholder="app.example.com" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Host.Error}} aria-invalid="true" aria-describedby="domain-host-error"{{end}}{{if .Host.Alert}} autofocus{{end}}>
+      {{template "field-error" .Host}}
+    </label>
+
+    <div class="cv-fld">
+      {{if .FixedApp}}
+      <span class="cv-label">Sends traffic to</span>
+      <p class="cv-dmto">{{template "sentence" .Fixed}}</p>
+      {{else}}
+      <label class="cv-label" for="domain-app">Sends traffic to</label>
+      <select class="cv-field cv-select" id="domain-app" name="app"{{if .App.Error}} aria-invalid="true" aria-describedby="domain-app-error"{{end}}{{if .App.Alert}} autofocus{{end}}>
+        {{range .Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      {{template "field-error" .App}}
+      {{end}}
+      {{if .ServiceShown}}
+      <label class="cv-fld" for="domain-service">
+        <span class="cv-label">Service</span>
+        <select class="cv-field cv-select" id="domain-service" name="service"{{if .Service.Error}} aria-invalid="true" aria-describedby="domain-service-error"{{end}}{{if .Service.Alert}} autofocus{{end}}>
+          {{range .Services}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      {{template "field-error" .Service}}
+      <p class="cv-data-muted cv-hint">Each service's port is set in Configure.</p>
+      {{else}}
+      <input type="hidden" name="service" value="{{.HiddenService}}">
+      {{with .Port}}<p class="cv-data-muted cv-hint"><span class="cv-inline-mono">{{.}}</span>, set in Configure</p>{{end}}
+      {{end}}
+    </div>
+
+    <label class="cv-fld" for="domain-path">
+      <span class="cv-label">Path</span>
+      <input class="cv-field cv-field-mono" id="domain-path" type="text" name="path" value="{{.Path.Value}}" placeholder="/api" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="domain-path-hint{{if .Path.Error}} domain-path-error{{end}}"{{if .Path.Error}} aria-invalid="true"{{end}}{{if .Path.Alert}} autofocus{{end}}>
+      <span class="cv-data-muted cv-hint" id="domain-path-hint">Optional. Only requests under this path reach the app; the path is kept.</span>
+      {{template "field-error" .Path}}
+    </label>
+
+    <div class="cv-fld">
+      <span class="cv-label">Point it at caravana</span>
+      <p class="cv-dnsintro">Add this record where you manage DNS for the domain:</p>
+      {{template "domain-records" .Records}}
+      <p class="cv-note">The root of a domain needs an A record. A subdomain can use one too.</p>
+    </div>
+
+    <div class="cv-fld">
+      <span class="cv-label">Check</span>
+      <ul class="cv-dmchecks"{{if .Checked}} role="status"{{end}}>
+        {{template "domain-checkline" .DNS}}
+        {{template "domain-checkline" .Cert}}
+      </ul>
+      <div><button type="submit" name="action" value="check" class="cv-btn cv-btn-secondary cv-btn-sm">Check now</button></div>
+    </div>
+
+    <div class="cv-formfoot">
+      <button type="submit" name="action" value="add" class="cv-btn {{if .Primary}}cv-btn-primary{{else}}cv-btn-secondary{{end}} cv-btn-sm">Add domain and deploy</button>
+      <a href="{{.CancelHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</a>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{end}}

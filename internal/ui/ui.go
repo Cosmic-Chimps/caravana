@@ -200,6 +200,10 @@ func (s *server) routeTable() []route {
 		{"GET", "/schedules/{id}/runs/{runId}", s.requireSession(s.showRun)},
 		{"POST", "/schedules/{id}/runs/{runId}/stop", s.protected(s.requireSession(s.stopScheduleRun))},
 		{"GET", "/parts/schedules", s.requirePart(s.partSchedules)},
+		{"GET", "/domains", s.requireSession(s.showDomainsPage)},
+		{"POST", "/domains", s.protected(s.requireSession(s.addDomainsPost))},
+		{"POST", "/domains/{host}/check", s.protected(s.requireSession(s.checkDomainAgain))},
+		{"GET", "/parts/domains", s.requirePart(s.partDomains)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/deploying", s.requirePart(s.partDeploying)},
@@ -293,7 +297,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -304,8 +308,14 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS,
-			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
+		files := []string{"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html"}
+		// An app's Domains page draws /domains' rows and Add panel (feature 023). domains.html
+		// comes first, so app.html's "content" is the one the set keeps.
+		if name == "app" {
+			files = append(files, "templates/domains.html")
+		}
+		files = append(files, "templates/"+name+".html")
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}
