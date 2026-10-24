@@ -719,6 +719,9 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   read-only because they are Traefik's static configuration ("Set when caravana was installed; run the
   installer again to change it."), and **Warn when** ("14 d before expiry", "Sends to the channels set up in
   Notifications."). A saved window answers 303 with a notice; the checks already stored are judged again at once.
+  Nothing here pushes the page wider: every track, fixed ones included, is `minmax(0, …)` (so the 220/260px columns and
+  the table's 150px one shrink first), the hint column wraps (`overflow-wrap: anywhere`), and the section head's children
+  have `min-width: 0` so Edit always stays inside.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
   no address and no later page; the Copy button stays hidden without script.
@@ -886,7 +889,9 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   open). There is no retry into ACME: Traefik retries on its own.
 - **The table:** a 38px ink-2 head "Domain · Status · Goes to · Certificate", columns `14px minmax(0, 1.6fr)
   190px minmax(0, 1.2fr) 150px 36px`, gap 18, padding 0 18, rows 52px at least with 1px line-1 dividers, every
-  cell `min-width: 0`. Each row is a native `<details id="domain-<host>">` (console.js keeps it open or
+  cell `min-width: 0` (the fixed 190px and 150px tracks are `minmax(0, …)` too). An open row's facts grid is `minmax(0, 90px) minmax(0, 1fr)`
+  (110px for a live domain); its keys and values, the state sentence and the notes wrap with `overflow-wrap: anywhere`, so a
+  four-address "now" value or a long host never widens the page at any width from 390 up. Each row is a native `<details id="domain-<host>">` (console.js keeps it open or
   closed across a refresh); the open row has the ink-2 ground. Cells: the chevron; the host (500 14px mono,
   one line, ellipsis) with a 12px lock (fg-3, `title` "Team only") for a Team-only domain and its path
   (`/api`, 12px mono fg-3); the quiet small pill (no ground, edge or padding); Goes to (13px mono fg-2:
