@@ -680,8 +680,35 @@ traefik.http.routers.spike023-web-c8147f72.middlewares=spike023-web-c8147f72-aut
    and `https://d.localhost:8443/` answers `HTTP/2 404`, `content-type: text/plain;
    charset=utf-8`, `x-content-type-options: nosniff`, body `404 page not found`: the same answer
    as a host with no router. It fails closed, and only that router: the other three on the same
-   registration stayed `enabled`. The file-provider re-render from a changed variable (4a) needs
-   the lab's Traefik job changed (T021): **not run here**.
+   registration stayed `enabled`.
+   **Re-render check (lab, 2026-10-24, T021, observed).** The lab's Traefik job (and the
+   installer's) now reads `--providers.file.directory=/local/dynamic` with `watch=true` and a
+   `team.yml` template (`change_mode = "noop"`) over the variable `nomad/jobs/traefik`. The syntax
+   that works: `nomadVarExists "nomad/jobs/traefik"` guards the read (a missing variable renders
+   `{}` and the task starts and keeps running; the first allocation started with no variable at
+   all), then `{{ with nomadVar "nomad/jobs/traefik" }}{{ range $name, $users := . }}`: **`nomadVar`
+   yields the items map itself, so the range is over `.`, not `.Items`**, and
+   `{{ $users | toJSON }}` writes the value as a YAML-safe double-quoted string. Observed:
+   - A variable with items `spike-auth` = `team:$2y$05$...` (htpasswd bcrypt) and the marker
+     `CARAVANA_TEAM` rendered `http.middlewares.spike-auth.basicAuth` (`realm: caravana`,
+     `removeHeader: true`, one user), and within about 10 s `/api/http/middlewares/spike-auth@file`
+     answered `{"basicAuth":{"users":["team:$2y$05$..."],"realm":"caravana","removeHeader":true},
+     "status":"enabled","name":"spike-auth@file","provider":"file","type":"basicauth"}`.
+   - Changing the item's value: the middleware's `users` changed within 10 s; the allocation's
+     events stayed `Received, Task Setup, Started` and `Restarts` 0 (no restart).
+   - Writing the variable back with the marker only: `team.yml` became `{}` and the middleware
+     answered 404 within 10 s. Deleting the variable: `team.yml` stayed `{}`, Traefik kept
+     running and the apps kept answering.
+   - Two failures worth keeping: (1) a template that **fails to render kills the task** even with
+     `noop` (the first version ranged over `.Items`: "range can't iterate over", the alloc went
+     `failed`, Traefik stopped serving 80/443 until the job was registered again with a fixed
+     template); (2) a file with `http:` and nothing under it (the marker alone, rendered with
+     `http:\n  middlewares:`) is refused by Traefik's file watcher: `http cannot be a standalone
+     element`, logged on every change, and the previous configuration stays in force, so the
+     middleware that should have been removed **stayed**. The template therefore renders `{}`
+     unless an item ending in `-auth` exists (it counts them first with a `$any` flag).
+   - The dashboard's `/api/http/middlewares/<name>@file` shows the hash (loopback only), the same
+     exposure as a file on Traefik's disk; the job and the export never hold it.
 5. **HTTP-01 through basic auth (reasoned, not observed).** Traefik answers
    `/.well-known/acme-challenge/<token>` on the resolver's `httpChallenge.entryPoint` (`web` on a
    host) with its internal router `acme-http@internal`, whose priority is the largest possible, so

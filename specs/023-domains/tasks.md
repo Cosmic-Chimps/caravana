@@ -166,7 +166,7 @@ Independent test: quickstart §4.
 
 ## Phase 7: Installer, lab, docs and the review cycle (no story label)
 
-- [ ] T021 `deploy/install/traefik.nomad.hcl`: `--providers.file.directory=/local/dynamic`, the
+- [x] T021 `deploy/install/traefik.nomad.hcl`: `--providers.file.directory=/local/dynamic`, the
   existing `caravana.yml` template moved there, a `team.yml` template ranging the variable
   `nomad/jobs/traefik` (`change_mode = "noop"`), per T001's observed syntax;
   `deploy/install/install.sh`: writes `CARAVANA_ACME`, `CARAVANA_ACME_EMAIL` and
