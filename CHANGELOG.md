@@ -34,11 +34,57 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   16:15 local"), added in the browser; without JavaScript the UTC time stands. Schedules and
   backups are written in UTC; there is no timezone setting.
 
+- **Domains**: every address your apps answer to, with its state, on **Domains** in the sidebar
+  and on each app's Domains page. A row says where the address goes (the app, its service and
+  port, the environment) and one of: live, getting its certificate, DNS points elsewhere (with the
+  address seen and the one expected), no DNS record yet, certificate expiring and not renewed,
+  served with Traefik's own certificate, a redirect, not served (the app is stopped or has no
+  healthy deployment) or couldn't check. The state comes from Caravana's own checks: the name
+  asked of the system's resolver and of two public ones, and a TLS handshake with Traefik for that
+  name, so it reads the certificate Traefik really serves. Caravana checks every address every 15
+  minutes, and every minute while a Domains page is open; **Check now** asks again at once.
+  Opening a row says what the state means and what to do.
+- A domain's options are switches in its row: **Team only** (HTTP basic auth, user `team`; Caravana
+  makes the password and shows it once, **New password** replaces it with no deploy), **Redirect
+  www** (the other of `www.host` and `host` sends visitors to this one, keeping the path and
+  query) and a **path** (`/api`: only that prefix goes to the app). **Force HTTPS** is on for every
+  domain and says so. Each option you change is a deploy of the app, like any change to its
+  definition; an app deployed from a Compose file keeps its file, and the page edits the overlay's
+  domains. Team only's password hash is kept in SQLite and handed to Traefik through a Nomad
+  Variable; no job, export, record or log holds the password or its hash.
+- **Add a domain** shows the DNS record to create (an A record to this host) and
+  **Check now** before you save: whether the name already points here, and what certificate it will
+  get. An address another app already uses is refused (409 `domain_taken`). Configure's Deploy
+  panel has **Domains go to** when a service has several ports.
+- Two needs-you items and notifications: **DNS points elsewhere** (a domain whose address is now
+  somewhere else, with the address seen) and **Certificate expiring** (not renewed inside the warn
+  window), each opened and resolved like any problem and pushed to every notification channel.
+- **Settings › Certificates**: every certificate Traefik holds for your addresses (issuer, when it
+  renews, when it ends), who issues them (Let's Encrypt production or staging, or none) and the
+  contact address, read-only: they are the installer's settings. **Warn when** (7, 14 or 30 days
+  before the end, 14 by default) is the one setting you can change. The sidebar's Settings entry
+  shows a mark when a certificate is expiring.
+- API 0.25.0: `listDomains`, `getDomain`, `checkDomain`, `rotateTeamPassword`,
+  `getCertificateSettings`, `putCertificateSettings` and `listCertificates`; `path`, `wwwRedirect`
+  and `teamOnly` on `App.services[].domains[]`; `Deployment.teamPasswords` (the password, once,
+  `no-store`); `AttentionItem.kind` gains `domain_dns_elsewhere` and `domain_cert_expiring`;
+  the notification message gains `domain`, `addressSeen` and `expiresAt`. A deploy token is still
+  refused on every domain route and may turn Team only on for its own app.
+
 ### Changed
 - The Backups tab's run and next-backup times are drawn as clock times (UTC, local beside them).
+- An app's Domains page grew a status and a certificate column (the same rows as the Domains
+  page, filtered to the app), and its domains are edited there with the options above.
 
-**Upgrade**: rerun nothing. The scoped Nomad policy needs no new capability; a schedule run's job
-is one more batch job while it runs and is purged after.
+**Upgrade**: rerun the installer. Traefik is restarted once (a few seconds without HTTP on 80 and
+443): it now reads its configuration from a directory so that Team only can hand it password
+hashes, and the installer says so when it does it. The installer also writes three lines into
+Caravana's settings: `CARAVANA_ACME` and `CARAVANA_ACME_EMAIL` (what Settings › Certificates
+shows) and `CARAVANA_EDGE_ADDRESS=127.0.0.1:443` (where Caravana connects to read each domain's
+certificate). The scoped Nomad policy needs no new capability (Traefik reads its own job's
+variable, and Caravana already writes `nomad/jobs/*`); a schedule run's job is one more batch job
+while it runs and is purged after. Until the installer is rerun, a domain with Team only is
+refused by Traefik (its router is disabled and answers 404).
 
 ## 0.12.0 - 2026-10-22
 

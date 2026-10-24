@@ -185,7 +185,7 @@ Independent test: quickstart §4.
   §1–§3 through the API with the gate's token, a deploy token refused on the seven routes and
   allowed to set `teamOnly` on its own app (the password once, absent from every later answer),
   `listCertificates`; on a real host (`host.sh prove`) the `live` state with Let's Encrypt.
-- [ ] T024 [P] Docs: `CHANGELOG.md` Unreleased (Added; the Upgrade note: rerun the installer,
+- [x] T024 [P] Docs: `CHANGELOG.md` Unreleased (Added; the Upgrade note: rerun the installer,
   Traefik restarts once, the three env lines), `docs/plan.md` row 023 (a router per domain with
   options under constitution 1.0.1; Force HTTPS global; the port per service; the certificate
   state from the handshake), `CLAUDE.md`'s "Where we are" paragraph for 023, `api/openapi.yaml`
