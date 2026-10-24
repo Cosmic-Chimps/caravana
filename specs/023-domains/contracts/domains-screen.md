@@ -267,3 +267,19 @@ The designer checks at 127.0.0.1:7070 against `p2-domains.png` and `p6-certs.png
   stageable: a short-lived certificate in the lab's Traefik, else the state's table test);
 - the needs-you items and a notification for a DNS-elsewhere domain;
 - narrow at 390px and the pages with JavaScript off.
+
+## Review fixes (2026-10-24)
+
+- Sideways overflow: every fixed grid track of the table, the open row's facts and the Certificates rows is
+  `minmax(0, N)`; keys, state sentences, notes and the issuer hints wrap (`overflow-wrap: anywhere`); the section
+  head's children and the settings grid have `min-width: 0`. It could not be reproduced at 1440 or 1200 with the
+  lab's data; a stress render (140-character unbroken values) did widen the page, through the facts' keys, and no
+  longer does at 1440, 1200, 768 and 390.
+- The Certificates head counts issued and expiring certificates only, as the nav does: "Domain certificates · 12
+  certificates"; with none, "· 8 domains · none issued yet", or "· 8 domains · no certificates: installed without
+  Let's Encrypt" when the issuer is none. The staging lede is "Certificates come from Let's Encrypt's staging
+  issuer: browsers don't trust them. Run the installer with the real issuer when the domains are ready."
+- Needs-you items lead with the app: "blog: `example.com` points at 104.20.23.154, which isn't this host." and
+  "blog: the certificate for `example.com` expires in 6 days and hasn't been renewed."
+- Edit (Warn when) is drawn in every state; a test holds it.
+- A host typed with capitals is lowercased, not refused, in the Add panel and the API (`WithLowercaseHosts`).
