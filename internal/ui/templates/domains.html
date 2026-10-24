@@ -57,7 +57,7 @@
   </details>
   {{end}}
 </div>
-<p class="cv-dmfoot">Checks run every minute. Certificates come from Let's Encrypt and renew by themselves.</p>
+<p class="cv-dmfoot">Checks run every minute while this page is open, and every 15 minutes otherwise. Certificates come from Let's Encrypt and renew by themselves.</p>
 {{else if .NoMatch}}
 <div class="cv-panel">
   <div class="cv-empty">
@@ -93,7 +93,7 @@
 {{define "domain-cells"}}<span class="sr-only">{{.State}}. </span>
       <span class="cv-dmname"><span class="cv-dmhost" title="{{.Host}}">{{.Host}}</span>{{if .TeamOnly}}<span class="cv-dmlock" title="Team only">{{icon "lock" 12}}<span class="sr-only"> (Team only)</span></span>{{end}}{{with .Path}}<span class="cv-dmpath">{{.}}</span>{{end}}</span>
       <span class="cv-dmstatus" data-label="Status"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
-      <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
+      <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}{{with .Project}}<span class="cv-dmgoes-app">{{.}}</span> › {{end}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
       <span class="cv-dmcert{{if .Cert.Warn}} cv-dmcert-warn{{end}}" data-label="Certificate"{{with .Cert.Title}} title="{{.}}"{{end}}>{{.Cert.Text}}</span>
       <span class="cv-dmopen">{{if .ShowOpen}}<a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a>{{end}}</span>{{end}}
 
@@ -135,7 +135,7 @@
       <label class="cv-fld" for="{{.Path.ID}}">
         <span class="cv-label">Path</span>
         <input class="cv-field cv-field-mono" id="{{.Path.ID}}" type="text" name="path" value="{{.Path.Value}}" placeholder="/api" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="{{.Path.ID}}-hint{{if .Path.Error}} {{.Path.ID}}-error{{end}}"{{if .Path.Error}} aria-invalid="true" autofocus{{end}}>
-        <span class="cv-data-muted cv-hint" id="{{.Path.ID}}-hint">Only requests under this path reach the app; the path is kept.</span>
+        <span class="cv-data-muted cv-hint" id="{{.Path.ID}}-hint">Only requests under this path reach the app; the path is kept. Saving deploys the app.</span>
         {{template "field-error" .Path}}
       </label>
       <div class="cv-dmbtns"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button></div>

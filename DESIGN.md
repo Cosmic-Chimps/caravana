@@ -909,17 +909,20 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   one line, ellipsis) with a 12px lock (fg-3, `title` "Team only") for a Team-only domain and its path
   (`/api`, 12px mono fg-3); the quiet small pill (no ground, edge or padding); Goes to (13px mono fg-2:
   "`booking-api` `:8080 · production`", the port and environment fg-3, "`hollo` › `web`" when the app has
-  several services, "→ `example.com`" for a redirect row); the certificate (12px mono fg-3: "renews in 61 d",
+  several services, "`Shop` › `web` :80 · staging" when the app is outside Default › production (the project's
+  display name, as the rail names it, since two projects may each have a `web`), "→ `example.com`" for a
+  redirect row); the certificate (12px mono fg-3: "renews in 61 d",
   which is the expiry less the 30 days ACME renews before, "expires in 6 d" in the warn hue when expiring,
   "Traefik's own", "—"; the expiry date in the `title`); the `external-link` icon link ("Open
   https://<host>"). The first row whose state needs the owner (■ or ◆) opens by itself; `?open=<host>`
   opens another. Empty: "No domains yet. Give an app a domain and HTTPS is set up for it." with Add
-  domain. Footer 13px fg-3: "Checks run every minute. Certificates come from Let's Encrypt and renew by
-  themselves."
+  domain. Footer 13px fg-3: "Checks run every minute while this page is open, and every 15 minutes otherwise.
+  Certificates come from Let's Encrypt and renew by themselves." (the watcher checks every 60 s only while a
+  domains page's stream is open)
 - **The detail** (ink-0, grid `minmax(0, 1fr) minmax(0, 1fr)`, gap 24, padding 18 18 20 46, a line-1 bottom):
   the left column by state: DNS elsewhere has its sentence ("The domain points at …, which isn't this host.
   Until it changes, caravana can't get a certificate and visitors won't reach `<app>`.") and a facts grid
-  with 90px keys (now, in the failed hue; should be; last check "40 s ago · checks every minute");
+  with 90px keys (now, in the failed hue; should be; last check "40 s ago · checks every minute while this page is open");
   expiring has its sentence and Check again; Traefik's own a quiet sentence, and getting a certificate one with
   **Open it once** (a link to `https://<host>/`, new tab, `rel="noopener"`: Traefik asks Let's Encrypt for the
   certificate on the first request it gets); no
@@ -942,7 +945,7 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   "On for every domain." under it in 13px fg-3 (not a field); **Team only (a shared password)**; the redirect
   switch, worded by what it redirects: "Redirect `example.com` here" on a `www.` host, "Redirect
   `www.example.com` here" on an apex, absent on any other host; **Path**, the 32px mono field with "Only
-  requests under this path reach the app; the path is kept." under it; **Save and deploy** (primary small).
+  requests under this path reach the app; the path is kept. Saving deploys the app." under it; **Save and deploy** (primary small).
   Each switch is a checkbox with `role="switch"` and `.cv-switch`, its label wrapping it, so the whole line
   is the target. A refused path draws the row's form again with what was typed and the reason under the field
   (the row opens). Below the form, **Remove…** (a confirmation, "Remove and deploy") and, for a Team-only

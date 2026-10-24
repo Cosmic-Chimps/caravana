@@ -94,7 +94,7 @@ func TestDomainsListStates(t *testing.T) {
 	body := e.pageOf(t, "/domains")
 	got := text(body)
 	for _, want := range []string{"Domains", "Every address people use to reach your apps. Certificates are issued and renewed for you.",
-		"9 domains · 3 need you · 1 getting a certificate", "Checks run every minute. Certificates come from Let's Encrypt and renew by themselves.",
+		"9 domains · 3 need you · 1 getting a certificate", "Checks run every minute while this page is open, and every 15 minutes otherwise. Certificates come from Let's Encrypt and renew by themselves.",
 		`href="#add"`} {
 		if !strings.Contains(got, want) && !strings.Contains(body, want) {
 			t.Errorf("/domains lacks %q:\n%s", want, got)
@@ -119,8 +119,8 @@ func TestDomainsListStates(t *testing.T) {
 	rows := map[string][]string{
 		// Its banner is on the page, which says what is wrong: the detail leads with the fix.
 		"elsewhere": {"DNS points elsewhere", "shop :80 · production", "—", "Change the record to:", "Type A Name elsewhere Value this host's public IP address",
-			"now A · 185.199.108.153", "last check 40 s ago · checks every minute", "Remove…"},
-		"expiring": {"certificate expiring", "expires in 6 d", "certificate Let's Encrypt · expires in 6 d", "DNS A → 203.0.113.1", "checked 40 s ago"},
+			"now A · 185.199.108.153", "last check 40 s ago · checks every minute while this page is open", "Remove…"},
+		"expiring": {"certificate expiring", "expires in 6 d", "certificate Let's Encrypt · expires 20", "DNS A → 203.0.113.1", "checked 40 s ago"},
 		"none":     {"no DNS record", "No DNS record yet. Add this record where you manage DNS:", "Type A Name none Value this host's public IP address"},
 		"pending":  {"getting certificate", "Waiting for Let's Encrypt. DNS points here; the certificate usually arrives within a minute of the first visit."},
 		"live":     {"live · HTTPS", "renews in 61 d", "certificate Let's Encrypt · renews in 61 d · expires", "DNS A → 203.0.113.1", "router shop-web", "checked 40 s ago"},

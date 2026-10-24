@@ -33,8 +33,9 @@ const (
 	// maxDomainBanners is how many problem banners stand above the table; the
 	// rest are "and N more".
 	maxDomainBanners = 3
-	// checksEvery is how often the watcher checks while a domains page is open.
-	checksEvery = "checks every minute"
+	// checksEvery says how often a domain is checked: every minute while a domains page's stream is
+	// open (service.MarkDomainsWatched), else every 15 minutes, so the clause says "while this page is open".
+	checksEvery = "checks every minute while this page is open"
 )
 
 // domainsPage is the template set "domains": the list with its Add panel.
@@ -119,11 +120,11 @@ type domainRowView struct {
 	Pill     statusView
 	// The Goes to cell: the app, then the service when the app has several, the
 	// port and the environment; or, for a redirect row, the host it redirects to.
-	App, AppID, Service string
-	Port                string // ":8080", "" when the service has no such port
-	Environment         string
-	RedirectTo          string
-	Cert                domainCertCell
+	Project, App, AppID, Service string
+	Port                         string // ":8080", "" when the service has no such port
+	Environment                  string
+	RedirectTo                   string
+	Cert                         domainCertCell
 	// ShowOpen is whether the row has its open link: a DNS-elsewhere row doesn't, since the link
 	// would open whatever the domain points at today.
 	ShowOpen bool
@@ -234,6 +235,9 @@ type recordBox struct {
 // domainAppInfo is what a row needs of its app beyond the view: how many
 // services it has, and what its Options need.
 type domainAppInfo struct {
+	// project is the project's display name when the app is outside Default › production, else "":
+	// Goes to names it then, since two projects may each have a "web".
+	project  string
 	services int
 	revision string
 	defined  bool
@@ -646,7 +650,7 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		pill := domainPill(v)
 		row := domainRowView{Host: v.Host, Anchor: domainAnchor(v.Host), URL: "https://" + v.Host + v.Path,
 			State: v.Host + ", " + pill.Word, TeamOnly: v.TeamOnly, Path: v.Path, Pill: pill,
-			App: domainAppText(v), AppID: v.App, Environment: v.Environment, RedirectTo: v.RedirectOf,
+			Project: info.project, App: domainAppText(v), AppID: v.App, Environment: v.Environment, RedirectTo: v.RedirectOf,
 			Cert: certCellOf(now, v), ShowOpen: v.State != edge.StateDNSElsewhere}
 		if row.Environment == "" {
 			row.Environment = app.DefaultEnvironment
@@ -758,10 +762,18 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	if err != nil {
 		return domainsRegion{}, err
 	}
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return domainsRegion{}, err
+	}
 	apps := make(map[string]domainAppInfo, len(sums))
 	for _, sum := range sums {
-		apps[sum.App.ID] = domainAppInfo{services: len(sum.App.Services), revision: sum.Revision, defined: sum.App.Defined(),
+		info := domainAppInfo{services: len(sum.App.Services), revision: sum.Revision, defined: sum.App.Defined(),
 			stopped: sum.StoppedAt != nil}
+		if p := sum.Place; p.Project != "" && (p.Project != app.DefaultProject || p.Environment != app.DefaultEnvironment) {
+			info.project = pl.display(p.Project)
+		}
+		apps[sum.App.ID] = info
 	}
 	// This host's addresses are read only when a row draws the record box.
 	var addrs []string
