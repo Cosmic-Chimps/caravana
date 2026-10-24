@@ -1,5 +1,19 @@
 <!--
 Sync Impact Report
+- Version change: 1.0.0 → 1.0.1 (2026-10-24, PATCH: a clarification of VI's router-name rule for
+  feature 023 Domains, decided by the maintainer)
+- Modified principles: VI. Nomad-Native, No Lock-In (the router `<app>-<service>` serves a
+  service's domains; a domain with per-domain options gets its own router
+  `<app>-<service>-<8-hex hash of the host>`, still configured only through service tags)
+- Added sections: none
+- Removed sections: none
+- Templates:
+  ✅ .specify/templates/plan-template.md: no change; its Constitution Check reads this file
+  ✅ .specify/templates/spec-template.md, tasks-template.md: no change
+  ✅ CLAUDE.md: no change; it links here
+- Deferred TODOs: none
+
+Earlier report (1.0.0):
 - Version change: template (unversioned) → 1.0.0
 - Principles defined (all new):
   I. Small by Default
@@ -93,7 +107,10 @@ Rationale: the API has real clients from day one; the UI is one of them, not a s
 - No Kubernetes, Docker Swarm or Consul code paths. Service discovery uses Nomad's native
   provider (`Provider: "nomad"`).
 - Networking is bridge mode with dynamic host ports (container ports via `To`). Traefik routing
-  is configured only through service tags, with router name `<app>-<service>`.
+  is configured only through service tags. The router `<app>-<service>` serves a service's
+  domains; a domain with per-domain options (a www redirect, Team only, a path) gets its own
+  router `<app>-<service>-<8-hex hash of the host>` on the same service, so a middleware can
+  attach to that one domain. Domains without options stay on the service's router.
 - Any app MUST be exportable as a plain Nomad job, and uninstalling Caravana MUST leave running
   workloads untouched.
 - Nomad-specific code stays inside the packages that talk to Nomad (`nomadjob`, `deploy`), so the
@@ -159,4 +176,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.0.1 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-24
