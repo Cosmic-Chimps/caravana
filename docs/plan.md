@@ -434,6 +434,8 @@ per app, or firewall rules between copies) belongs with Phase 3's networking wor
 docs say: apps on one host trust each other. Asked for on 2026-10-24 by Frunchy's Megáfono sidecar,
 whose internal port (publish, approve, block) has only a bearer token as its lock here: a port that
 only the same app's services can reach, or a per-app network option; either shape would do.
+Until then Frunchy and Megáfono trust `172.26.64.0/20` with the risk accepted (a sibling can pick
+the client address they see); when isolation lands, tell Frunchy's session so it narrows that.
 
 ### Routing by path and header (Phase 3 or later)
 
