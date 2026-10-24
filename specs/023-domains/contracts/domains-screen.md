@@ -283,3 +283,46 @@ The designer checks at 127.0.0.1:7070 against `p2-domains.png` and `p6-certs.png
   "blog: the certificate for `example.com` expires in 6 days and hasn't been renewed."
 - Edit (Warn when) is drawn in every state; a test holds it.
 - A host typed with capitals is lowercased, not refused, in the Add panel and the API (`WithLowercaseHosts`).
+
+### Critique rulings
+
+The designer's rulings on the impeccable critique of this screen, one commit each (`fix(ui): 023 …`):
+
+1. **Check now lands on its result.** The Add panel's Check now answers 303 to the same page with
+   `?checked=<host>#add` (on `/domains` and on an app's Domains page); the GET draws the panel from the check
+   the console kept for that host for 60 seconds, with what was typed. An unknown or expired host draws the
+   empty panel.
+2. **The Options form never sits in a swapped region.** The Domains region's own swap is `none`. A domains
+   notice fetches `/parts/domains` with `known` (a key of the hosts the page was drawn with); while the hosts
+   are the same the answer is out-of-band fragments by id (the summary, each row's cells, each row's left
+   column), else the whole region (`HX-Reswap`). Every `<details>` has a stable id.
+3. **One state table** (`domainStates`) for the list, the Add panel's check lines and Settings ›
+   Certificates: each state's mark, pill words, certificate words and fixed sentence once. No DNS record is
+   a warning everywhere, a pending certificate says "waiting for Let's Encrypt" everywhere, and a certificate
+   that couldn't be read is idle, not failed.
+4. **The elsewhere row says it once.** When a row's banner is on the page, its open detail drops the sentence
+   and the second Check again and leads with the record to change it to (the no-record box), keeping now and
+   last check. A DNS-elsewhere row has no external link.
+5. **The smaller control gaps.** Cancel returns to the page; a pending certificate offers Open it once; a
+   Team-only domain says "Visitors sign in as `team`."; the shown-once panel writes caravana in lowercase.
+6. **Goes to and the Path hint.** Goes to names the project, by its display name as the rail does, when the
+   app is outside Default › production ("Shop › web :80 · staging"). The Options form's Path hint ends "Saving
+   deploys the app." The last check line keeps "checks every minute while this page is open" (true: 60 s only
+   while a domains page's stream is open), and the footer says "Checks run every minute while this page is
+   open, and every 15 minutes otherwise."
+7. **The service select.** On `/domains` it is drawn only after an app is picked: the app select fetches
+   `/parts/domains/add-service?app=` into the field, and Check now draws it without script; until then "The
+   app's first service" is the default, in words. A service whose port is 5432, 3306, 6379, 27017, 5672 or
+   11211, or that has a TCP-only health check and an image naming postgres, mysql, mariadb, redis, mongo,
+   rabbitmq or memcached, is listed disabled with "not an HTTP port" (an app with no other is disabled in the
+   app select, "(no HTTP port)"; the API takes any port). The filter's project select and every app select
+   use the same words: "Shop / staging / web" (the project's display name, the environment, the app).
+8. **Confirmations inline, the banner stacks, the locked switch, the sort.** Remove… and New password (and
+   Settings › Certificates' Edit) are `<details>` whose form is a block under its button, in the flow: it
+   pushes the row down, with no absolute overlay, so nothing clips. The DNS banner stacks its text, then Check
+   again, below 640px. The locked Force HTTPS switch is drawn in fg-3 (knob and ground); a real switch's on hue
+   stays the handoff's. A redirect row sorts directly under the host it redirects to.
+9. **Settings › Certificates without Let's Encrypt.** With `acme=none`, Warn when is drawn disabled with
+   "Applies once certificates are issued." (the form posts nothing; the API still accepts the setting). The
+   lede is "This caravana was installed without Let's Encrypt: Traefik serves its own certificate.", which the
+   page already said.
