@@ -117,9 +117,10 @@ func TestDomainsListStates(t *testing.T) {
 	}
 
 	rows := map[string][]string{
-		"elsewhere": {"DNS points elsewhere", "shop :80 · production", "—", "The domain points at 185.199.108.153, which isn't this host. Until it changes, caravana can't get a certificate and visitors won't reach shop.",
-			"now A · 185.199.108.153", "should be A · 203.0.113.1", "last check 40 s ago · checks every minute", "Check again", "Remove…"},
-		"expiring": {"certificate expiring", "expires in 6 d", "The certificate expires in 6 days and hasn't been renewed. Let's Encrypt renews 30 days before expiry, so renewal has been failing", "Check again"},
+		// Its banner is on the page, which says what is wrong: the detail leads with the fix.
+		"elsewhere": {"DNS points elsewhere", "shop :80 · production", "—", "Change the record to:", "Type A Name elsewhere Value this host's public IP address",
+			"now A · 185.199.108.153", "last check 40 s ago · checks every minute", "Remove…"},
+		"expiring": {"certificate expiring", "expires in 6 d", "certificate Let's Encrypt · expires in 6 d", "DNS A → 203.0.113.1", "checked 40 s ago"},
 		"none":     {"no DNS record", "No DNS record yet. Add this record where you manage DNS:", "Type A Name none Value this host's public IP address"},
 		"pending":  {"getting certificate", "Waiting for Let's Encrypt. DNS points here; the certificate usually arrives within a minute of the first visit."},
 		"live":     {"live · HTTPS", "renews in 61 d", "certificate Let's Encrypt · renews in 61 d · expires", "DNS A → 203.0.113.1", "router shop-web", "checked 40 s ago"},
@@ -139,6 +140,22 @@ func TestDomainsListStates(t *testing.T) {
 				t.Errorf("%s's row lacks %q:\n%s", h, want, text(row))
 			}
 		}
+	}
+	// A row whose banner is on the page doesn't say it twice: no sentence, no second Check again, and
+	// a DNS-elsewhere row has no external link (it would open whatever DNS points at today).
+	for _, h := range []string{"elsewhere", "expiring"} {
+		row := dmRowOf(body, h+".example.com")
+		for _, never := range []string{"isn't this host", "hasn't been renewed", "should be", "Check again"} {
+			if strings.Contains(text(row), never) {
+				t.Errorf("%s's row, with its banner on the page, still says %q:\n%s", h, never, text(row))
+			}
+		}
+	}
+	if row := dmRowOf(body, "elsewhere.example.com"); strings.Contains(row, "cv-iconlink") {
+		t.Error("a DNS-elsewhere row has an external link")
+	}
+	if row := dmRowOf(body, "live.example.com"); !strings.Contains(row, `class="cv-iconlink" aria-label="Open https://live.example.com"`) {
+		t.Error("a live row has no external link")
 	}
 	// The warn hue for an expiring certificate; the expiry as a clock time in the live detail.
 	if !strings.Contains(dmRowOf(body, "expiring.example.com"), `cv-dmcert cv-dmcert-warn`) {
@@ -187,6 +204,19 @@ func TestDomainsBannersCap(t *testing.T) {
 	}
 	if !strings.Contains(body, `<a href="#domain-d.example.com">and 2 more</a>`) {
 		t.Errorf("no \"and 2 more\":\n%s", text(body))
+	}
+	// A row whose banner is on the page leads with the record; one without keeps its sentence and its Check again.
+	for h, banner := range map[string]bool{"a": true, "c": true, "d": false, "e": false} {
+		row := text(dmRowOf(body, h+".example.com"))
+		if got := strings.Contains(row, "Change the record to:"); got != banner {
+			t.Errorf("%s: leads with the record = %v, want %v:\n%s", h, got, banner, row)
+		}
+		if got := strings.Contains(row, "which isn't this host. Until it changes"); got == banner {
+			t.Errorf("%s: has its sentence = %v, want %v:\n%s", h, got, !banner, row)
+		}
+		if got := strings.Contains(row, "Check again"); got == banner {
+			t.Errorf("%s: has Check again = %v, want %v", h, got, !banner)
+		}
 	}
 	if !strings.Contains(text(body), "5 domains · 5 need you") {
 		t.Errorf("the count line:\n%s", text(body))
@@ -241,7 +271,7 @@ func TestAppDomainsPageRows(t *testing.T) {
 	e := statesEnv(t)
 	body := e.pageOf(t, "/apps/shop/domains")
 	got := text(body)
-	for _, want := range []string{"All domains", "7 domains · 3 need you · 1 getting a certificate", "The domain points at 185.199.108.153"} {
+	for _, want := range []string{"All domains", "7 domains · 3 need you · 1 getting a certificate", "Change the record to:"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the app's page lacks %q:\n%s", want, got)
 		}
@@ -253,7 +283,7 @@ func TestAppDomainsPageRows(t *testing.T) {
 		t.Error("the app's page doesn't watch the domains, or its region doesn't refresh as the app's")
 	}
 	// Check again on the app's page comes back to it.
-	row := dmRowOf(body, "elsewhere.example.com")
+	row := regexp.MustCompile(`(?s)<div class="cv-panel cv-dmbanner">.*?</form>`).FindString(body)
 	if !strings.Contains(row, `<input type="hidden" name="app" value="shop">`) {
 		t.Error("the app page's Check again doesn't say where to come back")
 	}

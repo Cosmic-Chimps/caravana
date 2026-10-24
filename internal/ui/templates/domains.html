@@ -95,7 +95,7 @@
       <span class="cv-dmstatus" data-label="Status"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
       <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
       <span class="cv-dmcert{{if .Cert.Warn}} cv-dmcert-warn{{end}}" data-label="Certificate"{{with .Cert.Title}} title="{{.}}"{{end}}>{{.Cert.Text}}</span>
-      <span class="cv-dmopen"><a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a></span>{{end}}
+      <span class="cv-dmopen">{{if .ShowOpen}}<a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a>{{end}}</span>{{end}}
 
 {{/* domains-oob: the refresh's answer while the hosts on the page are the hosts there are: out-of-band
      fragments, swapped by id into the page (hx-swap-oob), for the summary, each row's cells and each

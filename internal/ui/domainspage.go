@@ -124,7 +124,10 @@ type domainRowView struct {
 	Environment         string
 	RedirectTo          string
 	Cert                domainCertCell
-	Detail              domainDetail
+	// ShowOpen is whether the row has its open link: a DNS-elsewhere row doesn't, since the link
+	// would open whatever the domain points at today.
+	ShowOpen bool
+	Detail   domainDetail
 }
 
 // domainCertCell is the Certificate column: "renews in 61 d", "expires in 6 d"
@@ -415,10 +418,33 @@ func certFact(now time.Time, c edge.Certificate) domainFact {
 
 // domainDetailOf builds what opens under a row, by its state. box is the
 // record box for this host (used when DNS has no record); opts its Options column.
-func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions) domainDetail {
+//
+// banner says the row's problem banner is on the page, which already says what is wrong and holds
+// Check again: the detail then says it once, with the fix. A DNS-elsewhere row leads with the record
+// to change it to, and keeps what DNS says now and the last check; an expiring one keeps its facts.
+func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions, banner bool) domainDetail {
 	d := domainDetail{Host: v.Host, Options: opts}
 	appName := domainAppText(v)
 	checked := checkedWhen(now, v.CheckedAt)
+	switch {
+	case v.State == edge.StateDNSElsewhere && banner:
+		seen := seenElsewhere(v.DNS)
+		d.Sentence = plainS("Change the record to:")
+		d.Records = &box
+		d.Facts = []domainFact{
+			{Key: "now", Value: plainS(strings.Join(seen, ", ")), Failed: true},
+			{Key: "last check", Checked: &checked, After: " · " + checksEvery},
+		}
+		return d
+	case v.State == edge.StateCertExpiring && banner:
+		d.Wide = true
+		d.Facts = []domainFact{
+			certFact(now, v.Certificate),
+			{Key: "DNS", Value: plainS(dnsFactText(v.DNS))},
+			{Key: "checked", Checked: &checked},
+		}
+		return d
+	}
 	switch v.State {
 	case edge.StateDNSElsewhere:
 		seen := seenElsewhere(v.DNS)
@@ -617,7 +643,7 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		row := domainRowView{Host: v.Host, Anchor: domainAnchor(v.Host), URL: "https://" + v.Host + v.Path,
 			State: v.Host + ", " + pill.Word, TeamOnly: v.TeamOnly, Path: v.Path, Pill: pill,
 			App: domainAppText(v), AppID: v.App, Environment: v.Environment, RedirectTo: v.RedirectOf,
-			Cert: certCellOf(now, v)}
+			Cert: certCellOf(now, v), ShowOpen: v.State != edge.StateDNSElsewhere}
 		if row.Environment == "" {
 			row.Environment = app.DefaultEnvironment
 		}
@@ -633,8 +659,9 @@ func domainViewsOf(now time.Time, list []service.DomainView, apps map[string]dom
 		case !opened && domainProblem(v.State):
 			row.Open, opened = true, true
 		}
-		row.Detail = domainDetailOf(now, v, box(v.Host), check, domainOptionsOf(v, info, appPage, draft))
-		if b, ok := bannerOf(now, v, check); ok {
+		b, hasBanner := bannerOf(now, v, check)
+		row.Detail = domainDetailOf(now, v, box(v.Host), check, domainOptionsOf(v, info, appPage, draft), hasBanner && len(banners) < maxDomainBanners)
+		if hasBanner {
 			if len(banners) < maxDomainBanners {
 				banners = append(banners, b)
 			} else if more == nil {
@@ -734,7 +761,9 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	}
 	// This host's addresses are read only when a row draws the record box.
 	var addrs []string
-	if slices.ContainsFunc(list, func(v service.DomainView) bool { return v.State == edge.StateDNSNone }) {
+	if slices.ContainsFunc(list, func(v service.DomainView) bool {
+		return v.State == edge.StateDNSNone || v.State == edge.StateDNSElsewhere
+	}) {
 		addrs = s.hostAddressTexts(ctx)
 	}
 	box := func(host string) recordBox { return recordBoxFor(host, addrs) }

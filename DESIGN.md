@@ -925,7 +925,12 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   redirect a facts grid with 110px keys (certificate "Let's Encrypt · renews in 61 d · expires
   `<clock time>`", DNS "A → 203.0.113.1", router "`<app>-<service>`" or "`<app>-<service>-<hash8>` (its own,
   for its options)", checked); not served "The app is stopped: start it to serve this domain." / "Nothing
-  is deployed yet." with a link. The expiry is a clock time (the time rule); "checked" is relative ("40 s
+  is deployed yet." with a link. **A problem is said once:** when a row's banner is on the page (at most three),
+  its detail drops the sentence the banner already says and the second Check again. A DNS-elsewhere row leads with
+  "Change the record to:" and the record box (A · Name per `DNSRecordName` · this host's address, the box a
+  no-record row draws), then "now" (the failed hue) and "last check"; an expiring one keeps its facts (certificate,
+  DNS, checked). A row beyond the three banners keeps its sentence and its Check again. A DNS-elsewhere row has no
+  external-link icon: it would open whatever DNS points at today. The expiry is a clock time (the time rule); "checked" is relative ("40 s
   ago" under a minute). The right column is "Options" (a Label), a form of its own (below), then Remove… and
   New password; or why there is none (a stopped app, a redirect row). A row, banner or detail never holds a
   password or a hash.
