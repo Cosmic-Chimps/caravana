@@ -1044,7 +1044,7 @@
   </div>
 </section>
 
-<section class="cv-sregion" aria-label="Domains of {{.ID}}" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="innerHTML">{{template "domains-region" .Region}}</section>
+<section class="cv-sregion" aria-label="Domains of {{.ID}}" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="none" hx-include="#domains-known">{{template "domains-region" .Region}}</section>
 
 {{if .CanEdit}}
 {{with .Add}}{{template "domain-add" .}}{{end}}

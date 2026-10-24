@@ -965,6 +965,16 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   points here or no check ran, secondary otherwise, and always there: the list shows the rest. A refusal
   draws the form again with the reason under its field: another app's host (naming it), the console's own
   host, a host that isn't one, a bad path.
+- **Live refresh swaps per row, never the forms.** The region's own swap is `none`. A notice (`sse:domains`) makes
+  it fetch `/parts/domains` with `known`, a short key of the hosts it was drawn with (a hidden `#domains-known`
+  inside the region, taken by `hx-include`). While the key still names the hosts there are, the answer is
+  out-of-band fragments (`hx-swap-oob`) for the summary above the table (`#domains-summary`: count line, banners),
+  each row's cells (`#domain-status-<host>`: host, status, Goes to, certificate, open link; a wrapper with
+  `display: contents`) and each row's left column (`#domain-left-<host>`: the state's sentence, facts and its
+  buttons), and nothing else. The Options form, Remove…, New password and the Add panel are never in it, so a
+  refresh never takes what is being typed or closes what is open. When a host was added or removed the answer is
+  the whole region with `HX-Reswap: innerHTML`; console.js puts back which `<details>` were open, by id. Every
+  `<details>` on these pages has a stable id (`domain-<host>`, `domain-remove-<host>`, `domain-password-<host>`).
 - **Narrow:** under 900px of room a row folds (chevron, host and the open link; then Status, Goes to and
   Certificate as label and value) and the detail stacks; the banner keeps its three columns.
 

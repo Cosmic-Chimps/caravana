@@ -28,25 +28,15 @@
   <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Apply</button>
   {{if .Filter.Clear}}<a href="/domains" class="cv-btn cv-btn-secondary cv-btn-sm">Clear</a>{{end}}
 </form>
-<section class="cv-sregion" aria-label="Domains" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="innerHTML">{{template "domains-region" .Region}}</section>
+<section class="cv-sregion" aria-label="Domains" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="none" hx-include="#domains-known">{{template "domains-region" .Region}}</section>
 {{with .Add}}{{template "domain-add" .}}{{end}}
 {{end}}
 
 {{/* domains-region: the count line, the problem banners, the table and the footer; /parts/domains
      draws it alone. Takes a domainsRegion. */}}
 {{define "domains-region"}}
-<p class="cv-scount">{{.Count}}</p>
-{{range .Banners}}
-<div class="cv-panel cv-dmbanner">
-  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
-  <div class="cv-dmbanner-text">
-    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
-    <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
-  </div>
-  {{template "domain-check" .Check}}
-</div>
-{{end}}
-{{with .More}}<p class="cv-dmmore"><a href="{{.Href}}">and {{.N}} more</a></p>{{end}}
+<input type="hidden" id="domains-known" name="known" value="{{.Known}}">
+<div id="domains-summary" class="cv-dmsummary">{{template "domains-summary" .}}</div>
 {{if .Rows}}
 <div class="cv-panel cv-dmtable">
   <div class="cv-dmhead cv-label" aria-hidden="true">
@@ -60,13 +50,8 @@
   {{range .Rows}}
   <details class="cv-dmdetails" id="{{.Anchor}}"{{if .Open}} open{{end}}>
     <summary class="cv-dmsum">
-      <span class="sr-only">{{.State}}. </span>
       <span class="cv-bchev" aria-hidden="true"><span class="cv-chev-closed">{{icon "chevron-right" 12}}</span><span class="cv-chev-open">{{icon "chevron-down" 12}}</span></span>
-      <span class="cv-dmname"><span class="cv-dmhost" title="{{.Host}}">{{.Host}}</span>{{if .TeamOnly}}<span class="cv-dmlock" title="Team only">{{icon "lock" 12}}<span class="sr-only"> (Team only)</span></span>{{end}}{{with .Path}}<span class="cv-dmpath">{{.}}</span>{{end}}</span>
-      <span class="cv-dmstatus" data-label="Status"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
-      <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
-      <span class="cv-dmcert{{if .Cert.Warn}} cv-dmcert-warn{{end}}" data-label="Certificate"{{with .Cert.Title}} title="{{.}}"{{end}}>{{.Cert.Text}}</span>
-      <span class="cv-dmopen"><a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a></span>
+      <span class="cv-dmcells" id="domain-status-{{.Host}}">{{template "domain-cells" .}}</span>
     </summary>
     {{template "domain-detail" .Detail}}
   </details>
@@ -85,6 +70,45 @@
 {{end}}
 {{end}}
 
+{{/* domains-summary: what stands above the table: the count line, the problem banners and "and N
+     more". It is swapped by id, with the rows' cells, when a domain changes state. */}}
+{{define "domains-summary"}}
+<p class="cv-scount">{{.Count}}</p>
+{{range .Banners}}
+<div class="cv-panel cv-dmbanner">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
+    <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
+  </div>
+  {{template "domain-check" .Check}}
+</div>
+{{end}}
+{{with .More}}<p class="cv-dmmore"><a href="{{.Href}}">and {{.N}} more</a></p>{{end}}
+{{end}}
+
+{{/* domain-cells: a row's summary cells after the chevron: the host with its lock and path, the
+     status, Goes to, the certificate and the open link. They are what a state change moves, and
+     what the refresh swaps (domains-oob); the detail's Options never are. Takes a domainRowView. */}}
+{{define "domain-cells"}}<span class="sr-only">{{.State}}. </span>
+      <span class="cv-dmname"><span class="cv-dmhost" title="{{.Host}}">{{.Host}}</span>{{if .TeamOnly}}<span class="cv-dmlock" title="Team only">{{icon "lock" 12}}<span class="sr-only"> (Team only)</span></span>{{end}}{{with .Path}}<span class="cv-dmpath">{{.}}</span>{{end}}</span>
+      <span class="cv-dmstatus" data-label="Status"><span class="cv-pill cv-pill-{{.Pill.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Pill.Kind}}" aria-hidden="true"></span>{{.Pill.Word}}</span></span>
+      <span class="cv-dmgoes" data-label="Goes to" title="{{.AppID}}"><span class="cv-dmval">{{if .RedirectTo}}→ <span class="cv-dmgoes-app">{{.RedirectTo}}</span>{{else}}<span class="cv-dmgoes-app">{{.App}}</span>{{with .Service}} › <span class="cv-dmgoes-app">{{.}}</span>{{end}} <span class="cv-dmgoes-meta">{{with .Port}}{{.}} · {{end}}{{.Environment}}</span>{{end}}</span></span>
+      <span class="cv-dmcert{{if .Cert.Warn}} cv-dmcert-warn{{end}}" data-label="Certificate"{{with .Cert.Title}} title="{{.}}"{{end}}>{{.Cert.Text}}</span>
+      <span class="cv-dmopen"><a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a></span>{{end}}
+
+{{/* domains-oob: the refresh's answer while the hosts on the page are the hosts there are: out-of-band
+     fragments, swapped by id into the page (hx-swap-oob), for the summary, each row's cells and each
+     row's left column. Nothing else: the Options form, Remove…, New password and the Add panel are
+     never in it, so a refresh never takes what is being typed. Takes a domainsRegion. */}}
+{{define "domains-oob"}}
+<div id="domains-summary" class="cv-dmsummary" hx-swap-oob="true">{{template "domains-summary" .}}</div>
+{{range .Rows}}
+<span id="domain-status-{{.Host}}" class="cv-dmcells" hx-swap-oob="true">{{template "domain-cells" .}}</span>
+<div id="domain-left-{{.Host}}" class="cv-dmdetail-left" hx-swap-oob="true">{{template "domain-detail-left" .Detail}}</div>
+{{end}}
+{{end}}
+
 {{/* domain-check: Check again, a post that checks the host now. Takes a domainCheckForm. */}}
 {{define "domain-check"}}<form method="post" action="{{.Action}}" class="cv-dmcheckform">{{with .App}}<input type="hidden" name="app" value="{{.}}">{{end}}<button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Check again</button></form>{{end}}
 
@@ -92,17 +116,7 @@
      column at the right. Takes a domainDetail. */}}
 {{define "domain-detail"}}
 <div class="cv-dmdetail">
-  <div class="cv-dmdetail-left">
-    {{with .Sentence}}<p class="cv-dmstate{{if $.Quiet}} cv-dmstate-quiet{{end}}">{{template "sentence" .}}</p>{{end}}
-    {{with .Records}}{{template "domain-records" .}}{{end}}
-    {{if .Facts}}
-    <dl class="cv-dmfacts{{if .Wide}} cv-dmfacts-wide{{end}}">
-      {{range .Facts}}<dt>{{.Key}}</dt> <dd{{if .Failed}} class="cv-dmfact-failed"{{end}}>{{template "sentence" .Value}}{{with .Expires}}{{template "clock" .}}{{end}}{{with .Checked}}<time datetime="{{.ISO}}"{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}{{.After}}</dd>
-      {{end}}
-    </dl>
-    {{end}}
-    {{if or .Check .Link}}<div class="cv-dmbtns">{{with .Check}}{{template "domain-check" .}}{{end}}{{with .Link}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a>{{end}}</div>{{end}}
-  </div>
+  <div class="cv-dmdetail-left" id="domain-left-{{.Host}}">{{template "domain-detail-left" .}}</div>
   <div class="cv-dmdetail-right">
     <h3 class="cv-label">Options</h3>
     {{with .Options.Note}}<p class="cv-dmnote">{{template "sentence" .}}</p>{{end}}
@@ -130,7 +144,7 @@
     {{if or .Options.Remove .Options.Rotate}}
     <div class="cv-dmbtns">
       {{with .Options.Remove}}
-      <details class="cv-confirm">
+      <details class="cv-confirm" id="domain-remove-{{.Host}}">
         <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Host}}">Remove…</summary>
         <form method="post" action="{{.Action}}" class="cv-confirm-body">
           <input type="hidden" name="app" value="{{.App}}">
@@ -143,7 +157,7 @@
       </details>
       {{end}}
       {{with .Options.Rotate}}
-      <details class="cv-confirm">
+      <details class="cv-confirm" id="domain-password-{{.Host}}">
         <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="New password for {{.Host}}">New password</summary>
         <form method="post" action="{{.Action}}" class="cv-confirm-body">
           <input type="hidden" name="app" value="{{.App}}">
@@ -158,6 +172,20 @@
     {{end}}
   </div>
 </div>
+{{end}}
+
+{{/* domain-detail-left: the state's sentence, its facts and its buttons: what a state change moves, so
+     the refresh swaps it by id. It holds no field the owner types into. Takes a domainDetail. */}}
+{{define "domain-detail-left"}}
+    {{with .Sentence}}<p class="cv-dmstate{{if $.Quiet}} cv-dmstate-quiet{{end}}">{{template "sentence" .}}</p>{{end}}
+    {{with .Records}}{{template "domain-records" .}}{{end}}
+    {{if .Facts}}
+    <dl class="cv-dmfacts{{if .Wide}} cv-dmfacts-wide{{end}}">
+      {{range .Facts}}<dt>{{.Key}}</dt> <dd{{if .Failed}} class="cv-dmfact-failed"{{end}}>{{template "sentence" .Value}}{{with .Expires}}{{template "clock" .}}{{end}}{{with .Checked}}<time datetime="{{.ISO}}"{{with .Exact}} title="{{.}}"{{end}}>{{.Text}}</time>{{end}}{{.After}}</dd>
+      {{end}}
+    </dl>
+    {{end}}
+    {{if or .Check .Link}}<div class="cv-dmbtns">{{with .Check}}{{template "domain-check" .}}{{end}}{{with .Link}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a>{{end}}</div>{{end}}
 {{end}}
 
 {{/* domain-once: a Team-only password just made, in the answer of the post that made it. It is in

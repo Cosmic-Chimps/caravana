@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,6 +67,21 @@ type domainsRegion struct {
 	NoMatch     bool
 	ClearHref   string
 	RefreshHref string
+	// Known says which hosts the page was drawn with (hostsKey). The refresh carries it back, and
+	// answers out-of-band fragments while it still names the hosts there are, a whole region when
+	// it doesn't.
+	Known string
+}
+
+// hostsKey is a short name for a set of hosts, whatever their order: what a page was drawn with.
+func hostsKey(rows []service.DomainView) string {
+	hosts := make([]string, len(rows))
+	for i, v := range rows {
+		hosts[i] = v.Host
+	}
+	slices.Sort(hosts)
+	sum := sha256.Sum256([]byte(strings.Join(hosts, "\n")))
+	return hex.EncodeToString(sum[:6])
 }
 
 // domainBanner is one problem above the table: a DNS record that points
@@ -132,6 +149,7 @@ type domainFact struct {
 // domainDetail is what opens under a row: the state's sentence and facts at
 // the left, the Options column at the right.
 type domainDetail struct {
+	Host     string // the row's, for the id of its left column
 	Sentence sentence
 	Quiet    bool
 	Facts    []domainFact
@@ -396,7 +414,7 @@ func certFact(now time.Time, c edge.Certificate) domainFact {
 // domainDetailOf builds what opens under a row, by its state. box is the
 // record box for this host (used when DNS has no record); opts its Options column.
 func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check domainCheckForm, opts domainOptions) domainDetail {
-	d := domainDetail{Options: opts}
+	d := domainDetail{Host: v.Host, Options: opts}
 	appName := domainAppText(v)
 	checked := checkedWhen(now, v.CheckedAt)
 	switch v.State {
@@ -721,6 +739,7 @@ func (s *server) loadDomains(ctx context.Context, q domainsQuery, empty emptyVie
 	}
 	box := func(host string) recordBox { return recordBoxFor(host, addrs) }
 
+	region.Known = hostsKey(list)
 	region.Count = domainsCount(list)
 	region.Rows, region.Banners, region.More = domainViewsOf(s.now(), list, apps, box, q.Open, appPage, q.Draft)
 	if len(list) == 0 {
@@ -797,6 +816,15 @@ func (s *server) partDomains(w http.ResponseWriter, r *http.Request, session str
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// The refresh swaps by id, so the Options form, Remove…, New password and the Add panel are
+	// never replaced under the owner's hands. Only when the hosts on the page are no longer the
+	// hosts there are does it answer the whole region, which htmx swaps in (HX-Reswap) over the
+	// page's own "none"; console.js keeps the rows that were open, open.
+	if r.URL.Query().Get("known") == region.Known {
+		s.renderPart(w, "domains", "domains-oob", region)
+		return
+	}
+	w.Header().Set("HX-Reswap", "innerHTML")
 	s.renderPart(w, "domains", "domains-region", region)
 }
 
