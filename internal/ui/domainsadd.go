@@ -386,8 +386,9 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 			s.serverError(w, "check a domain", err)
 			return
 		}
-		form.applyCheck(chk)
-		refuse(http.StatusOK)
+		// Answer 303 to the same page at the panel, so a reload doesn't post again.
+		s.checked.put(host, checkedAdd{in: in, check: chk}, s.now())
+		http.Redirect(w, r, checkedBack(fixedApp, host), http.StatusSeeOther)
 		return
 	}
 

@@ -742,7 +742,7 @@ var domainsEmpty = emptyView{Title: "No domains yet.", Text: "Give an app a doma
 // showDomains answers GET /domains.
 func (s *server) showDomainsPage(w http.ResponseWriter, r *http.Request, session string) {
 	q := domainsQueryOf(r.URL.Query())
-	add, err := s.domainAddFor(r.Context(), domainAddInput{App: q.App}, "")
+	add, err := s.addPanelFor(r.Context(), r, q.App, "")
 	if err != nil {
 		s.serverError(w, "draw the add form", err)
 		return

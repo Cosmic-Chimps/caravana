@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
@@ -78,6 +79,23 @@ func TestDomainAddPanel(t *testing.T) {
 	}
 }
 
+// checkNow posts the Add form's Check now and follows its 303 to the page it leads to, at the
+// panel: the panel as that page draws it, and the address it was drawn from.
+func (e *consoleEnv) checkNow(t *testing.T, f plainForm, set url.Values) (panel, address string) {
+	t.Helper()
+	set.Set("action", "check")
+	resp, body := e.submit(t, f, set)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("Check now = %d, want 303:\n%s", resp.StatusCode, text(body))
+	}
+	loc := location(t, resp)
+	page, frag, _ := strings.Cut(loc, "#")
+	if frag != "add" {
+		t.Errorf("Check now leads to %q, want the panel (#add)", loc)
+	}
+	return addPanel(e.pageOf(t, page)), loc
+}
+
 func TestDomainAddCheckNow(t *testing.T) {
 	e := addEnv(t)
 	form := addFormOf(t, e.pageOf(t, "/domains"))
@@ -92,10 +110,9 @@ func TestDomainAddCheckNow(t *testing.T) {
 		{"example.com", "failed", []string{"Name @ Value 203.0.113.1"}},
 	}
 	for _, tc := range tests {
-		resp, body := e.submit(t, form, url.Values{"action": {"check"}, "host": {tc.host}, "app": {"whoami"}})
-		panel := addPanel(body)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("check %s = %d:\n%s", tc.host, resp.StatusCode, text(body))
+		panel, loc := e.checkNow(t, form, url.Values{"host": {tc.host}, "app": {"whoami"}})
+		if want := "/domains?checked=" + tc.host + "#add"; loc != want {
+			t.Errorf("Check now of %s leads to %q, want %q", tc.host, loc, want)
 		}
 		lines := regexp.MustCompile(`(?s)<ul class="cv-dmchecks".*?</ul>`).FindString(panel)
 		if !strings.HasPrefix(strings.TrimSpace(strings.SplitN(lines, `<li class="cv-dmcheck">`, 2)[1]), `<span class="cv-mark cv-mark-`+tc.dns+`"`) {
@@ -117,15 +134,50 @@ func TestDomainAddCheckNow(t *testing.T) {
 	}
 	// A host that is served gets its real certificate state.
 	e.Svc.SetEdge(nil, &edgetest.FakeDialer{Default: []*x509.Certificate{edgetest.TraefikDefault(t)}})
-	_, body := e.submit(t, form, url.Values{"action": {"check"}, "host": {"whoami.example.com"}, "app": {"whoami"}})
-	if got := text(addPanel(body)); !strings.Contains(got, "HTTPS certificate Traefik's own") {
+	panel, _ := e.checkNow(t, form, url.Values{"host": {"whoami.example.com"}, "app": {"whoami"}})
+	if got := text(panel); !strings.Contains(got, "HTTPS certificate Traefik's own") {
 		t.Errorf("a served host's certificate line:\n%s", got)
 	}
 	// The app's page checks with the app fixed and no revision needed.
 	page := formWith(t, e.pageOf(t, "/apps/whoami/domains"), "/apps/whoami/domains")
-	resp, body := e.submit(t, page, url.Values{"action": {"check"}, "host": {"here.example.com"}})
-	if resp.StatusCode != http.StatusOK || !strings.Contains(text(addPanel(body)), "passed: DNS points at caravana") {
-		t.Errorf("the app page's check = %d:\n%s", resp.StatusCode, text(addPanel(body)))
+	panel, loc := e.checkNow(t, page, url.Values{"host": {"here.example.com"}})
+	if loc != "/apps/whoami/domains?checked=here.example.com#add" || !strings.Contains(text(panel), "passed: DNS points at caravana") {
+		t.Errorf("the app page's check led to %q:\n%s", loc, text(panel))
+	}
+}
+
+// The page Check now leads to draws the check from the console's cache: the check lines, the
+// record box and what was typed. An unknown host, or one whose check has expired, draws the panel
+// empty, and the address holds nothing but the host.
+func TestDomainAddCheckedPage(t *testing.T) {
+	e := addEnv(t)
+	form := addFormOf(t, e.pageOf(t, "/domains"))
+	_, loc := e.checkNow(t, form, url.Values{"host": {"here.example.com"}, "app": {"duet"}, "service": {"api"}, "path": {"/api"}})
+	if strings.Contains(loc, "duet") || strings.Contains(loc, "/api") {
+		t.Errorf("the address holds more than the host: %q", loc)
+	}
+	page, _, _ := strings.Cut(loc, "#")
+	panel := addPanel(e.pageOf(t, page))
+	for _, want := range []string{"passed: DNS points at caravana", "Name here Value 203.0.113.1"} {
+		if !strings.Contains(text(panel), want) {
+			t.Errorf("the checked panel lacks %q:\n%s", want, text(panel))
+		}
+	}
+	for _, want := range []string{`value="here.example.com"`, `<option value="duet" selected>`, `value="/api"`} {
+		if !strings.Contains(panel, want) {
+			t.Errorf("the checked panel lost what was typed (%s):\n%s", want, panel)
+		}
+	}
+	// Unknown: no check was kept for it.
+	empty := addPanel(e.pageOf(t, "/domains?checked=never.example.com"))
+	if strings.Contains(empty, "passed:") || strings.Contains(empty, `value="never.example.com"`) || strings.Count(empty, `cv-mark cv-mark-idle`) != 2 {
+		t.Errorf("an unknown ?checked= draws a checked panel:\n%s", text(empty))
+	}
+	// Expired: a minute later it is gone.
+	e.Clock.Advance(checkedFor + time.Second)
+	expired := addPanel(e.pageOf(t, page))
+	if strings.Contains(expired, "passed:") || strings.Contains(expired, `value="here.example.com"`) || strings.Count(expired, `cv-mark cv-mark-idle`) != 2 {
+		t.Errorf("an expired check is still drawn:\n%s", text(expired))
 	}
 }
 
@@ -233,13 +285,13 @@ func TestDomainAddLowercasesTheHost(t *testing.T) {
 	e := addEnv(t)
 	form := addFormOf(t, e.pageOf(t, "/domains"))
 
-	resp, body := e.submit(t, form, url.Values{"action": {"check"}, "host": {"HERE.Example.COM"}, "app": {"whoami"}})
-	if got := text(addPanel(body)); resp.StatusCode != http.StatusOK || !strings.Contains(got, "passed: DNS points at caravana") || !strings.Contains(got, "Name here Value 203.0.113.1") {
-		t.Errorf("check with capitals = %d:\n%s", resp.StatusCode, got)
+	panel, loc := e.checkNow(t, form, url.Values{"host": {"HERE.Example.COM"}, "app": {"whoami"}})
+	if got := text(panel); loc != "/domains?checked=here.example.com#add" || !strings.Contains(got, "passed: DNS points at caravana") || !strings.Contains(got, "Name here Value 203.0.113.1") {
+		t.Errorf("check with capitals led to %q:\n%s", loc, got)
 	}
 
 	n := e.deployCount(t, "whoami")
-	resp, body = e.submit(t, form, url.Values{"host": {"Shop.Example.COM"}, "app": {"whoami"}})
+	resp, body := e.submit(t, form, url.Values{"host": {"Shop.Example.COM"}, "app": {"whoami"}})
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("add with capitals = %d:\n%s", resp.StatusCode, text(body))
 	}

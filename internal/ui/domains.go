@@ -101,7 +101,7 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 			return
 		}
 		if add == nil {
-			if add, err = s.domainAddFor(ctx, domainAddInput{}, id); err != nil {
+			if add, err = s.addPanelFor(ctx, r, "", id); err != nil {
 				s.serverError(w, "draw the add form", err)
 				return
 			}

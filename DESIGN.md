@@ -955,9 +955,13 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   "`:8080`, set in Configure"; on an app's page the app as text), Path (optional, mono), "Point it at
   caravana" with the record box and "The root of a domain needs an A record. A subdomain can use one too.",
   then Check: two lines of 14px, each an 8px mark and words, a 13px fg-3 reason under them. Before a check
-  both are rings in fg-3; Check now (a submit of its own, `action=check`) draws the form again with ● or
+  both are rings in fg-3; Check now (a submit of its own, `action=check`) runs the check on the post and
+  answers 303 to the same page (`/domains` or `/apps/{id}/domains`) with `?checked=<host>#add`, so the
+  browser lands on the panel and a reload doesn't post again; the page draws the panel from the check the
+  console kept for that host for 60 seconds (with what was typed: the app, the service, the path), with ● or
   ■ "DNS points at caravana" ("points at `185.…`", "no record yet") and the certificate line ("issued after
-  you add it" for a new host, else its state). Add domain and deploy is primary when DNS was checked and
+  you add it" for a new host, else its state). An unknown or expired `checked` draws the empty panel; a host
+  that isn't a name is still refused in place (422) with the reason under the field. Add domain and deploy is primary when DNS was checked and
   points here or no check ran, secondary otherwise, and always there: the list shows the rest. A refusal
   draws the form again with the reason under its field: another app's host (naming it), the console's own
   host, a host that isn't one, a bad path.

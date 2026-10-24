@@ -66,6 +66,8 @@ type server struct {
 	assets  map[string]string // file under static/ -> content hash, the ?v= cache-buster
 	csrf    *http.CrossOriginProtection
 	live    liveSettings // timings and notice source of the /live streams, see live.go
+	// checked holds a Check now's result for the page its redirect leads to (domainschecked.go).
+	checked checkedAdds
 
 	// newApp says whether the pages offer "New app". Tests turn it off to
 	// check the pages without the action; newServer turns it on.
