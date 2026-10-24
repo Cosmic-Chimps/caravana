@@ -153,7 +153,7 @@ Independent test: quickstart §1's item and delivery.
 
 Independent test: quickstart §4.
 
-- [ ] T019 [US5] Service and API: `CertificateSettings()` (issuer from `CARAVANA_ACME`, the
+- [x] T019 [US5] Service and API: `CertificateSettings()` (issuer from `CARAVANA_ACME`, the
   email, `warnBeforeDays`, `edgeAddress`), `SetWarnBeforeDays` (7, 14, 30), `Certificates()`
   (from `domain_checks`, problems first); `getCertificateSettings`, `putCertificateSettings`,
   `listCertificates` in `internal/api/certificates.go` and `api/openapi.yaml`; tests.
