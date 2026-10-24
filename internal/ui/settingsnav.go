@@ -166,15 +166,7 @@ func notificationsState(chs []channelFacts) entryState {
 // certRowMark is a certificate's mark: ● issued, ◐ pending, ◆ expiring, and ○
 // Traefik's own, a failed handshake or anything else.
 func certRowMark(status string) string {
-	switch status {
-	case edge.CertIssued:
-		return "healthy"
-	case edge.CertPending:
-		return "rolling"
-	case edge.CertExpiring:
-		return "warning"
-	}
-	return "idle"
+	return stateInfo(certState(status)).Mark
 }
 
 // certificatesState: a certificate's mark is certRowMark's; the nav shows ◆ when

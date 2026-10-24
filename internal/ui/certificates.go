@@ -57,9 +57,9 @@ type certificateRow struct {
 	Href   string // the domain's row on /domains
 }
 
-// certificateRowOf says a certificate in the table's words. The expiry column
-// says "waiting for DNS" for a certificate that is still pending, and "—" for
-// Traefik's own, which has no renewal to tell.
+// certificateRowOf says a certificate in the table's words: its mark and its expiry are the
+// state table's (domainstates.go), so a pending certificate says "waiting for Let's Encrypt"
+// here as in the list, and Traefik's own, whose Issuer column says it already, has "—" to tell.
 func certificateRowOf(now time.Time, c service.CertificateView) certificateRow {
 	row := certificateRow{Mark: certRowMark(c.Status), Host: c.Host, App: c.App, Issuer: c.Issuer, Href: domainHref(c.Host)}
 	if row.Issuer == "" {
@@ -72,12 +72,10 @@ func certificateRowOf(now time.Time, c service.CertificateView) certificateRow {
 	if c.RenewsAt != nil {
 		cert.RenewsAt = *c.RenewsAt
 	}
-	row.Expiry = certCellFor(now, cert)
-	switch c.Status {
-	case edge.CertPending:
-		row.Expiry = domainCertCell{Text: "waiting for DNS"}
-	case edge.CertSelf:
-		row.Expiry = domainCertCell{Text: "—"} // the Issuer column says it already
+	if words := stateInfo(certState(c.Status)).Expiry; words != "" {
+		row.Expiry = domainCertCell{Text: words}
+	} else {
+		row.Expiry = certCellFor(now, cert)
 	}
 	return row
 }

@@ -135,7 +135,7 @@ func TestCertificatesPage(t *testing.T) {
 	for host, wants := range map[string][]string{
 		"expiring.example.com": {"shop", "Let's Encrypt", "expires in 6 d"},
 		"live.example.com":     {"shop", "Let's Encrypt", "renews in 61 d"},
-		"pending.example.com":  {"Traefik's own", "waiting for DNS"},
+		"pending.example.com":  {"Traefik's own", "waiting for Let's Encrypt"},
 		"self.example.com":     {"Traefik's own", "—"},
 	} {
 		for _, w := range wants {

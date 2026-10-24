@@ -715,7 +715,7 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   head and rows of 46px, columns `14px minmax(0, 1.4fr) minmax(0, 1fr) 150px minmax(0, 1.1fr)`, gap 18: the 9px
   mark, the domain (13px mono, a link to its row on `/domains`), the app (mono fg-2), the issuer ("Let's
   Encrypt", "Traefik's own", fg-3), the expiry (12px mono: "renews in 61 d" fg-3, "expires in 6 d" in the warn hue,
-  "waiting for DNS", "—"); problems first. Under 640px a row folds to label and value. Then the Label "How
+  "waiting for Let's Encrypt", "—"); problems first. Under 640px a row folds to label and value. Then the Label "How
   certificates are issued" with **Edit** at its right, a `<details>` confirmation (the Options form's popover)
   holding Warn when alone (a select of 7, 14 and 30 days, Save), over a panel of three rows (`220px 260px
   minmax(0, 1fr)`, gap 24, padding 14 20): **Issuer** ("Let's Encrypt", "none") and **Contact email**, both
@@ -879,6 +879,13 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   app isn't served, whatever the last check said); ○ "couldn't check", or "not checked yet" for a row never
   checked. The words are `edge.State.Words()`; the console words the redirect target, the not-served reason
   and the never-checked row.
+- **One state table** (`internal/ui/domainstates.go`, `domainStates`): state → mark, pill words, the Certificate
+  column's words when there is no date ("waiting for Let's Encrypt", "Traefik's own", "—"), the Certificates
+  table's expiry words, and the fixed detail sentence. The list, the Add panel's check lines and Settings ›
+  Certificates all read it: a DNS or certificate result is first named as the state it gives (`dnsState`,
+  `certState`), so "no DNS record" is ◆ with the same words in the list, the check line and the count, a pending
+  certificate says "waiting for Let's Encrypt" everywhere, and a certificate that couldn't be read is ○ "couldn't
+  check", never ■. A test holds the three places to the table, and the table to `edge.State`.
 - **Needs-you items** lead with the app, as every item does (its place first, then a colon): "blog: `example.com`
   points at 104.20.23.154, which isn't this host." and "blog: the certificate for `example.com` expires in 6 days and
   hasn't been renewed."; the Domains page's own banners, which are on the domain's page, start with the domain.
@@ -959,7 +966,7 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   answers 303 to the same page (`/domains` or `/apps/{id}/domains`) with `?checked=<host>#add`, so the
   browser lands on the panel and a reload doesn't post again; the page draws the panel from the check the
   console kept for that host for 60 seconds (with what was typed: the app, the service, the path), with ● or
-  ■ "DNS points at caravana" ("points at `185.…`", "no record yet") and the certificate line ("issued after
+  ■ or ◆ "DNS points at caravana" ("points at `185.…`" ■, "no DNS record" ◆) and the certificate line ("issued after
   you add it" for a new host, else its state). An unknown or expired `checked` draws the empty panel; a host
   that isn't a name is still refused in place (422) with the reason under the field. Add domain and deploy is primary when DNS was checked and
   points here or no check ran, secondary otherwise, and always there: the list shows the rest. A refusal

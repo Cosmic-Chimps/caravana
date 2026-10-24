@@ -228,37 +228,38 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 	}
 	v.Records = recordBoxFor(chk.Host, addrs)
 
+	// The lines' marks and words are the state table's (domainstates.go): the state the result
+	// would give the row in the list.
 	v.DNS = checkLine{Mark: "healthy", Words: "DNS points at caravana"}
-	switch chk.DNS.Status {
-	case edge.DNSElsewhere:
-		v.DNS.Mark, v.DNS.Reason = "failed", sentence{plain("points at "), mono(addressesOf(seenElsewhere(chk.DNS)))}
-	case edge.DNSNone:
-		v.DNS.Mark, v.DNS.Reason = "failed", plainS("no record yet")
-	case edge.DNSUnknown:
-		v.DNS.Mark = "idle"
-		if len(chk.Records) == 0 {
-			v.DNS.Reason = plainS("couldn't check: this host's public address isn't known")
-		} else {
-			v.DNS.Reason = plainS("couldn't check: the resolvers didn't answer")
+	if st, ok := dnsState(chk.DNS.Status); ok {
+		info := stateInfo(st)
+		v.DNS.Mark, v.DNS.Reason = info.Mark, plainS(info.Words)
+		switch st {
+		case edge.StateDNSElsewhere:
+			v.DNS.Reason = sentence{plain("points at "), mono(addressesOf(seenElsewhere(chk.DNS)))}
+		case edge.StateUnknown:
+			if len(chk.Records) == 0 {
+				v.DNS.Reason = plainS(info.Words + ": this host's public address isn't known")
+			} else {
+				v.DNS.Reason = plainS(info.Words + ": the resolvers didn't answer")
+			}
 		}
 	}
 	v.Primary = chk.DNS.Status == edge.DNSOK
 
 	v.Cert = checkLine{Mark: "idle", Words: "HTTPS certificate"}
 	c := chk.Certificate
-	switch c.Status {
-	case edge.CertIssued:
-		v.Cert.Mark, v.Cert.Reason = "healthy", plainS("issued by "+c.Issuer)
-	case edge.CertExpiring:
-		v.Cert.Mark, v.Cert.Reason = "warning", plainS("expiring, and not renewed")
-	case edge.CertPending:
-		v.Cert.Mark, v.Cert.Reason = "rolling", plainS("waiting for Let's Encrypt")
-	case edge.CertSelf:
-		v.Cert.Reason = plainS(edge.TraefikOwn)
-	case edge.CertError:
-		v.Cert.Mark, v.Cert.Reason = "failed", plainS("Traefik's edge didn't answer for it")
-	default:
+	if c.Status == edge.CertNone || c.Status == "" {
 		v.Cert.Reason = plainS("issued after you add it")
+		return
+	}
+	info := stateInfo(certState(c.Status))
+	v.Cert.Mark, v.Cert.Reason = info.Mark, plainS(info.Words)
+	switch {
+	case c.Status == edge.CertIssued:
+		v.Cert.Reason = plainS("issued by " + c.Issuer)
+	case info.Cert != "" && info.Cert != "—":
+		v.Cert.Reason = plainS(info.Cert) // waiting for Let's Encrypt, Traefik's own
 	}
 }
 

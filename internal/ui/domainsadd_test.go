@@ -106,8 +106,8 @@ func TestDomainAddCheckNow(t *testing.T) {
 	}{
 		{"here.example.com", "healthy", []string{"passed: DNS points at caravana", "not yet: HTTPS certificate issued after you add it", "Name here Value 203.0.113.1"}},
 		{"away.example.com", "failed", []string{"failed: DNS points at caravana points at 185.199.108.153"}},
-		{"nothing.example.com", "failed", []string{"failed: DNS points at caravana no record yet"}},
-		{"example.com", "failed", []string{"Name @ Value 203.0.113.1"}},
+		{"nothing.example.com", "warning", []string{"warning: DNS points at caravana no DNS record"}},
+		{"example.com", "warning", []string{"Name @ Value 203.0.113.1"}},
 	}
 	for _, tc := range tests {
 		panel, loc := e.checkNow(t, form, url.Values{"host": {tc.host}, "app": {"whoami"}})

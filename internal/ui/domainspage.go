@@ -240,7 +240,8 @@ type domainAppInfo struct {
 // domainPill is the row's status: the state's mark and words. A redirect row
 // names its target, and a row that isn't served says why.
 func domainPill(v service.DomainView) statusView {
-	pill := statusView{Kind: v.State.Mark(), Word: v.State.Words()}
+	info := stateInfo(v.State)
+	pill := statusView{Kind: info.Mark, Word: info.Words}
 	switch {
 	case v.State == edge.StateNotServed && v.Stopped:
 		pill.Word = "app stopped"
@@ -267,16 +268,17 @@ func certCellOf(now time.Time, v service.DomainView) domainCertCell {
 	return certCellFor(now, v.Certificate)
 }
 
-// certCellFor is the Certificate column's words for a certificate: the same on
-// /domains and in Settings › Certificates.
+// certCellFor is the Certificate column's words for a certificate: the state table's when the
+// certificate has no date to give (Traefik's own, pending, unknown), else its dates.
 func certCellFor(now time.Time, c edge.Certificate) domainCertCell {
+	if words := stateInfo(certState(c.Status)).Cert; words != "" {
+		return domainCertCell{Text: words}
+	}
 	title := ""
 	if !c.NotAfter.IsZero() {
 		title = "expires " + c.NotAfter.UTC().Format("2006-01-02 15:04 UTC")
 	}
 	switch c.Status {
-	case edge.CertSelf:
-		return domainCertCell{Text: edge.TraefikOwn}
 	case edge.CertExpiring:
 		left := c.NotAfter.Sub(now)
 		if left <= 0 {
@@ -430,10 +432,8 @@ func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check do
 	case edge.StateCertExpiring:
 		d.Sentence = plainS(expiringSentence(now, v.Certificate) + " Let's Encrypt renews 30 days before expiry, so renewal has been failing: check that DNS points here and that port 80 reaches this host.")
 		d.Check = &check
-	case edge.StateSelfSigned:
-		d.Sentence, d.Quiet = plainS("Traefik serves this domain with its own certificate: browsers will warn. Certificates are issued when caravana is installed with Let's Encrypt."), true
-	case edge.StateCertPending:
-		d.Sentence, d.Quiet = plainS("Waiting for Let's Encrypt. DNS points here; the certificate usually arrives within a minute of the first visit."), true
+	case edge.StateSelfSigned, edge.StateCertPending:
+		d.Sentence, d.Quiet = plainS(stateInfo(v.State).Sentence), true
 	case edge.StateDNSNone:
 		d.Sentence = plainS("No DNS record yet. Add this record where you manage DNS:")
 		d.Records = &box
@@ -486,7 +486,7 @@ func expiringSentence(now time.Time, c edge.Certificate) string {
 
 // bannerOf is the banner of a problem row; ok is false for a row that has none.
 func bannerOf(now time.Time, v service.DomainView, check domainCheckForm) (domainBanner, bool) {
-	b := domainBanner{Host: v.Host, Mark: v.State.Mark(), Check: check}
+	b := domainBanner{Host: v.Host, Mark: stateInfo(v.State).Mark, Check: check}
 	switch v.State {
 	case edge.StateDNSElsewhere:
 		b.Line = sentence{mono(v.Host), plain(" points at "), mono(addressesOf(seenElsewhere(v.DNS))), plain(", which isn't this host.")}
@@ -510,7 +510,7 @@ func bannerOf(now time.Time, v service.DomainView, check domainCheckForm) (domai
 func domainsCount(rows []service.DomainView) string {
 	needs, pending, fine := 0, 0, 0
 	for _, v := range rows {
-		switch v.State.Mark() {
+		switch stateInfo(v.State).Mark {
 		case "failed", "warning":
 			needs++
 		case "rolling":
@@ -538,7 +538,7 @@ func domainsCount(rows []service.DomainView) string {
 
 // domainProblem says a row's state needs the owner: it opens by itself.
 func domainProblem(s edge.State) bool {
-	m := s.Mark()
+	m := stateInfo(s).Mark
 	return m == "failed" || m == "warning"
 }
 
