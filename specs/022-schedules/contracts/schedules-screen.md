@@ -253,3 +253,37 @@ The designer checks at 127.0.0.1:7070 against `p5-schedules.png`:
   without script (headless with JavaScript off) show the UTC times alone and nothing broken;
   the form's hint and the preview's next three runs;
 - narrow at 390px.
+
+## Review (designer, 2026-10-23): follows the contract, four fixes
+
+1. **The UTC · local pair never wraps mid-phrase.** In Next and Last run the script puts the local
+   time on its own line, no separator, fg-3 ("Mon 03:00 local" under "in 2 d · Mon 09:00 UTC");
+   the UTC text never breaks before "UTC" (`white-space: nowrap` on the `<time>`). Next is 170px.
+   The count line stays one line as it is.
+2. **The run page's title** is the name and the UTC time only ("boom · 02:57 UTC"); the local time
+   stays in the meta line.
+3. **The bars panel's words:** "no completed runs · stops at 30 min" when runs exist but none
+   finished; "no runs yet" only when there are none.
+4. **No horizontal scroll at any width from 390 up:** at 1440px with JavaScript off the table's
+   fixed columns overflowed. The strip column is `minmax(120px, 200px)`; the fixed 150/160 columns
+   and nowrap mono text are checked at 1200 and 1440.
+
+## Rulings on the build's departures (designer, 2026-10-23)
+
+1. **Could-not-start wording.** The record keeps Nomad's short reason. The detail and the run page
+   say "Couldn't start: no `sh` in the image." (the executable wasn't found; the program is the
+   command's first word), "Couldn't start: the image couldn't be pulled.", else "Couldn't start:
+   Nomad couldn't start its copy." The needs-you item and the notification stay "Couldn't start."
+2. The run page shows stdout, then stderr marked, not interleaved by time.
+3. The cut line has no count: "The first lines of stdout were dropped; the last 64 KiB of each
+   stream is kept."
+4. Posts, create and save land on `/schedules?open=<id>#schedule-<id>`.
+5. The preview's next three runs are compact, with one "UTC" after the three.
+6. Superseded by fix 2.
+7. A preset link draws the preview at once.
+8. The sentences: "The last run finished in 48 s." (no colon), "It hasn't run yet.",
+   "Skipped N times, the last … ago, because …".
+9. Next wrapping: fix 1.
+10. Built-in rows' runs always read trigger `timer` (the backups table keeps no trigger): later,
+    filed in CodeAlta.
+11. An owner's stop neither opens nor clears a failure item (research R5).
