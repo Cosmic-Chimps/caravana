@@ -173,7 +173,7 @@ Independent test: quickstart §4.
   `CARAVANA_EDGE_ADDRESS` into Caravana's env, says Traefik restarts once on a rerun;
   `deploy/dev/traefik.nomad.hcl` and `deploy/dev/lab.sh up` the same (re-register the job);
   `deploy/dev/install-test.sh` checks the env lines and the file-provider middleware; shellcheck.
-- [ ] T022 `cmd/caravana/lab_test.go`: `startLab` sets `CARAVANA_EDGE_ADDRESS=127.0.0.1:8443`
+- [x] T022 `cmd/caravana/lab_test.go`: `startLab` sets `CARAVANA_EDGE_ADDRESS=127.0.0.1:8443`
   and injects the lab resolver (`elsewhere.test` → `203.0.113.9`, this host → `203.0.113.1`,
   `*.invalid` NXDOMAIN, `*.localhost` loopback) through `Service.SetEdge`;
   `cmd/caravana/console_domains_states_test.go`, step `console-domains-states` after
