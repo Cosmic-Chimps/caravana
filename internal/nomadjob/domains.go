@@ -87,8 +87,16 @@ func routerBase(router, rule string, s Settings) []string {
 //   - Team only puts the file middleware "<router>-auth@file" in front of
 //     everything, so nothing is redirected before the password is asked.
 //
-// The redirect's regex writes dots as [.] and its replacement uses $1, never
-// ${1}: Nomad interpolates ${...} in tags.
+// The redirect's regex writes dots as [.] and its replacement uses $1 and $2,
+// never ${1}: Nomad interpolates ${...} in tags. Traefik matches the regex
+// against the URL built from the Host header, which carries the port when the
+// visitor's URL has one (the lab's :8443, or a client sending :443); the regex
+// accepts an optional port and the replacement keeps it, or the redirect
+// would silently not happen and the pair would be served as the app (lab,
+// observed 2026-10-24). Traefik answers 301 to a GET and 308 to anything else.
+//
+// In the rule, && binds tighter than ||, so with a path the pair host is
+// routed on every path and redirected to the same path on this host.
 func optionRouterTags(router string, d app.Domain, s Settings) []string {
 	rule := fmt.Sprintf("Host(`%s`)", d.Host)
 	if d.Path != "" {
@@ -116,8 +124,8 @@ func optionRouterTags(router string, d app.Domain, s Settings) []string {
 	if pair != "" {
 		mw := "traefik.http.middlewares." + router + "-www.redirectregex."
 		tags = append(tags,
-			mw+"regex=^https://"+strings.ReplaceAll(pair, ".", "[.]")+"/(.*)",
-			mw+"replacement=https://"+d.Host+"/$1",
+			mw+"regex=^https://"+strings.ReplaceAll(pair, ".", "[.]")+"(:[0-9]+)?/(.*)",
+			mw+"replacement=https://"+d.Host+"$1/$2",
 			mw+"permanent=true",
 		)
 	}

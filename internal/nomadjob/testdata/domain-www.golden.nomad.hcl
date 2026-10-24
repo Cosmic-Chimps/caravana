@@ -34,7 +34,7 @@ job "shop" {
       name = "shop-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.shop-web-a379a6f6.rule=Host(`example.com`) || Host(`www.example.com`)", "traefik.http.routers.shop-web-a379a6f6.entrypoints=websecure", "traefik.http.routers.shop-web-a379a6f6.tls=true", "traefik.http.routers.shop-web-a379a6f6.middlewares=shop-web-a379a6f6-www", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.regex=^https://www[.]example[.]com/(.*)", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.replacement=https://example.com/$1", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.permanent=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.shop-web-a379a6f6.rule=Host(`example.com`) || Host(`www.example.com`)", "traefik.http.routers.shop-web-a379a6f6.entrypoints=websecure", "traefik.http.routers.shop-web-a379a6f6.tls=true", "traefik.http.routers.shop-web-a379a6f6.middlewares=shop-web-a379a6f6-www", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.regex=^https://www[.]example[.]com(:[0-9]+)?/(.*)", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.replacement=https://example.com$1/$2", "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.permanent=true"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

@@ -68,8 +68,8 @@ func TestRouterTagsOptions(t *testing.T) {
 		for _, want := range []string{
 			"traefik.http.routers." + r + ".rule=Host(`example.com`) && PathPrefix(`/app`) || Host(`www.example.com`)",
 			"traefik.http.routers." + r + ".middlewares=" + r + "-auth@file," + r + "-www",
-			"traefik.http.middlewares." + r + "-www.redirectregex.regex=^https://www[.]example[.]com/(.*)",
-			"traefik.http.middlewares." + r + "-www.redirectregex.replacement=https://example.com/$1",
+			"traefik.http.middlewares." + r + "-www.redirectregex.regex=^https://www[.]example[.]com(:[0-9]+)?/(.*)",
+			"traefik.http.middlewares." + r + "-www.redirectregex.replacement=https://example.com$1/$2",
 			"traefik.http.middlewares." + r + "-www.redirectregex.permanent=true",
 		} {
 			if !slices.Contains(tags, want) {
@@ -83,8 +83,8 @@ func TestRouterTagsOptions(t *testing.T) {
 		tags := tagsOf(t, labSettings(), app.Domain{Host: "www.example.com", Port: "http", WWWRedirect: true})
 		for _, want := range []string{
 			"traefik.http.routers." + w + ".rule=Host(`www.example.com`) || Host(`example.com`)",
-			"traefik.http.middlewares." + w + "-www.redirectregex.regex=^https://example[.]com/(.*)",
-			"traefik.http.middlewares." + w + "-www.redirectregex.replacement=https://www.example.com/$1",
+			"traefik.http.middlewares." + w + "-www.redirectregex.regex=^https://example[.]com(:[0-9]+)?/(.*)",
+			"traefik.http.middlewares." + w + "-www.redirectregex.replacement=https://www.example.com$1/$2",
 		} {
 			if !slices.Contains(tags, want) {
 				t.Errorf("tags lack %q:\n%s", want, strings.Join(tags, "\n"))
