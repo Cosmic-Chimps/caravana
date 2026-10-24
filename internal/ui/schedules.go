@@ -817,19 +817,20 @@ func (s *server) schedulesFilterOf(ctx context.Context, q schedulesQuery) (sched
 		if q.Project != "" && a.Place.Project != q.Project {
 			continue
 		}
-		f.Apps = append(f.Apps, selectOption{Value: a.App.ID, Label: appLabel(a.AppRecord), Selected: q.App == a.App.ID})
+		f.Apps = append(f.Apps, selectOption{Value: a.App.ID, Label: places{Projects: projects}.appLabel(a.AppRecord), Selected: q.App == a.App.ID})
 	}
 	return f, nil
 }
 
 // appLabel is an app as a select names it: its ID in Default › production,
-// else "project / environment / name".
-func appLabel(rec store.AppRecord) string {
-	p := rec.Place
-	if p.Name == "" || p.Project == app.DefaultProject && p.Environment == app.DefaultEnvironment {
+// else "Shop / staging / web" (the project's display name, as the project
+// select next to it names it, the environment and the name).
+func (p places) appLabel(rec store.AppRecord) string {
+	pl := rec.Place
+	if pl.Name == "" || pl.Project == app.DefaultProject && pl.Environment == app.DefaultEnvironment {
 		return rec.App.ID
 	}
-	return p.Project + " / " + p.Environment + " / " + p.Name
+	return p.display(pl.Project) + " / " + pl.Environment + " / " + pl.Name
 }
 
 // ---- Handlers -------------------------------------------------------------------------

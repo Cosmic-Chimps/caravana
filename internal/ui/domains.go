@@ -3,9 +3,11 @@ package ui
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -35,10 +37,40 @@ func (t domainsTab) CanEdit() bool { return t.Defined && !t.Stopped }
 type domainTarget struct {
 	Service string
 	Port    int
+	// NotHTTP says the port is a database's, a cache's or a queue's, not a web server's
+	// (notHTTPPort): the select lists it disabled.
+	NotHTTP bool
 }
 
-// Label is how the select names it: "web · :80".
-func (t domainTarget) Label() string { return t.Service + " · :" + strconv.Itoa(t.Port) }
+// Label is how the select names it: "web · :80", or "db · :5432 · not an HTTP port".
+func (t domainTarget) Label() string {
+	label := t.Service + " · :" + strconv.Itoa(t.Port)
+	if t.NotHTTP {
+		label += " · not an HTTP port"
+	}
+	return label
+}
+
+// nonHTTPPorts are the well-known ports of Postgres, MySQL and MariaDB, Redis, MongoDB, RabbitMQ
+// and memcached.
+var nonHTTPPorts = []int{5432, 3306, 6379, 27017, 5672, 11211}
+
+// nonHTTPImages are the image name parts of the same servers.
+var nonHTTPImages = []string{"postgres", "mysql", "mariadb", "redis", "mongo", "rabbitmq", "memcached"}
+
+// notHTTPPort says a domain can't usefully go to port of svc: the port is one of nonHTTPPorts, or
+// the service has a TCP-only health check (no path) and its image names one of nonHTTPImages. It
+// is the console's guess for its select, never a refusal: the API takes any port.
+func notHTTPPort(svc app.Service, port int) bool {
+	if slices.Contains(nonHTTPPorts, port) {
+		return true
+	}
+	if svc.Health == nil || svc.Health.Path != "" {
+		return false
+	}
+	image := strings.ToLower(svc.Image)
+	return slices.ContainsFunc(nonHTTPImages, func(name string) bool { return strings.Contains(image, name) })
+}
 
 // dnsRecord is one record of the box under "Point it at caravana": a record the
 // owner adds where they manage the domain's DNS. Name is empty until a host

@@ -46,10 +46,14 @@ func TestDomainAddPanel(t *testing.T) {
 	for _, want := range []string{"Add a domain", "Domain", "Sends traffic to", "Path", "Optional. Only requests under this path reach the app; the path is kept.",
 		"Point it at caravana", "Type A Name @ or the first label Value 203.0.113.1", "Type AAAA Name @ or the first label Value 2001:db8::1",
 		"The root of a domain needs an A record. A subdomain can use one too.", "Check", "DNS points at caravana", "HTTPS certificate", "Check now",
-		"Add domain and deploy", "Cancel", "Choose an app", "duet › api · :8080", "whoami › web · :80", "The app's first service"} {
+		"Add domain and deploy", "Cancel", "Choose an app", "The app's first service. An app with several offers them here once it is picked."} {
 		if !strings.Contains(text(panel), want) {
 			t.Errorf("the panel lacks %q:\n%s", want, text(panel))
 		}
+	}
+	// No app picked: no service select, and no "app › service" pairs.
+	if strings.Contains(panel, `id="domain-service"`) || strings.Contains(panel, "duet/api") {
+		t.Errorf("the service select is drawn before an app is picked:\n%s", panel)
 	}
 	// Each app's revision rides along, so the add is checked against the page.
 	for _, id := range []string{"duet", "whoami"} {

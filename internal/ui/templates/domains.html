@@ -218,6 +218,29 @@
      them. Takes a checkLine. */}}
 {{define "domain-checkline"}}<li class="cv-dmcheck"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-dmcheck-text"><span class="cv-dmcheck-words{{if eq .Mark "idle"}} cv-dmcheck-quiet{{end}}"><span class="sr-only">{{.Spoken}}: </span>{{.Words}}</span>{{with .Reason}} <span class="cv-dmcheck-reason">{{template "sentence" .}}</span>{{end}}</span></li>{{end}}
 
+{{/* domain-add-service: the Add panel's service field: the picked app's service select when it has
+     several (a service whose port isn't HTTP listed disabled), its port as text when it has one, or,
+     before an app is picked, the words for the default. /parts/domains/add-service draws it alone
+     when /domains' app select changes; it takes no box of its own. Takes a domainAddView. */}}
+{{define "domain-add-service"}}
+      <div id="domain-service-field" class="cv-dmsvcfield">
+      {{if .ServiceShown}}
+      <label class="cv-fld" for="domain-service">
+        <span class="cv-label">Service</span>
+        <select class="cv-field cv-select" id="domain-service" name="service"{{if .Service.Error}} aria-invalid="true" aria-describedby="domain-service-error"{{end}}{{if .Service.Alert}} autofocus{{end}}>
+          {{range .Services}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      {{template "field-error" .Service}}
+      <p class="cv-data-muted cv-hint">Each service's port is set in Configure.</p>
+      {{else}}
+      <input type="hidden" name="service" value="{{.HiddenService}}">
+      {{with .Port}}<p class="cv-data-muted cv-hint"><span class="cv-inline-mono">{{.}}</span>, set in Configure</p>{{end}}
+      {{if .FirstService}}<p class="cv-data-muted cv-hint">The app's first service. An app with several offers them here once it is picked.</p>{{end}}
+      {{end}}
+      </div>
+{{end}}
+
 {{/* domain-add: the Add panel (#add), on /domains and, with the app fixed, on the app's Domains
      page. Check now (action=check) draws it again with the checks; Add domain and deploy
      (action=add) deploys. Takes a domainAddView. */}}
@@ -242,24 +265,12 @@
       <p class="cv-dmto">{{template "sentence" .Fixed}}</p>
       {{else}}
       <label class="cv-label" for="domain-app">Sends traffic to</label>
-      <select class="cv-field cv-select" id="domain-app" name="app"{{if .App.Error}} aria-invalid="true" aria-describedby="domain-app-error"{{end}}{{if .App.Alert}} autofocus{{end}}>
+      <select class="cv-field cv-select" id="domain-app" name="app" hx-get="/parts/domains/add-service" hx-trigger="change" hx-target="#domain-service-field" hx-swap="outerHTML"{{if .App.Error}} aria-invalid="true" aria-describedby="domain-app-error"{{end}}{{if .App.Alert}} autofocus{{end}}>
         {{range .Apps}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
       </select>
       {{template "field-error" .App}}
       {{end}}
-      {{if .ServiceShown}}
-      <label class="cv-fld" for="domain-service">
-        <span class="cv-label">Service</span>
-        <select class="cv-field cv-select" id="domain-service" name="service"{{if .Service.Error}} aria-invalid="true" aria-describedby="domain-service-error"{{end}}{{if .Service.Alert}} autofocus{{end}}>
-          {{range .Services}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Disabled}} disabled{{end}}>{{.Label}}</option>{{end}}
-        </select>
-      </label>
-      {{template "field-error" .Service}}
-      <p class="cv-data-muted cv-hint">Each service's port is set in Configure.</p>
-      {{else}}
-      <input type="hidden" name="service" value="{{.HiddenService}}">
-      {{with .Port}}<p class="cv-data-muted cv-hint"><span class="cv-inline-mono">{{.}}</span>, set in Configure</p>{{end}}
-      {{end}}
+      {{template "domain-add-service" .}}
     </div>
 
     <label class="cv-fld" for="domain-path">

@@ -21,8 +21,8 @@ import (
 // the typed host (service.CheckDomain) and draws the form again with the DNS
 // and certificate lines; "Add domain and deploy" (action=add, the default)
 // deploys the app with one more domain on the revision the page was drawn
-// from. Without script the service select of /domains lists every app's
-// services as "app › service" until an app is picked, as the schedule form does.
+// from. The service select of /domains is drawn once an app is picked: a pick
+// redraws the field (with script), and so does Check now (without).
 
 // domainAddInput is what the Add form posted (or the address asked for).
 type domainAddInput struct {
@@ -46,11 +46,13 @@ type domainAddView struct {
 	Apps      []formOption
 	Service   formField
 	// Services is the service select: the chosen app's services when it has
-	// several (ServiceShown), or every app's as "app › service" (Pairs);
+	// several (ServiceShown). It is drawn only once an app is picked (a pick
+	// redraws it, through /parts/domains/add-service, and so does Check now);
+	// until then FirstService says the app's first service is the default.
 	// HiddenService is the one service posted when there is no select.
 	Services      []formOption
 	ServiceShown  bool
-	Pairs         bool
+	FirstService  bool
 	HiddenService string
 	// Port is the chosen service's port, ":8080", drawn as text after it.
 	Port    string
@@ -96,7 +98,9 @@ func (c checkLine) Spoken() string {
 	return "not yet"
 }
 
-// addTargetsOf are the services of an app a domain can go to.
+// addTargetsOf are the services of an app a domain can go to; one whose port
+// isn't HTTP (notHTTPPort) is among them, marked, so the select can list it
+// disabled.
 func addTargetsOf(a app.App) []domainTarget {
 	var out []domainTarget
 	for _, svc := range a.Services {
@@ -106,17 +110,35 @@ func addTargetsOf(a app.App) []domainTarget {
 		}
 		for _, p := range svc.Ports {
 			if p.Name == name {
-				out = append(out, domainTarget{Service: svc.Name, Port: p.ContainerPort})
+				out = append(out, domainTarget{Service: svc.Name, Port: p.ContainerPort, NotHTTP: notHTTPPort(svc, p.ContainerPort)})
 			}
 		}
 	}
 	return out
 }
 
+// firstHTTPTarget is the index of the first target with an HTTP port, else 0:
+// the service a domain goes to when none is named.
+func firstHTTPTarget(targets []domainTarget) int {
+	if i := slices.IndexFunc(targets, func(t domainTarget) bool { return !t.NotHTTP }); i >= 0 {
+		return i
+	}
+	return 0
+}
+
+// hasHTTPTarget says one of targets has an HTTP port.
+func hasHTTPTarget(targets []domainTarget) bool {
+	return slices.ContainsFunc(targets, func(t domainTarget) bool { return !t.NotHTTP })
+}
+
 // domainAddFor builds the Add panel for in. fixedApp is the app of the page
 // ("" on /domains). Nothing is checked here.
 func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp string) (*domainAddView, error) {
 	sums, err := s.svc.ListApps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pl, err := s.loadPlaces(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,54 +191,66 @@ func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp s
 			return v, nil
 		}
 		v.Revision = cands[chosen].sum.Revision
-		v.Fixed = sentence{mono(appLabel(cands[chosen].sum.AppRecord))}
+		v.Fixed = sentence{mono(pl.appLabel(cands[chosen].sum.AppRecord))}
 	} else {
 		if chosen < 0 {
 			v.Apps = append(v.Apps, formOption{Value: "", Label: "Choose an app", Selected: true})
 		}
 		for i, c := range cands {
-			label := appLabel(c.sum.AppRecord)
-			stopped := c.sum.StoppedAt != nil
-			if stopped {
+			label := pl.appLabel(c.sum.AppRecord)
+			disabled := true
+			switch {
+			case c.sum.StoppedAt != nil:
 				label += " (stopped)"
+			case !hasHTTPTarget(c.targets):
+				label += " (no HTTP port)"
+			default:
+				disabled = false
 			}
-			v.Apps = append(v.Apps, formOption{Value: c.sum.App.ID, Label: label, Selected: i == chosen, Disabled: stopped})
+			v.Apps = append(v.Apps, formOption{Value: c.sum.App.ID, Label: label, Selected: i == chosen, Disabled: disabled})
 			v.Revisions = append(v.Revisions, appRevision{App: c.sum.App.ID, Revision: c.sum.Revision})
 		}
 	}
 
-	switch {
-	case chosen >= 0:
-		targets := cands[chosen].targets
-		svcName := in.Service
-		if _, after, ok := strings.Cut(svcName, pairSep); ok {
-			svcName = after
+	if chosen < 0 {
+		// No app picked yet: no service select, which a pick or Check now draws. The app's first
+		// service is the default, said only when some app has more than one.
+		v.FirstService = slices.ContainsFunc(cands, func(c candidate) bool { return len(c.targets) > 1 })
+		return v, nil
+	}
+	targets := cands[chosen].targets
+	svcName := in.Service
+	if _, after, ok := strings.Cut(svcName, pairSep); ok {
+		svcName = after
+	}
+	at := slices.IndexFunc(targets, func(t domainTarget) bool { return t.Service == svcName && !t.NotHTTP })
+	if at < 0 {
+		at = firstHTTPTarget(targets)
+	}
+	if len(targets) > 1 {
+		v.ServiceShown = true
+		for i, t := range targets {
+			v.Services = append(v.Services, formOption{Value: t.Service, Label: t.Label(), Selected: i == at, Disabled: t.NotHTTP})
 		}
-		at := slices.IndexFunc(targets, func(t domainTarget) bool { return t.Service == svcName })
-		if at < 0 {
-			at = 0
-		}
-		if len(targets) > 1 {
-			v.ServiceShown = true
-			for i, t := range targets {
-				v.Services = append(v.Services, formOption{Value: t.Service, Label: t.Label(), Selected: i == at})
-			}
-		} else {
-			v.HiddenService = targets[0].Service
-			v.Port = ":" + strconv.Itoa(targets[0].Port)
-		}
-	case slices.ContainsFunc(cands, func(c candidate) bool { return len(c.targets) > 1 }):
-		v.ServiceShown, v.Pairs = true, true
-		v.Services = append(v.Services, formOption{Value: "", Label: "The app's first service", Selected: in.Service == ""})
-		for _, c := range cands {
-			for _, t := range c.targets {
-				val := c.sum.App.ID + pairSep + t.Service
-				v.Services = append(v.Services, formOption{Value: val, Label: appLabel(c.sum.AppRecord) + " › " + t.Label(), Selected: in.Service == val,
-					Disabled: c.sum.StoppedAt != nil})
-			}
-		}
+	} else {
+		v.HiddenService = targets[0].Service
+		v.Port = ":" + strconv.Itoa(targets[0].Port)
 	}
 	return v, nil
+}
+
+// partDomainAddService answers GET /parts/domains/add-service?app=: the Add
+// panel's service field for the app just picked in /domains' app select (its
+// select when it has several services, else its port as text), which htmx
+// puts in place of the field. Without script, Check now draws the same.
+func (s *server) partDomainAddService(w http.ResponseWriter, r *http.Request, session string) {
+	v, err := s.domainAddFor(r.Context(), domainAddInput{App: strings.TrimSpace(r.URL.Query().Get("app"))}, "")
+	if err != nil {
+		s.log.Error("draw the add form", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.renderPart(w, "domains", "domain-add-service", v)
 }
 
 // applyCheck puts a fresh check's results in the panel: the records from it,
@@ -418,10 +452,10 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 			return
 		}
 	}
-	// Alone, a service needn't be named.
+	// Alone, a service needn't be named: the app's first service with an HTTP port.
 	if in.Service == "" {
 		if t := addTargetsOf(rec.App); len(t) > 0 {
-			in.Service = t[0].Service
+			in.Service = t[firstHTTPTarget(t)].Service
 		}
 	}
 	i, found := serviceNamed(rec.App, in.Service)

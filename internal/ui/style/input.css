@@ -1090,6 +1090,8 @@
   /* The summary's cells and the summary above the table are wrappers a refresh swaps by id: they
      take no box of their own, so their children lay out as the table's and the region's. */
   .cv-dmcells, .cv-dmsummary { display: contents; }
+  /* The Add panel's service field, which a pick in the app select swaps by id: no box either. */
+  .cv-dmsvcfield { display: contents; }
   /* The domain: 500 14px mono, cut with an ellipsis, then the Team-only lock and the path. */
   .cv-dmname { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .cv-dmhost { min-width: 0; font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

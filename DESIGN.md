@@ -968,9 +968,17 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
 - **Add a domain** (`#add`, a panel, padding 22, gap 22, "Add a domain" 500 18px): Domain (mono; capitals are
   read as lowercase, since DNS names are case-insensitive: "Shop.Example.COM" is `shop.example.com`, never refused for
   its case, and the API does the same), Sends
-  traffic to (the app select, stopped apps disabled; the service select of a picked app with several, or
-  every app's services as "app › service · :port" until one is picked; one service's port as text,
-  "`:8080`, set in Configure"; on an app's page the app as text), Path (optional, mono), "Point it at
+  traffic to (the app select, stopped apps disabled and an app with no HTTP port disabled as "(no HTTP port)";
+  the service select only once an app is picked: picking one fetches `/parts/domains/add-service?app=` into
+  `#domain-service-field` (a `display: contents` wrapper) and, without script, Check now draws it; before a
+  pick the words "The app's first service. An app with several offers them here once it is picked." stand there
+  and the post goes to the app's first HTTP service; one service's port as text, "`:8080`, set in Configure";
+  on an app's page the app as text). **Not an HTTP port:** a service whose port is 5432, 3306, 6379, 27017, 5672
+  or 11211, or that has a TCP-only health check and an image naming postgres, mysql, mariadb, redis, mongo,
+  rabbitmq or memcached, is listed disabled as "db · :5432 · not an HTTP port" (`notHTTPPort`; the console's
+  guess, never a refusal: the API takes any port). The filter's project select and every app select name an app
+  outside Default › production the same way, "Shop / staging / web" (the project's display name, the
+  environment, the name; `places.appLabel`, which Schedules uses too). Path (optional, mono), "Point it at
   caravana" with the record box and "The root of a domain needs an A record. A subdomain can use one too.",
   then Check: two lines of 14px, each an 8px mark and words, a 13px fg-3 reason under them. Before a check
   both are rings in fg-3; Check now (a submit of its own, `action=check`) runs the check on the post and

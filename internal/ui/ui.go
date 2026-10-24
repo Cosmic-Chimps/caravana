@@ -208,6 +208,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/domains/{host}/remove", s.protected(s.requireSession(s.removeDomain))},
 		{"POST", "/domains/{host}/team-password", s.protected(s.requireSession(s.rotateTeamPassword))},
 		{"GET", "/parts/domains", s.requirePart(s.partDomains)},
+		{"GET", "/parts/domains/add-service", s.requirePart(s.partDomainAddService)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/deploying", s.requirePart(s.partDeploying)},
