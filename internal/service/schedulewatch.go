@@ -170,7 +170,9 @@ func (s *Service) endRun(ctx context.Context, r store.ScheduleRunRecord, sched s
 // outputTries is how many times the output of a run that just ended is read
 // before it is given up: the job is purged right after, so a read that fails
 // once (the copy's log file still being closed, a blip reading the secrets)
-// would lose the output for good.
+// would lose the output for good. A read that answers nothing is tried again
+// too: a run that ended a moment ago may not have had its last bytes written
+// to its log yet, and a command that printed nothing costs the two short waits.
 const outputTries = 3
 
 // runOutput reads what a run printed and masks the service's secret values
@@ -180,10 +182,11 @@ const outputTries = 3
 func (s *Service) runOutput(ctx context.Context, r store.ScheduleRunRecord, allocID string) (stdout, stderr []byte, stdoutCut, stderrCut, kept bool) {
 	var err error
 	for try := 1; ; try++ {
-		if stdout, stderr, stdoutCut, stderrCut, kept, err = s.readRunOutput(ctx, r, allocID); err == nil {
+		stdout, stderr, stdoutCut, stderrCut, kept, err = s.readRunOutput(ctx, r, allocID)
+		if err == nil && (len(stdout) > 0 || len(stderr) > 0 || try == outputTries) {
 			return stdout, stderr, stdoutCut, stderrCut, kept
 		}
-		if try == outputTries || ctx.Err() != nil {
+		if err != nil && (try == outputTries || ctx.Err() != nil) {
 			s.log.Warn("read a schedule run's output; it isn't kept", "run", r.ID, "tries", try, "error", err)
 			return nil, nil, false, false, false
 		}
