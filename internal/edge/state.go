@@ -51,6 +51,10 @@ func StateOf(f Facts, served, redirecting bool) State {
 		return StateRedirect
 	case f.DNS.Status == DNSOK && f.Certificate.Status == CertIssued:
 		return StateLive
+	case f.DNS.Status == DNSUnknown && f.Certificate.Status == CertIssued:
+		// The resolvers didn't answer, but a trusted certificate was issued for
+		// the host, which proves the issuer reached it: live, not "couldn't check".
+		return StateLive
 	}
 	return StateUnknown
 }

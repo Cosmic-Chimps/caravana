@@ -33,7 +33,7 @@ func TestStateOf(t *testing.T) {
 		{"redirect", facts(DNSOK, CertIssued), true, true, StateRedirect},
 		{"redirect with unknown dns", facts(DNSUnknown, CertIssued), true, true, StateRedirect},
 		{"live", facts(DNSOK, CertIssued), true, false, StateLive},
-		{"unknown dns with an issued certificate", facts(DNSUnknown, CertIssued), true, false, StateUnknown},
+		{"unknown dns with an issued certificate", facts(DNSUnknown, CertIssued), true, false, StateLive},
 		{"dns ok, certificate error", facts(DNSOK, CertError), true, false, StateUnknown},
 		{"dns ok, certificate not probed", facts(DNSOK, CertNone), true, false, StateUnknown},
 		{"nothing could be checked", facts(DNSUnknown, CertError), true, false, StateUnknown},
