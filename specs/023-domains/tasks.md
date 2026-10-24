@@ -62,7 +62,7 @@ builds each phase; Opus reviews before the next.
 Goal: `/v1/domains` and `/domains` list every domain with a derived, cached state.
 Independent test: quickstart §1.
 
-- [ ] T007 [US1] `internal/service/domains.go` + tests: `DomainView`, `Domains(ctx,
+- [x] T007 [US1] `internal/service/domains.go` + tests: `DomainView`, `Domains(ctx,
   DomainFilter{App, Project})` from `StoredApps` + app statuses + `domain_checks` (sorted
   problems first; a redirect pair's redirecting host as a `redirect` row; `not_served` for a
   stopped or undeployed app; "two apps claim this address" said), `Domain(host)`,
@@ -70,7 +70,7 @@ Independent test: quickstart §1.
   served: DNS and the records to create, certificate "none"), `hostAddresses()` (the public
   URL's host resolved, IPv4 and IPv6, cached as the Add form's lookup is: move `hostIP` out of
   the UI), `ChangeDomains` notice.
-- [ ] T008 [US1] `internal/service/domainwatch.go` + tests: every stored domain every 15 min,
+- [x] T008 [US1] `internal/service/domainwatch.go` + tests: every stored domain every 15 min,
   every 60 s while a domains stream is open (`SetDomainWatchGaps` setters for the lab), at most 8
   probes at once, each result upserted, `ChangeDomains` published; stopped or undeployed apps
   not probed; the injectable resolver and dialer (`Service.SetEdge(edge.Resolver, edge.Dialer)`)

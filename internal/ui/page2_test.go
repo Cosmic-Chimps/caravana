@@ -2,8 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -458,76 +457,6 @@ func TestAddAndRemoveDomain(t *testing.T) {
 	})
 }
 
-// recordName is "@" for a host with one dot and the first label otherwise.
-func TestRecordName(t *testing.T) {
-	for host, want := range map[string]string{
-		"example.com":     "@",
-		"Example.com.":    "@",
-		"www.example.com": "www",
-		"a.b.example.com": "a",
-		"app.example.com": "app",
-		"":                "",
-		"  ":              "",
-		"example.co.uk":   "example", // the registered domain needs the public suffix list; documented in recordName
-	} {
-		if got := recordName(host); got != want {
-			t.Errorf("recordName(%q) = %q, want %q", host, got, want)
-		}
-	}
-}
-
-// The address a domain's A record points at is what the console's own host name resolves to,
-// found lazily with a two-second limit, kept once found, and not asked for again for a minute
-// after a failure.
-func TestHostIP(t *testing.T) {
-	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	calls := 0
-	h := &hostIP{timeout: time.Second, retry: time.Minute, lookup: func(_ context.Context, network, host string) ([]net.IP, error) {
-		calls++
-		if network != "ip4" || host != "console.example.com" {
-			t.Errorf("lookup(%q, %q)", network, host)
-		}
-		return []net.IP{net.ParseIP("203.0.113.7")}, nil
-	}}
-	if got := h.find(context.Background(), "", now); got != "" || calls != 0 {
-		t.Errorf("with no public URL: %q after %d lookups, want none", got, calls)
-	}
-	if got := h.find(context.Background(), "https://console.example.com", now); got != "203.0.113.7" {
-		t.Errorf("find = %q", got)
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(time.Hour))
-	if calls != 1 {
-		t.Errorf("%d lookups, want the answer kept for the process", calls)
-	}
-
-	calls = 0
-	h = &hostIP{timeout: 20 * time.Millisecond, retry: time.Minute, lookup: func(ctx context.Context, _, _ string) ([]net.IP, error) {
-		calls++
-		<-ctx.Done() // a resolver that never answers
-		return nil, ctx.Err()
-	}}
-	start := time.Now()
-	if got := h.find(context.Background(), "https://console.example.com", now); got != "" || time.Since(start) > 2*time.Second {
-		t.Errorf("a stuck resolver: %q after %v", got, time.Since(start))
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(30*time.Second))
-	if calls != 1 {
-		t.Errorf("%d lookups within a minute of a failure, want 1", calls)
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(2*time.Minute))
-	if calls != 2 {
-		t.Errorf("%d lookups after the minute, want a retry", calls)
-	}
-
-	// A loopback address is the console on a laptop, not a host a domain can point at.
-	h = &hostIP{timeout: time.Second, retry: time.Minute, lookup: func(context.Context, string, string) ([]net.IP, error) {
-		return []net.IP{net.ParseIP("127.0.0.1")}, nil
-	}}
-	if got := h.find(context.Background(), "http://127.0.0.1:7070", now); got != "" {
-		t.Errorf("a loopback address was offered: %q", got)
-	}
-}
-
 // The add form's record box: the A record's name from the typed host, and the address when the
 // resolver gives one, else the words for it.
 func TestDomainRecordBox(t *testing.T) {
@@ -540,17 +469,15 @@ func TestDomainRecordBox(t *testing.T) {
 	}
 
 	t.Run("no public URL: the words", func(t *testing.T) {
-		e.Server.publicURL = func() string { return "" }
+		e.Svc.SetPublicURL("")
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Type A") || !strings.Contains(got, "Value this host's public IP address") {
 			t.Errorf("the box = %q", got)
 		}
 	})
 
 	t.Run("the address the host resolves to", func(t *testing.T) {
-		e.Server.publicURL = func() string { return "https://console.example.com" }
-		e.Server.hostIP.lookup = func(context.Context, string, string) ([]net.IP, error) {
-			return []net.IP{net.ParseIP("203.0.113.7")}, nil
-		}
+		e.Svc.SetPublicURL("https://console.example.com")
+		e.Svc.SetEdge(edgetest.FakeResolver{Hosts: map[string][]string{"console.example.com": {"2001:db8::7", "203.0.113.7"}}}, nil)
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Value 203.0.113.7") || strings.Contains(got, "public IP address") {
 			t.Errorf("the box = %q", got)
 		}
@@ -567,8 +494,7 @@ func TestDomainRecordBox(t *testing.T) {
 	})
 
 	t.Run("a host that doesn't resolve: the words", func(t *testing.T) {
-		e.Server.hostIP = newHostIP()
-		e.Server.hostIP.lookup = func(context.Context, string, string) ([]net.IP, error) { return nil, errors.New("no such host") }
+		e.Svc.SetEdge(edgetest.FakeResolver{}, nil) // a new resolver drops the kept address; this one finds nothing
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Value this host's public IP address") {
 			t.Errorf("the box = %q", got)
 		}

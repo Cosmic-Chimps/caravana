@@ -3,14 +3,10 @@ package ui
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
@@ -82,77 +78,17 @@ type dnsRecord struct {
 // hostIPWords stand where the address would be when the console doesn't know it.
 const hostIPWords = "this host's public IP address"
 
-// recordName is the Name of the A record for a host: "@" for an apex, the first
-// label otherwise. An apex is a host with exactly one dot (example.com). Telling
-// the registered domain apart in general (example.co.uk, example.com.br) needs
-// the public suffix list, which is a module Caravana doesn't carry, so a host
-// like example.co.uk is read as a subdomain "example". An empty host has no name.
-func recordName(host string) string {
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	switch {
-	case host == "":
-		return ""
-	case app.IsApex(host):
-		return "@"
-	}
-	label, _, _ := strings.Cut(host, ".")
-	return label
-}
-
-// hostIP finds the address the console's own host name answers on, which is what a
-// domain's A record should point at. The host comes from CARAVANA_PUBLIC_URL; the
-// lookup runs the first time a page asks, waits two seconds at most, and a
-// success is kept for the life of the process. A failure is kept a minute, so a
-// host that doesn't resolve doesn't make every page view wait.
-type hostIP struct {
-	mu      sync.Mutex
-	ip      string
-	failed  time.Time
-	lookup  func(ctx context.Context, network, host string) ([]net.IP, error)
-	timeout time.Duration
-	retry   time.Duration
-}
-
-// newHostIP is a lookup through the system resolver.
-func newHostIP() *hostIP {
-	return &hostIP{lookup: net.DefaultResolver.LookupIP, timeout: 2 * time.Second, retry: time.Minute}
-}
-
-// find returns the IPv4 address publicURL's host answers on, or "" when there is
-// no URL, no such host, or only an address that isn't a public one (a loopback
-// or unspecified address is the console running on a laptop).
-func (h *hostIP) find(ctx context.Context, publicURL string, now time.Time) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.ip != "" {
-		return h.ip
-	}
-	if publicURL == "" || (!h.failed.IsZero() && now.Sub(h.failed) < h.retry) {
-		return ""
-	}
-	u, err := url.Parse(publicURL)
-	if err != nil || u.Hostname() == "" {
-		return ""
-	}
-	ctx, cancel := context.WithTimeout(ctx, h.timeout)
-	defer cancel()
-	ips, _ := h.lookup(ctx, "ip4", u.Hostname())
-	for _, ip := range ips {
-		if v4 := ip.To4(); v4 != nil && !v4.IsLoopback() && !v4.IsUnspecified() {
-			h.ip = v4.String()
-			return h.ip
-		}
-	}
-	h.failed = now
-	return ""
-}
-
-// recordFor is the DNS box for a host: the A record with its address, or the
-// words for it.
+// recordFor is the DNS box for a host: the A record with this host's IPv4
+// address (service.HostAddresses: the console's own name resolved, kept once
+// found), or the words for it when the address isn't known. The record's name
+// is service.DNSRecordName's.
 func (s *server) recordFor(ctx context.Context, host string) dnsRecord {
-	rec := dnsRecord{Type: "A", Name: recordName(host), Value: hostIPWords}
-	if ip := s.hostIP.find(ctx, s.publicURL(), s.now()); ip != "" {
-		rec.Value, rec.Known = ip, true
+	rec := dnsRecord{Type: "A", Name: service.DNSRecordName(host), Value: hostIPWords}
+	for _, a := range s.svc.HostAddresses(ctx) {
+		if a.Is4() {
+			rec.Value, rec.Known = a.String(), true
+			break
+		}
 	}
 	return rec
 }
@@ -216,7 +152,7 @@ func (s *server) domainsPage(w http.ResponseWriter, r *http.Request, status int,
 		host = typed.Host.Value
 	}
 	// The address is looked up only for a page that draws the box.
-	record := dnsRecord{Type: "A", Name: recordName(host), Value: hostIPWords}
+	record := dnsRecord{Type: "A", Name: service.DNSRecordName(host), Value: hostIPWords}
 	if sum.App.Defined() && sum.Compose == nil && sum.StoppedAt == nil {
 		record = s.recordFor(ctx, host)
 	}

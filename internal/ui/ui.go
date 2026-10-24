@@ -72,9 +72,6 @@ type server struct {
 	newApp bool
 	// tabs are the app page's tabs built so far, in order (see app.go).
 	tabs []tabSpec
-	// hostIP finds the address the console's host answers on, for the Domains
-	// page's DNS record (see domains.go); tests give it their own lookup.
-	hostIP *hostIP
 	// publicURL is the console's own address (CARAVANA_PUBLIC_URL); tests give it their own.
 	publicURL func() string
 	// deployPage is how many deployments the Deployments tab shows before
@@ -102,7 +99,7 @@ func New(d Deps) (http.Handler, error) {
 // parsed templates. Tests use it to reach the server itself.
 func newServer(d Deps) (*server, error) {
 	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, version: d.Version, proxies: d.Proxies, log: d.Log, now: d.Now,
-		csrf: http.NewCrossOriginProtection(), hostIP: newHostIP(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
+		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
 	s.publicURL = func() string { return d.Service.PublicURL() }
 	if s.now == nil {
 		s.now = time.Now

@@ -17,6 +17,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
@@ -71,6 +72,9 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 		VersionRetries: []time.Duration{time.Millisecond, time.Millisecond},
 	}
 	svc := service.New(st, deployer, deploy.NewVariables(client), log)
+	// No domain watcher pass, and domain checks that never leave the process.
+	svc.SetDomainWatchGaps(time.Hour, time.Hour)
+	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 	svcCtx, stop := context.WithCancel(ctx)
 	if err := svc.Start(svcCtx); err != nil {
 		t.Fatalf("start service: %v", err)

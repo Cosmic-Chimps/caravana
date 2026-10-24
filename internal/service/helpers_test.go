@@ -11,6 +11,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
@@ -118,6 +119,11 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	// clock and the watcher call runDueSchedules and followScheduleRuns.
 	svc.scheduleScanGap = time.Hour
 	svc.scheduleWatchGap = time.Hour
+	// Domains: no watcher pass, and checks that never leave the process (a
+	// resolver that finds nothing, a dialer that is refused). Tests of the
+	// checks give their own fakes with SetEdge.
+	svc.domainIdleGap, svc.domainWatchGap = time.Hour, time.Hour
+	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
