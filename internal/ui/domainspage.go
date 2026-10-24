@@ -460,6 +460,10 @@ func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check do
 		d.Check = &check
 	case edge.StateSelfSigned, edge.StateCertPending:
 		d.Sentence, d.Quiet = plainS(stateInfo(v.State).Sentence), true
+		if v.State == edge.StateCertPending {
+			// Traefik asks Let's Encrypt for a certificate on the first request it gets for the host.
+			d.Link = &actionLink{Label: "Open it once", Href: "https://" + v.Host + "/", External: true}
+		}
 	case edge.StateDNSNone:
 		d.Sentence = plainS("No DNS record yet. Add this record where you manage DNS:")
 		d.Records = &box

@@ -134,7 +134,8 @@ func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp s
 		}
 	}
 
-	v := &domainAddView{Action: "/domains", CancelHref: "/domains#add",
+	// Cancel goes back to the page, not to the panel it is in.
+	v := &domainAddView{Action: "/domains", CancelHref: "/domains",
 		Host:    formField{ID: "domain-host", Value: in.Host},
 		Path:    formField{ID: "domain-path", Value: in.Path},
 		App:     formField{ID: "domain-app", Value: in.App},
@@ -144,7 +145,7 @@ func (s *server) domainAddFor(ctx context.Context, in domainAddInput, fixedApp s
 		Primary: true}
 	v.Records = recordBoxFor(in.Host, s.hostAddressTexts(ctx))
 	if fixedApp != "" {
-		v.Action, v.CancelHref, v.FixedApp = "/apps/"+url.PathEscape(fixedApp)+"/domains", "/apps/"+url.PathEscape(fixedApp)+"/domains#add", fixedApp
+		v.Action, v.CancelHref, v.FixedApp = "/apps/"+url.PathEscape(fixedApp)+"/domains", "/apps/"+url.PathEscape(fixedApp)+"/domains", fixedApp
 	}
 	if len(cands) == 0 {
 		v.NoTargets = true

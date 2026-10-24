@@ -920,7 +920,9 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   the left column by state: DNS elsewhere has its sentence ("The domain points at …, which isn't this host.
   Until it changes, caravana can't get a certificate and visitors won't reach `<app>`.") and a facts grid
   with 90px keys (now, in the failed hue; should be; last check "40 s ago · checks every minute");
-  expiring has its sentence and Check again; Traefik's own and getting a certificate a quiet sentence; no
+  expiring has its sentence and Check again; Traefik's own a quiet sentence, and getting a certificate one with
+  **Open it once** (a link to `https://<host>/`, new tab, `rel="noopener"`: Traefik asks Let's Encrypt for the
+  certificate on the first request it gets); no
   DNS record "No DNS record yet. Add this record where you manage DNS:" and the record box; live and
   redirect a facts grid with 110px keys (certificate "Let's Encrypt · renews in 61 d · expires
   `<clock time>`", DNS "A → 203.0.113.1", router "`<app>-<service>`" or "`<app>-<service>-<hash8>` (its own,
@@ -948,7 +950,8 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   once."); each is a form of its own, since forms don't nest. Turning Team only on, or New password, answers
   200 with the shown-once panel above the page ("Copy the password for `<host>` now. User name `team`.", the
   value in a box that selects whole, Copy hidden without script): the password is in no address, no later page
-  and no log. A stopped app's rows show "The app is stopped: start it first." in place of the form.
+  and no log. A Team-only domain says "Visitors sign in as `team`." in 13px fg-3 above New password. The panel and
+  every sentence write "caravana" in lowercase. A stopped app's rows show "The app is stopped: start it first." in place of the form.
 - **Domains go to** (Configure's Deploy panel): a service with several ports and domains has a select of its ports
   ("http · :80") after Image; saving sets the port of every one of its domains and nothing else of them. A
   service with one port has the Container port input, as before.
@@ -974,7 +977,8 @@ page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the s
   ■ or ◆ "DNS points at caravana" ("points at `185.…`" ■, "no DNS record" ◆) and the certificate line ("issued after
   you add it" for a new host, else its state). An unknown or expired `checked` draws the empty panel; a host
   that isn't a name is still refused in place (422) with the reason under the field. Add domain and deploy is primary when DNS was checked and
-  points here or no check ran, secondary otherwise, and always there: the list shows the rest. A refusal
+  points here or no check ran, secondary otherwise, and always there: the list shows the rest. Cancel is a link to
+  the page itself (`/domains` or `/apps/{id}/domains`), without the panel's fragment. A refusal
   draws the form again with the reason under its field: another app's host (naming it), the console's own
   host, a host that isn't one, a bad path.
 - **Live refresh swaps per row, never the forms.** The region's own swap is `none`. A notice (`sse:domains`) makes

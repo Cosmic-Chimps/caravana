@@ -825,6 +825,8 @@ func foreignJob(errText string) bool {
 type actionLink struct {
 	Label string
 	Href  string
+	// External opens it in a new tab, without an opener: a link to the app's own address.
+	External bool
 }
 
 // deployFormHref is the deploy form on the Deployments tab.

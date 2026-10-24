@@ -142,6 +142,7 @@
     </form>
     {{end}}
     {{if or .Options.Remove .Options.Rotate}}
+    {{if .Options.Rotate}}<p class="cv-dmnote">Visitors sign in as <span class="cv-inline-mono">team</span>.</p>{{end}}
     <div class="cv-dmbtns">
       {{with .Options.Remove}}
       <details class="cv-confirm" id="domain-remove-{{.Host}}">
@@ -185,7 +186,7 @@
       {{end}}
     </dl>
     {{end}}
-    {{if or .Check .Link}}<div class="cv-dmbtns">{{with .Check}}{{template "domain-check" .}}{{end}}{{with .Link}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a>{{end}}</div>{{end}}
+    {{if or .Check .Link}}<div class="cv-dmbtns">{{with .Check}}{{template "domain-check" .}}{{end}}{{with .Link}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm"{{if .External}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a>{{end}}</div>{{end}}
 {{end}}
 
 {{/* domain-once: a Team-only password just made, in the answer of the post that made it. It is in
@@ -193,7 +194,7 @@
      teamPasswordPanel. */}}
 {{define "domain-once"}}
 <div class="cv-panel cv-once" role="status">
-  <p class="cv-once-text">Copy the {{if .New}}new {{end}}password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. Caravana only keeps a hash and can't show it again.</p>
+  <p class="cv-once-text">Copy the {{if .New}}new {{end}}password for <span class="cv-inline-mono">{{.Host}}</span> now. User name <span class="cv-inline-mono">team</span>. caravana only keeps a hash and can't show it again.</p>
   <div class="cv-once-row">
     <code class="cv-once-value" id="team-password-value">{{.Password}}</code>
     <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="team-password-value" hidden>Copy password</button>
