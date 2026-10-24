@@ -40,6 +40,9 @@ type certificatesData struct {
 	Email, EmailHint   string
 	WarnDays           int
 	Warn               []formOption
+	// WarnLocked says Warn when is drawn disabled: installed without Let's Encrypt, nothing is
+	// issued, so there is nothing to warn about yet. The form posts nothing; the API still takes it.
+	WarnLocked bool
 	// Notice is what a saved form says; Alert what a refused one says.
 	Notice string
 	Alert  string
@@ -145,6 +148,7 @@ func (s *server) certificatesSection(ctx context.Context, now time.Time, f setti
 		data.Email = "not set"
 	}
 	data.WarnDays = cs.WarnBeforeDays
+	data.WarnLocked = cs.Issuer == service.IssuerNone
 	for _, d := range warnChoices {
 		data.Warn = append(data.Warn, formOption{Value: strconv.Itoa(d), Label: strconv.Itoa(d) + " d before expiry", Selected: d == cs.WarnBeforeDays})
 	}

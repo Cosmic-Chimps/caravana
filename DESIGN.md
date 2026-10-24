@@ -723,7 +723,9 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   minmax(0, 1fr)`, gap 24, padding 14 20): **Issuer** ("Let's Encrypt", "none") and **Contact email**, both
   read-only because they are Traefik's static configuration ("Set when caravana was installed; run the
   installer again to change it."), and **Warn when** ("14 d before expiry", "Sends to the channels set up in
-  Notifications."). A saved window answers 303 with a notice; the checks already stored are judged again at once.
+  Notifications."). Without Let's Encrypt (`acme=none`) Warn when is drawn disabled: the Edit form's select
+  (fg-3) and Save (faded) are disabled, so it posts nothing, with "Applies once certificates are issued." under
+  the select and before the row's note; the API still takes the setting. A saved window answers 303 with a notice; the checks already stored are judged again at once.
   Nothing here pushes the page wider: every track, fixed ones included, is `minmax(0, …)` (so the 220/260px columns and
   the table's 150px one shrink first), the hint column wraps (`overflow-wrap: anywhere`), and the section head's children
   have `min-width: 0` so Edit always stays inside.

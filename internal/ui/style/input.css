@@ -1218,6 +1218,10 @@
   .cv-certedit { display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
   .cv-certedit > * { pointer-events: auto; }
   .cv-certedit .cv-confirm-body { width: min(24rem, 100%); margin-top: 10px; background: var(--color-ink-1); }
+  /* Without Let's Encrypt, Warn when is drawn disabled ("Applies once certificates are issued."): the
+     select in fg-3 and Save faded, both saying so under the pointer. */
+  .cv-certedit .cv-field:disabled { color: var(--color-fg-3); cursor: not-allowed; }
+  .cv-certedit .cv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .cv-certsettings { margin: 0; min-width: 0; }
   .cv-certset { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 260px) minmax(0, 1fr); gap: 24px; align-items: baseline; padding: 14px 20px; border-top: 1px solid var(--color-line-1); }
   .cv-certset:first-child { border-top: 0; }

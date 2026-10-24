@@ -311,18 +311,19 @@
       <form method="post" action="/settings/certificates" class="cv-confirm-body">
         <label class="cv-fld" for="cert-warn">
           <span class="cv-label">Warn when</span>
-          <select class="cv-field cv-select" id="cert-warn" name="warnBeforeDays"{{if $.Certificates.Alert}} aria-invalid="true" autofocus{{end}}>
+          <select class="cv-field cv-select" id="cert-warn" name="warnBeforeDays"{{if .WarnLocked}} disabled aria-describedby="cert-warn-hint"{{end}}{{if $.Certificates.Alert}} aria-invalid="true" autofocus{{end}}>
             {{range .Warn}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
           </select>
+          {{if .WarnLocked}}<span class="cv-data-muted cv-hint" id="cert-warn-hint">Applies once certificates are issued.</span>{{end}}
         </label>
-        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save</button></div>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm"{{if .WarnLocked}} disabled{{end}}>Save</button></div>
       </form>
     </details>
   </div>
   <dl class="cv-panel cv-certsettings">
     <div class="cv-certset"><dt>Issuer</dt> <dd>{{.Issuer}}</dd> <dd class="cv-certset-note">{{.IssuerHint}}</dd></div>
     <div class="cv-certset"><dt>Contact email</dt> <dd>{{.Email}}</dd> <dd class="cv-certset-note">{{.EmailHint}}</dd></div>
-    <div class="cv-certset"><dt>Warn when</dt> <dd>{{.WarnDays}} d before expiry</dd> <dd class="cv-certset-note">Sends to the channels set up in <a href="/settings/notifications">Notifications</a>.</dd></div>
+    <div class="cv-certset"><dt>Warn when</dt> <dd>{{.WarnDays}} d before expiry</dd> <dd class="cv-certset-note">{{if .WarnLocked}}Applies once certificates are issued. {{end}}Sends to the channels set up in <a href="/settings/notifications">Notifications</a>.</dd></div>
   </dl>
 </section>
 {{end}}
