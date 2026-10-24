@@ -28,7 +28,7 @@ builds each phase; Opus reviews before the next.
 
 ## Phase 1: Foundation (no story label; everything below needs it)
 
-- [ ] T002 [P] `internal/app/app.go`, `validate.go` + tests: `Domain.Path`, `WWWRedirect`,
+- [x] T002 [P] `internal/app/app.go`, `validate.go` + tests: `Domain.Path`, `WWWRedirect`,
   `TeamOnly` (`omitempty`), `Domain.HasOptions()`, `Domain.RedirectPair()`; validation per
   plan.md (path shape and length; `wwwRedirect` only on an apex or `www.` host; errors name
   `services[i].domains[j].<field>`); a test that an app without options marshals as before.
@@ -40,13 +40,13 @@ builds each phase; Opus reviews before the next.
   `$1`); goldens `domain-path`, `domain-www`, `domain-team`, `domain-all`; every existing golden
   unchanged (a test asserts it); `hcl.go`'s golden gains the cases; `deploy/export.go`'s header
   names the Team-only middleware file. Adjust to T001's findings.
-- [ ] T004 [P] `internal/edge/` (new, pure): `Resolver` and `Dialer` seams, the real system +
+- [x] T004 [P] `internal/edge/` (new, pure): `Resolver` and `Dialer` seams, the real system +
   public resolvers (2 s each, parallel) and the TLS dialer (3 s, SNI, hand verification),
   `Check(ctx, host, expected, resolverSet, warn) Facts`, `StateOf(facts, served, redirecting)
   State`, the classification tables (Traefik's default cert → pending/self; trusted → issued;
   within warn → expiring; dial failed → error; DNS ok/elsewhere/none/unknown with a stale AAAA
   as elsewhere); `edgetest` fakes. Tables for every row of the precedence.
-- [ ] T005 [P] `internal/store/migrations/0018_domains.sql` and `internal/store/domains.go` +
+- [x] T005 [P] `internal/store/migrations/0018_domains.sql` and `internal/store/domains.go` +
   tests: `domain_checks`, `team_passwords`, `certificate_settings` per data-model.md;
   `UpsertDomainCheck`, `ListDomainChecks`, `DeleteDomainCheck(host)`, `DeleteDomainChecks(appID)`;
   `SetTeamPassword`, `TeamPasswords`, `DeleteTeamPassword`, `DeleteTeamPasswords(appID)`;
