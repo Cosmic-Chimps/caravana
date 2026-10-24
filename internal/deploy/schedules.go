@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -158,9 +160,24 @@ type RunState struct {
 	// (the image couldn't be pulled, the program isn't there) or a Setup
 	// Failure (a template, an artifact).
 	StartFailed bool
+	// StartFailure classifies the newest start failure event, the service
+	// task's first and any task's otherwise: StartProgramNotFound,
+	// StartImagePull or StartOther. Empty when there is no start failure.
+	// It is a class, never Nomad's text, which may quote the image.
+	StartFailure string
 	// Terminal says the allocation ended: complete, failed or lost.
 	Terminal bool
 }
+
+// The classes of RunState.StartFailure.
+const (
+	// StartProgramNotFound: the container's program isn't in the image.
+	StartProgramNotFound = "program_not_found"
+	// StartImagePull: the image couldn't be pulled or found.
+	StartImagePull = "image_pull"
+	// StartOther: Nomad couldn't start the copy, for any other reason.
+	StartOther = "other"
+)
 
 // ScheduleRunState reads the state of the run jobID, whose service task is
 // task. A job Nomad doesn't have is ErrRunGone. A job with no allocation yet
@@ -203,10 +220,13 @@ func (d *Deployer) ScheduleRunState(ctx context.Context, jobID, task string) (Ru
 			continue
 		}
 		for _, e := range ts.Events {
-			if e != nil && (e.Type == api.TaskDriverFailure || e.Type == api.TaskSetupFailure) {
+			if isStartFailure(e) {
 				st.StartFailed = true
 			}
 		}
+	}
+	if st.StartFailed {
+		st.StartFailure = startFailureOf(a.TaskStates, task)
 	}
 	if ts := a.TaskStates[task]; ts != nil {
 		if !ts.StartedAt.IsZero() {
@@ -216,6 +236,53 @@ func (d *Deployer) ScheduleRunState(ctx context.Context, jobID, task string) (Ru
 		st.ExitCode = exitCodeOf(ts)
 	}
 	return st, nil
+}
+
+func isStartFailure(e *api.TaskEvent) bool {
+	return e != nil && (e.Type == api.TaskDriverFailure || e.Type == api.TaskSetupFailure)
+}
+
+// startFailureOf classifies the newest Driver Failure or Setup Failure event
+// of task, or of the other tasks (by name) when task has none.
+func startFailureOf(states map[string]*api.TaskState, task string) string {
+	names := []string{task}
+	for _, n := range slices.Sorted(maps.Keys(states)) {
+		if n != task {
+			names = append(names, n)
+		}
+	}
+	for _, n := range names {
+		ts := states[n]
+		if ts == nil {
+			continue
+		}
+		for i := len(ts.Events) - 1; i >= 0; i-- { // Nomad appends events, newest last
+			if e := ts.Events[i]; isStartFailure(e) {
+				return classifyStartFailure(e)
+			}
+		}
+	}
+	return StartOther
+}
+
+// classifyStartFailure reads what the docker driver says when a container
+// can't start. A missing program comes from the container runtime
+// ("... exec: \"nosuch\": executable file not found in $PATH: unknown", or
+// "no such file or directory"); a missing image from the pull ("Failed to
+// pull `x`: ...") or the lookup ("Failed to find docker image ..."). The
+// program is checked first: "executable file not found" also says "not found".
+func classifyStartFailure(e *api.TaskEvent) string {
+	msg := strings.ToLower(strings.Join([]string{e.DisplayMessage, e.Message,
+		e.Details["driver_error"], e.Details["error"]}, " "))
+	switch {
+	case strings.Contains(msg, "executable file not found") || strings.Contains(msg, "no such file or directory"):
+		return StartProgramNotFound
+	case strings.Contains(msg, "pull") || strings.Contains(msg, "failed to find") ||
+		strings.Contains(msg, "manifest unknown") ||
+		(e.Type == api.TaskDriverFailure && strings.Contains(msg, "image")):
+		return StartImagePull
+	}
+	return StartOther
 }
 
 // exitCodeOf is the exit status in a task's newest Terminated event, or nil.

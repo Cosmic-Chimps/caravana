@@ -206,15 +206,32 @@ func runOutcome(r store.ScheduleRunRecord, st deploy.RunState, limit time.Durati
 	case st.ExitCode != nil && *st.ExitCode == 0:
 		return store.RunOK, ""
 	case st.StartFailed && st.ExitCode == nil:
-		return store.RunCouldNotStart, "could not start"
+		return store.RunCouldNotStart, startFailureWords(r, st)
 	case st.DesiredStatus == "stop":
 		return store.RunFailed, "stopped outside Caravana"
 	case st.ExitCode != nil:
 		return store.RunFailed, fmt.Sprintf("exit %d", *st.ExitCode)
 	case st.TaskStartedAt == nil:
-		return store.RunCouldNotStart, "could not start"
+		return store.RunCouldNotStart, startFailureWords(r, st)
 	}
 	return store.RunFailed, "its copy was lost"
+}
+
+// startFailureWords says why a run couldn't start, in Caravana's words and
+// never Nomad's text, which can quote the image or a path. The console shows
+// it as "Couldn't start: <words>." (the Schedules page, the run's page).
+func startFailureWords(r store.ScheduleRunRecord, st deploy.RunState) string {
+	switch st.StartFailure {
+	case deploy.StartProgramNotFound:
+		program := "program"
+		if len(r.Command) > 0 && r.Command[0] != "" {
+			program = r.Command[0]
+		}
+		return "no `" + program + "` in the image"
+	case deploy.StartImagePull:
+		return "the image couldn't be pulled"
+	}
+	return "Nomad couldn't start its copy"
 }
 
 // durationWords says a limit in words: "5 minutes", "1 minute", or Go's

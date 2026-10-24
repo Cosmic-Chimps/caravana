@@ -216,6 +216,45 @@ func TestScheduleRunState(t *testing.T) {
 		if err != nil || !st.Terminal || !st.StartFailed || st.TaskStartedAt != nil || st.ExitCode != nil {
 			t.Errorf("state = %+v, %v; want a start failure with no start time or exit code", st, err)
 		}
+		if st.StartFailure != StartImagePull {
+			t.Errorf("StartFailure = %q, want %q", st.StartFailure, StartImagePull)
+		}
+	})
+
+	t.Run("no start failure, no class", func(t *testing.T) {
+		d, nomad := registerRun(t)
+		nomad.FinishRunExit(testRunJob, 3)
+		st, err := d.ScheduleRunState(ctx, testRunJob, "web")
+		if err != nil || st.StartFailed || st.StartFailure != "" {
+			t.Errorf("state = %+v, %v; want no start failure", st, err)
+		}
+	})
+
+	t.Run("the service task's newest failure is the one classified", func(t *testing.T) {
+		d, nomad := registerRun(t)
+		nomad.SetCopies(testRunJob, api.AllocationListStub{ID: "a1", ClientStatus: "failed", TaskStates: map[string]*api.TaskState{
+			"names": {State: "dead", Events: []*api.TaskEvent{{Type: "Setup Failure", DisplayMessage: "template: boom"}}},
+			"web": {State: "dead", Events: []*api.TaskEvent{
+				{Type: "Driver Failure", DisplayMessage: "Failed to pull `x`: unauthorized"},
+				{Type: "Driver Failure", Details: map[string]string{"driver_error": "exec: \"sh\": executable file not found in $PATH"}},
+			}},
+		}})
+		st, err := d.ScheduleRunState(ctx, testRunJob, "web")
+		if err != nil || st.StartFailure != StartProgramNotFound {
+			t.Errorf("state = %+v, %v; want %s", st, err, StartProgramNotFound)
+		}
+	})
+
+	t.Run("another task's failure is the fallback", func(t *testing.T) {
+		d, nomad := registerRun(t)
+		nomad.SetCopies(testRunJob, api.AllocationListStub{ID: "a1", ClientStatus: "failed", TaskStates: map[string]*api.TaskState{
+			"names": {State: "dead", Events: []*api.TaskEvent{{Type: "Driver Failure", DisplayMessage: "Failed to pull `busybox`: timeout"}}},
+			"web":   {State: "pending"},
+		}})
+		st, err := d.ScheduleRunState(ctx, testRunJob, "web")
+		if err != nil || st.StartFailure != StartImagePull {
+			t.Errorf("state = %+v, %v; want %s", st, err, StartImagePull)
+		}
 	})
 
 	t.Run("the newest Terminated event counts", func(t *testing.T) {
@@ -439,5 +478,46 @@ func TestStopAppStopsItsRuns(t *testing.T) {
 	}
 	if j := nomad.Job("whoami"); j == nil || !*j.Stop {
 		t.Error("the app's job wasn't stopped")
+	}
+}
+
+// TestClassifyStartFailure uses the shapes the docker driver and the container
+// runtime give: the pull ("Failed to pull `image`: ..."), the lookup ("Failed
+// to find docker image ..."), a program the image doesn't have, and the rest.
+func TestClassifyStartFailure(t *testing.T) {
+	tests := []struct {
+		name  string
+		event api.TaskEvent
+		want  string
+	}{
+		{"pull denied", api.TaskEvent{Type: "Driver Failure",
+			DisplayMessage: "Failed to pull `registry.example.com/team/app:1`: Error response from daemon: pull access denied for registry.example.com/team/app, repository does not exist or may require 'docker login'"},
+			StartImagePull},
+		{"pull, tag not found", api.TaskEvent{Type: "Driver Failure",
+			DisplayMessage: "Failed to pull `busybox:nope`: Error response from daemon: manifest for busybox:nope not found: manifest unknown: manifest unknown"},
+			StartImagePull},
+		{"image lookup, in driver_error", api.TaskEvent{Type: "Driver Failure",
+			Details: map[string]string{"driver_error": "Failed to find docker image \"busybox@sha256:abc\": no such image"}},
+			StartImagePull},
+		{"an image problem with no other word", api.TaskEvent{Type: "Driver Failure", DisplayMessage: "image is broken"}, StartImagePull},
+		{"executable not found", api.TaskEvent{Type: "Driver Failure",
+			DisplayMessage: "Failed to start container 1f2e: API error (400): OCI runtime create failed: runc create failed: unable to start container process: exec: \"nosuch\": executable file not found in $PATH: unknown"},
+			StartProgramNotFound},
+		{"no such file or directory, in details", api.TaskEvent{Type: "Driver Failure",
+			Details: map[string]string{"error": "OCI runtime create failed: exec: \"/app/run.sh\": stat /app/run.sh: no such file or directory: unknown"}},
+			StartProgramNotFound},
+		{"a program not found beats the word image", api.TaskEvent{Type: "Driver Failure",
+			DisplayMessage: "exec: \"x\": executable file not found in $PATH (image busybox)"}, StartProgramNotFound},
+		{"another driver failure", api.TaskEvent{Type: "Driver Failure", DisplayMessage: "Failed to create container: cgroup error"}, StartOther},
+		{"a setup failure", api.TaskEvent{Type: "Setup Failure", DisplayMessage: "failed to render template: missing key"}, StartOther},
+		{"a setup failure that says image is not an image problem", api.TaskEvent{Type: "Setup Failure", DisplayMessage: "artifact for the image is bad"}, StartOther},
+		{"no message", api.TaskEvent{Type: "Driver Failure"}, StartOther},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyStartFailure(&tt.event); got != tt.want {
+				t.Errorf("classifyStartFailure = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -1059,8 +1059,15 @@ func (n *Nomad) OOMRun(jobID string) {
 // FailRunStart ends the run without its task ever starting: a Driver Failure
 // event and a failed copy.
 func (n *Nomad) FailRunStart(jobID string) {
+	n.FailRunStartWith(jobID, "Failed to pull `busybox:nope`: unauthorized")
+}
+
+// FailRunStartWith is FailRunStart with the driver's message, as the docker
+// driver words it (it is the event's DisplayMessage and its driver_error).
+func (n *Nomad) FailRunStartWith(jobID, message string) {
 	n.setRunCopy(jobID, runCopy{status: api.AllocClientStatusFailed, state: "dead", failed: true,
-		events: []*api.TaskEvent{{Type: api.TaskDriverFailure, DisplayMessage: "Failed to pull image: unauthorized"}}})
+		events: []*api.TaskEvent{{Type: api.TaskDriverFailure, DisplayMessage: message,
+			Details: map[string]string{"driver_error": message}}}})
 }
 
 // terminated is the event Nomad adds when a task exits.

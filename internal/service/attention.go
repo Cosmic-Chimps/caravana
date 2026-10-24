@@ -396,7 +396,7 @@ func failedExitCode(r store.ScheduleRunRecord) *int {
 
 // runFailedSentence says why a failed run failed, as the schedule's detail on
 // the Schedules page does: "Exited with code 3.", "Stopped at the 5 min
-// limit.", "Couldn't start: Nomad refused the job." Another failure is the
+// limit.", "Couldn't start." (the reason is on the run's page). Another failure is the
 // run's own words as a sentence ("Ran out of memory.").
 func runFailedSentence(r store.ScheduleRunRecord, limit time.Duration) string {
 	switch {
@@ -404,10 +404,10 @@ func runFailedSentence(r store.ScheduleRunRecord, limit time.Duration) string {
 		return fmt.Sprintf("Exited with code %d.", *r.ExitCode)
 	case r.Status == store.RunStoppedAtLimit:
 		return "Stopped at the " + limitWords(limit) + " limit."
-	case r.Status == store.RunCouldNotStart && (r.Error == "" || r.Error == "could not start"):
-		return "Couldn't start."
 	case r.Status == store.RunCouldNotStart:
-		return "Couldn't start: " + strings.TrimSuffix(r.Error, ".") + "."
+		// Generic on purpose: the reason is on the run's page, not in a
+		// needs-you item or a notification.
+		return "Couldn't start."
 	case r.Error == "":
 		return "Failed."
 	}

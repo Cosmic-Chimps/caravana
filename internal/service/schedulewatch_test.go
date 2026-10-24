@@ -27,19 +27,22 @@ func TestRunOutcome(t *testing.T) {
 		{"exit 3", "", deploy.RunState{ExitCode: code(3), TaskStartedAt: started}, store.RunFailed, "exit 3"},
 		{"exit 127", "", deploy.RunState{ExitCode: code(127), TaskStartedAt: started}, store.RunFailed, "exit 127"},
 		{"out of memory", "", deploy.RunState{ExitCode: code(137), OOMKilled: true, TaskStartedAt: started}, store.RunFailed, "ran out of memory"},
-		{"a driver failure", "", deploy.RunState{StartFailed: true}, store.RunCouldNotStart, "could not start"},
+		{"a driver failure", "", deploy.RunState{StartFailed: true}, store.RunCouldNotStart, "Nomad couldn't start its copy"},
+		{"a start failure of another kind", "", deploy.RunState{StartFailed: true, StartFailure: deploy.StartOther}, store.RunCouldNotStart, "Nomad couldn't start its copy"},
+		{"the image can't be pulled", "", deploy.RunState{StartFailed: true, StartFailure: deploy.StartImagePull}, store.RunCouldNotStart, "the image couldn't be pulled"},
+		{"the program isn't in the image", "", deploy.RunState{StartFailed: true, StartFailure: deploy.StartProgramNotFound}, store.RunCouldNotStart, "no `sh` in the image"},
 		{"the limit", stopLimit, deploy.RunState{ExitCode: code(143), DesiredStatus: "stop", TaskStartedAt: started}, store.RunStoppedAtLimit, "stopped after 5 minutes"},
 		{"the owner", stopOwner, deploy.RunState{ExitCode: code(143), DesiredStatus: "stop", TaskStartedAt: started}, store.RunStopped, "stopped by the owner"},
 		{"the owner, though it exited 0 on the signal", stopOwner, deploy.RunState{ExitCode: code(0), DesiredStatus: "stop"}, store.RunStopped, "stopped by the owner"},
 		{"the app stopped", stopAppStopped, deploy.RunState{ExitCode: code(143)}, store.RunStopped, "the app was stopped"},
 		{"the schedule removed", stopScheduleRemoved, deploy.RunState{}, store.RunStopped, "the schedule was removed"},
 		{"stopped in Nomad", "", deploy.RunState{ExitCode: code(143), DesiredStatus: "stop", TaskStartedAt: started}, store.RunFailed, "stopped outside Caravana"},
-		{"never started, no event", "", deploy.RunState{}, store.RunCouldNotStart, "could not start"},
+		{"never started, no event", "", deploy.RunState{}, store.RunCouldNotStart, "Nomad couldn't start its copy"},
 		{"started, then the copy was lost", "", deploy.RunState{TaskStartedAt: started}, store.RunFailed, "its copy was lost"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, words := runOutcome(store.ScheduleRunRecord{StopReason: tt.reason}, tt.st, 5*time.Minute)
+			status, words := runOutcome(store.ScheduleRunRecord{StopReason: tt.reason, Command: []string{"sh", "-c", "true"}}, tt.st, 5*time.Minute)
 			if status != tt.wantStatus || words != tt.wantWords {
 				t.Errorf("runOutcome = %s %q, want %s %q", status, words, tt.wantStatus, tt.wantWords)
 			}
@@ -69,7 +72,12 @@ func TestWatchRuns(t *testing.T) {
 		{"exit 0", func(l *schedLab, j string) { l.nomad.FinishRunExit(j, 0) }, store.RunOK, "", new(0), true},
 		{"exit 3", func(l *schedLab, j string) { l.nomad.FinishRunExit(j, 3) }, store.RunFailed, "exit 3", new(3), true},
 		{"out of memory", func(l *schedLab, j string) { l.nomad.OOMRun(j) }, store.RunFailed, "ran out of memory", new(137), true},
-		{"the image can't be pulled", func(l *schedLab, j string) { l.nomad.FailRunStart(j) }, store.RunCouldNotStart, "could not start", nil, false},
+		{"the image can't be pulled", func(l *schedLab, j string) { l.nomad.FailRunStart(j) }, store.RunCouldNotStart, "the image couldn't be pulled", nil, false},
+		{"the program isn't in the image", func(l *schedLab, j string) {
+			l.nomad.FailRunStartWith(j, "Failed to start container abc: API error (400): OCI runtime create failed: runc create failed: unable to start container process: exec: \"echo\": executable file not found in $PATH: unknown")
+		}, store.RunCouldNotStart, "no `echo` in the image", nil, false},
+		{"another start failure", func(l *schedLab, j string) { l.nomad.FailRunStartWith(j, "Failed to create container: cgroup error") },
+			store.RunCouldNotStart, "Nomad couldn't start its copy", nil, false},
 		{"stopped outside Caravana", func(l *schedLab, j string) {
 			l.nomad.StartRun(j)
 			if err := l.svc.deployer.StopScheduleRun(context.Background(), j); err != nil {
