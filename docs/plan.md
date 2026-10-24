@@ -431,7 +431,9 @@ app directly: by its copy's address, or by its host port on `caravana0`, which a
 as the bridge gateway (172.26.64.1, lab-checked). An app that trusts `X-Forwarded-*` should trust
 only `10.99.0.1`, the address Traefik's requests come from, never the gateway. Isolation (a network
 per app, or firewall rules between copies) belongs with Phase 3's networking work. Until then the
-docs say: apps on one host trust each other.
+docs say: apps on one host trust each other. Asked for on 2026-10-24 by Frunchy's Megáfono sidecar,
+whose internal port (publish, approve, block) has only a bearer token as its lock here: a port that
+only the same app's services can reach, or a per-app network option; either shape would do.
 
 ### Routing by path and header (Phase 3 or later)
 
