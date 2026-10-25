@@ -133,9 +133,9 @@ the next.
   folding, search, the chips' counts, only-service and a copy, around with the highlight, Raw, a
   deploy during the step as a row and marker, Show older, Download's first lines and order, the
   app's tab, the sidebar item, a gone copy, no escape byte in any page or file).
-- [ ] T019 `cmd/caravana/gate_logs_test.go` + `gate_test.go`: the gate step `logs` per quickstart
+- [x] T019 `cmd/caravana/gate_logs_test.go` + `gate_test.go`: the gate step `logs` per quickstart
   §6 (`listLogs`, `getLogsAround`, `downloadLogs` with the gate's token, a deploy token's 403 on
-  each, a wrong `at` 422, a purged file 404 `log_rotated`, no `\x1b`/`\x07`/NUL in any answer).
+  each, a wrong `at` 422, a purged file 404 `log_rotated`, no `\x1b`/`\x07`/NUL in any answer; the purge itself is out of the lab's reach, see the note in the step).
 
 ## Phase 6: Docs
 
