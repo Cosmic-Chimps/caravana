@@ -43,8 +43,8 @@ func download(t *testing.T, e *env, q EnvLogQuery) string {
 }
 
 // The file: two header lines, then every row oldest first as tab-separated
-// fields, an estimated time with a trailing "~", a folded row written out as
-// many times as it stands for, tabs and control sequences gone from the text.
+// fields, an estimated time with a trailing "~", equal lines never folded (each is
+// written with its own time), tabs and control sequences gone from the text.
 func TestDownloadLogsFormat(t *testing.T) {
 	e := readEnv(t)
 	downloadFixture(e)
@@ -55,8 +55,8 @@ func TestDownloadLogsFormat(t *testing.T) {
 		"# caravana logs default/production 2026-10-24T00:40:00Z to 2026-10-25T00:40:00Z, read from 2026-10-24T00:40:00Z (app blog, levels error,warn,info)",
 		"2026-10-25T00:10:00.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:10:00Z first",
 		"2026-10-25T00:11:00.000Z\tblog/worker\tb7c20e11\tstderr\terror\t2026-10-25T00:11:00Z ERROR boom",
-		"2026-10-25T00:12:10.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:12:10Z GET /health 200",
-		"2026-10-25T00:12:10.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:12:10Z GET /health 200",
+		"2026-10-25T00:12:00.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:12:00Z GET /health 200",
+		"2026-10-25T00:12:05.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:12:05Z GET /health 200",
 		"2026-10-25T00:12:10.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:12:10Z GET /health 200",
 		"2026-10-25T00:12:10.000Z~\tblog/web\t9a4d13ff\tstdout\tinfo\tno time here",
 		"2026-10-25T00:20:00.000Z\tblog/web\t9a4d13ff\tstdout\tinfo\t2026-10-25T00:20:00Z a b",
@@ -97,6 +97,48 @@ func TestDownloadLogsHeaderFilters(t *testing.T) {
 	}
 	if len(lines) != 3 || lines[2] != "" { // nothing matches that text
 		t.Errorf("file = %q, want the two header lines only", got)
+	}
+}
+
+// The bug the review found: a search that leaves only equal consecutive lines
+// folded them into one row, and the file wrote that row N times at the newest
+// line's time. The file must hold the real lines, each with its own time, also
+// when another stream is merged by time.
+func TestDownloadLogsEqualLinesKeepTheirTimes(t *testing.T) {
+	e := readEnv(t)
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{
+		`2026-10-25T00:10:00Z json boom`,
+		`2026-10-25T00:10:01Z json boom`,
+		`2026-10-25T00:10:02Z json boom`,
+		`2026-10-25T00:10:03Z json boom`,
+		`2026-10-25T00:10:04Z json boom`,
+		`2026-10-25T00:10:05Z calm`,
+	}, wrote("00:11:00"))
+	e.nomad.AddLogFile(copyBlogWorker, "stderr", 0, []string{
+		`2026-10-25T00:10:02Z ERROR other boom`,
+	}, wrote("00:10:30"))
+
+	got := download(t, e, EnvLogQuery{App: "blog", Range: 24 * time.Hour, Q: "boom"})
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 2+6 {
+		t.Fatalf("file has %d lines, want the 2 header lines and 6 rows:\n%s", len(lines), got)
+	}
+	if !strings.Contains(lines[1], `q "boom"`) || !strings.Contains(lines[1], "to 2026-10-25T00:40:00Z") {
+		t.Errorf("header = %q", lines[1])
+	}
+	var times []string
+	for _, l := range lines[2:] {
+		times = append(times, strings.SplitN(l, "\t", 2)[0])
+	}
+	want := []string{
+		"2026-10-25T00:10:00.000Z", "2026-10-25T00:10:01.000Z", "2026-10-25T00:10:02.000Z",
+		"2026-10-25T00:10:02.000Z", "2026-10-25T00:10:03.000Z", "2026-10-25T00:10:04.000Z",
+	}
+	if fmt.Sprint(times) != fmt.Sprint(want) {
+		t.Errorf("times = %v, want %v", times, want)
+	}
+	if !strings.Contains(lines[4], "blog/worker") && !strings.Contains(lines[5], "blog/worker") {
+		t.Errorf("the worker's line isn't merged in by time:\n%s", got)
 	}
 }
 

@@ -307,7 +307,7 @@ func (s *Service) ReadLogs(ctx context.Context, q EnvLogQuery) (LogRead, error) 
 	readCtx, cancel := context.WithTimeout(ctx, s.logDeadline)
 	defer cancel()
 
-	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, streamBudget)
+	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, streamBudget, true)
 	if err != nil {
 		return LogRead{}, err
 	}
@@ -786,7 +786,7 @@ type logStream struct {
 // at a time, then parses and filters each. parent is the request's context and
 // ctx the one with the deadline; budget gives a stream's bytes for the number
 // of streams read (the page's streamBudget, or a download's).
-func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win logWindow, copies []logCopy, budget func(streams int) int64) ([]*logStream, error) {
+func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win logWindow, copies []logCopy, budget func(streams int) int64, fold bool) ([]*logStream, error) {
 	wanted := []logline.Stream{logline.Stdout, logline.Stderr}
 	if q.Stream == logline.Stdout || q.Stream == logline.Stderr {
 		wanted = []logline.Stream{q.Stream}
@@ -887,7 +887,7 @@ func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win
 
 	filter := q.filter()
 	for _, ls := range out {
-		finishLogStream(ls, win, filter)
+		finishLogStream(ls, win, filter, fold)
 	}
 	return out, nil
 }
@@ -899,8 +899,9 @@ func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win
 // The order matters: the sort times are made non-decreasing over every line of
 // the window, so a filter never moves a line; the filters come before
 // folding, so a search for 502 folds the 502s and a line between two equal
-// ones that the filter removes doesn't keep them apart.
-func finishLogStream(ls *logStream, win logWindow, filter logFilter) {
+// ones that the filter removes doesn't keep them apart. With fold false (the
+// download) every kept line is its own row, with its own time and ID.
+func finishLogStream(ls *logStream, win logWindow, filter logFilter, fold bool) {
 	short := ls.copy.short
 	lines := parseLogStream(short, ls.stream, ls.copy.StartedAt, ls.files, ls.res.raws)
 	ls.res.raws = nil
@@ -925,6 +926,13 @@ func finishLogStream(ls *logStream, win logWindow, filter logFilter) {
 	}
 	ls.lines = len(kept)
 
+	if !fold {
+		ls.rows = make([]LogEntry, 0, len(kept))
+		for j, l := range kept {
+			ls.rows = append(ls.rows, LogEntry{Line: l, App: ls.copy.app, Service: ls.copy.Service, Copy: short, sort: sorts[j]})
+		}
+		return
+	}
 	folded := logline.Fold(kept)
 	ls.rows = make([]LogEntry, 0, len(folded))
 	j := 0

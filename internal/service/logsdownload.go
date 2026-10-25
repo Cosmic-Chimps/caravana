@@ -15,8 +15,9 @@ import (
 )
 
 // Download (feature 024, research R4): the filter of a page as a text file,
-// oldest first, read with the same walk, parse, filter and fold as ReadLogs but
-// under bigger budgets and written out line by line.
+// oldest first, read with the same walk, parse and filter as ReadLogs (and no fold) but
+// under bigger budgets and written out line by line. Lines are not folded: the
+// file holds the real lines, each with its own time and ID.
 //
 // As in logsread.go, nothing here logs, stores or puts a line in an error.
 
@@ -69,7 +70,8 @@ func (b downloadBudgets) each(n int) int64 {
 //	# cut: the budget ended at <time>; older lines of copy <copy> weren't included
 //
 // A time ends in "~" when the line carried none and it was taken from an older
-// line. A folded row is written as many times as it stands for. Deploy rows
+// line. Every line is written as read, never folded (a page folds equal
+// consecutive lines into one row; a file keeps them all). Deploy rows
 // are merged in by time. The walk goes backwards from the newest line, so a
 // cut means the older lines are the missing ones; one "# cut:" line is written
 // per copy that was cut, last. Every text has its control sequences removed
@@ -109,7 +111,7 @@ func (s *Service) download(ctx context.Context, q EnvLogQuery, w io.Writer, b do
 
 	readCtx, cancel := context.WithTimeout(ctx, b.deadline)
 	defer cancel()
-	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, b.each)
+	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, b.each, false)
 	if err != nil {
 		return err
 	}
@@ -206,10 +208,7 @@ func writeDownload(ctx context.Context, w io.Writer, q EnvLogQuery, win logWindo
 		}
 		e := streams[best].rows[next[best]]
 		next[best]++
-		line := downloadLine(e)
-		for range e.Repeat + 1 {
-			bw.WriteString(line)
-		}
+		bw.WriteString(downloadLine(e))
 		if bw.Buffered() > 32<<10 {
 			if err := bw.Flush(); err != nil {
 				return err
