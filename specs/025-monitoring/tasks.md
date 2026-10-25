@@ -60,7 +60,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   service task's memory and `memory_max`, restarts, requested restarts, status, the newest
   `Terminated` event's exit code and time, job and group); the fakes for both; tests with the lab's
   numbers (1730 / 1312 against 1880 / 1408).
-- [ ] T004 [P] `internal/store/migrations/0019_metrics.sql` + `internal/store/metrics.go` + tests:
+- [x] T004 [P] `internal/store/migrations/0019_metrics.sql` + `internal/store/metrics.go` + tests:
   the six tables of data-model.md (`STRICT`, `WITHOUT ROWID` where it says), `EnsureSeries`,
   `EnsureLayout`, `WriteMetricsTick` (one transaction: minute rows, host, disks, an optional fold's
   rows by upsert, an optional prune, `started_at` once), `MinuteRows`, `SlotRows`, `HostRows`,
