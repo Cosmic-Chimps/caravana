@@ -324,9 +324,25 @@ func (s *Service) Start(ctx context.Context) error {
 // Wait blocks until every watcher has returned. Call it after cancelling
 // Start's context. The backup scheduler goes first: it can start volume runs,
 // which are watchers, so none can be added once it has stopped.
+//
+// Every goroutine Start launches is counted in one of the two groups (see
+// Start). One thing still outlives them: a store write cut off by the
+// cancellation. database/sql rolls such a transaction back and discards its
+// connection in a goroutine of its own after the caller has returned, and
+// SQLite checkpoints and deletes its -wal file when that connection closes. So
+// Wait ends by asking the store a question (Ping): with the store's single
+// connection it is answered only once the old one is gone, which makes closing
+// the store right after Wait safe (and a temp dir removable).
 func (s *Service) Wait() {
 	s.backupWatcher.Wait()
 	s.watchers.Wait()
+	if s.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// The error doesn't matter: a store that is already closed, or one
+		// that can't answer in time, has nothing left for Wait to protect.
+		_ = s.store.Ping(ctx)
+	}
 }
 
 // GetApp returns the stored app, or store.ErrNotFound.
