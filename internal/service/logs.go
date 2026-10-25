@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/logline"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -17,8 +19,16 @@ type LogLine struct {
 	Copy    string // the copy's ID (a Nomad allocation ID)
 	Service string // the service the copy belongs to
 	Stream  deploy.LogStream
-	Text    string     // the line without its newline; plain text, never markup
-	Time    *time.Time // when Caravana received it; nil for the tail, which has no time
+	Text    string     // the line without its newline, its control sequences removed; plain text, never markup
+	Time    *time.Time // the line's time: read from the line or estimated for the tail, the arrival's for a followed line; nil only when none is known
+	// ID is the line's address (<copy>.<stream>.<file>.<offset>) for as long as Nomad keeps
+	// its file; zero for a followed line and for a tail line read without files.
+	ID logline.LineID
+	// Level is how serious the line says it is, as the console reads it.
+	Level logline.Level
+	// TimeSource says where Time came from: the line itself, an older line's
+	// (estimated) or the arrival of a followed line (received).
+	TimeSource logline.TimeSource
 }
 
 // LogQuery says which output to read.
@@ -136,9 +146,7 @@ func (s *Service) tailLogs(ctx context.Context, targets []logTarget, lines int, 
 	var wg sync.WaitGroup
 	for i, t := range targets {
 		wg.Go(func() {
-			failed[i] = s.readStream(ctx, t, logTailBytes, false, func(l deploy.LogLine) {
-				read[i] = append(read[i], logLineOf(t.copy, l, nil))
-			})
+			read[i], failed[i] = s.tailStream(ctx, t)
 		})
 	}
 	wg.Wait()
@@ -200,16 +208,19 @@ func firstErrorIfAll(errs []error) error {
 func (s *Service) followLogs(ctx context.Context, targets []logTarget, out chan<- LogLine) error {
 	type arrival struct {
 		copy Copy
-		line deploy.LogLine
+		line logline.Line
 	}
 	inner := make(chan arrival)
 	failed := make([]error, len(targets))
 	var wg sync.WaitGroup
 	for i, t := range targets {
 		wg.Go(func() {
+			var prev *logline.Line // the stream's line before, for the level of a continuation
 			failed[i] = s.readStream(ctx, t, 0, true, func(l deploy.LogLine) {
+				p := parseFrame(l, prev)
+				prev = &p
 				select {
-				case inner <- arrival{t.copy, l}:
+				case inner <- arrival{t.copy, p}:
 				case <-ctx.Done():
 				}
 			})
@@ -223,7 +234,7 @@ func (s *Service) followLogs(ctx context.Context, targets []logTarget, out chan<
 	for item := range inner {
 		now := time.Now().UTC()
 		select {
-		case out <- logLineOf(item.copy, item.line, &now):
+		case out <- followedLine(item.copy, item.line, now):
 		case <-ctx.Done():
 			// Producers see the same cancellation and stop; wait for them.
 			for range inner {
@@ -239,6 +250,88 @@ func (s *Service) followLogs(ctx context.Context, targets []logTarget, out chan<
 	return nil
 }
 
-func logLineOf(c Copy, l deploy.LogLine, at *time.Time) LogLine {
-	return LogLine{Copy: c.ID, Service: c.Service, Stream: l.Stream, Text: l.Text, Time: at}
+// tailStream reads the end of one stream: its last logTailBytes, from the
+// copy's files with the walk ReadLogs uses, so each line has its address and its
+// time. A stream that has no file (the copy hasn't written to it, or a Nomad that
+// keeps its output only in the frame stream) is read from that instead, and its
+// lines have no address and a time only when they carry one. A copy Nomad no
+// longer has has no lines.
+func (s *Service) tailStream(ctx context.Context, t logTarget) ([]LogLine, error) {
+	all, err := s.deployer.LogFiles(ctx, t.copy.ID, t.copy.Service)
+	if err != nil {
+		if errors.Is(err, deploy.ErrCopyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var files []deploy.LogFile
+	for _, f := range all {
+		if f.Stream == logline.Stream(t.stream) {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return s.tailFrames(ctx, t)
+	}
+	res, err := s.walkLogStream(ctx, t.copy, files, walkLimits{budget: logTailBytes})
+	if err != nil {
+		if errors.Is(err, deploy.ErrCopyNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	lines := parseLogStream(shortCopy(t.copy.ID), logline.Stream(t.stream), t.copy.StartedAt, files, res.raws)
+	out := make([]LogLine, len(lines))
+	for i, l := range lines {
+		out[i] = logLineFrom(t.copy, l)
+		if !l.Time.IsZero() {
+			at := l.Time
+			out[i].Time = &at
+		}
+	}
+	return out, nil
+}
+
+// tailFrames is tailStream's read of a stream without files: Nomad's own tail.
+func (s *Service) tailFrames(ctx context.Context, t logTarget) ([]LogLine, error) {
+	var out []LogLine
+	var prev *logline.Line
+	err := s.readStream(ctx, t, logTailBytes, false, func(l deploy.LogLine) {
+		p := parseFrame(l, prev)
+		prev = &p
+		ll := logLineFrom(t.copy, p)
+		if p.TimeSource == logline.FromLine {
+			at := p.Time
+			ll.Time = &at
+		} else {
+			ll.TimeSource = ""
+		}
+		out = append(out, ll)
+	})
+	return out, err
+}
+
+// parseFrame reads one line the frame stream gave, which has no file position
+// and no bounds: its time is taken only if the line carries one.
+func parseFrame(l deploy.LogLine, prev *logline.Line) logline.Line {
+	return logline.Parse(l.Text, logline.Stream(l.Stream), logline.LineID{}, logline.Bounds{}, prev)
+}
+
+// logLineFrom is the answer's line for a parsed one, without its time. A JSON
+// line's text is the whole line, as for every other line: its message and the
+// raw object are the console's.
+func logLineFrom(c Copy, l logline.Line) LogLine {
+	text := l.Text
+	if l.Raw != "" {
+		text = l.Raw
+	}
+	return LogLine{Copy: c.ID, Service: c.Service, Stream: deploy.LogStream(l.Stream), Text: text,
+		ID: l.ID, Level: l.Level, TimeSource: l.TimeSource}
+}
+
+// followedLine is a line that arrived at the time given.
+func followedLine(c Copy, l logline.Line, at time.Time) LogLine {
+	out := logLineFrom(c, l)
+	out.Time, out.TimeSource = &at, logline.Received
+	return out
 }

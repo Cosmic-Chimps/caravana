@@ -77,7 +77,7 @@ the next.
   merge oldest first streamed, `# newest last` then the header, tab-separated fields, `~` on an
   estimated time, folded rows written out, `# deploy …` rows, the 8/64 MiB budgets with `# cut:`,
   one at a time (`ErrDownloadBusy`), control bytes stripped; the file name helper.
-- [ ] T010 [US3] `internal/service/logs.go` + `live.go` + tests: `WatchLogs(place, on)` and the
+- [x] T010 [US3] `internal/service/logs.go` + `live.go` + tests: `WatchLogs(place, on)` and the
   `logs` notice from `followLogs` per stream only while a Logs page with Live is open, debounced
   2 s, no text in the notice; today's per-app `Logs` lines gain `ID`, `Level`, `TimeSource` and
   the stripped `Text` (and `Time` on tail lines read from the line); the sentinel test: a line's

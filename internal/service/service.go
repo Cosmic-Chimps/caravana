@@ -89,6 +89,7 @@ type Service struct {
 	logSem      chan struct{} // holds one token per environment read going; its size is logReadsAtOnce
 	logDeadline time.Duration // how long one page read may take
 	downloading atomic.Bool   // a download is going, see logsdownload.go
+	logWatch    logWatcher    // the places Live pages watch, see live.go
 
 	// Domains (feature 023), see domains.go and domainwatch.go.
 	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching
