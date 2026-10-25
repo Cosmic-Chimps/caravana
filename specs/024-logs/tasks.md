@@ -73,7 +73,7 @@ the next.
 - [ ] T008 [US2] `internal/service/logsaround.go` + tests: `LogsAround(ctx, copy, at, n)`: `readat`
   ±16 KiB around the offset crossing a file edge, both streams of the copy over the same span,
   every level, the anchor's id, `ErrLogRotated` on a purged file, `ErrNotFound` on a gone copy.
-- [ ] T009 [US4] `internal/service/logsdownload.go` + tests: `DownloadLogs(ctx, q, w)`: the k-way
+- [x] T009 [US4] `internal/service/logsdownload.go` + tests: `DownloadLogs(ctx, q, w)`: the k-way
   merge oldest first streamed, `# newest last` then the header, tab-separated fields, `~` on an
   estimated time, folded rows written out, `# deploy …` rows, the 8/64 MiB budgets with `# cut:`,
   one at a time (`ErrDownloadBusy`), control bytes stripped; the file name helper.

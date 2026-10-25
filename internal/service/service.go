@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -87,6 +88,7 @@ type Service struct {
 	// Logs (feature 024), see logsread.go.
 	logSem      chan struct{} // holds one token per environment read going; its size is logReadsAtOnce
 	logDeadline time.Duration // how long one page read may take
+	downloading atomic.Bool   // a download is going, see logsdownload.go
 
 	// Domains (feature 023), see domains.go and domainwatch.go.
 	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching
