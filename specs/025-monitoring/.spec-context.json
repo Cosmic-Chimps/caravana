@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Monitoring and capacity",
   "branch": "025-monitoring",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planned",
   "history": [
     {
       "step": "specify",
@@ -11,6 +11,13 @@
       "kind": "start",
       "by": "extension",
       "at": "2026-10-25T22:53:26.560Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-25T22:57:20.176Z"
     }
   ]
 }
