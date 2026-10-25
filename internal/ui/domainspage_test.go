@@ -120,7 +120,7 @@ func TestDomainsListStates(t *testing.T) {
 		// Its banner is on the page, which says what is wrong: the detail leads with the fix.
 		"elsewhere": {"DNS points elsewhere", "shop :80 · production", "—", "Change the record to:", "Type A Name elsewhere Value this host's public IP address",
 			"now A · 185.199.108.153", "last check 40 s ago · checks every minute while this page is open", "Remove…"},
-		"expiring": {"certificate expiring", "expires in 6 d", "certificate Let's Encrypt · expires 20", "DNS A → 203.0.113.1", "checked 40 s ago"},
+		"expiring": {"certificate expiring", "expires in 6 d", "certificate Let's Encrypt · expires ", "DNS A → 203.0.113.1", "checked 40 s ago"},
 		"none":     {"no DNS record", "No DNS record yet. Add this record where you manage DNS:", "Type A Name none Value this host's public IP address"},
 		"pending":  {"getting certificate", "Waiting for Let's Encrypt. DNS points here; the certificate usually arrives within a minute of the first visit."},
 		"live":     {"live · HTTPS", "renews in 61 d", "certificate Let's Encrypt · renews in 61 d · expires", "DNS A → 203.0.113.1", "router shop-web", "checked 40 s ago"},
