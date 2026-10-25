@@ -187,3 +187,16 @@ The designer checks at 127.0.0.1:7070 against `p9-logs.png`:
   the test's fake); a gone copy;
 - the app's Logs tab as the same page filtered, with "All logs";
 - narrow at 390px.
+
+## Rulings on the research (designer, 2026-10-24)
+
+1. **Levels:** an unmatched line is `info` on either stream (not `warn` on stderr); a continuation line takes
+   the level of the line above; the open row names the stream. This replaces the stderr fallback above.
+2. **Lines around this** is addressed by a line id, `?copy=<id>&at=<stream>.<file>.<offset>`, with the words
+   unchanged and `#line-<copy>-<n>` the highlight (a time can be missing or shared by many lines).
+3. **Estimated times:** an ordinary time is fg-3, an estimated one (a line with no time of its own, taking the
+   older line's before it) is fg-4 with a leading "~" and `title` "estimated: this line carried no time; taken
+   from the line before it". No "now" for an old line. Download is oldest first with a first line `# newest
+   last`; the page stays newest first.
+4. The histogram is inline SVG (the console's first, recorded in DESIGN.md as the one SVG chart); bins older
+   than what was read are hatched, never zero.

@@ -1,0 +1,16 @@
+{
+  "workflow": "speckit",
+  "specName": "Logs",
+  "branch": "024-logs",
+  "currentStep": "specify",
+  "status": "specified",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-25T02:22:29.885Z"
+    }
+  ]
+}
