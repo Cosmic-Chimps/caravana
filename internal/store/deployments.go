@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -311,6 +312,46 @@ func (s *Store) ListRecentDeployments(ctx context.Context, limit int) ([]Deploym
 	}
 	if out == nil {
 		out = []DeploymentRecord{}
+	}
+	return out, nil
+}
+
+// terminalStatuses lists the final statuses, derived from allowedNext: a
+// status some other status may change to and that itself has no way out. The
+// list is sorted, so the SQL built from it never changes between calls.
+func terminalStatuses() []Status {
+	var out []Status
+	for _, nexts := range allowedNext {
+		for _, n := range nexts {
+			if _, hasWayOut := allowedNext[n]; !hasWayOut && !slices.Contains(out, n) {
+				out = append(out, n)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// ListDeploymentsIn returns every deployment of the apps in project and
+// environment that overlaps [from, to] (both ends inclusive): it was created
+// in the range, or it ended in it. A deployment ended when it reached a final
+// status, and for those UpdatedAt is the end (there is no finishedAt column),
+// so a deployment still running is listed only by its start. Oldest first by
+// creation, then by ID. An empty result is nil.
+func (s *Store) ListDeploymentsIn(ctx context.Context, project, environment string, from, to time.Time) ([]DeploymentRecord, error) {
+	final := terminalStatuses()
+	marks := strings.TrimSuffix(strings.Repeat("?, ", len(final)), ", ")
+	f, t := formatTime(from), formatTime(to)
+	args := []any{project, environment, f, t, f, t}
+	for _, st := range final {
+		args = append(args, string(st))
+	}
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+` WHERE project = ? AND environment = ?
+		AND ((created_at >= ? AND created_at <= ?) OR (updated_at >= ? AND updated_at <= ? AND status IN (`+marks+`)))
+		ORDER BY created_at, seq`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list deployments of %s/%s in %s..%s: %w", project, environment, f, t, err)
 	}
 	return out, nil
 }

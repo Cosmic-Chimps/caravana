@@ -46,7 +46,7 @@ the next.
   `Logs` maps them (`ErrNomadUnavailable`, a 404 as `ErrLogRotated`); the `deploytest` fake file
   system (files of lines per copy and stream, `ls`/`readat`, append, purge) as the seam's second
   implementation; tests for the walk's inputs.
-- [ ] T004 [P] `internal/store/deployments.go` + test: `ListDeploymentsIn(ctx, project,
+- [x] T004 [P] `internal/store/deployments.go` + test: `ListDeploymentsIn(ctx, project,
   environment, from, to)` over `created_at` and the terminal `updated_at` of the place's apps
   (join on `apps`); no migration.
 
