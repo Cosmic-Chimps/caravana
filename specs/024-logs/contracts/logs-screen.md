@@ -232,3 +232,42 @@ The thirteen departures from the contract are accepted as proposed:
 11. The 400 and 404 rules for the logs routes.
 12. The download's name uses the console's clock.
 13. The coverage note is drawn only when the read was cut.
+
+### Critique rulings (designer, 2026-10-25)
+
+From the impeccable critique of the built page (`.impeccable/critique/2026-10-25T19-54-55Z__internal-ui-templates-logs-html.md`).
+
+1. **Repeats fold before the filter** (this reverses the research's filter-then-fold). "×N" means N consecutive equal
+   lines *as the copy wrote them*. Folding after a search joined lines a quarter of an hour apart into one row at
+   one time (92 JSON errors became "×92" at the newest one's time while the histogram spread them over the range).
+   Now each stream folds first, then the level and search filters keep or drop the folded rows: a search shows
+   each matching line where the copy wrote it, and equal lines that are adjacent in the stream still fold (the
+   nginx health-check shape). The histogram's stamps and the counts stay per line (a folded row's lines each
+   count). The download (fold off) is unchanged.
+2. **The chips count the range, and the cap is said.** The error and warn chips' counts are the range's, the
+   histogram's own numbers (`LogRead.LevelCounts`, from the same stamps), shown only on a chip that is on, as ruled
+   before: "error 48" beside "245 errors" was two numbers with one name. When the stream holds the 500-row cap, its
+   head says "newest 500 lines · Show older".
+3. **The narrow rail's chips name the app.** With more than one app in the environment each rail item carries
+   `<app>/` before the service (hidden wide, where the group head says it; shown under 900px, where the heads are
+   hidden): "web web web" in one hue was unreadable on a phone.
+4. **A stale open link says so.** An `open` id that isn't among the rows read draws, in the stream head, "That line
+   isn't in what was read. Show older, or open the lines around it." with "Lines around this" linking
+   `?copy=<its copy>&at=<its id>`. An unparsable `open` stays the 400.
+5. **The strip links the app, and "Lines like this".** The first sentence names the app as a link ("On `stdout` of
+   `chatter`/`web`, copy `4026d666`."; with one app in the read, "of `web` of `chatter`"). The first-seen note
+   compares the text with its time cut out and every run of digits collapsed to one placeholder, so "attempt 938"
+   and "attempt 939" count together, worded "Lines like this: first seen 19:28 UTC today, 91 times since." and
+   "Lines like this: seen once in this range." ("in what was read" when the read is partial).
+6. **The smaller rulings.** The Live/Paused button has a `title` naming the action ("Pause following" while live,
+   "Follow new lines" while paused). Deploy rows and markers name the version always, v0 included ("`chatter` v0
+   started rolling out · …", "v0 rolling out", "v0 live"; a deployment that never registered a version has none).
+   One deployment is one histogram label ("┆ chatter v0 rolling out · live"); several keep "and N more", N being
+   the other deployments. "streaming from 0 copies" is "no copies running". The around view hides the range bar,
+   the level chips and the search (it is every level, this copy only, unfiltered). The hidden table's first column
+   is "From (UTC)".
+7. **Estimated times are fg-3** (overriding the research ruling 3). Real and estimated times are both fg-3 and
+   differ only by the leading "~" and its `title`; fg-4 on ink-0 is below AA for text and an estimated time is the
+   row's only time. fg-4 stays for non-text marks.
+8. **Left as they are.** The download's trailing "~" (a file's columns, not the page's), the library's time prefix
+   in the text, and hues by hash of `<app>/<service>`.
