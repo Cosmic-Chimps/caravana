@@ -1369,6 +1369,9 @@
   .cv-lrow { position: relative; display: grid; grid-template-columns: 104px 48px 190px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 5px 16px; font: 400 13px/20px var(--font-mono); color: var(--color-fg-1); text-decoration: none; }
   a.cv-lrow:hover { background: var(--color-ink-1); color: var(--color-fg-1); }
   .cv-lrow:focus-visible { outline-offset: -2px; }
+  /* A row opened by its link (#line-…, the open row, the around view's line) lands below the sticky top bar
+     (52px), with 12px of air, not under it. */
+  .cv-lrow { scroll-margin-top: calc(52px + 12px); }
   .cv-lrow > * { min-width: 0; }
   /* The ordinary time is fg-3; an estimated one (the line carried none, so it took the older line's) is
      fg-4, and the template writes its leading "~" and the title. */
