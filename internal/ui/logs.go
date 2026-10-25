@@ -647,14 +647,17 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 	if err != nil {
 		return nil, err
 	}
-	deploys = slices.DeleteFunc(deploys, func(d service.DeployRow) bool {
+	// The histogram spans the whole range, so every deploy in it is a marker; only
+	// the stream's rows take the cut, since a row older than the oldest line shown
+	// would sit under lines it came before.
+	rows := slices.DeleteFunc(slices.Clone(deploys), func(d service.DeployRow) bool {
 		return d.At.Before(floor) || (!q.Before.IsZero() && !d.At.Before(q.Before))
 	})
 
 	reg.lines, reg.copies, reg.hist, reg.cover = read.Lines, read.Copies, read.Histogram(), read.Coverage
 	reg.Dropped = read.Dropped
 	reg.Hist = histOf(reg.hist, read.Coverage, deploys, rng)
-	reg.Items = s.logsItems(q, read.Lines, deploys, read.Copies)
+	reg.Items = s.logsItems(q, read.Lines, rows, read.Copies)
 	reg.Head = streamHead(q, read.Copies, reg.Problem != "")
 	if !q.Before.IsZero() {
 		reg.Head.Older = &logsOlderNote{Before: clockOf(now, q.Before), Back: q.href(fresh, func(q *logsReq) { q.Live = true })}
