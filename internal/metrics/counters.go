@@ -23,6 +23,12 @@ const (
 	MaxGap = 90 * time.Second
 )
 
+// StartJitter is how far process_start_time_seconds may move between two
+// scrapes of one Traefik process before it counts as a restart. The value is
+// not a stable start: on Traefik 3.7.13 it drifted back 1-4 s between scrapes
+// of one process, while a real restart moved it by 359 s (lab, observed).
+const StartJitter = 10 * time.Second
+
 // SeriesKey names one counter series by the labels Caravana keeps.
 type SeriesKey struct {
 	Name     string
@@ -82,14 +88,16 @@ func ReadSnapshot(r io.Reader) (Snapshot, error) {
 // by Prometheus' rules for a counter: a value lower than before means the
 // counter restarted at zero, so the delta is the new value; a series the
 // previous scrape didn't have counts from zero; a series that went away is
-// dropped. A change of the start time means Traefik restarted, so every series
-// counts from zero. The bool is false when gap is outside MinGap..MaxGap:
+// dropped. A start time that moved by more than StartJitter means Traefik
+// restarted, so every series counts from zero; a smaller move is the same
+// process. The bool is false when gap is outside MinGap..MaxGap:
 // nothing is counted and the caller keeps now as the new baseline.
 func Delta(prev, now Snapshot, gap time.Duration) (map[SeriesKey]float64, bool) {
 	if gap < MinGap || gap > MaxGap {
 		return nil, false
 	}
-	restarted := prev.HasStart && now.HasStart && prev.Start != now.Start
+	restarted := prev.HasStart && now.HasStart &&
+		math.Abs(now.Start-prev.Start) > StartJitter.Seconds()
 	out := make(map[SeriesKey]float64, len(now.Series))
 	for k, v := range now.Series {
 		p, seen := prev.Series[k]
@@ -102,8 +110,9 @@ func Delta(prev, now Snapshot, gap time.Duration) (map[SeriesKey]float64, bool) 
 	return out, true
 }
 
-// Minute is one Traefik service's minute: requests and 5xx answers (every
-// protocol), and the latency histogram of the protocols that end (http, grpc).
+// Minute is one Traefik service's minute: requests (every protocol), 5xx
+// answers (http and sse only) and the latency histogram of the protocols that
+// end (http, grpc).
 type Minute struct {
 	Requests int64
 	Errors   int64
@@ -115,8 +124,14 @@ type Minute struct {
 // Websocket and SSE last as long as the connection, so they never do.
 func timedProtocol(p string) bool { return p == "http" || p == "grpc" }
 
+// httpCodeProtocol says whether a protocol's code label is an HTTP status. For
+// grpc it is the gRPC status ("2" is UNKNOWN, "5" is NOT_FOUND), so a grpc
+// request is a request but never a 5xx.
+func httpCodeProtocol(p string) bool { return p == "http" || p == "sse" }
+
 // TraefikMinute sums a Delta's series per Traefik service (the label as
-// written, "<app>-<service>@nomad"): requests, 5xx answers, and the buckets of
+// written, "<app>-<service>@nomad"): requests, 5xx answers (http and sse
+// only), and the buckets of
 // the http and grpc protocols, made monotonic by a running maximum and stored
 // per bucket. Traefik gives every series of a histogram the same bounds, so
 // the layout is the service's finite bounds. A service present with zero
@@ -134,7 +149,7 @@ func TraefikMinute(deltas map[SeriesKey]float64) map[string]Minute {
 		switch k.Name {
 		case NameRequests:
 			reqs[k.Service] += v
-			if len(k.Code) > 0 && k.Code[0] == '5' {
+			if httpCodeProtocol(k.Protocol) && len(k.Code) > 0 && k.Code[0] == '5' {
 				errs[k.Service] += v
 			}
 		case NameBucket:

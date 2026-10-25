@@ -41,13 +41,16 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 - [x] T002 [P] New pure package `internal/metrics`: `text.go` (`ParseText` for the named families:
   the 0.0.4 format, escapes, `+Inf`/`-Inf`/`NaN`, an optional timestamp, `# HELP`/`# TYPE` skipped,
   a malformed line an error naming its number), `counters.go` (`Delta` with the reset and
-  new-series rules, the 50–90 s window, `process_start_time_seconds` per T001;
-  `TraefikMinute` summing requests, 5xx and the buckets of `http`/`grpc` only per service key),
+  new-series rules, the 50–90 s window, `process_start_time_seconds` read as a restart only when it
+  moves by more than 10 s (`StartJitter`; it drifts 1–4 s a minute in one process, lab, observed);
+  `TraefikMinute` summing requests (every protocol), 5xx (`http` and `sse` only: for `grpc` the
+  `code` is a gRPC status) and the buckets of `http`/`grpc` only per service key),
   `histogram.go` (`Layout`, `Buckets`, `Merge`, the stored text form and its parser, `Quantile`
   with Prometheus' interpolation, the running maximum, `+Inf` → over, empty → none), `real.go`
   (`HTTPSource`: `Accept: text/plain;version=0.0.4`, 8 MiB limit, 5 s, 404 → `ErrOff`, dial errors →
   `ErrUnreachable`), `metricstest` (a fake source with a fixture a test changes between ticks).
-  Tables: the lab's fixture first, research R2's table (2 ms, 40 ms, 180 ms, 820 ms, 3 s against the
+  Tables: the lab's fixture first (`testdata/traefik.prom`, Traefik 3.7.13: five services, `http`,
+  `sse` and `grpc`; `fixture_test.go`), research R2's table (2 ms, 40 ms, 180 ms, 820 ms, 3 s against the
   finer buckets), a reset, a new series, a non-monotonic scrape, a quantile in `+Inf`; a test that
   only `real.go` imports `net/http` and nothing imports `nomad`, `service` or `store`.
 - [ ] T003 [P] `internal/deploy/host.go`, `reserved.go` + `deploytest`: `HostStats(ctx,

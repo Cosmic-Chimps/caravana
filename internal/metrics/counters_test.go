@@ -95,6 +95,34 @@ func TestDeltaRules(t *testing.T) {
 			want: map[metrics.SeriesKey]float64{key("200"): 12},
 		},
 		{
+			name: "a start time that drifted back 3 s is the same process (lab, observed)",
+			prev: mk(1792969752, true, map[metrics.SeriesKey]float64{key("200"): 10}),
+			now:  mk(1792969749, true, map[metrics.SeriesKey]float64{key("200"): 12}),
+			gap:  time.Minute, ok: true,
+			want: map[metrics.SeriesKey]float64{key("200"): 2},
+		},
+		{
+			name: "a start time that moved 10 s is still the same process",
+			prev: mk(1000, true, map[metrics.SeriesKey]float64{key("200"): 10}),
+			now:  mk(1010, true, map[metrics.SeriesKey]float64{key("200"): 12}),
+			gap:  time.Minute, ok: true,
+			want: map[metrics.SeriesKey]float64{key("200"): 2},
+		},
+		{
+			name: "a start time that moved 359 s is a restart (lab, observed)",
+			prev: mk(1792969752, true, map[metrics.SeriesKey]float64{key("200"): 10}),
+			now:  mk(1792970111, true, map[metrics.SeriesKey]float64{key("200"): 12}),
+			gap:  time.Minute, ok: true,
+			want: map[metrics.SeriesKey]float64{key("200"): 12},
+		},
+		{
+			name: "a start time that moved forward by more than 10 s is a restart",
+			prev: mk(1000, true, map[metrics.SeriesKey]float64{key("200"): 10}),
+			now:  mk(1011, true, map[metrics.SeriesKey]float64{key("200"): 12}),
+			gap:  time.Minute, ok: true,
+			want: map[metrics.SeriesKey]float64{key("200"): 12},
+		},
+		{
 			name: "the same start time changes nothing",
 			prev: mk(100, true, map[metrics.SeriesKey]float64{key("200"): 10}),
 			now:  mk(100, true, map[metrics.SeriesKey]float64{key("200"): 12}),
@@ -305,6 +333,38 @@ func TestTraefikMinuteErrorsAre5xx(t *testing.T) {
 	m := metrics.TraefikMinute(d)[svc]
 	if m.Requests != 100 || m.Errors != 4 {
 		t.Fatalf("requests %d errors %d", m.Requests, m.Errors)
+	}
+}
+
+// A table of which protocols count where: every protocol is a request, only
+// http and sse can be a 5xx (for grpc the code is a gRPC status), only http and
+// grpc are timed.
+func TestTraefikMinuteProtocols(t *testing.T) {
+	tests := []struct {
+		protocol, code string
+		errors, timed  int64
+	}{
+		{"http", "503", 1, 1},
+		{"http", "200", 0, 1},
+		{"sse", "500", 1, 0},
+		{"sse", "200", 0, 0},
+		{"grpc", "2", 0, 1},
+		{"grpc", "5", 0, 1}, // NOT_FOUND, not a server error
+		{"websocket", "500", 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.protocol+"/"+tt.code, func(t *testing.T) {
+			d := map[metrics.SeriesKey]float64{
+				{Name: metrics.NameRequests, Service: svc, Code: tt.code, Method: "GET", Protocol: tt.protocol}:            1,
+				{Name: metrics.NameBucket, Service: svc, Code: tt.code, Method: "GET", Protocol: tt.protocol, Le: "1"}:     1,
+				{Name: metrics.NameBucket, Service: svc, Code: tt.code, Method: "GET", Protocol: tt.protocol, Le: "+Inf"}:  1,
+				{Name: metrics.NameBucket, Service: svc, Code: tt.code, Method: "GET", Protocol: tt.protocol, Le: "0.005"}: 0,
+			}
+			m := metrics.TraefikMinute(d)[svc]
+			if m.Requests != 1 || m.Errors != tt.errors || m.Latency.Buckets.Total() != tt.timed {
+				t.Fatalf("%+v, want 1 request, %d errors, %d timed", m, tt.errors, tt.timed)
+			}
+		})
 	}
 }
 
