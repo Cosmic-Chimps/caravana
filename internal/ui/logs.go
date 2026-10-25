@@ -379,9 +379,11 @@ type logsView struct {
 	Places       logsPlaces
 	Search       logsSearch
 	Chips        []logsChip
-	// The rail and, in the "lines around this" view, its notice.
-	Rail   logsRail
-	Around *logsAround
+	// The rail and, in the "lines around this" view, its notice. AroundView says the page is that
+	// view, which has no range, search or levels (every level, this copy only, around one line).
+	Rail       logsRail
+	Around     *logsAround
+	AroundView bool
 	// Region is the live region. Following says the page draws it again on the logs
 	// notice, from RegionHref.
 	Region       *logsRegion
@@ -488,7 +490,7 @@ type logsStreamHead struct {
 	// Feed is the count of new lines a paused page shows when it has script; nil where
 	// it makes no sense (the around view, an older page).
 	Feed   *logsFeed
-	Copies string // "8 copies", while Live
+	Copies string // "8 copies", while Live; "" when none run (the head says "no copies running")
 	// Older is the note of a view that shows lines before a time.
 	Older *logsOlderNote
 	// Cap is how many rows the stream holds when it holds the cap ("newest 500 lines"), 0 when
@@ -743,7 +745,10 @@ func streamHead(q logsReq, copies []service.LogCopy, problem bool) logsStreamHea
 				running++
 			}
 		}
-		h.Live, h.Copies = true, copyCount(running)
+		h.Live = true
+		if running > 0 {
+			h.Copies = copyCount(running)
+		}
 		return h
 	}
 	h.Paused = true
@@ -825,7 +830,7 @@ func (s *server) lineOf(q logsReq, l service.LogEntry, multi bool) *logsLine {
 func deployRowOf(d service.DeployRow) *logsDeploy {
 	u := d.At.UTC()
 	version := ""
-	if d.JobVersion > 0 {
+	if d.Versioned {
 		version = " v" + strconv.Itoa(d.JobVersion)
 	}
 	var words string
@@ -841,7 +846,7 @@ func deployRowOf(d service.DeployRow) *logsDeploy {
 		words = " failed its health checks"
 	case service.DeployReverted:
 		words = " failed its health checks · rolled back"
-		if d.RevertedTo > 0 {
+		if d.RevertedKnown {
 			words += " to v" + strconv.Itoa(d.RevertedTo)
 		}
 	case service.DeploySuperseded:
@@ -855,6 +860,58 @@ func deployRowOf(d service.DeployRow) *logsDeploy {
 		Failed:   d.Kind == service.DeployFailed || d.Kind == service.DeployReverted,
 		Sentence: sentence{mono(logsAppName(d.App)), plain(version + words)},
 	}
+}
+
+// deployVersion is "v24" for a deployment that registered a version (v0 is one), else "".
+func deployVersion(d service.DeployRow) string {
+	if !d.Versioned {
+		return ""
+	}
+	return "v" + strconv.Itoa(d.JobVersion)
+}
+
+// markWords is what a deploy marker says happened: "rolling out", "live", "failed".
+func markWords(d service.DeployRow) string {
+	switch d.Kind {
+	case service.DeployStarted:
+		return "rolling out"
+	case service.DeployLive:
+		return "live"
+	case service.DeployFailed:
+		return "failed"
+	case service.DeployReverted:
+		return "failed, rolled back"
+	default:
+		return "replaced"
+	}
+}
+
+// deployLabel is the histogram's label under the markers, from the deploys that have one (oldest
+// first): "┆ chatter v0 rolling out · live" when they are all one deployment's, so a deploy's start
+// and end are never "and 1 more"; with several deployments, the newest's name and how many others.
+func deployLabel(marked []service.DeployRow) string {
+	if len(marked) == 0 {
+		return ""
+	}
+	newest := marked[len(marked)-1]
+	label := "┆ " + logsAppName(newest.App)
+	if v := deployVersion(newest); v != "" {
+		label += " " + v
+	}
+	others := map[string]bool{}
+	for _, d := range marked {
+		if d.DeploymentID != newest.DeploymentID {
+			others[d.DeploymentID] = true
+		}
+	}
+	if len(others) > 0 {
+		return label + " and " + strconv.Itoa(len(others)) + " more"
+	}
+	var words []string
+	for _, d := range marked {
+		words = append(words, markWords(d))
+	}
+	return label + " " + strings.Join(words, " · ")
 }
 
 // ---- The histogram -----------------------------------------------------------------------
@@ -974,25 +1031,14 @@ func histOf(h service.LogHistogram, cov service.LogCoverage, deploys []service.D
 			multi = true
 		}
 	}
+	var marked []service.DeployRow // the deploys that have a marker, oldest first
 	for _, d := range deploys {
 		if d.At.Before(h.From) || d.At.After(h.To) || span <= 0 {
 			continue
 		}
-		title := ""
-		if d.JobVersion > 0 {
-			title = "v" + strconv.Itoa(d.JobVersion) + " "
-		}
-		switch d.Kind {
-		case service.DeployStarted:
-			title += "rolling out"
-		case service.DeployLive:
-			title += "live"
-		case service.DeployFailed:
-			title += "failed"
-		case service.DeployReverted:
-			title += "failed, rolled back"
-		default:
-			title += "replaced"
+		title := markWords(d)
+		if ver := deployVersion(d); ver != "" {
+			title = ver + " " + title
 		}
 		if multi {
 			title = logsAppName(d.App) + " " + title
@@ -1002,18 +1048,9 @@ func histOf(h service.LogHistogram, cov service.LogCoverage, deploys []service.D
 			Title:  title,
 			Failed: d.Kind == service.DeployFailed || d.Kind == service.DeployReverted,
 		})
+		marked = append(marked, d)
 	}
-	if n := len(v.Marks); n > 0 {
-		newest := deploys[len(deploys)-1]
-		label := "┆ " + logsAppName(newest.App)
-		if newest.JobVersion > 0 {
-			label += " v" + strconv.Itoa(newest.JobVersion)
-		}
-		if n > 1 {
-			label += " and " + strconv.Itoa(n-1) + " more"
-		}
-		v.Deploy = label
-	}
+	v.Deploy = deployLabel(marked)
 
 	if total == 0 {
 		v.Summary = "No lines in the last " + rng.Words
@@ -1331,6 +1368,7 @@ func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q l
 	v.Rail = rail
 
 	if q.At != "" {
+		v.AroundView = true
 		v.Around = s.aroundNotice(q, reg, now)
 	}
 	if strip := s.stripOf(r, q, reg, now); strip != nil {

@@ -1378,10 +1378,10 @@
      (52px), with 12px of air, not under it. */
   .cv-lrow { scroll-margin-top: calc(52px + 12px); }
   .cv-lrow > * { min-width: 0; }
-  /* The ordinary time is fg-3; an estimated one (the line carried none, so it took the older line's) is
-     fg-4, and the template writes its leading "~" and the title. */
+  /* Real and estimated times are both fg-3 (fg-4 is below AA for text); an estimated one (the line carried
+     none, so it took the older line's) differs only by the "~" the template writes and its title. */
   .cv-ltime { font: 400 12px/20px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--color-fg-3); }
-  .cv-ltime.cv-time-est, .cv-time-est { color: var(--color-fg-4); }
+  .cv-ltime.cv-time-est, .cv-time-est { color: var(--color-fg-3); }
   .cv-llvl { font: 400 12px/20px var(--font-mono); white-space: nowrap; color: var(--color-fg-2); }
   .cv-llvl-error { color: var(--color-failed); }
   .cv-llvl-warn { color: var(--color-warn); }

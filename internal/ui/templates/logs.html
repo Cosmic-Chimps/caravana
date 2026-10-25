@@ -31,18 +31,20 @@
   <div class="cv-lhead-tools">
     <form method="get" action="{{.Action}}">
       {{range .HeadHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
-      <nav class="cv-seg" aria-label="Time range">
+      {{if not .AroundView}}<nav class="cv-seg" aria-label="Time range">
         {{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
-      </nav>
-      <button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>
+      </nav>{{end}}
+      <button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" title="{{if .Live}}Pause following{{else}}Follow new lines{{end}}" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>
     </form>
   </div>
 </header>
 
+{{if or (not .AroundView) .Places.Any}}
 <form class="cv-logfilter" method="get" action="{{.Action}}" role="search" aria-label="Filter the logs">
   {{range .SearchHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
   {{with .Places.Projects}}<nav class="cv-seg" aria-label="Project">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
   {{with .Places.Environments}}<nav class="cv-seg" aria-label="Environment">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{if not .AroundView}}
   {{if .Places.Any}}<span class="cv-logfilter-div" aria-hidden="true"></span>{{end}}
   <label class="cv-logsearch">
     {{icon "search" 14}}
@@ -54,7 +56,9 @@
   <div class="cv-lvlchips" role="group" aria-label="Levels">
     {{range .Chips}}<a href="{{.Href}}" class="cv-lvlchip cv-lvl-{{.Level}}{{if .On}} cv-on{{end}}" title="{{.Title}}">{{.Level}}{{with .Count}} <span class="cv-lvlchip-n">{{.}}</span>{{end}}<span class="sr-only">, {{if .On}}shown{{else}}hidden{{end}}</span></a>{{end}}
   </div>
+  {{end}}
 </form>
+{{end}}
 
 {{with .Around}}
 <p class="cv-laround" role="status"><span>Around {{template "clock" .At}} in copy <span class="cv-inline-mono text-fg-1">{{.Copy}}</span> of <span class="cv-inline-mono text-fg-1">{{.Service}}</span>. Every level, this copy only.</span> <a href="{{.Back}}">Back to the stream</a></p>
@@ -89,7 +93,7 @@
 {{with .Hist}}{{template "logs-hist" .}}{{end}}
 <section class="cv-logstream" aria-label="Log lines">
   <div class="cv-lstreamhead">
-    {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> streaming from {{.Head.Copies}}</span><noscript><span>Following needs JavaScript. Reload the page to see newer lines.</span></noscript>
+    {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> {{if .Head.Copies}}streaming from {{.Head.Copies}}{{else}}no copies running{{end}}</span><noscript><span>Following needs JavaScript. Reload the page to see newer lines.</span></noscript>
     {{else if .Head.Paused}}<span>paused</span>{{with .Head.Feed}}<span class="cv-lpaused" data-logs-feed data-count-href="{{.CountHref}}" hx-trigger="sse:logs" hidden>· <span id="logs-paused-n"></span> new <span id="logs-paused-unit">lines</span> since <a href="{{.ShowHref}}">Show</a></span>{{end}}{{end}}
     {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
     {{if .Head.Cap}}<span class="cv-lstreamhead-cap">newest {{.Head.Cap}} lines · <a href="{{.Head.CapHref}}">Show older</a></span>{{end}}
@@ -134,7 +138,7 @@
   </svg>
   <table class="sr-only">
     <caption>Lines read in each slice of the range</caption>
-    <thead><tr><th scope="col">From</th><th scope="col">Lines</th><th scope="col">Errors</th></tr></thead>
+    <thead><tr><th scope="col">From (UTC)</th><th scope="col">Lines</th><th scope="col">Errors</th></tr></thead>
     <tbody>{{range .Table}}<tr><th scope="row">{{.From}}</th><td>{{.Lines}}</td><td>{{.Errors}}</td></tr>{{end}}</tbody>
   </table>
   <div class="cv-hlabels">

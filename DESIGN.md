@@ -1034,7 +1034,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   `aria-current="true"`) on ink-3 in fg-1, the others fg-3. Items are links of a GET form. A chooser with one
   choice isn't drawn (no project or environment bar while only Default › production exists).
 - **Live / Paused** (`.cv-livebtn`, a toggle with `aria-pressed`): primary with the `pause` icon while live,
-  secondary with `play` while paused. The console's generic pressed look (a lighter ground and a bar) does not
+  secondary with `play` while paused; its `title` says the action ("Pause following" while live, "Follow new
+  lines" while paused), the label the state. The console's generic pressed look (a lighter ground and a bar) does not
   apply here: the live state is the primary button itself.
 - **The filter row** (`.cv-logfilter`, wraps, gap 10): the place bars, a 1px line-2 divider 22px tall
   (`.cv-logfilter-div`), the search field, the level chips. **Search** (`.cv-logsearch`): flex 1, 280px at
@@ -1079,13 +1080,16 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   wasn't loaded", and the axis says "read from 14:21 UTC" (`.cv-hlabel-read`). Strokes use
   `vector-effect: non-scaling-stroke`, so the squeeze doesn't thicken them. Deploy markers are 1px dashed
   vertical `<line>`s (`.cv-hmark`, rolling; `.cv-hmark-failed` for a failed deploy) with a `<title>` "v24
-  rolling out" / "v24 live". A visually hidden table carries the same numbers for a screen reader, and the SVG's
+  rolling out" / "v24 live" (v0 is a version: "v0 rolling out"). A visually hidden table (its first column "From
+  (UTC)") carries the same numbers for a screen reader, and the SVG's
   label is a sentence ("612 lines in the last 15 minutes, 4 errors, 1 deploy"). Under it, a row of 11px mono
   fg-4 (`.cv-hlabels`): the range's start ("13:49 UTC"), the deploy's name in rolling under its marker
-  (`.cv-hlabel-deploy`), "now" at the right (`.cv-hlabel-end`). With no lines: the empty bars and "no lines in
+  (`.cv-hlabel-deploy`: one deployment's markers are one label, "┆ chatter v0 rolling out · live"; several
+  deployments say the newest and how many others, "┆ chatter v2 and 1 more"), "now" at the right
+  (`.cv-hlabel-end`). With no lines: the empty bars and "no lines in
   this range" (`.cv-hist-empty`).
 - **The stream** (`.cv-logstream`: ink-0 ground, 1px line-1, radius 4; a container of its own, `cvstream`). Its
-  head line (`.cv-lstreamhead`, 8 16, 400 12px mono): live, "◐ streaming from 8 copies" in rolling; paused,
+  head line (`.cv-lstreamhead`, 8 16, 400 12px mono): live, "◐ streaming from 8 copies" in rolling ("no copies running" when none do); paused,
   "paused · N new lines since" in fg-3 with a "Show" link; and at the right "times in UTC" in fg-4 (the
   stream's rows carry no zone of their own). When the stream holds the row cap, the head also says "newest 500
   lines · Show older" (`.cv-lstreamhead-cap`; Show older is the footer's link). An address that opens a line
@@ -1101,10 +1105,11 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   its chip share one cell in the markup (`.cv-lbody`, `display: contents` wide, so the chip is the `auto`
   column). A row has `scroll-margin-top: 64px` (the 52px top bar and 12px), so a `#line-…` link lands below
   the bar.
-- **The estimated time.** An ordinary time is fg-3. A line that carried no time of its own takes the older line's
-  before it, and its time (`.cv-time-est`) is fg-4 with a leading "~" (the template writes the character, so it
-  is in the text and in a copy) and the `title` "estimated: this line carried no time; taken from the line
-  before it". Never "now" for an old line. fg-4 is a step quieter, not a different hue: the "~" is what says it.
+- **The estimated time.** Real and estimated times are both fg-3 (the critique's ruling, replacing the research's
+  fg-4: fg-4 is below AA for text, and an estimated time is the row's only time). A line that carried no time
+  of its own takes the older line's before it, and its time (`.cv-time-est`) differs only by a leading "~" (the
+  template writes the character, so it is in the text and in a copy) and the `title` "estimated: this line
+  carried no time; taken from the line before it". Never "now" for an old line. fg-4 stays for non-text marks.
 - **The error row** has a 7% failed tint (`.cv-row-error`, `oklch(0.68 0.17 40 / 0.07)`), the level word keeps
   its own failed hue, so the row never relies on the tint alone.
 - **The fresh row** (a line that arrived while Live is on): a 5% fg-1 tint that fades out once in 600ms
@@ -1114,7 +1119,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   a line is fresh once.
 - **The anchor row** (`.cv-row-anchor`, and any `:target`): in "lines around this", the line the view is about
   has a 9% fg-1 tint and a 2px fg-1 bar at its left edge. It is white, not the accent: the accent is for
-  focus and the current page.
+  focus and the current page. The "lines around this" view draws neither the range bar nor the level chips nor
+  the search (it is every level, this copy only, unfiltered); the Live button stays.
 - **The open row** (`.cv-row-open`, ink-1): its text wraps (`pre-wrap`, anywhere), and under it a strip
   (`.cv-rowstrip`, padding 8 16 10 180, ink-1, 1px line-1 top and bottom, flex, gap 8, wraps): Lines around
   this, Only `<service>` (secondary small links with `list` and `filter` icons), the row's own address in

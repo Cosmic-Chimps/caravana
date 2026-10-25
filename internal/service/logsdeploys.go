@@ -42,10 +42,14 @@ type DeployRow struct {
 	// JobVersion is the Nomad job version the deployment registered; 0 when it
 	// never got one.
 	JobVersion int
+	// Versioned says JobVersion was registered: v0 is a version, so the zero
+	// value alone can't tell "version 0" from "never got one".
+	Versioned bool
 	// RevertedTo is the job version Nomad went back to, on a reverted row: the
 	// one its message names, else the last healthy deployment's before it, else
-	// 0 (unknown).
-	RevertedTo int
+	// 0 (unknown); RevertedKnown says it is a version, v0 included.
+	RevertedTo    int
+	RevertedKnown bool
 	// Who is page 4's who-words, lowercase: "pushed to main by ana", "promoted
 	// from staging", "through the API by ci-token", "by the webhook", "from the
 	// console".
@@ -78,7 +82,7 @@ func (s *Service) LogDeploys(ctx context.Context, project, environment string, f
 		}
 		row := DeployRow{DeploymentID: rec.Deployment.ID, App: rec.AppID, Who: deployWhoWords(rec)}
 		if rec.JobVersion != nil {
-			row.JobVersion = int(*rec.JobVersion)
+			row.JobVersion, row.Versioned = int(*rec.JobVersion), true
 		}
 		if inRange(rec.CreatedAt) {
 			started := row
@@ -92,7 +96,7 @@ func (s *Service) LogDeploys(ctx context.Context, project, environment string, f
 		row.At, row.Kind = rec.UpdatedAt, kind
 		if kind == DeployReverted {
 			if n, ok := revertedToVersion(rec.Error); ok {
-				row.RevertedTo = n
+				row.RevertedTo, row.RevertedKnown = n, true
 			} else {
 				if _, seen := earlier[rec.AppID]; !seen {
 					list, err := s.store.ListDeployments(ctx, rec.AppID, 0)
@@ -101,7 +105,7 @@ func (s *Service) LogDeploys(ctx context.Context, project, environment string, f
 					}
 					earlier[rec.AppID] = list
 				}
-				row.RevertedTo = previousHealthyVersion(earlier[rec.AppID], rec)
+				row.RevertedTo, row.RevertedKnown = previousHealthyVersion(earlier[rec.AppID], rec)
 			}
 		}
 		rows = append(rows, row)
@@ -140,14 +144,15 @@ func revertedToVersion(errText string) (int, bool) {
 }
 
 // previousHealthyVersion is the job version of the newest deployment of the
-// list (an app's, newest first) that went healthy before rec was created, or 0.
-func previousHealthyVersion(list []store.DeploymentRecord, rec store.DeploymentRecord) int {
+// list (an app's, newest first) that went healthy before rec was created; ok
+// is false when there is none.
+func previousHealthyVersion(list []store.DeploymentRecord, rec store.DeploymentRecord) (version int, ok bool) {
 	for _, d := range list {
 		if d.Status == store.StatusHealthy && d.JobVersion != nil && d.CreatedAt.Before(rec.CreatedAt) {
-			return int(*d.JobVersion)
+			return int(*d.JobVersion), true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // deployWhoWords says who deployed, as the console's page 4 words it (ui's

@@ -163,6 +163,12 @@ func TestLogsPageStream(t *testing.T) {
 		t.Errorf("an error row's class = %q, want cv-row-error", c)
 	}
 	// The untimed line has an estimated time: a leading ~, its own class and the words.
+	// Real and estimated times are both fg-3; the "~" and the title are what differ.
+	if css, err := os.ReadFile("static/app.css"); err != nil {
+		t.Fatal(err)
+	} else if !regexp.MustCompile(`\.cv-time-est\{color:var\(--color-fg-3\)\}`).Match(css) {
+		t.Error("an estimated time isn't fg-3")
+	}
 	lgWant(t, "/logs", body, `cv-time-est`, `>~`, `title="estimated: this line carried no time; taken from the line before it"`)
 	// An ordinary time has its zone in the title and no ~.
 	if m := regexp.MustCompile(`<time class="cv-ltime" datetime="[^"]*" title="[^"]* UTC">(\d\d:\d\d:\d\d\.\d{3})</time>`).FindStringSubmatch(body); m == nil {
@@ -325,9 +331,9 @@ func TestLogsPageRangeAndLive(t *testing.T) {
 	// Live is a form button flipping ?live and carrying the filter.
 	head := regexp.MustCompile(`(?s)<div class="cv-lhead-tools">.*?</div>`).FindString(body)
 	lgWant(t, "the head", head, `<form method="get" action="/logs">`, `<input type="hidden" name="q" value="retry">`,
-		`name="live" value="0"`, `aria-pressed="true"`, ">Live<")
+		`name="live" value="0"`, `title="Pause following"`, `aria-pressed="true"`, ">Live<")
 	paused := e.pageOf(t, "/logs?live=0")
-	lgWant(t, "?live=0", paused, `name="live" value="1"`, `aria-pressed="false"`, ">Paused<", "paused")
+	lgWant(t, "?live=0", paused, `name="live" value="1"`, `title="Follow new lines"`, `aria-pressed="false"`, ">Paused<", "paused")
 	lgNot(t, "?live=0", paused, "streaming from", `id="logs-live" hx-get`)
 
 	// While live, the region is drawn again from the part on the logs notice, and the page opens the
@@ -399,7 +405,7 @@ func TestLogsPageHistogram(t *testing.T) {
 	}
 	// The deploys of the range are markers with a title, and the deploy's name is under them.
 	lgWant(t, "the histogram", hist, `<line class="cv-hmark" `, `<line class="cv-hmark cv-hmark-failed" `, `<title>blog v7 rolling out</title>`,
-		`<title>blog v8 failed, rolled back</title>`, `<span class="cv-hlabel-deploy">┆ docs v2 and 5 more</span>`, `<span class="cv-hlabel-end">now</span>`)
+		`<title>blog v8 failed, rolled back</title>`, `<span class="cv-hlabel-deploy">┆ docs v2 and 2 more</span>`, `<span class="cv-hlabel-end">now</span>`, `<th scope="col">From (UTC)</th>`)
 	// Everything was read: no "read from".
 	lgNot(t, "the histogram", hist, "cv-hbar-unread", "cv-hlabel-read", "no lines in this range")
 	// The start of the range.
@@ -421,7 +427,7 @@ func TestHistOfGeometry(t *testing.T) {
 		h.Bins[i].Read = h.Bins[i].Read && i >= 6
 	}
 	cov := service.LogCoverage{From: from.Add(5 * time.Minute), Complete: false, Timed: false}
-	deploys := []service.DeployRow{{DeploymentID: "d1", App: "web", At: from.Add(7*time.Minute + 30*time.Second), Kind: service.DeployFailed, JobVersion: 3}}
+	deploys := []service.DeployRow{{DeploymentID: "d1", App: "web", At: from.Add(7*time.Minute + 30*time.Second), Kind: service.DeployFailed, JobVersion: 3, Versioned: true}}
 	v := histOf(h, cov, deploys, logsRanges[0])
 
 	if len(v.Bars) != 30 {
@@ -452,7 +458,7 @@ func TestHistOfGeometry(t *testing.T) {
 	if len(v.Marks) != 1 || v.Marks[0].X != "150" || !v.Marks[0].Failed || v.Marks[0].Title != "v3 failed" {
 		t.Errorf("marks = %+v", v.Marks)
 	}
-	if v.Deploy != "┆ web v3" || v.Read != "read from 00:05 UTC · not all read in time" || v.Start != "00:00 UTC" || v.Empty {
+	if v.Deploy != "┆ web v3 failed" || v.Read != "read from 00:05 UTC · not all read in time" || v.Start != "00:00 UTC" || v.Empty {
 		t.Errorf("labels = %q, %q, %q, empty %v", v.Deploy, v.Read, v.Start, v.Empty)
 	}
 	if want := "151 lines in the last 15 minutes, 25 errors, 1 deploy"; v.Summary != want {
@@ -489,14 +495,17 @@ func TestDeployRowWords(t *testing.T) {
 		row  service.DeployRow
 		want string
 	}{
-		{service.DeployRow{App: "web", Kind: service.DeployStarted, JobVersion: 24, Who: "pushed to main by ana"}, "web v24 started rolling out · pushed to main by ana"},
-		{service.DeployRow{App: "web", Kind: service.DeployStarted, JobVersion: 0, Who: "from the console"}, "web started rolling out · from the console"},
-		{service.DeployRow{App: "web", Kind: service.DeployLive, JobVersion: 24}, "web v24 is live · rollout finished"},
-		{service.DeployRow{App: "web", Kind: service.DeployFailed, JobVersion: 24}, "web v24 failed its health checks"},
-		{service.DeployRow{App: "web", Kind: service.DeployReverted, JobVersion: 24, RevertedTo: 23}, "web v24 failed its health checks · rolled back to v23"},
-		{service.DeployRow{App: "web", Kind: service.DeployReverted, JobVersion: 24}, "web v24 failed its health checks · rolled back"},
-		{service.DeployRow{App: "web", Kind: service.DeploySuperseded, JobVersion: 24}, "web v24 was replaced by a newer deploy"},
-		{service.DeployRow{App: "shop--staging--web", Kind: service.DeployLive, JobVersion: 2}, "web v2 is live · rollout finished"},
+		{service.DeployRow{App: "web", Kind: service.DeployStarted, JobVersion: 24, Versioned: true, Who: "pushed to main by ana"}, "web v24 started rolling out · pushed to main by ana"},
+		{service.DeployRow{App: "web", Kind: service.DeployStarted, Who: "from the console"}, "web started rolling out · from the console"}, // never got a version
+		{service.DeployRow{App: "web", Kind: service.DeployStarted, Versioned: true, Who: "through the API"}, "web v0 started rolling out · through the API"},
+		{service.DeployRow{App: "web", Kind: service.DeployLive, Versioned: true}, "web v0 is live · rollout finished"},
+		{service.DeployRow{App: "web", Kind: service.DeployLive, JobVersion: 24, Versioned: true}, "web v24 is live · rollout finished"},
+		{service.DeployRow{App: "web", Kind: service.DeployFailed, JobVersion: 24, Versioned: true}, "web v24 failed its health checks"},
+		{service.DeployRow{App: "web", Kind: service.DeployReverted, JobVersion: 24, Versioned: true, RevertedTo: 23, RevertedKnown: true}, "web v24 failed its health checks · rolled back to v23"},
+		{service.DeployRow{App: "web", Kind: service.DeployReverted, JobVersion: 1, Versioned: true, RevertedKnown: true}, "web v1 failed its health checks · rolled back to v0"},
+		{service.DeployRow{App: "web", Kind: service.DeployReverted, JobVersion: 24, Versioned: true}, "web v24 failed its health checks · rolled back"},
+		{service.DeployRow{App: "web", Kind: service.DeploySuperseded, JobVersion: 24, Versioned: true}, "web v24 was replaced by a newer deploy"},
+		{service.DeployRow{App: "shop--staging--web", Kind: service.DeployLive, JobVersion: 2, Versioned: true}, "web v2 is live · rollout finished"},
 	} {
 		tc.row.At, tc.row.DeploymentID = at, "dep1"
 		got := deployRowOf(tc.row)
@@ -607,6 +616,11 @@ func TestLogsAroundView(t *testing.T) {
 		t.Errorf("the anchor row's class = %q", c)
 	}
 	lgNot(t, "the around view", body, "cv-hist", "streaming from", "web b up")
+	// The range, the levels and the search don't apply (every level, this copy only, unfiltered), so they
+	// aren't drawn; the Live button is.
+	lgNot(t, "the around view", body, `aria-label="Time range"`, "cv-lvlchips", "cv-logsearch", `role="search"`)
+	lgWant(t, "the around view", body, "cv-livebtn")
+	lgWant(t, "the stream", e.pageOf(t, "/logs"), `aria-label="Time range"`, "cv-lvlchips", "cv-logsearch")
 	lgWant(t, "the around view", body, `<a href="/logs">Back to the stream</a>`)
 	// The copy defaults to the line's.
 	lgWant(t, "?at alone", text(e.pageOf(t, "/logs?at="+at)), "in copy aaaa1111")
@@ -645,6 +659,12 @@ func TestLogsPageEmptySentences(t *testing.T) {
 	// No output, no filter.
 	body := e.pageOf(t, "/logs")
 	lgWant(t, "/logs", text(body), logsNoOutput, "no lines in this range", "docs v2 started rolling out")
+	// The head doesn't say "streaming from 0 copies" when nothing runs.
+	e.Nomad.SetCopies("docs")
+	none := text(e.pageOf(t, "/logs"))
+	lgWant(t, "no copies", none, "no copies running")
+	lgNot(t, "no copies", none, "streaming from", "0 copies")
+	e.Nomad.SetCopies("docs", api.AllocationListStub{ID: lgDocs, TaskGroup: "web", JobVersion: 2, ClientStatus: "running", NodeName: "n", TaskStates: lgStarted("web", time.Now())})
 	lgNot(t, "/logs", text(body), logsNoMatch)
 	// With a filter.
 	for _, path := range []string{"/logs?q=zzz", "/logs?levels=debug", "/logs?service=docs%2Fweb"} {
@@ -1028,5 +1048,33 @@ func TestLogsPagesHaveNoInlineScript(t *testing.T) {
 		if strings.Contains(body, "javascript:") {
 			t.Errorf("GET %s has a javascript: URL", path)
 		}
+	}
+}
+
+// The histogram's markers and label name the version always, v0 included, and one deployment's start
+// and end are one label, not "and 1 more"; several deployments keep the count of the others.
+func TestHistogramMarkersNameV0AndOneDeployOnce(t *testing.T) {
+	from := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	row := func(id string, k service.DeployKind, min int, v int) service.DeployRow {
+		return service.DeployRow{DeploymentID: id, App: "chatter", Kind: k, At: from.Add(time.Duration(min) * time.Minute), JobVersion: v, Versioned: true}
+	}
+	cov := service.LogCoverage{Complete: true, Timed: true}
+	read := service.LogRead{From: from, To: from.Add(15 * time.Minute), Coverage: cov}.Histogram()
+
+	one := histOf(read, cov, []service.DeployRow{row("d0", service.DeployStarted, 3, 0), row("d0", service.DeployLive, 5, 0)}, logsRanges[0])
+	if one.Deploy != "┆ chatter v0 rolling out · live" {
+		t.Errorf("label = %q", one.Deploy)
+	}
+	if len(one.Marks) != 2 || one.Marks[0].Title != "v0 rolling out" || one.Marks[1].Title != "v0 live" {
+		t.Errorf("marks = %+v", one.Marks)
+	}
+	two := histOf(read, cov, []service.DeployRow{row("d0", service.DeployStarted, 3, 0), row("d0", service.DeployLive, 5, 0), row("d1", service.DeployStarted, 8, 1)}, logsRanges[0])
+	if two.Deploy != "┆ chatter v1 and 1 more" {
+		t.Errorf("label = %q", two.Deploy)
+	}
+	// A deployment with no version has no "v".
+	none := histOf(read, cov, []service.DeployRow{{DeploymentID: "d2", App: "chatter", Kind: service.DeployFailed, At: from.Add(time.Minute)}}, logsRanges[0])
+	if none.Deploy != "┆ chatter failed" || none.Marks[0].Title != "failed" {
+		t.Errorf("no version: %q %+v", none.Deploy, none.Marks)
 	}
 }

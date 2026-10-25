@@ -241,3 +241,35 @@ func TestDeployWhoWords(t *testing.T) {
 		}
 	}
 }
+
+// Version 0 is a version: a deployment that registered it is Versioned, one that never registered has
+// none, and a revert to version 0 knows its target.
+func TestLogDeploysVersionZeroIsAVersion(t *testing.T) {
+	e := deployRowsFixture(t)
+	console := app.Deployment{Trigger: app.TriggerConsole}
+	first := e.deployment(t, "blog", "z0", console, store.StatusHealthy, 0, "")
+	e.deployment(t, "blog", "z1", console, store.StatusReverted, 1, "Failed - rolling back to job version 0")
+	e.deployment(t, "blog", "z2", console, store.StatusPending, 0, "")
+	e.deployment(t, "blog", "z3", console, store.StatusReverted, 2, "health check failed")
+
+	got := map[string]DeployRow{}
+	for _, r := range e.rows(t, first.CreatedAt.Add(-time.Hour), time.Now().Add(time.Hour), "blog") {
+		got[r.DeploymentID+":"+string(r.Kind)] = r
+	}
+	if r := got["z0:started"]; !r.Versioned || r.JobVersion != 0 {
+		t.Errorf("v0 started = %+v, want Versioned", r)
+	}
+	if r := got["z0:live"]; !r.Versioned {
+		t.Errorf("v0 live = %+v, want Versioned", r)
+	}
+	if r := got["z1:reverted"]; !r.Versioned || !r.RevertedKnown || r.RevertedTo != 0 {
+		t.Errorf("revert to v0 by message = %+v", r)
+	}
+	if r := got["z2:started"]; r.Versioned {
+		t.Errorf("a deployment that never registered has a version: %+v", r)
+	}
+	// No message: the last healthy deployment before it, which is z0 at version 0.
+	if r := got["z3:reverted"]; !r.RevertedKnown || r.RevertedTo != 0 {
+		t.Errorf("revert to v0 by history = %+v", r)
+	}
+}
