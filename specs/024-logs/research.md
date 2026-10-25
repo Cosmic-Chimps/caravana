@@ -583,28 +583,165 @@ None of these was run as a test; the read-only observations above are marked whe
    continues into `<task>.<stream>.<n-1>` (source says yes, `findClosest`); frames' `File` changes
    mid-read; `readat` with an offset past a file's size answers what (empty, 416, an error?); a
    purged file's `readat` answers 404 or 500.
+   - **Lab, observed (2026-10-24, Nomad 2.0.7, job `spike024`, `LogConfig {MaxFiles 3, MaxFileSizeMB 1}`):**
+     - `ls alloc/logs` after rotation (names, bytes, `ModTime` local offset -06:00): `main.stdout.1`
+       1,021,896, `main.stdout.2` 1,032,520, `main.stdout.3` 79,348 (growing), `main.stderr.0` 0, plus the
+       hidden FIFOs `.main.stdout.fifo` / `.main.stderr.fifo` (size 0, `ModTime` = now). Files close **under**
+       1 MiB (1,047,017, 1,021,896, 1,032,520 bytes for 1,048,576): the rotator moves to the next file
+       before a write that wouldn't fit, so a file isn't an exact 1 MiB and no line straddled two
+       files at the boundaries looked at (the start of `.1`, the end of `.2` with the start of `.3`: each file
+       began with a timestamp and `.2` ended with `\n`).
+     - `logs?origin=end&offset=<more than the newest file>&plain=false` **continues into the previous
+       file**, oldest first: frames `File: alloc/logs/main.stdout.2` (3 frames: 65,536 + 65,536 + 20,310
+       bytes), then `File: alloc/logs/main.stdout.3` from its offset 0 (frames of 65,536). `File` changes
+       mid-read and the first frame of the next file restarts at its start.
+     - **The frames' `Offset` is not the end of the frame's data for a short last frame.** For full frames
+       it is the end offset (`.2`: 799,716, 865,252, 930,788, 996,324, each +65,536); for the last, short
+       frame of a file it is the frame's start + 65,536, not + its length (`.2` is 1,032,520 bytes, the
+       short frame started at 996,324 and said `Offset: 1,061,860`; another read: start 1,012,210, length
+       20,310, `Offset: 1,077,746`, beyond the file's size). **A line id must come from Caravana's own
+       `readat` offsets, never from a frame's `Offset`**; Live (`follow=true`) therefore can't mint
+       `<file>.<offset>` ids from frames either, unless it reads the offset back with `Stat`.
+     - A framed read also carries zero-length frames with a `File`/`Offset` (end of file reached while
+       the writer is faster than the reader) and a bare `{}` (a heartbeat), then continues; a consumer
+       must skip both. `plain=true` of the same read returned the same bytes, concatenated.
+     - `readat` with an offset **past the end** of a file: `HTTP 200`, empty body (Content-Length 0), for
+       an offset 5,000 bytes past and for one at 50,000,000.
+     - `readat` of a file that doesn't exist (a purged `main.stdout.0`, or `main.stdout.99`): **`HTTP 200`
+       with the error text as the body**, `stat /opt/nomad/data/alloc/<alloc>/alloc/logs/main.stdout.0:
+       no such file or directory` (115 bytes, `text/plain`). `stat` of the same name answers a proper
+       `404` with the same text. So a purged file read by `readat` can come back as "data" that is an error
+       message. Rule for `ReadLogAt`: a chunk **shorter than asked** is checked with `Stat` (404: the file
+       is gone, say "rotated away"; else the chunk is the end of the file); a full-size chunk can't be
+       that text (115 bytes against 64 KiB asked).
 2. **File names and index**: after rotation, `ls` shows `.<n>` with `n` growing and the oldest gone
    (`MaxFiles` kept); a task restart (Restart in the console) keeps appending to the newest file, not
    a new `.0`.
+   - **Lab, observed:** the first file was purged as soon as `.3` was created (`ls` showed `.1 .2 .3`),
+     and `.1` as soon as `.4` was created: `MaxFiles` files kept, `n` growing (`.0` to `.4` in about 8 min),
+     `main.stderr.0` untouched (0 bytes, no rotation). `PUT /v1/client/allocation/<alloc>/restart`
+     (`HTTP 200`, events `Restart Signaled`, `Terminated Exit Code 137`, `Restarting`, `Started`)
+     **appended to the newest file**: the new run's `line 1` sits at byte 886,791 of `main.stdout.3` (the
+     file held 886,791 bytes just before), no new `.0`, and rotation went on from there (`.4` next). Output
+     survives a restart inside a copy, as the source said.
 3. **Dead copies**: after a deploy, the previous version's copy still answers `ls` and `logs` (seen for
    `hollo`, 2026-10-25); how long until the server stops listing it and the client deletes its
    directory, with the installer's defaults; a failed copy (a crash loop) keeps its output.
+   - **Lab, observed:** `spike024` was redeployed with a changed arg (job version 1, 02:37:55 UTC). The
+     version-0 copy `9be67afc…` went `complete`/`stop` at once, and for the whole observation (300 s,
+     polled every 30 s, until 02:43:49) it was still **listed** by `GET /v1/job/spike024/allocations`
+     and still answered `ls` and `logs` with 200 (and `readat` on its files). The version-1 copy was
+     listed beside it from its start and, once its job was stopped without purge (02:40), stayed listed and
+     readable too. The client's GC settings from `GET /v1/agent/self` are the defaults:
+     `GCMaxAllocs 50`, `GCDiskUsageThreshold 80`, `GCInodeUsageThreshold 70`, `GCInterval 60 s`,
+     `GCParallelDestroys 2`. So a dead copy's output is readable for **at least minutes**, in practice until
+     50 terminal allocations pile up on the node or the disk is over 80 %; not measured longer (the server's
+     own GC of old allocations was not seen in 5 minutes and, from source, is the evaluation GC at 1 h or the
+     job GC at 4 h, not verified). A failed copy (a crash loop) wasn't run.
 4. **The read cost on a real host** (2 GB arm64 if possible): 20 copies × 2 streams × 1 MiB through
    `readat`, plus parse and fold, under 2 s with the semaphore of 2; peak RSS of Caravana during it.
+   - **Lab, observed (Mac to the Lima VM through `127.0.0.1:4646`, `curl`, `xargs -P 2`):** the lab has
+     only **one stream over 1 MiB** (nginx's `web.stdout.0`, 1.4 MB), 44 (copy, stream) pairs in all, most
+     of them 0 to 43 bytes. So the check was run two ways. **(a)** The 20 largest pairs, each read from
+     offset 0 up to 1 MiB (1,121,814 bytes in all): wall **0.26 to 0.31 s** (three runs; median call 2 to
+     7 ms, slowest 31 ms). **(b)** The nginx file read 20 times, 1 MiB each (20 MiB), two at a time: wall
+     **0.28 to 0.31 s** on a warm run, **0.96 s** on a cold first one (median call 8 to 58 ms, slowest 171
+     ms). Both are inside the 2 s of the contract, with room.
+   - **A CPU-hungry neighbour breaks it.** The same reads were first run while `spike024` (a busy loop
+     writing as fast as it can) ran on the node, and the Mac was also at load average 12 (another
+     project's tests): the 20 reads took **18.8 s, 25.9 s and 74.3 s**, single calls up to **33.8 s** (even a
+     43-byte read took 11 to 33 s), and a 1 MiB `readat` took 0.8 to 6.9 s. Stopping the loop brought them
+     back to 0.06 to 0.24 s per MiB while the Mac's load average stayed at 12, so the loop was the main
+     cause. Nomad's file reads share the node's CPU with the apps, so on a small
+     host a log view during a CPU storm is slow however cheap the read; Caravana needs a deadline per
+     page (the page answers with what it read and says the rest was not read), not only a semaphore.
+   - **Caravana's RSS is not measurable here** (Caravana wasn't part of this spike, no Go code ran); the
+     check of peak RSS with the semaphore of 2 stays a check on a real host.
 5. **The binary search by time** (`around=<time>`, `before=`): probes needed on a 100 MiB stream, and
    behavior on a stream with no timed lines (falls back to offsets).
+   - **Lab, observed:** a probe-by-probe binary search for a CLF time over nginx's 1.4 MB
+     `web.stdout.0` (a Python client, one keep-alive connection, probes of 4 KiB, taking the first whole timed
+     line of each probe, offsets from `stat`): **10 probes** for the target 24 Oct 09:00, 10 for 25 Oct 01:00
+     and 10 for 25 Oct 02:00, each landing within a 2.7 KB window of the right line, **14 to 28 ms** in all
+     (2.2 to 3.1 s in total while the node was busy, see item 4). The count is `log2(size / 4 KiB)`: 1.4 MB gives 10,
+     **a full 10 MiB file gives 12, and 100 MiB (10 files of 10 MiB) gives 12 probes plus none to choose
+     the file** (the file comes from `ls`'s `ModTime` and the previous file's, no probe). A probe took
+     1.4 to 2.8 ms on the idle node, so 12 probes are about 30 ms; with the busy node's 200 to 300 ms a
+     probe they are 2 to 4 s, so the same deadline applies.
+   - **No stream with only untimed lines exists in the lab**: whoami's stderr is one timed Go-log line
+     (`2026/10/25 00:16:42 Starting up on port 80`); nginx's start has 2 untimed entrypoint lines then CLF;
+     Redis's own shape (`1:M 23 Oct 2026 23:13:18.804`, 6 KB) and Postgres's (`2026-10-24 23:53:36.390 UTC`)
+     are timed in other shapes. The nearest case, Redis read as if it had CLF times, gave **no timed line in
+     the first probe at all, so the search stops after 1 probe and falls back to offsets** (the middle of
+     the file, then the page offers "from the start"/"from the end"): that is the fallback working as the
+     plan has it, not a measured untimed app.
+   - **Recommendation: ship `around=<time>` in 024.** It is 12 probes, about 30 ms idle; the fallback
+     for an untimed stream is cheap and already in the plan. Proposal, not run: a probe that lands
+     on an untimed stretch (a stack trace) uses the next timed line within the probe, and a probe with none
+     steps forward by one more chunk, at most 4 times, then falls back.
 6. **Time zones**: a container with `TZ=Europe/Madrid` writing Go `log` times: the bounds check marks
    its lines `estimated` rather than placing them 1-2 h off.
+   - **Lab, observed:** `TZ=Europe/Madrid` had **no effect** in the `busybox:1.37` image (no zoneinfo
+     there: the lines carried UTC, `2026/10/25 02:31:15`, the same as the file's `ModTime`
+     20:31:15 -06:00), so the job was rerun with the POSIX zone `TZ=CEST-2`. The container wrote
+     `2026/10/25 04:38:22 plain go-log style` at a `ModTime` of `2026-10-24T20:38:22-06:00` = **02:38:22
+     UTC: the written time is exactly 2 h ahead** (CEST; CET would be 1 h) (the copy's `StartedAt` was `02:32:13Z`), so the plan's bound "a time more than a minute after the
+     file's `ModTime`" catches **an east-of-UTC zone** for every line of the file.
+   - **Not caught (by reasoning, not run): a west-of-UTC zone** (`America/Denver`, -6 h) writes times
+     6 h *early*, and the bounds only reject a time **before the copy's start** or before the previous
+     file's `ModTime` by more than a minute: a copy older than 6 h passes it for every line except the
+     first 6 h of its life. A stronger check costs nothing: **the last timed line of a file against that
+     file's `ModTime`** (the last line was written at about the file's last write): a difference over a
+     minute marks that file's lines `estimated` (skew over a minute), in both directions. This is added to
+     the plan's decisions.
 7. **Policy**: with the scoped token from `deploy/install/caravana-policy.hcl` (as `TestLab` uses), `ls`
    and `readat` on an app's `alloc/logs` succeed (needs `read-fs`, present since 016) and fail on
    Traefik's job only if a deny exists (none does today: Traefik's logs are readable, which 023's R2
    noted as useful).
+   - **Lab, observed:** a token made from `deploy/install/caravana-policy.hcl` (policy
+     `caravana-spike024`, type client, deleted afterwards; the lab's own `caravana` policy and
+     `caravana-lab-test` token were not touched). On an app's copy (`hollo`'s `api` task): `ls` 200, `stat`
+     200, `readat` 200, `logs` 200. On **Traefik's allocation**: `ls` 200, `stat` 200, `readat` 200 (it read
+     the first bytes of Traefik's log), `logs` 200. No deny exists. With no token the same `ls` answers 403.
 8. **ANSI and control bytes end to end**: a job printing SGR, OSC 8, OSC 52, `\r` progress and a NUL:
    the page, `listLogs`, the SSE notice path and Download hold none of the escape bytes.
+   - **Lab, observed (job `spike024esc`):** `readat` and `logs?plain=true` returned **the same 73 bytes,
+     byte for byte** what the shell printed: `1b 5b 33 31 6d` (SGR) and `1b 5b 30 6d`, the OSC 8 pair
+     `1b 5d 38 3b 3b … 1b 5c`, OSC 52 `1b 5d 35 32 3b 63 3b … 07`, the progress line as `31 30 25 0d 32 30 25
+     0d 33 30 25 0a` and the NUL as `61 00 62 0a`. `plain=false` carries the same bytes base64-encoded in
+     `Data` (one frame, `File: alloc/logs/main.stdout.0`, `Offset: 73`). **Nothing is stripped, folded or
+     escaped by Nomad**, so every control byte reaches Caravana and the stripping (R5) is entirely ours.
 9. **Where steps go**: a console step `console-logs` in `TestConsoleLab` (an app printing a timed
    `ERROR`, a `[warn]`, a JSON `"level":"error"`, an ANSI-colored line and a repeated line, a deploy
    during the step; filters, around, download) and a gate step `logs` (the API reads with the gate's
    token, a deploy token's 403), as 022 and 023 did.
+
+
+### Spike findings (2026-10-24)
+
+The lab spike (T001): every item above was run against the Lima lab; the jobs `spike024`, `spike024tz` and
+`spike024esc`, the scoped token and its policy were removed afterwards, and the review apps were only read.
+What it changes in `plan.md` ("Decisions carried"):
+
+- **`readat` of a missing file answers 200 with the error text** (item 1): `ReadLogAt` checks a short chunk
+  with `Stat`; the deploy test fake returns the same shape for a purged file. Added to the plan.
+- **Frames' `Offset` is unreliable for a short last frame** (item 1): line ids and `at=` offsets come only
+  from Caravana's own `readat` reads; Live lines get `Time` = arrival and no offset id (they take one when
+  the next view reads them back). Added to the plan.
+- **A per-file skew check** (item 6): the last timed line of a file against that file's `ModTime` (over a
+  minute either way: the file's lines are `estimated`), which also catches a west-of-UTC zone that the
+  start/`ModTime` bounds can't. Added to the plan.
+- **A deadline per page** (item 4): reads are cheap on an idle node (20 MiB in 0.3 s) and 100 times slower on
+  a CPU-starved one (a 1 MiB `readat` up to 6.9 s); the page carries what it read in time and says the rest
+  was not read. Added to the plan.
+- **`around=<time>` ships in 024** (item 5): 12 probes for a 10 MiB file, about 30 ms idle. The plan's
+  "R8.5 decides" becomes "ships". Edited in the plan.
+- Unchanged: live reads over `ls` + `readat` (item 1: continuing into `n-1` works; files close under 1 MiB
+  and don't split lines), the dead copies being readable at least minutes (item 3: they stay listed and
+  readable; no plan change, `LogCopies` keeps listing terminal copies), no new capability (item 7: the
+  scoped token reads app and Traefik logs), and R5's stripping (item 8: nothing is stripped by Nomad).
+- Not measured here: Caravana's RSS, a failed (crash-looping) copy's files, how long until Nomad's server and
+  client collect a dead copy (observed 5 min, still there), a stream of only untimed lines.
 
 ---
 

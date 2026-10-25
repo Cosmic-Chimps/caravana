@@ -16,7 +16,7 @@ the next.
 
 ## Phase 0: The lab spike (no story label)
 
-- [ ] T001 Run research R8's checks against the lab (no Caravana change: a hand-registered busybox
+- [x] T001 Run research R8's checks against the lab (no Caravana change: a hand-registered busybox
   job with `LogConfig {MaxFiles 3, MaxFileSizeMB 1}` writing past rotation, plus the lab's running
   apps): (1) `logs?origin=end&offset=<more than the newest file>` continuing into `<n-1>` and the
   frames' `File` changing mid-read; `readat` past a file's size, and on a purged file; (2) file

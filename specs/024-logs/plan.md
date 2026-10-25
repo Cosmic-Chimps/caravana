@@ -48,7 +48,10 @@ files of lines, service, API (contract, parity, the scope walk), UI, a `TestCons
 - **The source** (research R1): live reads, `ls` for the files and sizes, `readat` backwards in
   64 KiB chunks from the newest file crossing into `n-1`, until the oldest timed line read is
   before `from`, the stream's budget (1 MiB; 16 MiB per page split evenly beyond 16 streams) is
-  spent, or no file is left. The service and copy filters cut the copy list before reading.
+  spent, a **deadline** (a few seconds per page; spike R8.4: 20 MiB took 0.3 s on an idle node but a
+  1 MiB `readat` took up to 6.9 s beside a CPU-hungry app) passes, or no file is left. The service and
+  copy filters cut the copy list before reading; the coverage says when the deadline, not the budget,
+  ended a stream, in words ("not all read in time").
   `Logs` with `follow=true` (today's) is used only for Live. A read returns its coverage: the
   oldest time reached per stream and whether the budget or the end stopped it.
 - **Copies** (R1): a new `deploy.LogCopies(ctx, jobIDs)` lists every allocation Nomad still has
@@ -60,16 +63,22 @@ files of lines, service, API (contract, parity, the scope walk), UI, a `TestCons
   line: strip, time (span taken off), level (JSON first), continuation. A line with no time takes
   the older timed line's time in the same stream (`estimated`); a stream's first untimed lines take
   the copy's start or the previous file's `ModTime`; never the read's time. A time more than a
-  minute before the copy's start or after the file's `ModTime` isn't trusted (estimated). No zone
-  means UTC. An unmatched line is `info` on both streams (ruling 1).
+  minute before the copy's start or after the file's `ModTime` isn't trusted (estimated). A **per-file
+  skew check** (spike R8.6) goes further: the last timed line of a file against that file's `ModTime`
+  (the last line was written at about the file's last write); more than a minute either way and every
+  line of that file is `estimated`. It catches a west-of-UTC zone, which the bounds alone miss in an
+  old copy. No zone means UTC. An unmatched line is `info` on both streams (ruling 1).
 - **Folding** (R4): per stream, before merging, on the text without its time span; `repeat` = N-1;
   the row's time and id are the newest line's; a filter applies before folding; never across
   copies or streams.
 - **The line id** (R4, ruling 2): `<copy>.<stream>.<file index>.<byte offset>`, the offset of the
   line's first byte in `alloc/logs/<task>.<stream>.<n>`; `?copy=<id>&at=<stream>.<n>.<offset>` in
   the console, `at=` on the API; a purged file answers in words. `around=<time>` is a second form
-  for a time from elsewhere, by a binary search of the stream's files (R8.5 decides whether it
-  ships in 024 or waits).
+  for a time from elsewhere, by a binary search of the stream's files: **ships in 024** (spike R8.5: 12
+  probes of 4 KiB for a 10 MiB file, about 30 ms idle; the file is chosen from `ls`'s `ModTime`s, no probe;
+  a stream with no timed line in its first probe falls back to offsets). Ids and `at=` offsets come only
+  from Caravana's own `readat` offsets, never from a framed read's `Offset` (spike R8.1: for a file's short
+  last frame it is start + 65,536, past the file's size); a Live line has `Time` = arrival and no id.
 - **Search** (R4): case-insensitive substring over the stripped text plus `<app>/<service>`,
   ≤ 200 bytes, server-side over what was read; no regexp.
 - **Range and older** (R4): presets as `from`/`to`; `before=<time>` restarts the walk from that
@@ -122,11 +131,15 @@ files of lines, service, API (contract, parity, the scope walk), UI, a `TestCons
 ### `internal/deploy`
 - `LogFiles(ctx, copy, task) ([]LogFile, error)`: `AllocFS().List(alloc, "alloc/logs")` filtered to
   `<task>.<stream>.<n>`, with size and `ModTime`. `ReadLogAt(ctx, copy, path, offset, limit)
-  ([]byte, error)`: `AllocFS().ReadAt`. `LogCopies(ctx, jobIDs) ([]Copy, error)`: `Allocations().List`
+  ([]byte, error)`: `AllocFS().ReadAt`; a chunk **shorter than asked** is checked with `Stat`, because a
+  missing or purged file makes `readat` answer 200 with Nomad's error text as the body (spike R8.1), and
+  `Stat` answers 404 (then `ErrLogRotated`, "rotated away"); a full-size chunk can't be that text.
+  `LogCopies(ctx, jobIDs) ([]Copy, error)`: `Allocations().List`
   with a prefix/filter on the jobs, every status, `Gone` for terminal ones. `deploytest` gains a
   fake file system: files of lines per copy and stream, `ls`/`readat` over them, a way to append
   (for Live and "Show older" tests) and to purge a file (the rotated-away case). The seam is a
-  small interface the service holds (`logFS`), the fake its second implementation.
+  small interface the service holds (`logFS`), the fake its second implementation; the fake's purged file
+  answers `readat` with that error text and `Stat` with not-found, like Nomad.
 
 ### `internal/store`
 - `ListDeploymentsIn(ctx, project, environment string, from, to time.Time) ([]DeploymentRecord,
