@@ -98,6 +98,11 @@ type Nomad struct {
 	logRequests  []LogRequest
 	logOpen      int // follow streams still connected
 
+	// The rotated log files of copies (logfiles.go): by copy and stream, then
+	// file index.
+	logFS        map[logKey]map[int]*logFile
+	fileRequests []FileRequest
+
 	evals      []string                     // job ID of each eval forcePeriodic made, by index
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
@@ -337,6 +342,12 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.serveLogs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/logs/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/cat/"):
 		n.serveCat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/cat/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/ls/"):
+		n.serveLs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/ls/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/stat/"):
+		n.serveStat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/stat/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/readat/"):
+		n.serveReadAt(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/readat/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/exec"):
 		n.serveExec(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/exec"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/checks"):

@@ -39,7 +39,7 @@ the next.
   bounds check, the no-zone-is-UTC rule, the fast path, the mid-line `\r`, an unterminated
   escape, pino numbers, Serilog's absent `@l`, continuation inheritance; a test that no import of
   `net/http`, `nomad` or `service` exists in the package.
-- [ ] T003 [P] `internal/deploy/logfiles.go` + `deploytest`: `LogFiles(ctx, copy, task)` from
+- [x] T003 [P] `internal/deploy/logfiles.go` + `deploytest`: `LogFiles(ctx, copy, task)` from
   `AllocFS().List(alloc, "alloc/logs")` (name, size, `ModTime`, the stream and index parsed from
   `<task>.<stream>.<n>`), `ReadLogAt(ctx, copy, path, offset, limit)` from `AllocFS().ReadAt`,
   `LogCopies(ctx, jobIDs)` keeping terminal copies of every version (`Gone`), errors mapped as
