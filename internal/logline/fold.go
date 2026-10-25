@@ -10,7 +10,9 @@ package logline
 //     with no time of its own (or one outside b) takes prev's time, marked
 //     Estimated; the first line takes the copy's start, which is b.NotBefore
 //     plus Slack (zero when b has no start). A continuation line takes prev's
-//     level.
+//     level. Parse knows nothing of the file's size or the line's offset, so
+//     the service settles the lines with no older timed line in their file
+//     afterwards, by byte offset (service.placeLines).
 //
 // A JSON line keeps the stripped object in Raw and shows its message as Text.
 func Parse(raw string, stream Stream, id LineID, b Bounds, prev *Line) Line {

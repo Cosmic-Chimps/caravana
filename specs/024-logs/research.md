@@ -290,6 +290,35 @@ no time of its own; shown at the line before it" (a ruling for the designer). Li
 fixed-layout checks; the measured naive pass is already fast); a per-app "time format" setting
 (rejected for 024: nobody should have to configure a log viewer; maybe later for the rare app).
 
+### Spike follow-up (2026-10-24, the gate step)
+
+The gate step `logs` (lab, Nomad 2.0.7) found two faults in the rule above; the rule changed:
+
+1. **A stream with no timed line put every line at the copy's start.** The sample app's stderr was
+   untimed `[warn] careful` every 2 s: the first line took the start and each later one the line
+   before it, so after 15 minutes they all fell out of the 15-minute range, and "lines around" an
+   ERROR on stdout found no stderr line. Now, per file: a file with no timed line in what was read
+   (or a skewed one) has **every line placed by byte offset between its write bounds** (`ModTime(n-1)`,
+   or the copy's start for file 0, to `ModTime(n)`; the newest file's upper bound is its last write,
+   about now for a live stream), `estimated`. The "interpolate by byte offset" option rejected above
+   for timed streams is the only honest estimate when a stream carries no time at all. In a file with
+   timed lines, the lines before its first timed line are placed by offset between the file's lower
+   bound and that line's time; the lines after a timed line keep its time, as before. The page walk
+   stops at the range's start by these placed times when a file has shown no timed line, not at its
+   budget, and `around`'s read of the other stream finds untimed lines the same way (the search by
+   time's fallback to offsets, `placeByProportion`, is the same placement read backwards).
+2. **The copy's start isn't a strict lower bound.** The copy's `StartedAt` (04:01:00.039) was later
+   than the first stdout line's own time (04:00:59): the container's clock against Nomad's
+   task-start event. The untimed line before it was stamped later than the timed line after it, and
+   `around=<time>` anchored on it. Now a timed line earlier than the start by less than the slack
+   (a minute, as the bounds already allowed) is trusted, and the lower bound moves as far again
+   before it (never more than the slack before the start), so the untimed lines before it are placed
+   before it; a time more than a minute before the start is still refused. The search by time
+   returns the first line at or after the time even when it is before the file's first timed line.
+
+The placement lives in the service (`placeLines`, `internal/service/logsread.go`), which knows the
+files' sizes and the lines' offsets; `logline.Parse` is unchanged.
+
 ---
 
 ## R3. Levels

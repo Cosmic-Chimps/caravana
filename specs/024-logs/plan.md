@@ -46,7 +46,8 @@ files of lines, service, API (contract, parity, the scope walk), UI, a `TestCons
 ## Decisions carried (and where the research and the contract differed)
 
 - **The source** (research R1): live reads, `ls` for the files and sizes, `readat` backwards in
-  64 KiB chunks from the newest file crossing into `n-1`, until the oldest timed line read is
+  64 KiB chunks from the newest file crossing into `n-1`, until the oldest timed line read (in a
+  file with none read yet, the oldest line's place by byte offset) is
   before `from`, the stream's budget (1 MiB; 16 MiB per page split evenly beyond 16 streams) is
   spent, a **deadline** (a few seconds per page; spike R8.4: 20 MiB took 0.3 s on an idle node but a
   1 MiB `readat` took up to 6.9 s beside a CPU-hungry app) passes, or no file is left. The service and
@@ -61,9 +62,13 @@ files of lines, service, API (contract, parity, the scope walk), UI, a `TestCons
   `StripANSI(string) string`, `TimeOf(line string, bounds Bounds) (t time.Time, span Span, ok bool)`,
   `LevelOf(text string, prev Level) (Level, msg string, raw bool)`, `Fold([]Line) []Line`. Order per
   line: strip, time (span taken off), level (JSON first), continuation. A line with no time takes
-  the older timed line's time in the same stream (`estimated`); a stream's first untimed lines take
-  the copy's start or the previous file's `ModTime`; never the read's time. A time more than a
-  minute before the copy's start or after the file's `ModTime` isn't trusted (estimated). A **per-file
+  the older timed line's time in the same file (`estimated`); the lines before a file's first timed
+  line are placed by byte offset between the file's lower bound (the previous file's `ModTime`, or
+  the copy's start) and that line's time, and every line of a file with no timed line (or a skewed
+  one) by byte offset between its lower bound and its own `ModTime` (research R2's gate follow-up,
+  2026-10-24); never the read's time. A timed line up to a minute before the copy's start is
+  trusted and the lower bound moves before it, so untimed lines before it stay before it. A time
+  more than a minute before the copy's start or after the file's `ModTime` isn't trusted (estimated). A **per-file
   skew check** (spike R8.6) goes further: the last timed line of a file against that file's `ModTime`
   (the last line was written at about the file's last write); more than a minute either way and every
   line of that file is `estimated`. It catches a west-of-UTC zone, which the bounds alone miss in an

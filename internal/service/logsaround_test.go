@@ -285,6 +285,45 @@ func TestLogsAroundMergesTheOtherStream(t *testing.T) {
 	}
 }
 
+// The gate step's shape: stdout timed, stderr with no time at all, both a
+// line every 2 s for 20 minutes. Around an ERROR on stdout, the stderr lines
+// of the same seconds are found by their places between their file's write
+// bounds (the gate step's finding 1: they were all at the copy's start).
+func TestLogsAroundUntimedOtherStream(t *testing.T) {
+	e := readEnv(t)
+	start := wrote("00:00:00")
+	e.nomad.SetCopies("blog", copyStub(copyBlogWeb, "web", "running", start))
+	var out, errs []string
+	for i := 0; i < 600; i++ {
+		at := start.Add(time.Duration(2*i+1) * time.Second)
+		out = append(out, fmt.Sprintf("%s ERROR boom %03d", at.Format(time.RFC3339), i))
+		errs = append(errs, "[warn] careful")
+	}
+	last := start.Add(1200 * time.Second)
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, out, last)
+	e.nomad.AddLogFile(copyBlogWeb, "stderr", 0, errs, last)
+	lineLen := int64(len(out[0]) + 1)
+
+	got := mustAround(t, e, "9a4d13ff", logline.LineID{Stream: logline.Stdout, Offset: 300 * lineLen}, 3)
+	var n int
+	for _, l := range got.Lines {
+		if l.Stream != logline.Stderr {
+			continue
+		}
+		n++
+		if l.Text != "[warn] careful" || l.TimeSource != logline.Estimated || l.Level != logline.Warn {
+			t.Errorf("stderr row %q: %s %s", l.Text, l.TimeSource, l.Level)
+		}
+		if l.Time.Before(got.From) || l.Time.After(got.To) {
+			t.Errorf("stderr row at %s is outside the span %s to %s", l.Time, got.From, got.To)
+		}
+	}
+	// The span is stdout's lines 297 to 303, 12 seconds: about 6 stderr lines.
+	if n < 5 || n > 7 {
+		t.Errorf("%d stderr rows in the span %s to %s, want about 6", n, got.From, got.To)
+	}
+}
+
 func TestLogsAroundTimeBinarySearch(t *testing.T) {
 	e := readEnv(t)
 	f := makeAroundFile("line", readTime(t, "2026-10-25T00:00:00Z"), 11000, 50*time.Millisecond, 60)

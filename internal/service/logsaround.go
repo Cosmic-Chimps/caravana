@@ -447,19 +447,22 @@ func (s *Service) seekTime(ctx context.Context, c logCopy, files []deploy.LogFil
 	}
 	bounds := fileBounds(files, i, c.StartedAt)
 
-	_, first, ok, err := s.probeAhead(ctx, c, f, bounds, 0)
+	firstOff, first, ok, err := s.probeAhead(ctx, c, f, bounds, 0)
 	if err != nil {
 		return 0, err
 	}
 	if !ok {
 		return s.placeByProportion(ctx, c, files, i, t)
 	}
-	if !first.Before(t) {
-		return 0, nil
-	}
 
 	lo, hi := int64(0), f.Size // the answer is in [lo, hi]; lo's line is older than t
-	for hi-lo > logProbe {
+	if !first.Before(t) {
+		// At or before the first timed line: the untimed lines before it are
+		// placed before its time (placeLines), so the one read below, which
+		// holds them and the timed line, finds the first at or after t.
+		hi = firstOff
+	}
+	for first.Before(t) && hi-lo > logProbe {
 		mid := lo + (hi-lo)/2
 		off, tm, ok, err := s.probeAhead(ctx, c, f, bounds, mid)
 		if err != nil {
@@ -555,18 +558,13 @@ func (s *Service) probeTimed(ctx context.Context, c logCopy, f deploy.LogFile, b
 // placeByProportion is the search for a file that carries no times: t as a
 // share of the file's life, from the previous file's last write (or the
 // copy's start) to its own, taken as a share of its bytes, moved back to where its
-// line starts.
+// line starts. It is placeLines read backwards: the line it finds is the one
+// placed at or just before t.
 func (s *Service) placeByProportion(ctx context.Context, c logCopy, files []deploy.LogFile, i int, t time.Time) (int64, error) {
 	f := files[i]
-	var begin time.Time
-	switch {
-	case i > 0:
-		begin = files[i-1].ModTime
-	case c.StartedAt != nil:
-		begin = *c.StartedAt
-	}
-	span := f.ModTime.Sub(begin)
-	if begin.IsZero() || f.ModTime.IsZero() || span <= 0 {
+	begin, end := writeSpan(files, i, c.StartedAt)
+	span := end.Sub(begin)
+	if begin.IsZero() || end.IsZero() || span <= 0 {
 		return 0, nil
 	}
 	share := float64(t.Sub(begin)) / float64(span)
@@ -594,59 +592,32 @@ func (s *Service) placeByProportion(ctx context.Context, c logCopy, files []depl
 // skew check of parseLogStream compares a file's last timed line with its last
 // write, which a window that stops short of the end can't do, so here a file is
 // checked by its own tail: a skewed file (research R2) has every line of the
-// window estimated, as in the page read.
+// window estimated, as in the page read. Lines are placed by placeLines from
+// their offsets in their files, so a line gets the same time here as in the
+// page read when its file has no timed line.
 func (s *Service) parseWindow(ctx context.Context, c logCopy, stream logline.Stream, files []deploy.LogFile, raws []rawLine) ([]logline.Line, error) {
 	lines := make([]logline.Line, 0, len(raws))
-	var prev logline.Line
-	havePrev := false
+	var prev *logline.Line
 	for g := 0; g < len(raws); {
+		end := fileRunEnd(raws, g)
 		fi := raws[g].file
-		end := g
-		for end < len(raws) && raws[end].file == fi {
-			end++
-		}
 		f := files[fi]
-		b := fileBounds(files, fi, c.StartedAt)
-		fallback := f.ModTime
-		if !b.NotBefore.IsZero() {
-			fallback = b.NotBefore.Add(logline.Slack)
-		}
-		first := len(lines)
-		for _, r := range raws[g:end] {
-			id := logline.LineID{Copy: c.short, Stream: stream, File: f.Index, Offset: r.offset}
-			var p *logline.Line
-			if havePrev {
-				p = &prev
-			}
-			l := logline.Parse(r.text, stream, id, b, p)
-			if l.Time.IsZero() {
-				l.Time = fallback
-			}
-			lines = append(lines, l)
-			prev, havePrev = l, true
-		}
+		group := parseFileRun(c.short, stream, c.StartedAt, files, raws[g:end], prev)
 
-		group := lines[first:]
 		last := raws[end-1]
 		var skew bool
 		if last.offset+int64(len(last.text)) >= f.Size-2 { // the window reaches the file's end
 			skew = skewed(group, f.ModTime)
 		} else {
 			var err error
-			if skew, err = s.tailSkewed(ctx, c, f, b); err != nil {
+			if skew, err = s.tailSkewed(ctx, c, f, fileBounds(files, fi, c.StartedAt)); err != nil {
 				return nil, err
 			}
 		}
-		if skew {
-			anchor := fallback
-			if first > 0 {
-				anchor = lines[first-1].Time
-			}
-			for i := range group {
-				group[i].Time, group[i].TimeSource = anchor, logline.Estimated
-			}
-			prev = lines[len(lines)-1]
-		}
+		placeLines(group, files, fi, c.StartedAt, skew)
+		lines = append(lines, group...)
+		l := lines[len(lines)-1]
+		prev = &l
 		g = end
 	}
 	return lines, nil

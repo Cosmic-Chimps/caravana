@@ -73,7 +73,9 @@ const (
 	// FromLine: the line carried its own time.
 	FromLine TimeSource = "line"
 	// Estimated: the line had none, so it took the time of the older line
-	// before it in the same stream (or the copy's start).
+	// before it in the same stream (or the copy's start). The service then
+	// places a file's lines before its first timed line, or every line of a
+	// file with none, by byte offset between the file's write bounds.
 	Estimated TimeSource = "estimated"
 	// Received: a live line, timed when it arrived. Parse never sets it.
 	Received TimeSource = "received"

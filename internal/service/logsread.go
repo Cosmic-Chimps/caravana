@@ -458,12 +458,87 @@ func fileBounds(files []deploy.LogFile, i int, started *time.Time) logline.Bound
 	return b
 }
 
+// writeSpan is when the lines of files[i] were written, as the listing says:
+// from the previous file's last write (the copy's start for the first file) to
+// this file's last write, without slack. Either end is zero when unknown.
+func writeSpan(files []deploy.LogFile, i int, started *time.Time) (lo, hi time.Time) {
+	switch {
+	case i > 0:
+		lo = files[i-1].ModTime
+	case started != nil:
+		lo = *started
+	}
+	return lo, files[i].ModTime
+}
+
+// between places byte offset off of a stretch of size bytes written from lo
+// to hi: lo plus the same share of the time as off is of the bytes. With lo
+// unknown it is hi, and with hi unknown (or not after lo) it is lo; both
+// unknown give the zero time.
+func between(lo, hi time.Time, off, size int64) time.Time {
+	switch {
+	case lo.IsZero():
+		return hi
+	case hi.IsZero() || size <= 0 || !hi.After(lo):
+		return lo
+	}
+	off = min(max(off, 0), size)
+	return lo.Add(time.Duration(float64(hi.Sub(lo)) * float64(off) / float64(size)))
+}
+
+// placeLines settles the times of one file's lines that carry none of their
+// own (research R2 and its gate follow-up). group is what logline.Parse made
+// of a run of files[fi]'s lines, oldest first, each with its offset in its ID;
+// started is the copy's first start. Every line it places is Estimated.
+//
+//   - A file with no timed line in the group, or a skewed one (whose times
+//     aren't believed), has every line placed by its byte offset between the
+//     file's write bounds (writeSpan), as if its bytes were written at an even
+//     pace. The newest file's upper bound is its last write, which for a live
+//     stream is about now.
+//   - Otherwise the lines before the first timed line are placed by offset
+//     between the file's lower bound and that line's time, and the lines after
+//     it keep what Parse gave them: the time of the timed line before them.
+//   - A first timed line earlier than the lower bound is trusted (the
+//     container's clock and Nomad's start event disagree by a second or two;
+//     the bounds already refuse a time more than logline.Slack before it), and
+//     the lower bound moves as far again before that line, never more than the
+//     slack before the bound, so the lines before it stay before it.
+//
+// Nothing here uses the time of the read.
+func placeLines(group []logline.Line, files []deploy.LogFile, fi int, started *time.Time, skewed bool) {
+	if len(group) == 0 {
+		return
+	}
+	f := files[fi]
+	lo, hi := writeSpan(files, fi, started)
+	first := -1
+	if !skewed {
+		first = slices.IndexFunc(group, func(l logline.Line) bool { return l.TimeSource == logline.FromLine })
+	}
+	if first < 0 {
+		for i := range group {
+			group[i].Time, group[i].TimeSource = between(lo, hi, group[i].ID.Offset, f.Size), logline.Estimated
+		}
+		return
+	}
+	t1, o1 := group[first].Time, group[first].ID.Offset
+	if !lo.IsZero() && t1.Before(lo) {
+		lo = laterOf(t1.Add(-lo.Sub(t1)), lo.Add(-logline.Slack))
+	}
+	for i := 0; i < first; i++ {
+		group[i].Time, group[i].TimeSource = between(lo, t1, group[i].ID.Offset, o1), logline.Estimated
+	}
+}
+
 // walkLogStream reads one stream of one copy backwards: from the end of its
 // newest file in chunks of logChunk, into the file before when one is spent,
 // as Nomad's own findClosest does for its end offset. files are the stream's
 // files, oldest first, as LogFiles lists them. The walk stops at the first of:
 //
-//   - a chunk whose oldest timed line is older than lim.from (stopRange);
+//   - a chunk whose oldest line is older than lim.from (stopRange): the time
+//     of the first timed line near its start or, while no timed line has been
+//     read in its file, its first line's place by offset (placeLines);
 //   - lim.budget bytes read (stopBudget);
 //   - ctx ending (stopDeadline; the caller tells a deadline from a cancel);
 //   - no file left (stopEnd), or a file Nomad purged under it (stopEnd with
@@ -486,6 +561,8 @@ walk:
 			continue
 		}
 		bounds := fileBounds(files, i, c.StartedAt)
+		lo, hi := writeSpan(files, i, c.StartedAt)
+		sawTimed := false // a timed line was read in this file
 
 		pos := f.Size
 		var carry []byte    // the bytes from pos on that belong to a line begun before pos
@@ -533,7 +610,23 @@ walk:
 			}
 			pos = start
 			batches = append(batches, batch)
-			if reachedFrom(batch, bounds, lim.from) {
+			if lim.from.IsZero() || len(batch) == 0 {
+				continue
+			}
+			oldest, ok := firstTimed(batch, bounds, logProbeLines)
+			if ok {
+				sawTimed = true
+			} else if !sawTimed {
+				// No time near the chunk's start, and none read in this file
+				// yet: if the chunk has none at all, its lines are placed by
+				// offset, and the walk goes by that.
+				if _, timed := firstTimed(batch[min(len(batch), logProbeLines):], bounds, len(batch)); timed {
+					sawTimed = true
+				} else {
+					oldest, ok = between(lo, hi, batch[0].offset, f.Size), true
+				}
+			}
+			if ok && !oldest.IsZero() && oldest.Before(lim.from) {
 				res.reason, finished = stopRange, false
 				break walk
 			}
@@ -554,18 +647,15 @@ walk:
 	return res, nil
 }
 
-// reachedFrom says whether the oldest timed line near the start of a chunk is
-// older than from, which means the walk has gone back far enough.
-func reachedFrom(batch []rawLine, b logline.Bounds, from time.Time) bool {
-	if from.IsZero() {
-		return false
-	}
-	for i := 0; i < len(batch) && i < logProbeLines; i++ {
+// firstTimed is the time of the first of the first n lines of batch that
+// carries one, which the walk compares with the range's start.
+func firstTimed(batch []rawLine, b logline.Bounds, n int) (time.Time, bool) {
+	for i := 0; i < len(batch) && i < n; i++ {
 		if t, _, ok := logline.TimeOf(logline.StripANSI(batch[i].text), b); ok {
-			return t.Before(from)
+			return t, true
 		}
 	}
-	return false
+	return time.Time{}, false
 }
 
 // splitRawLines cuts seg, which begins at byte offset base of a file, into
@@ -613,63 +703,55 @@ func validLogText(b []byte) string {
 
 // parseLogStream reads the raw lines of one stream, oldest first, into lines:
 // logline.Parse for each, with the bounds of the line's file, then the skew
-// check per file. files are the stream's files and started the copy's first
-// start, as walkLogStream got them.
+// check and placeLines per file. files are the stream's files and started the
+// copy's first start, as walkLogStream got them.
 //
 // The skew check: the last timed line of a file was written at about the
 // file's last write, so one that is more than a minute from the file's
 // ModTime means the file's times can't be trusted (a container in a zone west
 // of UTC, a clock set wrong), and every line of the file becomes Estimated,
-// stamped like a line with no time: the time of the line before it in the
-// stream, else the lower bound.
+// placed like the lines of a file with no time: by byte offset between the
+// file's write bounds.
 func parseLogStream(short string, stream logline.Stream, started *time.Time, files []deploy.LogFile, raws []rawLine) []logline.Line {
 	lines := make([]logline.Line, 0, len(raws))
-	var prev logline.Line
-	havePrev := false
+	var prev *logline.Line
 	for g := 0; g < len(raws); {
+		end := fileRunEnd(raws, g)
 		fi := raws[g].file
-		end := g
-		for end < len(raws) && raws[end].file == fi {
-			end++
-		}
-		f := files[fi]
-		b := fileBounds(files, fi, started)
-
-		// A time to give a line that has nothing better: the lower bound, or,
-		// with no bound at all, the file's last write.
-		fallback := f.ModTime
-		if !b.NotBefore.IsZero() {
-			fallback = b.NotBefore.Add(logline.Slack)
-		}
-		first := len(lines)
-		for _, r := range raws[g:end] {
-			id := logline.LineID{Copy: short, Stream: stream, File: f.Index, Offset: r.offset}
-			var p *logline.Line
-			if havePrev {
-				p = &prev
-			}
-			l := logline.Parse(r.text, stream, id, b, p)
-			if l.Time.IsZero() {
-				l.Time = fallback
-			}
-			lines = append(lines, l)
-			prev, havePrev = l, true
-		}
-
-		group := lines[first:]
-		if skewed(group, f.ModTime) {
-			anchor := fallback
-			if first > 0 {
-				anchor = lines[first-1].Time
-			}
-			for i := range group {
-				group[i].Time, group[i].TimeSource = anchor, logline.Estimated
-			}
-			prev = lines[len(lines)-1]
-		}
+		group := parseFileRun(short, stream, started, files, raws[g:end], prev)
+		placeLines(group, files, fi, started, skewed(group, files[fi].ModTime))
+		lines = append(lines, group...)
+		last := lines[len(lines)-1]
+		prev = &last
 		g = end
 	}
 	return lines
+}
+
+// fileRunEnd is the end of the run of raws, from g on, that come from one file.
+func fileRunEnd(raws []rawLine, g int) int {
+	end := g
+	for end < len(raws) && raws[end].file == raws[g].file {
+		end++
+	}
+	return end
+}
+
+// parseFileRun is logline.Parse over a run of one file's lines, oldest first,
+// after prev (the stream's line before them, or nil). The times of lines with
+// none of their own are Parse's until placeLines settles them.
+func parseFileRun(short string, stream logline.Stream, started *time.Time, files []deploy.LogFile, run []rawLine, prev *logline.Line) []logline.Line {
+	fi := run[0].file
+	f := files[fi]
+	b := fileBounds(files, fi, started)
+	out := make([]logline.Line, 0, len(run))
+	for _, r := range run {
+		id := logline.LineID{Copy: short, Stream: stream, File: f.Index, Offset: r.offset}
+		l := logline.Parse(r.text, stream, id, b, prev)
+		out = append(out, l)
+		prev = &out[len(out)-1]
+	}
+	return out
 }
 
 // skewed says whether the last line of the group that carried its own time is

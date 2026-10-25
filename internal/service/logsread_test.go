@@ -301,21 +301,156 @@ func TestReadLogsCrossesFiles(t *testing.T) {
 	}
 }
 
-func TestReadLogsUntimedStreamIsEstimatedFromTheCopyStart(t *testing.T) {
+// A stream with no timed line: each line is placed by its byte offset between
+// the file's write bounds (the copy's start and the file's last write), not
+// all at the copy's start (the gate step's finding 1).
+func TestReadLogsUntimedStreamIsPlacedByItsFileBounds(t *testing.T) {
 	e := readEnv(t)
-	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{"booting", "still booting", "ready"}, wrote("00:30:10"))
+	mod := wrote("00:30:10")
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{"booting", "still booting", "ready"}, mod)
 
 	read := mustRead(t, e, EnvLogQuery{App: "blog", Range: 24 * time.Hour})
-	if len(read.Lines) != 3 {
-		t.Fatalf("%d rows, want 3", len(read.Lines))
+	if got := entryTexts(read.Lines); !slices.Equal(got, []string{"ready", "still booting", "booting"}) {
+		t.Fatalf("order = %q, want the file's order, newest first", got)
 	}
-	for _, l := range read.Lines {
-		if l.TimeSource != logline.Estimated || !l.Time.Equal(readStart) {
-			t.Errorf("%q: %s at %s, want estimated at the copy's start %s", l.Text, l.TimeSource, l.Time, readStart)
+	// Offsets 0, 8 and 22 of 28 bytes, between 23:00:00 and 00:30:10.
+	for i, off := range []int64{22, 8, 0} {
+		l := read.Lines[i]
+		want := readStart.Add(time.Duration(float64(mod.Sub(readStart)) * float64(off) / 28))
+		if l.TimeSource != logline.Estimated || !l.Time.Equal(want) {
+			t.Errorf("%q: %s at %s, want estimated at %s (offset %d of 28)", l.Text, l.TimeSource, l.Time, want, off)
 		}
 	}
-	if got := entryTexts(read.Lines); !slices.Equal(got, []string{"ready", "still booting", "booting"}) {
-		t.Errorf("order = %q: equal times must keep the file's order, newest first", got)
+}
+
+// 600 untimed lines over a file written from 00:20 to 00:40 (now): the last
+// 15 minutes hold the newest 450, not none (all at the copy's start) and not
+// all of them.
+func TestReadLogsUntimedStreamSpreadsAcrossTheRange(t *testing.T) {
+	e := readEnv(t)
+	e.nomad.SetCopies("blog", copyStub(copyBlogWeb, "web", "running", wrote("00:20:00")))
+	var lines []string
+	for i := 0; i < 600; i++ {
+		lines = append(lines, fmt.Sprintf("untimed line %04d", i)) // 18 bytes with the newline
+	}
+	e.nomad.AddLogFile(copyBlogWeb, "stderr", 0, lines, readNow)
+
+	read := mustRead(t, e, EnvLogQuery{App: "blog"})
+	if n := len(read.Lines); n != 450 {
+		t.Fatalf("%d rows in the last 15 minutes, want 450 (lines 150 to 599)", n)
+	}
+	if got := read.Lines[0].Text; got != "untimed line 0599" {
+		t.Errorf("the newest row is %q", got)
+	}
+	if got := read.Lines[449]; got.Text != "untimed line 0150" || !got.Time.Equal(wrote("00:25:00")) {
+		t.Errorf("the oldest row is %q at %s, want line 0150 at 00:25:00", got.Text, got.Time)
+	}
+	for i, l := range read.Lines {
+		if l.TimeSource != logline.Estimated || l.Time.Before(read.From) || l.Time.After(readNow) {
+			t.Fatalf("row %d %q: %s at %s, want estimated inside the range", i, l.Text, l.TimeSource, l.Time)
+		}
+		if i > 0 && !l.Time.Before(read.Lines[i-1].Time) {
+			t.Fatalf("row %d %q at %s is not older than the row before it", i, l.Text, l.Time)
+		}
+	}
+	if !read.Coverage.Complete {
+		t.Errorf("coverage = %+v, want complete", read.Coverage)
+	}
+}
+
+// The walk of an untimed stream stops at the range's start by the lines'
+// placed times, not at its budget.
+func TestReadLogsUntimedWalkStopsAtTheRange(t *testing.T) {
+	e := readEnv(t)
+	e.nomad.SetCopies("blog", copyStub(copyBlogWeb, "web", "running", wrote("00:00:00")))
+	var lines []string
+	for i := 0; i < 100000; i++ {
+		lines = append(lines, fmt.Sprintf("untimed %06d %s", i, strings.Repeat("u", 24))) // 40 bytes with the newline
+	}
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, lines, readNow)
+
+	// The last 2 of the file's 40 minutes: its last 5% of 4,000,000 bytes.
+	read := mustRead(t, e, EnvLogQuery{App: "blog", From: wrote("00:38:00"), To: readNow, Lines: 1000})
+	if n := len(read.stamps); n < 4999 || n > 5001 {
+		t.Errorf("%d lines in the range, want 5000", n)
+	}
+	if !read.Coverage.Complete {
+		t.Errorf("coverage = %+v, want complete: the walk reached the range's start", read.Coverage)
+	}
+	var bytesRead int64
+	for _, r := range e.nomad.FileRequests() {
+		if r.Op == "readat" {
+			bytesRead += r.Limit
+		}
+	}
+	if bytesRead > 5*logChunk {
+		t.Errorf("read %d bytes, want the 200,000 the range needs, in 64 KiB chunks (the budget is %d)", bytesRead, logStreamBudget)
+	}
+}
+
+// A first timed line a second before the copy's start (the container's clock
+// against Nomad's start event, the gate step's finding 2) keeps its time, the
+// untimed line before it is placed earlier still, and a search for its time
+// finds it, not the untimed line.
+func TestReadLogsTimedLineBeforeTheCopyStart(t *testing.T) {
+	e := readEnv(t)
+	started := readTime(t, "2026-10-25T00:20:00.039Z")
+	e.nomad.SetCopies("blog", copyStub(copyBlogWeb, "web", "running", started))
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{
+		"banner",
+		"2026-10-25T00:19:59Z ERROR boom",
+		"no time",
+		"2026-10-25T00:20:01Z tick",
+	}, wrote("00:20:02"))
+
+	read := mustRead(t, e, EnvLogQuery{App: "blog", Range: time.Hour})
+	if got := entryTexts(read.Lines); !slices.Equal(got, []string{"2026-10-25T00:20:01Z tick", "no time", "2026-10-25T00:19:59Z ERROR boom", "banner"}) {
+		t.Fatalf("order = %q", got)
+	}
+	boom, banner := read.Lines[2], read.Lines[3]
+	t1 := wrote("00:19:59")
+	if boom.TimeSource != logline.FromLine || !boom.Time.Equal(t1) {
+		t.Errorf("the ERROR line is %s at %s, want its own time %s", boom.TimeSource, boom.Time, t1)
+	}
+	if banner.TimeSource != logline.Estimated || !banner.Time.Before(t1) || banner.Time.Before(started.Add(-logline.Slack)) {
+		t.Errorf("the untimed first line is %s at %s, want estimated before %s and not more than the slack before the start", banner.TimeSource, banner.Time, t1)
+	}
+	if l := read.Lines[1]; l.TimeSource != logline.Estimated || !l.Time.Equal(t1) {
+		t.Errorf("the untimed line after it is %s at %s, want estimated at %s", l.TimeSource, l.Time, t1)
+	}
+
+	id, err := e.svc.LogsAroundTime(context.Background(), "9a4d13ff", logline.Stdout, t1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != boom.ID {
+		t.Errorf("around %s = %v, want the ERROR line %v", t1, id, boom.ID)
+	}
+}
+
+// In a file with timed lines, the untimed lines before its first timed line
+// are placed between the file's lower bound (the previous file's last write)
+// and that line, and the ones after it take its time.
+func TestReadLogsUntimedLinesBeforeTheFirstTimedLine(t *testing.T) {
+	e := readEnv(t)
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{"2026-10-25T00:05:00Z a", "2026-10-25T00:10:00Z b"}, wrote("00:10:00"))
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 1, []string{"cont one", "cont two", "2026-10-25T00:20:00Z x", "after x"}, wrote("00:20:05"))
+
+	read := mustRead(t, e, EnvLogQuery{App: "blog", Range: time.Hour})
+	got := map[string]LogEntry{}
+	for _, l := range read.Lines {
+		got[l.Text] = l
+	}
+	lo, t1 := wrote("00:10:00"), wrote("00:20:00")
+	one, two := got["cont one"], got["cont two"]
+	if one.TimeSource != logline.Estimated || !one.Time.Equal(lo) {
+		t.Errorf("cont one (offset 0) is %s at %s, want estimated at the lower bound %s", one.TimeSource, one.Time, lo)
+	}
+	if two.TimeSource != logline.Estimated || !two.Time.After(lo) || !two.Time.Before(t1) {
+		t.Errorf("cont two is %s at %s, want estimated between %s and %s", two.TimeSource, two.Time, lo, t1)
+	}
+	if l := got["after x"]; l.TimeSource != logline.Estimated || !l.Time.Equal(t1) {
+		t.Errorf("after x is %s at %s, want estimated at %s", l.TimeSource, l.Time, t1)
 	}
 }
 
@@ -340,13 +475,21 @@ func TestReadLogsSkewedFileIsEstimated(t *testing.T) {
 	for _, l := range read.Lines {
 		got[l.Text] = l
 	}
-	for _, text := range []string{"2026-10-24T22:00:00Z first", "2026-10-24T22:00:05Z second", "2026-10-25T02:30:00Z ahead"} {
+	// Each skewed line is placed like an untimed one: by its offset between
+	// the copy's start and its file's last write. "first" and "ahead" are at
+	// offset 0, "second" at byte 27 of web's 55.
+	webMod := wrote("00:30:10")
+	for text, want := range map[string]time.Time{
+		"2026-10-24T22:00:00Z first":  started,
+		"2026-10-24T22:00:05Z second": started.Add(time.Duration(float64(webMod.Sub(started)) * 27 / 55)),
+		"2026-10-25T02:30:00Z ahead":  started,
+	} {
 		l, ok := got[text]
 		if !ok {
 			t.Fatalf("no row %q in %q", text, entryTexts(read.Lines))
 		}
-		if l.TimeSource != logline.Estimated || !l.Time.Equal(started) {
-			t.Errorf("%q: %s at %s, want estimated at the copy's start %s", text, l.TimeSource, l.Time, started)
+		if l.TimeSource != logline.Estimated || !l.Time.Equal(want) {
+			t.Errorf("%q: %s at %s, want estimated at %s", text, l.TimeSource, l.Time, want)
 		}
 	}
 	if l := got["2026-10-25T00:20:00Z steady"]; l.TimeSource != logline.FromLine || !l.Time.Equal(readTime(t, "2026-10-25T00:20:00Z")) {
