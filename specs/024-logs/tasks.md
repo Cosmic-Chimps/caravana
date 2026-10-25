@@ -128,7 +128,7 @@ the next.
 
 ## Phase 5: Lab tests
 
-- [ ] T018 `cmd/caravana/console_logs_test.go` + `console_lab_test.go`: the step `console-logs`
+- [x] T018 `cmd/caravana/console_logs_test.go` + `console_lab_test.go`: the step `console-logs`
   per quickstart §6 (the two sample apps through the forms, every sample line's level and time,
   folding, search, the chips' counts, only-service and a copy, around with the highlight, Raw, a
   deploy during the step as a row and marker, Show older, Download's first lines and order, the
