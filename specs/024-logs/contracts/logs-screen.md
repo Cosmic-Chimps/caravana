@@ -200,3 +200,35 @@ The designer checks at 127.0.0.1:7070 against `p9-logs.png`:
    last`; the page stays newest first.
 4. The histogram is inline SVG (the console's first, recorded in DESIGN.md as the one SVG chart); bins older
    than what was read are hatched, never zero.
+
+## Review fixes (2026-10-25)
+
+1. **The download writes the real lines.** Its streams skip folding: every line that passes the filter is
+   written as read, oldest first, with its own time. A search that left only equal consecutive lines used to
+   fold them into one row that the file wrote N times at the newest line's time; "folded rows unfolded" now
+   means the original lines. The page keeps folding.
+2. **An opened row lands below the top bar.** `.cv-lrow` has `scroll-margin-top: calc(52px + 12px)` (the sticky
+   top bar's height and 12px of air), which covers a `#line-...` landing, the open row and the around view's
+   highlighted line.
+3. **The ×N chip stays inline at narrow widths.** The text and the chip are one `.cv-lbody` cell: wide it is
+   `display: contents` (the chip keeps its own right-aligned `auto` column, unchanged at 1440), under 640px it
+   is one inline flow, so the chip follows the text's last word instead of taking a third line.
+
+### Rulings (designer, 2026-10-25)
+
+The thirteen departures from the contract are accepted as proposed:
+
+1. The level chips' counts show only while the chip is on, and they are counts of lines read (a folded row
+   counts its lines).
+2. "N lines" is over what was read, not over the range.
+3. `live=0` on the open, around and older views.
+4. The older-only view, with its note.
+5. A deploy row beyond the row cap waits for "Show older", while its histogram marker always draws.
+6. `app/service` is the service's name when several apps are shown.
+7. The strip has a Close item and the URL as text, and the first-seen note says "(in what was read)".
+8. The rail's counts come from live copies, and a gone copy reads "(gone)".
+9. The paused count is made by a fetch.
+10. The app tab has its own stream and its own h2.
+11. The 400 and 404 rules for the logs routes.
+12. The download's name uses the console's clock.
+13. The coverage note is drawn only when the read was cut.

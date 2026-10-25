@@ -1088,7 +1088,10 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   in UTC, fg-3), the level (`.cv-llvl`, 12px, in its hue; `.cv-llvl-error` failed, `-warn` warn, `-info` fg-2,
   `-debug` fg-3), the service in its hue then the copy's short id (`.cv-lsvc`, `.cv-svcname`, `.cv-lcopy` 12px
   fg-4), the text (`.cv-ltext`, fg-1, one line, ellipsized; fg-3 on a `.cv-row-debug` row) and the `×N` chip
-  (`.cv-repeat`, 500 11px mono fg-3, 3px 6px, radius 3, 1px line-2) when equal lines were folded.
+  (`.cv-repeat`, 500 11px mono fg-3, 3px 6px, radius 3, 1px line-2) when equal lines were folded. The text and
+  its chip share one cell in the markup (`.cv-lbody`, `display: contents` wide, so the chip is the `auto`
+  column). A row has `scroll-margin-top: 64px` (the 52px top bar and 12px), so a `#line-…` link lands below
+  the bar.
 - **The estimated time.** An ordinary time is fg-3. A line that carried no time of its own takes the older line's
   before it, and its time (`.cv-time-est`) is fg-4 with a leading "~" (the template writes the character, so it
   is in the text and in a copy) and the `title` "estimated: this line carried no time; taken from the line
@@ -1131,8 +1134,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   and, when a service is chosen, its copies right after it (the page-3 nav's fade at the right edge says the
   row goes on); the histogram keeps its height and its labels keep their ends. A row folds to two lines when
   the stream itself has under 640px (its own container, so the rule follows the room the rail leaves, not the
-  viewport): time, level, service and copy; then the text, wrapping with no ellipsis, and the `×N` chip after
-  it; the open strip's padding drops to 16 and its buttons wrap. Every track is `minmax(0, …)` and long
+  viewport): time, level, service and copy; then the text, wrapping with no ellipsis, and the `×N` chip inline
+  after the text's last word (`.cv-lbody` becomes one inline flow, so it never takes a third line); the open strip's padding drops to 16 and its buttons wrap. Every track is `minmax(0, …)` and long
   words break anywhere, so nothing scrolls sideways at 390px. On touch screens the bars, chips and rail items
   are 44px tall.
 
