@@ -216,11 +216,10 @@ func (d *Deployer) logMessageError(action, copyID, msg string) error {
 		return fmt.Errorf("%w: Nomad refused the token (%s); its policy needs the read-fs capability: run the installer again to update it",
 			ErrNomadUnavailable, action)
 	}
-	first, _, _ := strings.Cut(strings.TrimSpace(msg), "\n")
-	if len(first) > 200 {
-		first = first[:200] + "…"
-	}
-	return fmt.Errorf("%w: %s: Nomad answered: %s", ErrNomadUnavailable, action, first)
+	// Anything else isn't quoted: a body of the wrong length may be the app's
+	// own output (a file truncated under the read), and an error travels to the
+	// API's answer and the log. Its size is enough to tell the two apart.
+	return fmt.Errorf("%w: %s: Nomad answered %d bytes that aren't the file", ErrNomadUnavailable, action, len(msg))
 }
 
 // errorBody is the text of a Nomad error answer, or "".
