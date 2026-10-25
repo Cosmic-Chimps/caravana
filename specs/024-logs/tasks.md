@@ -52,7 +52,7 @@ the next.
 
 ## Phase 2: Service (US1 the stream, US2 narrow, US3 deploys and live, US4 download)
 
-- [ ] T005 [US1] `internal/service/logsread.go` + tests on the fake fs: `LogQuery`, `LogRead`,
+- [x] T005 [US1] `internal/service/logsread.go` + tests on the fake fs: `LogQuery`, `LogRead`,
   `ReadLogs` per plan.md: the place and app checks, `LogCopies`, the service and copy filters
   before reading, the backwards walk per stream in 64 KiB chunks across files under the budgets
   (1 MiB per stream, 16 MiB per page split evenly, the semaphore of 2), per line strip → time →

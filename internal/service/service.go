@@ -84,6 +84,10 @@ type Service struct {
 	terminalIdle  time.Duration // how long a session may go without input
 	terminalLimit time.Duration // how long a session may stay open
 
+	// Logs (feature 024), see logsread.go.
+	logSem      chan struct{} // holds one token per environment read going; its size is logReadsAtOnce
+	logDeadline time.Duration // how long one page read may take
+
 	// Domains (feature 023), see domains.go and domainwatch.go.
 	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching
 	edgeCfg         domainSettings // the checks' resolver, dialer and settings
@@ -160,6 +164,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		domainIdleGap:  defaultDomainIdleGap,
 		domainWatchGap: defaultDomainWatchGap,
+
+		logSem:      make(chan struct{}, logReadsAtOnce),
+		logDeadline: logReadDeadline,
 	}
 }
 
