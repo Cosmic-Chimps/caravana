@@ -102,6 +102,10 @@ type Service struct {
 	// change, so two writers never leave the variable behind the table (see
 	// teamonly.go).
 	teamMu sync.Mutex
+
+	// Monitoring (feature 025), see sampler.go.
+	metricsGap time.Duration // between two ticks of the sampler
+	sampler    samplerState
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -170,6 +174,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		logSem:      make(chan struct{}, logReadsAtOnce),
 		logDeadline: logReadDeadline,
+
+		metricsGap: defaultMetricsGap,
+		sampler:    samplerState{offset: defaultSamplerOffset},
 	}
 }
 
@@ -317,6 +324,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.watchDomains(ctx)
+	}()
+	// The sampler reads Traefik and Nomad once a gap and starts no watchers,
+	// so it lives in the same group.
+	sampleGap := s.metricsGap // read here: tests set the field after Start to drive ticks themselves
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runSampler(ctx, sampleGap)
 	}()
 	return nil
 }

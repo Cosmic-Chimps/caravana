@@ -89,7 +89,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   the median; `minutes` counted) and `Points(rows, from, step, n)` (counters summed, gauges the
   median, rates over the seconds covered, gaps where no row), the four ranges' steps and the slot
   in progress read from its minute rows.
-- [ ] T007 [US1] `internal/service/sampler.go` + `changes.go` + tests on the fakes: `runSampler(ctx,
+- [x] T007 [US1] `internal/service/sampler.go` + `changes.go` + tests on the fakes: `runSampler(ctx,
   gap)` in `Start`'s `backupWatcher` group, ticks at `now.Truncate(gap) + gap + 2 s`, a 20 s budget,
   each source alone (Traefik scrape and deltas keyed `<app.ID>-<svc.Name>@nomad` for stored
   services with a domain, a collision attributed to neither and logged once; `Reservations`;

@@ -22,6 +22,7 @@ const (
 	ChangeActions     ChangeKind = "actions"     // one app's list of actions (stop, start, restart, run); never their content
 	ChangeSchedules   ChangeKind = "schedules"   // an app's schedules or their runs; never a run's output
 	ChangeDomains     ChangeKind = "domains"     // a domain's state from its checks; never a password or a hash
+	ChangeMetrics     ChangeKind = "metrics"     // the sampler wrote a tick; never a number
 )
 
 // Change is a notice that something changed. It says what, never the new
