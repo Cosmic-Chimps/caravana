@@ -1353,7 +1353,7 @@
   /* A deploy marker: a 1px dashed vertical line in the rolling hue. */
   .cv-hmark { stroke: var(--color-rolling); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; fill: none; }
   .cv-hmark-failed { stroke: var(--color-failed); }
-  .cv-hlabels { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; font: 400 11px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+  .cv-hlabels { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; font: 400 11px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
   .cv-hlabels > span { min-width: 0; white-space: nowrap; }
   .cv-hlabels > .cv-hlabel-deploy { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: center; color: var(--color-rolling); }
   .cv-hlabels > .cv-hlabel-end { margin-left: auto; text-align: right; }

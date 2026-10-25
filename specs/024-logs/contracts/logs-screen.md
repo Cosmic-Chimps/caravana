@@ -275,3 +275,7 @@ From the impeccable critique of the built page (`.impeccable/critique/2026-10-25
 ## Last look (designer, 2026-10-25): Approved
 
 Verified headlessly on the restaged review instances after the review fixes and the critique rulings: a search shows each match at its own time with no fold and the chips count the range; one marker label per deployment and v0 on the deploy rows; an opened row lands below the top bar with the app linked and "Lines like this"; the stale open notice; the narrow chips name the app and the ×N chip stays inline; estimated times in fg-3 with the "~"; the download oldest first with every line its own time. One copy fix after it: the cap sentence gets its separator ("paused · newest 500 lines · Show older"). 024 is done.
+
+## Note (designer, 2026-10-25, with 025)
+
+The histogram's label row (the range's start, "read from …", "now") is **fg-3**, not the 11px fg-4 written above: it is text, and fg-4 (about 3.3:1) stays for non-text marks only. Deploy labels stay rolling.

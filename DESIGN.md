@@ -1083,7 +1083,7 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   rolling out" / "v24 live" (v0 is a version: "v0 rolling out"). A visually hidden table (its first column "From
   (UTC)") carries the same numbers for a screen reader, and the SVG's
   label is a sentence ("612 lines in the last 15 minutes, 4 errors, 1 deploy"). Under it, a row of 11px mono
-  fg-4 (`.cv-hlabels`): the range's start ("13:49 UTC"), the deploy's name in rolling under its marker
+  fg-3 (`.cv-hlabels`; text, so not fg-4): the range's start ("13:49 UTC"), the deploy's name in rolling under its marker
   (`.cv-hlabel-deploy`: one deployment's markers are one label, "┆ chatter v0 rolling out · live"; several
   deployments say the newest and how many others, "┆ chatter v2 and 1 more"), "now" at the right
   (`.cv-hlabel-end`). With no lines: the empty bars and "no lines in
