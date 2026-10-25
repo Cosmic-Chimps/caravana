@@ -70,7 +70,7 @@ the next.
   terminal `UpdatedAt`, with `RevertedTo` and the who-words through a shared `deployWho`-like
   helper moved to the service or duplicated minimally), merged into the read by time, never
   filtered by level or `q`, kept by `Service` only for that app.
-- [ ] T008 [US2] `internal/service/logsaround.go` + tests: `LogsAround(ctx, copy, at, n)`: `readat`
+- [x] T008 [US2] `internal/service/logsaround.go` + tests: `LogsAround(ctx, copy, at, n)`: `readat`
   ±16 KiB around the offset crossing a file edge, both streams of the copy over the same span,
   every level, the anchor's id, `ErrLogRotated` on a purged file, `ErrNotFound` on a gone copy.
 - [x] T009 [US4] `internal/service/logsdownload.go` + tests: `DownloadLogs(ctx, q, w)`: the k-way
