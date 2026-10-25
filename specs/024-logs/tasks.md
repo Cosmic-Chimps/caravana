@@ -94,7 +94,7 @@ the next.
 
 ## Phase 4: Console (US1, US2, US3, US4, US5)
 
-- [ ] T012 [US1] `internal/ui/style/input.css` "Page 7 (024)" + `DESIGN.md`: the head, the
+- [x] T012 [US1] `internal/ui/style/input.css` "Page 7 (024)" + `DESIGN.md`: the head, the
   segmented bars, the filter row, the rail (hues by `hash(app/service) mod 6` over the handoff's
   six: the one identity color), the histogram SVG classes (`cv-hbar`, `cv-hbar-err`,
   `cv-hbar-unread` hatched, `cv-hmark`), the stream rows (grid, error tint, fresh tint with the

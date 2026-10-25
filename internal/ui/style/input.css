@@ -1240,3 +1240,238 @@
   .cv-certrow > [data-label] { grid-column: 2; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; }
   .cv-certrow > [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
 }
+
+/* ---------------------------------------------------------------------------
+   Page 7 (feature 024): Logs, on /logs and an app's Logs tab (one template): the head with the range
+   bar and Live, the filter row, the services rail with its six hues, the histogram (the console's one
+   SVG chart), the stream's rows (a grid, folded at the stream's own width), the open row's strip, the
+   deploy row and the footer. The values are contracts/logs-screen.md's. The page is a container
+   (cvlogs) for the head, filter and rail, and the stream a container of its own (cvstream) for the
+   row's fold, so each narrows by the room it has (the rules at the end). No rule here needs a
+   style attribute: hues, fills and strokes all come from classes.
+   --------------------------------------------------------------------------- */
+@layer components {
+  .cv-page-logs { max-width: 1440px; gap: 18px; padding: 30px 26px 48px; container-type: inline-size; container-name: cvlogs; }
+
+  /* The head: title and sentence at the left, the range bar and Live at the right. */
+  .cv-lhead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  .cv-lhead-text { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; max-width: 900px; }
+  .cv-lhead-tools { display: flex; align-items: center; gap: 10px; flex: none; max-width: 100%; }
+  .cv-lhead-tools form { display: contents; }
+
+  /* The segmented bar (the handoff's seg): 2px padding, radius 4, ink-1 ground, 1px line-1; items are
+     30px of 500 13px mono, the chosen one on ink-3. Items are links; .cv-on or aria-current marks one. */
+  .cv-seg { display: inline-flex; align-items: center; gap: 0; padding: 2px; border: 1px solid var(--color-line-1); border-radius: 4px; background: var(--color-ink-1); max-width: 100%; }
+  .cv-seg-item { display: inline-flex; align-items: center; justify-content: center; height: 30px; padding: 0 12px; border: 0; border-radius: 3px; background: transparent; font: 500 13px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-seg-item:hover { color: var(--color-fg-2); }
+  .cv-seg-item.cv-on, .cv-seg-item[aria-current="true"] { background: var(--color-ink-3); color: var(--color-fg-1); }
+
+  /* Live / Paused: primary with the pause icon while live, secondary with play while paused. The
+     console's generic pressed look (a lighter ground and a bar) would paint over the primary, so the
+     live state restates it. */
+  .cv-btn.cv-livebtn { text-decoration: none; }
+  .cv-btn.cv-livebtn[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-content); box-shadow: none; }
+  .cv-btn.cv-livebtn[aria-pressed="true"]:hover { background: var(--color-primary-press); border-color: var(--color-primary-press); }
+  .cv-btn.cv-livebtn[aria-pressed="false"] { background: var(--color-ink-2); border-color: var(--color-line-2); color: var(--color-fg-1); }
+
+  /* The filter row: the place bars, a divider, the search field, the level chips. */
+  .cv-logfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cv-logfilter-div { flex: none; width: 1px; height: 22px; background: var(--color-line-2); }
+  .cv-logsearch { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 280px; height: 36px; padding: 0 12px; border: 1px solid var(--color-line-2); border-radius: 4px; background: var(--color-ink-1); color: var(--color-fg-3); transition: border-color 120ms var(--ease-cv); }
+  .cv-logsearch:focus-within { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
+  .cv-logsearch > .cv-icon { width: 14px; height: 14px; color: var(--color-fg-3); }
+  .cv-logsearch-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; font: 400 14px/1 var(--font-mono); color: var(--color-fg-1); }
+  .cv-logsearch-input::placeholder { color: var(--color-fg-4); opacity: 1; }
+  .cv-logsearch-n { flex: none; font: 400 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
+  .cv-logsearch-submit { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); border: 0; padding: 0; }
+  .cv-lvlchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  /* A level chip: off is quiet (transparent, line-1, fg-4); on is raised (ink-2, line-3) and wears the
+     level's hue; the count of error and warn sits in fg-3. */
+  .cv-lvlchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--color-line-1); border-radius: 4px; background: transparent; font: 500 12px/1 var(--font-mono); color: var(--color-fg-4); text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv), border-color 120ms var(--ease-cv); }
+  .cv-lvlchip:hover { border-color: var(--color-line-2); }
+  .cv-lvlchip.cv-on, .cv-lvlchip[aria-pressed="true"] { background: var(--color-ink-2); border-color: var(--color-line-3); }
+  .cv-lvlchip.cv-on.cv-lvl-error, .cv-lvlchip[aria-pressed="true"].cv-lvl-error { color: var(--color-failed); }
+  .cv-lvlchip.cv-on.cv-lvl-warn, .cv-lvlchip[aria-pressed="true"].cv-lvl-warn { color: var(--color-warn); }
+  .cv-lvlchip.cv-on.cv-lvl-info, .cv-lvlchip[aria-pressed="true"].cv-lvl-info { color: var(--color-fg-2); }
+  .cv-lvlchip.cv-on.cv-lvl-debug, .cv-lvlchip[aria-pressed="true"].cv-lvl-debug { color: var(--color-fg-3); }
+  .cv-lvlchip-n { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
+
+  /* The notice of the "lines around this" view. */
+  .cv-laround { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-size: 13px; line-height: 1.45; color: var(--color-fg-2); overflow-wrap: anywhere; }
+
+  /* Two columns: the rail and the main column (histogram, then the stream and its footer). */
+  .cv-lcols { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .cv-lmain { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* The services rail: sticky under the top bar, a label, "all services", then each app's services. */
+  .cv-lograil { position: sticky; top: 72px; display: flex; flex-direction: column; gap: 2px; min-width: 0; max-height: calc(100vh - 92px); overflow-x: hidden; overflow-y: auto; }
+  .cv-lograil-label { padding: 0 10px 8px; }
+  .cv-lrailgroup { padding: 12px 10px 4px; }
+  .cv-lrailitem { display: flex; align-items: center; gap: 10px; flex: none; height: 32px; padding: 0 10px; border-radius: 4px; font: 400 13px/1 var(--font-mono); color: var(--color-fg-2); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-lrailitem:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-lrailitem.cv-on, .cv-lrailitem[aria-current="true"] { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-lrailitem-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-lrailitem-n { flex: none; font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+  /* "all services" has a ring where the others have their hue's square. */
+  .cv-svcring { flex: none; box-sizing: border-box; width: 8px; height: 8px; border: 1px solid var(--color-line-3); border-radius: 50%; }
+  /* The copies of the chosen service, indented under it. */
+  .cv-lrailcopies { display: flex; flex-direction: column; gap: 2px; padding-left: 28px; }
+  .cv-lrailcopy { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 4px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; }
+  .cv-lrailcopy:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-lrailcopy.cv-on, .cv-lrailcopy[aria-current="true"] { background: var(--color-ink-2); color: var(--color-fg-1); }
+  .cv-lgone { font: 400 11px/1 var(--font-mono); color: var(--color-fg-4); }
+
+  /* The service hue: the console's one identity color, six low-chroma hues the template picks by a
+     stable hash of <app>/<service> (cv-hue-0 .. cv-hue-5), never a status hue's exact value. Put the
+     class on the row or rail item; .cv-svchue (the 8px square) and .cv-svcname (the name) read it. */
+  .cv-hue-0 { --cv-hue: oklch(0.78 0.08 250); }
+  .cv-hue-1 { --cv-hue: oklch(0.78 0.09 300); }
+  .cv-hue-2 { --cv-hue: oklch(0.80 0.07 200); }
+  .cv-hue-3 { --cv-hue: oklch(0.80 0.08 150); }
+  .cv-hue-4 { --cv-hue: oklch(0.80 0.08 80); }
+  .cv-hue-5 { --cv-hue: oklch(0.78 0.08 20); }
+  .cv-svchue { flex: none; width: 8px; height: 8px; border-radius: 1px; background: var(--cv-hue, var(--color-fg-3)); }
+  .cv-svcname { color: var(--cv-hue, var(--color-fg-2)); }
+
+  /* The histogram: a panel, an SVG of 30 bars, deploy markers, then the label row. The SVG is
+     viewBox "0 0 300 48" with preserveAspectRatio none, so strokes don't scale (non-scaling-stroke). */
+  .cv-hist { padding: 14px 16px 10px; }
+  .cv-hist-svg { display: block; width: 100%; height: 48px; overflow: visible; }
+  .cv-hbar { fill: var(--color-ink-3); }
+  .cv-hbar:hover { fill: var(--color-line-2); }
+  .cv-hbar-err { fill: var(--color-failed); }
+  .cv-hbar-err:hover { fill: var(--color-failed); opacity: 0.85; }
+  /* An empty bin with nothing to show: a 2px stub. */
+  .cv-hbar-empty { fill: var(--color-line-2); }
+  /* A bin older than what was read: drawn hatched (a dashed outline, never a zero bar). */
+  .cv-hbar-unread { fill: oklch(0.500 0.010 255 / 0.12); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+  /* A deploy marker: a 1px dashed vertical line in the rolling hue. */
+  .cv-hmark { stroke: var(--color-rolling); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; fill: none; }
+  .cv-hmark-failed { stroke: var(--color-failed); }
+  .cv-hlabels { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; font: 400 11px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+  .cv-hlabels > span { min-width: 0; white-space: nowrap; }
+  .cv-hlabels > .cv-hlabel-deploy { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: center; color: var(--color-rolling); }
+  .cv-hlabels > .cv-hlabel-end { margin-left: auto; text-align: right; }
+  .cv-hlabels > .cv-hlabel-read { color: var(--color-fg-3); }
+  .cv-hist-empty { margin-top: 6px; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+
+  /* The stream: ink-0 ground, 1px line-1, radius 4. */
+  .cv-logstream { min-width: 0; overflow: hidden; background: var(--color-ink-0); border: 1px solid var(--color-line-1); border-radius: 4px; container-type: inline-size; container-name: cvstream; }
+  .cv-lstreamhead { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--color-line-1); font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-lstreamhead-live { color: var(--color-rolling); }
+  .cv-lstreamhead-zone { margin-left: auto; color: var(--color-fg-4); white-space: nowrap; }
+  .cv-lstreamhead a { color: var(--color-fg-1); }
+
+  /* A row: time, level, service and copy, the text, the ×N chip. */
+  .cv-lrow { position: relative; display: grid; grid-template-columns: 104px 48px 190px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 5px 16px; font: 400 13px/20px var(--font-mono); color: var(--color-fg-1); text-decoration: none; }
+  a.cv-lrow:hover { background: var(--color-ink-1); color: var(--color-fg-1); }
+  .cv-lrow:focus-visible { outline-offset: -2px; }
+  .cv-lrow > * { min-width: 0; }
+  /* The ordinary time is fg-3; an estimated one (the line carried none, so it took the older line's) is
+     fg-4, and the template writes its leading "~" and the title. */
+  .cv-ltime { font: 400 12px/20px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--color-fg-3); }
+  .cv-ltime.cv-time-est, .cv-time-est { color: var(--color-fg-4); }
+  .cv-llvl { font: 400 12px/20px var(--font-mono); white-space: nowrap; color: var(--color-fg-2); }
+  .cv-llvl-error { color: var(--color-failed); }
+  .cv-llvl-warn { color: var(--color-warn); }
+  .cv-llvl-info { color: var(--color-fg-2); }
+  .cv-llvl-debug { color: var(--color-fg-3); }
+  .cv-lsvc { display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
+  .cv-lsvc .cv-svcname { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .cv-lcopy { flex: none; font: 400 12px/20px var(--font-mono); color: var(--color-fg-4); }
+  .cv-ltext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-1); }
+  .cv-row-debug .cv-ltext { color: var(--color-fg-3); }
+  /* The ×N chip of a folded run of equal lines. */
+  .cv-repeat { align-self: center; padding: 3px 6px; border: 1px solid var(--color-line-2); border-radius: 3px; font: 500 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  /* An error row: a 7% failed tint. */
+  .cv-row-error { background: oklch(0.68 0.17 40 / 0.07); }
+  a.cv-row-error:hover { background: oklch(0.68 0.17 40 / 0.11); }
+  /* A fresh row (it arrived live): a 5% fg-1 tint over whatever the row is, fading out once in 600ms
+     (the One Tick Rule). A veil, not the row's own ground, so an error row keeps its tint after. Under
+     reduced motion there is no veil at all. */
+  .cv-row-fresh::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: oklch(0.955 0.004 255 / 0.05); animation: cv-fresh 600ms var(--ease-cv) forwards; }
+  @keyframes cv-fresh { from { opacity: 1; } to { opacity: 0; } }
+  /* The line the "around this" view is about: a stronger tint and a bar at the edge. */
+  .cv-row-anchor, .cv-lrow:target { background: oklch(0.955 0.004 255 / 0.09); box-shadow: inset 2px 0 0 var(--color-fg-1); }
+  /* The open row: its text wraps, and a strip of actions sits under it. */
+  .cv-row-open { background: var(--color-ink-1); }
+  .cv-row-open .cv-ltext { overflow: visible; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cv-row-open.cv-row-error { background: oklch(0.68 0.17 40 / 0.07); }
+  .cv-rowstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px 10px 180px; background: var(--color-ink-1); border-top: 1px solid var(--color-line-1); border-bottom: 1px solid var(--color-line-1); }
+  .cv-rowstrip .cv-btn { text-decoration: none; }
+  .cv-rowstrip-note { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  .cv-rowstrip-url { max-width: 100%; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); user-select: all; overflow-wrap: anywhere; }
+  .cv-rowraw { flex-basis: 100%; min-width: 0; }
+  .cv-rowraw > summary { cursor: pointer; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-rowraw > pre { margin: 6px 0 0; padding: 8px 12px; background: var(--color-ink-0); border: 1px solid var(--color-line-1); border-radius: 4px; font: 400 12px/1.5 var(--font-mono); color: var(--color-fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  /* A deploy row: a rolling 8% tint between two rolling lines; time, rocket, the sentence. */
+  .cv-row-deploy { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; background: oklch(0.84 0.09 300 / 0.08); border-top: 1px solid var(--color-rolling-line); border-bottom: 1px solid var(--color-rolling-line); font: 500 13px/1.4 var(--font-mono); color: var(--color-rolling); text-decoration: none; }
+  a.cv-row-deploy:hover { background: oklch(0.84 0.09 300 / 0.13); color: var(--color-rolling); }
+  .cv-row-deploy > .cv-icon { flex: none; width: 13px; height: 13px; align-self: center; }
+  .cv-row-deploy .cv-ltime { flex: none; width: 96px; font-weight: 400; color: var(--color-fg-3); }
+  .cv-row-deploy-text { min-width: 0; overflow-wrap: anywhere; }
+  /* A deploy that failed keeps the shape and takes the failed hues. */
+  .cv-row-deploy-failed { background: oklch(0.68 0.17 40 / 0.08); border-color: var(--color-failed-line); color: var(--color-failed); }
+  a.cv-row-deploy-failed:hover { background: oklch(0.68 0.17 40 / 0.13); color: var(--color-failed); }
+
+  /* Under the rows: the notes that the read hit Nomad's tail or that more exists, the empty and error
+     sentences, and the footer. */
+  .cv-lolder { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 10px 16px; border-top: 1px solid var(--color-line-1); font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  .cv-lempty { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-lerror { display: flex; align-items: baseline; gap: 10px; padding: 24px; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-lerror > .cv-mark { position: relative; top: -0.05em; }
+  .cv-lfoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; font-size: 13px; line-height: 1.45; color: var(--color-fg-3); }
+  .cv-lfoot > p { min-width: 0; margin: 0; text-wrap: pretty; }
+  .cv-lfoot .cv-btn { text-decoration: none; }
+}
+
+/* Touch screens: the bars, chips and rail items are at least 44px tall. */
+@media (pointer: coarse) {
+  .cv-seg-item, .cv-lvlchip, .cv-lrailitem, .cv-lrailcopy { min-height: 44px; }
+  .cv-logsearch { height: 44px; }
+}
+
+/* Under 900px of room: the head stacks (title, sentence, then the range bar and Live on one line);
+   the filter row wraps (the bars, the search field full width, the level chips); the rail becomes one
+   row of chips above the stream, the chosen one first and its copies after it, scrolling sideways. */
+@container cvlogs (max-width: 899.98px) {
+  .cv-lhead { flex-direction: column; align-items: flex-start; }
+  .cv-lhead-text { flex: none; width: 100%; }
+  .cv-lhead-tools { flex-wrap: nowrap; }
+  .cv-seg-item { padding: 0 10px; }
+  .cv-logfilter-div { display: none; }
+  .cv-logsearch { flex: 1 1 100%; min-width: 0; }
+  .cv-lcols { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .cv-lograil { position: relative; top: auto; flex-direction: row; align-items: center; gap: 4px; max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .cv-lograil-label, .cv-lrailgroup { display: none; }
+  .cv-lrailitem { flex: none; order: 1; white-space: nowrap; }
+  .cv-lrailitem.cv-on, .cv-lrailitem[aria-current="true"] { order: 0; }
+  .cv-lrailitem-name { flex: none; overflow: visible; }
+  .cv-lrailcopies { display: contents; }
+  .cv-lrailcopy { flex: none; order: 0; }
+}
+
+/* A row folds to two lines when the stream is under 640px: time, level, service and copy; then the
+   text, wrapping, with the ×N chip after it. The open strip's padding matches and its buttons wrap. */
+@container cvstream (max-width: 639.98px) {
+  .cv-lrow { grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 10px; }
+  .cv-lrow > .cv-ltext { grid-column: 1 / -1; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+  .cv-lrow > .cv-repeat { grid-column: 1 / -1; justify-self: start; margin-top: 2px; }
+  .cv-row-open .cv-ltext { white-space: pre-wrap; }
+  .cv-rowstrip { padding-left: 16px; }
+  .cv-row-deploy { flex-wrap: wrap; row-gap: 4px; }
+  .cv-row-deploy .cv-ltime { width: auto; }
+}
+
+/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
+   gutters; the Logs page keeps the tighter gap. */
+@media (max-width: 899.98px) {
+  .cv-page-logs { gap: 18px; padding: 24px 16px 40px; }
+}
+
+/* Reduced motion: the global rule stops the veil's animation, which would leave it at 5% for good,
+   so a fresh row has no veil at all. */
+@media (prefers-reduced-motion: reduce) {
+  .cv-row-fresh::after { display: none; }
+}
