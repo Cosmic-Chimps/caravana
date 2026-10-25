@@ -570,9 +570,10 @@ func TestReadLogsTwoCopiesEqualLinesAreNotFolded(t *testing.T) {
 	}
 }
 
-// A search for 502 over nginx's access lines keeps only the 502s, and they
-// fold into one row because the lines between them were filtered out first.
-func TestReadLogsFilterComesBeforeFolding(t *testing.T) {
+// A search for 502 over nginx's access lines keeps only the 502s, each where
+// the copy wrote it: the 200s between them keep them apart, so nothing folds
+// (the fold comes before the filter, so "×N" is always consecutive lines).
+func TestReadLogsFoldComesBeforeFilter(t *testing.T) {
 	e := readEnv(t)
 	access := func(sec int, status int) string {
 		return fmt.Sprintf(`192.168.5.15 - - [25/Oct/2026:00:30:%02d +0000] "GET / HTTP/1.1" %d 896 "-" "Nomad/2.0.7"`, sec, status)
@@ -581,11 +582,11 @@ func TestReadLogsFilterComesBeforeFolding(t *testing.T) {
 		access(1, 200), access(2, 502), access(3, 200), access(4, 502), access(5, 200)}, wrote("00:30:10"))
 
 	read := mustRead(t, e, EnvLogQuery{App: "blog", Q: "502"})
-	if len(read.Lines) != 1 || read.Lines[0].Repeat != 1 || !strings.Contains(read.Lines[0].Text, " 502 ") {
-		t.Fatalf("rows = %+v, want one folded 502 row with a repeat of 1", entryTexts(read.Lines))
+	if len(read.Lines) != 2 || read.Lines[0].Repeat != 0 || read.Lines[1].Repeat != 0 || !strings.Contains(read.Lines[0].Text, " 502 ") {
+		t.Fatalf("rows = %+v, want two unfolded 502 rows", entryTexts(read.Lines))
 	}
-	if !read.Lines[0].Time.Equal(readTime(t, "2026-10-25T00:30:04Z")) {
-		t.Errorf("the row is at %s, want the newest 502's time", read.Lines[0].Time)
+	if !read.Lines[0].Time.Equal(readTime(t, "2026-10-25T00:30:04Z")) || !read.Lines[1].Time.Equal(readTime(t, "2026-10-25T00:30:02Z")) {
+		t.Errorf("the rows are at %s and %s, want each line's own time", read.Lines[0].Time, read.Lines[1].Time)
 	}
 	if read.Copies[0].Lines != 2 {
 		t.Errorf("the copy has %d lines after the filter, want 2", read.Copies[0].Lines)
@@ -603,6 +604,85 @@ func TestReadLogsFilterComesBeforeFolding(t *testing.T) {
 	if read = mustRead(t, e, EnvLogQuery{App: "blog", Q: "blog/worker"}); len(read.Lines) != 0 {
 		t.Errorf("%d rows for q=blog/worker, want none", len(read.Lines))
 	}
+}
+
+// A JSON error that repeats every ten lines, with other output between: a
+// search for it shows one row per occurrence, each at its own time, none folded
+// (a fold would have put all of them at the newest one's time). The histogram
+// still counts each line at its own time.
+func TestReadLogsSearchShowsEachOccurrenceWhereItWasWritten(t *testing.T) {
+	e := readEnv(t)
+	var lines []string
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 9; j++ {
+			lines = append(lines, fmt.Sprintf("2026-10-25T00:%02d:%02dZ tick %d-%d", 10+i, j, i, j))
+		}
+		lines = append(lines, fmt.Sprintf(`{"time":"2026-10-25T00:%02d:30Z","level":"error","msg":"boom"}`, 10+i))
+	}
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, lines, wrote("00:14:40"))
+
+	read := mustRead(t, e, EnvLogQuery{App: "blog", Q: "boom", Range: time.Hour})
+	if len(read.Lines) != 5 {
+		t.Fatalf("%d rows, want one per occurrence: %q", len(read.Lines), entryTexts(read.Lines))
+	}
+	seen := map[time.Time]bool{}
+	for _, l := range read.Lines {
+		if l.Repeat != 0 {
+			t.Errorf("row %q is folded (repeat %d)", l.Text, l.Repeat)
+		}
+		seen[l.Time] = true
+	}
+	if len(seen) != 5 {
+		t.Errorf("the rows are at %d distinct times, want 5", len(seen))
+	}
+	stamps := 0
+	for _, st := range read.stamps {
+		stamps++
+		if st.Level != logline.Error {
+			t.Errorf("a stamp of level %s under q=boom", st.Level)
+		}
+	}
+	if stamps != 5 {
+		t.Errorf("%d stamps, want 5", stamps)
+	}
+}
+
+// Equal lines that are adjacent in the stream fold under a search or a levels
+// filter that matches them; a line of another level between them keeps them
+// apart even when the levels filter drops that line.
+func TestReadLogsAdjacentEqualLinesFoldUnderAFilter(t *testing.T) {
+	e := readEnv(t)
+	const bad = `time=2026-10-25T00:30:0%dZ level=ERROR msg="upstream down"`
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, []string{
+		fmt.Sprintf(bad, 1), fmt.Sprintf(bad, 2), fmt.Sprintf(bad, 3),
+		"time=2026-10-25T00:30:04Z level=INFO msg=ok",
+		fmt.Sprintf(bad, 5), fmt.Sprintf(bad, 6),
+	}, wrote("00:30:10"))
+
+	for name, q := range map[string]EnvLogQuery{
+		"a search":     {App: "blog", Q: "upstream"},
+		"the levels":   {App: "blog", Levels: []logline.Level{logline.Error}},
+		"the unfilter": {App: "blog", Levels: []logline.Level{logline.Error, logline.Info}},
+	} {
+		read := mustRead(t, e, q)
+		var bad []LogEntry
+		for _, l := range read.Lines {
+			if l.Level == logline.Error {
+				bad = append(bad, l)
+			}
+		}
+		// Newest first: the run of two (×2), then the run of three (×3).
+		if len(bad) != 2 || bad[0].Repeat != 1 || bad[1].Repeat != 2 {
+			t.Errorf("%s: rows = %q repeats %d, %d, want ×2 then ×3", name, entryTexts(bad), repeatOf(bad, 0), repeatOf(bad, 1))
+		}
+	}
+}
+
+func repeatOf(rows []LogEntry, i int) int {
+	if i >= len(rows) {
+		return -1
+	}
+	return rows[i].Repeat
 }
 
 func TestReadLogsLevels(t *testing.T) {

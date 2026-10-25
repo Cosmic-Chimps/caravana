@@ -779,7 +779,7 @@ type logStream struct {
 
 	rows   []LogEntry // after the range, filters and folding; oldest first, sort non-decreasing
 	stamps []logStamp
-	lines  int // lines that passed the filters, before folding
+	lines  int // lines that passed the filters, one by one (a folded row counts its lines)
 }
 
 // readLogStreams lists the files of every copy and walks every stream, a few
@@ -893,14 +893,18 @@ func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win
 }
 
 // finishLogStream parses a walked stream and takes the lines in the window
-// through the level and text filters and folding. It fills rows (oldest
+// through folding and the level and text filters. It fills rows (oldest
 // first), stamps, lines and oldest.
 //
-// The order matters: the sort times are made non-decreasing over every line of
-// the window, so a filter never moves a line; the filters come before
-// folding, so a search for 502 folds the 502s and a line between two equal
-// ones that the filter removes doesn't keep them apart. With fold false (the
-// download) every kept line is its own row, with its own time and ID.
+// The order matters. The sort times are made non-decreasing over every line of
+// the window, so a filter never moves a line. Folding comes before the
+// filters (the critique's ruling, reversing the research's filter-then-fold):
+// "×N" always means N consecutive equal lines as the copy wrote them, so a
+// search shows each matching line where it was written instead of joining
+// lines a quarter of an hour apart. The filters then keep or drop the folded
+// rows. The stamps and lines count every line that passes the filters, one by
+// one, so a folded row counts its lines. With fold false (the download) every
+// kept line is its own row, with its own time and ID.
 func finishLogStream(ls *logStream, win logWindow, filter logFilter, fold bool) {
 	short := ls.copy.short
 	lines := parseLogStream(short, ls.stream, ls.copy.StartedAt, ls.files, ls.res.raws)
@@ -909,7 +913,7 @@ func finishLogStream(ls *logStream, win logWindow, filter logFilter, fold bool) 
 		ls.oldest = lines[0].Time
 	}
 
-	var kept []logline.Line
+	var inWin []logline.Line
 	var sorts []time.Time
 	var run time.Time
 	for _, l := range lines {
@@ -917,31 +921,34 @@ func finishLogStream(ls *logStream, win logWindow, filter logFilter, fold bool) 
 			continue
 		}
 		run = laterOf(run, l.Time)
-		if !filter.keeps(l, ls.copy.app, ls.copy.Service) {
-			continue
-		}
-		kept = append(kept, l)
+		inWin = append(inWin, l)
 		sorts = append(sorts, run)
-		ls.stamps = append(ls.stamps, logStamp{Time: l.Time, Level: l.Level, Estimated: l.TimeSource == logline.Estimated})
+		if filter.keeps(l, ls.copy.app, ls.copy.Service) {
+			ls.lines++
+			ls.stamps = append(ls.stamps, logStamp{Time: l.Time, Level: l.Level, Estimated: l.TimeSource == logline.Estimated})
+		}
 	}
-	ls.lines = len(kept)
 
 	if !fold {
-		ls.rows = make([]LogEntry, 0, len(kept))
-		for j, l := range kept {
-			ls.rows = append(ls.rows, LogEntry{Line: l, App: ls.copy.app, Service: ls.copy.Service, Copy: short, sort: sorts[j]})
+		ls.rows = make([]LogEntry, 0, ls.lines)
+		for j, l := range inWin {
+			if filter.keeps(l, ls.copy.app, ls.copy.Service) {
+				ls.rows = append(ls.rows, LogEntry{Line: l, App: ls.copy.app, Service: ls.copy.Service, Copy: short, sort: sorts[j]})
+			}
 		}
 		return
 	}
-	folded := logline.Fold(kept)
+	folded := logline.Fold(inWin)
 	ls.rows = make([]LogEntry, 0, len(folded))
 	j := 0
 	for _, l := range folded {
 		// A folded row is its group's newest line, whose ID is unique.
-		for kept[j].ID != l.ID {
+		for inWin[j].ID != l.ID {
 			j++
 		}
-		ls.rows = append(ls.rows, LogEntry{Line: l, App: ls.copy.app, Service: ls.copy.Service, Copy: short, sort: sorts[j]})
+		if filter.keeps(l, ls.copy.app, ls.copy.Service) {
+			ls.rows = append(ls.rows, LogEntry{Line: l, App: ls.copy.app, Service: ls.copy.Service, Copy: short, sort: sorts[j]})
+		}
 		j++
 	}
 }
