@@ -152,7 +152,13 @@ func TestAppLogsTabStream(t *testing.T) {
 	e := logsPageEnv(t)
 	var placeSeen atomic.Value
 	var open, done atomic.Int32
+	var real atomic.Bool // the second part hands the watch to the service itself
+	// The hook is set once, before any stream runs: a closed stream's goroutine
+	// (the Running tab's usage ticker) may still be reading the live settings.
 	e.Server.live.watchLogs = func(project, environment string) func() {
+		if real.Load() {
+			return e.Svc.WatchLogs(project, environment)
+		}
 		placeSeen.Store(project + "/" + environment)
 		open.Add(1)
 		return func() { done.Add(1) }
@@ -176,7 +182,7 @@ func TestAppLogsTabStream(t *testing.T) {
 	}
 
 	// The notice itself, from a line a copy of the app wrote.
-	e.Server.live.watchLogs = nil
+	real.Store(true)
 	e.Svc.SetLogWatchGaps(50*time.Millisecond, time.Hour)
 	ls = openStream(t, e.URL, "/live/apps/blog?watch=logs&live=1", e.Cookie.Value)
 	ls.expect("sync")
