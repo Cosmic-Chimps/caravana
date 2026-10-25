@@ -139,7 +139,7 @@ the next.
 
 ## Phase 6: Docs
 
-- [ ] T020 `CHANGELOG.md` Unreleased (Added: the Logs page and what it reads; Changed: the app's
+- [x] T020 `CHANGELOG.md` Unreleased (Added: the Logs page and what it reads; Changed: the app's
   Logs tab, `getLogs`' stripped text and new fields; Upgrade: rerun nothing, no policy change),
   `docs/plan.md` row 024 ("Built (specs/024-logs)…" with what changed from the row's text: read
   live with a budget, no store, levels and times by the pure rules, the line id, Download oldest

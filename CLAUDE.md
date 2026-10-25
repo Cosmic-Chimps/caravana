@@ -720,6 +720,80 @@ every address with its state, per-domain options, Add with checks, and certifica
   NXDOMAIN) with the real TLS dialer, and watcher gaps of 60 s and 10 s. The `console-domains-states`
   step and the gate's `domains` step are listed in `specs/023-domains/tasks.md` (T022, T023).
 
+Feature 024 (`specs/024-logs`, Phase 2.6) is implemented on branch `024-logs` (stacked on `023-domains`):
+the output of every copy of every service of one project › environment on one page, read live from
+Nomad and never stored. No migration, no new module, no policy change (`read-fs` since 016).
+- Source (research R1): a page view lists each copy's `alloc/logs` files (`ls`) and reads them
+  backwards with `readat` in 64 KiB chunks from the newest file into `n-1`, until the oldest timed line
+  read is before the range's start, the stream's budget (1 MiB; the page's 16 MiB split evenly beyond
+  16 streams) is spent, a deadline (5 s; `logReadDeadline`) passes, or no file is left. At most 2 page
+  reads at once per Caravana (`logSem`, a semaphore), 8 Nomad calls at once inside one read. The
+  coverage (the oldest time reached per stream, budget or deadline or end) goes with the answer: the
+  page says "read from <time>" and "not all read in time". A ring buffer of lines was rejected
+  (research R1): app output, and any secret in it, at rest in SQLite, and a follower on every copy
+  forever. `getLogs?follow=true` stays the per-app live read; the environment has no follow in the API.
+- `internal/logline` is pure (a test forbids network imports) and reads each line: `StripANSI`
+  (CSI, OSC, DCS/SOS/PM/APC, C1, C0 but tab, DEL; the text after the last mid-line `\r`; Nomad strips
+  nothing, so this is ours), `TimeOf(s, Bounds)` (JSON fields, klog, the start of the line or after
+  one short token or inside a leading `[`, Go's `log`, Redis, syslog, the Common Log Format bracket
+  after three words, `time=`/`ts=` in the first six logfmt pairs; no zone is UTC; a time outside the
+  bounds, the copy's start minus a minute to the file's `ModTime`, is refused and the line is
+  `estimated`; a date inside a message is never the line's time), plus the per-file skew check in
+  the service (the file's last timed line against its `ModTime`, over a minute either way marks the
+  whole file estimated: it catches a container in a west-of-UTC zone, which the bounds miss),
+  `LevelOf(text, prev)` (order: JSON `level`/`lvl`/`severity`/`LogLevel`/`@l`/`log.level` with pino
+  numbers, klog/Rails/.NET prefixes and the sentences `panic:` and `Traceback`, `level=` among the first
+  six pairs, the first four words against the table, a continuation (indent, `at `, `Caused by:`,
+  Postgres `DETAIL:`...) takes `prev`, else **info on either stream**, designer's ruling 1), `Fold`
+  (consecutive equal texts without the time span, per stream, `Repeat` = N-1, the newest line's time and
+  id), `Parse` and `LineID` (`<copy>.<stream>.<file>.<offset>`, `ParseLineID`). An estimated line takes
+  the older timed line's time in its stream, never "now".
+- Nomad facts (research R8, lab, observed): `readat` of a missing or purged file answers **200 with the
+  error text as the body**, so `deploy.ReadLogAt` checks a chunk shorter than asked with `Stat` (404 is
+  `ErrLogRotated`) and never quotes an unexpected body in an error (it may be the app's output); a
+  frame's `Offset` is unreliable for a file's short last frame (start + 65,536), so every id and `at`
+  offset comes from Caravana's own `readat` offsets, and a Live line has no id; files close under their
+  size and never split a line; a restart keeps appending to the newest file; dead copies stay listed and
+  readable until Nomad's GC (`GCMaxAllocs` 50, disk over 80 %), at least minutes; a CPU-hungry neighbour
+  made a 1 MiB `readat` take up to 6.9 s, which is why there is a deadline. `deploy.LogFiles`,
+  `deploy.ReadLogAt` and `deploy.LogCopies` (every copy Nomad lists, any version, terminal ones `Gone`;
+  `Copies` keeps its `listed` filter for every other page); `deploytest` has a fake file system.
+- Store: `store.ListDeploymentsIn(project, environment, from, to)` (created in range, or ended in range
+  for a terminal status), read-only.
+- Service: `ReadLogs(EnvLogQuery)` returns `LogRead` (lines newest first, `Coverage`, `Copies` with
+  counts and `Gone`, `Dropped`, `From`/`To`; `Histogram()` is 30 bins of `count`, `errors`,
+  `estimated` and `read`, false for bins before the coverage); `LogDeploys` gives the deploy rows
+  (two per deployment: started, then live/failed and rolled back/replaced, with `deployWho`'s words,
+  never filtered by level or search); `LogsAround(copy, at, n)` (both streams of that copy, every level,
+  the anchor's id; `ErrLogRotated` is 404 `log_rotated`) and `LogsAroundTime` (a binary search of the
+  stream's files by time, about 12 probes of 4 KiB for a 10 MiB file, a stream with no timed line
+  falls back to offsets); `DownloadLogs(q, w)` (the k-way merge oldest first, streamed; 8 MiB per
+  stream, 64 MiB per download, one at a time: `ErrDownloadBusy`, 409 `download_busy`; the first line
+  `# newest last`, an estimated time with a trailing `~`, `# deploy …` and `# cut: …` lines); the
+  page read and the download share one stream loop. `WatchLogs(project, environment)` follows the
+  place's running copies while a page with Live is open and sends the `logs` notice (`ChangeLogs`: the
+  app, never a line) at most every 2 s; the per-app `Logs` read now goes through the same file walk, so
+  its lines have an id, a level, a time and a source (`line`, `estimated`, `received`) and a stripped
+  `text`.
+- API 0.26.0: `listLogs` (`GET /v1/logs`), `getLogsAround` (`/v1/logs/around?copy&at`), `downloadLogs`
+  (`text/plain`, `Content-Disposition`), every answer `no-store`, deploy tokens denied by the default
+  deny (the scope walk lists them), `LogLine` of `getLogs` gains `id`, `level`, `timeSource`, codes
+  `log_rotated` and `download_busy`. Console (`internal/ui/logs.go`, `templates/logs.html`):
+  `/logs` (the range bar and Live/Paused, one GET form for the filters, the rail with copy counts,
+  the SVG histogram, the stream with folded rows, deploy rows and the open row's strip), `/logs?copy&at`
+  (around), `/parts/logs` (the stream and the histogram only, on the `logs` notice; the filters, the rail
+  and the open row sit outside the swapped region), `/logs/download`, the app's Logs tab as the same page
+  filtered to the app (with "All logs"), the sidebar's Logs item. The service's hue (a stable hash of
+  `<app>/<service>` over six) is the console's one identity color and the histogram its one SVG chart (the
+  CSP forbids `style`, so bars are `rect` attributes and classes), both recorded in `DESIGN.md`; an
+  estimated time is fg-4 with a leading `~`. Forms and links work without JavaScript; Live needs it.
+- Secrets rule: a line's text is never written to the store, the server log, an error, a notice or a
+  live event; the `logs` notice has no text, Download and every API answer are `no-store`, control
+  bytes are stripped so a file can't drive a terminal. Tests search for sentinels.
+- Lab: `TestConsoleLab` has a step `console-logs` (`console_logs_test.go`) and the gate a step `logs`
+  (`gate_logs_test.go`), per `specs/024-logs/quickstart.md` §6. Neither had been run in the lab when this
+  was written.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
