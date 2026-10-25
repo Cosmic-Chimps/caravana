@@ -271,3 +271,7 @@ From the impeccable critique of the built page (`.impeccable/critique/2026-10-25
    row's only time. fg-4 stays for non-text marks.
 8. **Left as they are.** The download's trailing "~" (a file's columns, not the page's), the library's time prefix
    in the text, and hues by hash of `<app>/<service>`.
+
+## Last look (designer, 2026-10-25): Approved
+
+Verified headlessly on the restaged review instances after the review fixes and the critique rulings: a search shows each match at its own time with no fold and the chips count the range; one marker label per deployment and v0 on the deploy rows; an opened row lands below the top bar with the app linked and "Lines like this"; the stale open notice; the narrow chips name the app and the ×N chip stays inline; estimated times in fg-3 with the "~"; the download oldest first with every line its own time. One copy fix after it: the cap sentence gets its separator ("paused · newest 500 lines · Show older"). 024 is done.

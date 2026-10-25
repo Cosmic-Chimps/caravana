@@ -147,7 +147,7 @@ the next.
 
 ## Phase 7: Review cycle
 
-- [ ] T021 Checks (the CI list, `go test -race ./...`), `TestConsoleLab` (every step) and the gate
+- [x] T021 Checks (the CI list, `go test -race ./...`), `TestConsoleLab` (every step) and the gate
   step `logs` in the lab; stage the review instances (the two sample apps, a deploy during the
   review, a gone copy), tell the designer; their review; the impeccable critique (no detector);
   the rulings into the contract; the fixes; the last look.

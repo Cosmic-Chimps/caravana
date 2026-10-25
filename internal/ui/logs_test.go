@@ -289,7 +289,7 @@ func TestLogsPageChipsCountTheRangeAndTheCapIsSaid(t *testing.T) {
 		t.Errorf("the histogram counts %d errors, want 600", total)
 	}
 	head := regexp.MustCompile(`(?s)<div class="cv-lstreamhead">.*?</div>`).FindString(body)
-	lgWant(t, "the stream head", text(head), "newest 500 lines · Show older")
+	lgWant(t, "the stream head", text(head), " · newest 500 lines · Show older")
 	lgWant(t, "the stream head", head, `<a href="/logs?`, `before=`)
 
 	// A stale open link on a capped stream offers Show older beside the lines around.
