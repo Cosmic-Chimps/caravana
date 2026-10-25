@@ -54,7 +54,7 @@ var (
 		`<time class="cv-ltime( cv-time-est)?" datetime="([^"]*)" title="([^"]*)">([^<]*)</time>\s*` +
 		`<span class="cv-llvl cv-llvl-(\w+)">\w+</span>\s*` +
 		`<span class="cv-lsvc cv-hue-\d"><span class="cv-svcname">([^<]*)</span><span class="cv-lcopy">([^<]*)</span></span>\s*` +
-		`<span class="cv-ltext">([^<]*)</span>\s*(?:<span class="cv-repeat">×(\d+)</span>)?`)
+		`<span class="cv-lbody"><span class="cv-ltext">([^<]*)</span>\s*(?:<span class="cv-repeat">×(\d+)</span>)?</span>`)
 	// clDeployRe is a deploy row of the stream.
 	clDeployRe = regexp.MustCompile(`(?s)<a href="([^"]*)" class="cv-row-deploy( cv-row-deploy-failed)?">(.*?)</a>`)
 	// clChipRe is a level chip.
