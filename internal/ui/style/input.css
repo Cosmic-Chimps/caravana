@@ -1362,10 +1362,13 @@
 
   /* The stream: ink-0 ground, 1px line-1, radius 4. */
   .cv-logstream { min-width: 0; overflow: hidden; background: var(--color-ink-0); border: 1px solid var(--color-line-1); border-radius: 4px; container-type: inline-size; container-name: cvstream; }
-  .cv-lstreamhead { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--color-line-1); font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
+  .cv-lstreamhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--color-line-1); font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
   .cv-lstreamhead-live { color: var(--color-rolling); }
   .cv-lstreamhead-zone { margin-left: auto; color: var(--color-fg-4); white-space: nowrap; }
   .cv-lstreamhead a { color: var(--color-fg-1); }
+  /* An open link to a line that isn't among the rows read: a full-width sentence under the head's line. */
+  .cv-lstale { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-2); }
+  .cv-lstreamhead .cv-lstale .cv-btn { color: var(--color-fg-1); text-decoration: none; }
 
   /* A row: time, level, service and copy, the text, the ×N chip. */
   .cv-lrow { position: relative; display: grid; grid-template-columns: 104px 48px 190px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 5px 16px; font: 400 13px/20px var(--font-mono); color: var(--color-fg-1); text-decoration: none; }

@@ -1088,7 +1088,10 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   head line (`.cv-lstreamhead`, 8 16, 400 12px mono): live, "◐ streaming from 8 copies" in rolling; paused,
   "paused · N new lines since" in fg-3 with a "Show" link; and at the right "times in UTC" in fg-4 (the
   stream's rows carry no zone of their own). When the stream holds the row cap, the head also says "newest 500
-  lines · Show older" (`.cv-lstreamhead-cap`; Show older is the footer's link).
+  lines · Show older" (`.cv-lstreamhead-cap`; Show older is the footer's link). An address that opens a line
+  which isn't among the rows read (it scrolled out of the newest 500) draws no strip but a sentence under the
+  head's line (`.cv-lstale`, a status): "That line isn't in what was read. Show older, or open the lines around
+  it." with a "Lines around this" button that reads the lines from the id alone.
 - **A row** (`.cv-lrow`, grid `104px 48px 190px minmax(0, 1fr) auto`, gap 12, baseline, padding 5 16, 400
   13px/20px mono; a link to `?…&open=<copy>-<n>#line-…`): the time (`.cv-ltime`, 12px, a `<time>` "14:03:41.208"
   in UTC, fg-3), the level (`.cv-llvl`, 12px, in its hue; `.cv-llvl-error` failed, `-warn` warn, `-info` fg-2,

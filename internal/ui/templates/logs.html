@@ -94,6 +94,7 @@
     {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
     {{if .Head.Cap}}<span class="cv-lstreamhead-cap">newest {{.Head.Cap}} lines · <a href="{{.Head.CapHref}}">Show older</a></span>{{end}}
     <span class="cv-lstreamhead-zone">times in UTC</span>
+    {{with .Head.Stale}}<p class="cv-lstale" role="status">That line isn't in what was read. {{with .Older}}<a href="{{.}}">Show older</a>, or open{{else}}Open{{end}} the lines around it. <a href="{{.AroundHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "list" 14}}Lines around this</a></p>{{end}}
   </div>
   {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}{{with $.Back}} <a href="{{.}}">Back to the stream</a>{{end}}</span></div>{{end}}
   {{range .Items}}

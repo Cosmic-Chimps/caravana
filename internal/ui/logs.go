@@ -494,6 +494,14 @@ type logsStreamHead struct {
 	// it doesn't; CapHref is "Show older"'s address beside it.
 	Cap     int
 	CapHref string
+	// Stale is set when the address opens a line that isn't among the rows read.
+	Stale *logsStale
+}
+
+// logsStale is the notice of an open link to a line that isn't in what was read.
+type logsStale struct {
+	Older      string // "Show older"'s address, or "" when there is none to offer
+	AroundHref string // Lines around this: ?copy=<the line's copy>&at=<its id>
 }
 
 // logsFeed is the paused head's "· 3 new lines since Show": logs.js listens for the logs notice,
@@ -687,7 +695,32 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 			reg.Head.Cap, reg.Head.CapHref = logsPageLines, reg.Older
 		}
 	}
+	reg.Head.Stale = staleOpenOf(q, read.Lines, reg.Problem != "", reg.Older)
 	return reg, nil
+}
+
+// staleOpenOf is the head's notice for an open link whose line is not among the rows read (it
+// scrolled out of the newest 500, or the range moved on): it says so and offers the lines around
+// it, which the id alone is enough to read. nil when no row is open or the row is there. open has
+// been checked as a line id by logsReqOf; older is "Show older"'s address, or "".
+func staleOpenOf(q logsReq, lines []service.LogEntry, problem bool, older string) *logsStale {
+	if q.Open == "" || problem {
+		return nil
+	}
+	for _, l := range lines {
+		if l.ID.String() == q.Open {
+			return nil
+		}
+	}
+	open := q.Open
+	id, err := logline.ParseLineID(open)
+	if err != nil {
+		return nil
+	}
+	return &logsStale{
+		Older:      older,
+		AroundHref: q.href(paused, func(r *logsReq) { fresh(r); r.Copy, r.At = id.Copy, open }),
+	}
 }
 
 // streamHead builds the line over the rows.

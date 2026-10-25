@@ -286,6 +286,11 @@ func TestLogsPageChipsCountTheRangeAndTheCapIsSaid(t *testing.T) {
 	lgWant(t, "the stream head", text(head), "newest 500 lines · Show older")
 	lgWant(t, "the stream head", head, `<a href="/logs?`, `before=`)
 
+	// A stale open link on a capped stream offers Show older beside the lines around.
+	stale := regexp.MustCompile(`(?s)<p class="cv-lstale".*?</p>`).FindString(e.pageOf(t, "/logs?open=dddd4444.stdout.0.7"))
+	lgWant(t, "a stale open link on a capped stream", text(stale), "That line isn't in what was read. Show older, or open the lines around it. Lines around this")
+	lgWant(t, "a stale open link on a capped stream", stale, `before=`, `at=dddd4444.stdout.0.7`)
+
 	// A stream below the cap says nothing of it.
 	few := e.pageOf(t, "/logs?q=one+warning")
 	lgNot(t, "an uncapped head", text(few), "newest 500 lines")
@@ -559,6 +564,19 @@ func TestLogsPageOpenRow(t *testing.T) {
 	// A row that isn't in the read draws no strip and no error.
 	gone := e.pageOf(t, "/logs?open=aaaa1111.stdout.0.999999")
 	lgNot(t, "a row that isn't read", gone, "cv-rowstrip", "cv-row-open")
+	// ... but the stream head says so, and offers the lines around it from the id alone.
+	stale := regexp.MustCompile(`(?s)<p class="cv-lstale".*?</p>`).FindString(gone)
+	lgWant(t, "the stale notice", text(stale), "That line isn't in what was read.", "Lines around this")
+	lgWant(t, "the stale notice", stale, `href="/logs?at=aaaa1111.stdout.0.999999&amp;copy=aaaa1111&amp;live=0"`, `role="status"`)
+	// Nothing older to show here (the whole range was read), so no "Show older".
+	lgNot(t, "the stale notice", text(stale), "Show older")
+	// An open row that is there has no notice; no open row has none either.
+	lgNot(t, "an open row that is read", e.pageOf(t, "/logs?open="+repeat), "cv-lstale")
+	lgNot(t, "the plain page", e.pageOf(t, "/logs"), "cv-lstale")
+	// An id that doesn't parse stays a 400.
+	if resp, _ := e.get(t, "/logs?open=nonsense"); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("open=nonsense = %d, want 400", resp.StatusCode)
+	}
 
 	// The part is the region alone: the open row keeps its id and class, with no strip, filter or rail.
 	resp, part := e.get(t, "/parts/logs?open="+repeat)
