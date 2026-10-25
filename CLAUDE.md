@@ -791,8 +791,11 @@ Nomad and never stored. No migration, no new module, no policy change (`read-fs`
   live event; the `logs` notice has no text, Download and every API answer are `no-store`, control
   bytes are stripped so a file can't drive a terminal. Tests search for sentinels.
 - Lab: `TestConsoleLab` has a step `console-logs` (`console_logs_test.go`) and the gate a step `logs`
-  (`gate_logs_test.go`), per `specs/024-logs/quickstart.md` §6. Neither had been run in the lab when this
-  was written.
+  (`gate_logs_test.go`), per `specs/024-logs/quickstart.md` §6. Both pass in the lab (2026-10-25): the
+  console step in about a minute inside the full run, the gate step in 41 s. The gate step found that an
+  untimed stream was pinned to the copy's start and that the start isn't a lower bound (a container's
+  clock runs ahead of Nomad's start event); since then an untimed line is placed by byte offset between
+  its file's write bounds, and a timed line up to a minute before the start is trusted.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
