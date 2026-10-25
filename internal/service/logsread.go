@@ -307,7 +307,7 @@ func (s *Service) ReadLogs(ctx context.Context, q EnvLogQuery) (LogRead, error) 
 	readCtx, cancel := context.WithTimeout(ctx, s.logDeadline)
 	defer cancel()
 
-	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies)
+	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, streamBudget)
 	if err != nil {
 		return LogRead{}, err
 	}
@@ -702,8 +702,9 @@ type logStream struct {
 
 // readLogStreams lists the files of every copy and walks every stream, a few
 // at a time, then parses and filters each. parent is the request's context and
-// ctx the one with the deadline.
-func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win logWindow, copies []logCopy) ([]*logStream, error) {
+// ctx the one with the deadline; budget gives a stream's bytes for the number
+// of streams read (the page's streamBudget, or a download's).
+func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win logWindow, copies []logCopy, budget func(streams int) int64) ([]*logStream, error) {
 	wanted := []logline.Stream{logline.Stdout, logline.Stderr}
 	if q.Stream == logline.Stdout || q.Stream == logline.Stderr {
 		wanted = []logline.Stream{q.Stream}
@@ -761,8 +762,7 @@ func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win
 		}
 	}
 
-	budget := streamBudget(len(streams))
-	lim := walkLimits{budget: budget, from: win.from, upper: win.upper()}
+	lim := walkLimits{budget: budget(len(streams)), from: win.from, upper: win.upper()}
 	errs := make([]error, len(streams))
 	for i, ls := range streams {
 		if ls.res.reason == stopDeadline {

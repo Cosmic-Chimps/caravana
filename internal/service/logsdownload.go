@@ -8,11 +8,9 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
-	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/logline"
 )
 
@@ -111,7 +109,7 @@ func (s *Service) download(ctx context.Context, q EnvLogQuery, w io.Writer, b do
 
 	readCtx, cancel := context.WithTimeout(ctx, b.deadline)
 	defer cancel()
-	streams, err := s.readDownloadStreams(ctx, readCtx, q, win, copies, b)
+	streams, err := s.readLogStreams(ctx, readCtx, q, win, copies, b.each)
 	if err != nil {
 		return err
 	}
@@ -125,112 +123,6 @@ func (s *Service) download(ctx context.Context, q EnvLogQuery, w io.Writer, b do
 		return err
 	}
 	return writeDownload(ctx, w, q, win, streams, deploys)
-}
-
-// readDownloadStreams is readLogStreams with the download's budgets: it lists
-// the files of every copy, walks every stream a few at a time, then parses and
-// filters each. (logsread.go's takes its budget from the page's constants.)
-func (s *Service) readDownloadStreams(parent, ctx context.Context, q EnvLogQuery, win logWindow, copies []logCopy, b downloadBudgets) ([]*logStream, error) {
-	wanted := []logline.Stream{logline.Stdout, logline.Stderr}
-	if q.Stream == logline.Stdout || q.Stream == logline.Stderr {
-		wanted = []logline.Stream{q.Stream}
-	}
-
-	type listing struct {
-		files    []deploy.LogFile
-		err      error
-		deadline bool
-	}
-	listings := make([]listing, len(copies))
-	slots := make(chan struct{}, logWalkWorkers)
-	var wg sync.WaitGroup
-	for i, c := range copies {
-		wg.Go(func() {
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			files, err := s.deployer.LogFiles(ctx, c.ID, c.Service)
-			switch {
-			case err != nil && ctx.Err() != nil:
-				listings[i].deadline = true
-			case err != nil:
-				listings[i].err = err
-			default:
-				listings[i].files = files
-			}
-		})
-	}
-	wg.Wait()
-	if err := parent.Err(); err != nil {
-		return nil, err
-	}
-
-	var streams []*logStream
-	for i, c := range copies {
-		l := listings[i]
-		if l.err != nil {
-			if errors.Is(l.err, deploy.ErrCopyNotFound) {
-				continue // the copy went between the two calls
-			}
-			return nil, fmt.Errorf("download logs of copy %s: %w", c.short, l.err)
-		}
-		for _, st := range wanted {
-			ls := &logStream{copy: c, stream: st}
-			if l.deadline {
-				ls.res.reason = stopDeadline
-			}
-			for _, f := range l.files {
-				if f.Stream == st {
-					ls.files = append(ls.files, f)
-				}
-			}
-			streams = append(streams, ls)
-		}
-	}
-
-	lim := walkLimits{budget: b.each(len(streams)), from: win.from, upper: win.upper()}
-	errs := make([]error, len(streams))
-	for i, ls := range streams {
-		if ls.res.reason == stopDeadline {
-			continue
-		}
-		wg.Go(func() {
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			res, err := s.walkLogStream(ctx, ls.copy.Copy, ls.files, lim)
-			ls.res, errs[i] = res, err
-		})
-	}
-	wg.Wait()
-	if err := parent.Err(); err != nil {
-		return nil, err
-	}
-
-	var hard error
-	gone := map[string]bool{}
-	for i, ls := range streams {
-		err := errs[i]
-		switch {
-		case err == nil:
-		case errors.Is(err, deploy.ErrCopyNotFound):
-			gone[ls.copy.ID] = true
-		case hard == nil || errors.Is(err, deploy.ErrNomadUnavailable):
-			hard = fmt.Errorf("download logs of copy %s: %w", ls.copy.short, err)
-		}
-	}
-	if hard != nil {
-		return nil, hard
-	}
-	out := streams[:0:0]
-	for _, ls := range streams {
-		if !gone[ls.copy.ID] {
-			out = append(out, ls)
-		}
-	}
-	filter := q.filter()
-	for _, ls := range out {
-		finishLogStream(ls, win, filter)
-	}
-	return out, nil
 }
 
 // downloadCut is one copy the download didn't read back to the range's start.
