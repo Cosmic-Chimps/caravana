@@ -190,7 +190,7 @@ Independent test: quickstart §4.
   options under constitution 1.0.1; Force HTTPS global; the port per service; the certificate
   state from the handshake), `CLAUDE.md`'s "Where we are" paragraph for 023, `api/openapi.yaml`
   info text, `deploy/install/caravana-policy.hcl` unchanged (said in the commit).
-- [ ] T025 Checks (the CI list, `go test -race` on ui/service/store/edge), `TestConsoleLab`,
+- [x] T025 Checks (the CI list, `go test -race` on ui/service/store/edge), `TestConsoleLab`,
   `deploy/dev/install-test.sh`, the review instance staged with the contract's review list, the
   designer's review, the impeccable critique agent (no detector), rulings recorded in the
   contract, fixes, the last look.

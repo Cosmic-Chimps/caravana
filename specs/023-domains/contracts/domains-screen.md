@@ -326,3 +326,11 @@ The designer's rulings on the impeccable critique of this screen, one commit eac
    "Applies once certificates are issued." (the form posts nothing; the API still accepts the setting). The
    lede is "This caravana was installed without Let's Encrypt: Traefik serves its own certificate.", which the
    page already said.
+
+## Last look (designer, 2026-10-24): Approved
+
+Verified headlessly on the restaged review instances after the review fixes and the critique rulings: the Team-only
+detail, the elsewhere detail leading with the record to change, the redirect sort, the project in Goes to, the
+footer's cadence, Check now's 303 to `?checked=<host>#add` with ◆ "no DNS record", Settings › Certificates' count and the
+disabled Warn when, and the needs-you item leading with the app. Fix 1's overflow was the capture tool's viewport,
+not the page; the wrapping rules stay. Nothing to change: 023 is done.
