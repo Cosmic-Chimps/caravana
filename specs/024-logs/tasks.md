@@ -32,7 +32,7 @@ the next.
 
 ## Phase 1: Foundation (no story label)
 
-- [ ] T002 [P] New pure package `internal/logline` (`ansi.go`, `time.go`, `level.go`, `fold.go`,
+- [x] T002 [P] New pure package `internal/logline` (`ansi.go`, `time.go`, `level.go`, `fold.go`,
   `line.go` with `Line`, `LineID`, `ParseLineID`/`String`, `Bounds`, `Span`, `Level`): `StripANSI`,
   `TimeOf`, `LevelOf`, `Fold` per plan.md's Design, with tables holding every example of research
   R2 (the shapes) and R3 (the examples table and the words table), the lab's six lines first, the
