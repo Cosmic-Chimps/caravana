@@ -33,7 +33,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains"}}, // notices that these changed
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
@@ -183,6 +183,13 @@ var consoleParity = map[string]parity{
 	"POST /domains/{host}/options":       {ops: []string{"getApp", "deployApp"}},
 	"POST /domains/{host}/remove":        {ops: []string{"getApp", "deployApp"}},
 	"POST /domains/{host}/team-password": {ops: []string{"getApp", "rotateTeamPassword"}},
+	// Logs (feature 024). The page reads the environment's output (listLogs, with the filters of its address:
+	// project, environment, app, service, copy, q, range, levels, before), the lines around one line
+	// (getLogsAround, for ?copy=&at=), and the apps and projects for the rail and the place bars. The part is
+	// the stream and the histogram alone, drawn again on the logs notice.
+	// "GET /logs/download" (downloadLogs) joins them when T016 adds the route.
+	"GET /logs":       {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
+	"GET /parts/logs": {ops: []string{"listLogs"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

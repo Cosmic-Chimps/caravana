@@ -101,7 +101,7 @@ the next.
   One Tick Rule and reduced motion, the `×N` chip, the estimated time in fg-4 with `~`, the
   ordinary time in fg-3), the open row's strip, the deploy row, the footer; narrow rules (the rail
   as a chip row, rows on two lines, the histogram's labels); `tools/ui-css.sh build`.
-- [ ] T013 [US1] `internal/ui/logs.go` (rewritten) + `templates/logs.html` + tests: `GET /logs`
+- [x] T013 [US1] `internal/ui/logs.go` (rewritten) + `templates/logs.html` + tests: `GET /logs`
   (the query → `LogQuery`, the place choosers only with more than one, the rail from the copies
   grouped by app, the histogram SVG with `title`s and the hidden table, the stream with folded
   rows and deploy rows, "Older lines were dropped." and "Show older" (`before=` from the

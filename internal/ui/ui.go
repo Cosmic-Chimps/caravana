@@ -138,6 +138,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/login", s.showLogin},
 		{"POST", "/login", s.protected(s.signIn)},
 		{"POST", "/logout", s.protected(s.signOut)},
+		{"GET", "/logs", s.requireSession(s.showLogsPage)},
+		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
 		{"GET", "/projects", s.requireSession(s.showProjects)},
@@ -304,7 +306,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

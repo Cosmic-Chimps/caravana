@@ -180,8 +180,13 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 
 // liveApps answers GET /live: the stream of the workspace pages (Apps,
 // Schedules, which listens for the schedules notice, and Domains, which opens
-// it with ?watch=domains: the domains notice, and checks every minute while open).
+// it with ?watch=domains: the domains notice, and checks every minute while open; and Logs,
+// which is liveLogs in logs.go).
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("watch") == "logs" {
+		s.liveLogs(w, r)
+		return
+	}
 	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
 		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules}}
 	if r.URL.Query().Get("watch") == "domains" {

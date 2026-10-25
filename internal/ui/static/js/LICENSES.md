@@ -107,7 +107,7 @@ THE SOFTWARE.
 Not a script: the shapes of the icons the sidebar and buttons draw inline (house, folder, settings,
 log-out, plus, rotate-ccw, rocket, lock, external-link, file-text, history, play, chevron-right,
 chevron-down, and the Settings nav's user, package, hard-drive, bell, key, hash, message-square and
-webhook), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
+webhook; and the Logs page's scroll-text, search, list, filter and download), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
 License: ISC.
 
 ```text

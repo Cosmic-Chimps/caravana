@@ -30,6 +30,9 @@ type liveSettings struct {
 	// watchDomains says a domains page is open until the returned done is
 	// called (Service.MarkDomainsWatched when nil).
 	watchDomains func() (done func())
+	// watchLogs says a Logs page with Live on is open on a place until the
+	// returned done is called (Service.WatchLogs when nil).
+	watchLogs func(project, environment string) (done func())
 }
 
 func (l liveSettings) coalesceEvery() time.Duration  { return orDefault(l.coalesce, defaultCoalesce) }
@@ -61,6 +64,10 @@ type liveRoute struct {
 	// WatchDomains says the page shows domains (feature 023): while the stream
 	// is open the domain watcher checks every minute, not every 15.
 	WatchDomains bool
+	// WatchLogs, when set, says the page follows an environment's output (feature 024): it runs once
+	// the session is checked, and the returned done when the stream ends. While it is open the
+	// service follows the copies of the place and sends the logs notice when an app wrote.
+	WatchLogs func() (done func())
 }
 
 // stream answers a /live… request. It is the loop every such route shares:
@@ -115,6 +122,11 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 			watch = s.svc.MarkDomainsWatched
 		}
 		done := watch()
+		defer done()
+	}
+
+	if route.WatchLogs != nil {
+		done := route.WatchLogs()
 		defer done()
 	}
 
