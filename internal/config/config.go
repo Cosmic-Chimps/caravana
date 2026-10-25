@@ -10,7 +10,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +67,14 @@ type Config struct {
 	// ACMEEmail is the address given to the certificate authority; empty when
 	// it isn't said.
 	ACMEEmail string
+	// DockerRoot is the directory Docker keeps its images and layers in, as the
+	// host's Docker says (`docker info`), so Monitoring can name the filesystem
+	// they are on (feature 025). The installer writes it; /var/lib/docker
+	// otherwise.
+	DockerRoot string
+	// TraefikMetricsURL is where Traefik serves its Prometheus numbers, on the
+	// host's loopback (feature 025). Empty means Monitoring doesn't read them.
+	TraefikMetricsURL string
 }
 
 // Secret is a string that never prints. Formatting it with fmt or logging it
@@ -111,6 +121,8 @@ var (
 	edgeAddressSetting   = setting{"CARAVANA_EDGE_ADDRESS", "edge-address"}
 	acmeSetting          = setting{"CARAVANA_ACME", "acme"}
 	acmeEmailSetting     = setting{"CARAVANA_ACME_EMAIL", "acme-email"}
+	dockerRootSetting    = setting{"CARAVANA_DOCKER_ROOT", "docker-root"}
+	metricsURLSetting    = setting{"CARAVANA_TRAEFIK_METRICS_URL", "traefik-metrics-url"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -157,6 +169,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	edgeAddress := fs.String(edgeAddressSetting.flag, envOr(edgeAddressSetting, "127.0.0.1:443"), "where Traefik's HTTPS entrypoint answers, host:port, for the domain certificate checks")
 	acme := fs.String(acmeSetting.flag, envOr(acmeSetting, ""), "the certificate authority: production, staging or none; empty means not said")
 	acmeEmail := fs.String(acmeEmailSetting.flag, envOr(acmeEmailSetting, ""), "the address given to the certificate authority; empty means not said")
+	dockerRoot := fs.String(dockerRootSetting.flag, envOr(dockerRootSetting, "/var/lib/docker"), "the directory Docker keeps images and layers in (docker info's Docker Root Dir), an absolute path; Monitoring watches its disk")
+	metricsURL := fs.String(metricsURLSetting.flag, envOr(metricsURLSetting, "http://127.0.0.1:8081/metrics"), "where Traefik serves its Prometheus numbers, an http:// URL on this machine's loopback; an empty flag value (-traefik-metrics-url=) turns the request numbers off")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -203,6 +217,14 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%s: %q must be production, staging or none", acmeSetting, *acme)
 	}
 	c.ACMEEmail = strings.TrimSpace(*acmeEmail)
+	if !path.IsAbs(*dockerRoot) {
+		return Config{}, fmt.Errorf("%s: %q must be an absolute path, such as /var/lib/docker", dockerRootSetting, *dockerRoot)
+	}
+	c.DockerRoot = *dockerRoot
+	if err := checkMetricsURL(*metricsURL); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", metricsURLSetting, err)
+	}
+	c.TraefikMetricsURL = *metricsURL
 	if err := checkListen(c.Listen); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", listenSetting, err)
 	}
@@ -267,6 +289,25 @@ func parsePublicURL(raw string) (string, error) {
 		return "", fmt.Errorf("%q must be an http:// or https:// URL with a host and no query, e.g. https://caravana.example.com", raw)
 	}
 	return strings.TrimRight(raw, "/"), nil
+}
+
+// checkMetricsURL accepts an http:// URL whose host is this machine's loopback
+// (an address in 127.0.0.0/8 or ::1, or "localhost"), or nothing at all. Traefik's
+// numbers are served next to its unauthenticated dashboard, so Caravana only
+// reads them where nobody else can.
+func checkMetricsURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%q must be an http:// URL with a host and no query, e.g. http://127.0.0.1:8081/metrics", raw)
+	}
+	host := u.Hostname()
+	if ip, err := netip.ParseAddr(host); host != "localhost" && (err != nil || !ip.IsLoopback()) {
+		return fmt.Errorf("%q must point at this machine's loopback (127.0.0.1, ::1 or localhost), not %q", raw, host)
+	}
+	return nil
 }
 
 func checkNomadAddr(addr string) error {

@@ -17,6 +17,10 @@
 # alloc-exec is "Run a command" (feature 020.5): one non-interactive command in a running copy, for
 # the signed-in owner or an API token, with its output shown once and never kept. It lets Caravana's
 # token run commands in the apps' containers, which is the feature; it never opens a terminal.
+# node:read is Monitoring (feature 025): the host's memory, CPU and disks (Nodes().List, Info and
+# Stats) and each node's total resources, so the page can say how much room is left. It reads node
+# records and client stats only: no node:write (drain, eligibility), no agent:read (Nomad's
+# configuration and log stream).
 # install.sh applies it on every run, so running the installer again brings a host up to date.
 namespace "default" {
   capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete", "alloc-lifecycle", "read-fs", "alloc-exec"]
@@ -31,6 +35,10 @@ namespace "default" {
       capabilities = ["read", "write", "destroy", "list"]
     }
   }
+}
+
+node {
+  policy = "read"
 }
 
 host_volume "*" {

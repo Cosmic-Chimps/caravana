@@ -377,6 +377,10 @@ run_traefik() {
     spec="$(nomad_cli job inspect traefik 2>/dev/null || true)"
     grep -q 'providers.file.directory' <<<"$spec" ||
       echo "  Traefik is restarted once for the file provider (a few seconds without HTTP)"
+    # Feature 025: Monitoring reads Traefik's request numbers (Prometheus text on its loopback
+    # entrypoint). An existing Traefik job doesn't have the two metrics arguments yet.
+    grep -q 'metrics.prometheus' <<<"$spec" ||
+      echo "  Traefik is restarted once for its request numbers (a few seconds without HTTP)"
   fi
   local out
   out="$(nomad_cli job run -detach \
@@ -401,12 +405,16 @@ configure_caravana() {
   install -d -m 0700 -o caravana -g caravana "$DATA"
 
   # Caravana's Nomad token, limited to its policy, is created once and kept in its env file.
-  local token resolver=letsencrypt
+  local token resolver=letsencrypt docker_root
   token="$(sed -n 's/^NOMAD_TOKEN=//p' "$ENV_FILE" 2>/dev/null || true)"
   if [ -z "$token" ]; then
     token="$(nomad_cli acl token create -name caravana -policy caravana -t '{{.SecretID}}')"
   fi
   [ "$acme" = none ] && resolver=""
+  # Feature 025: Monitoring watches the disk Docker's images and layers live on. Docker says where
+  # that is; Caravana can't ask it (it has no Docker access), so the installer writes it down.
+  docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  [ -n "$docker_root" ] || docker_root=/var/lib/docker
   # Traefik, on this host's loopback, is the only proxy: Caravana believes its forwarded
   # headers, so cookies are Secure and sign-in limits count each real client. The public URL
   # is the console's own address, which notifications link to (feature 018). The certificate
@@ -422,6 +430,7 @@ CARAVANA_PUBLIC_URL=https://$domain
 CARAVANA_ACME=$acme
 CARAVANA_ACME_EMAIL=$acme_email
 CARAVANA_EDGE_ADDRESS=127.0.0.1:443
+CARAVANA_DOCKER_ROOT=$docker_root
 NOMAD_ADDR=http://127.0.0.1:4646
 NOMAD_TOKEN=$token
 EOF

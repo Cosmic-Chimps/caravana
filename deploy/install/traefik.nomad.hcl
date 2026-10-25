@@ -148,6 +148,12 @@ job "traefik" {
           "--providers.nomad.watch=true",
           "--providers.file.directory=/local/dynamic",
           "--providers.file.watch=true",
+          # Feature 025: request counts and durations per service, on the traefik entrypoint
+          # (/metrics next to the dashboard). The buckets are finer than Traefik's default
+          # (0.1, 0.3, 1.2, 5), which would read any fast app as 95 ms: with these a p95 of 40 ms
+          # stays 25-50 ms. Caravana reads them once a minute (internal/metrics).
+          "--metrics.prometheus=true",
+          "--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10",
           "--certificatesresolvers.letsencrypt.acme.email=${var.acme_email}",
           "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json",
           "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",

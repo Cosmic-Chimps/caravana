@@ -66,7 +66,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   rows by upsert, an optional prune, `started_at` once), `MinuteRows`, `SlotRows`, `HostRows`,
   `DiskRows`, `NewestHost`, `MetricsStartedAt`; `DeleteApp` deletes the app's series in its
   transaction; tests for a refold, the prune bounds and the cascade.
-- [ ] T005 [P] Host and lab: `deploy/install/traefik.nomad.hcl` and `deploy/dev/traefik.nomad.hcl`
+- [x] T005 [P] Host and lab: `deploy/install/traefik.nomad.hcl` and `deploy/dev/traefik.nomad.hcl`
   gain the two arguments with a comment on the buckets; `install.sh` says "Traefik is restarted
   once for its request numbers (a few seconds without HTTP)" when the running job lacks
   `metrics.prometheus`, and writes `CARAVANA_DOCKER_ROOT` from `docker info --format
