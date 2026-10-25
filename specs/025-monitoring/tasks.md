@@ -123,6 +123,8 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   `DiskState` (ok, warning, failed; the item's open rule, level and `When` per ruling 8);
   `Service.Host(ctx)` from the newest stored host and disk rows (`stale` after 5 minutes), the
   per-series reservations, the 7-day hourly history, baseline and sources; no Nomad call.
+  Pure part done (`room.go`, `disk.go` + tests: `Room`, `DiskState`, `DiskRun`, `Stale`,
+  `UsedPercent`); `internal/service/host.go` and `Service.Host` are still to do.
 - [ ] T011 [US4] `internal/service/attention.go`, `notifier.go` + `internal/notify` + tests:
   `AttentionDiskNearlyFull` from `DiskRows` (host-level, one per watched filesystem, `Mount`,
   `Holds`, `UsedPercent`, `FreeBytes`, `Level`, `When`), not judged when the host sample is older
