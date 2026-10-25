@@ -84,7 +84,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 2: Service (US1 the numbers, US2 the host, US3 issues, US4 the disk item)
 
-- [ ] T006 [US1] `internal/metrics/fold.go` + tests: `Fold` (counters and `http_secs` summed, NULL
+- [x] T006 [US1] `internal/metrics/fold.go` + tests: `Fold` (counters and `http_secs` summed, NULL
   when every row's is; buckets summed per bound within one layout, other layouts skipped; gauges
   the median; `minutes` counted) and `Points(rows, from, step, n)` (counters summed, gauges the
   median, rates over the seconds covered, gaps where no row), the four ranges' steps and the slot
