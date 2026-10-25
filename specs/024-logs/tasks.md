@@ -62,7 +62,7 @@ the next.
   with per-stream non-decreasing times, `Lines` rows, `Coverage`, `Dropped`, the copies with
   counts and `Gone`. Tests: a sample file per research example, the budget cut, a rotation
   crossed, an untimed stream, two copies' equal lines not folded, a filter applied before folding.
-- [ ] T006 [US1] `internal/service/logshist.go` + tests: the 30 bins from the read (`Count`,
+- [x] T006 [US1] `internal/service/logshist.go` + tests: the 30 bins from the read (`Count`,
   `Errors`, `Estimated`, `Read` false before the coverage), `BucketSeconds`; the first-seen note's
   count (equal texts in what was read).
 - [ ] T007 [US3] `internal/service/logsdeploys.go` + tests: `DeployRow`s from
