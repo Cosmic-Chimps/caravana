@@ -93,3 +93,6 @@ func firstSeen(lines []LogEntry, text string) (first time.Time, n int) {
 	}
 	return first, n
 }
+
+// Histogram is the read's 30 bins over its range, for the API and the page.
+func (r LogRead) Histogram() LogHistogram { return histogramOf(r) }
