@@ -2,8 +2,8 @@
   "workflow": "speckit",
   "specName": "Logs",
   "branch": "024-logs",
-  "currentStep": "specify",
-  "status": "specified",
+  "currentStep": "plan",
+  "status": "planned",
   "history": [
     {
       "step": "specify",
@@ -11,6 +11,13 @@
       "kind": "start",
       "by": "extension",
       "at": "2026-10-25T02:22:29.885Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-25T02:26:14.666Z"
     }
   ]
 }
