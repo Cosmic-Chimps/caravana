@@ -22,7 +22,7 @@ func startedStub(id, group string) api.AllocationListStub {
 
 // statsFor is Nomad's stats for the service task: ticks MHz and usedMB of memory.
 func statsFor(group string, ticks float64, usedMB uint64) api.AllocResourceUsage {
-	return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{group: {ResourceUsage: &api.ResourceUsage{
+	return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{group: {ResourceUsage: &api.ResourceUsage{
 		CpuStats:    &api.CpuStats{TotalTicks: ticks},
 		MemoryStats: &api.MemoryStats{Usage: usedMB * mb, Measured: []string{"Usage"}},
 	}}}}

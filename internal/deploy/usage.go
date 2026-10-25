@@ -21,8 +21,20 @@ import (
 // publish_allocation_metrics is off). It is the host's setup, not a failed call.
 var ErrUsageNotCollected = errors.New("nomad isn't collecting usage on this node")
 
+// ErrUsageNone is the Err of a copy whose stats Nomad answered with no
+// measurement: a copy that isn't running has an answer with no time and a
+// zeroed entry per task, and a task can have no memory kind measured. It is
+// no value, never 0 MB (feature 025, lab: research R8.11). It isn't an
+// ErrNomadUnavailable: Nomad answered, there is nothing to show.
+var ErrUsageNone = errors.New("nomad has no usage for this copy")
+
 // CopyUsage is what one copy's service task uses right now (research R6).
-// When Err is set the numbers are zero: Nomad didn't answer for this copy.
+// When Err is set the numbers are zero: Nomad didn't answer for this copy, or
+// had nothing to say (ErrUsageNotCollected, ErrUsageNone).
+//
+// MemoryMB is memory in use without the page cache (Usage less Cache, clamped
+// at 0; RSS when Nomad measures no Usage): the number to compare with a
+// ceiling, since the kernel gives cache back before it kills anything.
 type CopyUsage struct {
 	CPUMHz   int
 	MemoryMB int
@@ -95,25 +107,39 @@ func (d *Deployer) usageOf(ctx context.Context, c Copy, timeout time.Duration) C
 }
 
 // usageFromStats picks the service task's numbers out of Nomad's answer.
-// Memory is Usage when Nomad measured it (cgroups v2), else RSS (cgroups v1).
+// Memory is Usage less Cache when Nomad measured Usage (cgroups v2, Cache is
+// the reclaimable page cache), else RSS (cgroups v1, which has no page cache
+// in it). An answer with no time (Timestamp 0) or a task with no memory kind
+// measured is ErrUsageNone, not a zero.
 func usageFromStats(c Copy, stats *api.AllocResourceUsage) CopyUsage {
 	if len(stats.Tasks) == 0 && stats.Timestamp == 0 {
 		return CopyUsage{Err: ErrUsageNotCollected}
+	}
+	if stats.Timestamp == 0 {
+		return CopyUsage{Err: ErrUsageNone}
 	}
 	task := stats.Tasks[c.Service]
 	if task == nil || task.ResourceUsage == nil {
 		return CopyUsage{Err: fmt.Errorf("%w: no usage reported for task %q of copy %s", ErrNomadUnavailable, c.Service, c.ID)}
 	}
-	var u CopyUsage
+	mem := task.ResourceUsage.MemoryStats
+	var bytes uint64
+	switch {
+	case mem == nil:
+		return CopyUsage{Err: ErrUsageNone}
+	case slices.Contains(mem.Measured, "Usage"):
+		bytes = mem.Usage
+		if slices.Contains(mem.Measured, "Cache") {
+			bytes -= min(mem.Cache, bytes) // clamped at 0
+		}
+	case slices.Contains(mem.Measured, "RSS"):
+		bytes = mem.RSS
+	default:
+		return CopyUsage{Err: ErrUsageNone}
+	}
+	u := CopyUsage{MemoryMB: int(math.Round(float64(bytes) / (1 << 20)))}
 	if cpu := task.ResourceUsage.CpuStats; cpu != nil {
 		u.CPUMHz = int(math.Round(cpu.TotalTicks))
-	}
-	if mem := task.ResourceUsage.MemoryStats; mem != nil {
-		bytes := mem.RSS
-		if slices.Contains(mem.Measured, "Usage") {
-			bytes = mem.Usage
-		}
-		u.MemoryMB = int(math.Round(float64(bytes) / (1 << 20)))
 	}
 	return u
 }

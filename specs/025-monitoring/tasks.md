@@ -53,7 +53,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   `sse` and `grpc`; `fixture_test.go`), research R2's table (2 ms, 40 ms, 180 ms, 820 ms, 3 s against the
   finer buckets), a reset, a new series, a non-monotonic scrape, a quantile in `+Inf`; a test that
   only `real.go` imports `net/http` and nothing imports `nomad`, `service` or `store`.
-- [ ] T003 [P] `internal/deploy/host.go`, `reserved.go` + `deploytest`: `HostStats(ctx,
+- [x] T003 [P] `internal/deploy/host.go`, `reserved.go` + `deploytest`: `HostStats(ctx,
   dockerRoot)` (`Nodes().List`, `Info` cached 10 minutes, `Stats`; memory used and total, CPU used,
   total and cores, `ReservedResources`; Nomad's data by `AllocDirStats` matched to its `DiskStats`
   entry, Docker's root by the longest `Mountpoint` prefix, one row when they match, no other mount;

@@ -16,7 +16,7 @@ const (
 
 // webStats is Nomad's stats for the service task "web" (the task is named after the service).
 func webStats(ticks float64, usedMB uint64) api.AllocResourceUsage {
-	return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+	return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
 		CpuStats:    &api.CpuStats{TotalTicks: ticks},
 		MemoryStats: &api.MemoryStats{Usage: usedMB << 20, Measured: []string{"Usage"}},
 	}}}}
