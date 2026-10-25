@@ -65,9 +65,10 @@
     <span class="cv-label cv-lograil-label">Services</span>
     <a href="{{.Rail.All.Href}}" class="cv-lrailitem{{if .Rail.All.On}} cv-on{{end}}"{{if .Rail.All.On}} aria-current="true"{{end}}><span class="cv-svcring" aria-hidden="true"></span><span class="cv-lrailitem-name">{{.Rail.All.Name}}</span></a>
     {{range .Rail.Groups}}
-    {{with .Name}}<span class="cv-label cv-lrailgroup">{{.}}</span>{{end}}
+    {{$app := .Name}}
+    {{with $app}}<span class="cv-label cv-lrailgroup">{{.}}</span>{{end}}
     {{range .Items}}
-    <a href="{{.Href}}" class="cv-lrailitem cv-hue-{{.Hue}}{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}><span class="cv-svchue" aria-hidden="true"></span><span class="cv-lrailitem-name">{{.Name}}</span>{{with .Count}} <span class="cv-lrailitem-n" title="copies">{{.}}</span>{{end}}</a>
+    <a href="{{.Href}}" class="cv-lrailitem cv-hue-{{.Hue}}{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}><span class="cv-svchue" aria-hidden="true"></span><span class="cv-lrailitem-name">{{with $app}}<span class="cv-lrailapp">{{.}}/</span>{{end}}{{.Name}}</span>{{with .Count}} <span class="cv-lrailitem-n" title="copies">{{.}}</span>{{end}}</a>
     {{with .Copies}}<div class="cv-lrailcopies">{{range .}}<a href="{{.Href}}" class="cv-lrailcopy{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Short}}{{if .Gone}} <span class="cv-lgone">(gone)</span>{{end}}</a>{{end}}</div>{{end}}
     {{end}}
     {{end}}

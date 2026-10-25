@@ -181,7 +181,7 @@ func TestLogsPageRail(t *testing.T) {
 	}
 	got := text(rail)
 	// all services, then each app (a group head, since there are two) with its services and copies.
-	for _, want := range []string{"Services all services blog web 2 worker 1 docs web 1"} {
+	for _, want := range []string{"Services all services blog blog/web 2 blog/worker 1 docs docs/web 1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the rail reads %q, want it to contain %q", got, want)
 		}
@@ -195,11 +195,20 @@ func TestLogsPageRail(t *testing.T) {
 			t.Errorf("the rail lacks %s:\n%s", want, rail)
 		}
 	}
+	// With more than one app, an item carries its app's name before the service (the narrow rail has
+	// no group head, so it is what tells "web" of blog from "web" of docs); the CSS shows it only there.
+	lgWant(t, "the rail", rail, `<span class="cv-lrailitem-name"><span class="cv-lrailapp">blog/</span>web</span>`,
+		`<span class="cv-lrailapp">docs/</span>web</span>`, `<span class="cv-lrailapp">blog/</span>worker</span>`)
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lgWant(t, "app.css", string(css), ".cv-lrailapp")
 	// Rows wear the same hue.
 	lgWant(t, "/logs", body, fmt.Sprintf(`<span class="cv-lsvc cv-hue-%d"><span class="cv-svcname">docs/web`, hueOf("docs", "web")))
 	// With one app there is no group head and the rows name the service alone.
 	one := e.pageOf(t, "/logs?app=docs")
-	lgNot(t, "/logs?app=docs", one, "cv-lrailgroup", "blog", "docs/web")
+	lgNot(t, "/logs?app=docs", one, "cv-lrailgroup", "cv-lrailapp", "blog", "docs/web")
 	lgWant(t, "/logs?app=docs", one, `<span class="cv-svcname">web</span>`)
 }
 

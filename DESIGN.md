@@ -1054,7 +1054,10 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   when the environment has more than one app) and its services, each with an 8px square of its hue
   (`.cv-svchue`) and its copy count at the right (`.cv-lrailitem-n`, 11px fg-4). The chosen item is ink-2 in
   fg-1, the others fg-2. Under the chosen service its copies are listed, indented 28px (`.cv-lrailcopies`,
-  `.cv-lrailcopy`, 12px mono); a copy that is gone reads "(gone)" (`.cv-lgone`) and keeps its lines.
+  `.cv-lrailcopy`, 12px mono); a copy that is gone reads "(gone)" (`.cv-lgone`) and keeps its lines. Under
+  900px the group heads are hidden, so when the rail has more than one app each item carries its app's name
+  before the service (`.cv-lrailapp`, "blog/web", fg-3, hidden wide where the group head says it): eight chips
+  named "web" would differ by hue alone.
 - **The service hue** is the console's one color of identity. Everywhere else a hue says status; here six
   low-chroma hues tell services apart: `oklch(0.78 0.08 250)`, `(0.78 0.09 300)`, `(0.80 0.07 200)`,
   `(0.80 0.08 150)`, `(0.80 0.08 80)` and `(0.78 0.08 20)`, as `.cv-hue-0` to `.cv-hue-5`, picked by a stable
