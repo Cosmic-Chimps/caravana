@@ -111,7 +111,7 @@ the next.
   row's strip outside the region; an open row keeps its id), `WatchLogs` on the page's stream
   with `?live=1`, the sidebar's Logs item (`scroll-text`) after Domains, the console's `TestNoShipWords`
   and the parity test green.
-- [ ] T014 [US2] `internal/ui/logs.go` + template + tests: the open row (`?open=<id>#line-…`: the
+- [x] T014 [US2] `internal/ui/logs.go` + template + tests: the open row (`?open=<id>#line-…`: the
   full text, the stream named, Lines around this, Only `<service>`, the row's link as selectable
   text, Raw for JSON, the first-seen note), the around view (`?copy&at`: the notice sentence,
   the highlight, "Back to the stream", the rotated-away and gone sentences), the level chips as

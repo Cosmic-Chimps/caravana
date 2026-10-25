@@ -28,8 +28,10 @@ import (
 //
 // The page is drawn in two parts. The live region (#logs-live: the histogram and the
 // stream) is drawn again from /parts/logs on the logs notice while Live is on. The
-// head, the filter row, the rail, the open line's strip and the footer sit outside
-// it, so a typed search and a selection are never swapped away (feature 023's rule).
+// head, the filter row, the rail and the footer sit outside it, so a typed search and
+// a selection are never swapped away (feature 023's rule). A row that is open, and the
+// lines around one, are paused pages: the open row's strip is drawn under its row and
+// nothing replaces it.
 //
 // A line is the app's output and may hold anything: it goes through html/template
 // only, and never into a logger, an error, a notice or a URL (constitution VII). The
@@ -337,11 +339,9 @@ type logsView struct {
 	Around *logsAround
 	// Region is the live region. Following says the page draws it again on the logs
 	// notice, from RegionHref.
-	Region     *logsRegion
-	Following  bool
-	RegionHref string
-	// Strip is the open row's details; it sits outside the live region.
-	Strip        *logsStrip
+	Region       *logsRegion
+	Following    bool
+	RegionHref   string
 	DownloadHref string
 }
 
@@ -421,6 +421,7 @@ type logsRegion struct {
 	Head    logsStreamHead
 	Items   []logsItem
 	Problem string // why there is nothing to read, when that is so
+	Back    string // the "lines around this" view's way back to the stream, beside the Problem
 	Empty   string // the sentence for a stream with no lines
 	Dropped bool
 	Older   string // "Show older"'s address, or ""
@@ -452,6 +453,8 @@ type logsOlderNote struct {
 type logsItem struct {
 	Line   *logsLine
 	Deploy *logsDeploy
+	// Strip is the open row's details, drawn under its row (set by the page, never by /parts/logs).
+	Strip *logsStrip
 }
 
 // logsLine is one line as the stream draws it.
@@ -508,6 +511,7 @@ type firstSeenNote struct {
 const (
 	logsNomadDown    = "Nomad can't be reached right now, so logs can't be read."
 	logsCopyGone     = "That copy isn't one of this environment's copies any more. A newer deploy may have replaced it. Pick another in the list."
+	logsAroundGone   = "This copy's lines are gone."
 	logsRotated      = "That part of the copy's output has been rotated away."
 	logsNoMatch      = "No lines match. Try a wider time range or turn on more levels."
 	logsNoOutput     = "No output yet. New lines appear here."
@@ -933,7 +937,7 @@ func (s *server) logsAroundOf(ctx context.Context, q logsReq) (*logsRegion, erro
 	case errors.Is(err, service.ErrLogRotated):
 		reg.Problem, reg.status = logsRotated, http.StatusNotFound
 	case errors.Is(err, service.ErrLogCopyNotFound):
-		reg.Problem, reg.status = logsCopyGone, http.StatusNotFound
+		reg.Problem, reg.status = logsAroundGone, http.StatusNotFound
 	case isNomadDown(err):
 		s.log.Warn("can't read logs from Nomad", "error", err)
 		reg.Problem = logsNomadDown
@@ -941,6 +945,7 @@ func (s *server) logsAroundOf(ctx context.Context, q logsReq) (*logsRegion, erro
 		return nil, err
 	}
 	if reg.Problem != "" {
+		reg.Back = q.streamBack()
 		return reg, nil
 	}
 	reg.lines, reg.copies, reg.anchor = got.Lines, got.Copies, got.Anchor.String()
@@ -963,8 +968,8 @@ func (s *server) showLogsPage(w http.ResponseWriter, r *http.Request, session st
 		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
 		return
 	}
-	if q.At != "" {
-		q.Live = false
+	if q.At != "" || q.Open != "" {
+		q.Live = false // an open row, or the lines around one, is a page that is read, not followed
 	}
 	pl, err := s.loadPlaces(ctx)
 	if err != nil {
@@ -1142,15 +1147,30 @@ func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q l
 	if q.At != "" {
 		v.Around = s.aroundNotice(q, reg, now)
 	}
-	v.Strip = s.stripOf(r, q, reg, now)
+	if strip := s.stripOf(r, q, reg, now); strip != nil {
+		for i := range reg.Items {
+			if l := reg.Items[i].Line; l != nil && l.Open {
+				reg.Items[i].Strip = strip
+			}
+		}
+	}
 	return v, nil
 }
 
+// streamBack is the address the "lines around this" view's way back leads to: the stream with the
+// filters it had, and no copy (the view's copy is its own), live again.
+func (q logsReq) streamBack() string {
+	return q.href(func(q *logsReq) { fresh(q); q.Copy = ""; q.Live = true })
+}
+
 // aroundNotice is "Around 14:03:39 UTC in copy 9a4d of blog/web. Every level, this copy only."
-// It is nil when the read found nothing to be around.
+// It is nil when the read found nothing to be around: the region's problem says why, with its own
+// way back.
 func (s *server) aroundNotice(q logsReq, reg *logsRegion, now time.Time) *logsAround {
-	back := q.href(func(q *logsReq) { fresh(q); q.Copy = ""; q.Live = true })
-	n := &logsAround{Back: back, Copy: q.Copy}
+	if reg.Problem != "" {
+		return nil
+	}
+	n := &logsAround{Back: q.streamBack(), Copy: q.Copy}
 	for _, c := range reg.copies {
 		n.Copy, n.Service = c.Short, logsAppName(c.App)+"/"+c.Service
 	}

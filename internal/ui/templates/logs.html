@@ -1,8 +1,9 @@
 {{/* Logs (feature 024): the workspace page /logs. The head (the range bar and Live), the filter row
      (the place bars, the search, the level chips) and the services rail are links and one GET form, so
      the page works without script. The histogram and the stream are the live region #logs-live, drawn
-     again from /parts/logs on the logs notice while Live is on; the filter row, the rail and the open
-     line's strip sit outside it, so a typed search and a selection are never swapped away. A line is
+     again from /parts/logs on the logs notice while Live is on (a page with a row open is paused, and
+     has no refresh); the filter row and the rail sit outside it, so a typed search and a selection are
+     never swapped away. A line is
      the app's output: it is only ever drawn as text. The values are contracts/logs-screen.md's. */}}
 
 {{define "page-class"}} cv-page-logs{{end}}
@@ -64,7 +65,6 @@
 
   <div class="cv-lmain">
     <div class="cv-lmain" id="logs-live"{{if .Following}} hx-get="{{.RegionHref}}" hx-trigger="sse:logs" hx-swap="innerHTML"{{end}}>{{template "logs-region" .Region}}</div>
-    {{with .Strip}}{{template "logs-strip" .}}{{end}}
     <footer class="cv-lfoot">
       <p>Kept as long as Nomad keeps them. Send them somewhere longer from Settings › Connections, later.</p>
       <a href="{{.DownloadHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "download" 14}}Download</a>
@@ -83,7 +83,7 @@
     {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
     <span class="cv-lstreamhead-zone">times in UTC</span>
   </div>
-  {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+  {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}{{with $.Back}} <a href="{{.}}">Back to the stream</a>{{end}}</span></div>{{end}}
   {{range .Items}}
   {{with .Deploy}}
   <a href="{{.Href}}" class="cv-row-deploy{{if .Failed}} cv-row-deploy-failed{{end}}"><time class="cv-ltime" datetime="{{.ISO}}" title="{{.Title}}">{{.Clock}}</time>{{icon "rocket" 13}}<span class="cv-row-deploy-text">{{template "sentence" .Sentence}}</span></a>
@@ -97,6 +97,7 @@
     {{if .Times}}<span class="cv-repeat">×{{.Times}}</span>{{end}}
   </a>
   {{end}}
+  {{with .Strip}}{{template "logs-strip" .}}{{end}}
   {{end}}
   {{with .Empty}}<p class="cv-lempty">{{.}}</p>{{end}}
   {{if or .Dropped .Older}}
@@ -134,8 +135,8 @@
 </section>
 {{end}}
 
-{{/* logs-strip: the open line's details, outside the live region so a refresh never replaces them:
-     the stream it came from, Lines around this, Only <service>, its address as selectable text, Raw for
+{{/* logs-strip: the open line's details, under its row. A page with a row open is paused, so it is never
+     drawn again by a refresh; /parts/logs never draws it. It holds the stream the line came from, Lines around this, Only <service>, its address as selectable text, Raw for
      a JSON line and, for an error, when its text was first seen. Takes a logsStrip. */}}
 {{define "logs-strip"}}
 <section class="cv-rowstrip" id="open-line" aria-label="The open line">

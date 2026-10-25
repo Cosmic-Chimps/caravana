@@ -467,31 +467,39 @@ func TestLogsPageOpenRow(t *testing.T) {
 	anchor := lgAnchor(repeat)
 	body := e.pageOf(t, "/logs?open="+repeat)
 
-	// The row is open and links back to the page without it; the others open themselves, paused.
-	if c := classOf(t, body, anchor); !strings.Contains(c, "cv-row-open") || !strings.Contains(c, "cv-row-error") {
-		t.Errorf("the open row's class = %q", c)
-	}
-	lgWant(t, "the open page", body, `href="/logs#`+anchor+`"`, `href="/logs?live=0&amp;open=`+e.lineID(1)+`#`+lgAnchor(e.lineID(1))+`"`)
+	// The row is open and links back to the page without it (paused: an open row isn't followed); the
+	// others open themselves, paused.
+	lgWant(t, "the open page", body, `href="/logs?live=0#`+anchor+`"`, `href="/logs?live=0&amp;open=`+e.lineID(1)+`#`+lgAnchor(e.lineID(1))+`"`)
 
-	// The strip is after the stream and outside the live region.
+	// A page with a row open is not followed: the head says paused and nothing swaps the region, so
+	// the strip under the row stays as it is.
+	lgNot(t, "the open page", body, "hx-get", "streaming from")
+	lgWant(t, "the open page", body, `name="live" value="1"`, `aria-pressed="false"`, ">Paused<")
+
+	// The strip is under its row, inside the stream, and nowhere else.
 	strip := regexp.MustCompile(`(?s)<section class="cv-rowstrip" id="open-line".*?</section>`).FindString(body)
 	if strip == "" {
 		t.Fatal("no strip for the open row")
 	}
-	if i, j := strings.Index(body, `id="logs-live"`), strings.Index(body, `id="open-line"`); i < 0 || j < i {
-		t.Error("the strip isn't after the live region")
+	if n := strings.Count(body, `id="open-line"`); n != 1 {
+		t.Errorf("%d strips, want 1", n)
 	}
-	if live := regexp.MustCompile(`(?s)<div class="cv-lmain" id="logs-live".*?</section>\s*</div>`).FindString(body); strings.Contains(live, "cv-rowstrip") {
-		t.Error("the strip is inside the live region")
+	underRow := regexp.MustCompile(`(?s)<a href="[^"]*" id="` + regexp.QuoteMeta(anchor) + `".*?</a>\s*<section class="cv-rowstrip" id="open-line"`)
+	if !underRow.MatchString(body) {
+		t.Errorf("the strip doesn't follow the open row:\n%s", text(body))
+	}
+	if i, j, k := strings.Index(body, `<section class="cv-logstream"`), strings.Index(body, `id="open-line"`), strings.Index(body, `<footer class="cv-lfoot"`); i < 0 || j < i || k < j {
+		t.Error("the strip isn't inside the stream")
 	}
 	got := text(strip)
 	lgWant(t, "the strip", got, "On stdout of blog/web, copy aaaa1111.", "Lines around this", "Only blog/web", "Close",
 		"First seen", "2 times since")
 	lgWant(t, "the strip", strip, `href="/logs?at=`+repeat+`&amp;copy=aaaa1111&amp;live=0"`)
-	lgWant(t, "the strip", strip, `href="/logs?service=blog%2Fweb"`, `href="/logs"`)
+	lgWant(t, "the strip", strip, `href="/logs?live=0&amp;service=blog%2Fweb"`, `href="/logs?live=0"`)
 	// The row's own address as selectable text.
 	lgWant(t, "the strip", strip, `class="cv-rowstrip-url">http://127.0.0.1:`, `/logs?live=0&amp;open=`+repeat+`#`+anchor)
 	lgNot(t, "the strip", strip, "cv-rowraw") // not a JSON line
+	lgWant(t, "the strip", strip, ">Lines around this<", `<span class="cv-inline-mono">blog/web</span>`)
 
 	// A JSON line has Raw, the line as received.
 	json := e.pageOf(t, "/logs?open="+e.lineID(3))
@@ -542,6 +550,22 @@ func TestLogsAroundView(t *testing.T) {
 	if resp, _ := e.get(t, "/logs?copy=aaaa1111&at=aaaa1111.stdout.5.0"); resp.StatusCode != 400 {
 		t.Errorf("a line past the files = %d, want 400", resp.StatusCode)
 	}
+	// The rotated-away sentence has its way back, keeping the filters, and no "Around" notice.
+	lgWant(t, "the rotated view", text(rotated), logsRotated)
+	lgWant(t, "the rotated view", rotated, `<a href="/logs">Back to the stream</a>`)
+	_, rotated = e.get(t, "/logs?q=x&copy=bbbb2222&at=bbbb2222.stdout.1.0")
+	lgWant(t, "the rotated view", text(rotated), logsRotated)
+	lgWant(t, "the rotated view", rotated, `<a href="/logs?q=x">Back to the stream</a>`)
+	lgNot(t, "the rotated view", text(rotated), "Around ", "Every level")
+
+	// A copy that is gone has its own sentence, and the way back.
+	resp, gone := e.get(t, "/logs?at=ffff9999.stdout.0.0")
+	if resp.StatusCode != 404 {
+		t.Errorf("the lines around a copy that isn't there = %d, want 404", resp.StatusCode)
+	}
+	lgWant(t, "the gone view", text(gone), "This copy's lines are gone.")
+	lgWant(t, "the gone view", gone, `<a href="/logs">Back to the stream</a>`)
+	lgNot(t, "the gone view", text(gone), "Around ", "Pick another")
 }
 
 func TestLogsPageEmptySentences(t *testing.T) {
