@@ -476,7 +476,8 @@ type logsRegion struct {
 	copies []service.LogCopy
 	hist   service.LogHistogram
 	cover  service.LogCoverage
-	anchor string // the line the around view is about
+	levels map[logline.Level]int // the range's lines per level, as the histogram counts them
+	anchor string                // the line the around view is about
 }
 
 // logsStreamHead is the line over the rows.
@@ -489,6 +490,10 @@ type logsStreamHead struct {
 	Copies string // "8 copies", while Live
 	// Older is the note of a view that shows lines before a time.
 	Older *logsOlderNote
+	// Cap is how many rows the stream holds when it holds the cap ("newest 500 lines"), 0 when
+	// it doesn't; CapHref is "Show older"'s address beside it.
+	Cap     int
+	CapHref string
 }
 
 // logsFeed is the paused head's "· 3 new lines since Show": logs.js listens for the logs notice,
@@ -655,6 +660,7 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 	})
 
 	reg.lines, reg.copies, reg.hist, reg.cover = read.Lines, read.Copies, read.Histogram(), read.Coverage
+	reg.levels = read.LevelCounts()
 	reg.Dropped = read.Dropped
 	reg.Hist = histOf(reg.hist, read.Coverage, deploys, rng)
 	reg.Items = s.logsItems(q, read.Lines, rows, read.Copies)
@@ -677,6 +683,9 @@ func (s *server) logsRegionOf(ctx context.Context, q logsReq) (*logsRegion, erro
 	}
 	if reg.Problem == "" && (capped || !read.Coverage.Complete) && before.After(read.From) {
 		reg.Older = q.href(fresh, paused, func(q *logsReq) { q.Before = before })
+		if capped {
+			reg.Head.Cap, reg.Head.CapHref = logsPageLines, reg.Older
+		}
 	}
 	return reg, nil
 }
@@ -1257,15 +1266,12 @@ func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q l
 		}
 	}
 
-	// The search and the chips count the lines the read found.
+	// The search counts the lines read; the chips count the range, the histogram's numbers.
 	v.Search.Value = q.Q
 	if q.Q != "" && reg.Problem == "" {
 		v.Search.N = plural(linesIn(reg.lines), "line")
 	}
-	counts := map[logline.Level]int{}
-	for _, l := range reg.lines {
-		counts[l.Level] += 1 + l.Repeat
-	}
+	counts := reg.levels
 	for _, l := range levelOrder {
 		chip := logsChip{Level: l, On: q.Levels.has(l), Href: q.href(withLevels(q.Levels.toggled(l)))}
 		chip.Title = "Show " + string(l) + " lines"

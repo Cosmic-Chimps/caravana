@@ -91,6 +91,7 @@
     {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> streaming from {{.Head.Copies}}</span><noscript><span>Following needs JavaScript. Reload the page to see newer lines.</span></noscript>
     {{else if .Head.Paused}}<span>paused</span>{{with .Head.Feed}}<span class="cv-lpaused" data-logs-feed data-count-href="{{.CountHref}}" hx-trigger="sse:logs" hidden>· <span id="logs-paused-n"></span> new <span id="logs-paused-unit">lines</span> since <a href="{{.ShowHref}}">Show</a></span>{{end}}{{end}}
     {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
+    {{if .Head.Cap}}<span class="cv-lstreamhead-cap">newest {{.Head.Cap}} lines · <a href="{{.Head.CapHref}}">Show older</a></span>{{end}}
     <span class="cv-lstreamhead-zone">times in UTC</span>
   </div>
   {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}{{with $.Back}} <a href="{{.}}">Back to the stream</a>{{end}}</span></div>{{end}}

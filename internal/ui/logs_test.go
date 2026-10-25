@@ -246,6 +246,42 @@ func TestLogsPageChips(t *testing.T) {
 	lgWant(t, "levels=warn", only, `href="/logs?levels=warn" class="cv-lvlchip cv-lvl-warn cv-on"`)
 }
 
+// The chips count the range, as the histogram does, not the 500 rows the stream holds; and a stream
+// that holds the cap says so, with Show older beside it.
+func TestLogsPageChipsCountTheRangeAndTheCapIsSaid(t *testing.T) {
+	e := newConsoleEnv(t)
+	now := time.Now().UTC()
+	e.seed(t, domainsApp("docs", "docs.example.com"))
+	e.Nomad.SetCopies("docs", api.AllocationListStub{ID: lgDocs, TaskGroup: "web", JobVersion: 2, ClientStatus: "running", NodeName: "n", TaskStates: lgStarted("web", now)})
+	var lines []string
+	start := now.Add(-10 * time.Minute)
+	for i := range 600 {
+		lines = append(lines, fmt.Sprintf("%s ERROR failure %04d", start.Add(time.Duration(i)*time.Second).Format(lgLayout), i))
+	}
+	lines = append(lines, now.Add(-time.Second).Format(lgLayout)+" [warn] one warning")
+	e.Nomad.AddLogFile(lgDocs, "stdout", 0, lines, now)
+
+	body := e.pageOf(t, "/logs")
+	chips := text(regexp.MustCompile(`(?s)<div class="cv-lvlchips".*?</div>`).FindString(body))
+	lgWant(t, "the chips", chips, "error 600", "warn 1")
+	// The histogram's hidden table says the same total.
+	total := 0
+	for _, m := range regexp.MustCompile(`(?s)<th scope="row">[^<]*</th><td>\d+</td><td>(\d+)</td>`).FindAllStringSubmatch(body, -1) {
+		n, _ := strconv.Atoi(m[1])
+		total += n
+	}
+	if total != 600 {
+		t.Errorf("the histogram counts %d errors, want 600", total)
+	}
+	head := regexp.MustCompile(`(?s)<div class="cv-lstreamhead">.*?</div>`).FindString(body)
+	lgWant(t, "the stream head", text(head), "newest 500 lines · Show older")
+	lgWant(t, "the stream head", head, `<a href="/logs?`, `before=`)
+
+	// A stream below the cap says nothing of it.
+	few := e.pageOf(t, "/logs?q=one+warning")
+	lgNot(t, "an uncapped head", text(few), "newest 500 lines")
+}
+
 func TestLogsPageSearch(t *testing.T) {
 	e := logsPageEnv(t)
 	body := e.pageOf(t, "/logs?q=retry")

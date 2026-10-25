@@ -1043,7 +1043,9 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   visually hidden submit. **Level chips** (`.cv-lvlchip`, 30px, 0 10px, radius 4, 500 12px mono, gap 6): on
   (`.cv-on`) is ink-2 with a 1px line-3 edge and wears the level's hue (`.cv-lvl-error` failed, `.cv-lvl-warn`
   warn, `.cv-lvl-info` fg-2, `.cv-lvl-debug` fg-3); off is transparent with a line-1 edge in fg-4; error and
-  warn carry their count in fg-3 (`.cv-lvlchip-n`). Defaults: error, warn, info on, debug off. Each chip is a
+  warn carry their count in fg-3 (`.cv-lvlchip-n`) while they are on: the range's count, the histogram's own
+  numbers (every line of the range that passed the filters, folded or not), not the rows the stream holds.
+  Defaults: error, warn, info on, debug off. Each chip is a
   link that flips its level in the query. The state is also in the words ("error 2" over a chip that is on
   or off by its edge and ground), never by hue alone: an off chip has no hue at all.
 - **The services rail** (`<nav aria-label="Services">`, `.cv-lograil`, sticky at top 72): a Label "Services",
@@ -1082,7 +1084,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
 - **The stream** (`.cv-logstream`: ink-0 ground, 1px line-1, radius 4; a container of its own, `cvstream`). Its
   head line (`.cv-lstreamhead`, 8 16, 400 12px mono): live, "◐ streaming from 8 copies" in rolling; paused,
   "paused · N new lines since" in fg-3 with a "Show" link; and at the right "times in UTC" in fg-4 (the
-  stream's rows carry no zone of their own).
+  stream's rows carry no zone of their own). When the stream holds the row cap, the head also says "newest 500
+  lines · Show older" (`.cv-lstreamhead-cap`; Show older is the footer's link).
 - **A row** (`.cv-lrow`, grid `104px 48px 190px minmax(0, 1fr) auto`, gap 12, baseline, padding 5 16, 400
   13px/20px mono; a link to `?…&open=<copy>-<n>#line-…`): the time (`.cv-ltime`, 12px, a `<time>` "14:03:41.208"
   in UTC, fg-3), the level (`.cv-llvl`, 12px, in its hue; `.cv-llvl-error` failed, `-warn` warn, `-info` fg-2,

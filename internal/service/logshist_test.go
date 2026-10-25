@@ -136,3 +136,28 @@ func TestFirstSeen(t *testing.T) {
 		t.Errorf("no match = %s, %d", first, n)
 	}
 }
+
+// The chips' counts are the histogram's: the stamps of the range, per level.
+func TestLevelCountsMatchTheHistogram(t *testing.T) {
+	from := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)
+	at := func(sec int) time.Time { return from.Add(time.Duration(sec) * time.Second) }
+	r := histRead(from, 15*time.Minute, true, from,
+		logStamp{Time: at(1), Level: logline.Error},
+		logStamp{Time: at(2), Level: logline.Error},
+		logStamp{Time: at(3), Level: logline.Warn},
+		logStamp{Time: at(4), Level: logline.Info},
+		logStamp{Time: at(-5), Level: logline.Error},       // before the range
+		logStamp{Time: at(15*60 + 5), Level: logline.Warn}, // after it
+	)
+	got := r.LevelCounts()
+	if got[logline.Error] != 2 || got[logline.Warn] != 1 || got[logline.Info] != 1 || got[logline.Debug] != 0 {
+		t.Errorf("LevelCounts = %v, want error 2, warn 1, info 1", got)
+	}
+	errs := 0
+	for _, b := range r.Histogram().Bins {
+		errs += b.Errors
+	}
+	if errs != got[logline.Error] {
+		t.Errorf("histogram has %d errors, the counts %d", errs, got[logline.Error])
+	}
+}

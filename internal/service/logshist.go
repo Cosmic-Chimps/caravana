@@ -96,3 +96,18 @@ func firstSeen(lines []LogEntry, text string) (first time.Time, n int) {
 
 // Histogram is the read's 30 bins over its range, for the API and the page.
 func (r LogRead) Histogram() LogHistogram { return histogramOf(r) }
+
+// LevelCounts is how many lines of the read's range there are at each level:
+// the same stamps the histogram counts (every line that passed the range and
+// the filters, folded or not), so a chip's count and the histogram's total
+// say the same number. Levels with no lines are absent.
+func (r LogRead) LevelCounts() map[logline.Level]int {
+	out := map[logline.Level]int{}
+	for _, st := range r.stamps {
+		if st.Time.Before(r.From) || st.Time.After(r.To) {
+			continue
+		}
+		out[st.Level]++
+	}
+	return out
+}
