@@ -85,12 +85,12 @@ the next.
 
 ## Phase 3: API 0.26.0 (US4)
 
-- [ ] T011 [US4] `api/openapi.yaml` 0.26.0 + `internal/api/logs.go` + tests: `listLogs`,
+- [x] T011 [US4] `api/openapi.yaml` 0.26.0 + `internal/api/logs.go` + tests: `listLogs`,
   `getLogsAround`, `downloadLogs` per contracts/api.md (the parameters' rules and codes, `no-store`,
   the attachment header, `levelOf` and `stripANSI` written out in `listLogs`' description),
   `LogLine`'s new properties on `getLogs` (unchanged order), the contract test over every new
   route, `TestScopedTokenWalksEveryRoute` with the three routes denied, parity entries for
-  `/logs`, `/parts/logs`, `/logs/download` and the app's tab.
+  `/logs`, `/parts/logs`, `/logs/download` and the app's tab (moved to T013: `TestConsoleParity` fails on an entry for a console route that isn't served yet).
 
 ## Phase 4: Console (US1, US2, US3, US4, US5)
 
