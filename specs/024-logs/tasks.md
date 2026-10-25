@@ -119,7 +119,7 @@ the next.
 - [x] T015 [US3] `internal/ui/logs.go` + `console.js` + tests: Live/Paused (`aria-pressed`, the
   post that flips `?live`), the fresh tint, "paused · N new lines since" with "Show" (script only),
   the deploy rows as links to the entry with page 4's words, the markers' `title`s.
-- [ ] T016 [US4] `internal/ui/logs.go` + tests: `GET /logs/download` (the service's download,
+- [x] T016 [US4] `internal/ui/logs.go` + tests: `GET /logs/download` (the service's download,
   the attachment header, `no-store`), the footer's link carrying the filter.
 - [ ] T017 [US5] `internal/ui/app.go` + `logs.html` + tests: the app's Logs tab as the same
   template filtered to the app (its services in the rail, its deploys, "All logs" to

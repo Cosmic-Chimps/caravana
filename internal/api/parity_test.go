@@ -186,10 +186,11 @@ var consoleParity = map[string]parity{
 	// Logs (feature 024). The page reads the environment's output (listLogs, with the filters of its address:
 	// project, environment, app, service, copy, q, range, levels, before), the lines around one line
 	// (getLogsAround, for ?copy=&at=), and the apps and projects for the rail and the place bars. The part is
-	// the stream and the histogram alone, drawn again on the logs notice.
-	// "GET /logs/download" (downloadLogs) joins them when T016 adds the route.
-	"GET /logs":       {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
-	"GET /parts/logs": {ops: []string{"listLogs"}},
+	// the stream and the histogram alone, drawn again on the logs notice. Download is the page's filter as
+	// a text file, oldest first.
+	"GET /logs":          {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
+	"GET /parts/logs":    {ops: []string{"listLogs"}},
+	"GET /logs/download": {ops: []string{"downloadLogs"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

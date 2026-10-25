@@ -140,6 +140,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/logout", s.protected(s.signOut)},
 		{"GET", "/logs", s.requireSession(s.showLogsPage)},
 		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
+		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
 		{"GET", "/projects", s.requireSession(s.showProjects)},

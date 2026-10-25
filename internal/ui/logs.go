@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"mime"
 	"net/http"
 	"net/url"
 	"slices"
@@ -527,6 +528,7 @@ const (
 	logsNoOutput     = "No output yet. New lines appear here."
 	logsEstimatedTip = "estimated: this line carried no time; taken from the line before it"
 	logsUnreadTip    = "not read: older output wasn't loaded"
+	logsDownloadBusy = "A download is already running; try again in a moment."
 )
 
 // logsAppName is an app as the stream names it: its name, which is its ID in Default › production.
@@ -1343,4 +1345,86 @@ func firstSeenOf(lines []service.LogEntry, line service.LogEntry, now time.Time,
 		tail += " (in what was read)"
 	}
 	return &firstSeenNote{Lead: "First seen ", Clock: &c, Tail: tail + "."}
+}
+
+// ---- Download -------------------------------------------------------------------------------
+
+// logsDownloadDeadline is how long a download may take to its last byte: the service reads for up to
+// two minutes before it writes, longer than the server's own write timeout allows.
+const logsDownloadDeadline = 5 * time.Minute
+
+// downloadLogsFile answers GET /logs/download?<the page's query>: the same filter as a text file, oldest
+// first (service.DownloadLogs). The page's paging, open row, around view and Live mean nothing to a file,
+// so before, open, at and live are dropped before the query is read. The service reads every stream
+// before it writes a byte, so a refusal still gets its own page and status (409 for a download already
+// running, 502 for a Nomad that can't be read, 404 for a place, app or copy that isn't there); the
+// headers go out with the first byte, and a failure after that is only logged, since the status is
+// sent. The file holds the app's output: it is never logged, and the answer is never cached.
+func (s *server) downloadLogsFile(w http.ResponseWriter, r *http.Request, session string) {
+	v := r.URL.Query()
+	for _, name := range []string{"before", "open", "at", "live"} {
+		v.Del(name)
+	}
+	q, bad := logsReqOf(v)
+	if bad != "" {
+		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
+		return
+	}
+	// The service reads for up to two minutes before the first byte; the server's write timeout
+	// shouldn't cut a download that is working.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(logsDownloadDeadline))
+
+	now := s.now().UTC()
+	rng, _ := logsRangeOf(q.Range)
+	dw := &logsDownloadWriter{w: w, name: service.LogDownloadName(q.Project, q.Environment, now.Add(-rng.D), now)}
+	err := s.svc.DownloadLogs(r.Context(), q.envQuery(), dw)
+	var fe *app.FieldError
+	var pe *service.PlaceError
+	switch {
+	case err == nil:
+		dw.start() // an empty file still has its headers
+	case dw.started:
+		s.log.Warn("log download ended early", "error", err)
+	case errors.Is(err, service.ErrDownloadBusy):
+		s.message(w, http.StatusConflict, "Download", logsDownloadBusy, "Only one download of logs runs at a time. Go back to Logs and press Download again.")
+	case errors.As(err, &fe):
+		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
+			fe.Field+" "+fe.Message+". Go back to Logs and use the choices there.")
+	case errors.As(err, &pe):
+		s.message(w, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
+	case errors.Is(err, service.ErrLogCopyNotFound):
+		s.message(w, http.StatusNotFound, "Not found", "That copy isn't there any more.", logsCopyGone)
+	case errors.Is(err, store.ErrNotFound):
+		s.message(w, http.StatusNotFound, "Not found", "That app isn't in this environment.", "Go back to Logs and choose another.")
+	case isNomadDown(err):
+		s.log.Warn("can't download logs from Nomad", "error", err)
+		s.message(w, http.StatusBadGateway, "Logs", "Nomad can't be reached.", logsNomadDown)
+	default:
+		s.serverError(w, "download logs", err)
+	}
+}
+
+// logsDownloadWriter sends the file's headers with its first write, so that nothing is sent while the
+// service may still refuse.
+type logsDownloadWriter struct {
+	w       http.ResponseWriter
+	name    string
+	started bool
+}
+
+func (d *logsDownloadWriter) start() {
+	if d.started {
+		return
+	}
+	d.started = true
+	h := d.w.Header()
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": d.name}))
+	h.Set("Cache-Control", "no-store")
+	d.w.WriteHeader(http.StatusOK)
+}
+
+func (d *logsDownloadWriter) Write(p []byte) (int, error) {
+	d.start()
+	return d.w.Write(p)
 }
