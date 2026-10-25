@@ -108,6 +108,8 @@ func TestTimeOfNoTime(t *testing.T) {
 		{"error text", `Error handling is disabled for /health`},
 		{"date in the middle of a message", `Certificate will expire on 2026-11-01 10:00:00 UTC`},
 		{"date after a long prefix", `Certificate expires 2026-11-01 10:00:00`},
+		{"date after a short word", `expires 2026-11-01 10:00:00`},
+		{"date after a short word with a colon", `since: 2026-11-01 10:00:00`},
 		{"date after two words", `Started at 2026-10-25 00:33:21 by the owner`},
 		{"date only", `2026-10-25 hello`},
 		{"clf after four words", `a b c d [25/Oct/2026:00:33:21 +0000] "GET /"`},

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // TimeOf reads the time a line carries, from the shapes apps really write, at
@@ -113,10 +114,19 @@ func priorityEnd(s string) int {
 	return 0
 }
 
-// afterToken skips one token of 1 to 8 bytes and the spaces after it.
+// afterToken skips one token of 1 to 8 bytes and the spaces after it. The
+// token must look like a tag ("1:M", "I,", "<34>1", "[1]": it holds a digit or
+// punctuation) or be a level word ("INFO 2026-…"). A plain word ("expires",
+// "since") isn't a prefix, so a date that follows one in a message never
+// becomes the line's time.
 func afterToken(s string, p int) (int, bool) {
 	sp := strings.IndexByte(s[p:], ' ')
 	if sp < 1 || sp > 8 {
+		return 0, false
+	}
+	token := s[p : p+sp]
+	if _, isLevel := wordLevel(token); !isLevel &&
+		!strings.ContainsFunc(token, func(r rune) bool { return !unicode.IsLetter(r) }) {
 		return 0, false
 	}
 	q := p + sp
