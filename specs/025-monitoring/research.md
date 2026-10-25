@@ -128,7 +128,9 @@ Caravana reads:
   copy count: they are the app's failures as a visitor sees them);
 - **buckets** = Σ over `code, method` of the delta of each `_bucket{le}`, **only for `protocol` `http`
   and `grpc`** (finding 4: `websocket` and `sse` last as long as the connection). Unverified: the
-  exact protocol values on 3.7.13 (R8).
+  exact protocol values on 3.7.13 (R8). Observed (R8.1, lab): `http`, `sse` and `grpc`, never
+  `websocket` (those requests aren't recorded at all), and for `grpc` the `code` label is the gRPC
+  status, so errors count only `http` and `sse`.
 
 ### The service label
 
@@ -145,7 +147,7 @@ Caravana reads:
   `a-b-c`, which today already merges their copies in one Traefik load balancer. When two stored
   pairs give the same key the sampler attributes the series to neither and logs it once. Worth a
   backlog item (a deploy-time refusal).
-- **Which requests reach the service metrics** is a lab check (R8): a Team-only domain's 401 (basic
+- **Which requests reach the service metrics** (lab, observed, R8.2: confirmed): a Team-only domain's 401 (basic
   auth on the router) and a www pair's 301 (redirect middleware on the router) are answered before
   the service, so they should count only on the router and the entrypoint. That is the right meaning
   ("requests the app saw"); the domain page (023) is where redirects and the password show.
@@ -770,37 +772,172 @@ Host:
 
 ## R8. Lab checks to run (after the Traefik and policy changes, before the sampler)
 
-None of these were run: each needs the lab's Traefik job changed or a load, which this research must
-not do.
+Run on the lab on 2026-10-25 (T001), except 10, 12 and 13, which wait for the throwaway VM, the
+sampler and the console. The only change to the lab's configuration was the feature's own: the
+Traefik job re-registered by `deploy/dev/lab.sh up` with the two arguments. Each of items 1–9 and 11
+ends with "Lab, observed". The throwaway objects were an app `spike025` (a whoami job registered
+through Nomad's API with the router shapes 023 writes: plain, Team-only basic auth, a www redirect
+pair, a per-domain router with a path) and two ACL policies and tokens `spike025-with` and
+`spike025-without`; all were removed. The lab was short of memory the whole time (1.7–1.84 GB of
+1.95 GB used, 34 MB free and 100–150 MB available), so the kernel's own out-of-memory killer took
+Traefik down four times that day (`dmesg`: "dockerd invoked oom-killer … global_oom …
+task=traefik"), one of them during check 4, and killed the Postgres backend of check 8's sort (anon-rss 82
+MB); Traefik itself uses 17 MB of its 128. That is the lab's condition, not the feature's, but the
+numbers of checks 3 and 4 carry it.
 
 1. **Traefik's metrics on**: rerun the dev Traefik job with the two arguments; `curl
    http://127.0.0.1:8088/metrics` answers 200 with `traefik_service_requests_total{…,service="whoami-whoami@nomad"}`
    (check the exact label value and the `protocol` values: `http`, `websocket`, `sse`, `grpc`?);
    capture the whole answer as the parser's fixture (with the buckets set) and note its size and line
    count; does it carry `process_start_time_seconds`?
+   - **Lab, observed**: after `lab.sh up`, `curl http://127.0.0.1:8088/metrics` answers 200. Before any
+     request it is 131 lines, 8,820 bytes: `go_*`, `process_*`, `traefik_config_*` and
+     `traefik_open_connections`, no `traefik_service_*` (a service's series appear with its first
+     request). After one request to `whoami.localhost`:
+     `traefik_service_requests_total{code="200",method="GET",protocol="http",service="whoami-whoami@nomad"} 1`,
+     with `_request_duration_seconds_{bucket,sum,count}`, `_requests_bytes_total`,
+     `_responses_bytes_total` and `_requests_tls_total{service=…,tls_cipher=…,tls_version="1.3"}`.
+     The buckets are the eleven bounds and `+Inf` (`le="0.005"` … `le="10"`, `le="+Inf"`).
+     **`protocol` values seen: `http`, `sse`** (`Accept: text/event-stream`) **and `grpc`** (a POST
+     with `Content-Type: application/grpc` to whoami, which answered HTTP 200; the series says
+     `code="2"`, the gRPC status, not an HTTP code). **`websocket` never appeared**: a `101` to
+     whoami's `/echo`, with curl and with a raw client that sent a text frame and a close frame and
+     closed cleanly, left no series 12 s later. `process_start_time_seconds` is there
+     (`1.79296926318e+09`) **but is not a stable start time**: one process read 1792969410.57,
+     406.57 and 405.57 on three scrapes within two minutes; the next 764.09, 763.09, 761.09 and,
+     over the following half hour, 752.09, 749.09 and 746.09 (Nomad's own "Started" event said
+     766): it drifts back about 1 s a minute. A restart moved it by 359 s.
+     After 46 requests to five services: **446 lines, 47,152 bytes** (108 bucket lines), saved
+     untrimmed (under 200 KB) as `internal/metrics/testdata/traefik.prom`; its services are
+     `blog-web`, `hollo-web`, `lab023-web`, `spike025-web` and `whoami-whoami`, all `@nomad`, with
+     codes 200, 503 and the grpc 2, and protocols `http`, `sse`, `grpc`. Decisions changed (plan):
+     errors count only `http` and `sse`; `process_start_time_seconds` marks a reset only when it
+     moves by more than 10 s; websocket traffic is not in the numbers.
+
 2. **Which requests count on the service**: one Team-only domain (023's `team.lab023.localhost`)
    without a password (401) and a www pair (301): neither should move
    `traefik_service_requests_total{service="lab023-web@nomad"}`; a plain request should. A
    per-domain router's request should (finding 2).
+   - **Lab, observed**: 023's `lab023-web` Team-only router was disabled in the lab (its auth
+     variable is gone: `middleware "lab023-web-13ab8f6e-auth@file" does not exist`, answers 404), so
+     the check ran on `spike025`, with the same shapes. `traefik_service_requests_total{service="spike025-web@nomad"}`
+     started at 1; Team-only without a password (401) left it at 1; the www pair's 301 left it at 1;
+     Team-only with the password (200) made 2; the plain domain 3; the per-domain router with a path
+     4; the apex of the www pair 5; a host no router knows (Traefik's own 404) left it at 5.
+     `traefik_entrypoint_requests_total{entrypoint="websecure"}` carried the 401 (1), the 301 (1)
+     and the 404s (2) beside the 200s (5). So a middleware's answer and an unrouted request never
+     reach the service's numbers (the "requests the app saw" meaning), and every per-domain router
+     feeds the one service (finding 2 holds). The redirect regex sees the Host with its port, so the
+     lab's `https://www…:8443/` is served, not redirected: the test sent the Host without the port.
+
 3. **The bucket math against a known load**: a service with a path that sleeps a known time (e.g. 50
    ms and 400 ms in a 9:1 mix, `curl` in a loop for 2 minutes); the computed p95 per minute from the
    deltas should fall in the 250-500 ms bucket; compare with the client-side p95 of the loop.
+   - **Lab, observed**: two runs of a sequential client, one request per round trip, nine
+     `?wait=50ms` to one `?wait=400ms`, scraping once a minute and applying the plan's rules to
+     the bucket deltas (running maximum, Prometheus interpolation):
+
+     | Run, minute | Requests (client) | p50 buckets / client | p95 buckets / client |
+     |---|---|---|---|
+     | 1, minute 1 | 252 (240) | 82 / 83 ms | 856 / 1328 ms |
+     | 1, minute 3 (spans the restart of item 4) | 92 (88) | 82 / 61 ms | 540 / 661 ms |
+     | 1, minute 4 | 295 (293) | 83 / 84 ms | 594 / 764 ms |
+     | 1, minute 5 | 382 (382) | 81 / 70 ms | 485 / 561 ms |
+     | 2, minute 1 | 270 (265) | 85 / 88 ms | 625 / 880 ms |
+     | 2, minute 2 | 319 (324) | 82 / 81 ms | 480 / 752 ms |
+
+     The totals agree with the client's (the scrape and the loop don't start on the same second),
+     the p50s within a few ms (but 82 against 61 in the minute with the restart), and **the
+     bucket p95 is 14–36% below the client's p95 in every minute** (Traefik doesn't time the
+     client's own work) and in the same or the next lower bucket. **It fell in the 250–500 ms
+     bucket in 2 of the 6 minutes, not all**: the VM was starved (`CPUTicksConsumed` 3,818–3,961
+     of 4,000 MHz while the load ran, about 450 idle; the "50 ms" requests had a p50 of 82 ms, and
+     23% of all requests took over 100 ms where the mix has only its slow tenth above it), so the
+     slow tenth reached into the 0.5–1 s bucket. The interpolation itself is covered by the unit tables, not by this run.
+     No decision changes: a p95 reads as "within a bucket", the finer buckets do their job (a p95
+     of 480–856 ms reads as that, not as the old default's 1.2 s).
+
 4. **Resets**: restart Traefik (`job restart` or the job rerun) during the load; the next minute's
    delta must be the new value, not negative and not a jump.
+   - **Lab, observed**: Traefik went down during run 1, twice: the VM's out-of-memory killer
+     (the scrape at 122 s was refused) and my `alloc restart` at 150 s (exit 137, restarted by Nomad
+     within 2 s: "Restarting Task restarting in 0s"; after the kernel's kill Nomad waited 15 s);
+     the clients saw 123 failed requests in the minutes around them. A restarted Traefik has no `traefik_service_*` series until a service's first request.
+     The first successful scrape after it: the `+Inf` bucket sum went from 259 to 92, so the reset
+     rule's delta is 92, the requests since the restart: not negative, not a jump; the two minutes
+     after it gave 295 and 382, within 2 of the client's 293 and 382. `process_start_time_seconds`
+     moved by 359 s. That scrape came about 120 s after the last good one (a scrape in between
+     had been refused), over the plan's 90 s window, so the sampler would only re-baseline and
+     store no HTTP numbers for that minute, as planned.
+
 5. **A series that vanishes**: a stop-then-start deploy of a volume app with a domain: does its
    service's series disappear from `/metrics` and come back at zero?
+   - **Lab, observed**: stopping `spike025` (Deregister, no purge: the same disappearance of the
+     registration as a volume app's stop-then-start) left its series in `/metrics` 12 s later
+     (933 requests, 18 lines) and **gone 32 s later** (0 lines); a request in between answered 404.
+     After the start the first 200 came 6 s later, and the series came back **at 1**, then 2: from
+     zero, as a new series. Other services' series were not touched. A "now less than previous"
+     (1 against 933) would also give a delta of 1, so the plan's two rules agree; the sampler should
+     still drop a series' memory when it is absent from a scrape.
+
 6. **The scoped token reads the host**: a token from `deploy/install/caravana-policy.hcl` with
    `node { policy = "read" }` (as `TestLab` makes one): `Nodes().List`, `Info`, `Stats` answer; without
    the line, 403 (finding 8).
+   - **Lab, observed**: a token from `deploy/install/caravana-policy.hcl` as it stands, and one with
+     `node { policy = "read" }` appended:
+
+     | Call (`/v1/…`) | Without | With |
+     |---|---|---|
+     | `Nodes().List` `nodes` | 403 `Permission denied` | 200, 1 node |
+     | `Nodes().Info` `node/<id>` | 403 | 200 (`MemoryMB` 1949, `CpuShares` 4000) |
+     | `Nodes().Stats` `client/stats?node_id=` | 403 | 200 (`Memory.Used` 1,826,328,576) |
+     | `Allocations().List` `allocations?resources=true` | 200 | 200 |
+     | `Jobs().Info` `job/whoami` | 200 | 200 |
+
+     Finding 8 stands; the reservations need no node capability.
+
 7. **Reserved by Nomad's rule**: the sampler's lifecycle-aware sum equals
    `nomad.client.allocated.cpu` / `.memory` in `/v1/metrics` (lab, observed today: 1730 / 1312 against
    a naive 1880 / 1408).
+   - **Lab, observed** (18 non-terminal copies on 2026-10-25): the lifecycle-aware sum (per copy
+     `max(Σ prestart non-sidecar, Σ main and sidecar)`, task lifecycles from the job's versions)
+     was **1780 MHz and 1344 MB**; Nomad's `nomad.client.allocated.cpu` was **1780** and
+     `allocated.memory` **1344**, exact, against a naive sum of 1930 and 1440. The prestart tasks
+     that matter were `caravana-volumes` on `db`, `files-vol` and `nobackup` (50/32 against a
+     service's 100/96, 100/32, 100/32); `names` sidecars sit with the main tasks. The unallocated
+     gauges were 2220 and 605 (4000 − 1780, 1949 − 1344), and `allocated.max_memory` was 4576:
+     the gauge for memory leaves `memory_max` out, as the room's yardstick does. The node's
+     `ReservedResources` is 0 / 0.
+
 8. **Memory under cache**: the `db` Postgres under a read load (e.g. a `pgbench -S` run in the copy,
    or a large `SELECT`): `Usage` climbs towards the 192 MB ceiling while `Usage − Cache` stays near
    the working set; no OOM.
+   - **Lab, observed** (`db`, `postgres` task, 96 MB reserved, ceiling 192): at rest Usage 17.3 MB,
+     RSS 4.1, Cache 11.6, **Usage − Cache 5.6**. Reading 286 MB of the image's files through the
+     container twice moved Cache to 16.8 and 21.8 and Usage to 23.6 and 28.4, while **Usage −
+     Cache stayed 6.8 and 6.6**. The data directory is 39 MB. A sort in `work_mem` (`set work_mem='80MB'`, 900,000 rows) took Usage to
+     86.0 MB, RSS 66.4, Usage − Cache 69.9: anonymous memory moves both, as it should. **Not
+     reproduced**: Usage climbing towards the 192 MB ceiling, because the page cache this cgroup was
+     charged for was only about 10 MB (the image's files were charged to whoever read them first),
+     and the backend of that sort was then killed by the VM's out-of-memory killer ("connection to
+     server was lost"; `dmesg` shows a `postgres` of 82 MB anonymous memory killed by the global
+     killer, 34 MB free in the VM; the container didn't restart, its restart count was 1 from an
+     earlier kill that day). The check shows what `Usage − Cache` is for (cache doesn't
+     count), not the behaviour at the ceiling.
+
 9. **Disk fields**: `AllocDirStats` matches the `/` entry (today: same `Size`, same `Used`); on a host
    whose `/opt/nomad/data` or `/var/lib/docker` is a separate mount, the match and the longest-prefix
    rule pick it; `/mnt/lima-cidata` (100%) is never watched.
+   - **Lab, observed**: `AllocDirStats` is `Size` 19,682,557,952, `Used` 6,235,652,096,
+     `UsedPercent` 31.71 (and an `InodesUsedPercent` 7.27); the `DiskStats` entry `/dev/vda1` on `/`
+     has the same `Size` and the same `Used` (one collection), and it is the only entry that
+     matches. `/boot` (23.6%), `/boot/efi` (6.7%) and `/mnt/lima-cidata` (`Size` 19,922,944,
+     `Available` 0, 100%) don't match and aren't watched. The lab has one filesystem for
+     `/opt/nomad/data` (dynamic host volumes at `/opt/nomad/data/host_volumes/<uuid>`) and
+     `/var/lib/docker`, so **the separate-mount match and the longest-prefix rule are not
+     exercised here** (the unit table covers them). The node's attributes have no Docker root
+     (`driver.docker.version` 29.1.3, `.bridge_ip`, `.os_type`, `.runtimes` only), as R3 said.
+
 10. **Disk nearly full**: filling the lab's 20 GB `/` is slow and risky for the lab, and a loop
     filesystem mounted elsewhere isn't a watched one. Use a throwaway VM (`deploy/dev/install-test.sh`'s
     Lima VM) with a small disk, filled past 85% and 95% with `fallocate`, then freed: the item, its
@@ -809,6 +946,15 @@ not do.
 11. **Allocation stats with `publish_allocation_metrics`**: already on in both configs
     (`PublishAllocationMetrics: true`, lab, observed); a check that a node without it gives
     `ErrUsageNotCollected` rows as NULL memory and CPU, not 0.
+   - **Lab, observed**: not run as written: turning `publish_allocation_metrics` off needs a Nomad
+     restart on the lab that holds the 18 review apps. What the API does give for a copy with no
+     collected stats (a `complete` and a `failed` Traefik allocation): `Timestamp` 0 and **one entry
+     per task** with a zeroed `ResourceUsage` and `Measured` null, not an empty `Tasks` map.
+     014's `usageFromStats` only says "not collected" for `len(Tasks) == 0 && Timestamp == 0`, so
+     it would read that answer as 0 MHz and 0 MB, not NULL. Whether a running copy on a node without
+     collection answers the same way is unverified. Plan changed: `Timestamp` 0, or no measured
+     memory kind, reads NULL (see "Memory used").
+
 12. **The ring buffer after a day**: run Caravana in the lab with `SetMetricsSampleGap` at a minute
     for 24 h against ~15 services: row counts by `res`, the file's growth (`caravana.db` size, the WAL),
     the sampler's time per tick (log it at debug), and Caravana's RSS before and after.

@@ -18,7 +18,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 0: The lab spike (no story label)
 
-- [ ] T001 Run research R8.1–R8.9 and R8.11 against the lab (the only lab change is the one the
+- [x] T001 Run research R8.1–R8.9 and R8.11 against the lab (the only lab change is the one the
   feature makes: the dev Traefik job rerun with `--metrics.prometheus=true` and
   `--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10`): (1) `curl
   http://127.0.0.1:8088/metrics` answers 200 with `service="whoami-whoami@nomad"`; the exact

@@ -82,8 +82,11 @@ lab checks as the first task, recorded in `research.md` as "lab, observed".
 - **Counters and resets** (R2): the delta per series is `now − previous`; `now < previous` is a
   reset and the delta is `now`; a series absent from the previous scrape counts from zero. A
   delta is stored only when the previous successful scrape was 50–90 s before; after a missed
-  minute the next scrape only re-baselines. If the fixture shows `process_start_time_seconds`
-  (R8.1), a change in it marks every series reset.
+  minute the next scrape only re-baselines. `process_start_time_seconds` is in the answer but is
+  not a stable process start: it drifts back 1–4 s between scrapes of one process (lab, observed,
+  R8.1/R8.4), so it marks every series reset only when it moves by more than 10 s (a restart moved
+  it by 359 s); the counter rule stays the base, and the 10 s check only catches a restart that
+  leaves every counter above its old value.
 - **Buckets stored, p95 on read** (R2): per service per minute the per-bucket (not cumulative)
   counts, trailing zeros cut, with a layout id naming the bounds; any p95 (a minute, a window, a
   point, a service, the environment) merges the counts and applies Prometheus'
@@ -93,11 +96,20 @@ lab checks as the first task, recorded in `research.md` as "lab, observed".
   sampler keeps the merged buckets per environment per minute" is met by merging the services'
   stored counts on read: no environment table, so a deleted app leaves the totals.
 - **Long-lived requests** (ruling 2, R1): the bucket deltas sum only `protocol` `http` and `grpc`;
-  `websocket` and `sse` count in requests and errors but never in latency. The exact protocol
-  values on Traefik 3.7.13 are R8.1's check. The footer adds the ruling's sentence.
+  `sse` (and `websocket`, below) count in requests but never in latency. The protocol values on
+  Traefik 3.7.13 (R8.1, lab, observed) are `http`, `sse` and `grpc`; **`websocket` never appeared**
+  in `traefik_service_*` after an upgraded connection ended cleanly, so websocket traffic is not
+  in the numbers at all (the footer's sentence says so). **Errors (5xx) are counted only for
+  `http` and `sse`**: for `grpc` the `code` label is the gRPC status (observed `code="2"`), so a
+  `5` there is NOT_FOUND, not a server error; grpc requests still count in requests and latency.
+  The footer adds the ruling's sentence.
 - **Memory used** (ruling 1, R3): `Usage − Cache` when both are measured, else `RSS`, in
   `usageFromStats` (`internal/deploy/usage.go`), so the Running tab and Monitoring agree. The
-  Running tab's numbers drop for apps that read files; the CHANGELOG says so.
+  Running tab's numbers drop for apps that read files; the CHANGELOG says so. A copy whose stats
+  answer has `Timestamp` 0 or no measured memory kind reads **NULL, not 0**: Nomad answers that way
+  for a copy that isn't running (lab, observed, R8.11: one zeroed entry per task, `Measured` null,
+  so 014's `len(Tasks) == 0` test would have read it as 0 MB), and `usageFromStats` gains the
+  check beside the `Usage − Cache` change.
 - **Memory limit** (R3): per copy the service task's `memory_max` when set, else its reservation,
   from `AllocatedResources.Tasks[<service>]`, summed over the service's running copies.
 - **Reserved** (ruling 3, R3): per copy, `max(Σ prestart non-sidecar tasks, Σ main and sidecar
@@ -105,7 +117,9 @@ lab checks as the first task, recorded in `research.md` as "lab, observed".
   comes from the job (`Jobs().Info`), cached per job ID and version, so jobs Caravana didn't make
   are counted right too. The host's reserved is the sum over every non-terminal copy on the node
   plus the node's `ReservedResources` (0 today). R8.7 checks it against Nomad's
-  `nomad.client.allocated.*` gauges (1730 MHz / 1312 MB in the lab, against a naive 1880 / 1408).
+  `nomad.client.allocated.*` gauges: on 2026-10-25 the rule gave 1780 MHz / 1344 MB over 18 copies
+  and the gauges said exactly 1780 / 1344, against a naive 1930 / 1440 (lab, observed, R8.7). The
+  gauge `allocated.memory` leaves `memory_max` out, as the room's yardstick does.
 - **Reservations per service stored** (an addition to R4's table): `metrics_samples` gains
   `cpu_reserved_mhz` and `memory_reserved_mb` (the service's flattened reservation over its
   running copies, its `names` sidecar and `caravana-volumes` task included), and `metrics_host`
@@ -202,7 +216,7 @@ lab checks as the first task, recorded in `research.md` as "lab, observed".
   lab's fixture (`testdata/traefik.prom`, captured in T001).
 - `counters.go`: `Delta(prev, now map[SeriesKey]float64) map[SeriesKey]float64` with the reset
   and new-series rules; `TraefikMinute(deltas, keyOf func(service string) (Key, bool))` summing
-  requests, 5xx and (for `http`/`grpc` only) buckets per service.
+  requests, 5xx (`http` and `sse` only) and (for `http`/`grpc` only) buckets per service.
 - `histogram.go`: `Layout` (bounds), `Buckets` (per-bucket counts), `Merge`, `Quantile(b, q)`
   (Prometheus' interpolation, running maximum, `+Inf` → `Over`, empty → no value), the text form
   stored in a row and its parser.
