@@ -116,7 +116,7 @@ the next.
   text, Raw for JSON, the first-seen note), the around view (`?copy&at`: the notice sentence,
   the highlight, "Back to the stream", the rotated-away and gone sentences), the level chips as
   links with counts, the search with "N lines", every filter as one GET form.
-- [ ] T015 [US3] `internal/ui/logs.go` + `console.js` + tests: Live/Paused (`aria-pressed`, the
+- [x] T015 [US3] `internal/ui/logs.go` + `console.js` + tests: Live/Paused (`aria-pressed`, the
   post that flips `?live`), the fresh tint, "paused · N new lines since" with "Show" (script only),
   the deploy rows as links to the entry with page 4's words, the markers' `title`s.
 - [ ] T016 [US4] `internal/ui/logs.go` + tests: `GET /logs/download` (the service's download,

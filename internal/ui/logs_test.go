@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -277,7 +278,7 @@ func TestLogsPageRangeAndLive(t *testing.T) {
 		`name="live" value="0"`, `aria-pressed="true"`, ">Live<")
 	paused := e.pageOf(t, "/logs?live=0")
 	lgWant(t, "?live=0", paused, `name="live" value="1"`, `aria-pressed="false"`, ">Paused<", "paused")
-	lgNot(t, "?live=0", paused, "streaming from", "hx-trigger", "sse-connect")
+	lgNot(t, "?live=0", paused, "streaming from", `id="logs-live" hx-get`)
 
 	// While live, the region is drawn again from the part on the logs notice, and the page opens the
 	// stream; the no-script sentence is in the stream's head.
@@ -854,5 +855,92 @@ func TestLogsFirstSeenNote(t *testing.T) {
 	old := []service.LogEntry{mk("boom", now.Add(-30*time.Hour), 0), mk("boom", now.Add(-time.Hour), 0)}
 	if n := firstSeenOf([]service.LogEntry{old[1], old[0]}, old[1], now, false); n.Tail != ", 2 times since (in what was read)." || n.Clock.Text != "yesterday 06:00 UTC" {
 		t.Errorf("note = %+v %v", n, n.Clock)
+	}
+}
+
+// Live and Paused (T015): the head's markup for both states, the script that adds the fresh veil and
+// the count of new lines, and a page that draws no script of its own.
+func TestLogsPageLiveAndPausedHeads(t *testing.T) {
+	e := logsPageEnv(t)
+
+	// Live: the stream's head says so and has no count; the region refreshes itself.
+	live := e.pageOf(t, "/logs")
+	lgWant(t, "/logs", live, "streaming from 4 copies", `hx-trigger="sse:logs"`)
+	lgNot(t, "/logs", live, "data-logs-feed", "logs-paused-n")
+
+	// Paused: "paused" for everyone, and for script a hidden count that Show answers. The page keeps
+	// the stream open (live=1: the service follows) so the notice can reach the script, but nothing
+	// swaps: the region has no refresh.
+	paused := e.pageOf(t, "/logs?live=0&service=blog%2Fweb")
+	head := regexp.MustCompile(`(?s)<div class="cv-lstreamhead">.*?</div>`).FindString(paused)
+	lgWant(t, "the paused head", head, "<span>paused</span>",
+		`<span class="cv-lpaused" data-logs-feed data-count-href="/parts/logs?live=0&amp;service=blog%2Fweb" hx-trigger="sse:logs" hidden>`,
+		`<span id="logs-paused-n"></span>`, `<span id="logs-paused-unit">lines</span>`, `<a href="/logs?service=blog%2Fweb">Show</a>`)
+	lgNot(t, "the paused head", text(head), "streaming from")
+	lgWant(t, "the paused page", paused, `sse-connect="/live?environment=production&amp;live=1&amp;project=default&amp;watch=logs"`)
+	lgNot(t, "the paused page", paused, `id="logs-live" hx-get`)
+
+	// An open row is paused too, and Show drops it. A page of older lines, and the around view, count nothing.
+	open := e.pageOf(t, "/logs?open="+e.lineID(3))
+	lgWant(t, "the open page", open, `<a href="/logs">Show</a>`, `data-count-href="/parts/logs?live=0"`)
+	around := e.pageOf(t, "/logs?copy=aaaa1111&at="+e.lineID(3))
+	lgNot(t, "the around view", around, "data-logs-feed", "sse-connect")
+	older := e.pageOf(t, "/logs?live=0&before="+url.QueryEscape(e.now.Add(-4*time.Minute).Format(time.RFC3339)))
+	lgNot(t, "an older page", older, "data-logs-feed", "sse-connect")
+	lgWant(t, "an older page", text(older), "Lines before ")
+}
+
+func TestLogsScriptIsOursAndServed(t *testing.T) {
+	e := logsPageEnv(t)
+	body := e.pageOf(t, "/logs")
+	m := regexp.MustCompile(`<script src="(/static/js/logs\.js\?v=[0-9a-f]{12})" defer></script>`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("/logs doesn't load logs.js:\n%s", body[:min(len(body), 900)])
+	}
+	resp, js := e.get(t, m[1])
+	if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "javascript") {
+		t.Fatalf("logs.js = %d as %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") || strings.Contains(csp, "unsafe") {
+		t.Errorf("logs.js's policy = %q", csp)
+	}
+	// What the script does, and doesn't: a line's text is never made into markup, and the veil and
+	// the count are the classes and ids the page and stylesheet use.
+	lgWant(t, "logs.js", js, `"use strict";`, "cv-row-fresh", "logs-paused-n", "data-logs-feed", "sse:logs", "htmx:afterSwap")
+	lgNot(t, "logs.js", js, "innerHTML", "outerHTML", "insertAdjacentHTML", "eval(", "document.write")
+	if !strings.Contains(js, "textContent") {
+		t.Error("logs.js doesn't write its numbers with textContent")
+	}
+	// It is a file of ours the vendor check pins.
+	versions, err := os.ReadFile("../../tools/ui-vendor.versions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(versions), "logs.js ours - - ") {
+		t.Error("logs.js isn't listed as ours in tools/ui-vendor.versions")
+	}
+	// The stylesheet has the veil the script adds, and drops it under reduced motion.
+	_, css := e.get(t, "/static/app.css")
+	lgWant(t, "app.css", css, ".cv-row-fresh")
+}
+
+// The page has no script of its own: every <script> loads a file under /static, so the console's
+// policy (script-src 'self') holds without a nonce or a hash.
+func TestLogsPagesHaveNoInlineScript(t *testing.T) {
+	e := logsPageEnv(t)
+	inline := regexp.MustCompile(`(?s)<script(?:\s[^>]*)?>`)
+	for _, path := range []string{"/logs", "/logs?live=0", "/logs?open=" + e.lineID(3), "/logs?copy=aaaa1111&at=" + e.lineID(3), "/parts/logs"} {
+		_, body := e.get(t, path)
+		for _, tag := range inline.FindAllString(body, -1) {
+			if !strings.Contains(tag, ` src="/static/js/`) {
+				t.Errorf("GET %s has a script that isn't a /static file: %s", path, tag)
+			}
+		}
+		if regexp.MustCompile(`\son[a-z]+\s*=`).MatchString(body) {
+			t.Errorf("GET %s has an inline event handler", path)
+		}
+		if strings.Contains(body, "javascript:") {
+			t.Errorf("GET %s has a javascript: URL", path)
+		}
 	}
 }

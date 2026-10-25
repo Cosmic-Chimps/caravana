@@ -2,7 +2,7 @@
 
 `htmx.min.js`, `sse.min.js`, `xterm.js`, `xterm.css` and `addon-fit.js` are vendored by
 `tools/ui-vendor.sh` from the npm registry's tarballs, pinned by version and SHA-256 in
-`tools/ui-vendor.versions`. `console.js` and `terminal.js` are caravana's own.
+`tools/ui-vendor.versions`. `console.js`, `terminal.js`, `localtime.js` and `logs.js` are caravana's own.
 
 ## htmx 2.0.11 (`htmx.min.js`)
 

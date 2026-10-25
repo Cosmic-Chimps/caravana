@@ -439,9 +439,19 @@ type logsRegion struct {
 type logsStreamHead struct {
 	Live   bool
 	Paused bool
+	// Feed is the count of new lines a paused page shows when it has script; nil where
+	// it makes no sense (the around view, an older page).
+	Feed   *logsFeed
 	Copies string // "8 copies", while Live
 	// Older is the note of a view that shows lines before a time.
 	Older *logsOlderNote
+}
+
+// logsFeed is the paused head's "· 3 new lines since Show": logs.js listens for the logs notice,
+// reads CountHref (the same stream, from the newest) and counts the rows the page doesn't have.
+type logsFeed struct {
+	CountHref string
+	ShowHref  string
 }
 
 type logsOlderNote struct {
@@ -640,6 +650,14 @@ func streamHead(q logsReq, copies []service.LogCopy, problem bool) logsStreamHea
 		return h
 	}
 	h.Paused = true
+	if q.At == "" && q.Before.IsZero() {
+		newest := q
+		fresh(&newest)
+		h.Feed = &logsFeed{
+			CountHref: "/parts/logs?" + newest.values().Encode(),
+			ShowHref:  q.href(fresh, func(q *logsReq) { q.Live = true }),
+		}
+	}
 	return h
 }
 
@@ -994,7 +1012,8 @@ func (s *server) showLogsPage(w http.ResponseWriter, r *http.Request, session st
 		s.serverError(w, "read admin", err)
 		return
 	}
-	if view.Following {
+	if view.Following || reg.Head.Feed != nil {
+		// A paused page with script keeps the stream too, to count the lines that arrive.
 		head.LiveURL = "/live?" + url.Values{"watch": {"logs"}, "project": {q.Project}, "environment": {q.Environment}, "live": {"1"}}.Encode()
 	}
 	s.render(w, reg.status, "logs", logsPage{pageData: head, Logs: view})

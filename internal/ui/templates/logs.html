@@ -8,6 +8,8 @@
 
 {{define "page-class"}} cv-page-logs{{end}}
 
+{{define "head"}}<script src="{{asset "js/logs.js"}}" defer></script>{{end}}
+
 {{define "content"}}
 {{with .Logs}}{{template "logs-page" .}}{{end}}
 {{end}}
@@ -79,7 +81,7 @@
 <section class="cv-logstream" aria-label="Log lines">
   <div class="cv-lstreamhead">
     {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> streaming from {{.Head.Copies}}</span><noscript><span>Following needs JavaScript. Reload the page to see newer lines.</span></noscript>
-    {{else if .Head.Paused}}<span>paused</span>{{end}}
+    {{else if .Head.Paused}}<span>paused</span>{{with .Head.Feed}}<span class="cv-lpaused" data-logs-feed data-count-href="{{.CountHref}}" hx-trigger="sse:logs" hidden>· <span id="logs-paused-n"></span> new <span id="logs-paused-unit">lines</span> since <a href="{{.ShowHref}}">Show</a></span>{{end}}{{end}}
     {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
     <span class="cv-lstreamhead-zone">times in UTC</span>
   </div>
