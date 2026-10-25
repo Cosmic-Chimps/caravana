@@ -278,7 +278,7 @@ func ErrorPercent(r Row) (float64, bool) {
 	if r.Errors == nil || r.Requests == nil || *r.Requests <= 0 {
 		return 0, false
 	}
-	return float64(*r.Errors) / float64(*r.Requests) * 100, true
+	return float64(*r.Errors) * 100 / float64(*r.Requests), true
 }
 
 // P95Millis is the slowest 5 % of the row's merged buckets in milliseconds.

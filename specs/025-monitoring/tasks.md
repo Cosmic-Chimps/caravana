@@ -100,7 +100,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   `SetTraefikMetricsURL`, `SetDockerRoot`, wired in `cmd/caravana/main.go` from config. Tests: a
   gap leaves NULLs, a reset, a missed minute only re-baselines, the first minute after a start, a
   collision, a Traefik 404 as `off`, a 403 on node reads as `denied`, `Wait` returns after cancel.
-- [ ] T008 [US3] `internal/metrics/band.go`, `rules.go` + tests: `Band` (same UTC slot on days
+- [x] T008 [US3] `internal/metrics/band.go`, `rules.go` + tests: `Band` (same UTC slot on days
   1–7, min, max, median, days; a 7 d point merges its six slots per day; NULLs skipped),
   `Baseline` (`building`, `partial`, `full`), `Judge` (the five rules over the last 10 minutes'
   minute rows with the band of the slot covering `now − 5 min`: sums and merged buckets for the

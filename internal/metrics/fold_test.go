@@ -227,7 +227,7 @@ func TestPointsSumsAndGaps(t *testing.T) {
 		t.Errorf("rate = %v %v, want 1.5", rate, ok)
 	}
 	pct, ok := pts[0].ErrorPercent()
-	if !ok || pct != 6.0/180*100 {
+	if !ok || pct != 6.0*100/180 {
 		t.Errorf("error percent = %v %v", pct, ok)
 	}
 	if ms, over, ok := pts[0].P95(); !ok || over || ms <= 25 || ms > 50 {
