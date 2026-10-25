@@ -248,7 +248,7 @@ func (c *console) consoleLogs(t *testing.T) {
 		fatalf("/logs has no services rail")
 	}
 	rail := pageText(railM[1])
-	if !strings.HasPrefix(rail, "Services all services ") || !strings.Contains(rail, "cl024a web 1") || !strings.Contains(rail, "cl024b web 1") {
+	if !strings.HasPrefix(rail, "Services all services ") || !strings.Contains(rail, "cl024a/ web 1") || !strings.Contains(rail, "cl024b/ web 1") {
 		errorf("the rail reads %q, want \"all services\" first and cl024a and cl024b each with web and 1 copy", rail)
 	}
 	if !strings.Contains(main, "times in UTC") {
@@ -463,7 +463,7 @@ func (c *console) consoleLogs(t *testing.T) {
 	}
 	jsonPage, jsonStrip := opened(jsonRows[0])
 	stripText := prose(jsonStrip)
-	for _, want := range []string{"On stdout of cl024a/web, copy " + short + ".", "Lines around this", "Only cl024a/web", "Close", "Raw"} {
+	for _, want := range []string{"On stdout of cl024a / web, copy " + short + ".", "Lines around this", "Only cl024a/web", "Close", "Raw"} {
 		if !strings.Contains(stripText, want) {
 			errorf("the JSON row's strip doesn't say %q: %s", want, stripText)
 		}
@@ -480,14 +480,14 @@ func (c *console) consoleLogs(t *testing.T) {
 		errorf("Only cl024a/web links to %q", only)
 	}
 	_, errStrip := opened(errRows[0])
-	if s := prose(errStrip); !regexp.MustCompile(`First seen \d\d:\d\d UTC( today)?, \d+ times since\.`).MatchString(s) {
+	if s := prose(errStrip); !regexp.MustCompile(`Lines like this: first seen \d\d:\d\d UTC( today)?, \d+ times since\.`).MatchString(s) {
 		errorf("the ERROR row's strip has no first-seen note: %s", s)
 	}
 	if strings.Contains(errStrip, "cv-rowraw") {
 		errorf("the ERROR row's strip has Raw, but its line isn't JSON")
 	}
 	_, warnStrip := opened(warnRows[0])
-	if s := prose(warnStrip); !strings.Contains(s, "On stderr of cl024a/web") {
+	if s := prose(warnStrip); !strings.Contains(s, "On stderr of cl024a / web") {
 		errorf("the [warn] row's strip doesn't name stderr: %s", s)
 	}
 
