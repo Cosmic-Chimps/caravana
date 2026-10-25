@@ -103,8 +103,7 @@
     <time class="cv-ltime{{if .Estimated}} cv-time-est{{end}}" datetime="{{.ISO}}" title="{{.TimeTitle}}">{{.Clock}}</time>
     <span class="cv-llvl cv-llvl-{{.Level}}">{{.Level}}</span>
     <span class="cv-lsvc cv-hue-{{.Hue}}"><span class="cv-svcname">{{.Service}}</span><span class="cv-lcopy">{{.Copy}}</span></span>
-    <span class="cv-ltext">{{.Text}}</span>
-    {{if .Times}}<span class="cv-repeat">×{{.Times}}</span>{{end}}
+    <span class="cv-lbody"><span class="cv-ltext">{{.Text}}</span>{{if .Times}} <span class="cv-repeat">×{{.Times}}</span>{{end}}</span>
   </a>
   {{end}}
   {{with .Strip}}{{template "logs-strip" .}}{{end}}
