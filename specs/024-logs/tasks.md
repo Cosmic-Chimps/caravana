@@ -65,7 +65,7 @@ the next.
 - [x] T006 [US1] `internal/service/logshist.go` + tests: the 30 bins from the read (`Count`,
   `Errors`, `Estimated`, `Read` false before the coverage), `BucketSeconds`; the first-seen note's
   count (equal texts in what was read).
-- [ ] T007 [US3] `internal/service/logsdeploys.go` + tests: `DeployRow`s from
+- [x] T007 [US3] `internal/service/logsdeploys.go` + tests: `DeployRow`s from
   `ListDeploymentsIn` (`started` at `CreatedAt`; `live`/`failed`/`reverted`/`superseded` at the
   terminal `UpdatedAt`, with `RevertedTo` and the who-words through a shared `deployWho`-like
   helper moved to the service or duplicated minimally), merged into the read by time, never
