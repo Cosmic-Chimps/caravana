@@ -4,7 +4,10 @@
      again from /parts/logs on the logs notice while Live is on (a page with a row open is paused, and
      has no refresh); the filter row and the rail sit outside it, so a typed search and a selection are
      never swapped away. A line is
-     the app's output: it is only ever drawn as text. The values are contracts/logs-screen.md's. */}}
+     the app's output: it is only ever drawn as text. The values are contracts/logs-screen.md's.
+     An app's Logs tab draws the same "logs-page" inside the app's shell (app.html): its head is a
+     section title under the app's own headline, with "All logs" at the end of the sentence, and it has
+     no place bars (AllHref is set only there). */}}
 
 {{define "page-class"}} cv-page-logs{{end}}
 
@@ -17,11 +20,16 @@
 {{define "logs-page"}}
 <header class="cv-lhead">
   <div class="cv-lhead-text">
+    {{with .AllHref}}
+    <h2 class="cv-pgtitle">Logs</h2>
+    <p class="cv-pgsub">Output from every copy of every service, newest first. Deploys show up in the stream. <a href="{{.}}">All logs</a></p>
+    {{else}}
     <h1 class="cv-headline">Logs</h1>
     <p class="cv-lede">Output from every copy of every service, newest first. Deploys show up in the stream.</p>
+    {{end}}
   </div>
   <div class="cv-lhead-tools">
-    <form method="get" action="/logs">
+    <form method="get" action="{{.Action}}">
       {{range .HeadHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
       <nav class="cv-seg" aria-label="Time range">
         {{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
@@ -31,7 +39,7 @@
   </div>
 </header>
 
-<form class="cv-logfilter" method="get" action="/logs" role="search" aria-label="Filter the logs">
+<form class="cv-logfilter" method="get" action="{{.Action}}" role="search" aria-label="Filter the logs">
   {{range .SearchHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
   {{with .Places.Projects}}<nav class="cv-seg" aria-label="Project">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
   {{with .Places.Environments}}<nav class="cv-seg" aria-label="Environment">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}

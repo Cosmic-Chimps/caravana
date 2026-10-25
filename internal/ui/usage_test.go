@@ -155,7 +155,7 @@ func TestLiveUsageEvents(t *testing.T) {
 
 	t.Run("without it none comes, and Nomad is not asked for stats", func(t *testing.T) {
 		before := e.Nomad.StatsRequests()
-		for _, path := range []string{"/live/apps/whoami", "/live/apps/whoami?tab=deployments", "/live/apps/whoami?logs=1"} {
+		for _, path := range []string{"/live/apps/whoami", "/live/apps/whoami?tab=deployments", "/live/apps/whoami?watch=logs"} {
 			ls := openStream(t, e.URL, path, e.Cookie.Value)
 			ls.expect("sync")
 			deadline := time.After(250 * time.Millisecond)

@@ -54,10 +54,13 @@ var consoleParity = map[string]parity{
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules"}},
-	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
+	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
+	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
+	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
-	// ?tab=domains adds the domains notice (listDomains ?app=).
-	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs", "listDomains"}},
+	// ?tab=domains adds the domains notice (listDomains ?app=). ?watch=logs adds the logs notice, on which the
+	// Logs tab reads its region again (listLogs ?app=).
+	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "listLogs", "listDomains"}},
 
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},

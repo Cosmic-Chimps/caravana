@@ -121,7 +121,7 @@ the next.
   the deploy rows as links to the entry with page 4's words, the markers' `title`s.
 - [x] T016 [US4] `internal/ui/logs.go` + tests: `GET /logs/download` (the service's download,
   the attachment header, `no-store`), the footer's link carrying the filter.
-- [ ] T017 [US5] `internal/ui/app.go` + `logs.html` + tests: the app's Logs tab as the same
+- [x] T017 [US5] `internal/ui/app.go` + `logs.html` + tests: the app's Logs tab as the same
   template filtered to the app (its services in the rail, its deploys, "All logs" to
   `/logs?project&environment`); the old Copy and Stream selects gone; `console-reads` and the
   existing Logs-tab tests updated.

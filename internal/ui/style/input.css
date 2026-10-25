@@ -1252,6 +1252,9 @@
    --------------------------------------------------------------------------- */
 @layer components {
   .cv-page-logs { max-width: 1440px; gap: 18px; padding: 30px 26px 48px; container-type: inline-size; container-name: cvlogs; }
+  /* An app's Logs tab: the same page inside the app's shell, in a box that is the page's container
+     (cvlogs), so the head, filter and rail narrow by the room the tab has, as on /logs. */
+  .cv-applogs { display: flex; flex-direction: column; gap: 18px; min-width: 0; container-type: inline-size; container-name: cvlogs; }
 
   /* The head: title and sentence at the left, the range bar and Live at the right. */
   .cv-lhead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }

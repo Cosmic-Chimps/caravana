@@ -166,7 +166,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps/{id}/promote", s.requireSession(s.showPromote)},
 		{"POST", "/apps/{id}/promote", s.protected(s.requireSession(s.promoteApp))},
 		{"POST", "/apps/{id}/copy", s.protected(s.requireSession(s.copyApp))},
-		{"GET", "/apps/{id}/logs", s.requireSession(s.showLogs)},
+		{"GET", "/apps/{id}/logs", s.requireSession(s.showAppLogs)},
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/deployments/{deploymentId}/redeploy", s.protected(s.requireSession(s.redeployVersion))},
 		{"GET", "/apps/{id}/deployments/{deploymentId}/jobspec", s.requireSession(s.exportVersion)},
@@ -324,6 +324,11 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// one the set keeps.
 		if name == "app" || name == "settings" {
 			files = append(files, "templates/domains.html")
+		}
+		// An app's Logs tab is the Logs page filtered to the app (feature 024): one template. app.html
+		// comes after it, so the app's "content", "head" and "page-class" are the ones the set keeps.
+		if name == "app" {
+			files = append(files, "templates/logs.html")
 		}
 		files = append(files, "templates/"+name+".html")
 		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS, files...)

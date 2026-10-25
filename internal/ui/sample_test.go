@@ -135,6 +135,12 @@ var (
 	namePiece = regexp.MustCompile(`[A-Za-z0-9_]+|[-.@]`)
 )
 
+// whoami's two copies in the sample, with output on both streams.
+const (
+	logCopyA = "aaaa1111-0000-4000-8000-00000000000a"
+	logCopyB = "bbbb2222-0000-4000-8000-00000000000b"
+)
+
 // tokensOf splits a page into the names it could show: runs of letters and
 // digits joined by dashes, dots or @ ("hel-1", "ana.example.com"). It returns
 // each run and every stretch of whole pieces inside it, so "kit@studio-agency"

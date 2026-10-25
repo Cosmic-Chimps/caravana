@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/logline"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -34,10 +35,14 @@ import (
 // lines around one, are paused pages: the open row's strip is drawn under its row and
 // nothing replaces it.
 //
+// An app's Logs tab (/apps/{id}/logs) is the same page filtered to the app, inside
+// the app's shell: the query's tab names the app, its links stay on the tab, its rail
+// lists the app's services and its deploy rows are the app's, there are no place
+// bars, and its head's sentence ends with "All logs", the environment's page.
+//
 // A line is the app's output and may hold anything: it goes through html/template
 // only, and never into a logger, an error, a notice or a URL (constitution VII). The
-// values of the page are contracts/logs-screen.md's. The app's own Logs tab is still
-// logstab.go's until T017.
+// values of the page are contracts/logs-screen.md's.
 
 const (
 	// logsPageLines is how many rows (after folding) a view asks for: the service's default.
@@ -137,6 +142,39 @@ type logsReq struct {
 	Before               time.Time // "Show older": the lines before it
 	Open                 string    // a line's id: the row that is open
 	At                   string    // a line's id: the "lines around this" view of Copy
+
+	// tab is the app whose Logs tab the page is, or "" for /logs. It is never read from the
+	// address: the tab's path says it, and its links stay on the tab.
+	tab string
+}
+
+// inTab fixes the query to an app's Logs tab: the app and its place come from the app, not the
+// address.
+func (q logsReq) inTab(rec store.AppRecord) logsReq {
+	q.tab, q.App = rec.App.ID, rec.App.ID
+	q.Project, q.Environment = rec.Place.Project, rec.Place.Environment
+	return q
+}
+
+// path is the page's own path: /logs, or the app's tab.
+func (q logsReq) path() string {
+	if q.tab != "" {
+		return "/apps/" + url.PathEscape(q.tab) + "/logs"
+	}
+	return "/logs"
+}
+
+// pageValues are the values of the page's own address: the tab's path already says the app and
+// its place, so they are left out of it. values() keeps them, for the part, the stream's count
+// and Download, which are the environment's routes.
+func (q logsReq) pageValues() url.Values {
+	v := q.values()
+	if q.tab != "" {
+		v.Del("project")
+		v.Del("environment")
+		v.Del("app")
+	}
+	return v
 }
 
 // logsReqOf reads the address. bad is "" or a sentence saying what is wrong with it: a
@@ -223,15 +261,16 @@ func (q logsReq) values() url.Values {
 	return v
 }
 
-// href is the page's address for the query, after the changes: "/logs?service=…".
+// href is the page's address for the query, after the changes: "/logs?service=…", or the app's
+// tab with the same filter.
 func (q logsReq) href(changes ...func(*logsReq)) string {
 	for _, change := range changes {
 		change(&q)
 	}
-	if enc := q.values().Encode(); enc != "" {
-		return "/logs?" + enc
+	if enc := q.pageValues().Encode(); enc != "" {
+		return q.path() + "?" + enc
 	}
-	return "/logs"
+	return q.path()
 }
 
 // The changes the page's links make. Each also drops what the change makes stale: a new
@@ -302,7 +341,7 @@ func (q logsReq) downloadHref() string {
 // filter along. Names in skip are left out.
 func (q logsReq) hidden(skip ...string) []hiddenField {
 	var out []hiddenField
-	v := q.values()
+	v := q.pageValues()
 	for _, name := range []string{"project", "environment", "app", "service", "copy", "q", "range", "levels", "live", "before", "open", "at"} {
 		if slices.Contains(skip, name) || !v.Has(name) {
 			continue
@@ -325,6 +364,10 @@ type logsPage struct {
 
 // logsView is the whole page.
 type logsView struct {
+	// Action is where the page's forms go: /logs, or the app's tab.
+	Action string
+	// AllHref is set on an app's tab: "All logs", the environment's page.
+	AllHref string
 	// The head: the range bar and Live. Live is a form button: its value is what it flips to.
 	HeadHidden []hiddenField
 	Ranges     []logsBarItem
@@ -1021,6 +1064,73 @@ func (s *server) showLogsPage(w http.ResponseWriter, r *http.Request, session st
 	s.render(w, reg.status, "logs", logsPage{pageData: head, Logs: view})
 }
 
+// isNomadDown says the error is Nomad's: it couldn't be reached, or it refused.
+func isNomadDown(err error) bool {
+	return errors.Is(err, deploy.ErrNomadUnavailable) || errors.Is(err, deploy.ErrNomadRejected)
+}
+
+// showAppLogs answers GET /apps/{id}/logs: the Logs page filtered to the app, inside the app's shell.
+// The address takes the page's filters; the app and its place are the app's whatever it says. The
+// stream is the app's own (/live/apps/{id}, which the header needs) with ?watch=logs for the logs
+// notice and, while Live is on or a paused page counts new lines, live=1: the app's place is followed.
+func (s *server) showAppLogs(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	sum, err := s.svc.AppSummary(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, "read app", err)
+		return
+	}
+	q, bad := logsReqOf(r.URL.Query())
+	if bad != "" {
+		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to the Logs tab and use the choices there.")
+		return
+	}
+	q = q.inTab(sum.AppRecord)
+	if q.At != "" || q.Open != "" {
+		q.Live = false // an open row, or the lines around one, is a page that is read, not followed
+	}
+	reg, err := s.logsRegionOf(ctx, q)
+	if !s.logsRead(w, err) {
+		return
+	}
+	view, err := s.logsViewOf(ctx, r, places{}, q, reg)
+	if err != nil {
+		s.serverError(w, "draw the logs", err)
+		return
+	}
+	head, err := s.shellPage(r, id+" logs", navProjects, s.appCrumbs(ctx, id)...)
+	if err != nil {
+		s.serverError(w, "read admin", err)
+		return
+	}
+	head.LiveURL = "/live/apps/" + id + "?watch=logs"
+	if view.Following || reg.Head.Feed != nil {
+		head.LiveURL += "&live=1"
+	}
+	s.render(w, reg.status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "logs"), LogsTab: view})
+}
+
+// appLogsWatch is the WatchLogs of an app's stream with ?watch=logs&live=1: it follows the app's
+// place, which its ID says (an old ID that isn't a place's is in Default › production).
+func (s *server) appLogsWatch(id string) func() func() {
+	watch := s.live.watchLogs
+	if watch == nil {
+		watch = s.svc.WatchLogs
+	}
+	return func() func() {
+		p, err := app.PlaceOf(id)
+		if err != nil {
+			p = app.Place{Project: app.DefaultProject, Environment: app.DefaultEnvironment}
+		}
+		return watch(p.Project, p.Environment)
+	}
+}
+
 // logsRead says whether reading the logs worked. A refused address is answered with a 400 page, a
 // place that went away with a 404 and anything else with a 500, and it returns false.
 func (s *server) logsRead(w http.ResponseWriter, err error) bool {
@@ -1102,6 +1212,7 @@ func (s *server) liveLogs(w http.ResponseWriter, r *http.Request) {
 func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q logsReq, reg *logsRegion) (*logsView, error) {
 	now := s.now().UTC()
 	v := &logsView{
+		Action: q.path(),
 		Region: reg, Live: q.Live, LiveFlip: "1", Following: q.Live && q.At == "",
 		DownloadHref: q.downloadHref(),
 		HeadHidden:   q.hidden("live"),
@@ -1119,7 +1230,12 @@ func (s *server) logsViewOf(ctx context.Context, r *http.Request, pl places, q l
 		v.Ranges = append(v.Ranges, logsBarItem{Label: rng.Label, On: rng.Key == q.Range, Href: q.href(withRange(rng.Key))})
 	}
 
-	// The place bars: each only when it has more than one choice.
+	// The place bars: each only when it has more than one choice, and never on an app's tab, whose
+	// place is the app's.
+	if q.tab != "" {
+		v.AllHref = "/logs?project=" + url.QueryEscape(q.Project) + "&environment=" + url.QueryEscape(q.Environment)
+		pl = places{}
+	}
 	if len(pl.Projects) > 1 {
 		for _, pr := range pl.Projects {
 			env := q.Environment
