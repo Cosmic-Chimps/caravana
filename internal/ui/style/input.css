@@ -1414,6 +1414,9 @@
   .cv-rowstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px 10px 180px; background: var(--color-ink-1); border-top: 1px solid var(--color-line-1); border-bottom: 1px solid var(--color-line-1); }
   .cv-rowstrip .cv-btn { text-decoration: none; }
   .cv-rowstrip-note { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  /* The app's name in the first sentence is a link to the app: underlined so it reads as one. */
+  .cv-rowstrip-note a { text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
+  .cv-rowstrip-note a:hover { text-decoration-color: var(--color-fg-1); }
   .cv-rowstrip-url { max-width: 100%; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); user-select: all; overflow-wrap: anywhere; }
   .cv-rowraw { flex-basis: 100%; min-width: 0; }
   .cv-rowraw > summary { cursor: pointer; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }

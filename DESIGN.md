@@ -1120,7 +1120,11 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   this, Only `<service>` (secondary small links with `list` and `filter` icons), the row's own address in
   selectable 12px mono (`.cv-rowstrip-url`, for the no-script case: Copy link is only drawn with script), Raw
   for a JSON line (`.cv-rowraw`, a `<details>` with the line as received in a `pre`), and the error note when
-  known ("First seen 09:12 UTC today, 3 times since.", 13px fg-3, `.cv-rowstrip-note`).
+  known ("Lines like this: first seen 09:12 UTC today, 3 times since.", 13px fg-3, `.cv-rowstrip-note`). The
+  strip's first sentence names the app as a link to it ("On `stdout` of `chatter`/`web`, copy `4026d666`.";
+  with one app in the read, "of `web` of `chatter`"). "Lines like this" compares the text with its time cut
+  out and every run of digits collapsed to one placeholder, so "attempt 938" and "attempt 939" count together;
+  "seen once in this range." when nothing else is like it ("in what was read" when the read is partial).
 - **The deploy row** (`.cv-row-deploy`): flex, gap 12, padding 8 16, a rolling 8% tint between two 1px
   rolling-line rules, 500 13px/1.4 mono in rolling: the time (96px, fg-3, 400), the `rocket` icon at 13px, the
   sentence ("`supplier-gw` v24 started rolling out · pushed to `main` by ana · `4e0a77`", "v24 is live", "v24

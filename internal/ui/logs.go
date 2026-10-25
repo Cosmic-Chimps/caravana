@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -554,8 +555,14 @@ type logsDeploy struct {
 
 // logsStrip is the open row's details.
 type logsStrip struct {
-	Stream     string
-	Service    string
+	Stream  string
+	Service string // "<app>/<service>" when the read has several apps, else the service
+	// The first sentence names the app as a link: AppName is its name, AppHref its page, SvcName
+	// the service, and Multi says the read holds several apps ("blog/web", not "web of blog").
+	AppHref    string
+	AppName    string
+	SvcName    string
+	Multi      bool
 	Copy       string
 	AroundHref string
 	OnlyHref   string
@@ -1460,6 +1467,7 @@ func (s *server) stripOf(r *http.Request, q logsReq, reg *logsRegion, now time.T
 	id := line.ID.String()
 	strip := &logsStrip{
 		Stream: string(line.ID.Stream), Service: label, Copy: line.Copy, Raw: line.Raw,
+		AppHref: "/apps/" + url.PathEscape(line.App), AppName: logsAppName(line.App), SvcName: line.Service, Multi: multi,
 		AroundHref: q.href(paused, func(q *logsReq) { fresh(q); q.Copy, q.At = line.Copy, id }),
 		CloseHref:  q.href(func(q *logsReq) { q.Open = "" }),
 		URL:        s.origin(r) + q.href(paused) + "#" + lineAnchor(line.ID),
@@ -1477,11 +1485,11 @@ func (s *server) stripOf(r *http.Request, q logsReq, reg *logsRegion, now time.T
 // open error row's note. A folded row counts for all the lines it replaced. complete is false
 // when the read didn't reach the start of the range.
 func firstSeenOf(lines []service.LogEntry, line service.LogEntry, now time.Time, complete bool) *firstSeenNote {
-	want := logline.TextWithoutTime(line.Line)
+	want := likeKey(line.Line)
 	var first time.Time
 	n := 0
 	for _, l := range lines { // newest first: the last one met is the oldest
-		if logline.TextWithoutTime(l.Line) != want {
+		if likeKey(l.Line) != want {
 			continue
 		}
 		n += 1 + l.Repeat
@@ -1492,7 +1500,7 @@ func firstSeenOf(lines []service.LogEntry, line service.LogEntry, now time.Time,
 		scope = "in what was read"
 	}
 	if n <= 1 {
-		return &firstSeenNote{Lead: "Seen once " + scope + "."}
+		return &firstSeenNote{Lead: "Lines like this: seen once " + scope + "."}
 	}
 	c := clockOf(now, first)
 	tail := fmt.Sprintf(", %d times since", n)
@@ -1502,7 +1510,17 @@ func firstSeenOf(lines []service.LogEntry, line service.LogEntry, now time.Time,
 	if !complete {
 		tail += " (in what was read)"
 	}
-	return &firstSeenNote{Lead: "First seen ", Clock: &c, Tail: tail + "."}
+	return &firstSeenNote{Lead: "Lines like this: first seen ", Clock: &c, Tail: tail + "."}
+}
+
+// digitRun is a run of digits: a counter, an id, a duration, a port.
+var digitRun = regexp.MustCompile(`[0-9]+`)
+
+// likeKey is what "lines like this" compares: the line's text with its time cut out and every run
+// of digits collapsed to one placeholder, so "upstream timed out after 5s (attempt 938)" and "(attempt
+// 939)" are the same line shape. Pure.
+func likeKey(l logline.Line) string {
+	return digitRun.ReplaceAllString(logline.TextWithoutTime(l), "#")
 }
 
 // ---- Download -------------------------------------------------------------------------------

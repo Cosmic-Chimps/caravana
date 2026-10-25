@@ -543,8 +543,14 @@ func TestLogsPageOpenRow(t *testing.T) {
 		t.Error("the strip isn't inside the stream")
 	}
 	got := text(strip)
+	// The app's name in the first sentence is a link to the app; with one app in the read the sentence says
+	// "web of blog" and still links it.
+	lgWant(t, "the strip", strip, `<a href="/apps/blog" class="cv-inline-mono text-fg-1">blog</a>/<span class="cv-inline-mono text-fg-1">web</span>`)
+	oneApp := e.pageOf(t, "/logs?app=blog&open="+repeat)
+	lgWant(t, "the strip of one app", text(oneApp), "On stdout of web of blog, copy aaaa1111.")
+	lgWant(t, "the strip of one app", oneApp, `<a href="/apps/blog" class="cv-inline-mono text-fg-1">blog</a>, copy`)
 	lgWant(t, "the strip", got, "On stdout of blog/web, copy aaaa1111.", "Lines around this", "Only blog/web", "Close",
-		"First seen", "2 times since")
+		"Lines like this: first seen", "2 times since")
 	lgWant(t, "the strip", strip, `href="/logs?at=`+repeat+`&amp;copy=aaaa1111&amp;live=0"`)
 	lgWant(t, "the strip", strip, `href="/logs?live=0&amp;service=blog%2Fweb"`, `href="/logs?live=0"`)
 	// The row's own address as selectable text.
@@ -557,10 +563,10 @@ func TestLogsPageOpenRow(t *testing.T) {
 	raw := regexp.MustCompile(`(?s)<details class="cv-rowraw">.*?</details>`).FindString(json)
 	lgWant(t, "Raw", raw, "<summary>Raw</summary>", `&#34;level&#34;:&#34;error&#34;`, "json boom")
 	// An info row has no first-seen note; an error seen once says so.
-	if info := e.pageOf(t, "/logs?open="+e.lineID(0)); strings.Contains(info, "First seen") || strings.Contains(info, "Seen once") {
+	if info := e.pageOf(t, "/logs?open="+e.lineID(0)); strings.Contains(info, "Lines like this") {
 		t.Error("an info row has the first-seen note")
 	}
-	lgWant(t, "an error seen once", e.pageOf(t, "/logs?open="+e.lineID(1)), "Seen once in this range.")
+	lgWant(t, "an error seen once", e.pageOf(t, "/logs?open="+e.lineID(1)), "Lines like this: seen once in this range.")
 	// A row that isn't in the read draws no strip and no error.
 	gone := e.pageOf(t, "/logs?open=aaaa1111.stdout.0.999999")
 	lgNot(t, "a row that isn't read", gone, "cv-rowstrip", "cv-row-open")
@@ -909,11 +915,28 @@ func TestLogsFirstSeenNote(t *testing.T) {
 	}
 	lines := []service.LogEntry{mk("boom", now.Add(-time.Minute), 2), mk("other", now.Add(-2*time.Minute), 0), mk("boom", now.Add(-time.Hour), 0)}
 	n := firstSeenOf(lines, lines[0], now, true)
-	if n.Lead != "First seen " || n.Clock == nil || n.Clock.Text != "11:00 UTC" || n.Tail != " today, 4 times since." {
+	if n.Lead != "Lines like this: first seen " || n.Clock == nil || n.Clock.Text != "11:00 UTC" || n.Tail != " today, 4 times since." {
 		t.Errorf("note = %+v %v", n, n.Clock)
 	}
-	if n := firstSeenOf(lines, lines[1], now, false); n.Lead != "Seen once in what was read." || n.Clock != nil {
+	if n := firstSeenOf(lines, lines[1], now, false); n.Lead != "Lines like this: seen once in what was read." || n.Clock != nil {
 		t.Errorf("note = %+v", n)
+	}
+	// A counter in the text doesn't make a line a new one: "attempt 938" and "attempt 939" count together,
+	// and a different sentence doesn't join them.
+	tries := []service.LogEntry{
+		mk("upstream timed out after 5s (attempt 939)", now.Add(-time.Minute), 0),
+		mk("upstream refused (attempt 940)", now.Add(-90*time.Second), 0),
+		mk("upstream timed out after 5s (attempt 938)", now.Add(-2*time.Minute), 0),
+		mk("upstream timed out after 15s (attempt 7)", now.Add(-3*time.Minute), 1),
+	}
+	if n := firstSeenOf(tries, tries[0], now, true); n.Clock == nil || n.Clock.Text != "11:57 UTC" || n.Tail != " today, 4 times since." {
+		t.Errorf("attempts note = %+v %v", n, n.Clock)
+	}
+	if n := firstSeenOf(tries, tries[1], now, true); n.Lead != "Lines like this: seen once in this range." {
+		t.Errorf("a different sentence = %+v", n)
+	}
+	if a, b := likeKey(logline.Line{Text: "retry 3 of 10 at :8080"}), likeKey(logline.Line{Text: "retry 12 of 100 at :9"}); a != b || a != "retry # of # at :#" {
+		t.Errorf("likeKey = %q, %q", a, b)
 	}
 	old := []service.LogEntry{mk("boom", now.Add(-30*time.Hour), 0), mk("boom", now.Add(-time.Hour), 0)}
 	if n := firstSeenOf([]service.LogEntry{old[1], old[0]}, old[1], now, false); n.Tail != ", 2 times since (in what was read)." || n.Clock.Text != "yesterday 06:00 UTC" {

@@ -152,7 +152,7 @@
      a JSON line and, for an error, when its text was first seen. Takes a logsStrip. */}}
 {{define "logs-strip"}}
 <section class="cv-rowstrip" id="open-line" aria-label="The open line">
-  <span class="cv-rowstrip-note">On <span class="cv-inline-mono text-fg-1">{{.Stream}}</span> of <span class="cv-inline-mono text-fg-1">{{.Service}}</span>, copy <span class="cv-inline-mono text-fg-1">{{.Copy}}</span>.</span>
+  <span class="cv-rowstrip-note">On <span class="cv-inline-mono text-fg-1">{{.Stream}}</span> of {{if .Multi}}<a href="{{.AppHref}}" class="cv-inline-mono text-fg-1">{{.AppName}}</a>/<span class="cv-inline-mono text-fg-1">{{.SvcName}}</span>{{else}}<span class="cv-inline-mono text-fg-1">{{.SvcName}}</span> of <a href="{{.AppHref}}" class="cv-inline-mono text-fg-1">{{.AppName}}</a>{{end}}, copy <span class="cv-inline-mono text-fg-1">{{.Copy}}</span>.</span>
   <a href="{{.AroundHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "list" 14}}Lines around this</a>
   {{with .OnlyHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "filter" 14}}Only <span class="cv-inline-mono">{{$.OnlyLabel}}</span></a>{{end}}
   <a href="{{.CloseHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Close</a>
