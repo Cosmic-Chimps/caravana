@@ -38,7 +38,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 1: Foundation (no story label)
 
-- [ ] T002 [P] New pure package `internal/metrics`: `text.go` (`ParseText` for the named families:
+- [x] T002 [P] New pure package `internal/metrics`: `text.go` (`ParseText` for the named families:
   the 0.0.4 format, escapes, `+Inf`/`-Inf`/`NaN`, an optional timestamp, `# HELP`/`# TYPE` skipped,
   a malformed line an error naming its number), `counters.go` (`Delta` with the reset and
   new-series rules, the 50–90 s window, `process_start_time_seconds` per T001;
