@@ -340,7 +340,7 @@ func TestDiskLine(t *testing.T) {
 	}{
 		{"not a disk", Event{Type: EventProblemOpened}, ""},
 		{"the example", diskNearlyFull, "Disk: / is 86% full, 11 GB left"},
-		{"under 10 GB left", Event{Mount: "/var/lib/docker", UsedPercent: 94.6, FreeBytes: new(int64(3584) << 20)}, "Disk: /var/lib/docker is 95% full, 3.5 GB left"},
+		{"cut down, so 94.6 is not 95, where the item turns failed; under 10 GB left", Event{Mount: "/var/lib/docker", UsedPercent: 94.6, FreeBytes: new(int64(3584) << 20)}, "Disk: /var/lib/docker is 94% full, 3.5 GB left"},
 		{"no space left", Event{Mount: "/", UsedPercent: 100, FreeBytes: new(int64(0))}, "Disk: / is 100% full, 0 B left"},
 		{"free space not known", Event{Mount: "/", UsedPercent: 90}, "Disk: / is 90% full"},
 		{"a mount with a line break stays one line", Event{Mount: "/a\nb", UsedPercent: 90}, "Disk: /a b is 90% full"},
@@ -361,6 +361,26 @@ func TestSize(t *testing.T) {
 	} {
 		if got := Size(n); got != want {
 			t.Errorf("Size(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// The one wording of a nearly full disk, which the console, the API's detail and the notifications
+// share: the percent is cut down and the space left is Size's.
+func TestDiskSentence(t *testing.T) {
+	for _, tc := range []struct {
+		mount string
+		pct   float64
+		free  int64
+		want  string
+	}{
+		{"/var/lib/docker", 87.2, 1126 << 20, "The disk at /var/lib/docker is 87% full: 1.1 GB left."},
+		{"/", 86.9, 11 << 30, "The disk at / is 86% full: 11 GB left."},
+		{"/data", 94.6, 600 << 20, "The disk at /data is 94% full: 600 MB left."},
+		{"/", 100, 0, "The disk at / is 100% full: 0 B left."},
+	} {
+		if got := DiskSentence(tc.mount, tc.pct, tc.free); got != tc.want {
+			t.Errorf("DiskSentence(%q, %v, %d) = %q, want %q", tc.mount, tc.pct, tc.free, got, tc.want)
 		}
 	}
 }

@@ -212,11 +212,24 @@ func diskLine(ev Event) string {
 	if ev.Mount == "" {
 		return ""
 	}
-	line := fmt.Sprintf("Disk: %s is %.0f%% full", oneLine(ev.Mount), ev.UsedPercent)
+	line := fmt.Sprintf("Disk: %s is %d%% full", oneLine(ev.Mount), int(ev.UsedPercent))
 	if ev.FreeBytes != nil {
 		line += ", " + Size(*ev.FreeBytes) + " left"
 	}
 	return line
+}
+
+// DiskTail is " is 87% full: 1.1 GB left." The percent is cut down, not
+// rounded, so a disk at 94.6 % isn't called 95 %, where the item turns failed.
+func DiskTail(usedPercent float64, freeBytes int64) string {
+	return fmt.Sprintf(" is %d%% full: %s left.", int(usedPercent), Size(freeBytes))
+}
+
+// DiskSentence is the one wording of a nearly full disk, in the console, the
+// API's detail and every notification: "The disk at /var/lib/docker is 87%
+// full: 1.1 GB left." (the console sets the mount in code style).
+func DiskSentence(mount string, usedPercent float64, freeBytes int64) string {
+	return "The disk at " + mount + DiskTail(usedPercent, freeBytes)
 }
 
 // Size writes a number of bytes as the console does: "11 GB", "3.5 GB",

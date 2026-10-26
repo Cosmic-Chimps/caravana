@@ -272,6 +272,10 @@ func TestProblemKeyAndEventOfADisk(t *testing.T) {
 		ev.URL != "https://c.example.com/monitoring#host" || ev.Type != notify.EventProblemOpened || *ev.FreeBytes != 1500<<20 {
 		t.Errorf("event = %+v", ev)
 	}
+	// The event's text, the item's detail (the API's) and the console's row are one sentence.
+	if want := notify.DiskSentence("/var/lib/docker", 96.2, 1500<<20); ev.Text != want || it.Detail != want {
+		t.Errorf("text %q, detail %q, want %q", ev.Text, it.Detail, want)
+	}
 	// Without the console's address there is no link.
 	if got := problemEvent(it, "", time.Time{}); got.URL != "" {
 		t.Errorf("url without a public address = %q", got.URL)

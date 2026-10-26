@@ -103,7 +103,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Title = fmt.Sprintf("%s: the certificate for %s is expiring", it.AppID, it.Domain)
 		ev.Text, ev.Detail = it.Detail, ""
 	case AttentionDiskNearlyFull:
-		ev.Title = fmt.Sprintf("Disk nearly full: %s is %.0f%% full", it.Mount, it.UsedPercent)
+		ev.Title = fmt.Sprintf("Disk nearly full: %s is %d%% full", it.Mount, int(it.UsedPercent))
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)

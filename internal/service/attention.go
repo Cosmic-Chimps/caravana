@@ -247,7 +247,7 @@ func diskItemsOf(newest, history []store.DiskSample) []AttentionItem {
 		items = append(items, AttentionItem{
 			Kind: AttentionDiskNearlyFull, Mount: mount, Holds: strings.Split(d.Holds, ","),
 			UsedPercent: pct, FreeBytes: free, Level: metrics.DiskState(pct, true).Level, When: when,
-			Detail: fmt.Sprintf("The disk at %s is %.0f%% full: %s left.", mount, pct, notify.Size(free)),
+			Detail: notify.DiskSentence(mount, pct, free),
 		})
 	}
 	return items
