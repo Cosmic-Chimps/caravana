@@ -775,7 +775,14 @@ Deploying now, the filter, the groups.
   with Clear. The headline and the needs-you list are about the whole caravana and never filtered. The form
   sits outside the reload's way (`hx-preserve`), so a refresh never takes away what is being typed, and
   the region's refresh address carries the query.
-- **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned. One rule
+- **The name never breaks mid-word** (review of 025, with the Platform panel beside the table at 1600px, where the
+  name column is its 96px floor). `.cv-namecell` wraps (`flex-wrap`, gap 2 10): the name is one line
+  (`white-space: nowrap`, `min-width: 0`, an ellipsis when it alone is wider than its cell; the cell's `title`
+  has the whole name) and the kind word (`flex: none`) drops under it when the two don't fit side by side.
+  At 1600px the table is about 870px wide (name 96), at 1440 and 1100 the rail is below the table (name 158 and
+  96); under 720px of its own width the row folds and the name has the whole line, so nothing scrolls sideways
+  at 390. On touch screens the name's 44px target is padding, so the ellipsis still works.
+- **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned (under the name when it wraps). One rule
   (`kindOf`), shared with the kind filter, the first that applies: **compose** (source Compose or a kept
   file), **database** (a Postgres backup, or an image named postgres, mysql, mariadb, redis or valkey: the
   last path segment before the tag or digest), **volume** (any volume), else nothing: an image app has no
@@ -1181,6 +1188,15 @@ of the earlier days. It is information, not a to-do list: an unusual service is 
   one choice), a spacer (`.cv-mnfilter-spacer`) and the range bar 1 h · 6 h · 24 h · 7 d. Section heads
   (`.cv-mnsec`): the Label, its meta in 14px fg-2 (`.cv-mnsec-meta`) and tools at the right (`.cv-mnsec-tools`,
   the sort bar; `.cv-mnsec-link` for a link such as "Open monitoring").
+- **The live refresh swaps by id, never the region.** `#mon-live`'s own swap is `none`. The metrics notice (once a
+  minute) fetches `/parts/monitoring`, whose answer is out-of-band fragments (`hx-swap-oob="innerHTML:#id"`, as the
+  Domains rows): the issues (`#mon-issues`), each chart (`#mon-chart-…`), the table's meta, the notices and the
+  band note, and each row (`#mon-row-…`) while the rows on the page are the rows there are, in the same order
+  (a key in `#mon-known` goes back with the request), else the whole table body (`#mon-table-slot`). The place,
+  range and sort bars and the Apps head are in no answer, so keyboard focus (each link has an id, which htmx
+  gives focus back to) and the pointer stay; `monitoring.js` cancels the swap of a chart that is being hovered. The
+  Nomad notices sit above the region and are not a `role="status"`, so a screen reader doesn't hear them again each
+  minute.
 - **The issues panel** (`.cv-panel` holding `.cv-mnissues`): one row per unusual service
   (`.cv-mnissue`), grid `14px minmax(0, 1fr) auto`, gap 14, padding 16 18, 1px line-1 between rows. The mark is
   the 9px `cv-mark-lg`: ◆ warning, ■ failed (errors above 10% or memory above 98%).
@@ -1193,7 +1209,7 @@ of the earlier days. It is information, not a to-do list: an unusual service is 
   "before", never "so the deploy isn't the cause".
 - **The charts** (`.cv-mncharts`, grid `repeat(4, minmax(0, 1fr))`, gap 14; 2×2 under 1200px of the page's room,
   one column under 640px, both by the page's container): Requests, Errors, Slowest 5%, Memory, each a panel
-  (`.cv-mnchart`). The head is the Label and "now" (`.cv-mnnow`, 12px mono fg-3; with script the hovered
+  (`.cv-mnchart`). The head is the Label and "last 10 min" (`.cv-mnnow`, 12px mono fg-3; with script the hovered
   point's time); under it the value (`.cv-mnvalue`, 500 26px mono fg-1, `.cv-mnvalue-warn` while the latest
   10 minutes are unusual), its unit (`.cv-mnunit`, 13px fg-3) and "usually 120" at the right
   (`.cv-mnusually`, 12px fg-3). A chart with nothing to draw says why in one sentence in the plot's place
@@ -1215,44 +1231,74 @@ of the earlier days. It is information, not a to-do list: an unusual service is 
   built from 3 days never looks like a week. Before a full day of history there is no band and no "usually", and
   the caption (`.cv-mncap`, 11px/1.4 mono fg-3) says "Building the baseline: started 2026-10-25 UTC. The usual
   range appears after a full day." On the 7 d range the band thins to the left (older hours have fewer earlier
-  days kept), one caption line under that chart's times: "The band thins to the left: older hours have fewer
-  earlier days kept." The polyline's `<title>` names the range's min, max and latest, and a visually hidden table
-  carries the numbers.
+  days kept), said once, in one caption line under the chart grid (`.cv-mncap.cv-mnnote`): "The band thins to the
+  left: older hours have fewer earlier days kept." The band's low and high edges are drawn over the polygon as
+  1px line-2 polylines (`.cv-mnband-edge`), so a narrow band still shows. The polyline's `<title>` names the
+  range's min, max and latest, and a visually hidden table carries the numbers.
+- **The scale.** Each chart's top gridline (the one at 75% of the height) is labelled with its value
+  (`.cv-mnscale`, 11px mono fg-3, a span over the plot's left end, above that line): "100 req/s", "5%", "150 ms",
+  "3G". The scale is set so that line is a round number (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 times a power of ten) at
+  least as high as the data needs, and the Errors chart's is never under 5%, so a calm chart doesn't zoom into its
+  noise. The host's memory chart has one too. A head with no number is "—" alone, never "—%".
+- **The head is the last 10 minutes.** Every chart's value is the last 10 minutes at every range (the window
+  the unusual rules read; memory's median), labelled "last 10 min" (`.cv-mnnow`) where it used to say "now"; with
+  script the hover replaces the label with the point's time, the value, and that point's own "usually".
+  The value is in the warn hue only when a rule judged it.
 - **Gaps are never zero.** A minute the sampler couldn't read writes no row, and the series breaks there: the
   polyline ends and starts again (several `<polyline>`s, or one with a break), and a long stretch is drawn as
   `.cv-mngap` (a faint ground with a dashed edge, the same language as the histogram's unread bins). A chart is
   never drawn down to zero for what wasn't measured.
 - **Deploy markers and labels.** The markers are the Logs histogram's, in the same hue; their labels
   (`.cv-mnlabels`, a flex row at the plot's top right, over the plot; `.cv-mndeploy-label`, 11px mono rolling,
-  with a 3px ink-1 halo so it reads over the line) say "`supplier-gw` v24": one label per deployment, "and N
-  more" when they crowd.
+  with a 3px ink-1 halo so it reads over the line) say "`supplier-gw` v24": one label per marker, "and N
+  more" when they crowd. Deploys within 5 minutes of each other (each of the one before) share one marker,
+  labelled "10 deploys", whose `<title>` lists them. The HTTP charts mark only the deploys of apps with a domain;
+  the Memory chart marks them all.
 - **The axis** (`.cv-mnaxis`, 8 16 0, 11px mono): the start, the middle and "now", in UTC, **fg-3**. Text is never
   fg-4 (the rule in Colors).
 - **The Meter** (the handoff's, here an SVG): `<svg class="cv-mnmeter-svg" viewBox="0 0 100 6"
   preserveAspectRatio="none">`, 6px tall, radius 1 (the svg clips), with `.cv-mntrack` (ink-3) full width, then
   `.cv-mnreserved` (what Nomad has set aside, **hatched**: a `<line>` whose dashed stroke draws vertical ticks, so
-  no gradient and no pattern id), then `.cv-mnfill` (fg-2, what is used) on top. Lengths are attributes (`width`
+  no gradient and no pattern id), drawn **after** `.cv-mnfill` (fg-2, what is used), so the reservation still
+  shows when use is above it (fg-4 ticks read on the track, the fg-2 fill and the warn fill). Lengths are attributes (`width`
   on the rect, `x2` on the line), so no `style` attribute is needed; a fixed set of width classes was the
-  other choice and was rejected: a hundred classes for one number. Above 90% the fill is `.cv-mnfill-warn` **and**
-  the readout takes `.cv-mnwarntext`, so the colour is never the only sign. The row (`.cv-mnmeter`) is a grid
+  other choice and was rejected: a hundred classes for one number. Above 90% (an app's memory, the host's CPU) the fill is `.cv-mnfill-warn` **and**
+  the readout takes `.cv-mnwarntext`, so the colour is never the only sign. The host's memory and each disk use the
+  disk's thresholds instead: fg-2 below 85%, the warn fill and readout with a ◆ mark from 85%, a ■ mark from 95%
+  (same warn hue; the mark tells the two apart). The hatched `.cv-mnreserved` line runs from 0 to the reserved
+  fraction of the total (`x2`). Memory used is Nomad's host `Memory.Used`, which leaves out the
+  page cache. The row (`.cv-mnmeter`) is a grid
   `40px minmax(0, 1fr) auto`: the label (`.cv-mnmeter-label`, a Label), the bar, the readout
-  (`.cv-mnmeter-read`, 12px mono fg-2, "1.9/3.8G"). The Running tab's `<meter>` (feature 016) stays: it is one
+  (`.cv-mnmeter-read`, 12px mono fg-2, "18/40G" for a disk). Memory and CPU read **split**, "1.7G used · 1.3G
+  reserved of 1.9G" and "1.2 used · 0.8 reserved of 2 vCPU" (without a reservation, "1.7G used of 1.9G"); that is
+  too long for the bar's row, so `.cv-mnmeter-split` puts it under the bar. **vCPU is the one CPU unit** on the
+  page: the readout, the sparkline's title and figure, the room sentence ("(32 MB, 0.1 vCPU each)"); MHz only
+  when the host's cores weren't read. The Running tab's `<meter>` (feature 016) stays: it is one
   thin bar with no reserved part; this one is for capacity, where used under reserved under total is the point.
 - **The apps table** (`.cv-panel` with `.cv-mntable`, a container of its own, `cvmntbl`): a head 38px on ink-2
   (`.cv-mnthead`, Labels), rows 52px (`.cv-mnrow`), grid `14px minmax(0, 1.3fr) 110px 100px 150px 130px
-  minmax(0, 1.2fr) 80px 36px`, gap 16, padding 0 18. A row: the mark (◆ unusual, ■ failed, ◐ rolling out, ● healthy,
-  ○ stopped); the name (`.cv-mnname`: `.cv-mnname-text` 500 14px mono fg-1, "`hollo` / `web`" with several
+  minmax(0, 1.2fr) 80px 36px` (CPU is 222px: its figure sits beside the line), gap 16, padding 0 18. A row: the
+  mark is **the app's status first**, as the Apps home has it (■ not running or deploy failed, ○ stopped or never
+  deployed, ◐ rolling out, ◆ some copies short, ● healthy); ◆ "unusual" is only what is left, a serving service
+  whose numbers are unusual against its week (■ "failing" when the issue is failed). A service that serves
+  nothing gets no "less traffic than usual" issue at all (its cause is on the needs-you list, and the row's ■ is
+  enough); the quieter sentence has the deploy clause like the others. A place in which nothing serves says "Nothing
+  is running in `Shop` / `staging`: `web` is stopped." with ○ in place of the calm line. The name (`.cv-mnname`: `.cv-mnname-text` 500 14px mono fg-1, "`hollo` / `web`" with several
   services; under it `.cv-mncopies`, 12px fg-3, "2 copies · no domain"); Requests, Errors, Slowest 5%
   (`.cv-mnnumber`, 13px mono, right-aligned; `.cv-mnnumber-warn` when unusual; "820 ms · usually 180" with
   `.cv-mnusual` for the quiet part; "—" is `.cv-mnnumber-none`, fg-3: no domain, no number); CPU (`.cv-mncpu`
-  with the 120×24 `.cv-mnspark` and its `.cv-mnspark-line`, 1.25px fg-2); Memory (`.cv-mnmem`: a meter of at most
-  140px and the readout `.cv-mnmem-read`, 12px fg-3, warn above 90%); Restarts (`.cv-mnrestarts`, warn when not
-  zero); and the logs link (`.cv-mnlogs`, a 28px target, the `scroll-text` icon, `aria-label` "Logs of
-  booking-api"). The row is one link to the app's Running tab: the name's link covers the row with `::after`
+  with the 120×24 `.cv-mnspark` and its `.cv-mnspark-line`, 1.25px fg-2, and the figure `.cv-mncpu-read` beside
+  it, "0.4/0.5 vCPU", used over reserved); the CPU and Memory cells sit above the row link's overlay so their
+  tooltips can be reached; Memory (`.cv-mnmem`: a meter of at most
+  140px and the readout `.cv-mnmem-read`, 12px fg-3, warn above 90%); Restarts (`.cv-mnrestarts`, warn from 2, the
+  rule's threshold); and the logs link (`.cv-mnlogs` in its own `role="cell"`, `.cv-mnlogscell`, so a row has as many
+  cells as the head has headers; a 28px target, the `scroll-text` icon, `aria-label` "Logs of booking-api", to
+  `/logs?app=<id>&service=<app>/<service>`). Rates and percents have one decimal ("96.0/s", "2.4%"). The row is one link to the app's Running tab: the name's link covers the row with `::after`
   (no nested anchors), and the logs link rides above it. Sorted by the sort bar: unusual first (by how far),
   most traffic, most memory.
-- **The table folds under 900px of its own width**, not the contract's 640: nine columns need about 860px
-  (the fixed ones are 620px with the gaps), so a table folded at 640 would scroll sideways between 640 and 860.
+- **The table folds under 980px of its own width**, not the contract's 640: nine columns and the CPU figure need
+  about 950px (the fixed ones are 710px with the gaps), so a table folded at 640 would scroll sideways between 640
+  and 950.
   Folded, the head goes; mark, name and copies are the first line; then Requests, Errors, Slowest 5% and CPU as
   label and value (the label is each cell's `data-label`, 5.5rem, like the Domains rows); the memory meter takes
   the width; Restarts and the logs link close the row. No cell scrolls: every track is `minmax(0, …)` and text

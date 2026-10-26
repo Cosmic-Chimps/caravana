@@ -260,8 +260,8 @@ func TestMetricsPointsAndBand(t *testing.T) {
 		if v.Requests.Now == nil || *v.Requests.Now != 2 || v.Requests.Usual != nil || v.Requests.UsualDays != 0 {
 			t.Errorf("now = %v usual %v days %d", v.Requests.Now, v.Requests.Usual, v.Requests.UsualDays)
 		}
-		if v.Memory.Now == nil || *v.Memory.Now != 101 || val(v.MemoryLimit[len(v.MemoryLimit)-2]) != 512 {
-			t.Errorf("memory now = %v, limit %v", v.Memory.Now, v.MemoryLimit[len(v.MemoryLimit)-2])
+		if v.Memory.Now == nil || *v.Memory.Now != 105 || val(v.MemoryLimit[len(v.MemoryLimit)-2]) != 512 {
+			t.Errorf("memory head = %v (the median of the last 10 minutes: 105), limit %v", v.Memory.Now, v.MemoryLimit[len(v.MemoryLimit)-2])
 		}
 		if v.Baseline.State != metrics.Building || v.Baseline.FullDays != 0 {
 			t.Errorf("baseline = %+v", v.Baseline)
@@ -395,8 +395,8 @@ func TestMetricsSlowerIssue(t *testing.T) {
 			if tc.relation == metrics.StartedAfter && (is.DeployNear.Minutes < tc.minutesMin || is.DeployNear.Minutes > 11) {
 				t.Errorf("minutes after = %d, want about 10", is.DeployNear.Minutes)
 			}
-			if len(v.Deploys) != 1 || v.Deploys[0].Version != 24 {
-				t.Errorf("deploys = %+v, want the one marker", v.Deploys)
+			if len(v.Deploys) != 1 || v.Deploys[0].Version != 24 || !v.Deploys[0].HasDomain {
+				t.Errorf("deploys = %+v, want the one marker, of an app with a domain", v.Deploys)
 			}
 			sv := v.Services[0]
 			if sv.State != ServiceUnusual || !sv.Unusual || sv.Level != metrics.LevelWarning || sv.Distance == nil || *sv.Distance != is.Distance ||
@@ -467,6 +467,9 @@ func TestMetricsMoreErrorsQuieterAndLevels(t *testing.T) {
 		rows = append(rows, f.http(quiet, ts, 60, 60, 0, fastBuckets)) // 1 a second against 10
 	}
 	f.minute(rows...)
+	// Both services serve: a deployment ended healthy and each has a healthy copy.
+	finalDeployment(t, f.e.store, "whoami", "d1", store.StatusHealthy, 0)
+	f.e.nomad.SetCopies("whoami", runningStub("web", 0), runningStub("quiet", 0))
 
 	v := f.read(metrics.Range6h)
 	if len(v.Issues) != 2 {
@@ -749,5 +752,91 @@ func TestMetricsSlotRanges(t *testing.T) {
 	}
 	if v.Sources.Traefik != SamplerUnknown || v.Sources.Nomad != SamplerUnknown {
 		t.Errorf("sources = %+v before any tick, want unknown", v.Sources)
+	}
+}
+
+// The apps table's Requests, Errors and Slowest 5 % are the last 10 minutes',
+// the same numbers the issue and the chart head read, not the range's average.
+func TestMetricsTableIsTheLastTenMinutes(t *testing.T) {
+	now := time.Date(2026, 10, 25, 12, 0, 30, 0, time.UTC)
+	f := newMetricsFixture(t, now)
+	web := f.series("whoami", "web")
+	f.startedAt(now.Add(-4 * 24 * time.Hour))
+	last := now.Truncate(time.Minute).Add(-time.Minute)
+	// Fifty minutes of busy, fast traffic (2 req/s, no errors), then ten quiet
+	// ones with errors and slow answers (0.5 req/s, 20 % 5xx).
+	var rows []store.MetricsSample
+	for i := range 60 {
+		ts := last.Add(-time.Duration(59-i) * time.Minute)
+		if i < 50 {
+			rows = append(rows, f.http(web, ts, 60, 120, 0, "0,0,0,0,120"))
+		} else {
+			rows = append(rows, f.http(web, ts, 60, 30, 6, "0,0,0,0,0,0,0,30"))
+		}
+	}
+	f.minute(rows...)
+
+	v := f.read(metrics.Range6h)
+	sv := findService(v, "whoami")
+	if sv.Requests == nil || *sv.Requests != 0.5 {
+		t.Errorf("requests = %v, want 0.5/s (the last 10 minutes), not the range's 1.83", val(sv.Requests))
+	}
+	if sv.Errors == nil || *sv.Errors != 20 {
+		t.Errorf("errors = %v, want 20 %% of the window's requests", val(sv.Errors))
+	}
+	if sv.P95 == nil || *sv.P95 < 500 {
+		t.Errorf("slowest 5%% = %v, want the window's (over 500 ms), not the range's fast mix", val(sv.P95))
+	}
+	// The same window is the chart head's "now" and the issue's number.
+	if w := metrics.WindowOf(rows2(rows, f), now); w.RequestsPerSec != *sv.Requests || w.ErrorPercent != *sv.Errors {
+		t.Errorf("window %+v disagrees with the row", w)
+	}
+}
+
+// rows2 reads stored samples as metrics rows, to compare the table with the
+// pure window.
+func rows2(in []store.MetricsSample, f *metricsFixture) []metrics.Row {
+	layouts, err := f.e.store.MetricsLayouts(f.ctx)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	out := make([]metrics.Row, 0, len(in))
+	for _, m := range in {
+		out = append(out, samplerRow(m, layouts))
+	}
+	return out
+}
+
+// A row's number is in warn hue only when its issue's rule holds: the issue's
+// own value is the row's.
+func TestMetricsTableMatchesItsIssue(t *testing.T) {
+	real := time.Now().UTC()
+	now := real.Truncate(time.Minute).Add(20*time.Minute + 30*time.Second)
+	f := newMetricsFixture(t, now)
+	web := f.series("whoami", "web")
+	f.startedAt(now.Add(-4 * 24 * time.Hour))
+	f.slotsOnEarlierDays(web, 3, now.Add(-time.Hour), now, func(series int64, ts time.Time) store.MetricsSample {
+		return f.http(series, ts, 600, 200, 0, fastBuckets)
+	})
+	slowFrom := now.Truncate(time.Minute).Add(-9 * time.Minute)
+	var rows []store.MetricsSample
+	for ts := now.Truncate(time.Minute).Add(-20 * time.Minute); ts.Before(now.Truncate(time.Minute)); ts = ts.Add(time.Minute) {
+		b := fast20
+		if !ts.Before(slowFrom) {
+			b = slow20
+		}
+		rows = append(rows, f.http(web, ts, 60, 20, 0, b))
+	}
+	f.minute(rows...)
+	v := f.read(metrics.Range6h)
+	if len(v.Issues) != 1 {
+		t.Fatalf("issues = %+v", v.Issues)
+	}
+	is, sv := v.Issues[0], v.Services[0]
+	if sv.P95 == nil || *sv.P95 != is.Value {
+		t.Errorf("row slowest 5%% = %v, issue says %v", val(sv.P95), is.Value)
+	}
+	if sv.Requests == nil || *sv.Requests != is.Window.RequestsPerSec {
+		t.Errorf("row requests = %v, issue window %v", val(sv.Requests), is.Window.RequestsPerSec)
 	}
 }

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -21,8 +23,9 @@ import (
 //
 // The filters are all in the address (place, range, sort), so a reload or a shared link shows the
 // same; the bars are links and the page is a GET, so it works without script. The live region
-// (#mon-live: sources, issues, charts and the table) is drawn again from /parts/monitoring on the
-// metrics notice, which comes once a minute; the head and the filter row sit outside it. The
+// (#mon-live: issues, charts and the table) is never swapped as a whole: the metrics notice, once a
+// minute, fetches /parts/monitoring, whose answer is out-of-band fragments by id (the issues, each
+// chart, each row), so the bars, keyboard focus and an open hover stay put. The
 // charts are inline SVG: every shape is an element with attributes and every colour a class, never
 // a style attribute (the page's policy forbids one). monitoring.js only adds the hover readout.
 // The values of the page are contracts/monitoring-screen.md's.
@@ -153,13 +156,9 @@ func trim1(v float64) string {
 	return strconv.FormatFloat(float64(int(v*10+0.5))/10, 'f', -1, 64)
 }
 
-// rateText is a rate of requests per second: no decimals from 10 up, else one ("0.4", "4", "96").
-func rateText(v float64) string {
-	if v >= 10 {
-		return strconv.Itoa(int(v + 0.5))
-	}
-	return trim1(v)
-}
+// rateText is a rate of requests per second with one decimal, like the percents beside it:
+// "0.4", "4.0", "96.0".
+func rateText(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 
 // percentText is a share with one decimal: "2.4", "0.0".
 func percentText(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
@@ -218,6 +217,7 @@ type monNotice struct {
 
 // monIssue is one row of the issues panel.
 type monIssue struct {
+	ID         string // the id the action link carries, so a refresh gives focus back to it
 	Mark       string // warning or failed
 	Text       monSentence
 	Detail     monSentence
@@ -237,7 +237,9 @@ type monRegion struct {
 	Issues  []monIssue
 	Calm    *monCalm
 	Charts  []monChart
-	Table   monTable
+	// BandNote is the one line under the charts on the 7 d range ("The band thins to the left...").
+	BandNote monSentence
+	Table    monTable
 }
 
 // monTable is the apps table.
@@ -246,6 +248,26 @@ type monTable struct {
 	Sorts []logsBarItem
 	Rows  []monRow
 	Empty string
+	// Known names the rows the page was drawn with, in their order (rowsKey). The refresh carries
+	// it back and swaps the rows one by one while it still names the rows there are.
+	Known string
+}
+
+// monOOB is what /parts/monitoring answers: the fragments the page swaps by id. Replace puts the
+// whole table body in place of the rows' own fragments (a row was added, removed or moved).
+type monOOB struct {
+	*monRegion
+	Replace bool
+}
+
+// rowsKey is a short name for the rows of the table in their order.
+func rowsKey(rows []monRow) string {
+	anchors := make([]string, len(rows))
+	for i, r := range rows {
+		anchors[i] = r.Anchor
+	}
+	sum := sha256.Sum256([]byte(strings.Join(anchors, "\n")))
+	return hex.EncodeToString(sum[:6])
 }
 
 // monNum is one number cell: "—" (None) when there is none, in warn hue when Warn, with
@@ -280,6 +302,8 @@ type monRow struct {
 type monSpark struct {
 	Segments []string
 	Title    string
+	// Read is the newest number beside the line: "0.4/0.5 vCPU", used over reserved.
+	Read string
 }
 
 // monMem is the table's memory cell: a bar and its readout.
@@ -351,7 +375,10 @@ func (s *server) partMonitoring(w http.ResponseWriter, r *http.Request, session 
 		s.partFailed(w, "read metrics", err)
 		return
 	}
-	s.renderPart(w, "monitoring", "mon-region", reg)
+	// The answer is fragments the page swaps by id (mon-oob), so the sort and range bars, what has
+	// keyboard focus and an open hover stay where they are. While the rows on the page are the rows
+	// there are, in the same order, each row is swapped alone; else the whole table body is.
+	s.renderPart(w, "monitoring", "mon-oob", monOOB{monRegion: reg, Replace: r.URL.Query().Get("known") != reg.Table.Known})
 }
 
 // partFailed answers a part that couldn't be read: a place that vanished is 404, the rest 500
@@ -476,6 +503,7 @@ func (b *monBuilder) region() *monRegion {
 		reg.Calm = b.calm()
 	}
 	reg.Charts = b.charts()
+	reg.BandNote = b.bandNote()
 	reg.Table = b.table()
 	return reg
 }
@@ -526,6 +554,9 @@ func (b *monBuilder) calm() *monCalm {
 	if len(b.view.Services) == 0 {
 		return nil
 	}
+	if down := b.nothingRunning(); down != nil {
+		return down
+	}
 	if b.view.Baseline.State == metrics.Building {
 		text := "The usual range is still being learned"
 		if st := b.baselineStarted(); st != "" {
@@ -541,10 +572,50 @@ func (b *monBuilder) calm() *monCalm {
 	return &monCalm{Mark: "healthy", Text: msentence(mtext("Every app is within its usual range."))}
 }
 
+// nothingRunning is the line for a place in which no service serves anything (all stopped, not
+// running or never deployed): the calm line would say the numbers are in their usual range
+// while there are none. "Nothing is running in Shop / staging: web is stopped." with ○.
+func (b *monBuilder) nothingRunning() *monCalm {
+	var named []monSentence
+	for _, sv := range b.view.Services {
+		if !sv.Standing.Down {
+			return nil
+		}
+		named = append(named, msentence(mname(b.serviceName(sv.AppName, sv.AppID, sv.Service)), mtext(" "+downPhrase(sv.Standing.Word))))
+	}
+	text := msentence(mtext("Nothing is running"))
+	if w := b.where(); w != nil {
+		text = append(append(text, mtext(" in ")), w...)
+	}
+	text = append(text, mtext(": "))
+	for i, one := range named[:min(3, len(named))] {
+		if i > 0 {
+			text = append(text, mtext(", "))
+		}
+		text = append(text, one...)
+	}
+	if len(named) > 3 {
+		text = append(text, mtext(" and "+strconv.Itoa(len(named)-3)+" more"))
+	}
+	text = append(text, mtext("."))
+	return &monCalm{Mark: "idle", Text: text}
+}
+
+// downPhrase says what a standing word means after a service's name: "is stopped".
+func downPhrase(word string) string {
+	switch word {
+	case "never deployed":
+		return "was never deployed"
+	case "not defined yet":
+		return "isn't defined yet"
+	}
+	return "is " + word
+}
+
 // issue says one unusual service with the contract's fixed sentences.
 func (b *monBuilder) issue(is service.MetricIssue) monIssue {
 	name := b.serviceName(is.AppName, is.AppID, is.Service)
-	out := monIssue{Mark: "warning"}
+	out := monIssue{Mark: "warning", ID: "mon-issue-" + is.AppID + "-" + is.Service + "-" + string(is.Kind)}
 	if is.Level == metrics.LevelFailed {
 		out.Mark = "failed"
 	}
@@ -574,7 +645,7 @@ func (b *monBuilder) issue(is service.MetricIssue) monIssue {
 			text = append(text, mtext(", usually "+rateText(*is.Usual)))
 		}
 		text = append(text, mtext(". "))
-		out.Text = append(text, started...)
+		out.Text = append(append(text, started...), b.deployClause(is)...)
 		if len(is.Domains) > 0 {
 			out.Detail = msentence(mtext("Its domains: " + strings.Join(is.Domains, ", ")))
 		}
@@ -635,6 +706,9 @@ func (b *monBuilder) exitDetail(is service.MetricIssue) monSentence {
 // showAction is the issue's action to the Logs page: the app's errors, or its logs.
 func (b *monBuilder) showAction(name, what string, is service.MetricIssue, errorsOnly bool) (monSentence, string) {
 	q := logsReq{Project: b.q.Project, Environment: b.q.Environment, App: is.AppID, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
+	if is.Service != "" {
+		q.Service = is.AppID + "/" + is.Service // the Logs page filtered to the service, not the whole app
+	}
 	if errorsOnly {
 		q.Levels = levelSet{true, false, false, false}
 	}
@@ -660,11 +734,13 @@ func (b *monBuilder) table() monTable {
 	}
 	if len(b.view.Services) == 0 {
 		t.Empty = "No apps here yet. Their numbers appear a minute after they run."
+		t.Known = rowsKey(nil)
 		return t
 	}
 	for _, sv := range b.view.Services {
 		t.Rows = append(t.Rows, b.row(sv))
 	}
+	t.Known = rowsKey(t.Rows)
 	return t
 }
 
@@ -681,17 +757,21 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		Href:   "/apps/" + url.PathEscape(sv.AppID),
 		Copies: copyCount(sv.Copies),
 	}
+	// The mark is the app's status first, as /apps shows it: ■ not running or failed, ○ stopped
+	// (or never deployed), ◐ rolling out, ◆ some copies short. ◆ "unusual" is only what is left:
+	// a serving service whose numbers are unusual against its week.
 	switch {
-	case sv.State == service.ServiceStopped:
-		row.Mark, row.MarkWord, row.Copies = "idle", "stopped", "stopped"
+	case sv.Standing.Mark != "" && sv.Standing.Mark != "healthy":
+		row.Mark, row.MarkWord = sv.Standing.Mark, sv.Standing.Word
 	case sv.State == service.ServiceUnusual && sv.Level == metrics.LevelFailed:
 		row.Mark, row.MarkWord = "failed", "failing"
 	case sv.State == service.ServiceUnusual:
 		row.Mark, row.MarkWord = "warning", "unusual"
-	case sv.State == service.ServiceRollingOut:
-		row.Mark, row.MarkWord = "rolling", "rolling out"
 	default:
 		row.Mark, row.MarkWord = "healthy", "healthy"
+	}
+	if sv.State == service.ServiceStopped {
+		row.Copies = "stopped"
 	}
 	if !sv.HasDomain {
 		row.Copies += " · no domain"
@@ -719,7 +799,7 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		}
 		row.P95 = monNum{Text: p, Warn: kinds[metrics.Slower]}
 		if kinds[metrics.Slower] && sv.UsualP95 != nil {
-			row.P95.Usual = "usually " + rateText(*sv.UsualP95)
+			row.P95.Usual = "usually " + strconv.Itoa(int(*sv.UsualP95+0.5))
 		}
 	}
 	if kinds[metrics.Quieter] && row.Requests.Text != "—" && sv.Requests != nil {
@@ -728,13 +808,23 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 
 	row.Spark = b.spark(sv)
 	row.Mem = b.memory(sv, kinds[metrics.Memory])
+	if sv.State == service.ServiceStopped {
+		// A stopped app has no "now": what its last minutes read is history, not a number to show.
+		// Only the sparkline stays, as the CPU it used while it ran; Restarts is the app's own.
+		why := "The app is stopped."
+		row.Requests, row.Errors, row.P95 = none(why), none(why), none(why)
+		row.Mem = monMem{}
+		if row.Spark != nil {
+			row.Spark.Title, row.Spark.Read = "CPU while the app ran; it is stopped now", "—"
+		}
+	}
 	if sv.Restarts == nil {
 		row.Restarts = monNum{Text: "—", None: true}
 	} else {
-		row.Restarts = monNum{Text: strconv.FormatInt(*sv.Restarts, 10), Warn: *sv.Restarts > 0}
+		row.Restarts = monNum{Text: strconv.FormatInt(*sv.Restarts, 10), Warn: *sv.Restarts >= metrics.RestartsInHour}
 	}
 
-	logs := logsReq{Project: b.q.Project, Environment: b.q.Environment, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
+	logs := logsReq{Project: b.q.Project, Environment: b.q.Environment, App: sv.AppID, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
 	row.LogsHref, row.LogsName = logs.href(), "Logs of "+b.serviceName(sv.AppName, sv.AppID, sv.Service)
 	return row
 }
@@ -790,22 +880,33 @@ func (b *monBuilder) spark(sv service.ServiceMetrics) *monSpark {
 		return float64(i) / float64(n-1) * sparkW
 	}
 	y := func(v float64) float64 { return sparkH - 2 - v/top*(sparkH-4) }
-	return &monSpark{Segments: segments(sv.CPU, x, y), Title: b.cpuTitle(*last, sv.CPUReservedMHz)}
+	return &monSpark{Segments: segments(sv.CPU, x, y), Title: b.cpuTitle(*last, sv.CPUReservedMHz), Read: b.cpuRead(*last, sv.CPUReservedMHz)}
 }
 
-// cpuTitle is "0.4 of 1 core reserved, now" (in cores when the host's core speed is known, else
-// MHz).
+// cpuRead is the figure beside the sparkline: "0.4/0.5 vCPU", used over reserved (vCPU when the
+// host's core speed is known, else MHz; only the used number when nothing is reserved).
+func (b *monBuilder) cpuRead(now float64, reserved *int64) string {
+	amount, unit := func(mhz float64) string { return strconv.Itoa(int(mhz + 0.5)) }, " MHz"
+	if b.coreMHz > 0 {
+		amount, unit = func(mhz float64) string { return vcpuText(mhz / b.coreMHz) }, " vCPU"
+	}
+	if reserved == nil {
+		return amount(now) + unit
+	}
+	return amount(now) + "/" + amount(float64(*reserved)) + unit
+}
+
+// cpuTitle is "0.4 of 1 vCPU reserved, now" (vCPU is the page's one CPU unit; MHz only when the
+// host's core speed isn't known).
 func (b *monBuilder) cpuTitle(now float64, reserved *int64) string {
+	if b.coreMHz > 0 {
+		if reserved == nil {
+			return vcpuText(now/b.coreMHz) + " vCPU now"
+		}
+		return vcpuText(now/b.coreMHz) + " of " + vcpuText(float64(*reserved)/b.coreMHz) + " vCPU reserved, now"
+	}
 	if reserved == nil {
 		return trim1(now) + " MHz now"
-	}
-	if b.coreMHz > 0 {
-		res := float64(*reserved) / b.coreMHz
-		unit := "cores"
-		if trim1(res) == "1" {
-			unit = "core"
-		}
-		return trim1(now/b.coreMHz) + " of " + trim1(res) + " " + unit + " reserved, now"
 	}
 	return strconv.Itoa(int(now+0.5)) + " of " + strconv.FormatInt(*reserved, 10) + " MHz reserved, now"
 }

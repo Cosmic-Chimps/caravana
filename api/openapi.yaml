@@ -271,7 +271,9 @@ paths:
         `more_errors`, the band's lowest over the value for `quieter`, memory over 90 %, and 1
         plus restarts over 10, at most 100); `issues` and the unusual rows are sorted by it, the
         furthest first. An app rolling out is not judged by the HTTP rules, and a stopped app is
-        not judged. Unusual services are not on `listAttention`.
+        not judged. A service that serves nothing (no healthy copy, or never deployed) is not
+        judged by `quieter`: its cause is on `listAttention`. Unusual services are not on
+        `listAttention`.
 
         **Memory** used is Nomad's `Usage − Cache` (the page cache left out), as `listCopies`
         gives with `usage=true`.
@@ -4280,7 +4282,7 @@ components:
 
     NotificationEventType:
       type: string
-      enum: [problem.opened, problem.resolved, deploy.succeeded, deploy.failed, test]
+      enum: [problem.opened, problem.worsened, problem.resolved, deploy.succeeded, deploy.failed, test]
 
     NotificationEvent:
       description: |
@@ -4318,8 +4320,10 @@ components:
             `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
             `disk_nearly_full` (a filesystem of the host is 85 % full or more). A
             schedule that keeps failing is one problem: one `problem.opened`, then one
-            `problem.resolved` after a run succeeds; so is a domain, per host. Receivers should
-            accept kinds they don't know.
+            `problem.resolved` after a run succeeds; so is a domain, per host. A disk that rises
+            from `warning` to `failed` after its `problem.opened` sends one `problem.worsened`
+            (`level` is `failed`); a fall back to `warning`, or a repeat, sends nothing, and the
+            `problem.resolved` follows below 83 %. Receivers should accept kinds they don't know.
         app:
           type: string
           description: The app's ID. Absent for installation-wide events.
@@ -4405,7 +4409,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: "`problem.opened` of `disk_nearly_full`: `warning` from 85 % used, `failed` from 95 %."
+          description: "`problem.opened` and `problem.worsened` of `disk_nearly_full`: `warning` from 85 % used, `failed` from 95 %; a `problem.worsened` is always `failed`."
         url:
           type: string
           description: |
@@ -5490,8 +5494,10 @@ components:
         now:
           type: [number, "null"]
           description: |
-            The newest point's value, when it is within the last few minutes. `null` when the
-            sampler stopped: a stale value is not "now".
+            The chart's head: the last 10 minutes at every range, the window the unusual rules
+            read (requests per second over it, the 5xx share of its requests, the slowest 5 % of
+            its merged counts, and the median of memory), not the range's newest point. `null`
+            when the window has no number, as when the sampler stopped: a stale value is not "now".
         over:
           type: boolean
           description: |
@@ -5499,7 +5505,7 @@ components:
             highest bound and the page says "over 10 s".
         usual:
           type: [number, "null"]
-          description: The band's median at `now`'s point.
+          description: The band's median for the last 10 minutes, in `now`'s unit.
         usualDays:
           type: integer
           description: How many earlier days `usual` rests on.
@@ -5656,13 +5662,13 @@ components:
           description: False for a service with no domain; its request numbers are then `null`.
         requests:
           type: [number, "null"]
-          description: Requests per second over the range.
+          description: Requests per second over the last 10 minutes (the window the issues use), whatever the range.
         errors:
           type: [number, "null"]
-          description: Percent of requests that were 5xx over the range.
+          description: Percent of requests that were 5xx over the last 10 minutes.
         p95:
           type: [number, "null"]
-          description: The slowest 5 % over the range, in milliseconds.
+          description: The slowest 5 % over the last 10 minutes, in milliseconds.
         p95Over:
           type: boolean
           description: "`p95` is beyond the highest bucket (10 s): it is that bound, and means \"over\"."
@@ -5797,7 +5803,7 @@ components:
               state:
                 type: string
                 enum: [ok, warning, failed]
-                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %."
+                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %; and at least `warning` while the filesystem's `disk_nearly_full` item is open (it stays open until the disk reads under 83 %)."
         room:
           type: object
           additionalProperties: false

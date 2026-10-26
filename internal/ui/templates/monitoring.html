@@ -24,15 +24,36 @@
   <span class="cv-mnfilter-spacer"></span>
   <nav class="cv-seg" aria-label="Time range">{{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
 </div>
-<div class="cv-mnregion" id="mon-live" hx-get="{{.RegionHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-region" .Region}}</div>
+<div id="mon-notices" class="cv-mnnotices">{{template "mon-notices-body" .Region}}</div>
+<div class="cv-mnregion" id="mon-live" hx-get="{{.RegionHref}}" hx-trigger="sse:metrics" hx-swap="none" hx-include="#mon-known"><input type="hidden" id="mon-known" name="known" value="{{.Region.Table.Known}}">{{template "mon-region" .Region}}</div>
 {{template "mon-host-section" .}}
 <p class="cv-mnfoot">Sampled every minute and kept for 8 days. Requests come from Traefik, memory and CPU from Nomad. Long-lived connections, such as websockets and streams, count as requests but not in Slowest 5%.</p>
 {{end}}
 
-{{/* mon-region: the sources, the issues, the charts and the apps table; /parts/monitoring draws it alone.
-     Takes a monRegion. */}}
+{{/* mon-notices-body: the Nomad problems of the last tick, above the live region and not a live region
+     themselves (no role="status"): the notice swaps them by id, and a screen reader must not hear them again
+     each minute. Written without whitespace around the lines, so an empty one leaves the container empty
+     (and hidden). Takes a monRegion. */}}
+{{define "mon-notices-body"}}{{range .Notices}}<div class="cv-notice"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></div>{{end}}{{end}}
+
+{{/* mon-region: the issues, the charts and the apps table. The page's live region never swaps as a whole:
+     the metrics notice fetches /parts/monitoring, whose answer is out-of-band fragments (mon-oob), one for
+     the issues, each chart, the table's meta and each row, by id, so what has keyboard focus or the pointer
+     over it isn't replaced under it. Takes a monRegion. */}}
 {{define "mon-region"}}
-{{range .Notices}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></div>{{end}}
+<div id="mon-issues" class="cv-mnslot">{{template "mon-issues-body" .}}</div>
+<section class="cv-mncharts" aria-label="Charts">
+  {{range .Charts}}{{template "mon-chart" .}}{{end}}
+</section>
+<div id="mon-bandnote" class="cv-mnslot">{{template "mon-bandnote-body" .}}</div>
+{{template "mon-table" .Table}}
+{{end}}
+
+{{/* mon-bandnote-body: the one line under the chart grid on the 7 d range. Takes a monRegion. */}}
+{{define "mon-bandnote-body"}}{{with .BandNote}}<p class="cv-mncap cv-mnnote">{{template "mon-sentence" .}}</p>{{end}}{{end}}
+
+{{/* mon-issues-body: the issues panel, or the one calm line. Takes a monRegion. */}}
+{{define "mon-issues-body"}}
 {{if .Issues}}
 <section class="cv-panel cv-mnissues" aria-label="Unusual services">
   {{range .Issues}}
@@ -42,41 +63,58 @@
       <p class="cv-mnissue-text">{{template "mon-sentence" .Text}}</p>
       {{with .Detail}}<p class="cv-mnissue-detail">{{template "mon-sentence" .}}</p>{{end}}
     </div>
-    <div class="cv-mnissue-act"><a href="{{.ActionHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "scroll-text" 14}}{{template "mon-sentence" .Action}}</a></div>
+    <div class="cv-mnissue-act"><a href="{{.ActionHref}}" id="{{.ID}}-act" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "scroll-text" 14}}{{template "mon-sentence" .Action}}</a></div>
   </div>
   {{end}}
 </section>
 {{else}}
 {{with .Calm}}<p class="cv-mncalm"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
 {{end}}
-<section class="cv-mncharts" aria-label="Charts">
-  {{range .Charts}}{{template "mon-chart" .}}{{end}}
-</section>
-{{template "mon-table" .Table}}
 {{end}}
 
-{{/* mon-chart: one panel: the head, the value, the plot and the times under it. Takes a monChart. */}}
-{{define "mon-chart"}}
-<div class="cv-panel cv-mnchart" id="{{.ID}}">
-  <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>now</span></div>
-  <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{with .Usually}}<span class="cv-mnusually">{{.}}</span>{{end}}</div>
+{{/* mon-oob: the answer of /parts/monitoring: the fragments the page swaps by id (hx-swap-oob's
+     "innerHTML:#id" form, so the elements that hold focus and the pointer keep their place). The rows are
+     swapped one by one while the rows on the page are the rows there are, in the same order (known); when
+     one was added, removed or moved, the whole table body is. Takes a monOOB. */}}
+{{define "mon-oob"}}
+<input type="hidden" id="mon-known" name="known" value="{{.Table.Known}}" hx-swap-oob="true">
+<div hx-swap-oob="innerHTML:#mon-notices">{{template "mon-notices-body" .}}</div>
+<div hx-swap-oob="innerHTML:#mon-issues">{{template "mon-issues-body" .}}</div>
+{{range .Charts}}<div hx-swap-oob="innerHTML:#{{.ID}}">{{template "mon-chart-body" .}}</div>
+{{end}}
+<div hx-swap-oob="innerHTML:#mon-bandnote">{{template "mon-bandnote-body" .}}</div>
+<span hx-swap-oob="innerHTML:#mon-table-meta">{{template "mon-sentence" .Table.Meta}}</span>
+{{if .Replace}}<div hx-swap-oob="innerHTML:#mon-table-slot">{{template "mon-table-body" .Table}}</div>
+{{else}}{{range .Table.Rows}}<div hx-swap-oob="innerHTML:#{{.Anchor}}">{{template "mon-row-body" .}}</div>
+{{end}}{{end}}
+{{end}}
+
+{{/* mon-chart: one panel: its id and its body. Takes a monChart. */}}
+{{define "mon-chart"}}<div class="cv-panel cv-mnchart" id="{{.ID}}">{{template "mon-chart-body" .}}</div>
+{{end}}
+
+{{/* mon-chart-body: the head, the value, the plot and the times under it. Takes a monChart. */}}
+{{define "mon-chart-body"}}
+  <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>last 10 min</span></div>
+  <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{if .HasUsually}}<span class="cv-mnusually" data-mon-usually>{{.Usually}}</span>{{end}}</div>
   {{with .Plot}}{{template "mon-plot" .}}
   <div class="cv-mnaxis"><span>{{$.AxisStart}}</span><span>{{$.AxisMid}}</span><span>now</span></div>
   {{else}}
   {{with .Empty}}<div class="cv-mnchart-empty">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}<span>{{template "mon-sentence" .Text}}</span></div>{{end}}
   {{end}}
   {{range .Captions}}<p class="cv-mncap">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "mon-sentence" .Text}}</p>{{end}}
-</div>
 {{end}}
 
 {{/* mon-plot: the SVG of a chart and its hidden table. Takes a monPlot. */}}
 {{define "mon-plot"}}
-<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}" data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
+<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}"{{if .Usuals}} data-usuals="{{.Usuals}}"{{end}} data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
   <svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">
     <line class="cv-mngrid" x1="0" x2="300" y1="30" y2="30"/>
     <line class="cv-mngrid" x1="0" x2="300" y1="60" y2="60"/>
     <line class="cv-mngrid" x1="0" x2="300" y1="90" y2="90"/>
     {{range .Bands}}<polygon class="cv-mnband" points="{{.Points}}"><title>{{.Title}}</title></polygon>
+    <polyline class="cv-mnband-edge" points="{{.Top}}"/>
+    <polyline class="cv-mnband-edge" points="{{.Bottom}}"/>
     {{end}}
     {{with .Warn}}<rect class="cv-mnwarn" x="{{.X}}" y="0" width="{{.W}}" height="120"><title>{{.Title}}</title></rect>
     {{end}}
@@ -88,6 +126,7 @@
     {{end}}{{end}}
     {{if .Hover}}<line class="cv-mncross" x1="0" x2="0" y1="0" y2="120" data-mon-cross/>{{end}}
   </svg>
+  {{with .Scale}}<span class="cv-mnscale" aria-hidden="true">{{.}}</span>{{end}}
   {{with .Labels}}<div class="cv-mnlabels">{{range .}}<span class="cv-mndeploy-label">{{.}}</span>{{end}}</div>{{end}}
 </div>
 <table class="sr-only">
@@ -99,14 +138,20 @@
 
 {{define "mon-numtext"}}{{.Text}}{{with .Usual}} <span class="cv-mnusual">· {{.}}</span>{{end}}{{end}}
 
-{{/* mon-table: the Apps section: its head with the sort bar, and a row for each service. Takes a monTable. */}}
+{{/* mon-table: the Apps section: its head with the sort bar (which no refresh touches), and the table. Takes a monTable. */}}
 {{define "mon-table"}}
 <section class="cv-mnblock" aria-label="Apps">
   <div class="cv-mnsec">
     <h2 class="cv-label">Apps</h2>
-    <span class="cv-mnsec-meta">{{template "mon-sentence" .Meta}}</span>
+    <span class="cv-mnsec-meta" id="mon-table-meta">{{template "mon-sentence" .Meta}}</span>
     <nav class="cv-seg cv-mnsec-tools" aria-label="Sort">{{range .Sorts}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
   </div>
+  <div id="mon-table-slot" class="cv-mnslot">{{template "mon-table-body" .}}</div>
+</section>
+{{end}}
+
+{{/* mon-table-body: the table with a row for each service, or the sentence for no rows. Takes a monTable. */}}
+{{define "mon-table-body"}}
   {{if .Rows}}
   <div class="cv-panel cv-mntable" role="table" aria-label="Apps">
     <div class="cv-mnthead cv-label" role="row">
@@ -121,23 +166,26 @@
       <span role="columnheader"><span class="sr-only">Logs</span></span>
     </div>
     {{range .Rows}}
-    <div class="cv-mnrow" role="row" id="{{.Anchor}}">
-      <span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" role="cell" aria-label="{{.MarkWord}}" title="{{.MarkWord}}"></span>
-      <div role="cell" class="cv-mnname"><a href="{{.Href}}" class="cv-mnname-text">{{.Name}}</a><span class="cv-mncopies">{{.Copies}}</span></div>
-      <div role="cell" class="cv-mnnumber{{if .Requests.Warn}} cv-mnnumber-warn{{end}}{{if .Requests.None}} cv-mnnumber-none{{end}}" data-label="Requests"{{with .Requests.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Requests}}</div>
-      <div role="cell" class="cv-mnnumber{{if .Errors.Warn}} cv-mnnumber-warn{{end}}{{if .Errors.None}} cv-mnnumber-none{{end}}" data-label="Errors"{{with .Errors.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Errors}}</div>
-      <div role="cell" class="cv-mnnumber{{if .P95.Warn}} cv-mnnumber-warn{{end}}{{if .P95.None}} cv-mnnumber-none{{end}}" data-label="Slowest 5%"{{with .P95.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .P95}}</div>
-      <div role="cell" class="cv-mncpu" data-label="CPU">{{with .Spark}}<svg class="cv-mnspark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-mnspark-line" points="{{.}}"/>{{end}}</svg>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
-      <div role="cell" class="cv-mnmem" data-label="Memory">{{if .Mem.Known}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Mem.Title}}"><title>{{.Mem.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Mem.Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Mem.Fill}}" height="6"/></svg><span class="cv-mnmem-read{{if .Mem.Warn}} cv-mnwarntext{{end}}">{{.Mem.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
-      <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
-      <a href="{{.LogsHref}}" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a>
-    </div>
+    <div class="cv-mnrow" role="row" id="{{.Anchor}}">{{template "mon-row-body" .}}</div>
     {{end}}
   </div>
   {{else}}
   <div class="cv-panel"><p class="cv-mntable-empty">{{.Empty}}</p></div>
   {{end}}
-</section>
+{{end}}
+
+{{/* mon-row-body: the cells of one service's row (the refresh swaps them by the row's id, so the row's
+     links keep what has focus: each carries an id). Takes a monRow. */}}
+{{define "mon-row-body"}}
+      <span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" role="cell" aria-label="{{.MarkWord}}" title="{{.MarkWord}}"></span>
+      <div role="cell" class="cv-mnname"><a href="{{.Href}}" id="{{.Anchor}}-link" class="cv-mnname-text">{{.Name}}</a><span class="cv-mncopies">{{.Copies}}</span></div>
+      <div role="cell" class="cv-mnnumber{{if .Requests.Warn}} cv-mnnumber-warn{{end}}{{if .Requests.None}} cv-mnnumber-none{{end}}" data-label="Requests"{{with .Requests.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Requests}}</div>
+      <div role="cell" class="cv-mnnumber{{if .Errors.Warn}} cv-mnnumber-warn{{end}}{{if .Errors.None}} cv-mnnumber-none{{end}}" data-label="Errors"{{with .Errors.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Errors}}</div>
+      <div role="cell" class="cv-mnnumber{{if .P95.Warn}} cv-mnnumber-warn{{end}}{{if .P95.None}} cv-mnnumber-none{{end}}" data-label="Slowest 5%"{{with .P95.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .P95}}</div>
+      <div role="cell" class="cv-mncpu" data-label="CPU">{{with .Spark}}<svg class="cv-mnspark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-mnspark-line" points="{{.}}"/>{{end}}</svg><span class="cv-mncpu-read" title="{{.Title}}">{{.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
+      <div role="cell" class="cv-mnmem" data-label="Memory">{{if .Mem.Known}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Mem.Title}}"><title>{{.Mem.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Mem.Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Mem.Fill}}" height="6"/></svg><span class="cv-mnmem-read{{if .Mem.Warn}} cv-mnwarntext{{end}}">{{.Mem.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
+      <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
+      <div role="cell" class="cv-mnlogscell"><a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a></div>
 {{end}}
 
 {{/* mon-host-section: "This host", a live region of its own (#host, drawn again from /parts/monitoring/host

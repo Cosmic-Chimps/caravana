@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -103,13 +104,35 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Title = fmt.Sprintf("%s: the certificate for %s is expiring", it.AppID, it.Domain)
 		ev.Text, ev.Detail = it.Detail, ""
 	case AttentionDiskNearlyFull:
-		ev.Title = fmt.Sprintf("Disk nearly full: %s is %.0f%% full", it.Mount, it.UsedPercent)
+		ev.Title = fmt.Sprintf("Disk nearly full: %s is %d%% full", it.Mount, int(it.UsedPercent))
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
 	}
 	return ev
+}
+
+// worsenedEvent says that item it, already sent as opened, got worse: a disk
+// from warning to failed. It is problemEvent's event with the type
+// problem.worsened and the "now" sentence.
+func worsenedEvent(it AttentionItem, base string, at time.Time) notify.Event {
+	ev := problemEvent(it, base, at)
+	ev.Type = notify.EventProblemWorsened
+	if it.Kind == AttentionDiskNearlyFull {
+		ev.Title = fmt.Sprintf("Disk nearly full: %s is now %d%% full", it.Mount, int(it.UsedPercent))
+		ev.Text = notify.DiskNowSentence(it.Mount, it.UsedPercent, it.FreeBytes)
+	}
+	ev.At = at // when it got worse, not when it opened
+	return ev
+}
+
+// levelOf is the level an item is sent at, for the kinds that have one.
+func levelOf(it AttentionItem) string {
+	if it.Kind == AttentionDiskNearlyFull {
+		return string(it.Level)
+	}
+	return ""
 }
 
 // resolvedEvent says that a problem already sent has been gone from the
@@ -371,6 +394,7 @@ func notJudged[K ~string](kind K, j judged) bool {
 type problemChanges struct {
 	Opened   []AttentionItem     // on the list, never sent: send "opened"
 	Resolved []store.SentProblem // sent, and gone for resolveAfter: send "resolved"
+	Worsened []AttentionItem     // sent before at a lower level, and now worse: send "worsened"
 	Seen     []string            // keys sent before and on the list now: move their last-seen time
 	Dropped  []string            // keys of apps that no longer exist: forget, say nothing
 }
@@ -379,6 +403,9 @@ type problemChanges struct {
 // It is pure, so the table test calls it with whatever it needs.
 //
 //   - An item on the list and not in prev is opened; one in both is seen.
+//   - A seen item whose level rose to failed from the warning that was last sent
+//     is also worsened, once: the sent level moves to failed, so a fall and a
+//     rise again, or a repeat, send nothing more.
 //   - A sent problem off the list for resolveAfter or more since it was last seen
 //     is resolved. A younger one is kept as it is, so an item that flaps doesn't
 //     send "resolved" and then "opened" again.
@@ -391,9 +418,9 @@ type problemChanges struct {
 func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps map[string]bool,
 	at time.Time, resolveAfter time.Duration) problemChanges {
 
-	sent := make(map[string]bool, len(prev))
+	sent := make(map[string]store.SentProblem, len(prev))
 	for _, p := range prev {
-		sent[p.Key] = true
+		sent[p.Key] = p
 	}
 
 	var out problemChanges
@@ -409,8 +436,11 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps 
 			continue
 		}
 		present[key] = true
-		if sent[key] {
+		if p, ok := sent[key]; ok {
 			out.Seen = append(out.Seen, key)
+			if p.Level == string(metrics.DiskWarning) && levelOf(it) == string(metrics.DiskFailed) {
+				out.Worsened = append(out.Worsened, it)
+			}
 		} else {
 			out.Opened = append(out.Opened, it)
 		}
@@ -495,16 +525,24 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		opened = append(opened, ev)
 		check.Opened = append(check.Opened, store.SentProblem{
 			Key: problemKey(it), Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
-			OpenedAt: now, LastSeenAt: now, Summary: ev.Title,
+			OpenedAt: now, LastSeenAt: now, Summary: ev.Title, Level: levelOf(it),
 		})
+	}
+	var worsened []notify.Event
+	for _, it := range changes.Worsened {
+		worsened = append(worsened, worsenedEvent(it, s.publicURL, now))
+		if check.Levels == nil {
+			check.Levels = map[string]string{}
+		}
+		check.Levels[problemKey(it)] = levelOf(it)
 	}
 	for _, p := range changes.Resolved {
 		resolved = append(resolved, inPlace(resolvedEvent(p, s.publicURL, now), places[p.AppID]))
 		check.Removed = append(check.Removed, p.Key)
 	}
 
-	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.publicURL, now),
-		summarize(resolved, "problems resolved", notify.EventProblemResolved, s.publicURL, now)...)
+	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.publicURL, now), worsened...)
+	events = append(events, summarize(resolved, "problems resolved", notify.EventProblemResolved, s.publicURL, now)...)
 	for _, ch := range channelsWanting(channels, EventProblems) {
 		for _, ev := range events {
 			d, err := newDelivery(ch.ID, ev, now)

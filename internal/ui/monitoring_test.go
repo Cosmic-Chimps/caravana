@@ -98,7 +98,7 @@ func TestMonReqOf(t *testing.T) {
 }
 
 func TestMonNumberWords(t *testing.T) {
-	for in, want := range map[float64]string{0: "0", 0.04: "0", 0.4: "0.4", 4: "4", 9.96: "10", 96.4: "96", 127.5: "128"} {
+	for in, want := range map[float64]string{0: "0.0", 0.04: "0.0", 0.4: "0.4", 4: "4.0", 9.96: "10.0", 96.4: "96.4", 127.5: "127.5"} {
 		if got := rateText(in); got != want {
 			t.Errorf("rateText(%v) = %q, want %q", in, got, want)
 		}
@@ -136,23 +136,27 @@ func TestMonIssueSentences(t *testing.T) {
 		{"slower", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 820, Usual: fl(180), Since: since, Window: service.IssueWindow{ErrorPercent: 2.4, RequestsPerSec: 96}},
 			"booking-api is slower than usual. The slowest 5% of requests take 820 ms, usually 180 ms. It started at 13:58 UTC.",
-			"2.4% of requests return 5xx · 96 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"2.4% of requests return 5xx · 96.0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"slower after a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 820, Usual: fl(180), Since: since, DeployNear: deploy(metrics.StartedAfter, 2)},
 			"booking-api is slower than usual. The slowest 5% of requests take 820 ms, usually 180 ms. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
-			"0.0% of requests return 5xx · 0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"0.0% of requests return 5xx · 0.0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"slower before a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 1500, Since: since, DeployNear: deploy(metrics.StartedBefore, 0)},
 			"booking-api is slower than usual. The slowest 5% of requests take 1.5 s. It started at 13:58 UTC. It started before supplier-gw v24 rolled out.",
-			"0.0% of requests return 5xx · 0 req/s", []string{"1.5 s"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"0.0% of requests return 5xx · 0.0 req/s", []string{"1.5 s"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"more errors", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.MoreErrors, Level: metrics.LevelFailed,
 			Value: 12.4, Usual: fl(0.3), Since: since, Window: service.IssueWindow{Errors: 41}},
 			"booking-api returns more errors than usual: 12.4% of requests, usually 0.3%. It started at 13:58 UTC.",
 			"41 errors in the last 10 minutes", []string{"12.4%"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "failed"},
 		{"quieter", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Quieter, Level: metrics.LevelWarning,
 			Value: 3, Usual: fl(96), Since: since, Domains: []string{"api.example.com", "b.example.com"}},
-			"booking-api has much less traffic than usual: 3 req/s, usually 96. It started at 13:58 UTC.",
-			"Its domains: api.example.com, b.example.com", []string{"3 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
+			"booking-api has much less traffic than usual: 3.0 req/s, usually 96.0. It started at 13:58 UTC.",
+			"Its domains: api.example.com, b.example.com", []string{"3.0 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
+		{"quieter after a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Quieter, Level: metrics.LevelWarning,
+			Value: 3, Usual: fl(96), Since: since, DeployNear: deploy(metrics.StartedAfter, 2)},
+			"booking-api has much less traffic than usual: 3.0 req/s, usually 96.0. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
+			"", []string{"3.0 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
 		{"memory", service.MetricIssue{AppID: "metabase", AppName: "metabase", Kind: metrics.Memory, Level: metrics.LevelFailed,
 			Value: 98, LimitMB: fl(1024), Restarts: &restarts3, LastExit: &service.LastExit{Copy: "e4d1aaaa-0000", ExitCode: 137, At: monNow.Add(-4 * time.Minute)}},
 			"metabase is using 98% of its 1 GB memory limit. It restarted 3 times in the last hour.",
@@ -188,7 +192,7 @@ func TestMonIssueSentences(t *testing.T) {
 	// An app with several services is named "app/service"; a place that isn't home is in the action's link.
 	b := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: []service.ServiceMetrics{{AppID: "hollo", Service: "web"}, {AppID: "hollo", Service: "db"}}}, true)
 	got := b.issue(service.MetricIssue{AppID: "hollo", AppName: "hollo", Service: "web", Kind: metrics.Restarting, Value: 2})
-	if got.Text.String() != "hollo/web restarted 2 times in the last hour." || got.ActionHref != "/logs?app=hollo&project=shop" {
+	if got.Text.String() != "hollo/web restarted 2 times in the last hour." || got.ActionHref != "/logs?app=hollo&project=shop&service=hollo%2Fweb" {
 		t.Errorf("multi-service issue = %q to %q", got.Text.String(), got.ActionHref)
 	}
 	// A restart or a deploy older than the 6 hours the run is walked back along is "more than 6 hours".
@@ -224,6 +228,35 @@ func TestMonCalmLine(t *testing.T) {
 	if monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow}, false).calm() != nil {
 		t.Error("with no service there is nothing to call calm")
 	}
+
+	// A place in which nothing serves says so (○) instead of calling its numbers usual.
+	down := func(app, word string) service.ServiceMetrics {
+		return service.ServiceMetrics{AppID: app, AppName: app, Service: "web", Standing: service.ServiceStanding{Mark: "idle", Word: word, Down: true}}
+	}
+	for _, tc := range []struct {
+		name  string
+		svcs  []service.ServiceMetrics
+		multi bool
+		want  string
+	}{
+		{"stopped, several places", []service.ServiceMetrics{down("web", "stopped")}, true, "Nothing is running in Shop / production: web is stopped."},
+		{"stopped, one place", []service.ServiceMetrics{down("web", "stopped")}, false, "Nothing is running: web is stopped."},
+		{"two, not the same way", []service.ServiceMetrics{down("a", "stopped"), down("b", "not running")}, false, "Nothing is running: a is stopped, b is not running."},
+		{"five", []service.ServiceMetrics{down("a", "stopped"), down("b", "stopped"), down("c", "never deployed"), down("d", "stopped"), down("e", "stopped")}, false,
+			"Nothing is running: a is stopped, b is stopped, c was never deployed and 2 more."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calm := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: tc.svcs, Baseline: service.MetricsBaseline{State: metrics.Full}}, tc.multi).calm()
+			if calm == nil || calm.Text.String() != tc.want || calm.Mark != "idle" {
+				t.Errorf("calm = %+v, want %q (idle)", calm, tc.want)
+			}
+		})
+	}
+	// One that serves keeps the usual line.
+	mixed := []service.ServiceMetrics{down("a", "stopped"), {AppID: "b", AppName: "b", Service: "web"}}
+	if calm := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: mixed, Baseline: service.MetricsBaseline{State: metrics.Full}}, false).calm(); calm == nil || calm.Mark != "healthy" {
+		t.Errorf("a place with a service serving: calm = %+v", calm)
+	}
 }
 
 // The chart's SVG: gridlines, the band between the earlier days' lowest and highest, the warn
@@ -234,7 +267,7 @@ func TestMonChartShapes(t *testing.T) {
 	v := service.MetricsView{Range: rng, At: monNow, Points: monPoints(rng), HasHTTP: true,
 		Baseline: service.MetricsBaseline{State: metrics.Partial, FullDays: 3},
 		Deploys: []service.MetricDeploy{
-			{AppName: "supplier-gw", Version: 24, EndedAt: monNow.Add(-30 * time.Minute)},
+			{AppName: "supplier-gw", Version: 24, EndedAt: monNow.Add(-30 * time.Minute), HasDomain: true},
 		}}
 	req := monSeries(72, 100)
 	for i := 10; i <= 40; i++ {
@@ -261,11 +294,14 @@ func TestMonChartShapes(t *testing.T) {
 		t.Fatalf("%d charts", len(charts))
 	}
 	c := charts[0]
-	if c.Title != "Requests" || c.Plot == nil || c.Value != "100" || c.Unit != "req/s" || c.Usually != "usually 100" || c.Warn {
+	if c.Title != "Requests" || c.Plot == nil || c.Value != "100.0" || c.Unit != "req/s" || c.Usually != "usually 100.0" || c.Warn {
 		t.Errorf("requests head = %+v", c)
 	}
 	p := c.Plot
-	if len(p.Bands) != 1 || !strings.Contains(p.Bands[0].Title, "the same hour on the 3 days there are: 80 to 120 req/s") {
+	if want := "Requests over the last 6 hours, 100.0 req/s in the last 10 minutes"; p.Label != want {
+		t.Errorf("plot label = %q, want %q", p.Label, want)
+	}
+	if len(p.Bands) != 1 || !strings.Contains(p.Bands[0].Title, "the same hour on the 3 days there are: 80.0 to 120.0 req/s") {
 		t.Errorf("band = %+v", p.Bands)
 	}
 	// The polygon has a vertex on top and one under for each point of the stretch: 31 and 31.
@@ -278,7 +314,7 @@ func TestMonChartShapes(t *testing.T) {
 	if len(p.Lines) != 1 || len(p.Lines[0].Segments) != 2 {
 		t.Fatalf("lines = %+v: the series should break at the gap", p.Lines)
 	}
-	if want := "min 100, max 100, latest 100 req/s"; p.Lines[0].Title != want {
+	if want := "min 100.0, max 100.0, latest 100.0 req/s"; p.Lines[0].Title != want {
 		t.Errorf("line title = %q, want %q", p.Lines[0].Title, want)
 	}
 	if len(p.Deploys) != 1 || !strings.Contains(p.Deploys[0].Title, "supplier-gw v24 rolled out at 13:30 UTC") {
@@ -290,7 +326,7 @@ func TestMonChartShapes(t *testing.T) {
 	if len(p.Table.Rows) != 72 || p.Table.Rows[50].Value != "no reading" {
 		t.Errorf("hidden table: %d rows, row 50 = %+v", len(p.Table.Rows), p.Table.Rows[50])
 	}
-	if cells := strings.Split(p.Values, ","); len(cells) != 72 || cells[50] != "" || cells[0] != "100" {
+	if cells := strings.Split(p.Values, ","); len(cells) != 72 || cells[50] != "" || cells[0] != "100.0" {
 		t.Errorf("hover values = %d cells, %q %q", len(cells), cells[0], cells[50])
 	}
 	if p.T0 != v.Points[0].Format(time.RFC3339) || p.Step != 300 || p.Date {
@@ -327,10 +363,27 @@ func TestMonChartShapes(t *testing.T) {
 	v.Baseline = service.MetricsBaseline{State: metrics.Full}
 	week := monSeries(168, 10)
 	v.Requests, v.Errors, v.P95, v.Memory = week, week, week, week
-	c = monBuild(v, false).charts()[0]
-	if !c.Plot.Date || !strings.Contains(c.AxisStart, "UTC") || len(c.Captions) != 1 ||
-		c.Captions[0].Text.String() != "The band thins to the left: older hours have fewer earlier days kept." {
+	b := monBuild(v, false)
+	c = b.charts()[0]
+	if !c.Plot.Date || !strings.Contains(c.AxisStart, "UTC") || len(c.Captions) != 0 {
 		t.Errorf("7 d chart = date %v axis %q captions %+v", c.Plot.Date, c.AxisStart, c.Captions)
+	}
+	// The band's thin edge is said once, under the chart grid, not on each chart.
+	for i, ch := range b.charts() {
+		if len(ch.Captions) != 0 {
+			t.Errorf("chart %d has captions %+v on the 7 d range", i, ch.Captions)
+		}
+	}
+	if got := b.bandNote().String(); got != "The band thins to the left: older hours have fewer earlier days kept." {
+		t.Errorf("band note = %q", got)
+	}
+	v.Range, v.Points = metrics.Range6h, monPoints(metrics.Range6h)
+	if monBuild(v, false).bandNote() != nil {
+		t.Error("a band note on the 6 h range")
+	}
+	v.Range, v.Points, v.Baseline = metrics.Range7d, monPoints(metrics.Range7d), service.MetricsBaseline{State: metrics.Building}
+	if monBuild(v, false).bandNote() != nil {
+		t.Error("a band note while the baseline is built: there is no band")
 	}
 }
 
@@ -338,8 +391,9 @@ func TestMonChartCrowdedDeploysAndBuilding(t *testing.T) {
 	rng := metrics.Range6h
 	v := service.MetricsView{Range: rng, At: monNow, Points: monPoints(rng), HasHTTP: true,
 		Baseline: service.MetricsBaseline{State: metrics.Building, Since: new(monNow.Add(-5 * time.Hour))}}
+	// Four deploys 30 minutes apart (each its own marker), with domains.
 	for i := 0; i < 4; i++ {
-		v.Deploys = append(v.Deploys, service.MetricDeploy{AppName: "app", Version: uint64(i + 1), EndedAt: monNow.Add(-time.Duration(60-i) * time.Minute)})
+		v.Deploys = append(v.Deploys, service.MetricDeploy{AppName: "app", Version: uint64(i + 1), EndedAt: monNow.Add(-time.Duration(120-30*i) * time.Minute), HasDomain: true})
 	}
 	v.Requests, v.Errors, v.P95, v.Memory = monSeries(72, 5), monSeries(72, 0), monSeries(72, 90), monSeries(72, 300)
 	c := monBuild(v, false).charts()[0]
@@ -411,6 +465,11 @@ func with(v service.MetricsView, f func(*service.MetricsView)) service.MetricsVi
 	return v
 }
 
+var (
+	rollingStanding = service.ServiceStanding{Mark: "rolling", Word: "rolling out"}
+	stoppedStanding = service.ServiceStanding{Mark: "idle", Word: "stopped", Down: true}
+)
+
 // The apps table's rows: marks, the words under a name, dashes, warn values, the sparkline's title,
 // the memory meter and the logs link.
 func TestMonTableRows(t *testing.T) {
@@ -424,11 +483,14 @@ func TestMonTableRows(t *testing.T) {
 		{AppID: "booking-api", AppName: "booking-api", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Copies: 2, HasDomain: true,
 			Requests: fl(96), Errors: fl(2.4), P95: fl(820), UsualP95: fl(180), CPU: cpu, CPUReservedMHz: i64(100),
 			MemoryMB: i64(700), MemoryLimitMB: i64(1024), Restarts: i64(0)},
-		{AppID: "worker", AppName: "worker", Service: "web", State: service.ServiceRollingOut, Copies: 1,
+		{AppID: "worker", AppName: "worker", Service: "web", State: service.ServiceRollingOut, Copies: 1, Standing: rollingStanding,
 			CPU: cpu, MemoryMB: i64(930), MemoryLimitMB: i64(1000), Restarts: i64(2)},
-		{AppID: "old", AppName: "old", Service: "web", State: service.ServiceStopped, HasDomain: true, Requests: fl(0.4), Errors: fl(0), P95: fl(11)},
+		{AppID: "old", AppName: "old", Service: "web", State: service.ServiceStopped, Standing: stoppedStanding, HasDomain: true, Requests: fl(0.4), Errors: fl(0), P95: fl(11)},
 		{AppID: "hollo", AppName: "hollo", Service: "web", State: service.ServiceHealthy, Copies: 1, HasDomain: true, Requests: fl(8), Errors: fl(0), P95: fl(290)},
 		{AppID: "hollo", AppName: "hollo", Service: "db", State: service.ServiceHealthy, Copies: 1},
+		{AppID: "files", AppName: "files", Service: "site", State: service.ServiceHealthy, Standing: service.ServiceStanding{Mark: "failed", Word: "not running", Down: true}, HasDomain: true},
+		{AppID: "feed", AppName: "feed", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Standing: service.ServiceStanding{Mark: "failed", Word: "deploy failed"}, Copies: 1},
+		{AppID: "quiet", AppName: "quiet", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Standing: service.ServiceStanding{Mark: "healthy", Word: "healthy"}, Copies: 1, HasDomain: true},
 	}, Issues: []service.MetricIssue{
 		{AppID: "booking-api", Service: "web", Kind: metrics.Slower}, {AppID: "booking-api", Service: "web", Kind: metrics.MoreErrors},
 		{AppID: "worker", Service: "web", Kind: metrics.Memory},
@@ -443,7 +505,7 @@ func TestMonTableRows(t *testing.T) {
 		b.kinds[ref][is.Kind] = true
 	}
 	tbl := b.table()
-	if tbl.Meta.String() != "4 apps" {
+	if tbl.Meta.String() != "7 apps" {
 		t.Errorf("meta = %q", tbl.Meta.String())
 	}
 	if len(tbl.Sorts) != 3 || tbl.Sorts[0].Label != "unusual first" || !tbl.Sorts[0].On || tbl.Sorts[1].Href != "/monitoring?sort=traffic" || tbl.Sorts[2].Label != "most memory" {
@@ -454,17 +516,17 @@ func TestMonTableRows(t *testing.T) {
 		rows[r.Name] = r
 	}
 	api := rows["booking-api"]
-	if api.Mark != "warning" || api.Copies != "2 copies" || api.Requests.Text != "96/s" || api.Errors.Text != "2.4%" || !api.Errors.Warn ||
+	if api.Mark != "warning" || api.Copies != "2 copies" || api.Requests.Text != "96.0/s" || api.Errors.Text != "2.4%" || !api.Errors.Warn ||
 		api.P95.Text != "820 ms" || !api.P95.Warn || api.P95.Usual != "usually 180" || api.Requests.Warn {
 		t.Errorf("booking-api = %+v", api)
 	}
-	if api.Spark == nil || api.Spark.Title != "0.4 of 1 core reserved, now" || len(api.Spark.Segments) != 2 {
+	if api.Spark == nil || api.Spark.Title != "0.4 of 1 vCPU reserved, now" || len(api.Spark.Segments) != 2 {
 		t.Errorf("sparkline = %+v", api.Spark)
 	}
 	if api.Mem.Read != "0.7 / 1.0 GB" || api.Mem.Warn || api.Restarts.Text != "0" || api.Restarts.Warn {
 		t.Errorf("memory %+v restarts %+v", api.Mem, api.Restarts)
 	}
-	if api.Href != "/apps/booking-api" || api.LogsHref != "/logs?service=booking-api%2Fweb" || api.LogsName != "Logs of booking-api" {
+	if api.Href != "/apps/booking-api" || api.LogsHref != "/logs?app=booking-api&service=booking-api%2Fweb" || api.LogsName != "Logs of booking-api" {
 		t.Errorf("links = %q %q %q", api.Href, api.LogsHref, api.LogsName)
 	}
 	w := rows["worker"]
@@ -472,8 +534,19 @@ func TestMonTableRows(t *testing.T) {
 		!w.Mem.Warn || w.Mem.Read != "930 / 1000 MB" || !w.Restarts.Warn || w.Restarts.Text != "2" {
 		t.Errorf("worker = %+v", w)
 	}
-	if old := rows["old"]; old.Mark != "idle" || old.Copies != "stopped" || old.MarkWord != "stopped" || old.Requests.Text != "0.4/s" {
+	if old := rows["old"]; old.Mark != "idle" || old.Copies != "stopped" || old.MarkWord != "stopped" || old.Requests.Text != "—" || old.P95.Text != "—" {
 		t.Errorf("stopped = %+v", old)
+	}
+	// The mark is the app's status first: not running and deploy failed are ■ (a service that is down
+	// is never ◆ "unusual"), a rolling one ◐, and ◆ is only for a serving service whose numbers are
+	// unusual, as the Apps home has them.
+	for name, want := range map[string][2]string{
+		"files": {"failed", "not running"}, "feed": {"failed", "deploy failed"}, "worker": {"rolling", "rolling out"},
+		"old": {"idle", "stopped"}, "quiet": {"warning", "unusual"}, "booking-api": {"warning", "unusual"}, "hollo / web": {"healthy", "healthy"},
+	} {
+		if r := rows[name]; r.Mark != want[0] || r.MarkWord != want[1] {
+			t.Errorf("%s mark = %s %q, want %s %q", name, r.Mark, r.MarkWord, want[0], want[1])
+		}
 	}
 	// An app with several services has a row for each, named "app / service".
 	if _, ok := rows["hollo / web"]; !ok {
@@ -545,8 +618,8 @@ func TestMonitoringPage(t *testing.T) {
 		`hx-get="/parts/monitoring" hx-trigger="sse:metrics"`, `id="mon-live"`, `data-live`, `sse-connect="/live?watch=monitoring"`,
 		`id="mon-chart-requests"`, `id="mon-chart-errors"`, `id="mon-chart-p95"`, `id="mon-chart-memory"`,
 		`<svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none"`, `class="cv-mnline"`, `class="cv-mngrid"`,
-		`<a href="/apps/whoami" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
-		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`,
+		`<a href="/apps/whoami" id="mon-row-whoami-web-link" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
+		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`, `data-mon-now>last 10 min</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
@@ -576,6 +649,10 @@ func TestMonitoringPage(t *testing.T) {
 	if strings.Contains(body, "text-fg-4") {
 		t.Error("the page has text in fg-4")
 	}
+	// A chart head is the last 10 minutes, said so: never "now".
+	if n := strings.Count(body, `data-mon-now>last 10 min</span>`); n != 4 || strings.Contains(body, `data-mon-now>now</span>`) {
+		t.Errorf("%d chart heads say \"last 10 min\", or one still says \"now\"", n)
+	}
 }
 
 func TestMonitoringPartAndRanges(t *testing.T) {
@@ -588,7 +665,7 @@ func TestMonitoringPartAndRanges(t *testing.T) {
 		if strings.Contains(body, "<html") || strings.Contains(body, `class="cv-shell"`) {
 			t.Errorf("part %s draws a whole page", rng)
 		}
-		if !strings.Contains(body, `id="mon-chart-requests"`) || !strings.Contains(body, `cv-mntable"`) {
+		if !strings.Contains(body, `hx-swap-oob="innerHTML:#mon-chart-requests"`) || !strings.Contains(body, `cv-mntable"`) {
 			t.Errorf("part %s lacks the charts or the table:\n%s", rng, text(body))
 		}
 		if regexp.MustCompile(monNoStyle).MatchString(body) {

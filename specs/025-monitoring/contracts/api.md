@@ -156,6 +156,11 @@ AttentionItem (existing), gains:
 
 NotificationEvent (existing, the webhook message), gains the same five properties for a
 problem about a disk.
+NotificationEventType gains `problem.worsened` (designer's review, 2026-10-26): a disk that
+rises from warning to failed after its `problem.opened` sends one, with `level: failed` and the
+text "The disk at / is now 96% full: 410 MB left." A fall back to warning, a repeat or a further
+rise sends nothing; the `problem.resolved` below 83 % is as before. `sent_problems` gains a
+`level` column (in migration 0019, which has not shipped) to remember the level last sent.
 ```
 
 An example of `getHost`:

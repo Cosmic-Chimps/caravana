@@ -170,28 +170,58 @@ func (s *Service) diskItems(ctx context.Context, now time.Time) (items []Attenti
 	if err != nil {
 		return nil, false, err
 	}
+	history, err := s.diskHistory(ctx, now, h.TS, newest)
+	if err != nil {
+		return nil, false, err
+	}
+	return diskItemsOf(newest, history), true, nil
+}
+
+// diskHistory reads the disk rows that decide whether an item is open: the
+// history of every filesystem, only when one of the newest sample's is at 83 %
+// or more (an item can't be open below that, so the others need no history).
+// The needs-you item and the host's meters both read the open state from it,
+// so the two never disagree.
+func (s *Service) diskHistory(ctx context.Context, now, sampleAt time.Time, newest []store.DiskSample) ([]store.DiskSample, error) {
 	needsHistory := false
 	for _, d := range newest {
 		if metrics.UsedPercent(d.UsedMB, d.FreeMB) >= metrics.DiskResolvePercent {
 			needsHistory = true
 		}
 	}
-	var history []store.DiskSample
-	if needsHistory {
-		// The minute rows cover 48 hours; the 10-minute rows before them reach
-		// back 8 days (they overlap the minute rows, so only the older ones).
-		edge := now.Add(-store.MinuteKeep)
-		older, err := s.store.DiskRows(ctx, store.SlotRes, now.Add(-store.SlotKeep), edge)
-		if err != nil {
-			return nil, false, err
-		}
-		recent, err := s.store.DiskRows(ctx, store.MinuteRes, edge, h.TS.Add(time.Second))
-		if err != nil {
-			return nil, false, err
-		}
-		history = append(older, recent...)
+	if !needsHistory {
+		return nil, nil
 	}
-	return diskItemsOf(newest, history), true, nil
+	// The minute rows cover 48 hours; the 10-minute rows before them reach
+	// back 8 days (they overlap the minute rows, so only the older ones).
+	edge := now.Add(-store.MinuteKeep)
+	older, err := s.store.DiskRows(ctx, store.SlotRes, now.Add(-store.SlotKeep), edge)
+	if err != nil {
+		return nil, err
+	}
+	recent, err := s.store.DiskRows(ctx, store.MinuteRes, edge, sampleAt.Add(time.Second))
+	if err != nil {
+		return nil, err
+	}
+	return append(older, recent...), nil
+}
+
+// diskRun reads a filesystem's open state from its newest sample and the
+// history (metrics.DiskRun: it opens at 85 % and stays open down to 83 %).
+func diskRun(mount string, d store.DiskSample, history []store.DiskSample) (open bool, when time.Time) {
+	var samples []metrics.DiskSample
+	for _, r := range history {
+		if r.Mount == mount {
+			samples = append(samples, metrics.DiskSample{At: r.TS, UsedPercent: metrics.UsedPercent(r.UsedMB, r.FreeMB)})
+		}
+	}
+	if len(samples) == 0 || !samples[len(samples)-1].At.Equal(d.TS) {
+		samples = append(samples, metrics.DiskSample{At: d.TS, UsedPercent: metrics.UsedPercent(d.UsedMB, d.FreeMB)})
+	}
+	slices.SortStableFunc(samples, func(a, b metrics.DiskSample) int {
+		return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.UsedPercent, b.UsedPercent))
+	})
+	return metrics.DiskRun(samples)
 }
 
 // diskItemsOf is the pure part: one item for each filesystem of the newest
@@ -209,19 +239,7 @@ func diskItemsOf(newest, history []store.DiskSample) []AttentionItem {
 	var items []AttentionItem
 	for mount, d := range fullest {
 		pct := metrics.UsedPercent(d.UsedMB, d.FreeMB)
-		var samples []metrics.DiskSample
-		for _, r := range history {
-			if r.Mount == mount {
-				samples = append(samples, metrics.DiskSample{At: r.TS, UsedPercent: metrics.UsedPercent(r.UsedMB, r.FreeMB)})
-			}
-		}
-		if len(samples) == 0 || !samples[len(samples)-1].At.Equal(d.TS) {
-			samples = append(samples, metrics.DiskSample{At: d.TS, UsedPercent: pct})
-		}
-		slices.SortStableFunc(samples, func(a, b metrics.DiskSample) int {
-			return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.UsedPercent, b.UsedPercent))
-		})
-		open, when := metrics.DiskRun(samples)
+		open, when := diskRun(mount, d, history)
 		if !open {
 			continue
 		}
@@ -229,7 +247,7 @@ func diskItemsOf(newest, history []store.DiskSample) []AttentionItem {
 		items = append(items, AttentionItem{
 			Kind: AttentionDiskNearlyFull, Mount: mount, Holds: strings.Split(d.Holds, ","),
 			UsedPercent: pct, FreeBytes: free, Level: metrics.DiskState(pct, true).Level, When: when,
-			Detail: fmt.Sprintf("The disk at %s is %.0f%% full: %s left.", mount, pct, notify.Size(free)),
+			Detail: notify.DiskSentence(mount, pct, free),
 		})
 	}
 	return items

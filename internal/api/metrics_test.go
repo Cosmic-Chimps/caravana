@@ -538,6 +538,9 @@ func TestAttentionDiskNearlyFull(t *testing.T) {
 	if disk["mount"] != "/" || disk["level"] != "warning" || disk["usedPercent"] != 90.0 || disk["freeBytes"] != float64(4096<<20) {
 		t.Errorf("disk item = %v", disk)
 	}
+	if disk["detail"] != "The disk at / is 90% full: 4.0 GB left." {
+		t.Errorf("detail = %v, want the one sentence the console and the notifications use", disk["detail"])
+	}
 	if holds := list(t, disk["holds"], "holds"); len(holds) != 2 || holds[0] != "nomad" || holds[1] != "docker" {
 		t.Errorf("holds = %v", holds)
 	}

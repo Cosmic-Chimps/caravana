@@ -19,8 +19,9 @@ const roomTitle = "Nomad's count of what fits. Caravana's and the host's own pro
 
 // monMeter is the Meter of the handoff, as an SVG: a track, what is reserved hatched under what is
 // used, and a readout. Lengths are attributes in a 0-100 box, so no style attribute is needed. Warn
-// puts the fill and the readout in the warn hue (above 90 %, or a disk past its threshold); a disk
-// in a state also has its mark ahead of the readout, so the hue is never the only sign.
+// puts the fill and the readout in the warn hue (CPU above 90 %; memory and disks from 85 %); a meter
+// in a state also has its mark ahead of the readout (◆ from 85 %, ■ from 95 %), so the hue is never
+// the only sign.
 type monMeter struct {
 	Label       string
 	HasReserved bool
@@ -31,6 +32,9 @@ type monMeter struct {
 	Mark        string // "", warning or failed
 	MarkWord    string // "nearly full", "full": for a screen reader
 	Title       string
+	// Split is a readout of "used · reserved of total": too long for the bar's row, so it
+	// is drawn under the bar.
+	Split bool
 }
 
 // monHostLine is a line about the host's readings: a problem, with its mark.
@@ -78,7 +82,7 @@ func hostViewOf(now time.Time, h service.HostView) *monHostView {
 	v.Lines = hostLines(now, h)
 	if h.SampledAt != nil {
 		v.Meters = hostMeters(h)
-		v.Room = roomOf(h.Room)
+		v.Room = roomOf(h)
 	}
 	v.Chart = hostChartOf(now, h)
 	return v
@@ -118,6 +122,14 @@ func hostMeters(h service.HostView) []monMeter {
 	return append(out, diskMeters(h)...)
 }
 
+// The host memory meter's thresholds are the disk's: warn from 85 % used, failed from 95 %, under 85 %
+// the fill is the plain fg-2. (CPU keeps the Meter's 90 %.) The memory used here is Nomad's host
+// `Memory.Used`, which leaves out the page cache, as the apps' numbers do.
+const (
+	meterWarnPercent = metrics.DiskWarnPercent
+	meterFailPercent = metrics.DiskFailPercent
+)
+
 // meterFill is how much of a 0-100 box used takes of total.
 func meterFill(used, total float64) float64 {
 	if total <= 0 {
@@ -126,15 +138,56 @@ func meterFill(used, total float64) float64 {
 	return max(0, min(100, used/total*100))
 }
 
-// memoryMeter reads "1.9/3.8G": used over total, with what is reserved hatched.
+// vcpuText is an amount of CPU in vCPU, written as amountText does, except that a little use is
+// "<0.01" (a running app never reads as idle); exactly 0 stays "0".
+func vcpuText(v float64) string {
+	if v > 0 && v < 0.01 {
+		return "<0.01"
+	}
+	return amountText(v)
+}
+
+// amountText is a number as the page writes an amount: whole from 10, one decimal from 1, up to
+// two under 1 (a small app's 0.04 is not "0"): "12", "1.2", "0.1", "0.04".
+func amountText(v float64) string {
+	switch {
+	case v >= 10:
+		return strconv.Itoa(int(v + 0.5))
+	case v >= 1:
+		return trim1(v)
+	}
+	return strconv.FormatFloat(float64(int(v*100+0.5))/100, 'f', -1, 64)
+}
+
+// coreMHzOf is the MHz of one core of the host, 0 when the cores or the total weren't read.
+func coreMHzOf(c service.HostCPU) float64 {
+	if c.Total == nil || c.Cores == nil || *c.Cores <= 0 {
+		return 0
+	}
+	return float64(*c.Total) / float64(*c.Cores)
+}
+
+// memoryMeter reads "1.7G used · 1.3G reserved of 1.9G": what is used and what Nomad has set
+// aside (hatched, drawn above the fill) against the total. The mark and the warn hue follow
+// what is used.
 func memoryMeter(h service.HostView) *monMeter {
 	r := h.Memory
 	if r.Used == nil || r.Total == nil || *r.Total <= 0 {
 		return nil
 	}
 	used, total := float64(*r.Used), float64(*r.Total)
-	m := &monMeter{Label: "mem", Fill: units(meterFill(used, total)), Read: gbText(used) + "/" + gbText(total) + "G"}
-	m.Warn = used/total*100 > metrics.MemoryPercent
+	m := &monMeter{Label: "mem", Fill: units(meterFill(used, total)), Split: true}
+	m.Read = gbText(used) + "G used"
+	if r.Reserved != nil {
+		m.Read += " · " + gbText(float64(*r.Reserved)) + "G reserved"
+	}
+	m.Read += " of " + gbText(total) + "G"
+	switch pct := used / total * 100; {
+	case pct >= meterFailPercent:
+		m.Warn, m.Mark, m.MarkWord = true, "failed", "nearly all in use"
+	case pct >= meterWarnPercent:
+		m.Warn, m.Mark, m.MarkWord = true, "warning", "mostly in use"
+	}
 	m.Title = sizeText(*r.Used) + " in use"
 	if r.Reserved != nil {
 		m.HasReserved, m.ResW = true, units(meterFill(float64(*r.Reserved), total))
@@ -144,27 +197,36 @@ func memoryMeter(h service.HostView) *monMeter {
 	return m
 }
 
-// cpuMeter reads "1.2/4 vCPU" (in MHz when the cores aren't known).
+// cpuMeter reads "1.2 used · 0.8 reserved of 2 vCPU" (in MHz when the cores aren't known).
 func cpuMeter(h service.HostView) *monMeter {
 	r := h.CPU
 	if r.Used == nil || r.Total == nil || *r.Total <= 0 {
 		return nil
 	}
 	used, total := float64(*r.Used), float64(*r.Total)
-	m := &monMeter{Label: "cpu", Fill: units(meterFill(used, total))}
+	m := &monMeter{Label: "cpu", Fill: units(meterFill(used, total)), Split: true}
 	m.Warn = used/total*100 > metrics.MemoryPercent
-	if r.Cores != nil && *r.Cores > 0 {
-		perCore := total / float64(*r.Cores)
-		m.Read = trim1(used/perCore) + "/" + strconv.FormatInt(*r.Cores, 10) + " vCPU"
-	} else {
-		m.Read = strconv.FormatInt(*r.Used, 10) + "/" + strconv.FormatInt(*r.Total, 10) + " MHz"
+	// amount writes a number of MHz in the one unit the page uses: vCPU, or MHz without cores.
+	perCore := coreMHzOf(r)
+	amount := func(mhz float64) string {
+		if perCore > 0 {
+			return vcpuText(mhz / perCore)
+		}
+		return strconv.Itoa(int(mhz + 0.5))
 	}
-	m.Title = strconv.FormatInt(*r.Used, 10) + " MHz in use"
+	unit := " MHz"
+	if perCore > 0 {
+		unit = " vCPU"
+	}
+	m.Read = amount(used) + " used"
+	m.Title = amount(used) + unit + " in use"
 	if r.Reserved != nil {
 		m.HasReserved, m.ResW = true, units(meterFill(float64(*r.Reserved), total))
-		m.Title += ", " + strconv.FormatInt(*r.Reserved, 10) + " MHz reserved"
+		m.Read += " · " + amount(float64(*r.Reserved)) + " reserved"
+		m.Title += ", " + amount(float64(*r.Reserved)) + unit + " reserved"
 	}
-	m.Title += " of " + strconv.FormatInt(*r.Total, 10) + " MHz"
+	m.Read += " of " + amount(total) + unit
+	m.Title += " of " + amount(total) + unit
 	return m
 }
 
@@ -191,7 +253,10 @@ func diskMeters(h service.HostView) []monMeter {
 
 // roomOf is the room sentence: how many more apps like the usual one fit, "No room" naming what
 // ran out, or what is free when nothing runs yet. Nil when the totals or reservations weren't read.
-func roomOf(r service.HostRoom) *monRoom {
+// Room counts reservations, so when the memory in use is already at 85 % or more the sentence says
+// so after the count: ", but memory in use is already at 89%."
+func roomOf(h service.HostView) *monRoom {
+	r := h.Room
 	if !r.Known {
 		return nil
 	}
@@ -204,8 +269,18 @@ func roomOf(r service.HostRoom) *monRoom {
 	case !r.HasYardstick:
 		out.Text = msentence(mtext("Nothing is running yet: " + sizeText(r.FreeMemoryMB) + " of memory is free to reserve."))
 	case r.Count > 0:
+		cpu := strconv.FormatInt(r.CPUMHz, 10) + " MHz"
+		if perCore := coreMHzOf(h.CPU); perCore > 0 {
+			cpu = vcpuText(float64(r.CPUMHz)/perCore) + " vCPU"
+		}
+		end := "."
+		if h.Memory.Used != nil && h.Memory.Total != nil && *h.Memory.Total > 0 {
+			if pct := float64(*h.Memory.Used) / float64(*h.Memory.Total) * 100; pct >= meterWarnPercent {
+				end = ", but memory in use is already at " + strconv.Itoa(int(pct)) + "%."
+			}
+		}
 		out.Text = msentence(mtext("Room for about "+strconv.Itoa(r.Count)+" more apps like "), mname(name),
-			mtext(" ("+sizeText(r.MemoryMB)+", "+strconv.FormatInt(r.CPUMHz, 10)+" MHz each)."))
+			mtext(" ("+sizeText(r.MemoryMB)+", "+cpu+" each)"+end))
 	default:
 		what := "memory"
 		if r.LimitedBy == metrics.ResourceCPU {
@@ -239,9 +314,16 @@ func hostChartOf(now time.Time, h service.HostView) *monHostChart {
 	if h.Memory.Total != nil {
 		top = max(top, float64(*h.Memory.Total))
 	}
-	g := geom{n: n, ymax: top * 1.04}
+	// The scale: gigabytes from a gigabyte up; the top gridline is a round number.
+	useGB := top >= 1024
+	conv := identity
+	if useGB {
+		conv = func(mb float64) float64 { return mb / 1024 }
+	}
+	ymax, topLine := scaleOf(top*1.04, 0, conv)
+	g := geom{n: n, ymax: ymax}
 
-	plot := &monPlot{Label: "Memory over the last 7 days: what is used and what is reserved"}
+	plot := &monPlot{Label: "Memory over the last 7 days: what is used and what is reserved", Scale: memoryScaleLabel(useGB, topLine)}
 	plot.Gaps = gapsOf(hist.MemoryUsed, g, hist.Points)
 	words := func(label string, vals []*float64) string {
 		lo, hi, latest, ok := rangeOf(vals, identity)
@@ -302,7 +384,7 @@ func platformOf(h service.HostView) *monPlatform {
 		// One disk meter, so its readout carries no mount.
 		p.Meters = append(p.Meters, diskMeters(service.HostView{Disks: []service.HostDisk{fuller}})...)
 	}
-	p.Room = roomOf(h.Room)
+	p.Room = roomOf(h)
 	return p
 }
 

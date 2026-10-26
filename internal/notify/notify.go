@@ -22,10 +22,12 @@ const (
 // Kinds lists the kinds of channel in the order the console offers them.
 var Kinds = []string{KindNtfy, KindSlack, KindDiscord, KindWebhook}
 
-// The types of event. A problem is something the needs-you list derived; a
-// deploy event says how a deployment ended; test is what "Send a test" sends.
+// The types of event. A problem is something the needs-you list derived (opened,
+// worsened when its level rises, resolved); a deploy event says how a
+// deployment ended; test is what "Send a test" sends.
 const (
 	EventProblemOpened   = "problem.opened"
+	EventProblemWorsened = "problem.worsened" // a problem already sent got worse: a disk from warning to failed
 	EventProblemResolved = "problem.resolved"
 	EventDeploySucceeded = "deploy.succeeded"
 	EventDeployFailed    = "deploy.failed"
@@ -78,7 +80,8 @@ type Event struct {
 	// Mount is the filesystem of a problem about a disk (feature 025:
 	// disk_nearly_full) when it opens, Holds what is on it ("nomad" and/or
 	// "docker"), UsedPercent how full it is, FreeBytes what is left and Level
-	// how bad it was then ("warning" from 85 %, "failed" from 95 %). The host
+	// how bad it was then ("warning" from 85 %, "failed" from 95 %); a
+	// problem.worsened carries the level it rose to. The host
 	// has no app, so such an event has no app, project or environment.
 	Mount       string    `json:"mount,omitempty"`
 	Holds       []string  `json:"holds,omitempty"`

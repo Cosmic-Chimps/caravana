@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
-	"strconv"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/metrics"
+	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -139,16 +138,12 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	return row
 }
 
-// diskSentence is "The disk holding /var/lib/docker is 86% full: 11 GB left." (the filesystem in
-// mono), or, when one filesystem holds both Nomad's data and Docker's, "The disk holding Nomad's
-// data and Docker's (/) is 86% full: 11 GB left." The percent is cut down, so a disk at 94.6%
-// isn't called 95%, which is where the item turns failed.
+// diskSentence is "The disk at /var/lib/docker is 87% full: 1.1 GB left." with the mount in mono:
+// the words are notify.DiskTail's, so the console, the API's detail and the notifications say the
+// same thing. What is on the disk (Nomad's data, Docker's images) is the API's `holds`; the row
+// has no second line for it.
 func diskSentence(it service.AttentionItem) sentence {
-	tail := " is " + strconv.Itoa(int(it.UsedPercent)) + "% full: " + sizeText(it.FreeBytes>>20) + " left."
-	if slices.Contains(it.Holds, "nomad") && slices.Contains(it.Holds, "docker") {
-		return sentence{plain("The disk holding Nomad's data and Docker's ("), mono(it.Mount), plain(")" + tail)}
-	}
-	return sentence{plain("The disk holding "), mono(it.Mount), plain(tail)}
+	return sentence{plain("The disk at "), mono(it.Mount), plain(notify.DiskTail(it.UsedPercent, it.FreeBytes))}
 }
 
 // domainElsewhereSentence is "blog: bi.example.com points at 185.199.108.153,

@@ -24,11 +24,20 @@ var (
 		`<div class="cv-mnissue-body">\s*<p class="cv-mnissue-text">(.*?)</p>\s*(?:<p class="cv-mnissue-detail">(.*?)</p>)?\s*</div>\s*` +
 		`<div class="cv-mnissue-act"><a href="([^"]*)"[^>]*>(.*?)</a></div>`)
 	// cmRowNameRe is the name cell of an apps table row.
-	cmRowNameRe = regexp.MustCompile(`<a href="([^"]*)" class="cv-mnname-text">([^<]*)</a><span class="cv-mncopies">([^<]*)</span>`)
+	cmRowNameRe = regexp.MustCompile(`<a href="([^"]*)" id="[^"]*" class="cv-mnname-text">([^<]*)</a><span class="cv-mncopies">([^<]*)</span>`)
 	// cmCellRe is a number cell of an apps table row, by its label.
 	cmCellRe = regexp.MustCompile(`(?s)<div role="cell" class="cv-mnnumber([^"]*)" data-label="([^"]*)"[^>]*>(.*?)</div>`)
-	// cmMeterRe is a Meter: its label and readout.
-	cmMeterRe = regexp.MustCompile(`(?s)<span class="cv-mnmeter-label">(\w+)</span>.*?<span class="cv-mnmeter-read[^"]*">(.*?)</span>\s*</div>`)
+	// cmMeterRe is a Meter: its label and readout. The readout may be led by a mark (◆ from 85 % memory
+	// in use, ■ from 95 %) and followed by a word for a screen reader ("mostly in use"), neither of which
+	// is part of the number; the lab host's memory is often past 85 %.
+	cmMeterRe = regexp.MustCompile(`(?s)<span class="cv-mnmeter-label">(\w+)</span>.*?<span class="cv-mnmeter-read[^"]*">` +
+		`(?:<span class="cv-mark[^"]*"[^>]*></span>\s*)?(.*?)(?:<span class="sr-only">[^<]*</span>)?</span>\s*</div>`)
+	// cmRowMarkRe is the mark cell of an apps table row: its kind and what it says.
+	cmRowMarkRe = regexp.MustCompile(`<span class="cv-mark cv-mark-lg cv-mark-(\w+)" role="cell" aria-label="([^"]*)"`)
+	// cmRowLogsRe is the logs link of a row, in a cell of its own.
+	cmRowLogsRe = regexp.MustCompile(`<div role="cell" class="cv-mnlogscell"><a href="([^"]*)" id="[^"]*" class="cv-mnlogs"`)
+	// cmRowCPURe is the figure beside a row's CPU sparkline.
+	cmRowCPURe = regexp.MustCompile(`<span class="cv-mncpu-read" title="[^"]*">([^<]*)</span>`)
 	// cmRoomRe is the room sentence and its title.
 	cmRoomRe = regexp.MustCompile(`(?s)<p class="cv-mnroom( cv-mnroom-warn)?" title="([^"]*)">(.*?)</p>`)
 	// cmSegRe is an item of a bar (range, sort): its address, whether it is on, its label.
@@ -40,6 +49,8 @@ var (
 // cmRow is a row of the apps table as the page draws it.
 type cmRow struct {
 	Href, Name, Copies string
+	Mark, MarkWord     string // the app's status first: failed/"not running", rolling, warning/"unusual", healthy
+	LogsHref, CPU      string
 	Cells              map[string]string // label -> text
 	None               map[string]bool   // label -> drawn as "—" in the none style
 }
@@ -52,6 +63,15 @@ func cmRowsOf(page string) []cmRow {
 		r := cmRow{Cells: map[string]string{}, None: map[string]bool{}}
 		if m := cmRowNameRe.FindStringSubmatch(part); m != nil {
 			r.Href, r.Name, r.Copies = html.UnescapeString(m[1]), html.UnescapeString(m[2]), html.UnescapeString(m[3])
+		}
+		if m := cmRowMarkRe.FindStringSubmatch(part); m != nil {
+			r.Mark, r.MarkWord = m[1], html.UnescapeString(m[2])
+		}
+		if m := cmRowLogsRe.FindStringSubmatch(part); m != nil {
+			r.LogsHref = html.UnescapeString(m[1])
+		}
+		if m := cmRowCPURe.FindStringSubmatch(part); m != nil {
+			r.CPU = html.UnescapeString(m[1])
 		}
 		for _, m := range cmCellRe.FindAllStringSubmatch(part, -1) {
 			r.Cells[m[2]] = pageText(m[3])
@@ -92,13 +112,15 @@ func cmWhoami(host, foo string) map[string]any {
 //  4. The API's issues for slow: slower and more errors, both with the deploy
 //     clause "after mon025calm vN"; nothing about calm or quiet.
 //  5. /monitoring: the issues panel's sentences, details and actions; the apps
-//     table with slow first and "—" and "· no domain" for quiet; four charts
-//     with a band polygon, the deploy marker and its label, "usually", and "now"
+//     table with slow first (marked by its numbers: unusual) and "—" and "· no domain" for quiet,
+//     each row's mark the app's status first, its logs link and its CPU figure in vCPU; four charts
+//     with a band polygon, the deploy marker and its label, "usually", and "last 10 min"
 //     in each head (no script); the host section's three meters, the room
 //     sentence and its title; the footer; the sidebar item; the range and
 //     sort bars as links that answer; no style attribute or inline script.
 //  6. /parts/monitoring, /parts/monitoring/host and /parts/platform draw their
-//     regions alone; the live stream says "metrics"; the Apps home has the
+//     regions alone (the first as out-of-band fragments by id, each row alone while the key of the
+//     rows is the page's, the whole table body when it is not); the live stream says "metrics"; the Apps home has the
 //     Platform panel linking to /monitoring#host.
 //  7. Traefik unreachable (the service's setter pointed at a closed port): its
 //     sentence with ○ under the HTTP charts, the history still drawn, and the
@@ -278,8 +300,9 @@ func (c *console) consoleMonitoring(t *testing.T) {
 			t.Errorf("issue row %d's mark is %q, want warning or failed", i, mark)
 		}
 		if action != "Show "+slow+" errors" || !strings.HasPrefix(href, "/logs?") || !strings.Contains(href, "app="+slow) ||
+			!strings.Contains(href, "service="+slow+"%2Fweb") ||
 			!strings.Contains(href, "levels=error") || strings.Contains(href, "levels=error,") || strings.Contains(href, "levels=error%2C") {
-			t.Errorf("issue row %d's action is %q to %q, want \"Show %s errors\" to the Logs page with its errors only", i, action, href, slow)
+			t.Errorf("issue row %d's action is %q to %q, want \"Show %s errors\" to the Logs page with its service and its errors only", i, action, href, slow)
 		}
 		t.Logf("issue row %d: %s %q, detail %q", i, mark, sentence, detail)
 		switch {
@@ -321,7 +344,28 @@ func (c *console) consoleMonitoring(t *testing.T) {
 			if !strings.Contains(r.Cells["Slowest 5%"], "· usually") {
 				t.Errorf("%s's Slowest 5%% reads %q, want the usual value beside it (it is unusual)", slow, r.Cells["Slowest 5%"])
 			}
+			if !regexp.MustCompile(`^\d+\.\d/s$`).MatchString(r.Cells["Requests"]) {
+				t.Errorf("%s's Requests read %q, want a rate with one decimal (\"96.0/s\")", slow, r.Cells["Requests"])
+			}
+			// The app serves, so its mark is its numbers': ◆ unusual (■ when the errors are past 10 %).
+			if (r.Mark != "warning" || r.MarkWord != "unusual") && (r.Mark != "failed" || r.MarkWord != "failing") {
+				t.Errorf("%s's mark is %s %q, want warning \"unusual\" or failed \"failing\"", slow, r.Mark, r.MarkWord)
+			}
+			// The logs link carries the app and the service; the CPU figure is in vCPU beside the line.
+			if r.LogsHref != "/logs?app="+slow+"&service="+slow+"%2Fweb" {
+				t.Errorf("%s's logs link is %q, want the app's and the service's", slow, r.LogsHref)
+			}
+			if !regexp.MustCompile(`^[\d.]+(?:/[\d.]+)? vCPU$`).MatchString(r.CPU) {
+				t.Errorf("%s's CPU figure reads %q, want \"0.4/0.5 vCPU\"", slow, r.CPU)
+			}
+		case calm:
+			if r.Mark != "healthy" {
+				t.Errorf("%s's mark is %s %q, want healthy (its numbers are in their usual range)", calm, r.Mark, r.MarkWord)
+			}
 		case quiet:
+			if r.Mark != "healthy" {
+				t.Errorf("%s's mark is %s %q, want healthy", quiet, r.Mark, r.MarkWord)
+			}
 			for _, label := range []string{"Requests", "Errors", "Slowest 5%"} {
 				if r.Cells[label] != "—" || !r.None[label] {
 					t.Errorf("%s's %s reads %q, want \"—\" (no domain)", quiet, label, r.Cells[label])
@@ -337,20 +381,27 @@ func (c *console) consoleMonitoring(t *testing.T) {
 	if len(charts) != 4 {
 		t.Errorf("/monitoring has %d chart panels, want 4", len(charts))
 	}
-	if n := strings.Count(page, `<span class="cv-mnnow" data-mon-now>now</span>`); n != 4 {
-		t.Errorf("%d chart heads say \"now\" without script, want 4", n)
+	if n := strings.Count(page, `<span class="cv-mnnow" data-mon-now>last 10 min</span>`); n != 4 {
+		t.Errorf("%d chart heads say \"last 10 min\" without script, want 4", n)
 	}
 	if !strings.Contains(page, `<polygon class="cv-mnband" points="`) {
 		t.Errorf("no chart draws a band polygon (two earlier days were seeded)")
 	}
-	if !strings.Contains(page, `<span class="cv-mnusually">usually `) {
+	if !strings.Contains(page, `<span class="cv-mnusually" data-mon-usually>usually `) {
 		t.Errorf("no chart head says \"usually\"")
 	}
-	if !regexp.MustCompile(`<line class="cv-mndeploy" [^>]*><title>` + calm + ` ` + calmV + ` rolled out at \d\d:\d\d UTC</title></line>`).MatchString(page) {
+	// The lab's deploys (three apps and calm's second one) end within minutes of each other, so the
+	// markers may share one: its title then lists each deploy ("3 deploys rolled out:" and a line "calm v1
+	// at 14:02 UTC"), its label says "3 deploys". A lone deploy reads "calm v1 rolled out at 14:02 UTC".
+	if !regexp.MustCompile(`<line class="cv-mndeploy" [^>]*><title>[^<]*` + calm + ` ` + calmV + ` (?:rolled out )?at \d\d:\d\d UTC[^<]*</title></line>`).MatchString(page) {
 		t.Errorf("no deploy marker for %s %s", calm, calmV)
 	}
-	if !strings.Contains(page, `<span class="cv-mndeploy-label">`+calm+` `+calmV+`</span>`) {
-		t.Errorf("no deploy label \"%s %s\" over the charts", calm, calmV)
+	if !regexp.MustCompile(`<span class="cv-mndeploy-label">(?:` + calm + ` ` + calmV + `|\d+ deploys)</span>`).MatchString(page) {
+		t.Errorf("no deploy label \"%s %s\" or \"N deploys\" over the charts", calm, calmV)
+	}
+	// Only the deploys of apps with a domain mark the HTTP charts; the Memory chart marks them all.
+	if req := regexp.MustCompile(`(?s)id="mon-chart-requests">(.*?)id="mon-chart-errors"`).FindStringSubmatch(page); req != nil && strings.Contains(req[1], quiet+" v") {
+		t.Errorf("the Requests chart marks a deploy of %s, which has no domain", quiet)
 	}
 
 	hostStart := strings.Index(page, `<section class="cv-mnblock" id="host"`)
@@ -365,9 +416,10 @@ func (c *console) consoleMonitoring(t *testing.T) {
 	for _, mm := range cmMeterRe.FindAllStringSubmatch(hostPart, -1) {
 		meters[mm[1]] = pageText(mm[2])
 	}
-	if !regexp.MustCompile(`^[\d.]+/\d+ vCPU$`).MatchString(meters["cpu"]) || !regexp.MustCompile(`^[\d.]+/[\d.]+G$`).MatchString(meters["mem"]) ||
+	if !regexp.MustCompile(`^[\d.]+ used(?: · [\d.]+ reserved)? of \d+ vCPU$`).MatchString(meters["cpu"]) ||
+		!regexp.MustCompile(`^[\d.]+G used(?: · [\d.]+G reserved)? of [\d.]+G$`).MatchString(meters["mem"]) ||
 		!regexp.MustCompile(`^[\d.]+/[\d.]+G$`).MatchString(meters["disk"]) {
-		t.Errorf("the host's meters read %v, want cpu \"x/N vCPU\", mem and disk \"x/yG\"", meters)
+		t.Errorf("the host's meters read %v, want cpu \"1.2 used · 0.8 reserved of 2 vCPU\", mem \"1.7G used · 1.3G reserved of 1.9G\" and disk \"x/yG\"", meters)
 	}
 	if room := cmRoomRe.FindStringSubmatch(hostPart); room == nil {
 		t.Errorf("the host section has no room sentence")
@@ -377,7 +429,8 @@ func (c *console) consoleMonitoring(t *testing.T) {
 		if html.UnescapeString(room[2]) != "Nomad's count of what fits. Caravana's and the host's own processes aren't reserved." {
 			t.Errorf("the room sentence's title is %q", html.UnescapeString(room[2]))
 		}
-		okRoom := regexp.MustCompile(`^Room for about \d+ more apps like \S+ \(\d+(\.\d)? [MG]B, \d+ MHz each\)\.$`).MatchString(sentence) && room[1] == ""
+		// vCPU is the page's one CPU unit, and memory in use at 85 % or more is said after the count.
+		okRoom := regexp.MustCompile(`^Room for about \d+ more apps like \S+ \(\d+(\.\d)? [MG]B, [\d.]+ vCPU each\)(?:\.|, but memory in use is already at \d+%\.)$`).MatchString(sentence) && room[1] == ""
 		noRoom := regexp.MustCompile(`^No room for another app like \S+: (memory|CPU) is fully reserved\.$`).MatchString(sentence) && room[1] != ""
 		if !okRoom && !noRoom {
 			t.Errorf("the room sentence reads %q (warn %v), want \"Room for about N more apps like …\" or the warn \"No room …\"", sentence, room[1] != "")
@@ -436,7 +489,7 @@ func (c *console) consoleMonitoring(t *testing.T) {
 
 	// 6. The parts, the stream and the Apps home.
 	for path, want := range map[string]string{
-		"/parts/monitoring":      `<section class="cv-mncharts"`,
+		"/parts/monitoring":      `hx-swap-oob="innerHTML:#mon-chart-requests"`,
 		"/parts/monitoring/host": `<span class="cv-mnmeter-label">mem</span>`,
 		"/parts/platform":        `<a href="/monitoring#host" class="cv-panel cv-mnplat"`,
 	} {
@@ -447,6 +500,25 @@ func (c *console) consoleMonitoring(t *testing.T) {
 		}
 		if path == "/parts/monitoring" && !strings.Contains(body, `<div class="cv-mnissue">`) {
 			t.Errorf("GET /parts/monitoring draws no issue")
+		}
+	}
+	// The live region is never swapped as a whole: the page says hx-swap="none" and carries the key of its
+	// rows; the part with that key answers each row alone (and not the table body or a bar), a stale key the
+	// whole table body.
+	if !strings.Contains(page, `id="mon-live" hx-get="/parts/monitoring" hx-trigger="sse:metrics" hx-swap="none"`) {
+		t.Errorf("/monitoring's live region isn't swapped by id (hx-swap=\"none\")")
+	}
+	if key := regexp.MustCompile(`id="mon-known" name="known" value="([0-9a-f]+)"`).FindStringSubmatch(page); key == nil {
+		t.Errorf("/monitoring has no key of its rows")
+	} else {
+		_, same := c.get(t, "/parts/monitoring?known="+key[1])
+		if !strings.Contains(same, `hx-swap-oob="innerHTML:#mon-row-`+slow+`-web"`) || strings.Contains(same, `innerHTML:#mon-table-slot`) ||
+			strings.Contains(same, `aria-label="Sort"`) || strings.Contains(same, `aria-label="Time range"`) {
+			t.Errorf("/parts/monitoring with the page's key isn't each row alone by id: %.400s", pageText(same))
+		}
+		_, whole := c.get(t, "/parts/monitoring?known=stale")
+		if !strings.Contains(whole, `hx-swap-oob="innerHTML:#mon-table-slot"`) {
+			t.Errorf("/parts/monitoring with a stale key isn't the whole table body")
 		}
 	}
 	c.expectEvent(t, "metrics", 30*time.Second)

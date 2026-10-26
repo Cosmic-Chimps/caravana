@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -340,7 +341,7 @@ func TestDiskLine(t *testing.T) {
 	}{
 		{"not a disk", Event{Type: EventProblemOpened}, ""},
 		{"the example", diskNearlyFull, "Disk: / is 86% full, 11 GB left"},
-		{"under 10 GB left", Event{Mount: "/var/lib/docker", UsedPercent: 94.6, FreeBytes: new(int64(3584) << 20)}, "Disk: /var/lib/docker is 95% full, 3.5 GB left"},
+		{"cut down, so 94.6 is not 95, where the item turns failed; under 10 GB left", Event{Mount: "/var/lib/docker", UsedPercent: 94.6, FreeBytes: new(int64(3584) << 20)}, "Disk: /var/lib/docker is 94% full, 3.5 GB left"},
 		{"no space left", Event{Mount: "/", UsedPercent: 100, FreeBytes: new(int64(0))}, "Disk: / is 100% full, 0 B left"},
 		{"free space not known", Event{Mount: "/", UsedPercent: 90}, "Disk: / is 90% full"},
 		{"a mount with a line break stays one line", Event{Mount: "/a\nb", UsedPercent: 90}, "Disk: /a b is 90% full"},
@@ -362,5 +363,68 @@ func TestSize(t *testing.T) {
 		if got := Size(n); got != want {
 			t.Errorf("Size(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+// The one wording of a nearly full disk, which the console, the API's detail and the notifications
+// share: the percent is cut down and the space left is Size's.
+func TestDiskSentence(t *testing.T) {
+	for _, tc := range []struct {
+		mount string
+		pct   float64
+		free  int64
+		want  string
+	}{
+		{"/var/lib/docker", 87.2, 1126 << 20, "The disk at /var/lib/docker is 87% full: 1.1 GB left."},
+		{"/", 86.9, 11 << 30, "The disk at / is 86% full: 11 GB left."},
+		{"/data", 94.6, 600 << 20, "The disk at /data is 94% full: 600 MB left."},
+		{"/", 100, 0, "The disk at / is 100% full: 0 B left."},
+	} {
+		if got := DiskSentence(tc.mount, tc.pct, tc.free); got != tc.want {
+			t.Errorf("DiskSentence(%q, %v, %d) = %q, want %q", tc.mount, tc.pct, tc.free, got, tc.want)
+		}
+	}
+}
+
+func TestDiskNowSentence(t *testing.T) {
+	if got, want := DiskNowSentence("/", 96.4, 429496730), "The disk at / is now 96% full: 410 MB left."; got != want {
+		t.Errorf("DiskNowSentence = %q, want %q", got, want)
+	}
+}
+
+// A problem.worsened is rendered by every kind of channel with the "now" sentence, as a bad
+// news message (ntfy: high priority, warning tag), and the webhook's JSON carries its type.
+func TestRenderProblemWorsened(t *testing.T) {
+	ev := Event{
+		Type: EventProblemWorsened, Kind: "disk_nearly_full", Title: "Disk nearly full: / is now 96% full",
+		Text:  DiskNowSentence("/", 96.4, 429496730),
+		Mount: "/", Holds: []string{"nomad", "docker"}, UsedPercent: 96.4, FreeBytes: new(int64(429496730)), Level: "failed",
+		URL: "https://c.example.com/monitoring#host", At: time.Date(2026, 10, 25, 3, 0, 0, 0, time.UTC),
+	}
+	now := time.Date(2026, 10, 25, 3, 0, 1, 0, time.UTC)
+	for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
+		req, err := Render(Channel{Kind: kind, Address: "https://hooks.example.com/x"}, ev, "ndl_1", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(raw), "The disk at / is now 96% full: 410 MB left.") || !strings.Contains(string(raw), "Disk: / is 96% full, 410 MB left") {
+			t.Errorf("%s message = %s", kind, raw)
+		}
+		if kind == KindNtfy && (req.Header.Get("Priority") != "high" || req.Header.Get("Tags") != "warning") {
+			t.Errorf("ntfy headers = %v, want high priority and the warning tag", req.Header)
+		}
+	}
+	req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "s"}, ev, "ndl_1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] != "problem.worsened" || body["level"] != "failed" || req.Header.Get("Caravana-Event") != "problem.worsened" {
+		t.Errorf("webhook = %s, header %q", raw, req.Header.Get("Caravana-Event"))
 	}
 }

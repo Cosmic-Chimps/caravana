@@ -125,14 +125,27 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   (the app in the middle of your apps by memory, and whether memory or CPU runs out first). The
   Apps home has a **Platform** panel with the same numbers and a link.
 - **Disk nearly full** on the needs-you list and in notifications: a watched disk at 85 % opens an
-  item (a warning; failed from 95 %) with how much is left, and it resolves once the disk is below
-  83 %, so a disk at 84 % doesn't flap. Slack, Discord, ntfy and webhook channels get it like any
-  problem.
+  item (a warning; failed from 95 %) that says it the same way everywhere, in the console, the API
+  and every message: "The disk at / is 87% full: 1.1 GB left." It resolves once the disk is below
+  83 %, so a disk at 84 % doesn't flap, and the disk's meter keeps showing the item's state until
+  then. A disk that rises from warning to failed sends one more message (`problem.worsened`: "The
+  disk at / is now 96% full: 410 MB left."); a fall sends nothing. Slack, Discord, ntfy and webhook
+  channels get it like any problem.
+- Monitoring reads as the rest of the console does. A row's mark is the app's own status first (■
+  not running or deploy failed, ○ stopped, ◐ rolling out; ◆ only means "unusual against its week",
+  and only for a service that serves), and a service that serves nothing gets no "less traffic than
+  usual" issue (its cause is on the needs-you list). A chart's head is the last 10 minutes at every
+  range, said so, and each chart has a scale on its top line (Errors never zooms in below 5 %) and
+  its band's edges drawn. The host's meters read "1.7G used · 1.3G reserved of 1.9G" with the
+  reserved hatching above the fill; CPU is in vCPU everywhere; the room sentence says when memory in
+  use is already at 85 % or more. The minute's refresh swaps the issues, each chart and each row in
+  place, so the sort bar, keyboard focus and a chart you are pointing at stay where they are.
 - API 0.27.0: `getMetrics` (`GET /v1/metrics`), `getAppMetrics` (`GET /v1/apps/{id}/metrics`) and
   `getHost` (`GET /v1/host`), all read from the stored samples (a gap is `null`, and `sources` says
   what couldn't be read); `AttentionItem.kind` gains `disk_nearly_full` with `mount`, `holds`,
   `usedPercent`, `freeBytes` and `level`, and the notification message carries the same five
-  properties. Deploy tokens can't use any of it.
+  properties. A chart's `now` is the last 10 minutes at every range (the window the unusual rules
+  read), not the range's newest point. Deploy tokens can't use any of it.
 
 ### Changed
 - Dim text raised to fg-3 for contrast across the console: counts, times, the copy id on Logs and other

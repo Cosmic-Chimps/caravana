@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/metrics"
+	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -22,10 +23,10 @@ func TestPlatformOf(t *testing.T) {
 	if p.Mark != "healthy" || p.Line != "1 server up" || len(p.Meters) != 2 || p.Room == nil {
 		t.Fatalf("healthy = %+v", p)
 	}
-	if p.Meters[0].Label != "mem" || p.Meters[0].Read != "1.9/3.8G" || !p.Meters[0].HasReserved || p.Meters[1].Label != "disk" || p.Meters[1].Read != "18/40G" {
+	if p.Meters[0].Label != "mem" || p.Meters[0].Read != "1.9G used · 1.0G reserved of 3.8G" || !p.Meters[0].HasReserved || p.Meters[1].Label != "disk" || p.Meters[1].Read != "18/40G" {
 		t.Errorf("meters = %+v", p.Meters)
 	}
-	if p.Room.Text.String() != "Room for about 4 more apps like whoami (256 MB, 100 MHz each)." {
+	if p.Room.Text.String() != "Room for about 4 more apps like whoami (256 MB, 0.04 vCPU each)." {
 		t.Errorf("room = %q", p.Room.Text.String())
 	}
 
@@ -73,16 +74,20 @@ func TestDiskNeedsYouRow(t *testing.T) {
 	}{
 		{"one filesystem", service.AttentionItem{Kind: service.AttentionDiskNearlyFull, Mount: "/var/lib/docker", Holds: []string{"docker"},
 			UsedPercent: 86.4, FreeBytes: 11 << 30, Level: metrics.DiskWarning},
-			"The disk holding /var/lib/docker is 86% full: 11 GB left.", "warning"},
+			"The disk at /var/lib/docker is 86% full: 11 GB left.", "warning"},
 		{"both held, failed", service.AttentionItem{Kind: service.AttentionDiskNearlyFull, Mount: "/", Holds: []string{"nomad", "docker"},
 			UsedPercent: 96.9, FreeBytes: 1536 << 20, Level: metrics.DiskFailed},
-			"The disk holding Nomad's data and Docker's (/) is 96% full: 1.5 GB left.", "failed"},
+			"The disk at / is 96% full: 1.5 GB left.", "failed"},
 		{"just under failed is still a warning", service.AttentionItem{Kind: service.AttentionDiskNearlyFull, Mount: "/data", Holds: []string{"nomad"},
 			UsedPercent: 94.6, FreeBytes: 600 << 20, Level: metrics.DiskWarning},
-			"The disk holding /data is 94% full: 600 MB left.", "warning"},
+			"The disk at /data is 94% full: 600 MB left.", "warning"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row := e.Server.attentionRow(now, tc.it, pl, nil)
+			// The same sentence the API's detail and the notifications carry.
+			if want := notify.DiskSentence(tc.it.Mount, tc.it.UsedPercent, tc.it.FreeBytes); row.Text.String() != want {
+				t.Errorf("row = %q, the shared sentence is %q", row.Text.String(), want)
+			}
 			if row.Text.String() != tc.text || row.Mark != tc.mark || row.Action != "Open monitoring" || row.Href != "/monitoring#host" {
 				t.Errorf("row = %q (%s) %q -> %s, want %q (%s)", row.Text.String(), row.Mark, row.Action, row.Href, tc.text, tc.mark)
 			}
@@ -106,7 +111,7 @@ func TestAppsHomePlatformPanel(t *testing.T) {
 		}
 	}
 	panel := text(body[strings.Index(body, `id="platform"`):strings.Index(body, `id="activity-title"`)])
-	for _, want := range []string{"This host", "1 server up", "mem", "1.9/3.8G", "disk", "18/40G", "Room for about 14 more apps like whoami (256 MB, 100 MHz each)."} {
+	for _, want := range []string{"This host", "1 server up", "mem", "1.9G used · 0.2G reserved of 3.8G", "disk", "18/40G", "Room for about 14 more apps like whoami (256 MB, 0.04 vCPU each)."} {
 		if !strings.Contains(panel, want) {
 			t.Errorf("the panel lacks %q:\n%s", want, panel)
 		}
@@ -145,7 +150,7 @@ func TestAppsHomeDiskNeedsYou(t *testing.T) {
 	for _, path := range []string{"/apps", "/parts/attention"} {
 		_, body := e.get(t, path)
 		words := text(body)
-		if !strings.Contains(words, "The disk holding Nomad's data and Docker's (/) is 90% full: 4 GB left.") || !strings.Contains(words, "Open monitoring") {
+		if !strings.Contains(words, "The disk at / is 90% full: 4.0 GB left.") || !strings.Contains(words, "Open monitoring") {
 			t.Errorf("GET %s lacks the disk row:\n%s", path, words)
 		}
 		if !strings.Contains(body, `<a href="/monitoring#host" class="cv-btn cv-btn-secondary cv-btn-sm">Open monitoring</a>`) || !strings.Contains(body, `cv-mark cv-mark-warning`) {

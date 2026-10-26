@@ -22,4 +22,4 @@ xterm.css 6.0.0 https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz packag
 addon-fit.js 0.11.0 https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz package/lib/addon-fit.js ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527
 localtime.js ours - - 357aa1938e8ba0e907b4f4ffff18b8c3be54aafe6a4a84347d9f8e344038faa5
 logs.js ours - - f32b9d925bb5a2582dd94bfd142ae89a8468fa86a68aff3ee5563e760919f639
-monitoring.js ours - - 14ff11e7f755588ef085da602f877b81ed515c7bcb4c1c82e8fc97440d58a22c
+monitoring.js ours - - d1161b4b4fcd74cbda8fd6c47ef616034f22886eb84dc2237b321b807a4c9dea

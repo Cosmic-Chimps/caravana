@@ -212,7 +212,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 7: Review cycle
 
-- [ ] T022 Checks (the CI list, `go test -race ./...`), `TestConsoleLab` (every step), the gate step
+- [x] T022 Checks (the CI list, `go test -race ./...`), `TestConsoleLab` (every step), the gate step
   `monitoring` and `deploy/dev/install-test.sh` in the lab; research R8.12 (a day of the ring
   buffer: rows by `res`, the file and WAL, the tick's time, Caravana's RSS) recorded; stage the
   review instances (a fresh instance, one with seeded history, the load script's unusual services

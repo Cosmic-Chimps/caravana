@@ -467,3 +467,35 @@ func TestApplyProblemCheck(t *testing.T) {
 		}
 	})
 }
+
+// A sent problem keeps the level last sent, empty by default (a row from before the column, or a kind
+// with none), and a check moves it with ProblemCheck.Levels.
+func TestSentProblemLevel(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	plain := SentProblem{Key: "restarting|blog|web|", Kind: "restarting", AppID: "blog", Service: "web", OpenedAt: notifyT0, LastSeenAt: notifyT0, Summary: "t"}
+	disk := SentProblem{Key: "disk_nearly_full|||/", Kind: "disk_nearly_full", OpenedAt: notifyT0.Add(time.Second), LastSeenAt: notifyT0, Summary: "d", Level: "warning"}
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{Opened: []SentProblem{plain, disk}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListSentProblems(ctx)
+	if err != nil || len(got) != 2 || got[0].Level != "" || got[1].Level != "warning" {
+		t.Fatalf("ListSentProblems() = %+v, %v; want levels '' and warning", got, err)
+	}
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{Levels: map[string]string{disk.Key: "failed"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ListSentProblems(ctx)
+	if len(got) != 2 || got[1].Level != "failed" || got[0].Level != "" {
+		t.Errorf("after the rise = %+v, want the disk failed and the other unchanged", got)
+	}
+	// A row written without a level keeps the default.
+	old := SentProblem{Key: "k", Kind: "x", OpenedAt: notifyT0.Add(time.Minute), LastSeenAt: notifyT0, Summary: "s"}
+	if err := s.UpsertSentProblem(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ListSentProblems(ctx)
+	if len(got) != 3 || got[2].Level != "" {
+		t.Errorf("a problem saved without a level = %+v", got)
+	}
+}

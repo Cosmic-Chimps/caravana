@@ -39,7 +39,9 @@ type HostDisk struct {
 	UsedMB, TotalMB, FreeMB int64
 	// UsedPercent is used / (used + free), what df prints.
 	UsedPercent float64
-	// State is the meter's: ok below 85 %, warning from 85, failed from 95.
+	// State is the meter's: ok below 85 %, warning from 85, failed from 95,
+	// and at least warning while the filesystem's disk_nearly_full item is open
+	// (it stays open down to 83 %).
 	State metrics.DiskLevel
 }
 
@@ -109,14 +111,33 @@ func (s *Service) Host(ctx context.Context) (HostView, error) {
 	if err != nil {
 		return HostView{}, fmt.Errorf("read the host: %w", err)
 	}
+	var mine []store.DiskSample
 	for _, d := range disks {
-		if d.Node != h.Node {
-			continue
+		if d.Node == h.Node {
+			mine = append(mine, d)
 		}
+	}
+	// While a disk_nearly_full item is open the meter shows its state, so the
+	// meter and the needs-you item never disagree (an item opened at 86 % stays
+	// open, a warning, until the disk reads under 83 %). The item isn't judged
+	// from a stale sample, so a stale host's meters go by the percent alone.
+	var history []store.DiskSample
+	if !view.Stale {
+		if history, err = s.diskHistory(ctx, now, h.TS, mine); err != nil {
+			return HostView{}, fmt.Errorf("read the host: %w", err)
+		}
+	}
+	for _, d := range mine {
 		pct := metrics.UsedPercent(d.UsedMB, d.FreeMB)
+		state := metrics.DiskState(pct, false).State
+		if !view.Stale {
+			if open, _ := diskRun(d.Mount, d, history); open {
+				state = metrics.DiskState(pct, true).Level
+			}
+		}
 		view.Disks = append(view.Disks, HostDisk{
 			Mount: d.Mount, Holds: strings.Split(d.Holds, ","), UsedMB: d.UsedMB, TotalMB: d.TotalMB, FreeMB: d.FreeMB,
-			UsedPercent: pct, State: metrics.DiskState(pct, false).State,
+			UsedPercent: pct, State: state,
 		})
 	}
 

@@ -508,7 +508,10 @@ func fillNomad(m *store.MetricsSample, key deploy.ServiceKey, r *samplerReads) {
 	}
 }
 
-// hostSample is the host's row for a tick. What is reserved is the sum over
+// hostSample is the host's row for a tick. Memory used is Nomad's host
+// Memory.Used (gopsutil's total less free, buffers and cache), so the page
+// cache isn't counted, as for the apps (ruling 1); Memory.Available would also
+// leave it out but adds the kernel's reclaimable slab, which Used doesn't. What is reserved is the sum over
 // every live copy on the node, the ones of jobs Caravana didn't make too, plus
 // what the node's own configuration holds back; NULL when the copies weren't
 // listed.

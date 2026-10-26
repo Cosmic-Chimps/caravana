@@ -240,3 +240,93 @@ The designer checks at 127.0.0.1:7070 against `pb-monitoring.png` and `pb-now.pn
    (start, middle, "now") are fg-3; fg-4 stays for non-text marks only. Deploy labels stay rolling,
    gridlines line-1. (024's histogram label row was moved to fg-3 on its own branch for the same
    reason.)
+
+## Review fixes (designer, 2026-10-26)
+
+Applied on branch `025-monitoring`, one commit each, in this order:
+
+1. **The apps table's HTTP numbers are the last 10 minutes.** Requests, Errors and Slowest 5% in the
+   table come from the same 10-minute window as the issues and the chart heads (`metrics.WindowOf`:
+   requests per second over the window, 5xx as a share of the window's requests, the p95 of its merged
+   buckets), so a row never disagrees with its own issue; only the CPU sparkline keeps the range, and a
+   number is in the warn hue only when its rule holds (the API's `requests`, `errors` and `p95` say the
+   same).
+2. **The host meters draw reserved, and memory warns from 85%.** The hatched line runs from 0 to the
+   reserved fraction of the total (`x2`, checked in the page's markup for memory and CPU); the host's
+   memory meter takes the warn fill and readout with a ◆ mark from 85% and a ■ mark from 95%, as the disk
+   does, and is fg-2 below 85% (CPU keeps 90%). Memory used is Nomad's host `Memory.Used`, total less free,
+   buffers and cache, so the page cache is left out as for the apps (ruling 1).
+3. **The Apps home's app names never break mid-word.** The name keeps to one line (an ellipsis when it alone
+   is wider than its cell) and the kind word drops under it when the two don't fit side by side.
+4. **The disk meter shows the needs-you item's state while it is open.** `Service.Host` runs
+   `metrics.DiskRun` over the same history as the attention kind, so a disk opened at 86% reads ◆ warning at
+   84% until it resolves below 83%, and ■ failed from 95%, in the host section and the Platform panel.
+5. **One wording for the disk item everywhere.** "The disk at `/var/lib/docker` is 87% full: 1.1 GB left."
+   in the console (the mount in code style), the API's `detail` and every notification
+   (`notify.DiskSentence`); the percent is cut down, not rounded, and the space left is `notify.Size`'s.
+   The console's "The disk holding …" sentence is gone; what is on the disk stays the API's `holds`.
+6. **A disk that rises from warning to failed sends one message.** `sent_problems` remembers the level last
+   sent (a `level` column added to the unreleased migration 0019); a present item rising to failed from the
+   sent warning sends one `problem.worsened` ("The disk at / is now 96% full: 410 MB left."), a fall or a
+   repeat sends nothing, and the resolve below 83% is the usual `problem.resolved`.
+
+### Rulings
+
+- **The seven departures, accepted as built:** (1) when Traefik's numbers are off or disabled, the three HTTP
+  charts show a ○ sentence in the plot's place without history, and keep the plot with a caption with history;
+  (2) the CPU sparkline scales from zero to the larger of the reservation and the observed maximum; (3) an
+  issue whose run reaches the 6-hour walk limit says "It started more than 6 hours ago."; (4) the 7 d chart's
+  axis and gap titles name the weekday; (5) the Platform panel says "Waiting for the first reading of the host"
+  with ○ before the first sample, and refreshes on the `metrics` notice; (6) no disk item before the first
+  sample; (7) Nomad problems are a notice at the top of the live region plus a ■ line in the host section.
+- **The three disk answers:** (a) while the needs-you item is open, the meter shows its state (◆ until it
+  resolves below 83%, ■ at 95% or more), so the two never disagree; (b) one wording everywhere, console, API
+  `detail` and notifications: "The disk at `/var/lib/docker` is 87% full: 1.1 GB left."; (c) a rise from ◆ to ■
+  sends one message, `problem.worsened` ("…is now 96% full: 410 MB left."); a fall sends nothing; the resolve
+  below 83% sends the usual resolved message. "No second opened" was about flapping at the threshold.
+- Where this section and the contract above disagree, this section wins. The contract's "The disk holding
+  `/var/lib/docker` is 86% full: 11 GB left." (needs-you list) reads "The disk at `/var/lib/docker` is 86%
+  full: 11 GB left." from fix 5.
+
+### Critique rulings (designer, 2026-10-26)
+
+From the impeccable critique of the built page (`.impeccable/critique/2026-10-26T02-57-08Z__internal-ui-templates-monitoring-html.md`),
+applied on branch `025-monitoring`, one commit per group, in this order. Where this section and the contract
+above disagree, this section wins.
+
+1. **A row's mark is the app's status first.** ■ not running or deploy failed (the same states `/apps` shows ■),
+   ○ stopped (or never deployed), ◐ rolling out, ◆ some copies short; ◆ "unusual" only means "unusual against its
+   week" and only for a serving service (■ "failing" when its issue is failed). **Amendment: a service that isn't
+   serving gets no "quieter" issue at all** (its cause is on the needs-you list; the row's ■ is enough); the other
+   kinds still apply, and the quieter sentence gains the deploy clause like the others. A place with nothing running
+   reads "Nothing is running in `Shop` / `staging`: `web` is stopped." with ○ in place of the calm line.
+2. **Chart heads are the last 10 minutes at every range**, labelled "last 10 min" (not "now"; the API's `now` is the
+   same window). **Amendment to the contract's "now" heads.** A number is in the warn hue only when a rule judged
+   it; the table's warn hues follow the issues.
+3. **The host meters.** The reserved mark is drawn above the fill (it was hidden when use exceeds the
+   reservation). The readout is split: "1.7G used · 1.3G reserved of 1.9G", CPU likewise in vCPU ("1.2 used · 0.8
+   reserved of 2 vCPU"). When memory in use is at 85% or more, the room sentence adds ", but memory in use is
+   already at 89%." (its `title` unchanged). vCPU is the one CPU unit on the page (the sparkline's title, the table,
+   the meters, the room sentence: "(32 MB, 0.1 vCPU each)").
+4. **Scale, floor and edges.** An 11px fg-3 label of the top gridline's value on each chart ("4 req/s", "5%",
+   "800 ms", "1.2G"); the Errors chart scaled to at least 0-5%; the band's low and high edges drawn as 1px line-2
+   polylines (`.cv-mnband-edge`) over the polygon.
+5. **The live swap keeps focus.** The sort, range and place bars sit outside the swapped region; the notice swaps the
+   issues, each chart and each table row by id, out of band (as 023's Domains rows), never the whole region, so
+   keyboard focus and an open hover survive; the source notices sit outside the live region (no re-announcement each
+   minute). The CPU cell prints its figure beside the sparkline ("0.4/0.5 vCPU") and, with the memory cell, sits
+   above the row link's overlay.
+6. **The smaller rulings.** HTTP charts mark only the deploys of apps with a domain (the Memory chart marks all);
+   deploys within 5 minutes of each other become one marker labelled "10 deploys" (its `title` lists them); the 7 d
+   caption is said once, under the chart grid; the hover's "usually" follows the hovered point; logs links carry the
+   service (`/logs?app=<id>&service=<app>/<service>`); "—" alone (no "—%", "—MB"); rates and percents with one
+   decimal; restarts warn from 2 (the rule's threshold); the ARIA table's cells (the logs link inside a
+   `role="cell"`, header and cell counts equal).
+
+## Last look (designer, 2026-10-26): Approved
+
+1. **Deploy labels never collide.** Markers closer than 4% of the plot (12 of its 300 units) become one marker with one label ("6 deploys") whose `title` lists every deploy in it.
+2. **A stopped app has no "now".** Its row reads "—" in requests, errors, slowest 5%, the CPU figure and the memory readout; only Restarts and the CPU sparkline (history) stay.
+3. **CPU under 0.01 vCPU.** A used value above 0 and under 0.01 is written "<0.01" (so "<0.01/0.05 vCPU"), in the readout, the sparkline title and the host meter; exactly 0 stays "0".
+
+025 is done, and with it Phase 2.6's screens.

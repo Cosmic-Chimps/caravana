@@ -64,13 +64,14 @@ type SeriesPoint struct {
 // MetricSeries is one chart: the place's (or the app's) totals per point.
 type MetricSeries struct {
 	Points []SeriesPoint
-	// Now is the newest point that has a value, within the last few minutes;
-	// nil when none (a sampler that stopped doesn't leave a stale "now").
+	// Now is the chart's head: the last 10 minutes at every range (the window
+	// the rules read; memory's median), not the range's newest point; nil when
+	// the window has no number (a sampler that stopped doesn't leave a stale one).
 	Now *float64
 	// Over is for the slowest 5 % only: Now is beyond the highest bucket
 	// bound, so the page says "over 10 s".
 	Over bool
-	// Usual and UsualDays are the band's median and its days at Now's point.
+	// Usual and UsualDays are the band's median now and its days.
 	Usual     *float64
 	UsualDays int
 	// UnusualSince is when the chart's rule began to hold, for Errors and the
@@ -84,6 +85,9 @@ type MetricDeploy struct {
 	AppID, AppName, DeploymentID string
 	Version                      uint64
 	EndedAt                      time.Time
+	// HasDomain says the app has a service with a domain: only its deploys mark the HTTP charts
+	// (a deploy of an app with no traffic says nothing about requests). Not in the API.
+	HasDomain bool
 }
 
 // DeployNear is the deploy clause of an issue: a deploy that ended within 15
@@ -149,16 +153,32 @@ const (
 	ServiceStopped    ServiceState = "stopped"
 )
 
+// ServiceStanding is the app's own status as the Apps home shows it, seen from one service: the
+// first thing a row of the apps table says. Mark is the console's mark kind (healthy, rolling,
+// warning, failed or idle) and Word what the mark means ("not running", "deploy failed", "2 of 3
+// healthy", "stopped", "never deployed"). Down says the service serves nothing: it is stopped, was
+// never deployed or has no healthy copy, so what its traffic did is not news (the cause is on the
+// needs-you list) and the "quieter" rule is not judged. The zero value is a serving service with
+// no remark. It is not in the API: the API's `state` keeps its meaning.
+type ServiceStanding struct {
+	Mark string
+	Word string
+	Down bool
+}
+
 // ServiceMetrics is one row of the apps table.
 type ServiceMetrics struct {
 	AppID, AppName, Service string
 	State                   ServiceState
+	// Standing is the app's status first (see ServiceStanding); State and Unusual say what the
+	// service's own numbers said.
+	Standing ServiceStanding
 	// Level is the worst level of its issues when it is unusual.
 	Level     metrics.Level
 	Copies    int
 	HasDomain bool
-	// Requests (per second), Errors (percent) and P95 (ms) are over the range;
-	// nil without HTTP numbers. UsualP95 is the band's median now, nil while
+	// Requests (per second), Errors (percent) and P95 (ms) are over the last
+	// 10 minutes, as the issues' values are; nil without HTTP numbers. UsualP95 is the band's median now, nil while
 	// the baseline is being built.
 	Requests, Errors, P95, UsualP95 *float64
 	P95Over                         bool
@@ -321,6 +341,7 @@ func (s *Service) metricsOf(ctx context.Context, recs []store.AppRecord, project
 	totalMinute, totalSlots := combineRows(minutes), combineRows(slots)
 	totalHist := metrics.NewHistory(totalSlots)
 	charts := chartsOf(rng, from, now, totalMinute, totalSlots, totalHist, baseline.State)
+	windowHead(&charts, totalMinute, totalHist, now, baseline.State)
 	view.Requests, view.Errors, view.P95, view.Memory = charts.requests, charts.errors, charts.p95, charts.memory
 	view.MemoryLimit = charts.limit
 	if iss := metrics.Judge(metrics.Facts{
@@ -443,8 +464,12 @@ func (s *Service) healthyDeploys(ctx context.Context, project, environment, only
 		return nil, nil, fmt.Errorf("read metrics: %w", err)
 	}
 	names := map[string]string{}
+	domained := map[string]bool{}
 	for _, rec := range recs {
 		names[rec.App.ID] = rec.Place.Name
+		for _, svc := range rec.App.Services {
+			domained[rec.App.ID] = domained[rec.App.ID] || len(svc.Domains) > 0
+		}
 	}
 	var deploys []metrics.Deploy
 	details := map[deployKey]MetricDeploy{}
@@ -463,6 +488,7 @@ func (s *Service) healthyDeploys(ctx context.Context, project, environment, only
 		deploys = append(deploys, metrics.Deploy{App: d.AppID, Version: *d.JobVersion, End: end})
 		details[deployKey{d.AppID, *d.JobVersion, end}] = MetricDeploy{
 			AppID: d.AppID, AppName: name, DeploymentID: d.Deployment.ID, Version: *d.JobVersion, EndedAt: end,
+			HasDomain: domained[d.AppID],
 		}
 	}
 	return deploys, details, nil
@@ -659,31 +685,50 @@ func chartsOf(rng metrics.Range, from, now time.Time, minute, slots []metrics.Ro
 	if c.whole.Restarts != nil {
 		c.restarts = c.whole.Restarts
 	}
-
-	// "Now" is the newest point with a value, if it is a recent one.
-	live := now.Add(-liveRowAge - rng.Step)
-	idx := -1
-	for i := n - 1; i >= 0 && pts[i].T.After(live); i-- {
-		if !pts[i].Gap() {
-			idx = i
-			break
-		}
-	}
-	if idx >= 0 {
-		p := pts[idx]
-		c.requests.Now, c.requests.Usual, c.requests.UsualDays = nowOf(c.requests.Points[idx])
-		c.errors.Now, c.errors.Usual, c.errors.UsualDays = nowOf(c.errors.Points[idx])
-		c.p95.Now, c.p95.Usual, c.p95.UsualDays = nowOf(c.p95.Points[idx])
-		c.memory.Now = c.memory.Points[idx].Value
-		c.memory.UsualDays = c.memory.Points[idx].Days
-		if _, over, ok := p.P95(); ok && c.p95.Now != nil {
-			c.p95.Over = over
-		}
-	}
 	return c
 }
 
-func nowOf(p SeriesPoint) (value, usual *float64, days int) { return p.Value, p.Usual, p.Days }
+// windowHead sets what each chart's head says: the last 10 minutes of the totals at every range
+// (the window the rules and the apps table read), with the band's median for it. A head with no
+// number in the window stays nil, so a sampler that stopped doesn't leave a stale value.
+func windowHead(c *charts, rows []metrics.Row, hist metrics.History, now time.Time, state metrics.BaselineState) {
+	w := metrics.WindowOf(rows, now)
+	b := bandsAt(hist, now.Add(-5*time.Minute), state)
+	usual := func(r metrics.BandRange, div float64) (*float64, int) {
+		if !r.Has() {
+			return nil, 0
+		}
+		return new(r.Usual / div), r.Days
+	}
+	if w.HasHTTP {
+		c.requests.Now = new(w.RequestsPerSec)
+		c.requests.Usual, c.requests.UsualDays = usual(b.RequestsPerMin, 60)
+		if w.Requests > 0 {
+			c.errors.Now = new(w.ErrorPercent)
+			c.errors.Usual, c.errors.UsualDays = usual(b.ErrorPercent, 1)
+		}
+	}
+	if w.HasP95 {
+		c.p95.Now, c.p95.Over = new(w.P95Millis), w.P95Over
+		c.p95.Usual, c.p95.UsualDays = usual(b.P95Millis, 1)
+	}
+	// Memory is a gauge: the median of the window's minutes, as the memory rule reads it.
+	var mem []float64
+	from := now.Add(-metrics.WindowMinutes * time.Minute)
+	for _, r := range rows {
+		if r.MemoryMB != nil && r.TS.After(from) && !r.TS.After(now) {
+			mem = append(mem, float64(*r.MemoryMB))
+		}
+	}
+	if len(mem) > 0 {
+		slices.Sort(mem)
+		v := mem[len(mem)/2]
+		if len(mem)%2 == 0 {
+			v = (mem[len(mem)/2-1] + v) / 2
+		}
+		c.memory.Now = &v
+	}
+}
 
 // bandPoint makes a point of value v with the band b divided by div (the
 // requests' band is per minute and the chart per second).
@@ -729,7 +774,9 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	state := baseline.State
 	stopped := r.rec.StoppedAt != nil
 	rolling := false
+	var newest *store.DeploymentRecord
 	if d, ok := latest[id]; ok {
+		newest = &d
 		rolling = d.Status == store.StatusPending || d.Status == store.StatusRunning
 	}
 
@@ -752,15 +799,20 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	} else if rolling {
 		sv.State = ServiceRollingOut
 	}
+	sv.Standing = standingOf(r.rec, r.svc.Name, newest, byJob[id], copiesKnown)
 	if sv.HasDomain {
-		if v, ok := metrics.RatePerSec(ch.whole); ok {
-			sv.Requests = &v
+		// The table's HTTP numbers are the last 10 minutes', the same window
+		// the issues and the chart heads read, so a row never disagrees with
+		// its own issue. Only the CPU sparkline keeps the range.
+		w := metrics.WindowOf(r.minute, now)
+		if w.HasHTTP {
+			sv.Requests = new(w.RequestsPerSec)
+			if w.Requests > 0 {
+				sv.Errors = new(w.ErrorPercent)
+			}
 		}
-		if v, ok := metrics.ErrorPercent(ch.whole); ok {
-			sv.Errors = &v
-		}
-		if v, over, ok := metrics.P95Millis(ch.whole); ok {
-			sv.P95, sv.P95Over = &v, over
+		if w.HasP95 {
+			sv.P95, sv.P95Over = new(w.P95Millis), w.P95Over
 		}
 		if b := bandsAt(hist, now.Add(-5*time.Minute), state); b.P95Millis.Has() {
 			sv.UsualP95 = new(b.P95Millis.Usual)
@@ -790,6 +842,11 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	var issues []MetricIssue
 	limit, hasLimit := limitOf(r.minute)
 	for _, is := range found {
+		if is.Kind == metrics.Quieter && sv.Standing.Down {
+			// Traffic that stopped is no news from a service that serves nothing: its cause
+			// is on the needs-you list, and the row's mark says it.
+			continue
+		}
 		mi := MetricIssue{
 			AppID: id, AppName: r.rec.Place.Name, Service: r.svc.Name, Kind: is.Kind, Level: is.Level,
 			Value: is.Value, Distance: is.Distance,
@@ -841,6 +898,49 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 		sv.Distance = &worst
 	}
 	return sv, issues
+}
+
+// errCopiesUnknown stands for "Nomad couldn't be read" when a service's standing is derived.
+var errCopiesUnknown = errors.New("copies unknown")
+
+// standingOf derives what the Apps home would show for the app, for one of its services: ■ when
+// the app isn't running (or this service has no healthy copy) or its newest deploy failed, ○
+// when stopped, never deployed or not defined, ◐ while rolling out, ◆ when some copies are
+// short, ● otherwise. While Nomad can't be read nothing is claimed.
+func standingOf(rec store.AppRecord, svc string, latest *store.DeploymentRecord, copies []Copy, copiesKnown bool) ServiceStanding {
+	var nomadErr error
+	if !copiesKnown {
+		nomadErr = errCopiesUnknown
+	}
+	st := statusOfRecord(rec, latest, copies, nomadErr)
+	deployFailed := latest != nil && (latest.Status == store.StatusFailed || latest.Status == store.StatusReverted)
+	switch st.State {
+	case StateStopped:
+		return ServiceStanding{Mark: "idle", Word: "stopped", Down: true}
+	case StateRollingOut:
+		return ServiceStanding{Mark: "rolling", Word: "rolling out"}
+	case StateNotRunning:
+		switch {
+		case !rec.App.Defined():
+			return ServiceStanding{Mark: "idle", Word: "not defined yet", Down: true}
+		case latest == nil:
+			return ServiceStanding{Mark: "idle", Word: "never deployed", Down: true}
+		}
+		return ServiceStanding{Mark: "failed", Word: "not running", Down: true}
+	case StateHealthy, StateDegraded:
+		for _, ss := range st.Services {
+			if ss.Name == svc && ss.Wanted > 0 && ss.Healthy == 0 {
+				return ServiceStanding{Mark: "failed", Word: "not running", Down: true}
+			}
+		}
+		if deployFailed {
+			return ServiceStanding{Mark: "failed", Word: "deploy failed"}
+		}
+		if st.State == StateDegraded {
+			return ServiceStanding{Mark: "warning", Word: fmt.Sprintf("%d of %d healthy", st.HealthyCopies, st.WantedCopies)}
+		}
+	}
+	return ServiceStanding{Mark: "healthy", Word: "healthy"}
 }
 
 // newestRow is the newest minute row if it is recent enough to be "now".

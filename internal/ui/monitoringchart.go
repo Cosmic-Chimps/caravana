@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -31,11 +32,14 @@ type monChart struct {
 	Value, Unit string
 	Warn        bool
 	Usually     string
-	Plot        *monPlot
-	Empty       *monEmpty
-	AxisStart   string
-	AxisMid     string
-	Captions    []monCaption
+	// HasUsually says the chart has a "usually" slot in its head (the hover fills it with the
+	// hovered point's own), whether or not there is a band now.
+	HasUsually bool
+	Plot       *monPlot
+	Empty      *monEmpty
+	AxisStart  string
+	AxisMid    string
+	Captions   []monCaption
 }
 
 // monEmpty says why a chart has nothing to draw, in the plot's place.
@@ -54,6 +58,8 @@ type monCaption struct {
 type monPoly struct {
 	Points string
 	Title  string
+	// Top and Bottom are the band's high and low edges, drawn as lines over the polygon.
+	Top, Bottom string
 }
 
 // monRect is a rect that spans the plot's height from X, Width wide.
@@ -86,11 +92,15 @@ type monPlot struct {
 	Labels  []string
 	Lines   []monLine
 	Table   monPlotTable
+	// Scale is the top gridline's value with its unit ("4 req/s"), written at its left end.
+	Scale string
 
 	Hover  bool
 	T0     string
 	Step   int
 	Values string
+	// Usuals is each point's "usually 120" (empty for a point with no band), for the hover's head.
+	Usuals string
 	Unit   string
 	Date   bool
 }
@@ -125,6 +135,36 @@ func (g geom) y(v float64) float64 {
 	return plotH - plotPad - min(v, g.ymax)/g.ymax*(plotH-2*plotPad)
 }
 
+// topGridFraction is the share of the value range that lies under the top gridline (y=30 of the
+// plot's 120 units, with the series 4 units off the top and bottom): the scale's label names the
+// value on that line, so the line is where the reader looks.
+const topGridFraction = (plotH - plotPad - 30) / (plotH - 2*plotPad)
+
+// niceCeil is the smallest of 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 times a power of ten that is at
+// least v (1 for nothing): a label a person would write.
+func niceCeil(v float64) float64 {
+	if v <= 0 {
+		return 1
+	}
+	exp := math.Pow(10, math.Floor(math.Log10(v)))
+	for _, m := range []float64{1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10} {
+		if m*exp >= v*(1-1e-9) {
+			return m * exp
+		}
+	}
+	return 10 * exp
+}
+
+// scaleOf sets a chart's scale from the largest number it draws (rawMax, in stored units, margin
+// included): the top gridline is a round number of the displayed unit that is at least what the
+// data needs and at least floor (a chart that stays calm doesn't zoom into its noise). It returns
+// the value of the plot's top in stored units and the top gridline's value in displayed units.
+// conv turns stored units into displayed ones and is linear.
+func scaleOf(rawMax, floor float64, conv func(float64) float64) (ymax, top float64) {
+	top = niceCeil(max(conv(rawMax)*topGridFraction, floor))
+	return top / topGridFraction / conv(1), top
+}
+
 // metricSpec says how one metric reads: how its numbers are written in the head, the title and
 // the hover, and what its band is called.
 type metricSpec struct {
@@ -141,6 +181,10 @@ type metricSpec struct {
 	// usual writes "usually ..." for the band's median; nil for a chart without one.
 	usual func(float64) string
 	warn  bool
+	// floor is the least the top gridline may be, in displayed units (0 for none); scale writes
+	// the top gridline's value with its unit ("4 req/s", "5%", "800 ms", "1.2G").
+	floor float64
+	scale func(top float64) string
 }
 
 func identity(v float64) float64 { return v }
@@ -161,10 +205,10 @@ func (b *monBuilder) charts() []monChart {
 	specs := []metricSpec{
 		{id: "requests", title: "Requests", series: v.Requests, http: true, conv: identity, num: rateText, unit: "req/s",
 			head:  func(now float64, _ bool) (string, string) { return rateText(now), "req/s" },
-			usual: rateText},
+			usual: rateText, scale: func(top float64) string { return amountText(top) + " req/s" }},
 		{id: "errors", title: "Errors", series: v.Errors, http: true, conv: identity, num: percentText, unit: "%",
 			head:  func(now float64, _ bool) (string, string) { return percentText(now), "% 5xx" },
-			usual: percentText, warn: v.Errors.UnusualSince != nil},
+			usual: percentText, warn: v.Errors.UnusualSince != nil, floor: 5, scale: func(top float64) string { return amountText(top) + "%" }},
 		{id: "p95", title: "Slowest 5%", series: v.P95, http: true, conv: identity,
 			num: func(f float64) string { return strconv.Itoa(int(f + 0.5)) }, unit: "ms",
 			head: func(now float64, over bool) (string, string) {
@@ -174,9 +218,10 @@ func (b *monBuilder) charts() []monChart {
 				}
 				return n, u
 			},
-			usual: func(f float64) string { return msWords(f) }, warn: v.P95.UnusualSince != nil},
+			usual: func(f float64) string { return msWords(f) }, warn: v.P95.UnusualSince != nil, scale: msWords},
 		{id: "memory", title: "Memory", series: v.Memory, conv: memConv, num: memNum, unit: memUnit,
-			head: func(now float64, _ bool) (string, string) { return memNum(memConv(now)), memUnit + limitWords }},
+			head:  func(now float64, _ bool) (string, string) { return memNum(memConv(now)), memUnit + limitWords },
+			scale: func(top float64) string { return memoryScaleLabel(useGB, top) }},
 	}
 	out := make([]monChart, 0, len(specs))
 	for _, sp := range specs {
@@ -228,7 +273,8 @@ func axisTime(t time.Time, dated bool) string {
 // chart builds one panel from a metric.
 func (b *monBuilder) chart(sp metricSpec) monChart {
 	v := b.view
-	c := monChart{ID: "mon-chart-" + sp.id, Title: sp.title, Unit: sp.unit, Value: "—", Warn: sp.warn}
+	// A head with no number is "—" alone: no unit after it ("—%", "—MB").
+	c := monChart{ID: "mon-chart-" + sp.id, Title: sp.title, Value: "—", Warn: sp.warn}
 	pts := sp.series.Points
 	n := len(pts)
 
@@ -245,6 +291,7 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 	if sp.series.Now != nil {
 		c.Value, c.Unit = sp.head(*sp.series.Now, sp.series.Over)
 	}
+	c.HasUsually = sp.usual != nil
 	if sp.usual != nil && sp.series.Usual != nil && b.view.Baseline.State != metrics.Building {
 		c.Usually = "usually " + sp.usual(*sp.series.Usual)
 	}
@@ -261,16 +308,17 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 			g.ymax = max(g.ymax, *p.High)
 		}
 	}
-	g.ymax *= 1.08
+	top := 0.0
+	g.ymax, top = scaleOf(g.ymax*1.08, sp.floor, sp.conv)
 
 	lo, hi, latest, haveLatest := rangeOf(vals, sp.conv)
 	plot := &monPlot{
 		Label: sp.title + " over the last " + rangeWords(v.Range),
 		T0:    times[0].UTC().Format(time.RFC3339), Step: int(v.Range.Step / time.Second), Unit: sp.unit,
-		Date: dated, Hover: true,
+		Date: dated, Hover: true, Scale: sp.scale(top),
 	}
 	if sp.series.Now != nil {
-		plot.Label += ", " + sp.num(sp.conv(*sp.series.Now)) + " " + sp.unit + " now"
+		plot.Label += ", " + sp.num(sp.conv(*sp.series.Now)) + " " + sp.unit + " in the last 10 minutes"
 	}
 
 	// The band: one polygon per stretch of points that have one.
@@ -290,14 +338,20 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 	}
 	plot.Gaps = gapsOf(vals, g, times)
 
-	// Deploys: a dashed line each, and at most a couple of labels.
+	// Deploys: a dashed line each (deploys within 5 minutes of each other share one), and at most a
+	// couple of labels. The HTTP charts mark only the deploys of apps with a domain: an app with no
+	// traffic says nothing about requests. The Memory chart marks every deploy.
+	var marked []service.MetricDeploy
 	for _, d := range v.Deploys {
-		if d.EndedAt.Before(times[0]) || d.EndedAt.After(v.At) {
-			continue
+		if !d.EndedAt.Before(times[0]) && !d.EndedAt.After(v.At) && (!sp.http || d.HasDomain) {
+			marked = append(marked, d)
 		}
-		plot.Deploys = append(plot.Deploys, monMark{X: units(tx(d.EndedAt)), Title: d.AppName + " v" + strconv.FormatUint(d.Version, 10) + " rolled out at " + clockOf(b.now, d.EndedAt).Text})
 	}
-	plot.Labels = deployLabels(v.Deploys, times[0], v.At)
+	groups := mergeNearMarkers(groupDeploys(marked), func(d service.MetricDeploy) float64 { return tx(d.EndedAt) })
+	for _, grp := range groups {
+		plot.Deploys = append(plot.Deploys, monMark{X: units(tx(grp[0].EndedAt)), Title: b.deployTitle(grp)})
+	}
+	plot.Labels = deployLabels(groups)
 
 	title := ""
 	if haveLatest {
@@ -312,15 +366,24 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 	if dated {
 		layout = "2006-01-02 15:04"
 	}
+	usuals, haveUsual := make([]string, n), false
 	for i, p := range pts {
 		row := monPlotRow{Time: times[i].UTC().Format(layout), Value: "no reading"}
 		if p.Value != nil {
 			cells[i] = sp.num(sp.conv(*p.Value))
 			row.Value = cells[i]
 		}
+		// The hover's "usually" is the hovered point's own, not the head's.
+		if sp.usual != nil && p.Usual != nil {
+			usuals[i] = "usually " + sp.usual(*p.Usual)
+			haveUsual = true
+		}
 		plot.Table.Rows = append(plot.Table.Rows, row)
 	}
 	plot.Values = strings.Join(cells, ",")
+	if haveUsual {
+		plot.Usuals = strings.Join(usuals, ",")
+	}
 	c.Plot = plot
 
 	c.AxisStart = axisTime(times[0], dated) + " UTC"
@@ -345,8 +408,17 @@ func (b *monBuilder) emptyChart(sp metricSpec) *monEmpty {
 	return &monEmpty{Text: msentence(mtext("Nothing has been sampled in this range yet."))}
 }
 
-// captions are the lines under a chart's times: the baseline being built, the 7 d range's thin
-// band, and what is wrong with Traefik when the chart has history to show anyway.
+// bandNote is the one line under the chart grid on the 7 d range: the band thins to the left. It
+// was a caption of each chart, four times; none while the baseline is built (there is no band).
+func (b *monBuilder) bandNote() monSentence {
+	if b.view.Baseline.State == metrics.Building || b.view.Range.Name != metrics.Range7d.Name {
+		return nil
+	}
+	return msentence(mtext("The band thins to the left: older hours have fewer earlier days kept."))
+}
+
+// captions are the lines under a chart's times: the baseline being built, and what is wrong with
+// Traefik when the chart has history to show anyway.
 func (b *monBuilder) captions(sp metricSpec) []monCaption {
 	var out []monCaption
 	if b.view.Baseline.State == metrics.Building {
@@ -357,8 +429,6 @@ func (b *monBuilder) captions(sp metricSpec) []monCaption {
 			text += "."
 		}
 		out = append(out, monCaption{Text: msentence(mtext(text + " The usual range appears after a full day."))})
-	} else if b.view.Range.Name == metrics.Range7d.Name {
-		out = append(out, monCaption{Text: msentence(mtext("The band thins to the left: older hours have fewer earlier days kept."))})
 	}
 	if sp.http {
 		if s := traefikSentence(b.view.Sources.Traefik); s != nil {
@@ -401,7 +471,7 @@ func (b *monBuilder) bands(g geom, pts []service.SeriesPoint, sp metricSpec) []m
 		for i := len(bottoms) - 1; i >= 0; i-- {
 			poly = append(poly, bottoms[i])
 		}
-		out = append(out, monPoly{Points: strings.Join(poly, " ")})
+		out = append(out, monPoly{Points: strings.Join(poly, " "), Top: edgeOf(tops), Bottom: edgeOf(bottoms)})
 		tops, bottoms = nil, nil
 	}
 	for i, p := range pts {
@@ -433,6 +503,22 @@ func (b *monBuilder) bands(g geom, pts []service.SeriesPoint, sp metricSpec) []m
 		out[i].Title = title
 	}
 	return out
+}
+
+// edgeOf is a band edge as a polyline's points; a lone point is drawn as a short stroke so it shows.
+func edgeOf(pts []string) string {
+	if len(pts) == 1 {
+		return pts[0] + " " + pts[0]
+	}
+	return strings.Join(pts, " ")
+}
+
+// memoryScaleLabel writes the memory chart's top gridline: "1.2G", or "800M" below a gigabyte.
+func memoryScaleLabel(useGB bool, top float64) string {
+	if useGB {
+		return amountText(top) + "G"
+	}
+	return amountText(top) + "M"
 }
 
 // gapMinRun is how many missing points in a row make a stretch drawn as a gap.
@@ -471,25 +557,85 @@ func gapsOf(vals []*float64, g geom, times []time.Time) []monRect {
 	return out
 }
 
-// deployLabels are the labels over the plot: each deployment's own when there are one or two,
-// else the newest and "and N more".
-func deployLabels(deploys []service.MetricDeploy, from, to time.Time) []string {
-	var in []service.MetricDeploy
+// deployGroupGap is how close deploys must be to share a marker: each within this long of the one
+// before it, so a burst of deploys is one marker however long it lasts.
+const deployGroupGap = 5 * time.Minute
+
+// groupDeploys puts deploys (oldest first) into markers: a deploy within 5 minutes of the one
+// before it joins its marker, else it starts a new one.
+func groupDeploys(deploys []service.MetricDeploy) [][]service.MetricDeploy {
+	var out [][]service.MetricDeploy
 	for _, d := range deploys {
-		if !d.EndedAt.Before(from) && !d.EndedAt.After(to) {
-			in = append(in, d)
+		if n := len(out); n > 0 && d.EndedAt.Sub(out[n-1][len(out[n-1])-1].EndedAt) <= deployGroupGap {
+			out[n-1] = append(out[n-1], d)
+			continue
 		}
+		out = append(out, []service.MetricDeploy{d})
 	}
-	label := func(d service.MetricDeploy) string { return d.AppName + " v" + strconv.FormatUint(d.Version, 10) }
+	return out
+}
+
+// deployMergeGap is how close two markers may sit before they become one: 4% of the plot's width
+// (12 of its 300 units), about what three characters of a label take. Closer than that the eye can't
+// tell the lines apart and their labels ("3 deploys" twice) read as one repeated. It is a fixed gap
+// rather than a measured label width because the plot is stretched to its box (the label's own width
+// in units changes with the screen); 4% keeps markers 30 minutes apart on 6 h (8%) separate and joins
+// 30 minutes apart on 24 h (2%).
+const deployMergeGap = 0.04 * plotW
+
+// mergeNearMarkers joins markers (oldest first) whose lines fall within deployMergeGap of the one
+// before it into one marker, whose label counts every deploy in it and whose title lists them all.
+// x is a deploy's place on the plot, in its units.
+func mergeNearMarkers(groups [][]service.MetricDeploy, x func(service.MetricDeploy) float64) [][]service.MetricDeploy {
+	var out [][]service.MetricDeploy
+	for _, g := range groups {
+		if n := len(out); n > 0 {
+			prev := out[n-1]
+			if x(g[0])-x(prev[len(prev)-1]) < deployMergeGap {
+				out[n-1] = append(prev[:len(prev):len(prev)], g...)
+				continue
+			}
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// deployName is "supplier-gw v24".
+func deployName(d service.MetricDeploy) string {
+	return d.AppName + " v" + strconv.FormatUint(d.Version, 10)
+}
+
+// deployTitle is a marker's title: one deploy says when it rolled out; several list each with its time.
+func (b *monBuilder) deployTitle(grp []service.MetricDeploy) string {
+	if len(grp) == 1 {
+		return deployName(grp[0]) + " rolled out at " + clockOf(b.now, grp[0].EndedAt).Text
+	}
+	lines := []string{strconv.Itoa(len(grp)) + " deploys rolled out:"}
+	for _, d := range grp {
+		lines = append(lines, deployName(d)+" at "+clockOf(b.now, d.EndedAt).Text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// deployLabels are the labels over the plot: each marker's own when there are one or two ("supplier-gw
+// v24", or "10 deploys" for a marker that stands for several), else the newest and "and N more".
+func deployLabels(groups [][]service.MetricDeploy) []string {
+	label := func(grp []service.MetricDeploy) string {
+		if len(grp) == 1 {
+			return deployName(grp[0])
+		}
+		return strconv.Itoa(len(grp)) + " deploys"
+	}
 	switch {
-	case len(in) == 0:
+	case len(groups) == 0:
 		return nil
-	case len(in) <= 2:
+	case len(groups) <= 2:
 		var out []string
-		for _, d := range in {
-			out = append(out, label(d))
+		for _, g := range groups {
+			out = append(out, label(g))
 		}
 		return out
 	}
-	return []string{label(in[len(in)-1]), "and " + strconv.Itoa(len(in)-1) + " more"}
+	return []string{label(groups[len(groups)-1]), "and " + strconv.Itoa(len(groups)-1) + " more"}
 }
