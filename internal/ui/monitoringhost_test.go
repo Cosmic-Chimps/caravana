@@ -198,6 +198,12 @@ func TestHostChart(t *testing.T) {
 // host sample is.
 func monHostEnv(t *testing.T, age time.Duration, disks ...store.DiskSample) *consoleEnv {
 	t.Helper()
+	return monHostEnvOf(t, age, 1946, 256, 3891, disks...)
+}
+
+// monHostEnvOf is monHostEnv with the host's memory (MB used, reserved, total) given.
+func monHostEnvOf(t *testing.T, age time.Duration, used, reservedMB, total int64, disks ...store.DiskSample) *consoleEnv {
+	t.Helper()
 	e := monEnv(t)
 	ctx := context.Background()
 	series, err := e.Store.EnsureSeries(ctx, "whoami", "web")
@@ -209,8 +215,8 @@ func monHostEnv(t *testing.T, age time.Duration, disks ...store.DiskSample) *con
 	res := []store.MetricsSample{{Series: series, TS: now.Add(-time.Minute), Minutes: 1, Copies: i64(1), MemoryReservedMB: reserved, CPUReservedMHz: i64(100), MemoryMB: i64(1000), MemoryLimitMB: i64(1024)}}
 	at := now.Add(-age)
 	tick := store.MetricsTick{Minute: store.MetricsRows{Samples: res, Hosts: []store.HostSample{{
-		Node: "node-1", TS: at, MemoryUsedMB: i64(1946), MemoryReservedMB: i64(256), MemoryTotalMB: i64(3891),
-		CPUUsedMHz: i64(2880), CPUReservedMHz: i64(100), CPUTotalMHz: i64(9600), CPUCores: i64(4)}}, Disks: disks}}
+		Node: "node-1", TS: at, MemoryUsedMB: i64(used), MemoryReservedMB: i64(reservedMB), MemoryTotalMB: i64(total),
+		CPUUsedMHz: i64(2880), CPUReservedMHz: i64(2400), CPUTotalMHz: i64(9600), CPUCores: i64(4)}}, Disks: disks}}
 	for i := range tick.Minute.Disks {
 		tick.Minute.Disks[i].TS = at
 	}
@@ -274,5 +280,43 @@ func TestMonitoringHostNeverRead(t *testing.T) {
 	}
 	if strings.Contains(body, `class="cv-mnmeter"`) {
 		t.Error("meters with nothing read")
+	}
+}
+
+// The hatched line of the host meters runs from 0 to the reserved fraction of the total, for memory
+// and for CPU (1331 of 1949 MB is 68.3 %, 2400 of 9600 MHz is 25 %), read from the page's markup.
+func TestHostReservedLineIsDrawnToTheFraction(t *testing.T) {
+	e := monHostEnvOf(t, 30*time.Second, 900, 1331, 1949)
+	_, body := e.get(t, "/monitoring")
+	lines := regexp.MustCompile(`<line class="cv-mnreserved" x1="0" x2="([0-9.]+)" y1="3" y2="3"/>`).FindAllStringSubmatch(body, -1)
+	if len(lines) != 2 || lines[0][1] != "68.3" || lines[1][1] != "25" {
+		t.Errorf("reserved lines = %v, want x2 68.3 (memory) and 25 (cpu)", lines)
+	}
+}
+
+// Memory takes the warn hue from 85 % with a ◆ mark and a ■ mark from 95 %, as the disk does; under 85 %
+// the fill is the plain one. The page's markup carries the classes.
+func TestHostMemoryMeterStates(t *testing.T) {
+	for _, tc := range []struct {
+		used      int64
+		mark      string
+		fillClass string
+		readClass string
+	}{
+		{1946, "", "cv-mnfill", "cv-mnmeter-read"},
+		{8400, "", "cv-mnfill", "cv-mnmeter-read"},
+		{8500, "warning", "cv-mnfill cv-mnfill-warn", "cv-mnmeter-read cv-mnwarntext"},
+		{9400, "warning", "cv-mnfill cv-mnfill-warn", "cv-mnmeter-read cv-mnwarntext"},
+		{9500, "failed", "cv-mnfill cv-mnfill-warn", "cv-mnmeter-read cv-mnwarntext"},
+	} {
+		e := monHostEnvOf(t, 30*time.Second, tc.used, 2000, 10000)
+		_, body := e.get(t, "/parts/monitoring/host")
+		meter := regexp.MustCompile(`(?s)<div class="cv-mnmeter">.*?</div>`).FindString(body)
+		if !strings.Contains(meter, "mem") || !strings.Contains(meter, `class="`+tc.fillClass+`"`) || !strings.Contains(meter, `class="`+tc.readClass+`"`) {
+			t.Errorf("memory at %d/10000 draws %s, want %q and %q", tc.used, meter, tc.fillClass, tc.readClass)
+		}
+		if tc.mark != "" && !strings.Contains(meter, "cv-mark-"+tc.mark) || tc.mark == "" && strings.Contains(meter, "cv-mark-") {
+			t.Errorf("memory at %d/10000 mark = %s, want %q", tc.used, meter, tc.mark)
+		}
 	}
 }

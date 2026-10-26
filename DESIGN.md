@@ -1233,8 +1233,12 @@ of the earlier days. It is information, not a to-do list: an unusual service is 
   `.cv-mnreserved` (what Nomad has set aside, **hatched**: a `<line>` whose dashed stroke draws vertical ticks, so
   no gradient and no pattern id), then `.cv-mnfill` (fg-2, what is used) on top. Lengths are attributes (`width`
   on the rect, `x2` on the line), so no `style` attribute is needed; a fixed set of width classes was the
-  other choice and was rejected: a hundred classes for one number. Above 90% the fill is `.cv-mnfill-warn` **and**
-  the readout takes `.cv-mnwarntext`, so the colour is never the only sign. The row (`.cv-mnmeter`) is a grid
+  other choice and was rejected: a hundred classes for one number. Above 90% (an app's memory, the host's CPU) the fill is `.cv-mnfill-warn` **and**
+  the readout takes `.cv-mnwarntext`, so the colour is never the only sign. The host's memory and each disk use the
+  disk's thresholds instead: fg-2 below 85%, the warn fill and readout with a ◆ mark from 85%, a ■ mark from 95%
+  (same warn hue; the mark tells the two apart). The hatched `.cv-mnreserved` line runs from 0 to the reserved
+  fraction of the total (`x2`), under the used fill. Memory used is Nomad's host `Memory.Used`, which leaves out the
+  page cache. The row (`.cv-mnmeter`) is a grid
   `40px minmax(0, 1fr) auto`: the label (`.cv-mnmeter-label`, a Label), the bar, the readout
   (`.cv-mnmeter-read`, 12px mono fg-2, "1.9/3.8G"). The Running tab's `<meter>` (feature 016) stays: it is one
   thin bar with no reserved part; this one is for capacity, where used under reserved under total is the point.

@@ -19,8 +19,9 @@ const roomTitle = "Nomad's count of what fits. Caravana's and the host's own pro
 
 // monMeter is the Meter of the handoff, as an SVG: a track, what is reserved hatched under what is
 // used, and a readout. Lengths are attributes in a 0-100 box, so no style attribute is needed. Warn
-// puts the fill and the readout in the warn hue (above 90 %, or a disk past its threshold); a disk
-// in a state also has its mark ahead of the readout, so the hue is never the only sign.
+// puts the fill and the readout in the warn hue (CPU above 90 %; memory and disks from 85 %); a meter
+// in a state also has its mark ahead of the readout (◆ from 85 %, ■ from 95 %), so the hue is never
+// the only sign.
 type monMeter struct {
 	Label       string
 	HasReserved bool
@@ -118,6 +119,14 @@ func hostMeters(h service.HostView) []monMeter {
 	return append(out, diskMeters(h)...)
 }
 
+// The host memory meter's thresholds are the disk's: warn from 85 % used, failed from 95 %, under 85 %
+// the fill is the plain fg-2. (CPU keeps the Meter's 90 %.) The memory used here is Nomad's host
+// `Memory.Used`, which leaves out the page cache, as the apps' numbers do.
+const (
+	meterWarnPercent = metrics.DiskWarnPercent
+	meterFailPercent = metrics.DiskFailPercent
+)
+
 // meterFill is how much of a 0-100 box used takes of total.
 func meterFill(used, total float64) float64 {
 	if total <= 0 {
@@ -134,7 +143,12 @@ func memoryMeter(h service.HostView) *monMeter {
 	}
 	used, total := float64(*r.Used), float64(*r.Total)
 	m := &monMeter{Label: "mem", Fill: units(meterFill(used, total)), Read: gbText(used) + "/" + gbText(total) + "G"}
-	m.Warn = used/total*100 > metrics.MemoryPercent
+	switch pct := used / total * 100; {
+	case pct >= meterFailPercent:
+		m.Warn, m.Mark, m.MarkWord = true, "failed", "nearly all in use"
+	case pct >= meterWarnPercent:
+		m.Warn, m.Mark, m.MarkWord = true, "warning", "mostly in use"
+	}
 	m.Title = sizeText(*r.Used) + " in use"
 	if r.Reserved != nil {
 		m.HasReserved, m.ResW = true, units(meterFill(float64(*r.Reserved), total))
