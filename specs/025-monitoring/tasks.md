@@ -200,7 +200,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 6: Docs
 
-- [ ] T021 `CHANGELOG.md` Unreleased (Added: the Monitoring page, the host's capacity, the Platform
+- [x] T021 `CHANGELOG.md` Unreleased (Added: the Monitoring page, the host's capacity, the Platform
   panel, `disk_nearly_full`, the three reads; Changed: the Running tab's memory leaves the page
   cache out, so its numbers drop for apps that read files; **Upgrade**: rerun the installer:
   Traefik is restarted once (a few seconds without HTTP on 80 and 443) to turn on its request

@@ -797,6 +797,85 @@ Nomad and never stored. No migration, no new module, no policy change (`read-fs`
   clock runs ahead of Nomad's start event); since then an untimed line is placed by byte offset between
   its file's write bounds, and a timed line up to a minute before the start is trusted.
 
+Feature 025 (`specs/025-monitoring`, Phase 2.6) is implemented on branch `025-monitoring` (stacked on
+`024-logs`): requests, errors, the slowest 5 % and memory per service against the same hour of the
+last 7 days, the host's capacity and room for more apps, and a disk item on the needs-you list. New
+migration 0019, no new Go module (our own parser of Traefik's text format; `expfmt` would bring three).
+- Sources and the sampler (`service/sampler.go`, plan "Decisions carried"): `runSampler` is started
+  in `Service.Start` with the other watchers and ticks at the next whole minute plus 2 s
+  (`SetMetricsSampleGap`, 10 s in the lab). Each tick has 20 s and reads each source on its own, so a
+  failed one leaves its columns NULL (a gap, never 0): Traefik's Prometheus text on loopback
+  (`CARAVANA_TRAEFIK_METRICS_URL`, default `http://127.0.0.1:8081/metrics`, loopback only, empty turns the
+  HTTP numbers off; states `ok`, `off` (404), `unreachable`, `disabled`), Nomad's allocation list with
+  resources (reservations, restarts, exit events), 014's per-copy `Allocations().Stats` for usage, and
+  the node's stats (states `ok`, `denied`, `unreachable`). The page's notices come from the last outcome of
+  each. One transaction per tick writes the minute rows, folds the 10-minute slot that just ended and,
+  every 10 minutes, prunes; then `ChangeMetrics` (the live notice `metrics`, no number). The previous
+  Traefik snapshot, the restart counts and the last scrape time live in memory: a restart loses them, so
+  its first minute has CPU and memory and no HTTP numbers.
+- `internal/metrics` is pure (a test forbids `net/http` outside `real.go`, and `nomad`, `service`,
+  `store`): `ParseText` (the 0.0.4 format, only the named families), `Delta` (a counter that went
+  down is a reset and the delta is its value; a delta is kept only when the last scrape was 50-90 s
+  before; `process_start_time_seconds` counts as a restart only when it moves by more than 10 s,
+  because it drifts 1-4 s in one process, lab, observed), `TraefikMinute` (5xx from `http` and `sse` only,
+  because a grpc `code` is a gRPC status; buckets from `http` and `grpc` only, so SSE counts as requests
+  and never in latency; websocket never appears in Traefik's service metrics), `Layout`/`Buckets`/`Merge`/
+  `Quantile` (per-bucket counts stored, Prometheus' interpolation with a running maximum on read,
+  over the last bound is "over 10 s", bounds 5 ms to 10 s), `Fold` and `Points` (counters and buckets
+  summed, gauges the median, a point with no row is a gap), `Band`/`Baseline` (min, max and median of
+  the same UTC 10-minute slot on the previous 1-7 days; `building` under 24 h of history, `partial`
+  with 1-6 days, `full`), `Judge`/`Since`/`DeployNear` (slower: p95 over a 10-minute window of at
+  least 20 requests above 1.5 times the band's high and 100 ms over it; more errors: over 1 %, 5 or
+  more, above the band; quieter: under half the band's low; memory over 90 % of the limit; restarting:
+  2 or more; rollouts skip the HTTP rules, stopped apps aren't judged), `Room` (N = min of memory and
+  CPU left over the yardstick app, the one whose memory reservation is the median) and
+  `DiskState`/`DiskRun`/`Stale` (opens at 85 %, resolves below 83 %).
+- Nomad reads (`internal/deploy`): `host.go` `HostStats` (`Nodes().Info` cached 10 minutes, `Stats`; the
+  two watched filesystems are the `DiskStats` entry that matches `AllocDirStats` (Nomad's data) and the one
+  with the longest mount that prefixes `CARAVANA_DOCKER_ROOT`, one row with `holds` when it's one disk;
+  a 403 is `ErrNodeReadDenied`); `reserved.go` `Reservations` (per copy `max(sum of prestart non-sidecar
+  tasks, sum of main and sidecar tasks)` from the job's task lifecycles, cached per job version: 1780 MHz
+  and 1344 MB, exactly Nomad's `allocated` gauges, where a plain sum said 1930/1440); `usage.go` memory is
+  `Usage - Cache` (else RSS), and a copy with `Timestamp` 0 or no measured memory is NULL (Nomad answers a
+  stopped copy with one zeroed entry per task, which 014's test read as 0); `deploytest` has the node and
+  allocation fakes.
+- Store: migration `0019_metrics.sql` (`metrics_series`, `metrics_layouts`, `metrics_samples` with
+  `res` 60 for 48 h and 600 for 8 days overlapping, `metrics_host`, `metrics_disks`, `metrics_state`
+  whose `started_at` is written once), `store.WriteMetricsTick`, `MinuteRows`, `SlotRows`, `HostRows`,
+  `DiskRows`; `DeleteApp` takes the app's series. 3-8 MB for 20 services.
+- Service reads: `Metrics`/`AppMetrics` (`service/metrics.go`: the place check, points, bands, totals,
+  issues, the deploy clause from healthy deployments' end within 15 minutes, sort `unusual`/`traffic`/
+  `memory`), `Host` (`service/host.go`, from the newest stored rows, stale after 5 minutes). Restarts
+  use one rule, `crashesInHour` (3 is a needs-you `restarting`, 2 a monitoring issue). The attention kind
+  `disk_nearly_full` is host-level (key `disk_nearly_full|||<mount>`, level failed from 95 %), derived on
+  every read from the stored disk rows, and `diffProblems` doesn't judge it (so never sends "resolved")
+  when the newest host sample is over 5 minutes old; `notify.Event` carries `mount`, `holds`,
+  `usedPercent`, `freeBytes`.
+- API 0.27.0: `getMetrics`, `getAppMetrics`, `getHost` (read from the store, never 502: `sources` says what
+  couldn't be read; a gap is `null`), the attention kind and the webhook's five properties; deploy
+  tokens denied by the default deny. Console: `/monitoring` (`ui/monitoring.go`, `monitoringchart.go`,
+  `monitoringhost.go`: the issues panel, four inline-SVG charts with the band and deploy markers and a
+  hidden table, the apps table, the host section with meters whose reserved part is hatched, the 7-day
+  memory chart, a footer that says websocket isn't counted), `/parts/monitoring`, `/parts/monitoring/host`
+  and `/parts/platform` swapped on the `metrics` notice, `static/js/monitoring.js` (the hover crosshair;
+  the page reads without it), the Apps home's Platform panel above Activity, the sidebar's Monitoring
+  item. The Running tab's memory is the new one, and a copy with no measurement shows "—". Ruling 9
+  (text is never fg-4) is in `DESIGN.md`.
+- Installer: both `traefik.nomad.hcl` files gain `--metrics.prometheus=true` and the buckets (Traefik
+  restarts once on a rerun, and `install.sh` says so), the policy gains `node { policy = "read" }`,
+  `caravana.env` gains `CARAVANA_DOCKER_ROOT` from `docker info` (`-docker-root`, default
+  `/var/lib/docker`), `internal/config` checks both new settings, and `install-test.sh` checks the
+  policy line, the env line and a 200 from `127.0.0.1:8081/metrics`.
+- Not in 025: a host reservation, per-copy history, the access log, owner-set thresholds, network and
+  disk I/O, an MCP tool, several servers (Phase 3).
+- Lab: `TestConsoleLab` has a step `console-monitoring` and the gate a step `monitoring`, per
+  `specs/025-monitoring/quickstart.md` §6 (`startLab` points the Traefik URL at `127.0.0.1:8088/metrics`
+  and the gap at 10 s). They had not been run in the lab when this was written (T018, T019 unticked);
+  T020 (the seeded review data and the disk fill on `install-test.sh`'s VM) is the other lab piece.
+  The lab's checks are in `research.md` R8 ("lab, observed"). Gotchas: the lab VM has about 4 GB, so
+  clear the review apps before a lab step, or a deploy fails for lack of memory; and
+  `TestRestartMidRolloutRestoresSecrets`'s fix belongs to 024, not to this feature.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

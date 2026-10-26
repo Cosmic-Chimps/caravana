@@ -106,6 +106,34 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   `timeSource` on each line; `listLogs`' description writes out the level and escape rules so a
   client can match the page.
 
+- **Monitoring**: how your apps and the host are doing, on **Monitoring** in the sidebar. Four charts for a project › environment (6 hours by default; 1 hour, 24 hours
+  and 7 days too): **requests**, **errors** (the share that were 5xx), the **slowest 5 %** of
+  requests (the time that 19 in 20 beat) and **memory**, each drawn against the same 10 minutes of
+  the last 7 days (a shaded band from the lowest to the highest, a line for the usual), with a
+  marker for each deploy. Above them, the services that are **unusual** come first, each with what
+  it did and since when (its value, "usually 210 ms"), the deploy
+  nearby ("It started 2 minutes after web v24 rolled out") and, for memory and restarts, the last exit;
+  below, a table of every service sorted unusual first (or by traffic, or by memory) with its
+  requests, errors, slowest 5 %, memory against its ceiling, CPU sparkline and restarts. A service
+  with no domain shows "—" for the request numbers, not zero. Caravana reads Traefik's numbers and
+  Nomad's every minute and keeps minute rows for 48 hours and 10-minute rows for 8 days (a few MB
+  in its SQLite file); nothing is kept per request, and websocket traffic isn't in the numbers.
+- **The host's capacity**, at the foot of Monitoring: memory and CPU **used** and **reserved** (what
+  Nomad has promised to the apps, counted by Nomad's own rule for startup tasks), the two disks
+  worth watching (the one holding Nomad's data and the one holding Docker's images, one row when
+  it is the same disk), a 7-day memory chart, and **"room for about 4 more apps like whoami"**
+  (the app in the middle of your apps by memory, and whether memory or CPU runs out first). The
+  Apps home has a **Platform** panel with the same numbers and a link.
+- **Disk nearly full** on the needs-you list and in notifications: a watched disk at 85 % opens an
+  item (a warning; failed from 95 %) with how much is left, and it resolves once the disk is below
+  83 %, so a disk at 84 % doesn't flap. Slack, Discord, ntfy and webhook channels get it like any
+  problem.
+- API 0.27.0: `getMetrics` (`GET /v1/metrics`), `getAppMetrics` (`GET /v1/apps/{id}/metrics`) and
+  `getHost` (`GET /v1/host`), all read from the stored samples (a gap is `null`, and `sources` says
+  what couldn't be read); `AttentionItem.kind` gains `disk_nearly_full` with `mount`, `holds`,
+  `usedPercent`, `freeBytes` and `level`, and the notification message carries the same five
+  properties. Deploy tokens can't use any of it.
+
 ### Changed
 - Dim text raised to fg-3 for contrast across the console: counts, times, the copy id on Logs and other
   small labels that were drawn in the dimmest grey now read a shade brighter.
@@ -118,6 +146,10 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - `getLogs`: `text` no longer carries escape sequences, and the tail lines now have a `time`
   (read from the line, or estimated) where they had none. A client that read the colors out of
   `text` loses them.
+- The Running tab's **memory** (and `listCopies`' `usage`) leaves the page cache out: it is what the
+  app holds (Nomad's `Usage` minus `Cache`), the number Monitoring uses, so it drops for apps that
+  read files, such as a database or a static site. A copy whose usage Nomad didn't measure (not
+  running, or collection off) shows "—" instead of 0 MB.
 
 **Upgrade**: rerun the installer. Traefik is restarted once (a few seconds without HTTP on 80 and
 443): it now reads its configuration from a directory so that Team only can hand it password
@@ -135,6 +167,15 @@ stored. The page shows only what Nomad keeps: by default 10 files of 10 MiB per 
 copy, so how far back it reaches depends on how much the app prints, and a copy is readable
 until Nomad collects it. A host whose Caravana token predates `read-fs` must rerun the
 installer, or the app's Logs tab says Nomad refused the read.
+
+**Monitoring, upgrade**: rerun the installer. Traefik is restarted once (a few seconds without HTTP
+on 80 and 443) to turn on its request numbers, and the installer says so when it does it. Caravana's scoped Nomad policy gains `node { policy = "read" }`
+(for the host's memory, CPU and disks; no drain, no write), and `caravana.env` gains
+`CARAVANA_DOCKER_ROOT` (read from `docker info`). Until it is rerun, Monitoring says what is
+missing and to run the installer again (Traefik isn't serving its request numbers, or the token
+can't read the host). History builds from the upgrade: the first day has no
+band and no "usually" (the page says it is still being learned), a band appears with the first
+earlier day and is complete after 7.
 
 ## 0.12.0 - 2026-10-22
 
