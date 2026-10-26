@@ -181,7 +181,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 5: Lab tests
 
-- [ ] T018 `cmd/caravana/console_monitoring_test.go` + `console_lab_test.go` + `lab_test.go`: the
+- [x] T018 `cmd/caravana/console_monitoring_test.go` + `console_lab_test.go` + `lab_test.go`: the
   step `console-monitoring` per quickstart §6 (`startLab` sets
   `CARAVANA_TRAEFIK_METRICS_URL=http://127.0.0.1:8088/metrics` and the gap to 10 s; the three
   apps; seeded history through the store; the load for 2 minutes; the issues, the order, "—", the

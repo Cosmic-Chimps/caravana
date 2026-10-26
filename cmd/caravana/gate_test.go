@@ -61,6 +61,10 @@ type gateTarget struct {
 	// logged or stored.
 	ServerLog func() string
 	DataDir   string
+	// SetTraefikMetricsURL changes where the running Caravana reads Traefik's
+	// numbers (service.SetTraefikMetricsURL); only the lab sets it. The
+	// console-monitoring step points it at a closed port and back.
+	SetTraefikMetricsURL func(url string)
 }
 
 // publicTarget is what only a real host has.
