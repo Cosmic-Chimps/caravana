@@ -5797,7 +5797,7 @@ components:
               state:
                 type: string
                 enum: [ok, warning, failed]
-                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %."
+                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %; and at least `warning` while the filesystem's `disk_nearly_full` item is open (it stays open until the disk reads under 83 %)."
         room:
           type: object
           additionalProperties: false

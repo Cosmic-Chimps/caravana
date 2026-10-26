@@ -217,3 +217,61 @@ func TestHostHistory(t *testing.T) {
 		t.Errorf("an hour nothing was sampled in must be a gap, got %v", h.MemoryUsed[point(8)])
 	}
 }
+
+// While a disk_nearly_full item is open, the host's meter shows its state, so
+// the meter and the needs-you item never disagree: opened at 86 %, the disk
+// reads warning at 84 % (the item stays open down to 83 %), failed from 95 %,
+// and ok again once the item resolves under 83 %. A disk that was never at
+// 85 % is ok at 84 %.
+func TestHostDiskStateFollowsTheOpenItem(t *testing.T) {
+	now := time.Date(2026, 10, 25, 12, 0, 30, 0, time.UTC)
+	for _, tc := range []struct {
+		name     string
+		percents []float64
+		want     metrics.DiskLevel
+		item     bool
+	}{
+		{"never at 85 is ok at 84", []float64{80, 84}, metrics.DiskOK, false},
+		{"86 then 84 stays warning", []float64{86, 84}, metrics.DiskWarning, true},
+		{"86 then 83 stays warning", []float64{86, 83}, metrics.DiskWarning, true},
+		{"86 then 82 is ok", []float64{86, 82}, metrics.DiskOK, false},
+		{"85 is warning", []float64{84, 85}, metrics.DiskWarning, true},
+		{"96 is failed", []float64{86, 96}, metrics.DiskFailed, true},
+		{"96 then 94 is warning again", []float64{96, 94}, metrics.DiskWarning, true},
+		{"96 then 84 is warning", []float64{96, 84}, metrics.DiskWarning, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newMetricsFixture(t, now)
+			ts := now.Truncate(time.Minute).Add(-time.Minute)
+			var hosts []store.HostSample
+			var disks []store.DiskSample
+			for i, p := range tc.percents {
+				at := ts.Add(-time.Duration(len(tc.percents)-1-i) * time.Minute)
+				used := int64(p * 10)
+				hosts = append(hosts, hostRow("n1", at, 1000, 900, 4096))
+				disks = append(disks, diskRow("n1", at, "/", "nomad,docker", used, 1000-used))
+			}
+			f.host(store.MetricsRows{Hosts: hosts, Disks: disks})
+			v, err := f.e.svc.Host(f.ctx)
+			if err != nil || len(v.Disks) != 1 {
+				t.Fatalf("Host = %+v, %v", v.Disks, err)
+			}
+			if v.Disks[0].State != tc.want {
+				t.Errorf("meter state = %q, want %q", v.Disks[0].State, tc.want)
+			}
+			att, err := f.e.svc.Attention(f.ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var open metrics.DiskLevel
+			for _, it := range att.Items {
+				if it.Kind == AttentionDiskNearlyFull {
+					open = it.Level
+				}
+			}
+			if (open != "") != tc.item || (tc.item && open != v.Disks[0].State) {
+				t.Errorf("the item's level %q and the meter's %q disagree", open, v.Disks[0].State)
+			}
+		})
+	}
+}
