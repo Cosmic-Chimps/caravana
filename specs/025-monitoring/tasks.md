@@ -117,14 +117,14 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   (`unusualSince`), the live copies for restarting and last exits (Nomad down leaves that rule
   unjudged), the three sorts, the issues' facts (window, domains, deploy clause from
   `ListDeploymentsIn` healthy ends), deploys in the range, baseline, sources.
-- [ ] T010 [US2] `internal/metrics/room.go`, `disk.go` + `internal/service/host.go` + tests: `Room`
+- [x] T010 [US2] `internal/metrics/room.go`, `disk.go` + `internal/service/host.go` + tests: `Room`
   (the yardstick by median summed memory reservation over running stored apps, the lower middle,
   ties alphabetical; ⌊min(free memory / X, free CPU / X)⌋; `limitedBy`; nothing running);
   `DiskState` (ok, warning, failed; the item's open rule, level and `When` per ruling 8);
   `Service.Host(ctx)` from the newest stored host and disk rows (`stale` after 5 minutes), the
   per-series reservations, the 7-day hourly history, baseline and sources; no Nomad call.
   Pure part done (`room.go`, `disk.go` + tests: `Room`, `DiskState`, `DiskRun`, `Stale`,
-  `UsedPercent`); `internal/service/host.go` and `Service.Host` are still to do.
+  `UsedPercent`); `internal/service/host.go` (`Service.Host`, `HostView`) done too.
 - [ ] T011 [US4] `internal/service/attention.go`, `notifier.go` + `internal/notify` + tests:
   `AttentionDiskNearlyFull` from `DiskRows` (host-level, one per watched filesystem, `Mount`,
   `Holds`, `UsedPercent`, `FreeBytes`, `Level`, `When`), not judged when the host sample is older
