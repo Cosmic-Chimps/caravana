@@ -468,6 +468,7 @@ type copyEntry struct {
 // neither (the cells show a dash); one Nomad didn't answer for has Error.
 type usageView struct {
 	Has      bool   // there are numbers
+	None     bool   // Nomad has no measurement for the copy: a dash, and no sentence
 	Error    string // the sentence, when Nomad didn't answer for this copy
 	CPU      string // "42 MHz"
 	CPUOf    string // "of 100 MHz reserved"
@@ -593,6 +594,9 @@ func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 func usageViewOf(u service.CopyUsage) usageView {
 	if u.Error != "" {
 		return usageView{Error: u.Error}
+	}
+	if u.None {
+		return usageView{None: true} // no measurement: a dash in both cells, no error line
 	}
 	v := usageView{Has: true, NearCeil: u.NearCeiling,
 		CPU: fmt.Sprintf("%d MHz", u.CPUMHz), CPUOf: fmt.Sprintf("of %d MHz reserved", u.CPUReservedMHz),

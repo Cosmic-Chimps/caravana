@@ -447,6 +447,9 @@
       <meter class="cv-meter{{if .NearCeil}} cv-meter-warn{{end}}" min="0" max="100" value="{{.MeterPct}}" aria-hidden="true"></meter>
       <span class="cv-usage-of">{{.MemoryOf}}</span>
       {{if .NearCeil}}<span class="cv-oom"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>close to its ceiling</span>{{end}}</div>
+    {{else if .None}}
+    <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data-muted" title="No value">&mdash;</span></div>
+    <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data-muted" title="No value">&mdash;</span></div>
     {{else}}
     <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data-muted" title="Not running">&mdash;</span></div>
     <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data-muted" title="Not running">&mdash;</span></div>

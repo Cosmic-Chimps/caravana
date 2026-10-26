@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -37,6 +38,20 @@ func saveApp(t *testing.T, e *env, a app.App) {
 
 func TestCopiesWithUsage(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("a copy with no measurement has no value, not an error and not 0 MB", func(t *testing.T) {
+		e := newEnv(t)
+		saveApp(t, e, appWith("blog", 1))
+		e.nomad.SetCopies("blog", startedStub("c1", "web"))
+		e.nomad.SetStats("c1", deploytest.DeadAllocUsage("web"))
+		_, usage, err := e.svc.CopiesWithUsage(ctx, "blog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u := usage["c1"]; !u.None || u.Error != "" || u.MemoryMB != 0 || u.MemoryCeilingMB != 256 {
+			t.Errorf("c1 = %+v, want None with no error", u)
+		}
+	})
 
 	t.Run("defaults are applied to a service with no resources", func(t *testing.T) {
 		e := newEnv(t)

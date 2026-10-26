@@ -44,6 +44,9 @@ type usageJSON struct {
 }
 
 func toUsageJSON(u service.CopyUsage) *usageJSON {
+	if u.None {
+		return nil // no value: left out, as for a copy that hasn't started
+	}
 	if u.Error != "" {
 		return &usageJSON{Error: u.Error}
 	}

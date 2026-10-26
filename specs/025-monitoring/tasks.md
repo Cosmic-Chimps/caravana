@@ -133,7 +133,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   gains the disk facts, Slack, Discord and ntfy a line "Disk: / is 86% full, 11 GB left", the
   webhook JSON the fields; tests: 85 opens, 86→96 sends no second "opened", 84 stays, 82 resolves,
   stale samples change nothing.
-- [ ] T012 [US2] `internal/deploy/usage.go` + `internal/ui/usage_test.go`: `usageFromStats` takes
+- [x] T012 [US2] `internal/deploy/usage.go` + `internal/ui/usage_test.go`: `usageFromStats` takes
   `Usage − Cache` when both are measured, else `RSS` (ruling 1); the Running tab's memory and its
   ceiling meter follow; tests for both cases and the lab's Postgres numbers (24 / 3 / 18 → 6 MB).
 
