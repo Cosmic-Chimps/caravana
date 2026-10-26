@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -21,8 +23,9 @@ import (
 //
 // The filters are all in the address (place, range, sort), so a reload or a shared link shows the
 // same; the bars are links and the page is a GET, so it works without script. The live region
-// (#mon-live: sources, issues, charts and the table) is drawn again from /parts/monitoring on the
-// metrics notice, which comes once a minute; the head and the filter row sit outside it. The
+// (#mon-live: issues, charts and the table) is never swapped as a whole: the metrics notice, once a
+// minute, fetches /parts/monitoring, whose answer is out-of-band fragments by id (the issues, each
+// chart, each row), so the bars, keyboard focus and an open hover stay put. The
 // charts are inline SVG: every shape is an element with attributes and every colour a class, never
 // a style attribute (the page's policy forbids one). monitoring.js only adds the hover readout.
 // The values of the page are contracts/monitoring-screen.md's.
@@ -218,6 +221,7 @@ type monNotice struct {
 
 // monIssue is one row of the issues panel.
 type monIssue struct {
+	ID         string // the id the action link carries, so a refresh gives focus back to it
 	Mark       string // warning or failed
 	Text       monSentence
 	Detail     monSentence
@@ -246,6 +250,26 @@ type monTable struct {
 	Sorts []logsBarItem
 	Rows  []monRow
 	Empty string
+	// Known names the rows the page was drawn with, in their order (rowsKey). The refresh carries
+	// it back and swaps the rows one by one while it still names the rows there are.
+	Known string
+}
+
+// monOOB is what /parts/monitoring answers: the fragments the page swaps by id. Replace puts the
+// whole table body in place of the rows' own fragments (a row was added, removed or moved).
+type monOOB struct {
+	*monRegion
+	Replace bool
+}
+
+// rowsKey is a short name for the rows of the table in their order.
+func rowsKey(rows []monRow) string {
+	anchors := make([]string, len(rows))
+	for i, r := range rows {
+		anchors[i] = r.Anchor
+	}
+	sum := sha256.Sum256([]byte(strings.Join(anchors, "\n")))
+	return hex.EncodeToString(sum[:6])
 }
 
 // monNum is one number cell: "—" (None) when there is none, in warn hue when Warn, with
@@ -280,6 +304,8 @@ type monRow struct {
 type monSpark struct {
 	Segments []string
 	Title    string
+	// Read is the newest number beside the line: "0.4/0.5 vCPU", used over reserved.
+	Read string
 }
 
 // monMem is the table's memory cell: a bar and its readout.
@@ -351,7 +377,10 @@ func (s *server) partMonitoring(w http.ResponseWriter, r *http.Request, session 
 		s.partFailed(w, "read metrics", err)
 		return
 	}
-	s.renderPart(w, "monitoring", "mon-region", reg)
+	// The answer is fragments the page swaps by id (mon-oob), so the sort and range bars, what has
+	// keyboard focus and an open hover stay where they are. While the rows on the page are the rows
+	// there are, in the same order, each row is swapped alone; else the whole table body is.
+	s.renderPart(w, "monitoring", "mon-oob", monOOB{monRegion: reg, Replace: r.URL.Query().Get("known") != reg.Table.Known})
 }
 
 // partFailed answers a part that couldn't be read: a place that vanished is 404, the rest 500
@@ -587,7 +616,7 @@ func downPhrase(word string) string {
 // issue says one unusual service with the contract's fixed sentences.
 func (b *monBuilder) issue(is service.MetricIssue) monIssue {
 	name := b.serviceName(is.AppName, is.AppID, is.Service)
-	out := monIssue{Mark: "warning"}
+	out := monIssue{Mark: "warning", ID: "mon-issue-" + is.AppID + "-" + is.Service + "-" + string(is.Kind)}
 	if is.Level == metrics.LevelFailed {
 		out.Mark = "failed"
 	}
@@ -703,11 +732,13 @@ func (b *monBuilder) table() monTable {
 	}
 	if len(b.view.Services) == 0 {
 		t.Empty = "No apps here yet. Their numbers appear a minute after they run."
+		t.Known = rowsKey(nil)
 		return t
 	}
 	for _, sv := range b.view.Services {
 		t.Rows = append(t.Rows, b.row(sv))
 	}
+	t.Known = rowsKey(t.Rows)
 	return t
 }
 
@@ -837,7 +868,20 @@ func (b *monBuilder) spark(sv service.ServiceMetrics) *monSpark {
 		return float64(i) / float64(n-1) * sparkW
 	}
 	y := func(v float64) float64 { return sparkH - 2 - v/top*(sparkH-4) }
-	return &monSpark{Segments: segments(sv.CPU, x, y), Title: b.cpuTitle(*last, sv.CPUReservedMHz)}
+	return &monSpark{Segments: segments(sv.CPU, x, y), Title: b.cpuTitle(*last, sv.CPUReservedMHz), Read: b.cpuRead(*last, sv.CPUReservedMHz)}
+}
+
+// cpuRead is the figure beside the sparkline: "0.4/0.5 vCPU", used over reserved (vCPU when the
+// host's core speed is known, else MHz; only the used number when nothing is reserved).
+func (b *monBuilder) cpuRead(now float64, reserved *int64) string {
+	amount, unit := func(mhz float64) string { return strconv.Itoa(int(mhz + 0.5)) }, " MHz"
+	if b.coreMHz > 0 {
+		amount, unit = func(mhz float64) string { return vcpuText(mhz / b.coreMHz) }, " vCPU"
+	}
+	if reserved == nil {
+		return amount(now) + unit
+	}
+	return amount(now) + "/" + amount(float64(*reserved)) + unit
 }
 
 // cpuTitle is "0.4 of 1 vCPU reserved, now" (vCPU is the page's one CPU unit; MHz only when the

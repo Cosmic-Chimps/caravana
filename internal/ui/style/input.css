@@ -1589,7 +1589,7 @@
   .cv-mnchart-empty > .cv-mark { margin-right: 8px; }
 
   /* The apps table: a panel, a 38px head on ink-2, rows of 52px; a container of its own (cvmntbl). */
-  .cv-mntable { --cols: 14px minmax(0, 1.3fr) 110px 100px 150px 130px minmax(0, 1.2fr) 80px 36px; container-type: inline-size; container-name: cvmntbl; }
+  .cv-mntable { --cols: 14px minmax(0, 1.3fr) 110px 100px 150px 222px minmax(0, 1.2fr) 80px 36px; container-type: inline-size; container-name: cvmntbl; }
   .cv-mnthead, .cv-mnrow { display: grid; grid-template-columns: var(--cols); column-gap: 16px; align-items: center; padding: 0 18px; }
   .cv-mnthead { height: 38px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
   .cv-mnrow { position: relative; min-height: 52px; padding-block: 6px; font-size: 13px; }
@@ -1610,11 +1610,13 @@
   .cv-mnnumber-none { color: var(--color-fg-3); }
   /* "usually 180" after an unusual value: quieter, on its own words. */
   .cv-mnusual { color: var(--color-fg-3); }
-  .cv-mncpu { display: flex; align-items: center; }
+  /* The CPU and Memory cells sit above the row link's overlay (it covers the row), so their tooltips can be reached. */
+  .cv-mncpu { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
+  .cv-mncpu-read { flex: none; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
   /* The CPU sparkline: 120x24, one 1.25px fg-2 line. */
   .cv-mnspark { display: block; width: 120px; max-width: 100%; height: 24px; overflow: visible; }
   .cv-mnspark-line { fill: none; stroke: var(--color-fg-2); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-  .cv-mnmem { display: flex; align-items: center; gap: 10px; }
+  .cv-mnmem { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
   .cv-mnmem .cv-mnmeter-svg { flex: 1 1 auto; max-width: 140px; }
   .cv-mnmem-read { flex: none; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
   .cv-mnmem-read.cv-mnwarntext { color: var(--color-warn); }
@@ -1665,6 +1667,11 @@
 
   /* The live region and each section (a head over its panel) keep the page's gap and a tighter one. */
   .cv-mnregion { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  /* A slot is an id the refresh swaps into; it adds no box of its own, so its child is the flex item. */
+  .cv-mnslot { display: contents; }
+  /* The Nomad notices above the live region; hidden while empty so they leave no gap. */
+  .cv-mnnotices { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cv-mnnotices:empty { display: none; }
   .cv-mnblock { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   /* The Apps home's rail: the Platform panel's head and link, with the rail's own gap. */
   .cv-mnplatform { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -1687,10 +1694,10 @@
   .cv-mnsec-tools { margin-left: 0; }
 }
 
-/* The table folds when it has under 900px of its own (nine columns need about that much; the contract's
+/* The table folds when it has under 980px of its own (nine columns and the CPU figure need about that much; the contract's
    640px would overflow): mark, name and copies on the first line, then each fact as a label and its value
    (the labels come from data-label), the memory meter across, and Restarts with the logs link last. */
-@container cvmntbl (max-width: 899.98px) {
+@container cvmntbl (max-width: 979.98px) {
   .cv-mnthead { display: none; }
   .cv-mnrow { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; padding-block: 12px; }
   .cv-mnrow > .cv-mark { align-self: start; margin-top: 5px; }

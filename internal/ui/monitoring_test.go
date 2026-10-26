@@ -600,7 +600,7 @@ func TestMonitoringPage(t *testing.T) {
 		`hx-get="/parts/monitoring" hx-trigger="sse:metrics"`, `id="mon-live"`, `data-live`, `sse-connect="/live?watch=monitoring"`,
 		`id="mon-chart-requests"`, `id="mon-chart-errors"`, `id="mon-chart-p95"`, `id="mon-chart-memory"`,
 		`<svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none"`, `class="cv-mnline"`, `class="cv-mngrid"`,
-		`<a href="/apps/whoami" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
+		`<a href="/apps/whoami" id="mon-row-whoami-web-link" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
 		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`, `data-mon-now>last 10 min</span>`,
 	} {
 		if !strings.Contains(body, want) {
@@ -647,7 +647,7 @@ func TestMonitoringPartAndRanges(t *testing.T) {
 		if strings.Contains(body, "<html") || strings.Contains(body, `class="cv-shell"`) {
 			t.Errorf("part %s draws a whole page", rng)
 		}
-		if !strings.Contains(body, `id="mon-chart-requests"`) || !strings.Contains(body, `cv-mntable"`) {
+		if !strings.Contains(body, `hx-swap-oob="innerHTML:#mon-chart-requests"`) || !strings.Contains(body, `cv-mntable"`) {
 			t.Errorf("part %s lacks the charts or the table:\n%s", rng, text(body))
 		}
 		if regexp.MustCompile(monNoStyle).MatchString(body) {

@@ -102,6 +102,15 @@
     }
   }
 
+  // The minute's refresh swaps each chart's content by id (htmx's out-of-band swaps). A chart with the
+  // pointer over it keeps what it shows until the pointer leaves, so an open hover doesn't blink away.
+  document.addEventListener("htmx:oobBeforeSwap", function (event) {
+    const target = event.detail && event.detail.target;
+    if (target instanceof Element && target.classList.contains("cv-mnchart") && saved.has(target)) {
+      event.preventDefault();
+    }
+  });
+
   function plotOf(target) {
     return target instanceof Element ? target.closest(PLOT) : null;
   }
