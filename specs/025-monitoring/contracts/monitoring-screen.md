@@ -322,3 +322,11 @@ above disagree, this section wins.
    service (`/logs?app=<id>&service=<app>/<service>`); "—" alone (no "—%", "—MB"); rates and percents with one
    decimal; restarts warn from 2 (the rule's threshold); the ARIA table's cells (the logs link inside a
    `role="cell"`, header and cell counts equal).
+
+## Last look (designer, 2026-10-26): Approved
+
+1. **Deploy labels never collide.** Markers closer than 4% of the plot (12 of its 300 units) become one marker with one label ("6 deploys") whose `title` lists every deploy in it.
+2. **A stopped app has no "now".** Its row reads "—" in requests, errors, slowest 5%, the CPU figure and the memory readout; only Restarts and the CPU sparkline (history) stay.
+3. **CPU under 0.01 vCPU.** A used value above 0 and under 0.01 is written "<0.01" (so "<0.01/0.05 vCPU"), in the readout, the sparkline title and the host meter; exactly 0 stays "0".
+
+025 is done, and with it Phase 2.6's screens.
