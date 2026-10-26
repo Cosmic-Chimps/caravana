@@ -347,7 +347,7 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 			marked = append(marked, d)
 		}
 	}
-	groups := groupDeploys(marked)
+	groups := mergeNearMarkers(groupDeploys(marked), func(d service.MetricDeploy) float64 { return tx(d.EndedAt) })
 	for _, grp := range groups {
 		plot.Deploys = append(plot.Deploys, monMark{X: units(tx(grp[0].EndedAt)), Title: b.deployTitle(grp)})
 	}
@@ -571,6 +571,32 @@ func groupDeploys(deploys []service.MetricDeploy) [][]service.MetricDeploy {
 			continue
 		}
 		out = append(out, []service.MetricDeploy{d})
+	}
+	return out
+}
+
+// deployMergeGap is how close two markers may sit before they become one: 4% of the plot's width
+// (12 of its 300 units), about what three characters of a label take. Closer than that the eye can't
+// tell the lines apart and their labels ("3 deploys" twice) read as one repeated. It is a fixed gap
+// rather than a measured label width because the plot is stretched to its box (the label's own width
+// in units changes with the screen); 4% keeps markers 30 minutes apart on 6 h (8%) separate and joins
+// 30 minutes apart on 24 h (2%).
+const deployMergeGap = 0.04 * plotW
+
+// mergeNearMarkers joins markers (oldest first) whose lines fall within deployMergeGap of the one
+// before it into one marker, whose label counts every deploy in it and whose title lists them all.
+// x is a deploy's place on the plot, in its units.
+func mergeNearMarkers(groups [][]service.MetricDeploy, x func(service.MetricDeploy) float64) [][]service.MetricDeploy {
+	var out [][]service.MetricDeploy
+	for _, g := range groups {
+		if n := len(out); n > 0 {
+			prev := out[n-1]
+			if x(g[0])-x(prev[len(prev)-1]) < deployMergeGap {
+				out[n-1] = append(prev[:len(prev):len(prev)], g...)
+				continue
+			}
+		}
+		out = append(out, g)
 	}
 	return out
 }

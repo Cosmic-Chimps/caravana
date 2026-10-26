@@ -808,6 +808,16 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 
 	row.Spark = b.spark(sv)
 	row.Mem = b.memory(sv, kinds[metrics.Memory])
+	if sv.State == service.ServiceStopped {
+		// A stopped app has no "now": what its last minutes read is history, not a number to show.
+		// Only the sparkline stays, as the CPU it used while it ran; Restarts is the app's own.
+		why := "The app is stopped."
+		row.Requests, row.Errors, row.P95 = none(why), none(why), none(why)
+		row.Mem = monMem{}
+		if row.Spark != nil {
+			row.Spark.Title, row.Spark.Read = "CPU while the app ran; it is stopped now", "—"
+		}
+	}
 	if sv.Restarts == nil {
 		row.Restarts = monNum{Text: "—", None: true}
 	} else {

@@ -534,7 +534,7 @@ func TestMonTableRows(t *testing.T) {
 		!w.Mem.Warn || w.Mem.Read != "930 / 1000 MB" || !w.Restarts.Warn || w.Restarts.Text != "2" {
 		t.Errorf("worker = %+v", w)
 	}
-	if old := rows["old"]; old.Mark != "idle" || old.Copies != "stopped" || old.MarkWord != "stopped" || old.Requests.Text != "0.4/s" {
+	if old := rows["old"]; old.Mark != "idle" || old.Copies != "stopped" || old.MarkWord != "stopped" || old.Requests.Text != "—" || old.P95.Text != "—" {
 		t.Errorf("stopped = %+v", old)
 	}
 	// The mark is the app's status first: not running and deploy failed are ■ (a service that is down
