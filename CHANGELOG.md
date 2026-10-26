@@ -107,6 +107,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   client can match the page.
 
 ### Changed
+- Dim text raised to fg-3 for contrast across the console: counts, times, the copy id on Logs and other
+  small labels that were drawn in the dimmest grey now read a shade brighter.
 - The Backups tab's run and next-backup times are drawn as clock times (UTC, local beside them).
 - An app's Domains page grew a status and a certificate column (the same rows as the Domains
   page, filtered to the app), and its domains are edited there with the options above.

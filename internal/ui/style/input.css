@@ -610,7 +610,7 @@
   .cv-bar-none { height: 4px; background: transparent; }
   /* A restorable day whose newest run failed: the bar keeps its restore point and wears a failed cap. */
   .cv-bar-capped { box-shadow: inset 0 3px 0 var(--color-failed); }
-  .cv-strip-ends { display: flex; justify-content: space-between; max-width: 900px; font: 400 11px/1 var(--font-mono); color: var(--color-fg-4); }
+  .cv-strip-ends { display: flex; justify-content: space-between; max-width: 900px; font: 400 11px/1 var(--font-mono); color: var(--color-fg-3); }
   .cv-bfail { font-size: 13px; line-height: 1.5; color: var(--color-fg-2); overflow-wrap: anywhere; }
   .cv-bpath { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   /* The runs, and the restores: mark, when, facts, and the action at the right. */
@@ -685,7 +685,7 @@
   .cv-snav-item:hover, .cv-snav-item[aria-current="page"] { background: var(--color-ink-2); color: var(--color-fg-1); }
   .cv-snav-item[aria-current="page"] .cv-icon { color: var(--color-fg-1); }
   .cv-snav-text { flex: 1; min-width: 0; }
-  .cv-snav-count { font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+  .cv-snav-count { font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
 
   .cv-settings-main { container-type: inline-size; display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 1180px; min-width: 0; padding: 36px 32px 64px; }
   .cv-sthead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
@@ -789,7 +789,7 @@
   .cv-conn-acts { justify-content: flex-start; }
   .cv-thead { display: none; }
   /* A stacked token row names its facts, since the head is gone. */
-  .cv-conn-row-tok > [data-label]::before { content: attr(data-label) " "; color: var(--color-fg-4); }
+  .cv-conn-row-tok > [data-label]::before { content: attr(data-label) " "; color: var(--color-fg-3); }
   .cv-conn-row-tok > [data-label] > .sr-only { display: none; }
   .cv-conn .cv-confirm-row .cv-confirm-body { left: 0; right: auto; }
 }
@@ -928,9 +928,9 @@
   .cv-swhere { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cv-swords { font-size: 14px; line-height: 1.35; color: var(--color-fg-1); }
   .cv-swords-paused { color: var(--color-fg-3); }
-  .cv-scron { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-4); overflow-wrap: anywhere; }
+  .cv-scron { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   .cv-snext { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); }
-  .cv-snext-none { color: var(--color-fg-4); }
+  .cv-snext-none { color: var(--color-fg-3); }
   .cv-slast { font: 400 12px/1.2 var(--font-mono); }
   .cv-slast-now { color: var(--color-rolling); }
   .cv-slast-when { color: var(--color-fg-2); }
@@ -1316,7 +1316,7 @@
   .cv-lrailitem-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The app's name before the service, shown only where the group label isn't (the narrow rail). */
   .cv-lrailapp { display: none; color: var(--color-fg-3); }
-  .cv-lrailitem-n { flex: none; font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-4); }
+  .cv-lrailitem-n { flex: none; font: 400 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
   /* "all services" has a ring where the others have their hue's square. */
   .cv-svcring { flex: none; box-sizing: border-box; width: 8px; height: 8px; border: 1px solid var(--color-line-3); border-radius: 50%; }
   /* The copies of the chosen service, indented under it. */
@@ -1324,7 +1324,7 @@
   .cv-lrailcopy { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border-radius: 4px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; }
   .cv-lrailcopy:hover { background: var(--color-ink-2); color: var(--color-fg-1); }
   .cv-lrailcopy.cv-on, .cv-lrailcopy[aria-current="true"] { background: var(--color-ink-2); color: var(--color-fg-1); }
-  .cv-lgone { font: 400 11px/1 var(--font-mono); color: var(--color-fg-4); }
+  .cv-lgone { font: 400 11px/1 var(--font-mono); color: var(--color-fg-3); }
 
   /* The service hue: the console's one identity color, six low-chroma hues the template picks by a
      stable hash of <app>/<service> (cv-hue-0 .. cv-hue-5), never a status hue's exact value. Put the
@@ -1364,7 +1364,7 @@
   .cv-logstream { min-width: 0; overflow: hidden; background: var(--color-ink-0); border: 1px solid var(--color-line-1); border-radius: 4px; container-type: inline-size; container-name: cvstream; }
   .cv-lstreamhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--color-line-1); font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
   .cv-lstreamhead-live { color: var(--color-rolling); }
-  .cv-lstreamhead-zone { margin-left: auto; color: var(--color-fg-4); white-space: nowrap; }
+  .cv-lstreamhead-zone { margin-left: auto; color: var(--color-fg-3); white-space: nowrap; }
   .cv-lstreamhead a { color: var(--color-fg-1); }
   /* An open link to a line that isn't among the rows read: a full-width sentence under the head's line. */
   .cv-lstale { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-2); }
@@ -1389,7 +1389,7 @@
   .cv-llvl-debug { color: var(--color-fg-3); }
   .cv-lsvc { display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
   .cv-lsvc .cv-svcname { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .cv-lcopy { flex: none; font: 400 12px/20px var(--font-mono); color: var(--color-fg-4); }
+  .cv-lcopy { flex: none; font: 400 12px/20px var(--font-mono); color: var(--color-fg-3); }
   /* The text and its chip are one cell in the markup; wide, the cell vanishes and they are the row's own
      fourth and fifth columns, narrow it is one inline flow (the chip after the text's last word). */
   .cv-lbody { display: contents; }

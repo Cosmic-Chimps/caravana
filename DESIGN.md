@@ -290,9 +290,10 @@ Blue on the status marks.
 the "—" of a value that doesn't exist, timestamps and counts are Label Text (fg-3) at the least; fg-4 is for
 marks that are not read: dashed edges, hatching, tick separators, the ring of an empty state. fg-4 is about
 3.3:1 against a panel, below the 4.5:1 that text needs, and "quiet" is made by size and position, not by
-dimming below legibility. A new surface that wants a dimmer text takes fg-3. (Older surfaces that still set
-a count or a time in fg-4 move to fg-3 as their pages are next touched; the Logs page's estimated time and
-histogram labels already did.)
+dimming below legibility. A new surface that wants a dimmer text takes fg-3. Every older surface was brought
+in line with 025: the deploy strip's ends, the Settings nav counts, the token label, the Schedules cron line
+and "not scheduled", and on Logs the rail's copy counts, "(gone)", "times in UTC" and the copy id. The
+breadcrumb's "/" stays fg-4: it is a separator mark, `aria-hidden`, not text a reader needs.
 
 **The Flat Ground Rule.** No gradients anywhere. The one exception is the hard-stop half fill of the
 rolling mark, which is a shape, not a blend.
