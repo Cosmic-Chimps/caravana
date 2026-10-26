@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.13.0 - 2026-10-26
+
 ### Added
 - **Schedules**: a command on a timer in a fresh copy of an app. A schedule names an app and one
   of its services, a command (no shell implied: use `sh -c '…'`), when it runs (words such as
