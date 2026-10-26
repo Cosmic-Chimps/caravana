@@ -138,9 +138,12 @@ func meterFill(used, total float64) float64 {
 	return max(0, min(100, used/total*100))
 }
 
-// vcpuText is an amount of CPU in vCPU: whole from 10, one decimal from 1, up to two under 1
-// (a small app's 0.04 is not "0"): "12", "1.2", "0.1", "0.04".
-func vcpuText(v float64) string {
+// vcpuText is an amount of CPU in vCPU, written as amountText does.
+func vcpuText(v float64) string { return amountText(v) }
+
+// amountText is a number as the page writes an amount: whole from 10, one decimal from 1, up to
+// two under 1 (a small app's 0.04 is not "0"): "12", "1.2", "0.1", "0.04".
+func amountText(v float64) string {
 	switch {
 	case v >= 10:
 		return strconv.Itoa(int(v + 0.5))
@@ -305,9 +308,16 @@ func hostChartOf(now time.Time, h service.HostView) *monHostChart {
 	if h.Memory.Total != nil {
 		top = max(top, float64(*h.Memory.Total))
 	}
-	g := geom{n: n, ymax: top * 1.04}
+	// The scale: gigabytes from a gigabyte up; the top gridline is a round number.
+	useGB := top >= 1024
+	conv := identity
+	if useGB {
+		conv = func(mb float64) float64 { return mb / 1024 }
+	}
+	ymax, topLine := scaleOf(top*1.04, 0, conv)
+	g := geom{n: n, ymax: ymax}
 
-	plot := &monPlot{Label: "Memory over the last 7 days: what is used and what is reserved"}
+	plot := &monPlot{Label: "Memory over the last 7 days: what is used and what is reserved", Scale: memoryScaleLabel(useGB, topLine)}
 	plot.Gaps = gapsOf(hist.MemoryUsed, g, hist.Points)
 	words := func(label string, vals []*float64) string {
 		lo, hi, latest, ok := rangeOf(vals, identity)

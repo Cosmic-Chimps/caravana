@@ -77,6 +77,8 @@
     <line class="cv-mngrid" x1="0" x2="300" y1="60" y2="60"/>
     <line class="cv-mngrid" x1="0" x2="300" y1="90" y2="90"/>
     {{range .Bands}}<polygon class="cv-mnband" points="{{.Points}}"><title>{{.Title}}</title></polygon>
+    <polyline class="cv-mnband-edge" points="{{.Top}}"/>
+    <polyline class="cv-mnband-edge" points="{{.Bottom}}"/>
     {{end}}
     {{with .Warn}}<rect class="cv-mnwarn" x="{{.X}}" y="0" width="{{.W}}" height="120"><title>{{.Title}}</title></rect>
     {{end}}
@@ -88,6 +90,7 @@
     {{end}}{{end}}
     {{if .Hover}}<line class="cv-mncross" x1="0" x2="0" y1="0" y2="120" data-mon-cross/>{{end}}
   </svg>
+  {{with .Scale}}<span class="cv-mnscale" aria-hidden="true">{{.}}</span>{{end}}
   {{with .Labels}}<div class="cv-mnlabels">{{range .}}<span class="cv-mndeploy-label">{{.}}</span>{{end}}</div>{{end}}
 </div>
 <table class="sr-only">

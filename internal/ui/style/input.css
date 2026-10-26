@@ -1559,6 +1559,10 @@
   .cv-mngrid { stroke: var(--color-line-1); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
   /* The band: the lowest to the highest value of the same hour on the earlier days, a polygon, never an area from zero. */
   .cv-mnband { fill: var(--color-ink-3); opacity: 0.7; stroke: none; }
+  /* The band's low and high edges, 1px line-2 over the polygon, so a narrow band still shows. */
+  .cv-mnband-edge { fill: none; stroke: var(--color-line-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  /* The scale: the value of the top gridline (y=30 of 120), 11px fg-3 mono, just above that line at the plot's left. */
+  .cv-mnscale { position: absolute; left: 0; top: 25%; transform: translateY(-100%); padding-bottom: 1px; font: 400 11px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; pointer-events: none; text-shadow: 0 0 3px var(--color-ink-1), 0 0 3px var(--color-ink-1); }
   /* From when a service became unusual to now: an 8% warn rect. */
   .cv-mnwarn { fill: var(--color-warn); opacity: 0.08; stroke: none; }
   /* A stretch with no samples: faint ground and a dashed edge, never a zero. */

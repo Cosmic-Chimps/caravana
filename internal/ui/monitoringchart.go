@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,8 @@ type monCaption struct {
 type monPoly struct {
 	Points string
 	Title  string
+	// Top and Bottom are the band's high and low edges, drawn as lines over the polygon.
+	Top, Bottom string
 }
 
 // monRect is a rect that spans the plot's height from X, Width wide.
@@ -86,6 +89,8 @@ type monPlot struct {
 	Labels  []string
 	Lines   []monLine
 	Table   monPlotTable
+	// Scale is the top gridline's value with its unit ("4 req/s"), written at its left end.
+	Scale string
 
 	Hover  bool
 	T0     string
@@ -125,6 +130,36 @@ func (g geom) y(v float64) float64 {
 	return plotH - plotPad - min(v, g.ymax)/g.ymax*(plotH-2*plotPad)
 }
 
+// topGridFraction is the share of the value range that lies under the top gridline (y=30 of the
+// plot's 120 units, with the series 4 units off the top and bottom): the scale's label names the
+// value on that line, so the line is where the reader looks.
+const topGridFraction = (plotH - plotPad - 30) / (plotH - 2*plotPad)
+
+// niceCeil is the smallest of 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 times a power of ten that is at
+// least v (1 for nothing): a label a person would write.
+func niceCeil(v float64) float64 {
+	if v <= 0 {
+		return 1
+	}
+	exp := math.Pow(10, math.Floor(math.Log10(v)))
+	for _, m := range []float64{1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10} {
+		if m*exp >= v*(1-1e-9) {
+			return m * exp
+		}
+	}
+	return 10 * exp
+}
+
+// scaleOf sets a chart's scale from the largest number it draws (rawMax, in stored units, margin
+// included): the top gridline is a round number of the displayed unit that is at least what the
+// data needs and at least floor (a chart that stays calm doesn't zoom into its noise). It returns
+// the value of the plot's top in stored units and the top gridline's value in displayed units.
+// conv turns stored units into displayed ones and is linear.
+func scaleOf(rawMax, floor float64, conv func(float64) float64) (ymax, top float64) {
+	top = niceCeil(max(conv(rawMax)*topGridFraction, floor))
+	return top / topGridFraction / conv(1), top
+}
+
 // metricSpec says how one metric reads: how its numbers are written in the head, the title and
 // the hover, and what its band is called.
 type metricSpec struct {
@@ -141,6 +176,10 @@ type metricSpec struct {
 	// usual writes "usually ..." for the band's median; nil for a chart without one.
 	usual func(float64) string
 	warn  bool
+	// floor is the least the top gridline may be, in displayed units (0 for none); scale writes
+	// the top gridline's value with its unit ("4 req/s", "5%", "800 ms", "1.2G").
+	floor float64
+	scale func(top float64) string
 }
 
 func identity(v float64) float64 { return v }
@@ -161,10 +200,10 @@ func (b *monBuilder) charts() []monChart {
 	specs := []metricSpec{
 		{id: "requests", title: "Requests", series: v.Requests, http: true, conv: identity, num: rateText, unit: "req/s",
 			head:  func(now float64, _ bool) (string, string) { return rateText(now), "req/s" },
-			usual: rateText},
+			usual: rateText, scale: func(top float64) string { return amountText(top) + " req/s" }},
 		{id: "errors", title: "Errors", series: v.Errors, http: true, conv: identity, num: percentText, unit: "%",
 			head:  func(now float64, _ bool) (string, string) { return percentText(now), "% 5xx" },
-			usual: percentText, warn: v.Errors.UnusualSince != nil},
+			usual: percentText, warn: v.Errors.UnusualSince != nil, floor: 5, scale: func(top float64) string { return amountText(top) + "%" }},
 		{id: "p95", title: "Slowest 5%", series: v.P95, http: true, conv: identity,
 			num: func(f float64) string { return strconv.Itoa(int(f + 0.5)) }, unit: "ms",
 			head: func(now float64, over bool) (string, string) {
@@ -174,9 +213,10 @@ func (b *monBuilder) charts() []monChart {
 				}
 				return n, u
 			},
-			usual: func(f float64) string { return msWords(f) }, warn: v.P95.UnusualSince != nil},
+			usual: func(f float64) string { return msWords(f) }, warn: v.P95.UnusualSince != nil, scale: msWords},
 		{id: "memory", title: "Memory", series: v.Memory, conv: memConv, num: memNum, unit: memUnit,
-			head: func(now float64, _ bool) (string, string) { return memNum(memConv(now)), memUnit + limitWords }},
+			head:  func(now float64, _ bool) (string, string) { return memNum(memConv(now)), memUnit + limitWords },
+			scale: func(top float64) string { return memoryScaleLabel(useGB, top) }},
 	}
 	out := make([]monChart, 0, len(specs))
 	for _, sp := range specs {
@@ -261,13 +301,14 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 			g.ymax = max(g.ymax, *p.High)
 		}
 	}
-	g.ymax *= 1.08
+	top := 0.0
+	g.ymax, top = scaleOf(g.ymax*1.08, sp.floor, sp.conv)
 
 	lo, hi, latest, haveLatest := rangeOf(vals, sp.conv)
 	plot := &monPlot{
 		Label: sp.title + " over the last " + rangeWords(v.Range),
 		T0:    times[0].UTC().Format(time.RFC3339), Step: int(v.Range.Step / time.Second), Unit: sp.unit,
-		Date: dated, Hover: true,
+		Date: dated, Hover: true, Scale: sp.scale(top),
 	}
 	if sp.series.Now != nil {
 		plot.Label += ", " + sp.num(sp.conv(*sp.series.Now)) + " " + sp.unit + " in the last 10 minutes"
@@ -401,7 +442,7 @@ func (b *monBuilder) bands(g geom, pts []service.SeriesPoint, sp metricSpec) []m
 		for i := len(bottoms) - 1; i >= 0; i-- {
 			poly = append(poly, bottoms[i])
 		}
-		out = append(out, monPoly{Points: strings.Join(poly, " ")})
+		out = append(out, monPoly{Points: strings.Join(poly, " "), Top: edgeOf(tops), Bottom: edgeOf(bottoms)})
 		tops, bottoms = nil, nil
 	}
 	for i, p := range pts {
@@ -433,6 +474,22 @@ func (b *monBuilder) bands(g geom, pts []service.SeriesPoint, sp metricSpec) []m
 		out[i].Title = title
 	}
 	return out
+}
+
+// edgeOf is a band edge as a polyline's points; a lone point is drawn as a short stroke so it shows.
+func edgeOf(pts []string) string {
+	if len(pts) == 1 {
+		return pts[0] + " " + pts[0]
+	}
+	return strings.Join(pts, " ")
+}
+
+// memoryScaleLabel writes the memory chart's top gridline: "1.2G", or "800M" below a gigabyte.
+func memoryScaleLabel(useGB bool, top float64) string {
+	if useGB {
+		return amountText(top) + "G"
+	}
+	return amountText(top) + "M"
 }
 
 // gapMinRun is how many missing points in a row make a stretch drawn as a gap.
