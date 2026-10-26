@@ -125,7 +125,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   per-series reservations, the 7-day hourly history, baseline and sources; no Nomad call.
   Pure part done (`room.go`, `disk.go` + tests: `Room`, `DiskState`, `DiskRun`, `Stale`,
   `UsedPercent`); `internal/service/host.go` (`Service.Host`, `HostView`) done too.
-- [ ] T011 [US4] `internal/service/attention.go`, `notifier.go` + `internal/notify` + tests:
+- [x] T011 [US4] `internal/service/attention.go`, `notifier.go` + `internal/notify` + tests:
   `AttentionDiskNearlyFull` from `DiskRows` (host-level, one per watched filesystem, `Mount`,
   `Holds`, `UsedPercent`, `FreeBytes`, `Level`, `When`), not judged when the host sample is older
   than 5 minutes (the "source unknown" branch in `diffProblems`, so an outage sends no

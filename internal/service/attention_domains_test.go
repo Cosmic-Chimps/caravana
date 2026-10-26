@@ -102,8 +102,8 @@ func TestDomainProblemKeyAndEvent(t *testing.T) {
 	if got := problemKey(elsewhere); got != "domain_dns_elsewhere|shop|web|shop.example.com" {
 		t.Errorf("problemKey = %q", got)
 	}
-	if isCopyKind(AttentionDomainDNSElsewhere) || isCopyKind(AttentionDomainCertExpiring) {
-		t.Error("a domain kind is a copy kind")
+	if notJudged(AttentionDomainDNSElsewhere, judged{}) || notJudged(AttentionDomainCertExpiring, judged{}) {
+		t.Error("a domain kind is judged only when Nomad or the host is readable")
 	}
 	const base = "https://caravana.example.com"
 	for _, tc := range []struct {
@@ -135,7 +135,7 @@ func TestDiffProblemsDomains(t *testing.T) {
 	admin := AttentionItem{Kind: AttentionDomainDNSElsewhere, AppID: "shop", Service: "web", Domain: "admin.example.com", AddressSeen: "198.51.100.9"}
 
 	// Two domains of one service pointing elsewhere: one problem each.
-	ch := diffProblems(nil, []AttentionItem{shop, admin}, true, exists, now, delay)
+	ch := diffProblems(nil, []AttentionItem{shop, admin}, allJudged, exists, now, delay)
 	if len(ch.Opened) != 2 {
 		t.Fatalf("opened %+v, want one per domain", ch.Opened)
 	}
@@ -143,14 +143,14 @@ func TestDiffProblemsDomains(t *testing.T) {
 	moved := shop
 	moved.AddressSeen = "198.51.100.10"
 	prev := []store.SentProblem{sentRow(shop, now.Add(-time.Minute)), sentRow(admin, now.Add(-time.Minute))}
-	ch = diffProblems(prev, []AttentionItem{moved, admin}, true, exists, now, delay)
+	ch = diffProblems(prev, []AttentionItem{moved, admin}, allJudged, exists, now, delay)
 	if len(ch.Opened) != 0 || len(ch.Seen) != 2 {
 		t.Errorf("a domain still pointing elsewhere: %+v", ch)
 	}
 	// The state cleared (or the domain was removed): resolved after the delay;
 	// a younger absence is kept. Nomad unreadable changes nothing for them.
 	prev = []store.SentProblem{sentRow(shop, now.Add(-delay)), sentRow(admin, now.Add(-time.Minute))}
-	ch = diffProblems(prev, nil, false, exists, now, delay)
+	ch = diffProblems(prev, nil, judged{Disks: true}, exists, now, delay)
 	if len(ch.Resolved) != 1 || ch.Resolved[0].Key != problemKey(shop) {
 		t.Errorf("cleared: %+v, want shop's resolved only", ch)
 	}

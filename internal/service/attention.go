@@ -12,6 +12,8 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/edge"
+	"github.com/cosmic-chimps/caravana/internal/metrics"
+	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -31,6 +33,7 @@ const (
 	AttentionScheduleSkipping    AttentionKind = "schedule_skipping"     // a schedule's newest 3 slots were skipped: a warning
 	AttentionDomainDNSElsewhere  AttentionKind = "domain_dns_elsewhere"  // a domain's DNS points at another host (feature 023)
 	AttentionDomainCertExpiring  AttentionKind = "domain_cert_expiring"  // a domain's certificate is near its end and not renewed
+	AttentionDiskNearlyFull      AttentionKind = "disk_nearly_full"      // a watched filesystem of the host is 85 % full or more (feature 025)
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -75,6 +78,15 @@ type AttentionItem struct {
 	Domain      string
 	AddressSeen string
 	ExpiresAt   *time.Time
+	// Mount is the filesystem of disk_nearly_full (feature 025; the item has no
+	// app). Holds is what is on it ("nomad", "docker"), UsedPercent how full
+	// the newest sample says it is, FreeBytes what is left, and Level whether
+	// it is a warning (from 85 %) or failed (from 95 %).
+	Mount       string
+	Holds       []string
+	UsedPercent float64
+	FreeBytes   int64
+	Level       metrics.DiskLevel
 	When        time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
@@ -86,6 +98,10 @@ type AttentionItem struct {
 type Attention struct {
 	Items         []AttentionItem // newest first
 	CopiesUnknown bool            // Nomad couldn't be read: the copy kinds are missing
+	// DisksUnknown says the host wasn't sampled in the last 5 minutes (or
+	// ever): the disk kind is missing because it couldn't be judged, not
+	// because the disks are fine, so the notifier sends no "resolved" for it.
+	DisksUnknown bool
 }
 
 // Attention builds the needs-you list from what is stored and what Nomad
@@ -122,7 +138,101 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	if copiesErr != nil {
 		s.log.Warn("can't read copies from Nomad; the needs-you list leaves them out", "error", copiesErr)
 	}
-	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds, domains), nil
+	out := attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds, domains)
+	disks, known, err := s.diskItems(ctx, s.clock.Now().UTC())
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.DisksUnknown = !known
+	out.Items = append(out.Items, disks...)
+	sortAttention(out.Items)
+	return out, nil
+}
+
+// diskItems is the disk kind (feature 025, ruling 8), derived from the stored
+// host rows on every read like the rest of the list. known is false when the
+// newest host sample is older than 5 minutes or there is none: the disks are
+// then not judged and the list has no disk item either way. The history is read
+// only for a filesystem that is at 83 % or more in the newest sample, since an
+// item can't be open below that.
+func (s *Service) diskItems(ctx context.Context, now time.Time) (items []AttentionItem, known bool, err error) {
+	h, err := s.store.NewestHost(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if metrics.Stale(h.TS, now) {
+		return nil, false, nil
+	}
+	newest, err := s.store.DiskRows(ctx, store.MinuteRes, h.TS, h.TS.Add(time.Second))
+	if err != nil {
+		return nil, false, err
+	}
+	needsHistory := false
+	for _, d := range newest {
+		if metrics.UsedPercent(d.UsedMB, d.FreeMB) >= metrics.DiskResolvePercent {
+			needsHistory = true
+		}
+	}
+	var history []store.DiskSample
+	if needsHistory {
+		// The minute rows cover 48 hours; the 10-minute rows before them reach
+		// back 8 days (they overlap the minute rows, so only the older ones).
+		edge := now.Add(-store.MinuteKeep)
+		older, err := s.store.DiskRows(ctx, store.SlotRes, now.Add(-store.SlotKeep), edge)
+		if err != nil {
+			return nil, false, err
+		}
+		recent, err := s.store.DiskRows(ctx, store.MinuteRes, edge, h.TS.Add(time.Second))
+		if err != nil {
+			return nil, false, err
+		}
+		history = append(older, recent...)
+	}
+	return diskItemsOf(newest, history), true, nil
+}
+
+// diskItemsOf is the pure part: one item for each filesystem of the newest
+// sample whose history, oldest first, leaves it open (metrics.DiskRun: it
+// opens at 85 % and stays open down to 83 %). A filesystem only the history
+// has (no longer watched) gives none. With several nodes a mount is judged on
+// its fullest. history may be empty when no filesystem is near the line.
+func diskItemsOf(newest, history []store.DiskSample) []AttentionItem {
+	fullest := map[string]store.DiskSample{}
+	for _, d := range newest {
+		if old, ok := fullest[d.Mount]; !ok || metrics.UsedPercent(d.UsedMB, d.FreeMB) > metrics.UsedPercent(old.UsedMB, old.FreeMB) {
+			fullest[d.Mount] = d
+		}
+	}
+	var items []AttentionItem
+	for mount, d := range fullest {
+		pct := metrics.UsedPercent(d.UsedMB, d.FreeMB)
+		var samples []metrics.DiskSample
+		for _, r := range history {
+			if r.Mount == mount {
+				samples = append(samples, metrics.DiskSample{At: r.TS, UsedPercent: metrics.UsedPercent(r.UsedMB, r.FreeMB)})
+			}
+		}
+		if len(samples) == 0 || !samples[len(samples)-1].At.Equal(d.TS) {
+			samples = append(samples, metrics.DiskSample{At: d.TS, UsedPercent: pct})
+		}
+		slices.SortStableFunc(samples, func(a, b metrics.DiskSample) int {
+			return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.UsedPercent, b.UsedPercent))
+		})
+		open, when := metrics.DiskRun(samples)
+		if !open {
+			continue
+		}
+		free := d.FreeMB << 20
+		items = append(items, AttentionItem{
+			Kind: AttentionDiskNearlyFull, Mount: mount, Holds: strings.Split(d.Holds, ","),
+			UsedPercent: pct, FreeBytes: free, Level: metrics.DiskState(pct, true).Level, When: when,
+			Detail: fmt.Sprintf("The disk at %s is %.0f%% full: %s left.", mount, pct, notify.Size(free)),
+		})
+	}
+	return items
 }
 
 // scheduleFacts is what the schedule kinds are derived from (feature 022,
@@ -249,7 +359,14 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 		}
 	}
 
-	slices.SortStableFunc(out.Items, func(a, b AttentionItem) int {
+	sortAttention(out.Items)
+	return out
+}
+
+// sortAttention orders the list newest first, then by app, service, kind and
+// what the item is about, so the same facts always give the same list.
+func sortAttention(items []AttentionItem) {
+	slices.SortStableFunc(items, func(a, b AttentionItem) int {
 		return cmp.Or(
 			b.When.Compare(a.When), // newest first
 			strings.Compare(a.AppID, b.AppID),
@@ -257,9 +374,9 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 			strings.Compare(string(a.Kind), string(b.Kind)),
 			strings.Compare(a.ScheduleID, b.ScheduleID),
 			strings.Compare(a.Domain, b.Domain),
+			strings.Compare(a.Mount, b.Mount),
 		)
 	})
-	return out
 }
 
 // copyItems turns one app's copies into items, per service (data-model

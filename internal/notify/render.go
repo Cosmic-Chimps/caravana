@@ -149,7 +149,8 @@ const maxDetail = 500
 // then, for a deploy that came from CI, a line saying from where ("From CI:
 // ..."), for a problem about a schedule its name and exit code ("Schedule:
 // ..."), then the raw reason on a line of its own ("Detail: ..."), so the
-// message says what went wrong and not only that something did (FR-006). The
+// message says what went wrong and not only that something did (FR-006). For a
+// problem about a filesystem it adds "Disk: / is 86% full, 11 GB left". The
 // detail is put on one line and cut at maxDetail characters.
 func withDetail(ev Event) string {
 	text := ev.Text
@@ -160,6 +161,9 @@ func withDetail(ev Event) string {
 		text += "\n" + line
 	}
 	if line := domainLine(ev); line != "" {
+		text += "\n" + line
+	}
+	if line := diskLine(ev); line != "" {
 		text += "\n" + line
 	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
@@ -200,6 +204,36 @@ func domainLine(ev Event) string {
 		line += ", certificate expires " + ev.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
 	}
 	return line
+}
+
+// diskLine is "Disk: / is 86% full, 11 GB left" for an event about a
+// filesystem (the space left when it was sent), or "" for another.
+func diskLine(ev Event) string {
+	if ev.Mount == "" {
+		return ""
+	}
+	line := fmt.Sprintf("Disk: %s is %.0f%% full", oneLine(ev.Mount), ev.UsedPercent)
+	if ev.FreeBytes != nil {
+		line += ", " + Size(*ev.FreeBytes) + " left"
+	}
+	return line
+}
+
+// Size writes a number of bytes as the console does: "11 GB", "3.5 GB",
+// "620 MB", with 1024 as the unit (Nomad's megabytes are mebibytes).
+func Size(n int64) string {
+	const kb, mb, gb = 1 << 10, 1 << 20, 1 << 30
+	switch {
+	case n >= 10*gb:
+		return fmt.Sprintf("%.0f GB", float64(n)/gb)
+	case n >= gb:
+		return fmt.Sprintf("%.1f GB", float64(n)/gb)
+	case n >= mb:
+		return fmt.Sprintf("%.0f MB", float64(n)/mb)
+	case n >= kb:
+		return fmt.Sprintf("%.0f KB", float64(n)/kb)
+	}
+	return fmt.Sprintf("%d B", max(n, 0))
 }
 
 // originLine is "From CI: abc1234 on main by ana, run https://...": the short
