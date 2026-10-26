@@ -89,7 +89,7 @@ type samplerState struct {
 	lastFold  time.Time           // start of the newest slot this process folded
 	lastPrune time.Time
 
-	mu      sync.Mutex // guards sources
+	mu      sync.Mutex // guards sources and traefik
 	sources SamplerSources
 }
 
@@ -104,13 +104,16 @@ func (s *Service) SetMetricsSampleGap(d time.Duration) {
 
 // SetTraefikMetricsURL sets where Traefik serves its Prometheus numbers
 // (CARAVANA_TRAEFIK_METRICS_URL). Empty turns the request numbers off: the
-// source reads "disabled". Call it before Start.
+// source reads "disabled". Safe while the sampler runs (the lab switches it
+// to show Traefik unreachable); the next tick reads the new source.
 func (s *Service) SetTraefikMetricsURL(u string) {
-	if u == "" {
-		s.sampler.traefik = nil
-		return
+	var src metrics.Source
+	if u != "" {
+		src = metrics.HTTPSource{URL: u}
 	}
-	s.sampler.traefik = metrics.HTTPSource{URL: u}
+	s.sampler.mu.Lock()
+	s.sampler.traefik = src
+	s.sampler.mu.Unlock()
 }
 
 // SetDockerRoot sets Docker's data directory (CARAVANA_DOCKER_ROOT), so the
@@ -343,11 +346,14 @@ func (s *Service) trafficLabels(apps []store.AppRecord) map[string]serviceRef {
 // re-baselines, and so does the first scrape after a start.
 func (s *Service) readTraefik(ctx context.Context, now time.Time, gap time.Duration, r *samplerReads) {
 	st := &s.sampler
-	if st.traefik == nil {
+	st.mu.Lock()
+	src := st.traefik
+	st.mu.Unlock()
+	if src == nil {
 		r.traefikState = SamplerDisabled
 		return
 	}
-	snap, err := metrics.Read(ctx, st.traefik)
+	snap, err := metrics.Read(ctx, src)
 	switch {
 	case errors.Is(err, metrics.ErrOff):
 		r.traefikState = SamplerOff
