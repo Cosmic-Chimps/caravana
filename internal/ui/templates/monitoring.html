@@ -45,8 +45,12 @@
 <section class="cv-mncharts" aria-label="Charts">
   {{range .Charts}}{{template "mon-chart" .}}{{end}}
 </section>
+<div id="mon-bandnote" class="cv-mnslot">{{template "mon-bandnote-body" .}}</div>
 {{template "mon-table" .Table}}
 {{end}}
+
+{{/* mon-bandnote-body: the one line under the chart grid on the 7 d range. Takes a monRegion. */}}
+{{define "mon-bandnote-body"}}{{with .BandNote}}<p class="cv-mncap cv-mnnote">{{template "mon-sentence" .}}</p>{{end}}{{end}}
 
 {{/* mon-issues-body: the issues panel, or the one calm line. Takes a monRegion. */}}
 {{define "mon-issues-body"}}
@@ -78,6 +82,7 @@
 <div hx-swap-oob="innerHTML:#mon-issues">{{template "mon-issues-body" .}}</div>
 {{range .Charts}}<div hx-swap-oob="innerHTML:#{{.ID}}">{{template "mon-chart-body" .}}</div>
 {{end}}
+<div hx-swap-oob="innerHTML:#mon-bandnote">{{template "mon-bandnote-body" .}}</div>
 <span hx-swap-oob="innerHTML:#mon-table-meta">{{template "mon-sentence" .Table.Meta}}</span>
 {{if .Replace}}<div hx-swap-oob="innerHTML:#mon-table-slot">{{template "mon-table-body" .Table}}</div>
 {{else}}{{range .Table.Rows}}<div hx-swap-oob="innerHTML:#{{.Anchor}}">{{template "mon-row-body" .}}</div>
@@ -91,7 +96,7 @@
 {{/* mon-chart-body: the head, the value, the plot and the times under it. Takes a monChart. */}}
 {{define "mon-chart-body"}}
   <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>last 10 min</span></div>
-  <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{with .Usually}}<span class="cv-mnusually">{{.}}</span>{{end}}</div>
+  <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{if .HasUsually}}<span class="cv-mnusually" data-mon-usually>{{.Usually}}</span>{{end}}</div>
   {{with .Plot}}{{template "mon-plot" .}}
   <div class="cv-mnaxis"><span>{{$.AxisStart}}</span><span>{{$.AxisMid}}</span><span>now</span></div>
   {{else}}
@@ -102,7 +107,7 @@
 
 {{/* mon-plot: the SVG of a chart and its hidden table. Takes a monPlot. */}}
 {{define "mon-plot"}}
-<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}" data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
+<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}"{{if .Usuals}} data-usuals="{{.Usuals}}"{{end}} data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
   <svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">
     <line class="cv-mngrid" x1="0" x2="300" y1="30" y2="30"/>
     <line class="cv-mngrid" x1="0" x2="300" y1="60" y2="60"/>
@@ -180,7 +185,7 @@
       <div role="cell" class="cv-mncpu" data-label="CPU">{{with .Spark}}<svg class="cv-mnspark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-mnspark-line" points="{{.}}"/>{{end}}</svg><span class="cv-mncpu-read" title="{{.Title}}">{{.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
       <div role="cell" class="cv-mnmem" data-label="Memory">{{if .Mem.Known}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Mem.Title}}"><title>{{.Mem.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Mem.Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Mem.Fill}}" height="6"/></svg><span class="cv-mnmem-read{{if .Mem.Warn}} cv-mnwarntext{{end}}">{{.Mem.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
       <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
-      <a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a>
+      <div role="cell" class="cv-mnlogscell"><a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a></div>
 {{end}}
 
 {{/* mon-host-section: "This host", a live region of its own (#host, drawn again from /parts/monitoring/host

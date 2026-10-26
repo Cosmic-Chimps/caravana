@@ -395,8 +395,8 @@ func TestMetricsSlowerIssue(t *testing.T) {
 			if tc.relation == metrics.StartedAfter && (is.DeployNear.Minutes < tc.minutesMin || is.DeployNear.Minutes > 11) {
 				t.Errorf("minutes after = %d, want about 10", is.DeployNear.Minutes)
 			}
-			if len(v.Deploys) != 1 || v.Deploys[0].Version != 24 {
-				t.Errorf("deploys = %+v, want the one marker", v.Deploys)
+			if len(v.Deploys) != 1 || v.Deploys[0].Version != 24 || !v.Deploys[0].HasDomain {
+				t.Errorf("deploys = %+v, want the one marker, of an app with a domain", v.Deploys)
 			}
 			sv := v.Services[0]
 			if sv.State != ServiceUnusual || !sv.Unusual || sv.Level != metrics.LevelWarning || sv.Distance == nil || *sv.Distance != is.Distance ||

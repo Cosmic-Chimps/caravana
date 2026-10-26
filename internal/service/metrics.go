@@ -85,6 +85,9 @@ type MetricDeploy struct {
 	AppID, AppName, DeploymentID string
 	Version                      uint64
 	EndedAt                      time.Time
+	// HasDomain says the app has a service with a domain: only its deploys mark the HTTP charts
+	// (a deploy of an app with no traffic says nothing about requests). Not in the API.
+	HasDomain bool
 }
 
 // DeployNear is the deploy clause of an issue: a deploy that ended within 15
@@ -461,8 +464,12 @@ func (s *Service) healthyDeploys(ctx context.Context, project, environment, only
 		return nil, nil, fmt.Errorf("read metrics: %w", err)
 	}
 	names := map[string]string{}
+	domained := map[string]bool{}
 	for _, rec := range recs {
 		names[rec.App.ID] = rec.Place.Name
+		for _, svc := range rec.App.Services {
+			domained[rec.App.ID] = domained[rec.App.ID] || len(svc.Domains) > 0
+		}
 	}
 	var deploys []metrics.Deploy
 	details := map[deployKey]MetricDeploy{}
@@ -481,6 +488,7 @@ func (s *Service) healthyDeploys(ctx context.Context, project, environment, only
 		deploys = append(deploys, metrics.Deploy{App: d.AppID, Version: *d.JobVersion, End: end})
 		details[deployKey{d.AppID, *d.JobVersion, end}] = MetricDeploy{
 			AppID: d.AppID, AppName: name, DeploymentID: d.Deployment.ID, Version: *d.JobVersion, EndedAt: end,
+			HasDomain: domained[d.AppID],
 		}
 	}
 	return deploys, details, nil

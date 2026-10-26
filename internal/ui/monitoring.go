@@ -156,13 +156,9 @@ func trim1(v float64) string {
 	return strconv.FormatFloat(float64(int(v*10+0.5))/10, 'f', -1, 64)
 }
 
-// rateText is a rate of requests per second: no decimals from 10 up, else one ("0.4", "4", "96").
-func rateText(v float64) string {
-	if v >= 10 {
-		return strconv.Itoa(int(v + 0.5))
-	}
-	return trim1(v)
-}
+// rateText is a rate of requests per second with one decimal, like the percents beside it:
+// "0.4", "4.0", "96.0".
+func rateText(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 
 // percentText is a share with one decimal: "2.4", "0.0".
 func percentText(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
@@ -241,7 +237,9 @@ type monRegion struct {
 	Issues  []monIssue
 	Calm    *monCalm
 	Charts  []monChart
-	Table   monTable
+	// BandNote is the one line under the charts on the 7 d range ("The band thins to the left...").
+	BandNote monSentence
+	Table    monTable
 }
 
 // monTable is the apps table.
@@ -505,6 +503,7 @@ func (b *monBuilder) region() *monRegion {
 		reg.Calm = b.calm()
 	}
 	reg.Charts = b.charts()
+	reg.BandNote = b.bandNote()
 	reg.Table = b.table()
 	return reg
 }
@@ -707,6 +706,9 @@ func (b *monBuilder) exitDetail(is service.MetricIssue) monSentence {
 // showAction is the issue's action to the Logs page: the app's errors, or its logs.
 func (b *monBuilder) showAction(name, what string, is service.MetricIssue, errorsOnly bool) (monSentence, string) {
 	q := logsReq{Project: b.q.Project, Environment: b.q.Environment, App: is.AppID, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
+	if is.Service != "" {
+		q.Service = is.AppID + "/" + is.Service // the Logs page filtered to the service, not the whole app
+	}
 	if errorsOnly {
 		q.Levels = levelSet{true, false, false, false}
 	}
@@ -797,7 +799,7 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		}
 		row.P95 = monNum{Text: p, Warn: kinds[metrics.Slower]}
 		if kinds[metrics.Slower] && sv.UsualP95 != nil {
-			row.P95.Usual = "usually " + rateText(*sv.UsualP95)
+			row.P95.Usual = "usually " + strconv.Itoa(int(*sv.UsualP95+0.5))
 		}
 	}
 	if kinds[metrics.Quieter] && row.Requests.Text != "—" && sv.Requests != nil {
@@ -809,10 +811,10 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 	if sv.Restarts == nil {
 		row.Restarts = monNum{Text: "—", None: true}
 	} else {
-		row.Restarts = monNum{Text: strconv.FormatInt(*sv.Restarts, 10), Warn: *sv.Restarts > 0}
+		row.Restarts = monNum{Text: strconv.FormatInt(*sv.Restarts, 10), Warn: *sv.Restarts >= metrics.RestartsInHour}
 	}
 
-	logs := logsReq{Project: b.q.Project, Environment: b.q.Environment, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
+	logs := logsReq{Project: b.q.Project, Environment: b.q.Environment, App: sv.AppID, Service: sv.AppID + "/" + sv.Service, Range: logsRangeDefault, Levels: defaultLevels, Live: true}
 	row.LogsHref, row.LogsName = logs.href(), "Logs of "+b.serviceName(sv.AppName, sv.AppID, sv.Service)
 	return row
 }

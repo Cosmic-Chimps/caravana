@@ -1551,6 +1551,7 @@
   .cv-mnvalue-warn { color: var(--color-warn); }
   .cv-mnunit { font: 400 13px/1.2 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   .cv-mnusually { margin-left: auto; font: 400 12px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-mnusually:empty { display: none; }
 
   /* The plot: an SVG (viewBox "0 0 300 120", preserveAspectRatio none, so every stroke is
      non-scaling), 120px tall, over a relative box that holds the deploy labels. */
@@ -1622,6 +1623,8 @@
   .cv-mnmem-read.cv-mnwarntext { color: var(--color-warn); }
   .cv-mnrestarts { font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); text-align: right; }
   .cv-mnrestarts.cv-mnwarntext { color: var(--color-warn); }
+  /* The logs link rides above the row link's overlay, in a cell of its own (the table's ninth, as its head has nine). */
+  .cv-mnlogscell { position: relative; z-index: 1; display: flex; justify-content: center; }
   .cv-mnlogs { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; color: var(--color-fg-3); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
   .cv-mnlogs:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
   .cv-mnlogs > .cv-icon { width: 15px; height: 15px; }
@@ -1708,7 +1711,7 @@
   .cv-mnrow > .cv-mnmem { grid-column: 2 / -1; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; align-items: center; }
   .cv-mnrow > .cv-mnmem .cv-mnmeter-svg { max-width: none; }
   .cv-mnrow > .cv-mnrestarts { grid-column: 2; }
-  .cv-mnrow > .cv-mnlogs { grid-column: 3; justify-self: end; }
+  .cv-mnrow > .cv-mnlogscell { grid-column: 3; justify-self: end; }
   .cv-mnnumber, .cv-mnrestarts { text-align: left; }
 }
 

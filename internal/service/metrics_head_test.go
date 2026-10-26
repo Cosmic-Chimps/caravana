@@ -48,3 +48,23 @@ func TestMetricsChartHeadIsTheLastTenMinutes(t *testing.T) {
 		t.Errorf("stale heads = %v %v %v, want none", val(v.Requests.Now), val(v.Memory.Now), val(v.P95.Now))
 	}
 }
+
+// A deploy is marked as of an app with a domain or not: only the first belongs on the HTTP charts.
+func TestMetricsDeploysSayWhetherTheAppHasADomain(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Minute).Add(5*time.Minute + 30*time.Second)
+	f := newMetricsFixture(t, now)
+	batch := appWith("batch", 1)
+	batch.Services[0].Domains = nil
+	f.save(batch)
+	f.startedAt(now.Add(-2 * time.Hour))
+	finalDeployment(t, f.e.store, "whoami", "d-web", store.StatusHealthy, 1)
+	finalDeployment(t, f.e.store, "batch", "d-batch", store.StatusHealthy, 4)
+
+	got := map[string]bool{}
+	for _, d := range f.read(metrics.Range6h).Deploys {
+		got[d.AppID] = d.HasDomain
+	}
+	if len(got) != 2 || !got["whoami"] || got["batch"] {
+		t.Errorf("deploys have domains = %v, want whoami true and batch false", got)
+	}
+}

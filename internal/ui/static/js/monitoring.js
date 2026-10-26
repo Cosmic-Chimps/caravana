@@ -1,15 +1,17 @@
 "use strict";
 
 // caravana's own script for the Monitoring page (feature 025). The page is complete without it:
-// the charts are drawn by the server as SVG, the filters are links, and a chart's head says "now".
-// This file adds one thing, the hover readout. While the pointer is over a chart's plot it draws a
-// 1px crosshair at the nearest point and writes that point's time and number into the chart's head
-// ("13:40 UTC · 07:40 local", then the value), and puts the head back when the pointer leaves.
+// the charts are drawn by the server as SVG, the filters are links, and a chart's head says "last
+// 10 min". This file adds one thing, the hover readout. While the pointer is over a chart's plot it
+// draws a 1px crosshair at the nearest point and writes that point's time, number and "usually" into
+// the chart's head ("13:40 UTC · 07:40 local", the value, "usually 120"), and puts the head back
+// when the pointer leaves.
 //
 // The markup says what to read: a plot is <div data-mon-plot data-t0 data-step data-values
-// data-unit [data-date]>, with its crosshair <line data-mon-cross>, inside a chart panel whose head
-// has data-mon-now, data-mon-value and data-mon-unit. The values are the server's own numbers,
-// written for display; a point with no reading is empty. Nothing is read from the network and
+// [data-usuals] data-unit [data-date]>, with its crosshair <line data-mon-cross>, inside a chart
+// panel whose head has data-mon-now, data-mon-value, data-mon-unit and [data-mon-usually]. The
+// values and the usuals are the server's own words, one per point (a point with no reading, or no
+// band, is empty), written for display. Nothing is read from the network and
 // nothing is put on the page as markup: the text goes in with textContent, and the crosshair moves
 // with setAttribute (a style attribute would be refused by the page's policy).
 //
@@ -52,7 +54,8 @@
     const now = chart.querySelector("[data-mon-now]");
     const value = chart.querySelector("[data-mon-value]");
     const unit = chart.querySelector("[data-mon-unit]");
-    return now && value && unit ? { chart: chart, now: now, value: value, unit: unit } : null;
+    const usually = chart.querySelector("[data-mon-usually]"); // absent on a chart with no band (Memory)
+    return now && value && unit ? { chart: chart, now: now, value: value, unit: unit, usually: usually } : null;
   }
 
   function show(plot, clientX) {
@@ -79,12 +82,17 @@
     if (!saved.has(head.chart)) {
       saved.set(head.chart, {
         now: head.now.textContent, value: head.value.textContent, unit: head.unit.textContent,
+        usually: head.usually ? head.usually.textContent : "",
       });
     }
     head.now.textContent = timeText(new Date(start + i * step), plot.hasAttribute("data-date"));
     const value = values[i];
     head.value.textContent = value === "" ? "—" : value;
     head.unit.textContent = value === "" ? "no reading" : plot.dataset.unit || "";
+    if (head.usually) {
+      // "usually" follows the hovered point: its own band's median, or nothing where there is no band.
+      head.usually.textContent = (plot.dataset.usuals || "").split(",")[i] || "";
+    }
   }
 
   function hide(plot) {
@@ -98,6 +106,9 @@
       head.now.textContent = before.now;
       head.value.textContent = before.value;
       head.unit.textContent = before.unit;
+      if (head.usually) {
+        head.usually.textContent = before.usually;
+      }
       saved.delete(head.chart);
     }
   }

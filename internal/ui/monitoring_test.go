@@ -98,7 +98,7 @@ func TestMonReqOf(t *testing.T) {
 }
 
 func TestMonNumberWords(t *testing.T) {
-	for in, want := range map[float64]string{0: "0", 0.04: "0", 0.4: "0.4", 4: "4", 9.96: "10", 96.4: "96", 127.5: "128"} {
+	for in, want := range map[float64]string{0: "0.0", 0.04: "0.0", 0.4: "0.4", 4: "4.0", 9.96: "10.0", 96.4: "96.4", 127.5: "127.5"} {
 		if got := rateText(in); got != want {
 			t.Errorf("rateText(%v) = %q, want %q", in, got, want)
 		}
@@ -136,27 +136,27 @@ func TestMonIssueSentences(t *testing.T) {
 		{"slower", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 820, Usual: fl(180), Since: since, Window: service.IssueWindow{ErrorPercent: 2.4, RequestsPerSec: 96}},
 			"booking-api is slower than usual. The slowest 5% of requests take 820 ms, usually 180 ms. It started at 13:58 UTC.",
-			"2.4% of requests return 5xx · 96 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"2.4% of requests return 5xx · 96.0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"slower after a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 820, Usual: fl(180), Since: since, DeployNear: deploy(metrics.StartedAfter, 2)},
 			"booking-api is slower than usual. The slowest 5% of requests take 820 ms, usually 180 ms. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
-			"0.0% of requests return 5xx · 0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"0.0% of requests return 5xx · 0.0 req/s", []string{"820 ms"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"slower before a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Slower, Level: metrics.LevelWarning,
 			Value: 1500, Since: since, DeployNear: deploy(metrics.StartedBefore, 0)},
 			"booking-api is slower than usual. The slowest 5% of requests take 1.5 s. It started at 13:58 UTC. It started before supplier-gw v24 rolled out.",
-			"0.0% of requests return 5xx · 0 req/s", []string{"1.5 s"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
+			"0.0% of requests return 5xx · 0.0 req/s", []string{"1.5 s"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "warning"},
 		{"more errors", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.MoreErrors, Level: metrics.LevelFailed,
 			Value: 12.4, Usual: fl(0.3), Since: since, Window: service.IssueWindow{Errors: 41}},
 			"booking-api returns more errors than usual: 12.4% of requests, usually 0.3%. It started at 13:58 UTC.",
 			"41 errors in the last 10 minutes", []string{"12.4%"}, "Show booking-api errors", "/logs?app=booking-api&levels=error", "failed"},
 		{"quieter", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Quieter, Level: metrics.LevelWarning,
 			Value: 3, Usual: fl(96), Since: since, Domains: []string{"api.example.com", "b.example.com"}},
-			"booking-api has much less traffic than usual: 3 req/s, usually 96. It started at 13:58 UTC.",
-			"Its domains: api.example.com, b.example.com", []string{"3 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
+			"booking-api has much less traffic than usual: 3.0 req/s, usually 96.0. It started at 13:58 UTC.",
+			"Its domains: api.example.com, b.example.com", []string{"3.0 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
 		{"quieter after a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Quieter, Level: metrics.LevelWarning,
 			Value: 3, Usual: fl(96), Since: since, DeployNear: deploy(metrics.StartedAfter, 2)},
-			"booking-api has much less traffic than usual: 3 req/s, usually 96. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
-			"", []string{"3 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
+			"booking-api has much less traffic than usual: 3.0 req/s, usually 96.0. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
+			"", []string{"3.0 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
 		{"memory", service.MetricIssue{AppID: "metabase", AppName: "metabase", Kind: metrics.Memory, Level: metrics.LevelFailed,
 			Value: 98, LimitMB: fl(1024), Restarts: &restarts3, LastExit: &service.LastExit{Copy: "e4d1aaaa-0000", ExitCode: 137, At: monNow.Add(-4 * time.Minute)}},
 			"metabase is using 98% of its 1 GB memory limit. It restarted 3 times in the last hour.",
@@ -192,7 +192,7 @@ func TestMonIssueSentences(t *testing.T) {
 	// An app with several services is named "app/service"; a place that isn't home is in the action's link.
 	b := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: []service.ServiceMetrics{{AppID: "hollo", Service: "web"}, {AppID: "hollo", Service: "db"}}}, true)
 	got := b.issue(service.MetricIssue{AppID: "hollo", AppName: "hollo", Service: "web", Kind: metrics.Restarting, Value: 2})
-	if got.Text.String() != "hollo/web restarted 2 times in the last hour." || got.ActionHref != "/logs?app=hollo&project=shop" {
+	if got.Text.String() != "hollo/web restarted 2 times in the last hour." || got.ActionHref != "/logs?app=hollo&project=shop&service=hollo%2Fweb" {
 		t.Errorf("multi-service issue = %q to %q", got.Text.String(), got.ActionHref)
 	}
 	// A restart or a deploy older than the 6 hours the run is walked back along is "more than 6 hours".
@@ -267,7 +267,7 @@ func TestMonChartShapes(t *testing.T) {
 	v := service.MetricsView{Range: rng, At: monNow, Points: monPoints(rng), HasHTTP: true,
 		Baseline: service.MetricsBaseline{State: metrics.Partial, FullDays: 3},
 		Deploys: []service.MetricDeploy{
-			{AppName: "supplier-gw", Version: 24, EndedAt: monNow.Add(-30 * time.Minute)},
+			{AppName: "supplier-gw", Version: 24, EndedAt: monNow.Add(-30 * time.Minute), HasDomain: true},
 		}}
 	req := monSeries(72, 100)
 	for i := 10; i <= 40; i++ {
@@ -294,14 +294,14 @@ func TestMonChartShapes(t *testing.T) {
 		t.Fatalf("%d charts", len(charts))
 	}
 	c := charts[0]
-	if c.Title != "Requests" || c.Plot == nil || c.Value != "100" || c.Unit != "req/s" || c.Usually != "usually 100" || c.Warn {
+	if c.Title != "Requests" || c.Plot == nil || c.Value != "100.0" || c.Unit != "req/s" || c.Usually != "usually 100.0" || c.Warn {
 		t.Errorf("requests head = %+v", c)
 	}
 	p := c.Plot
-	if want := "Requests over the last 6 hours, 100 req/s in the last 10 minutes"; p.Label != want {
+	if want := "Requests over the last 6 hours, 100.0 req/s in the last 10 minutes"; p.Label != want {
 		t.Errorf("plot label = %q, want %q", p.Label, want)
 	}
-	if len(p.Bands) != 1 || !strings.Contains(p.Bands[0].Title, "the same hour on the 3 days there are: 80 to 120 req/s") {
+	if len(p.Bands) != 1 || !strings.Contains(p.Bands[0].Title, "the same hour on the 3 days there are: 80.0 to 120.0 req/s") {
 		t.Errorf("band = %+v", p.Bands)
 	}
 	// The polygon has a vertex on top and one under for each point of the stretch: 31 and 31.
@@ -314,7 +314,7 @@ func TestMonChartShapes(t *testing.T) {
 	if len(p.Lines) != 1 || len(p.Lines[0].Segments) != 2 {
 		t.Fatalf("lines = %+v: the series should break at the gap", p.Lines)
 	}
-	if want := "min 100, max 100, latest 100 req/s"; p.Lines[0].Title != want {
+	if want := "min 100.0, max 100.0, latest 100.0 req/s"; p.Lines[0].Title != want {
 		t.Errorf("line title = %q, want %q", p.Lines[0].Title, want)
 	}
 	if len(p.Deploys) != 1 || !strings.Contains(p.Deploys[0].Title, "supplier-gw v24 rolled out at 13:30 UTC") {
@@ -326,7 +326,7 @@ func TestMonChartShapes(t *testing.T) {
 	if len(p.Table.Rows) != 72 || p.Table.Rows[50].Value != "no reading" {
 		t.Errorf("hidden table: %d rows, row 50 = %+v", len(p.Table.Rows), p.Table.Rows[50])
 	}
-	if cells := strings.Split(p.Values, ","); len(cells) != 72 || cells[50] != "" || cells[0] != "100" {
+	if cells := strings.Split(p.Values, ","); len(cells) != 72 || cells[50] != "" || cells[0] != "100.0" {
 		t.Errorf("hover values = %d cells, %q %q", len(cells), cells[0], cells[50])
 	}
 	if p.T0 != v.Points[0].Format(time.RFC3339) || p.Step != 300 || p.Date {
@@ -363,10 +363,27 @@ func TestMonChartShapes(t *testing.T) {
 	v.Baseline = service.MetricsBaseline{State: metrics.Full}
 	week := monSeries(168, 10)
 	v.Requests, v.Errors, v.P95, v.Memory = week, week, week, week
-	c = monBuild(v, false).charts()[0]
-	if !c.Plot.Date || !strings.Contains(c.AxisStart, "UTC") || len(c.Captions) != 1 ||
-		c.Captions[0].Text.String() != "The band thins to the left: older hours have fewer earlier days kept." {
+	b := monBuild(v, false)
+	c = b.charts()[0]
+	if !c.Plot.Date || !strings.Contains(c.AxisStart, "UTC") || len(c.Captions) != 0 {
 		t.Errorf("7 d chart = date %v axis %q captions %+v", c.Plot.Date, c.AxisStart, c.Captions)
+	}
+	// The band's thin edge is said once, under the chart grid, not on each chart.
+	for i, ch := range b.charts() {
+		if len(ch.Captions) != 0 {
+			t.Errorf("chart %d has captions %+v on the 7 d range", i, ch.Captions)
+		}
+	}
+	if got := b.bandNote().String(); got != "The band thins to the left: older hours have fewer earlier days kept." {
+		t.Errorf("band note = %q", got)
+	}
+	v.Range, v.Points = metrics.Range6h, monPoints(metrics.Range6h)
+	if monBuild(v, false).bandNote() != nil {
+		t.Error("a band note on the 6 h range")
+	}
+	v.Range, v.Points, v.Baseline = metrics.Range7d, monPoints(metrics.Range7d), service.MetricsBaseline{State: metrics.Building}
+	if monBuild(v, false).bandNote() != nil {
+		t.Error("a band note while the baseline is built: there is no band")
 	}
 }
 
@@ -374,8 +391,9 @@ func TestMonChartCrowdedDeploysAndBuilding(t *testing.T) {
 	rng := metrics.Range6h
 	v := service.MetricsView{Range: rng, At: monNow, Points: monPoints(rng), HasHTTP: true,
 		Baseline: service.MetricsBaseline{State: metrics.Building, Since: new(monNow.Add(-5 * time.Hour))}}
+	// Four deploys 30 minutes apart (each its own marker), with domains.
 	for i := 0; i < 4; i++ {
-		v.Deploys = append(v.Deploys, service.MetricDeploy{AppName: "app", Version: uint64(i + 1), EndedAt: monNow.Add(-time.Duration(60-i) * time.Minute)})
+		v.Deploys = append(v.Deploys, service.MetricDeploy{AppName: "app", Version: uint64(i + 1), EndedAt: monNow.Add(-time.Duration(120-30*i) * time.Minute), HasDomain: true})
 	}
 	v.Requests, v.Errors, v.P95, v.Memory = monSeries(72, 5), monSeries(72, 0), monSeries(72, 90), monSeries(72, 300)
 	c := monBuild(v, false).charts()[0]
@@ -498,7 +516,7 @@ func TestMonTableRows(t *testing.T) {
 		rows[r.Name] = r
 	}
 	api := rows["booking-api"]
-	if api.Mark != "warning" || api.Copies != "2 copies" || api.Requests.Text != "96/s" || api.Errors.Text != "2.4%" || !api.Errors.Warn ||
+	if api.Mark != "warning" || api.Copies != "2 copies" || api.Requests.Text != "96.0/s" || api.Errors.Text != "2.4%" || !api.Errors.Warn ||
 		api.P95.Text != "820 ms" || !api.P95.Warn || api.P95.Usual != "usually 180" || api.Requests.Warn {
 		t.Errorf("booking-api = %+v", api)
 	}
@@ -508,7 +526,7 @@ func TestMonTableRows(t *testing.T) {
 	if api.Mem.Read != "0.7 / 1.0 GB" || api.Mem.Warn || api.Restarts.Text != "0" || api.Restarts.Warn {
 		t.Errorf("memory %+v restarts %+v", api.Mem, api.Restarts)
 	}
-	if api.Href != "/apps/booking-api" || api.LogsHref != "/logs?service=booking-api%2Fweb" || api.LogsName != "Logs of booking-api" {
+	if api.Href != "/apps/booking-api" || api.LogsHref != "/logs?app=booking-api&service=booking-api%2Fweb" || api.LogsName != "Logs of booking-api" {
 		t.Errorf("links = %q %q %q", api.Href, api.LogsHref, api.LogsName)
 	}
 	w := rows["worker"]
