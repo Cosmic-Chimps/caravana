@@ -188,7 +188,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   SVG's band and marker, the deploy clause after a deploy in the step, the host section, the
   Platform panel, the sidebar, the links, the no-script heads, the part swap, Traefik unreachable
   by the setter).
-- [ ] T019 `cmd/caravana/gate_monitoring_test.go` + `gate_test.go`: the gate step `monitoring` per
+- [x] T019 `cmd/caravana/gate_monitoring_test.go` + `gate_test.go`: the gate step `monitoring` per
   quickstart §6 (the three reads with the gate's token, requests against the loop's count,
   non-zero host numbers, reserved equal to Nomad's allocated gauges, `node:read` with the scoped
   token, a deploy token's 403 on each, `range=2h` 422, `null` in the first minute).
