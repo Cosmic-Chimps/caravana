@@ -157,8 +157,8 @@ type ServiceMetrics struct {
 	Level     metrics.Level
 	Copies    int
 	HasDomain bool
-	// Requests (per second), Errors (percent) and P95 (ms) are over the range;
-	// nil without HTTP numbers. UsualP95 is the band's median now, nil while
+	// Requests (per second), Errors (percent) and P95 (ms) are over the last
+	// 10 minutes, as the issues' values are; nil without HTTP numbers. UsualP95 is the band's median now, nil while
 	// the baseline is being built.
 	Requests, Errors, P95, UsualP95 *float64
 	P95Over                         bool
@@ -753,14 +753,18 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 		sv.State = ServiceRollingOut
 	}
 	if sv.HasDomain {
-		if v, ok := metrics.RatePerSec(ch.whole); ok {
-			sv.Requests = &v
+		// The table's HTTP numbers are the last 10 minutes', the same window
+		// the issues and the chart heads read, so a row never disagrees with
+		// its own issue. Only the CPU sparkline keeps the range.
+		w := metrics.WindowOf(r.minute, now)
+		if w.HasHTTP {
+			sv.Requests = new(w.RequestsPerSec)
+			if w.Requests > 0 {
+				sv.Errors = new(w.ErrorPercent)
+			}
 		}
-		if v, ok := metrics.ErrorPercent(ch.whole); ok {
-			sv.Errors = &v
-		}
-		if v, over, ok := metrics.P95Millis(ch.whole); ok {
-			sv.P95, sv.P95Over = &v, over
+		if w.HasP95 {
+			sv.P95, sv.P95Over = new(w.P95Millis), w.P95Over
 		}
 		if b := bandsAt(hist, now.Add(-5*time.Minute), state); b.P95Millis.Has() {
 			sv.UsualP95 = new(b.P95Millis.Usual)

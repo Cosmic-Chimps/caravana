@@ -5656,13 +5656,13 @@ components:
           description: False for a service with no domain; its request numbers are then `null`.
         requests:
           type: [number, "null"]
-          description: Requests per second over the range.
+          description: Requests per second over the last 10 minutes (the window the issues use), whatever the range.
         errors:
           type: [number, "null"]
-          description: Percent of requests that were 5xx over the range.
+          description: Percent of requests that were 5xx over the last 10 minutes.
         p95:
           type: [number, "null"]
-          description: The slowest 5 % over the range, in milliseconds.
+          description: The slowest 5 % over the last 10 minutes, in milliseconds.
         p95Over:
           type: boolean
           description: "`p95` is beyond the highest bucket (10 s): it is that bound, and means \"over\"."
