@@ -467,6 +467,9 @@ func TestMetricsMoreErrorsQuieterAndLevels(t *testing.T) {
 		rows = append(rows, f.http(quiet, ts, 60, 60, 0, fastBuckets)) // 1 a second against 10
 	}
 	f.minute(rows...)
+	// Both services serve: a deployment ended healthy and each has a healthy copy.
+	finalDeployment(t, f.e.store, "whoami", "d1", store.StatusHealthy, 0)
+	f.e.nomad.SetCopies("whoami", runningStub("web", 0), runningStub("quiet", 0))
 
 	v := f.read(metrics.Range6h)
 	if len(v.Issues) != 2 {

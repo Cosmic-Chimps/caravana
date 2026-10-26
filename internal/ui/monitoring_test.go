@@ -153,6 +153,10 @@ func TestMonIssueSentences(t *testing.T) {
 			Value: 3, Usual: fl(96), Since: since, Domains: []string{"api.example.com", "b.example.com"}},
 			"booking-api has much less traffic than usual: 3 req/s, usually 96. It started at 13:58 UTC.",
 			"Its domains: api.example.com, b.example.com", []string{"3 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
+		{"quieter after a deploy", service.MetricIssue{AppID: "booking-api", AppName: "booking-api", Kind: metrics.Quieter, Level: metrics.LevelWarning,
+			Value: 3, Usual: fl(96), Since: since, DeployNear: deploy(metrics.StartedAfter, 2)},
+			"booking-api has much less traffic than usual: 3 req/s, usually 96. It started at 13:58 UTC. It started 2 minutes after supplier-gw v24 rolled out.",
+			"", []string{"3 req/s"}, "Show booking-api logs", "/logs?app=booking-api", "warning"},
 		{"memory", service.MetricIssue{AppID: "metabase", AppName: "metabase", Kind: metrics.Memory, Level: metrics.LevelFailed,
 			Value: 98, LimitMB: fl(1024), Restarts: &restarts3, LastExit: &service.LastExit{Copy: "e4d1aaaa-0000", ExitCode: 137, At: monNow.Add(-4 * time.Minute)}},
 			"metabase is using 98% of its 1 GB memory limit. It restarted 3 times in the last hour.",
@@ -223,6 +227,35 @@ func TestMonCalmLine(t *testing.T) {
 	}
 	if monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow}, false).calm() != nil {
 		t.Error("with no service there is nothing to call calm")
+	}
+
+	// A place in which nothing serves says so (○) instead of calling its numbers usual.
+	down := func(app, word string) service.ServiceMetrics {
+		return service.ServiceMetrics{AppID: app, AppName: app, Service: "web", Standing: service.ServiceStanding{Mark: "idle", Word: word, Down: true}}
+	}
+	for _, tc := range []struct {
+		name  string
+		svcs  []service.ServiceMetrics
+		multi bool
+		want  string
+	}{
+		{"stopped, several places", []service.ServiceMetrics{down("web", "stopped")}, true, "Nothing is running in Shop / production: web is stopped."},
+		{"stopped, one place", []service.ServiceMetrics{down("web", "stopped")}, false, "Nothing is running: web is stopped."},
+		{"two, not the same way", []service.ServiceMetrics{down("a", "stopped"), down("b", "not running")}, false, "Nothing is running: a is stopped, b is not running."},
+		{"five", []service.ServiceMetrics{down("a", "stopped"), down("b", "stopped"), down("c", "never deployed"), down("d", "stopped"), down("e", "stopped")}, false,
+			"Nothing is running: a is stopped, b is stopped, c was never deployed and 2 more."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calm := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: tc.svcs, Baseline: service.MetricsBaseline{State: metrics.Full}}, tc.multi).calm()
+			if calm == nil || calm.Text.String() != tc.want || calm.Mark != "idle" {
+				t.Errorf("calm = %+v, want %q (idle)", calm, tc.want)
+			}
+		})
+	}
+	// One that serves keeps the usual line.
+	mixed := []service.ServiceMetrics{down("a", "stopped"), {AppID: "b", AppName: "b", Service: "web"}}
+	if calm := monBuild(service.MetricsView{Range: metrics.Range6h, At: monNow, Services: mixed, Baseline: service.MetricsBaseline{State: metrics.Full}}, false).calm(); calm == nil || calm.Mark != "healthy" {
+		t.Errorf("a place with a service serving: calm = %+v", calm)
 	}
 }
 
@@ -411,6 +444,11 @@ func with(v service.MetricsView, f func(*service.MetricsView)) service.MetricsVi
 	return v
 }
 
+var (
+	rollingStanding = service.ServiceStanding{Mark: "rolling", Word: "rolling out"}
+	stoppedStanding = service.ServiceStanding{Mark: "idle", Word: "stopped", Down: true}
+)
+
 // The apps table's rows: marks, the words under a name, dashes, warn values, the sparkline's title,
 // the memory meter and the logs link.
 func TestMonTableRows(t *testing.T) {
@@ -424,11 +462,14 @@ func TestMonTableRows(t *testing.T) {
 		{AppID: "booking-api", AppName: "booking-api", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Copies: 2, HasDomain: true,
 			Requests: fl(96), Errors: fl(2.4), P95: fl(820), UsualP95: fl(180), CPU: cpu, CPUReservedMHz: i64(100),
 			MemoryMB: i64(700), MemoryLimitMB: i64(1024), Restarts: i64(0)},
-		{AppID: "worker", AppName: "worker", Service: "web", State: service.ServiceRollingOut, Copies: 1,
+		{AppID: "worker", AppName: "worker", Service: "web", State: service.ServiceRollingOut, Copies: 1, Standing: rollingStanding,
 			CPU: cpu, MemoryMB: i64(930), MemoryLimitMB: i64(1000), Restarts: i64(2)},
-		{AppID: "old", AppName: "old", Service: "web", State: service.ServiceStopped, HasDomain: true, Requests: fl(0.4), Errors: fl(0), P95: fl(11)},
+		{AppID: "old", AppName: "old", Service: "web", State: service.ServiceStopped, Standing: stoppedStanding, HasDomain: true, Requests: fl(0.4), Errors: fl(0), P95: fl(11)},
 		{AppID: "hollo", AppName: "hollo", Service: "web", State: service.ServiceHealthy, Copies: 1, HasDomain: true, Requests: fl(8), Errors: fl(0), P95: fl(290)},
 		{AppID: "hollo", AppName: "hollo", Service: "db", State: service.ServiceHealthy, Copies: 1},
+		{AppID: "files", AppName: "files", Service: "site", State: service.ServiceHealthy, Standing: service.ServiceStanding{Mark: "failed", Word: "not running", Down: true}, HasDomain: true},
+		{AppID: "feed", AppName: "feed", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Standing: service.ServiceStanding{Mark: "failed", Word: "deploy failed"}, Copies: 1},
+		{AppID: "quiet", AppName: "quiet", Service: "web", State: service.ServiceUnusual, Level: metrics.LevelWarning, Standing: service.ServiceStanding{Mark: "healthy", Word: "healthy"}, Copies: 1, HasDomain: true},
 	}, Issues: []service.MetricIssue{
 		{AppID: "booking-api", Service: "web", Kind: metrics.Slower}, {AppID: "booking-api", Service: "web", Kind: metrics.MoreErrors},
 		{AppID: "worker", Service: "web", Kind: metrics.Memory},
@@ -443,7 +484,7 @@ func TestMonTableRows(t *testing.T) {
 		b.kinds[ref][is.Kind] = true
 	}
 	tbl := b.table()
-	if tbl.Meta.String() != "4 apps" {
+	if tbl.Meta.String() != "7 apps" {
 		t.Errorf("meta = %q", tbl.Meta.String())
 	}
 	if len(tbl.Sorts) != 3 || tbl.Sorts[0].Label != "unusual first" || !tbl.Sorts[0].On || tbl.Sorts[1].Href != "/monitoring?sort=traffic" || tbl.Sorts[2].Label != "most memory" {
@@ -474,6 +515,17 @@ func TestMonTableRows(t *testing.T) {
 	}
 	if old := rows["old"]; old.Mark != "idle" || old.Copies != "stopped" || old.MarkWord != "stopped" || old.Requests.Text != "0.4/s" {
 		t.Errorf("stopped = %+v", old)
+	}
+	// The mark is the app's status first: not running and deploy failed are ■ (a service that is down
+	// is never ◆ "unusual"), a rolling one ◐, and ◆ is only for a serving service whose numbers are
+	// unusual, as the Apps home has them.
+	for name, want := range map[string][2]string{
+		"files": {"failed", "not running"}, "feed": {"failed", "deploy failed"}, "worker": {"rolling", "rolling out"},
+		"old": {"idle", "stopped"}, "quiet": {"warning", "unusual"}, "booking-api": {"warning", "unusual"}, "hollo / web": {"healthy", "healthy"},
+	} {
+		if r := rows[name]; r.Mark != want[0] || r.MarkWord != want[1] {
+			t.Errorf("%s mark = %s %q, want %s %q", name, r.Mark, r.MarkWord, want[0], want[1])
+		}
 	}
 	// An app with several services has a row for each, named "app / service".
 	if _, ok := rows["hollo / web"]; !ok {

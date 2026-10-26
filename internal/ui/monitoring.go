@@ -526,6 +526,9 @@ func (b *monBuilder) calm() *monCalm {
 	if len(b.view.Services) == 0 {
 		return nil
 	}
+	if down := b.nothingRunning(); down != nil {
+		return down
+	}
 	if b.view.Baseline.State == metrics.Building {
 		text := "The usual range is still being learned"
 		if st := b.baselineStarted(); st != "" {
@@ -539,6 +542,46 @@ func (b *monBuilder) calm() *monCalm {
 		return &monCalm{Mark: "healthy", Text: append(msentence(mtext("Everything in ")), append(w, mtext(" is within its usual range."))...)}
 	}
 	return &monCalm{Mark: "healthy", Text: msentence(mtext("Every app is within its usual range."))}
+}
+
+// nothingRunning is the line for a place in which no service serves anything (all stopped, not
+// running or never deployed): the calm line would say the numbers are in their usual range
+// while there are none. "Nothing is running in Shop / staging: web is stopped." with ○.
+func (b *monBuilder) nothingRunning() *monCalm {
+	var named []monSentence
+	for _, sv := range b.view.Services {
+		if !sv.Standing.Down {
+			return nil
+		}
+		named = append(named, msentence(mname(b.serviceName(sv.AppName, sv.AppID, sv.Service)), mtext(" "+downPhrase(sv.Standing.Word))))
+	}
+	text := msentence(mtext("Nothing is running"))
+	if w := b.where(); w != nil {
+		text = append(append(text, mtext(" in ")), w...)
+	}
+	text = append(text, mtext(": "))
+	for i, one := range named[:min(3, len(named))] {
+		if i > 0 {
+			text = append(text, mtext(", "))
+		}
+		text = append(text, one...)
+	}
+	if len(named) > 3 {
+		text = append(text, mtext(" and "+strconv.Itoa(len(named)-3)+" more"))
+	}
+	text = append(text, mtext("."))
+	return &monCalm{Mark: "idle", Text: text}
+}
+
+// downPhrase says what a standing word means after a service's name: "is stopped".
+func downPhrase(word string) string {
+	switch word {
+	case "never deployed":
+		return "was never deployed"
+	case "not defined yet":
+		return "isn't defined yet"
+	}
+	return "is " + word
 }
 
 // issue says one unusual service with the contract's fixed sentences.
@@ -574,7 +617,7 @@ func (b *monBuilder) issue(is service.MetricIssue) monIssue {
 			text = append(text, mtext(", usually "+rateText(*is.Usual)))
 		}
 		text = append(text, mtext(". "))
-		out.Text = append(text, started...)
+		out.Text = append(append(text, started...), b.deployClause(is)...)
 		if len(is.Domains) > 0 {
 			out.Detail = msentence(mtext("Its domains: " + strings.Join(is.Domains, ", ")))
 		}
@@ -681,17 +724,21 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		Href:   "/apps/" + url.PathEscape(sv.AppID),
 		Copies: copyCount(sv.Copies),
 	}
+	// The mark is the app's status first, as /apps shows it: ■ not running or failed, ○ stopped
+	// (or never deployed), ◐ rolling out, ◆ some copies short. ◆ "unusual" is only what is left:
+	// a serving service whose numbers are unusual against its week.
 	switch {
-	case sv.State == service.ServiceStopped:
-		row.Mark, row.MarkWord, row.Copies = "idle", "stopped", "stopped"
+	case sv.Standing.Mark != "" && sv.Standing.Mark != "healthy":
+		row.Mark, row.MarkWord = sv.Standing.Mark, sv.Standing.Word
 	case sv.State == service.ServiceUnusual && sv.Level == metrics.LevelFailed:
 		row.Mark, row.MarkWord = "failed", "failing"
 	case sv.State == service.ServiceUnusual:
 		row.Mark, row.MarkWord = "warning", "unusual"
-	case sv.State == service.ServiceRollingOut:
-		row.Mark, row.MarkWord = "rolling", "rolling out"
 	default:
 		row.Mark, row.MarkWord = "healthy", "healthy"
+	}
+	if sv.State == service.ServiceStopped {
+		row.Copies = "stopped"
 	}
 	if !sv.HasDomain {
 		row.Copies += " · no domain"

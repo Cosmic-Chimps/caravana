@@ -271,7 +271,9 @@ paths:
         `more_errors`, the band's lowest over the value for `quieter`, memory over 90 %, and 1
         plus restarts over 10, at most 100); `issues` and the unusual rows are sorted by it, the
         furthest first. An app rolling out is not judged by the HTTP rules, and a stopped app is
-        not judged. Unusual services are not on `listAttention`.
+        not judged. A service that serves nothing (no healthy copy, or never deployed) is not
+        judged by `quieter`: its cause is on `listAttention`. Unusual services are not on
+        `listAttention`.
 
         **Memory** used is Nomad's `Usage − Cache` (the page cache left out), as `listCopies`
         gives with `usage=true`.

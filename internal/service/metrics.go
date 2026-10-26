@@ -149,10 +149,26 @@ const (
 	ServiceStopped    ServiceState = "stopped"
 )
 
+// ServiceStanding is the app's own status as the Apps home shows it, seen from one service: the
+// first thing a row of the apps table says. Mark is the console's mark kind (healthy, rolling,
+// warning, failed or idle) and Word what the mark means ("not running", "deploy failed", "2 of 3
+// healthy", "stopped", "never deployed"). Down says the service serves nothing: it is stopped, was
+// never deployed or has no healthy copy, so what its traffic did is not news (the cause is on the
+// needs-you list) and the "quieter" rule is not judged. The zero value is a serving service with
+// no remark. It is not in the API: the API's `state` keeps its meaning.
+type ServiceStanding struct {
+	Mark string
+	Word string
+	Down bool
+}
+
 // ServiceMetrics is one row of the apps table.
 type ServiceMetrics struct {
 	AppID, AppName, Service string
 	State                   ServiceState
+	// Standing is the app's status first (see ServiceStanding); State and Unusual say what the
+	// service's own numbers said.
+	Standing ServiceStanding
 	// Level is the worst level of its issues when it is unusual.
 	Level     metrics.Level
 	Copies    int
@@ -729,7 +745,9 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	state := baseline.State
 	stopped := r.rec.StoppedAt != nil
 	rolling := false
+	var newest *store.DeploymentRecord
 	if d, ok := latest[id]; ok {
+		newest = &d
 		rolling = d.Status == store.StatusPending || d.Status == store.StatusRunning
 	}
 
@@ -752,6 +770,7 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	} else if rolling {
 		sv.State = ServiceRollingOut
 	}
+	sv.Standing = standingOf(r.rec, r.svc.Name, newest, byJob[id], copiesKnown)
 	if sv.HasDomain {
 		// The table's HTTP numbers are the last 10 minutes', the same window
 		// the issues and the chart heads read, so a row never disagrees with
@@ -794,6 +813,11 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	var issues []MetricIssue
 	limit, hasLimit := limitOf(r.minute)
 	for _, is := range found {
+		if is.Kind == metrics.Quieter && sv.Standing.Down {
+			// Traffic that stopped is no news from a service that serves nothing: its cause
+			// is on the needs-you list, and the row's mark says it.
+			continue
+		}
 		mi := MetricIssue{
 			AppID: id, AppName: r.rec.Place.Name, Service: r.svc.Name, Kind: is.Kind, Level: is.Level,
 			Value: is.Value, Distance: is.Distance,
@@ -845,6 +869,49 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 		sv.Distance = &worst
 	}
 	return sv, issues
+}
+
+// errCopiesUnknown stands for "Nomad couldn't be read" when a service's standing is derived.
+var errCopiesUnknown = errors.New("copies unknown")
+
+// standingOf derives what the Apps home would show for the app, for one of its services: ■ when
+// the app isn't running (or this service has no healthy copy) or its newest deploy failed, ○
+// when stopped, never deployed or not defined, ◐ while rolling out, ◆ when some copies are
+// short, ● otherwise. While Nomad can't be read nothing is claimed.
+func standingOf(rec store.AppRecord, svc string, latest *store.DeploymentRecord, copies []Copy, copiesKnown bool) ServiceStanding {
+	var nomadErr error
+	if !copiesKnown {
+		nomadErr = errCopiesUnknown
+	}
+	st := statusOfRecord(rec, latest, copies, nomadErr)
+	deployFailed := latest != nil && (latest.Status == store.StatusFailed || latest.Status == store.StatusReverted)
+	switch st.State {
+	case StateStopped:
+		return ServiceStanding{Mark: "idle", Word: "stopped", Down: true}
+	case StateRollingOut:
+		return ServiceStanding{Mark: "rolling", Word: "rolling out"}
+	case StateNotRunning:
+		switch {
+		case !rec.App.Defined():
+			return ServiceStanding{Mark: "idle", Word: "not defined yet", Down: true}
+		case latest == nil:
+			return ServiceStanding{Mark: "idle", Word: "never deployed", Down: true}
+		}
+		return ServiceStanding{Mark: "failed", Word: "not running", Down: true}
+	case StateHealthy, StateDegraded:
+		for _, ss := range st.Services {
+			if ss.Name == svc && ss.Wanted > 0 && ss.Healthy == 0 {
+				return ServiceStanding{Mark: "failed", Word: "not running", Down: true}
+			}
+		}
+		if deployFailed {
+			return ServiceStanding{Mark: "failed", Word: "deploy failed"}
+		}
+		if st.State == StateDegraded {
+			return ServiceStanding{Mark: "warning", Word: fmt.Sprintf("%d of %d healthy", st.HealthyCopies, st.WantedCopies)}
+		}
+	}
+	return ServiceStanding{Mark: "healthy", Word: "healthy"}
 }
 
 // newestRow is the newest minute row if it is recent enough to be "now".
