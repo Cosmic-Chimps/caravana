@@ -775,7 +775,14 @@ Deploying now, the filter, the groups.
   with Clear. The headline and the needs-you list are about the whole caravana and never filtered. The form
   sits outside the reload's way (`hx-preserve`), so a refresh never takes away what is being typed, and
   the region's refresh address carries the query.
-- **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned. One rule
+- **The name never breaks mid-word** (review of 025, with the Platform panel beside the table at 1600px, where the
+  name column is its 96px floor). `.cv-namecell` wraps (`flex-wrap`, gap 2 10): the name is one line
+  (`white-space: nowrap`, `min-width: 0`, an ellipsis when it alone is wider than its cell; the cell's `title`
+  has the whole name) and the kind word (`flex: none`) drops under it when the two don't fit side by side.
+  At 1600px the table is about 870px wide (name 96), at 1440 and 1100 the rail is below the table (name 158 and
+  96); under 720px of its own width the row folds and the name has the whole line, so nothing scrolls sideways
+  at 390. On touch screens the name's 44px target is padding, so the ellipsis still works.
+- **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned (under the name when it wraps). One rule
   (`kindOf`), shared with the kind filter, the first that applies: **compose** (source Compose or a kept
   file), **database** (a Postgres backup, or an image named postgres, mysql, mariadb, redis or valkey: the
   last path segment before the tag or digest), **volume** (any volume), else nothing: an image app has no

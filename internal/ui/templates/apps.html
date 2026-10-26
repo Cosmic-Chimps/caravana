@@ -16,7 +16,7 @@
   {{range .}}
   <div class="cv-row cv-apps-row" role="row">
     <div role="cell" class="cv-c-status">{{template "status-quiet" .Status}}</div>
-    <div role="cell" class="cv-c-name cv-namecell"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
+    <div role="cell" class="cv-c-name cv-namecell" title="{{.Name}}"><a href="{{.Href}}" class="cv-app-name">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-c-version" data-label="Version">{{if .Version}}<span class="cv-data text-fg-1">{{.Version}}</span>{{else}}<span class="cv-data-muted">none</span>{{end}}{{with .Next}} <span class="cv-data text-fg-3"><span aria-hidden="true">→ </span><span class="sr-only">rolling out </span>{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-c-image cv-lines" data-label="Image">{{range .Images}}<span class="cv-data" title="{{.Image}}">{{with .Service}}<span class="text-fg-3">{{.}} </span>{{end}}{{.Image}}</span>{{end}}</div>
     <div role="cell" class="cv-c-deploy cv-lines" data-label="Last deploy">{{with .Deploy}}{{template "time" .When}}{{if .Outcome}}<a href="{{.Href}}" class="cv-outcome">{{if .Failed}}<span class="cv-mark cv-mark-failed" aria-hidden="true"></span>{{end}}{{.Outcome}}</a>{{end}}{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</div>
