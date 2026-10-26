@@ -28,6 +28,11 @@ type CopyUsage struct {
 	NearCeiling      bool // MemoryMB is 90% or more of MemoryCeilingMB
 
 	Error string // set instead of the numbers when Nomad couldn't give them
+
+	// None is set instead of the numbers when Nomad answered but has nothing
+	// measured for the copy (a copy that isn't running, or no memory kind
+	// measured): no value, which is not 0 MB and is not an error (feature 025).
+	None bool
 }
 
 // CopiesWithUsage is Copies plus the CPU and memory in use for each copy that
@@ -63,6 +68,8 @@ func (s *Service) CopiesWithUsage(ctx context.Context, appID string) ([]Copy, ma
 		cpu, mem, ceiling := s.deployer.Reserved(svc.Resources)
 		cu := CopyUsage{CPUReservedMHz: cpu, MemoryReservedMB: mem, MemoryCeilingMB: ceiling}
 		switch {
+		case errors.Is(u.Err, deploy.ErrUsageNone):
+			cu.None = true
 		case errors.Is(u.Err, deploy.ErrUsageNotCollected):
 			cu.Error = errNotCollecting
 		case u.Err != nil:

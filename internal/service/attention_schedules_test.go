@@ -234,7 +234,7 @@ func TestScheduleProblemKeyAndEvent(t *testing.T) {
 	if problemKey(renamed) != problemKey(failed) {
 		t.Error("a renamed schedule's problem has another key")
 	}
-	if isCopyKind(AttentionScheduleFailed) || isCopyKind(AttentionScheduleSkipping) {
+	if notJudged(AttentionScheduleFailed, judged{}) || notJudged(AttentionScheduleSkipping, judged{}) {
 		t.Error("a schedule kind is a copy kind")
 	}
 
@@ -273,29 +273,29 @@ func TestDiffProblemsSchedules(t *testing.T) {
 	skipping := AttentionItem{Kind: AttentionScheduleSkipping, AppID: "blog", Service: "web", Schedule: "rates-sync", ScheduleID: "aaaaaaaaaaaa"}
 
 	// Two schedules of one service failing: one problem each.
-	ch := diffProblems(nil, []AttentionItem{rates, digest, skipping}, true, exists, now, delay)
+	ch := diffProblems(nil, []AttentionItem{rates, digest, skipping}, allJudged, exists, now, delay)
 	if len(ch.Opened) != 3 {
 		t.Errorf("opened %d, want one per failing schedule and the warning: %+v", len(ch.Opened), ch.Opened)
 	}
 	// Failing again every minute: seen, never opened again.
 	prev := []store.SentProblem{sentRow(rates, now.Add(-time.Minute)), sentRow(digest, now.Add(-time.Minute))}
-	ch = diffProblems(prev, []AttentionItem{rates, digest}, true, exists, now, delay)
+	ch = diffProblems(prev, []AttentionItem{rates, digest}, allJudged, exists, now, delay)
 	if len(ch.Opened) != 0 || len(ch.Seen) != 2 {
 		t.Errorf("a schedule that keeps failing: %+v", ch)
 	}
 	// A run succeeded: once it has been gone for the delay, resolved.
 	prev = []store.SentProblem{sentRow(rates, now.Add(-delay)), sentRow(digest, now)}
-	ch = diffProblems(prev, []AttentionItem{digest}, true, exists, now, delay)
+	ch = diffProblems(prev, []AttentionItem{digest}, allJudged, exists, now, delay)
 	if len(ch.Resolved) != 1 || ch.Resolved[0].Key != problemKey(rates) || len(ch.Seen) != 1 {
 		t.Errorf("after a success: %+v", ch)
 	}
 	// Nomad unreadable: the schedule kinds come from the store, so they are still judged.
-	ch = diffProblems([]store.SentProblem{sentRow(digest, now.Add(-time.Hour))}, []AttentionItem{rates}, false, exists, now, delay)
+	ch = diffProblems([]store.SentProblem{sentRow(digest, now.Add(-time.Hour))}, []AttentionItem{rates}, judged{Disks: true}, exists, now, delay)
 	if len(ch.Opened) != 1 || len(ch.Resolved) != 1 {
 		t.Errorf("with copies unknown: %+v", ch)
 	}
 	// A removed schedule's problem is resolved after the delay like any other.
-	ch = diffProblems([]store.SentProblem{sentRow(rates, now.Add(-delay))}, nil, true, exists, now, delay)
+	ch = diffProblems([]store.SentProblem{sentRow(rates, now.Add(-delay))}, nil, allJudged, exists, now, delay)
 	if len(ch.Resolved) != 1 {
 		t.Errorf("a removed schedule: %+v", ch)
 	}

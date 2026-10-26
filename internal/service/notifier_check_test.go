@@ -171,7 +171,7 @@ func TestDiffProblems(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := diffProblems(tc.prev, tc.now, tc.copiesKnown, exists, at, delay)
+			got := diffProblems(tc.prev, tc.now, judged{Copies: tc.copiesKnown, Disks: true}, exists, at, delay)
 			for _, c := range []struct {
 				what      string
 				got, want []string

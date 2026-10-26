@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/api"
+
+	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 
 // webStats is Nomad's stats for the service task "web" (the task is named after the service).
 func webStats(ticks float64, usedMB uint64) api.AllocResourceUsage {
-	return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+	return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
 		CpuStats:    &api.CpuStats{TotalTicks: ticks},
 		MemoryStats: &api.MemoryStats{Usage: usedMB << 20, Measured: []string{"Usage"}},
 	}}}}
@@ -155,7 +157,7 @@ func TestLiveUsageEvents(t *testing.T) {
 
 	t.Run("without it none comes, and Nomad is not asked for stats", func(t *testing.T) {
 		before := e.Nomad.StatsRequests()
-		for _, path := range []string{"/live/apps/whoami", "/live/apps/whoami?tab=deployments", "/live/apps/whoami?logs=1"} {
+		for _, path := range []string{"/live/apps/whoami", "/live/apps/whoami?tab=deployments", "/live/apps/whoami?watch=logs"} {
 			ls := openStream(t, e.URL, path, e.Cookie.Value)
 			ls.expect("sync")
 			deadline := time.After(250 * time.Millisecond)
@@ -181,5 +183,55 @@ func TestLiveUsageEvents(t *testing.T) {
 		ls.expect("sync")
 		ls.close()
 		time.Sleep(100 * time.Millisecond) // the hook's context ends with the request; nothing to assert but no hang at cleanup
+	})
+}
+
+// Feature 025: the memory on the Running tab is what Monitoring draws, Usage less the page cache,
+// and a copy Nomad has no measurement for shows a dash, not an error.
+func TestRunningTabMemoryWithoutCacheAndNoValue(t *testing.T) {
+	e := runningEnv(t)
+	// The lab's Postgres: Usage 24 MB, RSS 3 MB, Cache 18 MB. The 18 MB is page cache the kernel
+	// gives back, so 6 MB is what the service holds.
+	e.Nomad.SetStats(copyA, api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+		CpuStats: &api.CpuStats{TotalTicks: 3},
+		MemoryStats: &api.MemoryStats{Usage: 24 << 20, RSS: 3 << 20, Cache: 18 << 20,
+			Measured: []string{"Usage", "Cache", "RSS"}},
+	}}}})
+	// A copy that has ended answers 200 with no time and zeroed entries (research R8.11).
+	e.Nomad.SetStats(copyB, deploytest.DeadAllocUsage("web"))
+	// cgroups v1 has no page cache in it: RSS stands in.
+	e.Nomad.SetStats(copyD, api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+		CpuStats:    &api.CpuStats{TotalTicks: 1},
+		MemoryStats: &api.MemoryStats{RSS: 40 << 20, Measured: []string{"RSS"}},
+	}}}})
+
+	_, body := e.get(t, "/apps/whoami")
+
+	t.Run("the cache is left out of the memory and the meter", func(t *testing.T) {
+		row := copyRow(t, body, copyA)
+		if got := text(row); !strings.Contains(got, "6 MB of 256 MB ceiling, 64 reserved") {
+			t.Errorf("the row reads %q, want 6 MB (24 less 18)", got)
+		}
+		if !strings.Contains(row, `value="2"`) {
+			t.Errorf("the meter isn't 6 of 256 MB (2 %%):\n%s", row)
+		}
+	})
+
+	t.Run("without a Usage reading RSS is used", func(t *testing.T) {
+		if got := text(copyRow(t, body, copyD)); !strings.Contains(got, "40 MB of 256 MB ceiling") {
+			t.Errorf("the row reads %q, want 40 MB", got)
+		}
+	})
+
+	t.Run("a copy with no measurement has a dash in both cells and no error line", func(t *testing.T) {
+		row := copyRow(t, body, copyB)
+		if got := strings.Count(row, "&mdash;") + strings.Count(row, "—"); got != 2 {
+			t.Errorf("row has %d dashes, want 2:\n%s", got, row)
+		}
+		for _, bad := range []string{"Nomad didn't answer", "<meter", "0 MB"} {
+			if strings.Contains(row, bad) {
+				t.Errorf("the row has %q:\n%s", bad, row)
+			}
+		}
 	})
 }

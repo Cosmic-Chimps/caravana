@@ -75,8 +75,18 @@ type Event struct {
 	Domain      string     `json:"domain,omitempty"`
 	AddressSeen string     `json:"addressSeen,omitempty"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	URL         string     `json:"url,omitempty"` // the console page about it, when its address is known
-	At          time.Time  `json:"at"`
+	// Mount is the filesystem of a problem about a disk (feature 025:
+	// disk_nearly_full) when it opens, Holds what is on it ("nomad" and/or
+	// "docker"), UsedPercent how full it is, FreeBytes what is left and Level
+	// how bad it was then ("warning" from 85 %, "failed" from 95 %). The host
+	// has no app, so such an event has no app, project or environment.
+	Mount       string    `json:"mount,omitempty"`
+	Holds       []string  `json:"holds,omitempty"`
+	UsedPercent float64   `json:"usedPercent,omitempty"`
+	FreeBytes   *int64    `json:"freeBytes,omitempty"`
+	Level       string    `json:"level,omitempty"`
+	URL         string    `json:"url,omitempty"` // the console page about it, when its address is known
+	At          time.Time `json:"at"`
 }
 
 // Origin is where a deploy came from, as a CI step told Caravana. It has the

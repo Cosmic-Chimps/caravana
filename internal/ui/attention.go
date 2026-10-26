@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -118,6 +121,13 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Mark = "warning"
 		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "+it.Detail))
 		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
+	case service.AttentionDiskNearlyFull:
+		row.Mark = "warning"
+		if it.Level == metrics.DiskFailed {
+			row.Mark = "failed"
+		}
+		row.Text = diskSentence(it)
+		row.Action, row.Href = "Open monitoring", "/monitoring#host"
 	case service.AttentionDomainDNSElsewhere:
 		row.Text = domainElsewhereSentence(pl.label(place, it.AppID, ""), it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
@@ -127,6 +137,18 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	}
 	return row
+}
+
+// diskSentence is "The disk holding /var/lib/docker is 86% full: 11 GB left." (the filesystem in
+// mono), or, when one filesystem holds both Nomad's data and Docker's, "The disk holding Nomad's
+// data and Docker's (/) is 86% full: 11 GB left." The percent is cut down, so a disk at 94.6%
+// isn't called 95%, which is where the item turns failed.
+func diskSentence(it service.AttentionItem) sentence {
+	tail := " is " + strconv.Itoa(int(it.UsedPercent)) + "% full: " + sizeText(it.FreeBytes>>20) + " left."
+	if slices.Contains(it.Holds, "nomad") && slices.Contains(it.Holds, "docker") {
+		return sentence{plain("The disk holding Nomad's data and Docker's ("), mono(it.Mount), plain(")" + tail)}
+	}
+	return sentence{plain("The disk holding "), mono(it.Mount), plain(tail)}
 }
 
 // domainElsewhereSentence is "blog: bi.example.com points at 185.199.108.153,
@@ -197,6 +219,8 @@ func headlineWords(it service.AttentionItem) string {
 		return "has a domain pointing elsewhere"
 	case service.AttentionDomainCertExpiring:
 		return "has a certificate expiring"
+	case service.AttentionDiskNearlyFull:
+		return "is on a disk that is nearly full"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

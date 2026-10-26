@@ -1,0 +1,30 @@
+{
+  "workflow": "speckit",
+  "specName": "Monitoring and capacity",
+  "branch": "025-monitoring",
+  "currentStep": "tasks",
+  "status": "ready-to-implement",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-10-25T22:53:26.560Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-25T22:57:20.176Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-10-25T22:58:38.387Z"
+    }
+  ]
+}

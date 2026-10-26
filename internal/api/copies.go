@@ -11,6 +11,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
+	"github.com/cosmic-chimps/caravana/internal/logline"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -43,6 +44,9 @@ type usageJSON struct {
 }
 
 func toUsageJSON(u service.CopyUsage) *usageJSON {
+	if u.None {
+		return nil // no value: left out, as for a copy that hasn't started
+	}
 	if u.Error != "" {
 		return &usageJSON{Error: u.Error}
 	}
@@ -102,15 +106,23 @@ func (s *server) listCopies(w http.ResponseWriter, r *http.Request) error {
 
 // logLineJSON is one line of output (schema LogLine).
 type logLineJSON struct {
-	Copy    string     `json:"copy"`
-	Service string     `json:"service"`
-	Stream  string     `json:"stream"`
-	Text    string     `json:"text"`
-	Time    *time.Time `json:"time,omitempty"`
+	Copy       string     `json:"copy"`
+	Service    string     `json:"service"`
+	Stream     string     `json:"stream"`
+	Text       string     `json:"text"`
+	Time       *time.Time `json:"time,omitempty"`
+	ID         string     `json:"id,omitempty"`
+	Level      string     `json:"level,omitempty"`
+	TimeSource string     `json:"timeSource,omitempty"`
 }
 
 func toLogLineJSON(l service.LogLine) logLineJSON {
-	return logLineJSON{Copy: l.Copy, Service: l.Service, Stream: string(l.Stream), Text: l.Text, Time: l.Time}
+	j := logLineJSON{Copy: l.Copy, Service: l.Service, Stream: string(l.Stream), Text: l.Text, Time: l.Time,
+		Level: string(l.Level), TimeSource: string(l.TimeSource)}
+	if l.ID != (logline.LineID{}) {
+		j.ID = l.ID.String() // a followed line has none
+	}
+	return j
 }
 
 // The defaults for an event stream's timings (research R11, R12).

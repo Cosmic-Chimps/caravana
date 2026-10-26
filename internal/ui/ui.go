@@ -138,6 +138,13 @@ func (s *server) routeTable() []route {
 		{"GET", "/login", s.showLogin},
 		{"POST", "/login", s.protected(s.signIn)},
 		{"POST", "/logout", s.protected(s.signOut)},
+		{"GET", "/logs", s.requireSession(s.showLogsPage)},
+		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
+		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
+		{"GET", "/monitoring", s.requireSession(s.showMonitoring)},
+		{"GET", "/parts/monitoring", s.requirePart(s.partMonitoring)},
+		{"GET", "/parts/monitoring/host", s.requirePart(s.partMonitoringHost)},
+		{"GET", "/parts/platform", s.requirePart(s.partPlatform)},
 		{"GET", "/apps", s.requireSession(s.showApps)},
 		{"GET", "/apps/new", s.requireSession(s.showNewApp)},
 		{"GET", "/projects", s.requireSession(s.showProjects)},
@@ -163,7 +170,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/apps/{id}/promote", s.requireSession(s.showPromote)},
 		{"POST", "/apps/{id}/promote", s.protected(s.requireSession(s.promoteApp))},
 		{"POST", "/apps/{id}/copy", s.protected(s.requireSession(s.copyApp))},
-		{"GET", "/apps/{id}/logs", s.requireSession(s.showLogs)},
+		{"GET", "/apps/{id}/logs", s.requireSession(s.showAppLogs)},
 		{"POST", "/apps/{id}/deploy", s.protected(s.requireSession(s.deployApp))},
 		{"POST", "/apps/{id}/deployments/{deploymentId}/redeploy", s.protected(s.requireSession(s.redeployVersion))},
 		{"GET", "/apps/{id}/deployments/{deploymentId}/jobspec", s.requireSession(s.exportVersion)},
@@ -304,7 +311,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -321,6 +328,11 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// one the set keeps.
 		if name == "app" || name == "settings" {
 			files = append(files, "templates/domains.html")
+		}
+		// An app's Logs tab is the Logs page filtered to the app (feature 024): one template. app.html
+		// comes after it, so the app's "content", "head" and "page-class" are the ones the set keeps.
+		if name == "app" {
+			files = append(files, "templates/logs.html")
 		}
 		files = append(files, "templates/"+name+".html")
 		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS, files...)

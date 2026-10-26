@@ -71,10 +71,85 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   the notification message gains `domain`, `addressSeen` and `expiresAt`. A deploy token is still
   refused on every domain route and may turn Team only on for its own app.
 
+- **Logs**: the output of every copy of every service of one project › environment on one page,
+  **Logs** in the sidebar, newest first. Caravana reads it live from Nomad on every view and
+  stores no line (what an app prints may hold anything, so none of it is kept, logged or sent in
+  a live notice). Each line's **time** and **level** are read from the line: a JSON line's fields,
+  the usual leading timestamps, a time inside the Common Log Format bracket, and the first words
+  for the level (`ERROR`, `[warn]`, `E1025` and the like); an indented continuation line (a stack
+  trace) takes the level above it; a line that matches nothing is info, **on stderr too** (Go's
+  `log` writes there with no level). A line with no time of its own shows `~` and the time of the
+  line before it, and a file whose times disagree with its last write (a container in another
+  time zone) is marked the same way, never placed hours off. Control sequences (colors, links,
+  progress `\r`, NUL) are removed, not rendered, and repeats of the same line are folded into one
+  row with a count (an nginx health check every 10 s is one row).
+- On the page: a rail of services with the number of copies and a hue each (a copy that has
+  stopped but whose output Nomad still holds reads "(gone)"); a **histogram** of what was read
+  with the error share of each bar and a marker for each deploy, where the part before what was
+  read is hatched and never drawn as zero; **deploys as rows** in the stream ("started rolling
+  out", "is live", "failed its health checks · rolled back", with who did it); the search
+  (a word or a status code, case-insensitive, over the text and the app and service names); the
+  ranges (15 minutes, 1 hour, 24 hours, 7 days) and the level chips with counts; **Only this
+  service**; **Lines around this** (the same copy, both streams, every level, the line
+  highlighted; it follows the line itself, so two lines in the same millisecond never get mixed
+  up, and it says so when Nomad has already rotated that file away); **Raw** for a JSON line;
+  **Show older**; and "Older lines were dropped." when what was read begins at the oldest line
+  Nomad keeps. **Live** follows new lines while the page is open and **Paused** counts them
+  instead. **Download as a text file** writes the filter, oldest first, one line per row with the
+  time in UTC, the service, the copy, the stream and the level.
+- A page reads at most 1 MiB per stream (16 MiB for the page) and for at most 5 seconds, two
+  pages at a time, so a busy app or a starved node answers with what was read and says so ("read
+  from 14:02 UTC", "not all read in time") instead of hanging. Search and the histogram see what
+  was read.
+- API 0.26.0: `listLogs`, `getLogsAround` and `downloadLogs` (`text/plain`), all `no-store`, and
+  all refused to a deploy token. `getLogs` (the per-app read) gains `id`, `level` and
+  `timeSource` on each line; `listLogs`' description writes out the level and escape rules so a
+  client can match the page.
+
+- **Monitoring**: how your apps and the host are doing, on **Monitoring** in the sidebar. Four charts for a project › environment (6 hours by default; 1 hour, 24 hours
+  and 7 days too): **requests**, **errors** (the share that were 5xx), the **slowest 5 %** of
+  requests (the time that 19 in 20 beat) and **memory**, each drawn against the same 10 minutes of
+  the last 7 days (a shaded band from the lowest to the highest, a line for the usual), with a
+  marker for each deploy. Above them, the services that are **unusual** come first, each with what
+  it did and since when (its value, "usually 210 ms"), the deploy
+  nearby ("It started 2 minutes after web v24 rolled out") and, for memory and restarts, the last exit;
+  below, a table of every service sorted unusual first (or by traffic, or by memory) with its
+  requests, errors, slowest 5 %, memory against its ceiling, CPU sparkline and restarts. A service
+  with no domain shows "—" for the request numbers, not zero. Caravana reads Traefik's numbers and
+  Nomad's every minute and keeps minute rows for 48 hours and 10-minute rows for 8 days (a few MB
+  in its SQLite file); nothing is kept per request, and websocket traffic isn't in the numbers.
+- **The host's capacity**, at the foot of Monitoring: memory and CPU **used** and **reserved** (what
+  Nomad has promised to the apps, counted by Nomad's own rule for startup tasks), the two disks
+  worth watching (the one holding Nomad's data and the one holding Docker's images, one row when
+  it is the same disk), a 7-day memory chart, and **"room for about 4 more apps like whoami"**
+  (the app in the middle of your apps by memory, and whether memory or CPU runs out first). The
+  Apps home has a **Platform** panel with the same numbers and a link.
+- **Disk nearly full** on the needs-you list and in notifications: a watched disk at 85 % opens an
+  item (a warning; failed from 95 %) with how much is left, and it resolves once the disk is below
+  83 %, so a disk at 84 % doesn't flap. Slack, Discord, ntfy and webhook channels get it like any
+  problem.
+- API 0.27.0: `getMetrics` (`GET /v1/metrics`), `getAppMetrics` (`GET /v1/apps/{id}/metrics`) and
+  `getHost` (`GET /v1/host`), all read from the stored samples (a gap is `null`, and `sources` says
+  what couldn't be read); `AttentionItem.kind` gains `disk_nearly_full` with `mount`, `holds`,
+  `usedPercent`, `freeBytes` and `level`, and the notification message carries the same five
+  properties. Deploy tokens can't use any of it.
+
 ### Changed
+- Dim text raised to fg-3 for contrast across the console: counts, times, the copy id on Logs and other
+  small labels that were drawn in the dimmest grey now read a shade brighter.
 - The Backups tab's run and next-backup times are drawn as clock times (UTC, local beside them).
 - An app's Domains page grew a status and a certificate column (the same rows as the Domains
   page, filtered to the app), and its domains are edited there with the options above.
+- An app's **Logs** tab is now the same page filtered to the app, with "All logs" to go to the
+  whole environment; its Copy and Stream selects are gone (the rail and the filters replace
+  them).
+- `getLogs`: `text` no longer carries escape sequences, and the tail lines now have a `time`
+  (read from the line, or estimated) where they had none. A client that read the colors out of
+  `text` loses them.
+- The Running tab's **memory** (and `listCopies`' `usage`) leaves the page cache out: it is what the
+  app holds (Nomad's `Usage` minus `Cache`), the number Monitoring uses, so it drops for apps that
+  read files, such as a database or a static site. A copy whose usage Nomad didn't measure (not
+  running, or collection off) shows "—" instead of 0 MB.
 
 **Upgrade**: rerun the installer. Traefik is restarted once (a few seconds without HTTP on 80 and
 443): it now reads its configuration from a directory so that Team only can hand it password
@@ -85,6 +160,22 @@ certificate). The scoped Nomad policy needs no new capability (Traefik reads its
 variable, and Caravana already writes `nomad/jobs/*`); a schedule run's job is one more batch job
 while it runs and is purged after. Until the installer is rerun, a domain with Team only is
 refused by Traefik (its router is disabled and answers 404).
+
+**Logs, upgrade**: nothing to rerun. The scoped Nomad policy needs no new capability (the page
+uses `read-fs`, which it has had since 0.4.0's volume backups), and nothing is migrated or
+stored. The page shows only what Nomad keeps: by default 10 files of 10 MiB per stream for each
+copy, so how far back it reaches depends on how much the app prints, and a copy is readable
+until Nomad collects it. A host whose Caravana token predates `read-fs` must rerun the
+installer, or the app's Logs tab says Nomad refused the read.
+
+**Monitoring, upgrade**: rerun the installer. Traefik is restarted once (a few seconds without HTTP
+on 80 and 443) to turn on its request numbers, and the installer says so when it does it. Caravana's scoped Nomad policy gains `node { policy = "read" }`
+(for the host's memory, CPU and disks; no drain, no write), and `caravana.env` gains
+`CARAVANA_DOCKER_ROOT` (read from `docker info`). Until it is rerun, Monitoring says what is
+missing and to run the installer again (Traefik isn't serving its request numbers, or the token
+can't read the host). History builds from the upgrade: the first day has no
+band and no "usually" (the page says it is still being learned), a band appears with the first
+earlier day and is complete after 7.
 
 ## 0.12.0 - 2026-10-22
 

@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/logline"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -268,5 +269,108 @@ func TestLogsFollow(t *testing.T) {
 	}
 	if n := e.nomad.OpenLogStreams(); n != 0 {
 		t.Errorf("%d follow streams still open after cancel", n)
+	}
+}
+
+// A stream with files is tailed through them: each line has its address, its level, the stripped
+// text and a time (read from the line, or estimated from the one before). A stream without files
+// is tailed from Nomad's frames, as before: no address, and a time only when the line carries one.
+func TestLogsTailFromFiles(t *testing.T) {
+	e := logsEnv(t)
+	e.nomad.AddLogFile("w-early", "stdout", 0, []string{
+		`2026-10-04T09:10:00Z first`,
+		`no time here`,
+		`2026-10-04T09:11:00Z ERROR bad`,
+		"2026-10-04T09:12:00Z \x1b[31mcolored\x1b[0m",
+		`{"level":"warn","ts":"2026-10-04T09:13:00Z","msg":"json says"}`,
+	}, time.Date(2026, 10, 4, 9, 13, 30, 0, time.UTC))
+
+	lines, err := readLogs(t, e, "blog", LogQuery{Copy: "w-early", Lines: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(h, m int) *time.Time { v := time.Date(2026, 10, 4, h, m, 0, 0, time.UTC); return &v }
+	type want struct {
+		text   string
+		id     logline.LineID
+		level  logline.Level
+		source logline.TimeSource
+		time   *time.Time
+	}
+	out := func(off int64) logline.LineID {
+		return logline.LineID{Copy: "w-early", Stream: logline.Stdout, File: 0, Offset: off}
+	}
+	// Each file line's offset is the length of the lines before it, newlines included.
+	wants := []want{
+		{`2026-10-04T09:10:00Z first`, out(0), logline.Info, logline.FromLine, at(9, 10)},
+		{`no time here`, out(27), logline.Info, logline.Estimated, at(9, 10)},
+		{`2026-10-04T09:11:00Z ERROR bad`, out(40), logline.Error, logline.FromLine, at(9, 11)},
+		{`2026-10-04T09:12:00Z colored`, out(71), logline.Info, logline.FromLine, at(9, 12)},
+		{`{"level":"warn","ts":"2026-10-04T09:13:00Z","msg":"json says"}`, out(109), logline.Warn, logline.FromLine, at(9, 13)},
+		// The stderr stream has no file: its frames, with no address or time.
+		{`early err 1`, logline.LineID{}, logline.Error, "", nil}, // the word err is a level
+	}
+	if len(lines) != len(wants) {
+		t.Fatalf("%d lines (%q), want %d", len(lines), texts(lines), len(wants))
+	}
+	for i, w := range wants {
+		l := lines[i]
+		if l.Text != w.text || l.ID != w.id || l.Level != w.level || l.TimeSource != w.source || (l.Time == nil) != (w.time == nil) ||
+			(l.Time != nil && !l.Time.Equal(*w.time)) {
+			t.Errorf("line %d = {%q %v %s %q %v}, want {%q %v %s %q %v}", i, l.Text, l.ID, l.Level, l.TimeSource, l.Time, w.text, w.id, w.level, w.source, w.time)
+		}
+		if l.Copy != "w-early" || l.Service != "web" {
+			t.Errorf("line %d belongs to %s/%s", i, l.Service, l.Copy)
+		}
+	}
+}
+
+// The tail's cut still takes the last lines, over lines that now carry times.
+func TestLogsTailFromFilesKeepsTheLastLines(t *testing.T) {
+	e := logsEnv(t)
+	var in []string
+	for i := range 700 {
+		in = append(in, fmt.Sprintf("2026-10-04T09:%02d:%02dZ w-late line %d", 10+i/60, i%60, i+1))
+	}
+	e.nomad.AddLogFile("w-late", "stdout", 0, in, time.Date(2026, 10, 4, 9, 22, 0, 0, time.UTC))
+	lines, err := readLogs(t, e, "blog", LogQuery{Copy: "w-late", Stream: deploy.LogStdout, Lines: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 3 || !strings.HasSuffix(lines[0].Text, "line 698") || !strings.HasSuffix(lines[2].Text, "line 700") {
+		t.Fatalf("lines = %q, want the last three", texts(lines))
+	}
+	if lines[2].Time == nil || lines[2].ID.Stream != logline.Stdout || lines[2].ID.Offset == 0 {
+		t.Errorf("last line = %+v, want a time and an address", lines[2])
+	}
+}
+
+// A followed line has its arrival as its time, marked received, and a level, and no address.
+func TestLogsFollowedLineHasLevelAndSource(t *testing.T) {
+	e := logsEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan LogLine)
+	go func() {
+		_ = e.svc.Logs(ctx, "blog", LogQuery{Copy: "w-late", Stream: deploy.LogStdout, Lines: 1, Follow: true}, out)
+	}()
+	next := func() LogLine {
+		select {
+		case l := <-out:
+			return l
+		case <-time.After(5 * time.Second):
+			t.Fatal("no line within 5s")
+		}
+		return LogLine{}
+	}
+	next() // the tail
+	deadline := time.Now().Add(5 * time.Second)
+	for e.nomad.OpenLogStreams() < 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	e.nomad.WriteLog("w-late", "stdout", "\x1b[31mERROR boom\x1b[0m\n")
+	l := next()
+	if l.Text != "ERROR boom" || l.Level != logline.Error || l.TimeSource != logline.Received || l.Time == nil || l.ID != (logline.LineID{}) {
+		t.Errorf("followed line = %+v, want stripped text, level error, received, a time and no address", l)
 	}
 }

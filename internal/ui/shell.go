@@ -16,7 +16,7 @@ type shellView struct {
 	Version  string  // Caravana's version, after "caravana"; "" for none
 	Email    string  // the admin, in the account row
 	Initials string  // the first two letters of the email's local part, upper case; "?" for none
-	Active   string  // navHome, navProjects, navSchedules, navDomains or navSettings: the sidebar item marked as current
+	Active   string  // navHome, navProjects, navSchedules, navDomains, navLogs, navMonitoring or navSettings: the sidebar item marked as current
 	Crumbs   []crumb // the top bar's breadcrumbs, the last one being this page
 	NewApp   bool    // the top bar offers "New app"
 }
@@ -54,11 +54,13 @@ type emptyView struct {
 // The sidebar items a page can mark as current. Home is the Apps list, and
 // Projects holds every page of a project and of an app in it.
 const (
-	navHome      = "home"
-	navProjects  = "projects"
-	navSchedules = "schedules" // every page under /schedules (feature 022)
-	navDomains   = "domains"   // every page under /domains (feature 023)
-	navSettings  = "settings"
+	navHome       = "home"
+	navProjects   = "projects"
+	navSchedules  = "schedules"  // every page under /schedules (feature 022)
+	navDomains    = "domains"    // every page under /domains (feature 023)
+	navLogs       = "logs"       // every page under /logs (feature 024)
+	navMonitoring = "monitoring" // every page under /monitoring (feature 025)
+	navSettings   = "settings"
 )
 
 // shellPage starts the data of a console page: the title, and the shell

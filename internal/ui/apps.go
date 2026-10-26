@@ -119,7 +119,9 @@ type appsPage struct {
 	pageData
 	appsRegion
 	activityRegion
-	Deleted string // an app ID to say was deleted, from ?deleted=
+	// Platform is the rail's "This host" panel (feature 025); nil when the host couldn't be read from the store.
+	Platform *monPlatform
+	Deleted  string // an app ID to say was deleted, from ?deleted=
 	// ProjectDeleted is a project name to say was deleted, from ?projectDeleted=.
 	ProjectDeleted string
 }
@@ -147,6 +149,10 @@ func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string
 	}
 	head.LiveURL = "/live"
 	page := appsPage{pageData: head, appsRegion: region, activityRegion: activity}
+	if page.Platform, err = s.loadPlatform(r); err != nil {
+		// The panel is a glance; the Apps page is the page. Say why it is missing and draw the rest.
+		s.log.Error("read the host", "error", err)
+	}
 	if id := r.URL.Query().Get("deleted"); deletedID.MatchString(id) {
 		page.Deleted = id
 	}
@@ -180,10 +186,19 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 
 // liveApps answers GET /live: the stream of the workspace pages (Apps,
 // Schedules, which listens for the schedules notice, and Domains, which opens
-// it with ?watch=domains: the domains notice, and checks every minute while open).
+// it with ?watch=domains: the domains notice, and checks every minute while open; and Logs,
+// which is liveLogs in logs.go; and Monitoring, which has the metrics notice only).
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("watch") == "logs" {
+		s.liveLogs(w, r)
+		return
+	}
+	if r.URL.Query().Get("watch") == "monitoring" {
+		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics}})
+		return
+	}
 	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
-		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules}}
+		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules, service.ChangeMetrics}}
 	if r.URL.Query().Get("watch") == "domains" {
 		route.Kinds, route.WatchDomains = append(route.Kinds, service.ChangeDomains), true
 	}

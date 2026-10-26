@@ -124,6 +124,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	// checks give their own fakes with SetEdge.
 	svc.domainIdleGap, svc.domainWatchGap = time.Hour, time.Hour
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
+	// Monitoring: no tick after Start. Tests of the sampler call sampleTick.
+	svc.metricsGap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

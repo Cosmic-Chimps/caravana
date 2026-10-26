@@ -120,7 +120,7 @@ func TestListCopiesUsage(t *testing.T) {
 			TaskStates: map[string]*api.TaskState{"web": {StartedAt: started}}}
 	}
 	usage := func(ticks float64, mb uint64) api.AllocResourceUsage {
-		return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
+		return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{"web": {ResourceUsage: &api.ResourceUsage{
 			CpuStats:    &api.CpuStats{TotalTicks: ticks},
 			MemoryStats: &api.MemoryStats{Usage: mb << 20, Measured: []string{"Usage"}},
 		}}}}

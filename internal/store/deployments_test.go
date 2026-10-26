@@ -542,3 +542,101 @@ func TestDeploymentDefinition(t *testing.T) {
 		}
 	})
 }
+
+func TestTerminalStatuses(t *testing.T) {
+	got := terminalStatuses()
+	want := []Status{StatusFailed, StatusHealthy, StatusReverted, StatusSuperseded}
+	if !slices.Equal(got, want) {
+		t.Errorf("terminalStatuses = %v, want %v", got, want)
+	}
+	for _, st := range got {
+		if _, has := allowedNext[st]; has {
+			t.Errorf("%s is listed as final but has a way out", st)
+		}
+	}
+}
+
+func TestListDeploymentsIn(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	for _, id := range []string{"lab--staging--web", "lab--production--web", "other--staging--web"} {
+		a := apptest.Whoami().App
+		a.ID = id
+		if _, err := s.SaveApp(ctx, a, nil); err != nil {
+			t.Fatalf("SaveApp %s: %v", id, err)
+		}
+	}
+
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	from, to := base, base.Add(time.Hour)
+	// add makes a deployment, brings it to status and sets its two times.
+	add := func(appID, id string, status Status, created, updated time.Time) {
+		t.Helper()
+		if _, err := s.CreateDeployment(ctx, appID, newDeployment(id), nil, nil, ""); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+		switch status {
+		case StatusPending:
+		case StatusHealthy, StatusReverted:
+			for _, step := range []Status{StatusRunning, status} {
+				if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: step}); err != nil {
+					t.Fatalf("%s -> %s: %v", id, step, err)
+				}
+			}
+		default:
+			if _, err := s.UpdateDeployment(ctx, id, DeploymentUpdate{Status: status}); err != nil {
+				t.Fatalf("%s -> %s: %v", id, status, err)
+			}
+		}
+		if _, err := s.db.ExecContext(ctx, "UPDATE deployments SET created_at = ?, updated_at = ? WHERE id = ?",
+			formatTime(created), formatTime(updated), id); err != nil {
+			t.Fatalf("set times of %s: %v", id, err)
+		}
+	}
+	const web = "lab--staging--web"
+	add(web, "late", StatusHealthy, base.Add(40*time.Minute), base.Add(45*time.Minute))
+	add(web, "early", StatusHealthy, base.Add(10*time.Minute), base.Add(20*time.Minute))
+	add(web, "ended-in", StatusFailed, base.Add(-2*time.Hour), base.Add(5*time.Minute))
+	add(web, "ended-in-reverted", StatusReverted, base.Add(-2*time.Hour), base.Add(6*time.Minute))
+	add(web, "ended-in-superseded", StatusSuperseded, base.Add(-2*time.Hour), base.Add(7*time.Minute))
+	add(web, "running-before", StatusRunning, base.Add(-2*time.Hour), base.Add(30*time.Minute))
+	add(web, "pending-before", StatusPending, base.Add(-2*time.Hour), base.Add(30*time.Minute))
+	add(web, "ended-before", StatusHealthy, base.Add(-3*time.Hour), base.Add(-2*time.Hour))
+	add(web, "after", StatusHealthy, to.Add(time.Minute), to.Add(2*time.Minute))
+	add(web, "at-from", StatusRunning, from, from)
+	add(web, "at-to", StatusRunning, to, to)
+	add(web, "ended-at-from", StatusHealthy, base.Add(-time.Hour), from)
+	add(web, "ended-at-to", StatusHealthy, base.Add(-time.Hour), to)
+	add("lab--production--web", "other-env", StatusHealthy, base.Add(15*time.Minute), base.Add(16*time.Minute))
+	add("other--staging--web", "other-project", StatusHealthy, base.Add(15*time.Minute), base.Add(16*time.Minute))
+
+	list, err := s.ListDeploymentsIn(ctx, "lab", "staging", from, to)
+	if err != nil {
+		t.Fatalf("ListDeploymentsIn: %v", err)
+	}
+	// Oldest first by creation; equal creation times (the three -2h rows) fall
+	// back to insertion order.
+	want := []string{
+		"ended-in", "ended-in-reverted", "ended-in-superseded", "ended-at-from", "ended-at-to",
+		"at-from", "early", "late", "at-to",
+	}
+	if got := deploymentIDs(list); !slices.Equal(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+	for _, rec := range list {
+		if rec.Deployment.ID == "early" && (rec.Status != StatusHealthy || rec.AppID != web) {
+			t.Errorf("early = %+v, want the whole record", rec)
+		}
+	}
+
+	none, err := s.ListDeploymentsIn(ctx, "lab", "staging", base.Add(24*time.Hour), base.Add(25*time.Hour))
+	if err != nil || none != nil {
+		t.Errorf("empty range = %v, %v; want nil, nil", none, err)
+	}
+	if got, _ := s.ListDeploymentsIn(ctx, "nope", "staging", from, to); got != nil {
+		t.Errorf("unknown place = %v, want nil", got)
+	}
+	if got, _ := s.ListDeploymentsIn(ctx, "other", "staging", from, to); !slices.Equal(deploymentIDs(got), []string{"other-project"}) {
+		t.Errorf("other project = %v", deploymentIDs(got))
+	}
+}

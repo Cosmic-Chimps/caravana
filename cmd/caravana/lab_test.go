@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,6 +43,10 @@ const labRunLimit = 40 * time.Second
 
 // labEdgeAddress is where the lab's Traefik answers HTTPS; the domain checks handshake with it.
 const labEdgeAddress = "127.0.0.1:8443"
+
+// labTraefikMetricsURL is where the lab's Traefik serves its Prometheus numbers
+// (deploy/dev/traefik.nomad.hcl publishes its loopback entrypoint on 8088).
+const labTraefikMetricsURL = "http://127.0.0.1:8088/metrics"
 
 // labResolver is the DNS side of the domain checks in the lab: the name of the console's host
 // (CARAVANA_PUBLIC_URL, when the test environment sets one) answers 203.0.113.1, elsewhere.test
@@ -95,12 +100,35 @@ func startLab(t *testing.T) labEnv {
 			// Traefik's HTTPS entrypoint in the lab is published on 8443, not 443 (feature 023).
 			return labEdgeAddress
 		}
-		return os.Getenv(key)
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		switch key {
+		case "CARAVANA_TRAEFIK_METRICS_URL":
+			// The lab's Traefik serves its numbers on 8088, not the installer's 8081 (feature 025).
+			return labTraefikMetricsURL
+		case "CARAVANA_DOCKER_ROOT":
+			// The lab VM's Docker root (docker info), the installer's default too.
+			return "/var/lib/docker"
+		}
+		return ""
 	}
 	// The schedules' clock looks every 5 s instead of 10, the watcher every 2
 	// s, and every run stops after labRunLimit instead of its schedule's 5
 	// minutes or more, so the schedules steps take seconds (research R8).
+	// current is the running service, for the steps that change a setting while
+	// it runs (RestartCaravana makes a new one).
+	var (
+		currentMu sync.Mutex
+		current   *service.Service
+	)
 	serviceHook = func(svc *service.Service) {
+		currentMu.Lock()
+		current = svc
+		currentMu.Unlock()
+		// The sampler ticks every 10 s instead of every minute, so the
+		// monitoring steps see rows in seconds (feature 025).
+		svc.SetMetricsSampleGap(10 * time.Second)
 		svc.SetScheduleScanGap(5 * time.Second)
 		svc.SetScheduleWatchGap(2 * time.Second)
 		svc.SetScheduleLimitForTests(labRunLimit)
@@ -169,6 +197,11 @@ func startLab(t *testing.T) labEnv {
 			},
 			ServerLog: stderr.String,
 			DataDir:   dataDir,
+			SetTraefikMetricsURL: func(u string) {
+				currentMu.Lock()
+				defer currentMu.Unlock()
+				current.SetTraefikMetricsURL(u)
+			},
 		},
 	}
 }

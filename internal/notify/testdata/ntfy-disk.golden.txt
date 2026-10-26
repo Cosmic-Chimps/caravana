@@ -1,0 +1,9 @@
+POST https://ntfy.sh/my-topic
+Click: https://caravana.example.com/monitoring#host
+Content-Type: text/plain; charset=utf-8
+Priority: high
+Tags: warning
+Title: Disk nearly full: / is 86% full
+
+The disk at / is 86% full: 11 GB left.
+Disk: / is 86% full, 11 GB left

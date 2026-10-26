@@ -43,6 +43,29 @@ check_domains_host() {
   vm sudo caravana-nomad alloc fs "$alloc" traefik/local/dynamic/team.yml >/dev/null || die "team.yml isn't in Traefik's allocation"
 }
 
+# check_monitoring_host: what feature 025 needs from the host. Caravana's env file names Docker's
+# root as Docker says it, Caravana's Nomad policy lets it read nodes, and Traefik's job has the
+# two metrics arguments and serves its numbers on the loopback entrypoint.
+check_monitoring_host() {
+  local env spec policy root code
+  env="$(vm sudo cat /etc/caravana/caravana.env)"
+  root="$(vm sudo docker info --format '{{.DockerRootDir}}')"
+  [ -n "$root" ] || die "docker info didn't say where Docker's root is"
+  grep -qx "CARAVANA_DOCKER_ROOT=$root" <<<"$env" ||
+    die "the env file should say CARAVANA_DOCKER_ROOT=$root:\n$(grep -v NOMAD_TOKEN <<<"$env")"
+  policy="$(vm sudo caravana-nomad acl policy info caravana | tr -d '\n')"
+  grep -Eq 'node \{ *policy = "read" *\}' <<<"$policy" || die "Caravana's Nomad policy has no node { policy = \"read\" }"
+  spec="$(vm sudo caravana-nomad job inspect traefik)"
+  grep -q -- '--metrics.prometheus=true' <<<"$spec" || die "Traefik's job doesn't turn on its metrics"
+  grep -q -- '--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10' <<<"$spec" ||
+    die "Traefik's job doesn't have the finer buckets"
+  local end=$((SECONDS + 60))
+  until code="$(vm curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/metrics 2>/dev/null)" && [ "$code" = 200 ]; do
+    [ "$SECONDS" -lt "$end" ] || die "http://127.0.0.1:8081/metrics answers $code, not 200"
+    sleep 2
+  done
+}
+
 cleanup() {
   if [ "${KEEP:-0}" = 1 ]; then
     echo "kept the VM: limactl shell $NAME"
@@ -132,11 +155,24 @@ main() {
 
   say "the certificate settings, the edge address and Team only's file provider (feature 023)"
   check_domains_host
+  say "the Docker root, node:read and Traefik's request numbers (feature 025)"
+  check_monitoring_host
   say "a rerun changes nothing"
   out="$(install "$v1")"
   grep -q '^changed: $' <<<"$out" || die "a rerun with nothing new changed: $(grep '^changed:' <<<"$out")"
   ! grep -q 'Traefik is restarted once' <<<"$out" || die "a rerun said Traefik is restarted:\n$out"
   check_domains_host
+  check_monitoring_host
+
+  say "a Traefik job from before feature 025 is restarted once for its request numbers, and says so"
+  vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
+    caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
+    die "couldn't put back a Traefik job without the metrics arguments"
+  ! vm sudo caravana-nomad job inspect traefik | grep -q -- 'metrics.prometheus' || die "the old Traefik job still has the metrics arguments"
+  out="$(install "$v1")"
+  grep -q 'Traefik is restarted once for its request numbers (a few seconds without HTTP)' <<<"$out" ||
+    die "the rerun over an older Traefik job should say it is restarted for its request numbers:\n$out"
+  check_monitoring_host
 
   say "deploy whoami"
   TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"

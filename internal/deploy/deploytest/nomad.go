@@ -24,6 +24,11 @@
 // items, one over 64 KiB, or a path Nomad wouldn't accept. Variable(path) and
 // SetVariable(path, items) let tests read and change them directly.
 //
+// The node and its stats (host.go): SetNode, SetHostStats, FailNodeReads and
+// the fake's answers to GET /v1/nodes, /v1/node/{id} and /v1/client/stats.
+// Allocation lists leave out each copy's resources unless asked for them
+// (resources=true), as Nomad does.
+//
 // Allocation stats: SetStats(allocID, usage) sets what
 // GET /v1/client/allocation/{id}/stats answers (404 until set), SetStatsDelay
 // holds each answer back, and StatsRequests and MaxStatsInFlight report how
@@ -98,6 +103,11 @@ type Nomad struct {
 	logRequests  []LogRequest
 	logOpen      int // follow streams still connected
 
+	// The rotated log files of copies (logfiles.go): by copy and stream, then
+	// file index.
+	logFS        map[logKey]map[int]*logFile
+	fileRequests []FileRequest
+
 	evals      []string                     // job ID of each eval forcePeriodic made, by index
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
@@ -124,6 +134,10 @@ type Nomad struct {
 	execStatus int // non-zero: every exec answers it before the upgrade
 	onExec     func(ExecRequest) ExecReply
 	checks     map[string]api.AllocCheckStatuses // by copy ID
+
+	host hostFake // the node and its stats (host.go)
+
+	jobInfos int // GET /v1/job/{id} requests answered
 }
 
 // hostVolume is one dynamic host volume and how often it was read.
@@ -337,6 +351,12 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.serveLogs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/logs/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/cat/"):
 		n.serveCat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/cat/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/ls/"):
+		n.serveLs(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/ls/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/stat/"):
+		n.serveStat(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/stat/"))
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/fs/readat/"):
+		n.serveReadAt(w, r, strings.TrimPrefix(r.URL.Path, "/v1/client/fs/readat/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/exec"):
 		n.serveExec(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/exec"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/checks"):
@@ -345,6 +365,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.serveRestart(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/restart"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/client/allocation/") && strings.HasSuffix(r.URL.Path, "/stats"):
 		n.serveStats(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/client/allocation/"), "/stats"))
+	case r.Method == http.MethodGet && (r.URL.Path == "/v1/nodes" || strings.HasPrefix(r.URL.Path, "/v1/node/") || r.URL.Path == "/v1/client/stats"):
+		n.serveNode(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/allocations":
 		n.allocations(w, r, "")
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/allocation/"):
@@ -411,6 +433,13 @@ func (n *Nomad) register(w http.ResponseWriter, r *http.Request) {
 		JobModifyIndex: *j.JobModifyIndex,
 		Warnings:       n.warnings,
 	})
+}
+
+// JobInfoRequests counts the job reads (GET /v1/job/{id}) answered so far.
+func (n *Nomad) JobInfoRequests() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.jobInfos
 }
 
 // Purged says whether jobID was deleted with purge=true. It stays true after
@@ -515,6 +544,7 @@ func (n *Nomad) Stops(jobID string) int {
 func (n *Nomad) info(w http.ResponseWriter, id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.jobInfos++
 	versions := n.jobs[id]
 	if len(versions) == 0 {
 		http.Error(w, "job not found", http.StatusNotFound)
@@ -732,7 +762,7 @@ func (n *Nomad) allocations(w http.ResponseWriter, r *http.Request, jobID string
 			return
 		}
 		if index == 0 || n.allocIndex > index {
-			n.answerAllocations(w, jobID)
+			n.answerAllocations(w, r, jobID)
 			n.mu.Unlock()
 			return
 		}
@@ -745,7 +775,7 @@ func (n *Nomad) allocations(w http.ResponseWriter, r *http.Request, jobID string
 			n.mu.Lock()
 			down := n.down
 			if !down {
-				n.answerAllocations(w, jobID)
+				n.answerAllocations(w, r, jobID)
 			}
 			n.mu.Unlock()
 			if down {
@@ -758,9 +788,10 @@ func (n *Nomad) allocations(w http.ResponseWriter, r *http.Request, jobID string
 	}
 }
 
-// answerAllocations writes the stubs of jobID (every job's when ""). n.mu
-// must be held.
-func (n *Nomad) answerAllocations(w http.ResponseWriter, jobID string) {
+// answerAllocations writes the stubs of jobID (every job's when ""). Like
+// Nomad, it leaves out each stub's AllocatedResources unless the request has
+// resources=true. n.mu must be held.
+func (n *Nomad) answerAllocations(w http.ResponseWriter, r *http.Request, jobID string) {
 	stubs := []*api.AllocationListStub{}
 	if jobID != "" {
 		stubs = append(stubs, n.allocs[jobID]...)
@@ -768,6 +799,15 @@ func (n *Nomad) answerAllocations(w http.ResponseWriter, jobID string) {
 		n.allocRequests++
 		for _, list := range n.allocs {
 			stubs = append(stubs, list...)
+		}
+	}
+	if r.URL.Query().Get("resources") != "true" {
+		for i, s := range stubs {
+			if s.AllocatedResources != nil {
+				c := *s
+				c.AllocatedResources = nil
+				stubs[i] = &c
+			}
 		}
 	}
 	n.writeJSONAt(w, n.allocIndex, stubs)

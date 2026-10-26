@@ -156,6 +156,22 @@ var certExpiring = Event{
 	At:          fixedNow,
 }
 
+// diskNearlyFull is a problem about the host's disk (feature 025): no app, the
+// mount, what is on it, how full and how much is left.
+var diskNearlyFull = Event{
+	Type:        EventProblemOpened,
+	Kind:        "disk_nearly_full",
+	Title:       "Disk nearly full: / is 86% full",
+	Text:        "The disk at / is 86% full: 11 GB left.",
+	Mount:       "/",
+	Holds:       []string{"nomad", "docker"},
+	UsedPercent: 86.4,
+	FreeBytes:   new(int64(11) << 30),
+	Level:       "warning",
+	URL:         "https://caravana.example.com/monitoring#host",
+	At:          fixedNow,
+}
+
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name string
@@ -183,6 +199,10 @@ func TestRender(t *testing.T) {
 		{"discord-domain", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, certExpiring},
 		{"ntfy-domain", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, certExpiring},
 		{"webhook-cert", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, certExpiring},
+		{"webhook-disk", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, diskNearlyFull},
+		{"slack-disk", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, diskNearlyFull},
+		{"discord-disk", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, diskNearlyFull},
+		{"ntfy-disk", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, diskNearlyFull},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,5 +329,38 @@ func TestRenderDetail(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDiskLine(t *testing.T) {
+	tests := []struct {
+		name string
+		ev   Event
+		want string
+	}{
+		{"not a disk", Event{Type: EventProblemOpened}, ""},
+		{"the example", diskNearlyFull, "Disk: / is 86% full, 11 GB left"},
+		{"under 10 GB left", Event{Mount: "/var/lib/docker", UsedPercent: 94.6, FreeBytes: new(int64(3584) << 20)}, "Disk: /var/lib/docker is 95% full, 3.5 GB left"},
+		{"no space left", Event{Mount: "/", UsedPercent: 100, FreeBytes: new(int64(0))}, "Disk: / is 100% full, 0 B left"},
+		{"free space not known", Event{Mount: "/", UsedPercent: 90}, "Disk: / is 90% full"},
+		{"a mount with a line break stays one line", Event{Mount: "/a\nb", UsedPercent: 90}, "Disk: /a b is 90% full"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := diskLine(tc.ev); got != tc.want {
+				t.Errorf("diskLine = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSize(t *testing.T) {
+	for n, want := range map[int64]string{
+		-5: "0 B", 0: "0 B", 1023: "1023 B", 1024: "1 KB", 1 << 20: "1 MB", 620 << 20: "620 MB",
+		1<<30 - 1: "1024 MB", 1 << 30: "1.0 GB", 3584 << 20: "3.5 GB", 10 << 30: "10 GB", 22528 << 20: "22 GB",
+	} {
+		if got := Size(n); got != want {
+			t.Errorf("Size(%d) = %q, want %q", n, got, want)
+		}
 	}
 }

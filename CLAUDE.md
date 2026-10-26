@@ -720,6 +720,162 @@ every address with its state, per-domain options, Add with checks, and certifica
   NXDOMAIN) with the real TLS dialer, and watcher gaps of 60 s and 10 s. The `console-domains-states`
   step and the gate's `domains` step are listed in `specs/023-domains/tasks.md` (T022, T023).
 
+Feature 024 (`specs/024-logs`, Phase 2.6) is implemented on branch `024-logs` (stacked on `023-domains`):
+the output of every copy of every service of one project › environment on one page, read live from
+Nomad and never stored. No migration, no new module, no policy change (`read-fs` since 016).
+- Source (research R1): a page view lists each copy's `alloc/logs` files (`ls`) and reads them
+  backwards with `readat` in 64 KiB chunks from the newest file into `n-1`, until the oldest timed line
+  read is before the range's start, the stream's budget (1 MiB; the page's 16 MiB split evenly beyond
+  16 streams) is spent, a deadline (5 s; `logReadDeadline`) passes, or no file is left. At most 2 page
+  reads at once per Caravana (`logSem`, a semaphore), 8 Nomad calls at once inside one read. The
+  coverage (the oldest time reached per stream, budget or deadline or end) goes with the answer: the
+  page says "read from <time>" and "not all read in time". A ring buffer of lines was rejected
+  (research R1): app output, and any secret in it, at rest in SQLite, and a follower on every copy
+  forever. `getLogs?follow=true` stays the per-app live read; the environment has no follow in the API.
+- `internal/logline` is pure (a test forbids network imports) and reads each line: `StripANSI`
+  (CSI, OSC, DCS/SOS/PM/APC, C1, C0 but tab, DEL; the text after the last mid-line `\r`; Nomad strips
+  nothing, so this is ours), `TimeOf(s, Bounds)` (JSON fields, klog, the start of the line or after
+  one short token or inside a leading `[`, Go's `log`, Redis, syslog, the Common Log Format bracket
+  after three words, `time=`/`ts=` in the first six logfmt pairs; no zone is UTC; a time outside the
+  bounds, the copy's start minus a minute to the file's `ModTime`, is refused and the line is
+  `estimated`; a date inside a message is never the line's time), plus the per-file skew check in
+  the service (the file's last timed line against its `ModTime`, over a minute either way marks the
+  whole file estimated: it catches a container in a west-of-UTC zone, which the bounds miss),
+  `LevelOf(text, prev)` (order: JSON `level`/`lvl`/`severity`/`LogLevel`/`@l`/`log.level` with pino
+  numbers, klog/Rails/.NET prefixes and the sentences `panic:` and `Traceback`, `level=` among the first
+  six pairs, the first four words against the table, a continuation (indent, `at `, `Caused by:`,
+  Postgres `DETAIL:`...) takes `prev`, else **info on either stream**, designer's ruling 1), `Fold`
+  (consecutive equal texts without the time span, per stream, `Repeat` = N-1, the newest line's time and
+  id), `Parse` and `LineID` (`<copy>.<stream>.<file>.<offset>`, `ParseLineID`). An estimated line takes
+  the older timed line's time in its stream, never "now".
+- Nomad facts (research R8, lab, observed): `readat` of a missing or purged file answers **200 with the
+  error text as the body**, so `deploy.ReadLogAt` checks a chunk shorter than asked with `Stat` (404 is
+  `ErrLogRotated`) and never quotes an unexpected body in an error (it may be the app's output); a
+  frame's `Offset` is unreliable for a file's short last frame (start + 65,536), so every id and `at`
+  offset comes from Caravana's own `readat` offsets, and a Live line has no id; files close under their
+  size and never split a line; a restart keeps appending to the newest file; dead copies stay listed and
+  readable until Nomad's GC (`GCMaxAllocs` 50, disk over 80 %), at least minutes; a CPU-hungry neighbour
+  made a 1 MiB `readat` take up to 6.9 s, which is why there is a deadline. `deploy.LogFiles`,
+  `deploy.ReadLogAt` and `deploy.LogCopies` (every copy Nomad lists, any version, terminal ones `Gone`;
+  `Copies` keeps its `listed` filter for every other page); `deploytest` has a fake file system.
+- Store: `store.ListDeploymentsIn(project, environment, from, to)` (created in range, or ended in range
+  for a terminal status), read-only.
+- Service: `ReadLogs(EnvLogQuery)` returns `LogRead` (lines newest first, `Coverage`, `Copies` with
+  counts and `Gone`, `Dropped`, `From`/`To`; `Histogram()` is 30 bins of `count`, `errors`,
+  `estimated` and `read`, false for bins before the coverage); `LogDeploys` gives the deploy rows
+  (two per deployment: started, then live/failed and rolled back/replaced, with `deployWho`'s words,
+  never filtered by level or search); `LogsAround(copy, at, n)` (both streams of that copy, every level,
+  the anchor's id; `ErrLogRotated` is 404 `log_rotated`) and `LogsAroundTime` (a binary search of the
+  stream's files by time, about 12 probes of 4 KiB for a 10 MiB file, a stream with no timed line
+  falls back to offsets); `DownloadLogs(q, w)` (the k-way merge oldest first, streamed; 8 MiB per
+  stream, 64 MiB per download, one at a time: `ErrDownloadBusy`, 409 `download_busy`; the first line
+  `# newest last`, an estimated time with a trailing `~`, `# deploy …` and `# cut: …` lines); the
+  page read and the download share one stream loop. `WatchLogs(project, environment)` follows the
+  place's running copies while a page with Live is open and sends the `logs` notice (`ChangeLogs`: the
+  app, never a line) at most every 2 s; the per-app `Logs` read now goes through the same file walk, so
+  its lines have an id, a level, a time and a source (`line`, `estimated`, `received`) and a stripped
+  `text`.
+- API 0.26.0: `listLogs` (`GET /v1/logs`), `getLogsAround` (`/v1/logs/around?copy&at`), `downloadLogs`
+  (`text/plain`, `Content-Disposition`), every answer `no-store`, deploy tokens denied by the default
+  deny (the scope walk lists them), `LogLine` of `getLogs` gains `id`, `level`, `timeSource`, codes
+  `log_rotated` and `download_busy`. Console (`internal/ui/logs.go`, `templates/logs.html`):
+  `/logs` (the range bar and Live/Paused, one GET form for the filters, the rail with copy counts,
+  the SVG histogram, the stream with folded rows, deploy rows and the open row's strip), `/logs?copy&at`
+  (around), `/parts/logs` (the stream and the histogram only, on the `logs` notice; the filters, the rail
+  and the open row sit outside the swapped region), `/logs/download`, the app's Logs tab as the same page
+  filtered to the app (with "All logs"), the sidebar's Logs item. The service's hue (a stable hash of
+  `<app>/<service>` over six) is the console's one identity color and the histogram its one SVG chart (the
+  CSP forbids `style`, so bars are `rect` attributes and classes), both recorded in `DESIGN.md`; an
+  estimated time is fg-4 with a leading `~`. Forms and links work without JavaScript; Live needs it.
+- Secrets rule: a line's text is never written to the store, the server log, an error, a notice or a
+  live event; the `logs` notice has no text, Download and every API answer are `no-store`, control
+  bytes are stripped so a file can't drive a terminal. Tests search for sentinels.
+- Lab: `TestConsoleLab` has a step `console-logs` (`console_logs_test.go`) and the gate a step `logs`
+  (`gate_logs_test.go`), per `specs/024-logs/quickstart.md` §6. Both pass in the lab (2026-10-25): the
+  console step in about a minute inside the full run, the gate step in 41 s. The gate step found that an
+  untimed stream was pinned to the copy's start and that the start isn't a lower bound (a container's
+  clock runs ahead of Nomad's start event); since then an untimed line is placed by byte offset between
+  its file's write bounds, and a timed line up to a minute before the start is trusted.
+
+Feature 025 (`specs/025-monitoring`, Phase 2.6) is implemented on branch `025-monitoring` (stacked on
+`024-logs`): requests, errors, the slowest 5 % and memory per service against the same hour of the
+last 7 days, the host's capacity and room for more apps, and a disk item on the needs-you list. New
+migration 0019, no new Go module (our own parser of Traefik's text format; `expfmt` would bring three).
+- Sources and the sampler (`service/sampler.go`, plan "Decisions carried"): `runSampler` is started
+  in `Service.Start` with the other watchers and ticks at the next whole minute plus 2 s
+  (`SetMetricsSampleGap`, 10 s in the lab). Each tick has 20 s and reads each source on its own, so a
+  failed one leaves its columns NULL (a gap, never 0): Traefik's Prometheus text on loopback
+  (`CARAVANA_TRAEFIK_METRICS_URL`, default `http://127.0.0.1:8081/metrics`, loopback only, empty turns the
+  HTTP numbers off; states `ok`, `off` (404), `unreachable`, `disabled`), Nomad's allocation list with
+  resources (reservations, restarts, exit events), 014's per-copy `Allocations().Stats` for usage, and
+  the node's stats (states `ok`, `denied`, `unreachable`). The page's notices come from the last outcome of
+  each. One transaction per tick writes the minute rows, folds the 10-minute slot that just ended and,
+  every 10 minutes, prunes; then `ChangeMetrics` (the live notice `metrics`, no number). The previous
+  Traefik snapshot, the restart counts and the last scrape time live in memory: a restart loses them, so
+  its first minute has CPU and memory and no HTTP numbers.
+- `internal/metrics` is pure (a test forbids `net/http` outside `real.go`, and `nomad`, `service`,
+  `store`): `ParseText` (the 0.0.4 format, only the named families), `Delta` (a counter that went
+  down is a reset and the delta is its value; a delta is kept only when the last scrape was 50-90 s
+  before; `process_start_time_seconds` counts as a restart only when it moves by more than 10 s,
+  because it drifts 1-4 s in one process, lab, observed), `TraefikMinute` (5xx from `http` and `sse` only,
+  because a grpc `code` is a gRPC status; buckets from `http` and `grpc` only, so SSE counts as requests
+  and never in latency; websocket never appears in Traefik's service metrics), `Layout`/`Buckets`/`Merge`/
+  `Quantile` (per-bucket counts stored, Prometheus' interpolation with a running maximum on read,
+  over the last bound is "over 10 s", bounds 5 ms to 10 s), `Fold` and `Points` (counters and buckets
+  summed, gauges the median, a point with no row is a gap), `Band`/`Baseline` (min, max and median of
+  the same UTC 10-minute slot on the previous 1-7 days; `building` under 24 h of history, `partial`
+  with 1-6 days, `full`), `Judge`/`Since`/`DeployNear` (slower: p95 over a 10-minute window of at
+  least 20 requests above 1.5 times the band's high and 100 ms over it; more errors: over 1 %, 5 or
+  more, above the band; quieter: under half the band's low; memory over 90 % of the limit; restarting:
+  2 or more; rollouts skip the HTTP rules, stopped apps aren't judged), `Room` (N = min of memory and
+  CPU left over the yardstick app, the one whose memory reservation is the median) and
+  `DiskState`/`DiskRun`/`Stale` (opens at 85 %, resolves below 83 %).
+- Nomad reads (`internal/deploy`): `host.go` `HostStats` (`Nodes().Info` cached 10 minutes, `Stats`; the
+  two watched filesystems are the `DiskStats` entry that matches `AllocDirStats` (Nomad's data) and the one
+  with the longest mount that prefixes `CARAVANA_DOCKER_ROOT`, one row with `holds` when it's one disk;
+  a 403 is `ErrNodeReadDenied`); `reserved.go` `Reservations` (per copy `max(sum of prestart non-sidecar
+  tasks, sum of main and sidecar tasks)` from the job's task lifecycles, cached per job version: 1780 MHz
+  and 1344 MB, exactly Nomad's `allocated` gauges, where a plain sum said 1930/1440); `usage.go` memory is
+  `Usage - Cache` (else RSS), and a copy with `Timestamp` 0 or no measured memory is NULL (Nomad answers a
+  stopped copy with one zeroed entry per task, which 014's test read as 0); `deploytest` has the node and
+  allocation fakes.
+- Store: migration `0019_metrics.sql` (`metrics_series`, `metrics_layouts`, `metrics_samples` with
+  `res` 60 for 48 h and 600 for 8 days overlapping, `metrics_host`, `metrics_disks`, `metrics_state`
+  whose `started_at` is written once), `store.WriteMetricsTick`, `MinuteRows`, `SlotRows`, `HostRows`,
+  `DiskRows`; `DeleteApp` takes the app's series. 3-8 MB for 20 services.
+- Service reads: `Metrics`/`AppMetrics` (`service/metrics.go`: the place check, points, bands, totals,
+  issues, the deploy clause from healthy deployments' end within 15 minutes, sort `unusual`/`traffic`/
+  `memory`), `Host` (`service/host.go`, from the newest stored rows, stale after 5 minutes). Restarts
+  use one rule, `crashesInHour` (3 is a needs-you `restarting`, 2 a monitoring issue). The attention kind
+  `disk_nearly_full` is host-level (key `disk_nearly_full|||<mount>`, level failed from 95 %), derived on
+  every read from the stored disk rows, and `diffProblems` doesn't judge it (so never sends "resolved")
+  when the newest host sample is over 5 minutes old; `notify.Event` carries `mount`, `holds`,
+  `usedPercent`, `freeBytes`.
+- API 0.27.0: `getMetrics`, `getAppMetrics`, `getHost` (read from the store, never 502: `sources` says what
+  couldn't be read; a gap is `null`), the attention kind and the webhook's five properties; deploy
+  tokens denied by the default deny. Console: `/monitoring` (`ui/monitoring.go`, `monitoringchart.go`,
+  `monitoringhost.go`: the issues panel, four inline-SVG charts with the band and deploy markers and a
+  hidden table, the apps table, the host section with meters whose reserved part is hatched, the 7-day
+  memory chart, a footer that says websocket isn't counted), `/parts/monitoring`, `/parts/monitoring/host`
+  and `/parts/platform` swapped on the `metrics` notice, `static/js/monitoring.js` (the hover crosshair;
+  the page reads without it), the Apps home's Platform panel above Activity, the sidebar's Monitoring
+  item. The Running tab's memory is the new one, and a copy with no measurement shows "—". Ruling 9
+  (text is never fg-4) is in `DESIGN.md`.
+- Installer: both `traefik.nomad.hcl` files gain `--metrics.prometheus=true` and the buckets (Traefik
+  restarts once on a rerun, and `install.sh` says so), the policy gains `node { policy = "read" }`,
+  `caravana.env` gains `CARAVANA_DOCKER_ROOT` from `docker info` (`-docker-root`, default
+  `/var/lib/docker`), `internal/config` checks both new settings, and `install-test.sh` checks the
+  policy line, the env line and a 200 from `127.0.0.1:8081/metrics`.
+- Not in 025: a host reservation, per-copy history, the access log, owner-set thresholds, network and
+  disk I/O, an MCP tool, several servers (Phase 3).
+- Lab: `TestConsoleLab` has a step `console-monitoring` and the gate a step `monitoring`, per
+  `specs/025-monitoring/quickstart.md` §6 (`startLab` points the Traefik URL at `127.0.0.1:8088/metrics`
+  and the gap at 10 s). They had not been run in the lab when this was written (T018, T019 unticked);
+  T020 (the seeded review data and the disk fill on `install-test.sh`'s VM) is the other lab piece.
+  The lab's checks are in `research.md` R8 ("lab, observed"). Gotchas: the lab VM has about 4 GB, so
+  clear the review apps before a lab step, or a deploy fails for lack of memory; and
+  `TestRestartMidRolloutRestoresSecrets`'s fix belongs to 024, not to this feature.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

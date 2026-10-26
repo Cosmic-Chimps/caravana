@@ -1,0 +1,167 @@
+{{/* Logs (feature 024): the workspace page /logs. The head (the range bar and Live), the filter row
+     (the place bars, the search, the level chips) and the services rail are links and one GET form, so
+     the page works without script. The histogram and the stream are the live region #logs-live, drawn
+     again from /parts/logs on the logs notice while Live is on (a page with a row open is paused, and
+     has no refresh); the filter row and the rail sit outside it, so a typed search and a selection are
+     never swapped away. A line is
+     the app's output: it is only ever drawn as text. The values are contracts/logs-screen.md's.
+     An app's Logs tab draws the same "logs-page" inside the app's shell (app.html): its head is a
+     section title under the app's own headline, with "All logs" at the end of the sentence, and it has
+     no place bars (AllHref is set only there). */}}
+
+{{define "page-class"}} cv-page-logs{{end}}
+
+{{define "head"}}<script src="{{asset "js/logs.js"}}" defer></script>{{end}}
+
+{{define "content"}}
+{{with .Logs}}{{template "logs-page" .}}{{end}}
+{{end}}
+
+{{define "logs-page"}}
+<header class="cv-lhead">
+  <div class="cv-lhead-text">
+    {{with .AllHref}}
+    <h2 class="cv-pgtitle">Logs</h2>
+    <p class="cv-pgsub">Output from every copy of every service, newest first. Deploys show up in the stream. <a href="{{.}}">All logs</a></p>
+    {{else}}
+    <h1 class="cv-headline">Logs</h1>
+    <p class="cv-lede">Output from every copy of every service, newest first. Deploys show up in the stream.</p>
+    {{end}}
+  </div>
+  <div class="cv-lhead-tools">
+    <form method="get" action="{{.Action}}">
+      {{range .HeadHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+      {{if not .AroundView}}<nav class="cv-seg" aria-label="Time range">
+        {{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}
+      </nav>{{end}}
+      <button type="submit" name="live" value="{{.LiveFlip}}" class="cv-btn cv-btn-sm cv-livebtn" title="{{if .Live}}Pause following{{else}}Follow new lines{{end}}" aria-pressed="{{if .Live}}true{{else}}false{{end}}">{{if .Live}}{{icon "pause" 14}}Live{{else}}{{icon "play" 14}}Paused{{end}}</button>
+    </form>
+  </div>
+</header>
+
+{{if or (not .AroundView) .Places.Any}}
+<form class="cv-logfilter" method="get" action="{{.Action}}" role="search" aria-label="Filter the logs">
+  {{range .SearchHidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+  {{with .Places.Projects}}<nav class="cv-seg" aria-label="Project">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{with .Places.Environments}}<nav class="cv-seg" aria-label="Environment">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{if not .AroundView}}
+  {{if .Places.Any}}<span class="cv-logfilter-div" aria-hidden="true"></span>{{end}}
+  <label class="cv-logsearch">
+    {{icon "search" 14}}
+    <span class="sr-only">Search the logs</span>
+    <input class="cv-logsearch-input" type="search" name="q" value="{{.Search.Value}}" placeholder="Search text, a request id, a status code…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    {{with .Search.N}}<span class="cv-logsearch-n">{{.}}</span>{{end}}
+    <button type="submit" class="cv-logsearch-submit">Search</button>
+  </label>
+  <div class="cv-lvlchips" role="group" aria-label="Levels">
+    {{range .Chips}}<a href="{{.Href}}" class="cv-lvlchip cv-lvl-{{.Level}}{{if .On}} cv-on{{end}}" title="{{.Title}}">{{.Level}}{{with .Count}} <span class="cv-lvlchip-n">{{.}}</span>{{end}}<span class="sr-only">, {{if .On}}shown{{else}}hidden{{end}}</span></a>{{end}}
+  </div>
+  {{end}}
+</form>
+{{end}}
+
+{{with .Around}}
+<p class="cv-laround" role="status"><span>Around {{template "clock" .At}} in copy <span class="cv-inline-mono text-fg-1">{{.Copy}}</span> of <span class="cv-inline-mono text-fg-1">{{.Service}}</span>. Every level, this copy only.</span> <a href="{{.Back}}">Back to the stream</a></p>
+{{end}}
+
+<div class="cv-lcols">
+  <nav class="cv-lograil" aria-label="Services">
+    <span class="cv-label cv-lograil-label">Services</span>
+    <a href="{{.Rail.All.Href}}" class="cv-lrailitem{{if .Rail.All.On}} cv-on{{end}}"{{if .Rail.All.On}} aria-current="true"{{end}}><span class="cv-svcring" aria-hidden="true"></span><span class="cv-lrailitem-name">{{.Rail.All.Name}}</span></a>
+    {{range .Rail.Groups}}
+    {{$app := .Name}}
+    {{with $app}}<span class="cv-label cv-lrailgroup">{{.}}</span>{{end}}
+    {{range .Items}}
+    <a href="{{.Href}}" class="cv-lrailitem cv-hue-{{.Hue}}{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}><span class="cv-svchue" aria-hidden="true"></span><span class="cv-lrailitem-name">{{with $app}}<span class="cv-lrailapp">{{.}}/</span>{{end}}{{.Name}}</span>{{with .Count}} <span class="cv-lrailitem-n" title="copies">{{.}}</span>{{end}}</a>
+    {{with .Copies}}<div class="cv-lrailcopies">{{range .}}<a href="{{.Href}}" class="cv-lrailcopy{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Short}}{{if .Gone}} <span class="cv-lgone">(gone)</span>{{end}}</a>{{end}}</div>{{end}}
+    {{end}}
+    {{end}}
+  </nav>
+
+  <div class="cv-lmain">
+    <div class="cv-lmain" id="logs-live"{{if .Following}} hx-get="{{.RegionHref}}" hx-trigger="sse:logs" hx-swap="innerHTML"{{end}}>{{template "logs-region" .Region}}</div>
+    <footer class="cv-lfoot">
+      <p>Kept as long as Nomad keeps them. Send them somewhere longer from Settings › Connections, later.</p>
+      <a href="{{.DownloadHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "download" 14}}Download</a>
+    </footer>
+  </div>
+</div>
+{{end}}
+
+{{/* logs-region: the histogram and the stream; /parts/logs draws it alone. Takes a logsRegion. */}}
+{{define "logs-region"}}
+{{with .Hist}}{{template "logs-hist" .}}{{end}}
+<section class="cv-logstream" aria-label="Log lines">
+  <div class="cv-lstreamhead">
+    {{if .Head.Live}}<span class="cv-lstreamhead-live"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span> {{if .Head.Copies}}streaming from {{.Head.Copies}}{{else}}no copies running{{end}}</span><noscript><span>Following needs JavaScript. Reload the page to see newer lines.</span></noscript>
+    {{else if .Head.Paused}}<span>paused</span>{{with .Head.Feed}}<span class="cv-lpaused" data-logs-feed data-count-href="{{.CountHref}}" hx-trigger="sse:logs" hidden>· <span id="logs-paused-n"></span> new <span id="logs-paused-unit">lines</span> since <a href="{{.ShowHref}}">Show</a></span>{{end}}{{end}}
+    {{with .Head.Older}}<span>Lines before {{template "clock" .Before}}. <a href="{{.Back}}">Back to the newest</a></span>{{end}}
+    {{if .Head.Cap}}<span class="cv-lstreamhead-cap">· newest {{.Head.Cap}} lines · <a href="{{.Head.CapHref}}">Show older</a></span>{{end}}
+    <span class="cv-lstreamhead-zone">times in UTC</span>
+    {{with .Head.Stale}}<p class="cv-lstale" role="status"><span>That line isn't in what was read. {{with .Older}}<a href="{{.}}">Show older</a>, or open{{else}}Open{{end}} the lines around it.</span> <a href="{{.AroundHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "list" 14}}Lines around this</a></p>{{end}}
+  </div>
+  {{with .Problem}}<div class="cv-lerror" role="status"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}{{with $.Back}} <a href="{{.}}">Back to the stream</a>{{end}}</span></div>{{end}}
+  {{range .Items}}
+  {{with .Deploy}}
+  <a href="{{.Href}}" class="cv-row-deploy{{if .Failed}} cv-row-deploy-failed{{end}}"><time class="cv-ltime" datetime="{{.ISO}}" title="{{.Title}}">{{.Clock}}</time>{{icon "rocket" 13}}<span class="cv-row-deploy-text">{{template "sentence" .Sentence}}</span></a>
+  {{end}}
+  {{with .Line}}
+  <a href="{{.Href}}" id="{{.Anchor}}" class="cv-lrow{{if eq .Level "error"}} cv-row-error{{end}}{{if eq .Level "debug"}} cv-row-debug{{end}}{{if .Open}} cv-row-open{{end}}{{if .Anchored}} cv-row-anchor{{end}}"{{if .Open}} aria-current="true"{{end}}>
+    <time class="cv-ltime{{if .Estimated}} cv-time-est{{end}}" datetime="{{.ISO}}" title="{{.TimeTitle}}">{{.Clock}}</time>
+    <span class="cv-llvl cv-llvl-{{.Level}}">{{.Level}}</span>
+    <span class="cv-lsvc cv-hue-{{.Hue}}"><span class="cv-svcname">{{.Service}}</span><span class="cv-lcopy">{{.Copy}}</span></span>
+    <span class="cv-lbody"><span class="cv-ltext">{{.Text}}</span>{{if .Times}} <span class="cv-repeat">×{{.Times}}</span>{{end}}</span>
+  </a>
+  {{end}}
+  {{with .Strip}}{{template "logs-strip" .}}{{end}}
+  {{end}}
+  {{with .Empty}}<p class="cv-lempty">{{.}}</p>{{end}}
+  {{if or .Dropped .Older}}
+  <div class="cv-lolder">
+    {{if .Dropped}}<span>Older lines were dropped.</span>{{end}}
+    {{with .Older}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Show older</a>{{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* logs-hist: the histogram, the console's one SVG chart. The bars and markers are rects and lines
+     with their numbers as attributes and their colors from classes (the page allows no style
+     attribute); a hidden table carries the same numbers for a screen reader. Takes a histView. */}}
+{{define "logs-hist"}}
+<section class="cv-panel cv-hist" aria-label="Lines over time">
+  <svg class="cv-hist-svg" viewBox="0 0 300 48" preserveAspectRatio="none" role="img" aria-label="{{.Summary}}">
+    {{range .Bars}}<rect class="{{.Class}}" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"><title>{{.Title}}</title></rect>{{if .Err}}<rect class="cv-hbar-err" x="{{.X}}" y="{{.ErrY}}" width="{{.W}}" height="{{.ErrH}}"><title>{{.ErrTitle}}</title></rect>{{end}}
+    {{end}}
+    {{range .Marks}}<line class="cv-hmark{{if .Failed}} cv-hmark-failed{{end}}" x1="{{.X}}" x2="{{.X}}" y1="0" y2="48"><title>{{.Title}}</title></line>
+    {{end}}
+  </svg>
+  <table class="sr-only">
+    <caption>Lines read in each slice of the range</caption>
+    <thead><tr><th scope="col">From (UTC)</th><th scope="col">Lines</th><th scope="col">Errors</th></tr></thead>
+    <tbody>{{range .Table}}<tr><th scope="row">{{.From}}</th><td>{{.Lines}}</td><td>{{.Errors}}</td></tr>{{end}}</tbody>
+  </table>
+  <div class="cv-hlabels">
+    <span>{{.Start}}</span>
+    {{with .Read}}<span class="cv-hlabel-read">{{.}}</span>{{end}}
+    {{with .Deploy}}<span class="cv-hlabel-deploy">{{.}}</span>{{end}}
+    <span class="cv-hlabel-end">now</span>
+  </div>
+  {{if .Empty}}<p class="cv-hist-empty">no lines in this range</p>{{end}}
+</section>
+{{end}}
+
+{{/* logs-strip: the open line's details, under its row. A page with a row open is paused, so it is never
+     drawn again by a refresh; /parts/logs never draws it. It holds the stream the line came from, Lines around this, Only <service>, its address as selectable text, Raw for
+     a JSON line and, for an error, when its text was first seen. Takes a logsStrip. */}}
+{{define "logs-strip"}}
+<section class="cv-rowstrip" id="open-line" aria-label="The open line">
+  <span class="cv-rowstrip-note">On <span class="cv-inline-mono text-fg-1">{{.Stream}}</span> of {{if .Multi}}<a href="{{.AppHref}}" class="cv-inline-mono text-fg-1">{{.AppName}}</a>/<span class="cv-inline-mono text-fg-1">{{.SvcName}}</span>{{else}}<span class="cv-inline-mono text-fg-1">{{.SvcName}}</span> of <a href="{{.AppHref}}" class="cv-inline-mono text-fg-1">{{.AppName}}</a>{{end}}, copy <span class="cv-inline-mono text-fg-1">{{.Copy}}</span>.</span>
+  <a href="{{.AroundHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "list" 14}}Lines around this</a>
+  {{with .OnlyHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "filter" 14}}Only <span class="cv-inline-mono">{{$.OnlyLabel}}</span></a>{{end}}
+  <a href="{{.CloseHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Close</a>
+  {{with .Note}}<span class="cv-rowstrip-note">{{.Lead}}{{with .Clock}}{{template "clock" .}}{{end}}{{.Tail}}</span>{{end}}
+  <span class="cv-rowstrip-url">{{.URL}}</span>
+  {{with .Raw}}<details class="cv-rowraw"><summary>Raw</summary><pre>{{.}}</pre></details>{{end}}
+</section>
+{{end}}

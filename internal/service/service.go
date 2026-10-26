@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -84,6 +85,12 @@ type Service struct {
 	terminalIdle  time.Duration // how long a session may go without input
 	terminalLimit time.Duration // how long a session may stay open
 
+	// Logs (feature 024), see logsread.go.
+	logSem      chan struct{} // holds one token per environment read going; its size is logReadsAtOnce
+	logDeadline time.Duration // how long one page read may take
+	downloading atomic.Bool   // a download is going, see logsdownload.go
+	logWatch    logWatcher    // the places Live pages watch, see live.go
+
 	// Domains (feature 023), see domains.go and domainwatch.go.
 	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching
 	edgeCfg         domainSettings // the checks' resolver, dialer and settings
@@ -95,6 +102,10 @@ type Service struct {
 	// change, so two writers never leave the variable behind the table (see
 	// teamonly.go).
 	teamMu sync.Mutex
+
+	// Monitoring (feature 025), see sampler.go.
+	metricsGap time.Duration // between two ticks of the sampler
+	sampler    samplerState
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -160,6 +171,12 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		domainIdleGap:  defaultDomainIdleGap,
 		domainWatchGap: defaultDomainWatchGap,
+
+		logSem:      make(chan struct{}, logReadsAtOnce),
+		logDeadline: logReadDeadline,
+
+		metricsGap: defaultMetricsGap,
+		sampler:    samplerState{offset: defaultSamplerOffset},
 	}
 }
 
@@ -308,15 +325,39 @@ func (s *Service) Start(ctx context.Context) error {
 		defer s.backupWatcher.Done()
 		s.watchDomains(ctx)
 	}()
+	// The sampler reads Traefik and Nomad once a gap and starts no watchers,
+	// so it lives in the same group.
+	sampleGap := s.metricsGap // read here: tests set the field after Start to drive ticks themselves
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runSampler(ctx, sampleGap)
+	}()
 	return nil
 }
 
 // Wait blocks until every watcher has returned. Call it after cancelling
 // Start's context. The backup scheduler goes first: it can start volume runs,
 // which are watchers, so none can be added once it has stopped.
+//
+// Every goroutine Start launches is counted in one of the two groups (see
+// Start). One thing still outlives them: a store write cut off by the
+// cancellation. database/sql rolls such a transaction back and discards its
+// connection in a goroutine of its own after the caller has returned, and
+// SQLite checkpoints and deletes its -wal file when that connection closes. So
+// Wait ends by asking the store a question (Ping): with the store's single
+// connection it is answered only once the old one is gone, which makes closing
+// the store right after Wait safe (and a temp dir removable).
 func (s *Service) Wait() {
 	s.backupWatcher.Wait()
 	s.watchers.Wait()
+	if s.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// The error doesn't matter: a store that is already closed, or one
+		// that can't answer in time, has nothing left for Wait to protect.
+		_ = s.store.Ping(ctx)
+	}
 }
 
 // GetApp returns the stored app, or store.ErrNotFound.

@@ -1,0 +1,4 @@
+POST https://discord.com/api/webhooks/123/abc
+Content-Type: application/json
+
+{"content":"**Disk nearly full: / is 86% full**\nThe disk at / is 86% full: 11 GB left.\nDisk: / is 86% full, 11 GB left\nhttps://caravana.example.com/monitoring#host"}

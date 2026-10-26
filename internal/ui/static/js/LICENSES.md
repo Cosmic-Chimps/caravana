@@ -2,7 +2,7 @@
 
 `htmx.min.js`, `sse.min.js`, `xterm.js`, `xterm.css` and `addon-fit.js` are vendored by
 `tools/ui-vendor.sh` from the npm registry's tarballs, pinned by version and SHA-256 in
-`tools/ui-vendor.versions`. `console.js` and `terminal.js` are caravana's own.
+`tools/ui-vendor.versions`. `console.js`, `terminal.js`, `localtime.js` and `logs.js` are caravana's own.
 
 ## htmx 2.0.11 (`htmx.min.js`)
 
@@ -107,7 +107,7 @@ THE SOFTWARE.
 Not a script: the shapes of the icons the sidebar and buttons draw inline (house, folder, settings,
 log-out, plus, rotate-ccw, rocket, lock, external-link, file-text, history, play, chevron-right,
 chevron-down, and the Settings nav's user, package, hard-drive, bell, key, hash, message-square and
-webhook), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
+webhook; and the Logs page's scroll-text, search, list, filter and download; and the Monitoring item's activity), copied from `lucide-static` 0.460.0, <https://lucide.dev/>.
 License: ISC.
 
 ```text

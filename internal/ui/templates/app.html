@@ -1,9 +1,12 @@
 {{/* An app's page (/apps/{id}): the header region, and below it the tab's own
      content (each tab adds its define here as its story lands). The header holds the app's
      actions (Restart, Stop…, Deploy, or Start); the top bar has none. The app's page has its
-     own page padding and stack gap (page-class). */}}
+     own page padding and stack gap (page-class). The Logs tab is logs.html's page filtered to the
+     app (feature 024), in a cv-applogs box that is its container; only that tab loads logs.js. */}}
 
 {{define "page-class"}} cv-page-app{{end}}
+
+{{define "head"}}{{if .LogsTab}}<script src="{{asset "js/logs.js"}}" defer></script>{{end}}{{end}}
 
 {{define "app-header"}}
 {{if .Gone}}
@@ -65,7 +68,7 @@
 {{with .Deployments}}{{template "deployments" .}}{{end}}
 {{with .Configure}}{{template "configure" .}}{{end}}
 {{with .Compose}}{{template "compose-deploy" .}}{{end}}
-{{with .Logs}}{{template "logs" .}}{{end}}
+{{with .LogsTab}}<div class="cv-applogs">{{template "logs-page" .}}</div>{{end}}
 {{with .Backups}}{{template "backups" .}}{{end}}
 {{with .VariablesTab}}{{template "variables" .}}{{end}}
 {{with .DomainsTab}}{{template "domains" .}}{{end}}
@@ -444,6 +447,9 @@
       <meter class="cv-meter{{if .NearCeil}} cv-meter-warn{{end}}" min="0" max="100" value="{{.MeterPct}}" aria-hidden="true"></meter>
       <span class="cv-usage-of">{{.MemoryOf}}</span>
       {{if .NearCeil}}<span class="cv-oom"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>close to its ceiling</span>{{end}}</div>
+    {{else if .None}}
+    <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data-muted" title="No value">&mdash;</span></div>
+    <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data-muted" title="No value">&mdash;</span></div>
     {{else}}
     <div role="cell" class="cv-k-cpu" data-label="CPU"><span class="cv-data-muted" title="Not running">&mdash;</span></div>
     <div role="cell" class="cv-k-mem" data-label="Memory"><span class="cv-data-muted" title="Not running">&mdash;</span></div>
@@ -589,47 +595,6 @@
 {{end}}
 {{with .OlderHref}}<div class="cv-deploy-more"><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Show older</a></div>{{end}}
 {{end}}
-{{end}}
-
-{{/* The Logs tab: the toolbar (a GET form, so it works without script), then the
-     panel. The tail is drawn on the server; console.js takes over with the
-     stream's "log" events, clearing the list on "logs-reset". Everything in a
-     line is text: html/template escapes it here, textContent there. Takes a logsTab. */}}
-{{define "logs"}}
-<section aria-labelledby="logs-title" class="flex flex-col gap-2">
-  <h2 id="logs-title" class="sr-only">Logs</h2>
-  {{with .Form}}
-  <div class="cv-logbar">
-    <form method="get" action="{{.Action}}" class="cv-logform">
-      <label class="cv-logpick">
-        <span class="cv-label">Copy</span>
-        <select class="cv-field cv-select" name="copy">{{range .Copies}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-      </label>
-      <label class="cv-logpick">
-        <span class="cv-label">Stream</span>
-        <select class="cv-field cv-select" name="stream">{{range .Streams}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-      </label>
-      <button type="submit" class="cv-btn cv-btn-secondary">Apply</button>
-    </form>
-    <div class="cv-logtools" data-log-tools hidden>
-      <button type="button" class="cv-btn cv-btn-secondary" data-log-pause aria-pressed="false">Pause</button>
-      <button type="button" class="cv-btn cv-btn-secondary" data-log-wrap aria-pressed="false">Wrap lines</button>
-    </div>
-  </div>
-  {{end}}
-  {{if .Notice}}
-  <div class="cv-panel"><p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Notice}}</p></div>
-  {{else if .HasTail}}
-  <div class="cv-panel cv-log" data-log>
-    <p class="cv-log-note" role="status" aria-live="polite" data-log-status hidden></p>
-    <p class="cv-log-note" data-log-dropped hidden>Older lines were dropped.</p>
-    <div class="cv-log-lines" data-log-list tabindex="0" role="log" aria-live="off" aria-label="Output of the app's copies">{{range .Lines}}<div class="cv-log-line"><span class="cv-log-copy cv-data" title="{{.CopyID}}">{{.Short}}</span>{{if .Stderr}}<span class="cv-log-stream">stderr</span>{{else}}<span class="cv-log-stream" aria-hidden="true"></span>{{end}}<span class="cv-log-text">{{.Text}}</span></div>{{end}}</div>
-    <p class="cv-log-empty" data-log-empty{{if .Lines}} hidden{{end}}>No output yet. New lines appear here.</p>
-    <div sse-swap="log,logs-reset" hx-swap="none" data-log-sink></div>
-  </div>
-  <noscript><p class="cv-hint cv-data-muted">Following needs JavaScript. Reload the page to see newer lines.</p></noscript>
-  {{end}}
-</section>
 {{end}}
 
 {{/* The Configure tab (feature 021): per service the grid of Copies & size and Deploy, as one form

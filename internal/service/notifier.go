@@ -53,6 +53,10 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		Schedule: it.Schedule, ExitCode: it.ExitCode,
 		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt,
 	}
+	if it.Kind == AttentionDiskNearlyFull {
+		ev.Mount, ev.Holds, ev.UsedPercent, ev.FreeBytes, ev.Level =
+			it.Mount, it.Holds, it.UsedPercent, new(it.FreeBytes), string(it.Level)
+	}
 	n := len(it.Copies)
 
 	switch it.Kind {
@@ -98,6 +102,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionDomainCertExpiring:
 		ev.Title = fmt.Sprintf("%s: the certificate for %s is expiring", it.AppID, it.Domain)
 		ev.Text, ev.Detail = it.Detail, ""
+	case AttentionDiskNearlyFull:
+		ev.Title = fmt.Sprintf("Disk nearly full: %s is %.0f%% full", it.Mount, it.UsedPercent)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -203,6 +210,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/apps/" + url.PathEscape(appID) + "/backups"
 	case AttentionScheduleFailed, AttentionScheduleSkipping:
 		return "/schedules#schedule-" + subject
+	case AttentionDiskNearlyFull:
+		return "/monitoring#host"
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
@@ -320,7 +329,8 @@ func problemKey(it AttentionItem) string {
 
 // problemSubject is the last part of an item's key, what the item is about
 // within its service: the deployment of a failed deploy, the schedule's ID of
-// the schedule kinds, the host of the domain kinds, else nothing.
+// the schedule kinds, the host of the domain kinds, the mount of a disk, else
+// nothing.
 func problemSubject(it AttentionItem) string {
 	if it.ScheduleID != "" {
 		return it.ScheduleID
@@ -328,16 +338,31 @@ func problemSubject(it AttentionItem) string {
 	if it.Domain != "" {
 		return it.Domain
 	}
+	if it.Mount != "" {
+		return it.Mount
+	}
 	return it.Deployment
 }
 
-// isCopyKind says whether a kind of item comes from Nomad's allocations, which
-// can't be judged while Nomad can't be read. It takes the kind as the list
-// writes it or as the table stores it (a plain string).
-func isCopyKind[K ~string](kind K) bool {
+// judged says which kinds of item the check could judge. The copy kinds come
+// from Nomad's allocations and can't be judged while Nomad can't be read; the
+// disk kind comes from the stored host samples and can't be judged while the
+// newest is older than 5 minutes. A kind that isn't judged is neither opened
+// nor resolved, so an outage sends no burst of "resolved".
+type judged struct{ Copies, Disks bool }
+
+// allJudged is a check that could read everything.
+var allJudged = judged{Copies: true, Disks: true}
+
+// notJudged says whether a kind of item is one the check couldn't judge. It
+// takes the kind as the list writes it or as the table stores it (a plain
+// string).
+func notJudged[K ~string](kind K, j judged) bool {
 	switch AttentionKind(kind) {
 	case AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy:
-		return true
+		return !j.Copies
+	case AttentionDiskNearlyFull:
+		return !j.Disks
 	}
 	return false
 }
@@ -357,13 +382,13 @@ type problemChanges struct {
 //   - A sent problem off the list for resolveAfter or more since it was last seen
 //     is resolved. A younger one is kept as it is, so an item that flaps doesn't
 //     send "resolved" and then "opened" again.
-//   - When copiesKnown is false (Nomad couldn't be read) the copy kinds are not
-//     judged: not opened, and not resolved, so an outage doesn't send a burst of
-//     "resolved".
+//   - What j says wasn't judged is neither opened nor resolved: the copy kinds
+//     when Nomad couldn't be read, the disk kind when the host wasn't sampled
+//     in the last 5 minutes. An outage doesn't send a burst of "resolved".
 //   - apps holds the IDs of the apps that exist. A problem of an app that is gone
 //     is dropped without a message, and an item of one is not opened: it can only
 //     be an app deleted while this check was running.
-func diffProblems(prev []store.SentProblem, now []AttentionItem, copiesKnown bool, apps map[string]bool,
+func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps map[string]bool,
 	at time.Time, resolveAfter time.Duration) problemChanges {
 
 	sent := make(map[string]bool, len(prev))
@@ -380,7 +405,7 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, copiesKnown boo
 			continue
 		case it.AppID != "" && !apps[it.AppID]:
 			continue
-		case !copiesKnown && isCopyKind(it.Kind):
+		case notJudged(it.Kind, j):
 			continue
 		}
 		present[key] = true
@@ -396,7 +421,7 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, copiesKnown boo
 		case present[p.Key]:
 		case p.AppID != "" && !apps[p.AppID]:
 			out.Dropped = append(out.Dropped, p.Key)
-		case !copiesKnown && isCopyKind(p.Kind):
+		case notJudged(p.Kind, j):
 			// Not judged: it may well still be there.
 		case at.Sub(p.LastSeenAt) >= resolveAfter:
 			out.Resolved = append(out.Resolved, p)
@@ -461,7 +486,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		places[rec.App.ID] = rec.Place
 	}
 	now := s.clock.Now().UTC()
-	changes := diffProblems(prev, att.Items, !att.CopiesUnknown, exists, now, s.resolveAfter)
+	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown}, exists, now, s.resolveAfter)
 
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped)}
 	var opened, resolved []notify.Event

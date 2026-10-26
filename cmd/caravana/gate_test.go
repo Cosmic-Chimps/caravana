@@ -61,6 +61,10 @@ type gateTarget struct {
 	// logged or stored.
 	ServerLog func() string
 	DataDir   string
+	// SetTraefikMetricsURL changes where the running Caravana reads Traefik's
+	// numbers (service.SetTraefikMetricsURL); only the lab sets it. The
+	// console-monitoring step points it at a closed port and back.
+	SetTraefikMetricsURL func(url string)
 }
 
 // publicTarget is what only a real host has.
@@ -139,6 +143,8 @@ func runGate(t *testing.T, target gateTarget) {
 		{"app-actions", false, g.appActionsStep},
 		{"schedules", false, g.schedulesStep},
 		{"domains", false, g.domainsStep},
+		{"logs", false, g.logsStep},
+		{"monitoring", false, g.monitoringStep},
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},

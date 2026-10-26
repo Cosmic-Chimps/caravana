@@ -122,6 +122,7 @@ type Deployer struct {
 	nomad    *api.Client
 	registry *registry.Client
 	settings nomadjob.Settings
+	cache    hostCache // node resources and job lifecycles kept between calls (host.go)
 
 	// Timing is read on every call; set it before the Deployer is used.
 	Timing Timing

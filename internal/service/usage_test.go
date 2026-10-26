@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -22,7 +23,7 @@ func startedStub(id, group string) api.AllocationListStub {
 
 // statsFor is Nomad's stats for the service task: ticks MHz and usedMB of memory.
 func statsFor(group string, ticks float64, usedMB uint64) api.AllocResourceUsage {
-	return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{group: {ResourceUsage: &api.ResourceUsage{
+	return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{group: {ResourceUsage: &api.ResourceUsage{
 		CpuStats:    &api.CpuStats{TotalTicks: ticks},
 		MemoryStats: &api.MemoryStats{Usage: usedMB * mb, Measured: []string{"Usage"}},
 	}}}}
@@ -37,6 +38,20 @@ func saveApp(t *testing.T, e *env, a app.App) {
 
 func TestCopiesWithUsage(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("a copy with no measurement has no value, not an error and not 0 MB", func(t *testing.T) {
+		e := newEnv(t)
+		saveApp(t, e, appWith("blog", 1))
+		e.nomad.SetCopies("blog", startedStub("c1", "web"))
+		e.nomad.SetStats("c1", deploytest.DeadAllocUsage("web"))
+		_, usage, err := e.svc.CopiesWithUsage(ctx, "blog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u := usage["c1"]; !u.None || u.Error != "" || u.MemoryMB != 0 || u.MemoryCeilingMB != 256 {
+			t.Errorf("c1 = %+v, want None with no error", u)
+		}
+	})
 
 	t.Run("defaults are applied to a service with no resources", func(t *testing.T) {
 		e := newEnv(t)

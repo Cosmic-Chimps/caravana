@@ -103,8 +103,9 @@ type appPage struct {
 	Deployments *deploymentsTab
 	Configure   *configureTab
 	Compose     *composeView // Deploy from Compose, under the Configure tab
-	Logs        *logsTab
-	Backups     *backupsTab
+	// LogsTab is the Logs page filtered to the app (feature 024), drawn with logs.html's template.
+	LogsTab *logsView
+	Backups *backupsTab
 	// Variables and Domains are Configure's own pages (feature 021); the Configure tab is current on both.
 	VariablesTab *variablesTab
 	DomainsTab   *domainsTab
@@ -398,19 +399,21 @@ func (s *server) tabKey(key string) string {
 }
 
 // liveApp answers GET /live/apps/{id}: the stream of one app's page.
-// With ?logs=1 (the Logs tab) it also carries the app's log lines; with
-// ?tab=running (the Running tab) a "usage" event every few seconds, which is
-// what makes the copies region read CPU and memory again; with ?tab=domains
-// (the Domains page) the domains notice, and the domains are checked every
-// minute while it is open.
+// With ?watch=logs (the Logs tab) it also carries the app's logs notice (never
+// a line), and with live=1 besides, the app's place is followed while it is
+// open (feature 024); with ?tab=running (the Running tab) a "usage" event every
+// few seconds, which is what makes the copies region read CPU and memory again;
+// with ?tab=domains (the Domains page) the domains notice, and the domains are
+// checked every minute while it is open.
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	route := liveRoute{AppID: id,
 		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted}}
 	switch {
-	case r.URL.Query().Get("logs") == "1":
-		if choice, ok := logChoiceOf(r.URL.Query()); ok {
-			route.Start = s.logStart(id, choice)
+	case r.URL.Query().Get("watch") == "logs":
+		route.Kinds = append(route.Kinds, service.ChangeLogs)
+		if r.URL.Query().Get("live") == "1" {
+			route.WatchLogs = s.appLogsWatch(id)
 		}
 	case r.URL.Query().Get("tab") == "running":
 		route.Start = s.usageStart()
@@ -465,6 +468,7 @@ type copyEntry struct {
 // neither (the cells show a dash); one Nomad didn't answer for has Error.
 type usageView struct {
 	Has      bool   // there are numbers
+	None     bool   // Nomad has no measurement for the copy: a dash, and no sentence
 	Error    string // the sentence, when Nomad didn't answer for this copy
 	CPU      string // "42 MHz"
 	CPUOf    string // "of 100 MHz reserved"
@@ -590,6 +594,9 @@ func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 func usageViewOf(u service.CopyUsage) usageView {
 	if u.Error != "" {
 		return usageView{Error: u.Error}
+	}
+	if u.None {
+		return usageView{None: true} // no measurement: a dash in both cells, no error line
 	}
 	v := usageView{Has: true, NearCeil: u.NearCeiling,
 		CPU: fmt.Sprintf("%d MHz", u.CPUMHz), CPUOf: fmt.Sprintf("of %d MHz reserved", u.CPUReservedMHz),

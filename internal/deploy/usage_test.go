@@ -36,8 +36,17 @@ func TestUsageFromStats(t *testing.T) {
 		{"cgroups v2 measures Usage", map[string]*api.TaskResourceUsage{
 			"web": taskUsage(41.6, api.MemoryStats{Usage: 120 * mb, RSS: 80 * mb, Measured: []string{"Usage", "Cache"}}),
 		}, CopyUsage{CPUMHz: 42, MemoryMB: 120}},
+		{"the page cache isn't memory in use", map[string]*api.TaskResourceUsage{
+			"web": taskUsage(1, api.MemoryStats{Usage: 24 * mb, Cache: 18 * mb, RSS: 3 * mb, Measured: []string{"Usage", "Cache"}}),
+		}, CopyUsage{CPUMHz: 1, MemoryMB: 6}},
+		{"a cache larger than Usage clamps at 0", map[string]*api.TaskResourceUsage{
+			"web": taskUsage(1, api.MemoryStats{Usage: 5 * mb, Cache: 9 * mb, Measured: []string{"Usage", "Cache"}}),
+		}, CopyUsage{CPUMHz: 1, MemoryMB: 0}},
+		{"Usage without a measured Cache is whole", map[string]*api.TaskResourceUsage{
+			"web": taskUsage(1, api.MemoryStats{Usage: 30 * mb, Cache: 18 * mb, Measured: []string{"Usage"}}),
+		}, CopyUsage{CPUMHz: 1, MemoryMB: 30}},
 		{"cgroups v1 measures RSS", map[string]*api.TaskResourceUsage{
-			"web": taskUsage(7, api.MemoryStats{RSS: 64 * mb, Usage: 999 * mb, Measured: []string{"RSS", "Cache", "Swap"}}),
+			"web": taskUsage(7, api.MemoryStats{RSS: 64 * mb, Usage: 999 * mb, Cache: 30 * mb, Measured: []string{"RSS", "Cache", "Swap"}}),
 		}, CopyUsage{CPUMHz: 7, MemoryMB: 64}},
 		{"the sidecar is not the service", map[string]*api.TaskResourceUsage{
 			"names": taskUsage(500, api.MemoryStats{Usage: 900 * mb, Measured: []string{"Usage"}}),
@@ -46,13 +55,16 @@ func TestUsageFromStats(t *testing.T) {
 		{"memory rounds to the nearest MB", map[string]*api.TaskResourceUsage{
 			"web": taskUsage(0, api.MemoryStats{Usage: 10*mb + mb/2, Measured: []string{"Usage"}}),
 		}, CopyUsage{MemoryMB: 11}},
-		{"a task with no stats of one kind", map[string]*api.TaskResourceUsage{
+		{"a task with no memory stats has no value", map[string]*api.TaskResourceUsage{
 			"web": {ResourceUsage: &api.ResourceUsage{}},
-		}, CopyUsage{}},
+		}, CopyUsage{Err: ErrUsageNone}},
+		{"a task with no memory kind measured has no value", map[string]*api.TaskResourceUsage{
+			"web": taskUsage(5, api.MemoryStats{}),
+		}, CopyUsage{Err: ErrUsageNone}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{Tasks: tc.tasks})
+			got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{Timestamp: 1, Tasks: tc.tasks})
 			if got != tc.want {
 				t.Errorf("usage = %+v, want %+v", got, tc.want)
 			}
@@ -66,8 +78,18 @@ func TestUsageFromStats(t *testing.T) {
 		}
 	})
 
-	t.Run("no stats for the service's task is an error", func(t *testing.T) {
+	t.Run("a dead copy's answer has no time and zeroed tasks: no value, not 0 MB", func(t *testing.T) {
 		got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{
+			"web":   taskUsage(0, api.MemoryStats{}),
+			"names": taskUsage(0, api.MemoryStats{}),
+		}})
+		if !errors.Is(got.Err, ErrUsageNone) || errors.Is(got.Err, ErrNomadUnavailable) || got.MemoryMB != 0 {
+			t.Errorf("usage = %+v, want ErrUsageNone only", got)
+		}
+	})
+
+	t.Run("no stats for the service's task is an error", func(t *testing.T) {
+		got := usageFromStats(runningCopy("c1", "web"), &api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{
 			"names": taskUsage(1, api.MemoryStats{}),
 		}})
 		if !errors.Is(got.Err, ErrNomadUnavailable) {
@@ -78,7 +100,7 @@ func TestUsageFromStats(t *testing.T) {
 
 func TestUsage(t *testing.T) {
 	stats := func(ticks float64, usageMB uint64) api.AllocResourceUsage {
-		return api.AllocResourceUsage{Tasks: map[string]*api.TaskResourceUsage{
+		return api.AllocResourceUsage{Timestamp: 1, Tasks: map[string]*api.TaskResourceUsage{
 			"web":   taskUsage(ticks, api.MemoryStats{Usage: usageMB * mb, Measured: []string{"Usage"}}),
 			"names": taskUsage(1000, api.MemoryStats{Usage: 800 * mb, Measured: []string{"Usage"}}),
 		}}

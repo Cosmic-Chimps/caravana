@@ -33,7 +33,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains"}}, // notices that these changed
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs", "getMetrics"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
@@ -46,7 +46,8 @@ var consoleParity = map[string]parity{
 	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
 	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
-	"GET /apps":                   {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// The rail's Platform panel (feature 025) is getHost; the needs-you list's disk row is listAttention.
+	"GET /apps": {ops: []string{"listProjects", "listApps", "listAttention", "getHost"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).
@@ -54,10 +55,13 @@ var consoleParity = map[string]parity{
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules"}},
-	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
+	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
+	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
+	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
-	// ?tab=domains adds the domains notice (listDomains ?app=).
-	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs", "listDomains"}},
+	// ?tab=domains adds the domains notice (listDomains ?app=). ?watch=logs adds the logs notice, on which the
+	// Logs tab reads its region again (listLogs ?app=).
+	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "listLogs", "listDomains"}},
 
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
@@ -183,6 +187,24 @@ var consoleParity = map[string]parity{
 	"POST /domains/{host}/options":       {ops: []string{"getApp", "deployApp"}},
 	"POST /domains/{host}/remove":        {ops: []string{"getApp", "deployApp"}},
 	"POST /domains/{host}/team-password": {ops: []string{"getApp", "rotateTeamPassword"}},
+	// Logs (feature 024). The page reads the environment's output (listLogs, with the filters of its address:
+	// project, environment, app, service, copy, q, range, levels, before), the lines around one line
+	// (getLogsAround, for ?copy=&at=), and the apps and projects for the rail and the place bars. The part is
+	// the stream and the histogram alone, drawn again on the logs notice. Download is the page's filter as
+	// a text file, oldest first.
+	"GET /logs":          {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
+	"GET /parts/logs":    {ops: []string{"listLogs"}},
+	"GET /logs/download": {ops: []string{"downloadLogs"}},
+	// Monitoring (feature 025). The page reads the place's numbers (getMetrics, with its range and sort), the host's
+	// (getHost: the sparkline titles say cores, and the "This host" section is the host's meters, room and
+	// seven days of memory) and the projects for the place bars. The part is the sources, issues, charts and
+	// table alone, drawn again on the metrics notice.
+	"GET /monitoring":       {ops: []string{"getMetrics", "getHost", "listProjects"}},
+	"GET /parts/monitoring": {ops: []string{"getMetrics", "getHost"}},
+	// The "This host" section alone, drawn again on the same notice: the host's meters, room and memory.
+	"GET /parts/monitoring/host": {ops: []string{"getHost"}},
+	// The Apps home's Platform panel alone, drawn again on the metrics notice.
+	"GET /parts/platform": {ops: []string{"getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

@@ -47,6 +47,9 @@ type Copy struct {
 	// status isn't "run") while it may still say it is running. Nomad refuses
 	// to restart or exec into such a copy, so the app actions skip it.
 	Stopping bool
+	// Gone is set only by LogCopies, on the copies that are terminal: they
+	// no longer run, but Nomad still keeps their output (feature 024).
+	Gone bool
 }
 
 // copyOf maps one allocation to a Copy (research R8):
@@ -194,7 +197,14 @@ func listed(copies []Copy) []Copy {
 			out = append(out, c)
 		}
 	}
-	slices.SortFunc(out, func(a, b Copy) int {
+	sortCopies(out)
+	return out
+}
+
+// sortCopies puts copies in display order: by service, then version (newest
+// first), then start time (copies that haven't started last), then ID.
+func sortCopies(copies []Copy) {
+	slices.SortFunc(copies, func(a, b Copy) int {
 		if c := strings.Compare(a.Service, b.Service); c != 0 {
 			return c
 		}
@@ -216,7 +226,6 @@ func listed(copies []Copy) []Copy {
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	return out
 }
 
 // WatchCopies calls changed with the job IDs whose allocations changed

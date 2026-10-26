@@ -17,7 +17,6 @@ const (
 	defaultCoalesce  = 500 * time.Millisecond // at most one event per kind in this time
 	defaultKeepalive = 20 * time.Second       // a comment line, so proxies keep an idle stream
 	defaultRecheck   = 30 * time.Second       // how often the session is checked again
-	defaultLogRetry  = 5 * time.Second        // how long the log view waits before it tries Nomad again
 	defaultUsage     = 5 * time.Second        // how often the Running tab reads CPU and memory (research R7)
 )
 
@@ -25,17 +24,19 @@ const (
 // value means the defaults and the real Service; tests set short timings and
 // a fake source. (C#: an options object whose unset fields mean "default".)
 type liveSettings struct {
-	coalesce, keepalive, recheck, logRetry, usageEvery time.Duration
-	subscribe                                          func(appID string) (<-chan service.Change, func())
+	coalesce, keepalive, recheck, usageEvery time.Duration
+	subscribe                                func(appID string) (<-chan service.Change, func())
 	// watchDomains says a domains page is open until the returned done is
 	// called (Service.MarkDomainsWatched when nil).
 	watchDomains func() (done func())
+	// watchLogs says a Logs page with Live on is open on a place until the
+	// returned done is called (Service.WatchLogs when nil).
+	watchLogs func(project, environment string) (done func())
 }
 
 func (l liveSettings) coalesceEvery() time.Duration  { return orDefault(l.coalesce, defaultCoalesce) }
 func (l liveSettings) keepaliveEvery() time.Duration { return orDefault(l.keepalive, defaultKeepalive) }
 func (l liveSettings) recheckEvery() time.Duration   { return orDefault(l.recheck, defaultRecheck) }
-func (l liveSettings) logRetryEvery() time.Duration  { return orDefault(l.logRetry, defaultLogRetry) }
 func (l liveSettings) usageInterval() time.Duration  { return orDefault(l.usageEvery, defaultUsage) }
 
 func orDefault(d, def time.Duration) time.Duration {
@@ -53,7 +54,7 @@ type liveRoute struct {
 	// event's name is the kind's name ("deployments", "copies", ...).
 	Kinds []service.ChangeKind
 	// Start, when set, runs in its own goroutine once "sync" is sent, and
-	// writes extra events (the log lines of the Logs tab) through ev, which
+	// writes extra events (the Running tab's usage ticks) through ev, which
 	// is safe to use from several goroutines. ctx ends when the stream ends,
 	// and the stream waits for Start to return before it closes, so Start
 	// must stop when ctx does.
@@ -61,6 +62,10 @@ type liveRoute struct {
 	// WatchDomains says the page shows domains (feature 023): while the stream
 	// is open the domain watcher checks every minute, not every 15.
 	WatchDomains bool
+	// WatchLogs, when set, says the page follows an environment's output (feature 024): it runs once
+	// the session is checked, and the returned done when the stream ends. While it is open the
+	// service follows the copies of the place and sends the logs notice when an app wrote.
+	WatchLogs func() (done func())
 }
 
 // stream answers a /live… request. It is the loop every such route shares:
@@ -115,6 +120,11 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request, route liveRoute)
 			watch = s.svc.MarkDomainsWatched
 		}
 		done := watch()
+		defer done()
+	}
+
+	if route.WatchLogs != nil {
+		done := route.WatchLogs()
 		defer done()
 	}
 
