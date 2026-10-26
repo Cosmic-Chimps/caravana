@@ -287,3 +287,38 @@ Applied on branch `025-monitoring`, one commit each, in this order:
 - Where this section and the contract above disagree, this section wins. The contract's "The disk holding
   `/var/lib/docker` is 86% full: 11 GB left." (needs-you list) reads "The disk at `/var/lib/docker` is 86%
   full: 11 GB left." from fix 5.
+
+### Critique rulings (designer, 2026-10-26)
+
+From the impeccable critique of the built page (`.impeccable/critique/2026-10-26T02-57-08Z__internal-ui-templates-monitoring-html.md`),
+applied on branch `025-monitoring`, one commit per group, in this order. Where this section and the contract
+above disagree, this section wins.
+
+1. **A row's mark is the app's status first.** ■ not running or deploy failed (the same states `/apps` shows ■),
+   ○ stopped (or never deployed), ◐ rolling out, ◆ some copies short; ◆ "unusual" only means "unusual against its
+   week" and only for a serving service (■ "failing" when its issue is failed). **Amendment: a service that isn't
+   serving gets no "quieter" issue at all** (its cause is on the needs-you list; the row's ■ is enough); the other
+   kinds still apply, and the quieter sentence gains the deploy clause like the others. A place with nothing running
+   reads "Nothing is running in `Shop` / `staging`: `web` is stopped." with ○ in place of the calm line.
+2. **Chart heads are the last 10 minutes at every range**, labelled "last 10 min" (not "now"; the API's `now` is the
+   same window). **Amendment to the contract's "now" heads.** A number is in the warn hue only when a rule judged
+   it; the table's warn hues follow the issues.
+3. **The host meters.** The reserved mark is drawn above the fill (it was hidden when use exceeds the
+   reservation). The readout is split: "1.7G used · 1.3G reserved of 1.9G", CPU likewise in vCPU ("1.2 used · 0.8
+   reserved of 2 vCPU"). When memory in use is at 85% or more, the room sentence adds ", but memory in use is
+   already at 89%." (its `title` unchanged). vCPU is the one CPU unit on the page (the sparkline's title, the table,
+   the meters, the room sentence: "(32 MB, 0.1 vCPU each)").
+4. **Scale, floor and edges.** An 11px fg-3 label of the top gridline's value on each chart ("4 req/s", "5%",
+   "800 ms", "1.2G"); the Errors chart scaled to at least 0-5%; the band's low and high edges drawn as 1px line-2
+   polylines (`.cv-mnband-edge`) over the polygon.
+5. **The live swap keeps focus.** The sort, range and place bars sit outside the swapped region; the notice swaps the
+   issues, each chart and each table row by id, out of band (as 023's Domains rows), never the whole region, so
+   keyboard focus and an open hover survive; the source notices sit outside the live region (no re-announcement each
+   minute). The CPU cell prints its figure beside the sparkline ("0.4/0.5 vCPU") and, with the memory cell, sits
+   above the row link's overlay.
+6. **The smaller rulings.** HTTP charts mark only the deploys of apps with a domain (the Memory chart marks all);
+   deploys within 5 minutes of each other become one marker labelled "10 deploys" (its `title` lists them); the 7 d
+   caption is said once, under the chart grid; the hover's "usually" follows the hovered point; logs links carry the
+   service (`/logs?app=<id>&service=<app>/<service>`); "—" alone (no "—%", "—MB"); rates and percents with one
+   decimal; restarts warn from 2 (the rule's threshold); the ARIA table's cells (the logs link inside a
+   `role="cell"`, header and cell counts equal).
