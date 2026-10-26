@@ -200,6 +200,8 @@ var consoleParity = map[string]parity{
 	// table alone, drawn again on the metrics notice.
 	"GET /monitoring":       {ops: []string{"getMetrics", "getHost", "listProjects"}},
 	"GET /parts/monitoring": {ops: []string{"getMetrics", "getHost"}},
+	// The "This host" section alone, drawn again on the same notice: the host's meters, room and memory.
+	"GET /parts/monitoring/host": {ops: []string{"getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

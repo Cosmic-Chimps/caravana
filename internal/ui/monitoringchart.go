@@ -99,10 +99,11 @@ type monPlot struct {
 type monPlotTable struct {
 	Caption string
 	Head    string // the value column's title
+	Head2   string // a second value column's title ("" for one column)
 	Rows    []monPlotRow
 }
 
-type monPlotRow struct{ Time, Value string }
+type monPlotRow struct{ Time, Value, Value2 string }
 
 // geom maps points and values onto the plot's box.
 type geom struct {
@@ -459,7 +460,11 @@ func gapsOf(vals []*float64, g geom, times []time.Time) []monRect {
 			if j < n-1 {
 				x1 = g.x(j + 1)
 			}
-			out = append(out, monRect{X: units(x0), W: units(x1 - x0), Title: "No readings from " + from.UTC().Format("15:04") + " to " + to.UTC().Format("15:04") + " UTC"})
+			layout := "15:04"
+			if from.UTC().YearDay() != to.UTC().YearDay() || from.UTC().Year() != to.UTC().Year() {
+				layout = "Mon 15:04" // across midnight: a time alone would be two days
+			}
+			out = append(out, monRect{X: units(x0), W: units(x1 - x0), Title: "No readings from " + from.UTC().Format(layout) + " to " + to.UTC().Format(layout) + " UTC"})
 		}
 		i = j + 1
 	}

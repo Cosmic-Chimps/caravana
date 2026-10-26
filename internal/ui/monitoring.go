@@ -205,6 +205,9 @@ type monView struct {
 	// Region is the live region, drawn again from RegionHref on the metrics notice.
 	Region     *monRegion
 	RegionHref string
+	// Host is the "This host" section, drawn again from HostHref on the same notice.
+	Host     *monHostView
+	HostHref string
 }
 
 // monNotice is a line about a source the sampler couldn't read.
@@ -373,7 +376,7 @@ func (s *server) monViewOf(ctx context.Context, q monReq, pl places) (*monView, 
 	if err != nil {
 		return nil, err
 	}
-	v := &monView{Region: reg, RegionHref: "/parts/monitoring"}
+	v := &monView{Region: reg, RegionHref: "/parts/monitoring", Host: hostViewOf(s.now().UTC(), host), HostHref: "/parts/monitoring/host"}
 	if enc := q.values().Encode(); enc != "" {
 		v.RegionHref += "?" + enc
 	}

@@ -168,7 +168,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   Running tab; the footer's two sentences; `/parts/monitoring/...` swapped by id on the `metrics`
   notice; the hover crosshair with script ("13:40 UTC · 07:40 local"), "now" without; the sidebar's
   Monitoring item (`activity`, `navMonitoring`) after Logs; parity entries; `TestNoShipWords` green.
-- [ ] T016 [US2] `internal/ui/monitoring.go` + template + tests: the "This host" section
+- [x] T016 [US2] `internal/ui/monitoring.go` + template + tests: the "This host" section
   (`id="host"`, `SectionHead` with "1 server", the three meters with readouts, one disk meter per
   watched filesystem labelled with its mount when they differ, the room sentence with its title and
   warn hue for "No room…", "Nothing is running yet: …", the 7-day memory chart with used and

@@ -13,10 +13,6 @@
 {{with .Mon}}{{template "mon-page" .}}{{end}}
 {{end}}
 
-{{/* mon-sentence: prose with names in mono, numbers in weight 500 and clock times (UTC first, the
-     local time added by localtime.js). Takes a monSentence. */}}
-{{define "mon-sentence"}}{{range .}}{{if .Clock}}{{template "clock" .Clock}}{{else if .Strong}}<span class="cv-mnstrong">{{.Text}}</span>{{else if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
-
 {{define "mon-page"}}
 <header class="cv-pagehead">
   <h1 class="cv-headline">Monitoring</h1>
@@ -29,6 +25,7 @@
   <nav class="cv-seg" aria-label="Time range">{{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
 </div>
 <div class="cv-mnregion" id="mon-live" hx-get="{{.RegionHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-region" .Region}}</div>
+{{template "mon-host-section" .}}
 <p class="cv-mnfoot">Sampled every minute and kept for 8 days. Requests come from Traefik, memory and CPU from Nomad. Long-lived connections, such as websockets and streams, count as requests but not in Slowest 5%.</p>
 {{end}}
 
@@ -95,8 +92,8 @@
 </div>
 <table class="sr-only">
   <caption>{{.Table.Caption}}</caption>
-  <thead><tr><th scope="col">Time (UTC)</th><th scope="col">{{.Table.Head}}</th></tr></thead>
-  <tbody>{{range .Table.Rows}}<tr><th scope="row">{{.Time}}</th><td>{{.Value}}</td></tr>{{end}}</tbody>
+  <thead><tr><th scope="col">Time (UTC)</th><th scope="col">{{.Table.Head}}</th>{{with .Table.Head2}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+  <tbody>{{range .Table.Rows}}<tr><th scope="row">{{.Time}}</th><td>{{.Value}}</td>{{if $.Table.Head2}}<td>{{.Value2}}</td>{{end}}</tr>{{end}}</tbody>
 </table>
 {{end}}
 
@@ -141,4 +138,30 @@
   <div class="cv-panel"><p class="cv-mntable-empty">{{.Empty}}</p></div>
   {{end}}
 </section>
+{{end}}
+
+{{/* mon-host-section: "This host", a live region of its own (#host, drawn again from /parts/monitoring/host
+     on the metrics notice). Takes a monView. */}}
+{{define "mon-host-section"}}
+<section class="cv-mnblock" id="host" aria-label="This host" hx-get="{{.HostHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-host" .Host}}</section>
+{{end}}
+
+{{/* mon-host: the section's head and panel: what is wrong with reading the host, the meters, the room
+     sentence and the seven days of memory. Takes a monHostView. */}}
+{{define "mon-host"}}
+<div class="cv-mnsec">
+  <h2 class="cv-label">This host</h2>
+  <span class="cv-mnsec-meta">{{.Meta}}</span>
+</div>
+<div class="cv-panel cv-mnhost">
+  {{range .Lines}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
+  {{range .Meters}}{{template "mon-meter" .}}{{end}}
+  {{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+  {{with .Chart}}
+  <h3 class="cv-label">Memory, last 7 days</h3>
+  <div class="cv-mnkey"><span>used</span><span class="cv-mnkey-res">reserved</span></div>
+  {{template "mon-plot" .Plot}}
+  <div class="cv-mnaxis"><span>{{.AxisStart}}</span><span>{{.AxisMid}}</span><span>now</span></div>
+  {{end}}
+</div>
 {{end}}
