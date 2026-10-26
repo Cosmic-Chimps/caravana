@@ -943,6 +943,35 @@ numbers of checks 3 and 4 carry it.
     Lima VM) with a small disk, filled past 85% and 95% with `fallocate`, then freed: the item, its
     level, the notification on open and its "resolved" after `resolveAfter`; the hysteresis at 84%.
     The rest is a table test of `attentionOf` over stored rows.
+   - **Lab, observed** (2026-10-26, T020): a throwaway Lima VM `caravana-disk-test` (Ubuntu 24.04,
+     2 CPUs, 2 GiB, `--disk 10`: `/` is 8.7 GB, 2.8 GB used after the install), installed from a dev
+     release of `025-monitoring` the way `deploy/dev/install-test.sh` does (`--acme none`), then
+     `CARAVANA_NOTIFY_RESOLVE_AFTER=10s` added to `caravana.env` and Caravana restarted; a webhook
+     channel (`problems`) to a receiver inside the VM on `127.0.0.1:9099`. The sampler kept its
+     minute. Docker's root was `/var/lib/docker`, on `/` with Nomad's data: one watched filesystem,
+     `holds` `["nomad","docker"]`, 31.3% before the fill. Each stage is one `fallocate` file sized to
+     the percent asked (used / (used + available), as `df` and Caravana compute it); the times are
+     from the file's write.
+     - **87%**: the next tick's `getHost` read 87.0%, 1,149 MB free, state `warning`; the needs-you
+       item `disk_nearly_full` came 56 s after the write at level `warning`, "The disk at / is 87%
+       full: 1.1 GB left." (`freeBytes` 1,204,813,824), and the webhook's `problem.opened` 5 s after
+       it: title "Disk nearly full: / is 87% full", that text, `level` warning, `mount` "/", `holds`,
+       `usedPercent` 86.999…, `freeBytes`, `url` `https://caravana.test/monitoring#host`.
+     - **96%**: 56 s later the item was `failed`, "The disk at / is 96% full: 353 MB left."; `getHost`
+       state `failed`. **No second message** over the next 70 s (two notifier checks) and none after:
+       the item's key carries no level, so the rise to ■ isn't notified.
+     - **84%**: after 100 s the item **stayed open**, at `warning`, "… 84% full: 1.4 GB left." (the
+       hysteresis), while `getHost`'s disk state for the same sample read **`ok`** (the meter's
+       state follows the 85% threshold alone, as `DiskState`'s comment says). The meter and the
+       needs-you row disagree for that band: worth the designer's look in T022.
+     - **81%**: the item was gone 11 s after the write (the next tick), and `problem.resolved` came
+       at once after `resolveAfter`: title "Resolved: Disk nearly full: / is 87% full" (the percent
+       of when it opened), text "It is no longer on the needs-you list.", the same `url`.
+     Two messages in all, one `opened` and one `resolved`. The VM was deleted after. "The disk at
+     / …" is the API's `detail` and the messages' text (the notify goldens' wording); the console's
+     needs-you row draws its own sentence ("The disk holding Nomad's data and Docker's (/) …",
+     `internal/ui/attention.go`), not looked at here (no browser on the VM). A Docker root on its
+     own filesystem, two watched mounts, isn't exercised (the unit tables cover it, as in item 9).
 11. **Allocation stats with `publish_allocation_metrics`**: already on in both configs
     (`PublishAllocationMetrics: true`, lab, observed); a check that a node without it gives
     `ErrUsageNotCollected` rows as NULL memory and CPU, not 0.

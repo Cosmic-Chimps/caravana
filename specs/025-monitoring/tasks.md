@@ -192,7 +192,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   quickstart §6 (the three reads with the gate's token, requests against the loop's count,
   non-zero host numbers, reserved equal to Nomad's allocated gauges, `node:read` with the scoped
   token, a deploy token's 403 on each, `range=2h` 422, `null` in the first minute).
-- [ ] T020 The review's data and the disk fill: `cmd/caravana/seed_metrics_test.go`
+- [x] T020 The review's data and the disk fill: `cmd/caravana/seed_metrics_test.go`
   (`TestSeedMetricsForReview`, opt-in with `CARAVANA_SEED_METRICS=<db>` and `CARAVANA_SEED_DAYS`,
   rows for every stored service with a domain, `started_at` moved back); research R8.10 on
   `deploy/dev/install-test.sh`'s throwaway VM (fill past 85 %, 95 %, back to 84 %, below 83 %, the

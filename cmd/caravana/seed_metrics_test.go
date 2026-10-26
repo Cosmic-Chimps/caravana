@@ -2,7 +2,9 @@ package main
 
 // Seeded monitoring history (feature 025): the band needs earlier days, and the
 // lab has only minutes. The console step console-monitoring writes two earlier
-// days for its own services.
+// days for its own services, and TestSeedMetricsForReview writes a week for
+// every stored service with a domain of a review instance, so the designer sees
+// a full band without waiting a week.
 //
 // Both write through the store beside the running server (store.OpenShared, as
 // the admin CLI opens it) and move metrics_state.started_at back with one SQL
@@ -12,8 +14,13 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"hash/fnv"
 	"math"
+	"math/rand/v2"
+	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -108,4 +115,159 @@ func spread(n int64, fractions ...float64) string {
 	}
 	b[largest] += n - given
 	return b.String()
+}
+
+// TestSeedMetricsForReview writes a week (CARAVANA_SEED_DAYS, 1 to 7) of
+// plausible history into a review instance's store, so /monitoring shows the
+// band, "usually" and "over N days" at once:
+//
+//	CARAVANA_SEED_METRICS=./data/caravana.db go test ./cmd/caravana -run TestSeedMetricsForReview -v
+//
+// For every stored service with a domain: a 10-minute row for each slot of the
+// days and a minute row for each minute of the last 48 hours (the minute rows'
+// keep time), with more traffic by day than by night (UTC), a little noise,
+// latencies whose slowest 5% sits around 150 ms and a few 5xx; and the host's
+// rows. Nothing is written at or after the instance's own first sample, so
+// its real numbers stay; started_at moves back one day more than the days
+// seeded. The server may keep running. Opt-in: skipped unless the variable is
+// set.
+func TestSeedMetricsForReview(t *testing.T) {
+	path := os.Getenv("CARAVANA_SEED_METRICS")
+	if path == "" {
+		t.Skip("set CARAVANA_SEED_METRICS to a caravana.db (and optionally CARAVANA_SEED_DAYS, default 7) to seed a review instance")
+	}
+	days := 7
+	if v := os.Getenv("CARAVANA_SEED_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 7 {
+			t.Fatalf("CARAVANA_SEED_DAYS=%q: want a whole number from 1 to 7", v)
+		}
+		days = n
+	}
+	dataDir := filepath.Dir(path)
+	ctx := context.Background()
+	st := openSharedStore(t, dataDir)
+
+	now := time.Now().UTC()
+	until := now
+	if started, err := st.MetricsStartedAt(ctx); err == nil && started.Before(until) {
+		until = started
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatal(err)
+	}
+	from := now.Add(-time.Duration(days) * 24 * time.Hour).Truncate(10 * time.Minute)
+	minutesFrom := now.Add(-store.MinuteKeep).Truncate(time.Minute)
+	if minutesFrom.Before(from) {
+		minutesFrom = from
+	}
+	layout := seedLayout(t, st)
+
+	apps, err := st.ListApps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := 0
+	for _, rec := range apps {
+		for _, svc := range rec.App.Services {
+			if len(svc.Domains) == 0 {
+				continue
+			}
+			series, err := st.EnsureSeries(ctx, rec.App.ID, svc.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := fnv.New64a()
+			h.Write([]byte(rec.App.ID + "/" + svc.Name))
+			seed := h.Sum64()
+			rng := rand.New(rand.NewPCG(seed, 25))
+			base := 20 + float64(seed%100)      // requests a minute at the day's peak: 20-119
+			memBase := 30 + float64(seed>>8%60) // MB at night
+			limit := int64(1024)                // the default ceiling (CARAVANA_DEFAULT_MEMORY_MAX_MB)
+			if svc.Resources.MemoryMaxMB > 0 {
+				limit = int64(svc.Resources.MemoryMaxMB)
+			}
+			copies := int64(1)
+			if svc.Replicas != nil && *svc.Replicas > 0 {
+				copies = int64(*svc.Replicas)
+			}
+			shape := func(ts time.Time, mins int) store.MetricsSample {
+				day := dayFactor(ts)
+				noise := 0.9 + 0.2*rng.Float64()
+				reqs := int64(math.Round(base * day * noise * float64(mins)))
+				errs := int64(math.Round(float64(reqs) * 0.002 * 2 * rng.Float64()))
+				secs := int64(mins * 60)
+				// Busier hours are a little slower: some of the 50-100 ms share moves up.
+				up := 0.04 * day
+				buckets := spread(reqs, 0.05, 0.15, 0.35, 0.25, 0.13-up, 0.06+up, 0.01)
+				return store.MetricsSample{
+					HTTPSecs: &secs, Requests: &reqs, Errors: &errs, Layout: &layout, Buckets: &buckets,
+					CPUMHz:           new(int64(math.Round((15 + 85*day) * noise * float64(copies)))),
+					CPUReservedMHz:   new(100 * copies),
+					MemoryMB:         new(int64(math.Round((memBase + 25*day) * float64(copies)))),
+					MemoryLimitMB:    new(limit * copies),
+					MemoryReservedMB: new(int64(256) * copies),
+					Copies:           &copies,
+					Restarts:         new(int64(0)),
+				}
+			}
+			n := 0
+			if from.Before(until) {
+				n += seedRows(t, st, series, store.SlotRes, from, until.Truncate(10*time.Minute), shape)
+			}
+			if minutesFrom.Before(until) {
+				n += seedRows(t, st, series, store.MinuteRes, minutesFrom, until.Truncate(time.Minute), shape)
+			}
+			services++
+			t.Logf("%s/%s: %d rows, about %.0f requests a minute at the peak", rec.App.ID, svc.Name, n, base)
+		}
+	}
+
+	// The host: what it is now, if it was ever read, with use following the day.
+	host := store.HostSample{Node: "seeded", MemoryTotalMB: new(int64(3891)), MemoryReservedMB: new(int64(1312)),
+		CPUTotalMHz: new(int64(4000)), CPUReservedMHz: new(int64(1730)), CPUCores: new(int64(4))}
+	if newest, err := st.NewestHost(ctx); err == nil {
+		host = newest
+	}
+	hostRows := func(res int, from, until time.Time) store.MetricsRows {
+		var rows store.MetricsRows
+		step := time.Duration(res) * time.Second
+		rng := rand.New(rand.NewPCG(25, 25))
+		for ts := from.Truncate(step); ts.Before(until); ts = ts.Add(step) {
+			day := dayFactor(ts)
+			h := host
+			h.TS = ts
+			if h.MemoryTotalMB != nil {
+				h.MemoryUsedMB = new(int64(float64(*h.MemoryTotalMB) * (0.35 + 0.2*day + 0.03*rng.Float64())))
+			}
+			if h.CPUTotalMHz != nil {
+				h.CPUUsedMHz = new(int64(float64(*h.CPUTotalMHz) * (0.05 + 0.25*day + 0.03*rng.Float64())))
+			}
+			rows.Hosts = append(rows.Hosts, h)
+		}
+		return rows
+	}
+	if from.Before(until) {
+		if err := st.WriteMetricsTick(ctx, store.MetricsTick{Fold: hostRows(store.SlotRes, from, until.Truncate(10*time.Minute))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if minutesFrom.Before(until) {
+		if err := st.WriteMetricsTick(ctx, store.MetricsTick{Minute: hostRows(store.MinuteRes, minutesFrom, until.Truncate(time.Minute))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	start := now.Add(-time.Duration(days+1) * 24 * time.Hour)
+	if until.Before(start) {
+		start = until // an instance older than the days asked: its own start stays
+	}
+	setMetricsStart(t, dataDir, start)
+	t.Logf("seeded %d services with a domain over %d days (rows before %s), the host, and the baseline's start at %s",
+		services, days, until.Format(time.RFC3339), start.Format(time.RFC3339))
+}
+
+// dayFactor is how busy the hour is, 0.35 at 03:00 UTC to 1 at 15:00 UTC.
+func dayFactor(ts time.Time) float64 {
+	h := float64(ts.UTC().Hour()) + float64(ts.UTC().Minute())/60
+	return 0.35 + 0.65*(0.5-0.5*math.Cos(2*math.Pi*(h-3)/24))
 }
