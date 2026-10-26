@@ -85,7 +85,9 @@ jobs:
 
       # The same checks as CI: a release is never built from a commit that fails them.
       - run: go vet ./...
-      - run: go test -race ./...
+      # The race detector makes the larger packages (api, ui, service) take 7-10 minutes on a
+      # runner, past go test's default 10-minute limit for one package.
+      - run: go test -race -timeout 30m ./...
 
       # Only now, with the checks green, does a dispatched run commit and tag. Main and the tag
       # go up in one atomic push: both or neither.

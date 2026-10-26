@@ -36,6 +36,17 @@ func deployHealthy(t *testing.T, e *env, a app.App) store.DeploymentRecord {
 		t.Fatalf("deployment = %s (%s), want healthy", final.Status, final.Error)
 	}
 	waitFor(t, "the secrets to be committed", func() bool { owner, _ := e.secrets.Kept(a.ID); return owner == "" })
+	// The deploy's goroutine still holds the app's lock for a moment after the
+	// record says healthy. Stop, start and restart take it with TryLock, so a
+	// test that calls them next would sometimes be told the app is busy.
+	waitFor(t, "the deploy to let go of the app's lock", func() bool {
+		state := e.svc.stateOf(a.ID)
+		if !state.mu.TryLock() {
+			return false
+		}
+		state.mu.Unlock()
+		return true
+	})
 	return final
 }
 
