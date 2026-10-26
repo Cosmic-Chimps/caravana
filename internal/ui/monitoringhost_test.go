@@ -36,13 +36,13 @@ func TestHostMeters(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	mem, cpu, disk := v.Meters[0], v.Meters[1], v.Meters[2]
-	if mem.Label != "mem" || mem.Read != "1.9/3.8G" || !mem.HasReserved || mem.ResW != "26.3" || mem.Fill != "50" || mem.Warn {
+	if mem.Label != "mem" || mem.Read != "1.9G used · 1.0G reserved of 3.8G" || !mem.HasReserved || mem.ResW != "26.3" || mem.Fill != "50" || mem.Warn {
 		t.Errorf("memory = %+v", mem)
 	}
 	if mem.Title != "1.9 GB in use, 1 GB reserved of 3.8 GB" {
 		t.Errorf("memory title = %q", mem.Title)
 	}
-	if cpu.Label != "cpu" || cpu.Read != "1.2/4 vCPU" || !cpu.HasReserved || cpu.ResW != "12.5" || cpu.Fill != "30" {
+	if cpu.Label != "cpu" || cpu.Read != "1.2 used · 0.5 reserved of 4 vCPU" || !cpu.HasReserved || cpu.ResW != "12.5" || cpu.Fill != "30" {
 		t.Errorf("cpu = %+v", cpu)
 	}
 	if disk.Label != "disk" || disk.Read != "18/40G" || disk.Warn || disk.Mark != "" || disk.Fill != "45" {
@@ -60,7 +60,7 @@ func TestHostMeters(t *testing.T) {
 	h.CPU.Cores = nil
 	h.Memory.Total = nil
 	got := hostViewOf(now, h).Meters
-	if len(got) != 2 || got[0].Label != "cpu" || got[0].Read != "2880/9600 MHz" {
+	if len(got) != 2 || got[0].Label != "cpu" || got[0].Read != "2880 used · 1200 reserved of 9600 MHz" {
 		t.Errorf("meters = %+v", got)
 	}
 }
@@ -112,13 +112,13 @@ func TestHostRoomSentences(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := roomOf(tc.room)
+			got := roomOf(service.HostView{Room: tc.room})
 			if got == nil || got.Text.String() != tc.want || got.Warn != tc.warn || got.Title != "Nomad's count of what fits. Caravana's and the host's own processes aren't reserved." {
 				t.Errorf("room = %+v, want %q (warn %v)", got, tc.want, tc.warn)
 			}
 		})
 	}
-	if roomOf(service.HostRoom{}) != nil {
+	if roomOf(service.HostView{}) != nil {
 		t.Error("a room that couldn't be counted says nothing")
 	}
 }
@@ -233,8 +233,8 @@ func TestMonitoringHostSection(t *testing.T) {
 		t.Fatalf("GET /monitoring = %d", resp.StatusCode)
 	}
 	words := text(body)
-	for _, want := range []string{"This host 1 server", "mem", "1.9/3.8G", "cpu", "1.2/4 vCPU", "disk", "18/40G",
-		"Room for about 14 more apps like whoami (256 MB, 100 MHz each).", "Memory, last 7 days"} {
+	for _, want := range []string{"This host 1 server", "mem", "1.9G used · 0.2G reserved of 3.8G", "cpu", "1.2 used · 1 reserved of 4 vCPU", "disk", "18/40G",
+		"Room for about 14 more apps like whoami (256 MB, 0.04 vCPU each).", "Memory, last 7 days"} {
 		if !strings.Contains(words, want) {
 			t.Errorf("the host section lacks %q:\n%s", want, words)
 		}
@@ -254,7 +254,7 @@ func TestMonitoringHostSection(t *testing.T) {
 	}
 
 	resp, part := e.get(t, "/parts/monitoring/host")
-	if resp.StatusCode != http.StatusOK || strings.Contains(part, "<html") || !strings.Contains(text(part), "This host 1 server") || !strings.Contains(text(part), "1.9/3.8G") {
+	if resp.StatusCode != http.StatusOK || strings.Contains(part, "<html") || !strings.Contains(text(part), "This host 1 server") || !strings.Contains(text(part), "1.9G used · 0.2G reserved of 3.8G") {
 		t.Errorf("part = %d:\n%s", resp.StatusCode, text(part))
 	}
 }
@@ -311,7 +311,7 @@ func TestHostMemoryMeterStates(t *testing.T) {
 	} {
 		e := monHostEnvOf(t, 30*time.Second, tc.used, 2000, 10000)
 		_, body := e.get(t, "/parts/monitoring/host")
-		meter := regexp.MustCompile(`(?s)<div class="cv-mnmeter">.*?</div>`).FindString(body)
+		meter := regexp.MustCompile(`(?s)<div class="cv-mnmeter[^"]*">.*?</div>`).FindString(body)
 		if !strings.Contains(meter, "mem") || !strings.Contains(meter, `class="`+tc.fillClass+`"`) || !strings.Contains(meter, `class="`+tc.readClass+`"`) {
 			t.Errorf("memory at %d/10000 draws %s, want %q and %q", tc.used, meter, tc.fillClass, tc.readClass)
 		}

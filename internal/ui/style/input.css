@@ -1633,7 +1633,12 @@
   .cv-mntrack { fill: var(--color-ink-3); }
   .cv-mnfill { fill: var(--color-fg-2); }
   .cv-mnfill-warn { fill: var(--color-warn); }
-  .cv-mnreserved { stroke: var(--color-fg-4); stroke-width: 6; stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; fill: none; }
+  /* Reserved is drawn after the fill, so it shows when use is above the reservation too; fg-4 ticks read on the
+     track, on the fg-2 fill and on the warn fill. */
+  .cv-mnreserved { stroke: var(--color-fg-4); stroke-width: 6; stroke-dasharray: 1 2; vector-effect: non-scaling-stroke; fill: none; }
+  /* A split readout ("1.7G used · 1.3G reserved of 1.9G") is too long for the bar's row: it sits under the bar. */
+  .cv-mnmeter-split { grid-template-columns: 40px minmax(0, 1fr); row-gap: 4px; }
+  .cv-mnmeter-split > .cv-mnmeter-read { grid-column: 2; min-width: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
   .cv-mnmeter-read { min-width: 5.5rem; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-2); text-align: right; white-space: nowrap; }
   .cv-mnmeter-read.cv-mnwarntext { color: var(--color-warn); }
 

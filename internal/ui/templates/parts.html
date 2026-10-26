@@ -66,13 +66,13 @@
      local time added by localtime.js). Takes a monSentence. */}}
 {{define "mon-sentence"}}{{range .}}{{if .Clock}}{{template "clock" .Clock}}{{else if .Strong}}<span class="cv-mnstrong">{{.Text}}</span>{{else if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 
-{{/* mon-meter: the Meter of the handoff as an SVG: a track, what Nomad has reserved hatched under what is used,
+{{/* mon-meter: the Meter of the handoff as an SVG: a track, what is used, and what Nomad has reserved hatched above it,
      and a readout; above 90 % (or a disk in a state) the fill and the readout are warn and a mark leads the
      readout. Used by the "This host" section and the Apps home's Platform panel. Takes a monMeter. */}}
 {{define "mon-meter"}}
-<div class="cv-mnmeter">
+<div class="cv-mnmeter{{if .Split}} cv-mnmeter-split{{end}}">
   <span class="cv-mnmeter-label">{{.Label}}</span>
-  <svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/>{{if .HasReserved}}<line class="cv-mnreserved" x1="0" x2="{{.ResW}}" y1="3" y2="3"/>{{end}}<rect class="cv-mnfill{{if .Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Fill}}" height="6"/></svg>
+  <svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Fill}}" height="6"/>{{if .HasReserved}}<line class="cv-mnreserved" x1="0" x2="{{.ResW}}" y1="3" y2="3"/>{{end}}</svg>
   <span class="cv-mnmeter-read{{if .Warn}} cv-mnwarntext{{end}}">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Read}}{{with .MarkWord}}<span class="sr-only"> ({{.}})</span>{{end}}</span>
 </div>
 {{end}}

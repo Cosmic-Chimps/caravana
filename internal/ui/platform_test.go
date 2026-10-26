@@ -23,10 +23,10 @@ func TestPlatformOf(t *testing.T) {
 	if p.Mark != "healthy" || p.Line != "1 server up" || len(p.Meters) != 2 || p.Room == nil {
 		t.Fatalf("healthy = %+v", p)
 	}
-	if p.Meters[0].Label != "mem" || p.Meters[0].Read != "1.9/3.8G" || !p.Meters[0].HasReserved || p.Meters[1].Label != "disk" || p.Meters[1].Read != "18/40G" {
+	if p.Meters[0].Label != "mem" || p.Meters[0].Read != "1.9G used · 1.0G reserved of 3.8G" || !p.Meters[0].HasReserved || p.Meters[1].Label != "disk" || p.Meters[1].Read != "18/40G" {
 		t.Errorf("meters = %+v", p.Meters)
 	}
-	if p.Room.Text.String() != "Room for about 4 more apps like whoami (256 MB, 100 MHz each)." {
+	if p.Room.Text.String() != "Room for about 4 more apps like whoami (256 MB, 0.04 vCPU each)." {
 		t.Errorf("room = %q", p.Room.Text.String())
 	}
 
@@ -111,7 +111,7 @@ func TestAppsHomePlatformPanel(t *testing.T) {
 		}
 	}
 	panel := text(body[strings.Index(body, `id="platform"`):strings.Index(body, `id="activity-title"`)])
-	for _, want := range []string{"This host", "1 server up", "mem", "1.9/3.8G", "disk", "18/40G", "Room for about 14 more apps like whoami (256 MB, 100 MHz each)."} {
+	for _, want := range []string{"This host", "1 server up", "mem", "1.9G used · 0.2G reserved of 3.8G", "disk", "18/40G", "Room for about 14 more apps like whoami (256 MB, 0.04 vCPU each)."} {
 		if !strings.Contains(panel, want) {
 			t.Errorf("the panel lacks %q:\n%s", want, panel)
 		}

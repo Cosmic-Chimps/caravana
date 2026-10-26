@@ -502,7 +502,7 @@ func TestMonTableRows(t *testing.T) {
 		api.P95.Text != "820 ms" || !api.P95.Warn || api.P95.Usual != "usually 180" || api.Requests.Warn {
 		t.Errorf("booking-api = %+v", api)
 	}
-	if api.Spark == nil || api.Spark.Title != "0.4 of 1 core reserved, now" || len(api.Spark.Segments) != 2 {
+	if api.Spark == nil || api.Spark.Title != "0.4 of 1 vCPU reserved, now" || len(api.Spark.Segments) != 2 {
 		t.Errorf("sparkline = %+v", api.Spark)
 	}
 	if api.Mem.Read != "0.7 / 1.0 GB" || api.Mem.Warn || api.Restarts.Text != "0" || api.Restarts.Warn {

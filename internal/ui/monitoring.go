@@ -840,19 +840,17 @@ func (b *monBuilder) spark(sv service.ServiceMetrics) *monSpark {
 	return &monSpark{Segments: segments(sv.CPU, x, y), Title: b.cpuTitle(*last, sv.CPUReservedMHz)}
 }
 
-// cpuTitle is "0.4 of 1 core reserved, now" (in cores when the host's core speed is known, else
-// MHz).
+// cpuTitle is "0.4 of 1 vCPU reserved, now" (vCPU is the page's one CPU unit; MHz only when the
+// host's core speed isn't known).
 func (b *monBuilder) cpuTitle(now float64, reserved *int64) string {
+	if b.coreMHz > 0 {
+		if reserved == nil {
+			return vcpuText(now/b.coreMHz) + " vCPU now"
+		}
+		return vcpuText(now/b.coreMHz) + " of " + vcpuText(float64(*reserved)/b.coreMHz) + " vCPU reserved, now"
+	}
 	if reserved == nil {
 		return trim1(now) + " MHz now"
-	}
-	if b.coreMHz > 0 {
-		res := float64(*reserved) / b.coreMHz
-		unit := "cores"
-		if trim1(res) == "1" {
-			unit = "core"
-		}
-		return trim1(now/b.coreMHz) + " of " + trim1(res) + " " + unit + " reserved, now"
 	}
 	return strconv.Itoa(int(now+0.5)) + " of " + strconv.FormatInt(*reserved, 10) + " MHz reserved, now"
 }
