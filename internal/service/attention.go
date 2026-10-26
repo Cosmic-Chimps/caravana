@@ -279,8 +279,7 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 	var services []string // in the order they first show up
 	byService := map[string][]Copy{}
 	for _, c := range copies {
-		failedRecently := c.Status == deploy.CopyFailed && c.FinishedAt != nil && now.Sub(*c.FinishedAt) <= recentFailure
-		if (c.Terminal && !failedRecently) || (skip != nil && c.Version == *skip) {
+		if !consideredCopy(now, c) || (skip != nil && c.Version == *skip) {
 			continue
 		}
 		if _, ok := byService[c.Service]; !ok {
@@ -294,30 +293,18 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 		oom := AttentionItem{Kind: AttentionOutOfMemory, AppID: appID, Service: name}
 		restarting := AttentionItem{Kind: AttentionRestarting, AppID: appID, Service: name}
 		unhealthy := AttentionItem{Kind: AttentionUnhealthy, AppID: appID, Service: name}
-		restarts := 0
+		var crashing []Copy // the copies that aren't out of memory
 		for _, c := range byService[name] {
-			// The restarts nobody asked for. A volume backup restarts the
-			// copy's tasks, and three nightly backups must not make a healthy
-			// app look like a crash loop. Both counts are sums over the same
-			// tasks (see deploy.Copy), so the difference is the crashes.
-			crashes := max(c.Restarts-c.RequestedRestarts, 0)
-			// A copy's restarts add up over its whole life. One that last
-			// restarted more than recentFailure ago has run cleanly since, so
-			// its old restarts are no loop any more (as for failed copies).
-			if c.Status != deploy.CopyFailed && (c.LastRestart == nil || now.Sub(*c.LastRestart) > recentFailure) {
-				crashes = 0
-			}
-			switch {
-			case c.OutOfMemory:
+			if c.OutOfMemory {
 				oom.add(c, eventTime(c))
-			case crashes > 0 || c.Status == deploy.CopyFailed:
-				restarts += crashes
-				if c.Status == deploy.CopyFailed {
-					restarts++
-				}
+				continue
+			}
+			crashing = append(crashing, c)
+			if copyCrashes(now, c) > 0 { // a failed copy counts at least one
 				restarting.add(c, eventTime(c))
 			}
 		}
+		restarts := crashesInHour(now, crashing)
 		if restarts < restartingAt {
 			restarting.Copies = nil // too few to be a loop: those copies are judged on their health alone
 		}
@@ -337,6 +324,48 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 		}
 	}
 	return items
+}
+
+// copyCrashes is how many crashes one copy counts for: the restarts nobody
+// asked for, plus one when it failed. A volume backup restarts the copy's
+// tasks, and three nightly backups must not make a healthy app look like a
+// crash loop; Restarts and RequestedRestarts are sums over the same tasks (see
+// deploy.Copy), so the difference is the crashes. A copy's restarts add up over
+// its whole life: one that last restarted more than recentFailure ago has run
+// cleanly since, so its old restarts are no loop any more (as for a copy that
+// failed long ago, which isn't considered at all, see consideredCopy).
+func copyCrashes(now time.Time, c Copy) int {
+	crashes := max(c.Restarts-c.RequestedRestarts, 0)
+	if c.Status != deploy.CopyFailed && (c.LastRestart == nil || now.Sub(*c.LastRestart) > recentFailure) {
+		crashes = 0
+	}
+	if c.Status == deploy.CopyFailed {
+		crashes++
+	}
+	return crashes
+}
+
+// consideredCopy says a copy counts for the crash rules: it hasn't ended, or
+// it failed within recentFailure. Stopped copies never count.
+func consideredCopy(now time.Time, c Copy) bool {
+	failedRecently := c.Status == deploy.CopyFailed && c.FinishedAt != nil && now.Sub(*c.FinishedAt) <= recentFailure
+	return !c.Terminal || failedRecently
+}
+
+// crashesInHour is the one counting rule of a crash loop (feature 025, R6): the
+// restarts nobody asked for of the considered copies that restarted within the
+// hour, plus one per copy that failed within it. At restartingAt (3) it is the
+// needs-you item "restarting"; the monitoring page calls a service restarting
+// from 2 (metrics.RestartsInHour). The copies are of one service: the sum
+// doesn't look at their names.
+func crashesInHour(now time.Time, copies []Copy) int {
+	n := 0
+	for _, c := range copies {
+		if consideredCopy(now, c) {
+			n += copyCrashes(now, c)
+		}
+	}
+	return n
 }
 
 // add puts a copy on a copy item. The item is dated by its newest copy, and

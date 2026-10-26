@@ -109,7 +109,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   `Level`, `Since` (the walk back ≤ 6 h, a no-data minute neither breaks nor ends the run), and
   `DeployNear` (15 minutes before, else the first after, "less than a minute after"). Tables at,
   just under and just over every threshold.
-- [ ] T009 [US1] `internal/service/metrics.go` + tests: `crashesInHour(now, copies)` extracted from
+- [x] T009 [US1] `internal/service/metrics.go` + tests: `crashesInHour(now, copies)` extracted from
   `copyItems` (`attention.go`) and used by both (≥ 3 needs-you, ≥ 2 monitoring); `Metrics(ctx,
   MetricsQuery)` and `AppMetrics(ctx, appID, rng, sort)`: the place check (`*PlaceError`), the apps
   and their series, one read of the range's rows and 8 days of slot rows, points, the totals and
