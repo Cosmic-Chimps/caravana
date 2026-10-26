@@ -240,3 +240,42 @@ The designer checks at 127.0.0.1:7070 against `pb-monitoring.png` and `pb-now.pn
    (start, middle, "now") are fg-3; fg-4 stays for non-text marks only. Deploy labels stay rolling,
    gridlines line-1. (024's histogram label row was moved to fg-3 on its own branch for the same
    reason.)
+
+## Review fixes (designer, 2026-10-26)
+
+Applied on branch `025-monitoring`, one commit each, in this order:
+
+1. **The apps table's HTTP numbers are the last 10 minutes.** Requests, Errors and Slowest 5% in the
+   table come from the same 10-minute window as the issues and the chart heads (`metrics.WindowOf`:
+   requests per second over the window, 5xx as a share of the window's requests, the p95 of its merged
+   buckets), so a row never disagrees with its own issue; only the CPU sparkline keeps the range, and a
+   number is in the warn hue only when its rule holds (the API's `requests`, `errors` and `p95` say the
+   same).
+2. **The host meters draw reserved, and memory warns from 85%.** The hatched line runs from 0 to the
+   reserved fraction of the total (`x2`, checked in the page's markup for memory and CPU); the host's
+   memory meter takes the warn fill and readout with a ◆ mark from 85% and a ■ mark from 95%, as the disk
+   does, and is fg-2 below 85% (CPU keeps 90%). Memory used is Nomad's host `Memory.Used`, total less free,
+   buffers and cache, so the page cache is left out as for the apps (ruling 1).
+3. **The Apps home's app names never break mid-word.** The name keeps to one line (an ellipsis when it alone
+   is wider than its cell) and the kind word drops under it when the two don't fit side by side.
+4. **The disk meter shows the needs-you item's state while it is open.** `Service.Host` runs
+   `metrics.DiskRun` over the same history as the attention kind, so a disk opened at 86% reads ◆ warning at
+   84% until it resolves below 83%, and ■ failed from 95%, in the host section and the Platform panel.
+5. **One wording for the disk item everywhere.** "The disk at `/var/lib/docker` is 87% full: 1.1 GB left."
+   in the console (the mount in code style), the API's `detail` and every notification
+   (`notify.DiskSentence`); the percent is cut down, not rounded, and the space left is `notify.Size`'s.
+   The console's "The disk holding …" sentence is gone; what is on the disk stays the API's `holds`.
+6. **A disk that rises from warning to failed sends one message.** `sent_problems` remembers the level last
+   sent (a `level` column added to the unreleased migration 0019); a present item rising to failed from the
+   sent warning sends one `problem.worsened` ("The disk at / is now 96% full: 410 MB left."), a fall or a
+   repeat sends nothing, and the resolve below 83% is the usual `problem.resolved`.
+
+### Rulings
+
+- **The seven departures accepted** and **the three disk answers**: the brief that applied these fixes did not
+  list them, so they are not written here. The designer session adds them to this list. The disk answers
+  that the code now follows are fixes 4, 5 and 6 above (the meter follows the open item, one sentence, one
+  message on a rise).
+- Where this section and the contract above disagree, this section wins. The contract's "The disk holding
+  `/var/lib/docker` is 86% full: 11 GB left." (needs-you list) reads "The disk at `/var/lib/docker` is 86%
+  full: 11 GB left." from fix 5.
