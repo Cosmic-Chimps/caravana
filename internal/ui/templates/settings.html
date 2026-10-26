@@ -25,6 +25,7 @@
     {{else if eq .Entry "registries"}}{{template "settings-registries" .}}
     {{else if eq .Entry "backup-storage"}}{{template "settings-backup-storage" .}}
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
+    {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
     {{end}}
   </div>
@@ -250,6 +251,82 @@
 {{else if .HasSecret}}<span id="dest-secretAccessKey-keep" class="cv-data-muted">Leave it empty to keep the current one.</span>{{end}}
 <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save destination</button>
 {{template "srow-close"}}
+{{end}}
+
+{{/* ------------------------------------------------------------ Certificates
+     Feature 023: the certificate each domain's last check found, problems first, and how they are
+     issued. The issuer and the contact email are Traefik's static configuration (set by the
+     installer): read-only. Warn when is the one setting; Edit is a <details> with its form. No
+     certificate's key or chain is read: only its issuer and dates. */}}
+{{define "settings-certificates"}}
+{{with .Certificates}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Certificates</h1>
+    <p class="cv-lede">{{.Lede}}</p>
+  </div>
+</header>
+{{if .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Notice}}</span></div>{{end}}
+{{if .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Alert}}</span></div>{{end}}
+{{range .Banners}}
+<div class="cv-panel cv-dmbanner">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
+    <p class="cv-dmbanner-explain">{{template "sentence" .Explain}}</p>
+  </div>
+  {{template "domain-check" .Check}}
+</div>
+{{end}}
+{{with .More}}<p class="cv-dmmore"><a href="{{.Href}}">and {{.N}} more</a></p>{{end}}
+
+<section aria-labelledby="certs-heading" class="cv-pgsec">
+  <h2 id="certs-heading" class="cv-label">{{.Count}}</h2>
+  {{if .Rows}}
+  <div class="cv-panel cv-certtable">
+    <div class="cv-certhead cv-label" aria-hidden="true"><span></span><span>Domain</span><span>Used by</span><span>Issuer</span><span>Expiry</span></div>
+    {{range .Rows}}
+    <div class="cv-certrow" id="cert-{{.Host}}">
+      <span class="cv-certmark"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <a href="{{.Href}}" class="cv-certhost" title="{{.Host}}">{{.Host}}</a>
+      <span class="cv-certapp" data-label="Used by">{{.App}}</span>
+      <span class="cv-certissuer" data-label="Issuer">{{.Issuer}}</span>
+      <span class="cv-certexp{{if .Expiry.Warn}} cv-certexp-warn{{end}}" data-label="Expiry"{{with .Expiry.Title}} title="{{.}}"{{end}}>{{.Expiry.Text}}</span>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="cv-panel"><div class="cv-empty">
+    <p class="cv-empty-title">No certificates yet.</p>
+    <a href="/domains" class="cv-btn cv-btn-secondary cv-btn-sm">Open Domains</a>
+  </div></div>
+  {{end}}
+</section>
+
+<section aria-labelledby="issued-heading" class="cv-pgsec">
+  <div class="cv-certsechead">
+    <h2 id="issued-heading" class="cv-label">How certificates are issued</h2>
+    <details class="cv-confirm cv-certedit"{{if .Open}} open{{end}}>
+      <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Edit how certificates are issued">Edit</summary>
+      <form method="post" action="/settings/certificates" class="cv-confirm-body">
+        <label class="cv-fld" for="cert-warn">
+          <span class="cv-label">Warn when</span>
+          <select class="cv-field cv-select" id="cert-warn" name="warnBeforeDays"{{if .WarnLocked}} disabled aria-describedby="cert-warn-hint"{{end}}{{if $.Certificates.Alert}} aria-invalid="true" autofocus{{end}}>
+            {{range .Warn}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          {{if .WarnLocked}}<span class="cv-data-muted cv-hint" id="cert-warn-hint">Applies once certificates are issued.</span>{{end}}
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm"{{if .WarnLocked}} disabled{{end}}>Save</button></div>
+      </form>
+    </details>
+  </div>
+  <dl class="cv-panel cv-certsettings">
+    <div class="cv-certset"><dt>Issuer</dt> <dd>{{.Issuer}}</dd> <dd class="cv-certset-note">{{.IssuerHint}}</dd></div>
+    <div class="cv-certset"><dt>Contact email</dt> <dd>{{.Email}}</dd> <dd class="cv-certset-note">{{.EmailHint}}</dd></div>
+    <div class="cv-certset"><dt>Warn when</dt> <dd>{{.WarnDays}} d before expiry</dd> <dd class="cv-certset-note">{{if .WarnLocked}}Applies once certificates are issued. {{end}}Sends to the channels set up in <a href="/settings/notifications">Notifications</a>.</dd></div>
+  </dl>
+</section>
+{{end}}
 {{end}}
 
 {{/* ------------------------------------------------------------ Notifications

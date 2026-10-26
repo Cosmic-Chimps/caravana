@@ -369,6 +369,15 @@ run_traefik() {
     fi
     echo "$acme" >"$STATE/acme"
   fi
+  # Feature 023: Team only's password hashes reach Traefik through its file provider, which
+  # watches a directory instead of one file. An existing Traefik job still has the file, so
+  # this run restarts it once.
+  if [ "$before" != none ]; then
+    local spec
+    spec="$(nomad_cli job inspect traefik 2>/dev/null || true)"
+    grep -q 'providers.file.directory' <<<"$spec" ||
+      echo "  Traefik is restarted once for the file provider (a few seconds without HTTP)"
+  fi
   local out
   out="$(nomad_cli job run -detach \
     -var "console_domain=$console" \
@@ -400,7 +409,9 @@ configure_caravana() {
   [ "$acme" = none ] && resolver=""
   # Traefik, on this host's loopback, is the only proxy: Caravana believes its forwarded
   # headers, so cookies are Secure and sign-in limits count each real client. The public URL
-  # is the console's own address, which notifications link to (feature 018).
+  # is the console's own address, which notifications link to (feature 018). The certificate
+  # settings are shown read-only on Settings, and the edge address is where Caravana connects
+  # to read each domain's certificate and test its route (feature 023): Traefik, on loopback.
   service_changed=0
   write_if_changed "$ENV_FILE" 0600 caravana-env <<EOF && service_changed=1
 CARAVANA_LISTEN=127.0.0.1:7070
@@ -408,6 +419,9 @@ CARAVANA_DATA_DIR=$DATA
 CARAVANA_CERT_RESOLVER=$resolver
 CARAVANA_TRUSTED_PROXIES=127.0.0.1,::1
 CARAVANA_PUBLIC_URL=https://$domain
+CARAVANA_ACME=$acme
+CARAVANA_ACME_EMAIL=$acme_email
+CARAVANA_EDGE_ADDRESS=127.0.0.1:443
 NOMAD_ADDR=http://127.0.0.1:4646
 NOMAD_TOKEN=$token
 EOF

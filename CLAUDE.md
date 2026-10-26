@@ -665,6 +665,61 @@ command on a timer in a fresh copy of one service of an app.
   `TestConsoleLab` has a step `console-schedules` and the gate a step `schedules` (with
   `RestartCaravana` during a run).
 
+Feature 023 (`specs/023-domains`, Phase 2.6) is implemented on branch `023-domains` (stacked on 022):
+every address with its state, per-domain options, Add with checks, and certificates.
+- Model: `app.Domain` gained `path`, `wwwRedirect` and `teamOnly` (`omitempty`, so no existing
+  `revision` moved; `validateDomains` names `services[i].domains[j].<field>`; `compose.Domain` has the
+  same, and a kept-file app's Domains page edits the kept overlay and deploys with `If-Match`). A
+  domain with any option gets its own router `<app>-<service>-<hash8(host)>`
+  (`nomadjob.DomainRouterName`; constitution 1.0.1), a plain domain stays on `<app>-<service>`.
+  `routerTags`/`optionRouterTags` write the tags: `Host(...) && PathPrefix(...)`, a `redirectregex`
+  middleware `<router>-www` (the regex tolerates a port in Host: `(:[0-9]+)?`; `$1`/`$2` and `[.]`
+  because Nomad interpolates `${...}`; 301 for GET, 308 otherwise), and `<router>-auth@file` for Team
+  only. Force HTTPS is the installer's global `web` redirect, shown on and not switchable (research R4).
+- `internal/edge` is the pure seam: `Resolver`, `Dialer`, `Check` (DNS from the system resolver plus
+  `1.1.1.1` and `8.8.8.8`, 2 s each; the certificate from a handshake with `CARAVANA_EDGE_ADDRESS`, SNI
+  = the host, verified by hand), `StateOf` (precedence: `not_served`, `dns_elsewhere`, `cert_expiring`,
+  `cert_pending`, `dns_none`, `self_signed`, `redirect`, `live`, `unknown`); `edgetest` has the fakes.
+  `*.localhost` answers loopback without DNS. `Service.SetEdge`, `SetEdgeAddress`, `SetACME`,
+  `SetDomainWatchGaps(idle, watched)`.
+- Store (migration `0018_domains.sql`): `domain_checks` (the cache the page and Attention read),
+  `team_passwords` (host, app, bcrypt hash; never the password) and `certificate_settings` (`warn_before_days`
+  14 by default; the issuer and contact are env, read-only). The watcher (`service/domainwatch.go`)
+  checks every domain every 15 min and every 60 s while a Domains page's stream is open
+  (`MarkDomainsWatched`), 8 probes at once; `CheckDomain` checks fresh. `ErrDomainTaken` (409
+  `domain_taken`), `ErrNotTeamOnly` (409 `not_team_only`).
+- Team only: the password (24 random bytes, base64url) is shown once, in the deploy answer
+  (`Deployment.teamPasswords`) or the console's 200 page, and by `RotateTeamPassword`. The hash is
+  `golang.org/x/crypto/bcrypt` (the module is new and direct; cost 10) in `team_passwords`;
+  `deploy.SyncTeamPasswords` rewrites the Nomad Variable `nomad/jobs/traefik` (one item
+  `<router>-auth` = `team:<hash>`, a marker item `CARAVANA_TEAM` when empty) before `Register`, after
+  a rotation and after a removal. Traefik's job reads it with no policy line (a job reads its own
+  `nomad/jobs/<job>`) through the file provider, `--providers.file.directory=/local/dynamic` with
+  `watch=true`: the template `local/dynamic/team.yml` (`change_mode = "noop"`) renders `{}` unless an
+  `-auth` item exists. Lab, observed: `nomadVar` yields the items map itself (range over `.`); a template
+  that fails to render kills the task; an `http:` with nothing under it is refused by the watcher and
+  the old middlewares stay. A router naming a missing `@file` middleware is disabled (404), so the variable
+  is written first.
+- Attention kinds `domain_dns_elsewhere` and `domain_cert_expiring` (key `kind|app|service|host`,
+  read from `domain_checks`), and `notify.Event` gained `domain`, `addressSeen` and `expiresAt`.
+- API 0.25.0: `listDomains`, `getDomain`, `checkDomain`, `rotateTeamPassword`,
+  `getCertificateSettings`, `putCertificateSettings`, `listCertificates`, the domain options,
+  `Deployment.teamPasswords`; deploy tokens are denied by the default deny (a scoped `deployApp` may
+  turn Team only on for its own app). Console: `/domains` (rows with the state, options as switches,
+  Save and deploy, Remove, New password, the Add panel with the record and Check now),
+  `/parts/domains`, the app's Domains page on the same rows, the sidebar's Domains entry,
+  Settings › Certificates, Configure's "Domains go to".
+- Installer: `deploy/install/traefik.nomad.hcl` reads the directory; `install.sh` writes
+  `CARAVANA_ACME`, `CARAVANA_ACME_EMAIL` and `CARAVANA_EDGE_ADDRESS=127.0.0.1:443` into Caravana's env,
+  and a rerun against an older Traefik job says it restarts it once (rerun the installer on an existing
+  host). `caravana-policy.hcl` is unchanged. `deploy/dev/traefik.nomad.hcl` is the same for the lab
+  (`lab.sh up` re-registers it); `install-test.sh` checks the env lines and `team.yml` in Traefik's
+  allocation.
+- Lab: `startLab` gives the in-process Caravana `CARAVANA_EDGE_ADDRESS=127.0.0.1:8443`, fake DNS through
+  `serviceHook` (`elsewhere.test` to `203.0.113.9`, the console's host to `203.0.113.1`, the rest
+  NXDOMAIN) with the real TLS dialer, and watcher gaps of 60 s and 10 s. The `console-domains-states`
+  step and the gate's `domains` step are listed in `specs/023-domains/tasks.md` (T022, T023).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

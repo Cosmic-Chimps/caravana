@@ -27,6 +27,22 @@ vm() { limactl shell --workdir / "$NAME" "$@"; }
 # https GET inside the VM, with DOMAIN or APP resolved to the VM itself (Traefik's own certificate).
 vm_curl() { vm curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" --resolve "$APP:443:127.0.0.1" "$@"; }
 
+# check_domains_host: Caravana's env file has the three lines feature 023 added, and Traefik's job
+# reads a directory with the Team only template, whose file exists in the running allocation.
+check_domains_host() {
+  local env spec alloc
+  env="$(vm sudo cat /etc/caravana/caravana.env)"
+  grep -q '^CARAVANA_ACME=none$' <<<"$env" || die "the env file has no CARAVANA_ACME=none:\n$(grep -v NOMAD_TOKEN <<<"$env")"
+  grep -q "^CARAVANA_ACME_EMAIL=$EMAIL$" <<<"$env" || die "the env file has no CARAVANA_ACME_EMAIL"
+  grep -q '^CARAVANA_EDGE_ADDRESS=127.0.0.1:443$' <<<"$env" || die "the env file has no CARAVANA_EDGE_ADDRESS"
+  spec="$(vm sudo caravana-nomad job inspect traefik)"
+  grep -q 'providers.file.directory=/local/dynamic' <<<"$spec" || die "Traefik doesn't read /local/dynamic"
+  grep -q 'local/dynamic/team.yml' <<<"$spec" || die "Traefik's job has no team.yml template"
+  alloc="$(vm sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}} {{end}}{{end}}' traefik | awk '{print $1}')"
+  [ -n "$alloc" ] || die "Traefik has no running allocation"
+  vm sudo caravana-nomad alloc fs "$alloc" traefik/local/dynamic/team.yml >/dev/null || die "team.yml isn't in Traefik's allocation"
+}
+
 cleanup() {
   if [ "${KEEP:-0}" = 1 ]; then
     echo "kept the VM: limactl shell $NAME"
@@ -114,9 +130,13 @@ main() {
   vm sudo caravana-nomad operator scheduler get-config | grep -Eq '^Memory Oversubscription +=+ +true' ||
     die "the installer didn't turn on memory oversubscription"
 
+  say "the certificate settings, the edge address and Team only's file provider (feature 023)"
+  check_domains_host
   say "a rerun changes nothing"
   out="$(install "$v1")"
   grep -q '^changed: $' <<<"$out" || die "a rerun with nothing new changed: $(grep '^changed:' <<<"$out")"
+  ! grep -q 'Traefik is restarted once' <<<"$out" || die "a rerun said Traefik is restarted:\n$out"
+  check_domains_host
 
   say "deploy whoami"
   TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"

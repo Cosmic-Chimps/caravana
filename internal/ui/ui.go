@@ -66,15 +66,14 @@ type server struct {
 	assets  map[string]string // file under static/ -> content hash, the ?v= cache-buster
 	csrf    *http.CrossOriginProtection
 	live    liveSettings // timings and notice source of the /live streams, see live.go
+	// checked holds a Check now's result for the page its redirect leads to (domainschecked.go).
+	checked checkedAdds
 
 	// newApp says whether the pages offer "New app". Tests turn it off to
 	// check the pages without the action; newServer turns it on.
 	newApp bool
 	// tabs are the app page's tabs built so far, in order (see app.go).
 	tabs []tabSpec
-	// hostIP finds the address the console's host answers on, for the Domains
-	// page's DNS record (see domains.go); tests give it their own lookup.
-	hostIP *hostIP
 	// publicURL is the console's own address (CARAVANA_PUBLIC_URL); tests give it their own.
 	publicURL func() string
 	// deployPage is how many deployments the Deployments tab shows before
@@ -102,7 +101,7 @@ func New(d Deps) (http.Handler, error) {
 // parsed templates. Tests use it to reach the server itself.
 func newServer(d Deps) (*server, error) {
 	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, version: d.Version, proxies: d.Proxies, log: d.Log, now: d.Now,
-		csrf: http.NewCrossOriginProtection(), hostIP: newHostIP(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
+		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
 	s.publicURL = func() string { return d.Service.PublicURL() }
 	if s.now == nil {
 		s.now = time.Now
@@ -178,7 +177,6 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/variables/env", s.protected(s.requireSession(s.saveEnvText))},
 		{"GET", "/apps/{id}/domains", s.requireSession(s.showDomains)},
 		{"POST", "/apps/{id}/domains", s.protected(s.requireSession(s.addDomain))},
-		{"POST", "/apps/{id}/domains/remove", s.protected(s.requireSession(s.removeDomain))},
 		{"GET", "/apps/{id}/backups", s.requireSession(s.showBackups)},
 		{"POST", "/apps/{id}/backups", s.protected(s.requireSession(s.backUpNow))},
 		{"POST", "/apps/{id}/backups/policy", s.protected(s.requireSession(s.setBackupPolicy))},
@@ -203,6 +201,14 @@ func (s *server) routeTable() []route {
 		{"GET", "/schedules/{id}/runs/{runId}", s.requireSession(s.showRun)},
 		{"POST", "/schedules/{id}/runs/{runId}/stop", s.protected(s.requireSession(s.stopScheduleRun))},
 		{"GET", "/parts/schedules", s.requirePart(s.partSchedules)},
+		{"GET", "/domains", s.requireSession(s.showDomainsPage)},
+		{"POST", "/domains", s.protected(s.requireSession(s.addDomainsPost))},
+		{"POST", "/domains/{host}/check", s.protected(s.requireSession(s.checkDomainAgain))},
+		{"POST", "/domains/{host}/options", s.protected(s.requireSession(s.saveDomainOptions))},
+		{"POST", "/domains/{host}/remove", s.protected(s.requireSession(s.removeDomain))},
+		{"POST", "/domains/{host}/team-password", s.protected(s.requireSession(s.rotateTeamPassword))},
+		{"GET", "/parts/domains", s.requirePart(s.partDomains)},
+		{"GET", "/parts/domains/add-service", s.requirePart(s.partDomainAddService)},
 		{"GET", "/parts/apps", s.requirePart(s.partApps)},
 		{"GET", "/parts/activity", s.requirePart(s.partActivity)},
 		{"GET", "/parts/deploying", s.requirePart(s.partDeploying)},
@@ -218,11 +224,13 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings/registries", s.requireSession(s.showRegistries)},
 		{"GET", "/settings/backup-storage", s.requireSession(s.showBackupStorage)},
 		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
+		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
 		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
 		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
+		{"POST", "/settings/certificates", s.protected(s.requireSession(s.setCertificates))},
 		{"POST", "/settings/registries", s.protected(s.requireSession(s.saveRegistry))},
 		{"POST", "/settings/registries/{host}/test", s.protected(s.requireSession(s.testRegistry))},
 		{"POST", "/settings/registries/{host}/remove", s.protected(s.requireSession(s.removeRegistry))},
@@ -296,7 +304,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -307,8 +315,15 @@ var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp"
 func (s *server) parseTemplates(names ...string) (map[string]*template.Template, error) {
 	pages := map[string]*template.Template{}
 	for _, name := range names {
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS,
-			"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html", "templates/"+name+".html")
+		files := []string{"templates/base.html", "templates/shell.html", "templates/parts.html", "templates/compose.html"}
+		// An app's Domains page draws /domains' rows and Add panel, and Settings › Certificates its
+		// banners (feature 023). domains.html comes first, so the page's own "content" is the
+		// one the set keeps.
+		if name == "app" || name == "settings" {
+			files = append(files, "templates/domains.html")
+		}
+		files = append(files, "templates/"+name+".html")
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

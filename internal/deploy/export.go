@@ -39,7 +39,7 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 
-	var routes, volumes, volumeVars, secrets, pulls, backups []string
+	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups []string
 	for _, svc := range a.Services {
 		if host, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
 			// Without the variable, the task's template waits for it and the
@@ -52,7 +52,17 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 				path, nomadjob.RegistryUsernameEnv, nomadjob.RegistryPasswordEnv))
 		}
 		for _, dom := range svc.Domains {
-			routes = append(routes, fmt.Sprintf("  %s -> service %s, port %s", dom.Host, svc.Name, dom.Port))
+			routes = append(routes, fmt.Sprintf("  %s -> service %s, port %s%s", dom.Host, svc.Name, dom.Port, domainOptions(dom)))
+			if dom.TeamOnly {
+				// Without the middleware, Traefik disables the router: the
+				// domain answers 404 instead of opening unguarded.
+				router := nomadjob.DomainRouterName(a.ID, svc.Name, dom.Host)
+				teamAuth = append(teamAuth, fmt.Sprintf(
+					"- Traefik file-provider middleware %s@file (basic auth) for %s, which the router %s names.\n"+
+						"  Traefik renders it from the Nomad Variable %s, item %s = team:<bcrypt hash>;\n"+
+						"  without it the router stays disabled. Create it before running the job.",
+					nomadjob.TeamAuthMiddleware(router), dom.Host, router, TraefikVariablePath, nomadjob.TeamAuthMiddleware(router)))
+			}
 		}
 		for _, v := range svc.Volumes {
 			volumes = append(volumes, fmt.Sprintf("- Host volume %q, mounted by service %s.", nomadjob.VolumeName(a.ID, v.Name), svc.Name))
@@ -89,6 +99,9 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 			b.WriteString(r + "\n")
 		}
 	}
+	for _, t := range teamAuth {
+		b.WriteString(t + "\n")
+	}
 	for _, v := range volumes {
 		b.WriteString(v + "\n")
 	}
@@ -111,4 +124,26 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 		fmt.Fprintf(&b, "\nBackups run as separate Nomad jobs (%s), not part of this file.\n", strings.Join(backups, ", "))
 	}
 	return b.String()
+}
+
+// domainOptions words a domain's options for the header's routing list: " (path
+// /api, redirects www.example.com here, team only)", or nothing for a plain
+// domain.
+func domainOptions(d app.Domain) string {
+	var opts []string
+	if d.Path != "" {
+		opts = append(opts, "path "+d.Path)
+	}
+	if d.WWWRedirect {
+		if pair := d.RedirectPair(); pair != "" {
+			opts = append(opts, "redirects "+pair+" here")
+		}
+	}
+	if d.TeamOnly {
+		opts = append(opts, "team only")
+	}
+	if len(opts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(opts, ", ") + ")"
 }

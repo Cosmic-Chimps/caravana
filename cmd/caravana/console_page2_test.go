@@ -239,13 +239,16 @@ func (c *console) domains(t *testing.T) {
 		refuse(host, "is the console's own address")
 	}
 
-	// 4. Remove it, from the form in its confirmation.
-	resp, page = c.get(t, domainsPath)
-	remove, ok := formWhere(formsPosting(page, domainsPath+"/remove"), "host", added)
-	if resp.StatusCode != http.StatusOK || !ok || remove.Get("service") != "api" || remove.Get("revision") == "" {
-		t.Fatalf("the Remove form of %s = %v (found %v), want service api and a revision:\n%s", added, remove, ok, pageText(page))
+	// 4. Remove it, from the form in its confirmation (since 023 the row's detail holds it, at
+	// POST /domains/{host}/remove with the app, its service and the page's revision).
+	removePath := "/domains/" + added + "/remove"
+	resp, page = c.get(t, domainsPath+"?open="+added)
+	forms = formsPosting(page, removePath)
+	if resp.StatusCode != http.StatusOK || len(forms) != 1 || forms[0].Get("app") != id || forms[0].Get("service") != "api" || forms[0].Get("revision") == "" {
+		t.Fatalf("the Remove form of %s = %v, want one with the app, service api and a revision:\n%s", added, forms, pageText(page))
 	}
-	resp, body = c.post(t, domainsPath+"/remove", remove)
+	remove := forms[0]
+	resp, body = c.post(t, removePath, remove)
 	c.deployedFrom(t, id, resp, body)
 
 	// A fresh value: decoding into the one read before would keep api's old domains, since an
@@ -274,7 +277,7 @@ func (c *console) domains(t *testing.T) {
 
 	// The same form again: the domain is gone, so there is nothing to remove.
 	again := c.deploymentCount(t, id)
-	resp, body = c.post(t, domainsPath+"/remove", remove)
+	resp, body = c.post(t, removePath, remove)
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(pageText(body), "no domain") {
 		t.Errorf("POST the Remove form of a domain already gone = %d, want 422 saying the app has no such domain:\n%s", resp.StatusCode, pageText(body))
 	}

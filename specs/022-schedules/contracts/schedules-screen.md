@@ -314,3 +314,7 @@ The rest:
     the stacked Next has no leading dot (fix 1's block form).
 - **Edit's "Run inside"** is text ("`web` of `clock`") when it can't change. The preview's
   timezone row stays.
+
+## Last look (designer, 2026-10-24)
+
+Approved with nothing to change. 022 is done.

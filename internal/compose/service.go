@@ -168,7 +168,8 @@ func applyOverlay(field string, svc *app.Service, sc types.ServiceConfig, ov Ove
 		if err != nil {
 			return err
 		}
-		svc.Domains = append(svc.Domains, app.Domain{Host: d.Host, Port: name})
+		svc.Domains = append(svc.Domains, app.Domain{Host: d.Host, Port: name,
+			Path: d.Path, WWWRedirect: d.WWWRedirect, TeamOnly: d.TeamOnly})
 	}
 
 	composeCheck := sc.HealthCheck != nil && !sc.HealthCheck.Disable &&

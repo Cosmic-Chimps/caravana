@@ -95,6 +95,9 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	svc.SetVolumeBackupTimeout(cfg.VolumeBackupTimeout)
 	svc.SetPublicURL(cfg.PublicURL)
 	svc.SetNotifyResolveAfter(cfg.NotifyResolveAfter)
+	svc.SetEdgeAddress(cfg.EdgeAddress)
+	svc.SetCertResolver(cfg.Settings.CertResolver)
+	svc.SetACME(cfg.ACME, cfg.ACMEEmail)
 	if serviceHook != nil {
 		serviceHook(svc)
 	}

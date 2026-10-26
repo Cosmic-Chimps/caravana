@@ -98,7 +98,7 @@ steps, docs and the review cycle. A Sonnet agent builds each phase; Opus reviews
 Goal: a schedule runs a command in a fresh copy at its time and records the run with output.
 Independent test: quickstart §1.
 
-- [x] T009 [US1] `internal/api/schedules.go` + `schedules_test.go` + `api/openapi.yaml` 0.24.0:
+- [X] T009 [US1] `internal/api/schedules.go` + `schedules_test.go` + `api/openapi.yaml` 0.24.0:
   `listSchedules`, `createSchedule`, `getSchedule`, `updateSchedule`, `deleteSchedule`,
   `listScheduleRuns`, `getScheduleRun`, `getScheduleRunOutput` (text/plain, `Cache-Control:
   no-store`, `Caravana-Output-Cut`), schemas `NewSchedule`, `Schedule`, `ScheduleRun`, codes
@@ -106,7 +106,7 @@ Independent test: quickstart §1.
   the `invalid_field` fields; `protectedRoutes` entries; the contract test; the scope walk expects
   403 for every new route (no `allowedForDeployTokens` change); a test that no list, run or
   attention answer holds a run's output.
-- [x] T010 [US1] Console list and run page: `internal/ui/schedules.go`, `templates/schedules.html`,
+- [X] T010 [US1] Console list and run page: `internal/ui/schedules.go`, `templates/schedules.html`,
   `schedulesnav` in `shell.go`/`shell.html` (Workspace › Schedules, `clock` icon in `icons.go`,
   active on `/schedules*`), routes `GET /schedules`, `GET /parts/schedules`,
   `GET /schedules/{id}/runs/{runId}` per contracts/schedules-screen.md "The list", "The row's
@@ -117,7 +117,7 @@ Independent test: quickstart §1.
   region on the `schedules` notice with stable ids; `ui/parity_test.go` entries. Handler tests
   per state (never run, ok, failed, running, paused, skipped) and a sentinel test that the
   output appears only on the run's page.
-- [x] T011 [US1] Styles: `internal/ui/style/input.css` "Page 5 (022)" section per the contract's
+- [X] T011 [US1] Styles: `internal/ui/style/input.css` "Page 5 (022)" section per the contract's
   sizes (the table columns, the row, the detail grid, the bars, the strip, the preview box, the
   chips, narrow rules under 900px), `tools/ui-css.sh build`, and the DESIGN.md Schedules section.
 
@@ -126,11 +126,11 @@ Independent test: quickstart §1.
 Goal: create, edit, pause, resume, run now, stop a run, delete, from the console and the API.
 Independent test: quickstart §3.
 
-- [x] T012 [US2] API: `runSchedule` (202), `pauseSchedule`, `resumeSchedule`, `stopScheduleRun`
+- [X] T012 [US2] API: `runSchedule` (202), `pauseSchedule`, `resumeSchedule`, `stopScheduleRun`
   (202), codes `run_going`, `run_not_running`, `app_stopped`, `no_live_deployment` on these
   routes, in `internal/api/schedules.go` and `api/openapi.yaml`; tests including a built-in's
   409s and the deploy-token 403s.
-- [x] T013 [US2] Console form: `internal/ui/schedulesform.go` + template section: `GET
+- [X] T013 [US2] Console form: `internal/ui/schedulesform.go` + template section: `GET
   /schedules/new`, `POST /schedules` (`action=check|create`), `GET /schedules/{id}/edit`,
   `POST /schedules/{id}` (`action=check|save`) per the contract's "New schedule" (Name with the
   default from the command, Run inside: app select with stopped apps disabled and the service
@@ -142,7 +142,7 @@ Independent test: quickstart §3.
   and Cancel; a refused submit redraws with the field error; create lands on
   `/schedules?created=<id>` with the row open). Handler tests: each preset, a cron line,
   unreadable words, each refusal, edit prefilled.
-- [x] T014 [US2] Console posts: `POST /schedules/{id}/run|pause|resume|delete` and
+- [X] T014 [US2] Console posts: `POST /schedules/{id}/run|pause|resume|delete` and
   `POST /schedules/{id}/runs/{runId}/stop` in `internal/ui/schedules.go`, the detail's buttons
   (Run now primary when the last run failed, Stop this run and Delete… behind `<details>`
   confirmations, Pause/Resume, Edit, Logs of last run; none of Pause/Edit/Delete on a built-in,
@@ -155,7 +155,7 @@ Independent test: quickstart §3.
 Goal: a failed run is a needs-you item and a notification; the next success clears it.
 Independent test: quickstart §2.
 
-- [x] T015 [US3] `internal/service/attention.go`: kinds `AttentionScheduleFailed` and
+- [X] T015 [US3] `internal/service/attention.go`: kinds `AttentionScheduleFailed` and
   `AttentionScheduleSkipping` from `LatestScheduleRuns` and `SkipStreak`, `Schedule`/`ScheduleID`
   on `AttentionItem`, `Detail` from the contract's sentence table ("Stopped at the 5 min limit.",
   "Exited with code 3.", "Couldn't start: …", "`<name>` has been skipped 3 times: each run takes
@@ -176,12 +176,12 @@ Independent test: quickstart §2.
 Goal: each backup policy is a read-only row of the list with its runs and next time.
 Independent test: quickstart §5.
 
-- [x] T017 [US4] Service and API: built-in rows in `ListSchedules` (T005 placed them; this task
+- [X] T017 [US4] Service and API: built-in rows in `ListSchedules` (T005 placed them; this task
   tests them end to end): `builtin: true`, words from the policy's cron, next from `cronwords.Next`,
   last runs from the backups table mapped to `ok|failed|running`, `getScheduleRunOutput` 404
   `output_not_kept`, the 409 `builtin_schedule` on every mutation; a volume and a Postgres
   policy in the tests.
-- [x] T018 [US4] Console: the built-in row and detail ("`<service> backup`", "pg_dump → `backups`"
+- [X] T018 [US4] Console: the built-in row and detail ("`<service> backup`", "pg_dump → `backups`"
   / "volumes → `backups`", the "Made by Backups…" sentence, Change in Backups, the run marks
   linking to the Backups tab), the Backups tab's times as `<time>` elements (T019's helper), the
   form refusing a built-in name. Handler tests.
@@ -191,13 +191,13 @@ Independent test: quickstart §5.
 Goal: every clock time reads UTC, with the viewer's local time beside it when scripts run.
 Independent test: quickstart §6.
 
-- [x] T019 [US5] `internal/ui/view.go`: a `clock` template helper drawing `<time
+- [X] T019 [US5] `internal/ui/view.go`: a `clock` template helper drawing `<time
   datetime="<RFC 3339 Z>" class="cv-clock">14:15 UTC</time>` (and the relative-day words the
   contract lists); applied on Schedules (Next, Last run, the strip titles, the detail, the
   preview box's three next runs), the run's page (title and "started …"), the Backups tab's run
   and next times, and the deployment entry's Live stage (`stages.go`). Tests that each page's
   clock times are `<time>` elements with a `Z` datetime and the " UTC" text.
-- [x] T020 [US5] `internal/ui/static/js/localtime.js` (ours: on load and after each htmx swap,
+- [X] T020 [US5] `internal/ui/static/js/localtime.js` (ours: on load and after each htmx swap,
   for every `time.cv-clock` append `<span class="cv-clock-local"> · 16:15 local</span>` from
   `Intl.DateTimeFormat` in the browser's zone, the same shape as the UTC text; the lede's
   "Your local time is shown beside them."; the form's "03:00 UTC is 05:00 local" hint; the
@@ -227,7 +227,7 @@ Independent test: quickstart §6.
   UTC with local time; Changed: Backups' times drawn as clock elements), `docs/plan.md` row 022
   ("one batch job per run on Caravana's clock" instead of "a Nomad periodic batch job", and the
   time ruling), the CLAUDE.md "Where we are" paragraph for 022, `api/openapi.yaml` info text.
-- [ ] T024 Checks (the CI list, `go test -race` on ui/service/store), `TestConsoleLab`, the
+- [X] T024 Checks (the CI list, `go test -race` on ui/service/store), `TestConsoleLab`, the
   review instance staged with the contract's review list (a failed, a running, a paused, a
   never-run, a built-in Postgres and a built-in volume schedule; the form states; the run pages;
   the needs-you item and a delivery; the Configure panel; the clock times with and without

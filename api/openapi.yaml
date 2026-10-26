@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.24.0
+  version: 0.25.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -34,6 +34,11 @@ info:
     `promoteApp` (for that app's ID), `createApp` (for an ID in scope), and
     `createEnvironmentApp` and `getEnvironmentApp` (for that project and app name) answer.
     Every other request, and those about another app, is 403 `token_scope`, before any work.
+
+    A domain may be Team only (`teamOnly`): HTTP basic auth, user `team`, with a password
+    Caravana makes. The password is shown in two answers only, each once and sent with
+    `Cache-Control: no-store`: the `deployApp` or `deployCompose` that turned the option on
+    (`Deployment.teamPasswords`) and `rotateTeamPassword`. Caravana keeps only its hash.
 
     `deployApp`, `deployCompose`, `promoteApp` and `callWebhook` accept optional
     `Caravana-Origin-*` headers saying where the deploy came from (a CI run); see
@@ -2008,6 +2013,245 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/domains:
+    get:
+      operationId: listDomains
+      summary: List every domain of every app, with its state.
+      description: |
+        Every domain of the stored apps, and for a domain with `wwwRedirect` the pair it
+        redirects (a row of its own, state `redirect`, `redirectOf` naming the target). Each
+        has the state Caravana's last check gave it: its DNS against this host's addresses, and
+        the certificate Traefik presents for it. Sorted problems first (`dns_elsewhere`, then
+        `cert_expiring` and `dns_none`, then `cert_pending`), then `live`, then the rest, by
+        host. Domains are checked every 15 minutes, every minute while the console's Domains
+        page is open; `fresh=true` checks them now and answers with what it found. A domain of
+        an app that is stopped or has no healthy deployment is `not_served` and isn't checked.
+      tags: [domains]
+      parameters:
+        - name: app
+          in: query
+          description: Only this app's domains (an app ID). 404 when there is no such app.
+          schema: {type: string}
+        - name: project
+          in: query
+          description: Only the domains of apps in this project. 404 `project_not_found` when there is none.
+          schema: {type: string}
+        - name: fresh
+          in: query
+          description: "`true` checks every listed domain now instead of answering the last checks."
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The domains.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/domains/check:
+    post:
+      operationId: checkDomain
+      summary: Check one host now.
+      description: |
+        Runs the checks now, not from the cache: the host's DNS against this host's addresses
+        and, when an app that is served has the host, the certificate Traefik presents for it.
+        A host no app has yet (before adding it) gets DNS only, with the certificate `none`: it
+        is issued after the domain is added and deployed. `record` lists the records that point
+        the host here (an A per IPv4 address of this host, an AAAA per IPv6), empty when this
+        host's own addresses aren't known (`CARAVANA_PUBLIC_URL` unset or not resolving). When
+        an app has the host, what was found is saved as its domain's state. Sent with
+        `Cache-Control: no-store`.
+      tags: [domains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckDomainRequest"
+      responses:
+        "200":
+          description: What the checks found.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/DomainInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/domains/{host}:
+    parameters:
+      - $ref: "#/components/parameters/DomainHost"
+    get:
+      operationId: getDomain
+      summary: Read one domain.
+      description: |
+        The domain as `listDomains` has it, from the last check. A host that is no app's domain
+        (nor the pair one redirects) is 404 `domain_not_found`. When two apps claim one host,
+        the first by app ID answers.
+      tags: [domains]
+      responses:
+        "200":
+          description: The domain.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/DomainNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/domains/{host}/team-password:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - $ref: "#/components/parameters/DomainHost"
+    post:
+      operationId: rotateTeamPassword
+      summary: Give a Team-only domain a new password.
+      description: |
+        Makes a new password for the domain's basic auth (user `team`) and answers it, this
+        once, with `Cache-Control: no-store`; Caravana keeps only its hash. The old password
+        stops working as soon as Traefik reads the change, a moment later, with no deploy and
+        no restart. When the change can't be written to Nomad (502), the old password stays.
+      tags: [domains]
+      responses:
+        "200":
+          description: The new password.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamPassword"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/DomainNotFound"
+        "409":
+          $ref: "#/components/responses/DomainConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/settings/certificates:
+    get:
+      operationId: getCertificateSettings
+      summary: Read how this installation gets its certificates.
+      description: |
+        The issuer and its contact email are the installer's (`--acme`, `--acme-email`):
+        Traefik reads them when it starts, so they are shown here and changed by running the
+        installer again. `issuer` is `unknown` on a host installed before version 0.25.0 until
+        the installer runs again. `warnBeforeDays` is Caravana's own setting.
+      tags: [domains]
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putCertificateSettings
+      summary: Set how long before its end a certificate counts as expiring.
+      description: |
+        7, 14 or 30 days. A certificate that close to its end has missed its renewal (Traefik
+        renews 30 days before), so its domain becomes `cert_expiring` and a needs-you item
+        (`domain_cert_expiring`). The domains' last checks are judged again with the new value
+        at once. Answers the settings as they are now.
+      tags: [domains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateSettingsRequest"
+      responses:
+        "200":
+          description: The settings, changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/DomainInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/certificates:
+    get:
+      operationId: listCertificates
+      summary: List the certificate of every domain.
+      description: |
+        The certificate the last check of each domain found, for the domains of apps that are
+        served and have been checked: problems first (`expiring`, `error`, `pending`), then
+        `issued` and Traefik's own (`self`), by host. Caravana reads what Traefik presents; it
+        never reads Traefik's certificate store.
+      tags: [domains]
+      responses:
+        "200":
+          description: The certificates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/apps/{id}/backups:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -3037,6 +3281,13 @@ components:
       schema:
         type: string
         pattern: "^[a-z2-7]{26}$"
+    DomainHost:
+      name: host
+      in: path
+      required: true
+      description: The domain's host, lowercase (`shop.example.com`).
+      schema:
+        type: string
     ScheduleID:
       name: scheduleId
       in: path
@@ -3227,10 +3478,35 @@ components:
             additionalProperties: false
             required: [host, port]
             properties:
-              host: {type: string}
+              host:
+                type: string
+                description: |
+                  A hostname (`shop.example.com`). DNS names are case-insensitive, so one sent with
+                  capitals (`Shop.Example.COM`) is stored in lowercase; the stored app's document
+                  changes only when a host had capitals. Anything else that isn't a hostname is
+                  refused with `invalid_field` naming the field.
               port:
                 type: string
                 description: The name of a port declared on this service.
+              path:
+                type: string
+                maxLength: 200
+                description: |
+                  Only URLs under this prefix (`/api`) go to the service; the prefix is kept.
+                  Starts with `/`; no spaces, backticks, `&&` or `||`. Empty or absent: every
+                  path.
+              wwwRedirect:
+                type: boolean
+                description: |
+                  This host is where its pair (`www.<host>` for an apex host, the apex for a
+                  `www.` host) redirects, permanently. Only for an apex or a `www.` host, and
+                  only when no app has the pair as a domain.
+              teamOnly:
+                type: boolean
+                description: |
+                  HTTP basic auth in front of the domain, user `team`. The deploy that turns it
+                  on answers the password once (`Deployment.teamPasswords`); `rotateTeamPassword`
+                  makes a new one.
         replicas:
           type: integer
           minimum: 1
@@ -3330,6 +3606,16 @@ components:
                 minimum: 1
                 maximum: 65535
                 description: The container port the domain routes to. Optional when the service has one port.
+              path:
+                type: string
+                maxLength: 200
+                description: As the app's `services[].domains[].path`.
+              wwwRedirect:
+                type: boolean
+                description: As the app's `services[].domains[].wwwRedirect`.
+              teamOnly:
+                type: boolean
+                description: As the app's `services[].domains[].teamOnly`.
         health:
           type: object
           additionalProperties: false
@@ -3613,10 +3899,12 @@ components:
           description: |
             For problems, what the needs-you list calls it (`AttentionItem.kind`), such as
             `deploy_failed`, `backup_failed`, `restarting`, `out_of_memory`, `schedule_failed`
-            (a schedule's latest run failed) or `schedule_skipping` (its last 3 slots were
-            skipped). A schedule that keeps failing is one problem: one `problem.opened`, then
-            one `problem.resolved` after a run succeeds. Receivers should accept kinds they don't
-            know.
+            (a schedule's latest run failed), `schedule_skipping` (its last 3 slots were
+            skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
+            `domain_cert_expiring` (a domain's certificate is near its end and not renewed). A
+            schedule that keeps failing is one problem: one `problem.opened`, then one
+            `problem.resolved` after a run succeeds; so is a domain, per host. Receivers should
+            accept kinds they don't know.
         app:
           type: string
           description: The app's ID. Absent for installation-wide events.
@@ -3674,10 +3962,23 @@ components:
           description: |
             `problem.opened` of `schedule_failed` only, when the run exited with a code (not
             when it was stopped at its limit or couldn't start). Absent otherwise.
+        domain:
+          type: string
+          description: "`problem.opened` of the domain kinds: the host."
+        addressSeen:
+          type: string
+          description: |
+            `problem.opened` of `domain_dns_elsewhere`: the address the domain's DNS gave that
+            isn't this host's.
+        expiresAt:
+          type: string
+          format: date-time
+          description: "`problem.opened` of `domain_cert_expiring`: when the certificate ends."
         url:
           type: string
           description: |
-            The console page about it (for a schedule, the Schedules page at that schedule).
+            The console page about it (for a schedule, the Schedules page at that schedule; for
+            a domain, the Domains page with it open).
             Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`).
         at: {type: string, format: date-time}
 
@@ -3975,6 +4276,222 @@ components:
         project: {type: string}
         environment: {type: string}
         appName: {type: string}
+
+    DomainList:
+      type: object
+      additionalProperties: false
+      required: [domains]
+      properties:
+        domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/Domain"
+
+    Domain:
+      type: object
+      additionalProperties: false
+      required: [host, app, project, environment, appName, service, port, path, wwwRedirect, teamOnly, router, state, dns, certificate, checkedAt]
+      properties:
+        host: {type: string}
+        app:
+          type: string
+          description: The app's ID.
+        project: {$ref: "#/components/schemas/PlaceProject"}
+        environment: {$ref: "#/components/schemas/PlaceEnvironment"}
+        appName: {$ref: "#/components/schemas/PlaceAppName"}
+        service: {type: string}
+        port:
+          type: string
+          description: The name of the service's port the domain goes to.
+        path:
+          type: string
+          description: The path prefix; empty for none.
+        wwwRedirect: {type: boolean}
+        teamOnly: {type: boolean}
+        router:
+          type: string
+          description: |
+            The Traefik router serving it: `<app>-<service>`, or `<app>-<service>-<8 hex>` for a
+            domain with options (`path`, `wwwRedirect`, `teamOnly`).
+        redirectOf:
+          type: string
+          description: "Only on a redirect row (state `redirect`): the host it redirects to."
+        state:
+          type: string
+          enum: [dns_elsewhere, cert_expiring, cert_pending, dns_none, self_signed, redirect, live, unknown, not_served]
+          description: |
+            The first that applies: `not_served` (the app is stopped or has no healthy
+            deployment; not checked), `dns_elsewhere` (DNS answers with an address that isn't
+            this host's), `cert_expiring` (issued, within `warnBeforeDays` of its end),
+            `cert_pending` (Traefik answers with its own certificate while Let's Encrypt is
+            being asked), `dns_none` (no DNS record), `self_signed` (Traefik's own certificate,
+            installed without Let's Encrypt), `redirect` (the pair of a `wwwRedirect` domain),
+            `live` (DNS here and a trusted certificate), `unknown` (never checked, or the checks
+            couldn't be made).
+        dns:
+          $ref: "#/components/schemas/DomainDNS"
+        certificate:
+          $ref: "#/components/schemas/DomainCertificate"
+        checkedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When it was last checked; null when never.
+
+    DomainDNS:
+      type: object
+      additionalProperties: false
+      required: [status, seen, expected]
+      properties:
+        status:
+          type: string
+          enum: [ok, elsewhere, none, unknown]
+          description: |
+            `ok`: every resolver that answered gave this host. `elsewhere`: one gave another
+            address (a stale AAAA counts). `none`: no record. `unknown`: no resolver answered,
+            or this host's addresses aren't known.
+        seen:
+          type: array
+          items: {type: string}
+          description: The addresses the resolvers answered.
+        expected:
+          type: array
+          items: {type: string}
+          description: This host's addresses when it was checked.
+
+    DomainCertificate:
+      type: object
+      additionalProperties: false
+      required: [status, issuer, notAfter, renewsAt]
+      properties:
+        status:
+          type: string
+          enum: [issued, pending, self, expiring, error, none]
+          description: |
+            `issued`: a trusted certificate for the host. `pending`: Traefik's own while Let's
+            Encrypt is asked. `self`: Traefik's own, installed without Let's Encrypt.
+            `expiring`: issued and within the warning window. `error`: the handshake failed or
+            the certificate isn't one to trust. `none`: not checked (the app isn't served, or
+            the host is no app's yet).
+        issuer:
+          type: string
+          description: The issuer's name (`Let's Encrypt`, `Traefik's own`); empty when none was presented.
+        notAfter: {type: [string, "null"], format: date-time}
+        renewsAt:
+          type: [string, "null"]
+          format: date-time
+          description: When Traefik renews it, 30 days before `notAfter`; null unless issued or expiring.
+
+    DomainCheck:
+      type: object
+      additionalProperties: false
+      required: [host, record, dns, certificate, checkedAt]
+      properties:
+        host: {type: string}
+        record:
+          type: array
+          description: The records that point the host here; empty when this host's addresses aren't known.
+          items:
+            $ref: "#/components/schemas/DNSRecord"
+        dns:
+          $ref: "#/components/schemas/DomainDNS"
+        certificate:
+          $ref: "#/components/schemas/DomainCertificate"
+        checkedAt: {type: string, format: date-time}
+
+    DNSRecord:
+      type: object
+      additionalProperties: false
+      required: [type, name, value]
+      properties:
+        type: {type: string, enum: [A, AAAA]}
+        name:
+          type: string
+          description: "`@` for an apex host, else its first label (`shop` for `shop.example.com`)."
+        value:
+          type: string
+          description: One of this host's addresses.
+
+    CheckDomainRequest:
+      type: object
+      additionalProperties: false
+      required: [host]
+      properties:
+        host:
+          type: string
+          description: A hostname (no scheme, port, path or wildcard), not the console's own. Capitals are read as lowercase (DNS names are case-insensitive), and the answer's `host` is the lowercase name.
+        app:
+          type: string
+          description: An app ID; when set, it must exist. It doesn't change what is checked.
+
+    TeamPassword:
+      type: object
+      additionalProperties: false
+      required: [host, user, teamPassword]
+      properties:
+        host: {type: string}
+        user: {type: string, const: team}
+        teamPassword:
+          type: string
+          description: The new password, shown this once.
+
+    CertificateSettings:
+      type: object
+      additionalProperties: false
+      required: [issuer, contactEmail, warnBeforeDays, edgeAddress]
+      properties:
+        issuer:
+          type: string
+          enum: [letsencrypt, letsencrypt-staging, none, unknown]
+          description: |
+            `none`: installed without Let's Encrypt, Traefik serves its own certificate.
+            `unknown`: the installer hasn't said (run it again).
+        contactEmail:
+          type: string
+          description: The email Let's Encrypt has; empty when unknown. Read-only.
+        warnBeforeDays:
+          type: integer
+          enum: [7, 14, 30]
+        edgeAddress:
+          type: string
+          description: Where Caravana reaches Traefik for the certificate checks (`CARAVANA_EDGE_ADDRESS`).
+
+    CertificateSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [warnBeforeDays]
+      properties:
+        warnBeforeDays:
+          type: integer
+          enum: [7, 14, 30]
+
+    CertificateList:
+      type: object
+      additionalProperties: false
+      required: [certificates]
+      properties:
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Certificate"
+
+    Certificate:
+      type: object
+      additionalProperties: false
+      required: [host, app, service, issuer, status, notAfter, renewsAt]
+      properties:
+        host: {type: string}
+        app:
+          type: string
+          description: The app's ID.
+        service: {type: string}
+        issuer:
+          type: string
+          description: "`Let's Encrypt`, `Traefik's own`, …"
+        status:
+          type: string
+          enum: [issued, pending, self, expiring, error]
+        notAfter: {type: [string, "null"], format: date-time}
+        renewsAt: {type: [string, "null"], format: date-time}
 
     ScheduleList:
       type: object
@@ -4490,13 +5007,18 @@ components:
         kind:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
-            schedule_failed, schedule_skipping]
+            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
             stopped at its limit, or it couldn't start); a later run that succeeds clears it.
             `schedule_skipping`, a warning: the schedule's last 3 slots were skipped because
-            the run before was still going. Clients should accept kinds they don't know.
+            the run before was still going. `domain_dns_elsewhere`: a domain's DNS answers with
+            an address that isn't this host's. `domain_cert_expiring`: a domain's certificate
+            ends within the warning window (`getCertificateSettings`) and hasn't been renewed,
+            which is how a failing renewal shows. Both come from Caravana's last check of the
+            domain (`listDomains`) and go when a check finds it fixed, or the domain is removed.
+            Clients should accept kinds they don't know.
         appId:
           type: string
           description: Absent for `no_backup_destination`, which is about the installation.
@@ -4511,10 +5033,22 @@ components:
           description: The name of `appId`'s app in its environment. Absent when `appId` is.
         service:
           type: string
-          description: The service, for the copy, backup and schedule kinds.
+          description: The service, for the copy, backup, schedule and domain kinds.
         schedule:
           type: string
           description: The schedule's name, for the schedule kinds.
+        domain:
+          type: string
+          description: The host, for the domain kinds (`getDomain`).
+        addressSeen:
+          type: string
+          description: |
+            For `domain_dns_elsewhere`: the first address the domain's DNS gave that isn't this
+            host's.
+        expiresAt:
+          type: string
+          format: date-time
+          description: For `domain_cert_expiring`, when the certificate ends.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -4540,13 +5074,17 @@ components:
           description: |
             When it happened: the deployment's end, the copy's last restart (an unhealthy copy:
             its start), the backup's or restore's end, the newest change to an app that asks
-            for backups, the failed run's end, or the newest skipped slot.
+            for backups, the failed run's end, the newest skipped slot, or the domain check
+            that found it.
         detail:
           type: string
           description: |
             The raw fact, e.g. Nomad's description or the error of the deploy or backup. For the
             schedule kinds, a sentence in Caravana's words ("Exited with code 3.", "Stopped at
             the 5 min limit.", "Couldn't start: Nomad refused the job."), never the run's output.
+            For the domain kinds, the sentence ("shop.example.com points at 185.199.108.153,
+            which isn't this host.", "The certificate for bi.example.com expires in 6 days and
+            hasn't been renewed.").
 
     LogLine:
       type: object
@@ -4648,6 +5186,16 @@ components:
         updatedAt: {type: string, format: date-time}
         progress:
           $ref: "#/components/schemas/Progress"
+        teamPasswords:
+          type: object
+          additionalProperties: {type: string}
+          description: |
+            Only in the answer of the `deployApp` or `deployCompose` that turned a domain's
+            `teamOnly` on: each such host and its password (user `team`), shown this once, and
+            the answer is sent with `Cache-Control: no-store`. Caravana keeps only the hash;
+            `rotateTeamPassword` makes a new one. Never in any other answer.
+          examples:
+            - {admin.example.com: 3q2-7wEvNfK0aXc1bRrP9mZ4yT6uJ8hL}
 
     Origin:
       type: object
@@ -5220,7 +5768,10 @@ components:
         record (see `Location`) is `failed`. Or `app_not_defined`: the app has no services yet,
         so there is nothing stored to deploy; nothing was recorded and there is no `Location`.
         Or `app_stopped`: the app is stopped (`stopApp`); start it first. Nothing was saved or
-        recorded and there is no `Location`.
+        recorded and there is no `Location`. Or `domain_taken` (`field` the domain's `host`,
+        `services[0].domains[1].host`, or its path in the Compose file): the deploy adds a host
+        another app has (as a domain, or as the pair its `wwwRedirect` redirects); the
+        `message` names that app. Nothing was saved or recorded.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -5356,6 +5907,31 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    DomainNotFound:
+      description: |
+        `domain_not_found`: no app has this host as a domain (`rotateTeamPassword`: the app
+        hasn't). Or `not_found`: no app has this ID.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    DomainConflict:
+      description: |
+        `not_team_only`: the domain isn't Team only, so it has no password. `app_stopped`: the
+        app is stopped; start it first. Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    DomainInvalid:
+      description: |
+        `invalid_field`, `field` naming it: `host` (not a hostname: a scheme, a port, a path or
+        a wildcard; or the console's own address) or `warnBeforeDays` (not 7, 14 or 30).
+        Nothing was changed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Internal:
       description: An unexpected server error. Details are in the server log.
       content:
@@ -5380,6 +5956,8 @@ tags:
     description: Channels that tell the owner what needs them and how deploys end, and their deliveries.
   - name: schedules
     description: Commands run on a timer in a fresh copy of an app, and their runs.
+  - name: domains
+    description: Every domain with its DNS and certificate state, Team-only passwords, and how certificates are issued.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account

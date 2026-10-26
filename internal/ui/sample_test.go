@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -281,7 +282,8 @@ func consolePages(t *testing.T, e *consoleEnv, ids ...string) map[string]string 
 		pages[name] = body
 		return body
 	}
-	for _, path := range []string{"/apps", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens", "/parts/apps", "/parts/activity", "/apps?deleted=gone"} {
+	for _, path := range []string{"/apps", "/apps/new", "/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens", "/parts/apps", "/parts/activity", "/apps?deleted=gone",
+		"/domains", "/parts/domains", "/domains?app=nope"} {
 		get(path, path)
 	}
 	for _, id := range append(append([]string{}, ids...), "nope") {
@@ -325,6 +327,14 @@ func formPages(t *testing.T, e *consoleEnv, id string) map[string]string {
 	post("backup destination, errors", "/settings/backups", url.Values{"endpoint": {"ftp://x"}, "region": {"r"}, "bucket": {"backups"}, "accessKeyId": {"AK"}})
 	post("new signing secret", "/settings/notifications", url.Values{"kind": {"webhook"}, "name": {"hook"}, "url": {"https://example.com/hook"}, "events": {"problems"}})
 	post("channel, errors", "/settings/notifications", url.Values{"kind": {"ntfy"}, "name": {""}, "url": {"nope"}})
+	// Check now answers 303 to the page that draws the check.
+	if resp, _ := e.postForm(t, "/domains", url.Values{"action": {"check"}, "host": {"new.example.com"}}); resp.StatusCode == http.StatusSeeOther {
+		page, _, _ := strings.Cut(location(t, resp), "#")
+		_, pages["domain, checked"] = e.get(t, page)
+	} else {
+		t.Fatalf("POST /domains (Check now) = %d, want 303", resp.StatusCode)
+	}
+	post("domain, errors", "/domains", url.Values{"action": {"add"}, "host": {"Bad Host"}})
 	return pages
 }
 

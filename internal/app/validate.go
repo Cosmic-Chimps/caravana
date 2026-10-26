@@ -97,7 +97,7 @@ func ValidateApp(a App) error {
 			return err
 		}
 	}
-	return nil
+	return validateRedirectPairs(a)
 }
 
 // validateBackup checks a service's backup policy. What needs the
@@ -345,12 +345,59 @@ func validateDomains(field string, domains []Domain, ports, hosts map[string]boo
 		}
 		hosts[dom.Host] = true
 
+		if err := validateDomainOptions(f, dom); err != nil {
+			return err
+		}
+
 		if !ports[dom.Port] {
 			return NewFieldError(f+".port", "%q is not a port of this service", dom.Port)
 		}
 		// One router per service, so every domain must go to the same port.
 		if dom.Port != domains[0].Port {
 			return NewFieldError(f+".port", "is %q, but domains[0] uses %q; all domains of a service must use the same port", dom.Port, domains[0].Port)
+		}
+	}
+	return nil
+}
+
+// maxDomainPathLen is the longest path prefix a domain may have.
+const maxDomainPathLen = 200
+
+// validateDomainOptions checks a domain's path and redirect option. That the
+// redirect's pair isn't another domain of the app needs every host, so
+// validateRedirectPairs does it once all services are read.
+func validateDomainOptions(field string, dom Domain) error {
+	if p := dom.Path; p != "" {
+		switch {
+		case p[0] != '/':
+			return NewFieldError(field+".path", "%q must start with /", p)
+		case len(p) > maxDomainPathLen:
+			return NewFieldError(field+".path", "is %d bytes; at most %d are allowed", len(p), maxDomainPathLen)
+		case strings.ContainsAny(p, "` \x00") || strings.Contains(p, "||") || strings.Contains(p, "&&"):
+			return NewFieldError(field+".path", "must not contain a backtick, space, NUL, || or &&")
+		}
+	}
+	if dom.WWWRedirect && dom.RedirectPair() == "" {
+		return NewFieldError(field+".wwwRedirect", "only an apex host (example.com) or a www. host can redirect its pair, and %q is neither", dom.Host)
+	}
+	return nil
+}
+
+// validateRedirectPairs refuses a wwwRedirect whose pair is already a domain of
+// this app: the pair would be routed twice.
+func validateRedirectPairs(a App) error {
+	hosts := map[string]bool{}
+	for _, svc := range a.Services {
+		for _, dom := range svc.Domains {
+			hosts[dom.Host] = true
+		}
+	}
+	for i, svc := range a.Services {
+		for j, dom := range svc.Domains {
+			if pair := dom.RedirectPair(); dom.WWWRedirect && hosts[pair] {
+				return NewFieldError(fmt.Sprintf("services[%d].domains[%d].wwwRedirect", i, j),
+					"%q would redirect to %q, which is already a domain of this app", pair, dom.Host)
+			}
 		}
 	}
 	return nil

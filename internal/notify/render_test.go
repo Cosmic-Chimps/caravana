@@ -122,6 +122,40 @@ var scheduleFailed = Event{
 	At:          fixedNow,
 }
 
+// domainElsewhere and certExpiring are problems about a domain (feature 023):
+// the host, the address its DNS gave and when its certificate ends.
+var domainElsewhere = Event{
+	Type:        EventProblemOpened,
+	Kind:        "domain_dns_elsewhere",
+	AppID:       "shop",
+	Project:     "default",
+	Environment: "production",
+	AppName:     "shop",
+	Service:     "web",
+	Title:       "shop: partners.example.com points elsewhere",
+	Text:        "partners.example.com points at 185.199.108.153, which isn't this host.",
+	Domain:      "partners.example.com",
+	AddressSeen: "185.199.108.153",
+	URL:         "https://caravana.example.com/domains?open=partners.example.com#domain-partners.example.com",
+	At:          fixedNow,
+}
+
+var certExpiring = Event{
+	Type:        EventProblemOpened,
+	Kind:        "domain_cert_expiring",
+	AppID:       "shop",
+	Project:     "default",
+	Environment: "production",
+	AppName:     "shop",
+	Service:     "web",
+	Title:       "shop: the certificate for bi.example.com is expiring",
+	Text:        "The certificate for bi.example.com expires in 6 days and hasn't been renewed.",
+	Domain:      "bi.example.com",
+	ExpiresAt:   new(fixedNow.Add(6 * 24 * time.Hour)),
+	URL:         "https://caravana.example.com/domains?open=bi.example.com#domain-bi.example.com",
+	At:          fixedNow,
+}
+
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name string
@@ -144,6 +178,11 @@ func TestRender(t *testing.T) {
 		{"slack-schedule", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, scheduleFailed},
 		{"discord-schedule", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, scheduleFailed},
 		{"ntfy-schedule", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, scheduleFailed},
+		{"webhook-domain", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, domainElsewhere},
+		{"slack-domain", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, domainElsewhere},
+		{"discord-domain", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, certExpiring},
+		{"ntfy-domain", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, certExpiring},
+		{"webhook-cert", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, certExpiring},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

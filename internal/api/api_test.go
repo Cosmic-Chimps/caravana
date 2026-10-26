@@ -18,6 +18,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
@@ -136,6 +137,11 @@ func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service
 		t.Fatalf("create token: %v", err)
 	}
 	e.Token = created.Token
+	// Domains (feature 023): no watcher pass, and checks that never leave the
+	// process (a resolver that finds nothing, a dialer that is refused). Tests
+	// of the checks give their own fakes with SetEdge.
+	svc.SetDomainWatchGaps(time.Hour, time.Hour)
+	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 	if setup != nil {
 		setup(svc)
 	}

@@ -54,6 +54,17 @@ type Config struct {
 	// list before "resolved" is sent, so one that flaps does not send a message
 	// on every swing (feature 018).
 	NotifyResolveAfter time.Duration
+	// EdgeAddress is where Traefik's public HTTPS entrypoint answers, host:port,
+	// as seen from this machine. The domain checks dial it with the domain as
+	// the TLS server name to read the certificate it serves (feature 023).
+	EdgeAddress string
+	// ACME is the certificate authority the installation uses: "production" or
+	// "staging" (Let's Encrypt), "none" (Traefik's own certificate), or empty
+	// when it isn't said. The console words its certificate advice by it.
+	ACME string
+	// ACMEEmail is the address given to the certificate authority; empty when
+	// it isn't said.
+	ACMEEmail string
 }
 
 // Secret is a string that never prints. Formatting it with fmt or logging it
@@ -97,6 +108,9 @@ var (
 	volumeTimeoutSetting = setting{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "volume-backup-timeout"}
 	publicURLSetting     = setting{"CARAVANA_PUBLIC_URL", "public-url"}
 	resolveAfterSetting  = setting{"CARAVANA_NOTIFY_RESOLVE_AFTER", "notify-resolve-after"}
+	edgeAddressSetting   = setting{"CARAVANA_EDGE_ADDRESS", "edge-address"}
+	acmeSetting          = setting{"CARAVANA_ACME", "acme"}
+	acmeEmailSetting     = setting{"CARAVANA_ACME_EMAIL", "acme-email"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -140,6 +154,9 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	volumeTimeout := fs.String(volumeTimeoutSetting.flag, envOr(volumeTimeoutSetting, "30m"), "longest a volume backup or restore may take, as a duration such as 30m; the service stays stopped meanwhile")
 	publicURL := fs.String(publicURLSetting.flag, envOr(publicURLSetting, ""), "the console's own address, such as https://caravana.example.com, used for links in notifications; empty means no links")
 	resolveAfter := fs.String(resolveAfterSetting.flag, envOr(resolveAfterSetting, "5m"), "how long a problem must be gone before a notification says it is resolved, as a duration such as 5m; at least 10s")
+	edgeAddress := fs.String(edgeAddressSetting.flag, envOr(edgeAddressSetting, "127.0.0.1:443"), "where Traefik's HTTPS entrypoint answers, host:port, for the domain certificate checks")
+	acme := fs.String(acmeSetting.flag, envOr(acmeSetting, ""), "the certificate authority: production, staging or none; empty means not said")
+	acmeEmail := fs.String(acmeEmailSetting.flag, envOr(acmeEmailSetting, ""), "the address given to the certificate authority; empty means not said")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -175,6 +192,17 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	if c.PublicURL, err = parsePublicURL(*publicURL); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", publicURLSetting, err)
 	}
+	if err := checkListen(*edgeAddress); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", edgeAddressSetting, err)
+	}
+	c.EdgeAddress = *edgeAddress
+	switch *acme {
+	case "", "production", "staging", "none":
+		c.ACME = *acme
+	default:
+		return Config{}, fmt.Errorf("%s: %q must be production, staging or none", acmeSetting, *acme)
+	}
+	c.ACMEEmail = strings.TrimSpace(*acmeEmail)
 	if err := checkListen(c.Listen); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", listenSetting, err)
 	}

@@ -65,7 +65,7 @@ job "traefik" {
       # app's (Traefik's default is the rule's length), so an app that was given the console's
       # domain can never take the console's requests; Caravana also refuses such a domain.
       template {
-        destination = "local/caravana.yml"
+        destination = "local/dynamic/caravana.yml"
         data        = var.console_domain == "" ? "{}\n" : <<-YAML
           http:
             routers:
@@ -80,6 +80,50 @@ job "traefik" {
                 loadBalancer:
                   servers:
                     - url: "http://127.0.0.1:7070"
+          YAML
+      }
+
+      # Feature 023, Team only: each domain's basic-auth users are an item of the variable
+      # nomad/jobs/traefik (key <router>-auth, value team:<bcrypt hash>), written by Caravana.
+      # Traefik's own job may read that variable with no policy line. The file provider turns
+      # every item into the middleware <router>-auth@file, which the app's router names; a
+      # router naming a middleware that doesn't exist is disabled, so Caravana writes the
+      # variable before it registers the app. noop: the file is rewritten without restarting
+      # the task, and the provider watches the directory. A missing variable renders an empty
+      # file, so the task never waits for it. The marker item CARAVANA_TEAM (no -auth suffix)
+      # keeps the variable from being empty and is skipped. Without any -auth item the file is
+      # `{}`: a file with `http:` and nothing under it is refused by Traefik (the old
+      # middlewares would stay), and a template that fails to render kills the task.
+      template {
+        destination = "local/dynamic/team.yml"
+        change_mode = "noop"
+        data        = <<-YAML
+          {{- $any := false }}
+          {{- if nomadVarExists "nomad/jobs/traefik" }}
+          {{- with nomadVar "nomad/jobs/traefik" }}
+          {{- range $name, $users := . }}
+          {{- if regexMatch "-auth$" $name }}{{ $any = true }}{{ end }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- if $any }}
+          http:
+            middlewares:
+          {{- with nomadVar "nomad/jobs/traefik" }}
+          {{- range $name, $users := . }}
+          {{- if regexMatch "-auth$" $name }}
+              {{ $name }}:
+                basicAuth:
+                  realm: caravana
+                  removeHeader: true
+                  users:
+                    - {{ $users | toJSON }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- else }}
+          {}
+          {{- end }}
           YAML
       }
 
@@ -102,7 +146,8 @@ job "traefik" {
           # Follow Nomad's event stream instead of polling every 15 s, so a route is
           # dropped within the translator's 5 s shutdown_delay when an allocation stops.
           "--providers.nomad.watch=true",
-          "--providers.file.filename=/local/caravana.yml",
+          "--providers.file.directory=/local/dynamic",
+          "--providers.file.watch=true",
           "--certificatesresolvers.letsencrypt.acme.email=${var.acme_email}",
           "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json",
           "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",

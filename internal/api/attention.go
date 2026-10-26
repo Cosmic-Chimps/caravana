@@ -10,26 +10,32 @@ import (
 // attentionItemJSON is one thing that needs the owner (schema AttentionItem).
 // It carries the facts; the console writes the sentence.
 type attentionItemJSON struct {
-	Kind             string    `json:"kind"`
-	AppID            string    `json:"appId,omitempty"`
-	Project          string    `json:"project,omitempty"`
-	Environment      string    `json:"environment,omitempty"`
-	AppName          string    `json:"appName,omitempty"`
-	Service          string    `json:"service,omitempty"`
-	Schedule         string    `json:"schedule,omitempty"`   // the schedule kinds (feature 022): its name
-	ScheduleID       string    `json:"scheduleId,omitempty"` // and its ID
-	Copies           []string  `json:"copies,omitempty"`
-	DeploymentID     string    `json:"deploymentId,omitempty"`
-	DeploymentStatus string    `json:"deploymentStatus,omitempty"`
-	JobVersion       *uint64   `json:"jobVersion,omitempty"`
-	At               time.Time `json:"at"`
-	Detail           string    `json:"detail,omitempty"`
+	Kind             string   `json:"kind"`
+	AppID            string   `json:"appId,omitempty"`
+	Project          string   `json:"project,omitempty"`
+	Environment      string   `json:"environment,omitempty"`
+	AppName          string   `json:"appName,omitempty"`
+	Service          string   `json:"service,omitempty"`
+	Schedule         string   `json:"schedule,omitempty"`   // the schedule kinds (feature 022): its name
+	ScheduleID       string   `json:"scheduleId,omitempty"` // and its ID
+	Copies           []string `json:"copies,omitempty"`
+	DeploymentID     string   `json:"deploymentId,omitempty"`
+	DeploymentStatus string   `json:"deploymentStatus,omitempty"`
+	JobVersion       *uint64  `json:"jobVersion,omitempty"`
+	// The domain kinds (feature 023): the host, the address its DNS gave that
+	// isn't this host's, and when its certificate ends.
+	Domain      string     `json:"domain,omitempty"`
+	AddressSeen string     `json:"addressSeen,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	At          time.Time  `json:"at"`
+	Detail      string     `json:"detail,omitempty"`
 }
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Service: it.Service, Schedule: it.Schedule, ScheduleID: it.ScheduleID, Copies: it.Copies,
-		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version, At: it.When, Detail: it.Detail}
+		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version,
+		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, At: it.When, Detail: it.Detail}
 }
 
 // listAttention answers GET /v1/attention: what needs the owner, newest

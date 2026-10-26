@@ -93,6 +93,7 @@ type settingsData struct {
 	Dest            destinationForm
 	Registries      registriesData
 	Notifications   notificationsData
+	Certificates    certificatesData
 }
 
 // destinationForm is the Backup storage page: the saved destination (or what
@@ -227,6 +228,9 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 			return f, err
 		}
 	}
+	if f.Certs, err = s.svc.Certificates(ctx); err != nil {
+		return f, err
+	}
 	switch d, err := s.svc.GetBackupDestination(ctx); {
 	case err == nil:
 		f.Dest = &d
@@ -270,6 +274,13 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 		data.Dest = destinationSection(now, facts, states[entryBackupStorage], data.Dest)
 	case entryNotifications:
 		data.Notifications = notificationsSection(now, facts, states[entryNotifications], data.Notifications)
+	case entryCertificates:
+		cert, err := s.certificatesSection(r.Context(), now, facts, data.Certificates)
+		if err != nil {
+			s.serverError(w, "read certificate settings", err)
+			return
+		}
+		data.Certificates = cert
 	case entryTokens:
 		data.Tokens, data.OlderHidden = tokenRows(now, facts.Tokens, states[entryTokens], data.ShowOlder)
 		if s.svc != nil {

@@ -400,7 +400,9 @@ func (s *server) tabKey(key string) string {
 // liveApp answers GET /live/apps/{id}: the stream of one app's page.
 // With ?logs=1 (the Logs tab) it also carries the app's log lines; with
 // ?tab=running (the Running tab) a "usage" event every few seconds, which is
-// what makes the copies region read CPU and memory again.
+// what makes the copies region read CPU and memory again; with ?tab=domains
+// (the Domains page) the domains notice, and the domains are checked every
+// minute while it is open.
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	route := liveRoute{AppID: id,
@@ -412,6 +414,8 @@ func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.URL.Query().Get("tab") == "running":
 		route.Start = s.usageStart()
+	case r.URL.Query().Get("tab") == "domains":
+		route.Kinds, route.WatchDomains = append(route.Kinds, service.ChangeDomains), true
 	}
 	s.stream(w, r, route)
 }

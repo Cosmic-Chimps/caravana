@@ -641,8 +641,9 @@ drawn, not its length either: ten dots and a lock icon.
   one sentence in Body, the page's actions at the right, secondary small buttons and one primary
   (`cv-pghead`).
 - **Tables** (Variables, Domains): a `cv-panel` of grid rows, a 38px Raised Control head in Label style,
-  rows 52px at least with 1px dividers, Raised Control on hover. A confirmation opens as an overlay under
-  its row's button, so these panels don't clip. A narrow table stacks its cells by its own width.
+  rows 52px at least with 1px dividers, Raised Control on hover. A Variables confirmation opens as an overlay
+  under its row's button, so the panel doesn't clip; a Domains row's (feature 023) opens inline, in the open
+  row's detail (see Domains). A narrow table stacks its cells by its own width.
 - **Backups:** a banner when there is no destination (Panel shape, warning mark, one button), a row for
   each service that could be backed up and isn't (warning mark, a sentence, "Back up daily"), then one
   `<details>` per backed-up service: the summary row (chevron, status mark, what, how often and kept, last
@@ -661,7 +662,7 @@ One page per entry, as the handoff draws Settings, with what the console has tod
 and the content, in the shell's frame; the shell's own page padding is off for these pages (`cv-page-settings`).
 - **Nav:** `<nav aria-label="Settings">`, sticky under the top bar (`top: 52px`, the rest of the window
   tall, scrolling by itself), a Hairline at its right. The word "Settings" at 18px, then the groups: Account
-  alone, **Connections** (Registries, Backup storage, Notifications) and **Security** (API tokens). A group
+  alone, **Connections** (Registries, Backup storage, Certificates, Notifications) and **Security** (API tokens). A group
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
   Control ground and no left bar (the bar is the sidebar's). Under 900px the shell's own narrow rule applies
@@ -672,14 +673,16 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   shell's narrow padding after the layer, which would otherwise win. The sidebar's Settings stays current on every Settings page, and the crumbs
   read "Settings / <entry>".
 - **The count-or-mark rule.** Each entry has one function (`registriesState`, `backupStorageState`,
-  `notificationsState`, `tokensState`) that gives its count, its nav mark, and the mark of each of its rows; the
+  `certificatesState`, `notificationsState`, `tokensState`) that gives its count, its nav mark, and the mark of each of its rows; the
   nav and the page's rows both read it. The nav marks only what is breaking, and a mark wins over the count;
   the rows mark more: a state the owner chose (a paused channel) or one that is chronic (a full token that
   never expires) marks its row and has its note there, and leaves the nav showing the count. Registries: ■
   when a registry's last test was refused (○ never tested, or changed since: a save that changes the
   credentials forgets the last test; ● passed), else how many. Backup storage has no count: ■ in the nav and
   on the row when the last backup failed, ◆ when no destination is set while a service has a backup policy.
-  Notifications: ◆ when a channel's last delivery failed, else how many (paused ones included; a paused
+  Certificates (feature 023): ◆ when any certificate is expiring, else how many are issued (Traefik's own and
+  pending ones aren't counted); a row is ● issued, ◐ pending, ◆ expiring, ○ Traefik's own or a failed
+  handshake. Notifications: ◆ when a channel's last delivery failed, else how many (paused ones included; a paused
   channel's row is ◆). API tokens: ◆ when an active token went unused for more than 90 days (a token never used
   counts from when it was made, so a fresh one is never flagged), else how many are active; a full token with
   no end date is ◆ on its row only; an expired or revoked token is ○. The nav's spoken reason puts a failure
@@ -702,6 +705,30 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   Revoke; sorted active (problems first), expired, revoked, the last five expired or revoked and then a "Show
   older" link (`?older=1`). "never expires" is in the warning hue for a full
   token.
+- **Certificates** (feature 023, `/settings/certificates`; values in `specs/023-domains/contracts/domains-screen.md`):
+  the head "Certificates" over "HTTPS certificates for every domain come from Let's Encrypt and renew 30 days
+  before they expire." (without Let's Encrypt: "This caravana was installed without Let's Encrypt: Traefik serves
+  its own certificate."; on the staging issuer: "Certificates come from Let's Encrypt's staging issuer: browsers don't
+  trust them. Run the installer with the real issuer when the domains are ready."), no action. The Domains page's banners stand above for each expiring certificate
+  (same markup, Check again). Then a Label "Domain certificates · 12 certificates" (it counts issued and expiring certificates only, as the nav
+  does; Traefik's own and pending ones are rows but not certificates: with none the Label says "· 8 domains · none issued yet",
+  or "· 8 domains · no certificates: installed without Let's Encrypt" when the issuer is none) over a panel: a 34px ink-2
+  head and rows of 46px, columns `14px minmax(0, 1.4fr) minmax(0, 1fr) 150px minmax(0, 1.1fr)`, gap 18: the 9px
+  mark, the domain (13px mono, a link to its row on `/domains`), the app (mono fg-2), the issuer ("Let's
+  Encrypt", "Traefik's own", fg-3), the expiry (12px mono: "renews in 61 d" fg-3, "expires in 6 d" in the warn hue,
+  "waiting for Let's Encrypt", "—"); problems first. Under 640px a row folds to label and value. Then the Label "How
+  certificates are issued" with **Edit** at its right, a `<details>` whose form opens inline under the button
+  and pushes the panel down (the heading and the `<details>` share the head's one grid cell, so the summary
+  stays on the heading's line; no overlay), holding Warn when alone (a select of 7, 14 and 30 days, Save), over a panel of three rows (`220px 260px
+  minmax(0, 1fr)`, gap 24, padding 14 20): **Issuer** ("Let's Encrypt", "none") and **Contact email**, both
+  read-only because they are Traefik's static configuration ("Set when caravana was installed; run the
+  installer again to change it."), and **Warn when** ("14 d before expiry", "Sends to the channels set up in
+  Notifications."). Without Let's Encrypt (`acme=none`) Warn when is drawn disabled: the Edit form's select
+  (fg-3) and Save (faded) are disabled, so it posts nothing, with "Applies once certificates are issued." under
+  the select and before the row's note; the API still takes the setting. A saved window answers 303 with a notice; the checks already stored are judged again at once.
+  Nothing here pushes the page wider: every track, fixed ones included, is `minmax(0, …)` (so the 220/260px columns and
+  the table's 150px one shrink first), the hint column wraps (`overflow-wrap: anywhere`), and the section head's children
+  have `min-width: 0` so Edit always stays inside.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
   no address and no later page; the Copy button stays hidden without script.
@@ -841,6 +868,154 @@ sidebar's third Workspace item (`clock` icon), current on every `/schedules…` 
 - **Narrow:** under 900px of room a row folds (mark, name and pill; app and command; Runs, Next and
   Last run as label and value; the strip on its own line) and the detail stacks; the form's rows stack
   under 640px (page 3's rule).
+
+### Domains (feature 023, page 6)
+Values from `specs/023-domains/contracts/domains-screen.md`. A workspace page, `/domains`: the sidebar's
+fourth Workspace item (`globe` icon, after Schedules), current on every `/domains…` page. The app's Domains
+page (`/apps/{id}/domains`) draws the same rows, detail and Add panel from the same template
+(`templates/domains.html`), filtered to the app, its head sentence ending with the link "All domains".
+- **The states.** Each row's state comes from Caravana's own last check (DNS against this host's
+  addresses, and the certificate Traefik's edge presents), cached and refreshed every minute while a
+  domains page is open. Marks and words, in the order the list sorts them (problems first, then live, then
+  idle, by host within): ■ "DNS points elsewhere"; ◆ "certificate expiring"; ◆ "no DNS record"; ◐ "getting
+  certificate"; ● "live · HTTPS"; ○ "Traefik's own certificate" (the lab, or a host installed without Let's
+  Encrypt); ○ "redirects to `<host>`" (the other half of a www pair); ○ "app stopped" / "not deployed" (the
+  app isn't served, whatever the last check said); ○ "couldn't check", or "not checked yet" for a row never
+  checked. The words are `edge.State.Words()`; the console words the redirect target, the not-served reason
+  and the never-checked row. **A redirect row sorts directly under the host it redirects to** (a www pair
+  reads together; `redirectsUnderTargets`), whatever its own state; one whose target isn't listed keeps its
+  place.
+- **One state table** (`internal/ui/domainstates.go`, `domainStates`): state → mark, pill words, the Certificate
+  column's words when there is no date ("waiting for Let's Encrypt", "Traefik's own", "—"), the Certificates
+  table's expiry words, and the fixed detail sentence. The list, the Add panel's check lines and Settings ›
+  Certificates all read it: a DNS or certificate result is first named as the state it gives (`dnsState`,
+  `certState`), so "no DNS record" is ◆ with the same words in the list, the check line and the count, a pending
+  certificate says "waiting for Let's Encrypt" everywhere, and a certificate that couldn't be read is ○ "couldn't
+  check", never ■. A test holds the three places to the table, and the table to `edge.State`.
+- **Needs-you items** lead with the app, as every item does (its place first, then a colon): "blog: `example.com`
+  points at 104.20.23.154, which isn't this host." and "blog: the certificate for `example.com` expires in 6 days and
+  hasn't been renewed."; the Domains page's own banners, which are on the domain's page, start with the domain.
+- **Page head** (Settings' shape): "Domains" 30px, "Every address people use to reach your apps.
+  Certificates are issued and renewed for you." and Add domain (primary small, plus, a link to `#add`). Then
+  the filter (Schedules': a project select only with more than one project, the app select, Apply, Clear)
+  and the count line, 13px mono fg-3: "12 domains · 2 need you · 1 getting a certificate", "· all healthy"
+  only when every row is live or redirects.
+- **Banners:** above the table, one per DNS-elsewhere or expiring row, at most three, then "and N more" (a
+  link to the first row without a banner). A panel, padding 16 18, grid `14px minmax(0, 1fr) auto`, gap 14:
+  a 9px mark, the sentence (15px fg-1: "`a.example.com` points at `185.199.108.153`, which isn't this
+  host." / "`b.example.com` expires in 6 days and hasn't been renewed.") over its fixed explanation (14px
+  fg-2), and Check again (secondary small, a post that checks the host now and comes back with its row
+  open). There is no retry into ACME: Traefik retries on its own.
+- **The table:** a 38px ink-2 head "Domain · Status · Goes to · Certificate", columns `14px minmax(0, 1.6fr)
+  190px minmax(0, 1.2fr) 150px 36px`, gap 18, padding 0 18, rows 52px at least with 1px line-1 dividers, every
+  cell `min-width: 0` (the fixed 190px and 150px tracks are `minmax(0, …)` too). An open row's facts grid is `minmax(0, 90px) minmax(0, 1fr)`
+  (110px for a live domain); its keys and values, the state sentence and the notes wrap with `overflow-wrap: anywhere`, so a
+  four-address "now" value or a long host never widens the page at any width from 390 up. Each row is a native `<details id="domain-<host>">` (console.js keeps it open or
+  closed across a refresh); the open row has the ink-2 ground. Cells: the chevron; the host (500 14px mono,
+  one line, ellipsis) with a 12px lock (fg-3, `title` "Team only") for a Team-only domain and its path
+  (`/api`, 12px mono fg-3); the quiet small pill (no ground, edge or padding); Goes to (13px mono fg-2:
+  "`booking-api` `:8080 · production`", the port and environment fg-3, "`hollo` › `web`" when the app has
+  several services, "`Shop` › `web` :80 · staging" when the app is outside Default › production (the project's
+  display name, as the rail names it, since two projects may each have a `web`), "→ `example.com`" for a
+  redirect row); the certificate (12px mono fg-3: "renews in 61 d",
+  which is the expiry less the 30 days ACME renews before, "expires in 6 d" in the warn hue when expiring,
+  "Traefik's own", "—"; the expiry date in the `title`); the `external-link` icon link ("Open
+  https://<host>"). The first row whose state needs the owner (■ or ◆) opens by itself; `?open=<host>`
+  opens another. Empty: "No domains yet. Give an app a domain and HTTPS is set up for it." with Add
+  domain. Footer 13px fg-3: "Checks run every minute while this page is open, and every 15 minutes otherwise.
+  Certificates come from Let's Encrypt and renew by themselves." (the watcher checks every 60 s only while a
+  domains page's stream is open)
+- **The detail** (ink-0, grid `minmax(0, 1fr) minmax(0, 1fr)`, gap 24, padding 18 18 20 46, a line-1 bottom):
+  the left column by state: DNS elsewhere has its sentence ("The domain points at …, which isn't this host.
+  Until it changes, caravana can't get a certificate and visitors won't reach `<app>`.") and a facts grid
+  with 90px keys (now, in the failed hue; should be; last check "40 s ago · checks every minute while this page is open");
+  expiring has its sentence and Check again; Traefik's own a quiet sentence, and getting a certificate one with
+  **Open it once** (a link to `https://<host>/`, new tab, `rel="noopener"`: Traefik asks Let's Encrypt for the
+  certificate on the first request it gets); no
+  DNS record "No DNS record yet. Add this record where you manage DNS:" and the record box; live and
+  redirect a facts grid with 110px keys (certificate "Let's Encrypt · renews in 61 d · expires
+  `<clock time>`", DNS "A → 203.0.113.1", router "`<app>-<service>`" or "`<app>-<service>-<hash8>` (its own,
+  for its options)", checked); not served "The app is stopped: start it to serve this domain." / "Nothing
+  is deployed yet." with a link. **A problem is said once:** when a row's banner is on the page (at most three),
+  its detail drops the sentence the banner already says and the second Check again. A DNS-elsewhere row leads with
+  "Change the record to:" and the record box (A · Name per `DNSRecordName` · this host's address, the box a
+  no-record row draws), then "now" (the failed hue) and "last check"; an expiring one keeps its facts (certificate,
+  DNS, checked). A row beyond the three banners keeps its sentence and its Check again. A DNS-elsewhere row has no
+  external-link icon: it would open whatever DNS points at today. The expiry is a clock time (the time rule); "checked" is relative ("40 s
+  ago" under a minute). The right column is "Options" (a Label), a form of its own (below), then Remove… and
+  New password; or why there is none (a stopped app, a redirect row). A row, banner or detail never holds a
+  password or a hash.
+- **The Options form** (one `<form method="post" action="/domains/<host>/options">` per row, on `/domains` and
+  on the app's page, carrying the app, the service, the page's revision and, on the app's page, `page=app`; it
+  works without script and saves with a button, never on toggle): Force HTTPS first, a locked-on switch with
+  "On for every domain." under it in 13px fg-3 (not a field); **Team only (a shared password)**; the redirect
+  switch, worded by what it redirects: "Redirect `example.com` here" on a `www.` host, "Redirect
+  `www.example.com` here" on an apex, absent on any other host; **Path**, the 32px mono field with "Only
+  requests under this path reach the app; the path is kept. Saving deploys the app." under it; **Save and deploy** (primary small).
+  Each switch is a checkbox with `role="switch"` and `.cv-switch`, its label wrapping it, so the whole line
+  is the target. A refused path draws the row's form again with what was typed and the reason under the field
+  (the row opens). Below the form, **Remove…** (a confirmation, "Remove and deploy") and, for a Team-only
+  domain, **New password** (a confirmation: "The old password stops working at once. The new one is shown
+  once."); each is a form of its own, since forms don't nest. **Inline confirmations:** both open in the
+  flow, never as an overlay: an open one takes its whole line (`flex-basis: 100%`), its form a block under
+  its button (ink-1, 26rem at most) that pushes the row down, and the other button wraps under it, so
+  nothing clips at any width. Turning Team only on, or New password, answers
+  200 with the shown-once panel above the page ("Copy the password for `<host>` now. User name `team`.", the
+  value in a box that selects whole, Copy hidden without script): the password is in no address, no later page
+  and no log. A Team-only domain says "Visitors sign in as `team`." in 13px fg-3 above New password. The panel and
+  every sentence write "caravana" in lowercase. A stopped app's rows show "The app is stopped: start it first." in place of the form.
+- **Domains go to** (Configure's Deploy panel): a service with several ports and domains has a select of its ports
+  ("http · :80") after Image; saving sets the port of every one of its domains and nothing else of them. A
+  service with one port has the Container port input, as before.
+- **The switch** (the Options form's): a checkbox drawn as one, `.cv-switch`, 30×18, radius 9. Off: ink-2
+  ground, line-2 edge, a 12px fg-3 knob; on: the healthy ground, edge and knob, moved 12px (the handoff's
+  hue, for a real switch). **The locked switch** (Force HTTPS: on, disabled, "On for every domain.") is drawn
+  in fg-3, knob and ground (the ground fg-3 at 22%, the edge at 45%), so it reads as fixed, not as a choice
+  that is on. Saved by a button, never on toggle.
+- **The record box** (page 2's, keys 80px): Type, Name, Value per record, one group for the A record and
+  one for the AAAA when this host has a public IPv6 address, a line-2 rule between groups. Name is "@" for an
+  apex (one dot), else the first label, "@ or the first label" before a host is typed; Value is the address,
+  or "this host's public IP address" in sans fg-2 when none is known.
+- **Add a domain** (`#add`, a panel, padding 22, gap 22, "Add a domain" 500 18px): Domain (mono; capitals are
+  read as lowercase, since DNS names are case-insensitive: "Shop.Example.COM" is `shop.example.com`, never refused for
+  its case, and the API does the same), Sends
+  traffic to (the app select, stopped apps disabled and an app with no HTTP port disabled as "(no HTTP port)";
+  the service select only once an app is picked: picking one fetches `/parts/domains/add-service?app=` into
+  `#domain-service-field` (a `display: contents` wrapper) and, without script, Check now draws it; before a
+  pick the words "The app's first service. An app with several offers them here once it is picked." stand there
+  and the post goes to the app's first HTTP service; one service's port as text, "`:8080`, set in Configure";
+  on an app's page the app as text). **Not an HTTP port:** a service whose port is 5432, 3306, 6379, 27017, 5672
+  or 11211, or that has a TCP-only health check and an image naming postgres, mysql, mariadb, redis, mongo,
+  rabbitmq or memcached, is listed disabled as "db · :5432 · not an HTTP port" (`notHTTPPort`; the console's
+  guess, never a refusal: the API takes any port). The filter's project select and every app select name an app
+  outside Default › production the same way, "Shop / staging / web" (the project's display name, the
+  environment, the name; `places.appLabel`, which Schedules uses too). Path (optional, mono), "Point it at
+  caravana" with the record box and "The root of a domain needs an A record. A subdomain can use one too.",
+  then Check: two lines of 14px, each an 8px mark and words, a 13px fg-3 reason under them. Before a check
+  both are rings in fg-3; Check now (a submit of its own, `action=check`) runs the check on the post and
+  answers 303 to the same page (`/domains` or `/apps/{id}/domains`) with `?checked=<host>#add`, so the
+  browser lands on the panel and a reload doesn't post again; the page draws the panel from the check the
+  console kept for that host for 60 seconds (with what was typed: the app, the service, the path), with ● or
+  ■ or ◆ "DNS points at caravana" ("points at `185.…`" ■, "no DNS record" ◆) and the certificate line ("issued after
+  you add it" for a new host, else its state). An unknown or expired `checked` draws the empty panel; a host
+  that isn't a name is still refused in place (422) with the reason under the field. Add domain and deploy is primary when DNS was checked and
+  points here or no check ran, secondary otherwise, and always there: the list shows the rest. Cancel is a link to
+  the page itself (`/domains` or `/apps/{id}/domains`), without the panel's fragment. A refusal
+  draws the form again with the reason under its field: another app's host (naming it), the console's own
+  host, a host that isn't one, a bad path.
+- **Live refresh swaps per row, never the forms.** The region's own swap is `none`. A notice (`sse:domains`) makes
+  it fetch `/parts/domains` with `known`, a short key of the hosts it was drawn with (a hidden `#domains-known`
+  inside the region, taken by `hx-include`). While the key still names the hosts there are, the answer is
+  out-of-band fragments (`hx-swap-oob`) for the summary above the table (`#domains-summary`: count line, banners),
+  each row's cells (`#domain-status-<host>`: host, status, Goes to, certificate, open link; a wrapper with
+  `display: contents`) and each row's left column (`#domain-left-<host>`: the state's sentence, facts and its
+  buttons), and nothing else. The Options form, Remove…, New password and the Add panel are never in it, so a
+  refresh never takes what is being typed or closes what is open. When a host was added or removed the answer is
+  the whole region with `HX-Reswap: innerHTML`; console.js puts back which `<details>` were open, by id. Every
+  `<details>` on these pages has a stable id (`domain-<host>`, `domain-remove-<host>`, `domain-password-<host>`).
+- **Narrow:** under 900px of room a row folds (chevron, host and the open link; then Status, Goes to and
+  Certificate as label and value) and the detail stacks. Below 640px the banner stacks too: the mark and the
+  text, then Check again under the text.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -28,6 +29,8 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/edge"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -36,6 +39,22 @@ import (
 // its own within it, Caravana's restart included; console-schedules' sleep 180
 // is stopped at it.
 const labRunLimit = 40 * time.Second
+
+// labEdgeAddress is where the lab's Traefik answers HTTPS; the domain checks handshake with it.
+const labEdgeAddress = "127.0.0.1:8443"
+
+// labResolver is the DNS side of the domain checks in the lab: the name of the console's host
+// (CARAVANA_PUBLIC_URL, when the test environment sets one) answers 203.0.113.1, elsewhere.test
+// answers 203.0.113.9 (a domain that points somewhere else), every other name is not found
+// (NXDOMAIN, so *.invalid is), and *.localhost never reaches it: the edge package answers
+// loopback for it. The TLS side stays the real dialer, against the lab's real Traefik.
+func labResolver() edgetest.FakeResolver {
+	hosts := map[string][]string{"elsewhere.test": {"203.0.113.9"}}
+	if u, err := url.Parse(os.Getenv("CARAVANA_PUBLIC_URL")); err == nil && u.Hostname() != "" {
+		hosts[u.Hostname()] = []string{"203.0.113.1"}
+	}
+	return edgetest.FakeResolver{Hosts: hosts}
+}
 
 // labEnv is Caravana running in-process next to the lab.
 type labEnv struct {
@@ -72,6 +91,10 @@ func startLab(t *testing.T) labEnv {
 			// The console-notifications step waits for "resolved"; the default is 5 minutes.
 			return "10s"
 		}
+		if key == "CARAVANA_EDGE_ADDRESS" {
+			// Traefik's HTTPS entrypoint in the lab is published on 8443, not 443 (feature 023).
+			return labEdgeAddress
+		}
 		return os.Getenv(key)
 	}
 	// The schedules' clock looks every 5 s instead of 10, the watcher every 2
@@ -81,6 +104,10 @@ func startLab(t *testing.T) labEnv {
 		svc.SetScheduleScanGap(5 * time.Second)
 		svc.SetScheduleWatchGap(2 * time.Second)
 		svc.SetScheduleLimitForTests(labRunLimit)
+		// The domain checks: fake DNS, the real handshake with Traefik, and the watcher's gaps
+		// short enough for the steps (60 s while nobody looks, 10 s while a page is open).
+		svc.SetEdge(labResolver(), edge.TLSDialer{})
+		svc.SetDomainWatchGaps(60*time.Second, 10*time.Second)
 	}
 	t.Cleanup(func() { serviceHook = nil })
 

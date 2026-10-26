@@ -280,6 +280,7 @@ var ErrAppExists = errors.New("an app with this ID already exists")
 // once exactly one wins. Once the app is saved, errors are *DeployError, as
 // for Deploy: the app stays, and its failed deployment is recorded.
 func (s *Service) CreateApp(ctx context.Context, a app.App, trigger app.Trigger) (store.DeploymentRecord, error) {
+	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return store.DeploymentRecord{}, err
 	}
@@ -316,6 +317,7 @@ var ErrAppNotDefined = errors.New("the app has no definition yet: deploy it with
 // only ever sent with a deploy, so one here is refused naming its field, never
 // dropped; secret names are kept. The ID's project and environment must exist.
 func (s *Service) CreateAppOnly(ctx context.Context, a app.App) (store.AppRecord, error) {
+	a = a.WithLowercaseHosts()
 	if a.Defined() {
 		if err := s.deployer.Validate(a); err != nil {
 			return store.AppRecord{}, err
@@ -435,10 +437,19 @@ func (s *Service) DeleteApp(ctx context.Context, id string) error {
 		state.stopWatchers()
 	}
 	s.mu.Unlock()
+	hadTeamOnly := s.hasTeamPasswords(ctx, id)
 	if err := s.store.DeleteApp(context.WithoutCancel(ctx), id); err != nil {
 		return err
 	}
 	state.deleted = true
+	// The store deleted the app's Team-only passwords with it (feature 023):
+	// Traefik's copy follows. A failure is logged; the next deploy of any app
+	// with a Team-only domain writes the variable again.
+	if hadTeamOnly {
+		if err := s.syncTeamPasswords(context.WithoutCancel(ctx)); err != nil {
+			s.log.Warn("remove a deleted app's Team-only passwords from Traefik", "app", id, "error", err)
+		}
+	}
 
 	s.mu.Lock()
 	if s.apps[id] == state {

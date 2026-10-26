@@ -724,6 +724,18 @@
             <h3 class="cv-label">Deploy</h3>
             {{template "field" (.F "image")}}
             {{if .ShowPort}}<div class="cv-field-narrow">{{template "field" (.F "port")}}</div>{{end}}
+            {{if .ShowDomainPort}}
+            <div class="cv-fld cv-field-narrow">
+              <label class="cv-fld" for="{{.DomainPort.ID}}">
+                <span class="cv-label">Domains go to</span>
+                <select class="cv-field cv-select" id="{{.DomainPort.ID}}" name="{{(.F "domainPort").InputName}}"{{if .DomainPort.Error}} aria-invalid="true" aria-describedby="{{.DomainPort.ID}}-hint {{.DomainPort.ID}}-error"{{else}} aria-describedby="{{.DomainPort.ID}}-hint"{{end}}>
+                  {{range .DomainPortOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+                </select>
+                <span class="cv-data-muted cv-hint" id="{{.DomainPort.ID}}-hint">Every domain of this service goes to this port.</span>
+                {{template "field-error" .DomainPort}}
+              </label>
+            </div>
+            {{end}}
             {{if .ShowHealth}}
             <div class="cv-fields3">
               {{template "field" (.F "healthPath")}}
@@ -1007,10 +1019,12 @@
 {{end}}
 {{end}}
 
-{{/* The Domains page (feature 021): every address the app answers on, and the form that adds one.
-     Takes a domainsTab. */}}
+{{/* The Domains page (features 021 and 023): every address the app answers on, drawn as /domains
+     draws them (domains.html's region, filtered to the app), and the Add panel with the app fixed.
+     A refused post's notice stands at the top. Takes a domainsTab. */}}
 {{define "domains"}}
-{{with .Add.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Once}}{{template "domain-once" .}}{{end}}
+{{with .Add}}{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}{{end}}
 {{if not .Defined}}
 <section aria-labelledby="domains-page-title" class="cv-pgsec">
   <div class="cv-pghead"><div class="cv-pghead-text">
@@ -1023,89 +1037,20 @@
   <div class="cv-pghead">
     <div class="cv-pghead-text">
       <h2 id="domains-page-title" class="cv-pgtitle">Domains</h2>
-      <p class="cv-pgsub">Every address people use to reach this app. HTTPS is set up for each.</p>
+      <p class="cv-pgsub">Every address people use to reach this app. HTTPS is set up for each. <a href="/domains">All domains</a></p>
     </div>
     <span class="cv-spacer"></span>
     {{if .CanEdit}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
   </div>
-  <p class="cv-count">{{.Count}}</p>
-  {{if .Kept}}<p class="cv-note">{{"This app is edited through its Compose file."}} Change its domains in the file, in <a href="/apps/{{.ID}}/configure">Configure</a>.</p>{{end}}
 </section>
 
-<div class="cv-panel cv-domains" role="table" aria-label="Domains">
-  {{if .Rows}}<div class="cv-dhead cv-label" role="row">
-    <span role="columnheader">Domain</span>
-    <span role="columnheader">Goes to</span>
-    <span role="columnheader"><span class="sr-only">Actions</span></span>
-  </div>{{end}}
-  {{range .Rows}}
-  <div class="cv-drow cv-confirm-row" role="row">
-    <div role="cell" class="cv-dhost" title="{{.Host}}">{{.Host}}</div>
-    <div role="cell" class="cv-dgoes">{{.Service}} <span class="cv-dgoes-meta">:{{.Port}} · {{$.Environment}}</span></div>
-    <div role="cell" class="cv-dact">
-      <a href="{{.URL}}" class="cv-iconlink" aria-label="Open {{.URL}}" target="_blank" rel="noopener">{{icon "external-link" 15}}</a>
-      {{if $.CanEdit}}
-      <details class="cv-confirm">
-        <summary class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Remove {{.Host}}">Remove</summary>
-        <form method="post" action="/apps/{{$.ID}}/domains/remove" class="cv-confirm-body">
-          <input type="hidden" name="revision" value="{{$.Revision}}">
-          <input type="hidden" name="service" value="{{.Service}}">
-          <input type="hidden" name="host" value="{{.Host}}">
-          <p>This deploys the app without <span class="cv-inline-mono">{{.Host}}</span>. It stops answering on it once the new copies are healthy.</p>
-          <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">Remove and deploy</button></div>
-        </form>
-      </details>
-      {{end}}
-    </div>
-  </div>
-  {{else}}
-  <div class="cv-empty">
-    <p class="cv-empty-title">No domains.</p>
-    <p class="cv-empty-text">Copies are reachable only inside the app.</p>
-    {{if .CanEdit}}<a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add domain</a>{{end}}
-  </div>
-  {{end}}
-</div>
+<section class="cv-sregion" aria-label="Domains of {{.ID}}" hx-get="{{.Region.RefreshHref}}" hx-trigger="sse:domains, sse:sync" hx-swap="none" hx-include="#domains-known">{{template "domains-region" .Region}}</section>
 
 {{if .CanEdit}}
-<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide" aria-labelledby="add-title">
-  <h2 id="add-title" class="cv-pgtitle">Add a domain</h2>
-  {{if .Targets}}
-  <form method="post" action="/apps/{{.ID}}/domains" class="cv-formcol cv-formcol-wide" autocomplete="off">
-    <input type="hidden" name="revision" value="{{.Revision}}">
-    <label class="cv-fld" for="domain-host">
-      <span class="cv-label">Domain</span>
-      <input class="cv-field cv-field-mono" id="domain-host" type="text" name="host" value="{{.Add.Host.Value}}" placeholder="app.example.com" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Host.Error}} aria-invalid="true" aria-describedby="domain-host-error"{{end}}{{if .Add.Host.Alert}} autofocus{{end}}>
-      {{template "field-error" .Add.Host}}
-    </label>
-    {{if .Many}}
-    <label class="cv-fld" for="domain-service">
-      <span class="cv-label">Sends traffic to</span>
-      <select class="cv-field cv-select" id="domain-service" name="service">{{range .Targets}}<option value="{{.Service}}"{{if eq .Service $.Add.Service}} selected{{end}}>{{.Label}}</option>{{end}}</select>
-    </label>
-    {{else}}<input type="hidden" name="service" value="{{.Add.Service}}">{{end}}
-    <div class="cv-fld">
-      <span class="cv-label">Point it at Caravana</span>
-      <p class="cv-dnsintro">Add this record where you manage DNS for the domain:</p>
-      <dl class="cv-dnsbox">
-        <div class="cv-dnsrow"><dt class="cv-label">Type</dt> <dd>{{.Record.Type}}</dd></div>
-        <div class="cv-dnsrow"><dt class="cv-label">Name</dt> <dd>{{with .Record.Name}}{{.}}{{else}}@ or the first label{{end}}</dd></div>
-        <div class="cv-dnsrow"><dt class="cv-label">Value</dt> <dd>{{.Record.Value}}</dd></div>
-      </dl>
-      <p class="cv-note">The root of a domain needs an A record. A subdomain can use one too.</p>
-    </div>
-    <div class="cv-formfoot">
-      <span class="cv-spacer"></span>
-      <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Add domain and deploy</button>
-    </div>
-  </form>
-  {{else}}
-  <p class="cv-note">No service of this app has a port, so there is nothing for a domain to go to. Give a service a port in <a href="/apps/{{.ID}}/configure">Configure</a> first.</p>
-  {{end}}
-</section>
+{{with .Add}}{{template "domain-add" .}}{{end}}
 {{else if .Stopped}}
-<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide" aria-labelledby="add-title">
-  <h2 id="add-title" class="cv-pgtitle">Add a domain</h2>
+<section id="add" class="cv-panel cv-gpanel cv-gpanel-wide cv-dmadd" aria-labelledby="add-title">
+  <h2 id="add-title" class="cv-dmadd-title">Add a domain</h2>
   <p class="cv-note">The app is stopped: start it first.</p>
 </section>
 {{end}}

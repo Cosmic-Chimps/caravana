@@ -80,7 +80,7 @@ func (s *Service) editSecrets(ctx context.Context, appID, service string, cond C
 		file := withSecretNames(*rec.Compose, service, list)
 		m.file = &file
 	}
-	return s.saveAndDeploy(ctx, a, cond, trigger, m, nil)
+	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
 // withSecretNames returns a copy of file whose overlay for service lists the

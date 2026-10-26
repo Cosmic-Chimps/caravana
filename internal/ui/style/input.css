@@ -674,6 +674,7 @@
   /* The page has no padding of its own: the nav runs edge to edge under the top bar. */
   .cv-page-settings { max-width: none; margin: 0; padding: 0; display: block; }
   .cv-settings { display: grid; grid-template-columns: 232px minmax(0, 1fr); align-items: start; }
+  .cv-settings > * { min-width: 0; }
 
   .cv-snav { position: sticky; top: 52px; height: calc(100vh - 52px); overflow: auto; display: flex; flex-direction: column; gap: 20px; padding: 28px 12px; border-right: 1px solid var(--color-line-1); }
   .cv-snav-title { padding: 0 10px; font: 500 18px/1 var(--font-sans); color: var(--color-fg-1); }
@@ -1056,4 +1057,186 @@
 /* The form's limits stack when the form is narrow; the setting rows already do (page 3's rule). */
 @container (max-width: 479.98px) {
   .cv-slimits { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------------------------------------------------------------------------
+   Page 6 (feature 023): Domains, on /domains and an app's Domains page: the problem banners, the
+   table of <details> rows, the detail per state, the record box and the Add panel's check lines,
+   and the switch the Options form will draw. The values are contracts/domains-screen.md's. The
+   table is a container, so it narrows by the room it has (the rules at the end).
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* A problem banner: a 9px mark, the sentence over its explanation, Check again. */
+  .cv-dmbanner { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px 18px; }
+  .cv-dmbanner-mark { display: grid; place-items: center; height: 22px; }
+  .cv-dmbanner-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cv-dmbanner-line { font-size: 15px; line-height: 1.5; color: var(--color-fg-1); overflow-wrap: anywhere; text-wrap: pretty; }
+  .cv-dmbanner-explain { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-dmmore { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  /* Below 640px the banner stacks: the mark and the text, then Check again under the text. */
+  @media (max-width: 639.98px) {
+    .cv-dmbanner { grid-template-columns: 14px minmax(0, 1fr); row-gap: 12px; }
+    .cv-dmbanner > .cv-dmcheckform { grid-column: 2; }
+  }
+
+  /* The table: a head, then one <details> per domain whose summary is the row. */
+  .cv-dmtable { overflow: visible; container-type: inline-size; }
+  .cv-dmhead, .cv-dmsum { grid-template-columns: 14px minmax(0, 1.6fr) minmax(0, 190px) minmax(0, 1.2fr) minmax(0, 150px) 36px; }
+  .cv-dmhead { display: grid; column-gap: 18px; align-items: center; height: 38px; padding: 0 18px; background: var(--color-ink-2); border-radius: 5px 5px 0 0; border-bottom: 1px solid var(--color-line-1); }
+  .cv-dmsum { display: grid; column-gap: 18px; align-items: center; min-height: 52px; padding: 0 18px; list-style: none; cursor: pointer; border-top: 1px solid var(--color-line-1); }
+  .cv-dmhead + .cv-dmdetails > .cv-dmsum { border-top: 0; }
+  .cv-dmsum::-webkit-details-marker { display: none; }
+  .cv-dmsum:hover, .cv-dmdetails[open] > .cv-dmsum { background: var(--color-ink-2); }
+  .cv-dmdetails { min-width: 0; }
+  .cv-dmdetails[open] .cv-chev-closed { display: none; }
+  .cv-dmdetails[open] .cv-chev-open { display: block; }
+  .cv-dmdetails:last-child:not([open]) > .cv-dmsum { border-radius: 0 0 5px 5px; }
+  .cv-dmsum > *, .cv-dmcells > *, .cv-dmhead > * { min-width: 0; }
+  /* The summary's cells and the summary above the table are wrappers a refresh swaps by id: they
+     take no box of their own, so their children lay out as the table's and the region's. */
+  .cv-dmcells, .cv-dmsummary { display: contents; }
+  /* The Add panel's service field, which a pick in the app select swaps by id: no box either. */
+  .cv-dmsvcfield { display: contents; }
+  /* The domain: 500 14px mono, cut with an ellipsis, then the Team-only lock and the path. */
+  .cv-dmname { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .cv-dmhost { min-width: 0; font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-dmlock { display: inline-flex; flex: none; color: var(--color-fg-3); }
+  .cv-dmpath { flex: none; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  /* The quiet small pill: no ground, edge or padding, so its mark lines up with the head; a long
+     "redirects to …" wraps rather than leaving its column. */
+  .cv-dmstatus .cv-pill { height: auto; min-height: 18px; padding: 0; white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
+  .cv-dmgoes { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-dmgoes-app { color: var(--color-fg-2); }
+  .cv-dmgoes-meta { color: var(--color-fg-3); }
+  .cv-dmcert { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-dmcert-warn { color: var(--color-warn); }
+  .cv-dmopen { display: flex; justify-content: flex-end; }
+
+  /* What opens under a row: the state at the left, Options at the right. */
+  .cv-dmdetail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; padding: 18px 18px 20px 46px; background: var(--color-ink-0); border-bottom: 1px solid var(--color-line-1); }
+  .cv-dmdetails:last-child .cv-dmdetail { border-radius: 0 0 5px 5px; border-bottom: 0; }
+  .cv-dmdetail-left, .cv-dmdetail-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-dmdetail-right { gap: 10px; }
+  .cv-dmstate { font-size: 14px; line-height: 1.5; color: var(--color-fg-1); text-wrap: pretty; overflow-wrap: anywhere; }
+  .cv-dmstate-quiet { color: var(--color-fg-2); }
+  .cv-dmnote { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); text-wrap: pretty; overflow-wrap: anywhere; }
+  /* The facts: 90px keys (a DNS problem), 110px for a live domain's. */
+  .cv-dmfacts { display: grid; grid-template-columns: minmax(0, 90px) minmax(0, 1fr); gap: 8px 14px; margin: 0; min-width: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); }
+  .cv-dmfacts-wide { grid-template-columns: minmax(0, 110px) minmax(0, 1fr); }
+  .cv-dmfacts > dt { min-width: 0; color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-dmfacts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .cv-dmfacts .cv-inline-mono { color: var(--color-fg-2); }
+  .cv-dmfacts > dd.cv-dmfact-failed { color: var(--color-failed); }
+  .cv-dmbtns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .cv-dmbtns .cv-btn { text-decoration: none; }
+  /* Remove… and New password confirm inline: an open one takes the whole line, its form under its
+     button in the flow (it pushes the row down; nothing overlays or clips), and the other button
+     wraps under it. */
+  .cv-dmbtns > .cv-confirm[open] { flex-basis: 100%; min-width: 0; }
+  .cv-dmbtns .cv-confirm-body { margin-top: 10px; max-width: 26rem; background: var(--color-ink-1); }
+  .cv-dmcheckform { display: inline-flex; }
+  /* The Options form: switches (Force HTTPS first, locked, with its note under it), the path, Save. */
+  .cv-dmform { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-dmswitch { display: flex; flex-direction: column; gap: 4px; }
+  .cv-dmswitch .cv-dmnote { padding-left: 40px; }
+  .cv-dmform .cv-switch-row { cursor: pointer; }
+  .cv-dmform .cv-switch-row:has(:disabled) { cursor: default; }
+  .cv-dmform .cv-fld { max-width: 22rem; min-width: 0; }
+
+  /* Under the table. */
+  .cv-dmfoot { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+
+  /* The record box (page 2's, 80px keys): a group of Type, Name and Value per record, a stronger
+     line between groups. A value in words (no address known) is quieter, in sans. */
+  .cv-dnsrow + .cv-dnsrow.cv-dnsrow-next { border-top-color: var(--color-line-2); }
+  .cv-dnsrow dd.cv-dnsword { font-family: var(--font-sans); color: var(--color-fg-2); word-break: normal; }
+
+  /* The Add panel: the title, the app fixed as text, the two check lines. */
+  .cv-dmadd-title { font-size: 18px; font-weight: 500; line-height: 1.35; color: var(--color-fg-1); }
+  .cv-dmto { padding: 6px 0; font: 400 13px/20px var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-dmchecks { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .cv-dmcheck { display: flex; align-items: baseline; gap: 10px; font-size: 14px; line-height: 1.5; }
+  .cv-dmcheck > .cv-mark { flex: none; position: relative; top: -0.06em; }
+  .cv-dmcheck-text { display: flex; flex-direction: column; min-width: 0; }
+  .cv-dmcheck-words { color: var(--color-fg-1); }
+  .cv-dmcheck-quiet { color: var(--color-fg-3); }
+  .cv-dmcheck-reason { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); overflow-wrap: anywhere; }
+
+  /* The switch (the Options form's, a checkbox drawn as one): 30×18, radius 9. Off: ink-2 ground,
+     line-2 edge, fg-3 knob; on: the healthy ground, edge and knob. A disabled one (Force HTTPS, on
+     for every domain) keeps its look and loses the pointer. */
+  .cv-switch { appearance: none; position: relative; flex: none; width: 30px; height: 18px; margin: 0; border: 1px solid var(--color-line-2); border-radius: 9px; background: var(--color-ink-2); cursor: pointer; transition: background-color 120ms, border-color 120ms; }
+  .cv-switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--color-fg-3); transition: transform 120ms; }
+  .cv-switch:checked { background: var(--color-healthy-bg); border-color: var(--color-healthy-line); }
+  .cv-switch:checked::before { transform: translateX(12px); background: var(--color-healthy); }
+  .cv-switch:disabled { cursor: default; }
+  /* A locked switch (Force HTTPS, on for every domain) is drawn in fg-3, knob and ground, so it
+     reads as fixed, not as a choice; a real switch's on hue stays the healthy one. */
+  .cv-switch:disabled:checked { background: color-mix(in oklab, var(--color-fg-3) 22%, transparent); border-color: color-mix(in oklab, var(--color-fg-3) 45%, transparent); }
+  .cv-switch:disabled:checked::before { background: var(--color-fg-3); }
+  .cv-switch-row { display: flex; align-items: center; gap: 10px; font-size: 14px; line-height: 1.4; color: var(--color-fg-1); }
+}
+
+/* The table folds like the home's when it has less than 900px: the chevron, the domain and the
+   open link; then Status, Goes to and Certificate as label and value. The detail stacks. */
+@container (max-width: 899.98px) {
+  .cv-dmhead { display: none; }
+  .cv-dmsum { grid-template-columns: 14px minmax(0, 1fr) 36px; row-gap: 8px; padding-block: 12px; align-items: start; }
+  .cv-dmsum > .cv-bchev { grid-row: 1; grid-column: 1; padding-top: 3px; }
+  .cv-dmsum .cv-dmname { grid-row: 1; grid-column: 2; }
+  .cv-dmsum .cv-dmopen { grid-row: 1; grid-column: 3; margin-top: -6px; }
+  .cv-dmsum [data-label] { grid-column: 2 / 4; display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; }
+  .cv-dmsum [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-dmdetail { grid-template-columns: minmax(0, 1fr); gap: 20px; padding-left: 18px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Settings › Certificates (feature 023): the certificates table and the issuer's rows. The
+   table's columns are the handoff's; the rows fold to label and value under 640px.
+   --------------------------------------------------------------------------- */
+@layer components {
+  .cv-certtable { overflow: hidden; min-width: 0; }
+  .cv-certhead, .cv-certrow { display: grid; grid-template-columns: 14px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 150px) minmax(0, 1.1fr); column-gap: 18px; align-items: center; padding: 0 18px; }
+  .cv-certhead { height: 34px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
+  .cv-certrow { min-height: 46px; border-top: 1px solid var(--color-line-1); }
+  .cv-certhead + .cv-certrow { border-top: 0; }
+  .cv-certrow > * { min-width: 0; }
+  .cv-certmark { display: grid; place-items: center; }
+  .cv-certhost { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-certhost:hover { text-decoration: underline; }
+  .cv-certapp { font: 400 13px/1.3 var(--font-mono); color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-certissuer { font: 400 13px/1.3 var(--font-sans); color: var(--color-fg-3); }
+  .cv-certexp { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-certexp-warn { color: var(--color-warn); }
+
+  /* How certificates are issued: the section head holds Edit, whose form opens inline under it and
+     pushes the panel down. The heading and the <details> share the head's one grid cell: the
+     summary stays at the right of the heading's line, the form comes under it, in the flow. */
+  .cv-certsechead { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .cv-certsechead > * { grid-area: 1 / 1; min-width: 0; }
+  .cv-certsechead > h2 { align-self: start; display: flex; align-items: center; min-height: 32px; padding-right: 72px; }
+  .cv-certedit { display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+  .cv-certedit > * { pointer-events: auto; }
+  .cv-certedit .cv-confirm-body { width: min(24rem, 100%); margin-top: 10px; background: var(--color-ink-1); }
+  /* Without Let's Encrypt, Warn when is drawn disabled ("Applies once certificates are issued."): the
+     select in fg-3 and Save faded, both saying so under the pointer. */
+  .cv-certedit .cv-field:disabled { color: var(--color-fg-3); cursor: not-allowed; }
+  .cv-certedit .cv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .cv-certsettings { margin: 0; min-width: 0; }
+  .cv-certset { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 260px) minmax(0, 1fr); gap: 24px; align-items: baseline; padding: 14px 20px; border-top: 1px solid var(--color-line-1); }
+  .cv-certset:first-child { border-top: 0; }
+  .cv-certset > dt { font: 500 14px/1.3 var(--font-sans); color: var(--color-fg-1); }
+  .cv-certset > dd { margin: 0; min-width: 0; font: 400 14px/1.4 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-certset > dd.cv-certset-note { font: 400 13px/1.45 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; overflow-wrap: anywhere; }
+}
+@container (max-width: 759.98px) {
+  .cv-certset { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+@container (max-width: 639.98px) {
+  .cv-certhead { display: none; }
+  .cv-certrow { grid-template-columns: 14px minmax(0, 1fr); row-gap: 6px; padding-block: 12px; align-items: start; }
+  .cv-certrow > .cv-certmark { grid-row: 1; padding-top: 4px; }
+  .cv-certrow > .cv-certhost { grid-row: 1; grid-column: 2; }
+  .cv-certrow > [data-label] { grid-column: 2; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; }
+  .cv-certrow > [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
 }

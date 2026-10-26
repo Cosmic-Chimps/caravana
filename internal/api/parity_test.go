@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listApps", "listBackups"}
+	"getBackupDestination", "listApps", "listBackups", "listCertificates"}
 
 type parity struct {
 	ops []string
@@ -33,7 +33,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules"}}, // notices that these changed
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
@@ -42,8 +42,11 @@ var consoleParity = map[string]parity{
 	"GET /settings/registries":     {ops: settingsReads},
 	"GET /settings/backup-storage": {ops: settingsReads},
 	"GET /settings/notifications":  {ops: settingsReads},
-	"GET /settings/tokens":         {ops: append([]string{"listProjects"}, settingsReads...)},
-	"GET /apps":                    {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// Certificates (feature 023): the table is listCertificates; the issuer, the contact email and Warn when are getCertificateSettings.
+	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
+	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
+	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
+	"GET /apps":                   {ops: []string{"listProjects", "listApps", "listAttention"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).
@@ -53,7 +56,8 @@ var consoleParity = map[string]parity{
 	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules"}},
 	"GET /apps/{id}/logs":        {ops: []string{"getLogs"}},
 	// ?tab=running adds a "usage" event every 5 s that refetches the copies part (listCopies, usage=true).
-	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs"}},
+	// ?tab=domains adds the domains notice (listDomains ?app=).
+	"GET /live/apps/{id}": {ops: []string{"getApp", "listCopies", "listDeployments", "getLogs", "listDomains"}},
 
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
@@ -96,13 +100,14 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
-	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains.
-	"GET /apps/{id}/variables":       {ops: []string{"getApp"}},
-	"POST /apps/{id}/variables":      {ops: []string{"getApp", "deployApp"}},
-	"POST /apps/{id}/variables/env":  {ops: []string{"getApp", "deployApp"}},
-	"GET /apps/{id}/domains":         {ops: []string{"getApp"}},
-	"POST /apps/{id}/domains":        {ops: []string{"getApp", "deployApp"}},
-	"POST /apps/{id}/domains/remove": {ops: []string{"getApp", "deployApp"}},
+	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
+	// the page draws the app's domains with their state (listDomains ?app=, feature 023), and its Add panel's
+	// Check now is checkDomain.
+	"GET /apps/{id}/variables":      {ops: []string{"getApp"}},
+	"POST /apps/{id}/variables":     {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/variables/env": {ops: []string{"getApp", "deployApp"}},
+	"GET /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "listApps"}},
+	"POST /apps/{id}/domains":       {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp"}},
 	// "Back up daily" sets a service's backup policy: a deploy of the app with backup {engine, schedule, keep}.
 	"POST /apps/{id}/backups/policy": {ops: []string{"getApp", "deployApp"}},
 	// Backups (feature 010).
@@ -163,6 +168,21 @@ var consoleParity = map[string]parity{
 	"POST /schedules/{id}/delete":            {ops: []string{"getSchedule", "deleteSchedule"}},
 	"GET /schedules/{id}/runs/{runId}":       {ops: []string{"getSchedule", "getScheduleRun", "getScheduleRunOutput"}},
 	"POST /schedules/{id}/runs/{runId}/stop": {ops: []string{"stopScheduleRun"}},
+	// Domains (feature 023). The list reads every domain with its state (listDomains, with the filter's
+	// ?project= and ?app=), the apps for the filter and the Add panel, and the projects for the filter.
+	// Check again and the Add panel's Check now are checkDomain; Add is a deploy of the app with one more
+	// domain on its revision, refused when another app has the host (listDomains).
+	"GET /domains":                   {ops: []string{"listDomains", "listApps", "listProjects"}},
+	"GET /parts/domains":             {ops: []string{"listDomains", "listApps"}},
+	"GET /parts/domains/add-service": {ops: []string{"getApp"}}, // the Add panel's service field for a picked app
+	"POST /domains":                  {ops: []string{"listApps", "getApp", "listDomains", "checkDomain", "deployApp"}},
+	"POST /domains/{host}/check":     {ops: []string{"checkDomain"}},
+	// The Options form (feature 023): Team only, the www redirect and the path of one domain, and Remove…, are a
+	// deploy of the app with that service's domains replaced, on the revision getApp gave (deployApp with
+	// If-Match; the Compose-file app goes through deployCompose's overlay). New password is rotateTeamPassword.
+	"POST /domains/{host}/options":       {ops: []string{"getApp", "deployApp"}},
+	"POST /domains/{host}/remove":        {ops: []string{"getApp", "deployApp"}},
+	"POST /domains/{host}/team-password": {ops: []string{"getApp", "rotateTeamPassword"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

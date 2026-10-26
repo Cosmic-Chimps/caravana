@@ -48,5 +48,5 @@ func (s *Service) RedeployVersion(ctx context.Context, appID, deploymentID strin
 	// The version's Compose file comes back with its definition, so the editor
 	// shows what that version was made from. A version made from a definition has
 	// none: the kept file is dropped, with the warning saveAndDeploy adds.
-	return s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: rec.Compose}, &pinned{digests: rec.Deployment.Digests, source: deploymentID})
+	return recordOnly(s.saveAndDeploy(ctx, a, Condition{}, trigger, made{file: rec.Compose}, &pinned{digests: rec.Deployment.Digests, source: deploymentID}))
 }

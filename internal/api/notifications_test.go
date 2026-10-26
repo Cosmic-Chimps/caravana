@@ -375,6 +375,11 @@ func TestNotificationEventSchema(t *testing.T) {
 			Detail: "Exited with code 3.", Schedule: "rates-sync", ExitCode: new(3), At: ev.At},
 		{Type: notify.EventDeploySucceeded, AppID: "shop", Title: "t", Text: "x", At: ev.At,
 			Origin: &notify.Origin{Commit: "abc1234", Ref: "refs/heads/main", Actor: "ana", Run: "https://ci.example.com/1"}},
+		// Problems about a domain (feature 023).
+		{Type: notify.EventProblemOpened, Kind: "domain_dns_elsewhere", AppID: "shop", Service: "web", Title: "t", Text: "x",
+			Domain: "shop.example.com", AddressSeen: "198.51.100.9", At: ev.At},
+		{Type: notify.EventProblemOpened, Kind: "domain_cert_expiring", AppID: "shop", Service: "web", Title: "t", Text: "x",
+			Domain: "bi.example.com", ExpiresAt: new(ev.At.Add(time.Hour)), At: ev.At},
 	} {
 		req, err = notify.Render(notify.Channel{Kind: notify.KindWebhook, Address: "https://hooks.example.com/h", Secret: "s"},
 			ev, "ndl_3f9a1c2b4d5e", time.Now())

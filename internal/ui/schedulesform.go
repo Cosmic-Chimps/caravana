@@ -214,6 +214,10 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 	if err != nil {
 		return schedForm{}, err
 	}
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return schedForm{}, err
+	}
 	var apps []formApp
 	for _, sum := range sums {
 		if sum.App.Defined() {
@@ -234,7 +238,7 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 		f.Apps = append(f.Apps, formOption{Value: "", Label: "Choose an app", Selected: chosen < 0})
 	}
 	for i, a := range apps {
-		label := appLabel(a.rec)
+		label := pl.appLabel(a.rec)
 		if a.stopped {
 			label += " (stopped)"
 		}
@@ -273,7 +277,7 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 		for _, a := range apps {
 			for _, svc := range a.rec.App.Services {
 				v := a.rec.App.ID + pairSep + svc.Name
-				f.Services = append(f.Services, formOption{Value: v, Label: appLabel(a.rec) + " › " + svc.Name, Selected: in.Service == v,
+				f.Services = append(f.Services, formOption{Value: v, Label: pl.appLabel(a.rec) + " › " + svc.Name, Selected: in.Service == v,
 					Disabled: a.stopped || len(svc.Volumes) > 0})
 			}
 		}

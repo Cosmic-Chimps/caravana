@@ -66,10 +66,17 @@ type Event struct {
 	// 022: schedule_failed, schedule_skipping) when it opens. ExitCode is the
 	// code its failed run exited with, when it exited with one. Never the
 	// run's output.
-	Schedule string    `json:"schedule,omitempty"`
-	ExitCode *int      `json:"exitCode,omitempty"`
-	URL      string    `json:"url,omitempty"` // the console page about it, when its address is known
-	At       time.Time `json:"at"`
+	Schedule string `json:"schedule,omitempty"`
+	ExitCode *int   `json:"exitCode,omitempty"`
+	// Domain is the host of a problem about a domain (feature 023:
+	// domain_dns_elsewhere, domain_cert_expiring) when it opens. AddressSeen
+	// is the address its DNS gave that isn't this host's (dns_elsewhere);
+	// ExpiresAt is when its certificate ends (cert_expiring).
+	Domain      string     `json:"domain,omitempty"`
+	AddressSeen string     `json:"addressSeen,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	URL         string     `json:"url,omitempty"` // the console page about it, when its address is known
+	At          time.Time  `json:"at"`
 }
 
 // Origin is where a deploy came from, as a CI step told Caravana. It has the

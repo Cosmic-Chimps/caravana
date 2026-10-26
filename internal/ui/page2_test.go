@@ -2,8 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -102,9 +101,9 @@ func TestPage2Shapes(t *testing.T) {
 			"Add or change", "Keep as a secret (the value is never shown again)", "Set and deploy", "Secret values live in Nomad Variables"},
 			[]string{"Used by", `id="var-service"`})
 		check(t, e, "whoami", "/domains", []string{"Domains", "Every address people use to reach this app. HTTPS is set up for each.", "1 domain", "whoami.example.com",
-			"web :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at Caravana", "Add domain and deploy",
+			"whoami :80 · production", `aria-label="Open https://whoami.example.com"`, `target="_blank" rel="noopener"`, "Add a domain", "Point it at caravana", "Add domain and deploy", "All domains", "Sends traffic to whoami :80, set in Configure",
 			"The root of a domain needs an A record. A subdomain can use one too."},
-			[]string{`id="domain-service"`, "Sends traffic to"})
+			[]string{`id="domain-service"`})
 		check(t, e, "whoami", "/configure", []string{"Copies & size", "Deploy"}, []string{`id="svc-web-title"`})
 	})
 
@@ -126,7 +125,8 @@ func TestPage2Shapes(t *testing.T) {
 		if !strings.Contains(vars, `<input type="hidden" name="secret" value="1">`) {
 			t.Error("the kept-file Add form doesn't set a secret")
 		}
-		check(t, e, "shop", "/domains", []string{"This app is edited through its Compose file.", "shop.example.com"}, []string{"Add a domain", "Remove", "Add domain and deploy"})
+		// Domains are edited through the overlay now, as secrets are: the page has its Add panel and Options.
+		check(t, e, "shop", "/domains", []string{"shop.example.com", "Add a domain", "Add domain and deploy", "Save and deploy", "Remove…"}, []string{"This app is edited through its Compose file."})
 		check(t, e, "shop", "/backups", []string{"1 backed up · 0 failing · 0 not"}, nil)
 	})
 
@@ -160,12 +160,13 @@ func TestPage2Shapes(t *testing.T) {
 		// A hand-made post is refused with the same words, and deploys nothing.
 		n := e.deployCount(t, "duet")
 		for path, form := range map[string]url.Values{
-			"/apps/duet/variables":      {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "name": {"A"}, "value": {"1"}},
-			"/apps/duet/variables/env":  {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "env": {"A=1"}},
-			"/apps/duet/domains":        {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"x.duet.example.com"}},
-			"/apps/duet/domains/remove": {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"web.duet.example.com"}},
-			"/apps/duet/secrets/remove": {"revision": {e.revisionOf(t, "duet")}, "service": {"api"}, "name": {"TOKEN"}},
-			"/apps/duet/backups/policy": {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
+			"/apps/duet/variables":                  {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "name": {"A"}, "value": {"1"}},
+			"/apps/duet/variables/env":              {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "env": {"A=1"}},
+			"/apps/duet/domains":                    {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "host": {"x.duet.example.com"}},
+			"/domains/web.duet.example.com/remove":  {"app": {"duet"}, "revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
+			"/domains/web.duet.example.com/options": {"app": {"duet"}, "revision": {e.revisionOf(t, "duet")}, "service": {"web"}, "teamOnly": {"on"}},
+			"/apps/duet/secrets/remove":             {"revision": {e.revisionOf(t, "duet")}, "service": {"api"}, "name": {"TOKEN"}},
+			"/apps/duet/backups/policy":             {"revision": {e.revisionOf(t, "duet")}, "service": {"web"}},
 		} {
 			resp, body := e.postForm(t, path, form)
 			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusSeeOther || !strings.Contains(text(body), sentence) && path != "/apps/duet/backups/policy" {
@@ -392,7 +393,7 @@ func TestAddAndRemoveDomain(t *testing.T) {
 	_, page = e.get(t, "/apps/duet/domains")
 	var remove plainForm
 	for _, f := range formsIn(page) {
-		if f.Action == "/apps/duet/domains/remove" && f.Values.Get("host") == "v2.duet.example.com" {
+		if f.Action == "/domains/v2.duet.example.com/remove" {
 			remove = f
 		}
 	}
@@ -414,7 +415,7 @@ func TestAddAndRemoveDomain(t *testing.T) {
 		add := formWith(t, page, "/apps/duet/domains")
 		var remove plainForm
 		for _, f := range formsIn(page) {
-			if f.Action == "/apps/duet/domains/remove" && f.Values.Get("host") == "web.duet.example.com" {
+			if f.Action == "/domains/web.duet.example.com/remove" {
 				remove = f
 			}
 		}
@@ -448,84 +449,25 @@ func TestAddAndRemoveDomain(t *testing.T) {
 		}
 	})
 
-	t.Run("a kept Compose file is read-only", func(t *testing.T) {
+	t.Run("a kept Compose file is edited through its overlay", func(t *testing.T) {
 		k, _ := keptShopEnv(t)
 		n := k.deployCount(t, "shop")
 		resp, body := k.postForm(t, "/apps/shop/domains", url.Values{"revision": {k.revisionOf(t, "shop")}, "service": {"web"}, "host": {"x.shop.example.com"}})
-		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), "This app is edited through its Compose file.") || k.deployCount(t, "shop") != n {
-			t.Errorf("add on a kept-file app = %d:\n%s", resp.StatusCode, text(body))
+		if resp.StatusCode != http.StatusSeeOther || k.deployCount(t, "shop") != n+1 {
+			t.Fatalf("add on a kept-file app = %d:\n%s", resp.StatusCode, text(body))
+		}
+		rec, err := k.Store.GetApp(context.Background(), "shop")
+		if err != nil || rec.Compose == nil {
+			t.Fatalf("the app lost its kept file: %v", err)
+		}
+		hosts := []string{}
+		for _, d := range rec.Compose.Services["web"].Domains {
+			hosts = append(hosts, d.Host)
+		}
+		if strings.Join(hosts, ",") != "shop.example.com,x.shop.example.com" {
+			t.Errorf("the kept file's overlay domains = %v", hosts)
 		}
 	})
-}
-
-// recordName is "@" for a host with one dot and the first label otherwise.
-func TestRecordName(t *testing.T) {
-	for host, want := range map[string]string{
-		"example.com":     "@",
-		"Example.com.":    "@",
-		"www.example.com": "www",
-		"a.b.example.com": "a",
-		"app.example.com": "app",
-		"":                "",
-		"  ":              "",
-		"example.co.uk":   "example", // the registered domain needs the public suffix list; documented in recordName
-	} {
-		if got := recordName(host); got != want {
-			t.Errorf("recordName(%q) = %q, want %q", host, got, want)
-		}
-	}
-}
-
-// The address a domain's A record points at is what the console's own host name resolves to,
-// found lazily with a two-second limit, kept once found, and not asked for again for a minute
-// after a failure.
-func TestHostIP(t *testing.T) {
-	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
-	calls := 0
-	h := &hostIP{timeout: time.Second, retry: time.Minute, lookup: func(_ context.Context, network, host string) ([]net.IP, error) {
-		calls++
-		if network != "ip4" || host != "console.example.com" {
-			t.Errorf("lookup(%q, %q)", network, host)
-		}
-		return []net.IP{net.ParseIP("203.0.113.7")}, nil
-	}}
-	if got := h.find(context.Background(), "", now); got != "" || calls != 0 {
-		t.Errorf("with no public URL: %q after %d lookups, want none", got, calls)
-	}
-	if got := h.find(context.Background(), "https://console.example.com", now); got != "203.0.113.7" {
-		t.Errorf("find = %q", got)
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(time.Hour))
-	if calls != 1 {
-		t.Errorf("%d lookups, want the answer kept for the process", calls)
-	}
-
-	calls = 0
-	h = &hostIP{timeout: 20 * time.Millisecond, retry: time.Minute, lookup: func(ctx context.Context, _, _ string) ([]net.IP, error) {
-		calls++
-		<-ctx.Done() // a resolver that never answers
-		return nil, ctx.Err()
-	}}
-	start := time.Now()
-	if got := h.find(context.Background(), "https://console.example.com", now); got != "" || time.Since(start) > 2*time.Second {
-		t.Errorf("a stuck resolver: %q after %v", got, time.Since(start))
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(30*time.Second))
-	if calls != 1 {
-		t.Errorf("%d lookups within a minute of a failure, want 1", calls)
-	}
-	h.find(context.Background(), "https://console.example.com", now.Add(2*time.Minute))
-	if calls != 2 {
-		t.Errorf("%d lookups after the minute, want a retry", calls)
-	}
-
-	// A loopback address is the console on a laptop, not a host a domain can point at.
-	h = &hostIP{timeout: time.Second, retry: time.Minute, lookup: func(context.Context, string, string) ([]net.IP, error) {
-		return []net.IP{net.ParseIP("127.0.0.1")}, nil
-	}}
-	if got := h.find(context.Background(), "http://127.0.0.1:7070", now); got != "" {
-		t.Errorf("a loopback address was offered: %q", got)
-	}
 }
 
 // The add form's record box: the A record's name from the typed host, and the address when the
@@ -540,35 +482,32 @@ func TestDomainRecordBox(t *testing.T) {
 	}
 
 	t.Run("no public URL: the words", func(t *testing.T) {
-		e.Server.publicURL = func() string { return "" }
+		e.Svc.SetPublicURL("")
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Type A") || !strings.Contains(got, "Value this host's public IP address") {
 			t.Errorf("the box = %q", got)
 		}
 	})
 
 	t.Run("the address the host resolves to", func(t *testing.T) {
-		e.Server.publicURL = func() string { return "https://console.example.com" }
-		e.Server.hostIP.lookup = func(context.Context, string, string) ([]net.IP, error) {
-			return []net.IP{net.ParseIP("203.0.113.7")}, nil
-		}
+		e.Svc.SetPublicURL("https://console.example.com")
+		e.Svc.SetEdge(edgetest.FakeResolver{Hosts: map[string][]string{"console.example.com": {"2001:db8::7", "203.0.113.7"}}}, nil)
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Value 203.0.113.7") || strings.Contains(got, "public IP address") {
 			t.Errorf("the box = %q", got)
 		}
 		// A refused add draws the box for the host that was typed: an apex is "@", a subdomain its first label.
 		add := formWith(t, e.pageOf(t, "/apps/whoami/domains"), "/apps/whoami/domains")
-		_, body := e.submit(t, add, url.Values{"host": {"Example.com"}}) // uppercase: refused, and one dot
+		_, body := e.submit(t, add, url.Values{"host": {"Example.com"}, "path": {"no-slash"}}) // capitals are read as lowercase; the path is what is refused
 		if got := box(body); !strings.Contains(got, "Name @") || !strings.Contains(got, "Value 203.0.113.7") {
 			t.Errorf("the box for an apex = %q", got)
 		}
-		_, body = e.submit(t, add, url.Values{"host": {"Sub.example.com"}})
+		_, body = e.submit(t, add, url.Values{"host": {"Sub.example.com"}, "path": {"no-slash"}})
 		if got := box(body); !strings.Contains(got, "Name sub") {
 			t.Errorf("the box for a subdomain = %q", got)
 		}
 	})
 
 	t.Run("a host that doesn't resolve: the words", func(t *testing.T) {
-		e.Server.hostIP = newHostIP()
-		e.Server.hostIP.lookup = func(context.Context, string, string) ([]net.IP, error) { return nil, errors.New("no such host") }
+		e.Svc.SetEdge(edgetest.FakeResolver{}, nil) // a new resolver drops the kept address; this one finds nothing
 		if got := box(e.pageOf(t, "/apps/whoami/domains")); !strings.Contains(got, "Value this host's public IP address") {
 			t.Errorf("the box = %q", got)
 		}

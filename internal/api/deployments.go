@@ -60,6 +60,9 @@ type deploymentJSON struct {
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
+	// TeamPasswords is set only in the answer of the deploy that turned a
+	// domain Team only (feature 023): host → its password, shown this once.
+	TeamPasswords map[string]string `json:"teamPasswords,omitempty"`
 }
 
 // promotedFromJSON is the source of a promotion (schema PromotedFrom).
@@ -204,7 +207,7 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	var rec store.DeploymentRecord
+	var res service.DeployResult
 	if present {
 		var cond service.Condition
 		if cond, err = ifMatch(r); err != nil {
@@ -218,17 +221,28 @@ func (s *server) deploy(w http.ResponseWriter, r *http.Request) error {
 			return &Error{Status: http.StatusBadRequest, Code: codeInvalidField, Field: "id",
 				Message: fmt.Sprintf("%q doesn't match the app ID in the path (%q)", a.ID, id)}
 		}
-		rec, err = s.svc.DeployIf(ctx, a, cond, app.TriggerManual)
+		res, err = s.svc.DeployIfResult(ctx, a, cond, app.TriggerManual)
 	} else {
-		rec, err = s.svc.Redeploy(ctx, id, app.TriggerManual)
+		res.DeploymentRecord, err = s.svc.Redeploy(ctx, id, app.TriggerManual)
 	}
 	if err != nil {
 		return err
 	}
-
-	w.Header().Set("Location", deploymentPath(id, rec.Deployment.ID))
-	writeJSON(w, http.StatusAccepted, toDeploymentJSON(rec))
+	writeDeployResult(w, id, res)
 	return nil
+}
+
+// writeDeployResult answers a deploy: 202, the deployment and its Location,
+// and the passwords of the domains it turned Team only, shown this once (the
+// answer is then no-store).
+func writeDeployResult(w http.ResponseWriter, id string, res service.DeployResult) {
+	d := toDeploymentJSON(res.DeploymentRecord)
+	if len(res.TeamPasswords) > 0 {
+		d.TeamPasswords = res.TeamPasswords
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	w.Header().Set("Location", deploymentPath(id, res.Deployment.ID))
+	writeJSON(w, http.StatusAccepted, d)
 }
 
 // listLimit reads the optional ?limit= of a list route: 1 to maxListLimit,

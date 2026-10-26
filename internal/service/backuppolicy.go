@@ -43,7 +43,7 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 		file := withBackup(*rec.Compose, service, policy)
 		m.file = &file
 	}
-	return s.saveAndDeploy(ctx, a, cond, trigger, m, nil)
+	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
 // withBackup returns a copy of file whose overlay for service sets policy as

@@ -72,6 +72,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 	cases = append(cases, volumeBackupCases()...)
 	cases = append(cases, entrypointCases()...)
+	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
 }
 
@@ -154,6 +155,51 @@ func entrypointCases() []goldenCase {
 		"tool":  "ghcr.io/acme/tool@sha256:" + strings.Repeat("b", 64),
 	}}
 	return []goldenCase{{name: "entrypoint", app: cache, deployment: dep, settings: labSettings()}}
+}
+
+// domainCases are apps whose domains have options (feature 023), each with
+// the domains the case is named for. They live here, not in apptest, like the
+// other cases of one feature. "domain-all" has one domain of each kind and a
+// plain one, so the base router keeps only the plain host.
+func domainCases() []goldenCase {
+	shop := func(domains ...app.Domain) app.App {
+		return app.App{
+			ID:     "shop",
+			Source: app.Source{Kind: app.SourceImage},
+			Services: []app.Service{{
+				Name:    "web",
+				Image:   "traefik/whoami:v1.10",
+				Ports:   []app.Port{{Name: "http", ContainerPort: 80}},
+				Domains: domains,
+				Health:  &app.HealthCheck{Path: "/health"},
+			}},
+		}
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"web": "traefik/whoami@sha256:" + strings.Repeat("a", 64),
+	}}
+	return []goldenCase{
+		{name: "domain-path", app: shop(app.Domain{Host: "shop.example.com", Port: "http", Path: "/api"}), deployment: dep, settings: labSettings()},
+		{name: "domain-www", app: shop(app.Domain{Host: "example.com", Port: "http", WWWRedirect: true}), deployment: dep, settings: labSettings()},
+		{name: "domain-team", app: shop(app.Domain{Host: "staging.example.com", Port: "http", TeamOnly: true}), deployment: dep, settings: labSettings()},
+		{
+			name: "domain-all",
+			app: shop(
+				app.Domain{Host: "plain.example.com", Port: "http"},
+				app.Domain{Host: "api.example.com", Port: "http", Path: "/api"},
+				app.Domain{Host: "example.com", Port: "http", WWWRedirect: true},
+				app.Domain{Host: "team.example.com", Port: "http", TeamOnly: true},
+			),
+			deployment: dep,
+			settings:   letsEncryptSettings(),
+		},
+	}
+}
+
+func letsEncryptSettings() Settings {
+	s := labSettings()
+	s.CertResolver = "letsencrypt"
+	return s
 }
 
 func TestTranslate(t *testing.T) {

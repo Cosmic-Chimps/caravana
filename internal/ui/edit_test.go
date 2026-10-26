@@ -198,6 +198,7 @@ func TestParseEditFormValues(t *testing.T) {
 		Replicas:       new(3),
 		HealthPath:     "/healthz",
 		HealthInterval: 30 * time.Second,
+		DomainPort:     "http", // richApp's web has several ports and a domain on http
 		MemoryMB:       256,
 		MemoryMaxMB:    1024,
 	}

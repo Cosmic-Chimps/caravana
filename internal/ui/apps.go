@@ -178,11 +178,16 @@ func (s *server) partActivity(w http.ResponseWriter, r *http.Request, session st
 	s.renderPart(w, "apps", "activity-region", region)
 }
 
-// liveApps answers GET /live: the stream of the workspace pages (Apps, and
-// Schedules, which listens for the schedules notice).
+// liveApps answers GET /live: the stream of the workspace pages (Apps,
+// Schedules, which listens for the schedules notice, and Domains, which opens
+// it with ?watch=domains: the domains notice, and checks every minute while open).
 func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
-	s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
-		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules}})
+	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
+		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules}}
+	if r.URL.Query().Get("watch") == "domains" {
+		route.Kinds, route.WatchDomains = append(route.Kinds, service.ChangeDomains), true
+	}
+	s.stream(w, r, route)
 }
 
 // loadApps reads every app and builds the headline, the needs-you list and

@@ -1234,8 +1234,8 @@ func TestConsoleFormsWorkWithoutJavaScript(t *testing.T) {
 			t.Fatalf("POST domains = %d to %q, want 303 to the new deployment's entry:\n%s", resp.StatusCode, location(t, resp), body)
 		}
 		_, page = e.get(t, "/apps/plain/domains")
-		remove := formWith(t, page, "/apps/plain/domains/remove")
-		resp, body = e.submit(t, remove, url.Values{"host": {"www.plain.example.com"}})
+		remove := formWith(t, page, "/domains/www.plain.example.com/remove")
+		resp, body = e.submit(t, remove, nil)
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Fatalf("POST domains/remove = %d:\n%s", resp.StatusCode, text(body))
 		}

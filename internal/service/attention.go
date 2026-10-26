@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -27,6 +29,8 @@ const (
 	AttentionNoBackupDestination AttentionKind = "no_backup_destination" // backups are asked for and nowhere to put them
 	AttentionScheduleFailed      AttentionKind = "schedule_failed"       // a schedule's newest real run failed (feature 022)
 	AttentionScheduleSkipping    AttentionKind = "schedule_skipping"     // a schedule's newest 3 slots were skipped: a warning
+	AttentionDomainDNSElsewhere  AttentionKind = "domain_dns_elsewhere"  // a domain's DNS points at another host (feature 023)
+	AttentionDomainCertExpiring  AttentionKind = "domain_cert_expiring"  // a domain's certificate is near its end and not renewed
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -64,7 +68,14 @@ type AttentionItem struct {
 	// ExitCode is a failed run's exit code, when it exited with one
 	// (schedule_failed). Notifications carry it; the API's item doesn't.
 	ExitCode *int
-	When     time.Time
+	// Domain is the host of the domain kinds (feature 023); Service is then
+	// the service it goes to. AddressSeen is, for domain_dns_elsewhere, the
+	// first address its DNS gave that isn't this host's; ExpiresAt is, for
+	// domain_cert_expiring, when its certificate ends.
+	Domain      string
+	AddressSeen string
+	ExpiresAt   *time.Time
+	When        time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -103,11 +114,15 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	if err != nil {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
+	domains, err := s.store.ListDomainChecks(ctx)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
 	copies, copiesErr := s.deployer.AllCopies(ctx)
 	if copiesErr != nil {
 		s.log.Warn("can't read copies from Nomad; the needs-you list leaves them out", "error", copiesErr)
 	}
-	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds), nil
+	return attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds, domains), nil
 }
 
 // scheduleFacts is what the schedule kinds are derived from (feature 022,
@@ -165,7 +180,8 @@ func (s *Service) scheduleFactsOf(ctx context.Context) (scheduleFacts, error) {
 // one kind in one service become one item.
 func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.DeploymentRecord,
 	copies map[string][]Copy, copiesErr error,
-	backups []store.BackupRecord, restores []store.RestoreRecord, hasDestination bool, scheds scheduleFacts) Attention {
+	backups []store.BackupRecord, restores []store.RestoreRecord, hasDestination bool, scheds scheduleFacts,
+	domains []store.DomainCheckRecord) Attention {
 
 	out := Attention{CopiesUnknown: copiesErr != nil}
 	known := map[string]store.AppRecord{} // the apps, by ID
@@ -225,6 +241,7 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 		out.Items = append(out.Items, AttentionItem{Kind: AttentionNoBackupDestination, When: *noDestination})
 	}
 	out.Items = append(out.Items, scheduleItems(known, scheds)...)
+	out.Items = append(out.Items, domainItems(now, known, domains)...)
 
 	for i, it := range out.Items {
 		if rec, ok := known[it.AppID]; ok {
@@ -239,6 +256,7 @@ func attentionOf(now time.Time, apps []store.AppRecord, latest map[string]store.
 			strings.Compare(a.Service, b.Service),
 			strings.Compare(string(a.Kind), string(b.Kind)),
 			strings.Compare(a.ScheduleID, b.ScheduleID),
+			strings.Compare(a.Domain, b.Domain),
 		)
 	})
 	return out
@@ -382,6 +400,90 @@ func scheduleItems(apps map[string]store.AppRecord, facts scheduleFacts) []Atten
 		})
 	}
 	return items
+}
+
+// domainItems are the domain kinds (feature 023), from the cached checks: a
+// row whose state is dns_elsewhere or cert_expiring is an item while its app
+// exists, isn't stopped, and still has the host (as a domain, or as the pair
+// a domain's wwwRedirect redirects). A row is one check's facts, so a check
+// that couldn't be made never opens or clears an item by itself: the row
+// keeps the last state until a check says otherwise.
+func domainItems(now time.Time, apps map[string]store.AppRecord, checks []store.DomainCheckRecord) []AttentionItem {
+	var items []AttentionItem
+	for _, c := range checks {
+		var kind AttentionKind
+		switch edge.State(c.State) {
+		case edge.StateDNSElsewhere:
+			kind = AttentionDomainDNSElsewhere
+		case edge.StateCertExpiring:
+			kind = AttentionDomainCertExpiring
+		default:
+			continue
+		}
+		rec, ok := apps[c.AppID]
+		if !ok || rec.StoppedAt != nil || !hasHost(rec.App, c.Host) {
+			continue
+		}
+		it := AttentionItem{Kind: kind, AppID: c.AppID, Service: c.Service, Domain: c.Host, When: c.CheckedAt}
+		if kind == AttentionDomainDNSElsewhere {
+			it.AddressSeen = firstElsewhere(c.DNSSeen, c.DNSExpected)
+			if it.AddressSeen != "" {
+				it.Detail = fmt.Sprintf("%s points at %s, which isn't this host.", c.Host, it.AddressSeen)
+			} else {
+				it.Detail = fmt.Sprintf("%s points at another host.", c.Host)
+			}
+		} else {
+			if c.CertNotAfter != nil {
+				it.ExpiresAt = new(c.CertNotAfter.UTC())
+			}
+			it.Detail = expiringSentence(now, c.Host, it.ExpiresAt)
+		}
+		items = append(items, it)
+	}
+	return items
+}
+
+// hasHost says whether a has host as a domain, or as the pair of a domain
+// with wwwRedirect.
+func hasHost(a app.App, host string) bool {
+	for _, svc := range a.Services {
+		for _, d := range svc.Domains {
+			if d.Host == host || (d.WWWRedirect && d.RedirectPair() == host) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// firstElsewhere is the first address in seen that isn't in expected, or "".
+func firstElsewhere(seen, expected []string) string {
+	for _, a := range seen {
+		if !slices.Contains(expected, a) {
+			return a
+		}
+	}
+	return ""
+}
+
+// expiringSentence says when a certificate ends: "The certificate for
+// bi.example.com expires in 6 days and hasn't been renewed.", "... expires
+// today ...", "... has expired ...".
+func expiringSentence(now time.Time, host string, notAfter *time.Time) string {
+	if notAfter == nil {
+		return fmt.Sprintf("The certificate for %s is about to expire and hasn't been renewed.", host)
+	}
+	left := notAfter.Sub(now)
+	days := int(left / (24 * time.Hour))
+	switch {
+	case left <= 0:
+		return fmt.Sprintf("The certificate for %s has expired and hasn't been renewed.", host)
+	case days == 0:
+		return fmt.Sprintf("The certificate for %s expires today and hasn't been renewed.", host)
+	case days == 1:
+		return fmt.Sprintf("The certificate for %s expires in 1 day and hasn't been renewed.", host)
+	}
+	return fmt.Sprintf("The certificate for %s expires in %d days and hasn't been renewed.", host, days)
 }
 
 // failedExitCode is the exit code a failed run exited with, or nil: a run

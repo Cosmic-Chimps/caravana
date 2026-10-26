@@ -159,6 +159,9 @@ func withDetail(ev Event) string {
 	if line := scheduleLine(ev); line != "" {
 		text += "\n" + line
 	}
+	if line := domainLine(ev); line != "" {
+		text += "\n" + line
+	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
 	if detail == "" {
 		return text
@@ -178,6 +181,23 @@ func scheduleLine(ev Event) string {
 	line := "Schedule: " + oneLine(ev.Schedule)
 	if ev.ExitCode != nil {
 		line += fmt.Sprintf(", exit code %d", *ev.ExitCode)
+	}
+	return line
+}
+
+// domainLine is "Domain: shop.example.com, points at 198.51.100.9" or
+// "Domain: shop.example.com, certificate expires 2026-11-03 09:00 UTC" for an
+// event about a domain, or "" for another.
+func domainLine(ev Event) string {
+	if ev.Domain == "" {
+		return ""
+	}
+	line := "Domain: " + oneLine(ev.Domain)
+	if ev.AddressSeen != "" {
+		line += ", points at " + oneLine(ev.AddressSeen)
+	}
+	if ev.ExpiresAt != nil {
+		line += ", certificate expires " + ev.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
 	}
 	return line
 }

@@ -498,6 +498,7 @@ func TestPromoteVolumes(t *testing.T) {
 	deployHealthy(t, e, prod)
 	st := whoamiAs(stagingID)
 	st.Services[0].Replicas = nil
+	st.Services[0].Domains = []app.Domain{{Host: "staging.example.com", Port: "http"}} // a host is one app's
 	st.Services[0].Volumes = []app.Volume{{Name: "data", Path: "/data"}}
 	deployHealthy(t, e, st)
 

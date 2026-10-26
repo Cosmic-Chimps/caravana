@@ -95,7 +95,7 @@ func TestScheduleItems(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := attentionOf(attNow, apps, nil, nil, nil, nil, nil, true, tc.facts).Items
+			got := attentionOf(attNow, apps, nil, nil, nil, nil, nil, true, tc.facts, nil).Items
 			if len(got) != len(tc.want) {
 				t.Fatalf("items = %+v, want %d", got, len(tc.want))
 			}

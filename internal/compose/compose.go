@@ -78,11 +78,19 @@ type Overlay struct {
 	Backup *app.Backup `json:"backup,omitempty"`
 }
 
-// Domain routes Host to one container port of the service.
+// Domain routes Host to one container port of the service, with the options
+// of app.Domain (feature 023).
 type Domain struct {
 	Host string `json:"host"`
 	// Port is the container port. Zero is allowed when the service has one.
 	Port int `json:"port,omitempty"`
+	// Path, when set, limits the domain to URLs under that prefix ("/api").
+	Path string `json:"path,omitempty"`
+	// WWWRedirect makes Host the target of its pair (www.<h> or <h>), which
+	// redirects here.
+	WWWRedirect bool `json:"wwwRedirect,omitzero"`
+	// TeamOnly puts HTTP basic auth (user "team") in front of the domain.
+	TeamOnly bool `json:"teamOnly,omitzero"`
 }
 
 // Health is a check Nomad can run: HTTP on Path, or TCP when Path is empty.

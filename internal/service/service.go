@@ -83,6 +83,18 @@ type Service struct {
 	maxTerminals  int           // sessions that may be open at once
 	terminalIdle  time.Duration // how long a session may go without input
 	terminalLimit time.Duration // how long a session may stay open
+
+	// Domains (feature 023), see domains.go and domainwatch.go.
+	domainMu        sync.Mutex     // guards edgeCfg, the two gaps and domainsWatching
+	edgeCfg         domainSettings // the checks' resolver, dialer and settings
+	hostAddrs       hostAddressCache
+	domainIdleGap   time.Duration // between two checks of every domain
+	domainWatchGap  time.Duration // between two checks while a domains page is watched
+	domainsWatching int           // domains pages open now, see MarkDomainsWatched
+	// teamMu is held while team_passwords and the variable nomad/jobs/traefik
+	// change, so two writers never leave the variable behind the table (see
+	// teamonly.go).
+	teamMu sync.Mutex
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -145,6 +157,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		maxTerminals:  defaultMaxTerminals,
 		terminalIdle:  defaultTerminalIdle,
 		terminalLimit: defaultTerminalLimit,
+
+		domainIdleGap:  defaultDomainIdleGap,
+		domainWatchGap: defaultDomainWatchGap,
 	}
 }
 
@@ -286,6 +301,12 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runSender(ctx, s.senderGap)
+	}()
+	// The domain checks dial out, so they live in the same group.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.watchDomains(ctx)
 	}()
 	return nil
 }

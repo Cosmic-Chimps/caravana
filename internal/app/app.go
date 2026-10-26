@@ -10,7 +10,11 @@
 // change.
 package app
 
-import "time"
+import (
+	"slices"
+	"strings"
+	"time"
+)
 
 // App is one project a user deploys. It becomes one Nomad job.
 type App struct {
@@ -196,6 +200,39 @@ func (a App) WithoutSecretValues() App {
 	return a
 }
 
+// WithLowercaseHosts returns the app with every domain's host in lowercase. DNS names are
+// case-insensitive, so "WWW.Example.com" and "www.example.com" are the same name: a host typed
+// with capitals is lowercased on the way in rather than refused, and the stored definition
+// only changes when a host had capitals. An app with none is returned as it is (the same
+// slices); otherwise the changed services are copied, never the caller's.
+func (a App) WithLowercaseHosts() App {
+	var services []Service
+	for i, svc := range a.Services {
+		var domains []Domain
+		for j, d := range svc.Domains {
+			lower := strings.ToLower(d.Host)
+			if lower == d.Host {
+				continue
+			}
+			if domains == nil {
+				domains = slices.Clone(svc.Domains)
+			}
+			domains[j].Host = lower
+		}
+		if domains == nil {
+			continue
+		}
+		if services == nil {
+			services = slices.Clone(a.Services)
+		}
+		services[i].Domains = domains
+	}
+	if services != nil {
+		a.Services = services
+	}
+	return a
+}
+
 // Port is a named container port. Nomad maps a dynamic host port to it.
 type Port struct {
 	// Name is the port label, e.g. "http": a lowercase letter, then lowercase
@@ -207,10 +244,45 @@ type Port struct {
 
 // Domain is a public hostname routed over HTTPS to one port of a service.
 type Domain struct {
-	// Host is a lowercase hostname, unique across the whole app.
+	// Host is a lowercase hostname, unique across the whole app. A host sent with capitals is
+	// lowercased by a deploy (WithLowercaseHosts), since DNS names are case-insensitive.
 	Host string `json:"host"`
 	// Port is the Name of a Port declared on the same service.
 	Port string `json:"port"`
+	// Path, when set, limits the domain to URLs under that prefix ("/api").
+	Path string `json:"path,omitempty"`
+	// WWWRedirect makes this host the target of its pair (see RedirectPair):
+	// the pair redirects here.
+	WWWRedirect bool `json:"wwwRedirect,omitzero"`
+	// TeamOnly puts HTTP basic auth (user "team") in front of the domain.
+	TeamOnly bool `json:"teamOnly,omitzero"`
+}
+
+// HasOptions reports whether the domain has any option, which gives it a
+// router of its own.
+func (d Domain) HasOptions() bool {
+	return d.Path != "" || d.WWWRedirect || d.TeamOnly
+}
+
+// RedirectPair is the other name a WWWRedirect on this host covers: "<h>" for
+// "www.<h>", "www.<h>" for an apex "<h>", and "" for any other host (a
+// subdomain that isn't "www.").
+func (d Domain) RedirectPair() string {
+	if rest, ok := strings.CutPrefix(d.Host, "www."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	if IsApex(d.Host) {
+		return "www." + d.Host
+	}
+	return ""
+}
+
+// IsApex reports whether host is an apex: exactly one dot ("example.com").
+// Telling a registered domain apart in general ("example.co.uk") needs the
+// public suffix list, which Caravana doesn't carry, so such a host reads as a
+// subdomain. The console's DNS record advice uses the same rule.
+func IsApex(host string) bool {
+	return strings.Count(host, ".") == 1
 }
 
 // HealthCheck tells Nomad how to decide that a service is healthy. Deploys wait

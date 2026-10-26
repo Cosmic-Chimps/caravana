@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
@@ -24,13 +25,32 @@ func (s *Service) DeployCompose(ctx context.Context, appID string, req compose.R
 // the file later. The kept copy has no secret values; the request itself, with
 // them, still feeds Translate, so the values reach the secret store.
 func (s *Service) DeployComposeIf(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return recordOnly(s.DeployComposeIfResult(ctx, appID, req, cond, trigger))
+}
+
+// DeployComposeIfResult is DeployComposeIf answering a DeployResult: with the
+// password of each domain the deploy turned Team only, the one time it is
+// shown (the API's deployCompose).
+func (s *Service) DeployComposeIfResult(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (DeployResult, error) {
 	a, warnings, err := compose.Translate(appID, req)
 	if err != nil {
-		return store.DeploymentRecord{}, err
+		return DeployResult{}, err
 	}
 	file := req.WithoutSecretValues()
-	rec, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
-	return rec, compose.InFile(err, a)
+	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
+	return res, inFile(err, a)
+}
+
+// inFile is compose.InFile, which names a refused field by its path in the
+// file, for a DomainTakenError too.
+func inFile(err error, a app.App) error {
+	var taken *DomainTakenError
+	if errors.As(err, &taken) {
+		if fe, ok := compose.InFile(app.NewFieldError(taken.Field, ""), a).(*app.FieldError); ok {
+			return &DomainTakenError{Field: fe.Field, Host: taken.Host, App: taken.App}
+		}
+	}
+	return compose.InFile(err, a)
 }
 
 // PreviewCompose answers what DeployCompose would deploy: the app, with
@@ -41,6 +61,7 @@ func (s *Service) PreviewCompose(ctx context.Context, appID string, req compose.
 	if err != nil {
 		return app.App{}, nil, err
 	}
+	a = a.WithLowercaseHosts()
 	if err := s.deployer.Validate(a); err != nil {
 		return app.App{}, nil, compose.InFile(err, a)
 	}
