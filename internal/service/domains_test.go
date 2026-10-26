@@ -127,7 +127,7 @@ func TestDomainsList(t *testing.T) {
 
 	cacheRow(t, e, "shop.example.com", "shop", edge.DNSOK, edge.CertIssued)
 	cacheRow(t, e, "www.shop.example.com", "shop", edge.DNSOK, edge.CertIssued)
-	cacheRow(t, e, "api.shop.example.com", "shop", edge.DNSElsewhere, edge.CertIssued)
+	cacheRow(t, e, "api.shop.example.com", "shop", edge.DNSElsewhere, edge.CertNone)
 	cacheRow(t, e, "blog.example.com", "blog", edge.DNSNone, edge.CertPending)
 	cacheRow(t, e, "old.example.com", "old", edge.DNSOK, edge.CertIssued) // from before it stopped
 

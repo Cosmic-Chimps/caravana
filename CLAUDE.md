@@ -679,7 +679,11 @@ every address with its state, per-domain options, Add with checks, and certifica
 - `internal/edge` is the pure seam: `Resolver`, `Dialer`, `Check` (DNS from the system resolver plus
   `1.1.1.1` and `8.8.8.8`, 2 s each; the certificate from a handshake with `CARAVANA_EDGE_ADDRESS`, SNI
   = the host, verified by hand), `StateOf` (precedence: `not_served`, `dns_elsewhere`, `cert_expiring`,
-  `cert_pending`, `dns_none`, `self_signed`, `redirect`, `live`, `unknown`); `edgetest` has the fakes.
+  `cert_pending`, `dns_none`, `self_signed`, `redirect`, `live`, `unknown`; but a valid certificate
+  (`Certificate.Valid`: issued or expiring) overrides an elsewhere DNS, since it proves the issuer
+  reached this host, so a domain behind Cloudflare's proxy is `live` and only `dns_elsewhere` while
+  it has no valid certificate; `DNS.Proxy` is `Cloudflare` when every foreign address is in its
+  hard-coded ranges, `edge.ProxyOf`, recomputed from the stored addresses); `edgetest` has the fakes.
   `*.localhost` answers loopback without DNS. `Service.SetEdge`, `SetEdgeAddress`, `SetACME`,
   `SetDomainWatchGaps(idle, watched)`.
 - Store (migration `0018_domains.sql`): `domain_checks` (the cache the page and Attention read),

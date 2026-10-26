@@ -108,8 +108,10 @@ func TestDomainWatchPass(t *testing.T) {
 		t.Errorf("the served row wasn't checked again: %v", row.CheckedAt)
 	}
 
-	// The DNS of one host moves elsewhere: only its app is told.
+	// The DNS of one host moves elsewhere, and Traefik has no certificate for it any more (with a
+	// valid one it would be a proxy in front, and live): only its app is told.
 	resolver.Hosts["api.example.com"] = []string{"198.51.100.9"}
+	delete(dialer.Chains, "api.example.com")
 	e.svc.SetEdge(resolver, nil)
 	if err := e.svc.checkDomainTargets(ctx, DomainFilter{}, true); err != nil {
 		t.Fatalf("third pass: %v", err)

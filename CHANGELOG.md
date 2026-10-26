@@ -9,6 +9,16 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+- **Domains behind Cloudflare's proxy** (or another proxy or CDN) with a valid certificate are
+  live, not "DNS points elsewhere". Their DNS answers the proxy's addresses, not the host's, but a
+  trusted certificate from Traefik proves the issuer reached this host, so the certificate now
+  decides: live, or "certificate expiring". The DNS line says "· Cloudflare's proxy" (or "· a proxy
+  or CDN in front of this host") as information, and the Add panel shows a Cloudflare address as a
+  warning that explains the origin, not as a failure. The needs-you items and notifications for
+  such domains clear by themselves at the next check (every 15 minutes at most), with one
+  "resolved" each. A domain with no valid certificate yet still reads "DNS points elsewhere".
+
 ## 0.13.0 - 2026-10-26
 
 ### Added

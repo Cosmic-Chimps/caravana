@@ -381,7 +381,7 @@ func dnsFactText(d edge.DNS) string {
 		out = append(out, typ+" → "+a.String())
 	}
 	if len(out) > 0 {
-		return strings.Join(out, ", ")
+		return strings.Join(out, ", ") + proxyNote(d)
 	}
 	switch d.Status {
 	case edge.DNSNone:
@@ -390,6 +390,32 @@ func dnsFactText(d edge.DNS) string {
 		return "points here"
 	}
 	return "couldn't check"
+}
+
+// proxyNote is what a live row's DNS fact adds when the addresses aren't this host's (the
+// certificate says they are in front of it): information, not a failure. "" for DNS that
+// isn't elsewhere.
+func proxyNote(d edge.DNS) string {
+	if d.Status != edge.DNSElsewhere {
+		return ""
+	}
+	if d.Proxy == edge.ProxyCloudflare {
+		return " · Cloudflare's proxy"
+	}
+	return " · a proxy or CDN in front of this host"
+}
+
+// expectedTexts are this host's own addresses as the "A · 203.0.113.1" parts addressesOf reads.
+func expectedTexts(d edge.DNS) []string {
+	out := make([]string, len(d.Expected))
+	for i, a := range d.Expected {
+		typ := "A"
+		if a.Is6() {
+			typ = "AAAA"
+		}
+		out[i] = typ + " · " + a.String()
+	}
+	return out
 }
 
 // certFact is the certificate fact of a live row: "Let's Encrypt · renews in

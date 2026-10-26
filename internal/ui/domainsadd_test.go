@@ -30,6 +30,7 @@ func addEnv(t *testing.T) *consoleEnv {
 		"console.example.com": {"203.0.113.1", "2001:db8::1"},
 		"here.example.com":    {"203.0.113.1", "2001:db8::1"},
 		"away.example.com":    {"185.199.108.153"},
+		"cf.example.com":      {"188.114.96.3", "2a06:98c1:3120::3"},
 	}}, nil)
 	return e
 }
@@ -110,6 +111,7 @@ func TestDomainAddCheckNow(t *testing.T) {
 	}{
 		{"here.example.com", "healthy", []string{"passed: DNS points at caravana", "not yet: HTTPS certificate issued after you add it", "Name here Value 203.0.113.1"}},
 		{"away.example.com", "failed", []string{"failed: DNS points at caravana points at 185.199.108.153"}},
+		{"cf.example.com", "warning", []string{"warning: DNS points at caravana points at Cloudflare's proxy (188.114.96.3, 2a06:98c1:3120::3). That works when Cloudflare forwards to this host: its origin should be 203.0.113.1, 2001:db8::1. The certificate is checked after the deploy."}},
 		{"nothing.example.com", "warning", []string{"warning: DNS points at caravana no DNS record"}},
 		{"example.com", "warning", []string{"Name @ Value 203.0.113.1"}},
 	}
@@ -132,7 +134,7 @@ func TestDomainAddCheckNow(t *testing.T) {
 			t.Errorf("%s: the form lost what was typed", tc.host)
 		}
 		primary := strings.Contains(panel, `class="cv-btn cv-btn-primary cv-btn-sm">Add domain and deploy`)
-		if primary != (tc.dns == "healthy") {
+		if primary != (tc.dns == "healthy" || tc.host == "cf.example.com") {
 			t.Errorf("%s: Add is primary = %v", tc.host, primary)
 		}
 	}

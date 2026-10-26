@@ -67,7 +67,9 @@ func certState(status string) edge.State {
 }
 
 // dnsState is the state a DNS result gives; ok is false for DNS that points here, which gives
-// no state of its own (the certificate's does).
+// no state of its own (the certificate's does). It reads the DNS alone: a trusted certificate
+// overrides an elsewhere DNS in edge.StateOf (something is in front of the host), and the Add
+// panel applies that rule itself (applyCheck), since it holds both facts.
 func dnsState(status string) (state edge.State, ok bool) {
 	switch status {
 	case edge.DNSElsewhere:

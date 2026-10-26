@@ -519,8 +519,12 @@ func routerOf(appID, service string, d app.Domain) string {
 // factsOf turns a stored check back into edge's facts. An address that doesn't
 // parse (none should) is left out.
 func factsOf(c store.DomainCheckRecord) edge.Facts {
+	dns := edge.DNS{Status: c.DNSStatus, Seen: parseAddrs(c.DNSSeen), Expected: parseAddrs(c.DNSExpected)}
+	if dns.Status == edge.DNSElsewhere {
+		dns.Proxy = edge.ProxyOf(dns.Seen, dns.Expected) // a pure function of what is stored
+	}
 	f := edge.Facts{
-		DNS:         edge.DNS{Status: c.DNSStatus, Seen: parseAddrs(c.DNSSeen), Expected: parseAddrs(c.DNSExpected)},
+		DNS:         dns,
 		Certificate: edge.Certificate{Status: c.CertStatus, Issuer: c.CertIssuer},
 		CheckedAt:   c.CheckedAt,
 	}

@@ -266,7 +266,21 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 	// The lines' marks and words are the state table's (domainstates.go): the state the result
 	// would give the row in the list.
 	v.DNS = checkLine{Mark: "healthy", Words: "DNS points at caravana"}
-	if st, ok := dnsState(chk.DNS.Status); ok {
+	behindProxy := chk.DNS.Status == edge.DNSElsewhere && (chk.Certificate.Valid() || chk.DNS.Proxy != "")
+	if behindProxy {
+		// An address that isn't this host's is not a failure when something stands in front of the
+		// host: a trusted certificate (edge.StateOf's rule, for a host already served) or Cloudflare's
+		// ranges (a new host has no certificate yet, so it is a warning, not a pass).
+		seen := mono(addressesOf(seenElsewhere(chk.DNS)))
+		switch {
+		case chk.Certificate.Valid():
+			v.DNS.Reason = sentence{plain("points at "), seen, plain(proxyNote(chk.DNS))}
+		default:
+			v.DNS.Mark = "warning"
+			v.DNS.Reason = sentence{plain("points at Cloudflare's proxy ("), seen, plain("). That works when Cloudflare forwards to this host: its origin should be "),
+				mono(addressesOf(expectedTexts(chk.DNS))), plain(". The certificate is checked after the deploy.")}
+		}
+	} else if st, ok := dnsState(chk.DNS.Status); ok {
 		info := stateInfo(st)
 		v.DNS.Mark, v.DNS.Reason = info.Mark, plainS(info.Words)
 		switch st {
@@ -280,7 +294,7 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 			}
 		}
 	}
-	v.Primary = chk.DNS.Status == edge.DNSOK
+	v.Primary = chk.DNS.Status == edge.DNSOK || behindProxy
 
 	v.Cert = checkLine{Mark: "idle", Words: "HTTPS certificate"}
 	c := chk.Certificate

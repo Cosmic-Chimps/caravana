@@ -25,6 +25,10 @@ type DNS struct {
 	Seen []netip.Addr
 	// Expected are this host's own addresses, as the caller gave them.
 	Expected []netip.Addr
+	// Proxy names the proxy the "elsewhere" addresses belong to ("Cloudflare"),
+	// or is empty. It is set only with Status elsewhere, and is a pure function of
+	// Seen and Expected (ProxyOf), so a stored check recomputes it.
+	Proxy string
 }
 
 // Resolver looks a host up. *net.Resolver satisfies it.
@@ -168,6 +172,7 @@ func classifyDNS(answers []Answer, expected []netip.Addr) DNS {
 		for _, a := range addrs {
 			if !slices.Contains(want, a) {
 				res.Status = DNSElsewhere
+				res.Proxy = ProxyOf(res.Seen, want)
 				return res
 			}
 		}

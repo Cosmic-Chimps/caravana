@@ -25,19 +25,23 @@ var States = []State{
 // StateOf derives the state from the facts: the first rule that applies.
 //
 //  1. not served (the app is stopped, or has no healthy deployment): not_served;
-//  2. DNS points elsewhere: dns_elsewhere;
+//  2. DNS points elsewhere and the certificate isn't a valid one: dns_elsewhere.
+//     A trusted certificate for the host (issued or expiring) proves the issuer
+//     reached this host, so DNS points at something in front of it (Cloudflare's
+//     proxy, another CDN) and the state follows the certificate;
 //  3. the certificate is expiring: cert_expiring;
 //  4. the certificate is pending: cert_pending;
 //  5. DNS has no record: dns_none;
 //  6. Traefik's own certificate with no resolver: self_signed;
 //  7. the host only redirects to its pair: redirect;
-//  8. DNS ok and the certificate issued: live;
+//  8. the certificate issued and DNS ok, elsewhere (behind a proxy) or not
+//     answering: live;
 //  9. anything else (a check that couldn't be made): unknown.
 func StateOf(f Facts, served, redirecting bool) State {
 	switch {
 	case !served:
 		return StateNotServed
-	case f.DNS.Status == DNSElsewhere:
+	case f.DNS.Status == DNSElsewhere && !f.Certificate.Valid():
 		return StateDNSElsewhere
 	case f.Certificate.Status == CertExpiring:
 		return StateCertExpiring
@@ -51,9 +55,10 @@ func StateOf(f Facts, served, redirecting bool) State {
 		return StateRedirect
 	case f.DNS.Status == DNSOK && f.Certificate.Status == CertIssued:
 		return StateLive
-	case f.DNS.Status == DNSUnknown && f.Certificate.Status == CertIssued:
-		// The resolvers didn't answer, but a trusted certificate was issued for
-		// the host, which proves the issuer reached it: live, not "couldn't check".
+	case f.Certificate.Status == CertIssued && (f.DNS.Status == DNSUnknown || f.DNS.Status == DNSElsewhere):
+		// The resolvers didn't answer, or answer a proxy's address, but a trusted
+		// certificate was issued for the host, which proves the issuer reached it:
+		// live, not "couldn't check" or "DNS points elsewhere".
 		return StateLive
 	}
 	return StateUnknown

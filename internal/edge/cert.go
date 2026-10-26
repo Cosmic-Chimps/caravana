@@ -43,6 +43,12 @@ type Certificate struct {
 	RenewsAt time.Time
 }
 
+// Valid says Traefik presented a trusted certificate for the host (issued, or
+// expiring but still the issuer's): proof that the issuer reached this host.
+func (c Certificate) Valid() bool {
+	return c.Status == CertIssued || c.Status == CertExpiring
+}
+
 // Dialer makes a TLS handshake with serverName at addr and returns what the
 // peer presented. It must not verify the certificate: Check does, by hand, so
 // that "untrusted" and "wrong name" are separate facts.
