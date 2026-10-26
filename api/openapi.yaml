@@ -5494,8 +5494,10 @@ components:
         now:
           type: [number, "null"]
           description: |
-            The newest point's value, when it is within the last few minutes. `null` when the
-            sampler stopped: a stale value is not "now".
+            The chart's head: the last 10 minutes at every range, the window the unusual rules
+            read (requests per second over it, the 5xx share of its requests, the slowest 5 % of
+            its merged counts, and the median of memory), not the range's newest point. `null`
+            when the window has no number, as when the sampler stopped: a stale value is not "now".
         over:
           type: boolean
           description: |
@@ -5503,7 +5505,7 @@ components:
             highest bound and the page says "over 10 s".
         usual:
           type: [number, "null"]
-          description: The band's median at `now`'s point.
+          description: The band's median for the last 10 minutes, in `now`'s unit.
         usualDays:
           type: integer
           description: How many earlier days `usual` rests on.

@@ -270,7 +270,7 @@ func (b *monBuilder) chart(sp metricSpec) monChart {
 		Date: dated, Hover: true,
 	}
 	if sp.series.Now != nil {
-		plot.Label += ", " + sp.num(sp.conv(*sp.series.Now)) + " " + sp.unit + " now"
+		plot.Label += ", " + sp.num(sp.conv(*sp.series.Now)) + " " + sp.unit + " in the last 10 minutes"
 	}
 
 	// The band: one polygon per stretch of points that have one.

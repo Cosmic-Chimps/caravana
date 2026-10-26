@@ -64,13 +64,14 @@ type SeriesPoint struct {
 // MetricSeries is one chart: the place's (or the app's) totals per point.
 type MetricSeries struct {
 	Points []SeriesPoint
-	// Now is the newest point that has a value, within the last few minutes;
-	// nil when none (a sampler that stopped doesn't leave a stale "now").
+	// Now is the chart's head: the last 10 minutes at every range (the window
+	// the rules read; memory's median), not the range's newest point; nil when
+	// the window has no number (a sampler that stopped doesn't leave a stale one).
 	Now *float64
 	// Over is for the slowest 5 % only: Now is beyond the highest bucket
 	// bound, so the page says "over 10 s".
 	Over bool
-	// Usual and UsualDays are the band's median and its days at Now's point.
+	// Usual and UsualDays are the band's median now and its days.
 	Usual     *float64
 	UsualDays int
 	// UnusualSince is when the chart's rule began to hold, for Errors and the
@@ -337,6 +338,7 @@ func (s *Service) metricsOf(ctx context.Context, recs []store.AppRecord, project
 	totalMinute, totalSlots := combineRows(minutes), combineRows(slots)
 	totalHist := metrics.NewHistory(totalSlots)
 	charts := chartsOf(rng, from, now, totalMinute, totalSlots, totalHist, baseline.State)
+	windowHead(&charts, totalMinute, totalHist, now, baseline.State)
 	view.Requests, view.Errors, view.P95, view.Memory = charts.requests, charts.errors, charts.p95, charts.memory
 	view.MemoryLimit = charts.limit
 	if iss := metrics.Judge(metrics.Facts{
@@ -675,31 +677,50 @@ func chartsOf(rng metrics.Range, from, now time.Time, minute, slots []metrics.Ro
 	if c.whole.Restarts != nil {
 		c.restarts = c.whole.Restarts
 	}
-
-	// "Now" is the newest point with a value, if it is a recent one.
-	live := now.Add(-liveRowAge - rng.Step)
-	idx := -1
-	for i := n - 1; i >= 0 && pts[i].T.After(live); i-- {
-		if !pts[i].Gap() {
-			idx = i
-			break
-		}
-	}
-	if idx >= 0 {
-		p := pts[idx]
-		c.requests.Now, c.requests.Usual, c.requests.UsualDays = nowOf(c.requests.Points[idx])
-		c.errors.Now, c.errors.Usual, c.errors.UsualDays = nowOf(c.errors.Points[idx])
-		c.p95.Now, c.p95.Usual, c.p95.UsualDays = nowOf(c.p95.Points[idx])
-		c.memory.Now = c.memory.Points[idx].Value
-		c.memory.UsualDays = c.memory.Points[idx].Days
-		if _, over, ok := p.P95(); ok && c.p95.Now != nil {
-			c.p95.Over = over
-		}
-	}
 	return c
 }
 
-func nowOf(p SeriesPoint) (value, usual *float64, days int) { return p.Value, p.Usual, p.Days }
+// windowHead sets what each chart's head says: the last 10 minutes of the totals at every range
+// (the window the rules and the apps table read), with the band's median for it. A head with no
+// number in the window stays nil, so a sampler that stopped doesn't leave a stale value.
+func windowHead(c *charts, rows []metrics.Row, hist metrics.History, now time.Time, state metrics.BaselineState) {
+	w := metrics.WindowOf(rows, now)
+	b := bandsAt(hist, now.Add(-5*time.Minute), state)
+	usual := func(r metrics.BandRange, div float64) (*float64, int) {
+		if !r.Has() {
+			return nil, 0
+		}
+		return new(r.Usual / div), r.Days
+	}
+	if w.HasHTTP {
+		c.requests.Now = new(w.RequestsPerSec)
+		c.requests.Usual, c.requests.UsualDays = usual(b.RequestsPerMin, 60)
+		if w.Requests > 0 {
+			c.errors.Now = new(w.ErrorPercent)
+			c.errors.Usual, c.errors.UsualDays = usual(b.ErrorPercent, 1)
+		}
+	}
+	if w.HasP95 {
+		c.p95.Now, c.p95.Over = new(w.P95Millis), w.P95Over
+		c.p95.Usual, c.p95.UsualDays = usual(b.P95Millis, 1)
+	}
+	// Memory is a gauge: the median of the window's minutes, as the memory rule reads it.
+	var mem []float64
+	from := now.Add(-metrics.WindowMinutes * time.Minute)
+	for _, r := range rows {
+		if r.MemoryMB != nil && r.TS.After(from) && !r.TS.After(now) {
+			mem = append(mem, float64(*r.MemoryMB))
+		}
+	}
+	if len(mem) > 0 {
+		slices.Sort(mem)
+		v := mem[len(mem)/2]
+		if len(mem)%2 == 0 {
+			v = (mem[len(mem)/2-1] + v) / 2
+		}
+		c.memory.Now = &v
+	}
+}
 
 // bandPoint makes a point of value v with the band b divided by div (the
 // requests' band is per minute and the chart per second).

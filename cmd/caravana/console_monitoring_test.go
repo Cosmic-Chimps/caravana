@@ -337,8 +337,8 @@ func (c *console) consoleMonitoring(t *testing.T) {
 	if len(charts) != 4 {
 		t.Errorf("/monitoring has %d chart panels, want 4", len(charts))
 	}
-	if n := strings.Count(page, `<span class="cv-mnnow" data-mon-now>now</span>`); n != 4 {
-		t.Errorf("%d chart heads say \"now\" without script, want 4", n)
+	if n := strings.Count(page, `<span class="cv-mnnow" data-mon-now>last 10 min</span>`); n != 4 {
+		t.Errorf("%d chart heads say \"last 10 min\" without script, want 4", n)
 	}
 	if !strings.Contains(page, `<polygon class="cv-mnband" points="`) {
 		t.Errorf("no chart draws a band polygon (two earlier days were seeded)")

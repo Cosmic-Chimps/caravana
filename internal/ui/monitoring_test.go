@@ -298,6 +298,9 @@ func TestMonChartShapes(t *testing.T) {
 		t.Errorf("requests head = %+v", c)
 	}
 	p := c.Plot
+	if want := "Requests over the last 6 hours, 100 req/s in the last 10 minutes"; p.Label != want {
+		t.Errorf("plot label = %q, want %q", p.Label, want)
+	}
 	if len(p.Bands) != 1 || !strings.Contains(p.Bands[0].Title, "the same hour on the 3 days there are: 80 to 120 req/s") {
 		t.Errorf("band = %+v", p.Bands)
 	}
@@ -598,7 +601,7 @@ func TestMonitoringPage(t *testing.T) {
 		`id="mon-chart-requests"`, `id="mon-chart-errors"`, `id="mon-chart-p95"`, `id="mon-chart-memory"`,
 		`<svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none"`, `class="cv-mnline"`, `class="cv-mngrid"`,
 		`<a href="/apps/whoami" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
-		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`,
+		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`, `data-mon-now>last 10 min</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
@@ -627,6 +630,10 @@ func TestMonitoringPage(t *testing.T) {
 	// No text is fg-4: none of the page's classes asks for it.
 	if strings.Contains(body, "text-fg-4") {
 		t.Error("the page has text in fg-4")
+	}
+	// A chart head is the last 10 minutes, said so: never "now".
+	if n := strings.Count(body, `data-mon-now>last 10 min</span>`); n != 4 || strings.Contains(body, `data-mon-now>now</span>`) {
+		t.Errorf("%d chart heads say \"last 10 min\", or one still says \"now\"", n)
 	}
 }
 

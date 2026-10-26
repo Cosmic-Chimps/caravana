@@ -260,8 +260,8 @@ func TestMetricsPointsAndBand(t *testing.T) {
 		if v.Requests.Now == nil || *v.Requests.Now != 2 || v.Requests.Usual != nil || v.Requests.UsualDays != 0 {
 			t.Errorf("now = %v usual %v days %d", v.Requests.Now, v.Requests.Usual, v.Requests.UsualDays)
 		}
-		if v.Memory.Now == nil || *v.Memory.Now != 101 || val(v.MemoryLimit[len(v.MemoryLimit)-2]) != 512 {
-			t.Errorf("memory now = %v, limit %v", v.Memory.Now, v.MemoryLimit[len(v.MemoryLimit)-2])
+		if v.Memory.Now == nil || *v.Memory.Now != 105 || val(v.MemoryLimit[len(v.MemoryLimit)-2]) != 512 {
+			t.Errorf("memory head = %v (the median of the last 10 minutes: 105), limit %v", v.Memory.Now, v.MemoryLimit[len(v.MemoryLimit)-2])
 		}
 		if v.Baseline.State != metrics.Building || v.Baseline.FullDays != 0 {
 			t.Errorf("baseline = %+v", v.Baseline)

@@ -58,7 +58,7 @@
 {{/* mon-chart: one panel: the head, the value, the plot and the times under it. Takes a monChart. */}}
 {{define "mon-chart"}}
 <div class="cv-panel cv-mnchart" id="{{.ID}}">
-  <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>now</span></div>
+  <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>last 10 min</span></div>
   <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{with .Usually}}<span class="cv-mnusually">{{.}}</span>{{end}}</div>
   {{with .Plot}}{{template "mon-plot" .}}
   <div class="cv-mnaxis"><span>{{$.AxisStart}}</span><span>{{$.AxisMid}}</span><span>now</span></div>
