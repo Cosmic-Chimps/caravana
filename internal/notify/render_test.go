@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -382,5 +383,48 @@ func TestDiskSentence(t *testing.T) {
 		if got := DiskSentence(tc.mount, tc.pct, tc.free); got != tc.want {
 			t.Errorf("DiskSentence(%q, %v, %d) = %q, want %q", tc.mount, tc.pct, tc.free, got, tc.want)
 		}
+	}
+}
+
+func TestDiskNowSentence(t *testing.T) {
+	if got, want := DiskNowSentence("/", 96.4, 429496730), "The disk at / is now 96% full: 410 MB left."; got != want {
+		t.Errorf("DiskNowSentence = %q, want %q", got, want)
+	}
+}
+
+// A problem.worsened is rendered by every kind of channel with the "now" sentence, as a bad
+// news message (ntfy: high priority, warning tag), and the webhook's JSON carries its type.
+func TestRenderProblemWorsened(t *testing.T) {
+	ev := Event{
+		Type: EventProblemWorsened, Kind: "disk_nearly_full", Title: "Disk nearly full: / is now 96% full",
+		Text:  DiskNowSentence("/", 96.4, 429496730),
+		Mount: "/", Holds: []string{"nomad", "docker"}, UsedPercent: 96.4, FreeBytes: new(int64(429496730)), Level: "failed",
+		URL: "https://c.example.com/monitoring#host", At: time.Date(2026, 10, 25, 3, 0, 0, 0, time.UTC),
+	}
+	now := time.Date(2026, 10, 25, 3, 0, 1, 0, time.UTC)
+	for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
+		req, err := Render(Channel{Kind: kind, Address: "https://hooks.example.com/x"}, ev, "ndl_1", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(raw), "The disk at / is now 96% full: 410 MB left.") || !strings.Contains(string(raw), "Disk: / is 96% full, 410 MB left") {
+			t.Errorf("%s message = %s", kind, raw)
+		}
+		if kind == KindNtfy && (req.Header.Get("Priority") != "high" || req.Header.Get("Tags") != "warning") {
+			t.Errorf("ntfy headers = %v, want high priority and the warning tag", req.Header)
+		}
+	}
+	req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "s"}, ev, "ndl_1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] != "problem.worsened" || body["level"] != "failed" || req.Header.Get("Caravana-Event") != "problem.worsened" {
+		t.Errorf("webhook = %s, header %q", raw, req.Header.Get("Caravana-Event"))
 	}
 }

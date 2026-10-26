@@ -74,3 +74,9 @@ CREATE TABLE metrics_state (
   id         INTEGER PRIMARY KEY CHECK (id = 1),
   started_at TEXT NOT NULL
 ) STRICT;
+
+-- A sent problem remembers the level it last sent ("warning" or "failed"; empty
+-- for the kinds that have none), so a disk that rises from warning to failed
+-- sends one more message and a fall or a repeat sends none. sent_problems is
+-- 0010's, which has shipped, so this is an ALTER; 0019 hasn't shipped.
+ALTER TABLE sent_problems ADD COLUMN level TEXT NOT NULL DEFAULT '';

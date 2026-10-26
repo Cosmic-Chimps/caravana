@@ -383,6 +383,9 @@ func TestNotificationEventSchema(t *testing.T) {
 		// A problem about the host's disk (feature 025): no app.
 		{Type: notify.EventProblemOpened, Kind: "disk_nearly_full", Title: "t", Text: "x", At: ev.At,
 			Mount: "/", Holds: []string{"nomad", "docker"}, UsedPercent: 86.2, FreeBytes: new(int64(5600 << 20)), Level: "warning"},
+		// The same disk rising from warning to failed.
+		{Type: notify.EventProblemWorsened, Kind: "disk_nearly_full", Title: "t", Text: "The disk at / is now 96% full: 410 MB left.", At: ev.At,
+			Mount: "/", Holds: []string{"nomad", "docker"}, UsedPercent: 96.2, FreeBytes: new(int64(400 << 20)), Level: "failed"},
 	} {
 		req, err = notify.Render(notify.Channel{Kind: notify.KindWebhook, Address: "https://hooks.example.com/h", Secret: "s"},
 			ev, "ndl_3f9a1c2b4d5e", time.Now())

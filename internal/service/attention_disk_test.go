@@ -133,8 +133,9 @@ func problemTypes(ds []store.Delivery) []string {
 	return out
 }
 
-// The story of a disk: 85 sends one "opened", 86 and then 96 send no second
-// one, 84 keeps it open, and a reading under 83 resolves it after the delay.
+// The story of a disk: 85 sends one "opened", 86 sends nothing and 96 sends one
+// "worsened" (a repeat of 96 none), 84 keeps it open, and a reading under 83
+// resolves it after the delay.
 func TestCheckProblemsDisk(t *testing.T) {
 	t0 := time.Date(2026, 10, 25, 3, 0, 30, 0, time.UTC)
 	e := newNotifyEnv(t)
@@ -174,15 +175,15 @@ func TestCheckProblemsDisk(t *testing.T) {
 		e.step(t, time.Minute, "/", pct)
 		e.check(t)
 	}
-	if got := e.deliveriesOf(t, e.problems); len(got) != 1 {
-		t.Fatalf("86 then 96: %v, want no second opened", problemTypes(got))
+	if got := e.deliveriesOf(t, e.problems); len(got) != 2 || got[1].EventType != notify.EventProblemWorsened {
+		t.Fatalf("86 then 96: %v, want no second opened, and one worsened", problemTypes(got))
 	}
 
 	e.step(t, time.Minute, "/", 84) // under 85 but not under 83: still open
 	e.check(t)
 	e.step(t, 10*time.Minute, "/", 84)
 	e.check(t)
-	if got := e.deliveriesOf(t, e.problems); len(got) != 1 || len(e.sentKeys(t)) != 1 {
+	if got := e.deliveriesOf(t, e.problems); len(got) != 2 || len(e.sentKeys(t)) != 1 {
 		t.Fatalf("84%%: %v, want the item open and nothing sent", problemTypes(got))
 	}
 	att, err := e.svc.Attention(context.Background())
@@ -194,17 +195,17 @@ func TestCheckProblemsDisk(t *testing.T) {
 	e.check(t)
 	e.step(t, 3*time.Minute, "/", 82)
 	e.check(t)
-	if got := e.deliveriesOf(t, e.problems); len(got) != 1 {
+	if got := e.deliveriesOf(t, e.problems); len(got) != 2 {
 		t.Fatalf("82%% for 4 minutes since it was last on the list: %v, want nothing yet", problemTypes(got))
 	}
 	e.step(t, 2*time.Minute, "/", 82)
 	e.check(t)
 	e.check(t)
 	got = e.deliveriesOf(t, e.problems)
-	if len(got) != 2 || got[1].EventType != notify.EventProblemResolved {
-		t.Fatalf("82%% for the delay: %v, want opened then resolved", problemTypes(got))
+	if len(got) != 3 || got[2].EventType != notify.EventProblemResolved {
+		t.Fatalf("82%% for the delay: %v, want opened, worsened, resolved", problemTypes(got))
 	}
-	if ev := payloadOf(t, got[1]); ev.Title != "Resolved: Disk nearly full: / is 85% full" || ev.URL != "https://caravana.example.com/monitoring#host" {
+	if ev := payloadOf(t, got[2]); ev.Title != "Resolved: Disk nearly full: / is 85% full" || ev.URL != "https://caravana.example.com/monitoring#host" {
 		t.Errorf("resolved = %+v", ev)
 	}
 	if keys := e.sentKeys(t); len(keys) != 0 {
@@ -324,5 +325,110 @@ func TestDiffProblemsDisks(t *testing.T) {
 	got = diffProblems(old, nil, judged{Copies: true}, exists, at, delay)
 	if keys := rowKeys(got.Resolved); !slices.Equal(keys, []string{problemKey(oom)}) {
 		t.Errorf("only copies judged: resolved %v", keys)
+	}
+}
+
+// A rise from warning to failed sends one problem.worsened with the "now"
+// sentence; a fall sends nothing, a repeat or a further rise sends nothing more,
+// and the resolve below 83 % sends the usual one once.
+func TestCheckProblemsDiskWorsened(t *testing.T) {
+	t0 := time.Date(2026, 10, 25, 3, 0, 30, 0, time.UTC)
+	e := newNotifyEnv(t)
+	e.clockAt(t0)
+	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.resolveAfter = 5 * time.Minute
+	types := func() []string { return problemTypes(e.deliveriesOf(t, e.problems)) }
+
+	e.writeDisk(t, "/", 85)
+	e.check(t)
+	if got := types(); !slices.Equal(got, []string{notify.EventProblemOpened}) {
+		t.Fatalf("85: %v, want one opened", got)
+	}
+	if rows, err := e.store.ListSentProblems(context.Background()); err != nil || len(rows) != 1 || rows[0].Level != "warning" {
+		t.Fatalf("the level sent at 85 = %+v, %v; want warning", rows, err)
+	}
+
+	e.step(t, time.Minute, "/", 96)
+	e.check(t)
+	got := e.deliveriesOf(t, e.problems)
+	if len(got) != 2 || got[1].EventType != notify.EventProblemWorsened {
+		t.Fatalf("85 then 96: %v, want opened then one worsened", problemTypes(got))
+	}
+	ev := payloadOf(t, got[1])
+	if ev.Type != notify.EventProblemWorsened || ev.Kind != "disk_nearly_full" || ev.Level != "failed" || ev.Mount != "/" || ev.UsedPercent != 96 ||
+		ev.Text != "The disk at / is now 96% full: 1.6 GB left." || ev.Title != "Disk nearly full: / is now 96% full" ||
+		ev.URL != "https://caravana.example.com/monitoring#host" || ev.Detail != "" {
+		t.Errorf("worsened = %+v", ev)
+	}
+	if rows, _ := e.store.ListSentProblems(context.Background()); len(rows) != 1 || rows[0].Level != "failed" || rows[0].Summary != "Disk nearly full: / is 85% full" {
+		t.Errorf("after the rise: %+v, want the level failed and the opened title kept for the resolve", rows)
+	}
+
+	// A repeat, a further rise and a fall send nothing.
+	for _, pct := range []float64{96, 97, 90, 96, 99} {
+		e.step(t, time.Minute, "/", pct)
+		e.check(t)
+	}
+	if got := types(); !slices.Equal(got, []string{notify.EventProblemOpened, notify.EventProblemWorsened}) {
+		t.Fatalf("96, 97, 90, 96, 99: %v, want nothing more", got)
+	}
+
+	// The resolve after the delay, once.
+	e.step(t, time.Minute, "/", 82)
+	e.check(t)
+	e.step(t, 6*time.Minute, "/", 82)
+	e.check(t)
+	e.check(t)
+	if got := types(); !slices.Equal(got, []string{notify.EventProblemOpened, notify.EventProblemWorsened, notify.EventProblemResolved}) {
+		t.Fatalf("82: %v, want one resolved", got)
+	}
+	if rows, _ := e.store.ListSentProblems(context.Background()); len(rows) != 0 {
+		t.Errorf("sent problems after resolving = %+v", rows)
+	}
+
+	// A disk that opened already failed sends opened only, at that level.
+	e.step(t, time.Minute, "/", 97)
+	e.check(t)
+	e.step(t, time.Minute, "/", 98)
+	e.check(t)
+	if got := types(); len(got) != 4 || got[3] != notify.EventProblemOpened {
+		t.Fatalf("opened at 97: %v, want just one more opened", got)
+	}
+}
+
+// diffProblems finds a disk that rose from the warning that was sent to failed,
+// and nothing else: not a fall, not a repeat, not a row with no level, not a kind
+// with none.
+func TestDiffProblemsWorsened(t *testing.T) {
+	at := time.Date(2026, 10, 25, 3, 0, 0, 0, time.UTC)
+	level := func(l metrics.DiskLevel) AttentionItem {
+		return AttentionItem{Kind: AttentionDiskNearlyFull, Mount: "/", Level: l}
+	}
+	row := func(l string) []store.SentProblem {
+		r := sentRow(AttentionItem{Kind: AttentionDiskNearlyFull, Mount: "/"}, at)
+		r.Level = l
+		return []store.SentProblem{r}
+	}
+	oom := item(AttentionOutOfMemory, "blog", "web")
+	for _, tc := range []struct {
+		name string
+		prev []store.SentProblem
+		now  []AttentionItem
+		want int
+	}{
+		{"warning sent, failed now", row("warning"), []AttentionItem{level(metrics.DiskFailed)}, 1},
+		{"failed sent, failed now", row("failed"), []AttentionItem{level(metrics.DiskFailed)}, 0},
+		{"failed sent, warning now", row("failed"), []AttentionItem{level(metrics.DiskWarning)}, 0},
+		{"warning sent, warning now", row("warning"), []AttentionItem{level(metrics.DiskWarning)}, 0},
+		{"no level known, failed now", row(""), []AttentionItem{level(metrics.DiskFailed)}, 0},
+		{"not sent yet is opened, not worsened", nil, []AttentionItem{level(metrics.DiskFailed)}, 0},
+		{"a kind with no level", []store.SentProblem{sentRow(oom, at)}, []AttentionItem{oom}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := diffProblems(tc.prev, tc.now, allJudged, map[string]bool{"blog": true}, at, time.Minute)
+			if len(ch.Worsened) != tc.want {
+				t.Errorf("worsened = %v, want %d", ch.Worsened, tc.want)
+			}
+		})
 	}
 }

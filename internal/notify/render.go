@@ -100,7 +100,7 @@ func renderNtfy(ch Channel, ev Event) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	bad := ev.Type == EventProblemOpened || ev.Type == EventDeployFailed
+	bad := ev.Type == EventProblemOpened || ev.Type == EventProblemWorsened || ev.Type == EventDeployFailed
 	tags, priority := "white_check_mark", "default"
 	if bad {
 		tags, priority = "warning", "high"
@@ -230,6 +230,12 @@ func DiskTail(usedPercent float64, freeBytes int64) string {
 // full: 1.1 GB left." (the console sets the mount in code style).
 func DiskSentence(mount string, usedPercent float64, freeBytes int64) string {
 	return "The disk at " + mount + DiskTail(usedPercent, freeBytes)
+}
+
+// DiskNowSentence is DiskSentence for a disk that got worse, the words of a
+// problem.worsened: "The disk at / is now 96% full: 0.4 GB left."
+func DiskNowSentence(mount string, usedPercent float64, freeBytes int64) string {
+	return "The disk at " + mount + " is now" + strings.TrimPrefix(DiskTail(usedPercent, freeBytes), " is")
 }
 
 // Size writes a number of bytes as the console does: "11 GB", "3.5 GB",

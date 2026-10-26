@@ -130,9 +130,13 @@ type SentProblem struct {
 	LastSeenAt time.Time
 	// Summary is the title that was sent, reused for the "resolved" message.
 	Summary string
+	// Level is the level last sent for the problem ("warning" or "failed" for a
+	// disk; empty for a kind with none). A rise from warning to failed sends
+	// one more message and moves it; a fall or a repeat sends none.
+	Level string
 }
 
-const problemColumns = "key, kind, app_id, service, opened_at, last_seen_at, summary"
+const problemColumns = "key, kind, app_id, service, opened_at, last_seen_at, summary, level"
 
 // ListSentProblems returns every sent problem, oldest first.
 func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
@@ -145,7 +149,7 @@ func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
 	for rows.Next() {
 		var p SentProblem
 		var opened, seen string
-		if err := rows.Scan(&p.Key, &p.Kind, &p.AppID, &p.Service, &opened, &seen, &p.Summary); err != nil {
+		if err := rows.Scan(&p.Key, &p.Kind, &p.AppID, &p.Service, &opened, &seen, &p.Summary, &p.Level); err != nil {
 			return nil, fmt.Errorf("list sent problems: %w", err)
 		}
 		if p.OpenedAt, err = parseTime(opened); err != nil {
@@ -166,10 +170,11 @@ func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
 // same key.
 func (s *Store) UpsertSentProblem(ctx context.Context, p SentProblem) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, app_id = excluded.app_id, service = excluded.service,
-			opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary`,
-		p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary)
+			opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary,
+			level = excluded.level`,
+		p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level)
 	if err != nil {
 		return fmt.Errorf("save sent problem %q: %w", p.Key, err)
 	}
@@ -223,8 +228,9 @@ type ProblemCheck struct {
 	Opened     []SentProblem // recorded as sent (an existing key is replaced)
 	Seen       []string      // keys still on the list: their last-seen time moves to SeenAt
 	SeenAt     time.Time
-	Removed    []string   // keys resolved, or dropped because their app is gone
-	Deliveries []Delivery // queued, all pending
+	Levels     map[string]string // key -> the level just sent for a problem that got worse
+	Removed    []string          // keys resolved, or dropped because their app is gone
+	Deliveries []Delivery        // queued, all pending
 }
 
 // ApplyProblemCheck records one check in a single transaction, so the table of
@@ -241,16 +247,22 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 
 	for _, p := range c.Opened {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, app_id = excluded.app_id, service = excluded.service,
-				opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary`,
-			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary); err != nil {
+				opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary,
+				level = excluded.level`,
+			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level); err != nil {
 			return fmt.Errorf("record a problem check: save problem %q: %w", p.Key, err)
 		}
 	}
 	for _, key := range c.Seen {
 		if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET last_seen_at = ? WHERE key = ?", formatTime(c.SeenAt), key); err != nil {
 			return fmt.Errorf("record a problem check: touch problem %q: %w", key, err)
+		}
+	}
+	for key, level := range c.Levels {
+		if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET level = ? WHERE key = ?", level, key); err != nil {
+			return fmt.Errorf("record a problem check: set the level of problem %q: %w", key, err)
 		}
 	}
 	for _, key := range c.Removed {
@@ -284,7 +296,7 @@ const (
 type Delivery struct {
 	ID        string // "ndl_" and 12 random hex digits
 	ChannelID string
-	EventType string // problem.opened, problem.resolved, deploy.succeeded, deploy.failed or test
+	EventType string // problem.opened, problem.worsened, problem.resolved, deploy.succeeded, deploy.failed or test
 	Title     string
 	// Payload is the event as JSON. It holds no secret.
 	Payload  string

@@ -4280,7 +4280,7 @@ components:
 
     NotificationEventType:
       type: string
-      enum: [problem.opened, problem.resolved, deploy.succeeded, deploy.failed, test]
+      enum: [problem.opened, problem.worsened, problem.resolved, deploy.succeeded, deploy.failed, test]
 
     NotificationEvent:
       description: |
@@ -4318,8 +4318,10 @@ components:
             `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
             `disk_nearly_full` (a filesystem of the host is 85 % full or more). A
             schedule that keeps failing is one problem: one `problem.opened`, then one
-            `problem.resolved` after a run succeeds; so is a domain, per host. Receivers should
-            accept kinds they don't know.
+            `problem.resolved` after a run succeeds; so is a domain, per host. A disk that rises
+            from `warning` to `failed` after its `problem.opened` sends one `problem.worsened`
+            (`level` is `failed`); a fall back to `warning`, or a repeat, sends nothing, and the
+            `problem.resolved` follows below 83 %. Receivers should accept kinds they don't know.
         app:
           type: string
           description: The app's ID. Absent for installation-wide events.
@@ -4405,7 +4407,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: "`problem.opened` of `disk_nearly_full`: `warning` from 85 % used, `failed` from 95 %."
+          description: "`problem.opened` and `problem.worsened` of `disk_nearly_full`: `warning` from 85 % used, `failed` from 95 %; a `problem.worsened` is always `failed`."
         url:
           type: string
           description: |
