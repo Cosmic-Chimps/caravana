@@ -272,10 +272,18 @@ Applied on branch `025-monitoring`, one commit each, in this order:
 
 ### Rulings
 
-- **The seven departures accepted** and **the three disk answers**: the brief that applied these fixes did not
-  list them, so they are not written here. The designer session adds them to this list. The disk answers
-  that the code now follows are fixes 4, 5 and 6 above (the meter follows the open item, one sentence, one
-  message on a rise).
+- **The seven departures, accepted as built:** (1) when Traefik's numbers are off or disabled, the three HTTP
+  charts show a ○ sentence in the plot's place without history, and keep the plot with a caption with history;
+  (2) the CPU sparkline scales from zero to the larger of the reservation and the observed maximum; (3) an
+  issue whose run reaches the 6-hour walk limit says "It started more than 6 hours ago."; (4) the 7 d chart's
+  axis and gap titles name the weekday; (5) the Platform panel says "Waiting for the first reading of the host"
+  with ○ before the first sample, and refreshes on the `metrics` notice; (6) no disk item before the first
+  sample; (7) Nomad problems are a notice at the top of the live region plus a ■ line in the host section.
+- **The three disk answers:** (a) while the needs-you item is open, the meter shows its state (◆ until it
+  resolves below 83%, ■ at 95% or more), so the two never disagree; (b) one wording everywhere, console, API
+  `detail` and notifications: "The disk at `/var/lib/docker` is 87% full: 1.1 GB left."; (c) a rise from ◆ to ■
+  sends one message, `problem.worsened` ("…is now 96% full: 410 MB left."); a fall sends nothing; the resolve
+  below 83% sends the usual resolved message. "No second opened" was about flapping at the threshold.
 - Where this section and the contract above disagree, this section wins. The contract's "The disk holding
   `/var/lib/docker` is 86% full: 11 GB left." (needs-you list) reads "The disk at `/var/lib/docker` is 86%
   full: 11 GB left." from fix 5.
