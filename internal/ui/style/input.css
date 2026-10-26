@@ -1652,6 +1652,8 @@
   /* The live region and each section (a head over its panel) keep the page's gap and a tighter one. */
   .cv-mnregion { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
   .cv-mnblock { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  /* The Apps home's rail: the Platform panel's head and link, with the rail's own gap. */
+  .cv-mnplatform { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .cv-mnrestarts.cv-mnnumber-none { color: var(--color-fg-3); }
 
   /* The footer: one sentence, 13px fg-3. */

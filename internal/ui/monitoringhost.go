@@ -266,3 +266,62 @@ func hostChartOf(now time.Time, h service.HostView) *monHostChart {
 	}
 	return &monHostChart{Plot: plot, AxisStart: axisTime(hist.Points[0], true) + " UTC", AxisMid: axisTime(hist.Points[n/2], true)}
 }
+
+// ---- the Apps home's Platform panel -----------------------------------------------------------
+
+// monPlatform is the Platform panel of the Apps home's rail: whether the host can be read, the
+// memory meter, the fuller disk's meter and the room sentence. It links to /monitoring#host.
+type monPlatform struct {
+	Mark   string // healthy, failed or idle
+	Line   string
+	Meters []monMeter
+	Room   *monRoom
+}
+
+// platformOf builds the panel from the host's numbers. A host that can't be read (Nomad refuses or
+// is silent, or the newest reading is more than 5 minutes old) says so and draws no meters: the
+// home is for what is true now. One that was never read says it is waiting.
+func platformOf(h service.HostView) *monPlatform {
+	switch {
+	case h.SampledAt == nil && h.Sources.Nomad != service.SamplerDenied && h.Sources.Nomad != service.SamplerUnreachable:
+		return &monPlatform{Mark: "idle", Line: "Waiting for the first reading of the host"}
+	case h.SampledAt == nil || h.Stale || h.Sources.Nomad == service.SamplerDenied || h.Sources.Nomad == service.SamplerUnreachable:
+		return &monPlatform{Mark: "failed", Line: "Can't read the host's numbers"}
+	}
+	p := &monPlatform{Mark: "healthy", Line: "1 server up"}
+	if m := memoryMeter(h); m != nil {
+		p.Meters = append(p.Meters, *m)
+	}
+	if len(h.Disks) > 0 {
+		fuller := h.Disks[0]
+		for _, d := range h.Disks[1:] {
+			if d.UsedPercent > fuller.UsedPercent {
+				fuller = d
+			}
+		}
+		// One disk meter, so its readout carries no mount.
+		p.Meters = append(p.Meters, diskMeters(service.HostView{Disks: []service.HostDisk{fuller}})...)
+	}
+	p.Room = roomOf(h.Room)
+	return p
+}
+
+// partPlatform answers GET /parts/platform: the Platform panel alone.
+func (s *server) partPlatform(w http.ResponseWriter, r *http.Request, session string) {
+	p, err := s.loadPlatform(r)
+	if err != nil {
+		s.log.Error("read the host", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.renderPart(w, "apps", "platform-region", p)
+}
+
+// loadPlatform reads the host for the panel (the store only, never Nomad).
+func (s *server) loadPlatform(r *http.Request) (*monPlatform, error) {
+	h, err := s.svc.Host(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	return platformOf(h), nil
+}

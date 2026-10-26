@@ -46,7 +46,8 @@ var consoleParity = map[string]parity{
 	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
 	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
-	"GET /apps":                   {ops: []string{"listProjects", "listApps", "listAttention"}},
+	// The rail's Platform panel (feature 025) is getHost; the needs-you list's disk row is listAttention.
+	"GET /apps": {ops: []string{"listProjects", "listApps", "listAttention", "getHost"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).
@@ -202,6 +203,8 @@ var consoleParity = map[string]parity{
 	"GET /parts/monitoring": {ops: []string{"getMetrics", "getHost"}},
 	// The "This host" section alone, drawn again on the same notice: the host's meters, room and memory.
 	"GET /parts/monitoring/host": {ops: []string{"getHost"}},
+	// The Apps home's Platform panel alone, drawn again on the metrics notice.
+	"GET /parts/platform": {ops: []string{"getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

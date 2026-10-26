@@ -128,6 +128,19 @@
 {{end}}
 {{end}}
 
+{{/* platform-region: the rail's "This host" panel (feature 025): whether the host can be read, the memory
+     meter, the fuller disk's meter and the room sentence, one link to /monitoring#host. It comes from the
+     store only. The page draws it inside #platform and /parts/platform draws it alone, on the metrics
+     notice. Takes a monPlatform. */}}
+{{define "platform-region"}}
+<h2 class="cv-label" id="platform-title">This host</h2>
+<a href="/monitoring#host" class="cv-panel cv-mnplat" aria-labelledby="platform-title">
+  <p class="cv-mnhostline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Line}}</span></p>
+  {{range .Meters}}{{template "mon-meter" .}}{{end}}
+  {{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+</a>
+{{end}}
+
 {{define "activity-region"}}
 {{range .Activity}}
 <div class="cv-row">
@@ -158,6 +171,7 @@
 <div class="cv-split">
   <section class="cv-main" aria-label="Apps" hx-get="{{.RefreshHref}}" hx-trigger="sse:apps, sse:sync" hx-swap="innerHTML">{{template "apps-region" .}}</section>
   <aside class="cv-rail" aria-labelledby="activity-title">
+    {{with .Platform}}<div class="cv-mnplatform" id="platform" hx-get="/parts/platform" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "platform-region" .}}</div>{{end}}
     <h2 id="activity-title" class="cv-label">Activity</h2>
     <div class="cv-panel" hx-get="/parts/activity" hx-trigger="sse:activity, sse:sync" hx-swap="innerHTML">{{template "activity-region" .}}</div>
   </aside>

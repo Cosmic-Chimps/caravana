@@ -173,7 +173,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   watched filesystem labelled with its mount when they differ, the room sentence with its title and
   warn hue for "No room…", "Nothing is running yet: …", the 7-day memory chart with used and
   reserved dashed, the stale ■ line, the "token can't read the host" sentence).
-- [ ] T017 [US4] `internal/ui/home.go` + `templates` + `attention.go` + tests: the Apps home's
+- [x] T017 [US4] `internal/ui/home.go` + `templates` + `attention.go` + tests: the Apps home's
   Platform panel above Activity ("● 1 server up" or "■ Can't read the host's numbers", the memory
   meter, the fuller disk's meter, the room sentence, linking to `/monitoring#host`) from
   `Service.Host` only; the needs-you row for `disk_nearly_full` with the contract's sentences (one
