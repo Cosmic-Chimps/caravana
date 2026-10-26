@@ -1649,6 +1649,11 @@
   .cv-mnkey > span::before { content: ""; width: 16px; height: 0; border-top: 1.5px solid var(--color-fg-1); }
   .cv-mnkey > .cv-mnkey-res::before { border-top: 1.25px dashed var(--color-fg-3); }
 
+  /* The live region and each section (a head over its panel) keep the page's gap and a tighter one. */
+  .cv-mnregion { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .cv-mnblock { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-mnrestarts.cv-mnnumber-none { color: var(--color-fg-3); }
+
   /* The footer: one sentence, 13px fg-3. */
   .cv-mnfoot { margin: 0; font-size: 13px; line-height: 1.45; color: var(--color-fg-3); overflow-wrap: anywhere; text-wrap: pretty; }
 }

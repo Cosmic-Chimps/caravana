@@ -33,7 +33,7 @@ var consoleParity = map[string]parity{
 	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":  {why: "a redirect to /settings"},
 	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs"}}, // notices that these changed
+	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs", "getMetrics"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
@@ -194,6 +194,12 @@ var consoleParity = map[string]parity{
 	"GET /logs":          {ops: []string{"listLogs", "getLogsAround", "listApps", "listProjects"}},
 	"GET /parts/logs":    {ops: []string{"listLogs"}},
 	"GET /logs/download": {ops: []string{"downloadLogs"}},
+	// Monitoring (feature 025). The page reads the place's numbers (getMetrics, with its range and sort), the host's
+	// (getHost: the sparkline titles say cores, and the "This host" section is the host's meters, room and
+	// seven days of memory) and the projects for the place bars. The part is the sources, issues, charts and
+	// table alone, drawn again on the metrics notice.
+	"GET /monitoring":       {ops: []string{"getMetrics", "getHost", "listProjects"}},
+	"GET /parts/monitoring": {ops: []string{"getMetrics", "getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

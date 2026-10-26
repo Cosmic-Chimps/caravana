@@ -21,7 +21,7 @@ func TestNoShipWords(t *testing.T) {
 		"/apps/duo", "/apps/duo/deployments", "/apps/duo/configure", "/apps/duo/variables",
 		"/apps/duo/domains", "/apps/duo/backups", "/apps/duo/logs",
 		"/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens",
-		"/schedules", "/schedules/new", "/logs",
+		"/schedules", "/schedules/new", "/logs", "/monitoring",
 	} {
 		resp, body := e.get(t, path)
 		if resp.StatusCode != http.StatusOK {

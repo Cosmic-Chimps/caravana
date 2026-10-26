@@ -75,6 +75,7 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/schedules/new", "Schedules", "Schedules /New schedule"},
 		{"/domains", "Domains", "Domains"},
 		{"/logs", "Logs", "Logs"},
+		{"/monitoring", "Monitoring", "Monitoring"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -83,7 +84,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Fatalf("GET %s = %d:\n%s", tc.path, resp.StatusCode, text(body))
 			}
 
-			want := []string{"Home=/apps", "Projects=/projects", "Schedules=/schedules", "Domains=/domains", "Logs=/logs", "Settings=/settings"}
+			want := []string{"Home=/apps", "Projects=/projects", "Schedules=/schedules", "Domains=/domains", "Logs=/logs", "Monitoring=/monitoring", "Settings=/settings"}
 			for i, item := range want {
 				if strings.HasPrefix(item, tc.active+"=") {
 					want[i] += "*"
@@ -93,7 +94,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Errorf("sidebar = %v, want %v", got, want)
 			}
 			side := text(sidebarRegion.FindString(body))
-			for _, absent := range []string{"Deploys", "Previews", "Monitoring", "Backups", "Developer", "Operator"} {
+			for _, absent := range []string{"Deploys", "Previews", "Backups", "Developer", "Operator"} {
 				if strings.Contains(side, absent) {
 					t.Errorf("the sidebar links %q, which has no page yet: %s", absent, side)
 				}

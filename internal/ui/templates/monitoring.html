@@ -1,0 +1,144 @@
+{{/* Monitoring (feature 025, page 8): the workspace page /monitoring. The head and the filter row (the
+     place bars and the range bar are links) sit outside the live region #mon-live, which is drawn again
+     from /parts/monitoring on the metrics notice, once a minute. The charts are inline SVG: every shape
+     has its numbers as attributes and its colours from classes, because the page allows no style
+     attribute; a hidden table carries the same numbers for a screen reader. monitoring.js only adds the
+     hover readout; without it the page is complete. The values are contracts/monitoring-screen.md's. */}}
+
+{{define "page-class"}} cv-page-mon{{end}}
+
+{{define "head"}}<script src="{{asset "js/monitoring.js"}}" defer></script>{{end}}
+
+{{define "content"}}
+{{with .Mon}}{{template "mon-page" .}}{{end}}
+{{end}}
+
+{{/* mon-sentence: prose with names in mono, numbers in weight 500 and clock times (UTC first, the
+     local time added by localtime.js). Takes a monSentence. */}}
+{{define "mon-sentence"}}{{range .}}{{if .Clock}}{{template "clock" .Clock}}{{else if .Strong}}<span class="cv-mnstrong">{{.Text}}</span>{{else if .Mono}}<span class="cv-inline-mono text-fg-1">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+
+{{define "mon-page"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Monitoring</h1>
+  <p class="cv-lede">How your apps are doing compared with their usual week. The shaded band is the same hour over the last 7 days.</p>
+</header>
+<div class="cv-mnfilter">
+  {{with .Projects}}<nav class="cv-seg" aria-label="Project">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  {{with .Environments}}<nav class="cv-seg" aria-label="Environment">{{range .}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>{{end}}
+  <span class="cv-mnfilter-spacer"></span>
+  <nav class="cv-seg" aria-label="Time range">{{range .Ranges}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+</div>
+<div class="cv-mnregion" id="mon-live" hx-get="{{.RegionHref}}" hx-trigger="sse:metrics" hx-swap="innerHTML">{{template "mon-region" .Region}}</div>
+<p class="cv-mnfoot">Sampled every minute and kept for 8 days. Requests come from Traefik, memory and CPU from Nomad. Long-lived connections, such as websockets and streams, count as requests but not in Slowest 5%.</p>
+{{end}}
+
+{{/* mon-region: the sources, the issues, the charts and the apps table; /parts/monitoring draws it alone.
+     Takes a monRegion. */}}
+{{define "mon-region"}}
+{{range .Notices}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></div>{{end}}
+{{if .Issues}}
+<section class="cv-panel cv-mnissues" aria-label="Unusual services">
+  {{range .Issues}}
+  <div class="cv-mnissue">
+    <span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span>
+    <div class="cv-mnissue-body">
+      <p class="cv-mnissue-text">{{template "mon-sentence" .Text}}</p>
+      {{with .Detail}}<p class="cv-mnissue-detail">{{template "mon-sentence" .}}</p>{{end}}
+    </div>
+    <div class="cv-mnissue-act"><a href="{{.ActionHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "scroll-text" 14}}{{template "mon-sentence" .Action}}</a></div>
+  </div>
+  {{end}}
+</section>
+{{else}}
+{{with .Calm}}<p class="cv-mncalm"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
+{{end}}
+<section class="cv-mncharts" aria-label="Charts">
+  {{range .Charts}}{{template "mon-chart" .}}{{end}}
+</section>
+{{template "mon-table" .Table}}
+{{end}}
+
+{{/* mon-chart: one panel: the head, the value, the plot and the times under it. Takes a monChart. */}}
+{{define "mon-chart"}}
+<div class="cv-panel cv-mnchart" id="{{.ID}}">
+  <div class="cv-mnchart-top"><h2 class="cv-label">{{.Title}}</h2><span class="cv-mnnow" data-mon-now>now</span></div>
+  <div class="cv-mnchart-val"><span class="cv-mnvalue{{if .Warn}} cv-mnvalue-warn{{end}}" data-mon-value>{{.Value}}</span><span class="cv-mnunit" data-mon-unit>{{.Unit}}</span>{{with .Usually}}<span class="cv-mnusually">{{.}}</span>{{end}}</div>
+  {{with .Plot}}{{template "mon-plot" .}}
+  <div class="cv-mnaxis"><span>{{$.AxisStart}}</span><span>{{$.AxisMid}}</span><span>now</span></div>
+  {{else}}
+  {{with .Empty}}<div class="cv-mnchart-empty">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}<span>{{template "mon-sentence" .Text}}</span></div>{{end}}
+  {{end}}
+  {{range .Captions}}<p class="cv-mncap">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "mon-sentence" .Text}}</p>{{end}}
+</div>
+{{end}}
+
+{{/* mon-plot: the SVG of a chart and its hidden table. Takes a monPlot. */}}
+{{define "mon-plot"}}
+<div class="cv-mnplot"{{if .Hover}} data-mon-plot data-t0="{{.T0}}" data-step="{{.Step}}" data-values="{{.Values}}" data-unit="{{.Unit}}"{{if .Date}} data-date="1"{{end}}{{end}}>
+  <svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">
+    <line class="cv-mngrid" x1="0" x2="300" y1="30" y2="30"/>
+    <line class="cv-mngrid" x1="0" x2="300" y1="60" y2="60"/>
+    <line class="cv-mngrid" x1="0" x2="300" y1="90" y2="90"/>
+    {{range .Bands}}<polygon class="cv-mnband" points="{{.Points}}"><title>{{.Title}}</title></polygon>
+    {{end}}
+    {{with .Warn}}<rect class="cv-mnwarn" x="{{.X}}" y="0" width="{{.W}}" height="120"><title>{{.Title}}</title></rect>
+    {{end}}
+    {{range .Gaps}}<rect class="cv-mngap" x="{{.X}}" y="0" width="{{.W}}" height="120"><title>{{.Title}}</title></rect>
+    {{end}}
+    {{range .Deploys}}<line class="cv-mndeploy" x1="{{.X}}" x2="{{.X}}" y1="0" y2="120"><title>{{.Title}}</title></line>
+    {{end}}
+    {{range .Lines}}{{$line := .}}{{range .Segments}}<polyline class="{{$line.Class}}" points="{{.}}"><title>{{$line.Title}}</title></polyline>
+    {{end}}{{end}}
+    {{if .Hover}}<line class="cv-mncross" x1="0" x2="0" y1="0" y2="120" data-mon-cross/>{{end}}
+  </svg>
+  {{with .Labels}}<div class="cv-mnlabels">{{range .}}<span class="cv-mndeploy-label">{{.}}</span>{{end}}</div>{{end}}
+</div>
+<table class="sr-only">
+  <caption>{{.Table.Caption}}</caption>
+  <thead><tr><th scope="col">Time (UTC)</th><th scope="col">{{.Table.Head}}</th></tr></thead>
+  <tbody>{{range .Table.Rows}}<tr><th scope="row">{{.Time}}</th><td>{{.Value}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+
+{{define "mon-numtext"}}{{.Text}}{{with .Usual}} <span class="cv-mnusual">· {{.}}</span>{{end}}{{end}}
+
+{{/* mon-table: the Apps section: its head with the sort bar, and a row for each service. Takes a monTable. */}}
+{{define "mon-table"}}
+<section class="cv-mnblock" aria-label="Apps">
+  <div class="cv-mnsec">
+    <h2 class="cv-label">Apps</h2>
+    <span class="cv-mnsec-meta">{{template "mon-sentence" .Meta}}</span>
+    <nav class="cv-seg cv-mnsec-tools" aria-label="Sort">{{range .Sorts}}<a href="{{.Href}}" class="cv-seg-item{{if .On}} cv-on{{end}}"{{if .On}} aria-current="true"{{end}}>{{.Label}}</a>{{end}}</nav>
+  </div>
+  {{if .Rows}}
+  <div class="cv-panel cv-mntable" role="table" aria-label="Apps">
+    <div class="cv-mnthead cv-label" role="row">
+      <span role="columnheader"><span class="sr-only">State</span></span>
+      <span role="columnheader">App</span>
+      <span role="columnheader" class="cv-mnr">Requests</span>
+      <span role="columnheader" class="cv-mnr">Errors</span>
+      <span role="columnheader" class="cv-mnr">Slowest 5%</span>
+      <span role="columnheader">CPU</span>
+      <span role="columnheader">Memory</span>
+      <span role="columnheader" class="cv-mnr">Restarts</span>
+      <span role="columnheader"><span class="sr-only">Logs</span></span>
+    </div>
+    {{range .Rows}}
+    <div class="cv-mnrow" role="row" id="{{.Anchor}}">
+      <span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" role="cell" aria-label="{{.MarkWord}}" title="{{.MarkWord}}"></span>
+      <div role="cell" class="cv-mnname"><a href="{{.Href}}" class="cv-mnname-text">{{.Name}}</a><span class="cv-mncopies">{{.Copies}}</span></div>
+      <div role="cell" class="cv-mnnumber{{if .Requests.Warn}} cv-mnnumber-warn{{end}}{{if .Requests.None}} cv-mnnumber-none{{end}}" data-label="Requests"{{with .Requests.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Requests}}</div>
+      <div role="cell" class="cv-mnnumber{{if .Errors.Warn}} cv-mnnumber-warn{{end}}{{if .Errors.None}} cv-mnnumber-none{{end}}" data-label="Errors"{{with .Errors.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .Errors}}</div>
+      <div role="cell" class="cv-mnnumber{{if .P95.Warn}} cv-mnnumber-warn{{end}}{{if .P95.None}} cv-mnnumber-none{{end}}" data-label="Slowest 5%"{{with .P95.Title}} title="{{.}}"{{end}}>{{template "mon-numtext" .P95}}</div>
+      <div role="cell" class="cv-mncpu" data-label="CPU">{{with .Spark}}<svg class="cv-mnspark" viewBox="0 0 120 24" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-mnspark-line" points="{{.}}"/>{{end}}</svg>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
+      <div role="cell" class="cv-mnmem" data-label="Memory">{{if .Mem.Known}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Mem.Title}}"><title>{{.Mem.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Mem.Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Mem.Fill}}" height="6"/></svg><span class="cv-mnmem-read{{if .Mem.Warn}} cv-mnwarntext{{end}}">{{.Mem.Read}}</span>{{else}}<span class="cv-mnnumber cv-mnnumber-none">—</span>{{end}}</div>
+      <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
+      <a href="{{.LogsHref}}" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="cv-panel"><p class="cv-mntable-empty">{{.Empty}}</p></div>
+  {{end}}
+</section>
+{{end}}

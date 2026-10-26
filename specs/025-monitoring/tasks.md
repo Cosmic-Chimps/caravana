@@ -157,7 +157,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
   and its fold under 640px, the CPU sparkline, the `Meter` (track ink-3, fill fg-2, reserved
   hatched, warn above 90 %), the host panel, the footer, the 2×2 and one-column chart grids;
   ruling 9 (no fg-4 text) written in DESIGN.md; `tools/ui-css.sh build`.
-- [ ] T015 [US1] `internal/ui/monitoring.go` + `templates/monitoring.html` + `console.js` + tests:
+- [x] T015 [US1] `internal/ui/monitoring.go` + `templates/monitoring.html` + `console.js` + tests:
   `GET /monitoring` (the place bars only with more than one choice, the range bar, the sort bar,
   all links), the issues panel with the contract's fixed sentences per kind and the deploy clause,
   or its one line (and the baseline line); the four charts as inline SVG by attributes and
