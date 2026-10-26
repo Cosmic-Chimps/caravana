@@ -1494,3 +1494,203 @@
 @media (prefers-reduced-motion: reduce) {
   .cv-row-fresh::after { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Page 8 (feature 025): Monitoring, on /monitoring and the Apps home's Platform panel. The head
+   (page 3's shape, .cv-pagehead), the filter row (the place and range bars are 024's .cv-seg), the
+   issues panel, four chart panels (the console's second SVG family, after the Logs histogram), the
+   apps table with its sparkline and meters, the "This host" panel and the footer. The values are
+   contracts/monitoring-screen.md's. The page is a container (cvmon) for the chart grid and the issue
+   rows; the apps table is a container of its own (cvmntbl) for its fold. No rule here needs a style
+   attribute (the CSP forbids one): a bar's length, a band's shape and a line's points are SVG
+   attributes (width, x2, points), and every colour, stroke and dash comes from a class. Text is never
+   fg-4 (ruling 9): axis times, captions and the "no value" dash are fg-3; fg-4 draws only marks.
+   --------------------------------------------------------------------------- */
+@layer components {
+  .cv-page-mon { max-width: 1440px; gap: 18px; padding: 30px 26px 48px; container-type: inline-size; container-name: cvmon; }
+
+  /* The filter row: the project and environment bars, a spacer, the range bar at the right. */
+  .cv-mnfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+  .cv-mnfilter-spacer { flex: 1 1 0; min-width: 0; }
+
+  /* A section's head (the handoff's SectionHead): the label, its meta, then tools (the sort bar) at the right. */
+  .cv-mnsec { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .cv-mnsec-meta { min-width: 0; font-size: 14px; line-height: 1.4; color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-mnsec-tools { margin-left: auto; max-width: 100%; }
+  .cv-mnsec-link { margin-left: auto; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); }
+
+  /* The issues panel: one row per unusual service; mark, the sentence over a detail line, the action. */
+  .cv-mnissues { display: flex; flex-direction: column; }
+  .cv-mnissue { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 14px; align-items: start; padding: 16px 18px; }
+  .cv-mnissue + .cv-mnissue { border-top: 1px solid var(--color-line-1); }
+  .cv-mnissue > .cv-mark { align-self: start; margin-top: 7px; }
+  .cv-mnissue-body { min-width: 0; }
+  .cv-mnissue-text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--color-fg-1); overflow-wrap: anywhere; text-wrap: pretty; }
+  .cv-mnstrong { font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cv-mnissue-detail { margin: 4px 0 0; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-mnissue-act { align-self: center; min-width: 0; }
+  .cv-mnissue-act .cv-btn { text-decoration: none; max-width: 100%; }
+  /* No unusual service: one quiet line, not a panel. */
+  .cv-mncalm { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-mncalm > .cv-mark { position: relative; top: -0.04em; }
+
+  /* The four charts: a grid of panels (2x2 and one column in the rules below). */
+  .cv-mncharts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .cv-mncharts > * { min-width: 0; }
+  .cv-mnchart { display: flex; flex-direction: column; min-width: 0; }
+  .cv-mnchart-top { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px 0; }
+  .cv-mnchart-top > .cv-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .cv-mnnow { flex: none; font: 400 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-mnchart-val { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 16px 0; }
+  .cv-mnvalue { font: 500 26px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); }
+  .cv-mnvalue-warn { color: var(--color-warn); }
+  .cv-mnunit { font: 400 13px/1.2 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-mnusually { margin-left: auto; font: 400 12px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+
+  /* The plot: an SVG (viewBox "0 0 300 120", preserveAspectRatio none, so every stroke is
+     non-scaling), 120px tall, over a relative box that holds the deploy labels. */
+  .cv-mnplot { position: relative; margin: 14px 16px 0; }
+  .cv-mnsvg { display: block; width: 100%; height: 120px; overflow: visible; }
+  .cv-mngrid { stroke: var(--color-line-1); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; }
+  /* The band: the lowest to the highest value of the same hour on the earlier days, a polygon, never an area from zero. */
+  .cv-mnband { fill: var(--color-ink-3); opacity: 0.7; stroke: none; }
+  /* From when a service became unusual to now: an 8% warn rect. */
+  .cv-mnwarn { fill: var(--color-warn); opacity: 0.08; stroke: none; }
+  /* A stretch with no samples: faint ground and a dashed edge, never a zero. */
+  .cv-mngap { fill: oklch(0.500 0.010 255 / 0.12); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+  .cv-mndeploy { stroke: var(--color-rolling); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; fill: none; }
+  .cv-mndeploy-failed { stroke: var(--color-failed); }
+  .cv-mnline { fill: none; stroke: var(--color-fg-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  /* The host chart's second line: what is reserved, dashed and quieter than what is used. */
+  .cv-mnline-ref { fill: none; stroke: var(--color-fg-3); stroke-width: 1.25; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  /* The hover crosshair (script only): hidden until .cv-on. */
+  .cv-mncross { stroke: var(--color-fg-3); stroke-width: 1; vector-effect: non-scaling-stroke; fill: none; visibility: hidden; pointer-events: none; }
+  .cv-mncross.cv-on { visibility: visible; }
+  /* Deploy labels: rolling text at the plot's top right, over the plot, one per deployment ("and N more" when they crowd). */
+  .cv-mnlabels { position: absolute; inset: 0 0 auto 0; display: flex; justify-content: flex-end; gap: 8px; pointer-events: none; }
+  .cv-mndeploy-label { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px/1.3 var(--font-mono); color: var(--color-rolling); text-shadow: 0 0 3px var(--color-ink-1), 0 0 3px var(--color-ink-1); }
+  /* The axis: start, middle and now, 11px mono fg-3 (text, so not fg-4). */
+  .cv-mnaxis { display: flex; justify-content: space-between; gap: 8px; margin: 8px 16px 0; font: 400 11px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
+  .cv-mnaxis > span { min-width: 0; white-space: nowrap; }
+  /* The captions under the axis: the 7 d "band thins" line and the baseline line. */
+  .cv-mncap { margin: 6px 16px 0; font: 400 11px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; text-wrap: pretty; }
+  .cv-mnchart > :last-child { margin-bottom: 14px; }
+  /* A chart with nothing to draw: one sentence in the plot's place. */
+  .cv-mnchart-empty { display: flex; align-items: center; min-height: 120px; margin: 14px 16px 0; font-size: 13px; line-height: 1.45; color: var(--color-fg-3); overflow-wrap: anywhere; text-wrap: pretty; }
+  .cv-mnchart-empty > .cv-mark { margin-right: 8px; }
+
+  /* The apps table: a panel, a 38px head on ink-2, rows of 52px; a container of its own (cvmntbl). */
+  .cv-mntable { --cols: 14px minmax(0, 1.3fr) 110px 100px 150px 130px minmax(0, 1.2fr) 80px 36px; container-type: inline-size; container-name: cvmntbl; }
+  .cv-mnthead, .cv-mnrow { display: grid; grid-template-columns: var(--cols); column-gap: 16px; align-items: center; padding: 0 18px; }
+  .cv-mnthead { height: 38px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
+  .cv-mnrow { position: relative; min-height: 52px; padding-block: 6px; font-size: 13px; }
+  .cv-mnrow + .cv-mnrow { border-top: 1px solid var(--color-line-1); }
+  .cv-mnrow:hover { background: var(--color-ink-2); }
+  .cv-mnrow > *, .cv-mnthead > * { min-width: 0; }
+  .cv-mnr { text-align: right; }
+  .cv-mnname { display: flex; flex-direction: column; gap: 2px; }
+  .cv-mnname-text { font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow-wrap: anywhere; }
+  /* The row is one link to the app's Running tab: the name's link covers the row; the logs link rides above it. */
+  a.cv-mnname-text::after { content: ""; position: absolute; inset: 0; }
+  a.cv-mnname-text:hover { color: var(--color-fg-1); }
+  a.cv-mnname-text:focus-visible { outline: none; }
+  a.cv-mnname-text:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-mncopies { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-mnnumber { font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); text-align: right; overflow-wrap: anywhere; }
+  .cv-mnnumber-warn { color: var(--color-warn); }
+  .cv-mnnumber-none { color: var(--color-fg-3); }
+  /* "usually 180" after an unusual value: quieter, on its own words. */
+  .cv-mnusual { color: var(--color-fg-3); }
+  .cv-mncpu { display: flex; align-items: center; }
+  /* The CPU sparkline: 120x24, one 1.25px fg-2 line. */
+  .cv-mnspark { display: block; width: 120px; max-width: 100%; height: 24px; overflow: visible; }
+  .cv-mnspark-line { fill: none; stroke: var(--color-fg-2); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .cv-mnmem { display: flex; align-items: center; gap: 10px; }
+  .cv-mnmem .cv-mnmeter-svg { flex: 1 1 auto; max-width: 140px; }
+  .cv-mnmem-read { flex: none; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-mnmem-read.cv-mnwarntext { color: var(--color-warn); }
+  .cv-mnrestarts { font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); text-align: right; }
+  .cv-mnrestarts.cv-mnwarntext { color: var(--color-warn); }
+  .cv-mnlogs { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; color: var(--color-fg-3); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-mnlogs:hover { background: var(--color-ink-3); color: var(--color-fg-1); }
+  .cv-mnlogs > .cv-icon { width: 15px; height: 15px; }
+  /* A table with no rows. */
+  .cv-mntable-empty { padding: 24px; font-size: 14px; line-height: 1.5; color: var(--color-fg-3); text-wrap: pretty; }
+
+  /* The Meter (the handoff's): an SVG of viewBox "0 0 100 6", preserveAspectRatio none, 6px tall, radius 1
+     (clipped by the svg), a track, what is reserved hatched, what is used on top. Lengths are attributes
+     (width, x2): no style attribute. The hatch is a dashed stroke (vertical ticks, no gradient), so it
+     needs no pattern id and stays the same few pixels wide at any width. Above 90% the fill is warn and
+     the readout says it too (.cv-mnwarntext), so the colour is never the only sign. */
+  .cv-mnmeter { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; min-width: 0; }
+  .cv-mnmeter-label { font: 500 12px/1 var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-fg-3); }
+  .cv-mnmeter-svg { display: block; width: 100%; height: 6px; border-radius: 1px; overflow: hidden; }
+  .cv-mntrack { fill: var(--color-ink-3); }
+  .cv-mnfill { fill: var(--color-fg-2); }
+  .cv-mnfill-warn { fill: var(--color-warn); }
+  .cv-mnreserved { stroke: var(--color-fg-4); stroke-width: 6; stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; fill: none; }
+  .cv-mnmeter-read { min-width: 5.5rem; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-2); text-align: right; white-space: nowrap; }
+  .cv-mnmeter-read.cv-mnwarntext { color: var(--color-warn); }
+
+  /* "This host" and the Apps home's Platform panel: padding 18, a column with a 14px gap. */
+  .cv-mnhost, .cv-mnplat { display: flex; flex-direction: column; gap: 14px; padding: 18px; min-width: 0; }
+  a.cv-mnplat { color: inherit; text-decoration: none; transition: border-color 120ms var(--ease-cv); }
+  a.cv-mnplat:hover { color: inherit; border-color: var(--color-line-2); }
+  .cv-mnhostline { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 14px; line-height: 1.4; color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-mnhostline > .cv-mark { width: 8px; height: 8px; }
+  .cv-mnroom { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); overflow-wrap: anywhere; text-wrap: pretty; }
+  .cv-mnroom-warn { color: var(--color-warn); }
+  /* The host's 7-day memory chart sits in the panel's padding: no extra margin, and a key for its two lines. */
+  .cv-mnhost .cv-mnplot { margin: 4px 0 0; }
+  .cv-mnhost .cv-mnaxis { margin: 8px 0 0; }
+  .cv-mnhost .cv-mncap { margin: 6px 0 0; }
+  .cv-mnkey { display: flex; flex-wrap: wrap; gap: 4px 16px; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-mnkey > span { display: inline-flex; align-items: center; gap: 8px; }
+  .cv-mnkey > span::before { content: ""; width: 16px; height: 0; border-top: 1.5px solid var(--color-fg-1); }
+  .cv-mnkey > .cv-mnkey-res::before { border-top: 1.25px dashed var(--color-fg-3); }
+
+  /* The footer: one sentence, 13px fg-3. */
+  .cv-mnfoot { margin: 0; font-size: 13px; line-height: 1.45; color: var(--color-fg-3); overflow-wrap: anywhere; text-wrap: pretty; }
+}
+
+/* Under 1200px of room (the page's container) the charts are a 2x2 grid; under 640px, one column. The
+   issue rows stack their action under the text under 640px. */
+@container cvmon (max-width: 1199.98px) {
+  .cv-mncharts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container cvmon (max-width: 639.98px) {
+  .cv-mncharts { grid-template-columns: minmax(0, 1fr); }
+  .cv-mnissue { padding: 14px 16px; }
+  .cv-mnissue-act { grid-column: 2; justify-self: start; margin-top: 10px; }
+  .cv-mnfilter-spacer { display: none; }
+  .cv-mnsec-tools { margin-left: 0; }
+}
+
+/* The table folds when it has under 900px of its own (nine columns need about that much; the contract's
+   640px would overflow): mark, name and copies on the first line, then each fact as a label and its value
+   (the labels come from data-label), the memory meter across, and Restarts with the logs link last. */
+@container cvmntbl (max-width: 899.98px) {
+  .cv-mnthead { display: none; }
+  .cv-mnrow { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; padding-block: 12px; }
+  .cv-mnrow > .cv-mark { align-self: start; margin-top: 5px; }
+  .cv-mnrow > .cv-mnname { grid-column: 2 / -1; }
+  .cv-mnrow > [data-label] { grid-column: 2 / -1; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; text-align: left; }
+  .cv-mnrow > [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-mnrow > .cv-mncpu { align-items: center; }
+  .cv-mnrow > .cv-mnmem { grid-column: 2 / -1; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; align-items: center; }
+  .cv-mnrow > .cv-mnmem .cv-mnmeter-svg { max-width: none; }
+  .cv-mnrow > .cv-mnrestarts { grid-column: 2; }
+  .cv-mnrow > .cv-mnlogs { grid-column: 3; justify-self: end; }
+  .cv-mnnumber, .cv-mnrestarts { text-align: left; }
+}
+
+/* Touch screens: the logs link is 44px. */
+@media (pointer: coarse) {
+  .cv-mnlogs { width: 44px; height: 44px; }
+}
+
+/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
+   gutters; the Monitoring page keeps the tighter gap. */
+@media (max-width: 899.98px) {
+  .cv-page-mon { gap: 18px; padding: 24px 16px 40px; }
+}

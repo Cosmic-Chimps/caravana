@@ -149,7 +149,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 4: Console (US1, US2, US3, US4, US6)
 
-- [ ] T014 [US1] `internal/ui/style/input.css` "Page 8 (025)" + `DESIGN.md` "Monitoring (feature
+- [x] T014 [US1] `internal/ui/style/input.css` "Page 8 (025)" + `DESIGN.md` "Monitoring (feature
   025, page 8)": the head, the filter row, the issues rows (grid `14px minmax(0, 1fr) auto`, the
   marks, the detail line, the action), the `MnChart` classes (gridlines line-1, the band polygon
   ink-3 at 0.7, the warn rect, the dashed deploy markers and their rolling labels, the series

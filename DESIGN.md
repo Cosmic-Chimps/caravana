@@ -258,8 +258,9 @@ alone.
 - **Strong Edge** (oklch 0.440 0.012 255): the border of a hovered control, and link underlines.
 - **Body Text** (oklch 0.810 0.008 255): ordinary text.
 - **Label Text** (oklch 0.680 0.010 255): section labels, mono detail lines, timestamps.
-- **Dim Mark** (oklch 0.500 0.010 255): disabled text and marks that aren't text (axis ticks,
-  separators). It fails 4.5:1, so it never carries meaning on its own.
+- **Dim Mark** (oklch 0.500 0.010 255): marks that aren't text (dashed edges,
+  hatching, separators) and a disabled control's text. It is about 3.3:1 against the panel, so it never
+  carries meaning on its own and never sets text that is meant to be read (see the No-Dim-Text Rule).
 
 ### Status
 Each status has a full-strength color, a tinted ground and an edge. They differ in lightness as
@@ -284,6 +285,14 @@ by the same ratios.
 **The Status-Only Color Rule.** The four status hues mean status and nothing else. Buttons, links,
 tabs and decoration stay neutral. When a screen is fully healthy, the only color on it is Signal
 Blue on the status marks.
+
+**The No-Dim-Text Rule.** Text is never Dim Mark (fg-4). Axis times, captions,
+the "—" of a value that doesn't exist, timestamps and counts are Label Text (fg-3) at the least; fg-4 is for
+marks that are not read: dashed edges, hatching, tick separators, the ring of an empty state. fg-4 is about
+3.3:1 against a panel, below the 4.5:1 that text needs, and "quiet" is made by size and position, not by
+dimming below legibility. A new surface that wants a dimmer text takes fg-3. (Older surfaces that still set
+a count or a time in fg-4 move to fg-3 as their pages are next touched; the Logs page's estimated time and
+histogram labels already did.)
 
 **The Flat Ground Rule.** No gradients anywhere. The one exception is the hard-stop half fill of the
 rolling mark, which is a shape, not a blend.
@@ -1158,6 +1167,113 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   words break anywhere, so nothing scrolls sideways at 390px. On touch screens the bars, chips and rail items
   are 44px tall.
 
+### Monitoring (feature 025, page 8)
+Values from `specs/025-monitoring/contracts/monitoring-screen.md`. A workspace page, `/monitoring`: the sidebar's
+Workspace group gains Monitoring (`activity` icon, after Logs). The first page that draws stored numbers: a
+sampler writes one row a minute per service and for the host, and the page compares now with the same hour
+of the earlier days. It is information, not a to-do list: an unusual service is never a needs-you item.
+- **The shape.** `<main class="cv-page cv-page-mon">`, a container (`cvmon`) with padding 30 26 48 and gap 18:
+  the head (`.cv-pagehead`, page 3's shape: "Monitoring" 30px, "How your apps are doing compared with their usual
+  week. The shaded band is the same hour over the last 7 days." in the lede), the filter row, the issues panel
+  (or its line), the four charts, the Apps section, "This host" (`id="host"`) and the footer. The filter row
+  (`.cv-mnfilter`, wraps, gap 14) holds the project and environment bars (`.cv-seg`, only when there is more than
+  one choice), a spacer (`.cv-mnfilter-spacer`) and the range bar 1 h · 6 h · 24 h · 7 d. Section heads
+  (`.cv-mnsec`): the Label, its meta in 14px fg-2 (`.cv-mnsec-meta`) and tools at the right (`.cv-mnsec-tools`,
+  the sort bar; `.cv-mnsec-link` for a link such as "Open monitoring").
+- **The issues panel** (`.cv-panel` holding `.cv-mnissues`): one row per unusual service
+  (`.cv-mnissue`), grid `14px minmax(0, 1fr) auto`, gap 14, padding 16 18, 1px line-1 between rows. The mark is
+  the 9px `cv-mark-lg`: ◆ warning, ■ failed (errors above 10% or memory above 98%).
+  The sentence (`.cv-mnissue-text`, 15px/1.5 fg-1) has its numbers in weight 500 (`.cv-mnstrong`); under
+  it the detail line (`.cv-mnissue-detail`, 12px/1.4 mono fg-3); at the right the action (`.cv-mnissue-act`, a
+  secondary small button with the `scroll-text` icon, to Logs filtered). Under 640px the action drops under the
+  text, aligned with it. With nothing unusual there is no panel, one line (`.cv-mncalm`: a 9px ● and "Everything
+  in `Shop` / `production` is within its usual range."; ○ while the baseline is still being learned). The
+  sentences state facts and never excuse a deploy: "It started 2 minutes after `supplier-gw` v24 rolled out" or
+  "before", never "so the deploy isn't the cause".
+- **The charts** (`.cv-mncharts`, grid `repeat(4, minmax(0, 1fr))`, gap 14; 2×2 under 1200px of the page's room,
+  one column under 640px, both by the page's container): Requests, Errors, Slowest 5%, Memory, each a panel
+  (`.cv-mnchart`). The head is the Label and "now" (`.cv-mnnow`, 12px mono fg-3; with script the hovered
+  point's time); under it the value (`.cv-mnvalue`, 500 26px mono fg-1, `.cv-mnvalue-warn` while the latest
+  10 minutes are unusual), its unit (`.cv-mnunit`, 13px fg-3) and "usually 120" at the right
+  (`.cv-mnusually`, 12px fg-3). A chart with nothing to draw says why in one sentence in the plot's place
+  (`.cv-mnchart-empty`, 13px fg-3, min 120px tall, with a ○ when Traefik can't be read).
+- **The charts are the console's second SVG family.** The Logs histogram (page 7) was the first: an SVG whose
+  shapes are elements with attributes and whose colours are classes, never a `style` attribute (the page's policy
+  forbids it) and no script needed to draw. `<svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none"
+  role="img" aria-labelledby=…>` inside `.cv-mnplot` (margin 14 16 0), 120px tall; every stroke is
+  `vector-effect: non-scaling-stroke`, so the squeeze doesn't thicken it. Inside, in this order: three
+  gridlines at 25, 50 and 75% (`.cv-mngrid`, 1px line-1); the **band** (`.cv-mnband`, a `<polygon>` from the
+  lowest to the highest value of the same hour on each earlier day, ink-3 at 0.7: a band between two values,
+  never an area from zero); the unusual stretch (`.cv-mnwarn`, a `<rect>` from its start to now, warn at 8%, on
+  Errors and Slowest 5% only); gaps (`.cv-mngap`); the deploy markers (`.cv-mndeploy`, 1px dashed `<line>`s in
+  rolling, `.cv-mndeploy-failed` for a failed deploy, each with a `<title>`); the series (`.cv-mnline`, a
+  1.5px fg-1 `<polyline>`; on the host's chart a second `.cv-mnline-ref`, dashed, for what is reserved); the
+  crosshair (`.cv-mncross`, hidden until script gives it `.cv-on`).
+- **What the band means, and says.** The band is "the same hour over the last 7 days": its `<title>` names the
+  days it rests on ("the same hour on the last 7 days: 3 to 9 req/s" or "…on the 3 days there are"), so a band
+  built from 3 days never looks like a week. Before a full day of history there is no band and no "usually", and
+  the caption (`.cv-mncap`, 11px/1.4 mono fg-3) says "Building the baseline: started 2026-10-25 UTC. The usual
+  range appears after a full day." On the 7 d range the band thins to the left (older hours have fewer earlier
+  days kept), one caption line under that chart's times: "The band thins to the left: older hours have fewer
+  earlier days kept." The polyline's `<title>` names the range's min, max and latest, and a visually hidden table
+  carries the numbers.
+- **Gaps are never zero.** A minute the sampler couldn't read writes no row, and the series breaks there: the
+  polyline ends and starts again (several `<polyline>`s, or one with a break), and a long stretch is drawn as
+  `.cv-mngap` (a faint ground with a dashed edge, the same language as the histogram's unread bins). A chart is
+  never drawn down to zero for what wasn't measured.
+- **Deploy markers and labels.** The markers are the Logs histogram's, in the same hue; their labels
+  (`.cv-mnlabels`, a flex row at the plot's top right, over the plot; `.cv-mndeploy-label`, 11px mono rolling,
+  with a 3px ink-1 halo so it reads over the line) say "`supplier-gw` v24": one label per deployment, "and N
+  more" when they crowd.
+- **The axis** (`.cv-mnaxis`, 8 16 0, 11px mono): the start, the middle and "now", in UTC, **fg-3**. Text is never
+  fg-4 (the rule in Colors).
+- **The Meter** (the handoff's, here an SVG): `<svg class="cv-mnmeter-svg" viewBox="0 0 100 6"
+  preserveAspectRatio="none">`, 6px tall, radius 1 (the svg clips), with `.cv-mntrack` (ink-3) full width, then
+  `.cv-mnreserved` (what Nomad has set aside, **hatched**: a `<line>` whose dashed stroke draws vertical ticks, so
+  no gradient and no pattern id), then `.cv-mnfill` (fg-2, what is used) on top. Lengths are attributes (`width`
+  on the rect, `x2` on the line), so no `style` attribute is needed; a fixed set of width classes was the
+  other choice and was rejected: a hundred classes for one number. Above 90% the fill is `.cv-mnfill-warn` **and**
+  the readout takes `.cv-mnwarntext`, so the colour is never the only sign. The row (`.cv-mnmeter`) is a grid
+  `40px minmax(0, 1fr) auto`: the label (`.cv-mnmeter-label`, a Label), the bar, the readout
+  (`.cv-mnmeter-read`, 12px mono fg-2, "1.9/3.8G"). The Running tab's `<meter>` (feature 016) stays: it is one
+  thin bar with no reserved part; this one is for capacity, where used under reserved under total is the point.
+- **The apps table** (`.cv-panel` with `.cv-mntable`, a container of its own, `cvmntbl`): a head 38px on ink-2
+  (`.cv-mnthead`, Labels), rows 52px (`.cv-mnrow`), grid `14px minmax(0, 1.3fr) 110px 100px 150px 130px
+  minmax(0, 1.2fr) 80px 36px`, gap 16, padding 0 18. A row: the mark (◆ unusual, ■ failed, ◐ rolling out, ● healthy,
+  ○ stopped); the name (`.cv-mnname`: `.cv-mnname-text` 500 14px mono fg-1, "`hollo` / `web`" with several
+  services; under it `.cv-mncopies`, 12px fg-3, "2 copies · no domain"); Requests, Errors, Slowest 5%
+  (`.cv-mnnumber`, 13px mono, right-aligned; `.cv-mnnumber-warn` when unusual; "820 ms · usually 180" with
+  `.cv-mnusual` for the quiet part; "—" is `.cv-mnnumber-none`, fg-3: no domain, no number); CPU (`.cv-mncpu`
+  with the 120×24 `.cv-mnspark` and its `.cv-mnspark-line`, 1.25px fg-2); Memory (`.cv-mnmem`: a meter of at most
+  140px and the readout `.cv-mnmem-read`, 12px fg-3, warn above 90%); Restarts (`.cv-mnrestarts`, warn when not
+  zero); and the logs link (`.cv-mnlogs`, a 28px target, the `scroll-text` icon, `aria-label` "Logs of
+  booking-api"). The row is one link to the app's Running tab: the name's link covers the row with `::after`
+  (no nested anchors), and the logs link rides above it. Sorted by the sort bar: unusual first (by how far),
+  most traffic, most memory.
+- **The table folds under 900px of its own width**, not the contract's 640: nine columns need about 860px
+  (the fixed ones are 620px with the gaps), so a table folded at 640 would scroll sideways between 640 and 860.
+  Folded, the head goes; mark, name and copies are the first line; then Requests, Errors, Slowest 5% and CPU as
+  label and value (the label is each cell's `data-label`, 5.5rem, like the Domains rows); the memory meter takes
+  the width; Restarts and the logs link close the row. No cell scrolls: every track is `minmax(0, …)` and text
+  breaks anywhere.
+- **"This host"** (`id="host"`, `.cv-mnhost`: a panel, padding 18, gap 14): the meters for cpu, mem and disk
+  (reserved hatched for cpu and mem; one disk row per watched filesystem when they differ, its mount in the
+  readout), the room sentence (`.cv-mnroom`, 14px/1.5 fg-2; `.cv-mnroom-warn` in the warn hue for "No room…"; its
+  `title` is "Nomad's count of what fits. Caravana's and the host's own processes aren't reserved."), and a 7-day
+  memory chart under them (the chart shape without panel margins: used solid, reserved dashed, with a key,
+  `.cv-mnkey`, whose second item is `.cv-mnkey-res`). The Apps home's **Platform panel** is the same panel
+  (`.cv-mnplat`, an `<a>` to `/monitoring#host`, which only lifts its edge to line-2 on hover): a line "● 1 server up"
+  (`.cv-mnhostline`, 14px fg-1, an 8px mark; ■ "Can't read the host's numbers" when the sampler failed), the memory and
+  disk meters and the room sentence, under a "This host" Label and above Activity in the rail. Multi-server capacity
+  is Phase 3.
+- **The footer** (`.cv-mnfoot`, 13px fg-3): "Sampled every minute and kept for 8 days. Requests come from Traefik,
+  memory and CPU from Nomad." and the line about long-lived connections.
+- **Narrow:** the chart grid and the issue rows narrow by the page's room (the rules at the end of the
+  Monitoring block: 2×2 under 1200px, one column and stacked actions under 640px); the filter row wraps and its
+  spacer goes; the plot keeps its 120px and the axis its three times. On touch screens the logs link is 44px (the
+  bars already are). Every track is `minmax(0, …)` and long words break anywhere, so nothing scrolls sideways at
+  390px.
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is
@@ -1192,6 +1308,7 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
   text, never markup.
 - **Do** put every command to copy in its own `cv-cmd` block, and every error under its field with
   the field autofocused.
+- **Do** set every piece of text in fg-3 or brighter. fg-4 draws marks only (the No-Dim-Text Rule).
 - **Do** take every color from the theme tokens. If a color is missing, add a token instead of
   writing a raw oklch value in a component.
 
