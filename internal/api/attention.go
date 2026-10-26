@@ -27,15 +27,27 @@ type attentionItemJSON struct {
 	Domain      string     `json:"domain,omitempty"`
 	AddressSeen string     `json:"addressSeen,omitempty"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	At          time.Time  `json:"at"`
-	Detail      string     `json:"detail,omitempty"`
+	// disk_nearly_full (feature 025): the filesystem, what is on it, how full
+	// it is, what is left and the level. Host-level, so there is no appId.
+	Mount       string    `json:"mount,omitempty"`
+	Holds       []string  `json:"holds,omitempty"`
+	UsedPercent *float64  `json:"usedPercent,omitempty"`
+	FreeBytes   *int64    `json:"freeBytes,omitempty"`
+	Level       string    `json:"level,omitempty"`
+	At          time.Time `json:"at"`
+	Detail      string    `json:"detail,omitempty"`
 }
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
-	return attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
+	out := attentionItemJSON{Kind: string(it.Kind), AppID: it.AppID, Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Service: it.Service, Schedule: it.Schedule, ScheduleID: it.ScheduleID, Copies: it.Copies,
 		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version,
 		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, At: it.When, Detail: it.Detail}
+	if it.Kind == service.AttentionDiskNearlyFull {
+		out.Mount, out.Holds, out.Level = it.Mount, it.Holds, string(it.Level)
+		out.UsedPercent, out.FreeBytes = &it.UsedPercent, &it.FreeBytes
+	}
+	return out
 }
 
 // listAttention answers GET /v1/attention: what needs the owner, newest
@@ -50,7 +62,8 @@ func (s *server) listAttention(w http.ResponseWriter, r *http.Request) error {
 	out := struct {
 		Items         []attentionItemJSON `json:"items"`
 		CopiesUnknown bool                `json:"copiesUnknown"`
-	}{Items: make([]attentionItemJSON, 0, len(att.Items)), CopiesUnknown: att.CopiesUnknown}
+		DisksUnknown  bool                `json:"disksUnknown"`
+	}{Items: make([]attentionItemJSON, 0, len(att.Items)), CopiesUnknown: att.CopiesUnknown, DisksUnknown: att.DisksUnknown}
 	for _, it := range att.Items {
 		out.Items = append(out.Items, toAttentionItemJSON(it))
 	}

@@ -139,7 +139,7 @@ cycle. A Sonnet agent builds each phase; Opus reviews before the next.
 
 ## Phase 3: API 0.27.0 (US5)
 
-- [ ] T013 [US5] `api/openapi.yaml` 0.27.0 + `internal/api/metrics.go` + tests: `getMetrics`,
+- [x] T013 [US5] `api/openapi.yaml` 0.27.0 + `internal/api/metrics.go` + tests: `getMetrics`,
   `getAppMetrics`, `getHost` per contracts/api.md (the parameters' rules and codes, `null` for gaps,
   the description texts), `AttentionItem`'s kind `disk_nearly_full` and its five properties, the
   same on `NotificationEvent`; the contract test over the new routes; `TestScopedTokenWalksEveryRoute`

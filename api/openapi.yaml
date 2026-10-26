@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.26.0
+  version: 0.27.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -225,6 +225,121 @@ paths:
                 $ref: "#/components/schemas/Attention"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Read the numbers of an environment's apps (the Monitoring page).
+      description: |
+        What the Monitoring page draws, for one environment (`project` and `environment`; both
+        may be left out only on an installation whose one environment is Default › production):
+        the environment's totals as four charts, the deploys of the range, the services that are
+        unusual and why, and one row per service. Every value is computed on read from the
+        samples Caravana's sampler stored each minute, so Nomad or Traefik being down never
+        fails this call: `sources` says what the sampler last couldn't read.
+
+        **Units.** Requests are per second, errors a percent of requests, the slowest 5 % in
+        milliseconds, memory in megabytes, CPU in MHz. **A gap is `null`, never 0**: a point the
+        sampler didn't cover, a number that doesn't apply (an app without a domain has no
+        requests) and a band that isn't known yet are all `null`.
+
+        **The charts.** `points` are the start of each point of the range (1h is 60 points of a
+        minute, 6h 72 of 5 minutes, 24h 144 of 10 minutes, 7d 168 of an hour); each series has
+        one entry per point, in the same order. A point sums the rows of a counter and takes the
+        median of a gauge's rows. The slowest 5 % is Prometheus' `histogram_quantile(0.95)` over
+        the merged counts of Traefik's buckets (`0.005` to `10` seconds); websocket and
+        server-sent-event requests count as requests but not in it, and a value beyond 10 s sets
+        `over`.
+
+        **The band** (`low`, `high`, `usual`, `days`) is the minimum, maximum and median of the
+        same UTC 10-minute slot on each of the previous 1 to 7 days; `days` says how many were
+        found. It is `null` with no earlier day and while `baseline.state` is `building` (under
+        one full day of samples); it is drawn from the days there are while `partial` (1 to 6
+        days) and rests on seven while `full`.
+
+        **Unusual.** Over the last 10 minutes, a service is unusual when one of five rules holds:
+        `slower` (the slowest 5 % is above the band's highest by more than 50 % and by at least
+        100 ms, with at least 20 timed requests), `more_errors` (5xx above 1 % of requests, at
+        least 5 errors, and above the band's highest), `quieter` (requests below half the band's
+        lowest, which is at least one request a minute), `memory` (the median above 90 % of the
+        limit) and `restarting` (2 or more restarts nobody asked for in the last hour). Before a
+        full day of samples only `memory` and `restarting` are judged. `level` is `failed` when
+        errors are above 10 % or memory above 98 % of the limit, else `warning`. `distance` is
+        how far past its rule it is (value over the band's highest for `slower` and
+        `more_errors`, the band's lowest over the value for `quieter`, memory over 90 %, and 1
+        plus restarts over 10, at most 100); `issues` and the unusual rows are sorted by it, the
+        furthest first. An app rolling out is not judged by the HTTP rules, and a stopped app is
+        not judged. Unusual services are not on `listAttention`.
+
+        **Memory** used is Nomad's `Usage − Cache` (the page cache left out), as `listCopies`
+        gives with `usage=true`.
+
+        The services are listed in the `sort` asked: `unusual` (unusual first, then those
+        rolling out, then by name), `traffic` (requests per second) or `memory` (used).
+      tags: [metrics]
+      parameters:
+        - name: project
+          in: query
+          description: The project. 404 `project_not_found` when there is none.
+          schema: {type: string}
+        - name: environment
+          in: query
+          description: The environment of the project. 404 `environment_not_found` when there is none.
+          schema: {type: string}
+        - $ref: "#/components/parameters/MetricsRange"
+        - $ref: "#/components/parameters/MetricsSort"
+      responses:
+        "200":
+          description: The numbers, from the stored samples.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metrics"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/MetricsNotFound"
+        "422":
+          $ref: "#/components/responses/MetricsInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/host:
+    get:
+      operationId: getHost
+      summary: Read the host's capacity and disks.
+      description: |
+        The host's memory and CPU (used, reserved and total: Nomad places by reservation, not by
+        use), its watched filesystems with their state, how many more apps like the usual one fit
+        (`room`) and seven days of memory, an hour per point. It reads what the sampler stored
+        and never calls Nomad. A resource the sampler couldn't read is `null`, never 0; a host
+        that was never sampled answers `sampledAt: null` with every number `null` and `disks`
+        empty. `stale` is true when the newest sample is more than 5 minutes old: the numbers
+        are the last known ones.
+
+        A disk's `state` is `ok` below 85 % used, `warning` from 85 % and `failed` from 95 %
+        (what `df` prints: used over used plus free). A disk at `warning` or beyond is also an
+        item on `listAttention` (`disk_nearly_full`).
+
+        `room.count` is `floor(min(free memory ÷ X's memory, free CPU ÷ X's CPU))` where X is the
+        running app whose memory reservation is the median; `limitedBy` says which resource ran
+        out first. It is `null`, with `freeMemoryMb` still given, when no app is running.
+      tags: [metrics]
+      responses:
+        "200":
+          description: The host, from the stored samples.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Host"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -1086,6 +1201,39 @@ paths:
           $ref: "#/components/responses/Internal"
         "502":
           $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/apps/{id}/metrics:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: getAppMetrics
+      summary: Read one app's numbers.
+      description: |
+        `getMetrics` for one app: `series` are the app's totals, `deploys` the app's own, and
+        `services` its services. Units, gaps, the band and the rules are as `getMetrics`
+        describes them. Computed from the stored samples; Nomad or Traefik being down never
+        fails it.
+      tags: [metrics]
+      parameters:
+        - $ref: "#/components/parameters/MetricsRange"
+        - $ref: "#/components/parameters/MetricsSort"
+      responses:
+        "200":
+          description: The app's numbers, from the stored samples.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metrics"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/MetricsInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /v1/logs:
     get:
@@ -3374,6 +3522,20 @@ paths:
 
 components:
   parameters:
+    MetricsRange:
+      name: range
+      in: query
+      description: The span the charts cover, ending now. Default `6h`. Another value is 422 `invalid_field`.
+      schema: {type: string, enum: ["1h", "6h", "24h", "7d"], default: "6h"}
+    MetricsSort:
+      name: sort
+      in: query
+      description: |
+        How `services` is ordered. `unusual` (default): the unusual first, the furthest past its
+        rule first, then those rolling out, then by name. `traffic`: most requests per second
+        first. `memory`: most memory used first. A service without the number comes last.
+        Another value is 422 `invalid_field`.
+      schema: {type: string, enum: [unusual, traffic, memory], default: unusual}
     AppID:
       name: id
       in: path
@@ -4153,7 +4315,8 @@ components:
             `deploy_failed`, `backup_failed`, `restarting`, `out_of_memory`, `schedule_failed`
             (a schedule's latest run failed), `schedule_skipping` (its last 3 slots were
             skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
-            `domain_cert_expiring` (a domain's certificate is near its end and not renewed). A
+            `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
+            `disk_nearly_full` (a filesystem of the host is 85 % full or more). A
             schedule that keeps failing is one problem: one `problem.opened`, then one
             `problem.resolved` after a run succeeds; so is a domain, per host. Receivers should
             accept kinds they don't know.
@@ -4226,6 +4389,23 @@ components:
           type: string
           format: date-time
           description: "`problem.opened` of `domain_cert_expiring`: when the certificate ends."
+        mount:
+          type: string
+          description: "`problem.opened` of `disk_nearly_full`: the filesystem's mount point."
+        holds:
+          type: array
+          items: {type: string, enum: [nomad, docker]}
+          description: "`problem.opened` of `disk_nearly_full`: what is on it."
+        usedPercent:
+          type: number
+          description: "`problem.opened` of `disk_nearly_full`: how full it is."
+        freeBytes:
+          type: integer
+          description: "`problem.opened` of `disk_nearly_full`: what is left, in bytes."
+        level:
+          type: string
+          enum: [warning, failed]
+          description: "`problem.opened` of `disk_nearly_full`: `warning` from 85 % used, `failed` from 95 %."
         url:
           type: string
           description: |
@@ -5235,10 +5415,446 @@ components:
           items:
             $ref: "#/components/schemas/Copy"
 
+    Metrics:
+      description: |
+        The numbers of an environment's apps (`getMetrics`) or of one app (`getAppMetrics`).
+        Every list under `series` has one entry per `points` entry, in order. A gap is `null`,
+        never 0.
+      type: object
+      additionalProperties: false
+      required: [range, step, points, series, deploys, issues, services, baseline, sources]
+      properties:
+        range: {type: string, enum: ["1h", "6h", "24h", "7d"]}
+        step:
+          type: integer
+          description: Seconds per point, 60, 300, 600 or 3600.
+        points:
+          type: array
+          description: The start of each point, RFC 3339 UTC; the last holds now.
+          items: {type: string, format: date-time}
+        series:
+          type: object
+          additionalProperties: false
+          required: [requests, errors, p95, memory, memoryLimit, hasHttp]
+          properties:
+            requests:
+              $ref: "#/components/schemas/MetricSeries"
+              description: Requests per second, all services together.
+            errors:
+              $ref: "#/components/schemas/MetricSeries"
+              description: The percent of requests that were 5xx.
+            p95:
+              $ref: "#/components/schemas/MetricSeries"
+              description: |
+                The slowest 5 % in milliseconds, from the buckets of every service merged (not an
+                average of the services' values).
+            memory:
+              $ref: "#/components/schemas/MetricSeries"
+              description: Megabytes used, summed over the services.
+            memoryLimit:
+              type: array
+              description: The memory limits summed, in megabytes, per point.
+              items: {type: [number, "null"]}
+            hasHttp:
+              type: boolean
+              description: False when no app has a domain, so there are no request numbers to draw.
+        deploys:
+          type: array
+          description: Deployments that ended healthy in the range, oldest first, for the charts' markers.
+          items:
+            $ref: "#/components/schemas/MetricDeploy"
+        issues:
+          type: array
+          description: The unusual services and why, the furthest past its rule first.
+          items:
+            $ref: "#/components/schemas/MetricIssue"
+        services:
+          type: array
+          description: One row per service, in the `sort` asked.
+          items:
+            $ref: "#/components/schemas/ServiceMetrics"
+        baseline:
+          $ref: "#/components/schemas/MetricsBaseline"
+        sources:
+          $ref: "#/components/schemas/MetricsSources"
+
+    MetricSeries:
+      type: object
+      additionalProperties: false
+      required: [points, now, over, usual, usualDays, unusualSince]
+      properties:
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricPoint"
+        now:
+          type: [number, "null"]
+          description: |
+            The newest point's value, when it is within the last few minutes. `null` when the
+            sampler stopped: a stale value is not "now".
+        over:
+          type: boolean
+          description: |
+            The slowest 5 % only: `now` is beyond the highest bucket (10 s), so `now` is the
+            highest bound and the page says "over 10 s".
+        usual:
+          type: [number, "null"]
+          description: The band's median at `now`'s point.
+        usualDays:
+          type: integer
+          description: How many earlier days `usual` rests on.
+        unusualSince:
+          type: [string, "null"]
+          format: date-time
+          description: When the chart's rule began to hold (errors and the slowest 5 % only); `null` within the band.
+
+    MetricPoint:
+      type: object
+      additionalProperties: false
+      required: [value, low, high, usual, days]
+      properties:
+        value:
+          type: [number, "null"]
+          description: The point's value; `null` is a gap (the sampler wasn't running, or nothing applies).
+        low:
+          type: [number, "null"]
+          description: The lowest value of the same UTC 10-minute slot on the earlier days. `null` with no earlier day or while the baseline is `building`.
+        high:
+          type: [number, "null"]
+          description: The highest of those.
+        usual:
+          type: [number, "null"]
+          description: The median of those.
+        days:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: How many earlier days the band rests on.
+
+    MetricDeploy:
+      type: object
+      additionalProperties: false
+      required: [appId, appName, deploymentId, version, endedAt]
+      properties:
+        appId: {type: string}
+        appName: {type: string}
+        deploymentId: {type: string}
+        version:
+          type: integer
+          minimum: 0
+          description: The Nomad job version, "v24".
+        endedAt:
+          type: string
+          format: date-time
+          description: When it ended healthy.
+
+    MetricIssue:
+      description: One unusual service, with the facts of its sentence. The console writes the sentence.
+      type: object
+      additionalProperties: false
+      required: [appId, appName, service, kind, level, value, usual, limitMb, restarts, since, sinceCapped, distance, window]
+      properties:
+        appId: {type: string}
+        appName: {type: string}
+        service: {type: string}
+        kind:
+          type: string
+          enum: [slower, more_errors, quieter, memory, restarting]
+          description: Clients should accept kinds they don't know.
+        level:
+          type: string
+          enum: [warning, failed]
+        value:
+          type: number
+          description: |
+            In the kind's unit: milliseconds (`slower`), percent of requests (`more_errors`),
+            requests per second (`quieter`), percent of the limit (`memory`), restarts in the
+            last hour (`restarting`).
+        usual:
+          type: [number, "null"]
+          description: The band's median in `value`'s unit; `null` for `memory` and `restarting`.
+        limitMb:
+          type: [number, "null"]
+          description: The memory limit, for `memory`.
+        restarts:
+          type: [integer, "null"]
+          description: Restarts nobody asked for in the last hour (`memory` and `restarting`); `null` when Nomad couldn't be read.
+        since:
+          type: string
+          format: date-time
+          description: "The earliest minute of the unbroken run, at most 6 hours back (`restarting`: the start of the hour counted)."
+        sinceCapped:
+          type: boolean
+          description: "The run reaches the 6-hour limit: \"for more than 6 hours\"."
+        distance:
+          type: number
+          description: How far past its rule, at most 100.
+        deployNear:
+          type: object
+          additionalProperties: false
+          required: [appId, appName, deploymentId, version, endedAt, relation]
+          description: |
+            Absent without a deploy clause: the newest deploy of any app of the environment that
+            ended healthy within 15 minutes before the issue began (`after`), else the first that
+            ended after it began (`before`).
+          properties:
+            appId: {type: string}
+            appName: {type: string}
+            deploymentId: {type: string}
+            version: {type: integer, minimum: 0}
+            endedAt: {type: string, format: date-time}
+            relation: {type: string, enum: [after, before]}
+            minutes:
+              type: integer
+              description: Whole minutes between the deploy and the start; `after` only.
+        window:
+          type: object
+          additionalProperties: false
+          required: [requests, errors, errorPercent, requestsPerSecond]
+          description: What the last 10 minutes added up to.
+          properties:
+            requests: {type: integer}
+            errors: {type: integer}
+            errorPercent: {type: number}
+            requestsPerSecond: {type: number}
+        lastExit:
+          type: object
+          additionalProperties: false
+          required: [copy, exitCode, at]
+          description: The service task's newest exit on a live copy (`memory` and `restarting`), when Nomad could be read.
+          properties:
+            copy: {type: string, description: "The copy's allocation ID."}
+            exitCode: {type: integer}
+            at: {type: string, format: date-time}
+        domains:
+          type: array
+          description: The service's domains (`quieter`).
+          items: {type: string}
+
+    ServiceMetrics:
+      description: One row of the apps table.
+      type: object
+      additionalProperties: false
+      required: [appId, appName, service, state, level, copies, hasDomain, requests, errors, p95, p95Over, usualP95, cpu,
+        cpuReservedMhz, memoryMb, memoryLimitMb, restarts, unusual, distance, httpShared]
+      properties:
+        appId: {type: string}
+        appName: {type: string}
+        service: {type: string}
+        state:
+          type: string
+          enum: [unusual, rolling_out, healthy, stopped]
+        level:
+          type: [string, "null"]
+          enum: [warning, failed, null]
+          description: The worst level of its issues; `null` unless `state` is `unusual`.
+        copies:
+          type: integer
+          description: How many copies are running (0 for a stopped app).
+        hasDomain:
+          type: boolean
+          description: False for a service with no domain; its request numbers are then `null`.
+        requests:
+          type: [number, "null"]
+          description: Requests per second over the range.
+        errors:
+          type: [number, "null"]
+          description: Percent of requests that were 5xx over the range.
+        p95:
+          type: [number, "null"]
+          description: The slowest 5 % over the range, in milliseconds.
+        p95Over:
+          type: boolean
+          description: "`p95` is beyond the highest bucket (10 s): it is that bound, and means \"over\"."
+        usualP95:
+          type: [number, "null"]
+          description: The band's median now; `null` while the baseline is `building`.
+        cpu:
+          type: array
+          description: MHz per point of the range (the sparkline); `null` is a gap.
+          items: {type: [number, "null"]}
+        cpuReservedMhz:
+          type: [integer, "null"]
+        memoryMb:
+          type: [integer, "null"]
+          description: Memory used in the newest minute (`Usage − Cache`); `null` when it is older than a few minutes.
+        memoryLimitMb:
+          type: [integer, "null"]
+        restarts:
+          type: [integer, "null"]
+          description: Restarts nobody asked for, summed over the range.
+        unusual:
+          type: boolean
+        distance:
+          type: [number, "null"]
+          description: The largest distance of its issues; `null` unless unusual.
+        httpShared:
+          type: [string, "null"]
+          description: |
+            The other service (`<app>/<service>`) when Traefik's names collide (`a-b`/`c` and
+            `a`/`b-c` are both `a-b-c`); the request numbers are then attributed to neither.
+
+    MetricsBaseline:
+      description: How much history the bands rest on.
+      type: object
+      additionalProperties: false
+      required: [since, state, fullDays]
+      properties:
+        since:
+          type: [string, "null"]
+          format: date-time
+          description: The first sample; `null` when nothing was ever sampled.
+        state:
+          type: string
+          enum: [building, partial, full]
+          description: |
+            `building`: under one full day, no band is drawn or judged. `partial`: 1 to 6 full
+            days, the band uses the days there are. `full`: 7 days or more.
+        fullDays:
+          type: integer
+          minimum: 0
+
+    MetricsSources:
+      description: |
+        What the sampler's last tick could read. `at` is when that tick ran, `null` before the
+        first one (and `state` is then `unknown`).
+      type: object
+      additionalProperties: false
+      required: [traefik, nomad]
+      properties:
+        traefik:
+          type: object
+          additionalProperties: false
+          required: [state, at]
+          properties:
+            state:
+              type: string
+              enum: [unknown, ok, off, unreachable, disabled]
+              description: |
+                `ok`; `off`: Traefik answers 404, its exporter is off (rerun the installer on an
+                old host); `unreachable`; `disabled`: no address is set, so there are no request
+                numbers.
+            at: {type: [string, "null"], format: date-time}
+        nomad:
+          type: object
+          additionalProperties: false
+          required: [state, at]
+          properties:
+            state:
+              type: string
+              enum: [unknown, ok, denied, unreachable]
+              description: |
+                `denied`: Nomad answered 403 to the node reads, so Caravana's policy predates
+                feature 025 (rerun the installer).
+            at: {type: [string, "null"], format: date-time}
+
+    Host:
+      description: |
+        The host's capacity, from the newest stored sample. Memory is in megabytes and CPU in
+        MHz. A resource the sampler couldn't read is `null`.
+      type: object
+      additionalProperties: false
+      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources]
+      properties:
+        memory:
+          type: object
+          additionalProperties: false
+          required: [used, reserved, total]
+          properties:
+            used: {type: [integer, "null"]}
+            reserved:
+              type: [integer, "null"]
+              description: What the running allocations reserved; Nomad places by it.
+            total: {type: [integer, "null"]}
+        cpu:
+          type: object
+          additionalProperties: false
+          required: [used, reserved, total, cores]
+          properties:
+            used: {type: [integer, "null"]}
+            reserved: {type: [integer, "null"]}
+            total: {type: [integer, "null"]}
+            cores: {type: [integer, "null"]}
+        disks:
+          type: array
+          description: The watched filesystems of the newest sample; empty before the first.
+          items:
+            type: object
+            additionalProperties: false
+            required: [mount, holds, usedMb, totalMb, freeMb, usedPercent, state]
+            properties:
+              mount: {type: string}
+              holds:
+                type: array
+                description: "What is on it. `nomad`: the copies' files and host volumes. `docker`: the images."
+                items: {type: string, enum: [nomad, docker]}
+              usedMb: {type: integer}
+              totalMb: {type: integer}
+              freeMb: {type: integer}
+              usedPercent:
+                type: number
+                description: Used over used plus free, as `df` prints it.
+              state:
+                type: string
+                enum: [ok, warning, failed]
+                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %."
+        room:
+          type: object
+          additionalProperties: false
+          required: [count, likeApp, likeAppName, memoryMb, cpuMhz, limitedBy, freeMemoryMb]
+          description: "Room for about `count` more apps like `likeApp`, by reservation."
+          properties:
+            count:
+              type: [integer, "null"]
+              description: |
+                `null` when no app is running (there is no yardstick) or the totals weren't
+                sampled. 0 reads "No room".
+            likeApp:
+              type: [string, "null"]
+              description: "The yardstick's app ID: the running app whose memory reservation is the median."
+            likeAppName: {type: [string, "null"]}
+            memoryMb:
+              type: [integer, "null"]
+              description: What the yardstick reserves.
+            cpuMhz: {type: [integer, "null"]}
+            limitedBy:
+              type: [string, "null"]
+              enum: [memory, cpu, null]
+              description: What ran out first (memory on a tie).
+            freeMemoryMb:
+              type: [integer, "null"]
+              description: Memory left to reserve (never negative); `null` when the totals weren't sampled.
+        history:
+          type: object
+          additionalProperties: false
+          required: [points, memoryUsed, memoryReserved]
+          description: Seven days of memory, an hour per point (the median of the hour); the host chart.
+          properties:
+            points:
+              type: array
+              items: {type: string, format: date-time}
+            memoryUsed:
+              type: array
+              items: {type: [number, "null"]}
+            memoryReserved:
+              type: array
+              items: {type: [number, "null"]}
+        sampledAt:
+          type: [string, "null"]
+          format: date-time
+          description: The newest sample's time; `null` when the host was never read.
+        stale:
+          type: boolean
+          description: The newest sample is more than 5 minutes old, so the numbers are the last known ones.
+        baseline:
+          $ref: "#/components/schemas/MetricsBaseline"
+        sources:
+          $ref: "#/components/schemas/MetricsSources"
+
     Attention:
       type: object
       additionalProperties: false
-      required: [items, copiesUnknown]
+      required: [items, copiesUnknown, disksUnknown]
       properties:
         items:
           type: array
@@ -5250,6 +5866,11 @@ components:
           description: |
             True when Nomad couldn't be read: the copy kinds (`out_of_memory`, `restarting`,
             `unhealthy`) may be missing.
+        disksUnknown:
+          type: boolean
+          description: |
+            True when the host wasn't sampled in the last 5 minutes (or ever): `disk_nearly_full`
+            may be missing because the disks couldn't be judged, not because they are fine.
 
     AttentionItem:
       type: object
@@ -5259,7 +5880,7 @@ components:
         kind:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
-            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring]
+            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -5270,10 +5891,13 @@ components:
             ends within the warning window (`getCertificateSettings`) and hasn't been renewed,
             which is how a failing renewal shows. Both come from Caravana's last check of the
             domain (`listDomains`) and go when a check finds it fixed, or the domain is removed.
-            Clients should accept kinds they don't know.
+            `disk_nearly_full`: a filesystem the host watches is 85 % full or more (a `warning`;
+            `failed` from 95 %), from the newest host sample (`getHost`). It is about the host, so
+            it has no `appId`; it stays while the filesystem is at 83 % or more, and goes under
+            that. Clients should accept kinds they don't know.
         appId:
           type: string
-          description: Absent for `no_backup_destination`, which is about the installation.
+          description: Absent for `no_backup_destination` and `disk_nearly_full`, which are about the installation or the host.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.
@@ -5301,6 +5925,26 @@ components:
           type: string
           format: date-time
           description: For `domain_cert_expiring`, when the certificate ends.
+        mount:
+          type: string
+          description: For `disk_nearly_full`, the filesystem's mount point, such as `/`.
+        holds:
+          type: array
+          items: {type: string, enum: [nomad, docker]}
+          description: |
+            For `disk_nearly_full`, what is on it: `nomad` (the copies' files and host volumes),
+            `docker` (the images), or both.
+        usedPercent:
+          type: number
+          description: For `disk_nearly_full`, how full it is (used over used plus free, as `df` prints it).
+        freeBytes:
+          type: integer
+          minimum: 0
+          description: For `disk_nearly_full`, what is left, in bytes.
+        level:
+          type: string
+          enum: [warning, failed]
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -6397,6 +7041,20 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    MetricsNotFound:
+      description: |
+        `project_not_found` (`field` `project`) or `environment_not_found` (`field`
+        `environment`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MetricsInvalid:
+      description: "`invalid_field`, `field` `range` or `sort`. Nothing was read."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Internal:
       description: An unexpected server error. Details are in the server log.
       content:
@@ -6423,6 +7081,8 @@ tags:
     description: Commands run on a timer in a fresh copy of an app, and their runs.
   - name: domains
     description: Every domain with its DNS and certificate state, Team-only passwords, and how certificates are issued.
+  - name: metrics
+    description: "Monitoring and capacity: the numbers of an environment's or an app's services, and the host's memory, CPU and disks."
   - name: logs
     description: "The output of an environment's copies, read from Nomad's files: search, lines around one line, download."
   - name: tokens
