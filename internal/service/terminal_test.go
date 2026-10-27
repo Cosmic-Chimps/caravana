@@ -24,12 +24,15 @@ const termSentinel = "s3cret-sentinel-0206"
 type screen struct {
 	mu  sync.Mutex
 	buf strings.Builder
+	// read is closed once the watcher has taken everything the session printed.
+	read chan struct{}
 }
 
 // watch reads the session's output into a screen until the session is done.
 func watch(sess *TerminalSession) *screen {
-	sc := &screen{}
+	sc := &screen{read: make(chan struct{})}
 	go func() {
+		defer close(sc.read)
 		for {
 			select {
 			case b := <-sess.Output():
@@ -57,6 +60,19 @@ func (sc *screen) String() string {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	return sc.buf.String()
+}
+
+// final is the whole screen of a session that has ended. When Done closes, the
+// watcher may still be copying the last pieces of output (the fake shell sends
+// one per typed character), so final waits for it to finish first.
+func (sc *screen) final(t *testing.T) string {
+	t.Helper()
+	select {
+	case <-sc.read:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the screen's watcher did not finish")
+	}
+	return sc.String()
 }
 
 func (sc *screen) waitFor(t *testing.T, want string) {
@@ -385,8 +401,8 @@ func TestTerminalKeepsNoInputOrOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitDone(t, exits)
-	if !strings.Contains(exitScreen.String(), termSentinel) {
-		t.Fatalf("the screen = %q; the fake shell should have echoed the typing", exitScreen.String())
+	if got := exitScreen.final(t); !strings.Contains(got, termSentinel) {
+		t.Fatalf("the screen = %q; the fake shell should have echoed the typing", got)
 	}
 
 	closer := openTerm(t, l, "c2", ShellSh)
