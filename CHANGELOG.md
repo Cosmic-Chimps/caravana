@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.14.0 - 2026-10-27
+
 ### Fixed
 - **Domains behind Cloudflare's proxy** (or another proxy or CDN) with a valid certificate are
   live, not "DNS points elsewhere". Their DNS answers the proxy's addresses, not the host's, but a
