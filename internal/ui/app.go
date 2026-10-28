@@ -1154,6 +1154,10 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		// The file is the app's source of truth: its form comes first, and the
 		// definition it makes is shown, not edited (feature 015, research R6).
 		v := keptComposeView(sum.AppRecord)
+		if len(deployments) > 0 && deployments[0].Deployment.Origin != nil {
+			// ListDeployments is newest first: say so when CI made the last one.
+			v.FromCI = deployments[0].Deployment.Origin.Repository
+		}
 		tab.ComposeForm = &v
 		tab.Edit.ReadOnly = true
 		tab.Edit.Panels = servicePanels(sum.App)

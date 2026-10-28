@@ -335,7 +335,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/logs.html")
 		}
 		files = append(files, "templates/"+name+".html")
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor}).ParseFS(templatesFS, files...)
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

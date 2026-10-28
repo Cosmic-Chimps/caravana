@@ -106,28 +106,29 @@
 
       <fieldset class="flex flex-col gap-3">
         <legend class="cv-label">Secrets</legend>
-        <div class="cv-edit-fields">
+        {{if .HasSecrets}}<p class="cv-data-muted cv-hint">Leave a value empty to keep it.</p>{{end}}
+        <div class="cv-secret-rows">
           {{range .Secrets}}
-          <label class="cv-fld" for="{{.Field.ID}}">
-            <span class="cv-data text-fg-1">{{.Name}}</span>
+          <div class="cv-secret-row">
+            <label class="cv-secret-name cv-data text-fg-1" for="{{.Field.ID}}">{{.Name}}</label>
             <input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
-            <span class="cv-data-muted cv-hint">{{if .Exists}}Empty keeps the current value.{{else}}Type its value.{{end}}</span>
+            {{if not .Exists}}<span class="cv-data-muted cv-hint cv-secret-aside">Type its value.</span>{{end}}
             {{template "field-error" .Field}}
-          </label>
+          </div>
           {{end}}
         </div>
         <p class="cv-data-muted cv-hint">Add a secret: its name, then its value. It reaches the service as an environment variable. Values are not kept on this page.</p>
-        <div class="cv-edit-fields">
+        <div class="cv-secret-rows">
+          <div class="cv-secret-row cv-secret-heads" aria-hidden="true">
+            <span class="cv-label">Name</span>
+            <span class="cv-label">Value</span>
+          </div>
           {{range $i, $row := .NewSecrets}}
-          <div class="flex flex-col gap-2">
-            <label class="cv-fld" for="{{$row.ID}}">
-              <span class="cv-label">Name</span>
-              <input class="cv-field cv-field-mono" id="{{$row.ID}}" type="text" name="svc.{{$svc.Name}}.newSecret.{{$i}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if $row.Error}} aria-invalid="true" aria-describedby="{{$row.ID}}-error"{{end}}{{if $row.Alert}} autofocus{{end}}>
-            </label>
-            <label class="cv-fld" for="{{$row.ID}}-value">
-              <span class="cv-label">Value</span>
-              <input class="cv-field cv-field-mono" id="{{$row.ID}}-value" type="password" name="svc.{{$svc.Name}}.newSecretValue.{{$i}}" autocomplete="new-password">
-            </label>
+          <div class="cv-secret-row cv-secret-row-add">
+            <label class="cv-secret-label" for="{{$row.ID}}">Name of new secret {{inc $i}}</label>
+            <input class="cv-field cv-field-mono" id="{{$row.ID}}" type="text" name="svc.{{$svc.Name}}.newSecret.{{$i}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if $row.Error}} aria-invalid="true" aria-describedby="{{$row.ID}}-error"{{end}}{{if $row.Alert}} autofocus{{end}}>
+            <label class="cv-secret-label" for="{{$row.ID}}-value">Value of new secret {{inc $i}}</label>
+            <input class="cv-field cv-field-mono" id="{{$row.ID}}-value" type="password" name="svc.{{$svc.Name}}.newSecretValue.{{$i}}" autocomplete="new-password">
             {{template "field-error" $row}}
           </div>
           {{end}}

@@ -141,7 +141,7 @@ func TestComposeDeployPreviewPrefills(t *testing.T) {
 	if strings.Contains(body, storedSecret) {
 		t.Error("the page holds a stored secret value")
 	}
-	for _, want := range []string{"Empty keeps the current value.", `<option value="postgres" selected>`, ">Deploy</button>", `formaction="/apps/shop/compose"`} {
+	for _, want := range []string{"Leave a value empty to keep it.", `<option value="postgres" selected>`, ">Deploy</button>", `formaction="/apps/shop/compose"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the preview lacks %q", want)
 		}

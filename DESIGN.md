@@ -700,6 +700,12 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   first and names both when both hold.
 - **Content:** 1180px at most, padding 36px 32px 64px, 22px between blocks. The head is the headline
   (30px, 400) over a 15px sentence, and the page's one primary action at the right (small, with a plus).
+- **Secrets in a form** (the Compose form, on New app, Deploy from Compose and Configure of a kept-file app) are
+  rows: the name at the left (mono, wrapping inside its column), the password input at the right, the
+  "Leave a value empty to keep it." hint said once above; the add rows are a name input and a value input side by
+  side under heads drawn once. Never a column grid of names: a long one (`Auth__Providers__X__ClientSecret`)
+  would run into the next. Under 640px a row stacks and the add rows' labels show in place of the heads.
+  Configure of a kept-file app opens with a 13px legend saying why it differs from an image app's.
 - **Setting rows** (Account, the add and edit forms): a panel of rows, a 220px label with its 13px hint at
   the left and the controls at the right, 24px between, 18px 20px of padding, a Hairline between rows. Fields
   are the 32px field at 360px. The form's primary button ends its last row.

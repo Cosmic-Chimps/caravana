@@ -840,7 +840,7 @@ func (c *console) compose(t *testing.T) {
 	revision := formValuesOf(t, body, "compose-form").Get("revision")
 	resp, preview = c.post(t, "/apps/"+id+"/compose/preview", url.Values{"revision": {revision}, "compose": {consoleComposeV2}})
 	again := formValuesOf(t, preview, "compose-form")
-	if resp.StatusCode != http.StatusOK || again.Get("svc.web.healthPath") != "/" || !strings.Contains(preview, "Empty keeps the current value.") {
+	if resp.StatusCode != http.StatusOK || again.Get("svc.web.healthPath") != "/" || !strings.Contains(preview, "Leave a value empty to keep it.") {
 		t.Fatalf("the preview from Deploy from Compose = %d, want the app's health check and the secret kept: %s", resp.StatusCode, preview)
 	}
 	if v, ok := again["svc.web.secret.API_KEY"]; !ok || v[0] != "" || strings.Contains(preview, secret) {

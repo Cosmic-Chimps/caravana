@@ -53,6 +53,10 @@ type composeView struct {
 	// file is empty and the overlay is filled from the app, so Configure can ask
 	// for the file once (feature 015, US2).
 	NotKept bool
+	// FromCI is the repository of the app's newest deployment when a CI run
+	// made it (feature 020's origin), for Configure's legend of a kept-file
+	// app; empty otherwise.
+	FromCI string
 
 	// Notice is an error that isn't about one input; SavedID is set when the
 	// app was saved but its deploy didn't start; Stale says the app changed

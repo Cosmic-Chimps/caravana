@@ -611,6 +611,7 @@
 {{with .ComposeForm}}
 <section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
   <h2 id="compose-edit-title" class="cv-label">Edit</h2>
+  {{if .Kept}}<p class="cv-note">This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's domains, health check and secrets. An app deployed from an image is edited field by field instead.{{with .FromCI}} Its last deploy came from CI ({{.}}). A deploy from CI can replace changes made here, so make lasting changes in the source.{{end}}</p>{{end}}
   {{if .NotKept}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This app's Compose file wasn't kept. Paste it once to edit it here from now on.</span></div>{{end}}
   {{template "compose-form" .}}
 </section>

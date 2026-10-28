@@ -65,6 +65,17 @@ type draftSecret struct {
 	Field  formField
 }
 
+// HasSecrets says the service already has a secret, so the form draws its one
+// "Leave a value empty to keep it." line.
+func (s draftService) HasSecrets() bool {
+	for _, sec := range s.Secrets {
+		if sec.Exists {
+			return true
+		}
+	}
+	return false
+}
+
 // newDraftService makes a service's inputs with their IDs set.
 func newDraftService(name string) draftService {
 	s := draftService{Name: name}
