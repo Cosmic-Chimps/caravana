@@ -635,7 +635,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	if err := r.ParseForm(); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			s.message(w, http.StatusRequestEntityTooLarge, "Too large", "That form is larger than 256 KiB.", "Shorten the environment lists and try again.")
+			s.message(w, http.StatusRequestEntityTooLarge, "Too large", "That form is larger than 256 KiB.", "Shorten the longest field and try again.")
 			return
 		}
 		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")

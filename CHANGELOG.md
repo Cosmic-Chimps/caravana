@@ -273,7 +273,7 @@ earlier day and is complete after 7.
   older version still runs, and the Apps list sorts it first. Its summary and the needs-you list
   say the same sentence, "v3 failed its health checks. v2 keeps running." (or "No copies are
   running."). "0 of 1 copies healthy" now says so when copies exist and none is healthy.
-- Configure is a short form: per service, Copies & size (copies, CPU, memory, ceiling) and Shipping
+- Configure is a short form: per service, Copies & size (copies, CPU, memory, ceiling) and Deploy
   (image, port and the health check), a read-only "Also set" for what the form leaves alone, then
   Domains and Secrets panels that link to their pages. The environment, the domains and the secrets
   left the form, and saving it keeps them as they are. The registry notice shows when an image
