@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-23
 
-**Status**: Draft
+**Status**: Implemented, v0.13.0
 
 **Input**:
 - **The maintainer, 2026-10-23:** "what's next we should continue with the new pages? continue",

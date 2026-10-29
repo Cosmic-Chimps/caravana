@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-25
 
-**Status**: Draft
+**Status**: Implemented, v0.13.0
 
 **Input**:
 - **The maintainer, 2026-10-23:** "continue with other page": 025 follows 024 with no pause.

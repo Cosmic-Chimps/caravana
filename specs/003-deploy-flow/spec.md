@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "Feature 003: Deploy flow. A client sends an app definition, and
 Caravana pins every image to a digest, translates the app into a Nomad job (feature 001),

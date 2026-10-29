@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "feature: 005" — from docs/plan.md: "Real HTTPS + auto-revert, on a
 cheap VM. One arm64 VM (a few €/month) with a domain. Traefik ACME HTTP-01. Scripted proof that

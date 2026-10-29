@@ -5,7 +5,7 @@ own repository, `Cosmic-Chimps/caravana-action`
 
 **Created**: 2026-10-18
 
-**Status**: Draft
+**Status**: Implemented, v0.8.1
 
 **Input**: the maintainer, 2026-10-18: build from source is the heaviest thing for Caravana; let CI
 build the image, and instead of every repository carrying a deploy script (Umbral's

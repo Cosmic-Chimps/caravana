@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "Feature 001: App model and Nomad job translator. Turn an app
 definition into a Nomad job as pure code with no I/O (no Nomad, no registry, no database), so

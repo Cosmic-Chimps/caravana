@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-21
 
-**Status**: Draft (page 1 detailed; pages 2–4 outlined, detailed when each starts)
+**Status**: Implemented, v0.12.0 (pages 1-4)
 
 **Input**:
 - **The maintainer, 2026-10-21:** "now let's do feature 021 ... we should follow 'almost' pixel by

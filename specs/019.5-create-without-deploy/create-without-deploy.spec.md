@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Draft
+**Status**: Implemented, v0.7.0
 
 **Input**: the maintainer, on New app: "I should be able to create an app only by name... so the
 first automation works automatically."

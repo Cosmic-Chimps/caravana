@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-07
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "010 Databases + backups (docs/plan.md): Postgres/MySQL/Redis as
 regular apps pinned to a node with a host volume; backups as Nomad periodic batch jobs to

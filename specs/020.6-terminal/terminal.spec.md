@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-19
 
-**Status**: Draft
+**Status**: Implemented, v0.9.0
 
 **Input**: the maintainer, 2026-10-19, after using Run a command: "it doesn't give the same value
 as other PaaS tools that let us run something like `docker exec -ti`. Are we not able to do that

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "Feature 004" — from docs/plan.md: "Webhook redeploy. Per-app
 secret token, constant-time compare, same service call as 003. Token shown once, stored hashed."

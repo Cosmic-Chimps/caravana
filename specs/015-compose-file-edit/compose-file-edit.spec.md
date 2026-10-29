@@ -2,7 +2,7 @@
 
 **Feature Branch**: `015-compose-file-edit`
 **Created**: 2026-10-14
-**Status**: Draft
+**Status**: Implemented, v0.3.0
 **Input**: "Keep and edit the Compose file (feature 015, from the maintainer's daily use: Uptime
 Kuma deployed from a Compose file can't be edited as a file, only field by field or by pasting
 the whole file again). Caravana keeps the Compose file and its overlay (domains, health, secret

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-07
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "009 Compose translator (docs/plan.md): `compose-go`; loud errors
 for unsupported fields, warnings for changed ones, explicit host volumes. Phase 2 gate: a real

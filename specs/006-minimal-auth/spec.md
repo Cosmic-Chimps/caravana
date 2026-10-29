@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-04
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "006 Minimal auth: one admin login for the web UI, and API tokens
 for clients, so caravana can be exposed publicly." Full description: one admin created on the

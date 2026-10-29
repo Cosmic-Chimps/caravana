@@ -5,7 +5,7 @@ repository `Cosmic-Chimps/aspire-hosting-caravana` (local clone `../aspire-hosti
 
 **Created**: 2026-10-19
 
-**Status**: Draft
+**Status**: Implemented, v0.9.0 (Caravana side; the publisher is its own repo)
 
 **Input**: the maintainer, 2026-10-19: "we should start with PublishToCaravana; we have to create a
 new project and folder like we did with caravana-action". docs/plan.md 026; docs/integrations.md.

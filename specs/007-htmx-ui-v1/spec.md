@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-04
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "007 HTMX UI v1: the Developer console for what the engine does
 today, built from the Claude Design handoff (DESIGN.md, PRODUCT.md). Pages: the shell (sidebar

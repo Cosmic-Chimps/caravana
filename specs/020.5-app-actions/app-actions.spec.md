@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Draft
+**Status**: Implemented, v0.8.0
 
 **Input**: docs/plan.md, Phase 2.6, 020.5: "Stop, Start and Restart per app. Run a command in a
 running copy: one non-interactive command in the live copy, its stdout, stderr and exit code shown

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `012-one-command-install`
 **Created**: 2026-10-08
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 **Input**: "012 One-command install: a fresh VM becomes Docker + Nomad (ACLs on) + Traefik + Caravana with one command, Caravana as a systemd service (not a Nomad job) so a cold start never waits on anything. deploy/vm/ (host.sh over SSH + setup.sh) is its rehearsal. Phase 2, per docs/plan.md."
 
 ## User Scenarios & Testing *(mandatory)*

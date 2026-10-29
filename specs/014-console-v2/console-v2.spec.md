@@ -2,7 +2,7 @@
 
 **Feature Branch**: `014-console-v2`
 **Created**: 2026-10-12
-**Status**: Draft
+**Status**: Implemented, v0.2.0
 **Input**: "Console v2 (docs/plan.md item 012.5): bring the web console up to what the design
 handoff shows for a single-node install, so the maintainer (now a daily user) never needs curl or
 deploy.sh for routine changes. Four parts, all through internal/service so the API keeps parity:
