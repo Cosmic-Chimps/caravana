@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-17
 
-**Status**: Draft
+**Status**: Implemented, v0.6.0
 
 **Input**: "Organization / Project / Environment (docs/plan.md, Phase 2.5, 019). Projects group
 apps; environments (production, staging, ...) hold each project's own copies of its apps with

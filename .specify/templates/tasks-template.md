@@ -13,10 +13,11 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Format: `[ID] [P?] [Story] Description`
+## Format: `[ID] [P?] [Story] [Requirements] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
+- **[Requirements]**: The spec's requirements and success criteria the task implements, by ID, beside the story tag (e.g., `[FR-012]`, `[FR-004, SC-003]`). A requirement or success criterion that no task names is a gap, so check the list against the spec before implementing. Tasks that implement no requirement (setup, docs, the full check) leave it out. This is for new features: older `tasks.md` files are not rewritten.
 - Include exact file paths in descriptions
 
 ## Path Conventions
@@ -83,15 +84,15 @@ Examples of foundational tasks (adjust based on your project):
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T010 [P] [US1] [FR-001] Contract test for [endpoint] in tests/contract/test_[name].py
 - [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
+- [ ] T012 [P] [US1] [FR-001, FR-002] Create [Entity1] model in src/models/[entity1].py
 - [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
 - [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T015 [US1] [FR-001, SC-001] Implement [endpoint/feature] in src/[location]/[file].py
 - [ ] T016 [US1] Add validation and error handling
 - [ ] T017 [US1] Add logging for user story 1 operations
 
@@ -244,6 +245,7 @@ With multiple developers:
 
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
+- [Requirements] tags map a task to the FR and SC IDs it implements, so a requirement with no task shows
 - Each user story should be independently completable and testable
 - Verify tests fail before implementing
 - Commit after each task or logical group

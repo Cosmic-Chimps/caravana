@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-16
 
-**Status**: Draft
+**Status**: Implemented, v0.6.0
 
 **Input**: "Notifications (docs/plan.md, Phase 2.5, 018). Push what the 'needs you' list derives
 (failed or reverted deploys, out-of-memory kills, crash loops, unhealthy copies, failed backups and

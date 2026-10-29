@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-24
 
-**Status**: Draft
+**Status**: Implemented, v0.13.0
 
 **Input**:
 - **The maintainer, 2026-10-23:** "after you finish continue with other page": 023 follows 022

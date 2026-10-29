@@ -76,7 +76,7 @@ Files: `internal/deploy/volumes.go`, `internal/deploy/volumes_test.go`,
 
 Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 `internal/service/deploy.go`, `internal/api/compose.go`, `internal/api/compose_test.go`,
-`internal/api/api.go`, `api/openapi.yaml`, `deploy/vm/caravana-policy.hcl`,
+`internal/api/api.go`, `api/openapi.yaml`, `deploy/install/caravana-policy.hcl`,
 `cmd/caravana/gate_test.go`
 
 - [x] **T018** [US1] `DeployCompose` and `PreviewCompose`; `deploy` takes extra warnings (stored with the record); warning for a volume no longer mounted · internal/service/compose.go, internal/service/deploy.go
@@ -84,7 +84,7 @@ Files: `internal/service/compose.go`, `internal/service/compose_test.go`,
 - [x] **T020** [US1] `POST /v1/apps/{id}/compose` and `/compose/preview` handlers, routes · internal/api/compose.go, internal/api/api.go
 - [x] **T021** [US1] API tests against the contract: 202, preview 200 with no secret values, error fields as Compose paths, nothing saved on refusal · internal/api/compose_test.go
 - [x] **T022** [US1] `api/openapi.yaml` 0.7.0: two operations, `ComposeRequest`, `ComposeOverlay`, `ComposePreview`, `Volume`, source kind `compose` · api/openapi.yaml
-- [x] **T023** [US4] Policy: `host-volume-create`, `host-volume-delete`, `host_volume "*_*" { policy = "write" }` · deploy/vm/caravana-policy.hcl
+- [x] **T023** [US4] Policy: `host-volume-create`, `host-volume-delete`, `host_volume "*" { policy = "write" }` and `host_volume "traefik-acme" { policy = "deny" }` (Nomad allows no `_` in these names, commit 139e3e0) · deploy/install/caravana-policy.hcl
 - [x] **T024** [US3] Gate step `compose-app`: a two-service Compose app (`store` serves a file from its volume, `web` fetches `http://store:8080/` by name), checked by exec; redeploy; still reached by name and data kept; delete; volume gone · cmd/caravana/gate_test.go
 
 **Checkpoint**: the Phase 2 gate shape works: a multi-service Compose app with a volume.

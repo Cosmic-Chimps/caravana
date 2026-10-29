@@ -2,7 +2,7 @@
 
 **Feature Branch**: `013-memory-per-service`
 **Created**: 2026-10-11
-**Status**: Draft
+**Status**: Implemented, v0.1.1
 **Input**: "Memory per service (backlog item in docs/plan.md): the 64 MB default (CARAVANA_DEFAULT_MEMORY_MB) is a hard Nomad limit that kills Node.js, .NET, Postgres at start unless every Compose file sets mem_limit. Raise the default (e.g. 256 MB) and let a service burst into the node's spare memory beyond what it reserves (Nomad memory_max / memory oversubscription), so a short peak isn't a kill. Then release v0.1.1 to test the installer's upgrade on the real netcup host."
 
 ## User Scenarios & Testing *(mandatory)*

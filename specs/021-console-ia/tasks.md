@@ -79,7 +79,7 @@ Already decided:
 ## Page 4: the Apps home and the deployment's stages (US4)
 
 Contract: `contracts/page4-home-deploys.md` (the designer, 2026-10-22). The maintainer moved the
-pause to after page 4. The one backend addition is the token's name on a deployment (API 0.23.0).
+pause to after page 4. There were two backend additions: the token's name on a deployment (`deployments.token_name`, migration 0015, API 0.23.0) and `registered_at` (migration 0016, UI only at first; `registeredAt` is in the API from 0.28.0).
 
 - [X] T022 [US4] Backend: migration `deployments.token_name` (nullable), set from the
   authenticated token in `deployApp`, `deployCompose`, `promoteApp` and `redeployDeployment` (a
@@ -97,7 +97,7 @@ pause to after page 4. The one backend addition is the token's name on a deploym
   name for API deploys.
 - [X] T026 [US4] The stages strip in every Deployments history entry (Queued, Roll out, Live, the
   marks and values, superseded and failed-before-register, narrow stacking), and the "v2 (v0
-  again)" wording in the entry and the lede (match by digests, the definition as tie-breaker).
+  again)" wording in the entry and the lede (ruling 3: the newest earlier healthy deployment with a recorded definition and pinned digests, but when Nomad's revert message names a version that a healthy deployment has, that one wins).
 - [X] T027 [US4] DESIGN.md, CHANGELOG, tests, lab-test selectors.
 - [X] T028 [US4] Checks, TestConsoleLab, the review instance staged, the designer's review, the
   critique agent, fixes, the last look; then the pause.

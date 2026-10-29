@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-04
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "006 Minimal auth: one admin login for the web UI, and API tokens
 for clients, so caravana can be exposed publicly." Full description: one admin created on the
@@ -319,6 +319,7 @@ rebuild the stylesheet from source and compare with the committed one.
 - **FR-013a**: After sign-in the admin MUST land on an account page that offers change
   password, API token create (shown once), list and revoke, and sign out, using the same
   service calls as the API. It follows DESIGN.md and needs no JavaScript.
+  *Superseded by 007 and 021 (2026-10-29): the account page is Settings (`/settings`, later `/settings/tokens` and the grouped Settings pages); `/account` redirects to it.*
 
 **Failed sign-in limits**
 
@@ -343,6 +344,7 @@ rebuild the stylesheet from source and compare with the committed one.
 - **FR-021**: An authenticated caller MUST be able to revoke a token; from then on it MUST be
   refused. An expired token MUST be refused the same way.
 - **FR-022**: Every active token MUST grant the whole API, as the admin. There are no scopes.
+  *Superseded by 020 (2026-10-29): a deploy token is an API token with a scope, one app name in one project (`specs/020-deploy-from-ci/`). A token without a scope still grants the whole API.*
 
 **Access rules**
 

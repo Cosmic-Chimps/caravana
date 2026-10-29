@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-21
 
-**Status**: Draft (page 1 detailed; pages 2–4 outlined, detailed when each starts)
+**Status**: Implemented, v0.12.0 (pages 1-4)
 
 **Input**:
 - **The maintainer, 2026-10-21:** "now let's do feature 021 ... we should follow 'almost' pixel by
@@ -23,7 +23,7 @@
 
 ## How this feature is built
 
-One page at a time, each its own release.
+One page at a time, built and reviewed in turn. The four pages were released together, in 0.12.0.
 1. The designer lists what must match the handoff (sizes, spacing, colors, states) and what may
    differ because the console is server-rendered HTMX without JavaScript. That list is the page's
    contract in `contracts/`.
@@ -67,7 +67,7 @@ postgres, 1 copy each. Last deployed … through the API." A stopped app shows S
    - Projects on `/projects*` and every `/apps/{id}*`;
    - Settings on `/settings*`.
 2. **Given** projects with environments, **When** the owner opens Projects, **Then** each project
-   is a row (name, description, environment pills, app count) linking to `/projects/{project}`.
+   is a row (name, environment pills, app count) linking to `/projects/{project}`.
 3. **Given** an app with one service of 2 copies, **Then** its header says "2 copies running v7."
    **Given** hollo 2 and postgres 1, **Then** "2 services running v2: hollo 2 copies, postgres 1."
    **Given** both at 1, **Then** "… hollo and postgres, 1 copy each." **Given** hollo 1 of 2
@@ -83,18 +83,24 @@ postgres, 1 copy each. Last deployed … through the API." A stopped app shows S
 ### User Story 2 - Page 2: the app's short Configure and its own pages (Priority: P2)
 
 Configure becomes the handoff's short form: copies and size, deploy (image, port, health check), the list of domains, and
-the secret names. Variables and secrets, Domains and Backups become pages of the app. Open
-question for its contract: seven tabs, or Configure linking to the three pages.
+the secret names. Variables and secrets, Domains and Backups become pages of the app. The app keeps
+five tabs; Variables and Domains are Configure's pages (the contract rules it).
+
+Acceptance is the page contract (`contracts/page2-app-pages.md`), with the designer's rulings.
 
 ### User Story 3 - Page 3: Settings with its grouped nav (Priority: P3)
 
-Settings gets the handoff's left nav, grouped as Connections, Security and People, with counts and
-warning marks per entry.
+Settings gets the handoff's left nav, grouped as Connections and Security (no People group: teams are
+Phase 4), with one page per entry.
+
+Acceptance is the page contract (`contracts/page3-settings.md`).
 
 ### User Story 4 - Page 4: the Apps home and the deployment stages (Priority: P3)
 
 The Apps home gets "Deploying now" for a rollout in progress, a kind word per row and an app filter.
 A deployment entry shows its stages (Queued, Roll out, Live) and who deployed it.
+
+Acceptance is the page contract (`contracts/page4-home-deploys.md`).
 
 ### Edge Cases
 

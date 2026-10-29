@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-16
 
-**Status**: Draft
+**Status**: Implemented, v0.5.0
 
 **Input**: "Private registry credentials (docs/plan.md backlog, Phase 2.5). Caravana resolves digests
 and Nomad pulls images anonymously, so only public images on Docker Hub and GHCR deploy. Most real

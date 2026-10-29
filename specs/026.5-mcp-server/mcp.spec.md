@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-20
 
-**Status**: Draft
+**Status**: Implemented, v0.10.0
 
 **Input**: the maintainer, 2026-10-19: "caravana needs an mcp so agents like you can connect to
 caravana and get the info needed". docs/plan.md, Phase 2.75: "026.5: an MCP server for Caravana,

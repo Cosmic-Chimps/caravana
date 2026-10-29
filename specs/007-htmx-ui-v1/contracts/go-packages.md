@@ -205,5 +205,5 @@ first, so open streams end at once (R12); `runGate` gains the `console-reads` st
 ## Tools and deploy
 
 - `tools/ui-vendor.sh fetch|check` and `tools/ui-vendor.versions` (R4); CI runs `check`.
-- `deploy/vm/caravana-policy.hcl`: `capabilities = ["submit-job", "read-job", "list-jobs",
+- `deploy/install/caravana-policy.hcl`: `capabilities = ["submit-job", "read-job", "list-jobs",
   "read-logs"]` (R10).

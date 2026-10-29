@@ -2,7 +2,7 @@
 
 **Feature Branch**: `011-rollback-export`
 **Created**: 2026-10-08
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 **Input**: "011 Rollback + export: redeploy any past version of an app (from the API and the console's Deployments tab), and export any app as a plain Nomad jobspec (HCL generated only by this feature, per constitution VI) so uninstalling Caravana leaves the user with a runnable job."
 
 ## User Scenarios & Testing *(mandatory)*

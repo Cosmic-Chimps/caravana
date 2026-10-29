@@ -300,6 +300,7 @@ Files: `internal/deploy/volumes.go`, `internal/service/volumes.go`, `internal/ap
   - Proven in the real image along the way: `regexMatch` and `replaceAll` in templates, `secrets/` unreadable through the fs API, BusyBox `tar --exclude`, `timeout`, and `rclone size --json`.
   - The gate's `exec` helper now retries a run that exits 0 with no output, up to three times. Nomad's exec stream sometimes reports the exit before the output. This showed up once in `secrets-render` and once in this feature's step.
   - Still open: quickstart §1–§4 by hand with Uptime Kuma 2, and SC-001 on the maintainer's host after the release (rerun the installer, redeploy Kuma, set its backup to Volume, back up, restore once).
+  - 2026-10-29: the automated part passed, as recorded above. The hand walk and SC-001 were not recorded. T024 stays open until the maintainer walks it or drops it (issue #15).
 
 ## Dependencies & Execution Order
 

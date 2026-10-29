@@ -77,9 +77,9 @@ Files: `internal/api/backups.go`, `internal/api/backups_test.go`, `internal/api/
 
 ## Phase 6: Gate and polish
 
-Files: `deploy/vm/caravana-policy.hcl`, `cmd/caravana/gate_test.go`, `CLAUDE.md`, `docs/plan.md`
+Files: `deploy/install/caravana-policy.hcl`, `cmd/caravana/gate_test.go`, `CLAUDE.md`, `docs/plan.md`
 
-- [x] **T022** Policy: variables `caravana/*` · deploy/vm/caravana-policy.hcl
+- [x] **T022** Policy: variables `caravana/*` · deploy/install/caravana-policy.hcl
 - [x] **T023** Gate step `backup-restore` (research R9) · cmd/caravana/gate_test.go
 - [x] **T024** Docs, then validate: build, vet, staticcheck, race tests, gofmt, tidy, cross-compiles, ui checks, shellcheck, TestLab · CLAUDE.md, docs/plan.md
 

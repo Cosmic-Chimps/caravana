@@ -35,7 +35,7 @@ internal/deploy/backups.go (+ tests), deploytest/nomad.go   # sync jobs+variable
 internal/service/backups.go (+ tests), deploy.go, apps.go, service.go
 internal/api/backups.go (+ tests), api.go, errors.go
 internal/ui/backups.go, settings.go, templates/app.html, templates/settings.html, ui.go (+ tests)
-api/openapi.yaml (0.8.0), deploy/vm/caravana-policy.hcl, cmd/caravana/gate_test.go
+api/openapi.yaml (0.8.0), deploy/install/caravana-policy.hcl, cmd/caravana/gate_test.go
 ```
 
 **Structure Decision**: job shapes live in `nomadjob` (pure, golden), Nomad calls in `deploy`,

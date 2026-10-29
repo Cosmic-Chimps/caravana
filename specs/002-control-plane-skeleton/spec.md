@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "Feature 002: Control plane skeleton and API contract. A running
 Caravana process for the deploy flow (003) and webhook (004) to live in: reads its config,

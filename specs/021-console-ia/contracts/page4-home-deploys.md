@@ -103,7 +103,7 @@ Each Activity row's second line reads **"<trigger> by <who> · <when>"** where w
 - the API: "through the API" and, **when the deployment records the token**, "through the API
   by `ci-github`" (the token's name in mono);
 - the webhook: "by the webhook".
-The token name is the one backend addition: `deployments.token_name` (migration, nullable),
+The token name is the first of two backend additions (the second is `registered_at`, ruling 2, migration 0016; `registeredAt` is in the API from 0.28.0): `deployments.token_name` (migration, nullable),
 set from the authenticated token on `deployApp`, `deployCompose`, `promoteApp` and
 `redeployDeployment` (a session leaves it null), carried as `Deployment.tokenName` (API
 0.23.0, optional). Worth doing: with deploy tokens per app (020) it says which CI deployed.

@@ -50,7 +50,7 @@ Files: `internal/app/app.go`, `internal/app/validate.go`, `internal/app/validate
 
 Files: `internal/service/deploy.go`, `internal/service/secrets.go`,
 `internal/service/secrets_test.go`, `internal/api/secrets_test.go`, `api/openapi.yaml`,
-`deploy/vm/caravana-policy.hcl`, `cmd/caravana/gate_test.go`
+`deploy/install/caravana-policy.hcl`, `cmd/caravana/gate_test.go`
 
 **Goal**: a deploy with secrets reaches the containers, never shows a value, and replaces the set.
 
@@ -67,7 +67,7 @@ responses, logs and the database don't; a deploy without it removes it.
 - [x] **T013** [US1] Add `buildSecrets` (keep check before save) and `settleSecrets` (Commit on healthy, Restore on failed or reverted, per-attempt app lock, retry until shutdown) · internal/service/secrets.go
 - [x] **T014** [US1] In `Deploy` save `WithoutSecretValues` and pre-check keeps; in `deploy` Build and Replace after the latest check, Restore when Register fails; call `settleSecrets` from `finish` · internal/service/deploy.go
 - [x] **T015** [P] [US1] Add `Service.secrets`, `Secret`, the error code, version 0.6.0 · api/openapi.yaml
-- [x] **T016** [P] [US1] Grant `variables` on `nomad/jobs/*` (read, write, destroy, list) · deploy/vm/caravana-policy.hcl
+- [x] **T016** [P] [US1] Grant `variables` on `nomad/jobs/*` (read, write, destroy, list) · deploy/install/caravana-policy.hcl
 - [x] **T017** [US1] Gate step `secrets-render`: deploy busybox with a tricky secret value, read it back over HTTPS, redeploy by webhook and read it again, delete the app · cmd/caravana/gate_test.go
 
 **Checkpoint**: the API deploys apps with secrets, and the gate proves it on a real host.

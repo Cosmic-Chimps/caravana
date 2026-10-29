@@ -195,6 +195,7 @@ Files: `internal/service/deploy.go`, `internal/service/secretedit.go`, `internal
   - 2026-10-15, automated part: `TestConsoleLab` passes on the Lima lab, 14 of 14 steps in 222 s. The new `console-compose-file-edit` step took 52.6 s. It created `cfe` from a file with a comment, saw the file on Configure, edited the tag v1.10 → v1.11 and deployed. It then redeployed the v1.10 version, saw v1.10 and its comment back on Configure, and checked that the history download equals the first file byte for byte.
   - Quickstart §2, §4 and §6 (API round trip, secret edit, webhook and redeploy keep the file, a definition deploy drops it, no secret value anywhere) are covered by the `httptest` suites in internal/api, internal/service and internal/ui. They were not run by hand.
   - Still open: the quickstart by hand in a browser (JavaScript on and off), and SC-005 (paste Uptime Kuma's file once on the maintainer's host).
+  - 2026-10-29: the automated part passed, as recorded above. The hand walk and SC-005 were not recorded. T020 stays open until the maintainer walks it or drops it (issue #15).
 
 ## Dependencies & Execution Order
 

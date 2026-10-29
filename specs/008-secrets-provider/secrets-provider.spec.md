@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-07
 
-**Status**: Draft
+**Status**: Implemented, v0.1.0
 
 **Input**: User description: "008 Secrets: a `secrets.Provider` interface in `internal/secrets`, a
 Nomad Variables implementation (secrets at `nomad/jobs/<app-id>`, rendered as env by a template in

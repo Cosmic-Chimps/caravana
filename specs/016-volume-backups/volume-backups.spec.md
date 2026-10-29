@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-15
 
-**Status**: Draft
+**Status**: Implemented, v0.4.0
 
 **Input**: "Feature 016: volumes panel + volume backups. A volumes panel per app (each named
 volume: name, the service and path it is mounted at, where it lives on the host, its size, its

@@ -5,6 +5,7 @@
 **Created**: [DATE]
 
 **Status**: Draft
+<!-- A release updates the Status line of every feature it contains: "Implemented, vX.Y.Z" (or "Implemented, unreleased" before the release). -->
 
 **Input**: User description: "$ARGUMENTS"
 

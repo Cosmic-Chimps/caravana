@@ -223,7 +223,7 @@ interleaved as they arrive, each stamped with the time caravana received it.
 - **The API**: `GET /v1/apps/{id}/logs?copy=&stream=&lines=` returns JSON lines;
   with `follow=true` it answers `text/event-stream` with the same `log` events (contracts).
 - **Nomad ACL**: reading logs needs the `read-logs` capability. The lab uses the management
-  token; the VM's `deploy/vm/caravana-policy.hcl` gains `read-logs` (and `host.sh up` re-applies
+  token; the VM's `deploy/install/caravana-policy.hcl` gains `read-logs` (and `host.sh up` re-applies
   it). The gate gets a step that reads copies and logs through the API with the scoped token, so
   a missing capability fails the gate, not a user.
 - **Reaching the node**: the Nomad client library first tries the node's own HTTP address, then

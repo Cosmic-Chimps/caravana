@@ -456,7 +456,8 @@ Restart per app.
 - The gate has a step `app-actions` (`gate_actions_test.go`: a two-copy busybox app with a domain;
   echo a sentinel, `sh -c 'exit 3'`, restart while the domain is called every 200 ms, stop, start,
   same job shape, delete) and `TestConsoleLab` a step `console-app-actions`
-  (`console_actions_test.go`). Neither had been run in the lab when this was written.
+  (`console_actions_test.go`). Both passed in the lab (`TestLab` on 2026-10-18; the QA pass ran it green again at
+  v0.12.0 on 2026-10-24: `app-actions` 42 s, `console-app-actions` 31 s).
 
 Feature 020 (`specs/020-deploy-from-ci`, Phase 2.5's CI piece) is implemented on branch
 `020-deploy-from-ci` (stacked on 020.5): deploy tokens, the origin of a deploy, and New app › "From
@@ -501,8 +502,9 @@ a GitHub repository". CI builds the image; the GitHub Action `Cosmic-Chimps/cara
   `$CARAVANA_ACTION_DIR` (default `../caravana-action` beside the repository, else the step skips
   with a note) with a deploy token for `lab020`/`web`: define and deploy, a new image, create
   production with the token and promote, a missing image, the origin on each deployment, no token
-  in any log or summary, and 403 `token_scope` for everything else. It had not been run in the lab
-  when this was written. Running the script against the in-process API found that it must send
+  in any log or summary, and 403 `token_scope` for everything else. It passed in the lab
+  (`TestLab` on 2026-10-18, 48 s; green again in the QA pass at v0.12.0 on 2026-10-24 with the action's
+  `61426ef`). Running the script against the in-process API found that it must send
   `If-Match` quoted (`"<revision>"`), as `getApp`'s ETag has it.
 
 Feature 020.6 (`specs/020.6-terminal`, Phase 2.6) is implemented on branch `020.6-terminal`
@@ -512,7 +514,7 @@ Feature 020.6 (`specs/020.6-terminal`, Phase 2.6) is implemented on branch `020.
   dependency since 020.5's deploytest, now in production code). Browser to Caravana: text frames
   `{"type":"input","data"}` and `{"type":"resize","cols","rows"}` (64 KiB at most, anything else
   closes with 1003); Caravana to browser: binary frames of the shell's output, then one text frame
-  `{"type":"exit","code":N}` or `{"type":"exit","reason":"idle|limit|error|gone","message"}` and a
+  `{"type":"exit","code":N}` or `{"type":"exit","reason":"idle|limit|error","message"}` (a lost connection has nobody to tell: no frame, recorded as "connection lost") and a
   normal close. Gorilla can't read on after a read timeout, so a client reads in one goroutine for
   the whole connection (the lab's `termClient` does).
 - gorilla's upgrader needs `http.Hijacker`: `httpx`'s request-log recorder gained `Hijack()` (it
@@ -552,7 +554,8 @@ Feature 020.6 (`specs/020.6-terminal`, Phase 2.6) is implemented on branch `020.
   and no sentinel in any later answer; refusals for no credentials, a deploy token and `shell=zsh`)
   and `TestConsoleLab` a step `console-terminal` (`console_terminal_test.go`: the page's CSP and
   assets, the socket with the cookie and the console's Origin, a foreign Origin and no Origin both
-  403). Neither had been run in the lab when this was written.
+  403). Both passed in the lab (`TestLab` on 2026-10-19; green again in the QA pass at v0.12.0 on
+  2026-10-24: `terminal` 18.5 s, `console-terminal` 16.5 s).
 
 Feature 026 (`specs/026-publish-to-caravana`, Phase 2.75) has its Caravana side implemented on
 branch `026-publish-to-caravana`; the publisher is its own repo, `Cosmic-Chimps/aspire-hosting-caravana`
@@ -874,8 +877,9 @@ migration 0019, no new Go module (our own parser of Traefik's text format; `expf
   disk I/O, an MCP tool, several servers (Phase 3).
 - Lab: `TestConsoleLab` has a step `console-monitoring` and the gate a step `monitoring`, per
   `specs/025-monitoring/quickstart.md` §6 (`startLab` points the Traefik URL at `127.0.0.1:8088/metrics`
-  and the gap at 10 s). They had not been run in the lab when this was written (T018, T019 unticked);
-  T020 (the seeded review data and the disk fill on `install-test.sh`'s VM) is the other lab piece.
+  and the gap at 10 s). They passed in the lab before 025 merged on 2026-10-26 (`specs/025-monitoring/tasks.md` T018 and
+  T019 are ticked); T020 (the seeded review data and the disk fill on `install-test.sh`'s VM) is the
+  other lab piece, also done.
   The lab's checks are in `research.md` R8 ("lab, observed"). Gotchas: the lab VM has about 4 GB, so
   clear the review apps before a lab step, or a deploy fails for lack of memory; and
   `TestRestartMidRolloutRestoresSecrets`'s fix belongs to 024, not to this feature.
