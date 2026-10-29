@@ -577,7 +577,7 @@ password, sign out; `/account` lands on `/settings`.
   local console URL `http://127.0.0.1:7070/`), `docs/plan.md` (the open decision "SSE vs. HTMX
   polling" closed: SSE, research R1), and `deploy/vm/README.md` or `host.sh` help if they list
   the policy's capabilities.
-- [ ] T085 Run everything in quickstart.md §1 and §2–3 by hand in the lab (record anything that
+- [X] T085 Run everything in quickstart.md §1 and §2–3 by hand in the lab (record anything that
   didn't match in this file's Notes), then `CARAVANA_LAB=1 go test ./cmd/caravana -run TestLab`;
   `host.sh prove` when a VM is available (otherwise note it as pending, as 005 did).
 
@@ -635,8 +635,10 @@ T022 store → T023 service → T024 API      (T025 view helpers alongside)
   11 stop the lab, 12 restart the server, JavaScript off, keyboard-only, reduced motion) and
   `host.sh prove` (no VM; as 005 did, pending). Headless Chrome covered layout at 1440/900/768/390.
   - 2026-10-29: the automated part (quickstart §1, `TestLab`, `TestConsoleLab`) passed, as recorded
-    above. The by-hand walk was not recorded in this file. T085 stays open until the maintainer walks
-    it or drops it (issue #15).
+    above. Closed with the maintainer (issue #15): the by-hand walk is covered by real use and later
+    work. 007's pages were replaced by 014 and 021, whose pages were each reviewed live; the console
+    has been used daily on the maintainer's host since v0.1.0; `TestLab` passed again in the QA pass
+    at v0.12.0 (2026-10-24); and the host gates (Phase 2, 2026-10-11) stood in for `host.sh prove`.
 - Found while building: `DELETE /v1/apps/{id}` purged a Nomad job of the same name that Caravana
   didn't create. `deploy.Purge` now takes the same `owns` check as `Register` and leaves such a
   job alone (test in `purge_test.go` and `service/apps_test.go`).
