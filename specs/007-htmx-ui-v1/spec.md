@@ -459,6 +459,10 @@ it, change the password, sign out; the old `/account` address leads to Settings.
 
 ## Assumptions
 
+- **`createApp` saves before it resolves the image.** A failed first deploy leaves a stored app
+  that never ran. Feature 019.5 made that a normal state ("never deployed"), so the client
+  retries with `deployApp` and nothing is removed (#27).
+
 - **One admin, one node, image apps** (Phase 2 scope). No orgs, projects or environments: the
   breadcrumbs start at Apps, and the sidebar shows the instance's host name where the design has
   the org name.

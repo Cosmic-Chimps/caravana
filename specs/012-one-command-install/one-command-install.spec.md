@@ -133,7 +133,9 @@ that whoami still answers over HTTPS and Nomad still runs its job.
 - **FR-012**: Running the command for a newer version MUST upgrade Caravana in place, keeping its
   data, admin, tokens, certificates and running apps.
 - **FR-013**: If the upgraded Caravana fails its health check, the command MUST put the previous
-  version back and exit with an error.
+  version back and exit with an error. A rollback restores Caravana's binary and data. Nomad's
+  policies, Caravana's settings and its systemd unit stay at the new version, which the older
+  version tolerates (every policy change so far only adds capabilities).
 - **FR-014**: The command MUST refuse a version older than the installed one before changing
   anything.
 - **FR-015**: An uninstall command MUST remove Caravana's service and binary, and its data only

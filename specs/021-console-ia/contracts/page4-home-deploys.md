@@ -77,6 +77,8 @@ A `<form method="get">` row between the needs-you list and the groups, flex, gap
   whole caravana).
 - Drawn only when the caravana has more than 5 apps; under that the row is left out (the
   007 review's open question 2, settled: a filter over four rows is noise).
+- An unknown `?state=` or `?kind=` value means no filter, as `filterOf` in `internal/ui/home.go`
+  does: the select shows its first option and the groups are not narrowed.
 - Live refresh keeps the filter: the region's refresh URL carries the query.
 
 ### A kind word per Apps row

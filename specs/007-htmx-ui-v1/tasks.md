@@ -637,10 +637,11 @@ T022 store → T023 service → T024 API      (T025 view helpers alongside)
 - Found while building: `DELETE /v1/apps/{id}` purged a Nomad job of the same name that Caravana
   didn't create. `deploy.Purge` now takes the same `owns` check as `Register` and leaves such a
   job alone (test in `purge_test.go` and `service/apps_test.go`).
-- Open decision (US3): `CreateApp` saves the app before the image resolves (R14), so a failed
-  first deploy leaves the app stored and re-posting the form says the name exists. The page
-  shows a notice with a link to Deployments. Options: resolve the image first (one more registry
-  call, 422 without `Location`), or remove the app when the first deploy never registered.
+- Decided (US3, #27): `CreateApp` saves the app before the image resolves (R14), so a failed
+  first deploy leaves a stored app that never ran. 019.5 made that a normal state ("never
+  deployed"), so it stays: the client retries with `deployApp`. The page shows a notice with a
+  link to Deployments. Resolving the image first, or removing the app when the first deploy never
+  registered, were rejected.
 - Not canonized in DESIGN.md: the Replace-token confirmation's primary button can make two
   primary buttons while it is open on Configure.
 - The app header still says "healthy" when copies are healthy but the newest deploy failed; only

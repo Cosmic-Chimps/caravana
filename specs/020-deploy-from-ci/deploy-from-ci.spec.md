@@ -87,13 +87,15 @@ linking to the workflow run, in the app's history and in its notification.
 
 On New app the owner picks "From a GitHub repository", names the app (and its project and
 environment), and gets: the app created without deploying (019.5), a deploy token for it, and the
-workflow to paste, with the app, the address and the secret name filled in, plus the definition
-file to commit, built from what they typed (port, domain, health path, image name).
+workflow to paste, with the app, the address and the secret name filled in. The app's definition
+lives in Caravana (`CreateAppOnly`, from what they typed: port, domain, health path, image name) and
+the action's `definition` input is optional, so no definition file is generated.
 
 **Acceptance Scenarios**:
 
 1. **Given** the form filled in, **When** submitted, **Then** the app exists without a deployment,
-   the token is shown once, and the page shows the workflow and the definition file to copy.
+   the token is shown once, and the page shows the token, the secret to add and the workflow to
+   commit.
 2. **Given** that workflow committed with the token as a secret, **When** CI runs, **Then** the app
    is defined and deployed by the action's first run.
 
@@ -133,7 +135,9 @@ action with `promote: production`; production runs staging's healthy deployment 
 - **FR-005**: A deploy MAY carry where it came from (commit, ref, actor, run URL); Caravana MUST
   record it on the deployment, show it in the history and notifications, and never require it.
 - **FR-006**: New app MUST offer "From a GitHub repository": create the app without deploying, make
-  a deploy token, and show the workflow and the definition file to commit.
+  a deploy token, and show the token, the secret to add and the workflow to commit. No definition
+  file is generated: the app's definition lives in Caravana and the action's `definition` input is
+  optional.
 - **FR-007**: The console and the API MUST offer the same: deploy tokens are created, listed and
   revoked through both.
 

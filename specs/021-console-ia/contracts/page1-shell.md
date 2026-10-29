@@ -222,6 +222,10 @@ ruled:
      "rolling out", "not running".
 6. **DESIGN.md:** the app has five tabs (Backups included); update the text.
 
+The host-address lookup behind the Domains Add panel lives in `internal/service` (`HostAddresses`,
+feature 023), and the API serves it inside `DomainCheck.record`, so the console's Add panel and an
+API client use the same source (#35).
+
 Declined for now:
 - capping the title row's domains (023 decides);
 - a scroll hint on the narrow tabs (the cut word is the hint);

@@ -32,6 +32,10 @@ Page 1's contract (`page1-shell.md`) still applies to the shell and the app head
   Domains pages of such an app are read-only tables with the sentence "This app is edited
   through its Compose file." and a link to Configure; setting and removing a **secret** still
   works there (`editSecrets` rewrites the overlay).
+- **An old Configure post (#4).** A Configure post that names fields the form no longer offers
+  (`svc.<name>.env`, `svc.<name>.domains`, from a page opened before 0.12.0) is saved without them:
+  they keep their stored values, and the answer is 303 as for any save. Principle IV is met because
+  those fields are edited on their own pages (Variables and Domains).
 - **An undefined app (019.5)**: Configure shows "Define the app" as today; Variables and Domains
   show the title, "Define the app first." and a link to Configure; Backups shows nothing to back up.
 - **A stopped app (020.5)**: every form on these pages says "The app is stopped: start it
