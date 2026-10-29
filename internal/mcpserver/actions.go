@@ -38,13 +38,13 @@ func (h *handler) addActionTools(srv *mcp.Server) {
 			"changed the app meanwhile (If-Match with the revision it read; retried once if the app changed). "+
 			"`service` is needed when the app has more than one. An app deployed from a Compose file loses "+
 			"its kept file (the answer's warnings say so). Changes a running app. Answers the new deployment; "+
-			"follow it with wait_for_deployment.", false),
+			"follow it with wait_for_deployment.", true),
 		h.deployImage)
 
 	addTool(h, srv, act("redeploy_version",
 		"Deploys a past healthy deployment of the app again (a rollback), with the images it pinned. Changes a "+
 			"running app. Answers the new deployment; follow it with wait_for_deployment. API operation "+
-			"redeployDeployment.", false),
+			"redeployDeployment.", true),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in deploymentInput) (string, error) {
 			return h.answer(ctx, call{op: opRedeployDeployment, params: []string{"id", in.App, "deploymentId", in.Deployment}})
 		})
@@ -54,7 +54,7 @@ func (h *handler) addActionTools(srv *mcp.Server) {
 			"staging to production), where the same app must already exist. Previews it first "+
 			"(previewPromotion), then promotes (promoteApp) only if the target is still as the preview saw "+
 			"it. Changes a running app in another environment. Answers the target's new deployment; follow it "+
-			"with wait_for_deployment using the target app's ID.", false),
+			"with wait_for_deployment using the target app's ID.", true),
 		h.promoteApp)
 
 	addTool(h, srv, act("restart_app",

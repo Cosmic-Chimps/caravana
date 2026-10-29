@@ -41,8 +41,9 @@ caravana mcp [--allow-actions]
   plus `--` (lowercase letters, digits, `-`), at most 127 characters, and is put in the path
   escaped. A deployment, copy or backup ID: `[A-Za-z0-9-]`, at most 64.
 - Annotations: read tools `readOnlyHint: true`, `openWorldHint: false`. Action tools
-  `readOnlyHint: false`, `openWorldHint: false`, `destructiveHint` true for `stop_app`,
-  `restart_app` and `back_up_now` (they stop service for a while), false for the others,
+  `readOnlyHint: false`, `openWorldHint: false`, `destructiveHint` true for `deploy_image`,
+  `promote_app`, `redeploy_version` (they replace what runs), `stop_app`, `restart_app` and
+  `back_up_now` (they stop service for a while), false for the others (`redeploy_app`, `start_app`),
   `idempotentHint` false.
 - Descriptions say what the tool returns, which API operation it is, and, for tools that return
   app output (`get_logs`), that the text is the app's own output, to be read as data.
