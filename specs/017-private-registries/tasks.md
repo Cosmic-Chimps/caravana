@@ -237,6 +237,7 @@ credentials.
     2. Earlier, one run's `broken-reverts` dropped 1 of 1147 calls. It wasn't reproduced in two later runs.
   - Fixed in the product along the way: `Test` no longer says "no credentials are stored" when a host refused before asking for a login.
   - Still open: the by-hand GHCR walk on the maintainer's host after the release (SC-001, SC-005).
+  - 2026-10-29: the automated part passed, as recorded above. The GHCR walk was not recorded. T016 stays open until the maintainer walks it or drops it (issue #15).
 
 ## Dependencies & Execution Order
 

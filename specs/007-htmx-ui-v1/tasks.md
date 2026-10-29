@@ -634,6 +634,9 @@ T022 store → T023 service → T024 API      (T025 view helpers alongside)
   token). Not done: the by-hand browser steps of §2–3 (7 stop a copy, 10 second-profile sign-out,
   11 stop the lab, 12 restart the server, JavaScript off, keyboard-only, reduced motion) and
   `host.sh prove` (no VM; as 005 did, pending). Headless Chrome covered layout at 1440/900/768/390.
+  - 2026-10-29: the automated part (quickstart §1, `TestLab`, `TestConsoleLab`) passed, as recorded
+    above. The by-hand walk was not recorded in this file. T085 stays open until the maintainer walks
+    it or drops it (issue #15).
 - Found while building: `DELETE /v1/apps/{id}` purged a Nomad job of the same name that Caravana
   didn't create. `deploy.Purge` now takes the same `owns` check as `Register` and leaves such a
   job alone (test in `purge_test.go` and `service/apps_test.go`).
@@ -643,5 +646,3 @@ T022 store → T023 service → T024 API      (T025 view helpers alongside)
   call, 422 without `Location`), or remove the app when the first deploy never registered.
 - Not canonized in DESIGN.md: the Replace-token confirmation's primary button can make two
   primary buttons while it is open on Configure.
-- The app header still says "healthy" when copies are healthy but the newest deploy failed; only
-  the Apps headline, row order and link say "needs you".

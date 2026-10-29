@@ -56,6 +56,7 @@ Files: `CLAUDE.md`, `docs/plan.md`
 ## Phase 6: Polish
 
 - [x] **T009** Validate against the Success Criteria: build, vet, staticcheck, `go test -race`, gofmt, tidy, both cross-compiles, UI checks, shellcheck (v0.10.0), `TestLab`, and `install-test.sh` (install, then an upgrade from a build without the setting). After merge and tag, the maintainer upgrades the real host (SC-003).
+  - The real-host upgrade (SC-003) is recorded in `docs/plan.md` ("Memory per service"): the host upgraded from `v0.1.0` to `v0.1.1` on 2026-10-12 with the published command, Hollo answering throughout.
 
 ## Dependencies & Execution Order
 
