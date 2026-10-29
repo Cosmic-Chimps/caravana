@@ -32,14 +32,17 @@ Bearer tokens (full API tokens) need no `Origin` check (no browser sends one wit
     `{"type":"exit","reason":"idle|limit|error","message":"…"}` (error also for "your sign-in
     ended": the credentials are checked again every 30 s)
     as the last message, then a normal close (1000).
-- Keepalive: Caravana pings every 30 s; no pong within 60 s ends the session (`reason` "gone").
+- Keepalive: Caravana pings every 30 s; no pong within 60 s ends the session. No frame is sent,
+  since the browser is gone: the connection is lost, and the record says "connection lost". The
+  exit frame never has `reason` "gone".
 - Message limit: 64 KiB per frame from the browser.
 
 ## The shell
 
 `shell=auto` runs `/bin/sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'`
 (the `sh -c` itself needs `/bin/sh`); `bash` runs `/bin/bash`, `sh` runs `/bin/sh`. TTY on, the
-service's task (never a sidecar). Env `TERM=xterm-256color`. When the program is missing Nomad
+service's task (never a sidecar). `TERM=xterm-256color` is set only for `shell=auto`, exported
+inside its `sh -c` (Nomad's exec can't set the environment); `bash` and `sh` take the runtime's own. When the program is missing Nomad
 answers an error or exit 126/127: the exit message says "no shell found in this image".
 
 ## Record
