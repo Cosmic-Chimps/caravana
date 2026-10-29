@@ -136,6 +136,20 @@ main() {
   [ $? = 2 ] || die "an install.sh without a version should exit 2"
   set -e
 
+  say "the installer refuses a domain or email that isn't plain, and changes nothing"
+  local bad_arg path
+  # shellcheck disable=SC2016 # the $( ) is the point: it must reach the installer as text
+  for bad_arg in "--domain=bad domain.test" '--domain=a$(id).test' "--domain=-a.test" "--email=a b@example.com" '--email=a$(id)@example.com' "--acme-email=a;b@example.com"; do
+    set +e
+    out="$(vm sudo bash "$WORK/$v1/install.sh" --from "$WORK/$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none "${bad_arg%%=*}" "${bad_arg#*=}" 2>&1)"
+    [ $? = 2 ] || { set -e; die "install.sh should refuse (exit 2) with ${bad_arg%%=*} '${bad_arg#*=}':\n$out"; }
+    set -e
+    grep -q -- "${bad_arg%%=*} is not" <<<"$out" || die "the refusal should name ${bad_arg%%=*}:\n$out"
+  done
+  for path in /etc/caravana /var/lib/caravana-host /opt/caravana /etc/nomad.d; do
+    vm test ! -e "$path" || die "a refused install changed the host: $path exists"
+  done
+
   say "install $v1"
   out="$(install "$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none)" || { echo "$out"; die "install"; }
   grep -q "Create the admin: sudo caravana admin init --email $EMAIL" <<<"$out" ||
