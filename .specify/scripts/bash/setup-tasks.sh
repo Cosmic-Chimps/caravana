@@ -35,7 +35,7 @@ if [[ ! -f "$IMPL_PLAN" ]]; then
 fi
 
 if [[ ! -f "$FEATURE_SPEC" ]]; then
-    echo "ERROR: spec.md not found in $FEATURE_DIR" >&2
+    echo "ERROR: no spec file (spec.md or <name>.spec.md) found in $FEATURE_DIR" >&2
     echo "Run /speckit-specify first to create the feature structure." >&2
     exit 1
 fi

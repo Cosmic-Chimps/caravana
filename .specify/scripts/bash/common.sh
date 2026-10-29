@@ -151,6 +151,32 @@ _persist_feature_json() {
     fi
 }
 
+# find_spec_file DIR: print the feature's spec file. It is DIR/spec.md, or else
+# the single DIR/*.spec.md (features from 008 on name it <name>.spec.md). With
+# none it prints DIR/spec.md, the name a new spec gets. Several *.spec.md and no
+# spec.md is an error: the script can't tell which one is meant.
+find_spec_file() {
+    local dir="${1%/}"
+    if [[ -f "$dir/spec.md" ]]; then
+        printf '%s\n' "$dir/spec.md"
+        return 0
+    fi
+    local found=()
+    local f
+    for f in "$dir"/*.spec.md; do
+        [[ -f "$f" ]] && found+=("$f")
+    done
+    if [[ ${#found[@]} -gt 1 ]]; then
+        echo "ERROR: more than one *.spec.md in $dir and no spec.md; keep one spec file per feature." >&2
+        return 1
+    fi
+    if [[ ${#found[@]} -eq 1 ]]; then
+        printf '%s\n' "${found[0]}"
+        return 0
+    fi
+    printf '%s\n' "$dir/spec.md"
+}
+
 get_feature_paths() {
     # Read-only callers (e.g. check-prerequisites.sh --paths-only) pass
     # --no-persist so pure path resolution never writes .specify/feature.json,
@@ -207,12 +233,15 @@ get_feature_paths() {
         current_branch="${feature_dir_trimmed##*/}"
     fi
 
+    local feature_spec
+    feature_spec=$(find_spec_file "$feature_dir") || return 1
+
     # Use printf '%q' to safely quote values, preventing shell injection
     # via crafted branch names or paths containing special characters
     printf 'REPO_ROOT=%q\n' "$repo_root"
     printf 'CURRENT_BRANCH=%q\n' "$current_branch"
     printf 'FEATURE_DIR=%q\n' "$feature_dir"
-    printf 'FEATURE_SPEC=%q\n' "$feature_dir/spec.md"
+    printf 'FEATURE_SPEC=%q\n' "$feature_spec"
     printf 'IMPL_PLAN=%q\n' "$feature_dir/plan.md"
     printf 'TASKS=%q\n' "$feature_dir/tasks.md"
     printf 'RESEARCH=%q\n' "$feature_dir/research.md"
