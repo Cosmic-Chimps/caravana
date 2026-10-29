@@ -42,6 +42,8 @@ func TestExport(t *testing.T) {
 		for _, want := range []string{
 			`# Nomad job for app "whoami", exported by Caravana.`,
 			"# Deployment " + w.Deployment.ID + ", deployed 2026-10-08T12:30:00Z.",
+			"# Rendered with this Caravana's current settings (entrypoint, certificate resolver, default memory and CPU,",
+			"# helper images), so it can differ from the job that ran if those settings changed since.",
 			"# Run it with: nomad job run whoami.nomad.hcl",
 			`entrypoint "websecure", Traefik's default certificate`,
 			"#   whoami.localhost -> service web, port http",
