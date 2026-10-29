@@ -439,7 +439,7 @@ counts new lines; one copy and `stdout` filters; the API returns the same lines.
   once); follow the bottom unless paused or scrolled up; Pause/Resume buttons with the "Paused.
   12 new lines." counter; Wrap toggles a class; both set `aria-pressed`. Log view styles in
   `internal/ui/style/input.css`; run `tools/ui-css.sh build`.
-- [X] T062 [US5] Add `"read-logs"` to `deploy/vm/caravana-policy.hcl` and update its comment
+- [X] T062 [US5] Add `"read-logs"` to `deploy/install/caravana-policy.hcl` and update its comment
   (research R10); `host.sh up` re-applies it (check `deploy/vm/setup.sh` applies the policy on
   every run).
 

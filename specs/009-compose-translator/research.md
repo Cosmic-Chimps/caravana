@@ -134,8 +134,10 @@ directory corrupt it); keeping volumes on app delete (data nobody can see or rem
 ## R6. Scoped policy
 
 **Decision**: the `default` namespace gains `host-volume-create` (implies read) and
-`host-volume-delete`. A top-level `host_volume "*_*" { policy = "write" }` lets Caravana's jobs
-mount the volumes it created, and nothing like `traefik-acme`. The gate's `compose-app` step
+`host-volume-delete`. A top-level `host_volume "*" { policy = "write" }` lets Caravana's jobs
+mount the volumes it created, and `host_volume "traefik-acme" { policy = "deny" }` keeps them off the
+host's own `traefik-acme`. (The first draft was `"*_*"`; Nomad allows no `_` in host volume names, so
+the shipped policy in `deploy/install/caravana-policy.hcl` is the wildcard plus the deny, commit 139e3e0.) The gate's `compose-app` step
 proves it on a real host.
 
 ## R7. API

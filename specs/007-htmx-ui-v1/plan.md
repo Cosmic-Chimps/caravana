@@ -185,7 +185,7 @@ tools/
 ├── ui-vendor.sh                         # NEW: fetch | check
 └── ui-vendor.versions                   # NEW
 
-deploy/vm/caravana-policy.hcl            # + read-logs
+deploy/install/caravana-policy.hcl            # + read-logs
 .github/workflows/ci.yml                 # + tools/ui-vendor.sh check
 DESIGN.md                                # tabs (Deployments), narrow-screen rules, live indicator, log view
 CLAUDE.md, docs/plan.md                  # where we are; the SSE decision closes the open item

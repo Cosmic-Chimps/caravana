@@ -3,7 +3,9 @@
 **Branch**: `014-console-v2` | **Date**: 2026-10-12 | **Spec**: [console-v2.spec.md](./console-v2.spec.md)
 
 **Scale note**: the biggest console feature since 007, about 35 files in six packages, but no
-migration, no new module and no new Nomad capability. The risk is in the two forms: the edit
+migration, no new module and no new Nomad capability in the policy. The usage numbers do need
+`telemetry { publish_allocation_metrics = true }` in Nomad's own config, which the installer's
+`nomad.hcl` sets, so an existing host reruns the installer (the 0.2.0 changelog says so). The risk is in the two forms: the edit
 form must never drop a field it doesn't show (merge from the stored revision, tested on every
 example app), and the Compose form must never echo a secret value. The four parts are
 independent and land in story order.

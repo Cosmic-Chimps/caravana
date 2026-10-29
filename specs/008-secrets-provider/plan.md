@@ -50,7 +50,7 @@ cmd/caravana/
 ├── main.go                        # wires deploy.NewVariables into service.New
 ├── gate_test.go                   # gate step secrets-render
 └── console_lab_test.go            # console step: set and remove a secret
-deploy/vm/caravana-policy.hcl      # variables rules for nomad/jobs/*
+deploy/install/caravana-policy.hcl      # variables rules for nomad/jobs/*
 CLAUDE.md, docs/plan.md            # where we are
 ```
 

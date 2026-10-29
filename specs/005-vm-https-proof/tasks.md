@@ -86,7 +86,7 @@ quickstart §6's port scan and reboot.
   `deploy/dev/nomad.hcl` but `bind_addr = "127.0.0.1"`, `client.network_interface =
   "caravana0"`, `client.host_volume "traefik-acme" { path = "/var/lib/caravana-host/traefik" }`,
   and a `@CPU_TOTAL_COMPUTE@` line that setup fills or removes.
-- [x] T007 [P] [US1] `deploy/vm/caravana-policy.hcl`: ACL policy for Caravana (namespace
+- [x] T007 [P] [US1] `deploy/install/caravana-policy.hcl`: ACL policy for Caravana (namespace
   `default`: `submit-job`, `read-job`, `list-jobs`), with a comment on why it isn't management.
 - [x] T008 [P] [US1] `deploy/vm/caravana.service` (research R7): `User=caravana`,
   `EnvironmentFile=/etc/caravana/caravana.env`, `ExecStart=/usr/local/bin/caravana`,

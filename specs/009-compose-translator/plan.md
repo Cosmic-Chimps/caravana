@@ -64,7 +64,7 @@ internal/api/
 internal/config/config.go          # CARAVANA_NAMES_IMAGE (default: busybox pinned by digest)
 internal/ui/configure.go, app.go   # Volumes row, source "compose", delete names volumes
 api/openapi.yaml                   # 0.7.0: ComposeRequest, ComposePreview, Volume, SourceKind compose
-deploy/vm/caravana-policy.hcl      # host-volume-create/-delete, host_volume "*_*" write
+deploy/install/caravana-policy.hcl      # host-volume-create/-delete, host_volume "*" write, "traefik-acme" deny
 cmd/caravana/gate_test.go          # gate step compose-app
 CLAUDE.md, docs/plan.md
 ```

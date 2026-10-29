@@ -194,6 +194,7 @@ on a local port).
 - **FR-001**: The system MUST provide a setup script, run from the operator's Mac, that turns a
   fresh Ubuntu LTS VM reachable over SSH into a Caravana host, given the VM's SSH address, the
   domain names to use and an email for Let's Encrypt.
+  *Superseded by 012 (2026-10-29): `deploy/install/install.sh`, the one-command installer, turns a fresh VM into a Caravana host and ships in each release. `deploy/vm/host.sh up` runs it over SSH. `setup.sh` is gone.*
 - **FR-002**: Setup MUST install and run as boot-time services: Docker, Nomad (single node,
   ACLs bootstrapped), Traefik (Nomad provider, event-stream watch, `exposedByDefault=false`)
   and Caravana (the given binary, with its data on the host's disk).

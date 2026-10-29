@@ -5,10 +5,13 @@
 
 ## Summary
 
-The console is put on the handoff's shape page by page, each page its own release. Page 1 covers
+The console is put on the handoff's shape page by page, each page built and reviewed in turn, all four released in 0.12.0. Page 1 covers
 the sidebar and top bar, a `/projects` page, and the app header with a copies line per service.
-The only data change is per-service copy counts on `AppStatus`, which the API also exposes
-(additive; openapi 0.22.0). Pages 2–4 get their contracts from the designer when each starts.
+Page 1's data change is per-service copy counts on `AppStatus`, which the API also exposes
+(additive; openapi 0.22.0). Pages 2–4 got their contracts from the designer when each started.
+Two backend additions came with page 4: `deployments.token_name` (migration 0015, API 0.23.0 as
+`Deployment.tokenName`) and `deployments.registered_at` (migration 0016, first only in the console;
+`registeredAt` is in the API from 0.28.0).
 
 ## Technical context (page 1)
 

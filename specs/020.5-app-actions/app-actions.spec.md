@@ -135,7 +135,7 @@ copy's restart count went up by one and the needs-you list stays empty.
 
 - One installation, one admin: anyone signed in or holding an API token may run commands, as they
   can already deploy anything. Per-person permissions are Phase 4.
-- The interactive terminal is Phase 3; this is its no-JavaScript first step.
+- The interactive terminal was built next, as 020.6 (v0.9.0); this is its no-JavaScript first step.
 - Stop and Start are per app (all its services), like the handoff's app actions.
 
 ## Out of Scope

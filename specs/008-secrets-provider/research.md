@@ -113,7 +113,7 @@ until the app's next deploy. That deploy takes over the kept copy, so it still e
 
 ## R7. The scoped Nomad policy
 
-**Decision**: `deploy/vm/caravana-policy.hcl` gains
+**Decision**: `deploy/install/caravana-policy.hcl` gains
 
 ```hcl
 variables {

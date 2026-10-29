@@ -233,6 +233,7 @@ Assumptions)
   form `repo@sha256:<64 lowercase hex>`, MUST fail.
 - **FR-022**: A deployment digest for a service the app doesn't have MUST fail.
 - **FR-023**: A deployment without an ID, or with a trigger other than `manual` or `webhook`, MUST fail.
+  *Superseded by 007 (2026-10-29): a deployment's trigger may also be `console`, for a deploy started from the web console (`internal/app/validate.go`).*
 - **FR-024**: App IDs and service names that aren't valid lowercase DNS labels MUST fail, as
   MUST duplicate service names and `<app-id>-<service-name>` combinations longer than 63
   characters.

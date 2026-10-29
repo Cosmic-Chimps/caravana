@@ -41,7 +41,7 @@ The render confirmed the rest:
   - the Developer/Operator toggle and the organization switcher, until an Operator view and
     organizations exist (Phase 3/4). Nothing stands in for them.
 - **Projects needs a landing page,** `/projects`:
-  - a panel of rows: the project name in mono 500, its description 15px fg-3 if any, the
+  - a panel of rows: the project name in mono 500, the
     environment names as small pills, and the app count;
   - each row links to `/projects/{project}`.
 
