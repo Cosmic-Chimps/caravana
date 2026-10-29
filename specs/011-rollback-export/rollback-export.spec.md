@@ -137,8 +137,11 @@ and env.
   deployment, as one Nomad jobspec in HCL, from the API and the console's Configure tab.
 - **FR-012**: The owner SHOULD be able to export any past deployment that has a recorded
   definition, from the API and its history entry.
-- **FR-013**: The exported jobspec MUST be the job Caravana registers for that deployment, so that
-  Nomad parses it into that job and a plan against the live job shows no change to what runs.
+- **FR-013**: The exported jobspec MUST be the job Caravana registers for that deployment, rendered
+  with this Caravana's current settings (entrypoint, certificate resolver, default memory and CPU,
+  helper images), so that Nomad parses it into that job and a plan against the live job shows no
+  change to what runs while those settings are as they were. The file's header says so, because an
+  old deployment's export can differ from the job that ran if a setting changed since.
 - **FR-014**: The exported file MUST start with a comment that says what it needs from the cluster:
   the Traefik routing it relies on, each host volume, and each secret's name and variable path.
 - **FR-015**: The exported file MUST NOT contain any secret value or token.
@@ -162,8 +165,9 @@ and env.
   from the app's history or with one API call.
 - **SC-002**: After a redeploy of version A, the running images are A's digests and the env is A's,
   every time, whatever the tags point at now.
-- **SC-003**: Nomad parses every exported file into the job Caravana registered for that deployment,
-  and a plan of it against the live app reports no change to what runs.
+- **SC-003**: Nomad parses every exported file into the job Caravana registers for that deployment
+  with its current settings, and a plan of it against the live app reports no change to what runs
+  while those settings are unchanged.
 - **SC-004**: No exported file, API answer or log line holds a secret value.
 - **SC-005**: Every refused redeploy names the reason (missing secret, missing image, failed rule,
   not healthy, no recorded definition) before anything changes.

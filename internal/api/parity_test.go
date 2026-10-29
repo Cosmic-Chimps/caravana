@@ -47,14 +47,17 @@ var consoleParity = map[string]parity{
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
 	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
 	// The rail's Platform panel (feature 025) is getHost; the needs-you list's disk row is listAttention.
-	"GET /apps": {ops: []string{"listProjects", "listApps", "listAttention", "getHost"}},
+	// The "Deploying now" card reads each rolling app's copies (listCopies) and the deployment it
+	// redeploys from and its progress (getDeployment).
+	"GET /apps": {ops: []string{"listProjects", "listApps", "listAttention", "getHost", "listCopies", "getDeployment"}},
 	// The Running tab reads listCopies with usage=true: CPU and memory per copy. The header names the
 	// app's project and environments (getProject, and getEnvironmentApp for where the app exists).
 	// It also lists the app's recent actions (feature 020.5).
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
 
 	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
-	"GET /apps/{id}/configure":   {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules"}},
+	// A failed deploy on an image also reads the registries, to say whether to add or fix credentials.
+	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries"}},
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
 	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
 	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
@@ -66,7 +69,7 @@ var consoleParity = map[string]parity{
 	"GET /parts/apps":             {ops: []string{"listProjects", "listApps"}},
 	"GET /parts/activity":         {ops: []string{"listRecentDeployments"}},
 	"GET /parts/attention":        {ops: []string{"listAttention"}},
-	"GET /parts/deploying":        {ops: []string{"listApps", "listCopies"}},
+	"GET /parts/deploying":        {ops: []string{"listApps", "listCopies", "getDeployment"}},
 	"GET /parts/apps/{id}/header": {ops: []string{"getApp", "getProject", "getEnvironmentApp"}},
 	// listCopies with usage=true, as the Running tab's copies region.
 	"GET /parts/apps/{id}/copies":      {ops: []string{"listCopies"}},
@@ -150,7 +153,7 @@ var consoleParity = map[string]parity{
 	"POST /projects/{project}/environments/{environment}/delete": {ops: []string{"deleteEnvironment"}},
 	// Promote and copy between environments. The page reads the preview, which is a POST in the API
 	// because it takes a body but changes nothing; the form posts the promotion.
-	"GET /apps/{id}/promote":                 {ops: []string{"getApp", "previewPromotion"}},
+	"GET /apps/{id}/promote":                 {ops: []string{"getApp", "previewPromotion", "getDeployment"}}, // getDeployment names the source's job version
 	"POST /apps/{id}/promote":                {ops: []string{"promoteApp"}},
 	"POST /apps/{id}/copy":                   {ops: []string{"copyApp"}},
 	"POST /settings/password":                {ops: []string{"changePassword"}},

@@ -238,6 +238,7 @@ func (s *server) repeatedFor(ctx context.Context, rec *store.DeploymentRecord) *
 	}
 	recs, err := s.svc.ListDeployments(ctx, rec.AppID, deployPageSize)
 	if err != nil {
+		s.log.Warn("can't read the history to say which version a rollback put back", "app", rec.AppID, "deployment", rec.Deployment.ID, "error", err)
 		return nil
 	}
 	for i, r := range recs {

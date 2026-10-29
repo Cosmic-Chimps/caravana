@@ -54,6 +54,30 @@ write_if_changed() {
   changed+=("$name")
 }
 
+# envq VALUE: VALUE as one word of an env file that the shell (". file") and systemd
+# (EnvironmentFile=) both read. Plain values (letters, digits and . _ / : @ , + = -) stay as they
+# are, so a file written by an older installer doesn't change. Anything else is single-quoted, so
+# nothing in it can run or expand. A single quote can't be quoted the same way in both readers, so
+# a value with one is refused.
+envq() {
+  if [[ "$1" =~ ^[A-Za-z0-9._/:@,+=-]*$ ]]; then
+    printf '%s' "$1"
+  elif [[ "$1" == *"'"* ]]; then
+    fail "can't write a value with a single quote into an env file"
+  else
+    printf "'%s'" "$1"
+  fi
+}
+
+# env_value FILE NAME: NAME's value from an env file written with envq, read as text. The file is
+# never sourced here, so a hand-edited line can't run anything.
+env_value() {
+  local v
+  v="$(sed -n "s/^$2=//p" "$1" 2>/dev/null | head -1)" || true
+  v="${v#\'}"
+  printf '%s' "${v%\'}"
+}
+
 nomad_cli() { NOMAD_ADDR=http://127.0.0.1:4646 NOMAD_TOKEN="$(cat "$STATE/bootstrap.token")" nomad "$@"; }
 
 # installed_version prints the version "current" points at, or nothing.
@@ -94,12 +118,11 @@ done
 
 # Options not given on this run come from the last one.
 if [ -f "$STATE/install.env" ]; then
-  # shellcheck source=/dev/null
-  . "$STATE/install.env"
-  email="${email:-${CARAVANA_ADMIN_EMAIL:-}}"
-  domain="${domain:-${CARAVANA_DOMAIN:-}}"
-  acme="${acme:-${CARAVANA_ACME:-}}"
-  acme_email="${acme_email:-${CARAVANA_ACME_EMAIL:-}}"
+  # Read as text, never sourced: an older installer wrote these values unquoted and unchecked.
+  email="${email:-$(env_value "$STATE/install.env" CARAVANA_ADMIN_EMAIL)}"
+  domain="${domain:-$(env_value "$STATE/install.env" CARAVANA_DOMAIN)}"
+  acme="${acme:-$(env_value "$STATE/install.env" CARAVANA_ACME)}"
+  acme_email="${acme_email:-$(env_value "$STATE/install.env" CARAVANA_ACME_EMAIL)}"
 fi
 acme="${acme:-production}"
 acme_email="${acme_email:-$email}"
@@ -128,6 +151,17 @@ preflight() {
     refuse "this install.sh has no version: use the one published with a release, or build one with tools/release.sh"
   case "$acme" in production | staging | none) ;; *) refuse "--acme is production, staging or none, not $acme" ;; esac
   [ -n "$email" ] || refuse "--email is required the first time: the admin signs in with it"
+  # The options end up in files the shell and systemd read, and in a Let's Encrypt account: refuse
+  # anything that isn't a plain address or host name, before anything changes.
+  local addr_re='^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
+  [[ "$email" =~ $addr_re ]] || refuse "--email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
+  [[ "$acme_email" =~ $addr_re ]] || refuse "--acme-email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
+  if [ -n "$domain" ]; then
+    local label='[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+    local domain_re="^${label}(\\.${label})+\$"
+    { [ "${#domain}" -le 253 ] && [[ "$domain" =~ $domain_re ]]; } ||
+      refuse "--domain is not a host name (labels of letters, digits and dashes, no dash at either end, at least one dot, at most 253 characters)"
+  fi
 
   local installed
   installed="$(installed_version)"
@@ -406,7 +440,7 @@ configure_caravana() {
 
   # Caravana's Nomad token, limited to its policy, is created once and kept in its env file.
   local token resolver=letsencrypt docker_root
-  token="$(sed -n 's/^NOMAD_TOKEN=//p' "$ENV_FILE" 2>/dev/null || true)"
+  token="$(env_value "$ENV_FILE" NOMAD_TOKEN)"
   if [ -z "$token" ]; then
     token="$(nomad_cli acl token create -name caravana -policy caravana -t '{{.SecretID}}')"
   fi
@@ -423,16 +457,16 @@ configure_caravana() {
   service_changed=0
   write_if_changed "$ENV_FILE" 0600 caravana-env <<EOF && service_changed=1
 CARAVANA_LISTEN=127.0.0.1:7070
-CARAVANA_DATA_DIR=$DATA
-CARAVANA_CERT_RESOLVER=$resolver
+CARAVANA_DATA_DIR=$(envq "$DATA")
+CARAVANA_CERT_RESOLVER=$(envq "$resolver")
 CARAVANA_TRUSTED_PROXIES=127.0.0.1,::1
-CARAVANA_PUBLIC_URL=https://$domain
-CARAVANA_ACME=$acme
-CARAVANA_ACME_EMAIL=$acme_email
+CARAVANA_PUBLIC_URL=$(envq "https://$domain")
+CARAVANA_ACME=$(envq "$acme")
+CARAVANA_ACME_EMAIL=$(envq "$acme_email")
 CARAVANA_EDGE_ADDRESS=127.0.0.1:443
-CARAVANA_DOCKER_ROOT=$docker_root
+CARAVANA_DOCKER_ROOT=$(envq "$docker_root")
 NOMAD_ADDR=http://127.0.0.1:4646
-NOMAD_TOKEN=$token
+NOMAD_TOKEN=$(envq "$token")
 EOF
   chown caravana:caravana "$ENV_FILE"
   write_if_changed /etc/systemd/system/caravana.service 0644 caravana-unit <"$OPT/$CARAVANA_VERSION/caravana.service" && service_changed=1
@@ -523,10 +557,10 @@ ensure_admin() {
 
 record_options() {
   write_if_changed "$STATE/install.env" 0600 options <<EOF || true
-CARAVANA_ADMIN_EMAIL=$email
-CARAVANA_DOMAIN=$domain
-CARAVANA_ACME=$acme
-CARAVANA_ACME_EMAIL=$acme_email
+CARAVANA_ADMIN_EMAIL=$(envq "$email")
+CARAVANA_DOMAIN=$(envq "$domain")
+CARAVANA_ACME=$(envq "$acme")
+CARAVANA_ACME_EMAIL=$(envq "$acme_email")
 EOF
 }
 

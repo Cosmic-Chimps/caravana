@@ -325,7 +325,7 @@ func TestActionsNeedTheFlag(t *testing.T) {
 func TestAnnotations(t *testing.T) {
 	f := newFakeAPI(t)
 	cs := f.session(t, true, nil, fastTuning, nil)
-	destructive := []string{"stop_app", "restart_app", "back_up_now"}
+	destructive := []string{"deploy_image", "promote_app", "redeploy_version", "stop_app", "restart_app", "back_up_now"}
 
 	for tool, err := range cs.Tools(t.Context(), nil) {
 		if err != nil {

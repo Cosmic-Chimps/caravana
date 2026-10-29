@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -211,37 +212,39 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 	var f settingsFacts
 	var err error
 	if f.Tokens, err = s.auth.ListAPITokens(ctx); err != nil {
-		return f, err
+		return f, fmt.Errorf("list API tokens: %w", err)
 	}
 	if s.svc == nil {
 		return f, nil
 	}
 	if f.Registries, err = s.svc.Registries(ctx); err != nil {
-		return f, err
+		return f, fmt.Errorf("list registries: %w", err)
 	}
 	if f.Channels, err = s.svc.NotificationChannels(ctx); err != nil {
-		return f, err
+		return f, fmt.Errorf("list notification channels: %w", err)
 	}
 	f.Deliveries = map[string][]store.Delivery{}
 	for _, c := range f.Channels {
 		if f.Deliveries[c.ID], err = s.svc.NotificationDeliveries(ctx, c.ID); err != nil {
-			return f, err
+			return f, fmt.Errorf("list deliveries of channel %q: %w", c.ID, err)
 		}
 	}
 	if f.Certs, err = s.svc.Certificates(ctx); err != nil {
-		return f, err
+		return f, fmt.Errorf("list certificates: %w", err)
 	}
 	switch d, err := s.svc.GetBackupDestination(ctx); {
 	case err == nil:
 		f.Dest = &d
 	case !errors.Is(err, store.ErrNotFound):
-		return f, err
+		return f, fmt.Errorf("read the backup destination: %w", err)
 	}
 	if f.LastBackup, f.FailingBackup, err = s.svc.BackupOutcome(ctx); err != nil {
-		return f, err
+		return f, fmt.Errorf("read the last backup outcome: %w", err)
 	}
-	f.Apps, err = s.svc.StoredApps(ctx)
-	return f, err
+	if f.Apps, err = s.svc.StoredApps(ctx); err != nil {
+		return f, fmt.Errorf("list apps: %w", err)
+	}
+	return f, nil
 }
 
 // renderSettings fills in what every Settings response shows (who, the nav with

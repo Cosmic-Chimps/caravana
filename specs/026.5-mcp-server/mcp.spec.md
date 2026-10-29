@@ -80,7 +80,7 @@ deployment, see it healthy; promote it to another environment; restart it.
 
 A deploy token (one app of one project, feature 020) given to `caravana mcp` limits the agent to
 that app, exactly as it limits CI. Caravana refuses everything else, and the agent is told why.
-Nothing the server sends to the agent holds a secret value, a token or a command's output.
+The server never sends the agent a secret value or a token, and it offers no tool that returns a command's output. Logs reach the model as they came, labelled as data.
 
 **Acceptance Scenarios**:
 

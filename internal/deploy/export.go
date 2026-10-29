@@ -36,6 +36,8 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	var b strings.Builder
 	fmt.Fprintf(&b, "Nomad job for app %q, exported by Caravana.\n", a.ID)
 	fmt.Fprintf(&b, "Deployment %s, deployed %s.\n", dep.ID, deployed.UTC().Format(time.RFC3339))
+	b.WriteString("Rendered with this Caravana's current settings (entrypoint, certificate resolver, default memory and CPU,\n")
+	b.WriteString("helper images), so it can differ from the job that ran if those settings changed since.\n")
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 

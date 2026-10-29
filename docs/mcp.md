@@ -62,12 +62,16 @@ loopback addresses, for a Caravana running on your machine.
 
 ## Reading, and acting
 
-By default the agent can only read. It can see:
+By default the agent can only read: this server offers no action tools unless you start it with
+`--allow-actions`. That limit is enforced by the server, not by the token. An agent that also has
+a shell runs as the same user, can read the token file and can call the API directly. What
+bounds such an agent is the token itself, so give it a deploy token scoped to one app (it can
+still deploy that app). It can see:
 - projects and environments, and apps with their status and definition (never a secret's
   value);
 - deployments, with their warnings, where they came from and why they failed, and it can wait
   for one to end;
-- the copies, with their CPU and memory, and an app's recent output;
+- the copies, with their CPU and memory, and an app's recent output as it came;
 - volumes, backups and recent actions;
 - the needs-you list, a promotion preview, the exported jobspec and the kept Compose file.
 
@@ -92,8 +96,10 @@ Do those in the console.
 ## Good to know
 
 - An app's output is whatever the app prints. The agent reads it as data, but anyone who can
-  make your app log a line can put words in front of the agent. Keep actions off unless you
-  need them.
+  make your app log a line can put words in front of the agent. The same goes for names and
+  messages that come from deploys (branch names, commit messages and actors from CI origins) and
+  for env values in app definitions: someone else may control that text. Keep actions off unless
+  you need them.
 - Each tool call is one API call, and the answer is the API's own JSON ([api/openapi.yaml](../api/openapi.yaml)).
 - The server writes one line per tool call to standard error: the tool, ok or the error code,
   and how long it took. It never logs the token or an answer.

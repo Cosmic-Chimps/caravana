@@ -9,6 +9,33 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- **API 0.28.0**: `Deployment.registeredAt` (the time Nomad accepted the job, `null` until it did),
+  the time the console splits a deploy's stages on. `AppStatus.state` now says what each of its
+  six states means.
+
+### Changed
+- **MCP**: `deploy_image`, `promote_app` and `redeploy_version` are marked destructive, so agent
+  clients ask before running them. `docs/mcp.md` now says what bounds an agent: the server offers
+  no action tools without `--allow-actions`, but the token is the real limit, since an agent with
+  a shell can read the token file. Use a deploy token scoped to one app. It also warns that deploy
+  names and messages and env values are text someone else may control.
+- An upgrade that rolls back restores Caravana's binary and data only. Nomad's policies, Caravana's
+  settings and its systemd unit stay at the new version, which the older version tolerates
+  (policies only ever add capabilities).
+
+### Fixed
+- **The installer validates and quotes its options.** `--email` and `--acme-email` must be plain
+  addresses and `--domain` a host name, or it refuses, naming the option, before changing anything.
+  The values it writes into `install.env` and `caravana.env` are quoted, and the installer reads
+  `install.env` as text instead of sourcing it.
+- An exported jobspec says in its header that it is rendered with this Caravana's current settings
+  (entrypoint, certificate resolver, default memory and CPU, helper images), so an old
+  deployment's export can differ from the job that ran if those settings changed since.
+- Two console reads that failed without a word (the Deploying now card's redeploy source, and the
+  history behind "(v0 again)") now log a warning. The "form too large" hint says to shorten the
+  longest field.
+
 ## 0.14.0 - 2026-10-27
 
 ### Fixed
@@ -273,7 +300,7 @@ earlier day and is complete after 7.
   older version still runs, and the Apps list sorts it first. Its summary and the needs-you list
   say the same sentence, "v3 failed its health checks. v2 keeps running." (or "No copies are
   running."). "0 of 1 copies healthy" now says so when copies exist and none is healthy.
-- Configure is a short form: per service, Copies & size (copies, CPU, memory, ceiling) and Shipping
+- Configure is a short form: per service, Copies & size (copies, CPU, memory, ceiling) and Deploy
   (image, port and the health check), a read-only "Also set" for what the form leaves alone, then
   Domains and Secrets panels that link to their pages. The environment, the domains and the secrets
   left the form, and saving it keeps them as they are. The registry notice shows when an image

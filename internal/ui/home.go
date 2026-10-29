@@ -195,6 +195,9 @@ func (s *server) deployingCardOf(ctx context.Context, sum service.AppSummary, pl
 	if rec.Source != "" && rec.SourceApp == "" {
 		if src, err := s.svc.GetDeployment(ctx, sum.App.ID, rec.Source); err == nil {
 			again = versionLabel(src.JobVersion)
+		} else {
+			s.log.Warn("can't read the deployment this one redeploys, for the Deploying now card",
+				"app", sum.App.ID, "deployment", rec.Source, "error", err)
 		}
 	}
 	card.Change = changeLine(rec, again)
