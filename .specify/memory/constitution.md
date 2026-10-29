@@ -1,5 +1,25 @@
 <!--
 Sync Impact Report
+- Version change: 1.0.1 → 1.1.0 (2026-10-29, MINOR: II is materially expanded; V and VI gain
+  clarifications; from the QA review, issues #10, #11 and #21)
+- Modified principles:
+  II. One Model, Many Inputs (the one-task-per-group rule stays for the user's model; Caravana may
+  add helper tasks and helper jobs, each named in a feature's plan: `names` sidecar (009),
+  `caravana-volumes` task (016), backup and restore jobs (010), schedule run jobs (022))
+  V. API-First (a 202 deploy answer before Nomad reports the version returns the deployment ID and
+  its `Location`; the version appears on the record, 003 research R6)
+  VI. Nomad-Native, No Lock-In (Caravana's own routes, the console domain and the webhook-only
+  host, are static routes in Traefik's configuration, since Caravana runs under systemd)
+- Added sections: none
+- Removed sections: none
+- Templates:
+  ✅ .specify/templates/plan-template.md, spec-template.md, tasks-template.md: no change; the
+  plan's Constitution Check reads this file
+  ✅ CLAUDE.md: no change; it links here
+  ✅ specs/003, 012, 016 and 022 plans: point at the amended principles (next commit)
+- Deferred TODOs: none
+
+Earlier report (1.0.1):
 - Version change: 1.0.0 → 1.0.1 (2026-10-24, PATCH: a clarification of VI's router-name rule for
   feature 023 Domains, decided by the maintainer)
 - Modified principles: VI. Nomad-Native, No Lock-In (the router `<app>-<service>` serves a
@@ -56,7 +76,12 @@ Rationale: the target user runs budget VMs; every extra moving part is a cost th
 
 - Every input (image, compose, git) MUST normalize into `app.App`. Nothing after normalization
   reads `Source`.
-- One `App` is one Nomad job; one `Service` is one task group with one task.
+- One `App` is one Nomad job; one `Service` is one task group with one task. That is the rule for
+  the user's model. Caravana may add helper tasks to a service's group and helper jobs beside the
+  app's job, each named in the feature's plan. Today these are the `names` prestart sidecar (009),
+  the `caravana-volumes` prestart task (016), the backup and restore jobs
+  `<app>_<service>_backup` and `<app>_<service>_restore` (010) and the schedule run jobs
+  `<app>_run-<id>` (022).
 - `nomadjob.Translate` MUST stay a pure function (no I/O, same input gives the same job) and is
   covered by golden-file tests.
 
@@ -96,7 +121,9 @@ Rationale: a deploy that "worked" but lost a volume is worse than one that faile
 - JSON bodies MUST be accepted with or without media-type parameters (`charset=UTF-8`).
 - Errors are JSON `{"error": {"code", "message", "field"}}` with the correct 4xx/5xx status.
   A bad request never gets a redirect.
-- Deploy responses return the deployment ID, the Nomad job version and warnings.
+- Deploy responses return the deployment ID, the Nomad job version and warnings. A deploy answered
+  202 before Nomad reports the version returns the deployment ID and its `Location`, and the
+  version appears on the deployment record (003 research R6).
 
 Rationale: the API has real clients from day one; the UI is one of them, not a special case.
 
@@ -107,7 +134,9 @@ Rationale: the API has real clients from day one; the UI is one of them, not a s
 - No Kubernetes, Docker Swarm or Consul code paths. Service discovery uses Nomad's native
   provider (`Provider: "nomad"`).
 - Networking is bridge mode with dynamic host ports (container ports via `To`). Traefik routing
-  is configured only through service tags. The router `<app>-<service>` serves a service's
+  is configured only through service tags, except Caravana's own routes (the console domain and the
+  webhook-only host), which are static routes in Traefik's configuration because Caravana runs
+  under systemd, not as a Nomad service. The router `<app>-<service>` serves a service's
   domains; a domain with per-domain options (a www redirect, Team only, a path) gets its own
   router `<app>-<service>-<8-hex hash of the host>` on the same service, so a middleware can
   attach to that one domain. Domains without options stay on the service's router.
@@ -176,4 +205,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.0.1 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-24
+**Version**: 1.1.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-29
