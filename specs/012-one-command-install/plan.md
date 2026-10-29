@@ -55,7 +55,7 @@ the lab.
 | III. Safe, Reversible Deploys | PASS. Apps keep running through install reruns, upgrades and uninstall. An upgrade that fails health puts the previous binary and data back. |
 | IV. Fail Loudly | PASS. Preflight refuses before any change and names the failing check. Downloads are checksum-verified. An older release is refused. |
 | V. API-First | PASS. `GET /v1/health` gains `version` in `api/openapi.yaml` (0.9.1) in the same change. |
-| VI. Nomad-Native, No Lock-In | PASS. Uninstalling Caravana leaves workloads, Nomad and Traefik running, as the principle requires. |
+| VI. Nomad-Native, No Lock-In | PASS. Uninstalling Caravana leaves workloads, Nomad and Traefik running, as the principle requires. The console route (console domain to `127.0.0.1:7070`) is a static route in Traefik's configuration: it is Caravana's own route under VI as amended in 1.1.0, since Caravana runs under systemd, not as a Nomad service, and so has no service tags. |
 | VII. Secure by Default | PASS. ACLs on from the first install. Caravana gets a policy-scoped token, and the bootstrap token stays root-only. Only 22, 80 and 443 are public. The console is HTTPS-only, with `__Host-` Secure cookies and per-client sign-in limits through trusted proxies, and it goes public only after the admin exists. |
 | VIII. Plain, Tested Go | PASS. The Go change is small and tested. Shell is shellchecked in CI and exercised end to end by `install-test.sh` and `host.sh prove`. |
 

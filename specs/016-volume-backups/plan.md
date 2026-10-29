@@ -76,7 +76,7 @@ timeout).
 | Principle | Assessment |
 | --- | --- |
 | I. Small by Default | PASS. No new runtime dependency or service. `cronexpr` was already in the module graph; it becomes direct, justified in the commit. The work runs in the app's own copy, with nothing extra running between runs. |
-| II. One Model, Many Inputs | PASS. `volume` is a value of `Backup.Engine`, from the API or the Compose overlay alike. The new task comes from `nomadjob.Translate`, which stays pure and golden-tested. Nothing reads `Source`. |
+| II. One Model, Many Inputs | PASS. `volume` is a value of `Backup.Engine`, from the API or the Compose overlay alike. The new task comes from `nomadjob.Translate`, which stays pure and golden-tested. It is a helper task under II as amended in 1.1.0: the `caravana-volumes` prestart task, added to the group of each service with volumes, beside the service's one task. Nothing reads `Source`. |
 | III. Safe, Reversible Deploys | PASS. Backups add no job version and touch no deploy. Deploys wait for a run (one lock). A restore keeps the old files until the new ones are in place. Auto-revert is unchanged. |
 | IV. Fail Loudly | PASS. Every refusal names `services[i].backup.engine`: no volume, a shared volume, the reserved task name. A failed run is recorded with its reason and goes on the needs-you list. A missed scheduled slot is logged. |
 | V. API-First | PASS. `listVolumes`, the new fields and the `no_running_copy` code are in `api/openapi.yaml` 0.13.0 in the same commits. The console reads only through `service`, and the parity table gains `listVolumes`. |

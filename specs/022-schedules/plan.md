@@ -35,7 +35,7 @@ gate step `schedules` (R8).
 | Principle | Assessment |
 | --- | --- |
 | I. Small | PASS. No module, no runtime service. One static script of our own (`localtime.js`), vendored like htmx. |
-| II. One Model | PASS. `app.App` and `Translate` untouched. A run's job is a second pure translator, `nomadjob.ScheduleRunJob`, golden-tested, built from the stored app and deployment. |
+| II. One Model | PASS. `app.App` and `Translate` untouched. A run's job is a second pure translator, `nomadjob.ScheduleRunJob`, golden-tested, built from the stored app and deployment. It is a helper job under II as amended in 1.1.0: the one-off batch job `<app>_run-<id>`, beside the app's job. |
 | III. Safe Deploys | PASS. A run uses the newest healthy deployment's pinned digest, never a tag; it is not a deployment and records none. A rollout in progress defers the slot rather than mixing versions (R1). |
 | IV. Fail Loudly | PASS. A service with volumes refuses a schedule naming `service`; an unreadable or never-firing cron line names `cron`; could-not-start, lost and the limit are recorded in words, never dropped; a skipped slot is a row. |
 | V. API-First | PASS. Twelve operations in openapi 0.24.0, the console on the same `service` methods, parity entries for the new parts routes. Deploy tokens stay denied (R7). |

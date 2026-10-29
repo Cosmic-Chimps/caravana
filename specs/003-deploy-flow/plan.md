@@ -65,7 +65,7 @@ fails a running rollout's record
 | Technology Constraints | `net/http` patterns, `encoding/json/v2` at the API boundary (R5), SQLite unchanged, Nomad 2.x, Traefik via tags only. | ✅ |
 | Development Workflow | Phase 1 scope only (webhook, HTTPS on a VM, UI, secrets are out). Implementations are ours (no PaaS code copied). | ✅ |
 
-No violations, so Complexity Tracking is empty.
+No violations, so Complexity Tracking is empty. The 202 answer without `jobVersion` (R6, R9) is recorded in the V row and in research R6; Principle V as amended in 1.1.0 says it: the answer carries the deployment ID and its `Location`, and the version appears on the record.
 
 **Post-design re-check**: still passes. Three design points worth knowing:
 - **Spec refinements made during planning**: FR-013a now defines "Caravana's job" as one
