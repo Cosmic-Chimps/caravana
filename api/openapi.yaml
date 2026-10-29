@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.27.0
+  version: 0.28.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -936,7 +936,10 @@ paths:
         (1000). `idle` is 15 minutes without input and `limit` is 60 minutes open; `error`
         covers Caravana or Nomad failing, a missing shell (`no shell found in this image`) and
         credentials that stopped being valid. The server pings every 30 seconds; no pong and no
-        input for 60 seconds ends the session. A browser that closes the connection ends it.
+        input for 60 seconds ends the session. A client that closes the connection, or whose
+        connection is lost (no pong included), ends the session without a frame, since nobody
+        is left to read it; Caravana records it as "connection lost" in `listAppActions`. The
+        reason `gone` is never sent.
 
         At most five terminals are open at once, 429 `too_many_terminals` after that. Nothing
         typed or printed is ever stored, logged or put in a notice: what Caravana keeps, and
@@ -5232,7 +5235,21 @@ components:
           type: string
           enum: [rolling_out, healthy, degraded, not_running, unknown, stopped]
           description: |
-            `stopped`: the owner stopped the app (`stopApp`); it wins over every other state.
+            Derived on every read, in this order. A copy is healthy when Caravana's checks pass
+            and Nomad hasn't told it to stop. The live version is the newest job version with a
+            healthy copy, and only healthy copies of that version are counted
+            (`healthyCopies`), so an old version's healthy copy never hides a broken new one.
+
+            - `stopped`: the owner stopped the app (`stopApp`). It wins over every other state.
+            - `rolling_out`: the newest deployment is `pending` or `running`.
+            - `unknown`: Nomad couldn't be read, so the copies aren't known. The counts are zero.
+            - `healthy`: at least one copy is wanted, `healthyCopies` reaches `wantedCopies`, and
+              every service has its own wanted number of healthy copies (a surplus in one
+              service doesn't make up for a missing copy in another).
+            - `degraded`: at least one copy is healthy, but not all that are wanted: some
+              service is short.
+            - `not_running`: no copy is healthy. This is also the state of an app that wants no
+              copies (one with no services yet).
         wantedCopies: {type: integer, minimum: 0}
         healthyCopies: {type: integer, minimum: 0}
         liveVersion:
@@ -6278,6 +6295,15 @@ components:
             made (`deployApp`, `deployCompose`, `promoteApp`, `redeployDeployment`). Absent for
             a deploy made from the console, by the webhook, and for deployments recorded before
             version 0.23.0.
+        registeredAt:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When Nomad accepted the job. `null` until it did: while the deployment is
+            `pending`, when it failed before the job was registered (a missing image, a refused
+            check), and for deployments recorded before Caravana kept it. The time between
+            `createdAt` and `registeredAt` is Caravana's own work (resolving digests, secrets,
+            volumes); after it, the rollout, which ends at `updatedAt`.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
         progress:

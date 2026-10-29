@@ -54,9 +54,12 @@ type deploymentJSON struct {
 	Origin *originJSON `json:"origin,omitempty"`
 	// TokenName is the name of the API token that made the deploy; absent for
 	// the console, the webhook and deployments recorded before 0.23.0.
-	TokenName string    `json:"tokenName,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	TokenName string `json:"tokenName,omitempty"`
+	// RegisteredAt is when Nomad accepted the job; null until it did (and for
+	// deployments recorded before migration 0016, or that failed before it).
+	RegisteredAt *time.Time `json:"registeredAt"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 	// Progress is only set while the deployment runs, and only by the reads
 	// that look it up (getDeployment, and the newest running one in listDeployments).
 	Progress *progressJSON `json:"progress,omitempty"`
@@ -129,6 +132,7 @@ func toDeploymentJSON(rec store.DeploymentRecord) deploymentJSON {
 	d.ComposeKept = rec.Compose != nil
 	d.Origin = toOriginJSON(rec.Deployment.Origin)
 	d.TokenName = rec.Deployment.TokenName
+	d.RegisteredAt = rec.RegisteredAt
 	// Never null in the JSON: clients can always iterate them.
 	if d.Digests == nil {
 		d.Digests = map[string]string{}
