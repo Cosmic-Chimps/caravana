@@ -88,6 +88,9 @@ func startLab(t *testing.T) labEnv {
 	// scoped token, as on the host; the test's own client keeps the lab's
 	// management token for its checks.
 	scoped := labCaravanaToken(t, nomad)
+	// Caravana runs on the Mac here, not on the lab VM: the host's OS files (apt's history, the reboot
+	// marker) come from a folder the console-ops steps write into (feature 027).
+	hostRoot := labHostRoot(t)
 	getenv := func(key string) string {
 		if key == "NOMAD_TOKEN" {
 			return scoped
@@ -95,6 +98,9 @@ func startLab(t *testing.T) labEnv {
 		if key == "CARAVANA_NOTIFY_RESOLVE_AFTER" {
 			// The console-notifications step waits for "resolved"; the default is 5 minutes.
 			return "10s"
+		}
+		if key == "CARAVANA_HOST_ROOT" {
+			return hostRoot
 		}
 		if key == "CARAVANA_EDGE_ADDRESS" {
 			// Traefik's HTTPS entrypoint in the lab is published on 8443, not 443 (feature 023).
@@ -197,6 +203,7 @@ func startLab(t *testing.T) labEnv {
 			},
 			ServerLog: stderr.String,
 			DataDir:   dataDir,
+			HostRoot:  hostRoot,
 			SetTraefikMetricsURL: func(u string) {
 				currentMu.Lock()
 				defer currentMu.Unlock()

@@ -153,10 +153,15 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   - The page's live part is `/parts/ops/servers/{name}` (the body, with the head swapped by id), not
     `/parts/ops/server`, which is page 1's server panel. Ids: `srv-head`, `srv-body`, `srv-copy-<copy id>`.
     Before the sampler's first reading of the node (no name to redirect to) `/ops/servers` is a 200 page that says so.
-- [ ] T020 [US2] [SC-002, SC-005, SC-007] `cmd/caravana/console_ops_test.go`: step `console-ops-server` (redirect, the
+- [X] T020 [US2] [SC-002, SC-005, SC-007] `cmd/caravana/console_ops_test.go`: step `console-ops-server` (redirect, the
   head with no actions, the lab's real versions and kernel, Running here with every copy, Recent with an
   unattended-upgrades run; in the lab Caravana runs on the Mac, not on the VM, so the apt history comes from the
   `hostos` fixture through `SetHostRoot`; the page renders in under 1 s); run it and record the result here.
+  - Written, not yet run in the lab (`cmd/caravana/console_ops_server_test.go`, listed after `console-ops-overview`).
+    The lab's in-process Caravana gets `CARAVANA_HOST_ROOT` (an empty folder from `labHostRoot`, `gateTarget.HostRoot`);
+    the step writes two apt runs dated a few minutes ago and the reboot marker into it (the sampler reads the folder on
+    every tick) and removes them on its way out, so a fixture with fixed dates can't fall out of the newest eight entries.
+    On a target with no `HostRoot` the apt and reboot checks are skipped.
 - [ ] T021 [US2] Page 2 review cycle as T015, against `pf-node.png`; record "Approved" in `contracts/page2-server.md`.
 
 **Checkpoint**: pages 1 and 2 work and are approved.

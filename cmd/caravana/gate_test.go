@@ -65,6 +65,10 @@ type gateTarget struct {
 	// numbers (service.SetTraefikMetricsURL); only the lab sets it. The
 	// console-monitoring step points it at a closed port and back.
 	SetTraefikMetricsURL func(url string)
+	// HostRoot is the directory the in-process Caravana reads as the host's root (apt's history, the
+	// reboot marker; CARAVANA_HOST_ROOT), which the console-ops steps write fixtures into; only the
+	// lab sets it. Empty means Caravana reads the machine it runs on.
+	HostRoot string
 }
 
 // publicTarget is what only a real host has.
