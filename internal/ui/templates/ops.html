@@ -13,33 +13,38 @@
 <p class="cv-opsstats">{{range .Stats}}<span class="cv-opsstat">{{.}}</span>{{end}}</p>
 {{end}}
 
-{{/* ops-main: the server and the apps. Takes an opsMain. */}}
-{{define "ops-main"}}
+{{/* ops-server-region: the Server section, a live region of its own (#ops-server, swapped on the notices
+     that change the host and its copies). Takes an opsServerRegion. */}}
+{{define "ops-server-region"}}
 {{if .NomadDown}}
 <div role="status" class="cv-notice">
   <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
   <span>Nomad can't be reached right now, so the server's state isn't shown.</span>
 </div>
 {{end}}
-<section class="cv-opsblock" aria-labelledby="ops-server-title">
-  <div class="cv-mnsec">
-    <h2 class="cv-label" id="ops-server-title">Server</h2>
-    {{with .Server.Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
-  </div>
-  {{template "ops-node" .Server.Node}}
-</section>
-<section class="cv-opsblock" aria-labelledby="ops-apps-title">
-  <div class="cv-mnsec">
-    <h2 class="cv-label" id="ops-apps-title">Apps</h2>
-    <span class="cv-mnsec-meta">{{.Apps.Meta}}</span>
-  </div>
-  {{template "ops-apps" .Apps}}
-</section>
+<div class="cv-mnsec">
+  <h2 class="cv-label" id="ops-server-title">Server</h2>
+  {{with .Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
+</div>
+{{template "ops-node" .Node}}
 {{end}}
 
-{{/* ops-main-oob: what /parts/ops/overview answers: the region, then the headline and the Needs-you
-     count, which sit outside it and are swapped by id. */}}
-{{define "ops-main-oob"}}{{template "ops-main" .}}
+{{/* ops-apps-region: the Apps section, a live region of its own (#ops-apps). Takes an opsApps. */}}
+{{define "ops-apps-region"}}
+<div class="cv-mnsec">
+  <h2 class="cv-label" id="ops-apps-title">Apps</h2>
+  <span class="cv-mnsec-meta">{{.Meta}}</span>
+</div>
+{{template "ops-apps" .}}
+{{end}}
+
+{{/* ops-server-part and ops-apps-part: what /parts/ops/server and /parts/ops/apps answer: the region
+     (swapped into its own element), then the headline and, for the apps, the Needs-you count, which sit
+     outside it and are swapped by id. */}}
+{{define "ops-server-part"}}{{template "ops-server-region" .Server}}
+<div hx-swap-oob="innerHTML:#ops-head">{{template "ops-head" .Head}}</div>
+{{end}}
+{{define "ops-apps-part"}}{{template "ops-apps-region" .Apps}}
 <div hx-swap-oob="innerHTML:#ops-head">{{template "ops-head" .Head}}</div>
 <span hx-swap-oob="innerHTML:#ops-needs-meta">{{.NeedsMeta}}</span>
 {{end}}
@@ -64,7 +69,7 @@
   {{if .Meters}}<div class="cv-node-meters">{{range .Meters}}{{template "mon-meter" .}}{{end}}</div>{{end}}
   {{if .Chips}}
   <div class="cv-node-chips">
-    {{range .Chips}}<a href="{{.Href}}" class="cv-copychip cv-opschip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-copychip-name">{{.Name}}</span> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></a>
+    {{range .Chips}}<a href="{{.Href}}" id="{{.ID}}" class="cv-copychip cv-opschip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-copychip-name">{{.Name}}</span> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></a>
     {{end}}
     {{if .More}}<span class="cv-node-more">and {{.More}} more {{if eq .More 1}}copy{{else}}copies{{end}}</span>{{end}}
   </div>
@@ -94,19 +99,33 @@
     <span role="columnheader">Last change</span>
   </div>
   {{range .Rows}}
-  {{$warn := .Warn}}
   <div class="cv-opsrow" role="row">
-    <div role="cell" class="cv-opsname" title="{{.Where}} {{.Name}}">{{with .Where}}<span class="cv-opswhere">{{.}}</span> {{end}}<a href="{{.Href}}" class="cv-opsapp">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
+    <div role="cell" class="cv-opsname" title="{{.Where}} {{.Name}}">{{with .Where}}<span class="cv-opswhere">{{.}}</span> {{end}}<a href="{{.Href}}" id="{{.LinkID}}" class="cv-opsapp">{{.Name}}</a>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</div>
     <div role="cell" class="cv-opsstate">{{template "status-quiet" .Status}}</div>
-    <div role="cell" class="cv-opscopies" data-label="Copies">{{range .Marks}}<span class="cv-mark cv-opsmark cv-mark-{{.}}" aria-hidden="true"></span>{{else}}<span class="cv-data-muted">{{.NoMarks}}</span>{{end}}{{with .MarksWord}}<span class="sr-only">{{.}}</span>{{end}}</div>
-    <div role="cell" class="cv-opscpu" data-label="CPU 1h">{{with .Spark}}<svg class="cv-opsspark" viewBox="0 0 84 16" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title>{{range .Segments}}<polyline class="cv-opsspark-line{{if $warn}} cv-opsspark-warn{{end}}" points="{{.}}"/>{{end}}</svg>{{else}}<span class="cv-data-muted">—</span>{{end}}</div>
-    <div role="cell" class="cv-opsmem" data-label="Mem">{{with .Mem}}{{.}}{{else}}<span class="cv-data-muted">—</span>{{end}}</div>
-    <div role="cell" class="cv-opsreach" data-label="Reach" title="{{.Reach}}">{{with .Reach}}{{.}}{{else}}<span class="cv-data-muted">no address</span>{{end}}</div>
-    <div role="cell" class="cv-opschange" data-label="Last change">{{if .Change}}{{.Change}} · {{end}}{{if .ChangeT.Text}}<time{{with .ChangeT.ISO}} datetime="{{.}}"{{end}}{{with .ChangeT.Exact}} title="{{.}}"{{end}}>{{.ChangeT.Text}}</time>{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</div>
+    {{/* The five facts: side by side in the table's columns (the wrapper has no box), and when the table
+         folds each is a label over its value, in a grid of its own under the name and the state. Each
+         cell has two items, the label (from data-label, drawn only when folded) and one value element. */}}
+    <div role="presentation" class="cv-opsfacts">
+      <div role="cell" class="cv-opscell cv-opscopies" data-label="Copies"><span class="cv-opsval">{{range .Marks}}<span class="cv-mark cv-opsmark cv-mark-{{.}}" aria-hidden="true"></span>{{else}}<span class="cv-data-muted">{{.NoMarks}}</span>{{end}}{{with .MarksWord}}<span class="sr-only">{{.}}</span>{{end}}</span></div>
+      <div role="cell" class="cv-opscell cv-opscpu" data-label="CPU 1h"><span class="cv-opsval">{{template "ops-cpu" .CPU}}</span></div>
+      <div role="cell" class="cv-opscell cv-opsmem" data-label="Mem"><span class="cv-opsval">{{with .Mem}}{{.}}{{else}}<span class="cv-data-muted">—</span>{{end}}</span></div>
+      <div role="cell" class="cv-opscell cv-opsreach" data-label="Reach"><span class="cv-opsval" title="{{.Reach}}">{{with .Reach}}{{.}}{{else}}<span class="cv-data-muted">no address</span>{{end}}</span></div>
+      <div role="cell" class="cv-opscell cv-opschange" data-label="Last change"><span class="cv-opsval">{{if .Change}}{{.Change}} · {{end}}{{if .ChangeT.Text}}<time{{with .ChangeT.ISO}} datetime="{{.}}"{{end}}{{with .ChangeT.Exact}} title="{{.}}"{{end}}>{{.ChangeT.Text}}</time>{{else}}<span class="cv-data-muted">never deployed</span>{{end}}</span></div>
+    </div>
   </div>
   {{end}}
 </div>
 {{end}}
+{{end}}
+
+{{/* ops-cpu: the CPU cell's value. A running app has its line (fg-2); when 025's rules call it unusual
+     the line is warn and a warn diamond leads it, both one link to the app on /monitoring whose name and
+     title are 025's sentence. A stopped app's line is what it used while it ran, with "—" beside it and
+     the title that says so. Takes an opsCPU. */}}
+{{define "ops-cpu"}}
+{{if .Href}}<a href="{{.Href}}" id="{{.ID}}" class="cv-opsunusual" aria-label="{{.Issue}}" title="{{.Issue}}"><span class="cv-mark cv-mark-warning cv-opsflag" aria-hidden="true"></span>{{with .Spark}}<svg class="cv-opsspark" viewBox="0 0 84 16" preserveAspectRatio="none" aria-hidden="true" focusable="false">{{range .Segments}}<polyline class="cv-opsspark-line cv-opsspark-warn" points="{{.}}"/>{{end}}</svg>{{else}}<span class="cv-data-muted">—</span>{{end}}</a>
+{{else if .Spark}}<svg class="cv-opsspark" viewBox="0 0 84 16" preserveAspectRatio="none" role="img" aria-label="{{.Spark.Title}}"><title>{{.Spark.Title}}</title>{{range .Spark.Segments}}<polyline class="cv-opsspark-line" points="{{.}}"/>{{end}}</svg>{{if .Stopped}}<span class="cv-data-muted" title="{{.Spark.Title}}">—</span>{{end}}
+{{else}}<span class="cv-data-muted">—</span>{{end}}
 {{end}}
 
 {{/* ops-activity-region: the last entries of the feed, a row each, keyed by data-ev so a refresh can tell
@@ -125,23 +144,26 @@
 {{end}}
 
 {{define "content"}}
-<header class="cv-pagehead cv-opshead-slot" id="ops-head">{{template "ops-head" .Main.Head}}</header>
-{{/* The four sections are the grid's items, in the order they read when the page is one column: Needs
-     you, Server and Apps (one region, swapped together), Live activity. Side by side the grid areas
-     put Needs you and Live activity in the right column beside the main one. */}}
+<header class="cv-pagehead cv-opshead-slot" id="ops-head">{{template "ops-head" .Head}}</header>
+{{/* The sections are the grid's items, in the order they read when the page is one column: Needs you,
+     Server and Apps (each a live region of its own, in one column), Live activity. Side by side the grid
+     areas put Needs you and Live activity in the right column beside the main one. */}}
 <div class="cv-ops">
   <section class="cv-opsblock cv-opsneeds" aria-labelledby="ops-needs-title">
     <div class="cv-mnsec">
       <h2 class="cv-label" id="ops-needs-title">Needs you</h2>
-      <span class="cv-mnsec-meta" id="ops-needs-meta">{{.Main.NeedsMeta}}</span>
+      <span class="cv-mnsec-meta" id="ops-needs-meta">{{.NeedsMeta}}</span>
     </div>
     <div hx-get="/parts/attention" hx-trigger="sse:attention, sse:sync" hx-swap="innerHTML">{{template "attention-region" .Needs}}</div>
   </section>
-  <div class="cv-opsmain" hx-get="/parts/ops/overview" hx-trigger="sse:metrics, sse:apps, sse:activity, sse:actions, sse:schedules, sse:attention, sse:host, sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML">{{template "ops-main" .Main}}</div>
+  <div class="cv-opsmain">
+    <section class="cv-opsblock" id="ops-server" aria-labelledby="ops-server-title" hx-get="/parts/ops/server" hx-trigger="sse:metrics, sse:host, sse:copies, sse:deployments, sse:apps, sse:actions, sse:attention, sse:sync" hx-swap="innerHTML">{{template "ops-server-region" .Server}}</section>
+    <section class="cv-opsblock" id="ops-apps" aria-labelledby="ops-apps-title" hx-get="/parts/ops/apps" hx-trigger="sse:metrics, sse:apps, sse:deployments, sse:copies, sse:actions, sse:attention, sse:sync" hx-swap="innerHTML">{{template "ops-apps-region" .Apps}}</section>
+  </div>
   <section class="cv-opsblock cv-opsactivity" aria-labelledby="ops-activity-title">
     <div class="cv-mnsec">
       <h2 class="cv-label" id="ops-activity-title">Live activity</h2>
-      <span class="cv-mnsec-link">from caravana's records</span>
+      <span class="cv-mnsec-link">from caravana's records · times in UTC</span>
     </div>
     <div class="cv-panel cv-evpanel" id="ops-activity" hx-get="/parts/ops/activity" hx-trigger="sse:activity, sse:actions, sse:schedules, sse:attention, sse:host, sse:deployments, sse:apps, sse:sync" hx-swap="innerHTML">{{template "ops-activity-region" .Activity}}</div>
   </section>

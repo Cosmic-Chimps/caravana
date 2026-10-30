@@ -96,8 +96,9 @@ func (s *Service) Activity(ctx context.Context, q ActivityQuery) ([]ActivityEntr
 		return nil, fmt.Errorf("read activity: %w", err)
 	}
 	var entries []ActivityEntry
+	display := s.projectDisplay(ctx)
 	for _, r := range rows {
-		if e, ok := s.activityEntry(ctx, r); ok {
+		if e, ok := s.activityEntry(ctx, r, display); ok {
 			entries = append(entries, e)
 		}
 	}
@@ -122,14 +123,15 @@ func (s *Service) Activity(ctx context.Context, q ActivityQuery) ([]ActivityEntr
 }
 
 // activityEntry turns a stored row into an entry. ok is false for a row of a
-// source this file doesn't know.
-func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow) (ActivityEntry, bool) {
+// source this file doesn't know. display says a project's name for people.
+func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow, display func(string) string) (ActivityEntry, bool) {
 	e := ActivityEntry{
 		ID:   r.Source + "." + r.RowID + "." + r.Phase,
 		Time: r.At.UTC(), AppID: r.AppID, Place: r.Place,
 		AppName: cmp.Or(r.Place.Name, r.AppID),
 	}
-	name := mono(e.AppName)
+	// The app as the needs-you list says it: its name at home, else "Shop › staging › web".
+	name := labelParts(display, r.Place, e.AppName, "")
 	switch r.Source {
 	case store.ActivityDeployment:
 		e.Kind = ActivityDeploy
@@ -162,7 +164,7 @@ func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow) (Activ
 // deployWords says a deployment's start or end. The who-words are the console's
 // page 4 words, read from the deployment's own record (a deleted record falls
 // back to how it was started).
-func (s *Service) deployWords(ctx context.Context, r store.ActivityRow, name TextPart) (status string, p []TextPart) {
+func (s *Service) deployWords(ctx context.Context, r store.ActivityRow, name []TextPart) (status string, p []TextPart) {
 	var version []TextPart
 	if r.Version != nil {
 		version = []TextPart{txt(" "), mono("v" + strconv.FormatInt(*r.Version, 10))}
@@ -210,7 +212,7 @@ func triggerLead(trigger string) string {
 
 // actionWords says an app action. A command names its program only: the
 // arguments and the output were never recorded.
-func actionWords(r store.ActivityRow, name TextPart) (kind, status string, p []TextPart) {
+func actionWords(r store.ActivityRow, name []TextPart) (kind, status string, p []TextPart) {
 	how := triggerLead(r.Trigger)
 	state := func(done, doing, failed string) (string, []TextPart) {
 		switch r.Status {
@@ -258,7 +260,7 @@ func actionWords(r store.ActivityRow, name TextPart) (kind, status string, p []T
 }
 
 // runWords says the outcome of a backup or restore: "<app>'s backup of <service> finished."
-func runWords(status string, name TextPart, link, service string) (string, []TextPart) {
+func runWords(status string, name []TextPart, link, service string) (string, []TextPart) {
 	subject := mono(service)
 	if service == "" {
 		subject = txt("the app")
@@ -273,7 +275,7 @@ func runWords(status string, name TextPart, link, service string) (string, []Tex
 }
 
 // scheduleWords says a schedule run that failed or was stopped at its limit.
-func scheduleWords(r store.ActivityRow, name TextPart) (string, []TextPart) {
+func scheduleWords(r store.ActivityRow, name []TextPart) (string, []TextPart) {
 	sched := parts("Schedule ", mono(cmp.Or(r.Label, "run")))
 	if r.Label == "" {
 		sched = parts("Schedule run")

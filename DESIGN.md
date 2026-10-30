@@ -1342,20 +1342,42 @@ with its split readouts ("1.5G used · 0.7G reserved of 1.9G"; there is no separ
 host: it would repeat these meters and the room sentence of the Server section), and the copies as chips grouped by app (a failed copy has the failed ground, a starting one a
 dashed edge, a draining one a dashed edge and a line through its text; past 40 the rest is one sentence).
 The **activity row** (Live activity) is three columns, a 64px time, a 92px kind word and the sentence with a
-6px mark, in 12px mono fg-3 for the first two and 14px fg-2 for the sentence; the time is UTC and the
-viewer's own time is in its title; a row that arrives live has the 5% veil once and nothing more. The
-sentence comes from the service as parts and is drawn by the console's sentence template, so every name in
-it (program, app, service, schedule, version) is mono, wherever it stands in the sentence; a deploy that is
-rolling out has the rolling mark (◐), and ○ is for what stopped. The feed lists one row per event: a failed
-deploy, schedule run, backup or restore is its own row, and the needs-you list adds a row only for what has
-no record of its own (disk, unhealthy copies, restarts, out of memory, domains, OS updates, no backup
-destination), plus a "Resolved:" row for every kind. The apps table folds into label and value pairs when
-it has under 860px of its own, its Reach column never gets under 140px, so the header never runs into the
-next one, and its text cells (the state pill, the last change) wrap inside their column instead of running
-into the next cell. The page has four sections in reading order: Needs you, Server and Apps, Live
-activity. Side by side (a container of 1200px or more) Server and Apps are the left column and Needs you
-with Live activity under it the right; under that width it is one column in that order, so Needs you is
-never under a long table.
+6px mark, in 12px mono fg-3 for the first two and 14px fg-2 for the sentence; under 420px of the panel's own
+width (a container query) the time and the kind share one line above the sentence. The time is UTC (the
+panel's note says "times in UTC") and the viewer's own time is in its title; a row that arrives live has the
+5% veil once and nothing more. The sentence comes from the service as parts and is drawn by the console's
+sentence template, so every name in it (program, app, service, schedule, version) is mono, wherever it
+stands in the sentence, and an app outside Default › production is said in full as the table and the
+needs-you rows say it, "Shop › staging › `web`": the place muted (fg-3, the environment mono), the name
+mono (one function, `labelParts`, in the service; the console's `places.label` writes the same words); a
+deploy that is rolling out has the rolling mark (◐), and ○ is for what stopped. The feed lists one row
+per event: a failed deploy, schedule run, backup or restore is its own row, and the needs-you list adds a
+row only for what has no record of its own (disk, unhealthy copies, restarts, out of memory, domains, OS
+updates, no backup destination), plus a "Resolved:" row for every kind.
+
+The **apps table** has seven columns (`minmax(140px, 1.3fr) 136px 80px 92px 64px minmax(140px, 1fr) 160px`):
+State and Last change never wrap and the table folds under 920px of its own width, so nothing is cut. Folded,
+a row is the name and the state on one line, and under it the five facts as **label-over-value cells** in
+`repeat(auto-fill, minmax(9rem, 1fr))` (about 80px an app at 800px). Each cell has two items, its label
+(from `data-label`) and one value element, so the label always sits over its whole value. State is the run
+state, nothing more. **Unusual is a mark, not only a colour:** only when 025's `Judge` has an issue for the
+app, a 7px ◆ warn mark leads the CPU line, the line is warn, and mark and line are one link to the app's row
+on `/monitoring`, whose `aria-label` and `title` are 025's issue sentence and ", open monitoring" (more
+than one issue adds "(and N more issues)"); with no issue the line is fg-2 and there is no mark and no link.
+A **stopped app** shows its line as what it used while it ran, "—" beside it and the title "CPU while the
+app ran; it is stopped now" (Monitoring's words, one constant), no memory and no "now" value anywhere.
+The stats line's cpu and mem are the newest sample's, the one the meters show (one window, never a mean).
+The meters' readouts all sit under their bars; the disk's reads "5.8G used of 18.3G · /".
+
+The page has four sections in reading order: Needs you, Server and Apps, Live activity. Server and Apps are
+**two live regions**, each swapped by its own part (`/parts/ops/server`, `/parts/ops/apps`) on the notices it
+needs, so a refresh of one never replaces the other, and links keep a stable `id` across swaps (the table's
+`ops-app-<app id>`, the chips' `ops-copy-<copy id>`, the unusual link's `ops-cpu-<app id>`) so htmx gives
+keyboard focus back to the same link after a swap. Side by side (a container of 1200px or more) Server and
+Apps are the left column and Needs you with Live activity under it the right; under that width it is one
+column in that order, so Needs you is never under a long table. The Needs-you action cell (shared with the
+Developer home) has a minimum width that fits "View deployment", the button at its right edge, so the times
+line up from row to row.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

@@ -21,9 +21,9 @@ var (
 	// coStatsRe is the stats line's items, each its own span.
 	coStatsRe = regexp.MustCompile(`<span class="cv-opsstat">([^<]*)</span>`)
 	// coAppRe is the name cell of an apps table row, with its place prefix when it has one.
-	coAppRe = regexp.MustCompile(`(?:<span class="cv-opswhere">([^<]*)</span> )?<a href="([^"]*)" class="cv-opsapp">([^<]*)</a>`)
+	coAppRe = regexp.MustCompile(`(?:<span class="cv-opswhere">([^<]*)</span> )?<a href="([^"]*)" id="ops-app-[^"]*" class="cv-opsapp">([^<]*)</a>`)
 	// coChipRe is a copy of the server panel: where it links.
-	coChipRe = regexp.MustCompile(`<a href="(/apps/[^"]*)" class="cv-copychip cv-opschip`)
+	coChipRe = regexp.MustCompile(`<a href="(/apps/[^"]*)" id="ops-copy-[^"]*" class="cv-copychip cv-opschip`)
 )
 
 // opsStatsOf reads the items of the stats line.
@@ -197,8 +197,8 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 	if n := strings.Count(page, `cv-mnmeter-label`); n < 3 {
 		t.Errorf("the page has %d meter labels, want mem, cpu and disk in the panel", n)
 	}
-	if n := strings.Count(page, `cv-mnmeter-split`); n != 2 {
-		t.Errorf("the page has %d split readouts, want the memory and the CPU of the panel", n)
+	if n := strings.Count(page, `cv-mnmeter-split`); n != 3 {
+		t.Errorf("the page has %d split readouts, want the memory, the CPU and the disk of the panel", n)
 	}
 
 	// The apps table: both rows, the second with its place before its name.
@@ -218,7 +218,7 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 
 	// 3. Live activity: the deploys, a command, a restart.
 	if !c.opsHasEntry(t, regexp.MustCompile(`^`+prodID+` v\d+ is live, through the API`)) ||
-		!c.opsHasEntry(t, regexp.MustCompile(`^web v\d+ is live, through the API`)) {
+		!c.opsHasEntry(t, regexp.MustCompile(`^Console 027 › staging › web v\d+ is live, through the API`)) {
 		t.Errorf("listActivity doesn't have the two deploys: %v", c.opsEntries(t))
 	}
 	runPath := "/apps/" + prodID + "/copies/" + copies[0] + "/run"
@@ -257,7 +257,7 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 		}
 	}
 	noSentinel := func(when string) {
-		for _, p := range []string{"/ops", "/parts/ops/overview", "/parts/ops/activity", "/v1/activity?limit=50"} {
+		for _, p := range []string{"/ops", "/parts/ops/server", "/parts/ops/apps", "/parts/ops/activity", "/v1/activity?limit=50"} {
 			if _, out := c.get(t, p); strings.Contains(out, sentinel) {
 				t.Errorf("GET %s %s has the command's output", p, when)
 			}

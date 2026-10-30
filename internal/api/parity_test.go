@@ -213,7 +213,8 @@ var consoleParity = map[string]parity{
 	// table adds the CPU line and memory of 025 (getMetrics, one call per place, whose places are listProjects); Live
 	// activity is listActivity. The parts are the same regions drawn again on the live notices.
 	"GET /ops":                {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
-	"GET /parts/ops/overview": {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /parts/ops/server":   {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /parts/ops/apps":     {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
 	"GET /parts/ops/activity": {ops: []string{"listActivity"}},
 }
 

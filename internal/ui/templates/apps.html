@@ -119,7 +119,7 @@
   <div class="cv-row cv-need" role="listitem">
     <span class="cv-need-text">{{template "status-mark" .Mark}}<span>{{template "sentence" .Text}}</span></span>
     {{if .When.Text}}<span class="cv-need-when">{{template "time" .When}}</span>{{end}}
-    <a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a>
+    <span class="cv-need-act"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a></span>
   </div>
   {{end}}
 </div>

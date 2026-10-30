@@ -38,23 +38,21 @@ const opsActivityLimit = 8
 // part draws one of them alone with the same templates.
 type opsPage struct {
 	pageData
-	Main     opsMain
-	Needs    attentionRegion
-	Activity opsActivityRegion
+	Head opsHead
+	// NeedsMeta is the count beside "Needs you" ("3" or "nothing").
+	NeedsMeta string
+	Server    opsServerRegion
+	Apps      opsApps
+	Needs     attentionRegion
+	Activity  opsActivityRegion
 }
 
-// opsMain is what /parts/ops/overview draws: the headline and the stats (a
-// slot outside the region, swapped with it), the server and the apps.
-type opsMain struct {
-	Head opsHead
-	// NomadDown says Nomad couldn't be read: the page says so and the server
-	// panel and the copies are not drawn.
-	NomadDown bool
-	Server    opsServer
-	Apps      opsApps
-	// NeedsMeta is the count beside "Needs you" ("3" or "nothing"), swapped with
-	// the region because the list changes on the notices this region listens to.
+// opsData is what one read of the host and its apps gives the page and its two parts.
+type opsData struct {
+	Head      opsHead
 	NeedsMeta string
+	Server    opsServerRegion
+	Apps      opsApps
 }
 
 // opsHead is the headline and the stats line.
@@ -63,10 +61,28 @@ type opsHead struct {
 	Stats    []string
 }
 
-// opsServer is the Server section: the room sentence and the one node.
-type opsServer struct {
-	Room *monRoom
-	Node opsNode
+// opsServerRegion is the Server section: its own live region, swapped on the notices that change
+// the host and its copies. NomadDown says Nomad couldn't be read: the section says so and the
+// panel and the copies are not drawn.
+type opsServerRegion struct {
+	NomadDown bool
+	Room      *monRoom
+	Node      opsNode
+}
+
+// opsServerPart is what /parts/ops/server answers: the region, and the headline and stats,
+// which sit outside it and are swapped by id.
+type opsServerPart struct {
+	Server opsServerRegion
+	Head   opsHead
+}
+
+// opsAppsPart is what /parts/ops/apps answers: the region, the headline and stats, and the
+// Needs-you count, which sit outside it and are swapped by id.
+type opsAppsPart struct {
+	Apps      opsApps
+	Head      opsHead
+	NeedsMeta string
 }
 
 // opsNode is the host's panel. Message, when set, replaces the panel's body
@@ -91,6 +107,8 @@ type opsNode struct {
 // opsChip is one copy of the server panel: the app's name and the copy's short
 // ID, the copy's mark and a link to the app's Running tab.
 type opsChip struct {
+	// ID is the link's id, stable across a swap so that focus stays on it ("ops-copy-<copy id>").
+	ID    string
 	Name  string
 	Short string
 	Title string
@@ -113,16 +131,29 @@ type opsAppRow struct {
 	appRow
 	// Where is the app's place when it isn't Default › production: "Shop › staging ›".
 	Where string
+	// LinkID is the app link's id, stable across a swap so that focus stays on it ("ops-app-<app id>").
+	LinkID string
 	// Marks are the copies, one mark each; NoMarks says why there are none to draw.
 	Marks     []string
 	MarksWord string // "2 copies", for a screen reader
 	NoMarks   string
-	Spark     *monSpark
-	Warn      bool // the app is unusual by 025's rules: the line is drawn in warn
+	CPU       opsCPU
 	Mem       string
 	Reach     string
 	Change    string
 	ChangeT   when
+}
+
+// opsCPU is the CPU cell: the line of the last hour and, only when 025's rules call the app
+// unusual, a warn mark before it with the line, both one link to the app on /monitoring.
+type opsCPU struct {
+	Spark *monSpark
+	// Stopped says the app is stopped: the line is what it used while it ran and the cell reads
+	// "—" beside it, never a "now" value.
+	Stopped bool
+	// Issue is 025's sentence for the app and ", open monitoring"; Href and ID are the link's. All
+	// three are empty unless 025 has an issue for the app.
+	Issue, Href, ID string
 }
 
 // opsActivityRegion is the Live activity panel.
@@ -148,12 +179,12 @@ type opsEvent struct {
 
 // showOps answers GET /ops.
 func (s *server) showOps(w http.ResponseWriter, r *http.Request, session string) {
-	main, needs, err := s.loadOpsMain(r)
+	data, needs, err := s.loadOps(r)
 	if err != nil {
 		s.serverError(w, "draw the Operator overview", err)
 		return
 	}
-	activity, err := s.loadOpsActivity(r, main.NomadDown)
+	activity, err := s.loadOpsActivity(r, data.Server.NomadDown)
 	if err != nil {
 		s.serverError(w, "read activity", err)
 		return
@@ -164,24 +195,31 @@ func (s *server) showOps(w http.ResponseWriter, r *http.Request, session string)
 		return
 	}
 	head.LiveURL = "/live?watch=ops"
-	s.render(w, http.StatusOK, "ops", opsPage{pageData: head, Main: main, Needs: needs, Activity: activity})
+	s.render(w, http.StatusOK, "ops", opsPage{pageData: head, Head: data.Head, NeedsMeta: data.NeedsMeta,
+		Server: data.Server, Apps: data.Apps, Needs: needs, Activity: activity})
 }
 
-// opsOOB is what /parts/ops/overview answers: the region, and the headline and
-// the Needs-you count, which sit outside it and are swapped by id.
-type opsOOB struct {
-	opsMain
-}
-
-// partOpsOverview answers GET /parts/ops/overview.
-func (s *server) partOpsOverview(w http.ResponseWriter, r *http.Request, session string) {
-	main, _, err := s.loadOpsMain(r)
+// partOpsServer answers GET /parts/ops/server: the Server section, and the headline and stats.
+func (s *server) partOpsServer(w http.ResponseWriter, r *http.Request, session string) {
+	data, _, err := s.loadOps(r)
 	if err != nil {
 		s.log.Error("draw the Operator overview", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.renderPart(w, "ops", "ops-main-oob", opsOOB{main})
+	s.renderPart(w, "ops", "ops-server-part", opsServerPart{Server: data.Server, Head: data.Head})
+}
+
+// partOpsApps answers GET /parts/ops/apps: the Apps section, the headline and stats, and the
+// Needs-you count.
+func (s *server) partOpsApps(w http.ResponseWriter, r *http.Request, session string) {
+	data, _, err := s.loadOps(r)
+	if err != nil {
+		s.log.Error("draw the Operator overview", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.renderPart(w, "ops", "ops-apps-part", opsAppsPart{Apps: data.Apps, Head: data.Head, NeedsMeta: data.NeedsMeta})
 }
 
 // partOpsActivity answers GET /parts/ops/activity.
@@ -209,24 +247,24 @@ func nomadUnread(h service.HostView) bool {
 
 // ---- loaders ----------------------------------------------------------------------------------
 
-// loadOpsMain reads what the main region and the Needs-you list draw.
-func (s *server) loadOpsMain(r *http.Request) (opsMain, attentionRegion, error) {
+// loadOps reads what the headline, the Server and Apps sections and the Needs-you list draw.
+func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 	ctx := r.Context()
 	pl, err := s.loadPlaces(ctx)
 	if err != nil {
-		return opsMain{}, attentionRegion{}, err
+		return opsData{}, attentionRegion{}, err
 	}
 	sums, err := s.svc.ListApps(ctx)
 	if err != nil {
-		return opsMain{}, attentionRegion{}, err
+		return opsData{}, attentionRegion{}, err
 	}
 	needs, items, err := s.loadAttention(r, pl, sums)
 	if err != nil {
-		return opsMain{}, attentionRegion{}, err
+		return opsData{}, attentionRegion{}, err
 	}
 	host, err := s.svc.Host(ctx)
 	if err != nil {
-		return opsMain{}, attentionRegion{}, err
+		return opsData{}, attentionRegion{}, err
 	}
 	copies, copiesErr := s.svc.AllCopies(ctx)
 	if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
@@ -239,39 +277,48 @@ func (s *server) loadOpsMain(r *http.Request) (opsMain, attentionRegion, error) 
 	for _, it := range items {
 		listed[it.AppID] = true
 	}
-	rows := s.opsRows(ctx, now, pl, sums, listed, copies, copiesErr)
+	rows := s.opsRows(ctx, now, pl, host, sums, listed, copies, copiesErr)
 
-	m := opsMain{NomadDown: down}
-	m.Head = opsHead{Headline: headlineOf(sums, items)}
-	m.Apps = opsAppsOf(rows, sums, copies, copiesErr)
-	m.Server = opsServer{Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)}
-	m.Head.Stats = opsStats(host, len(sums), copies, copiesErr, len(items))
+	d := opsData{
+		Head:   opsHead{Headline: headlineOf(sums, items), Stats: opsStats(host, len(sums), copies, copiesErr, len(items))},
+		Apps:   opsAppsOf(rows, sums, copies, copiesErr),
+		Server: opsServerRegion{NomadDown: down, Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)},
+	}
 	switch n := len(items); n {
 	case 0:
-		m.NeedsMeta = "nothing"
+		d.NeedsMeta = "nothing"
 	default:
-		m.NeedsMeta = strconv.Itoa(n)
+		d.NeedsMeta = strconv.Itoa(n)
 	}
-	return m, needs, nil
+	return d, needs, nil
 }
 
 // opsStats is the stats line: "1 server · 13 apps · 18 copies · cpu 38% · mem 63% · 3 open items".
-// Before the host's first reading it says so instead of the use and the items.
+// The use is the newest sample's, the one the Server panel's meters show (one window, never a mean
+// of the last minutes). Before the host's first reading it says so instead of the use and the items.
 func opsStats(h service.HostView, apps int, copies map[string][]service.Copy, copiesErr error, open int) []string {
 	out := []string{"1 server", appCount(apps)}
 	if copiesErr == nil {
 		out = append(out, copyCount(runningCopies(copies)))
 	}
-	if h.Recent == nil {
+	if h.SampledAt == nil {
 		return append(out, "waiting for the first reading")
 	}
-	if h.Recent.CPUPercent != nil {
-		out = append(out, "cpu "+strconv.Itoa(int(*h.Recent.CPUPercent+0.5))+"%")
+	if p, ok := usedPercent(h.CPU.Used, h.CPU.Total); ok {
+		out = append(out, "cpu "+strconv.Itoa(p)+"%")
 	}
-	if h.Recent.MemoryPercent != nil {
-		out = append(out, "mem "+strconv.Itoa(int(*h.Recent.MemoryPercent+0.5))+"%")
+	if p, ok := usedPercent(h.Memory.Used, h.Memory.Total); ok {
+		out = append(out, "mem "+strconv.Itoa(p)+"%")
 	}
 	return append(out, plural(open, "open item"))
+}
+
+// usedPercent is used over total in whole percent; ok is false when either wasn't read.
+func usedPercent(used, total *int64) (int, bool) {
+	if used == nil || total == nil || *total <= 0 {
+		return 0, false
+	}
+	return int(float64(*used)/float64(*total)*100 + 0.5), true
 }
 
 // runningCopies counts the copies that run or are starting, across apps.
@@ -288,13 +335,13 @@ func runningCopies(byApp map[string][]service.Copy) int {
 }
 
 // opsRows builds the apps table's rows, problems first, then by name.
-func (s *server) opsRows(ctx context.Context, now time.Time, pl places, sums []service.AppSummary, listed map[string]bool,
+func (s *server) opsRows(ctx context.Context, now time.Time, pl places, host service.HostView, sums []service.AppSummary, listed map[string]bool,
 	copies map[string][]service.Copy, copiesErr error) []opsAppRow {
-	usage := s.opsUsage(ctx, pl, sums)
+	usage := s.opsUsage(ctx, pl, host, sums)
 	rows := make([]opsAppRow, 0, len(sums))
 	for _, sum := range sums {
 		base := s.appRow(now, sum, needsYouOf(sum, listed[sum.App.ID]))
-		row := opsAppRow{appRow: base}
+		row := opsAppRow{appRow: base, LinkID: "ops-app-" + sum.App.ID}
 		if !atHome(sum.Place) {
 			row.Where = pl.display(sum.Place.Project) + " › " + sum.Place.Environment + " ›"
 		}
@@ -314,8 +361,20 @@ func (s *server) opsRows(ctx context.Context, now time.Time, pl places, sums []s
 				row.MarksWord = copyCount(len(row.Marks))
 			}
 		}
+		stopped := sum.StoppedAt != nil
 		if u, ok := usage[sum.App.ID]; ok {
-			row.Spark, row.Warn, row.Mem = u.Spark, u.Unusual, u.Mem
+			row.CPU.Spark, row.Mem = u.Spark, u.Mem
+			stopped = stopped || u.Stopped
+			if u.Issue != "" && !stopped {
+				row.CPU.Issue, row.CPU.Href, row.CPU.ID = u.Issue, u.Href, "ops-cpu-"+sum.App.ID
+			}
+		}
+		if stopped {
+			// A stopped app has no "now": the line is what it used while it ran, as Monitoring says.
+			row.CPU.Stopped, row.Mem = true, ""
+			if row.CPU.Spark != nil {
+				row.CPU.Spark.Title = monStoppedCPUTitle
+			}
 		}
 		row.Reach = ""
 		if len(base.Domains) > 0 {
@@ -357,12 +416,15 @@ func opsAppsOf(rows []opsAppRow, sums []service.AppSummary, copies map[string][]
 	return opsApps{Rows: rows, Empty: len(rows) == 0, Meta: strconv.Itoa(running) + " running"}
 }
 
-// opsUse is what 025 knows of an app: the CPU line of the last hour, whether
-// the app is unusual, and the memory it uses now.
+// opsUse is what 025 knows of an app: the CPU line of the last hour, the memory it uses now, whether
+// it is stopped, and, when 025's rules call it unusual, their sentence and the link to say it.
 type opsUse struct {
 	Spark   *monSpark
-	Unusual bool
 	Mem     string
+	Stopped bool
+	// Issue is 025's sentence for the app's worst issue (and how many more), ", open monitoring"
+	// after it; Href is the app's row on /monitoring.
+	Issue, Href string
 }
 
 // opsSparkW and opsSparkH are the table's sparkline box, 84 by 16.
@@ -374,16 +436,13 @@ const (
 // opsUsage reads 025's numbers of every place that has apps and folds each
 // app's services into one line and one memory figure. A place that can't be
 // read leaves its apps without them ("—"): the table is still true.
-func (s *server) opsUsage(ctx context.Context, pl places, sums []service.AppSummary) map[string]opsUse {
+func (s *server) opsUsage(ctx context.Context, pl places, host service.HostView, sums []service.AppSummary) map[string]opsUse {
 	have := map[app.Place]bool{}
 	for _, sum := range sums {
 		have[app.Place{Project: sum.Place.Project, Environment: sum.Place.Environment}] = true
 	}
 	out := map[string]opsUse{}
-	coreMHz := 0.0
-	if h, err := s.svc.Host(ctx); err == nil {
-		coreMHz = coreMHzOf(h.CPU)
-	}
+	coreMHz := coreMHzOf(host.CPU)
 	for place := range have {
 		view, err := s.svc.Metrics(ctx, service.MetricsQuery{Project: place.Project, Environment: place.Environment, Range: metrics.Range1h})
 		if err != nil {
@@ -394,22 +453,45 @@ func (s *server) opsUsage(ctx context.Context, pl places, sums []service.AppSumm
 		for _, sv := range view.Services {
 			byApp[sv.AppID] = append(byApp[sv.AppID], sv)
 		}
+		q := monReq{Project: cmp.Or(place.Project, app.DefaultProject), Environment: cmp.Or(place.Environment, app.DefaultEnvironment),
+			Range: metrics.Range6h, Sort: service.SortUnusual}
+		b := newMonBuilder(q, pl, view, host)
+		issues := map[string][]service.MetricIssue{}
+		for _, is := range view.Issues {
+			issues[is.AppID] = append(issues[is.AppID], is)
+		}
 		for id, svs := range byApp {
-			out[id] = opsUseOf(svs, coreMHz)
+			u := opsUseOf(svs, coreMHz)
+			if list := issues[id]; len(list) > 0 {
+				// The worst first, as 025 lists them; the link is that service's row on /monitoring.
+				u.Issue = issueLabel(b.issue(list[0]).Text.String(), len(list)-1)
+				u.Href = q.href() + "#mon-row-" + id + "-" + list[0].Service
+			}
+			out[id] = u
 		}
 	}
 	return out
 }
 
+// issueLabel is 025's sentence for an app's worst issue, its closing full stop dropped, with how
+// many other issues the app has, and ", open monitoring": the link's name and title.
+func issueLabel(sentence string, more int) string {
+	sentence = strings.TrimRight(strings.TrimSpace(sentence), ".")
+	if more > 0 {
+		sentence += " (and " + plural(more, "more issue") + ")"
+	}
+	return sentence + ", open monitoring"
+}
+
 // opsUseOf folds an app's services: the CPU series summed (a point is a gap
-// only when no service has a number), the memory summed, and unusual when any
-// service is.
+// only when no service has a number), the memory summed. The app is stopped
+// when every service is; it has no memory then.
 func opsUseOf(svs []service.ServiceMetrics, coreMHz float64) opsUse {
-	u := opsUse{}
+	u := opsUse{Stopped: len(svs) > 0}
 	n := 0
 	for _, sv := range svs {
 		n = max(n, len(sv.CPU))
-		u.Unusual = u.Unusual || sv.Unusual
+		u.Stopped = u.Stopped && sv.State == service.ServiceStopped
 	}
 	series := make([]*float64, n)
 	reserved, haveReserved := 0.0, false
@@ -460,7 +542,7 @@ func opsUseOf(svs []service.ServiceMetrics, coreMHz float64) opsUse {
 			total, known = total+*sv.MemoryMB, true
 		}
 	}
-	if known {
+	if known && !u.Stopped {
 		u.Mem = sizeText(total)
 	}
 	return u
@@ -495,7 +577,7 @@ func (s *server) opsNode(h service.HostView, rows []opsAppRow, copies map[string
 			if len(node.Chips) >= opsChipLimit {
 				continue
 			}
-			chip := opsChip{Name: row.Name, Short: shortID(c.ID), Href: "/apps/" + url.PathEscape(row.ID), Mark: copyMark(c)}
+			chip := opsChip{ID: "ops-copy-" + c.ID, Name: row.Name, Short: shortID(c.ID), Href: "/apps/" + url.PathEscape(row.ID), Mark: copyMark(c)}
 			word := copyStatusView(c.Status).Word
 			switch {
 			case c.Stopping:
@@ -557,7 +639,16 @@ func opsMeters(h service.HostView) []monMeter {
 	if h.SampledAt == nil {
 		return nil
 	}
-	return hostMeters(h)
+	meters := hostMeters(h)
+	// The disk's readout goes under its bar like memory's and CPU's: "5.5G used of 18.3G · /". The
+	// disk meters are the last ones, one per watched filesystem.
+	for i, d := range h.Disks {
+		if at := len(meters) - len(h.Disks) + i; at >= 0 {
+			meters[at].Read = gbText(float64(d.UsedMB)) + "G used of " + gbText(float64(d.TotalMB)) + "G · " + d.Mount
+			meters[at].Split = true
+		}
+	}
+	return meters
 }
 
 // loadOpsActivity reads the last entries of the feed. nomadDown adds the line
@@ -584,7 +675,7 @@ func opsEventOf(e service.ActivityEntry) opsEvent {
 		Kind: e.Kind, Mark: e.Status,
 	}
 	for _, p := range e.Parts {
-		ev.Sentence = append(ev.Sentence, part{Text: p.Text, Mono: p.Mono})
+		ev.Sentence = append(ev.Sentence, part{Text: p.Text, Mono: p.Mono, Muted: p.Muted})
 	}
 	if len(ev.Sentence) == 0 {
 		ev.Sentence = plainS(e.Sentence)

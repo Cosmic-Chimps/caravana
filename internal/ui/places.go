@@ -92,13 +92,15 @@ func (s *server) appCrumbs(ctx context.Context, id string, more ...crumb) []crum
 
 // label writes where an app is, as the console says it: the app's ID for an
 // app at home, else "<project display> › <environment> › <app name>" with the
-// names in mono. suffix, when given, is glued to the app's name inside its mono
-// part ("/web" for "<app>/web").
+// place muted (the environment in mono) and the app's name in mono. suffix,
+// when given, is glued to the app's name inside its mono part ("/web" for
+// "<app>/web").
 func (p places) label(pl app.Place, id, suffix string) sentence {
 	if atHome(pl) {
 		return sentence{mono(id + suffix)}
 	}
-	return sentence{plain(p.display(pl.Project) + " › "), mono(pl.Environment), plain(" › "), mono(pl.Name + suffix)}
+	return sentence{{Text: p.display(pl.Project) + " › ", Muted: true}, {Text: pl.Environment, Mono: true, Muted: true},
+		{Text: " › ", Muted: true}, mono(pl.Name + suffix)}
 }
 
 // takenSentence says an app of that ID exists already, naming it as the form

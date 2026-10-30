@@ -15,14 +15,19 @@ import (
 // which a page sets in its mono face. The activity feed sends sentences as parts so
 // that the console draws them as it draws the needs-you rows, and the API's plain
 // `message` is the parts joined.
+//
+// Muted marks the place in front of an app's name ("Shop › staging › "): the console sets it in its
+// third text colour. It is the console's own, never part of the API's answer.
 type TextPart struct {
-	Text string `json:"text"`
-	Mono bool   `json:"mono,omitempty"`
+	Text  string `json:"text"`
+	Mono  bool   `json:"mono,omitempty"`
+	Muted bool   `json:"muted,omitempty"`
 }
 
 // txt and mono make parts; join gives a sentence as plain text.
-func txt(s string) TextPart  { return TextPart{Text: s} }
-func mono(s string) TextPart { return TextPart{Text: s, Mono: true} }
+func txt(s string) TextPart   { return TextPart{Text: s} }
+func mono(s string) TextPart  { return TextPart{Text: s, Mono: true} }
+func muted(s string) TextPart { return TextPart{Text: s, Muted: true} }
 
 func plainText(parts []TextPart) string {
 	var b strings.Builder
@@ -65,14 +70,20 @@ func decodeParts(s string) (out []TextPart, ok bool) {
 	return out, true
 }
 
-// placeParts says where an app is as the needs-you list does: its ID for an app in Default's
-// production, else "<project display> › <environment> › <name>" with the names in mono. suffix
-// ("/web") is glued to the app's name.
-func placeParts(display func(string) string, it AttentionItem, suffix string) []TextPart {
-	if it.Project == "" || (it.Project == app.DefaultProject && it.Environment == app.DefaultEnvironment) {
-		return []TextPart{mono(it.AppID + suffix)}
+// labelParts says where an app is, the one wording of every sentence of the feed and of the
+// needs-you list: its ID for an app in Default's production, else "<project display> › <environment>
+// › <name>", the place muted (the environment in mono) and the name in mono. suffix ("/web") is glued
+// to the app's name.
+func labelParts(display func(string) string, pl app.Place, id, suffix string) []TextPart {
+	if pl.Project == "" || (pl.Project == app.DefaultProject && pl.Environment == app.DefaultEnvironment) {
+		return []TextPart{mono(id + suffix)}
 	}
-	return []TextPart{txt(display(it.Project) + " › "), mono(it.Environment), txt(" › "), mono(it.AppName + suffix)}
+	return []TextPart{muted(display(pl.Project) + " › "), {Text: pl.Environment, Mono: true, Muted: true}, muted(" › "), mono(pl.Name + suffix)}
+}
+
+// placeParts is labelParts for a needs-you item.
+func placeParts(display func(string) string, it AttentionItem, suffix string) []TextPart {
+	return labelParts(display, app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}, it.AppID, suffix)
 }
 
 // problemParts is the needs-you list's own sentence for an item, as parts. The console's rows

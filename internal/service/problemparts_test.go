@@ -144,3 +144,26 @@ func TestActivityListsAProblemOnceAndItsResolutionAlways(t *testing.T) {
 		t.Errorf("resolved entry = %+v", r)
 	}
 }
+
+// labelParts is the one wording of where an app is: the bare name at home, else the place muted
+// (the environment in mono) and the name in mono, with the suffix glued to the name.
+func TestLabelParts(t *testing.T) {
+	display := func(id string) string { return map[string]string{"shop": "Shop"}[id] }
+	home := labelParts(display, app.Place{Project: app.DefaultProject, Environment: app.DefaultEnvironment, Name: "blog"}, "blog", "/web")
+	if len(home) != 1 || home[0] != mono("blog/web") {
+		t.Errorf("home = %+v", home)
+	}
+	got := labelParts(display, app.Place{Project: "shop", Environment: "staging", Name: "web"}, "shop--staging--web", "")
+	want := []TextPart{{Text: "Shop › ", Muted: true}, {Text: "staging", Mono: true, Muted: true}, {Text: " › ", Muted: true}, {Text: "web", Mono: true}}
+	if len(got) != len(want) {
+		t.Fatalf("label = %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("part %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if plainText(got) != "Shop › staging › web" {
+		t.Errorf("text = %q", plainText(got))
+	}
+}

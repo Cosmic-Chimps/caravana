@@ -20,9 +20,12 @@ import (
 // part is a piece of a sentence. Mono marks what Nomad or the user's config
 // produced (an app name, a version), which the pages set in the mono face
 // (DESIGN.md, The Mono-Is-Real Rule).
+//
+// Muted marks the place in front of an app's name ("Shop › staging › "), set in the third text colour.
 type part struct {
-	Text string
-	Mono bool
+	Text  string
+	Mono  bool
+	Muted bool
 }
 
 // sentence is text the pages show as one line of prose, with its names and

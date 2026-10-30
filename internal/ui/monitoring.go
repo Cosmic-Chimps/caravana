@@ -441,7 +441,17 @@ func (s *server) monRegionOf(ctx context.Context, q monReq, pl places, host serv
 	if err != nil {
 		return nil, err
 	}
-	b := monBuilder{
+	return newMonBuilder(q, pl, view, host).region(), nil
+}
+
+// monStoppedCPUTitle is what a stopped app's CPU line says (Monitoring's and the Operator
+// Overview's alike): the line is what it used while it ran, and there is no "now".
+const monStoppedCPUTitle = "CPU while the app ran; it is stopped now"
+
+// newMonBuilder sets up the words of a place's metrics: which apps have several services, and the
+// host's core speed. The Operator Overview uses it for 025's issue sentences.
+func newMonBuilder(q monReq, pl places, view service.MetricsView, host service.HostView) *monBuilder {
+	b := &monBuilder{
 		now: view.At, q: q, pl: pl, view: view,
 		multi: map[string]bool{}, kinds: map[serviceRef]map[metrics.Kind]bool{},
 	}
@@ -455,7 +465,7 @@ func (s *server) monRegionOf(ctx context.Context, q monReq, pl places, host serv
 	for id, n := range perApp {
 		b.multi[id] = n > 1
 	}
-	return b.region(), nil
+	return b
 }
 
 // serviceRef names a service of an app.
@@ -815,7 +825,7 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		row.Requests, row.Errors, row.P95 = none(why), none(why), none(why)
 		row.Mem = monMem{}
 		if row.Spark != nil {
-			row.Spark.Title, row.Spark.Read = "CPU while the app ran; it is stopped now", "—"
+			row.Spark.Title, row.Spark.Read = monStoppedCPUTitle, "—"
 		}
 	}
 	if sv.Restarts == nil {

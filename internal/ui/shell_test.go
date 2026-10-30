@@ -312,7 +312,7 @@ func TestPathMode(t *testing.T) {
 		"/opsy": "", "/operator": "",
 		"/": "dev", "/apps": "dev", "/projects": "dev", "/projects/new": "dev", "/schedules/abc/edit": "dev",
 		"/domains": "dev", "/logs": "dev", "/monitoring": "dev",
-		"/logs/download": "", "/parts/logs": "", "/parts/ops/overview": "", "/live": "", "/static/app.css": "",
+		"/logs/download": "", "/parts/logs": "", "/parts/ops/server": "", "/live": "", "/static/app.css": "",
 		"/apps/new": "", "/apps/blog": "", "/apps/blog/logs": "", "/settings": "", "/settings/tokens": "", "/login": "",
 	}
 	for path, want := range tests {
