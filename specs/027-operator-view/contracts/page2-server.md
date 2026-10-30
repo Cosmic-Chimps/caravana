@@ -97,10 +97,14 @@ container width the aside drops below.
   - **address** the public address (023's: `CARAVANA_PUBLIC_URL`'s host or the entrypoint's)
     and, on a second line fg-3, the private `caravana0` address;
   - **up since** the host's boot time "2026-10-21 03:12 UTC" with the relative words after it
-    ("8 d ago"); the handoff's "joined" (when a server joined the cluster) is Phase 3;
-  - **agent** "nomad 1.9.4 · docker 27.3 · traefik 3.7.1 · caravana 0.13.0";
+    ("8 d ago"), from Nomad's client stats (timestamp minus uptime); the handoff's "joined"
+    isn't drawn: Nomad keeps no "created" time for a node, and joining is Phase 3;
+  - **agent** "nomad 1.9.4 · docker 27.3 · traefik 3.7.1 · caravana 0.13.0" (Traefik's version
+    is its registered job's image tag);
   - **os** "Ubuntu 24.04.1 LTS · kernel 6.8.0-147-generic";
-  - **cpu** "AMD EPYC-Rome · 2 cores · 2,445 MHz" (Nomad's attributes);
+  - **cpu** "AMD EPYC-Rome · 2 cores · 2,445 MHz" (Nomad's attributes); the model and the
+    per-core frequency are optional: on arm Nomad gives only the cores and a total, so the row
+    reads "2 cores · 4,890 MHz in total";
   - **last seen** "2 s ago" (Nomad's last heartbeat; ■ fg-1 "lost 3 min ago" when down).
 
 #### Recent on this server (aside, second)
@@ -108,13 +112,15 @@ container width the aside drops below.
 - `.cv-label` **"Recent on this server"**, then a `.cv-panel` (padding 6px 0) of rows, grid
   `54px 14px minmax(0, 1fr)`, gap 10, padding 9px 18px, 14px fg-2: the time 400 12px mono fg-3
   (UTC, the local time in its `title`), a 7px mark, the sentence.
-- Rows, newest first, the last 8, from three sources merged:
-  - page 1's translated Nomad events for this node and its copies ("`supplier-gw` `c81e`
-    started.", "`metabase` `e4d1` restarted: out of memory.");
+- Rows, newest first, the last 8, from three sources merged (ruled 2026-10-29 on the research):
+  - page 1's activity entries that concern the server: the node's own events (registered,
+    heartbeat missed, back), restarts and out-of-memory needs-you entries of copies on it;
   - the host's boots, from the boot time ("The server started (up since 03:12 UTC).");
-  - package changes, **only if** the research confirms `/var/log/apt/history.log` (or
-    `/var/log/dpkg.log`) is readable by Caravana's service user: "OS packages updated: 14
-    packages, no reboot needed." / "…, a reboot is needed." (page 3 owns the details).
+  - package runs from `/var/log/apt/history.log` (mode 644, confirmed readable; rotated monthly
+    to `.gz`, the current and the previous month read): one row per Start-Date block, "OS
+    packages updated by Ubuntu's automatic updates: 14 packages." when its Commandline is
+    `/usr/bin/unattended-upgrade`, "OS packages updated by hand: 3 packages." otherwise, with
+    ", a reboot is needed." when the block installed what `/var/run/reboot-required.pkgs` names.
   - The handoff's "Docker images pruned · 2.1 GB freed" has no source and isn't drawn.
 - Empty: "Nothing recent." 13px fg-3.
 
@@ -144,7 +150,7 @@ container width the aside drops below.
 cpuModel, traefikVersion, caravanaVersion}`; `listHostCopies` (`GET /v1/host/copies?usage=true`
 → every copy on the node with app, service, place, phase, status, cpu{used, reserved},
 memory{used, limit}, startedAt), or `listCopies` across apps if the spec prefers one route;
-`listHostEvents` (page 1) takes `node=` and includes boots and package changes. Times RFC 3339
+`listActivity` (page 1) takes `server=1` for the server's entries, boots and package runs. Times RFC 3339
 UTC.
 
 ## Review
@@ -155,6 +161,6 @@ The designer checks at 127.0.0.1:7070 against `pf-node.png`:
   actions;
 - the numbers panel (memory in warn at 87%, the reserved hatch, a second disk when staged);
 - Running here with a starting and a failed copy, places, the fold;
-- the facts (public and private addresses, up since, the agent line), Recent with Nomad events,
-  a boot and (if readable) a package change;
+- the facts (public and private addresses, up since, the agent line), Recent with a node event, a
+  boot, and a package run by Ubuntu's automatic updates and one by hand;
 - Nomad unreachable; 1440, 1200, 640 and 390 widths; without script.

@@ -140,25 +140,33 @@ container width the aside drops below the main column (024's container rule).
 
 #### Live activity (aside, second)
 
-- `SectionHead` **"Live activity"** with the right-hand note "from Nomad's events" 400 12px
-  mono fg-3 (the handoff's "nomad event stream").
-- A `.cv-panel` of the last 8 events as `EventRow`s: grid `64px 92px minmax(0, 1fr)`, gap 13,
+(Ruled 2026-10-29 on the research: Caravana's own records, not Nomad's event stream.)
+
+- `SectionHead` **"Live activity"** with the right-hand note "from caravana's records" 400 12px
+  mono fg-3 (the handoff's "nomad event stream" isn't what we read).
+- A `.cv-panel` of the last 8 entries as `EventRow`s: grid `64px 92px minmax(0, 1fr)`, gap 13,
   padding 10px 16px, 1px line-1 between rows: the time 400 12px mono fg-3 tabular ("14:02:14",
-  UTC, with the script's local time in its `title`), the kind 400 12px mono fg-3 (Nomad's word:
-  `alloc`, `deployment`, `node`, `eval`: a Nomad term in a mono detail cell, as PRODUCT.md
-  allows), then a 6px mark and the message 14px/1.4 fg-2 in plain words.
-- **Source**: Nomad's event stream (`/v1/event/stream`) for the topics `Deployment`,
-  `Allocation`, `Node` and `Evaluation`, filtered to Caravana's jobs and the host's node,
-  translated by a fixed table into plain sentences (the handoff's are the model: "`supplier-gw`
-  `c81e` passed its health check (v24).", "`supplier-gw` v24 started: replacing 2 copies one at
-  a time.", "`metabase` `e4d1` restarted: out of memory (exit 137), 3rd time this hour.",
-  "`booking-api` placed 2 copies."). An event the table doesn't know is not shown (never Nomad's
-  raw JSON). Caravana keeps the last 50 translated events in memory (no store: page 4's history
-  and 025's samples already hold what lasts); after a restart the panel says "Since caravana
-  started at 14:02 UTC." until 8 events have arrived.
-- New events arrive on the console's live stream (an `activity` notice; the panel swaps by row
-  id); a new row gets the fresh tint once (the One Tick Rule). Without script the panel is the
-  page's snapshot.
+  UTC, with the script's local time in its `title`), the kind 400 12px mono fg-3 in caravana's
+  words, then a 6px mark and the sentence 14px/1.4 fg-2.
+- **Source**: the records caravana already keeps, merged newest first:
+  - **deploy**: a deployment started and ended, in page 4's who-words ("`supplier-gw` v24 is
+    live, pushed to `main` by ana.", "`booking-api` v57 failed its health checks. v56 keeps
+    running.");
+  - **restart** / **stop** / **start** / **command**: app actions (020.5), never their output;
+  - **backup** / **restore**: runs and their outcome (016);
+  - **schedule**: a schedule run that failed or was stopped at its limit (022; ok runs aren't
+    listed, they would drown the panel);
+  - **needs you**: an item opened or resolved ("`metabase` keeps restarting: out of memory.",
+    "Resolved: `hel` disk below 83%.");
+  - **server**: the node's own events from Nomad's node record (`Events[]`: registered, drained,
+    heartbeat missed, back), and a boot (page 2).
+- Records survive a restart, so there is no "since caravana started" line. Nomad's event stream
+  isn't read (megabytes of JSON per hour, mostly evaluations and sidecars, lost when Nomad
+  restarts). Per-copy health lines ("`c81e` passed its health check") aren't shown; crashes and
+  out-of-memory kills arrive as needs-you entries.
+- New entries arrive on the console's existing live notices (deployments, actions, backups,
+  schedules, attention); the panel swaps by row id, and a new row gets the fresh tint once (the
+  One Tick Rule). Without script the panel is the page's snapshot.
 - The full feed is the Activity page, a later contract; this panel has no "See all" link until
   that page exists.
 
@@ -203,8 +211,9 @@ container width the aside drops below the main column (024's container rule).
 ## API (names only, for the spec)
 
 `getHost` (025) grows: `node{name, state, pool, os, kernel, nomadVersion, dockerVersion, cpu{
-cores, mhz}, memoryMB, uptimeSeconds}`; `listHostEvents` (`GET /v1/host/events?limit=8` →
-`events[]{time, kind, status, message, app?, copy?}`, the translated events, newest first);
+cores, mhz}, memoryMB, uptimeSeconds}`; `listActivity` (`GET /v1/activity?limit=8` →
+`entries[]{time, kind, status, message, app?, place?}`, caravana's records and the node's events,
+newest first);
 `listApps` already has what the table needs plus 025's per-app samples (`getMetrics`'
 `services[]`). The `caravana_mode` cookie is UI only. Times RFC 3339 UTC.
 
@@ -216,5 +225,6 @@ The designer checks at 127.0.0.1:7070 against `pe-ops-now.png`:
 - `/ops` with the lab's apps: the shared headline, the stats line, the Server panel (spec line,
   meters at 87% memory in warn, chips by app with a starting and a failed copy), the apps table
   across places with sparklines and the fold, Needs you as on the home, Live activity during a
-  deploy (fresh rows) and after a Caravana restart ("Since caravana started…"), Capacity;
+  deploy, a restart, a backup and a failed schedule run (fresh rows), still filled after a
+  caravana restart, Capacity;
 - Nomad unreachable; no apps; 1440, 1200, 640 and 390 widths; the page without script.

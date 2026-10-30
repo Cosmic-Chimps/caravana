@@ -19,8 +19,9 @@ waiting for a reboot. This page, the needs-you list and a notification must have
   The handoff's Run now, Run in next window, the update window and the rolling plan across
   servers aren't built (Phase 3, where applying updates belongs with draining).
 - **A newer caravana:** Caravana asks GitHub's releases API for the latest release of
-  `Cosmic-Chimps/caravana` once a day (and at start), sending nothing but a `User-Agent:
-  caravana/<version>`. A setting turns it off (below). A release counts when its version is
+  `Cosmic-Chimps/caravana` once a day with jitter (and at start), with the stored ETag, sending
+  nothing but a `User-Agent: caravana/<version>`. A setting kept in SQLite turns it off (below;
+  no environment variable). **Check now** runs it on demand, at most once per 10 minutes. A release counts when its version is
   higher than the running one and it isn't a pre-release. Its notes are the release's body
   (which `tools/release.sh notes` writes from CHANGELOG.md), first 6 bullet lines.
 - **Nomad and Traefik** ride with caravana's installer pins: "update" means rerunning a newer
@@ -30,17 +31,26 @@ waiting for a reboot. This page, the needs-you list and a notification must have
   separate Nomad row: nothing updates Nomad apart from the installer.
 - **The server's OS**, only from files on the host Caravana runs on (no root, no running `apt`
   as root):
-  - security and other updates waiting: `/var/lib/update-notifier/updates-available` (the motd's
-    "N updates can be applied immediately. M of these are standard security updates."), and
-    the package names if the research finds an unprivileged read (`apt-get -s upgrade` or the
-    `apt` lists); else the counts alone;
+  - security and other updates waiting: `/var/lib/update-notifier/updates-available` (mode 644,
+    the motd's "N updates can be applied immediately. M of these are standard security
+    updates."): the counts, as fresh as the server's last `apt update` (the file's mtime);
+  - **package names only on demand** (ruled 2026-10-29): `pro security-status --format json` is
+    the one unprivileged source, and it takes 4 s on an idle host and up to 69 s on a starved
+    one, so it never runs on a timer. The Ubuntu updates row offers **Check package names**
+    (below); the names are kept for an hour. A kernel waiting in `-updates` is not called a
+    security fix: only `pro`'s answer says what is security, and once a kernel is installed the
+    reboot row covers it;
   - a reboot needed: `/var/run/reboot-required` and `/var/run/reboot-required.pkgs` (the
     packages that asked for it), with the running kernel (Nomad's `kernel.version`, i.e.
     `uname -r`) and the newest installed kernel (the `linux-image-*` in `.pkgs`, or
     `/boot/vmlinuz-*`'s highest version);
   - how the host updates itself: unattended-upgrades on or off and automatic reboot, from
     `/etc/apt/apt.conf.d/20auto-upgrades` and `50unattended-upgrades` if readable;
-  - when Ubuntu last checked: the files' mtimes.
+  - when Ubuntu last checked: the files' mtimes. **Staleness** (ruled 2026-10-29): the counts are
+    shown with their age ("checked by Ubuntu 3 h ago"); older than 48 hours they still show, in
+    fg-3, with "Ubuntu's list is 3 days old. Run `sudo apt update` on the server to refresh it."
+    and no `os_security_updates` item is opened from them (stale counts aren't a fact to alarm
+    on); the reboot file has no staleness (it is written by the install itself).
   - A host that isn't Ubuntu or Debian (no such files): the OS rows say "caravana can't read
     this server's pending updates (not Ubuntu or Debian)." with ○, nothing else.
 - **No CVE names**: Caravana has no vulnerability feed, so it never names a CVE. It says what is
@@ -57,8 +67,9 @@ waiting for a reboot. This page, the needs-you list and a notification must have
   `caravana.release` sent once per release ("caravana 0.14.0 is out. You run 0.13.0.") to every
   channel, and the Updates nav count (page 1).
 - **History**: Caravana records its own version at each start (a row when it changes), the
-  host's boots (from the boot time, page 2), and package runs if `/var/log/apt/history.log` is
-  readable (page 2's research).
+  host's boots (from the boot time, page 2), and package runs from `/var/log/apt/history.log`
+  (confirmed readable; page 2's rule: by Ubuntu's automatic updates or by hand, the package
+  count, the versions in the notes).
 
 ## Where it lives
 
@@ -92,7 +103,12 @@ mark: ■ reboot needed, ◆ security updates waiting, else the count of availab
   - the change, 400 13px/1.4 mono fg-1: "0.13.0 → 0.14.0" · "14 packages · 9 security" ·
     "kernel 6.8.0-147 → 6.8.0-149";
   - the notes as a list (14px/1.45 fg-2, 4px gap): the release's bullets and its pin changes;
-    the package names when known (comma-separated, mono, at most 12, "and N more"); for the
+    for Ubuntu updates, the security package names when checked (comma-separated, mono, at most
+    12, "and N more", "checked 20 min ago"), else **Check package names** (secondary sm, a post
+    that starts `pro security-status` in the background and answers 303 to the page; while it
+    runs the row shows ◐ "Checking which packages… this can take a minute." and the live notice
+    redraws it when done; without script, reload; refused with a sentence within 10 minutes of the
+    last check); the caravana row's **Check now** (secondary sm) works the same way; for the
     reboot, "Installed by Ubuntu's automatic updates. Rebooting stops every app for about a
     minute; Nomad starts them again when the server is back." (one host: the truth).
   - Sorted ■, ◆, ○.
@@ -165,7 +181,7 @@ caravana owns. `SectionHead` **"How this server updates"** over a `.cv-panel` of
 pins?{nomad, traefik}, checkedAt?, checkEnabled, checkError?}`, `os{readable, distro,
 updates{total, security, packages?[], checkedAt}, reboot{required, since?, packages[],
 runningKernel, installedKernel?}, unattended{enabled?, autoReboot?, autoRebootTime?}}`,
-`history[]{at, kind, text, detail}`); `putUpdateSettings` (`checkEnabled`); attention kinds
+`history[]{at, kind, text, detail}`); `putUpdateSettings` (`checkEnabled`); `checkUpdates` (`POST /v1/updates/check?what=release|packages`, 202, at most once per 10 minutes each; `packages` runs `pro security-status`); attention kinds
 `os_reboot_required`, `os_security_updates`; notification event `caravana.release`. Times RFC
 3339 UTC.
 
@@ -175,7 +191,8 @@ The designer checks at 127.0.0.1:7070 against `pg-updates.png`:
 - a lab VM with a pending kernel (install a newer `linux-image` without rebooting): the ■ banner,
   the needs-you item and its notification, the Reboot row with both kernels, the steps;
 - security updates waiting (the motd file), before and after 24 hours with unattended-upgrades
-  on;
+  on; Check package names (the ◐ state, the names after); a stale file (older than 48 h: fg-3,
+  the apt update sentence, no item);
 - a newer caravana (a fake release served to the check in the lab, or the table test), the
   `caravana.release` notification, the nav count;
 - the release check turned off; GitHub unreachable; a non-Ubuntu host (the OS sentence);
