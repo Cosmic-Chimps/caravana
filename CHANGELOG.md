@@ -15,6 +15,14 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   six states means.
 
 ### Changed
+- **Configure of an app deployed from a Compose file** says why it looks different: Caravana keeps
+  the file, so the app is edited through it, while an app deployed from an image is edited field by
+  field. When the last deploy came from CI, it adds that a deploy from CI can replace changes made
+  here, so lasting changes belong in the source.
+- **Secrets in the Compose form** (New app, Deploy from Compose, Configure) are one row each: the
+  name at the left, its input at the right, so a long name such as
+  `Frunchy__Auth__Providers__Umbral__ClientSecret` no longer runs into the next one. "Leave a value
+  empty to keep it." is said once. A new secret's name and value sit side by side.
 - **MCP**: `deploy_image`, `promote_app` and `redeploy_version` are marked destructive, so agent
   clients ask before running them. `docs/mcp.md` now says what bounds an agent: the server offers
   no action tools without `--allow-actions`, but the token is the real limit, since an agent with
