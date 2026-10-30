@@ -254,3 +254,30 @@ Departures ruled: the table folds under 860px of its own width (yes); Needs you'
 the server's own events right now." (yes); local time in the title, not the cell (yes); a terminal session is kind
 `command` and "Resolved: " precedes the sentence (yes); `rebootRequired` waits for page 3 and bad activity queries are
 422 `invalid_field` (yes).
+
+## Recheck and critique rulings (designer, 2026-10-30)
+
+The recheck at f0fd007 measured no overflow at 1440, 1100 and 1700 and confirmed the six fixes. The critique
+(28/40, no P0, two P1) is saved in `.impeccable/critique/`. Ruled, to do in one pass:
+
+1. **The fold:** each folded value is one element (the cell has two items, label and value), and the pairs sit as
+   label-over-value cells in `repeat(auto-fill, minmax(9rem, 1fr))` under the name and state line (about 80px per app at
+   800px).
+2. **Column widths:** Last change 160px nowrap; State 136px nowrap; the fold moves to under 920px of the table's own
+   width.
+3. **Unusual numbers by more than colour:** State stays the run state. A 7px ◆ warn mark before the CPU sparkline; mark
+   and line are one link to the app on `/monitoring`, with 025's issue sentence plus ", open monitoring" as its
+   aria-label and title. The amber line and the mark come only from 025's `Judge` issues for the app; no issue, an fg-2
+   line and no mark.
+4. **One CPU and memory window:** the stats line uses the same newest sample the meters show (no 10-minute mean).
+5. **A stopped app:** 025's ruling exactly, "—" and "CPU while the app ran; it is stopped now"; never a "now" value.
+6. **Focus:** the server panel and the apps table are separate regions swapped by id; row links and chips have stable
+   ids (`ops-app-<app id>`, `ops-copy-<copy id>`); no new script.
+7. **Activity under 420px of the panel's own width:** time and kind share a line above the sentence.
+8. **The feed's place label** is the full one, as the table and needs-you have it ("Shop › staging › `web`", place in
+   fg-3, name in mono); Default › production stays the bare name.
+
+Minor: the note reads "from caravana's records · times in UTC"; the needs-you action cell gets a min-width that fits the
+longest label ("View deployment"), button right-aligned, in the shared template (the home too); the DISK readout goes
+under its bar like MEM and CPU. Kept as is: "5 apps need you" beside "Needs you 6" (apps against items), the copy chips,
+stacked at 1440, no sort or filter.
