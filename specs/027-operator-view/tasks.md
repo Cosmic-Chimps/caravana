@@ -106,10 +106,10 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 - [X] T013 [P] [US1] [SC-007] Styles under `/* Page 027 */` in `internal/ui/style/input.css` (toggle, Operator
   sidebar groups, NodePanel, AllocChip, EventRow, the apps table and its fold), `tools/ui-css.sh build`; `DESIGN.md`
   records the toggle, the Operator sidebar and the activity row; text never fg-4.
-- [ ] T014 [US1] [SC-005, SC-007] `cmd/caravana/console_ops_test.go`: `TestConsoleLab` step `console-ops-overview` (the
+- [X] T014 [US1] [SC-005, SC-007] `cmd/caravana/console_ops_test.go`: `TestConsoleLab` step `console-ops-overview` (the
   toggle, the cookie onto Settings, the stats line, the server panel with the lab's spec line, the apps table across two
   places, a deploy and a restart appearing in Live activity, still there after `RestartCaravana`, no command output
-  in the page, the page renders in under 1 s); run it in the lab and record the result here.
+  in the page, the page renders in under 1 s); written and compiled; not yet run in the lab (the main session runs it and records the result here).
 - [ ] T015 [US1] Page 1 review cycle: stage the lab for the designer, the designer's review against
   `pe-ops-now.png`, the impeccable critique (critique only, no detector), the designer's rulings, the fixes, the last
   look; record "Approved" in `contracts/page1-overview.md`.
