@@ -188,6 +188,30 @@ func TestPromotedTakesTheEntrypoint(t *testing.T) {
 	}
 }
 
+// The stop timeout is part of how the image shuts down, so a promotion takes
+// the source's, and says so when it differs.
+func TestPromotedTakesTheStopTimeout(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].StopTimeout = 20
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Services[0].StopTimeout != 20 {
+		t.Errorf("stopTimeout = %d, want staging's 20", got.Services[0].StopTimeout)
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "stopTimeout") {
+		t.Errorf("changed = %+v, want stopTimeout among them", changes)
+	}
+
+	// Both unset: nothing to say.
+	_, changes, _, _ = promoted(production(), staging())
+	if slices.Contains(changes[0].Changed, "stopTimeout") {
+		t.Errorf("changed = %v, no stop timeout differs", changes[0].Changed)
+	}
+}
+
 func TestPreviewPromotion(t *testing.T) {
 	ctx := context.Background()
 	e := shopEnv(t)

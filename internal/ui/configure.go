@@ -444,7 +444,23 @@ func alsoSet(svc app.Service, s editService) []defRow {
 		rows = append(rows, defRow{Label: "Backup", Values: []string{
 			fmt.Sprintf("%s, %s, keeping %d", b.Engine, scheduleText(b.ScheduleOrDefault()), b.KeepOrDefault())}})
 	}
+	if text := stopTimeoutText(svc); text != "" {
+		rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})
+	}
 	return rows
+}
+
+// stopTimeoutText says how long the service gets to stop before Nomad kills
+// it: its own setting, or the default of a service with a volume. Empty when
+// Nomad's own 5 s applies.
+func stopTimeoutText(svc app.Service) string {
+	switch {
+	case svc.StopTimeout > 0:
+		return strconv.Itoa(svc.StopTimeout) + " s"
+	case len(svc.Volumes) > 0:
+		return strconv.Itoa(app.VolumeStopTimeout) + " s (the default for a service with a volume)"
+	}
+	return ""
 }
 
 // servicePanels shows each service of the app as a panel of facts, for the
@@ -521,6 +537,9 @@ func servicePanels(a app.App) []defPanel {
 		if b := svc.Backup; b != nil {
 			rows = append(rows, defRow{Label: "Backup", Values: []string{
 				fmt.Sprintf("%s, %s (UTC), keeping the last %d", b.Engine, b.ScheduleOrDefault(), b.KeepOrDefault())}})
+		}
+		if text := stopTimeoutText(svc); text != "" {
+			rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})
 		}
 		out = append(out, defPanelOf(svc.Name, rows))
 	}

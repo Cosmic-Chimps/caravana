@@ -110,6 +110,10 @@ func TestValidate(t *testing.T) {
 			a.Services[0].Resources = Resources{MemoryMB: 512, MemoryMaxMB: 256}
 		}, "services[0].resources.memoryMB"},
 
+		// Stop timeout.
+		{"stop timeout negative", func(a *App, d *Deployment) { a.Services[0].StopTimeout = -1 }, "services[0].stopTimeout"},
+		{"stop timeout over the cap", func(a *App, d *Deployment) { a.Services[0].StopTimeout = MaxStopTimeout + 1 }, "services[0].stopTimeout"},
+
 		// Entrypoint.
 		{"entrypoint with an empty item", func(a *App, d *Deployment) { a.Services[1].Entrypoint = []string{"sh", ""} }, "services[1].entrypoint[1]"},
 		{"entrypoint item too long", func(a *App, d *Deployment) {

@@ -129,6 +129,7 @@ job "shop" {
     }
     task "db" {
       driver = "docker"
+      kill_timeout = "30s"
       config {
         image = "postgres@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
       }

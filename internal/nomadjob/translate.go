@@ -521,6 +521,11 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 		Env:       env,
 		Resources: taskResources(svc.Resources, s),
 	}
+	// How long Nomad waits after the stop signal before it kills the
+	// container. Unset keeps Nomad's own 5 s.
+	if n := svc.StopTimeoutOrDefault(); n > 0 {
+		t.KillTimeout = new(time.Duration(n) * time.Second)
+	}
 	// The job names the variable, never a value: values stay in the store.
 	if len(svc.Secrets) > 0 {
 		t.Templates = []*api.Template{secretsTemplate(appID, svc.Name)}

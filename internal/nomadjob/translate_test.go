@@ -72,6 +72,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 	cases = append(cases, volumeBackupCases()...)
 	cases = append(cases, entrypointCases()...)
+	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
 }
@@ -155,6 +156,26 @@ func entrypointCases() []goldenCase {
 		"tool":  "ghcr.io/acme/tool@sha256:" + strings.Repeat("b", 64),
 	}}
 	return []goldenCase{{name: "entrypoint", app: cache, deployment: dep, settings: labSettings()}}
+}
+
+// stopTimeoutCases is a service that sets its stop timeout, on a service
+// without a volume, so only this setting puts a kill timeout in the task.
+func stopTimeoutCases() []goldenCase {
+	worker := app.App{
+		ID:     "jobs",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:        "worker",
+				Image:       "ghcr.io/acme/worker:main",
+				StopTimeout: 20,
+			},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("c", 64),
+	}}
+	return []goldenCase{{name: "stop-timeout", app: worker, deployment: dep, settings: labSettings()}}
 }
 
 // domainCases are apps whose domains have options (feature 023), each with

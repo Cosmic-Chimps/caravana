@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.28.0
+  version: 0.29.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -3950,6 +3950,15 @@ components:
                 copy is restarted. At least `memoryMB`. 0 means the larger of the reservation and
                 the installation's default (1024 unless configured). When the cluster doesn't allow
                 memory oversubscription, Nomad ignores it and the deployment's warnings say so.
+        stopTimeout:
+          type: integer
+          minimum: 1
+          maximum: 30
+          description: |
+            Seconds Nomad waits after the stop signal before it kills the container, on a deploy,
+            a restart, a stop and a volume backup. Unset is 30 for a service with a volume and
+            Nomad's 5 otherwise. Compose's `stop_grace_period` sets it. At most 30: Nomad clients
+            cap a task's kill timeout (`max_kill_timeout`).
         health:
           type: object
           additionalProperties: false
@@ -6430,7 +6439,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [entrypoint, command, args, ports, health, volumes]
+            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout]
 
     PromotionPreview:
       type: object

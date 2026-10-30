@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 
@@ -93,6 +94,14 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 	if cpus > 0 {
 		svc.Resources.CPUMHz = int(math.Round(cpus * 1000))
 		warn(".deploy.resources.limits.cpus", "%g CPU becomes %d MHz: Nomad shares CPU by MHz, not by cores", cpus, svc.Resources.CPUMHz)
+	}
+
+	if sc.StopGracePeriod != nil {
+		n, err := stopTimeout(field, time.Duration(*sc.StopGracePeriod))
+		if err != nil {
+			return app.Service{}, nil, err
+		}
+		svc.StopTimeout = n
 	}
 
 	if err := applyOverlay(field, &svc, sc, ov, warn); err != nil {
@@ -231,9 +240,20 @@ func serviceWarnings(sc types.ServiceConfig, warn func(string, string, ...any)) 
 	if sc.Logging != nil {
 		warn(".logging", "is ignored: Nomad keeps each copy's output, which the console and the logs API read")
 	}
-	if sc.StopGracePeriod != nil {
-		warn(".stop_grace_period", "is ignored: Nomad's kill timeout applies")
+}
+
+// stopTimeout is Compose's stop_grace_period as the service's stop timeout:
+// whole seconds, rounded up. Nomad clients cap a task's kill timeout, so a
+// longer period is refused rather than shortened without a word.
+func stopTimeout(field string, d time.Duration) (int, error) {
+	switch {
+	case d <= 0:
+		return 0, app.NewFieldError(field+".stop_grace_period", "must be at least 1s")
+	case d > app.MaxStopTimeout*time.Second:
+		return 0, app.NewFieldError(field+".stop_grace_period",
+			"is %s; at most %ds is allowed: Nomad clients cap a task's kill timeout at 30 s", d, app.MaxStopTimeout)
 	}
+	return int((d + time.Second - 1) / time.Second), nil
 }
 
 // megabytes is a byte count in whole MB, rounded up.

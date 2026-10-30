@@ -1012,6 +1012,49 @@ func TestAlsoSetHealthPort(t *testing.T) {
 	}
 }
 
+// "Also set" and the Compose panels say how long a service gets to stop: its own setting, the
+// volume default, or nothing when Nomad's own 5 s applies.
+func TestStopTimeoutRows(t *testing.T) {
+	volume := []app.Volume{{Name: "data", Path: "/data"}}
+	tests := []struct {
+		name string
+		svc  app.Service
+		want string
+	}{
+		{"set", app.Service{Name: "web", StopTimeout: 20}, "20 s"},
+		{"set on a service with a volume", app.Service{Name: "web", StopTimeout: 12, Volumes: volume}, "12 s"},
+		{"the volume default", app.Service{Name: "web", Volumes: volume}, "30 s (the default for a service with a volume)"},
+		{"nothing", app.Service{Name: "web"}, ""},
+	}
+	find := func(rows []defRow) string {
+		for _, r := range rows {
+			if r.Label == "Stop timeout" {
+				return r.Values[0]
+			}
+		}
+		return ""
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := find(alsoSet(tt.svc, newEditService(tt.svc))); got != tt.want {
+				t.Errorf("alsoSet: stop timeout = %q, want %q", got, tt.want)
+			}
+			a := app.App{ID: "shop", Services: []app.Service{tt.svc}}
+			var got string
+			for _, p := range servicePanels(a) {
+				for _, r := range p.Rows {
+					if r.Label == "Stop timeout" {
+						got = r.Values[0]
+					}
+				}
+			}
+			if got != tt.want {
+				t.Errorf("servicePanels: stop timeout = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // Domains with none: no table head, the empty block alone.
 func TestDomainsEmptyHasNoHead(t *testing.T) {
 	e := newConsoleEnv(t)

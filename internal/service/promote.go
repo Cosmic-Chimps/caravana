@@ -268,7 +268,7 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, entrypoint, command, arguments, ports,
-// health check and volume mounts, and the target's everything else. A service
+// health check, volume mounts and stop timeout, and the target's everything else. A service
 // only the source has is added whole, without domains. A service only the
 // target has is a *RefusalError. It is pure.
 func promoted(target, source app.App) (result app.App, changes []ServiceChange, added []string, err error) {
@@ -308,12 +308,16 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !slices.Equal(t.Volumes, s.Volumes) {
 			change.Changed = append(change.Changed, "volumes")
 		}
+		if t.StopTimeout != s.StopTimeout {
+			change.Changed = append(change.Changed, "stopTimeout")
+		}
 		changes = append(changes, change)
 
 		t.Image, t.Command = s.Image, s.Command
 		t.Entrypoint = slices.Clone(s.Entrypoint)
 		t.Args, t.Ports, t.Volumes = slices.Clone(s.Args), slices.Clone(s.Ports), slices.Clone(s.Volumes)
 		t.Health = cloneHealth(s.Health)
+		t.StopTimeout = s.StopTimeout
 		result.Services = append(result.Services, t)
 	}
 	for _, s := range source.Services {

@@ -9,6 +9,29 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- **API 0.29.0**: `stopTimeout` on a service (1 to 30 seconds): how long Nomad waits after the stop
+  signal before it kills the container, on a deploy, a restart, a stop and a volume backup.
+  Unset is 30 for a service with a volume and Nomad's 5 otherwise. Compose's `stop_grace_period`
+  sets it, a promotion takes the source's, and Configure shows it as "Stop timeout".
+
+### Changed
+- **A service with a volume now gets 30 seconds to stop** (before: Nomad's 5). A volume backup
+  stops the service, and an in-process database such as Uptime Kuma 2's embedded MariaDB that is
+  killed mid-shutdown leaves a crash-consistent archive and runs crash recovery at every start.
+  The cost: a service that ignores the stop signal (a `sh -c` wrapper that doesn't pass it on)
+  now takes up to 30 s to stop on each deploy and backup. Set `stopTimeout` lower for such a
+  service.
+- **Compose's `stop_grace_period` is honoured**, rounded up to whole seconds, instead of ignored
+  with a warning. More than 30 s is refused, naming the field: Nomad clients cap a task's kill
+  timeout at 30 s (`max_kill_timeout`).
+
+### Upgrade
+- Redeploy each app that has a volume once, so its job gets the stop timeout (the running job
+  keeps Nomad's 5 s until then). For Uptime Kuma 2 (embedded MariaDB) that is enough; or set
+  `stop_grace_period: 30s` in its Compose file. Then check that the next start's log has no
+  "crash recovery".
+
 ## 0.15.0 - 2026-10-30
 
 ### Added

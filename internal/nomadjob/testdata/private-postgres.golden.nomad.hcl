@@ -50,6 +50,7 @@ job "shop" {
     }
     task "db" {
       driver = "docker"
+      kill_timeout = "30s"
       config {
         auth {
           password = "$${CARAVANA_REGISTRY_PASSWORD}"
