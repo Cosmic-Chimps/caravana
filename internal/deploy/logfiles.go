@@ -249,7 +249,7 @@ func (d *Deployer) LogCopies(ctx context.Context, jobIDs []string) ([]Copy, erro
 		if !slices.Contains(jobIDs, s.JobID) {
 			continue
 		}
-		c := copyOf(s)
+		c := copyOf(s, nil) // the logs don't use a copy's health
 		c.Gone = c.Terminal
 		copies = append(copies, c)
 	}

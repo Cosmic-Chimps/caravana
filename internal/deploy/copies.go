@@ -4,9 +4,12 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
+
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 )
 
 // CopyStatus is how one copy of a service is doing, in Caravana's words.
@@ -43,6 +46,13 @@ type Copy struct {
 	FinishedAt        *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
 	OutOfMemory       bool       // the service's last stop was the kernel killing it for passing its memory ceiling
 	Terminal          bool       // true for stopped and failed: it will never run again
+	// Replaced is true when Nomad has already made another copy to take this one's
+	// place (the stub's NextAllocation is set): a rescheduled failure. PreviousID is
+	// the copy this one replaced (the newest event of its reschedule tracker), ""
+	// for the first of its lineage. Together they let a list keep the newest copy of
+	// each lineage (the server page, feature 027).
+	Replaced   bool
+	PreviousID string
 	// Stopping is true when Nomad has told the copy to stop (its desired
 	// status isn't "run") while it may still say it is running. Nomad refuses
 	// to restart or exec into such a copy, so the app actions skip it.
@@ -54,22 +64,32 @@ type Copy struct {
 
 // copyOf maps one allocation to a Copy (research R8):
 //
-//	client pending                              starting
-//	client running, deployment health not set   starting
-//	client running, healthy or no deployment    healthy
-//	client running, health false                unhealthy
-//	client complete                             stopped
-//	client failed or lost                       failed
+//	client pending                                        starting
+//	client running, deployment health not set             starting
+//	client running, no deployment status, its version's
+//	  deployment still running                            starting
+//	client running, healthy or no deployment              healthy
+//	client running, health false                          unhealthy
+//	client complete                                       stopped
+//	client failed or lost                                 failed
+//
+// Nomad leaves a copy's DeploymentStatus nil until its health is decided, and the
+// list stub doesn't say which deployment it belongs to, so a nil status alone
+// can't tell "not part of a rollout" from "a rollout that hasn't decided yet".
+// active (the job versions with a deployment still going) tells them apart: nil
+// means none is known, and a nil status is then read as healthy.
 //
 // Any other client status (Nomad's "unknown", for a node that dropped out)
 // counts as unhealthy: the copy isn't known to be serving, but may come back.
-func copyOf(a *api.AllocationListStub) Copy {
+func copyOf(a *api.AllocationListStub, active rollouts) Copy {
 	c := Copy{
 		ID:          a.ID,
 		Service:     a.TaskGroup,
 		Node:        a.NodeName,
 		Description: a.ClientDescription,
 		Version:     a.JobVersion,
+		Replaced:    a.NextAllocation != "",
+		PreviousID:  previousOf(a),
 	}
 
 	switch a.ClientStatus {
@@ -77,6 +97,8 @@ func copyOf(a *api.AllocationListStub) Copy {
 		c.Status = CopyStarting
 	case api.AllocClientStatusRunning:
 		switch {
+		case a.DeploymentStatus == nil && active[jobVersion{a.JobID, a.JobVersion}]:
+			c.Status = CopyStarting // its rollout hasn't decided its health yet
 		case a.DeploymentStatus == nil:
 			c.Status = CopyHealthy // not part of a rollout: running is healthy
 		case a.DeploymentStatus.Healthy == nil:
@@ -119,6 +141,17 @@ func copyOf(a *api.AllocationListStub) Copy {
 	return c
 }
 
+// previousOf is the copy a rescheduled copy replaced, "" if it replaced none.
+func previousOf(a *api.AllocationListStub) string {
+	if a.RescheduleTracker == nil || len(a.RescheduleTracker.Events) == 0 {
+		return ""
+	}
+	if last := a.RescheduleTracker.Events[len(a.RescheduleTracker.Events)-1]; last != nil {
+		return last.PrevAllocID
+	}
+	return ""
+}
+
 // requestedRestartMessage is what a task's "Restart Signaled" event says when
 // someone asked for all of the allocation's tasks to restart (lab finding L5).
 // A restart Nomad decides on itself, after a crash, has no such event.
@@ -156,16 +189,22 @@ func killedForMemory(ts *api.TaskState) bool {
 // terminal copies of the newest job version Nomad still has for it, so a
 // failed deploy's crashed copies stay visible (research R8). They are ordered
 // by service, then version (newest first), then start time.
+//
+// A copy's status needs more than its stub says (see copyOf and settle): the
+// job's latest deployment, and for a copy running outside a rollout, its
+// service checks.
 func (d *Deployer) Copies(ctx context.Context, jobID string) ([]Copy, error) {
 	stubs, _, err := d.nomad.Jobs().Allocations(jobID, false, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
 		return nil, d.callError("list copies of "+jobID, err)
 	}
-	copies := make([]Copy, 0, len(stubs))
-	for _, s := range stubs {
-		copies = append(copies, copyOf(s))
+	dep, _, err := d.nomad.Jobs().LatestDeployment(jobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return nil, d.callError("read the latest deployment of "+jobID, err)
 	}
-	return listed(copies), nil
+	active := rollouts{}
+	active.add(dep)
+	return listed(d.copiesOf(ctx, stubs, active)), nil
 }
 
 // AllCopies lists every job's copies, by job ID, in one request, for the Apps
@@ -175,14 +214,126 @@ func (d *Deployer) AllCopies(ctx context.Context) (map[string][]Copy, error) {
 	if err != nil {
 		return nil, d.callError("list copies", err)
 	}
-	byJob := map[string][]Copy{}
-	for _, s := range stubs {
-		byJob[s.JobID] = append(byJob[s.JobID], copyOf(s))
+	deps, _, err := d.nomad.Deployments().List((&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return nil, d.callError("list deployments", err)
 	}
-	for id, copies := range byJob {
-		byJob[id] = listed(copies)
+	active := rollouts{}
+	for _, dep := range deps {
+		active.add(dep)
+	}
+	copies := d.copiesOf(ctx, stubs, active)
+	byJob := map[string][]Copy{}
+	for i, s := range stubs {
+		byJob[s.JobID] = append(byJob[s.JobID], copies[i])
+	}
+	for id, list := range byJob {
+		byJob[id] = listed(list)
 	}
 	return byJob, nil
+}
+
+// copiesOf maps stubs to copies, in the same order, and settles the status of
+// the running ones that no rollout speaks for (settle).
+func (d *Deployer) copiesOf(ctx context.Context, stubs []*api.AllocationListStub, active rollouts) []Copy {
+	copies := make([]Copy, len(stubs))
+	for i, s := range stubs {
+		copies[i] = copyOf(s, active)
+	}
+	d.settle(ctx, copies, stubs, active)
+	return copies
+}
+
+// The limits of the check reads: how many run at once and how long each may take.
+// A slow client delays the list by one timeout at most, and never fails it.
+const (
+	checkReads   = 8
+	checkTimeout = 3 * time.Second
+)
+
+// settle corrects the status of copies that run outside the rollout of their own
+// job version (a rescheduled copy, one Caravana restarted, one back after its node
+// returned). For them the deployment status says nothing about now: its health
+// was decided at the copy's first start, or never. What says it is the copy's
+// service checks (Nomad reads them on the client). Only a copy that would
+// otherwise be healthy, whose group has a service with checks, is read; an error
+// for one copy keeps its status and never fails the list.
+func (d *Deployer) settle(ctx context.Context, copies []Copy, stubs []*api.AllocationListStub, active rollouts) {
+	var todo []int
+	for i, c := range copies {
+		key := jobVersion{stubs[i].JobID, c.Version}
+		if c.Status != CopyHealthy || active[key] {
+			continue
+		}
+		if has, err := d.groupHasChecks(ctx, key, c.Service); err == nil && has {
+			todo = append(todo, i)
+		}
+	}
+	if len(todo) == 0 {
+		return
+	}
+	now := d.cache.clock()
+	sem := make(chan struct{}, checkReads)
+	var wg sync.WaitGroup
+	for _, i := range todo {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			cctx, cancel := context.WithTimeout(ctx, checkTimeout)
+			defer cancel()
+			checks, err := d.nomad.Allocations().Checks(copies[i].ID, (&api.QueryOptions{}).WithContext(cctx))
+			if err != nil {
+				return // keep today's rule for this copy
+			}
+			copies[i].Status = statusByChecks(copies[i], checks, now)
+		}()
+	}
+	wg.Wait()
+}
+
+// statusByChecks is the status of a copy running outside a rollout, from its
+// service checks (Nomad's "success", "failure" and "pending"): all passing is
+// healthy; any other result is starting while the copy's last start or restart is
+// within the healthy deadline a deploy allows (nomadjob.HealthyDeadline), and
+// unhealthy after it. A copy with no checks keeps its status. It is pure.
+func statusByChecks(c Copy, checks api.AllocCheckStatuses, now time.Time) CopyStatus {
+	passing := true
+	for _, ch := range checks {
+		if ch.Status != "success" {
+			passing = false
+		}
+	}
+	if passing {
+		return c.Status
+	}
+	var last *time.Time
+	for _, t := range []*time.Time{c.StartedAt, c.LastRestart} {
+		if t != nil && (last == nil || t.After(*last)) {
+			last = t
+		}
+	}
+	if last == nil || now.Sub(*last) < nomadjob.HealthyDeadline {
+		return CopyStarting
+	}
+	return CopyUnhealthy
+}
+
+// rollouts is the job versions that have a deployment still going.
+type rollouts map[jobVersion]bool
+
+// add notes dep when Nomad hasn't finished with it: running, or waiting on
+// something (a promotion, a pause, an earlier rollout).
+func (r rollouts) add(dep *api.Deployment) {
+	if dep == nil {
+		return
+	}
+	switch dep.Status {
+	case api.DeploymentStatusRunning, api.DeploymentStatusPending, api.DeploymentStatusPaused,
+		api.DeploymentStatusBlocked, api.DeploymentStatusUnblocking, "initializing":
+		r[jobVersion{dep.JobID, dep.JobVersion}] = true
+	}
 }
 
 // listed keeps the copies worth showing and puts them in display order.

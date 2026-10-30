@@ -130,14 +130,18 @@ type Nomad struct {
 	restartStop   time.Duration // how long a restarted main task stays stopped
 
 	// Commands run in copies, and the checks of copies (exec.go).
-	execs      []ExecRequest
-	execStatus int // non-zero: every exec answers it before the upgrade
-	onExec     func(ExecRequest) ExecReply
-	checks     map[string]api.AllocCheckStatuses // by copy ID
+	execs        []ExecRequest
+	execStatus   int // non-zero: every exec answers it before the upgrade
+	onExec       func(ExecRequest) ExecReply
+	checks       map[string]api.AllocCheckStatuses // by copy ID
+	checksStatus int                               // non-zero: every checks read answers it
 
 	host hostFake // the node and its stats (host.go)
 
 	jobInfos int // GET /v1/job/{id} requests answered
+
+	// The deployments the allocation lists are read against (SetDeployment).
+	latest map[string]api.Deployment // by job ID: what GET /v1/job/{id}/deployment answers
 }
 
 // hostVolume is one dynamic host volume and how often it was read.
@@ -371,6 +375,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.allocations(w, r, "")
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/allocation/"):
 		n.allocation(w, strings.TrimPrefix(r.URL.Path, "/v1/allocation/"))
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/deployments":
+		n.deploymentList(w)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs":
 		n.listJobs(w, r.URL.Query().Get("prefix"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/evaluation/"):
@@ -389,6 +395,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 			n.versions(w, id)
 		case "deployments":
 			n.deployments(w, id)
+		case "deployment":
+			n.latestDeployment(w, id)
 		case "allocations":
 			n.allocations(w, r, id)
 		default:
@@ -629,6 +637,50 @@ func (n *Nomad) deployments(w http.ResponseWriter, id string) {
 		d.ID = id + "-deployment-" + strconv.FormatUint(v, 10)
 		d.JobID = id
 		d.JobVersion = v
+		out = append(out, &d)
+	}
+	n.writeJSON(w, out)
+}
+
+// SetDeployment sets the latest deployment of jobID as the fake answers it to
+// GET /v1/job/{id}/deployment and, with every other job's, to GET /v1/deployments:
+// the one the copy status reads. Unlike Script it doesn't move on when read. With
+// none set a job has no deployment (null), which is how a copy outside any rollout
+// looks. status is Nomad's ("running", "successful", ...).
+func (n *Nomad) SetDeployment(jobID string, jobVersion uint64, status string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.latest == nil {
+		n.latest = map[string]api.Deployment{}
+	}
+	n.latest[jobID] = api.Deployment{
+		ID: jobID + "-deployment-latest", JobID: jobID, JobVersion: jobVersion, Status: status,
+	}
+}
+
+// ClearDeployment removes what SetDeployment set for jobID.
+func (n *Nomad) ClearDeployment(jobID string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.latest, jobID)
+}
+
+func (n *Nomad) latestDeployment(w http.ResponseWriter, id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if d, ok := n.latest[id]; ok {
+		n.writeJSON(w, &d)
+		return
+	}
+	n.writeJSON(w, nil)
+}
+
+func (n *Nomad) deploymentList(w http.ResponseWriter) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := []*api.Deployment{}
+	for _, id := range slices.Sorted(maps.Keys(n.latest)) {
+		d := n.latest[id]
 		out = append(out, &d)
 	}
 	n.writeJSON(w, out)

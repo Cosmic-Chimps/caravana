@@ -15,7 +15,7 @@ import (
 // A copy Nomad has told to stop may still say it is running; Stopping says so.
 func TestCopyOfStopping(t *testing.T) {
 	for desired, want := range map[string]bool{"": false, "run": false, "stop": true, "evict": true} {
-		got := copyOf(&api.AllocationListStub{ClientStatus: "running", DesiredStatus: desired})
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", DesiredStatus: desired})
 		if got.Stopping != want || got.Status != CopyHealthy {
 			t.Errorf("desired %q: stopping = %v, status = %s; want %v, healthy", desired, got.Stopping, got.Status, want)
 		}
@@ -49,7 +49,7 @@ func TestCopyOf(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.stub.ID, tc.stub.TaskGroup, tc.stub.NodeName = "a1", "web", "node-1"
 			tc.stub.JobVersion, tc.stub.ClientDescription = 7, "Tasks are running"
-			got := copyOf(&tc.stub)
+			got := plainCopyOf(&tc.stub)
 			if got.Status != tc.want || got.Terminal != tc.terminal {
 				t.Errorf("status = %s, terminal = %v; want %s, %v", got.Status, got.Terminal, tc.want, tc.terminal)
 			}
@@ -61,7 +61,7 @@ func TestCopyOf(t *testing.T) {
 	}
 
 	t.Run("restarts are summed over tasks and StartedAt is the first start", func(t *testing.T) {
-		got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskStates: map[string]*api.TaskState{
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", TaskStates: map[string]*api.TaskState{
 			"web":     {Restarts: 2, StartedAt: t0.Add(time.Minute)},
 			"sidecar": {Restarts: 1, StartedAt: t0},
 			"gone":    nil,
@@ -75,7 +75,7 @@ func TestCopyOf(t *testing.T) {
 	})
 
 	t.Run("LastRestart is the newest restart of any task", func(t *testing.T) {
-		got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
 			"web":     {Restarts: 2, LastRestart: t0.Add(2 * time.Minute)},
 			"sidecar": {Restarts: 1, LastRestart: t0.Add(time.Minute)},
 			"never":   {},
@@ -84,13 +84,13 @@ func TestCopyOf(t *testing.T) {
 		if got.LastRestart == nil || !got.LastRestart.Equal(t0.Add(2*time.Minute)) {
 			t.Errorf("LastRestart = %v, want %v", got.LastRestart, t0.Add(2*time.Minute))
 		}
-		if got := copyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.LastRestart != nil {
+		if got := plainCopyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.LastRestart != nil {
 			t.Errorf("LastRestart = %v, want nil when nothing restarted", got.LastRestart)
 		}
 	})
 
 	t.Run("FinishedAt is the newest end of any task", func(t *testing.T) {
-		got := copyOf(&api.AllocationListStub{ClientStatus: "failed", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "failed", TaskGroup: "web", TaskStates: map[string]*api.TaskState{
 			"web":     {FinishedAt: t0.Add(2 * time.Minute)},
 			"sidecar": {FinishedAt: t0.Add(time.Minute)},
 			"never":   {},
@@ -99,7 +99,7 @@ func TestCopyOf(t *testing.T) {
 		if got.FinishedAt == nil || !got.FinishedAt.Equal(t0.Add(2*time.Minute)) {
 			t.Errorf("FinishedAt = %v, want %v", got.FinishedAt, t0.Add(2*time.Minute))
 		}
-		if got := copyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.FinishedAt != nil {
+		if got := plainCopyOf(&api.AllocationListStub{TaskGroup: "web", TaskStates: map[string]*api.TaskState{"web": {}}}); got.FinishedAt != nil {
 			t.Errorf("FinishedAt = %v, want nil when nothing ended", got.FinishedAt)
 		}
 	})
@@ -130,7 +130,7 @@ func TestCopyOf(t *testing.T) {
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
+				got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
 				if got.OutOfMemory != tc.want {
 					t.Errorf("OutOfMemory = %v, want %v", got.OutOfMemory, tc.want)
 				}
@@ -159,7 +159,7 @@ func TestCopyOf(t *testing.T) {
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				got := copyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
+				got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", TaskGroup: "web", TaskStates: tc.states})
 				if got.RequestedRestarts != tc.want {
 					t.Errorf("RequestedRestarts = %d, want %d", got.RequestedRestarts, tc.want)
 				}
@@ -168,7 +168,7 @@ func TestCopyOf(t *testing.T) {
 	})
 
 	t.Run("StartedAt is nil while no task has started", func(t *testing.T) {
-		got := copyOf(&api.AllocationListStub{ClientStatus: "pending", TaskStates: map[string]*api.TaskState{
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "pending", TaskStates: map[string]*api.TaskState{
 			"web": {State: "pending"},
 		}})
 		if got.StartedAt != nil {
@@ -471,3 +471,6 @@ func distinct(s []string) map[string]bool {
 	}
 	return m
 }
+
+// plainCopyOf is copyOf with no rollout known: what the status rules say from the stub alone.
+func plainCopyOf(a *api.AllocationListStub) Copy { return copyOf(a, nil) }

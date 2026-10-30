@@ -71,9 +71,21 @@ func (n *Nomad) SetChecks(copyID string, checks api.AllocCheckStatuses) {
 	n.checks[copyID] = checks
 }
 
+// FailChecks makes every checks read answer status (0 undoes it), as a client does when
+// it can't be reached.
+func (n *Nomad) FailChecks(status int) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.checksStatus = status
+}
+
 func (n *Nomad) serveChecks(w http.ResponseWriter, id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.checksStatus != 0 {
+		http.Error(w, "client unreachable", n.checksStatus)
+		return
+	}
 	if n.copyStub(id) == nil {
 		http.Error(w, "alloc not found", http.StatusNotFound)
 		return

@@ -86,6 +86,9 @@ type hostCache struct {
 	now   func() time.Time
 	nodes map[string]cachedNode    // by node ID
 	tasks map[jobVersion]taskHooks // by job ID and version
+	// checked says, by job ID and version, then group, whether the group has a
+	// service with checks (filled with tasks).
+	checked map[jobVersion]map[string]bool
 	// traefik is the traefik job's image (TraefikImage).
 	traefik cachedImage
 }

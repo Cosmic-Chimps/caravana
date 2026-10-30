@@ -88,7 +88,7 @@ type Result struct {
 // allocations never stopped serving.
 const (
 	minHealthyTime   = 10 * time.Second
-	healthyDeadline  = 3 * time.Minute
+	HealthyDeadline  = 3 * time.Minute
 	progressDeadline = 10 * time.Minute
 )
 
@@ -236,7 +236,7 @@ func job(a app.App, d app.Deployment, s Settings, private map[string]bool) *api.
 			MaxParallel:      new(1),
 			HealthCheck:      new("checks"),
 			MinHealthyTime:   new(minHealthyTime),
-			HealthyDeadline:  new(healthyDeadline),
+			HealthyDeadline:  new(HealthyDeadline),
 			ProgressDeadline: new(progressDeadline),
 			AutoRevert:       new(true),
 			AutoPromote:      new(true),

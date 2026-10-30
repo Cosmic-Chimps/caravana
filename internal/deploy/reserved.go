@@ -144,7 +144,7 @@ func (d *Deployer) Reservations(ctx context.Context) (Reservations, error) {
 	out := Reservations{ByKey: map[ServiceKey]Reserved{}}
 	seen := map[jobVersion]bool{}
 	for _, s := range stubs {
-		c := copyOf(s)
+		c := copyOf(s, nil) // only whether it is over is used here
 		if c.Terminal {
 			continue
 		}
@@ -267,11 +267,13 @@ func (d *Deployer) lifecycles(ctx context.Context, key jobVersion) (taskHooks, e
 	}
 
 	hooks := taskHooks{}
+	checked := map[string]bool{}
 	if err == nil {
 		for _, g := range job.TaskGroups {
 			if g == nil || g.Name == nil {
 				continue
 			}
+			checked[*g.Name] = hasChecks(g)
 			tasks := map[string]*api.TaskLifecycle{}
 			for _, t := range g.Tasks {
 				if t != nil && t.Lifecycle != nil && t.Lifecycle.Hook != "" {
@@ -286,8 +288,45 @@ func (d *Deployer) lifecycles(ctx context.Context, key jobVersion) (taskHooks, e
 		c.tasks = map[jobVersion]taskHooks{}
 	}
 	c.tasks[key] = hooks
+	if c.checked == nil {
+		c.checked = map[jobVersion]map[string]bool{}
+	}
+	c.checked[key] = checked
 	c.mu.Unlock()
 	return hooks, nil
+}
+
+// hasChecks reports whether a service of the group, or of one of its tasks, has
+// a check.
+func hasChecks(g *api.TaskGroup) bool {
+	for _, s := range g.Services {
+		if s != nil && len(s.Checks) > 0 {
+			return true
+		}
+	}
+	for _, t := range g.Tasks {
+		if t == nil {
+			continue
+		}
+		for _, s := range t.Services {
+			if s != nil && len(s.Checks) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// groupHasChecks says whether a job version's group has a service with checks.
+// It shares lifecycles' cache and its single read of the job.
+func (d *Deployer) groupHasChecks(ctx context.Context, key jobVersion, group string) (bool, error) {
+	if _, err := d.lifecycles(ctx, key); err != nil {
+		return false, err
+	}
+	c := &d.cache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.checked[key][group], nil
 }
 
 // forgetLifecycles drops the cached versions that no live copy has, so the
@@ -299,6 +338,7 @@ func (d *Deployer) forgetLifecycles(keep map[jobVersion]bool) {
 	for k := range c.tasks {
 		if !keep[k] {
 			delete(c.tasks, k)
+			delete(c.checked, k)
 		}
 	}
 }
