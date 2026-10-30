@@ -748,7 +748,7 @@ func TestOpsTableWidthsAndFold(t *testing.T) {
 	if r := rule(".cv-evpanel"); !strings.Contains(r, "container-name: cvev") {
 		t.Errorf("the activity panel isn't the container: %s", r)
 	}
-	if r := rule(".cv-need-act"); !strings.Contains(r, "min-width: 8.75rem") || !strings.Contains(r, "justify-content: flex-end") {
+	if r := rule(".cv-need-act"); !strings.Contains(r, "width: 8.75rem") || strings.Contains(r, "min-width") || !strings.Contains(r, "justify-content: flex-end") {
 		t.Errorf("the needs-you action cell: %s", r)
 	}
 	e := opsEnv(t)

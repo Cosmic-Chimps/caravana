@@ -141,7 +141,8 @@
   .cv-need .cv-btn { align-self: center; text-decoration: none; }
   /* The action cell is as wide as the longest label in use ("View deployment") with the button at its right
      edge, so the times line up from row to row; it is always the last column. */
-  .cv-need-act { grid-column: -2 / -1; display: flex; justify-content: flex-end; min-width: 8.75rem; }
+  /* A fixed width, not a minimum: every row's time then ends at the same x, whatever its action's label. */
+  .cv-need-act { grid-column: -2 / -1; display: flex; justify-content: flex-end; flex: none; width: 8.75rem; }
   .cv-need-none { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
   /* The Running tab's note beside a copy's status when the kernel killed it for memory. */
   .cv-oom { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font: 400 12px/1.35 var(--font-mono); color: var(--color-warn); }
@@ -1809,6 +1810,9 @@
   .cv-opsfacts { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 10px 12px; }
   .cv-opscell { display: grid; align-content: start; gap: 2px; }
   .cv-opscell::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  /* Folded, a cell is narrow: Last change wraps instead of cutting its words. Reach keeps its ellipsis, with the
+     whole host in the value's title. */
+  .cv-opschange .cv-opsval { white-space: normal; overflow: visible; text-overflow: clip; }
 }
 
 /* Live activity under 420px of the panel's own width: the time and the kind share a line above the sentence. */
