@@ -143,6 +143,9 @@ func (s *server) routeTable() []route {
 		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
 		{"GET", "/ops", s.requireSession(s.showOps)},
 		{"GET", "/parts/ops/server", s.requirePart(s.partOpsServer)},
+		{"GET", "/ops/servers", s.requireSession(s.showOpsServers)},
+		{"GET", "/ops/servers/{name}", s.requireSession(s.showOpsServer)},
+		{"GET", "/parts/ops/servers/{name}", s.requirePart(s.partOpsServerBody)},
 		{"GET", "/parts/ops/apps", s.requirePart(s.partOpsApps)},
 		{"GET", "/parts/ops/activity", s.requirePart(s.partOpsActivity)},
 		{"GET", "/monitoring", s.requireSession(s.showMonitoring)},
@@ -315,7 +318,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

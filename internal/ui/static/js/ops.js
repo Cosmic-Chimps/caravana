@@ -2,7 +2,8 @@
 
 // caravana's own script for the Operator Overview (feature 027). The page is complete without
 // it: the server draws the Live activity panel as a snapshot and htmx draws it again on the live
-// notices. This file adds two small things to that panel:
+// notices. This file adds two small things to that panel (the server page's body, feature 027
+// page 2, gets the second one too: its Recent list has times with the same attribute):
 //
 //   - a new row (one whose data-ev the panel didn't have before the swap) gets .cv-row-fresh once,
 //     the 5% veil that fades out in 600 ms (the One Tick Rule). The first draw of the page has
@@ -61,10 +62,14 @@
     const target = event.detail && event.detail.target;
     const known = before;
     before = null;
-    if (!target || target.id !== PANEL) {
+    if (!target) {
       return;
     }
+    // Any swapped region may hold times: the server page's body has its Recent list in it.
     titles(target);
+    if (target.id !== PANEL) {
+      return;
+    }
     if (!known) {
       return;
     }
@@ -76,10 +81,7 @@
   });
 
   function start() {
-    const panel = document.getElementById(PANEL);
-    if (panel) {
-      titles(panel);
-    }
+    titles(document);
   }
 
   if (document.readyState === "loading") {

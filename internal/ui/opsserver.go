@@ -1,0 +1,737 @@
+package ui
+
+import (
+	"cmp"
+	"errors"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/service"
+)
+
+// The Operator server page (feature 027, page 2): /ops/servers/{name}, the one host with its
+// numbers, the copies on it, its facts and what happened to it lately. It reads only
+// internal/service. The numbers and the room sentence are 025's own functions (the meters, the
+// room), so this page and Monitoring never disagree; what is new here is the head, the copies
+// with their use against their reservation, the facts and the server's own history.
+//
+// With one host there is no list of servers: /ops/servers redirects to the one, and Phase 3
+// turns it into the list without moving this page (contracts/page2-server.md).
+
+// srvRecentLimit is how many entries "Recent on this server" lists.
+const srvRecentLimit = 8
+
+// ---- what the page draws ----------------------------------------------------------------------
+
+// opsServerPage is the whole page. Missing is set for a name that isn't the server's: the page
+// then draws the 404 sentence instead of the head and the body.
+type opsServerPage struct {
+	pageData
+	Name string
+	// PartHref is the body's refresh route; empty for a host not read yet, whose name isn't known.
+	PartHref string
+	Head     srvHead
+	Body     srvBody
+	Missing  *srvMissing
+}
+
+// srvMissing is the 404 page: what was asked for and the one server there is.
+type srvMissing struct {
+	Asked string
+	Real  string
+	Href  string
+}
+
+// srvPart is what /parts/ops/servers/{name} answers: the body (swapped into its own element) and
+// the head, which sits outside it and is swapped by id.
+type srvPart struct {
+	Head srvHead
+	Body srvBody
+}
+
+// srvHead is the head: the name, the state in plain words, "reboot needed" when the host's files
+// ask for it, and the spec line. It has no actions: a shell on the host and moving work off are
+// not built (the contract says why).
+type srvHead struct {
+	Name   string
+	State  *statusView // nil until the node is known
+	Reboot bool
+	Spec   string
+}
+
+// srvBody is everything under the head, one live region: the notice, the banners, the numbers
+// and the room line, and the two columns.
+type srvBody struct {
+	// NomadDown says Nomad couldn't be read: the notice is drawn, the numbers carry "as of", and
+	// Running here says it can't read Nomad.
+	NomadDown bool
+	// Waiting is set before the sampler's first reading of the node: the body is this one sentence.
+	Waiting string
+	Banners []srvBanner
+	Numbers srvNumbers
+	Room    *monRoom
+	Running srvRunning
+	Facts   []srvFact
+	Recent  []opsEvent
+}
+
+// srvBanner is a problem of the host as the contract draws it: the mark, the sentence, its
+// explanation when it has one and its one action (none for a node that is down).
+type srvBanner struct {
+	Mark    string
+	Line    sentence
+	Explain sentence
+	Action  string
+	Href    string
+}
+
+// srvNumbers is the three numbers panel. Line is set instead of the cells when the host was never read.
+type srvNumbers struct {
+	Line  string
+	Cells []srvCell
+}
+
+// srvCell is one cell: the label, the big value and its unit, what it is of, and the meter(s).
+// Meters[0] reads the percentage; a second one (the other disk) reads its mount.
+type srvCell struct {
+	Label  string
+	Value  string
+	Unit   string
+	Warn   bool
+	Sub    monSentence
+	Meters []monMeter
+}
+
+// srvRunning is the Running here panel. Message, when set, replaces the rows (Nomad can't be read).
+type srvRunning struct {
+	Count   int
+	Message string
+	Rows    []srvCopy
+}
+
+// srvCopy is one row of Running here.
+type srvCopy struct {
+	// ID is the link's id, stable across a swap so that focus stays on it ("srv-copy-<copy id>").
+	ID    string
+	Href  string
+	Label sentence
+	Short string
+	Title string
+	Mark  string
+	// State is "starting", "draining" (a copy being stopped) or "" for the chip's ground.
+	State string
+	Role  string
+	CPU   srvMetric
+	Mem   srvMetric
+	Up    string
+}
+
+// srvMetric is a LiveMetric: the value and its unit, and what it is of. Value is "—" when the
+// copy has none. Warn puts the value in the warn hue (memory from 90 % of the limit).
+type srvMetric struct {
+	Value, Unit string
+	Sub         string
+	Warn        bool
+	Title       string
+}
+
+// srvFact is one row of the facts panel. Value is the text; Clock replaces it for a time (up
+// since), followed by After in the muted words. Second is the line under it in fg-3. Mark is
+// drawn before the value (a host that is down).
+type srvFact struct {
+	Key    string
+	Value  string
+	Clock  *clockTime
+	After  string
+	Second string
+	Mark   string
+	Strong bool
+}
+
+// ---- handlers ---------------------------------------------------------------------------------
+
+// showOpsServers answers GET /ops/servers: one host, so it goes to the host's page. Before the
+// sampler's first reading the node's name isn't known: the page says so instead.
+func (s *server) showOpsServers(w http.ResponseWriter, r *http.Request, session string) {
+	host, err := s.svc.Host(r.Context())
+	if err != nil {
+		s.serverError(w, "read the host", err)
+		return
+	}
+	if host.Node == nil {
+		s.drawOpsServer(w, r, "")
+		return
+	}
+	http.Redirect(w, r, "/ops/servers/"+url.PathEscape(host.Node.Name), http.StatusFound)
+}
+
+// showOpsServer answers GET /ops/servers/{name}.
+func (s *server) showOpsServer(w http.ResponseWriter, r *http.Request, session string) {
+	s.drawOpsServer(w, r, r.PathValue("name"))
+}
+
+// drawOpsServer draws the page for name ("" for the page of a host not read yet).
+func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name string) {
+	data, err := s.loadOpsServer(r, name)
+	if err != nil {
+		s.serverError(w, "draw the server page", err)
+		return
+	}
+	title := cmp.Or(name, "Server")
+	crumbs := []crumb{{Label: "Overview", Href: "/ops"}, {Label: title}}
+	page, err := s.shellPage(r, title, navOpsServer, crumbs...)
+	if err != nil {
+		s.serverError(w, "read admin", err)
+		return
+	}
+	page.LiveURL = "/live?watch=ops"
+	out := opsServerPage{pageData: page, Name: name}
+	if name != "" {
+		out.PartHref = "/parts/ops/servers/" + url.PathEscape(name)
+	}
+	status := http.StatusOK
+	if data.missing != nil {
+		out.Missing, status = data.missing, http.StatusNotFound
+		out.Title, out.LiveURL = "Server not found", ""
+		out.Shell.Crumbs = []crumb{{Label: "Overview", Href: "/ops"}, {Label: "Server not found"}}
+	} else {
+		out.Head, out.Body = data.head, data.body
+	}
+	s.render(w, status, "opsserver", out)
+}
+
+// partOpsServerBody answers GET /parts/ops/servers/{name}: the body, and the head by id.
+func (s *server) partOpsServerBody(w http.ResponseWriter, r *http.Request, session string) {
+	data, err := s.loadOpsServer(r, r.PathValue("name"))
+	if err != nil {
+		s.log.Error("draw the server page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if data.missing != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.renderPart(w, "opsserver", "srv-part", srvPart{Head: data.head, Body: data.body})
+}
+
+// ---- loaders ----------------------------------------------------------------------------------
+
+// srvData is what one read gives the page and its part.
+type srvData struct {
+	missing *srvMissing
+	head    srvHead
+	body    srvBody
+}
+
+// loadOpsServer reads the host, its copies, the needs-you items about the host and the server's
+// own history, and builds the head and the body. A name that isn't the node's is a missing page;
+// before the node is known any name is the page of a host not read yet.
+func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
+	ctx := r.Context()
+	host, err := s.svc.Host(ctx)
+	if err != nil {
+		return srvData{}, err
+	}
+	now := s.now().UTC()
+	d := srvData{head: srvHead{Name: name}}
+	d.body.NomadDown = nomadUnread(host)
+	n := host.Node
+	if n == nil {
+		d.body.Waiting = "Waiting for the first reading of the server. It appears a minute after Caravana starts."
+		return d, nil
+	}
+	if name != n.Name {
+		d.missing = &srvMissing{Asked: name, Real: n.Name, Href: "/ops/servers/" + url.PathEscape(n.Name)}
+		return d, nil
+	}
+
+	copies, copiesErr := s.svc.HostCopies(ctx)
+	if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
+		s.log.Warn("can't read the copies for the server page", "error", copiesErr)
+	}
+	d.body.NomadDown = d.body.NomadDown || copiesErr != nil
+
+	sums, err := s.svc.ListApps(ctx)
+	if err != nil {
+		return srvData{}, err
+	}
+	pl, err := s.loadPlaces(ctx)
+	if err != nil {
+		return srvData{}, err
+	}
+	items, err := s.hostItems(r, now)
+	if err != nil {
+		return srvData{}, err
+	}
+	recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true})
+	if err != nil {
+		return srvData{}, err
+	}
+
+	d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required, Spec: nodeSpec(n)}
+	coreMHz := coreMHzOf(host.CPU)
+	if coreMHz == 0 && n.Cores > 0 && n.TotalMHz > 0 {
+		coreMHz = float64(n.TotalMHz) / float64(n.Cores)
+	}
+	d.body.Banners = append(s.nodeBanners(now, n), items...)
+	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
+	d.body.Room = roomOf(host)
+	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz)
+	d.body.Facts = s.serverFacts(r, now, n)
+	for _, e := range recent {
+		ev := opsEventOf(e)
+		ev.Time = shortTime(now, e.Time)
+		d.body.Recent = append(d.body.Recent, ev)
+	}
+	return d, nil
+}
+
+// hostItems are the banners of the host's open needs-you items: a disk nearly full, and the OS's
+// security updates and reboot (page 3's kinds). The row is the needs-you list's own, so the page
+// and the list say the same words and offer the same action.
+func (s *server) hostItems(r *http.Request, now time.Time) ([]srvBanner, error) {
+	att, err := s.svc.Attention(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	var out []srvBanner
+	for _, it := range att.Items {
+		if !isHostItem(it.Kind) {
+			continue
+		}
+		row := s.attentionRow(now, it, places{}, nil)
+		b := srvBanner{Mark: row.Mark, Line: row.Text, Action: row.Action, Href: row.Href}
+		switch {
+		case it.Kind == service.AttentionDiskNearlyFull:
+			b.Explain = diskExplain(it.Holds)
+		case len(row.Text) == 0:
+			b.Line = plainS(it.Detail)
+		}
+		out = append(out, b)
+	}
+	return out, nil
+}
+
+// isHostItem says a needs-you kind is about the host itself. The OS kinds are page 3's; naming
+// them here lets their banners appear as soon as the list has them.
+func isHostItem(kind service.AttentionKind) bool {
+	switch kind {
+	case service.AttentionDiskNearlyFull, "os_reboot_required", "os_security_updates":
+		return true
+	}
+	return false
+}
+
+// diskExplain says what is on a disk that is nearly full: "It holds Nomad's data and Docker's images."
+func diskExplain(holds []string) sentence {
+	var what []string
+	for _, h := range holds {
+		switch h {
+		case "nomad":
+			what = append(what, "Nomad's data")
+		case "docker":
+			what = append(what, "Docker's images")
+		}
+	}
+	if len(what) == 0 {
+		return nil
+	}
+	return plainS("It holds " + strings.Join(what, " and ") + ".")
+}
+
+// nodeBanners is the banner of a node Nomad has lost: it can do nothing about it, so no action.
+func (s *server) nodeBanners(now time.Time, n *service.HostNode) []srvBanner {
+	if n.State != "down" {
+		return nil
+	}
+	line := "Nomad lost this server's heartbeat"
+	if !n.LastHeartbeat.IsZero() {
+		line += " " + agoWords(now, n.LastHeartbeat)
+	}
+	return []srvBanner{{Mark: "failed", Line: plainS(line + ". Apps on it may be down.")}}
+}
+
+// serverState is the node's state in the console's words: ready, draining, not taking new work
+// (ineligible), down (Nomad lost its heartbeat) and starting (initializing).
+func serverState(state string) *statusView {
+	switch state {
+	case "ready":
+		return &statusView{Kind: "healthy", Word: "ready"}
+	case "draining":
+		return &statusView{Kind: "rolling", Word: "draining"}
+	case "ineligible":
+		return &statusView{Kind: "warning", Word: "not taking new work"}
+	case "down":
+		return &statusView{Kind: "failed", Word: "down"}
+	case "initializing":
+		return &statusView{Kind: "rolling", Word: "starting"}
+	}
+	return &statusView{Kind: "idle", Word: state}
+}
+
+// ---- the numbers ------------------------------------------------------------------------------
+
+// serverNumbers builds the three cells from the newest sample, the one 025's meters show (one
+// window, never a mean of the last minutes). When Nomad can't be read, or the sample is stale,
+// each sub says "as of 14:02 UTC": the numbers are the last ones stored. CPU is warn from 90 %,
+// the meter's own rule; memory and disk from 85 %, failed from 95 % (025).
+func serverNumbers(now time.Time, h service.HostView, down bool, coreMHz float64) srvNumbers {
+	if h.SampledAt == nil {
+		return srvNumbers{Line: "The host hasn't been read yet. Its numbers appear a minute after Caravana starts."}
+	}
+	var asOf monSentence
+	if down || h.Stale {
+		asOf = monSentence{mtext(" · as of "), mclock(clockOf(now, *h.SampledAt))}
+	}
+	cells := []srvCell{cpuCell(h, coreMHz, asOf), memoryCell(h, asOf), diskCell(h, asOf)}
+	return srvNumbers{Cells: cells}
+}
+
+// splitUnit cuts "1.7 GB" into "1.7" and "GB".
+func splitUnit(s string) (value, unit string) {
+	v, u, _ := strings.Cut(s, " ")
+	return v, u
+}
+
+// percentOf is used over total in whole percent.
+func percentOf(used, total float64) string {
+	return strconv.Itoa(int(used/total*100+0.5)) + "%"
+}
+
+// readPercent gives a meter the percentage readout of the numbers panel and no label.
+func readPercent(m *monMeter, used, total float64) monMeter {
+	out := *m
+	out.Label, out.Read, out.Split = "", percentOf(used, total), false
+	return out
+}
+
+func cpuCell(h service.HostView, coreMHz float64, asOf monSentence) srvCell {
+	c := srvCell{Label: "CPU", Value: "—"}
+	r := h.CPU
+	m := cpuMeter(h)
+	if m == nil {
+		c.Sub = monSentence{mtext("Not read.")}
+		return c
+	}
+	used, total := float64(*r.Used), float64(*r.Total)
+	amount, unit := func(mhz float64) string { return strconv.Itoa(int(mhz + 0.5)) }, "MHz"
+	if coreMHz > 0 {
+		amount, unit = func(mhz float64) string { return vcpuText(mhz / coreMHz) }, "vCPU"
+	}
+	c.Value, c.Unit, c.Warn = amount(used), unit, m.Warn
+	sub := "of " + amount(total) + " " + unit
+	if r.Reserved != nil {
+		sub += " · " + amount(float64(*r.Reserved)) + " reserved"
+	}
+	c.Sub = append(monSentence{mtext(sub)}, asOf...)
+	c.Meters = []monMeter{readPercent(m, used, total)}
+	return c
+}
+
+func memoryCell(h service.HostView, asOf monSentence) srvCell {
+	c := srvCell{Label: "Memory", Value: "—"}
+	m := memoryMeter(h)
+	if m == nil {
+		c.Sub = monSentence{mtext("Not read.")}
+		return c
+	}
+	r := h.Memory
+	c.Value, c.Unit = splitUnit(sizeText(*r.Used))
+	c.Warn = m.Warn
+	sub := "of " + sizeText(*r.Total)
+	if r.Reserved != nil {
+		sub += " · " + sizeText(*r.Reserved) + " reserved"
+	}
+	c.Sub = append(monSentence{mtext(sub)}, asOf...)
+	c.Meters = []monMeter{readPercent(m, float64(*r.Used), float64(*r.Total))}
+	return c
+}
+
+// diskCell shows the fuller of the watched filesystems big and, when there are two (Nomad's data
+// and Docker's images on different disks), the other as a second meter that reads its mount.
+func diskCell(h service.HostView, asOf monSentence) srvCell {
+	c := srvCell{Label: "Disk", Value: "—"}
+	if len(h.Disks) == 0 {
+		c.Sub = monSentence{mtext("Not read.")}
+		return c
+	}
+	meters := diskMeters(h)
+	first := 0
+	for i, d := range h.Disks {
+		if d.UsedPercent > h.Disks[first].UsedPercent {
+			first = i
+		}
+	}
+	d := h.Disks[first]
+	c.Value, c.Unit = splitUnit(sizeText(d.UsedMB))
+	c.Warn = meters[first].Warn
+	c.Sub = append(monSentence{mtext("of " + sizeText(d.TotalMB) + " · "), mname(d.Mount)}, asOf...)
+	c.Meters = []monMeter{readPercent(&meters[first], float64(d.UsedMB), float64(d.TotalMB))}
+	for i, m := range meters {
+		if i != first {
+			// "/var/lib/docker 41/80G": the readout diskMeters writes when there is more than one.
+			m.Label, m.Split = "", false
+			c.Meters = append(c.Meters, m)
+		}
+	}
+	return c
+}
+
+// ---- Running here -----------------------------------------------------------------------------
+
+// serverCopies builds the Running here panel from the service's copies, in its order (problems
+// first, then by app and service). The app's name is followed by the service only when the app
+// has several; the place leads outside Default › production, as on page 1.
+func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []service.HostCopy, copiesErr error, down bool, coreMHz float64) srvRunning {
+	if copiesErr != nil {
+		return srvRunning{Message: "Can't read Nomad right now."}
+	}
+	services := map[string]int{}
+	for _, sum := range sums {
+		services[sum.App.ID] = len(sum.App.Services)
+	}
+	out := srvRunning{}
+	for _, c := range copies {
+		if c.Phase != service.CopyPhaseFailed {
+			out.Count++
+		}
+		suffix := ""
+		if services[c.AppID] > 1 {
+			suffix = "/" + c.Service
+		}
+		row := srvCopy{
+			ID: "srv-copy-" + c.ID, Href: "/apps/" + url.PathEscape(c.AppID),
+			Label: pl.label(c.Place, c.AppID, suffix), Short: shortID(c.ID), Mark: copyMark(c.Copy),
+			CPU: copyCPU(c.Usage, coreMHz), Mem: copyMemory(c.Usage), Up: copyUp(s.now(), c),
+		}
+		switch c.Phase {
+		case service.CopyPhaseStopping:
+			row.State, row.Role = "draining", "stopping"
+		case service.CopyPhaseStarting:
+			row.State, row.Role = "starting", "starting"
+		default:
+			row.Role = copyStatusView(c.Status).Word
+		}
+		row.Title = "copy " + c.ID + ", " + c.Service + ", " + row.Role + ", v" + strconv.FormatUint(c.Version, 10)
+		out.Rows = append(out.Rows, row)
+	}
+	return out
+}
+
+// copyCPU is the CPU of one copy: "0.19 vCPU" of "0.05 reserved", no sparkline (Caravana keeps a
+// history per service, not per copy). A copy with no measurement shows "—".
+func copyCPU(u *service.CopyUsage, coreMHz float64) srvMetric {
+	amount, unit := func(mhz int) string { return strconv.Itoa(mhz) }, "MHz"
+	if coreMHz > 0 {
+		amount, unit = func(mhz int) string { return vcpuText(float64(mhz) / coreMHz) }, "vCPU"
+	}
+	m := srvMetric{Value: "—"}
+	if u == nil {
+		return m
+	}
+	if u.CPUReservedMHz > 0 {
+		m.Sub = "of " + amount(u.CPUReservedMHz) + " reserved"
+	}
+	switch {
+	case u.Error != "":
+		m.Title = u.Error
+	case !u.None:
+		m.Value, m.Unit = amount(u.CPUMHz), unit
+	}
+	return m
+}
+
+// copyMemory is "412 MB" of "512 MB limit", warn from 90 % of the limit.
+func copyMemory(u *service.CopyUsage) srvMetric {
+	m := srvMetric{Value: "—"}
+	if u == nil {
+		return m
+	}
+	if u.MemoryCeilingMB > 0 {
+		m.Sub = "of " + sizeText(int64(u.MemoryCeilingMB)) + " limit"
+	}
+	switch {
+	case u.Error != "":
+		m.Title = u.Error
+	case !u.None:
+		m.Value, m.Unit = splitUnit(sizeText(int64(u.MemoryMB)))
+		m.Warn = u.NearCeiling
+	}
+	return m
+}
+
+// copyUp is how long the copy has run: "3 d 4 h", "5 h 12 min", "12 min". A copy that never
+// started, or failed, has none.
+func copyUp(now time.Time, c service.HostCopy) string {
+	if c.StartedAt == nil || c.Phase == service.CopyPhaseFailed {
+		return "—"
+	}
+	return upText(now.Sub(*c.StartedAt))
+}
+
+// upText writes a span of running time: days and hours from a day, hours and minutes from an
+// hour, else minutes; under a minute it says so.
+func upText(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "under 1 min"
+	case d < time.Hour:
+		return strconv.Itoa(int(d/time.Minute)) + " min"
+	case d < 24*time.Hour:
+		h, m := int(d/time.Hour), int(d%time.Hour/time.Minute)
+		if m == 0 {
+			return strconv.Itoa(h) + " h"
+		}
+		return strconv.Itoa(h) + " h " + strconv.Itoa(m) + " min"
+	}
+	days, h := int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour)
+	if h == 0 {
+		return strconv.Itoa(days) + " d"
+	}
+	return strconv.Itoa(days) + " d " + strconv.Itoa(h) + " h"
+}
+
+// agoWords is how long ago t was, short: "just now", "2 s ago", "3 min ago", "5 h ago", "8 d ago".
+func agoWords(now, t time.Time) string {
+	d := now.Sub(t)
+	switch {
+	case d < time.Second:
+		return "just now"
+	case d < time.Minute:
+		return strconv.Itoa(int(d/time.Second)) + " s ago"
+	case d < time.Hour:
+		return strconv.Itoa(int(d/time.Minute)) + " min ago"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + " h ago"
+	}
+	return strconv.Itoa(int(d/(24*time.Hour))) + " d ago"
+}
+
+// shortTime is the time column of Recent: "14:02" for today (UTC), else "21 Oct". The whole
+// time, UTC, is in the title, with the local one added by the page's script.
+func shortTime(now, t time.Time) string {
+	t = t.UTC()
+	if t.Format("2006-01-02") == now.UTC().Format("2006-01-02") {
+		return t.Format("15:04")
+	}
+	return t.Format("2 Jan")
+}
+
+// ---- the facts --------------------------------------------------------------------------------
+
+// serverFacts are the facts panel's rows: only what is known. The public address is the console's
+// own host (Nomad doesn't know it), the private one is Nomad's.
+func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode) []srvFact {
+	var out []srvFact
+	if n.Pool != "" {
+		out = append(out, srvFact{Key: "pool", Value: n.Pool})
+	}
+	if public := s.consoleHostOf(r); public != "" || n.Address != "" {
+		f := srvFact{Key: "address", Value: public, Second: n.Address}
+		if public == "" {
+			f.Value, f.Second = n.Address, ""
+		}
+		out = append(out, f)
+	}
+	if !n.BootTime.IsZero() {
+		boot := n.BootTime.UTC()
+		c := clockAt(boot, boot.Format("2006-01-02 15:04")+" UTC", localDate)
+		out = append(out, srvFact{Key: "up since", Clock: &c, After: agoWords(now, boot)})
+	}
+	if agent := agentLine(n, s.version); agent != "" {
+		out = append(out, srvFact{Key: "agent", Value: agent})
+	}
+	if osLine := osLine(n); osLine != "" {
+		out = append(out, srvFact{Key: "os", Value: osLine})
+	}
+	if cpu := cpuLine(n); cpu != "" {
+		out = append(out, srvFact{Key: "cpu", Value: cpu})
+	}
+	if !n.LastHeartbeat.IsZero() {
+		f := srvFact{Key: "last seen", Value: agoWords(now, n.LastHeartbeat)}
+		if n.State == "down" {
+			f.Value, f.Mark, f.Strong = "lost "+agoWords(now, n.LastHeartbeat), "failed", true
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// consoleHostOf is the console's own host name, without a port: the one the owner set as the public
+// address, else the host the console is served for, else the one this request came to.
+func (s *server) consoleHostOf(r *http.Request) string {
+	if u, err := url.Parse(s.svc.PublicURL()); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	host := s.host
+	if host == "" {
+		host = r.Host
+	}
+	if u, err := url.Parse("//" + host); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return host
+}
+
+// agentLine is "nomad 1.9.4 · docker 27.3 · traefik 3.7.1 · caravana 0.13.0": the programs
+// Nomad and the Traefik job report, then the one running. Only the versions known are named.
+func agentLine(n *service.HostNode, caravana string) string {
+	var parts []string
+	for _, p := range []struct{ name, version string }{
+		{"nomad", n.NomadVersion}, {"docker", n.DockerVersion},
+		{"traefik", strings.TrimPrefix(n.TraefikVersion, "v")}, {"caravana", caravana},
+	} {
+		if p.version != "" {
+			parts = append(parts, p.name+" "+p.version)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// osLine is "Ubuntu 24.04 · kernel 6.8.0-147-generic".
+func osLine(n *service.HostNode) string {
+	var parts []string
+	if n.OS != "" {
+		r, size := utf8.DecodeRuneInString(n.OS)
+		parts = append(parts, strings.TrimSpace(string(unicode.ToUpper(r))+n.OS[size:]+" "+n.OSVersion))
+	}
+	if n.Kernel != "" {
+		parts = append(parts, "kernel "+n.Kernel)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// cpuLine is "AMD EPYC-Rome · 2 cores · 2,445 MHz" or, where Nomad gives no model or per-core
+// speed (a virtual machine on arm), "2 cores · 4,890 MHz in total".
+func cpuLine(n *service.HostNode) string {
+	var parts []string
+	if n.CPUModel != "" {
+		parts = append(parts, n.CPUModel)
+	}
+	if n.Cores > 0 {
+		parts = append(parts, plural(n.Cores, "core"))
+	}
+	switch {
+	case n.CoreMHz > 0:
+		parts = append(parts, thousands(n.CoreMHz)+" MHz")
+	case n.TotalMHz > 0:
+		parts = append(parts, thousands(n.TotalMHz)+" MHz in total")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// thousands writes n with a comma between each group of three digits: 4890 is "4,890".
+func thousands(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}

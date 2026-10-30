@@ -42,6 +42,13 @@ type consoleEnv struct {
 // newConsoleEnv serves the pages with a signed-in admin.
 func newConsoleEnv(t *testing.T) *consoleEnv {
 	t.Helper()
+	return newConsoleEnvWith(t, nil)
+}
+
+// newConsoleEnvWith is newConsoleEnv with a hook that sets up the service (its sampler's gap, the
+// host's files) before it starts, and that may set up the fake Nomad before the first tick.
+func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.Nomad)) *consoleEnv {
+	t.Helper()
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir())
 	if err != nil {
@@ -75,6 +82,9 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 	// No domain watcher pass, and domain checks that never leave the process.
 	svc.SetDomainWatchGaps(time.Hour, time.Hour)
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
+	if setup != nil {
+		setup(svc, nomad)
+	}
 	svcCtx, stop := context.WithCancel(ctx)
 	if err := svc.Start(svcCtx); err != nil {
 		t.Fatalf("start service: %v", err)

@@ -1,0 +1,162 @@
+{{/* The Operator server page (/ops/servers/{name}, feature 027 page 2): the one host with its numbers, the
+     copies on it, its facts and what happened to it lately. The page is complete without script. The head and
+     the body are two regions: /parts/ops/servers/{name} draws the body (swapped into #srv-body) and the head
+     by id, so a refresh and a load can't differ. */}}
+
+{{define "page-class"}} cv-page-srv{{end}}
+
+{{define "head"}}<script src="{{asset "js/ops.js"}}" defer></script>{{end}}
+
+{{/* srv-head: the back link, the name, the state, "reboot needed" when staged, and the spec line. No actions. */}}
+{{define "srv-head"}}
+<a href="/ops" class="cv-srvback">← Overview</a>
+<div class="cv-srvtitle">
+  <h1 class="cv-srvname">{{if .Name}}{{.Name}}{{else}}Server{{end}}</h1>
+  {{with .State}}{{template "status-pill" .}}{{end}}
+  {{if .Reboot}}<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>reboot needed</a>{{end}}
+  {{with .Spec}}<span class="cv-srvspec">{{.}}</span>{{end}}
+</div>
+{{end}}
+
+{{/* srv-meter: the Meter without its label: used solid, reserved hatched above it, and a readout at the
+     right (a percentage, or the mount of a second disk). Takes a monMeter. */}}
+{{define "srv-meter"}}
+<div class="cv-srvmeter">
+  <svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/><rect class="cv-mnfill{{if .Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Fill}}" height="6"/>{{if .HasReserved}}<line class="cv-mnreserved" x1="0" x2="{{.ResW}}" y1="3" y2="3"/>{{end}}</svg>
+  <span class="cv-mnmeter-read{{if .Warn}} cv-mnwarntext{{end}}">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Read}}{{with .MarkWord}}<span class="sr-only"> ({{.}})</span>{{end}}</span>
+</div>
+{{end}}
+
+{{/* srv-metric: a copy's CPU or memory: the value with its unit, and what it is of. "—" is no value, with the
+     reason in its title when Nomad couldn't say. Takes a srvMetric. */}}
+{{define "srv-metric"}}<span class="cv-srvmetric{{if .Warn}} cv-srvmetric-warn{{end}}"{{with .Title}} title="{{.}}"{{end}}><span class="cv-srvval">{{.Value}}{{with .Unit}} <span class="cv-srvunit">{{.}}</span>{{end}}{{if .Warn}}<span class="sr-only"> (near its limit)</span>{{end}}</span>{{with .Sub}}<span class="cv-srvsub">{{.}}</span>{{end}}</span>{{end}}
+
+{{/* srv-banner: a problem of the host, drawn as the domains' banners are: the mark, the sentence over its
+     explanation, and its one action. Takes a srvBanner. */}}
+{{define "srv-banner"}}
+<div class="cv-panel cv-dmbanner">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
+    {{with .Explain}}<p class="cv-dmbanner-explain">{{template "sentence" .}}</p>{{end}}
+  </div>
+  {{if .Action}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a>{{end}}
+</div>
+{{end}}
+
+{{/* srv-body: everything under the head, the one live region. Takes a srvBody. */}}
+{{define "srv-body"}}
+{{if .Waiting}}
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">{{.Waiting}}</p>
+  </div>
+</div>
+{{else}}
+{{if .NomadDown}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+  <span>Nomad can't be reached right now. The numbers and facts here are the last ones Caravana read.</span>
+</div>
+{{end}}
+{{range .Banners}}{{template "srv-banner" .}}{{end}}
+{{with .Numbers}}
+{{if .Line}}
+<div class="cv-panel cv-srvnums-line"><p class="cv-mnhostline"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.Line}}</span></p></div>
+{{else}}
+<div class="cv-panel cv-srvnums" role="group" aria-label="CPU, memory and disk">
+  {{range .Cells}}
+  <div class="cv-srvnum">
+    <p class="cv-label">{{.Label}}</p>
+    <p class="cv-srvbig"><span class="cv-srvbignum{{if .Warn}} cv-mnwarntext{{end}}">{{.Value}}</span>{{with .Unit}} <span class="cv-srvbigunit">{{.}}</span>{{end}}</p>
+    <p class="cv-srvbigsub">{{template "mon-sentence" .Sub}}</p>
+    {{range .Meters}}{{template "srv-meter" .}}{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+
+<div class="cv-srvgrid">
+  <section class="cv-srvmain" aria-labelledby="srv-running-title">
+    <h2 class="cv-label" id="srv-running-title">Running here · {{.Running.Count}}</h2>
+    {{with .Running}}
+    {{if .Message}}
+    <div class="cv-panel"><p class="cv-mnhostline cv-srvnote"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.Message}}</span></p></div>
+    {{else if .Rows}}
+    <div class="cv-panel cv-srvrows" role="table" aria-label="Copies running here">
+      {{range .Rows}}
+      <div class="cv-srvrow" role="row">
+        <div role="cell" class="cv-srvwho"><span class="cv-copychip cv-srvchip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><a href="{{.Href}}" id="{{.ID}}" class="cv-srvlink cv-copychip-name">{{template "sentence" .Label}}</a> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></span></div>
+        <div role="cell" class="cv-srvcell" data-label="CPU">{{template "srv-metric" .CPU}}</div>
+        <div role="cell" class="cv-srvcell" data-label="Memory">{{template "srv-metric" .Mem}}</div>
+        <div role="cell" class="cv-srvcell cv-srvup" data-label="Up">{{.Up}}</div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="cv-panel">
+      <div class="cv-empty">
+        <p class="cv-empty-title">Nothing runs here yet.</p>
+        <a href="/apps/new" class="cv-btn cv-btn-secondary cv-btn-sm">New app</a>
+      </div>
+    </div>
+    {{end}}
+    {{end}}
+  </section>
+
+  <div class="cv-srvaside">
+    <section aria-labelledby="srv-facts-title">
+      <h2 class="cv-label" id="srv-facts-title">Server</h2>
+      <div class="cv-panel cv-srvfacts">
+        <dl class="cv-srvdl">
+          {{range .Facts}}
+          <dt>{{.Key}}</dt>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}} <span class="cv-srvafter">({{.}})</span>{{end}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{end}}{{with .Second}}<span class="cv-srvsecond">{{.}}</span>{{end}}</dd>
+          {{end}}
+        </dl>
+      </div>
+    </section>
+    <section aria-labelledby="srv-recent-title">
+      <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>
+      <div class="cv-panel cv-srvrecent">
+        {{range .Recent}}
+        <div class="cv-srvev" data-ev="{{.ID}}">
+          <time class="cv-srvevtime" datetime="{{.ISO}}" title="{{.Title}}" data-ops-time>{{.Time}}</time>
+          <span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>
+          <span class="cv-srvevtext">{{if .Href}}<a href="{{.Href}}" class="cv-evlink">{{template "sentence" .Sentence}}</a>{{else}}{{template "sentence" .Sentence}}{{end}}</span>
+        </div>
+        {{else}}
+        <p class="cv-srvnone">Nothing recent.</p>
+        {{end}}
+      </div>
+    </section>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{/* srv-part: what /parts/ops/servers/{name} answers: the body (swapped into its own element) and the head,
+     which sits outside it and is swapped by id. */}}
+{{define "srv-part"}}{{template "srv-body" .Body}}
+<div hx-swap-oob="innerHTML:#srv-head">{{template "srv-head" .Head}}</div>
+{{end}}
+
+{{define "content"}}
+{{if .Missing}}
+<header class="cv-srvhead">
+  <a href="/ops" class="cv-srvback">← Overview</a>
+  <div class="cv-srvtitle"><h1 class="cv-srvname">Server not found</h1></div>
+</header>
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">No server called <span class="cv-inline-mono text-fg-1">{{.Missing.Asked}}</span>. This caravana has one: <span class="cv-inline-mono text-fg-1">{{.Missing.Real}}</span>.</p>
+    <a href="{{.Missing.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open {{.Missing.Real}}</a>
+  </div>
+</div>
+{{else}}
+<header class="cv-srvhead" id="srv-head">{{template "srv-head" .Head}}</header>
+<div class="cv-srvbody" id="srv-body"{{with .PartHref}} hx-get="{{.}}" hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:sync" hx-swap="innerHTML"{{end}}>{{template "srv-body" .Body}}</div>
+{{end}}
+{{end}}

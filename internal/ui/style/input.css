@@ -1794,6 +1794,76 @@
   .cv-evlink:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-evnone, .cv-evnote { margin: 0; padding: 14px 16px; font-size: 14px; line-height: 1.45; color: var(--color-fg-3); }
   .cv-evnote { color: var(--color-fg-2); border-bottom: 1px solid var(--color-line-1); }
+
+  /* The Operator server page (/ops/servers/{name}): max-width 1440, a 28px gap. The page is a container
+     (cvsrv) so the aside drops by the room the page has. Text is never fg-4. */
+  .cv-page-srv { max-width: 1440px; gap: 28px; padding: 30px 26px 64px; container-type: inline-size; container-name: cvsrv; }
+  .cv-srvhead { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cv-srvback { align-self: flex-start; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); text-decoration: none; }
+  .cv-srvback:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-srvtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+  .cv-srvname { margin: 0; font: 500 26px/1.2 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-srvspec { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  a.cv-srvreboot { text-decoration: none; }
+  .cv-srvbody { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+
+  /* The three numbers: three cells with a 1px line between them. The big value is 24px mono, its unit 13px. */
+  .cv-srvnums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 12px; }
+  .cv-srvnum { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 20px; }
+  .cv-srvnum + .cv-srvnum { border-left: 1px solid var(--color-line-1); }
+  .cv-srvbig { margin: 0; font: 500 24px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); }
+  .cv-srvbigunit { font: 400 13px/1.2 var(--font-mono); color: var(--color-fg-3); }
+  .cv-srvbigsub { margin: 0 0 6px; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-srvbigsub .cv-inline-mono { color: var(--color-fg-2); }
+  .cv-srvmeter { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; min-width: 0; }
+  .cv-srvmeter + .cv-srvmeter { margin-top: 6px; }
+  .cv-srvmeter .cv-mnmeter-read { min-width: 0; }
+  .cv-srvnums-line { padding: 16px 18px; }
+
+  /* Main column and aside (the handoff's: 1fr and 400px, a 32px gap). */
+  .cv-srvgrid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 32px; align-items: start; }
+  .cv-srvmain, .cv-srvaside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-srvaside { gap: 28px; }
+  .cv-srvaside > section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-srvnote { padding: 16px 18px; }
+
+  /* Running here: the chip, CPU, memory and Up. The row is one link (the chip's name stretches over it). */
+  .cv-srvrows { container-type: inline-size; container-name: cvsrvrows; }
+  .cv-srvrow { position: relative; display: grid; grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr) 90px; column-gap: 24px; align-items: center; padding: 14px 18px; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); }
+  .cv-srvrow + .cv-srvrow { border-top: 1px solid var(--color-line-1); }
+  .cv-srvrow > * { min-width: 0; }
+  .cv-srvwho { display: flex; min-width: 0; }
+  .cv-srvchip { max-width: 100%; min-width: 0; }
+  .cv-srvlink { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-decoration: none; color: var(--color-fg-1); }
+  .cv-srvlink::after { content: ""; position: absolute; inset: 0; }
+  .cv-srvlink:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-srvlink:focus-visible { outline: none; }
+  .cv-srvlink:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-srvmetric { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .cv-srvval { font: 500 14px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); }
+  .cv-srvunit { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-srvsub { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-srvmetric-warn .cv-srvval { color: var(--color-warn); }
+  .cv-srvup { text-align: right; color: var(--color-fg-3); font-variant-numeric: tabular-nums; }
+
+  /* The facts: keys fg-3 beside values fg-2, 13px/1.4 mono, a 10px by 18px gap. */
+  .cv-srvfacts { padding: 18px; }
+  .cv-srvdl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 18px; margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); }
+  .cv-srvdl dt { color: var(--color-fg-3); }
+  .cv-srvdl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .cv-srvdl dd.cv-srvstrong { color: var(--color-fg-1); }
+  .cv-srvdl .cv-mark { margin-right: 4px; }
+  .cv-srvsecond { display: block; color: var(--color-fg-3); }
+  .cv-srvafter { color: var(--color-fg-3); }
+
+  /* Recent: a 54px time, a 7px mark and the sentence, 14px fg-2. */
+  .cv-srvrecent { padding: 6px 0; }
+  .cv-srvev { display: grid; grid-template-columns: 54px 14px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 9px 18px; font-size: 14px; line-height: 1.4; color: var(--color-fg-2); }
+  .cv-srvevtime { font: 400 12px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-srvev > .cv-mark { width: 7px; height: 7px; margin: 0; position: relative; top: -0.05em; }
+  .cv-srvev > .cv-mark-warning { width: 5.46px; height: 5.46px; margin: 0.77px; }
+  .cv-srvevtext { min-width: 0; overflow-wrap: anywhere; }
+  .cv-srvnone { margin: 0; padding: 9px 18px; font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-3); }
 }
 
 /* Under 1200px of room the aside drops under the main column (the page's container, as 024's rule). */
@@ -1873,4 +1943,34 @@
    gutters; the Monitoring page keeps the tighter gap. */
 @media (max-width: 899.98px) {
   .cv-page-mon { gap: 18px; padding: 24px 16px 40px; }
+}
+
+/* The server page: under 1200px of room the aside drops under the main column; under 640px the three
+   numbers stack with the line on top instead of the left. */
+@container cvsrv (max-width: 1199.98px) {
+  .cv-srvgrid { grid-template-columns: minmax(0, 1fr); }
+}
+@container cvsrv (max-width: 639.98px) {
+  .cv-srvnums { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .cv-srvnum + .cv-srvnum { border-left: 0; border-top: 1px solid var(--color-line-1); }
+}
+
+/* Running here folds when the panel has under 600px of its own: the chip on its own line, then CPU and
+   Memory side by side, Up after (the labels come from data-label). */
+@container cvsrvrows (max-width: 599.98px) {
+  .cv-srvrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 10px; column-gap: 16px; }
+  .cv-srvwho { grid-column: 1 / -1; }
+  .cv-srvup { grid-column: 1 / -1; text-align: left; }
+  .cv-srvcell::before { content: attr(data-label); display: block; margin-bottom: 2px; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+}
+
+/* Touch screens: the copies' rows are 44px tall. */
+@media (pointer: coarse) {
+  .cv-srvrow { min-height: 44px; }
+}
+
+/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
+   gutters; the server page keeps its own gap. */
+@media (max-width: 899.98px) {
+  .cv-page-srv { gap: 24px; padding: 24px 16px 40px; }
 }

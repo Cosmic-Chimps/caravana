@@ -141,7 +141,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   place, phase, status, CPU used and reserved, memory used and limit, started), reusing `deploy.Copies` and
   `deploy.Usage`; `listHostCopies` is not added (page 2 reads the service; `listCopies` per app already exists in the
   API, recorded in contracts/api.md as the parity source); tests in `internal/service/copies_test.go`.
-- [ ] T019 [US2] [FR-010, FR-011, FR-012, FR-013, FR-014, FR-015] `internal/ui/opsserver.go` and
+- [X] T019 [US2] [FR-010, FR-011, FR-012, FR-013, FR-014, FR-015] `internal/ui/opsserver.go` and
   `internal/ui/templates/opsserver.html` per `contracts/page2-server.md`: `/ops/servers` (302 to the one server),
   `/ops/servers/{name}` (404 page naming the real one), the head (back link, name, state pill in plain words, "reboot
   needed" pill linking to Updates when known, spec line, no actions), host needs-you banners, the three numbers panel
@@ -150,6 +150,9 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   seen), Recent on this server (`Activity` with `Server`, boots, `os_packages`), Nomad unreachable and node down;
   `/parts/ops/server` swapped on `metrics`, `copies`, `host`; styles in `internal/ui/style/input.css`, `tools/ui-css.sh
   build`. Tests in `internal/ui/opsserver_test.go`.
+  - The page's live part is `/parts/ops/servers/{name}` (the body, with the head swapped by id), not
+    `/parts/ops/server`, which is page 1's server panel. Ids: `srv-head`, `srv-body`, `srv-copy-<copy id>`.
+    Before the sampler's first reading of the node (no name to redirect to) `/ops/servers` is a 200 page that says so.
 - [ ] T020 [US2] [SC-002, SC-005, SC-007] `cmd/caravana/console_ops_test.go`: step `console-ops-server` (redirect, the
   head with no actions, the lab's real versions and kernel, Running here with every copy, Recent with an
   unattended-upgrades run; in the lab Caravana runs on the Mac, not on the VM, so the apt history comes from the
