@@ -20,7 +20,7 @@ sentence) are the numbers here: one source, the same words.
   servers, Scheduler, Node pools, adding a server, moving work) stay in Phase 3, and nothing in
   this feature draws them.
 - **The mode is the URL.** Operator pages live under `/ops` (`/ops` is the Overview,
-  `/ops/server` page 2, `/ops/updates` page 3). There is no stored preference to get wrong:
+  `/ops/servers/<name>` page 2, `/ops/updates` page 3). There is no stored preference to get wrong:
   being on an `/ops` page *is* Operator mode. Pages both views share (Settings, an app's pages,
   New app) draw the sidebar in the mode the owner was last in, remembered in a cookie
   `caravana_mode=dev|ops` that every page of a mode sets (server-side, `SameSite=Lax`, not a
@@ -45,13 +45,14 @@ The handoff's `CV_NAV.ops`, reduced to entries that have a page (021's rule: an 
 designed yet" is worse than no entry):
 
 - Group **Server** (the handoff's "Cluster": one host isn't a cluster): **Overview** (icon
-  `layout-grid`, `/ops`), **Server** (icon `server`, `/ops/server`, page 2).
+  `layout-grid`, `/ops`), **Server** (icon `server`, `/ops/servers/<the host's node name>`, page 2;
+  `/ops/servers` redirects to the one server until Phase 3 makes it a list).
 - Group **Platform**: **Updates** (icon `download`, `/ops/updates`, page 3). The handoff's Node
   pools and Certificates aren't drawn here: node pools are Phase 3, and certificates already
   live in Settings › Certificates (023).
 - Later contracts add Activity, Logs and Proxy & routing to these groups.
 - Item shapes, the active bar and Settings at the foot are page 1 of 021's, unchanged.
-- **Active rule** (the handoff's `isActive`): Overview on `/ops`; Server on `/ops/server*`;
+- **Active rule** (the handoff's `isActive`): Overview on `/ops`; Server on `/ops/servers*`;
   Updates on `/ops/updates*`; on an app's pages while in Operator mode, Overview.
 - Updates carries 021 page 3's nav count/mark rule: ◆ when an update is available, ■ when a
   security update or a reboot is pending (page 3 defines both), else nothing.
@@ -87,7 +88,7 @@ container width the aside drops below the main column (024's container rule).
   `blog` (32 MB, 0.05 vCPU each), but memory in use is already at 87%."), no right action (the
   handoff's "Add node" is Phase 3).
 - One `NodePanel` for the host, full width of the main column (the handoff's three-up grid has
-  one panel; spanning keeps the chips readable). The panel links to `/ops/server`:
+  one panel; spanning keeps the chips readable). The panel links to the server page:
   - `.cv-panel` look: ink-1, 1px line-1 (line-2 on hover), radius 6, padding 16, column gap 13;
   - header: the node's 8px mark (● ready, ◐ draining, ◆ ineligible, ■ down; Nomad's states in
     the handoff's `NODE_STATE` map), the host name 500 14px mono fg-1 (Nomad's node name, which
