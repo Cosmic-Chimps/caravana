@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -79,6 +80,9 @@ type HostView struct {
 	// (feature 027); nil before its first reading, and after a restart until the
 	// next tick.
 	Node *HostNode
+	// Reboot is what the host's files say about a pending reboot, from the
+	// sampler's newest tick; nil before its first reading (feature 027).
+	Reboot *hostos.Reboot
 }
 
 // hostHistoryHours is the history's span: seven days of hourly points.
@@ -91,7 +95,7 @@ func (s *Service) Host(ctx context.Context) (HostView, error) {
 	if err != nil {
 		return HostView{}, err
 	}
-	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Node: s.hostNode()}
+	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Node: s.hostNode(), Reboot: s.hostReboot()}
 
 	hist, err := s.hostHistory(ctx, now)
 	if err != nil {

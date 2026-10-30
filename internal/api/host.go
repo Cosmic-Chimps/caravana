@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -51,12 +52,15 @@ type hostNodeJSON struct {
 	Address       hostAddressJSON  `json:"address"`
 	BootTime      *time.Time       `json:"bootTime,omitempty"`
 	LastHeartbeat *time.Time       `json:"lastHeartbeat,omitempty"`
+	// RebootRequired is whether the host's own files ask for a reboot; left out
+	// until the sampler has read them.
+	RebootRequired *bool `json:"rebootRequired,omitempty"`
 }
 
 // toHostNodeJSON maps the node's facts. publicHost is the console's own host
 // name, the only public address Caravana knows; version is the running
 // Caravana's.
-func toHostNodeJSON(n *service.HostNode, publicHost, version string) *hostNodeJSON {
+func toHostNodeJSON(n *service.HostNode, reboot *hostos.Reboot, publicHost, version string) *hostNodeJSON {
 	if n == nil {
 		return nil
 	}
@@ -69,6 +73,9 @@ func toHostNodeJSON(n *service.HostNode, publicHost, version string) *hostNodeJS
 		CPU:      hostNodeCPUJSON{Cores: n.Cores, TotalMHz: n.TotalMHz, Model: n.CPUModel, CoreMHz: n.CoreMHz},
 		MemoryMB: n.MemoryMB,
 		Address:  hostAddressJSON{Public: publicHost, Private: n.Address},
+	}
+	if reboot != nil {
+		out.RebootRequired = new(reboot.Required)
 	}
 	if !n.BootTime.IsZero() {
 		out.BootTime = new(n.BootTime.UTC())
@@ -101,7 +108,7 @@ func (s *server) getHost(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	out := toHostJSON(view)
-	out.Node = toHostNodeJSON(view.Node, s.consoleHost(r), s.version)
+	out.Node = toHostNodeJSON(view.Node, view.Reboot, s.consoleHost(r), s.version)
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

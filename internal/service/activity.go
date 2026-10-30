@@ -323,20 +323,9 @@ func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 		}
 		return ActivityIdle, parts("Caravana was updated from ", mono(d.From), " to ", mono(d.To), ".")
 	case store.HostEventOSPackages:
-		var d struct {
-			Packages int
-			By       string
-			Reboot   bool
-		}
+		var d osPackagesDetail
 		_ = json.Unmarshal([]byte(r.Detail), &d)
-		out := "Ubuntu updates were installed"
-		if d.Packages > 0 {
-			out = fmt.Sprintf("%d Ubuntu packages were updated", d.Packages)
-		}
-		if d.Reboot {
-			return ActivityWarning, parts(out + "; a reboot is needed.")
-		}
-		return ActivityIdle, parts(out + ".")
+		return osPackagesWords(d)
 	}
 	return ActivityIdle, parts("The server changed.")
 }
@@ -377,4 +366,31 @@ func sentenceCase(s string) string {
 		return s
 	}
 	return string(unicode.ToUpper(r)) + s[n:]
+}
+
+// osPackagesWords says a run of the OS's package manager: "OS packages updated by Ubuntu's
+// automatic updates: 14 packages." or "...by hand: 3 packages.", with ", a reboot is needed."
+// when the run installed what the reboot marker names. A run that recorded no count (an event
+// written without one) says only that packages were updated.
+func osPackagesWords(d osPackagesDetail) (string, []TextPart) {
+	by := "by hand"
+	if d.By == "unattended" {
+		by = "by Ubuntu's automatic updates"
+	}
+	out := "OS packages updated " + by
+	if d.Packages > 0 {
+		out += ": " + plural(d.Packages, "package")
+	}
+	if d.Reboot {
+		return ActivityWarning, parts(out + ", a reboot is needed.")
+	}
+	return ActivityIdle, parts(out + ".")
+}
+
+// plural is "1 package" or "14 packages": the name with an s unless n is 1.
+func plural(n int, name string) string {
+	if n == 1 {
+		return "1 " + name
+	}
+	return strconv.Itoa(n) + " " + name + "s"
 }

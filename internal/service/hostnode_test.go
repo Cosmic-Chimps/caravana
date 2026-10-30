@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -287,6 +288,7 @@ func TestStartRecordsTheVersion(t *testing.T) {
 	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
 	svc := New(st, newDeployer(t, e.registry, e.nomad), e.secrets, discardLogger())
 	svc.SetVersion("1.2.3")
+	svc.SetHostRoot(fstest.MapFS{})
 	svc.metricsGap = time.Hour
 	svc.scheduleGap, svc.scheduleScanGap, svc.scheduleWatchGap = time.Hour, time.Hour, time.Hour
 	svc.domainIdleGap, svc.domainWatchGap = time.Hour, time.Hour

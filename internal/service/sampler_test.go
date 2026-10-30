@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -650,6 +651,7 @@ func TestSamplerWaitReturnsAfterCancel(t *testing.T) {
 	nomad.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
 	nomad.SetHostStats(deploytest.LabHostStats())
 	svc := New(st, newDeployer(t, reg, nomad), secretstest.New(), discardLogger())
+	svc.SetHostRoot(fstest.MapFS{})
 	svc.SetMetricsSampleGap(20 * time.Millisecond)
 	svc.sampler.offset = 0
 	svc.sampler.traefik = metricstest.New(shopText(1000, 1, 0, nil))

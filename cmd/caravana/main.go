@@ -22,6 +22,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/api"
 	"github.com/cosmic-chimps/caravana/internal/config"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/service"
@@ -99,6 +100,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	svc.SetEdgeAddress(cfg.EdgeAddress)
 	svc.SetTraefikMetricsURL(cfg.TraefikMetricsURL)
 	svc.SetDockerRoot(cfg.DockerRoot)
+	svc.SetHostRoot(hostos.Dir(cfg.HostRoot))
 	svc.SetCertResolver(cfg.Settings.CertResolver)
 	svc.SetACME(cfg.ACME, cfg.ACMEEmail)
 	if serviceHook != nil {

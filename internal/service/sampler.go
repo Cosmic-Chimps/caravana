@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/metrics"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -90,10 +91,15 @@ type samplerState struct {
 	lastPrune time.Time
 
 	bootRef time.Time // the boot time last recorded as a host event (hostnode.go); only the tick touches it
+	osSeen  time.Time // the start of the newest apt run recorded as a host event (hostosstate.go); only the tick touches it
 
-	mu      sync.Mutex // guards sources, traefik and node
+	mu      sync.Mutex // guards sources, traefik, node and reboot
 	sources SamplerSources
 	node    *HostNode // the newest node facts (feature 027); nil before the first reading
+	// reboot is the newest reading of the host's reboot marker (hostosstate.go);
+	// rebootRead says there has been one.
+	reboot     hostos.Reboot
+	rebootRead bool
 }
 
 // SetMetricsSampleGap sets the time between two ticks of the sampler (a minute
@@ -240,6 +246,7 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 		return ctx.Err() // shutting down or out of budget: write nothing
 	}
 	s.noteHost(ctx, &r)
+	s.noteOS(ctx)
 
 	nomad := SamplerOK
 	for _, e := range []error{r.reservedErr, r.copiesErr, r.hostErr} {

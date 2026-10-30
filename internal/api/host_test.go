@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -23,7 +24,10 @@ func TestGetHostNodeIsNullBeforeTheFirstReading(t *testing.T) {
 }
 
 func TestGetHostNode(t *testing.T) {
-	e := newTestEnvWith(t, "", func(s *service.Service) { s.SetMetricsSampleGap(500 * time.Millisecond) })
+	e := newTestEnvWith(t, "", func(s *service.Service) {
+		s.SetMetricsSampleGap(500 * time.Millisecond)
+		s.SetHostRoot(fstest.MapFS{"run/reboot-required": {Data: []byte("*** System restart required ***\n")}})
+	})
 	// The fake Nomad knows the node before the sampler's first tick, up for a day.
 	e.Nomad.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
 	stats := deploytest.LabHostStats()
@@ -69,6 +73,9 @@ func TestGetHostNode(t *testing.T) {
 	}
 	if node["bootTime"] == nil {
 		t.Error("no bootTime")
+	}
+	if node["rebootRequired"] != true {
+		t.Errorf("rebootRequired = %v, want true: the host's files ask for a reboot", node["rebootRequired"])
 	}
 }
 

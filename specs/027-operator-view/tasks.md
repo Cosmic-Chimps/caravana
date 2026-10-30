@@ -133,7 +133,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   packages with old and new versions); fixtures in `internal/hostos/testdata/`; tests in
   `internal/hostos/history_test.go`. Done with page 3's reboot reader (`ReadReboot`, `state.go`) and `KernelNewer`, which page 2's
   "reboot needed" pill needs.
-- [ ] T017 [US2] [FR-015] The sampler (`internal/service/sampler.go`) reads `hostos.ReadHistory` from the host root on
+- [X] T017 [US2] [FR-015] The sampler (`internal/service/sampler.go`) reads `hostos.ReadHistory` from the host root on
   each tick and writes a `host_events` `os_packages` row per new run (key `os|<start>`, detail packages, by, reboot
   when the run installed what `reboot-required.pkgs` names); `Service.SetHostRoot(fs.FS)` (default `os.DirFS("/")`)
   for tests and the lab; tests in `internal/service/host_test.go`.

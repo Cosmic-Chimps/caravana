@@ -5978,6 +5978,11 @@ components:
             private: {type: string, description: "The node's private address."}
         bootTime: {type: string, format: date-time, description: "When the node started, to the second."}
         lastHeartbeat: {type: string, format: date-time, description: "The last time Caravana heard from the node."}
+        rebootRequired:
+          type: boolean
+          description: |
+            Whether the host's own files ask for a reboot (`/run/reboot-required`, which Ubuntu's package
+            tools write). Left out until Caravana has read them once after it started.
 
     ActivityList:
       type: object

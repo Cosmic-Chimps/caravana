@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -142,6 +143,8 @@ func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service
 	// of the checks give their own fakes with SetEdge.
 	svc.SetDomainWatchGaps(time.Hour, time.Hour)
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
+	// The host's OS files: none, so a test never reads the machine it runs on.
+	svc.SetHostRoot(fstest.MapFS{})
 	if setup != nil {
 		setup(svc)
 	}

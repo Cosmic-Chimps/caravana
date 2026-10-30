@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/secrets"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -106,6 +108,7 @@ type Service struct {
 
 	// Monitoring (feature 025), see sampler.go.
 	metricsGap time.Duration // between two ticks of the sampler
+	hostRoot   fs.FS         // the host's OS files the sampler reads (feature 027), see hostosstate.go
 	sampler    samplerState
 }
 
@@ -178,6 +181,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 
 		metricsGap: defaultMetricsGap,
 		sampler:    samplerState{offset: defaultSamplerOffset},
+		hostRoot:   hostos.Root(),
 	}
 }
 

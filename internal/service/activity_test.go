@@ -164,7 +164,7 @@ func TestActivityWordsForEveryKind(t *testing.T) {
 		"The server registered with Nomad.",
 		"The server started.",
 		"Caravana was updated from 0.1.0 to 0.2.0.",
-		"14 Ubuntu packages were updated; a reboot is needed.",
+		"OS packages updated by Ubuntu's automatic updates: 14 packages, a reboot is needed.",
 	}
 	if len(server) != len(wantServer) {
 		t.Fatalf("server entries = %q, want %q", server, wantServer)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -126,6 +127,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.SetEdge(edgetest.FakeResolver{}, &edgetest.FakeDialer{})
 	// Monitoring: no tick after Start. Tests of the sampler call sampleTick.
 	svc.metricsGap = time.Hour
+	// The host's OS files: none, so a test never reads the machine it runs on.
+	svc.SetHostRoot(fstest.MapFS{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {
