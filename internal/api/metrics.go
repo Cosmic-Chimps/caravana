@@ -375,6 +375,9 @@ type hostJSON struct {
 	Stale     bool             `json:"stale"`
 	Baseline  baselineJSON     `json:"baseline"`
 	Sources   sourcesJSON      `json:"sources"`
+	// Node is what Nomad says about the node (feature 027); null before the
+	// sampler's first reading.
+	Node *hostNodeJSON `json:"node"`
 }
 
 func toHostJSON(h service.HostView) hostJSON {
@@ -417,15 +420,4 @@ func toHostJSON(h service.HostView) hostJSON {
 		}
 	}
 	return out
-}
-
-// getHost answers GET /v1/host: the host's memory, CPU and disks, the room
-// for more apps, and seven days of memory. It reads the store only.
-func (s *server) getHost(w http.ResponseWriter, r *http.Request) error {
-	view, err := s.svc.Host(r.Context())
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusOK, toHostJSON(view))
-	return nil
 }

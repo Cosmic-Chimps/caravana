@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.28.0
+  version: 0.29.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -330,6 +330,11 @@ paths:
         `room.count` is `floor(min(free memory ÷ X's memory, free CPU ÷ X's CPU))` where X is the
         running app whose memory reservation is the median; `limitedBy` says which resource ran
         out first. It is `null`, with `freeMemoryMb` still given, when no app is running.
+
+        `node` is what Nomad says about the machine (name, state, node pool, OS, kernel,
+        versions, cores, memory, addresses, boot time), from the sampler's last reading. It is
+        `null` before the first reading, and after a restart of Caravana until the next one.
+        A field Nomad doesn't report is left out, never invented.
       tags: [metrics]
       responses:
         "200":
@@ -1237,6 +1242,53 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/MetricsInvalid"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/activity:
+    get:
+      operationId: listActivity
+      summary: Read what happened on the host and to its apps, newest first.
+      description: |
+        The live activity feed the Operator Overview shows: a deployment starting and ending, an
+        app's restart, stop or start, a command run in a copy (its program only, never its
+        arguments or output), a backup or restore and its outcome, a schedule run that failed or
+        was stopped at its limit, a change of the needs-you list (opened, got worse, resolved),
+        and the server's own events (its boots, new Caravana versions, the node's registration
+        and missed heartbeats). It is read from Caravana's records and the node's event list,
+        not from Nomad's event stream, so it survives a restart of Caravana.
+
+        `limit` is 1 to 50 (8 by default). `before` is a time: only entries older than it, which is
+        how the next page is read. With `server=true` only the entries about the server and its
+        copies are listed: the host's events, the needs-you items of the host and its copies, and
+        restarts. Each entry's `id` is stable, so a client can update it in place. No entry
+        holds a secret, a command's output or its arguments. Deploy tokens are refused.
+      tags: [metrics]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 8}
+        - name: before
+          in: query
+          description: Only entries older than this time.
+          schema: {type: string, format: date-time}
+        - name: server
+          in: query
+          description: Only the entries about the server and its copies.
+          schema: {type: boolean, default: false}
+      responses:
+        "200":
+          description: The entries, newest first. `Cache-Control` is `no-store`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "422":
+          $ref: "#/components/responses/ActivityInvalid"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -5777,8 +5829,13 @@ components:
         MHz. A resource the sampler couldn't read is `null`.
       type: object
       additionalProperties: false
-      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources]
+      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources, node]
       properties:
+        node:
+          oneOf:
+            - $ref: "#/components/schemas/HostNode"
+            - type: "null"
+          description: What Nomad says about the node; `null` before the sampler's first reading.
         memory:
           type: object
           additionalProperties: false
@@ -5873,6 +5930,99 @@ components:
           $ref: "#/components/schemas/MetricsBaseline"
         sources:
           $ref: "#/components/schemas/MetricsSources"
+
+    HostNode:
+      description: |
+        The machine Caravana runs on, from Nomad's node record and the sampler's last reading. A
+        field Nomad doesn't report is left out.
+      type: object
+      additionalProperties: false
+      required: [name, state, os, versions, cpu, memoryMB, address]
+      properties:
+        name: {type: string, description: "Nomad's node name; the installer sets it to the hostname."}
+        state:
+          type: string
+          enum: [ready, draining, ineligible, down, initializing]
+        pool: {type: string, description: "The node pool, `default` by default."}
+        os:
+          type: object
+          additionalProperties: false
+          properties:
+            name: {type: string, example: ubuntu}
+            version: {type: string, example: "24.04"}
+        kernel: {type: string, description: "The running kernel's release."}
+        arch: {type: string, example: x86_64}
+        versions:
+          type: object
+          additionalProperties: false
+          properties:
+            nomad: {type: string}
+            docker: {type: string}
+            traefik: {type: string, description: "The tag of the traefik job's image, without the leading v."}
+            caravana: {type: string, description: "The running Caravana's version."}
+        cpu:
+          type: object
+          additionalProperties: false
+          required: [cores, totalMHz]
+          properties:
+            cores: {type: integer}
+            totalMHz: {type: integer}
+            model: {type: string, description: "Absent on virtual machines that don't say."}
+            coreMHz: {type: integer}
+        memoryMB: {type: integer}
+        address:
+          type: object
+          additionalProperties: false
+          properties:
+            public: {type: string, description: "The console's host name, the only public address Caravana knows."}
+            private: {type: string, description: "The node's private address."}
+        bootTime: {type: string, format: date-time, description: "When the node started, to the second."}
+        lastHeartbeat: {type: string, format: date-time, description: "The last time Caravana heard from the node."}
+
+    ActivityList:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          description: Newest first.
+          items:
+            $ref: "#/components/schemas/ActivityEntry"
+
+    ActivityEntry:
+      type: object
+      additionalProperties: false
+      required: [id, time, kind, status, message]
+      properties:
+        id:
+          type: string
+          description: Stable for the entry, so a client can update it in place.
+        time: {type: string, format: date-time}
+        kind:
+          type: string
+          enum: [deploy, restart, stop, start, command, backup, restore, schedule, needs you, server]
+          description: Clients should accept kinds they don't know.
+        status:
+          type: string
+          enum: [healthy, warning, failed, idle]
+          description: The mark the console draws.
+        message:
+          type: string
+          description: |
+            Caravana's sentence ("whoami v24 is live, pushed to main by ana."). It starts with
+            the app's name when `app` is set. Never a command's output or arguments.
+        app:
+          type: string
+          description: "The app's name, when the entry is about an app."
+        place:
+          type: object
+          additionalProperties: false
+          required: [project, environment]
+          description: Where that app is.
+          properties:
+            project: {type: string}
+            environment: {type: string}
 
     Attention:
       type: object
@@ -7083,6 +7233,12 @@ components:
             $ref: "#/components/schemas/Error"
     MetricsInvalid:
       description: "`invalid_field`, `field` `range` or `sort`. Nothing was read."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ActivityInvalid:
+      description: "`invalid_field`, `field` `limit`, `before` or `server`. Nothing was read."
       content:
         application/json:
           schema:

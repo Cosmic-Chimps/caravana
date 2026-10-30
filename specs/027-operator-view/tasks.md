@@ -84,7 +84,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   worsened, resolved with the summary), server (node events, boots, version changes). Tests in
   `internal/service/activity_test.go`: every kind's sentence, ordering across sources, a sentinel printed by a command
   never appears.
-- [ ] T010 [US1] [FR-025] API 0.29.0 begins: `getHost` gains `node` (contracts/api.md) in `internal/api/host.go`;
+- [X] T010 [US1] [FR-025] API 0.29.0 begins: `getHost` gains `node` (contracts/api.md) in `internal/api/host.go`;
   `listActivity` (`GET /v1/activity?limit&before&server`) in `internal/api/activity.go`; `api/openapi.yaml` 0.29.0
   with both; deploy tokens denied (`internal/api/scope_test.go` walk); parity entries for `/ops` and its parts in
   `internal/api/parity_test.go`; contract tests in `internal/api/host_test.go`, `internal/api/activity_test.go`.

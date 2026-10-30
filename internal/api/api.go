@@ -65,6 +65,7 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/attention", s.listAttention, false, false},
 		{http.MethodGet, "/v1/metrics", s.getMetrics, false, false},
 		{http.MethodGet, "/v1/host", s.getHost, false, false},
+		{http.MethodGet, "/v1/activity", s.listActivity, false, false},
 		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
 		{http.MethodPost, "/v1/projects", s.createProject, false, false},
 		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
