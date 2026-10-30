@@ -76,7 +76,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 
 **Independent Test**: quickstart §2; `console-ops-overview` passes; the designer approves page 1.
 
-- [ ] T009 [US1] [FR-008] `internal/service/activity.go`: `Activity(ctx, ActivityQuery{Limit 1-50, Before, Server})`
+- [X] T009 [US1] [FR-008] `internal/service/activity.go`: `Activity(ctx, ActivityQuery{Limit 1-50, Before, Server})`
   merges `store.ListActivity` with the in-memory node `Events[]` (registered, heartbeat missed, back) and turns each
   into `ActivityEntry{ID, Time, Kind, Status, Sentence, AppID, Place}` through a words table: deploy (page 4's
   who-words: "`supplier-gw` v24 is live, pushed to `main` by ana."), restart, stop, start, command (the program only,
