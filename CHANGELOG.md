@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.15.0 - 2026-10-30
+
 ### Added
 - **API 0.28.0**: `Deployment.registeredAt` (the time Nomad accepted the job, `null` until it did),
   the time the console splits a deploy's stages on. `AppStatus.state` now says what each of its
