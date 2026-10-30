@@ -213,7 +213,7 @@ check turned off, nothing is fetched.
   or were stopped at their limit, needs-you items opened and resolved) and the server's own events
   (registered, heartbeat missed, back, boots). Entries MUST be in Caravana's words, survive a restart,
   and arrive while the page is open without a reload. Command output MUST never appear.
-- **FR-009**: Overview MUST show the host's capacity with 025's meters and room sentence.
+- **FR-009**: Overview MUST show the host's capacity: on one host, 025's meters with used and reserved (split readouts) and the room sentence, on the server panel and its section (the designer's review ruling, 2026-10-30: a separate Capacity section would repeat them; it returns with several servers).
 
 **The server page (US2)**
 

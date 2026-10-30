@@ -228,3 +228,29 @@ The designer checks at 127.0.0.1:7070 against `pe-ops-now.png`:
   deploy, a restart, a backup and a failed schedule run (fresh rows), still filled after a
   caravana restart, Capacity;
 - Nomad unreachable; no apps; 1440, 1200, 640 and 390 widths; the page without script.
+
+## Review rulings (designer, 2026-10-30)
+
+Checked headlessly at 1440 against the lab instance; the toggle and the mode verified as contracted.
+
+Fixes:
+1. **Stacked order.** At 1440 the container is under 1200, so the aside drops: when stacked the order is Needs you,
+   Server, Apps, Live activity (grid areas; side by side unchanged).
+2. **No Capacity section** on one host: its meters and room sentence repeat the Server panel and its meta. The Server
+   panel's meters take the split readouts ("1.5G used · 0.7G reserved of 1.9G", "0.1 used · 0.72 reserved of 2
+   vCPU"). Capacity returns with Phase 3's many servers.
+3. **The apps table stays inside its panel:** text cells `min-width: 0` and wrap in their column; at 1440 the
+   table's scrollWidth equals its panel's width.
+4. **Activity sentences are sentence parts**, drawn with the console's `sentence` template: program, app, service,
+   schedule and version names in mono everywhere (replaces the first-word rule).
+5. **A rolling-out deploy entry is ◐**, not ○ (○ is stopped).
+6. **One event, one row:** a needs-you "opened" entry only for kinds with no record of their own (disk, unhealthy,
+   restarting, out of memory, DNS, certificates, OS updates, no backup destination); deploy, schedule and backup
+   failures already have their row. "Resolved:" entries are always listed.
+7. **A needs-you entry uses the needs-you list's own sentence**, not the notification's short title.
+
+Departures ruled: the table folds under 860px of its own width (yes); Needs you's empty state is the home's paragraph
+(yes); no copies count when Nomad is unreadable (yes); the activity note when Nomad is unreachable reads "Can't read
+the server's own events right now." (yes); local time in the title, not the cell (yes); a terminal session is kind
+`command` and "Resolved: " precedes the sentence (yes); `rebootRequired` waits for page 3 and bad activity queries are
+422 `invalid_field` (yes).
