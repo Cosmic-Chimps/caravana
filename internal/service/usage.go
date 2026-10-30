@@ -35,6 +35,10 @@ type CopyUsage struct {
 	None bool
 }
 
+// nearCeiling is the one rule for "near its limit": the memory in use is 90 % or more of the ceiling
+// (the Running tab's and the server page's rows share it).
+func nearCeiling(usedMB, ceilingMB int) bool { return ceilingMB > 0 && usedMB*10 >= ceilingMB*9 }
+
 // CopiesWithUsage is Copies plus the CPU and memory in use for each copy that
 // is running, keyed by copy ID (research R7). Copies that have ended or not
 // started have no entry; a copy Nomad can't give numbers for has an entry
@@ -76,7 +80,7 @@ func (s *Service) CopiesWithUsage(ctx context.Context, appID string) ([]Copy, ma
 			cu.Error = errNoUsage
 		default:
 			cu.CPUMHz, cu.MemoryMB = u.CPUMHz, u.MemoryMB
-			cu.NearCeiling = u.MemoryMB*10 >= ceiling*9
+			cu.NearCeiling = nearCeiling(u.MemoryMB, ceiling)
 		}
 		out[id] = cu
 	}

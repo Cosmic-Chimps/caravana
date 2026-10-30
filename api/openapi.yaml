@@ -5975,7 +5975,7 @@ components:
           additionalProperties: false
           properties:
             public: {type: string, description: "The console's host name, the only public address Caravana knows."}
-            private: {type: string, description: "The node's private address."}
+            private: {type: string, description: "The address of the node's caravana0 interface, the private one allocation ports bind to. Left out when the node has no such interface (a lab on its default one)."}
         bootTime: {type: string, format: date-time, description: "When the node started, to the second."}
         lastHeartbeat: {type: string, format: date-time, description: "The last time Caravana heard from the node."}
         rebootRequired:

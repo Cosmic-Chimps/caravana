@@ -307,11 +307,15 @@ func problemWords(r store.ActivityRow) (string, []TextPart) {
 }
 
 // hostEventWords says a host event: a boot, a Caravana version change, a run of
-// the OS's package manager.
+// the OS's package manager. A version event is only in the feed when the version changed ("from" is
+// set): the first one ever recorded is the baseline the next change is measured from, and a start
+// on the same version is never recorded.
 func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 	switch r.Label {
 	case store.HostEventBoot:
-		return ActivityIdle, parts("The server started.")
+		// The event's own time is the boot time: "The server started (up since 03:12 UTC)." (the page-2
+		// contract). The row's time says the day.
+		return ActivityIdle, parts("The server started (up since " + r.At.UTC().Format("15:04") + " UTC).")
 	case store.HostEventVersion:
 		var d struct{ From, To string }
 		_ = json.Unmarshal([]byte(r.Detail), &d)
@@ -319,9 +323,9 @@ func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 		case d.To == "":
 			return ActivityIdle, parts("Caravana's version changed.")
 		case d.From == "":
-			return ActivityIdle, parts("Caravana ", mono(d.To), " is running.")
+			return ActivityIdle, parts("Caravana ", mono(d.To), " is running.") // not listed: the store leaves it out
 		}
-		return ActivityIdle, parts("Caravana was updated from ", mono(d.From), " to ", mono(d.To), ".")
+		return ActivityIdle, parts("Caravana was upgraded from ", mono(d.From), " to ", mono(d.To), ".")
 	case store.HostEventOSPackages:
 		var d osPackagesDetail
 		_ = json.Unmarshal([]byte(r.Detail), &d)

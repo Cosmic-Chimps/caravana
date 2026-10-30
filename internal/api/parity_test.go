@@ -212,10 +212,13 @@ var consoleParity = map[string]parity{
 	// use (getHost) and the copies (listCopies); the server panel is getHost's node and meters with the copies; the apps
 	// table adds the CPU line and memory of 025 (getMetrics, one call per place, whose places are listProjects); Live
 	// activity is listActivity. The parts are the same regions drawn again on the live notices.
-	"GET /ops":                {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
-	"GET /parts/ops/server":   {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
-	"GET /parts/ops/apps":     {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
-	"GET /parts/ops/activity": {ops: []string{"listActivity"}},
+	"GET /ops":                      {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
+	"GET /parts/ops/server":         {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /ops/servers":              {ops: []string{"getHost"}},
+	"GET /ops/servers/{name}":       {ops: []string{"getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
+	"GET /parts/ops/servers/{name}": {ops: []string{"getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
+	"GET /parts/ops/apps":           {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /parts/ops/activity":       {ops: []string{"listActivity"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

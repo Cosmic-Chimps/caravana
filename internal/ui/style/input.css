@@ -1844,6 +1844,9 @@
   .cv-srvunit { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
   .cv-srvsub { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   .cv-srvmetric-warn .cv-srvval { color: var(--color-warn); }
+  /* No value: "—" is quiet (400, fg-3), never the bold value. */
+  .cv-srvval-none { font-weight: 400; color: var(--color-fg-3); }
+  .cv-srvfailedn { color: var(--color-fg-3); }
   .cv-srvup { text-align: right; color: var(--color-fg-3); font-variant-numeric: tabular-nums; }
 
   /* The facts: keys fg-3 beside values fg-2, 13px/1.4 mono, a 10px by 18px gap. */
@@ -1949,6 +1952,11 @@
    numbers stack with the line on top instead of the left. */
 @container cvsrv (max-width: 1199.98px) {
   .cv-srvgrid { grid-template-columns: minmax(0, 1fr); }
+}
+/* Stacked but wide enough (900px of room or more): Server and Recent sit side by side, two equal columns
+   with the main column's gap, Server first. Under 900 they stack. */
+@container cvsrv (min-width: 900px) and (max-width: 1199.98px) {
+  .cv-srvaside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; align-items: start; }
 }
 @container cvsrv (max-width: 639.98px) {
   .cv-srvnums { grid-template-columns: minmax(0, 1fr); row-gap: 0; }

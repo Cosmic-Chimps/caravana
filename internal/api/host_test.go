@@ -36,6 +36,7 @@ func TestGetHostNode(t *testing.T) {
 	e.Nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", []*api.NodeEvent{
 		{Subsystem: "Cluster", Message: "Node registered", Timestamp: time.Now().Add(-time.Hour)},
 	})
+	e.Nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 	e.Nomad.SetTraefikJob("traefik:v3.7.13")
 
 	var host map[string]any
@@ -68,7 +69,7 @@ func TestGetHostNode(t *testing.T) {
 		t.Errorf("memoryMB = %v", node["memoryMB"])
 	}
 	addr := obj(t, node["address"], "address")
-	if addr["private"] != "192.168.5.15" || addr["public"] == "" {
+	if addr["private"] != "10.99.0.1" || addr["public"] == "" {
 		t.Errorf("address = %v", addr)
 	}
 	if node["bootTime"] == nil {

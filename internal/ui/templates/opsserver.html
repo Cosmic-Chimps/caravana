@@ -29,7 +29,7 @@
 
 {{/* srv-metric: a copy's CPU or memory: the value with its unit, and what it is of. "—" is no value, with the
      reason in its title when Nomad couldn't say. Takes a srvMetric. */}}
-{{define "srv-metric"}}<span class="cv-srvmetric{{if .Warn}} cv-srvmetric-warn{{end}}"{{with .Title}} title="{{.}}"{{end}}><span class="cv-srvval">{{.Value}}{{with .Unit}} <span class="cv-srvunit">{{.}}</span>{{end}}{{if .Warn}}<span class="sr-only"> (near its limit)</span>{{end}}</span>{{with .Sub}}<span class="cv-srvsub">{{.}}</span>{{end}}</span>{{end}}
+{{define "srv-metric"}}<span class="cv-srvmetric{{if .Warn}} cv-srvmetric-warn{{end}}"{{with .Title}} title="{{.}}"{{end}}><span class="cv-srvval{{if .None}} cv-srvval-none{{end}}">{{.Value}}{{with .Unit}} <span class="cv-srvunit">{{.}}</span>{{end}}{{if .Warn}}<span class="sr-only"> (near its limit)</span>{{end}}</span>{{with .Sub}}<span class="cv-srvsub">{{.}}</span>{{end}}</span>{{end}}
 
 {{/* srv-banner: a problem of the host, drawn as the domains' banners are: the mark, the sentence over its
      explanation, and its one action. Takes a srvBanner. */}}
@@ -80,7 +80,7 @@
 
 <div class="cv-srvgrid">
   <section class="cv-srvmain" aria-labelledby="srv-running-title">
-    <h2 class="cv-label" id="srv-running-title">Running here · {{.Running.Count}}</h2>
+    <h2 class="cv-label" id="srv-running-title">Running here · {{.Running.Count}}{{if .Running.Failed}} <span class="cv-srvfailedn">· {{.Running.Failed}} failed</span>{{end}}</h2>
     {{with .Running}}
     {{if .Message}}
     <div class="cv-panel"><p class="cv-mnhostline cv-srvnote"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.Message}}</span></p></div>
@@ -113,7 +113,7 @@
         <dl class="cv-srvdl">
           {{range .Facts}}
           <dt>{{.Key}}</dt>
-          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}} <span class="cv-srvafter">({{.}})</span>{{end}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{end}}{{with .Second}}<span class="cv-srvsecond">{{.}}</span>{{end}}</dd>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}} <span class="cv-srvafter">({{.}})</span>{{end}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
           {{end}}
         </dl>
       </div>

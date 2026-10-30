@@ -96,6 +96,8 @@ func activityLab(t *testing.T) (*samplerLab, time.Time) {
 		{Kind: store.HostEventBoot, At: ago(13), Detail: `{}`, Key: "boot|x"},
 		{Kind: store.HostEventVersion, At: ago(14), Detail: `{"from":"0.1.0","to":"0.2.0"}`, Key: "version|0.2.0"},
 		{Kind: store.HostEventOSPackages, At: ago(15), Detail: `{"packages":14,"by":"unattended","reboot":true}`, Key: "os|1"},
+		// The first version ever recorded is a baseline, not an event: the feed doesn't list it.
+		{Kind: store.HostEventVersion, At: ago(16), Detail: `{"from":"","to":"0.1.0"}`, Key: "version|0.1.0|first"},
 	} {
 		if _, err := l.store.AppendHostEvent(ctx, e); err != nil {
 			t.Fatal(err)
@@ -108,7 +110,7 @@ func activityLab(t *testing.T) (*samplerLab, time.Time) {
 }
 
 func TestActivityWordsForEveryKind(t *testing.T) {
-	l, _ := activityLab(t)
+	l, base := activityLab(t)
 	got, err := l.svc.Activity(context.Background(), ActivityQuery{Limit: 50})
 	if err != nil {
 		t.Fatal(err)
@@ -162,8 +164,8 @@ func TestActivityWordsForEveryKind(t *testing.T) {
 	wantServer := []string{
 		"The server missed its heartbeat: Nomad lost contact with it.",
 		"The server registered with Nomad.",
-		"The server started.",
-		"Caravana was updated from 0.1.0 to 0.2.0.",
+		"The server started (up since " + base.Add(-13*time.Minute).UTC().Format("15:04") + " UTC).",
+		"Caravana was upgraded from 0.1.0 to 0.2.0.",
 		"OS packages updated by Ubuntu's automatic updates: 14 packages, a reboot is needed.",
 	}
 	if len(server) != len(wantServer) {
@@ -362,7 +364,7 @@ func TestActivityPartsSetNamesInMono(t *testing.T) {
 		}
 	}
 	for _, e := range got {
-		if e.Kind == "server" && strings.Contains(e.Sentence, "was updated") {
+		if e.Kind == "server" && strings.Contains(e.Sentence, "was upgraded") {
 			var names []string
 			for _, p := range e.Parts {
 				if p.Mono {

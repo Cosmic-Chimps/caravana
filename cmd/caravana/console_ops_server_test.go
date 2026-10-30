@@ -83,7 +83,7 @@ func writeAptHistory(t *testing.T, root string) (remove func()) {
 //     page that names the real one.
 //  3. The head: the node's name, ready, "reboot needed" linking to Updates, the spec line (cores
 //     and kernel checked against Nomad's own record), and no action (no button, no form).
-//  4. The facts are the lab's real ones: pool, the private address, the versions of Nomad, Docker,
+//  4. The facts are the lab's real ones: pool, the addresses (the private one only when the node has caravana0), the versions of Nomad, Docker,
 //     Traefik (its job's image tag) and Caravana, the OS and kernel, the cores, up since, last seen.
 //  5. Running here has a row for every running copy of both apps, linking to its app, the second
 //     with its place; the copy's memory is a value (Nomad collects it) and its Up a time.
@@ -228,8 +228,26 @@ func (c *console) consoleOpsServer(t *testing.T) {
 	if got := facts["pool"]; got != node.NodePool {
 		t.Errorf("pool = %q, want %q", got, node.NodePool)
 	}
-	if got := facts["address"]; !strings.Contains(got, node.Attributes["unique.network.ip-address"]) {
-		t.Errorf("address = %q, want Nomad's address %s", got, node.Attributes["unique.network.ip-address"])
+	// The addresses are named. The private one is the caravana0 interface's, and only that: the lab's node
+	// runs on Lima's eth0 (192.168.5.15), which must not be shown as private; a host the installer made
+	// lists caravana0, and its address is.
+	private := ""
+	if node.NodeResources != nil {
+		for _, n := range node.NodeResources.Networks {
+			if n != nil && n.Device == "caravana0" {
+				private = n.IP
+			}
+		}
+	}
+	got := facts["address"]
+	if !strings.Contains(got, " · public") {
+		t.Errorf("address = %q, want the public address named", got)
+	}
+	switch {
+	case private != "" && !strings.Contains(got, private+" · private"):
+		t.Errorf("address = %q, want the caravana0 address %s named private", got, private)
+	case private == "" && (strings.Contains(got, "private") || strings.Contains(got, node.Attributes["unique.network.ip-address"])):
+		t.Errorf("address = %q: this node has no caravana0, so no private line (Nomad's ip-address %s is another interface)", got, node.Attributes["unique.network.ip-address"])
 	}
 	if got := facts["up since"]; !coSrvUpSinceRe.MatchString(got) || !strings.Contains(got, " ago)") && !strings.Contains(got, "just now)") {
 		t.Errorf("up since = %q, want a UTC time with how long ago", got)

@@ -38,8 +38,10 @@ type NodeFacts struct {
 	CoreMHz  int
 	MemoryMB int
 
-	// Address is the node's private address; the public one is the console's
-	// host, which Nomad doesn't know.
+	// Address is the address of the node's caravana0 interface, the private one
+	// the installer makes for allocation ports; "" when the node has no such
+	// interface (the lab's runs on eth0, and its address is not a private one
+	// to show). The public address is the console's host, which Nomad doesn't know.
 	Address string
 	// LastHeartbeat is the last time Caravana heard from the node: the moment
 	// its stats were read or, when they weren't, when its status last changed.
@@ -70,9 +72,9 @@ func nodeFacts(n *api.Node, seen time.Time) NodeFacts {
 		Cores:    attrNumber(a["cpu.numcores"]),
 		TotalMHz: attrNumber(a["cpu.totalcompute"]),
 		CPUModel: a["cpu.modelname"], CoreMHz: attrNumber(a["cpu.frequency"]),
-		Address: a["unique.network.ip-address"],
 	}
 	if r := n.NodeResources; r != nil {
+		f.Address = privateAddress(r)
 		if f.Cores == 0 {
 			f.Cores = int(r.Cpu.TotalCpuCores)
 		}
@@ -93,6 +95,23 @@ func nodeFacts(n *api.Node, seen time.Time) NodeFacts {
 		}
 	}
 	return f
+}
+
+// PrivateInterface is the network interface the installer makes for allocation
+// ports (install.sh, and `network_interface` in Nomad's configuration).
+const PrivateInterface = "caravana0"
+
+// privateAddress is the first address of the node's PrivateInterface, "" when
+// Nomad fingerprinted no such interface. The attribute unique.network.ip-address
+// isn't used: it is the address of whichever interface Nomad chose, which is
+// Lima's user network in the lab.
+func privateAddress(r *api.NodeResources) string {
+	for _, n := range r.Networks {
+		if n != nil && n.Device == PrivateInterface && n.IP != "" {
+			return n.IP
+		}
+	}
+	return ""
 }
 
 // nodeState is the one word for a node: Nomad's down and initializing win over

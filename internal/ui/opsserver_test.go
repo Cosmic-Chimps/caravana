@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -43,18 +44,27 @@ func srvStub(id, group, status, desired string, cpu, mem, ceiling int) api.Alloc
 // hostos fixture (a reboot is pending, Ubuntu's automatic updates ran), a Traefik job and these copies:
 // whoami's two (one near its memory limit), blog's worker starting, one being stopped, and a failed copy
 // of the staging app.
-func srvEnv(t *testing.T) *consoleEnv {
+func srvEnv(t *testing.T) *consoleEnv { return srvEnvStats(t, nil) }
+
+// srvEnvStats is srvEnv with the host's numbers changed by edit (a fuller disk, for instance) before
+// the sampler first reads them; nil leaves them as the lab's.
+func srvEnvStats(t *testing.T, edit func(*api.HostStats)) *consoleEnv {
 	t.Helper()
 	e := newConsoleEnvWith(t, func(svc *service.Service, n *deploytest.Nomad) {
 		svc.SetMetricsSampleGap(500 * time.Millisecond)
 		svc.SetHostRoot(hostos.Dir("../hostos/testdata/host"))
+		svc.SetDockerRoot("/var/lib/docker") // the installer's CARAVANA_DOCKER_ROOT
 		n.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
 		stats := deploytest.LabHostStats()
 		stats.Uptime = uint64((8*24*time.Hour + 2*time.Hour) / time.Second)
+		if edit != nil {
+			edit(&stats)
+		}
 		n.SetHostStats(stats)
 		n.SetNodeFacts(deploytest.X86NodeAttributes(), "default", []*api.NodeEvent{
 			{Subsystem: "Cluster", Message: "Node registered", Timestamp: time.Now().Add(-9 * 24 * time.Hour)},
 		})
+		n.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 		n.SetTraefikJob("traefik:v3.7.13")
 	})
 	e.seedStandard(t)
@@ -130,7 +140,7 @@ func TestOpsServerPage(t *testing.T) {
 	// The three numbers, the room line, and the sections.
 	for _, want := range []string{
 		"CPU", "Memory", "Disk", "of 2 vCPU", "reserved", "of 1.9 GB", "of 18.3 GB · /",
-		"Running here · 4", "Server", "Recent on this server",
+		"Running here · 4 · 1 failed", "Server", "Recent on this server",
 	} {
 		if !strings.Contains(words, want) {
 			t.Errorf("the page lacks %q:\n%s", want, words)
@@ -174,7 +184,7 @@ func TestOpsServerPage(t *testing.T) {
 	}
 	// A copy that hasn't started has no value, not 0; a failed one has none and no Up.
 	pending := srvRowOf(t, body, "srv-copy-b2dddddd-0000")
-	if strings.Contains(pending, "0 MB") || !strings.Contains(pending, `<span class="cv-srvval">—</span><span class="cv-srvsub">of 64 MB limit</span>`) {
+	if strings.Contains(pending, "0 MB") || !strings.Contains(pending, `<span class="cv-srvval cv-srvval-none">—</span><span class="cv-srvsub">of 64 MB limit</span>`) {
 		t.Errorf("a starting copy's row:\n%s", pending)
 	}
 
@@ -188,8 +198,13 @@ func TestOpsServerPage(t *testing.T) {
 			t.Errorf("the facts lack %q:\n%s", want, facts)
 		}
 	}
-	if !strings.Contains(regionBetween(t, body, `class="cv-srvdl"`, "</dl>"), `<dd>caravana.example.com<span class="cv-srvsecond">10.0.0.7</span></dd>`) {
-		t.Errorf("the address lacks the public and the private lines:\n%s", facts)
+	// Both addresses are named, the words in fg-3 (cv-srvafter); the private one is caravana0's.
+	if !strings.Contains(regionBetween(t, body, `class="cv-srvdl"`, "</dl>"),
+		`<dd>caravana.example.com<span class="cv-srvafter"> · public</span><span class="cv-srvsecond">10.99.0.1<span class="cv-srvafter"> · private</span></span></dd>`) {
+		t.Errorf("the address lacks the public and the private lines, named:\n%s", facts)
+	}
+	if !strings.Contains(facts, "address caravana.example.com · public10.99.0.1 · private") {
+		t.Errorf("the address reads:\n%s", facts)
 	}
 	if !regexp.MustCompile(`up since <time class="cv-clock" datetime="[^"]+" title="[^"]+" data-local="date">\d{4}-\d\d-\d\d \d\d:\d\d UTC</time> \(8 d ago\)`).MatchString(strings.Join(strings.Fields(regionBetween(t, body, `class="cv-srvdl"`, "</dl>")), " ")) &&
 		!strings.Contains(facts, "up since") {
@@ -201,7 +216,7 @@ func TestOpsServerPage(t *testing.T) {
 
 	// Recent: the boot, node events and the package runs, newest first, from the three sources.
 	recent := text(regionBetween(t, body, `class="cv-panel cv-srvrecent"`, "</section>"))
-	for _, want := range []string{"The server started.", "OS packages updated by Ubuntu's automatic updates", "OS packages updated by hand"} {
+	for _, want := range []string{"The server started (up since ", "OS packages updated by Ubuntu's automatic updates", "OS packages updated by hand"} {
 		if !strings.Contains(recent, want) {
 			t.Errorf("Recent lacks %q:\n%s", want, recent)
 		}
@@ -396,6 +411,16 @@ func TestServerNumbers(t *testing.T) {
 	if mem.Value != "1.7" || mem.Unit != "GB" || mem.Sub.String() != "of 1.9 GB · 1.2 GB reserved" || !mem.Warn || mem.Meters[0].Read != "87%" || mem.Meters[0].Mark != "warning" {
 		t.Errorf("memory = %+v / %s (87 %% is warn)", mem, mem.Sub)
 	}
+	// The reserved part takes the total's unit: under a GB it is still "0.7 GB", never "736 MB".
+	h2 := h
+	h2.Memory = service.HostResource{Used: i64(1000), Reserved: i64(736), Total: i64(1949)}
+	if got := memoryCell(h2, nil).Sub.String(); got != "of 1.9 GB · 0.7 GB reserved" {
+		t.Errorf("memory sub = %q, want the reserved part in GB", got)
+	}
+	h2.Memory = service.HostResource{Used: i64(300), Reserved: i64(200), Total: i64(900)}
+	if got := memoryCell(h2, nil).Sub.String(); got != "of 900 MB · 200 MB reserved" {
+		t.Errorf("a host under a GB: memory sub = %q", got)
+	}
 	if !mem.Meters[0].HasReserved || mem.Meters[0].Label != "" {
 		t.Errorf("the meter has no hatch or has a label: %+v", mem.Meters[0])
 	}
@@ -433,6 +458,53 @@ func TestServerNumbers(t *testing.T) {
 	h.SampledAt = nil
 	if n := serverNumbers(now, h, false, 1000); n.Line != "The host hasn't been read yet. Its numbers appear a minute after Caravana starts." || len(n.Cells) != 0 {
 		t.Errorf("unread = %+v", n)
+	}
+}
+
+// A missing value is drawn quiet: "—" in 400 and fg-3, never as the bold value; so is the Up of a copy with none.
+func TestMissingValuesAreQuiet(t *testing.T) {
+	e := opsEnv(t)
+	var buf strings.Builder
+	if err := e.Server.pages["opsserver"].ExecuteTemplate(&buf, "srv-metric", srvMetric{Value: "—", None: true, Sub: "of 64 MB limit"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, `class="cv-srvval cv-srvval-none">—<`) {
+		t.Errorf("a missing value:\n%s", got)
+	}
+	buf.Reset()
+	if err := e.Server.pages["opsserver"].ExecuteTemplate(&buf, "srv-metric", srvMetric{Value: "412", Unit: "MB"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "cv-srvval-none") {
+		t.Errorf("a value drawn as missing:\n%s", buf.String())
+	}
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := regexp.MustCompile(`\.cv-srvval-none\{([^}]*)\}`).FindSubmatch(css); m == nil ||
+		!strings.Contains(string(m[1]), "font-weight:400") || !strings.Contains(string(m[1]), "color:var(--color-fg-3)") {
+		t.Error("the stylesheet doesn't make .cv-srvval-none 400 and fg-3")
+	}
+}
+
+// When the aside stacks under the main column (container under 1200px) and the container is 900px or
+// more, Server and Recent sit side by side in two equal columns with the main column's 32px gap; under
+// 900 they stack (the rule has a floor of 900, and nothing else changes the aside).
+func TestAsideSideBySideRule(t *testing.T) {
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`@container cvsrv \(min-width:\s*900px\) and \(max-width:\s*1199\.98px\)\s*\{\s*\.cv-srvaside\s*\{([^}]*)\}`)
+	m := re.FindSubmatch(css)
+	if m == nil {
+		t.Fatal("the stylesheet has no rule for the aside between 900 and 1199px of container")
+	}
+	for _, want := range []string{"display:grid", "grid-template-columns:repeat(2,minmax(0,1fr))", "column-gap:32px"} {
+		if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(string(m[1]), ": ", ":")), ""), want) {
+			t.Errorf("the aside's rule lacks %s: %s", want, m[1])
+		}
 	}
 }
 
@@ -548,8 +620,11 @@ func TestServerDownAndBanners(t *testing.T) {
 	if got := diskExplain([]string{"nomad", "docker"}); got.String() != "It holds Nomad's data and Docker's images." {
 		t.Errorf("explain = %q", got)
 	}
-	if got := diskExplain([]string{"nomad"}); got.String() != "It holds Nomad's data." {
-		t.Errorf("explain = %q", got)
+	// Holding only one of the two, or nothing: no clause, the banner names its own mount.
+	for _, holds := range [][]string{{"nomad"}, {"docker"}, nil} {
+		if got := diskExplain(holds); got != nil {
+			t.Errorf("explain of %v = %q, want none", holds, got)
+		}
 	}
 	if got := diskExplain(nil); got != nil {
 		t.Errorf("explain of nothing = %q", got)
@@ -587,11 +662,20 @@ func TestServerCopiesRows(t *testing.T) {
 			Place: app.Place{Project: "default", Environment: "production", Name: "whoami"}, Phase: service.CopyPhaseRunning},
 	}
 	r := e.Server.serverCopies(pl, sums, copies, nil, false, 1000)
-	if r.Count != 2 || len(r.Rows) != 3 {
+	if r.Count != 2 || r.Failed != 1 || len(r.Rows) != 3 {
 		t.Fatalf("running = %+v", r)
 	}
-	if got := r.Rows[0].Label.String(); got != "Shop › staging › web" || r.Rows[0].Mark != "failed" || r.Rows[0].Up != "—" || r.Rows[0].CPU.Value != "—" {
+	if got := r.Rows[0].Label.String(); got != "Shop › staging › web" || r.Rows[0].Mark != "failed" || r.Rows[0].Up != "failed" || r.Rows[0].CPU.Value != "—" ||
+		!r.Rows[0].CPU.None || !r.Rows[0].Mem.None {
 		t.Errorf("failed row = %q %+v", got, r.Rows[0])
+	}
+	// A failed copy Nomad told to stop still has the failed mark (copyMark would call it idle), and its
+	// Up cell says when it failed.
+	endedAt := e.Server.now().Add(-3 * time.Minute)
+	stopped := service.HostCopy{Copy: deploy.Copy{ID: "eeeeeeee-9", Service: "web", Status: deploy.CopyFailed, Terminal: true, Stopping: true, FinishedAt: &endedAt},
+		AppID: "whoami", Place: app.Place{Project: "default", Environment: "production", Name: "whoami"}, Phase: service.CopyPhaseFailed}
+	if row := e.Server.serverCopies(pl, sums, []service.HostCopy{stopped}, nil, false, 1000).Rows[0]; row.Mark != "failed" || row.Up != "failed 3 min ago" || row.Role != "failed" {
+		t.Errorf("a failed copy told to stop = mark %q, up %q, role %q", row.Mark, row.Up, row.Role)
 	}
 	if got := r.Rows[1].Label.String(); got != "blog/worker" || r.Rows[1].Up != "1 d 2 h" || r.Rows[1].Mark != "healthy" {
 		t.Errorf("blog row = %q %+v", got, r.Rows[1])

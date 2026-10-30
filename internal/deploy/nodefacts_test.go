@@ -22,6 +22,7 @@ func TestHostNodeFacts(t *testing.T) {
 		labNode(nomad, deploytest.LabHostStats())
 		events := []*api.NodeEvent{{Subsystem: "Cluster", Message: "Node registered", Timestamp: now.Add(-48 * time.Hour)}}
 		nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", events)
+		nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 
 		h, err := d.HostStats(ctx, "/var/lib/docker")
 		if err != nil {
@@ -31,7 +32,7 @@ func TestHostNodeFacts(t *testing.T) {
 			Name: "lab", State: "ready", Pool: "default",
 			OS: "ubuntu", OSVersion: "26.04", Kernel: "7.0.0-14-generic", Arch: "arm64",
 			NomadVersion: "2.0.1", DockerVersion: "29.1.3",
-			Cores: 2, TotalMHz: 4000, MemoryMB: 1949, Address: "192.168.5.15",
+			Cores: 2, TotalMHz: 4000, MemoryMB: 1949, Address: "10.99.0.1",
 			LastHeartbeat: now,
 			Events:        []NodeEvent{{Time: now.Add(-48 * time.Hour), Subsystem: "Cluster", Message: "Node registered"}},
 		}
@@ -43,17 +44,35 @@ func TestHostNodeFacts(t *testing.T) {
 		}
 	})
 
+	t.Run("a node on eth0 only (the lab) has no private address, though Nomad has an ip-address attribute", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		labNode(nomad, deploytest.LabHostStats())
+		nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
+		nomad.SetNodeNetworks(deploytest.LabNodeNetworks())
+		if got := deploytest.LabNodeAttributes()["unique.network.ip-address"]; got != "192.168.5.15" {
+			t.Fatalf("the fixture's attribute = %q", got)
+		}
+		h, err := d.HostStats(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Node.Address != "" {
+			t.Errorf("Address = %q, want none: eth0 is not caravana0", h.Node.Address)
+		}
+	})
+
 	t.Run("an x86 node has both", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
 		nomad.SetNodeFacts(deploytest.X86NodeAttributes(), "default", nil)
+		nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 		h, err := d.HostStats(ctx, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		n := h.Node
 		if n.CPUModel != "AMD EPYC 7763 64-Core Processor" || n.CoreMHz != 2400 || n.Cores != 4 || n.TotalMHz != 9600 ||
-			n.Arch != "amd64" || n.OSVersion != "24.04" || n.Address != "10.0.0.7" {
+			n.Arch != "amd64" || n.OSVersion != "24.04" || n.Address != "10.99.0.1" {
 			t.Errorf("Node = %+v", n)
 		}
 	})

@@ -130,6 +130,7 @@ FROM (
          '', '', '', kind, '', NULL, NULL,
          '', detail
   FROM host_events WHERE (?1 = '' OR at < ?1)
+    AND NOT (kind = 'version' AND COALESCE(json_extract(detail, '$.from'), '') = '')
 ) u
 LEFT JOIN apps a ON a.id = u.app_id
 ORDER BY u.at DESC, u.source, u.row_id DESC, u.phase

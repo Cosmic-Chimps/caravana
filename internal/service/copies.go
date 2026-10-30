@@ -39,8 +39,10 @@ type HostCopy struct {
 
 // HostCopies lists every copy of an app that Nomad has on the node: the ones that run or are
 // starting, and the failed ones of the newest version (the same filter as an app's own list, since
-// a failed copy is what the page must show first). Jobs that aren't apps (Traefik, a backup run)
-// are left out, as the Overview's count leaves them.
+// a failed copy is what the page must show first). A failed copy that Nomad has replaced (it has a
+// next copy, or another copy names it as the one it replaced) is history, not "here": only the
+// newest copy of each lineage is listed. Jobs that aren't apps (Traefik, a backup run) are left
+// out, as the Overview's count leaves them.
 //
 // Each running copy has its CPU and memory now (the Running tab's source, deploy.Usage), and the
 // service task's reservation and memory limit from the allocation itself (feature 025's
@@ -64,8 +66,17 @@ func (s *Service) HostCopies(ctx context.Context) ([]HostCopy, error) {
 	var out []HostCopy
 	var shown []deploy.Copy
 	for _, rec := range recs {
+		replaced := map[string]bool{} // the copies another copy took the place of
+		for _, c := range byJob[rec.App.ID] {
+			if c.PreviousID != "" {
+				replaced[c.PreviousID] = true
+			}
+		}
 		for _, c := range byJob[rec.App.ID] {
 			if c.Terminal && c.Status != deploy.CopyFailed {
+				continue
+			}
+			if c.Status == deploy.CopyFailed && (c.Replaced || replaced[c.ID]) {
 				continue
 			}
 			out = append(out, HostCopy{Copy: c, AppID: rec.App.ID, Place: rec.Place, Phase: copyPhase(c)})
@@ -152,7 +163,7 @@ func hostCopyUsage(usage map[string]deploy.CopyUsage, reserved map[string]deploy
 		cu.Error = errNoUsage
 	default:
 		cu.CPUMHz, cu.MemoryMB = u.CPUMHz, u.MemoryMB
-		cu.NearCeiling = cu.MemoryCeilingMB > 0 && u.MemoryMB*10 >= cu.MemoryCeilingMB*9
+		cu.NearCeiling = nearCeiling(u.MemoryMB, cu.MemoryCeilingMB)
 	}
 	return &cu
 }

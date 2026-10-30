@@ -23,6 +23,7 @@ func nodeLab(t *testing.T) *samplerLab {
 	l.nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", []*api.NodeEvent{
 		{Subsystem: "Cluster", Message: "Node registered", Timestamp: labBase.Add(-24 * time.Hour)},
 	})
+	l.nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 	l.nomad.SetTraefikJob("traefik:v3.7.13")
 	return l
 }
@@ -63,7 +64,7 @@ func TestHostNodeFromTheSampler(t *testing.T) {
 	}
 	if n.Name != "lab" || n.State != "ready" || n.Pool != "default" || n.OS != "ubuntu" || n.OSVersion != "26.04" ||
 		n.Kernel != "7.0.0-14-generic" || n.Arch != "arm64" || n.NomadVersion != "2.0.1" || n.DockerVersion != "29.1.3" ||
-		n.Cores != 2 || n.TotalMHz != 4000 || n.MemoryMB != 1949 || n.Address != "192.168.5.15" {
+		n.Cores != 2 || n.TotalMHz != 4000 || n.MemoryMB != 1949 || n.Address != "10.99.0.1" {
 		t.Errorf("node = %+v", n)
 	}
 	if n.TraefikVersion != "v3.7.13" {

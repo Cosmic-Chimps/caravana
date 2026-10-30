@@ -66,7 +66,7 @@ func TestListActivity(t *testing.T) {
 		t.Fatalf("entries = %s", raw)
 	}
 	got := out.Entries
-	if got[0].Kind != "server" || got[0].Message != "The server started." || got[0].App != "" || got[0].Place != nil {
+	if got[0].Kind != "server" || got[0].Message != "The server started (up since "+got[0].Time.UTC().Format("15:04")+" UTC)." || got[0].App != "" || got[0].Place != nil {
 		t.Errorf("newest = %+v", got[0])
 	}
 	if got[1].Kind != "command" || got[1].Status != "warning" || got[1].Message != "cat ran in whoami through the API, exit 3." ||

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -109,8 +110,10 @@ type srvCell struct {
 }
 
 // srvRunning is the Running here panel. Message, when set, replaces the rows (Nomad can't be read).
+// Count is the copies running, starting or stopping; Failed the failed ones listed as well.
 type srvRunning struct {
 	Count   int
+	Failed  int
 	Message string
 	Rows    []srvCopy
 }
@@ -133,25 +136,30 @@ type srvCopy struct {
 }
 
 // srvMetric is a LiveMetric: the value and its unit, and what it is of. Value is "—" when the
-// copy has none. Warn puts the value in the warn hue (memory from 90 % of the limit).
+// copy has none (None is then set: it is drawn quiet, weight 400 in fg-3, never as a value). Warn
+// puts the value in the warn hue (memory from 90 % of the limit).
 type srvMetric struct {
 	Value, Unit string
 	Sub         string
 	Warn        bool
+	None        bool
 	Title       string
 }
 
 // srvFact is one row of the facts panel. Value is the text; Clock replaces it for a time (up
-// since), followed by After in the muted words. Second is the line under it in fg-3. Mark is
-// drawn before the value (a host that is down).
+// since), followed by After in the muted words. Note is a word after the value in fg-3 ("public").
+// Second is the line under it, in fg-3, with its own SecondNote. Mark is drawn before the value (a
+// host that is down).
 type srvFact struct {
-	Key    string
-	Value  string
-	Clock  *clockTime
-	After  string
-	Second string
-	Mark   string
-	Strong bool
+	Key        string
+	Value      string
+	Note       string
+	Clock      *clockTime
+	After      string
+	Second     string
+	SecondNote string
+	Mark       string
+	Strong     bool
 }
 
 // ---- handlers ---------------------------------------------------------------------------------
@@ -329,21 +337,15 @@ func isHostItem(kind service.AttentionKind) bool {
 	return false
 }
 
-// diskExplain says what is on a disk that is nearly full: "It holds Nomad's data and Docker's images."
+// diskExplain says what is on a disk that is nearly full, but only when the item says it holds both
+// (one filesystem for Nomad's data and Docker's images): "It holds Nomad's data and Docker's images."
+// For one that holds only one of them the clause would be a guess, so there is none: the banner's
+// own sentence names its mount ("The disk at /var/lib/docker ...").
 func diskExplain(holds []string) sentence {
-	var what []string
-	for _, h := range holds {
-		switch h {
-		case "nomad":
-			what = append(what, "Nomad's data")
-		case "docker":
-			what = append(what, "Docker's images")
-		}
+	if slices.Contains(holds, "nomad") && slices.Contains(holds, "docker") {
+		return plainS("It holds Nomad's data and Docker's images.")
 	}
-	if len(what) == 0 {
-		return nil
-	}
-	return plainS("It holds " + strings.Join(what, " and ") + ".")
+	return nil
 }
 
 // nodeBanners is the banner of a node Nomad has lost: it can do nothing about it, so no action.
@@ -392,6 +394,15 @@ func serverNumbers(now time.Time, h service.HostView, down bool, coreMHz float64
 	}
 	cells := []srvCell{cpuCell(h, coreMHz, asOf), memoryCell(h, asOf), diskCell(h, asOf)}
 	return srvNumbers{Cells: cells}
+}
+
+// sizeInUnitOf writes mb in the unit sizeText gives total, so that "of 1.9 GB" is followed by
+// "0.7 GB reserved" and never "736 MB reserved".
+func sizeInUnitOf(mb, total int64) string {
+	if total >= 1024 {
+		return trim1(float64(mb)/1024) + " GB"
+	}
+	return sizeText(mb)
 }
 
 // splitUnit cuts "1.7 GB" into "1.7" and "GB".
@@ -447,7 +458,7 @@ func memoryCell(h service.HostView, asOf monSentence) srvCell {
 	c.Warn = m.Warn
 	sub := "of " + sizeText(*r.Total)
 	if r.Reserved != nil {
-		sub += " · " + sizeText(*r.Reserved) + " reserved"
+		sub += " · " + sizeInUnitOf(*r.Reserved, *r.Total) + " reserved"
 	}
 	c.Sub = append(monSentence{mtext(sub)}, asOf...)
 	c.Meters = []monMeter{readPercent(m, float64(*r.Used), float64(*r.Total))}
@@ -499,7 +510,9 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 	}
 	out := srvRunning{}
 	for _, c := range copies {
-		if c.Phase != service.CopyPhaseFailed {
+		if c.Phase == service.CopyPhaseFailed {
+			out.Failed++
+		} else {
 			out.Count++
 		}
 		suffix := ""
@@ -508,7 +521,7 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 		}
 		row := srvCopy{
 			ID: "srv-copy-" + c.ID, Href: "/apps/" + url.PathEscape(c.AppID),
-			Label: pl.label(c.Place, c.AppID, suffix), Short: shortID(c.ID), Mark: copyMark(c.Copy),
+			Label: pl.label(c.Place, c.AppID, suffix), Short: shortID(c.ID), Mark: rowMark(c),
 			CPU: copyCPU(c.Usage, coreMHz), Mem: copyMemory(c.Usage), Up: copyUp(s.now(), c),
 		}
 		switch c.Phase {
@@ -525,6 +538,15 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 	return out
 }
 
+// rowMark is the mark of a copy's chip: a failed copy is failed even though Nomad has told it to
+// stop (copyMark would draw that one idle).
+func rowMark(c service.HostCopy) string {
+	if c.Phase == service.CopyPhaseFailed {
+		return "failed"
+	}
+	return copyMark(c.Copy)
+}
+
 // copyCPU is the CPU of one copy: "0.19 vCPU" of "0.05 reserved", no sparkline (Caravana keeps a
 // history per service, not per copy). A copy with no measurement shows "—".
 func copyCPU(u *service.CopyUsage, coreMHz float64) srvMetric {
@@ -532,7 +554,7 @@ func copyCPU(u *service.CopyUsage, coreMHz float64) srvMetric {
 	if coreMHz > 0 {
 		amount, unit = func(mhz int) string { return vcpuText(float64(mhz) / coreMHz) }, "vCPU"
 	}
-	m := srvMetric{Value: "—"}
+	m := srvMetric{Value: "—", None: true}
 	if u == nil {
 		return m
 	}
@@ -543,14 +565,14 @@ func copyCPU(u *service.CopyUsage, coreMHz float64) srvMetric {
 	case u.Error != "":
 		m.Title = u.Error
 	case !u.None:
-		m.Value, m.Unit = amount(u.CPUMHz), unit
+		m.Value, m.Unit, m.None = amount(u.CPUMHz), unit, false
 	}
 	return m
 }
 
 // copyMemory is "412 MB" of "512 MB limit", warn from 90 % of the limit.
 func copyMemory(u *service.CopyUsage) srvMetric {
-	m := srvMetric{Value: "—"}
+	m := srvMetric{Value: "—", None: true}
 	if u == nil {
 		return m
 	}
@@ -562,15 +584,22 @@ func copyMemory(u *service.CopyUsage) srvMetric {
 		m.Title = u.Error
 	case !u.None:
 		m.Value, m.Unit = splitUnit(sizeText(int64(u.MemoryMB)))
-		m.Warn = u.NearCeiling
+		m.Warn, m.None = u.NearCeiling, false
 	}
 	return m
 }
 
-// copyUp is how long the copy has run: "3 d 4 h", "5 h 12 min", "12 min". A copy that never
-// started, or failed, has none.
+// copyUp is how long the copy has run: "3 d 4 h", "5 h 12 min", "12 min". A failed copy says
+// when it failed ("failed 3 min ago", "failed" when Nomad gave no time); one that never started
+// has none.
 func copyUp(now time.Time, c service.HostCopy) string {
-	if c.StartedAt == nil || c.Phase == service.CopyPhaseFailed {
+	if c.Phase == service.CopyPhaseFailed {
+		if c.FinishedAt == nil {
+			return "failed"
+		}
+		return "failed " + agoWords(now, *c.FinishedAt)
+	}
+	if c.StartedAt == nil {
 		return "—"
 	}
 	return upText(now.Sub(*c.StartedAt))
@@ -627,16 +656,17 @@ func shortTime(now, t time.Time) string {
 // ---- the facts --------------------------------------------------------------------------------
 
 // serverFacts are the facts panel's rows: only what is known. The public address is the console's
-// own host (Nomad doesn't know it), the private one is Nomad's.
+// own host (Nomad doesn't know it), the private one is the node's caravana0 interface, left out
+// when the node has none. Each address says which it is.
 func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode) []srvFact {
 	var out []srvFact
 	if n.Pool != "" {
 		out = append(out, srvFact{Key: "pool", Value: n.Pool})
 	}
 	if public := s.consoleHostOf(r); public != "" || n.Address != "" {
-		f := srvFact{Key: "address", Value: public, Second: n.Address}
+		f := srvFact{Key: "address", Value: public, Note: "public", Second: n.Address, SecondNote: "private"}
 		if public == "" {
-			f.Value, f.Second = n.Address, ""
+			f.Value, f.Note, f.Second, f.SecondNote = n.Address, "private", "", ""
 		}
 		out = append(out, f)
 	}

@@ -47,6 +47,32 @@ func (n *Nomad) SetNodeFacts(attrs map[string]string, pool string, events []*api
 	n.host.node.Events = events
 }
 
+// SetNodeNetworks sets the interfaces the node record lists (NodeResources.Networks, as Nomad
+// fingerprints them). Call SetNode first.
+func (n *Nomad) SetNodeNetworks(nets []*api.NetworkResource) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.host.node.NodeResources != nil {
+		n.host.node.NodeResources.Networks = nets
+	}
+}
+
+// LabNodeNetworks is what the lab's node lists: Lima's eth0, no caravana0 (the lab doesn't make it).
+func LabNodeNetworks() []*api.NetworkResource {
+	return []*api.NetworkResource{
+		{Mode: "bridge"},
+		{Mode: "host", Device: "eth0", IP: "192.168.5.15", CIDR: "192.168.5.15/32"},
+	}
+}
+
+// Caravana0Networks is what an installed host lists: the private interface alone, at ip.
+func Caravana0Networks(ip string) []*api.NetworkResource {
+	return []*api.NetworkResource{
+		{Mode: "bridge"},
+		{Mode: "host", Device: "caravana0", IP: ip, CIDR: ip + "/32"},
+	}
+}
+
 // SetNodeScheduling sets the node's drain flag and scheduling eligibility
 // ("eligible" or "ineligible"), as the node list and Info answer them. Call
 // SetNode first.
