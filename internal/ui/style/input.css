@@ -1708,7 +1708,98 @@
   .cv-view-link[aria-current="page"] { background: var(--color-ink-3); color: var(--color-fg-1); }
   /* The mark after Updates (a count, a square or a diamond): the page fills it, text never fg-4. */
   .cv-nav-mark { margin-left: auto; font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
+
+  /* The Operator Overview (/ops): the page is a container (cvops) so the aside drops by the room the
+     page has; the stats line wraps between items, never inside one. Text is never fg-4. */
+  .cv-page-ops { max-width: 1440px; gap: 36px; padding: 36px 26px 62px; container-type: inline-size; container-name: cvops; }
+  .cv-opshead-slot { max-width: 900px; }
+  .cv-opsstats { display: flex; flex-wrap: wrap; gap: 4px 23px; margin: 0; font: 400 13px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
+  .cv-opsstat { white-space: nowrap; }
+  .cv-ops { display: grid; grid-template-columns: minmax(0, 1fr) 448px; gap: 26px; align-items: start; }
+  .cv-opsmain, .cv-opsaside { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  .cv-opsblock { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  /* The host's panel (the handoff's NodePanel): ink-1, a 16px padding, a 13px gap. */
+  .cv-node { display: flex; flex-direction: column; gap: 13px; padding: 16px; min-width: 0; }
+  .cv-node-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .cv-node-head > .cv-mark { flex: none; }
+  .cv-node-name { min-width: 0; font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow-wrap: anywhere; }
+  a.cv-node-name:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-node-pool { padding: 3px 7px; border: 1px solid var(--color-line-2); border-radius: 2px; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); }
+  .cv-node-copies { font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
+  .cv-node-spec { margin: 0; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-node-meters { display: flex; flex-direction: column; gap: 10px; }
+  .cv-node-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+  .cv-opschip { height: 22px; gap: 6px; padding: 0 8px; color: inherit; text-decoration: none; transition: border-color 120ms var(--ease-cv); }
+  .cv-opschip:hover { border-color: var(--color-line-3); color: inherit; }
+  .cv-copychip-failed { border-color: var(--color-failed-line); background: oklch(0.68 0.17 40 / 0.08); }
+  .cv-node-more { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+
+  /* The apps table: a 36px head on ink-2, rows of 40px, one grid for both. Reach has 140px at least. */
+  .cv-opstbl { --cols: minmax(140px, 1.3fr) 112px 80px 92px 64px minmax(140px, 1fr) 120px; container-type: inline-size; container-name: cvopstbl; }
+  .cv-opshead, .cv-opsrow { display: grid; grid-template-columns: var(--cols); column-gap: 12px; align-items: center; padding: 0 16px; }
+  .cv-opshead { height: 36px; background: var(--color-ink-2); border-bottom: 1px solid var(--color-line-1); }
+  .cv-opsrow { position: relative; min-height: 40px; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); }
+  .cv-opsrow + .cv-opsrow { border-top: 1px solid var(--color-line-1); }
+  .cv-opshead > *, .cv-opsrow > * { min-width: 0; }
+  .cv-opsname { display: flex; align-items: baseline; gap: 6px; overflow: hidden; white-space: nowrap; }
+  .cv-opswhere { flex: none; color: var(--color-fg-3); }
+  .cv-opsapp { font: 500 13px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
+  a.cv-opsapp::after { content: ""; position: absolute; inset: 0; }
+  a.cv-opsapp:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  a.cv-opsapp:focus-visible { outline: none; }
+  a.cv-opsapp:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-opscopies { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+  .cv-opsmark { width: 7px; height: 7px; margin: 0; }
+  .cv-opscpu { position: relative; z-index: 1; }
+  .cv-opsspark { display: block; width: 84px; max-width: 100%; height: 16px; overflow: visible; }
+  .cv-opsspark-line { fill: none; stroke: var(--color-fg-2); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .cv-opsspark-warn { stroke: var(--color-warn); }
+  .cv-opsmem { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cv-opsreach { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cv-opschange { color: var(--color-fg-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* Live activity: rows of a 64px time, a 92px kind and the sentence; a fresh row has the page's veil. */
+  .cv-evpanel { display: flex; flex-direction: column; }
+  .cv-ev { position: relative; display: grid; grid-template-columns: 64px 92px minmax(0, 1fr); gap: 13px; align-items: baseline; padding: 10px 16px; }
+  .cv-ev + .cv-ev { border-top: 1px solid var(--color-line-1); }
+  .cv-evtime, .cv-evkind { font: 400 12px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
+  .cv-evkind { overflow: hidden; text-overflow: ellipsis; }
+  .cv-evtext { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 14px; line-height: 1.4; color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-evtext > .cv-mark { flex: none; width: 6px; height: 6px; margin: 0; position: relative; top: -0.05em; }
+  .cv-evtext > .cv-mark-warning { width: 4.68px; height: 4.68px; margin: 0.66px; }
+  .cv-evlink { color: inherit; text-decoration: none; }
+  .cv-evlink:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-evnone, .cv-evnote { margin: 0; padding: 14px 16px; font-size: 14px; line-height: 1.45; color: var(--color-fg-3); }
+  .cv-evnote { color: var(--color-fg-2); border-bottom: 1px solid var(--color-line-1); }
 }
+
+/* Under 1200px of room the aside drops under the main column (the page's container, as 024's rule). */
+@container cvops (max-width: 1199.98px) {
+  .cv-ops { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The table folds when it has under 860px of its own (its columns need about that): the name and the
+   state on the first line, then each fact as a label and its value (the labels come from data-label). */
+@container cvopstbl (max-width: 859.98px) {
+  .cv-opshead { display: none; }
+  .cv-opsrow { grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; padding-block: 12px; }
+  .cv-opsrow > [data-label] { grid-column: 1 / -1; display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; }
+  .cv-opsrow > [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
+  .cv-opsrow > .cv-opscpu { align-items: center; }
+}
+
+/* Touch screens: the chips are 44px tall. */
+@media (pointer: coarse) {
+  .cv-opschip { min-height: 44px; }
+}
+
+/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
+   gutters; the Overview keeps its own gap. */
+@media (max-width: 899.98px) {
+  .cv-page-ops { gap: 28px; padding: 24px 16px 40px; }
+}
+
 
 /* Under 1200px of room (the page's container) the charts are a 2x2 grid; under 640px, one column. The
    issue rows stack their action under the text under 640px. */

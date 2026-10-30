@@ -208,6 +208,14 @@ var consoleParity = map[string]parity{
 	"GET /parts/monitoring/host": {ops: []string{"getHost"}},
 	// The Apps home's Platform panel alone, drawn again on the metrics notice.
 	"GET /parts/platform": {ops: []string{"getHost"}},
+	// The Operator Overview (feature 027 page 1). The headline and stats are the apps (listApps, listAttention), the host's
+	// use (getHost) and the copies (listCopies); the server panel is getHost's node and meters with the copies; the apps
+	// table adds the CPU line and memory of 025 (getMetrics, one call per place, whose places are listProjects); Live
+	// activity is listActivity. The parts are the same regions drawn again on the live notices.
+	"GET /ops":                {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
+	"GET /parts/ops/overview": {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /parts/ops/activity": {ops: []string{"listActivity"}},
+	"GET /parts/ops/capacity": {ops: []string{"getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

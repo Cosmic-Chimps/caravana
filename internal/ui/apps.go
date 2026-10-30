@@ -197,6 +197,13 @@ func (s *server) liveApps(w http.ResponseWriter, r *http.Request) {
 		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics}})
 		return
 	}
+	if r.URL.Query().Get("watch") == "ops" {
+		// The Operator Overview (feature 027): everything its regions draw, and the host's own events.
+		s.stream(w, r, liveRoute{Kinds: []service.ChangeKind{service.ChangeMetrics, service.ChangeApps, service.ChangeActivity,
+			service.ChangeActions, service.ChangeSchedules, service.ChangeAttention, service.ChangeHost, service.ChangeDeployments,
+			service.ChangeCopies}})
+		return
+	}
 	route := liveRoute{Kinds: []service.ChangeKind{service.ChangeApps, service.ChangeActivity, service.ChangeAttention,
 		service.ChangeDeployments, service.ChangeCopies, service.ChangeSchedules, service.ChangeMetrics}}
 	if r.URL.Query().Get("watch") == "domains" {

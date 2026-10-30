@@ -369,6 +369,27 @@ func (s *Service) Copies(ctx context.Context, appID string) ([]Copy, error) {
 	return copies, err
 }
 
+// AllCopies lists every app's copies in one request, by app ID, each list
+// filtered and ordered as Copies does (feature 027: the Operator Overview draws
+// the host's copies across apps). Jobs that aren't apps (Traefik, a backup run)
+// are left out. When Nomad can't be read the error is one of deploy's
+// (ErrNomadUnavailable).
+func (s *Service) AllCopies(ctx context.Context) (map[string][]Copy, error) {
+	byJob, err := s.deployer.AllCopies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list copies: %w", err)
+	}
+	recs, err := s.store.ListApps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list copies: %w", err)
+	}
+	out := make(map[string][]Copy, len(recs))
+	for _, rec := range recs {
+		out[rec.App.ID] = byJob[rec.App.ID]
+	}
+	return out, nil
+}
+
 // appCopies is Copies, with the stored app it checked.
 func (s *Service) appCopies(ctx context.Context, appID string) (app.App, []Copy, error) {
 	rec, err := s.store.GetApp(ctx, appID)

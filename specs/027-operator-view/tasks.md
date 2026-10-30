@@ -88,7 +88,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   `listActivity` (`GET /v1/activity?limit&before&server`) in `internal/api/activity.go`; `api/openapi.yaml` 0.29.0
   with both; deploy tokens denied (`internal/api/scope_test.go` walk); parity entries for `/ops` and its parts in
   `internal/api/parity_test.go`; contract tests in `internal/api/host_test.go`, `internal/api/activity_test.go`.
-- [ ] T011 [US1] [FR-004, FR-005, FR-006, FR-007, FR-009] The Overview: `internal/ui/ops.go` and
+- [X] T011 [US1] [FR-004, FR-005, FR-006, FR-007, FR-009] The Overview: `internal/ui/ops.go` and
   `internal/ui/templates/ops.html` at `/ops`, per `contracts/page1-overview.md`: the headline from the Developer home's
   function, the stats line (servers, apps, copies, cpu and mem over 10 min from 025, open items; "waiting for the
   first reading"), the Server section with the room sentence and one NodePanel (state mark, name, pool chip, copies
@@ -99,11 +99,11 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   `EventRow`s: time UTC with local in `title`, kind word, mark, sentence; "from caravana's records"), Capacity with
   025's "This host" template without the chart; Nomad unreachable and no-apps states. Tests in
   `internal/ui/ops_test.go`.
-- [ ] T012 [US1] [FR-008] Parts and live refresh: `/parts/ops/overview` (stats, server panel, apps) and
+- [X] T012 [US1] [FR-008] Parts and live refresh: `/parts/ops/overview` (stats, server panel, apps) and
   `/parts/ops/activity` in `internal/ui/ops.go`, swapped on `metrics`, `apps`, `activity`, `actions`, `schedules`,
   `attention` and `host` notices (forward `host` in the live stream), rows swapped by id with the fresh tint once;
   without script the page is a snapshot. Tests in `internal/ui/ops_test.go`.
-- [ ] T013 [P] [US1] [SC-007] Styles under `/* Page 027 */` in `internal/ui/style/input.css` (toggle, Operator
+- [X] T013 [P] [US1] [SC-007] Styles under `/* Page 027 */` in `internal/ui/style/input.css` (toggle, Operator
   sidebar groups, NodePanel, AllocChip, EventRow, the apps table and its fold), `tools/ui-css.sh build`; `DESIGN.md`
   records the toggle, the Operator sidebar and the activity row; text never fg-4.
 - [ ] T014 [US1] [SC-005, SC-007] `cmd/caravana/console_ops_test.go`: `TestConsoleLab` step `console-ops-overview` (the

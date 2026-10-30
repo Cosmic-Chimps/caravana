@@ -141,6 +141,10 @@ func (s *server) routeTable() []route {
 		{"GET", "/logs", s.requireSession(s.showLogsPage)},
 		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
 		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
+		{"GET", "/ops", s.requireSession(s.showOps)},
+		{"GET", "/parts/ops/overview", s.requirePart(s.partOpsOverview)},
+		{"GET", "/parts/ops/activity", s.requirePart(s.partOpsActivity)},
+		{"GET", "/parts/ops/capacity", s.requirePart(s.partOpsCapacity)},
 		{"GET", "/monitoring", s.requireSession(s.showMonitoring)},
 		{"GET", "/parts/monitoring", s.requirePart(s.partMonitoring)},
 		{"GET", "/parts/monitoring/host", s.requirePart(s.partMonitoringHost)},
@@ -311,7 +315,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -333,6 +337,11 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// comes after it, so the app's "content", "head" and "page-class" are the ones the set keeps.
 		if name == "app" {
 			files = append(files, "templates/logs.html")
+		}
+		// The Operator Overview draws the Needs-you list with the Developer home's own template
+		// (feature 027): apps.html comes first, so the page's own "content" is the one the set keeps.
+		if name == "ops" {
+			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")
 		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)

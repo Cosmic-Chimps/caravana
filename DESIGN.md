@@ -1327,6 +1327,25 @@ of the earlier days. It is information, not a to-do list: an unusual service is 
   bars already are). Every track is `minmax(0, …)` and long words break anywhere, so nothing scrolls sideways at
   390px.
 
+### The Operator view (feature 027, page 1)
+The console has two views of one host. The **toggle** sits under the brand in the sidebar and, under 900px,
+as the first row of the Menu panel: a `<nav aria-label="View">` of two plain links in a segmented control
+(a 1px line-1 edge, ink-1 ground, two equal 30px cells; the current one is ink-3 with fg-1 and
+`aria-current="page"`, the other transparent with fg-3). They navigate, so they are not radios. The mode is
+the URL (`/ops` and below are Operator); the pages both views share draw the sidebar of the view last
+visited, kept in a plain cookie. The **Operator sidebar** has two groups, Server (Overview, Server) and
+Platform (Updates), in the item shape of the Developer one; Updates may carry a small mark after its name
+(a count, a square or a diamond) in fg-2 mono, never fg-4. The Overview's **server panel** is a panel with a
+16px padding and a 13px gap: the node's mark, its name in mono 500, the pool as a small outlined chip, the
+copies' count at the right; then the spec line (mono, fg-3), the same meters as the Capacity panel with
+short readouts, and the copies as chips grouped by app (a failed copy has the failed ground, a starting one a
+dashed edge, a draining one a dashed edge and a line through its text; past 40 the rest is one sentence).
+The **activity row** (Live activity) is three columns, a 64px time, a 92px kind word and the sentence with a
+6px mark, in 12px mono fg-3 for the first two and 14px fg-2 for the sentence; the time is UTC and the
+viewer's own time is in its title; a row that arrives live has the 5% veil once and nothing more. The apps
+table folds into label and value pairs when it has under 860px of its own, and its Reach column never gets
+under 140px, so the header never runs into the next one.
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

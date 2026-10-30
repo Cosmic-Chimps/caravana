@@ -75,11 +75,24 @@ type HostView struct {
 	History  HostHistory
 	Baseline MetricsBaseline
 	Sources  SamplerSources
+	// Recent is the host's CPU and memory use over the 10 minutes up to the
+	// newest sample (feature 027: the Overview's "cpu 38% / mem 63%"); nil when
+	// the host was never sampled or those samples held no numbers.
+	Recent *HostRecent
 	// Node is what Nomad says about the node, from the sampler's newest tick
 	// (feature 027); nil before its first reading, and after a restart until the
 	// next tick.
 	Node *HostNode
 }
+
+// HostRecent is the mean use of the host over the last 10 minutes, in percent
+// of the total (memory without the page cache, as everywhere).
+type HostRecent struct {
+	CPUPercent, MemoryPercent *float64
+}
+
+// hostRecentWindow is how far back HostRecent reaches.
+const hostRecentWindow = 10 * time.Minute
 
 // hostHistoryHours is the history's span: seven days of hourly points.
 const hostHistoryHours = 7 * 24
@@ -143,6 +156,10 @@ func (s *Service) Host(ctx context.Context) (HostView, error) {
 			Mount: d.Mount, Holds: strings.Split(d.Holds, ","), UsedMB: d.UsedMB, TotalMB: d.TotalMB, FreeMB: d.FreeMB,
 			UsedPercent: pct, State: state,
 		})
+	}
+
+	if view.Recent, err = s.hostRecent(ctx, h.TS); err != nil {
+		return HostView{}, err
 	}
 
 	view.Room, err = s.hostRoom(ctx, h)
@@ -320,4 +337,35 @@ func medianInt(vs []int64) *int64 {
 		m = s[n/2-1] + (s[n/2]-s[n/2-1]+1)/2
 	}
 	return &m
+}
+
+// hostRecent averages the host's minute samples of the 10 minutes ending at
+// newest. A sample missing a number leaves it out of that resource's mean.
+func (s *Service) hostRecent(ctx context.Context, newest time.Time) (*HostRecent, error) {
+	rows, err := s.store.HostRows(ctx, store.MinuteRes, newest.Add(-hostRecentWindow+time.Second), newest.Add(time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("read the host: %w", err)
+	}
+	mean := func(used, total func(store.HostSample) *int64) *float64 {
+		sum, n := 0.0, 0
+		for _, r := range rows {
+			if u, t := used(r), total(r); u != nil && t != nil && *t > 0 {
+				sum += float64(*u) / float64(*t) * 100
+				n++
+			}
+		}
+		if n == 0 {
+			return nil
+		}
+		v := sum / float64(n)
+		return &v
+	}
+	out := &HostRecent{
+		CPUPercent:    mean(func(r store.HostSample) *int64 { return r.CPUUsedMHz }, func(r store.HostSample) *int64 { return r.CPUTotalMHz }),
+		MemoryPercent: mean(func(r store.HostSample) *int64 { return r.MemoryUsedMB }, func(r store.HostSample) *int64 { return r.MemoryTotalMB }),
+	}
+	if out.CPUPercent == nil && out.MemoryPercent == nil {
+		return nil, nil
+	}
+	return out, nil
 }
