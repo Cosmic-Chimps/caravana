@@ -281,3 +281,9 @@ Minor: the note reads "from caravana's records · times in UTC"; the needs-you a
 longest label ("View deployment"), button right-aligned, in the shared template (the home too); the DISK readout goes
 under its bar like MEM and CPU. Kept as is: "5 apps need you" beside "Needs you 6" (apps against items), the copy chips,
 stacked at 1440, no sort or filter.
+
+## Last look (designer, 2026-10-30): Approved
+
+Approved at 9210661, measured at 1440, 1100, 640 and 390 with innerWidth logged: needs-you times end at the same x on
+every row (/ops and the home), Last change wraps in the fold with nothing cut, Reach carries its host in a title, the
+feed's place label is the full one, and no width scrolls sideways.

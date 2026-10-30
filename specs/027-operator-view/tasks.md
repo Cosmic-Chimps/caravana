@@ -114,9 +114,10 @@ and the designer's review cycle (review, impeccable critique with no detector, r
     and `console-delete`). Two test fixes on the way: the API check after `RestartCaravana` waits for the new process's
     first sample (the node block is empty until then, as the spec allows), and the step reopens the app page's live
     stream on its way out, since its restart ends the stream `console-delete` reads.
-- [ ] T015 [US1] Page 1 review cycle: stage the lab for the designer, the designer's review against
+- [X] T015 [US1] Page 1 review cycle: stage the lab for the designer, the designer's review against
   `pe-ops-now.png`, the impeccable critique (critique only, no detector), the designer's rulings, the fixes, the last
   look; record "Approved" in `contracts/page1-overview.md`.
+  - 2026-10-30: review (6 fixes, f0fd007), recheck and critique (28/40, 0 P0; d713575), last look (9210661): Approved.
 
 **Checkpoint**: page 1 works on its own and is approved.
 
