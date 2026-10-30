@@ -48,10 +48,18 @@ CREATE TABLE problem_events (
   app_id  TEXT NOT NULL DEFAULT '',
   change  TEXT NOT NULL CHECK (change IN ('opened', 'worsened', 'resolved')),
   at      TEXT NOT NULL,
-  summary TEXT NOT NULL                         -- the sentence that was sent
+  summary TEXT NOT NULL,                        -- the title that was sent
+  -- The needs-you list's own sentence for the problem when the event was written, as JSON
+  -- [{"text":"...","mono":true}]: the names (app, service, schedule, mount, domain) are the mono
+  -- parts. Empty for an event written before the column existed: the feed falls back to summary.
+  sentence TEXT NOT NULL DEFAULT ''
 ) STRICT;
 CREATE INDEX problem_events_by_time ON problem_events (at, id);
 CREATE INDEX problem_events_by_app ON problem_events (app_id);
+
+-- The same sentence for a problem that is still open, so that the event that resolves it can say
+-- what was resolved without reading the needs-you list (the item is gone by then).
+ALTER TABLE sent_problems ADD COLUMN sentence TEXT NOT NULL DEFAULT '';
 
 -- Small facts about the host that must survive a restart, such as when the
 -- count of pending security updates first went above zero.

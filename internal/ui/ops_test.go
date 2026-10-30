@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestOpsPage(t *testing.T) {
 	for _, want := range []string{
 		// The headline is the Developer home's sentence, and the stats line follows it.
 		"apps need you", "1 server", "4 apps", "waiting for the first reading",
-		"Server", "Apps", "4 running", "Needs you", "Live activity", "from caravana's records", "Capacity",
+		"Server", "Apps", "4 running", "Needs you", "Live activity", "from caravana's records",
 		"App State Copies CPU 1h Mem Reach Last change",
 		"Waiting for the first reading of the server.",
 		// The activity: Caravana's words.
@@ -70,13 +71,40 @@ func TestOpsPage(t *testing.T) {
 	}
 	for _, want := range []string{
 		`sse-connect="/live?watch=ops"`, `data-live`,
-		`hx-get="/parts/ops/overview"`, `hx-get="/parts/ops/activity"`, `hx-get="/parts/ops/capacity"`, `hx-get="/parts/attention"`,
+		`hx-get="/parts/ops/overview"`, `hx-get="/parts/ops/activity"`, `hx-get="/parts/attention"`,
 		`id="ops-head"`, `id="ops-needs-meta"`, `id="ops-activity"`, `data-ev="`, `data-ops-time`,
 		`<script src="/static/js/ops.js?v=`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q", want)
 		}
+	}
+	// No Capacity section: on one host it would repeat the Server panel's meters and room sentence.
+	if strings.Contains(body, "Capacity") || strings.Contains(body, "ops-capacity") || strings.Contains(body, "/parts/ops/capacity") {
+		t.Error("the page still has a Capacity section")
+	}
+	// The sections read in the order they stack: Needs you, Server, Apps, Live activity.
+	last := -1
+	for _, id := range []string{`id="ops-needs-title"`, `id="ops-server-title"`, `id="ops-apps-title"`, `id="ops-activity-title"`} {
+		i := strings.Index(body, id)
+		if i < 0 || i < last {
+			t.Errorf("%s is at %d, after %d: the sections aren't in the order Needs you, Server, Apps, Live activity", id, i, last)
+		}
+		last = i
+	}
+	// The activity's names are mono wherever they stand, and a deploy that rolls out has the rolling mark.
+	for _, want := range []string{
+		`<span class="cv-inline-mono text-fg-1">printf</span> ran in <span class="cv-inline-mono text-fg-1">whoami</span> from the console, exit 0.`,
+		`<span class="cv-inline-mono text-fg-1">web</span> <span class="cv-inline-mono text-fg-1">v2</span> is live, by the webhook.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the activity lacks %q", want)
+		}
+	}
+	rolling := body[strings.Index(body, `data-ev="deployments.s1.started"`):]
+	rolling = rolling[:strings.Index(rolling, "</div>")]
+	if !strings.Contains(rolling, `cv-mark cv-mark-rolling`) || strings.Contains(rolling, "cv-mark-idle") {
+		t.Errorf("a deploy that is rolling out doesn't have the rolling mark:\n%s", rolling)
 	}
 	// The Operator sidebar, Overview marked, and the toggle with Operator current.
 	if !strings.Contains(body, `<a href="/ops" class="cv-nav-item" aria-current="page">`) {
@@ -202,11 +230,10 @@ func TestOpsParts(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(body, `data-ev="deployments.s1.ended"`) || strings.Contains(body, "<html") {
 		t.Errorf("activity part = %d:\n%s", resp.StatusCode, text(body))
 	}
-	resp, body = e.get(t, "/parts/ops/capacity")
-	if resp.StatusCode != 200 || !strings.Contains(body, "cv-mnhost") {
-		t.Errorf("capacity part = %d:\n%s", resp.StatusCode, text(body))
+	if resp, _ = e.get(t, "/parts/ops/capacity"); resp.StatusCode != 404 {
+		t.Errorf("the Capacity part answers %d, want it gone", resp.StatusCode)
 	}
-	for _, path := range []string{"/parts/ops/overview", "/parts/ops/activity", "/parts/ops/capacity"} {
+	for _, path := range []string{"/parts/ops/overview", "/parts/ops/activity"} {
 		resp, _ := e.do(t, request{path: path})
 		if resp.StatusCode != 401 || resp.Header.Get("HX-Redirect") == "" {
 			t.Errorf("%s without a session = %d, want 401 with HX-Redirect", path, resp.StatusCode)
@@ -229,7 +256,7 @@ func TestOpsNomadUnreachable(t *testing.T) {
 	}
 	words := text(body)
 	for _, want := range []string{
-		"Nomad can't be reached right now, so the server's state isn't shown.", "Can't read Nomad's events right now.",
+		"Nomad can't be reached right now, so the server's state isn't shown.", "Can't read the server's own events right now.",
 		"whoami", "blog", "Live activity", "Nomad can't be reached; showing what caravana last recorded.",
 	} {
 		if !strings.Contains(words, want) {
@@ -263,7 +290,7 @@ func TestOpsNeverShowsCommandOutput(t *testing.T) {
 		t.Fatalf("RunCommand: %v", err)
 	}
 	_ = rec
-	for _, path := range []string{"/ops", "/parts/ops/overview", "/parts/ops/activity", "/parts/ops/capacity"} {
+	for _, path := range []string{"/ops", "/parts/ops/overview", "/parts/ops/activity"} {
 		_, body := e.get(t, path)
 		if strings.Contains(body, opsSentinel) || strings.Contains(body, "echo "+opsSentinel) {
 			t.Errorf("%s holds the command's text", path)
@@ -313,11 +340,14 @@ func TestOpsNodePanel(t *testing.T) {
 	for _, m := range n.Meters {
 		reads = append(reads, m.Label+" "+m.Read)
 	}
-	if got := strings.Join(reads, "; "); got != "mem 1.7/1.9G; cpu 2.4/8 vCPU... " && !strings.HasPrefix(got, "mem 1.7/1.9G; cpu ") {
-		t.Errorf("meters = %s", got)
+	// The split readouts of Monitoring's host meters: what is used, what Nomad reserved, of the total.
+	if got, want := strings.Join(reads, "; "), "mem 1.7G used · 1.3G reserved of 1.9G; cpu 0.6 used · 0.89 reserved of 2 vCPU; disk 5.8/18.3G"; got != want {
+		t.Errorf("meters = %s, want %s", got, want)
 	}
-	if !strings.Contains(strings.Join(reads, ";"), "disk 5.8/18.3G") {
-		t.Errorf("meters = %v, want a disk readout 5.8/18.3G", reads)
+	for _, m := range n.Meters[:2] {
+		if !m.Split {
+			t.Errorf("meter %s isn't a split readout", m.Label)
+		}
 	}
 	if len(n.Chips) != 4 || n.More != 0 {
 		t.Fatalf("chips = %+v, more %d", n.Chips, n.More)
@@ -415,31 +445,39 @@ func TestOpsStatsLine(t *testing.T) {
 func TestOpsEventRows(t *testing.T) {
 	at := time.Date(2026, 10, 30, 14, 2, 14, 0, time.UTC)
 	ev := opsEventOf(service.ActivityEntry{ID: "deployments.d1.ended", Time: at, Kind: "deploy", Status: "healthy",
+		Parts:    []service.TextPart{{Text: "whoami", Mono: true}, {Text: " "}, {Text: "v24", Mono: true}, {Text: " is live, from the console."}},
 		Sentence: "whoami v24 is live, from the console.", AppID: "whoami", AppName: "whoami"})
 	if ev.Time != "14:02:14" || ev.Title != "2026-10-30 14:02:14 UTC" || ev.Kind != "deploy" || ev.Mark != "healthy" || ev.Href != "/apps/whoami" {
 		t.Errorf("event = %+v", ev)
 	}
-	if len(ev.Sentence) != 2 || !ev.Sentence[0].Mono || ev.Sentence[0].Text != "whoami" {
-		t.Errorf("the app's name isn't in mono: %+v", ev.Sentence)
+	if len(ev.Sentence) != 4 || !ev.Sentence[0].Mono || !ev.Sentence[2].Mono || ev.Sentence[3].Mono || ev.Sentence.String() != "whoami v24 is live, from the console." {
+		t.Errorf("the names aren't in mono: %+v", ev.Sentence)
 	}
-	srv := opsEventOf(service.ActivityEntry{ID: "node.1.cluster", Time: at, Kind: "server", Status: "idle", Sentence: "The server started."})
+	// A name that doesn't begin the sentence is mono too: the service says which parts are names.
+	mid := opsEventOf(service.ActivityEntry{ID: "schedule_runs.r.", Time: at, Kind: "schedule", Status: "warning", AppID: "clock", AppName: "clock",
+		Parts: []service.TextPart{{Text: "Schedule "}, {Text: "slow", Mono: true}, {Text: " was stopped at its time limit in "}, {Text: "clock", Mono: true}, {Text: "."}}})
+	if !mid.Sentence[1].Mono || mid.Sentence[0].Mono || !mid.Sentence[3].Mono {
+		t.Errorf("schedule sentence = %+v", mid.Sentence)
+	}
+	srv := opsEventOf(service.ActivityEntry{ID: "node.1.cluster", Time: at, Kind: "server", Status: "idle",
+		Parts: []service.TextPart{{Text: "The server started."}}, Sentence: "The server started."})
 	if srv.Href != "" || len(srv.Sentence) != 1 || srv.Sentence[0].Mono {
 		t.Errorf("a server entry = %+v", srv)
 	}
 }
 
-// opsHost's meters keep 025's rule: a memory meter at 85 % is warn, so the number and the colour
-// agree with the Capacity panel's.
-func TestOpsMetersAreTheCapacityOnes(t *testing.T) {
+// opsHost's meters are Monitoring's own (the split readouts, one function): a memory meter at 85 %
+// is warn, so the number and the colour agree with the "This host" panel's.
+func TestOpsMetersAreMonitoringOnes(t *testing.T) {
 	h := opsHost()
 	h.Memory.Used = i64(1700) // 87 % of 1949
 	short := opsMeters(h)
 	long := hostMeters(h)
 	if len(short) != len(long) {
-		t.Fatalf("meters = %d, capacity has %d", len(short), len(long))
+		t.Fatalf("meters = %d, Monitoring has %d", len(short), len(long))
 	}
 	for i := range short {
-		if short[i].Fill != long[i].Fill || short[i].Warn != long[i].Warn || short[i].Mark != long[i].Mark || short[i].ResW != long[i].ResW {
+		if short[i] != long[i] {
 			t.Errorf("meter %s differs: %+v vs %+v", short[i].Label, short[i], long[i])
 		}
 	}
@@ -476,3 +514,42 @@ func TestOpsLiveForwardsItsNotices(t *testing.T) {
 }
 
 var _ = api.AllocationListStub{} // the fake Nomad's allocation type, used by the helpers above
+
+// The apps table's text cells wrap inside their column (the State pill and the Last change cell used to
+// run into their neighbours at 1440px): the cells are the grid's items with a minimum width of 0, the
+// last change isn't nowrap and the pill may break. The rules are in the stylesheet's source, so a
+// change that removes one fails here, and the markup has the classes the rules are on.
+func TestOpsTableCellsWrapInTheirColumn(t *testing.T) {
+	css, err := os.ReadFile("style/input.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := func(selector string) string {
+		for _, line := range strings.Split(string(css), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), selector+" {") {
+				return line
+			}
+		}
+		t.Fatalf("no rule for %s", selector)
+		return ""
+	}
+	if r := rule(".cv-opshead > *, .cv-opsrow > *"); !strings.Contains(r, "min-width: 0") {
+		t.Errorf("the table's cells have no min-width 0: %s", r)
+	}
+	if r := rule(".cv-opsstate, .cv-opschange"); !strings.Contains(r, "min-width: 0") || !strings.Contains(r, "overflow-wrap: anywhere") {
+		t.Errorf("the state and last change cells don't wrap in their column: %s", r)
+	}
+	if r := rule(".cv-opschange"); strings.Contains(r, "nowrap") {
+		t.Errorf("the last change doesn't wrap: %s", r)
+	}
+	if r := rule(".cv-opsstate .cv-pill"); !strings.Contains(r, "white-space: normal") {
+		t.Errorf("the state pill doesn't wrap: %s", r)
+	}
+	e := opsEnv(t)
+	_, body := e.get(t, "/ops")
+	for _, class := range []string{`class="cv-opsstate"`, `class="cv-opschange"`, `class="cv-opsname"`} {
+		if !strings.Contains(body, class) {
+			t.Errorf("the table lacks a cell with %s", class)
+		}
+	}
+}

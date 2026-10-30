@@ -135,9 +135,12 @@ type SentProblem struct {
 	// disk; empty for a kind with none). A rise from warning to failed sends
 	// one more message and moves it; a fall or a repeat sends none.
 	Level string
+	// Sentence is the needs-you list's own sentence for the problem as JSON parts
+	// (feature 027): what the activity feed says when it opens and resolves.
+	Sentence string
 }
 
-const problemColumns = "key, kind, app_id, service, opened_at, last_seen_at, summary, level"
+const problemColumns = "key, kind, app_id, service, opened_at, last_seen_at, summary, level, sentence"
 
 // ListSentProblems returns every sent problem, oldest first.
 func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
@@ -150,7 +153,7 @@ func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
 	for rows.Next() {
 		var p SentProblem
 		var opened, seen string
-		if err := rows.Scan(&p.Key, &p.Kind, &p.AppID, &p.Service, &opened, &seen, &p.Summary, &p.Level); err != nil {
+		if err := rows.Scan(&p.Key, &p.Kind, &p.AppID, &p.Service, &opened, &seen, &p.Summary, &p.Level, &p.Sentence); err != nil {
 			return nil, fmt.Errorf("list sent problems: %w", err)
 		}
 		if p.OpenedAt, err = parseTime(opened); err != nil {
@@ -171,11 +174,11 @@ func (s *Store) ListSentProblems(ctx context.Context) ([]SentProblem, error) {
 // same key.
 func (s *Store) UpsertSentProblem(ctx context.Context, p SentProblem) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, app_id = excluded.app_id, service = excluded.service,
 			opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary,
-			level = excluded.level`,
-		p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level)
+			level = excluded.level, sentence = excluded.sentence`,
+		p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level, p.Sentence)
 	if err != nil {
 		return fmt.Errorf("save sent problem %q: %w", p.Key, err)
 	}
@@ -226,11 +229,14 @@ func (s *Store) DeleteSentProblemsOfApp(ctx context.Context, appID string) error
 // problems it opened and the messages queued for them and for the problems it
 // resolved.
 type ProblemCheck struct {
-	Opened  []SentProblem // recorded as sent (an existing key is replaced)
-	Seen    []string      // keys still on the list: their last-seen time moves to SeenAt
-	SeenAt  time.Time
-	Levels  map[string]string // key -> the level just sent for a problem that got worse
-	Removed []string          // keys resolved, or dropped because their app is gone
+	Opened []SentProblem // recorded as sent (an existing key is replaced)
+	Seen   []string      // keys still on the list: their last-seen time moves to SeenAt
+	SeenAt time.Time
+	Levels map[string]string // key -> the level just sent for a problem that got worse
+	// Sentences is, for the keys of Levels, the needs-you sentence now (JSON parts): the worse
+	// problem's event says it and the stored problem keeps it. A key without one keeps the old.
+	Sentences map[string]string
+	Removed   []string // keys resolved, or dropped because their app is gone
 	// Dropped lists the keys of Removed that are not resolutions (their app is
 	// gone): they leave no "resolved" problem event. Every other removed key
 	// does.
@@ -262,15 +268,15 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 
 	for _, p := range c.Opened {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO sent_problems (`+problemColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (key) DO UPDATE SET kind = excluded.kind, app_id = excluded.app_id, service = excluded.service,
 				opened_at = excluded.opened_at, last_seen_at = excluded.last_seen_at, summary = excluded.summary,
-				level = excluded.level`,
-			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level); err != nil {
+				level = excluded.level, sentence = excluded.sentence`,
+			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level, p.Sentence); err != nil {
 			return fmt.Errorf("record a problem check: save problem %q: %w", p.Key, err)
 		}
 		if err := appendProblemEvent(ctx, tx, ProblemEvent{Key: p.Key, Kind: p.Kind, AppID: p.AppID,
-			Change: ProblemOpened, At: p.OpenedAt, Summary: p.Summary}); err != nil {
+			Change: ProblemOpened, At: p.OpenedAt, Summary: p.Summary, Sentence: p.Sentence}); err != nil {
 			return fmt.Errorf("record a problem check: event for problem %q: %w", p.Key, err)
 		}
 		events++
@@ -281,6 +287,11 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 		}
 	}
 	for key, level := range c.Levels {
+		if sentence, ok := c.Sentences[key]; ok {
+			if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET sentence = ? WHERE key = ?", sentence, key); err != nil {
+				return fmt.Errorf("record a problem check: set the sentence of problem %q: %w", key, err)
+			}
+		}
 		wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemWorsened, at)
 		if err != nil {
 			return fmt.Errorf("record a problem check: event for problem %q: %w", key, err)
@@ -330,8 +341,8 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 // with no row records nothing and returns false.
 func appendStoredProblemEvent(ctx context.Context, tx *sql.Tx, key, change string, at time.Time) (bool, error) {
 	e := ProblemEvent{Key: key, Change: change, At: at}
-	err := tx.QueryRowContext(ctx, "SELECT kind, app_id, summary FROM sent_problems WHERE key = ?", key).
-		Scan(&e.Kind, &e.AppID, &e.Summary)
+	err := tx.QueryRowContext(ctx, "SELECT kind, app_id, summary, sentence FROM sent_problems WHERE key = ?", key).
+		Scan(&e.Kind, &e.AppID, &e.Summary, &e.Sentence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

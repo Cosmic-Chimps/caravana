@@ -215,7 +215,6 @@ var consoleParity = map[string]parity{
 	"GET /ops":                {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
 	"GET /parts/ops/overview": {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
 	"GET /parts/ops/activity": {ops: []string{"listActivity"}},
-	"GET /parts/ops/capacity": {ops: []string{"getHost"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

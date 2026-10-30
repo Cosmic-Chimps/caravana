@@ -43,6 +43,9 @@ const (
 	ActivityWarning = "warning"
 	ActivityFailed  = "failed"
 	ActivityIdle    = "idle"
+	// ActivityRolling is a deployment that is rolling out: the console's ◐, not the ○ of
+	// something stopped.
+	ActivityRolling = "rolling"
 )
 
 // Limits of one read of the feed.
@@ -67,13 +70,14 @@ type ActivityEntry struct {
 	ID   string
 	Time time.Time
 	Kind string
-	// Status is the mark: healthy, warning, failed or idle.
+	// Status is the mark: healthy, warning, failed, rolling or idle.
 	Status string
-	// Sentence is the entry in Caravana's words, plain text.
+	// Parts is the entry in Caravana's words as pieces, the names (program, app,
+	// service, schedule, version) marked mono so that a page sets them in its mono
+	// face. Sentence is the same words as plain text.
+	Parts    []TextPart
 	Sentence string
-	// AppID, AppName and Place name the app the entry is about; empty for the
-	// host's own. Sentence starts with AppName when the entry is about an app,
-	// so a page can set it in mono.
+	// AppID and AppName name the app the entry is about; empty for the host's own.
 	AppID, AppName string
 	Place          app.Place
 }
@@ -125,42 +129,43 @@ func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow) (Activ
 		Time: r.At.UTC(), AppID: r.AppID, Place: r.Place,
 		AppName: cmp.Or(r.Place.Name, r.AppID),
 	}
-	name := e.AppName
+	name := mono(e.AppName)
 	switch r.Source {
 	case store.ActivityDeployment:
 		e.Kind = ActivityDeploy
-		e.Status, e.Sentence = s.deployWords(ctx, r, name)
+		e.Status, e.Parts = s.deployWords(ctx, r, name)
 	case store.ActivityAction:
-		e.Kind, e.Status, e.Sentence = actionWords(r, name)
+		e.Kind, e.Status, e.Parts = actionWords(r, name)
 	case store.ActivityBackup:
 		e.Kind = ActivityBackup
-		e.Status, e.Sentence = runWords(r.Status, name+"'s backup of "+cmp.Or(r.Service, "the app"))
+		e.Status, e.Parts = runWords(r.Status, name, "'s backup of ", r.Service)
 	case store.ActivityRestore:
 		e.Kind = ActivityRestore
-		e.Status, e.Sentence = runWords(r.Status, name+"'s restore of "+cmp.Or(r.Service, "the app"))
+		e.Status, e.Parts = runWords(r.Status, name, "'s restore of ", r.Service)
 	case store.ActivitySchedule:
 		e.Kind = ActivitySchedule
-		e.Status, e.Sentence = scheduleWords(r, name)
+		e.Status, e.Parts = scheduleWords(r, name)
 	case store.ActivityProblem:
 		e.Kind = ActivityNeedsYou
-		e.Status, e.Sentence = problemWords(r)
+		e.Status, e.Parts = problemWords(r)
 	case store.ActivityHost:
 		e.Kind = ActivityServer
 		e.AppID, e.AppName = "", ""
-		e.Status, e.Sentence = hostEventWords(r)
+		e.Status, e.Parts = hostEventWords(r)
 	default:
 		return ActivityEntry{}, false
 	}
+	e.Sentence = plainText(e.Parts)
 	return e, true
 }
 
 // deployWords says a deployment's start or end. The who-words are the console's
 // page 4 words, read from the deployment's own record (a deleted record falls
 // back to how it was started).
-func (s *Service) deployWords(ctx context.Context, r store.ActivityRow, name string) (status, sentence string) {
-	version := ""
+func (s *Service) deployWords(ctx context.Context, r store.ActivityRow, name TextPart) (status string, p []TextPart) {
+	var version []TextPart
 	if r.Version != nil {
-		version = " v" + strconv.FormatInt(*r.Version, 10)
+		version = []TextPart{txt(" "), mono("v" + strconv.FormatInt(*r.Version, 10))}
 	}
 	who := "by " + r.Trigger
 	errText := r.Error
@@ -169,25 +174,25 @@ func (s *Service) deployWords(ctx context.Context, r store.ActivityRow, name str
 		errText = rec.Error
 	}
 	if r.Phase == "started" {
-		return ActivityIdle, name + version + " is rolling out, " + who + "."
+		return ActivityRolling, parts(name, version, " is rolling out, "+who+".")
 	}
 	switch store.Status(r.Status) {
 	case store.StatusHealthy:
-		return ActivityHealthy, name + version + " is live, " + who + "."
+		return ActivityHealthy, parts(name, version, " is live, "+who+".")
 	case store.StatusReverted:
 		if n, ok := revertedToVersion(errText); ok {
-			return ActivityFailed, fmt.Sprintf("%s%s failed its health checks and was rolled back to v%d.", name, version, n)
+			return ActivityFailed, parts(name, version, " failed its health checks and was rolled back to ", mono(fmt.Sprintf("v%d", n)), ".")
 		}
-		return ActivityFailed, name + version + " failed its health checks and was rolled back."
+		return ActivityFailed, parts(name, version, " failed its health checks and was rolled back.")
 	case store.StatusFailed:
-		if version == "" {
-			return ActivityFailed, name + "'s deploy failed before it started."
+		if version == nil {
+			return ActivityFailed, parts(name, "'s deploy failed before it started.")
 		}
-		return ActivityFailed, name + version + " failed its health checks."
+		return ActivityFailed, parts(name, version, " failed its health checks.")
 	case store.StatusSuperseded:
-		return ActivityIdle, name + version + " was replaced by a newer deploy."
+		return ActivityIdle, parts(name, version, " was replaced by a newer deploy.")
 	}
-	return ActivityIdle, name + version + " changed."
+	return ActivityIdle, parts(name, version, " changed.")
 }
 
 // triggerLead says how an action was started, in words that follow a verb.
@@ -205,102 +210,116 @@ func triggerLead(trigger string) string {
 
 // actionWords says an app action. A command names its program only: the
 // arguments and the output were never recorded.
-func actionWords(r store.ActivityRow, name string) (kind, status, sentence string) {
+func actionWords(r store.ActivityRow, name TextPart) (kind, status string, p []TextPart) {
 	how := triggerLead(r.Trigger)
-	state := func(done, doing, failed string) (string, string) {
+	state := func(done, doing, failed string) (string, []TextPart) {
 		switch r.Status {
 		case store.ActionFailed:
-			return ActivityFailed, name + " " + failed + "."
+			return ActivityFailed, parts(name, " "+failed+".")
 		case store.ActionRunning:
-			return ActivityIdle, name + " " + doing + " " + how + "."
+			return ActivityIdle, parts(name, " "+doing+" "+how+".")
 		}
-		return ActivityHealthy, name + " " + done + " " + how + "."
+		return ActivityHealthy, parts(name, " "+done+" "+how+".")
 	}
 	switch r.Label {
 	case store.ActionRestart:
-		status, sentence = state("was restarted", "is being restarted", "could not be restarted")
-		return ActivityRestart, status, sentence
+		status, p = state("was restarted", "is being restarted", "could not be restarted")
+		return ActivityRestart, status, p
 	case store.ActionStop:
-		status, sentence = state("was stopped", "is being stopped", "could not be stopped")
-		return ActivityStop, status, sentence
+		status, p = state("was stopped", "is being stopped", "could not be stopped")
+		return ActivityStop, status, p
 	case store.ActionStart:
-		status, sentence = state("was started", "is being started", "could not be started")
-		return ActivityStart, status, sentence
+		status, p = state("was started", "is being started", "could not be started")
+		return ActivityStart, status, p
 	case store.ActionTerminal:
-		sh := cmp.Or(r.Program, "a shell")
-		if r.Status == store.ActionFailed {
-			return ActivityCommand, ActivityWarning, "A terminal (" + sh + ") in " + name + " ended with an error."
+		sh := mono(cmp.Or(r.Program, "a shell"))
+		if r.Program == "" {
+			sh = txt("a shell")
 		}
-		return ActivityCommand, ActivityIdle, "A terminal (" + sh + ") was opened in " + name + " " + how + "."
+		if r.Status == store.ActionFailed {
+			return ActivityCommand, ActivityWarning, parts("A terminal (", sh, ") in ", name, " ended with an error.")
+		}
+		return ActivityCommand, ActivityIdle, parts("A terminal (", sh, ") was opened in ", name, " "+how+".")
 	}
 	// A run.
-	prog := cmp.Or(r.Program, "a command")
+	prog := mono(cmp.Or(r.Program, "a command"))
+	if r.Program == "" {
+		prog = txt("a command")
+	}
 	switch {
 	case r.Status == store.ActionRunning:
-		return ActivityCommand, ActivityIdle, prog + " is running in " + name + " " + how + "."
+		return ActivityCommand, ActivityIdle, parts(prog, " is running in ", name, " "+how+".")
 	case r.ExitCode != nil && *r.ExitCode == 0:
-		return ActivityCommand, ActivityHealthy, prog + " ran in " + name + " " + how + ", exit 0."
+		return ActivityCommand, ActivityHealthy, parts(prog, " ran in ", name, " "+how+", exit 0.")
 	case r.ExitCode != nil:
-		return ActivityCommand, ActivityWarning, prog + " ran in " + name + " " + how + ", exit " + strconv.Itoa(*r.ExitCode) + "."
+		return ActivityCommand, ActivityWarning, parts(prog, " ran in ", name, " "+how+", exit "+strconv.Itoa(*r.ExitCode)+".")
 	}
-	return ActivityCommand, ActivityFailed, prog + " didn't finish in " + name + " " + how + "."
+	return ActivityCommand, ActivityFailed, parts(prog, " didn't finish in ", name, " "+how+".")
 }
 
-// runWords says the outcome of a backup or restore; subject is "x's backup of db".
-func runWords(status, subject string) (string, string) {
+// runWords says the outcome of a backup or restore: "<app>'s backup of <service> finished."
+func runWords(status string, name TextPart, link, service string) (string, []TextPart) {
+	subject := mono(service)
+	if service == "" {
+		subject = txt("the app")
+	}
 	switch status {
 	case store.BackupSucceeded:
-		return ActivityHealthy, subject + " finished."
+		return ActivityHealthy, parts(name, link, subject, " finished.")
 	case store.BackupFailed:
-		return ActivityFailed, subject + " failed."
+		return ActivityFailed, parts(name, link, subject, " failed.")
 	}
-	return ActivityIdle, subject + " is running."
+	return ActivityIdle, parts(name, link, subject, " is running.")
 }
 
 // scheduleWords says a schedule run that failed or was stopped at its limit.
-func scheduleWords(r store.ActivityRow, name string) (string, string) {
-	sched := "Schedule " + cmp.Or(r.Label, "run")
+func scheduleWords(r store.ActivityRow, name TextPart) (string, []TextPart) {
+	sched := parts("Schedule ", mono(cmp.Or(r.Label, "run")))
+	if r.Label == "" {
+		sched = parts("Schedule run")
+	}
 	if r.Status == store.RunStoppedAtLimit {
-		return ActivityWarning, sched + " was stopped at its time limit in " + name + "."
+		return ActivityWarning, parts(sched, " was stopped at its time limit in ", name, ".")
 	}
 	if r.ExitCode != nil {
-		return ActivityFailed, sched + " failed in " + name + ", exit " + strconv.Itoa(*r.ExitCode) + "."
+		return ActivityFailed, parts(sched, " failed in ", name, ", exit "+strconv.Itoa(*r.ExitCode)+".")
 	}
-	return ActivityFailed, sched + " failed in " + name + "."
+	return ActivityFailed, parts(sched, " failed in ", name, ".")
 }
 
-// problemWords says a change of the needs-you list with the sentence that was
-// sent when it changed.
-func problemWords(r store.ActivityRow) (string, string) {
-	summary := strings.TrimSpace(r.Detail)
-	if summary == "" {
-		summary = strings.ReplaceAll(r.Label, "_", " ")
+// problemWords says a change of the needs-you list with the needs-you list's own
+// sentence, stored as parts when the event was written (the title that was sent
+// for an event written before that). A resolved one is "Resolved: " and the sentence.
+func problemWords(r store.ActivityRow) (string, []TextPart) {
+	sentence, ok := decodeParts(r.Detail)
+	if !ok {
+		sentence = []TextPart{txt(strings.ReplaceAll(r.Label, "_", " "))}
 	}
 	switch r.Status {
 	case store.ProblemResolved:
-		return ActivityHealthy, "Resolved: " + summary
+		return ActivityHealthy, parts("Resolved: ", sentence)
 	case store.ProblemWorsened:
-		return ActivityFailed, summary
+		return ActivityFailed, sentence
 	}
-	return ActivityWarning, summary
+	return ActivityWarning, sentence
 }
 
 // hostEventWords says a host event: a boot, a Caravana version change, a run of
 // the OS's package manager.
-func hostEventWords(r store.ActivityRow) (string, string) {
+func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 	switch r.Label {
 	case store.HostEventBoot:
-		return ActivityIdle, "The server started."
+		return ActivityIdle, parts("The server started.")
 	case store.HostEventVersion:
 		var d struct{ From, To string }
 		_ = json.Unmarshal([]byte(r.Detail), &d)
 		switch {
 		case d.To == "":
-			return ActivityIdle, "Caravana's version changed."
+			return ActivityIdle, parts("Caravana's version changed.")
 		case d.From == "":
-			return ActivityIdle, "Caravana " + d.To + " is running."
+			return ActivityIdle, parts("Caravana ", mono(d.To), " is running.")
 		}
-		return ActivityIdle, "Caravana was updated from " + d.From + " to " + d.To + "."
+		return ActivityIdle, parts("Caravana was updated from ", mono(d.From), " to ", mono(d.To), ".")
 	case store.HostEventOSPackages:
 		var d struct {
 			Packages int
@@ -313,11 +332,11 @@ func hostEventWords(r store.ActivityRow) (string, string) {
 			out = fmt.Sprintf("%d Ubuntu packages were updated", d.Packages)
 		}
 		if d.Reboot {
-			return ActivityWarning, out + "; a reboot is needed."
+			return ActivityWarning, parts(out + "; a reboot is needed.")
 		}
-		return ActivityIdle, out + "."
+		return ActivityIdle, parts(out + ".")
 	}
-	return ActivityIdle, "The server changed."
+	return ActivityIdle, parts("The server changed.")
 }
 
 // nodeEventEntry puts one of the node's events from Nomad in Caravana's words.
@@ -344,7 +363,7 @@ func nodeEventEntry(ev deploy.NodeEvent) ActivityEntry {
 	}
 	return ActivityEntry{
 		ID:   fmt.Sprintf("node.%d.%s", ev.Time.UnixNano(), strings.ToLower(ev.Subsystem)),
-		Time: ev.Time.UTC(), Kind: ActivityServer, Status: status, Sentence: sentence,
+		Time: ev.Time.UTC(), Kind: ActivityServer, Status: status, Parts: []TextPart{txt(sentence)}, Sentence: sentence,
 	}
 }
 

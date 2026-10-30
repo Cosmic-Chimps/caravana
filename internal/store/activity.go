@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -22,7 +23,7 @@ const (
 	ActivityBackup     = "backups"        // Label is the engine; At is its end, or its start while it runs
 	ActivityRestore    = "restores"       // likewise
 	ActivitySchedule   = "schedule_runs"  // only runs that failed or were stopped at their limit; Label is the schedule's name
-	ActivityProblem    = "problem_events" // Label is the attention kind, Status the change, Detail the sentence sent
+	ActivityProblem    = "problem_events" // Label is the attention kind, Status the change, Detail the sentence as JSON parts
 	ActivityHost       = "host_events"    // Label is the kind (boot, version, os_packages), Detail its JSON
 )
 
@@ -32,6 +33,17 @@ const (
 var ServerProblemKinds = []string{
 	"disk_nearly_full", "os_reboot_required", "os_security_updates", // the host
 	"out_of_memory", "restarting", // the copies on it
+}
+
+// OpenedProblemKinds are the needs-you kinds whose "opened" (and "worsened") entry the feed
+// lists: the ones with no record of their own in it. A failed deploy, a failed schedule run, a
+// failed backup or restore are rows of their own (deploy, schedule, backup, restore), so a second
+// "needs you" row for the same event would say it twice. A "resolved" entry is listed for every
+// kind: nothing else says that the trouble is over.
+var OpenedProblemKinds = []string{
+	"disk_nearly_full", "unhealthy", "restarting", "out_of_memory",
+	"domain_dns_elsewhere", "domain_cert_expiring",
+	"os_reboot_required", "os_security_updates", "no_backup_destination",
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on
@@ -65,14 +77,15 @@ type ActivityRow struct {
 	// Caravana's words.
 	Error string
 	// Detail is JSON or a sentence the row came with: a deployment's origin (the
-	// CI details), a schedule run's stop reason, a problem event's sentence, a
-	// host event's JSON.
+	// CI details), a schedule run's stop reason, a problem event's sentence as
+	// JSON parts ([{"text","mono"}]; never empty), a host event's JSON.
 	Detail string
 }
 
 // activitySQL is the feed: one UNION ALL over the sources, each cut to
 // ?1 (a stored time; empty means no cut) and, with ?2 = 1, to what concerns the
-// server. ?3 is the limit. Every branch has the same twelve columns.
+// server. ?3 is the limit. Problem events are listed when they resolve a problem
+// of any kind, and when they open or worsen one of OpenedProblemKinds only. Every branch has the same twelve columns.
 const activitySQL = `
 SELECT u.source, u.row_id, u.phase, u.at, u.app_id, COALESCE(a.project, ''), COALESCE(a.environment, ''), COALESCE(a.app_name, ''),
        u.service, u.status, u.trigger, u.label, u.program, u.exit_code, u.version, u.error, u.detail
@@ -110,8 +123,8 @@ FROM (
   UNION ALL
   SELECT 'problem_events', CAST(id AS TEXT), '', at, app_id,
          '', change, '', kind, '', NULL, NULL,
-         '', summary
-  FROM problem_events WHERE (?2 = 0 OR kind IN (%s)) AND (?1 = '' OR at < ?1)
+         '', COALESCE(NULLIF(sentence, ''), json_array(json_object('text', summary, 'mono', json('false'))))
+  FROM problem_events WHERE (?2 = 0 OR kind IN (%s)) AND (change = 'resolved' OR kind IN (%s)) AND (?1 = '' OR at < ?1)
   UNION ALL
   SELECT 'host_events', CAST(id AS TEXT), '', at, '',
          '', '', '', kind, '', NULL, NULL,
@@ -142,14 +155,7 @@ func (s *Store) ListActivity(ctx context.Context, limit int, before time.Time, s
 	if serverOnly {
 		server = 1
 	}
-	list := ""
-	for i, k := range ServerProblemKinds {
-		if i > 0 {
-			list += ", "
-		}
-		list += "'" + k + "'" // fixed words of this package, never input
-	}
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(activitySQL, list), cut, server, limit)
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(activitySQL, sqlList(ServerProblemKinds), sqlList(OpenedProblemKinds)), cut, server, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list activity: %w", err)
 	}
@@ -179,4 +185,14 @@ func (s *Store) ListActivity(ctx context.Context, limit int, before time.Time, s
 		return nil, fmt.Errorf("list activity: %w", err)
 	}
 	return out, nil
+}
+
+// sqlList writes words as the inside of an IN (...) list. The words are fixed
+// ones of this package, never input.
+func sqlList(words []string) string {
+	quoted := make([]string, len(words))
+	for i, w := range words {
+		quoted[i] = "'" + w + "'"
+	}
+	return strings.Join(quoted, ", ")
 }

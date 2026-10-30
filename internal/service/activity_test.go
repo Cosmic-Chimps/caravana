@@ -120,7 +120,7 @@ func TestActivityWordsForEveryKind(t *testing.T) {
 	want := []struct {
 		id, kind, status, sentence string
 	}{
-		{"deployments.dep1.started", "deploy", "idle", "whoami v24 is rolling out, pushed to main by ana."},
+		{"deployments.dep1.started", "deploy", "rolling", "whoami v24 is rolling out, pushed to main by ana."},
 		{"deployments.dep1.ended", "deploy", "healthy", "whoami v24 is live, pushed to main by ana."},
 		{"app_actions.act_restart.", "restart", "healthy", "whoami was restarted from the console."},
 		{"app_actions.act_stop.", "stop", "healthy", "whoami was stopped through the API."},
@@ -320,6 +320,58 @@ func TestActivityDeployOutcomes(t *testing.T) {
 	for _, e := range got {
 		if strings.Contains(e.Sentence, "image not found") || strings.Contains(e.Sentence, "deadline") {
 			t.Errorf("a deployment's error text is in the feed: %q", e.Sentence)
+		}
+	}
+}
+
+// The words come as parts, and every name in them is mono wherever it stands: the program, the
+// app, the service, the schedule and the version.
+func TestActivityPartsSetNamesInMono(t *testing.T) {
+	l, _ := activityLab(t)
+	got, err := l.svc.Activity(context.Background(), ActivityQuery{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]ActivityEntry{}
+	for _, e := range got {
+		by[e.ID] = e
+		if plainText(e.Parts) != e.Sentence {
+			t.Errorf("%s: the parts say %q and the sentence %q", e.ID, plainText(e.Parts), e.Sentence)
+		}
+	}
+	monos := func(id string) string {
+		var names []string
+		for _, p := range by[id].Parts {
+			if p.Mono {
+				names = append(names, p.Text)
+			}
+		}
+		return strings.Join(names, ",")
+	}
+	for id, want := range map[string]string{
+		"deployments.dep1.ended":      "whoami,v24",
+		"app_actions.act_run.":        "cat,whoami",
+		"backups.whoami/db-1.":        "whoami,db",
+		"restores.rst1.":              "whoami,db",
+		"schedule_runs.run000000001.": "nightly,whoami",
+		"app_actions.act_restart.":    "whoami",
+		"deployments.dep1.started":    "whoami,v24",
+	} {
+		if got := monos(id); got != want {
+			t.Errorf("%s: mono parts = %q, want %q", id, got, want)
+		}
+	}
+	for _, e := range got {
+		if e.Kind == "server" && strings.Contains(e.Sentence, "was updated") {
+			var names []string
+			for _, p := range e.Parts {
+				if p.Mono {
+					names = append(names, p.Text)
+				}
+			}
+			if strings.Join(names, ",") != "0.1.0,0.2.0" {
+				t.Errorf("the version change has mono parts %q", names)
+			}
 		}
 	}
 }

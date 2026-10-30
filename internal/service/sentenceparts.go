@@ -1,0 +1,144 @@
+package service
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/notify"
+	"github.com/cosmic-chimps/caravana/internal/store"
+)
+
+// TextPart is a piece of a sentence. Mono marks a name Nomad or the owner's config
+// produced (an app, a service, a schedule, a program, a version, a mount, a domain),
+// which a page sets in its mono face. The activity feed sends sentences as parts so
+// that the console draws them as it draws the needs-you rows, and the API's plain
+// `message` is the parts joined.
+type TextPart struct {
+	Text string `json:"text"`
+	Mono bool   `json:"mono,omitempty"`
+}
+
+// txt and mono make parts; join gives a sentence as plain text.
+func txt(s string) TextPart  { return TextPart{Text: s} }
+func mono(s string) TextPart { return TextPart{Text: s, Mono: true} }
+
+func plainText(parts []TextPart) string {
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(p.Text)
+	}
+	return b.String()
+}
+
+// parts joins pieces, where each is a TextPart or a []TextPart, into one sentence.
+func parts(pieces ...any) []TextPart {
+	var out []TextPart
+	for _, p := range pieces {
+		switch v := p.(type) {
+		case TextPart:
+			out = append(out, v)
+		case []TextPart:
+			out = append(out, v...)
+		case string:
+			out = append(out, txt(v))
+		}
+	}
+	return out
+}
+
+// encodeParts is the stored form of a sentence: JSON, never empty text.
+func encodeParts(p []TextPart) string {
+	b, err := json.Marshal(p)
+	if err != nil { // cannot happen for strings and a bool
+		return ""
+	}
+	return string(b)
+}
+
+// decodeParts reads a stored sentence. ok is false for text that isn't parts.
+func decodeParts(s string) (out []TextPart, ok bool) {
+	if strings.TrimSpace(s) == "" || json.Unmarshal([]byte(s), &out) != nil || len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+// placeParts says where an app is as the needs-you list does: its ID for an app in Default's
+// production, else "<project display> › <environment> › <name>" with the names in mono. suffix
+// ("/web") is glued to the app's name.
+func placeParts(display func(string) string, it AttentionItem, suffix string) []TextPart {
+	if it.Project == "" || (it.Project == app.DefaultProject && it.Environment == app.DefaultEnvironment) {
+		return []TextPart{mono(it.AppID + suffix)}
+	}
+	return []TextPart{txt(display(it.Project) + " › "), mono(it.Environment), txt(" › "), mono(it.AppName + suffix)}
+}
+
+// problemParts is the needs-you list's own sentence for an item, as parts. The console's rows
+// (internal/ui/attention.go) say the same words: service may not import ui, so the wording is
+// kept here for the activity feed, which stores it when the event is written (the item is gone
+// by the time the problem resolves). display says a project's name for people.
+func problemParts(it AttentionItem, display func(string) string) []TextPart {
+	who := placeParts(display, it, "")
+	where := placeParts(display, it, slashed(it.Service))
+	n := len(it.Copies)
+	switch it.Kind {
+	case AttentionDeployFailed:
+		version := txt("This deploy")
+		if it.Version != nil {
+			version = mono(fmt.Sprintf("v%d", *it.Version))
+		}
+		tail := " didn't start."
+		switch {
+		case it.DeploymentStatus == store.StatusReverted:
+			tail = " failed its health checks."
+		case it.Version != nil:
+			tail = " failed during its rollout."
+		}
+		return parts(who, ": ", version, tail)
+	case AttentionOutOfMemory:
+		return parts(copyCount(n)+" of ", where, " ran out of memory.")
+	case AttentionRestarting:
+		return parts(copyCount(n)+" of ", where, " "+verbFor(n, "keeps", "keep")+" restarting.")
+	case AttentionUnhealthy:
+		return parts(copyCount(n)+" of ", where, " "+verbFor(n, "is", "are")+" failing its health check.")
+	case AttentionBackupFailed:
+		return parts("The latest backup of ", where, " failed.")
+	case AttentionRestoreFailed:
+		return parts("The latest restore of ", where, " failed.")
+	case AttentionNoBackupDestination:
+		return parts("Backups are set up, but no backup destination is.")
+	case AttentionScheduleFailed:
+		// Detail is the run's sentence in Caravana's words ("Stopped at the 5 min limit."), never its output.
+		return parts(who, ": the last run of ", mono(it.Schedule), " failed. "+it.Detail)
+	case AttentionScheduleSkipping:
+		return parts(who, ": "+it.Detail)
+	case AttentionDiskNearlyFull:
+		return parts("The disk at ", mono(it.Mount), notify.DiskTail(it.UsedPercent, it.FreeBytes))
+	case AttentionDomainDNSElsewhere:
+		if it.AddressSeen == "" {
+			return parts(who, ": ", mono(it.Domain), " points at another host.")
+		}
+		return parts(who, ": ", mono(it.Domain), " points at ", mono(it.AddressSeen), ", which isn't this host.")
+	case AttentionDomainCertExpiring:
+		// Detail is "The certificate for <host> expires in 6 days and hasn't been renewed."
+		if rest, ok := strings.CutPrefix(it.Detail, "The certificate for "+it.Domain); ok {
+			return parts(who, ": the certificate for ", mono(it.Domain), rest)
+		}
+		return parts(who, ": "+it.Detail)
+	}
+	// A kind added to the list and not yet worded here: still say something.
+	if it.AppID != "" {
+		return parts(who, ": needs you ("+string(it.Kind)+").")
+	}
+	return parts("Needs you (" + string(it.Kind) + ").")
+}
+
+// slashed is "/web" for a service name, "" for none.
+func slashed(service string) string {
+	if service == "" {
+		return ""
+	}
+	return "/" + service
+}

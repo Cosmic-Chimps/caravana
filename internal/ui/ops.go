@@ -41,7 +41,6 @@ type opsPage struct {
 	Main     opsMain
 	Needs    attentionRegion
 	Activity opsActivityRegion
-	Capacity opsCapacity
 }
 
 // opsMain is what /parts/ops/overview draws: the headline and the stats (a
@@ -145,13 +144,6 @@ type opsEvent struct {
 	Href     string
 }
 
-// opsCapacity is the Capacity panel: 025's "This host" without the chart.
-type opsCapacity struct {
-	Lines  []monHostLine
-	Meters []monMeter
-	Room   *monRoom
-}
-
 // ---- handlers ---------------------------------------------------------------------------------
 
 // showOps answers GET /ops.
@@ -166,18 +158,13 @@ func (s *server) showOps(w http.ResponseWriter, r *http.Request, session string)
 		s.serverError(w, "read activity", err)
 		return
 	}
-	capacity, err := s.loadOpsCapacity(r)
-	if err != nil {
-		s.serverError(w, "read the host", err)
-		return
-	}
 	head, err := s.shellPage(r, "Overview", navOpsOverview, crumb{Label: "Overview"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live?watch=ops"
-	s.render(w, http.StatusOK, "ops", opsPage{pageData: head, Main: main, Needs: needs, Activity: activity, Capacity: capacity})
+	s.render(w, http.StatusOK, "ops", opsPage{pageData: head, Main: main, Needs: needs, Activity: activity})
 }
 
 // opsOOB is what /parts/ops/overview answers: the region, and the headline and
@@ -206,17 +193,6 @@ func (s *server) partOpsActivity(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	s.renderPart(w, "ops", "ops-activity-region", region)
-}
-
-// partOpsCapacity answers GET /parts/ops/capacity.
-func (s *server) partOpsCapacity(w http.ResponseWriter, r *http.Request, session string) {
-	capacity, err := s.loadOpsCapacity(r)
-	if err != nil {
-		s.log.Error("read the host", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	s.renderPart(w, "ops", "ops-capacity-region", capacity)
 }
 
 // nomadDown says Nomad can't be read right now, judged by the sampler's last
@@ -574,35 +550,14 @@ func nodeSpec(n *service.HostNode) string {
 	return strings.Join(parts, " · ")
 }
 
-// opsMeters are 025's meters of the host with the panel's short readouts:
-// "1.2/2 vCPU", "1.7/1.9G", "5.8/18.3G". The fill, the hatched reservation and
-// the warn rule are the same numbers as everywhere else.
+// opsMeters are 025's meters of the host with Monitoring's own split readouts ("1.5G used · 0.7G
+// reserved of 1.9G", "0.1 used · 0.72 reserved of 2 vCPU"): the same function, so the panel and
+// the Monitoring page never disagree. Nothing before the host's first sample.
 func opsMeters(h service.HostView) []monMeter {
 	if h.SampledAt == nil {
 		return nil
 	}
-	meters := hostMeters(h)
-	for i := range meters {
-		m := &meters[i]
-		switch m.Label {
-		case "mem":
-			if h.Memory.Used != nil && h.Memory.Total != nil {
-				m.Read = gbText(float64(*h.Memory.Used)) + "/" + gbText(float64(*h.Memory.Total)) + "G"
-				m.Split = false
-			}
-		case "cpu":
-			if h.CPU.Used != nil && h.CPU.Total != nil {
-				perCore := coreMHzOf(h.CPU)
-				if perCore > 0 {
-					m.Read = vcpuText(float64(*h.CPU.Used)/perCore) + "/" + vcpuText(float64(*h.CPU.Total)/perCore) + " vCPU"
-				} else {
-					m.Read = strconv.FormatInt(*h.CPU.Used, 10) + "/" + strconv.FormatInt(*h.CPU.Total, 10) + " MHz"
-				}
-				m.Split = false
-			}
-		}
-	}
-	return meters
+	return hostMeters(h)
 }
 
 // loadOpsActivity reads the last entries of the feed. nomadDown adds the line
@@ -620,30 +575,22 @@ func (s *server) loadOpsActivity(r *http.Request, nomadDown bool) (opsActivityRe
 }
 
 // opsEventOf turns an entry into a row: the time to the second in UTC, the kind
-// word, the mark and the sentence with the app's name in mono.
+// word, the mark and the sentence, whose parts the service marked mono (program, app,
+// service, schedule and version names), drawn by the console's "sentence" template.
 func opsEventOf(e service.ActivityEntry) opsEvent {
 	t := e.Time.UTC()
 	ev := opsEvent{
 		ID: e.ID, Time: t.Format("15:04:05"), ISO: t.Format(time.RFC3339), Title: t.Format("2006-01-02 15:04:05 UTC"),
 		Kind: e.Kind, Mark: e.Status,
 	}
-	if e.AppName != "" && strings.HasPrefix(e.Sentence, e.AppName) {
-		ev.Sentence = sentence{mono(e.AppName), plain(strings.TrimPrefix(e.Sentence, e.AppName))}
-	} else {
+	for _, p := range e.Parts {
+		ev.Sentence = append(ev.Sentence, part{Text: p.Text, Mono: p.Mono})
+	}
+	if len(ev.Sentence) == 0 {
 		ev.Sentence = plainS(e.Sentence)
 	}
 	if e.AppID != "" {
 		ev.Href = "/apps/" + url.PathEscape(e.AppID)
 	}
 	return ev
-}
-
-// loadOpsCapacity reads 025's host numbers for the Capacity panel.
-func (s *server) loadOpsCapacity(r *http.Request) (opsCapacity, error) {
-	h, err := s.svc.Host(r.Context())
-	if err != nil {
-		return opsCapacity{}, err
-	}
-	v := hostViewOf(s.now().UTC(), h)
-	return opsCapacity{Lines: v.Lines, Meters: v.Meters, Room: v.Room}, nil
 }

@@ -98,8 +98,10 @@ func activityFixture(t *testing.T) (*Store, string) {
 
 	clock = at(8)
 	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: at(8), Opened: []SentProblem{
-		{Key: "restarting|whoami|web|", Kind: "restarting", AppID: a.ID, Service: "web", OpenedAt: at(8), LastSeenAt: at(8), Summary: "whoami keeps restarting"},
-		{Key: "backup_failed|whoami|db|", Kind: "backup_failed", AppID: a.ID, Service: "db", OpenedAt: at(8), LastSeenAt: at(8), Summary: "whoami's backup failed"},
+		{Key: "restarting|whoami|web|", Kind: "restarting", AppID: a.ID, Service: "web", OpenedAt: at(8), LastSeenAt: at(8), Summary: "whoami/web: keeps restarting",
+			Sentence: `[{"text":"1 copy of "},{"text":"whoami/web","mono":true},{"text":" keeps restarting."}]`},
+		{Key: "backup_failed|whoami|db|", Kind: "backup_failed", AppID: a.ID, Service: "db", OpenedAt: at(8), LastSeenAt: at(8), Summary: "whoami's backup failed",
+			Sentence: `[{"text":"The latest backup of "},{"text":"whoami/db","mono":true},{"text":" failed."}]`},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +111,7 @@ func activityFixture(t *testing.T) (*Store, string) {
 	if ok, err := s.AppendHostEvent(ctx, HostEvent{Kind: HostEventVersion, At: at(10), Detail: `{"from":"0.1.0","to":"0.2.0"}`, Key: "version|0.2.0"}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: at(12), Removed: []string{"restarting|whoami|web|"}}); err != nil {
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: at(12), Removed: []string{"restarting|whoami|web|", "backup_failed|whoami|db|"}}); err != nil {
 		t.Fatal(err)
 	}
 	return s, a.ID
@@ -129,12 +131,12 @@ func TestListActivity(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []string{
-			"problem_events/",     // 12 resolved
+			"problem_events/",     // 12 resolved (restarting), and
+			"problem_events/",     // 12 resolved (backup_failed: a resolution is listed for every kind)
 			"app_actions/",        // 11 stop
 			"host_events/",        // 10 version
 			"host_events/",        // 9 boot
-			"problem_events/",     // 8 opened (two rows at the same time)
-			"problem_events/",     // 8
+			"problem_events/",     // 8 opened restarting; backup_failed's opening isn't listed: its backup row says it
 			"schedule_runs/",      // 6 failed
 			"restores/",           // 5
 			"backups/",            // 4
@@ -189,14 +191,19 @@ func TestListActivity(t *testing.T) {
 		if boot.AppID != "" || boot.Place != (app.Place{}) || boot.Label != HostEventBoot || boot.Detail != `{}` {
 			t.Errorf("boot = %+v, want no app", boot)
 		}
-		var resolved ActivityRow
+		var resolved, opened ActivityRow
 		for _, r := range got {
-			if r.Source == ActivityProblem && r.Status == ProblemResolved {
+			if r.Source == ActivityProblem && r.Label == "restarting" && r.Status == ProblemResolved {
 				resolved = r
 			}
+			if r.Source == ActivityProblem && r.Label == "restarting" && r.Status == ProblemOpened {
+				opened = r
+			}
 		}
-		if resolved.Label != "restarting" || resolved.Detail != "whoami keeps restarting" || resolved.AppID != appID || resolved.Place.Name != appID {
-			t.Errorf("problem resolved = %+v", resolved)
+		// The sentence stored with the problem is the row's detail, for the opening and the resolution.
+		const sentence = `[{"text":"1 copy of "},{"text":"whoami/web","mono":true},{"text":" keeps restarting."}]`
+		if resolved.Detail != sentence || opened.Detail != sentence || resolved.AppID != appID || resolved.Place.Name != appID {
+			t.Errorf("problem resolved = %+v, opened = %+v", resolved, opened)
 		}
 	})
 

@@ -5990,10 +5990,20 @@ components:
           items:
             $ref: "#/components/schemas/ActivityEntry"
 
+    ActivityPart:
+      type: object
+      additionalProperties: false
+      required: [text, mono]
+      properties:
+        text: {type: string}
+        mono:
+          type: boolean
+          description: A name (program, app, service, schedule, mount, version) rather than prose.
+
     ActivityEntry:
       type: object
       additionalProperties: false
-      required: [id, time, kind, status, message]
+      required: [id, time, kind, status, message, parts]
       properties:
         id:
           type: string
@@ -6005,13 +6015,24 @@ components:
           description: Clients should accept kinds they don't know.
         status:
           type: string
-          enum: [healthy, warning, failed, idle]
-          description: The mark the console draws.
+          enum: [healthy, warning, failed, rolling, idle]
+          description: |
+            The mark the console draws. `rolling` is a deployment that is rolling out; `idle` is
+            something that stopped or is only informative. Clients should accept marks they don't know.
         message:
           type: string
           description: |
-            Caravana's sentence ("whoami v24 is live, pushed to main by ana."). It starts with
-            the app's name when `app` is set. Never a command's output or arguments.
+            Caravana's sentence ("whoami v24 is live, pushed to main by ana."), the `parts` joined
+            as plain text. A needs-you entry is the needs-you list's own sentence ("clock: the last
+            run of slow failed. Stopped at the 5 min limit."), and "Resolved: " and that sentence
+            when it went away. Never a command's output or arguments.
+        parts:
+          type: array
+          description: |
+            The same sentence in pieces, so that a client can set the names in a monospaced face:
+            the program, app, service, schedule, mount and version names have `mono` true.
+          items:
+            $ref: "#/components/schemas/ActivityPart"
         app:
           type: string
           description: "The app's name, when the entry is about an app."

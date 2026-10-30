@@ -515,6 +515,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		exists[rec.App.ID] = true
 		places[rec.App.ID] = rec.Place
 	}
+	display := s.projectDisplay(ctx)
 	now := s.clock.Now().UTC()
 	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown}, exists, now, s.resolveAfter)
 
@@ -526,6 +527,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		check.Opened = append(check.Opened, store.SentProblem{
 			Key: problemKey(it), Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
 			OpenedAt: now, LastSeenAt: now, Summary: ev.Title, Level: levelOf(it),
+			Sentence: encodeParts(problemParts(it, display)),
 		})
 	}
 	var worsened []notify.Event
@@ -533,8 +535,10 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		worsened = append(worsened, worsenedEvent(it, s.publicURL, now))
 		if check.Levels == nil {
 			check.Levels = map[string]string{}
+			check.Sentences = map[string]string{}
 		}
 		check.Levels[problemKey(it)] = levelOf(it)
+		check.Sentences[problemKey(it)] = encodeParts(problemParts(it, display))
 	}
 	for _, p := range changes.Resolved {
 		resolved = append(resolved, inPlace(resolvedEvent(p, s.publicURL, now), places[p.AppID]))
@@ -613,4 +617,21 @@ func newDelivery(channelID string, ev notify.Event, at time.Time) (store.Deliver
 		ID: id, ChannelID: channelID, EventType: ev.Type, Title: ev.Title, Payload: string(payload),
 		Status: store.DeliveryPending, NextAt: at, CreatedAt: at,
 	}, nil
+}
+
+// projectDisplay returns a function that says a project's name for people (its display name),
+// read once for a check. A project that can't be read is named by its ID.
+func (s *Service) projectDisplay(ctx context.Context) func(string) string {
+	names := map[string]string{}
+	if projects, err := s.store.ListProjects(ctx); err == nil {
+		for _, p := range projects {
+			names[p.ID] = p.DisplayName
+		}
+	}
+	return func(id string) string {
+		if n := names[id]; n != "" {
+			return n
+		}
+		return id
+	}
 }

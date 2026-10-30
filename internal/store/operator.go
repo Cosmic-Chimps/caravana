@@ -119,14 +119,17 @@ type ProblemEvent struct {
 	AppID  string // empty for an installation-wide problem
 	Change string // ProblemOpened, ProblemWorsened or ProblemResolved
 	At     time.Time
-	// Summary is the sentence that was sent for the problem.
+	// Summary is the title that was sent for the problem.
 	Summary string
+	// Sentence is the needs-you list's own sentence for it, as JSON parts
+	// ([{"text","mono"}]); empty for an event written before the column.
+	Sentence string
 }
 
 // appendProblemEvent writes one event inside the check's transaction.
 func appendProblemEvent(ctx context.Context, tx *sql.Tx, e ProblemEvent) error {
-	_, err := tx.ExecContext(ctx, "INSERT INTO problem_events (key, kind, app_id, change, at, summary) VALUES (?, ?, ?, ?, ?, ?)",
-		e.Key, e.Kind, e.AppID, e.Change, formatTime(e.At), e.Summary)
+	_, err := tx.ExecContext(ctx, "INSERT INTO problem_events (key, kind, app_id, change, at, summary, sentence) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		e.Key, e.Kind, e.AppID, e.Change, formatTime(e.At), e.Summary, e.Sentence)
 	return err
 }
 
@@ -141,7 +144,7 @@ func pruneProblemEvents(ctx context.Context, tx *sql.Tx) error {
 // ProblemEvents returns up to limit problem events, newest first.
 func (s *Store) ProblemEvents(ctx context.Context, limit int) ([]ProblemEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, key, kind, app_id, change, at, summary FROM problem_events
+		SELECT id, key, kind, app_id, change, at, summary, sentence FROM problem_events
 		ORDER BY at DESC, id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list problem events: %w", err)
@@ -151,7 +154,7 @@ func (s *Store) ProblemEvents(ctx context.Context, limit int) ([]ProblemEvent, e
 	for rows.Next() {
 		var e ProblemEvent
 		var at string
-		if err := rows.Scan(&e.ID, &e.Key, &e.Kind, &e.AppID, &e.Change, &at, &e.Summary); err != nil {
+		if err := rows.Scan(&e.ID, &e.Key, &e.Kind, &e.AppID, &e.Change, &at, &e.Summary, &e.Sentence); err != nil {
 			return nil, fmt.Errorf("list problem events: %w", err)
 		}
 		if e.At, err = parseTime(at); err != nil {

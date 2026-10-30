@@ -112,7 +112,7 @@
 {{/* ops-activity-region: the last entries of the feed, a row each, keyed by data-ev so a refresh can tell
      which are new. Takes an opsActivityRegion. */}}
 {{define "ops-activity-region"}}
-{{if .NomadDown}}<p class="cv-mnhostline cv-evnote"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>Can't read Nomad's events right now.</span></p>{{end}}
+{{if .NomadDown}}<p class="cv-mnhostline cv-evnote"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>Can't read the server's own events right now.</span></p>{{end}}
 {{range .Events}}
 <div class="cv-ev" data-ev="{{.ID}}">
   <time class="cv-evtime" datetime="{{.ISO}}" title="{{.Title}}" data-ops-time>{{.Time}}</time>
@@ -124,39 +124,26 @@
 {{end}}
 {{end}}
 
-{{/* ops-capacity-region: 025's host meters and room sentence, the "This host" panel without the chart.
-     Takes an opsCapacity. */}}
-{{define "ops-capacity-region"}}
-<div class="cv-panel cv-mnhost">
-  {{range .Lines}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
-  {{range .Meters}}{{template "mon-meter" .}}{{end}}
-  {{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
-</div>
-{{end}}
-
 {{define "content"}}
 <header class="cv-pagehead cv-opshead-slot" id="ops-head">{{template "ops-head" .Main.Head}}</header>
+{{/* The four sections are the grid's items, in the order they read when the page is one column: Needs
+     you, Server and Apps (one region, swapped together), Live activity. Side by side the grid areas
+     put Needs you and Live activity in the right column beside the main one. */}}
 <div class="cv-ops">
+  <section class="cv-opsblock cv-opsneeds" aria-labelledby="ops-needs-title">
+    <div class="cv-mnsec">
+      <h2 class="cv-label" id="ops-needs-title">Needs you</h2>
+      <span class="cv-mnsec-meta" id="ops-needs-meta">{{.Main.NeedsMeta}}</span>
+    </div>
+    <div hx-get="/parts/attention" hx-trigger="sse:attention, sse:sync" hx-swap="innerHTML">{{template "attention-region" .Needs}}</div>
+  </section>
   <div class="cv-opsmain" hx-get="/parts/ops/overview" hx-trigger="sse:metrics, sse:apps, sse:activity, sse:actions, sse:schedules, sse:attention, sse:host, sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML">{{template "ops-main" .Main}}</div>
-  <aside class="cv-opsaside" aria-label="What needs you, what happened and what is left">
-    <section class="cv-opsblock" aria-labelledby="ops-needs-title">
-      <div class="cv-mnsec">
-        <h2 class="cv-label" id="ops-needs-title">Needs you</h2>
-        <span class="cv-mnsec-meta" id="ops-needs-meta">{{.Main.NeedsMeta}}</span>
-      </div>
-      <div hx-get="/parts/attention" hx-trigger="sse:attention, sse:sync" hx-swap="innerHTML">{{template "attention-region" .Needs}}</div>
-    </section>
-    <section class="cv-opsblock" aria-labelledby="ops-activity-title">
-      <div class="cv-mnsec">
-        <h2 class="cv-label" id="ops-activity-title">Live activity</h2>
-        <span class="cv-mnsec-link">from caravana's records</span>
-      </div>
-      <div class="cv-panel cv-evpanel" id="ops-activity" hx-get="/parts/ops/activity" hx-trigger="sse:activity, sse:actions, sse:schedules, sse:attention, sse:host, sse:deployments, sse:apps, sse:sync" hx-swap="innerHTML">{{template "ops-activity-region" .Activity}}</div>
-    </section>
-    <section class="cv-opsblock" aria-labelledby="ops-capacity-title">
-      <div class="cv-mnsec"><h2 class="cv-label" id="ops-capacity-title">Capacity</h2></div>
-      <div hx-get="/parts/ops/capacity" hx-trigger="sse:metrics, sse:host, sse:sync" hx-swap="innerHTML">{{template "ops-capacity-region" .Capacity}}</div>
-    </section>
-  </aside>
+  <section class="cv-opsblock cv-opsactivity" aria-labelledby="ops-activity-title">
+    <div class="cv-mnsec">
+      <h2 class="cv-label" id="ops-activity-title">Live activity</h2>
+      <span class="cv-mnsec-link">from caravana's records</span>
+    </div>
+    <div class="cv-panel cv-evpanel" id="ops-activity" hx-get="/parts/ops/activity" hx-trigger="sse:activity, sse:actions, sse:schedules, sse:attention, sse:host, sse:deployments, sse:apps, sse:sync" hx-swap="innerHTML">{{template "ops-activity-region" .Activity}}</div>
+  </section>
 </div>
 {{end}}

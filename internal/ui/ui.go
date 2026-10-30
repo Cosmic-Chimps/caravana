@@ -144,7 +144,6 @@ func (s *server) routeTable() []route {
 		{"GET", "/ops", s.requireSession(s.showOps)},
 		{"GET", "/parts/ops/overview", s.requirePart(s.partOpsOverview)},
 		{"GET", "/parts/ops/activity", s.requirePart(s.partOpsActivity)},
-		{"GET", "/parts/ops/capacity", s.requirePart(s.partOpsCapacity)},
 		{"GET", "/monitoring", s.requireSession(s.showMonitoring)},
 		{"GET", "/parts/monitoring", s.requirePart(s.partMonitoring)},
 		{"GET", "/parts/monitoring/host", s.requirePart(s.partMonitoringHost)},

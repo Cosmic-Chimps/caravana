@@ -1337,14 +1337,25 @@ visited, kept in a plain cookie. The **Operator sidebar** has two groups, Server
 Platform (Updates), in the item shape of the Developer one; Updates may carry a small mark after its name
 (a count, a square or a diamond) in fg-2 mono, never fg-4. The Overview's **server panel** is a panel with a
 16px padding and a 13px gap: the node's mark, its name in mono 500, the pool as a small outlined chip, the
-copies' count at the right; then the spec line (mono, fg-3), the same meters as the Capacity panel with
-short readouts, and the copies as chips grouped by app (a failed copy has the failed ground, a starting one a
+copies' count at the right; then the spec line (mono, fg-3), the same meters as Monitoring's "This host"
+with its split readouts ("1.5G used · 0.7G reserved of 1.9G"; there is no separate Capacity section on one
+host: it would repeat these meters and the room sentence of the Server section), and the copies as chips grouped by app (a failed copy has the failed ground, a starting one a
 dashed edge, a draining one a dashed edge and a line through its text; past 40 the rest is one sentence).
 The **activity row** (Live activity) is three columns, a 64px time, a 92px kind word and the sentence with a
 6px mark, in 12px mono fg-3 for the first two and 14px fg-2 for the sentence; the time is UTC and the
-viewer's own time is in its title; a row that arrives live has the 5% veil once and nothing more. The apps
-table folds into label and value pairs when it has under 860px of its own, and its Reach column never gets
-under 140px, so the header never runs into the next one.
+viewer's own time is in its title; a row that arrives live has the 5% veil once and nothing more. The
+sentence comes from the service as parts and is drawn by the console's sentence template, so every name in
+it (program, app, service, schedule, version) is mono, wherever it stands in the sentence; a deploy that is
+rolling out has the rolling mark (◐), and ○ is for what stopped. The feed lists one row per event: a failed
+deploy, schedule run, backup or restore is its own row, and the needs-you list adds a row only for what has
+no record of its own (disk, unhealthy copies, restarts, out of memory, domains, OS updates, no backup
+destination), plus a "Resolved:" row for every kind. The apps table folds into label and value pairs when
+it has under 860px of its own, its Reach column never gets under 140px, so the header never runs into the
+next one, and its text cells (the state pill, the last change) wrap inside their column instead of running
+into the next cell. The page has four sections in reading order: Needs you, Server and Apps, Live
+activity. Side by side (a container of 1200px or more) Server and Apps are the left column and Needs you
+with Live activity under it the right; under that width it is one column in that order, so Needs you is
+never under a long table.
 
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's

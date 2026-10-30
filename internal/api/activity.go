@@ -17,8 +17,16 @@ type activityEntryJSON struct {
 	Kind    string             `json:"kind"`
 	Status  string             `json:"status"`
 	Message string             `json:"message"`
+	Parts   []activityPartJSON `json:"parts"`
 	App     string             `json:"app,omitempty"`
 	Place   *activityPlaceJSON `json:"place,omitempty"`
+}
+
+// activityPartJSON is a piece of the message (schema ActivityPart): the names in it
+// (program, app, service, schedule, version) have mono set.
+type activityPartJSON struct {
+	Text string `json:"text"`
+	Mono bool   `json:"mono"`
 }
 
 type activityPlaceJSON struct {
@@ -27,7 +35,11 @@ type activityPlaceJSON struct {
 }
 
 func toActivityEntryJSON(e service.ActivityEntry) activityEntryJSON {
-	out := activityEntryJSON{ID: e.ID, Time: e.Time.UTC(), Kind: e.Kind, Status: e.Status, Message: e.Sentence, App: e.AppName}
+	out := activityEntryJSON{ID: e.ID, Time: e.Time.UTC(), Kind: e.Kind, Status: e.Status, Message: e.Sentence, App: e.AppName,
+		Parts: make([]activityPartJSON, 0, len(e.Parts))}
+	for _, p := range e.Parts {
+		out.Parts = append(out.Parts, activityPartJSON{Text: p.Text, Mono: p.Mono})
+	}
 	if e.Place.Project != "" {
 		out.Place = &activityPlaceJSON{Project: e.Place.Project, Environment: e.Place.Environment}
 	}

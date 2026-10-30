@@ -1715,8 +1715,13 @@
   .cv-opshead-slot { max-width: 900px; }
   .cv-opsstats { display: flex; flex-wrap: wrap; gap: 4px 23px; margin: 0; font: 400 13px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
   .cv-opsstat { white-space: nowrap; }
-  .cv-ops { display: grid; grid-template-columns: minmax(0, 1fr) 448px; gap: 26px; align-items: start; }
-  .cv-opsmain, .cv-opsaside { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  /* Four items in reading order (Needs you, the main region, Live activity). Side by side the main
+     region spans both rows of the left column and the other two stack on the right, the second row
+     taking what is left, so Live activity sits right under Needs you. */
+  .cv-ops { display: grid; grid-template-columns: minmax(0, 1fr) 448px; grid-template-rows: auto 1fr; grid-template-areas: "main needs" "main activity"; gap: 28px 26px; align-items: start; }
+  .cv-opsmain { grid-area: main; display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  .cv-opsneeds { grid-area: needs; }
+  .cv-opsactivity { grid-area: activity; }
   .cv-opsblock { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
   /* The host's panel (the handoff's NodePanel): ink-1, a 16px padding, a 13px gap. */
@@ -1743,6 +1748,10 @@
   .cv-opsrow + .cv-opsrow { border-top: 1px solid var(--color-line-1); }
   .cv-opshead > *, .cv-opsrow > * { min-width: 0; }
   .cv-opsname { display: flex; align-items: baseline; gap: 6px; overflow: hidden; white-space: nowrap; }
+  /* The text cells wrap inside their column: a pill ("not defined yet") and the last change break
+     at spaces, and a long word at any point, instead of running into the next cell. */
+  .cv-opsstate, .cv-opschange { min-width: 0; overflow-wrap: anywhere; }
+  .cv-opsstate .cv-pill { height: auto; min-height: 18px; padding: 0; white-space: normal; line-height: 1.3; }
   .cv-opswhere { flex: none; color: var(--color-fg-3); }
   .cv-opsapp { font: 500 13px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
   a.cv-opsapp::after { content: ""; position: absolute; inset: 0; }
@@ -1757,7 +1766,7 @@
   .cv-opsspark-warn { stroke: var(--color-warn); }
   .cv-opsmem { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .cv-opsreach { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cv-opschange { color: var(--color-fg-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cv-opschange { color: var(--color-fg-3); white-space: normal; font-variant-numeric: tabular-nums; }
 
   /* Live activity: rows of a 64px time, a 92px kind and the sentence; a fresh row has the page's veil. */
   .cv-evpanel { display: flex; flex-direction: column; }
@@ -1776,7 +1785,7 @@
 
 /* Under 1200px of room the aside drops under the main column (the page's container, as 024's rule). */
 @container cvops (max-width: 1199.98px) {
-  .cv-ops { grid-template-columns: minmax(0, 1fr); }
+  .cv-ops { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "needs" "main" "activity"; }
 }
 
 /* The table folds when it has under 860px of its own (its columns need about that): the name and the

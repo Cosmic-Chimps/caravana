@@ -65,7 +65,8 @@ func (c *console) opsHasEntry(t *testing.T, re *regexp.Regexp) bool {
 //     staging), deployed through the API: the stats line (1 server, the apps, copies, and cpu and
 //     mem once the host has been read), the server panel with the lab's spec line (cores and
 //     kernel checked against Nomad's own record), a chip for each running copy linking to its
-//     app, the apps table with both rows (the second with its place), and Capacity.
+//     app, the apps table with both rows (the second with its place). There is no Capacity
+//     section: on one host it would repeat the panel's meters (split readouts: used, reserved, of).
 //  3. Live activity: the deploys of both apps, then a command run through the console's form
 //     (its output is a sentinel that must not appear in the page, its parts or the API's feed,
 //     which name the program and the exit code) and a restart; the panel and listActivity say
@@ -194,7 +195,10 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 		}
 	}
 	if n := strings.Count(page, `cv-mnmeter-label`); n < 3 {
-		t.Errorf("the page has %d meter labels, want mem, cpu and disk in the panel and again in Capacity", n)
+		t.Errorf("the page has %d meter labels, want mem, cpu and disk in the panel", n)
+	}
+	if n := strings.Count(page, `cv-mnmeter-split`); n != 2 {
+		t.Errorf("the page has %d split readouts, want the memory and the CPU of the panel", n)
 	}
 
 	// The apps table: both rows, the second with its place before its name.
@@ -208,8 +212,8 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 	if r, ok := rows["/apps/"+stageID]; !ok || r[0] != "Console 027 › staging ›" || r[1] != "web" {
 		t.Errorf("the table's row of %s = %v, want \"Console 027 › staging ›\" and web", stageID, r)
 	}
-	if got := pageText(page); !strings.Contains(got, "Live activity from caravana's records") || !strings.Contains(got, "Capacity") {
-		t.Errorf("/ops lacks Live activity or Capacity:\n%.600s", got)
+	if got := pageText(page); !strings.Contains(got, "Live activity from caravana's records") || strings.Contains(got, "Capacity") {
+		t.Errorf("/ops lacks Live activity or still has Capacity:\n%.600s", got)
 	}
 
 	// 3. Live activity: the deploys, a command, a restart.
@@ -253,7 +257,7 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 		}
 	}
 	noSentinel := func(when string) {
-		for _, p := range []string{"/ops", "/parts/ops/overview", "/parts/ops/activity", "/parts/ops/capacity", "/v1/activity?limit=50"} {
+		for _, p := range []string{"/ops", "/parts/ops/overview", "/parts/ops/activity", "/v1/activity?limit=50"} {
 			if _, out := c.get(t, p); strings.Contains(out, sentinel) {
 				t.Errorf("GET %s %s has the command's output", p, when)
 			}
