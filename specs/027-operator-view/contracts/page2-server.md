@@ -239,3 +239,46 @@ link), against `pf-node.png`.
 - A disk banner and a down node's banner and pill: the tests, or a staged state.
 - Nomad unreachable: the panel from the last sample with "as of …", and Running here "Can't read
   Nomad right now."
+
+## Recheck rulings (designer, 2026-10-30, build 3f243f8 on 02beb0f)
+
+Checked at 1440, 1200, 1100 and 390, during slowstart's start (23:50:47 UTC), with no
+horizontal scroll at any width.
+
+### Verified
+
+- Fix 1: no replaced failed copies are listed. A missing value is "—" in 400 fg-3.
+- Fix 2: the label reads "Running here · 13", with no failed copy at the time. The "· 1 failed"
+  form is covered by the tests.
+- Fix 3: slowstart and crashy, between restarts, are ◐ with the dashed chip and "under 1 min" in
+  Up, ahead of the healthy rows.
+- Fix 4: "192.168.68.147 · public". The lab has no private line, which is right with no
+  `caravana0`.
+- Fix 5: "of 1.9 GB · 0.7 GB reserved".
+- Fix 6: side by side in two equal columns at 1440 (554px each) and 1200 (434px each), stacked
+  at 1100.
+- The boot row "The server started (up since 14:48 UTC).", and no version row on the baseline.
+
+### Fixes
+
+1. The facts break inside an item at 1200 ("traefik" / "3.7.13", "08:48" / "local (9 h ago)").
+   As on page 1's stats line, each item between the " · " separators stays whole (nowrap), and
+   lines break only between items. The relative "(9 h ago)" belongs with the local time.
+2. "last seen" read 40 s and then 45 s ago on a ready node. Confirm it comes from a fresh read of
+   the node's last heartbeat, not 025's 10-minute `Nodes().Info` cache. If it's the cache, read
+   the heartbeat fresh (one call per page render or live refresh). Or show "last seen" only when
+   it is over the heartbeat TTL, as the down state does.
+
+### Words
+
+- The down banner uses "3 minutes ago", full words, as the needs-you sentences do. Short units
+  ("3 min") are for dense columns (Up, Recent), never in a sentence.
+- The unreachable notice, "Nomad can't be reached right now. The numbers and facts here are the
+  last ones Caravana read.": yes. Each number's sub still carries "as of HH:MM UTC" (contract).
+
+### Not page 2's, but blocking the merge
+
+console-logs started failing 2 of 3 isolated runs at the copy-status change, after passing at the
+commit before. Treat the change as the cause until shown otherwise. The page's design can be
+approved without it, but 027 doesn't merge with that step flaky. A likely place: 024's
+`LogCopies` and the Live follower pick copies by status.
