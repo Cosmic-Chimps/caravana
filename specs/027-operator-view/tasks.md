@@ -19,22 +19,27 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 
 ## Phase 1: Setup
 
-- [ ] T001 Confirm the lab is cleared of leftover apps and running (`deploy/dev/lab.sh up`; research found it
+- [X] T001 Confirm the lab is cleared of leftover apps and running (`deploy/dev/lab.sh up`; research found it
   starved at 2 GB), and record the baseline: `go build ./... && go test ./internal/...` green on branch
   `027-operator-view` before any change; note the result under T001 in this file.
+  **Baseline (2026-10-29/30)**: `go build ./...` and `go test ./internal/...` green on `027-operator-view` at
+  `eb1c66a` (every package ok; api 148 s, service 241 s, ui 199 s; the run overlapped the first edits of T002, so
+  the store package was compiled with them, and nothing failed). The lab VM `caravana-lab` was **Running**
+  (aarch64, 2 CPUs, 2 GiB); it was not started, stopped or cleared, and its leftover apps were not looked at, since
+  no lab step runs before page 1's T014.
 
 ## Phase 2: Foundational (blocks every page)
 
-- [ ] T002 [FR-008, FR-024] Migration `internal/store/migrations/0020_operator.sql` with `release_check` (one row,
+- [X] T002 [FR-008, FR-024] Migration `internal/store/migrations/0020_operator.sql` with `release_check` (one row,
   `enabled` default 1), `host_events` (kind boot|version|os_packages, `key` UNIQUE, pruned to 200),
   `problem_events` (opened|worsened|resolved, pruned to 200, an app's rows go with the app) and `host_marks`, as
   data-model.md; store code in `internal/store/operator.go` (`AppendHostEvent`, `HostEvents`, `ReleaseCheck`,
   `SaveReleaseCheck`, `HostMark`, `SetHostMark`, `DeleteHostMark`) with tests in `internal/store/operator_test.go`
   (dedup by key, pruning, the single row's defaults).
-- [ ] T003 [FR-008] `store.ApplyProblemCheck` (`internal/store/notifications.go`) also appends a `problem_events` row
+- [X] T003 [FR-008] `store.ApplyProblemCheck` (`internal/store/notifications.go`) also appends a `problem_events` row
   per opened, worsened and resolved item in the same transaction; `DeleteApp` (`internal/store/apps.go`) deletes the
   app's rows; tests in `internal/store/notifications_test.go`.
-- [ ] T004 [FR-008] `store.ListActivity(ctx, limit, before, serverOnly)` in `internal/store/activity.go`: one
+- [X] T004 [FR-008] `store.ListActivity(ctx, limit, before, serverOnly)` in `internal/store/activity.go`: one
   `UNION ALL` read, newest first, over `deployments` (started; ended with status), `app_actions` (never arguments or
   output), `backups`, `restores`, `schedule_runs` whose outcome is failed or stopped at its limit, `problem_events`,
   `host_events`; rows carry source table, row id, time, app, place and the fields the words need. `serverOnly` keeps

@@ -518,7 +518,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	now := s.clock.Now().UTC()
 	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown}, exists, now, s.resolveAfter)
 
-	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped)}
+	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event
 	for _, it := range changes.Opened {
 		ev := problemEvent(it, s.publicURL, now)

@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/cosmic-chimps/caravana/internal/app/apptest"
 )
 
 var notifyT0 = time.Date(2026, 10, 16, 9, 0, 0, 123456789, time.UTC)
@@ -497,5 +500,122 @@ func TestSentProblemLevel(t *testing.T) {
 	got, _ = s.ListSentProblems(ctx)
 	if len(got) != 3 || got[2].Level != "" {
 		t.Errorf("a problem saved without a level = %+v", got)
+	}
+}
+
+// Feature 027: every check also appends problem events, in the same
+// transaction, for the problems it opened, made worse and resolved. A problem
+// dropped because its app is gone is not a resolution.
+func TestApplyProblemCheckAppendsEvents(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	mk := func(key, kind, appID, summary string) SentProblem {
+		return SentProblem{Key: key, Kind: kind, AppID: appID, OpenedAt: notifyT0, LastSeenAt: notifyT0, Summary: summary, Level: "warning"}
+	}
+	t1, t2, t3 := notifyT0.Add(time.Minute), notifyT0.Add(2*time.Minute), notifyT0.Add(3*time.Minute)
+
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{Opened: []SentProblem{
+		mk("disk|||/", "disk_nearly_full", "", "Disk / is 86% full"),
+		mk("restarting|blog|web|", "restarting", "blog", "blog keeps restarting"),
+		mk("failed|gone|web|", "deploy_failed", "gone", "gone failed"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: t1, Levels: map[string]string{"disk|||/": "failed"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: t2,
+		Removed: []string{"restarting|blog|web|", "failed|gone|web|"}, Dropped: []string{"failed|gone|web|"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A level or a removal for a key that has no row writes nothing.
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{SeenAt: t3, Levels: map[string]string{"nope": "failed"}, Removed: []string{"nope"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.ProblemEvents(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct{ Key, Kind, App, Change, Summary string }
+	var rows []row
+	for _, e := range got {
+		rows = append(rows, row{e.Key, e.Kind, e.AppID, e.Change, e.Summary})
+	}
+	want := []row{ // newest first
+		{"restarting|blog|web|", "restarting", "blog", "resolved", "blog keeps restarting"},
+		{"disk|||/", "disk_nearly_full", "", "worsened", "Disk / is 86% full"},
+		// the three opened at notifyT0: same time, newest id first
+		{"failed|gone|web|", "deploy_failed", "gone", "opened", "gone failed"},
+		{"restarting|blog|web|", "restarting", "blog", "opened", "blog keeps restarting"},
+		{"disk|||/", "disk_nearly_full", "", "opened", "Disk / is 86% full"},
+	}
+	if !reflect.DeepEqual(rows, want) {
+		t.Errorf("problem events = %+v\nwant %+v", rows, want)
+	}
+	if !got[0].At.Equal(t2) || !got[1].At.Equal(t1) || !got[4].At.Equal(notifyT0) {
+		t.Errorf("event times = %v, %v, %v; want the check's time, and the opened time", got[0].At, got[1].At, got[4].At)
+	}
+}
+
+// A failed check leaves no problem event behind, and the table keeps the
+// newest 200.
+func TestProblemEventsRollbackAndPrune(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	if err := s.SaveNotificationChannel(ctx, newChannel("nch_aa")); err != nil {
+		t.Fatal(err)
+	}
+	p := SentProblem{Key: "k", Kind: "x", OpenedAt: notifyT0, LastSeenAt: notifyT0, Summary: "s"}
+	err := s.ApplyProblemCheck(ctx, ProblemCheck{Opened: []SentProblem{p},
+		Deliveries: []Delivery{newDelivery("ndl_a", "nch_missing", notifyT0)}})
+	if err == nil {
+		t.Fatal("the check succeeded with a delivery of a missing channel")
+	}
+	if got, _ := s.ProblemEvents(ctx, 10); len(got) != 0 {
+		t.Errorf("a failed check left events %+v", got)
+	}
+
+	for i := range 210 {
+		q := SentProblem{Key: fmt.Sprintf("k%03d", i), Kind: "x", AppID: "a", Summary: "s",
+			OpenedAt: notifyT0.Add(time.Duration(i) * time.Second), LastSeenAt: notifyT0}
+		if err := s.ApplyProblemCheck(ctx, ProblemCheck{Opened: []SentProblem{q}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ProblemEvents(ctx, 500)
+	if err != nil || len(got) != 200 {
+		t.Fatalf("kept %d events, %v; want 200", len(got), err)
+	}
+	if got[0].Key != "k209" || got[199].Key != "k010" {
+		t.Errorf("kept %s down to %s, want k209 down to k010", got[0].Key, got[199].Key)
+	}
+}
+
+// An app's problem events go with the app.
+func TestDeleteAppDeletesProblemEvents(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	a := apptest.Whoami().App
+	if _, err := s.SaveApp(ctx, a, nil); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(key, appID string) SentProblem {
+		return SentProblem{Key: key, Kind: "x", AppID: appID, OpenedAt: notifyT0, LastSeenAt: notifyT0, Summary: "s"}
+	}
+	if err := s.ApplyProblemCheck(ctx, ProblemCheck{Opened: []SentProblem{mk("a", a.ID), mk("b", ""), mk("c", "other")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteApp(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.ProblemEvents(ctx, 10)
+	for _, e := range got {
+		if e.AppID == a.ID {
+			t.Errorf("event %+v of the deleted app is still there", e)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("events = %+v, want the two of other apps and of the host", got)
 	}
 }

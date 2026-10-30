@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -225,12 +226,16 @@ func (s *Store) DeleteSentProblemsOfApp(ctx context.Context, appID string) error
 // problems it opened and the messages queued for them and for the problems it
 // resolved.
 type ProblemCheck struct {
-	Opened     []SentProblem // recorded as sent (an existing key is replaced)
-	Seen       []string      // keys still on the list: their last-seen time moves to SeenAt
-	SeenAt     time.Time
-	Levels     map[string]string // key -> the level just sent for a problem that got worse
-	Removed    []string          // keys resolved, or dropped because their app is gone
-	Deliveries []Delivery        // queued, all pending
+	Opened  []SentProblem // recorded as sent (an existing key is replaced)
+	Seen    []string      // keys still on the list: their last-seen time moves to SeenAt
+	SeenAt  time.Time
+	Levels  map[string]string // key -> the level just sent for a problem that got worse
+	Removed []string          // keys resolved, or dropped because their app is gone
+	// Dropped lists the keys of Removed that are not resolutions (their app is
+	// gone): they leave no "resolved" problem event. Every other removed key
+	// does.
+	Dropped    []string
+	Deliveries []Delivery // queued, all pending
 }
 
 // ApplyProblemCheck records one check in a single transaction, so the table of
@@ -238,12 +243,22 @@ type ProblemCheck struct {
 // the two would otherwise send a problem twice (queued, not recorded) or never
 // (recorded, not queued). If any part fails, none of it is applied and the next
 // check works the same changes out again.
+//
+// The same transaction appends a problem event (feature 027's history of the
+// needs-you list) for each problem opened, made worse and resolved, and prunes
+// that table to the newest 200.
 func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("record a problem check: %w", err)
 	}
 	defer tx.Rollback() // does nothing once Commit succeeds
+
+	at := c.SeenAt
+	if at.IsZero() {
+		at = s.now()
+	}
+	events := 0
 
 	for _, p := range c.Opened {
 		if _, err := tx.ExecContext(ctx, `
@@ -254,6 +269,11 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 			p.Key, p.Kind, p.AppID, p.Service, formatTime(p.OpenedAt), formatTime(p.LastSeenAt), p.Summary, p.Level); err != nil {
 			return fmt.Errorf("record a problem check: save problem %q: %w", p.Key, err)
 		}
+		if err := appendProblemEvent(ctx, tx, ProblemEvent{Key: p.Key, Kind: p.Kind, AppID: p.AppID,
+			Change: ProblemOpened, At: p.OpenedAt, Summary: p.Summary}); err != nil {
+			return fmt.Errorf("record a problem check: event for problem %q: %w", p.Key, err)
+		}
+		events++
 	}
 	for _, key := range c.Seen {
 		if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET last_seen_at = ? WHERE key = ?", formatTime(c.SeenAt), key); err != nil {
@@ -261,11 +281,27 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 		}
 	}
 	for key, level := range c.Levels {
+		wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemWorsened, at)
+		if err != nil {
+			return fmt.Errorf("record a problem check: event for problem %q: %w", key, err)
+		}
+		if wrote {
+			events++
+		}
 		if _, err := tx.ExecContext(ctx, "UPDATE sent_problems SET level = ? WHERE key = ?", level, key); err != nil {
 			return fmt.Errorf("record a problem check: set the level of problem %q: %w", key, err)
 		}
 	}
 	for _, key := range c.Removed {
+		if !slices.Contains(c.Dropped, key) {
+			wrote, err := appendStoredProblemEvent(ctx, tx, key, ProblemResolved, at)
+			if err != nil {
+				return fmt.Errorf("record a problem check: event for problem %q: %w", key, err)
+			}
+			if wrote {
+				events++
+			}
+		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sent_problems WHERE key = ?", key); err != nil {
 			return fmt.Errorf("record a problem check: delete problem %q: %w", key, err)
 		}
@@ -278,10 +314,31 @@ func (s *Store) ApplyProblemCheck(ctx context.Context, c ProblemCheck) error {
 			return fmt.Errorf("record a problem check: queue delivery %q: %w", d.ID, err)
 		}
 	}
+	if events > 0 {
+		if err := pruneProblemEvents(ctx, tx); err != nil {
+			return fmt.Errorf("record a problem check: prune problem events: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("record a problem check: %w", err)
 	}
 	return nil
+}
+
+// appendStoredProblemEvent records a change of a problem the table of sent
+// problems already has, taking its kind, app and sentence from that row. A key
+// with no row records nothing and returns false.
+func appendStoredProblemEvent(ctx context.Context, tx *sql.Tx, key, change string, at time.Time) (bool, error) {
+	e := ProblemEvent{Key: key, Change: change, At: at}
+	err := tx.QueryRowContext(ctx, "SELECT kind, app_id, summary FROM sent_problems WHERE key = ?", key).
+		Scan(&e.Kind, &e.AppID, &e.Summary)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, appendProblemEvent(ctx, tx, e)
 }
 
 // The states of a delivery.
