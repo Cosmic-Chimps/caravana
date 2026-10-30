@@ -282,3 +282,54 @@ console-logs started failing 2 of 3 isolated runs at the copy-status change, aft
 commit before. Treat the change as the cause until shown otherwise. The page's design can be
 approved without it, but 027 doesn't merge with that step flaky. A likely place: 024's
 `LogCopies` and the Live follower pick copies by status.
+
+## Critique rulings (designer, 2026-10-31, critique of 0c672ce, 27/40)
+
+Fold these in with the two recheck fixes, the "last seen" ruling and "3 minutes ago".
+
+### P1, a crash-looping copy looks calm: yes
+
+- The phase mark stays truthful (■ failed, ◐ starting). The crash signal is added beside it, not
+  in place of it.
+- **Source: the needs-you item, one source.** When the copy's service has an open `restarting`
+  or out-of-memory item (025's `crashesInHour`), the Up cell reads ◆ "restarted 4 times in 1 h"
+  (or ■ "out of memory 2 times in 1 h"), in the item's level. The count comes from the same
+  function. A copy's own restart count is not read separately, so the page can never disagree
+  with the needs-you list or the notification.
+- A failed copy adds its exit reason from Nomad's last task event: "failed 3 min ago · exit 1",
+  or "· out of memory", or "· couldn't start". Use the words 022 uses for runs.
+
+### P2, columns: yes
+
+- Use the critique's columns: `minmax(10rem, 200px) minmax(0, 1fr) minmax(0, 1fr)
+  minmax(90px, auto)`. The Up cell is nowrap, and the fold stays under 600px.
+- Add a header row for screen readers only: `role="row"` with four `columnheader`s (Copy, CPU,
+  Memory, Up), visually hidden. The handoff draws none.
+- The fold's label follows the phase: "Up" for a running copy ("3 d 4 h"), "Starting"
+  ("for 40 s"), "Failed" ("26 s ago · exit 1"). Never "Up: failed".
+
+### P3: yes, all four
+
+- Recent's head reads "times in UTC" in its meta, as page 1's feed does.
+- The spec line keeps each " · " item whole (as recheck fix 1). "kernel 7.0.0-38-generic" never
+  breaks.
+- Disk's sub reads "of 18.3 GB on `/`". The second disk reads "on `/var/lib/docker`".
+- vCPU values always have two decimals ("1.00", "0.31"), and "<0.01" stays. Use one formatter,
+  shared with page 1's readouts and 025's, so all three pages agree.
+
+### Minor
+
+- A failed copy and a starting copy draw the same CPU and Memory cells: "—" in 400 fg-3 over the
+  sub "of 0.05 reserved" (or "of 32 MB limit"). The reservation is a fact of the copy in every
+  phase.
+- "up since" with script: `localtime.js` leaves out the local date when it equals the UTC date
+  ("2026-10-30 14:48 UTC · 08:48 local"). This applies console-wide. Update its checksum in
+  `tools/ui-vendor.versions`, and run the console steps that read times.
+
+### The two questions
+
+- Room clause above 85%: no change on this page. It is 025's `Room` sentence, and 025 already
+  adds ", but memory in use is already at 87%." from 85%. At 83% it is correctly absent. If the
+  owner should see it sooner, that change belongs to 025's function for every page, not to this
+  page.
+- The crash signal comes from the needs-you item (above).
