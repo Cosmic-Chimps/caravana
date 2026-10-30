@@ -54,12 +54,13 @@ type Service struct {
 	volume      volumeTiming
 
 	// Notifications (feature 018), see notifications.go.
-	publicURL    string        // the console's address for links; empty means no links
-	resolveAfter time.Duration // how long a problem must be gone before "resolved" is sent
-	notifyClient *http.Client  // what deliveries go through; tests may replace it
-	notifyGap    time.Duration // between two checks of the needs-you list, see notifier.go
-	senderGap    time.Duration // between two looks for due deliveries, see sender.go
-	queue        *deliveryQueue
+	publicURL      string        // the console's address for links; empty means no links
+	runningVersion string        // the running Caravana's version; empty (tests) records no version event
+	resolveAfter   time.Duration // how long a problem must be gone before "resolved" is sent
+	notifyClient   *http.Client  // what deliveries go through; tests may replace it
+	notifyGap      time.Duration // between two checks of the needs-you list, see notifier.go
+	senderGap      time.Duration // between two looks for due deliveries, see sender.go
+	queue          *deliveryQueue
 
 	// App actions (feature 020.5), see actions.go.
 	commandTimeout time.Duration // how long a command may run
@@ -191,6 +192,11 @@ func (s *Service) SetPublicURL(u string) {
 	s.publicURL = strings.TrimRight(u, "/")
 }
 
+// SetVersion tells the service which Caravana version is running (the build's
+// version, "dev" for a plain go build), so Start can record a version change
+// in the host's history. Empty records nothing. Call it before Start.
+func (s *Service) SetVersion(v string) { s.runningVersion = strings.TrimSpace(v) }
+
 // PublicURL is the console's own address as SetPublicURL was given it, without
 // a trailing slash, or "" when none was set.
 func (s *Service) PublicURL() string { return s.publicURL }
@@ -273,6 +279,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.failInterruptedActions(ctx); err != nil {
 		return err
 	}
+	s.recordVersion(ctx) // a failure is logged: the history is not worth stopping for
 	if err := s.resume(ctx); err != nil {
 		return err
 	}

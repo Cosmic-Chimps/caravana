@@ -36,7 +36,45 @@ func (n *Nomad) SetNode(id, name, status string, res api.NodeResources, reserved
 	n.host.node = api.Node{ID: id, Name: name, Status: status, NodeResources: &res, ReservedResources: reserved}
 }
 
-// SetHostStats sets what GET /v1/client/stats answers.
+// SetNodeFacts sets what the node record says about the machine (feature 027):
+// its attributes (see LabNodeAttributes), its node pool and its events. It
+// changes nothing else about the node; call SetNode first.
+func (n *Nomad) SetNodeFacts(attrs map[string]string, pool string, events []*api.NodeEvent) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.host.node.Attributes = attrs
+	n.host.node.NodePool = pool
+	n.host.node.Events = events
+}
+
+// SetNodeScheduling sets the node's drain flag and scheduling eligibility
+// ("eligible" or "ineligible"), as the node list and Info answer them. Call
+// SetNode first.
+func (n *Nomad) SetNodeScheduling(drain bool, eligibility string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.host.node.Drain = drain
+	n.host.node.SchedulingEligibility = eligibility
+	if drain {
+		n.host.node.DrainStrategy = &api.DrainStrategy{}
+	} else {
+		n.host.node.DrainStrategy = nil
+	}
+}
+
+// SetTraefikJob registers a job "traefik" whose one task runs image, as the
+// installer's Traefik job does.
+func (n *Nomad) SetTraefikJob(image string) {
+	n.AddForeignJob(&api.Job{
+		ID: new("traefik"), Name: new("traefik"),
+		TaskGroups: []*api.TaskGroup{{
+			Name:  new("traefik"),
+			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: map[string]any{"image": image}}},
+		}},
+	})
+}
+
+// SetHostStats sets what GET /v1/client/stats answers (Uptime included).
 func (n *Nomad) SetHostStats(s api.HostStats) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -88,6 +126,7 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v1/nodes":
 		n.writeJSON(w, []*api.NodeListStub{{
 			ID: h.node.ID, Name: h.node.Name, Status: h.status,
+			Drain: h.node.Drain, SchedulingEligibility: h.node.SchedulingEligibility, NodePool: h.node.NodePool,
 			NodeResources: h.node.NodeResources, ReservedResources: h.node.ReservedResources,
 		}})
 	case r.URL.Path == "/v1/client/stats":
@@ -134,6 +173,29 @@ func LabNodeResources() api.NodeResources {
 		Cpu:    api.NodeCpuResources{CpuShares: 4000, TotalCpuCores: 2},
 		Memory: api.NodeMemoryResources{MemoryMB: 1949},
 	}
+}
+
+// LabNodeAttributes is what the lab's node reports about the machine (Ubuntu
+// 26.04 on a 2-core ARM virtual machine: no CPU model and no per-core MHz).
+func LabNodeAttributes() map[string]string {
+	return map[string]string{
+		"os.name": "ubuntu", "os.version": "26.04",
+		"kernel.version": "7.0.0-14-generic", "kernel.arch": "arm64",
+		"nomad.version": "2.0.1", "driver.docker.version": "29.1.3",
+		"cpu.numcores": "2", "cpu.totalcompute": "4000",
+		"unique.network.ip-address": "192.168.5.15",
+	}
+}
+
+// X86NodeAttributes is a small x86 server's: like the lab's, with the CPU's
+// model and per-core MHz that x86 hosts report.
+func X86NodeAttributes() map[string]string {
+	a := LabNodeAttributes()
+	a["os.version"], a["kernel.version"], a["kernel.arch"] = "24.04", "6.8.0-88-generic", "amd64"
+	a["cpu.numcores"], a["cpu.totalcompute"] = "4", "9600"
+	a["cpu.modelname"], a["cpu.frequency"] = "AMD EPYC 7763 64-Core Processor", "2400"
+	a["unique.network.ip-address"] = "10.0.0.7"
+	return a
 }
 
 // AllocUsage is the stats of a running copy: each task's CPU ticks, and its

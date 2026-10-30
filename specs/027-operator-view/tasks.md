@@ -46,18 +46,18 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   host events, problem events of host kinds and of copies' kinds (out of memory, restarting), and app actions that
   restart. Tests in `internal/store/activity_test.go` with a row of each source, ordering, `before` paging and
   `serverOnly`.
-- [ ] T005 [P] [FR-005, FR-014] `internal/deploy/host.go`: `Host.Node` (`NodeFacts` as data-model.md: name, state
+- [X] T005 [P] [FR-005, FR-014] `internal/deploy/host.go`: `Host.Node` (`NodeFacts` as data-model.md: name, state
   from status/eligibility/drain, pool, OS and version, kernel and arch, Nomad and Docker versions, cores, total MHz,
   optional model and per-core MHz, memory, private address, last heartbeat, events) and `Host.BootTime`
   (`Stats.Timestamp/1e9 - Uptime`), from the cached node and the existing Stats call; `TraefikImage(ctx)` reading
   `Jobs().Info("traefik")`'s image tag on the same 10-minute cache. `internal/deploy/deploytest`: node attributes
   and events, client stats `Uptime` and `Timestamp`, a `traefik` job. Tests in `internal/deploy/host_test.go`
   (arm node without model, x86 with, a down node, boot time arithmetic).
-- [ ] T006 [FR-005, FR-014] `internal/service/sampler.go` and `internal/service/host.go`: keep the newest
+- [X] T006 [FR-005, FR-014] `internal/service/sampler.go` and `internal/service/host.go`: keep the newest
   `NodeFacts`, `BootTime` and Traefik version in memory on each tick (like the Traefik snapshot) and expose them as
   `HostView.Node` (nil before the first reading); write a `host_events` `boot` row when the boot time moves by more
   than 60 s; tests in `internal/service/host_test.go`.
-- [ ] T007 [FR-024] `Service.Start` (`internal/service/service.go`) writes a `host_events` `version` row when the
+- [X] T007 [FR-024] `Service.Start` (`internal/service/service.go`) writes a `host_events` `version` row when the
   running version differs from the newest recorded one (`detail` from and to); `ChangeHost` ("host") in
   `internal/service/changes.go`, sent when a host event is written; tests in `internal/service/host_test.go`.
 - [ ] T008 [FR-001, FR-002, FR-003] The Operator shell in `internal/ui/shell.go` and `internal/ui/templates/shell.html`:

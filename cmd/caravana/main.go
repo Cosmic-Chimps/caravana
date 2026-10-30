@@ -94,6 +94,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	svc := service.New(st, deploy.New(nomad, &registry.Client{}, cfg.Settings), deploy.NewVariables(nomad), log)
 	svc.SetVolumeBackupTimeout(cfg.VolumeBackupTimeout)
 	svc.SetPublicURL(cfg.PublicURL)
+	svc.SetVersion(version)
 	svc.SetNotifyResolveAfter(cfg.NotifyResolveAfter)
 	svc.SetEdgeAddress(cfg.EdgeAddress)
 	svc.SetTraefikMetricsURL(cfg.TraefikMetricsURL)

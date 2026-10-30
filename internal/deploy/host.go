@@ -45,6 +45,12 @@ type Host struct {
 	ReservedMemoryMB int
 
 	Disks []Disk
+
+	// Node is the node's own facts (feature 027), from the same cached record.
+	Node NodeFacts
+	// BootTime is when the node started: the moment the stats were read less
+	// the node's uptime, to the second. Zero when Nomad gave no uptime.
+	BootTime time.Time
 }
 
 // Disk is one filesystem of the host and what Caravana keeps on it.
@@ -80,6 +86,8 @@ type hostCache struct {
 	now   func() time.Time
 	nodes map[string]cachedNode    // by node ID
 	tasks map[jobVersion]taskHooks // by job ID and version
+	// traefik is the traefik job's image (TraefikImage).
+	traefik cachedImage
 }
 
 func (c *hostCache) clock() time.Time {
@@ -156,6 +164,14 @@ func (d *Deployer) HostStats(ctx context.Context, dockerRoot string) (Host, erro
 		h.ReservedMemoryMB = int(r.Memory.MemoryMB)
 	}
 	h.Disks = watchedDisks(stats, dockerRoot)
+
+	read := d.cache.clock().UTC()
+	h.Node = nodeFacts(info, read)
+	// The node record is cached, so its state may be older than the list's.
+	h.Node.State = nodeState(&api.Node{Status: stub.Status, Drain: stub.Drain, SchedulingEligibility: stub.SchedulingEligibility})
+	if stats.Uptime > 0 {
+		h.BootTime = bootTime(read, stats.Uptime)
+	}
 	return h, nil
 }
 

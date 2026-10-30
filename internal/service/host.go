@@ -75,6 +75,10 @@ type HostView struct {
 	History  HostHistory
 	Baseline MetricsBaseline
 	Sources  SamplerSources
+	// Node is what Nomad says about the node, from the sampler's newest tick
+	// (feature 027); nil before its first reading, and after a restart until the
+	// next tick.
+	Node *HostNode
 }
 
 // hostHistoryHours is the history's span: seven days of hourly points.
@@ -87,7 +91,7 @@ func (s *Service) Host(ctx context.Context) (HostView, error) {
 	if err != nil {
 		return HostView{}, err
 	}
-	view := HostView{Baseline: baseline, Sources: s.SamplerSources()}
+	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Node: s.hostNode()}
 
 	hist, err := s.hostHistory(ctx, now)
 	if err != nil {

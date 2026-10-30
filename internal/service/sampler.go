@@ -89,8 +89,11 @@ type samplerState struct {
 	lastFold  time.Time           // start of the newest slot this process folded
 	lastPrune time.Time
 
-	mu      sync.Mutex // guards sources and traefik
+	bootRef time.Time // the boot time last recorded as a host event (hostnode.go); only the tick touches it
+
+	mu      sync.Mutex // guards sources, traefik and node
 	sources SamplerSources
+	node    *HostNode // the newest node facts (feature 027); nil before the first reading
 }
 
 // SetMetricsSampleGap sets the time between two ticks of the sampler (a minute
@@ -173,6 +176,15 @@ type samplerReads struct {
 
 	host    deploy.Host
 	hostErr error
+
+	// Feature 027: the traefik job's image, read after the host (the deploy
+	// package caches it for 10 minutes), and, when the host's stats couldn't be
+	// read, the node's facts alone, which show a node that is down.
+	traefikImage  string
+	imageErr      error
+	fallback      deploy.NodeFacts
+	fallbackErr   error
+	fallbackTried bool
 }
 
 // serviceRef names one stored service.
@@ -215,11 +227,19 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 	go func() {
 		defer wg.Done()
 		r.host, r.hostErr = s.deployer.HostStats(ctx, st.dockerRoot)
+		switch {
+		case r.hostErr == nil:
+			r.traefikImage, r.imageErr = s.deployer.TraefikImage(ctx)
+		case !errors.Is(r.hostErr, deploy.ErrNodeReadDenied):
+			r.fallbackTried = true
+			r.fallback, r.fallbackErr = s.deployer.NodeFacts(ctx)
+		}
 	}()
 	wg.Wait()
 	if ctx.Err() != nil {
 		return ctx.Err() // shutting down or out of budget: write nothing
 	}
+	s.noteHost(ctx, &r)
 
 	nomad := SamplerOK
 	for _, e := range []error{r.reservedErr, r.copiesErr, r.hostErr} {
