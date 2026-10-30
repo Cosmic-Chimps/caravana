@@ -164,3 +164,78 @@ The designer checks at 127.0.0.1:7070 against `pf-node.png`:
 - the facts (public and private addresses, up since, the agent line), Recent with a node event, a
   boot, and a package run by Ubuntu's automatic updates and one by hand;
 - Nomad unreachable; 1440, 1200, 640 and 390 widths; without script.
+
+## Review rulings (designer, 2026-10-30, build 2d70ccd)
+
+Checked headless at 1440, 1200, 640 and 390 (innerWidth logged, no horizontal scroll at any),
+without script, `/ops/servers` (redirect) and `/ops/servers/nope` (404, the contract's sentence and
+link), against `pf-node.png`.
+
+### Verified
+
+- The head: "← Overview", the name 500 26px mono, ● "ready", ◆ "reboot needed" linking to
+  `/ops/updates`, the spec line, no actions.
+- The three numbers on the newest sample with the hatched reserve. Memory 80% stays fg-1 under 85%.
+- The fold at 390: chip, then CPU and Memory side by side, then Up. The numbers stack.
+- The facts (pool, addresses, up since in UTC and local, agent with Traefik's tag, os, cpu on arm,
+  last seen), and Recent's time column with the local time in each title.
+- Ids `srv-copy-<id>` on the chips.
+
+### Fixes
+
+1. **Superseded failed copies fill the top of the list.** crashy shows five failed copies. Four
+   have the idle ○ mark although their title says "failed", and one has ■. Each row is three bold
+   "—".
+   - A failed copy that Nomad replaced (it has a next copy) is history, not "here". Drop it from
+     Running here. Recent already says "crashy/worker keeps restarting".
+   - List the newest copy of each lineage only. When that copy is failed, it shows ■ and the
+     failed chip, and its Up cell reads "failed 3 min ago" in fg-3.
+   - A missing value is "—" in 400 fg-3, never the bold value style.
+2. **The count reads wrong next to the rows.** "Running here · 11" sits above 16 rows. With fix 1,
+   the label is "Running here · 12" counting running, starting and stopping copies, plus
+   "· 1 failed" in fg-3 when failed copies are listed.
+3. **The starting phase never shows.** slowstart started at 09:48:12, and its server sleeps
+   120 s, yet at 09:49:43 `listCopies` already said `healthy` ("Tasks are running"). Its health
+   is `{port: http}`.
+   - Find out whether the check really passes during the sleep (a staging gap) or a copy is
+     called healthy before Nomad's health is set (a bug in the shared copy status, which the
+     Running tab would share).
+   - If it's a bug, a copy whose deployment health isn't set yet is "starting" (◐, dashed chip).
+   - Stage a copy that is truly starting, for example with an HTTP path check, and tell me when
+     it's up.
+4. **The two addresses aren't named.** "192.168.68.147" over "192.168.5.15" doesn't say which is
+   which. Write "192.168.68.147 · public" and "192.168.5.15 · private" with the words in fg-3.
+   Check that the second line is really the `caravana0` address: in the lab, 192.168.5.15 looks
+   like Lima's user network. If `caravana0` has none, leave the line out rather than show another
+   interface.
+5. **Memory mixes units.** "of 1.9 GB · 736 MB reserved" becomes "of 1.9 GB · 0.7 GB reserved".
+   The reserved part takes the total's unit, as page 1's meters do.
+6. **The stacked aside wastes its width.** Under the 1200 container, Server and Recent each span
+   the full width with short lines. When stacked and the container is 900px or more, lay them out
+   side by side, two equal columns with the main column's gap, Server first. Under 900 they stack.
+   The same grid areas apply, with no new pattern.
+
+### Departures
+
+1. The newest sample, with 025's meter thresholds (CPU warn above 90%, memory and disk from 85%,
+   failed from 95%): yes. Use 025's meter function, not a copy.
+2. "Waiting for the first reading of the server…" with 200 before any node is known: yes.
+3. The banners reuse the needs-you row: yes. The disk clause "It holds Nomad's data and Docker's
+   images." appears only when the item's `holds` says so (one filesystem). Otherwise the banner
+   names its own mount. A down node's banner has no action.
+4. Recent's dates: yes, HH:MM today and "22 Oct" before, with the full UTC time and local time in
+   the title.
+5. Caravana's version in Recent: keep it, only when the version changes, as "Caravana was
+   upgraded from 0.11.2 to 0.12.0." A restart on the same version isn't listed. Today's row
+   "Caravana 0.12.0-dev.023 is running." would then be gone unless the version changed.
+6. Superseded by fixes 1 and 2.
+7. Traefik's version without the "v": yes.
+8. DESIGN.md untouched: yes.
+
+### Still to verify (stage or point at the test)
+
+- A boot row ("The server started (up since 02:24 UTC).") and the 10-28 kernel run with ", a
+  reboot is needed." Both fall outside the last 8 here. Name the tests that assert them.
+- A disk banner and a down node's banner and pill: the tests, or a staged state.
+- Nomad unreachable: the panel from the last sample with "as of …", and Running here "Can't read
+  Nomad right now."
