@@ -109,7 +109,11 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 - [X] T014 [US1] [SC-005, SC-007] `cmd/caravana/console_ops_test.go`: `TestConsoleLab` step `console-ops-overview` (the
   toggle, the cookie onto Settings, the stats line, the server panel with the lab's spec line, the apps table across two
   places, a deploy and a restart appearing in Live activity, still there after `RestartCaravana`, no command output
-  in the page, the page renders in under 1 s); written and compiled; not yet run in the lab (the main session runs it and records the result here).
+  in the page, the page renders in under 1 s).
+  - 2026-10-30, lab: `console-ops-overview` passes in 47 s (with `console-sign-in`, `console-clean`, `console-create`
+    and `console-delete`). Two test fixes on the way: the API check after `RestartCaravana` waits for the new process's
+    first sample (the node block is empty until then, as the spec allows), and the step reopens the app page's live
+    stream on its way out, since its restart ends the stream `console-delete` reads.
 - [ ] T015 [US1] Page 1 review cycle: stage the lab for the designer, the designer's review against
   `pe-ops-now.png`, the impeccable critique (critique only, no detector), the designer's rulings, the fixes, the last
   look; record "Approved" in `contracts/page1-overview.md`.

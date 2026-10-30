@@ -77,6 +77,12 @@ func (c *console) opsHasEntry(t *testing.T, re *regexp.Regexp) bool {
 // Budget: two deploys and a restart, each waited for up to 4 minutes, normally under one, and
 // a Caravana restart.
 func (c *console) consoleOpsOverview(t *testing.T) {
+	// This step opens its own stream and restarts Caravana, which ends every stream the earlier
+	// steps opened. console-delete reads the app page's stream, so open it again on the way out.
+	defer func() {
+		c.openLive(t, "/live/apps/whoami")
+		c.expectEvent(t, "sync", 5*time.Second)
+	}()
 	const (
 		project = "con027"
 		prodID  = "con0271"
@@ -300,14 +306,27 @@ func (c *console) consoleOpsOverview(t *testing.T) {
 		t.Errorf("GET /ops took %v at best, want under 1 s", best)
 	}
 
-	// The API's twin answers the same facts.
+	// The API's twin answers the same facts. After the restart above, the new process holds no
+	// node facts until its sampler's first tick (the spec allows the block to be empty for one
+	// sampling period after a start), so wait for it rather than read once.
 	var host struct {
 		Node *struct {
 			Name string `json:"name"`
 		} `json:"node"`
 	}
-	raw := c.g.sendWant(t, http.StatusOK, http.MethodGet, "/v1/host", "")
-	if err := json.Unmarshal(raw, &host); err != nil || host.Node == nil || host.Node.Name != node.Name {
-		t.Errorf("getHost's node = %s, want the lab's node %s", raw, node.Name)
+	var raw []byte
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		raw = c.g.sendWant(t, http.StatusOK, http.MethodGet, "/v1/host", "")
+		if err := json.Unmarshal(raw, &host); err == nil && host.Node != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if host.Node == nil || host.Node.Name != node.Name {
+		t.Errorf("getHost's node within 90 s of the restart = %.300s, want the lab's node %s", raw, node.Name)
 	}
 }
