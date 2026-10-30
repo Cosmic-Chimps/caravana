@@ -1697,6 +1697,17 @@
 
   /* The footer: one sentence, 13px fg-3. */
   .cv-mnfoot { margin: 0; font-size: 13px; line-height: 1.45; color: var(--color-fg-3); overflow-wrap: anywhere; text-wrap: pretty; }
+
+  /* Page 027: the Developer/Operator toggle under the brand (two plain links, the handoff's
+     segmented control) and the Operator sidebar's mark. The brand block keeps a 12px gap
+     between the brand and the toggle. */
+  .cv-side-top { display: flex; flex-direction: column; gap: 12px; }
+  .cv-view { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border: 1px solid var(--color-line-1); border-radius: 4px; background: var(--color-ink-1); }
+  .cv-view-link { display: flex; align-items: center; justify-content: center; height: 30px; border-radius: 3px; background: transparent; color: var(--color-fg-3); font: 500 13px/1 var(--font-sans); text-decoration: none; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv); }
+  .cv-view-link:hover { background: var(--color-ink-2); color: var(--color-fg-2); }
+  .cv-view-link[aria-current="page"] { background: var(--color-ink-3); color: var(--color-fg-1); }
+  /* The mark after Updates (a count, a square or a diamond): the page fills it, text never fg-4. */
+  .cv-nav-mark { margin-left: auto; font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
 }
 
 /* Under 1200px of room (the page's container) the charts are a 2x2 grid; under 640px, one column. The

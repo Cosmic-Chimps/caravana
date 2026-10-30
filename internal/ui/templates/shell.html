@@ -14,12 +14,29 @@
       <span class="cv-brand-version" title="Caravana's version">caravana{{with .Version}} {{.}}{{end}}</span>
     </span>
   </a>
+  {{/* The view toggle (feature 027): two plain links, no script. The current view is
+       marked, not selected: these navigate. */}}
+  <nav aria-label="View" class="cv-view">
+    <a href="/apps" class="cv-view-link"{{if not .Ops}} aria-current="page"{{end}}>Developer</a>
+    <a href="/ops" class="cv-view-link"{{if .Ops}} aria-current="page"{{end}}>Operator</a>
+  </nav>
 </div>
 {{end}}
 
 {{/* shell-nav: the Workspace group. Only pages that exist are linked. */}}
 {{define "shell-nav"}}
 <nav aria-label="Main" class="cv-nav">
+  {{if .Ops}}
+  <div class="cv-nav-group">
+    <span class="cv-label cv-nav-title">Server</span>
+    <a href="/ops" class="cv-nav-item"{{if eq .Active "ops-overview"}} aria-current="page"{{end}}>{{icon "layout-grid"}}<span>Overview</span></a>
+    <a href="/ops/servers" class="cv-nav-item"{{if eq .Active "ops-server"}} aria-current="page"{{end}}>{{icon "server"}}<span>Server</span></a>
+  </div>
+  <div class="cv-nav-group">
+    <span class="cv-label cv-nav-title">Platform</span>
+    <a href="/ops/updates" class="cv-nav-item"{{if eq .Active "ops-updates"}} aria-current="page"{{end}}>{{icon "download"}}<span>Updates</span>{{with .UpdatesMark}}<span class="cv-nav-mark">{{.}}</span>{{end}}</a>
+  </div>
+  {{else}}
   <div class="cv-nav-group">
     <span class="cv-label cv-nav-title">Workspace</span>
     <a href="/apps" class="cv-nav-item"{{if eq .Active "home"}} aria-current="page"{{end}}>{{icon "house"}}<span>Home</span></a>
@@ -29,6 +46,7 @@
     <a href="/logs" class="cv-nav-item"{{if eq .Active "logs"}} aria-current="page"{{end}}>{{icon "scroll-text"}}<span>Logs</span></a>
     <a href="/monitoring" class="cv-nav-item"{{if eq .Active "monitoring"}} aria-current="page"{{end}}>{{icon "activity"}}<span>Monitoring</span></a>
   </div>
+  {{end}}
 </nav>
 <nav aria-label="Settings" class="cv-nav-foot">
   <a href="/settings" class="cv-nav-item"{{if eq .Active "settings"}} aria-current="page"{{end}}>{{icon "settings"}}<span>Settings</span></a>

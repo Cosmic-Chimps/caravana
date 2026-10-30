@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"slices"
@@ -94,7 +95,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Errorf("sidebar = %v, want %v", got, want)
 			}
 			side := text(sidebarRegion.FindString(body))
-			for _, absent := range []string{"Deploys", "Previews", "Backups", "Developer", "Operator"} {
+			for _, absent := range []string{"Deploys", "Previews", "Backups"} {
 				if strings.Contains(side, absent) {
 					t.Errorf("the sidebar links %q, which has no page yet: %s", absent, side)
 				}
@@ -117,6 +118,225 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Error("the top bar still has a per-page action slot")
 			}
 		})
+	}
+}
+
+// The toggle (feature 027): a nav "View" of two plain links, the current view marked, in the
+// brand block of the sidebar and of the Menu panel; the Developer sidebar is what it was.
+func TestViewToggle(t *testing.T) {
+	e := shopConsole(t)
+	e.seedStandard(t)
+	toggle := regexp.MustCompile(`(?s)<nav aria-label="View" class="cv-view">(.*?)</nav>`)
+	link := regexp.MustCompile(`<a href="([^"]*)" class="cv-view-link"( aria-current="page")?>([^<]*)</a>`)
+	viewOf := func(t *testing.T, region string) []string {
+		t.Helper()
+		m := toggle.FindStringSubmatch(region)
+		if m == nil {
+			t.Fatalf("no View nav in:\n%s", region)
+		}
+		var out []string
+		for _, l := range link.FindAllStringSubmatch(m[1], -1) {
+			item := l[3] + "=" + l[1]
+			if l[2] != "" {
+				item += "*"
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+
+	_, body := e.get(t, "/apps")
+	if got, want := viewOf(t, sidebarRegion.FindString(body)), []string{"Developer=/apps*", "Operator=/ops"}; !slices.Equal(got, want) {
+		t.Errorf("toggle on /apps = %v, want %v", got, want)
+	}
+	if n := strings.Count(body, `<nav aria-label="View"`); n != 2 {
+		t.Errorf("the page has %d toggles, want 2 (the sidebar's and the Menu panel's)", n)
+	}
+	menu := regexp.MustCompile(`(?s)<div class="cv-menu-panel">.*?</div>\s*</details>`).FindString(body)
+	if got, want := viewOf(t, menu), []string{"Developer=/apps*", "Operator=/ops"}; !slices.Equal(got, want) {
+		t.Errorf("toggle in the Menu panel = %v, want %v", got, want)
+	}
+
+	// An Operator page shows the other side current (the pages themselves come with T011; the
+	// shell is drawn by whatever page asks for it, here the brand block on its own).
+	req := httptest.NewRequest(http.MethodGet, "/ops", nil)
+	d, err := e.Server.shellPage(req, "Overview", navOpsOverview, crumb{Label: "Overview"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	if err := e.Server.pages["monitoring"].ExecuteTemplate(&buf, "shell-brand", d.Shell); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := viewOf(t, buf.String()), []string{"Developer=/apps", "Operator=/ops*"}; !slices.Equal(got, want) {
+		t.Errorf("toggle on /ops = %v, want %v", got, want)
+	}
+}
+
+// The Operator sidebar: Server (Overview, Server) and Platform (Updates), then Settings; each
+// item marked as page 1's contract says, and an app's pages in Operator mode mark Overview.
+func TestOperatorSidebar(t *testing.T) {
+	e := shopConsole(t)
+	e.seedStandard(t)
+	ops := &http.Cookie{Name: "caravana_mode", Value: "ops"}
+	page := func(t *testing.T, path string, cookies ...*http.Cookie) string {
+		t.Helper()
+		resp, body := e.do(t, request{path: path, cookies: append([]*http.Cookie{e.Cookie}, cookies...)})
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s = %d", path, resp.StatusCode)
+		}
+		return body
+	}
+	want := func(active string) []string {
+		items := []string{"Overview=/ops", "Server=/ops/servers", "Updates=/ops/updates", "Settings=/settings"}
+		for i, it := range items {
+			if strings.HasPrefix(it, active+"=") {
+				items[i] += "*"
+			}
+		}
+		return items
+	}
+
+	tests := []struct {
+		path   string
+		active string
+	}{
+		{"/settings", "Settings"},
+		{"/settings/tokens", "Settings"},
+		{"/apps/whoami", "Overview"},
+		{"/apps/whoami/deployments", "Overview"},
+		{"/apps/new", "Overview"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			body := page(t, tc.path, ops)
+			if got := navOf(t, body); !slices.Equal(got, want(tc.active)) {
+				t.Errorf("Operator sidebar on %s = %v, want %v", tc.path, got, want(tc.active))
+			}
+			sidebar := text(sidebarRegion.FindString(body))
+			for _, group := range []string{"Server", "Platform"} {
+				if !strings.Contains(sidebar, group) {
+					t.Errorf("the Operator sidebar lacks the group %q", group)
+				}
+			}
+			for _, absent := range []string{"Workspace", "Projects", "Schedules", "Monitoring"} {
+				if strings.Contains(sidebar, absent) {
+					t.Errorf("the Operator sidebar has %q", absent)
+				}
+			}
+		})
+	}
+
+	// The same pages without the cookie are the Developer ones.
+	if got := navOf(t, page(t, "/settings")); !hasItem(got, "Projects=/projects") || hasItem(got, "Overview=/ops") {
+		t.Errorf("Settings without the cookie = %v, want the Developer sidebar", got)
+	}
+	// Anything but "ops" in the cookie is Developer.
+	if got := navOf(t, page(t, "/settings", &http.Cookie{Name: "caravana_mode", Value: "admin"})); !hasItem(got, "Projects=/projects") {
+		t.Errorf("Settings with a bad cookie = %v, want the Developer sidebar", got)
+	}
+	// The Developer-only pages ignore the cookie: their path says the view.
+	for _, path := range []string{"/apps", "/projects", "/schedules", "/domains", "/logs", "/monitoring"} {
+		if got := navOf(t, page(t, path, ops)); !hasItem(got, "Projects=/projects") {
+			t.Errorf("%s with the Operator cookie = %v, want the Developer sidebar", path, got)
+		}
+	}
+}
+
+// Every page of a view sets the cookie; the shared pages, the parts and the static files don't
+// touch it; the cookie is HttpOnly, Lax, for the whole site, and not Secure over plain HTTP.
+func TestModeCookieIsSetByPagesOfAView(t *testing.T) {
+	e := shopConsole(t)
+	e.seedStandard(t)
+	cookieOf := func(resp *http.Response) *http.Cookie {
+		for _, c := range resp.Cookies() {
+			if c.Name == "caravana_mode" {
+				return c
+			}
+		}
+		return nil
+	}
+	tests := []struct {
+		path string
+		want string // "" means no cookie is set
+	}{
+		{"/apps", "dev"},
+		{"/projects", "dev"},
+		{"/projects/shop", "dev"},
+		{"/schedules", "dev"},
+		{"/domains", "dev"},
+		{"/logs", "dev"},
+		{"/monitoring", "dev"},
+		{"/settings", ""},
+		{"/apps/whoami", ""},
+		{"/apps/new", ""},
+		{"/parts/apps", ""},
+		{"/static/app.css", ""},
+		{"/login", ""},
+		{"/nope", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			resp, _ := e.get(t, tc.path)
+			c := cookieOf(resp)
+			if tc.want == "" {
+				if c != nil {
+					t.Errorf("GET %s set the mode cookie %+v", tc.path, c)
+				}
+				return
+			}
+			if c == nil || c.Value != tc.want {
+				t.Fatalf("GET %s set %+v, want caravana_mode=%s", tc.path, c, tc.want)
+			}
+			if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.Secure {
+				t.Errorf("cookie = %+v, want HttpOnly, Lax, Path=/ and not Secure over plain HTTP", c)
+			}
+		})
+	}
+
+	// A form's answer changes nothing.
+	resp, _ := e.do(t, request{method: http.MethodPost, path: "/schedules/none/delete", cookies: []*http.Cookie{e.Cookie}, headers: map[string]string{"Sec-Fetch-Site": "same-origin"}})
+	if c := cookieOf(resp); c != nil {
+		t.Errorf("a POST set the mode cookie %+v", c)
+	}
+}
+
+// hasItem says whether the sidebar items (navOf) have item, starred or not.
+func hasItem(items []string, item string) bool {
+	return slices.ContainsFunc(items, func(i string) bool { return strings.TrimSuffix(i, "*") == item })
+}
+
+func TestPathMode(t *testing.T) {
+	tests := map[string]string{
+		"/ops": "ops", "/ops/": "ops", "/ops/servers": "ops", "/ops/servers/lab": "ops", "/ops/updates/check": "ops",
+		"/opsy": "", "/operator": "",
+		"/": "dev", "/apps": "dev", "/projects": "dev", "/projects/new": "dev", "/schedules/abc/edit": "dev",
+		"/domains": "dev", "/logs": "dev", "/monitoring": "dev",
+		"/logs/download": "", "/parts/logs": "", "/parts/ops/overview": "", "/live": "", "/static/app.css": "",
+		"/apps/new": "", "/apps/blog": "", "/apps/blog/logs": "", "/settings": "", "/settings/tokens": "", "/login": "",
+	}
+	for path, want := range tests {
+		if got := pathMode(path); got != want {
+			t.Errorf("pathMode(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// The cookie is Secure when the client reached the console over HTTPS, the way the session
+// cookie decides it.
+func TestModeCookieSecureOverHTTPS(t *testing.T) {
+	e := shopConsole(t)
+	h := e.Server.rememberMode(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, tc := range []struct {
+		url    string
+		secure bool
+	}{{"http://console.example.com/ops", false}, {"https://console.example.com/ops", true}} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.url, nil))
+		cs := w.Result().Cookies()
+		if len(cs) != 1 || cs[0].Name != "caravana_mode" || cs[0].Value != "ops" || cs[0].Secure != tc.secure {
+			t.Errorf("GET %s set %+v, want caravana_mode=ops with Secure=%v", tc.url, cs, tc.secure)
+		}
 	}
 }
 

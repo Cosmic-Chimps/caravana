@@ -58,3 +58,43 @@ func ClearSessionCookie(w http.ResponseWriter, https bool) {
 		SameSite: http.SameSiteLaxMode,
 	})
 }
+
+// The console's view, Developer or Operator, is remembered in a plain cookie so
+// the pages both views share (Settings, an app's pages, New app) draw the
+// sidebar of the view the owner was last in. It is a preference, not a
+// security value: nothing trusts it, and any other value reads as Developer.
+const (
+	modeCookieName = "caravana_mode"
+	// ModeDeveloper and ModeOperator are the two values the cookie carries.
+	ModeDeveloper = "dev"
+	ModeOperator  = "ops"
+	// modeCookieAge is how long the preference is kept: a year.
+	modeCookieAge = 365 * 24 * time.Hour
+)
+
+// ModeCookie returns the view the request's cookie remembers: ModeOperator or
+// ModeDeveloper, which is also what no cookie, or one with another value, means.
+func ModeCookie(r *http.Request) string {
+	if c, err := r.Cookie(modeCookieName); err == nil && c.Value == ModeOperator {
+		return ModeOperator
+	}
+	return ModeDeveloper
+}
+
+// SetModeCookie remembers the view (ModeDeveloper or ModeOperator). It has no
+// __Host- prefix, since it holds nothing to protect, but it is HttpOnly, Lax,
+// for the whole site and Secure when the client used HTTPS (Proxies.HTTPS).
+func SetModeCookie(w http.ResponseWriter, mode string, https bool) {
+	if mode != ModeOperator {
+		mode = ModeDeveloper
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     modeCookieName,
+		Value:    mode,
+		Path:     "/",
+		MaxAge:   int(modeCookieAge / time.Second),
+		HttpOnly: true,
+		Secure:   https,
+		SameSite: http.SameSiteLaxMode,
+	})
+}

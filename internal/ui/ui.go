@@ -271,7 +271,7 @@ func (s *server) routes() http.Handler {
 		mux.HandleFunc(rt.method+" "+rt.path, rt.handler)
 	}
 	mux.HandleFunc("/", s.notFound)
-	return s.securityHeaders(mux)
+	return s.securityHeaders(s.rememberMode(mux))
 }
 
 // hashAssets gives every file under static/ (stylesheet, scripts, fonts) a

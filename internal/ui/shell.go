@@ -19,7 +19,17 @@ type shellView struct {
 	Active   string  // navHome, navProjects, navSchedules, navDomains, navLogs, navMonitoring or navSettings: the sidebar item marked as current
 	Crumbs   []crumb // the top bar's breadcrumbs, the last one being this page
 	NewApp   bool    // the top bar offers "New app"
+	// Mode is the view the page is drawn in: "dev" (Developer) or "ops"
+	// (Operator). It picks the sidebar's links and which side of the toggle is
+	// current; see mode.go.
+	Mode string
+	// UpdatesMark is the little mark after the Operator sidebar's Updates item
+	// (a count, a ■ or a ◆). Empty draws nothing: page 3 of feature 027 fills it.
+	UpdatesMark string
 }
+
+// Ops says the page is drawn in the Operator view.
+func (v *shellView) Ops() bool { return v.Mode == "ops" }
 
 // crumb is one step of the breadcrumbs. The last is the page itself and has
 // no link, whatever its Href says.
@@ -61,6 +71,12 @@ const (
 	navLogs       = "logs"       // every page under /logs (feature 024)
 	navMonitoring = "monitoring" // every page under /monitoring (feature 025)
 	navSettings   = "settings"
+
+	// The Operator view's items (feature 027): Overview (/ops), Server
+	// (/ops/servers) and Updates (/ops/updates).
+	navOpsOverview = "ops-overview"
+	navOpsServer   = "ops-server"
+	navOpsUpdates  = "ops-updates"
 )
 
 // shellPage starts the data of a console page: the title, and the shell
@@ -81,9 +97,25 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 	if n := len(crumbs); n > 0 {
 		crumbs[n-1].Href = ""
 	}
+	mode := s.modeOf(r)
 	d.Shell = &shellView{Host: host, Initial: initialOf(host), Version: s.versionLabel(), Email: email, Initials: initialsOf(email),
-		Active: active, Crumbs: crumbs, NewApp: s.newApp}
+		Active: activeIn(mode, active), Crumbs: crumbs, NewApp: s.newApp, Mode: mode}
 	return d, nil
+}
+
+// activeIn is the sidebar item to mark for a page that asked for active, in
+// the given view. The Operator view has its own items and Settings; a page
+// both views share (an app's pages, New app) is marked Overview there, since
+// the Operator sidebar has nothing closer (contracts/page1-overview.md).
+func activeIn(mode, active string) string {
+	if mode != "ops" {
+		return active
+	}
+	switch active {
+	case navSettings, navOpsOverview, navOpsServer, navOpsUpdates:
+		return active
+	}
+	return navOpsOverview
 }
 
 // initialOf is the first letter of the host s, upper case, for the brand's

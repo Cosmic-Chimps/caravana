@@ -60,7 +60,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 - [X] T007 [FR-024] `Service.Start` (`internal/service/service.go`) writes a `host_events` `version` row when the
   running version differs from the newest recorded one (`detail` from and to); `ChangeHost` ("host") in
   `internal/service/changes.go`, sent when a host event is written; tests in `internal/service/host_test.go`.
-- [ ] T008 [FR-001, FR-002, FR-003] The Operator shell in `internal/ui/shell.go` and `internal/ui/templates/shell.html`:
+- [X] T008 [FR-001, FR-002, FR-003] The Operator shell in `internal/ui/shell.go` and `internal/ui/templates/shell.html`:
   the toggle under the brand (two links, `aria-current="page"` on the current, `nav aria-label="View"`), the mode from
   the path (`/ops…` is ops) and for shared pages from the cookie `caravana_mode=dev|ops` (`SameSite=Lax`, `Path=/`,
   `HttpOnly`, `Secure` over HTTPS) set by every page of a mode; the Operator sidebar (Server › Overview, Server;
