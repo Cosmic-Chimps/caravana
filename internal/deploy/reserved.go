@@ -33,6 +33,9 @@ type Reservation struct {
 	// is 0 when the task sets none. ServiceMemoryLimitMB is the one to use.
 	ServiceMemoryMB    int
 	ServiceMemoryMaxMB int
+	// ServiceCPUMHz is the service's own task's CPU reservation (feature 027: the
+	// server page's copies compare their use with it, and use is the service task's).
+	ServiceCPUMHz int
 
 	Restarts          int
 	RequestedRestarts int
@@ -199,6 +202,7 @@ func reservationOf(s *api.AllocationListStub, c Copy, group map[string]*api.Task
 		}
 		r.CPUMHz, r.MemoryMB = FlattenReserved(tasks)
 		if svc := s.AllocatedResources.Tasks[s.TaskGroup]; svc != nil {
+			r.ServiceCPUMHz = int(svc.Cpu.CpuShares)
 			r.ServiceMemoryMB = int(svc.Memory.MemoryMB)
 			r.ServiceMemoryMaxMB = int(svc.Memory.MemoryMaxMB)
 		}

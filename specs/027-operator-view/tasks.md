@@ -137,7 +137,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   each tick and writes a `host_events` `os_packages` row per new run (key `os|<start>`, detail packages, by, reboot
   when the run installed what `reboot-required.pkgs` names); `Service.SetHostRoot(fs.FS)` (default `os.DirFS("/")`)
   for tests and the lab; tests in `internal/service/host_test.go`.
-- [ ] T018 [US2] [FR-013] `internal/service/copies.go`: `HostCopies(ctx)` (every copy on the node with app, service,
+- [X] T018 [US2] [FR-013] `internal/service/copies.go`: `HostCopies(ctx)` (every copy on the node with app, service,
   place, phase, status, CPU used and reserved, memory used and limit, started), reusing `deploy.Copies` and
   `deploy.Usage`; `listHostCopies` is not added (page 2 reads the service; `listCopies` per app already exists in the
   API, recorded in contracts/api.md as the parity source); tests in `internal/service/copies_test.go`.
