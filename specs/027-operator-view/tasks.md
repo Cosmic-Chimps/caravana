@@ -165,6 +165,12 @@ and the designer's review cycle (review, impeccable critique with no detector, r
   - 2026-10-30, lab: `console-ops-server` passes in 40 s (with `console-ops-overview`, 48 s). One test fix on the
     way: the 404 check looked for the sentence across the page's `<span>`s, which `pageText` splits.
 - [ ] T021 [US2] Page 2 review cycle as T015, against `pf-node.png`; record "Approved" in `contracts/page2-server.md`.
+  - 2026-10-30: review of 2d70ccd (6 fixes, 1419bc1); fixes in 02beb0f (a copy whose health isn't decided is starting,
+    in a rollout from the job's active deployment and outside one from its checks: the shared copy status, so the
+    Running tab and page 1 too) and 3f243f8. Lab at 3f243f8: every TestConsoleLab step passes (the full run to
+    console-domains-states, then console-monitoring, console-ops-overview 48 s, console-ops-server 40 s), but
+    console-logs failed 2 of 3 runs alone (the part, a download, or the sentinel count read nothing; a different check
+    each time) and passed the one run at 1419bc1. Its reads take about 1 s each; not yet explained, open.
 
 **Checkpoint**: pages 1 and 2 work and are approved.
 
