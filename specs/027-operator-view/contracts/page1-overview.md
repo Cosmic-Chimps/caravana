@@ -54,8 +54,9 @@ designed yet" is worse than no entry):
 - Item shapes, the active bar and Settings at the foot are page 1 of 021's, unchanged.
 - **Active rule** (the handoff's `isActive`): Overview on `/ops`; Server on `/ops/servers*`;
   Updates on `/ops/updates*`; on an app's pages while in Operator mode, Overview.
-- Updates carries 021 page 3's nav count/mark rule: ◆ when an update is available, ■ when a
-  security update or a reboot is pending (page 3 defines both), else nothing.
+- Updates carries 021 page 3's nav count/mark rule: ■ when a reboot is needed, ◆ when
+  security updates are waiting, else the count of available updates ("1" for a newer caravana),
+  else nothing (page 3 defines each).
 
 ## Crumbs and head
 
