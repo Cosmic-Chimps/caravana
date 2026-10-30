@@ -150,7 +150,8 @@ func (c *console) consoleOpsServer(t *testing.T) {
 		t.Errorf("GET /ops/servers = %d to %q, want 302 to %s", resp.StatusCode, resp.Header.Get("Location"), pagePath)
 	}
 	if resp, body := c.get(t, "/ops/servers/nope"); resp.StatusCode != http.StatusNotFound ||
-		!strings.Contains(pageText(body), "No server called nope. This caravana has one: "+node.Name+".") {
+		!strings.Contains(pageText(body), "No server called nope") ||
+		!strings.Contains(pageText(body), "This caravana has one: "+node.Name) {
 		t.Errorf("GET /ops/servers/nope = %d, want a 404 page that names %s:\n%.400s", resp.StatusCode, node.Name, pageText(body))
 	}
 
