@@ -355,8 +355,9 @@ func (c *console) consoleMonitoring(t *testing.T) {
 			if r.LogsHref != "/logs?app="+slow+"&service="+slow+"%2Fweb" {
 				t.Errorf("%s's logs link is %q, want the app's and the service's", slow, r.LogsHref)
 			}
-			if !regexp.MustCompile(`^[\d.]+(?:/[\d.]+)? vCPU$`).MatchString(r.CPU) {
-				t.Errorf("%s's CPU figure reads %q, want \"0.4/0.5 vCPU\"", slow, r.CPU)
+			// Two decimals (feature 027's one formatter), or "<0.01" for a sliver of use.
+			if !regexp.MustCompile(`^(?:<0\.01|\d+\.\d\d)(?:/\d+\.\d\d)? vCPU$`).MatchString(r.CPU) {
+				t.Errorf("%s's CPU figure reads %q, want \"0.40/0.50 vCPU\"", slow, r.CPU)
 			}
 		case calm:
 			if r.Mark != "healthy" {
