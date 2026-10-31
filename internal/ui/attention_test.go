@@ -72,13 +72,13 @@ func TestAttentionRows(t *testing.T) {
 			"failed", "blog: bi.example.com points at 185.199.108.153, which isn't this host.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
 		{"a domain pointing elsewhere with no address", service.AttentionItem{Kind: service.AttentionDomainDNSElsewhere, AppID: "blog", Service: "web", Domain: "bi.example.com"},
 			"failed", "blog: bi.example.com points at another host.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
-		{"a certificate expiring in days", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(6*24*time.Hour + time.Hour))},
+		{"a certificate expiring in days", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(6*24*time.Hour + time.Hour)), Detail: "The certificate for bi.example.com expires in 6 days and hasn't been renewed."},
 			"warning", "blog: the certificate for bi.example.com expires in 6 days and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
-		{"a certificate expiring in a day", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(30 * time.Hour))},
+		{"a certificate expiring in a day", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(30 * time.Hour)), Detail: "The certificate for bi.example.com expires in 1 day and hasn't been renewed."},
 			"warning", "blog: the certificate for bi.example.com expires in 1 day and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
-		{"a certificate expiring today", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(3 * time.Hour))},
+		{"a certificate expiring today", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(3 * time.Hour)), Detail: "The certificate for bi.example.com expires today and hasn't been renewed."},
 			"warning", "blog: the certificate for bi.example.com expires today and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
-		{"a certificate that expired", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(-time.Hour))},
+		{"a certificate that expired", service.AttentionItem{Kind: service.AttentionDomainCertExpiring, AppID: "blog", Service: "web", Domain: "bi.example.com", ExpiresAt: new(now.Add(-time.Hour)), Detail: "The certificate for bi.example.com has expired and hasn't been renewed."},
 			"warning", "blog: the certificate for bi.example.com has expired and hasn't been renewed.", "Open domain", "/domains?open=bi.example.com#domain-bi.example.com"},
 	}
 	for _, tc := range tests {

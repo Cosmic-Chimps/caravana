@@ -6,11 +6,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/metrics"
-	"github.com/cosmic-chimps/caravana/internal/notify"
 	"github.com/cosmic-chimps/caravana/internal/service"
-	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // attentionRow is one line of the needs-you list: a mark, one sentence, when
@@ -57,9 +54,10 @@ func (s *server) loadAttention(r *http.Request, pl places, sums []service.AppSum
 	return region, att.Items, nil
 }
 
-// attentionRow says one item in the console's words. The API sends facts;
-// the sentence, the mark and the link are the console's (research R9, R12). sums
-// are the apps' summaries by ID, for what runs now (nil knows nothing).
+// attentionRow says one item in the console's words. The API sends facts; the sentence's words are the
+// service's (service.ProblemParts, the one source the activity feed and the host pages' banners draw
+// too), and the mark, the action and the link are the console's (research R9, R12). sums are the apps'
+// summaries by ID, for what runs now (nil knows nothing).
 func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places, sums map[string]service.AppSummary) attentionRow {
 	return s.attentionRowAgain(now, it, pl, sums, nil)
 }
@@ -67,127 +65,87 @@ func (s *server) attentionRow(now time.Time, it service.AttentionItem, pl places
 // attentionRowAgain is attentionRow for an item whose deployment was reverted:
 // again is the deployment of the owner's that the running version repeats, or nil.
 func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl places, sums map[string]service.AppSummary, again *uint64) attentionRow {
-	row := attentionRow{Mark: "failed"}
+	row := attentionRow{Mark: "failed", Text: problemSentence(it, pl)}
 	if !it.When.IsZero() {
 		row.When = whenOf(now, &it.When, "")
 	}
 	appHref := "/apps/" + url.PathEscape(it.AppID)
-	place := app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}
-	where := pl.label(place, it.AppID, "/"+it.Service)
 
 	switch it.Kind {
 	case service.AttentionDeployFailed:
-		// The sentence is the one the app's summary says, with the app in front. What runs
-		// now comes from the app's summary, when Nomad could be read.
-		rec := store.DeploymentRecord{Status: it.DeploymentStatus, JobVersion: it.Version, Error: it.Detail}
-		var now runningNow // an app missing from the summaries: nothing is said about what runs
+		// The sentence is the service's, with what runs now added when Nomad could be read: that comes
+		// from the app's summary.
+		var running runningNow // an app missing from the summaries: nothing is said about what runs
 		if sum, ok := sums[it.AppID]; ok {
-			now = runningOf(sum.Status).repeating(again)
+			running = runningOf(sum.Status).repeating(again)
 		}
-		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "), deployFailedSentence(rec, now))
+		row.Text = join(row.Text, runningWords(running))
 		row.Action = "View deployment"
 		row.Href = s.deploymentsHref(it.AppID)
 		if s.hasTab("deployments") {
 			row.Href += "#deployment-" + it.Deployment
 		}
 	case service.AttentionOutOfMemory:
-		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" ran out of memory."))
 		row.Action = "Raise memory"
 		row.Href = appHref + "/configure#" + inputID(it.Service, "memory")
 	case service.AttentionRestarting:
 		row.Mark = "warning"
-		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" "+verbFor(len(it.Copies), "keeps", "keep")+" restarting."))
 		row.Action, row.Href = "View logs", appHref+logsQuery(it)
 	case service.AttentionUnhealthy:
 		row.Mark = "warning"
-		row.Text = join(plainS(copyCount(len(it.Copies))+" of "), where, plainS(" "+verbFor(len(it.Copies), "is", "are")+" failing its health check."))
 		row.Action, row.Href = "View logs", appHref+logsQuery(it)
 	case service.AttentionBackupFailed:
-		row.Text = join(plainS("The latest backup of "), where, plainS(" failed."))
 		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionRestoreFailed:
-		row.Text = join(plainS("The latest restore of "), where, plainS(" failed."))
 		row.Action, row.Href = "Open backups", appHref+"/backups"
 	case service.AttentionNoBackupDestination:
 		row.Mark = "warning"
-		row.Text = sentence{plain("Backups are set up, but no backup destination is.")}
 		row.Action, row.Href = "Set destination", "/settings/backup-storage"
 	case service.AttentionScheduleFailed:
-		// Detail is the run's sentence in Caravana's words ("Exited with code 3."), never its output.
-		row.Text = join(pl.label(place, it.AppID, ""), plainS(": the last run of "), sentence{mono(it.Schedule)}, plainS(" failed. "+it.Detail))
 		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
 	case service.AttentionScheduleSkipping:
 		row.Mark = "warning"
-		row.Text = join(pl.label(place, it.AppID, ""), plainS(": "+it.Detail))
 		row.Action, row.Href = "Open schedule", scheduleHref(it.ScheduleID)
 	case service.AttentionDiskNearlyFull:
 		row.Mark = "warning"
 		if it.Level == metrics.DiskFailed {
 			row.Mark = "failed"
 		}
-		row.Text = diskSentence(it)
 		row.Action, row.Href = "Open monitoring", "/monitoring#host"
 	case service.AttentionDomainDNSElsewhere:
-		row.Text = domainElsewhereSentence(pl.label(place, it.AppID, ""), it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	case service.AttentionDomainCertExpiring:
 		row.Mark = "warning"
-		row.Text = domainExpiringSentence(pl.label(place, it.AppID, ""), now, it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	case service.AttentionOSRebootRequired:
-		// Detail is the service's sentence, the one the notification says (feature 027 page 3).
-		row.Text = plainS(it.Detail)
 		row.Action, row.Href = "Open updates", "/ops/updates"
 	case service.AttentionOSSecurityUpdates:
 		row.Mark = "warning"
-		row.Text = plainS(it.Detail)
 		row.Action, row.Href = "Open updates", "/ops/updates"
 	}
 	return row
 }
 
-// diskSentence is "The disk at /var/lib/docker is 87% full: 1.1 GB left." with the mount in mono:
-// the words are notify.DiskTail's, so the console, the API's detail and the notifications say the
-// same thing. What is on the disk (Nomad's data, Docker's images) is the API's `holds`; the row
-// has no second line for it.
-func diskSentence(it service.AttentionItem) sentence {
-	return sentence{plain("The disk at "), mono(it.Mount), plain(notify.DiskTail(it.UsedPercent, it.FreeBytes))}
+// problemSentence is an item's words: the service's parts, drawn by the "sentence" template. Every
+// place that says what a needs-you item is (the list, the host pages' banners) calls it.
+func problemSentence(it service.AttentionItem, pl places) sentence {
+	out := sentenceOfParts(service.ProblemParts(it, pl.display))
+	if it.Kind == service.AttentionOSRebootRequired {
+		// The kernels and packages are versions and names: they never break inside.
+		for i := range out {
+			out[i].Nowrap = out[i].Mono
+		}
+	}
+	return out
 }
 
-// domainElsewhereSentence is "blog: bi.example.com points at 185.199.108.153,
-// which isn't this host." (the app first, as every item has it) with the names
-// set apart; without an address it says "another host".
-func domainElsewhereSentence(app sentence, it service.AttentionItem) sentence {
-	if it.AddressSeen == "" {
-		return join(app, plainS(": "), sentence{mono(it.Domain), plain(" points at another host.")})
+// sentenceOfParts is parts of the service as a sentence of the console.
+func sentenceOfParts(parts []service.TextPart) sentence {
+	out := make(sentence, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, part{Text: p.Text, Mono: p.Mono, Muted: p.Muted})
 	}
-	return join(app, plainS(": "), sentence{mono(it.Domain), plain(" points at "), mono(it.AddressSeen), plain(", which isn't this host.")})
-}
-
-// domainExpiringSentence is "blog: the certificate for bi.example.com expires
-// in 6 days and hasn't been renewed." (or "has expired", "expires today").
-func domainExpiringSentence(app sentence, now time.Time, it service.AttentionItem) sentence {
-	head, tail := join(app, plainS(": the certificate for ")), " and hasn't been renewed."
-	switch {
-	case it.ExpiresAt == nil:
-		return join(head, sentence{mono(it.Domain), plain(" is about to expire" + tail)})
-	case !it.ExpiresAt.After(now):
-		return join(head, sentence{mono(it.Domain), plain(" has expired" + tail)})
-	}
-	days := int(it.ExpiresAt.Sub(now) / (24 * time.Hour))
-	when := "expires in " + plural(days, "day")
-	if days == 0 {
-		when = "expires today"
-	}
-	return join(head, sentence{mono(it.Domain), plain(" " + when + tail)})
-}
-
-// verbFor picks the verb for n copies: "keeps" for one, "keep" for more.
-func verbFor(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
+	return out
 }
 
 // logsQuery is the Logs tab, on the first copy the item names.

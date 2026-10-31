@@ -53,7 +53,7 @@ func TestProblemParts(t *testing.T) {
 			"Backups are set up, but no backup destination is.", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := problemParts(tc.it, display)
+			got := ProblemParts(tc.it, display)
 			if text := plainText(got); text != tc.want {
 				t.Errorf("sentence = %q, want %q", text, tc.want)
 			}

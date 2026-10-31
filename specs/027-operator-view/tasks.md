@@ -265,10 +265,13 @@ page 3.
   kinds, the release notification; Upgrade: nothing to rerun, the release check is on by default and can be turned off on
   Updates); `docs/plan.md` (the single-host Operator pages move to 2.6; Updates takes over the "update available"
   notice; the screen table's rows for `NowScreen`, `NodeScreen`, `UpdatesScreen`); `CLAUDE.md` paragraph for 027.
-- [ ] T034a One source for the needs-you wording: page 1's review (f0fd007) copied the needs-you sentences into
+- [x] T034a One source for the needs-you wording: page 1's review (f0fd007) copied the needs-you sentences into
   `internal/service/sentenceparts.go` (`problemParts`) because `service` can't import `ui`, so they now live there and in
   `internal/ui/attention.go`. Make the service's parts the one source and have `ui/attention.go` draw them (or add a test
   that both say the same for every attention kind), so the feed and the needs-you list can't drift.
+  Done: `service.ProblemParts` is the one source (kernels, packages and versions in mono; `service.FailureCause` for
+  a deploy that never started); `ui/attention.go` and the host pages' banners draw its parts, and a failed deploy's
+  row adds only what runs now. `TestEveryKindSaysTheSameWordsEverywhere` walks `service.AttentionKinds`.
 - [ ] T035 Full checks: build, vet, staticcheck, gofmt, both cross-compiles, `go mod tidy -diff`, `tools/ui-css.sh
   check`, `tools/ui-vendor.sh check`, shellcheck, `go test -race -timeout 30m ./...`; record the result here.
 

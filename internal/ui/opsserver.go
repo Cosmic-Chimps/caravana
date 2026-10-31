@@ -352,11 +352,8 @@ func (s *server) hostItems(now time.Time, att service.Attention) []srvBanner {
 		}
 		row := s.attentionRow(now, it, places{}, nil)
 		b := srvBanner{Mark: row.Mark, Line: row.Text, Action: row.Action, Href: row.Href}
-		switch {
-		case it.Kind == service.AttentionDiskNearlyFull:
+		if it.Kind == service.AttentionDiskNearlyFull {
 			b.Explain = diskExplain(it.Holds)
-		case len(row.Text) == 0:
-			b.Line = plainS(it.Detail)
 		}
 		out = append(out, b)
 	}
@@ -828,14 +825,24 @@ func agoFull(now, t time.Time) string {
 	return text
 }
 
-// shortTime is the time column of Recent: "14:02" for today (UTC), else "21 Oct". The whole
-// time, UTC, is in the title, with the local one added by the page's script.
+// shortTime is the time column of Recent: "14:02" for today (UTC), else the date as shortDate says it.
+// The whole time, UTC, is in the title, with the local one added by the page's script.
 func shortTime(now, t time.Time) string {
 	t = t.UTC()
 	if t.Format("2006-01-02") == now.UTC().Format("2006-01-02") {
 		return t.Format("15:04")
 	}
-	return t.Format("2 Jan")
+	return shortDate(now, t)
+}
+
+// shortDate is the console's one date format in dense places (UTC): "Oct 22", and "Oct 22, 2025" when
+// the date is from another year than now.
+func shortDate(now, t time.Time) string {
+	t = t.UTC()
+	if t.Year() != now.UTC().Year() {
+		return t.Format("Jan 2, 2006")
+	}
+	return t.Format("Jan 2")
 }
 
 // ---- the facts --------------------------------------------------------------------------------

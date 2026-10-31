@@ -86,11 +86,16 @@ func placeParts(display func(string) string, it AttentionItem, suffix string) []
 	return labelParts(display, app.Place{Project: it.Project, Environment: it.Environment, Name: it.AppName}, it.AppID, suffix)
 }
 
-// problemParts is the needs-you list's own sentence for an item, as parts. The console's rows
-// (internal/ui/attention.go) say the same words: service may not import ui, so the wording is
-// kept here for the activity feed, which stores it when the event is written (the item is gone
+// ProblemParts is the one wording of a needs-you item, as parts, with the names (apps, services,
+// schedules, mounts, domains, kernels, packages and versions) in mono. The console's needs-you list
+// (internal/ui/attention.go), the host pages' banners and the activity feed all draw these parts, so
+// they cannot say different things; the feed stores them when the event is written (the item is gone
 // by the time the problem resolves). display says a project's name for people.
-func problemParts(it AttentionItem, display func(string) string) []TextPart {
+//
+// The API's `detail` is the plain text of the same words for the host kinds (the parts joined); the
+// list's one addition is the "keeps running" sentence of a failed deploy, which needs the app's
+// state and so is the console's.
+func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 	who := placeParts(display, it, "")
 	where := placeParts(display, it, slashed(it.Service))
 	n := len(it.Copies)
@@ -106,6 +111,11 @@ func problemParts(it AttentionItem, display func(string) string) []TextPart {
 			tail = " failed its health checks."
 		case it.Version != nil:
 			tail = " failed during its rollout."
+		default:
+			// Detail is the deployment's error; only the cause the words know is said.
+			if cause := FailureCause(it.Detail); cause != "" {
+				tail = " didn't start: " + cause + "."
+			}
 		}
 		return parts(who, ": ", version, tail)
 	case AttentionOutOfMemory:
@@ -148,6 +158,16 @@ func problemParts(it AttentionItem, display func(string) string) []TextPart {
 		return parts(who, ": needs you ("+string(it.Kind)+").")
 	}
 	return parts("Needs you (" + string(it.Kind) + ").")
+}
+
+// AttentionKinds lists every kind of item, so a test can walk them all. A test reads the constants
+// from attention.go and fails when this list misses one.
+var AttentionKinds = []AttentionKind{
+	AttentionDeployFailed, AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy,
+	AttentionBackupFailed, AttentionRestoreFailed, AttentionNoBackupDestination,
+	AttentionScheduleFailed, AttentionScheduleSkipping,
+	AttentionDomainDNSElsewhere, AttentionDomainCertExpiring,
+	AttentionDiskNearlyFull, AttentionOSRebootRequired, AttentionOSSecurityUpdates,
 }
 
 // slashed is "/web" for a service name, "" for none.

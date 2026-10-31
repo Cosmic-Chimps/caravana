@@ -571,9 +571,17 @@ func TestAttentionRowsOfTheOSItems(t *testing.T) {
 		{service.AttentionOSRebootRequired, "failed"},
 		{service.AttentionOSSecurityUpdates, "warning"},
 	} {
-		row := s.attentionRow(now, service.AttentionItem{Kind: tc.kind, Detail: "The service's sentence."}, places{}, nil)
-		if row.Mark != tc.mark || row.Text.String() != "The service's sentence." || row.Action != "Open updates" || row.Href != "/ops/updates" {
+		it := service.AttentionItem{Kind: tc.kind, InstalledKernel: "6.8.0-149-generic", RunningKernel: "6.8.0-147-generic", Updates: 14, Security: 9}
+		row := s.attentionRow(now, it, places{}, nil)
+		if row.Mark != tc.mark || row.Action != "Open updates" || row.Href != "/ops/updates" {
 			t.Errorf("%s row = %+v", tc.kind, row)
+		}
+		want := "This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is still running."
+		if tc.kind == service.AttentionOSSecurityUpdates {
+			want = "14 updates are waiting, 9 of them security updates."
+		}
+		if row.Text.String() != want {
+			t.Errorf("%s says %q, want %q", tc.kind, row.Text, want)
 		}
 	}
 }

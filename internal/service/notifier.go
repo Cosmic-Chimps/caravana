@@ -538,7 +538,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		check.Opened = append(check.Opened, store.SentProblem{
 			Key: problemKey(it), Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
 			OpenedAt: now, LastSeenAt: now, Summary: ev.Title, Level: levelOf(it),
-			Sentence: encodeParts(problemParts(it, display)),
+			Sentence: encodeParts(ProblemParts(it, display)),
 		})
 	}
 	var worsened []notify.Event
@@ -549,7 +549,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 			check.Sentences = map[string]string{}
 		}
 		check.Levels[problemKey(it)] = levelOf(it)
-		check.Sentences[problemKey(it)] = encodeParts(problemParts(it, display))
+		check.Sentences[problemKey(it)] = encodeParts(ProblemParts(it, display))
 	}
 	for _, p := range changes.Resolved {
 		resolved = append(resolved, inPlace(resolvedEvent(p, s.publicURL, now), places[p.AppID]))

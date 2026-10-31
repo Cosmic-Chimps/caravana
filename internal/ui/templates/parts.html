@@ -11,7 +11,7 @@
 {{define "status-quiet"}}<span class="cv-pill cv-pill-{{.Kind}} cv-pill-quiet"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}
 
 {{/* sentence: prose with its names and versions set in mono. Takes a sentence (a list of parts, see view.go). */}}
-{{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono {{if .Muted}}text-fg-3{{else}}text-fg-1{{end}}">{{.Text}}</span>{{else if .Muted}}<span class="text-fg-3">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+{{define "sentence"}}{{range .}}{{if .Mono}}<span class="cv-inline-mono {{if .Muted}}text-fg-3{{else}}text-fg-1{{end}}{{if .Nowrap}} cv-nowrap{{end}}">{{.Text}}</span>{{else if .Muted}}<span class="text-fg-3">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 
 {{/* field-error: the message under an input, announced when it is the form's first. Takes a formField. */}}
 {{define "field-error"}}{{with .Error}}<span id="{{$.ID}}-error"{{if $.Alert}} role="alert"{{end}} class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}{{end}}

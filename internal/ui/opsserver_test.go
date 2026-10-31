@@ -601,7 +601,7 @@ func TestServerTimeWords(t *testing.T) {
 	if got := shortTime(now, now.Add(-time.Hour)); got != "13:05" {
 		t.Errorf("today's time = %q", got)
 	}
-	if got := shortTime(now, now.Add(-8*24*time.Hour)); got != "22 Oct" {
+	if got := shortTime(now, now.Add(-8*24*time.Hour)); got != "Oct 22" {
 		t.Errorf("an older time = %q", got)
 	}
 	for n, want := range map[int]string{5: "5", 999: "999", 4890: "4,890", 1234567: "1,234,567"} {

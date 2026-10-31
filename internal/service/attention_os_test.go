@@ -127,13 +127,13 @@ func TestOSItemParts(t *testing.T) {
 		} else {
 			want = securitySentence(it.Updates, it.Security)
 		}
-		got := problemParts(it, func(s string) string { return s })
+		got := ProblemParts(it, func(s string) string { return s })
 		if plainText(got) != want {
 			t.Errorf("%s: parts say %q, the sentence is %q", name, plainText(got), want)
 		}
 	}
 	// The kernels and the packages are the mono parts.
-	p := problemParts(AttentionItem{Kind: AttentionOSRebootRequired, InstalledKernel: "6.8.0-149-generic", RunningKernel: "6.8.0-147-generic"}, nil)
+	p := ProblemParts(AttentionItem{Kind: AttentionOSRebootRequired, InstalledKernel: "6.8.0-149-generic", RunningKernel: "6.8.0-147-generic"}, nil)
 	var monos []string
 	for _, x := range p {
 		if x.Mono {
