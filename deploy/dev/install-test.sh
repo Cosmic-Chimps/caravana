@@ -66,6 +66,38 @@ check_monitoring_host() {
   done
 }
 
+# check_updates_host MODE: what feature 027's Updates page needs from the host, through the API: the unit's
+# sandbox (ProtectSystem=strict, ProtectHome, PrivateTmp) lets Caravana read the host's files, so
+# GET /v1/updates says os.readable with Ubuntu, and GET /v1/host has the node's kernel (the sampler's
+# first tick comes within a minute). With MODE "packages" it also asks for the package names, which
+# runs `pro security-status` inside that sandbox: the check is accepted (202) and ends with no error. A
+# VM without a pro command (409) skips that part with a note.
+check_updates_host() {
+  local mode="$1" up host code end
+  up="$(api -fsS "https://$DOMAIN/v1/updates")" || die "GET /v1/updates failed"
+  grep -q '"os":{"readable":true,"distro":{"id":"ubuntu",' <<<"$up" ||
+    die "GET /v1/updates should say os.readable with Ubuntu (does the unit's sandbox stop the reads?):\n$up"
+  end=$((SECONDS + 150))
+  until host="$(api -fsS "https://$DOMAIN/v1/host")" && grep -q '"kernel":"[^"][^"]*"' <<<"$host"; do
+    [ "$SECONDS" -lt "$end" ] || die "GET /v1/host has no node.kernel after 150 s:\n$host"
+    sleep 3
+  done
+  [ "$mode" = packages ] || return 0
+  code="$(api -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/updates/check" -d '{"what":"packages"}')"
+  if [ "$code" = 409 ]; then
+    echo "    (this VM has no pro command: Check package names is skipped)"
+    return 0
+  fi
+  [ "$code" = 202 ] || die "POST /v1/updates/check for the package names answered $code, not 202"
+  end=$((SECONDS + 150))
+  until up="$(api -fsS "https://$DOMAIN/v1/updates")" && grep -q '"packagesCheckedAt":"' <<<"$up"; do
+    [ "$SECONDS" -lt "$end" ] || die "the package check didn't end within 150 s:\n$up"
+    sleep 3
+  done
+  grep -q '"packagesError":""' <<<"$up" ||
+    die "the package check failed inside the unit's sandbox (pro needs HOME, which is the data directory, and may write elsewhere):\n$up"
+}
+
 cleanup() {
   if [ "${KEEP:-0}" = 1 ]; then
     echo "kept the VM: limactl shell $NAME"
@@ -190,6 +222,9 @@ main() {
 
   say "deploy whoami"
   TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"
+
+  say "Updates reads the host's files, and pro runs, inside the unit's sandbox (feature 027)"
+  check_updates_host packages
   api -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/whoami/deployments" -d '{
     "source": {"kind": "image"},
     "services": [{"name": "web", "image": "traefik/whoami:latest",
@@ -213,6 +248,7 @@ main() {
   [ "$fails" = 0 ] || die "whoami failed $fails times during the upgrade"
   vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v2\"" || die "$v2 isn't the one answering"
   api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the API token didn't survive the upgrade"
+  check_updates_host reads
 
   say "a broken $bad is rolled back to $v2"
   set +e
