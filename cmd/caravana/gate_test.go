@@ -69,6 +69,9 @@ type gateTarget struct {
 	// reboot marker; CARAVANA_HOST_ROOT), which the console-ops steps write fixtures into; only the
 	// lab sets it. Empty means Caravana reads the machine it runs on.
 	HostRoot string
+	// Release is the stand-in for the releases API the lab's Caravana asks for new releases
+	// (feature 027 page 3); nil on a real host.
+	Release *labRelease
 }
 
 // publicTarget is what only a real host has.
@@ -149,6 +152,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"domains", false, g.domainsStep},
 		{"logs", false, g.logsStep},
 		{"monitoring", false, g.monitoringStep},
+		{"os-updates", false, g.osUpdatesStep},
 		{"terminal", false, g.terminalStep},
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},

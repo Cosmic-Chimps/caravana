@@ -235,9 +235,19 @@ page 3.
   `cmd/caravana/gate_os_updates_test.go` gate step `os-updates` (`problem.opened` for the reboot reaches a test
   receiver within one sampling period, `problem.resolved` after the file is removed, one `caravana.release`); run both
   and record here.
+  - Written, not yet run. The step is in `cmd/caravana/console_ops_updates_test.go` (own file, as page 2's). The lab
+    gives the in-process Caravana version 0.15.0 (a dev build makes no release request), a stand-in release server
+    (`labRelease`, asked every 30 s, so a check turned off is seen to make no request and Check now is always 429),
+    a recorded `pro` answer (`labPro`) and the host root's Ubuntu files (`hostFixture`: pending kernel 9.9.0-999, 14/9
+    counts, automatic updates off). `problem.opened` for the reboot needs the sampler's tick (10 s) and the notifier's
+    30 s check, so the gate step waits up to 3 minutes.
 - [ ] T031 [US3] [SC-001] `deploy/dev/install-test.sh`: after the install, `GET /v1/updates` answers `os.readable: true`
   with `distro.id: ubuntu` and `GET /v1/host` has `node.kernel`, proving the unit's sandbox allows the reads; shellcheck;
   run it on a throwaway VM if possible and record here (or note it as pending for the maintainer).
+  - Written, not yet run (shellcheck passes; the VM run is the maintainer's). After the whoami deploy it checks
+    `GET /v1/updates` (`os.readable`, Ubuntu), `GET /v1/host` (`node.kernel`) and asks for the package names
+    (`pro security-status` inside the unit's sandbox: 202, then no `packagesError`; a VM without `pro` skips that
+    part with a note); after the upgrade it checks the reads again.
 - [ ] T032 [US3] Page 3 review cycle as T015, against `pg-updates.png`; record "Approved" in
   `contracts/page3-updates.md`.
 

@@ -115,6 +115,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-monitoring", c.consoleMonitoring},
 		{"console-ops-overview", c.consoleOpsOverview},
 		{"console-ops-server", c.consoleOpsServer},
+		{"console-ops-updates", c.consoleOpsUpdates},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {

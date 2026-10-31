@@ -91,6 +91,8 @@ func startLab(t *testing.T) labEnv {
 	// Caravana runs on the Mac here, not on the lab VM: the host's OS files (apt's history, the reboot
 	// marker) come from a folder the console-ops steps write into (feature 027).
 	hostRoot := labHostRoot(t)
+	// The release check asks this stand-in for the releases API (feature 027 page 3), and pro is a recorded answer.
+	release := newLabRelease(t)
 	getenv := func(key string) string {
 		if key == "NOMAD_TOKEN" {
 			return scoped
@@ -142,6 +144,13 @@ func startLab(t *testing.T) labEnv {
 		// short enough for the steps (60 s while nobody looks, 10 s while a page is open).
 		svc.SetEdge(labResolver(), edge.TLSDialer{})
 		svc.SetDomainWatchGaps(60*time.Second, 10*time.Second)
+		// A development build makes no release request: the lab runs a release's number, asks the
+		// stand-in every 30 s and reads package names from a recorded pro answer (feature 027 page 3).
+		svc.SetVersion(labCurrentVersion)
+		svc.SetReleaseURL(release.URL + "/repos/x/releases/latest")
+		svc.SetReleasePinURLs(release.URL+"/download", release.URL+"/raw")
+		svc.SetReleaseCheckGap(labReleaseGap)
+		svc.SetProRunner(labPro{})
 	}
 	t.Cleanup(func() { serviceHook = nil })
 
@@ -204,6 +213,7 @@ func startLab(t *testing.T) labEnv {
 			ServerLog: stderr.String,
 			DataDir:   dataDir,
 			HostRoot:  hostRoot,
+			Release:   release,
 			SetTraefikMetricsURL: func(u string) {
 				currentMu.Lock()
 				defer currentMu.Unlock()
