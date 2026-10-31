@@ -144,7 +144,7 @@ func TestOpsServerPage(t *testing.T) {
 
 	// The three numbers, the room line, and the sections.
 	for _, want := range []string{
-		"CPU", "Memory", "Disk", "of 2.00 vCPU", "reserved", "of 1.9 GB", "of 18.3 GB on /",
+		"CPU", "Memory", "Disk", "of 2 vCPU", "reserved", "of 1.9 GB", "of 18.3 GB on /",
 		"Running here · 4 · 1 failed", "Server", "Recent on this server",
 	} {
 		if !strings.Contains(words, want) {
@@ -442,7 +442,7 @@ func TestServerNumbers(t *testing.T) {
 		t.Fatalf("numbers = %+v", n)
 	}
 	cpu, mem, disk := n.Cells[0], n.Cells[1], n.Cells[2]
-	if cpu.Value != "1.20" || cpu.Unit != "vCPU" || cpu.Sub.String() != "of 2.00 vCPU · 0.80 reserved" || cpu.Warn || cpu.Meters[0].Read != "60%" {
+	if cpu.Value != "1.20" || cpu.Unit != "vCPU" || cpu.Sub.String() != "of 2 vCPU · 0.80 reserved" || cpu.Warn || cpu.Meters[0].Read != "60%" {
 		t.Errorf("cpu = %+v / %s", cpu, cpu.Sub)
 	}
 	if mem.Value != "1.7" || mem.Unit != "GB" || mem.Sub.String() != "of 1.9 GB · 1.2 GB reserved" || !mem.Warn || mem.Meters[0].Read != "87%" || mem.Meters[0].Mark != "warning" {
@@ -758,6 +758,41 @@ func TestOpsServerNeverShowsCommandOutput(t *testing.T) {
 		_, body := e.get(t, path)
 		if strings.Contains(body, opsSentinel) {
 			t.Errorf("%s holds a sentinel", path)
+		}
+	}
+}
+
+// Running here puts problems first, and a crash loop is one even between its restarts (designer's
+// last look): failed, crash signal, starting, stopping, then running.
+func TestRowRank(t *testing.T) {
+	for _, tc := range []struct {
+		phase    string
+		crashing bool
+		want     int
+	}{
+		{service.CopyPhaseFailed, true, 0},
+		{service.CopyPhaseFailed, false, 0},
+		{service.CopyPhaseRunning, true, 1},
+		{service.CopyPhaseStarting, true, 1},
+		{service.CopyPhaseStarting, false, 2},
+		{service.CopyPhaseStopping, false, 3},
+		{service.CopyPhaseRunning, false, 4},
+	} {
+		if got := rowRank(tc.phase, tc.crashing); got != tc.want {
+			t.Errorf("rowRank(%s, crashing %v) = %d, want %d", tc.phase, tc.crashing, got, tc.want)
+		}
+	}
+}
+
+// A capacity is a count when it is whole: "of 2 vCPU", never "of 2.00 vCPU"; measured and reserved
+// values keep vcpuText's two decimals (designer's last look).
+func TestVCPUTotalText(t *testing.T) {
+	for _, tc := range []struct {
+		v    float64
+		want string
+	}{{2, "2"}, {1.999, "2"}, {12, "12"}, {1.5, "1.50"}, {0.5, "0.50"}} {
+		if got := vcpuTotalText(tc.v); got != tc.want {
+			t.Errorf("vcpuTotalText(%v) = %q, want %q", tc.v, got, tc.want)
 		}
 	}
 }

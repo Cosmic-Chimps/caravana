@@ -482,7 +482,11 @@ func cpuCell(h service.HostView, coreMHz float64, asOf monSentence) srvCell {
 		amount, unit = func(mhz float64) string { return vcpuText(mhz / coreMHz) }, "vCPU"
 	}
 	c.Value, c.Unit, c.Warn = amount(used), unit, m.Warn
-	sub := "of " + amount(total) + " " + unit
+	totalText := amount(total)
+	if coreMHz > 0 {
+		totalText = vcpuTotalText(total / coreMHz)
+	}
+	sub := "of " + totalText + " " + unit
 	if r.Reserved != nil {
 		sub += " · " + amount(float64(*r.Reserved)) + " reserved"
 	}
@@ -555,6 +559,7 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 		services[sum.App.ID] = len(sum.App.Services)
 	}
 	out := srvRunning{}
+	var ranks []int
 	for _, c := range copies {
 		if c.Phase == service.CopyPhaseFailed {
 			out.Failed++
@@ -581,8 +586,38 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 		}
 		row.Title = "copy " + c.ID + ", " + c.Service + ", " + row.Role + ", v" + strconv.FormatUint(c.Version, 10)
 		out.Rows = append(out.Rows, row)
+		ranks = append(ranks, rowRank(c.Phase, row.Up.Crash != nil))
 	}
+	// Problems first, and a crash loop is one even between its restarts, so the row never moves with the
+	// cycle: failed, crash signal, starting, stopping, then running. Within a rank the service's order
+	// (by place, app and service) stays.
+	order := make([]int, len(out.Rows))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return ranks[a] - ranks[b] })
+	sorted := make([]srvCopy, len(order))
+	for i, j := range order {
+		sorted[i] = out.Rows[j]
+	}
+	out.Rows = sorted
 	return out
+}
+
+// rowRank is a copy's place in Running here: failed 0, a crash signal 1, starting 2, stopping 3,
+// running 4.
+func rowRank(phase string, crashing bool) int {
+	switch {
+	case phase == service.CopyPhaseFailed:
+		return 0
+	case crashing:
+		return 1
+	case phase == service.CopyPhaseStarting:
+		return 2
+	case phase == service.CopyPhaseStopping:
+		return 3
+	}
+	return 4
 }
 
 // rowMark is the mark of a copy's chip: a failed copy is failed even though Nomad has told it to

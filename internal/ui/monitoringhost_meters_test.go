@@ -20,14 +20,14 @@ func TestHostSplitReadouts(t *testing.T) {
 	if mem.Read != "1.7G used · 1.3G reserved of 1.9G" || !mem.Split {
 		t.Errorf("memory = %q (split %v)", mem.Read, mem.Split)
 	}
-	if cpu.Read != "1.20 used · 0.80 reserved of 2.00 vCPU" || cpu.Title != "1.20 vCPU in use, 0.80 vCPU reserved of 2.00 vCPU" || !cpu.Split {
+	if cpu.Read != "1.20 used · 0.80 reserved of 2 vCPU" || cpu.Title != "1.20 vCPU in use, 0.80 vCPU reserved of 2 vCPU" || !cpu.Split {
 		t.Errorf("cpu = %q, title %q", cpu.Read, cpu.Title)
 	}
 	h.Memory.Reserved, h.CPU.Reserved = nil, nil
 	if got := memoryMeter(h).Read; got != "1.7G used of 1.9G" {
 		t.Errorf("memory without a reservation = %q", got)
 	}
-	if got := cpuMeter(h).Read; got != "1.20 used of 2.00 vCPU" {
+	if got := cpuMeter(h).Read; got != "1.20 used of 2 vCPU" {
 		t.Errorf("cpu without a reservation = %q", got)
 	}
 	for in, want := range map[float64]string{0.04: "0.04", 0.1: "0.10", 0.96: "0.96", 1.2: "1.20", 1: "1.00", 9.96: "9.96", 12: "12.00", 0: "0.00", 0.004: "<0.01", 0.0099: "<0.01", 0.01: "0.01", 0.31: "0.31"} {
@@ -82,7 +82,7 @@ func TestHostReservedIsAboveTheFill(t *testing.T) {
 		}
 	}
 	words := text(body)
-	for _, want := range []string{"1.7G used · 1.3G reserved of 1.9G", "1.20 used · 1.00 reserved of 4.00 vCPU", "vCPU each)"} {
+	for _, want := range []string{"1.7G used · 1.3G reserved of 1.9G", "1.20 used · 1.00 reserved of 4 vCPU", "vCPU each)"} {
 		if !strings.Contains(words, want) {
 			t.Errorf("the host lacks %q:\n%s", want, words)
 		}

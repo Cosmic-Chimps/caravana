@@ -420,7 +420,7 @@ func (c *console) consoleMonitoring(t *testing.T) {
 	if !regexp.MustCompile(`^[\d.]+ used(?: · [\d.]+ reserved)? of [\d.]+ vCPU$`).MatchString(meters["cpu"]) ||
 		!regexp.MustCompile(`^[\d.]+G used(?: · [\d.]+G reserved)? of [\d.]+G$`).MatchString(meters["mem"]) ||
 		!regexp.MustCompile(`^[\d.]+/[\d.]+G$`).MatchString(meters["disk"]) {
-		t.Errorf("the host's meters read %v, want cpu \"1.20 used · 0.80 reserved of 2.00 vCPU\", mem \"1.7G used · 1.3G reserved of 1.9G\" and disk \"x/yG\"", meters)
+		t.Errorf("the host's meters read %v, want cpu \"1.20 used · 0.80 reserved of 2 vCPU\", mem \"1.7G used · 1.3G reserved of 1.9G\" and disk \"x/yG\"", meters)
 	}
 	if room := cmRoomRe.FindStringSubmatch(hostPart); room == nil {
 		t.Errorf("the host section has no room sentence")

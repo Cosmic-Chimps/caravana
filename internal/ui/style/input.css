@@ -1981,9 +1981,10 @@
   .cv-srvnum + .cv-srvnum { border-left: 0; border-top: 1px solid var(--color-line-1); }
 }
 
-/* Running here folds when the panel has under 600px of its own: the chip on its own line, then CPU and
+/* Running here folds when the panel has under 720px of its own (designer's last look: under it a long
+   Up cell squeezed CPU and Memory to four lines): the chip on its own line, then CPU and
    Memory side by side, Up after (the labels come from data-label). */
-@container cvsrvrows (max-width: 599.98px) {
+@container cvsrvrows (max-width: 719.98px) {
   .cv-srvtable { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; }
   .cv-srvrow { row-gap: 10px; }
   .cv-srvwho { grid-column: 1 / -1; }

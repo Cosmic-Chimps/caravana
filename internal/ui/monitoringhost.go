@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -148,6 +149,15 @@ func vcpuText(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
+// vcpuTotalText writes a capacity: a whole number of cores is a count ("2"), and anything else
+// is vcpuText's two decimals ("1.50"). Measured and reserved values always use vcpuText.
+func vcpuTotalText(v float64) string {
+	if w := math.Round(v); math.Abs(v-w) < 0.005 {
+		return strconv.Itoa(int(w))
+	}
+	return vcpuText(v)
+}
+
 // amountText is a number as the page writes an amount: whole from 10, one decimal from 1, up to
 // two under 1 (a small app's 0.04 is not "0"): "12", "1.2", "0.1", "0.04".
 func amountText(v float64) string {
@@ -226,8 +236,12 @@ func cpuMeter(h service.HostView) *monMeter {
 		m.Read += " · " + amount(float64(*r.Reserved)) + " reserved"
 		m.Title += ", " + amount(float64(*r.Reserved)) + unit + " reserved"
 	}
-	m.Read += " of " + amount(total) + unit
-	m.Title += " of " + amount(total) + unit
+	totalText := amount(total)
+	if perCore > 0 {
+		totalText = vcpuTotalText(total / perCore)
+	}
+	m.Read += " of " + totalText + unit
+	m.Title += " of " + totalText + unit
 	return m
 }
 

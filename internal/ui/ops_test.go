@@ -515,7 +515,7 @@ func TestOpsNodePanel(t *testing.T) {
 		reads = append(reads, m.Label+" "+m.Read)
 	}
 	// The split readouts of Monitoring's host meters: what is used, what Nomad reserved, of the total.
-	if got, want := strings.Join(reads, "; "), "mem 1.7G used · 1.3G reserved of 1.9G; cpu 0.60 used · 0.89 reserved of 2.00 vCPU; disk 5.8G used of 18.3G · /"; got != want {
+	if got, want := strings.Join(reads, "; "), "mem 1.7G used · 1.3G reserved of 1.9G; cpu 0.60 used · 0.89 reserved of 2 vCPU; disk 5.8G used of 18.3G · /"; got != want {
 		t.Errorf("meters = %s, want %s", got, want)
 	}
 	for _, m := range n.Meters {

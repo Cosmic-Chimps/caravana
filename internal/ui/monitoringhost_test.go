@@ -42,7 +42,7 @@ func TestHostMeters(t *testing.T) {
 	if mem.Title != "1.9 GB in use, 1 GB reserved of 3.8 GB" {
 		t.Errorf("memory title = %q", mem.Title)
 	}
-	if cpu.Label != "cpu" || cpu.Read != "1.20 used · 0.50 reserved of 4.00 vCPU" || !cpu.HasReserved || cpu.ResW != "12.5" || cpu.Fill != "30" {
+	if cpu.Label != "cpu" || cpu.Read != "1.20 used · 0.50 reserved of 4 vCPU" || !cpu.HasReserved || cpu.ResW != "12.5" || cpu.Fill != "30" {
 		t.Errorf("cpu = %+v", cpu)
 	}
 	if disk.Label != "disk" || disk.Read != "18/40G" || disk.Warn || disk.Mark != "" || disk.Fill != "45" {
@@ -233,7 +233,7 @@ func TestMonitoringHostSection(t *testing.T) {
 		t.Fatalf("GET /monitoring = %d", resp.StatusCode)
 	}
 	words := text(body)
-	for _, want := range []string{"This host 1 server", "mem", "1.9G used · 0.2G reserved of 3.8G", "cpu", "1.20 used · 1.00 reserved of 4.00 vCPU", "disk", "18/40G",
+	for _, want := range []string{"This host 1 server", "mem", "1.9G used · 0.2G reserved of 3.8G", "cpu", "1.20 used · 1.00 reserved of 4 vCPU", "disk", "18/40G",
 		"Room for about 14 more apps like whoami (256 MB, 0.04 vCPU each).", "Memory, last 7 days"} {
 		if !strings.Contains(words, want) {
 			t.Errorf("the host section lacks %q:\n%s", want, words)
