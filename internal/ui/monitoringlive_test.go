@@ -109,10 +109,10 @@ func TestMonCPUFigure(t *testing.T) {
 		reserved *int64
 		want     string
 	}{
-		{400, i64(500), "0.4/0.5 vCPU"},
-		{40, i64(100), "0.04/0.1 vCPU"},
-		{1200, i64(2000), "1.2/2 vCPU"},
-		{400, nil, "0.4 vCPU"},
+		{400, i64(500), "0.40/0.50 vCPU"},
+		{40, i64(100), "0.04/0.10 vCPU"},
+		{1200, i64(2000), "1.20/2.00 vCPU"},
+		{400, nil, "0.40 vCPU"},
 	} {
 		if got := b.cpuRead(tc.now, tc.reserved); got != tc.want {
 			t.Errorf("cpuRead(%v, %v) = %q, want %q", tc.now, tc.reserved, got, tc.want)

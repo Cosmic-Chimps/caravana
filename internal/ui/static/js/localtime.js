@@ -12,8 +12,10 @@
 //   time.cv-clock          adds " · 16:15 local" after the element, in the
 //                          shape its data-local names: time (16:15), time-s
 //                          (16:15:02), weekday (Sun 16:15) or date
-//                          (2026-10-23 16:15). A "time" whose local day isn't
-//                          its UTC day gets the weekday, so it can't mislead.
+//                          (2026-10-23 16:15, and just 16:15 when the local
+//                          date is the UTC date, which the text already
+//                          says). A "time" whose local day isn't its UTC day
+//                          gets the weekday, so it can't mislead.
 //                          data-local="none" gets nothing (a page's title).
 //   [data-local-line]      a table cell whose times take the local time on a
 //                          line of its own, "Mon 03:00 local" under
@@ -72,7 +74,8 @@
     }
     const day = p.year + "-" + p.month + "-" + p.day;
     if (shape === "date") {
-      return day + " " + text;
+      // The date is left out when it is the UTC one: "2026-10-30 14:48 UTC · 08:48 local".
+      return day === utcDay(date) ? text : day + " " + text;
     }
     if (shape === "weekday" || day !== utcDay(date)) {
       return p.weekday + " " + text;

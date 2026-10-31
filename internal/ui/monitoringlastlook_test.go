@@ -72,13 +72,13 @@ func TestMonStoppedRowHasNoNow(t *testing.T) {
 	}
 }
 
-// A running app that uses a little CPU never reads as idle: under 0.01 vCPU is "<0.01", exactly 0 is "0".
+// A running app that uses a little CPU never reads as idle: under 0.01 vCPU is "<0.01", exactly 0 is "0.00".
 func TestMonCPUUnderAHundredth(t *testing.T) {
 	b := &monBuilder{coreMHz: 1000}
 	if got := b.cpuRead(5, i64(50)); got != "<0.01/0.05 vCPU" {
 		t.Errorf("read = %q", got)
 	}
-	if got := b.cpuRead(0, i64(50)); got != "0/0.05 vCPU" {
+	if got := b.cpuRead(0, i64(50)); got != "0.00/0.05 vCPU" {
 		t.Errorf("read at exactly 0 = %q", got)
 	}
 	if got := b.cpuTitle(5, i64(50)); got != "<0.01 of 0.05 vCPU reserved, now" {

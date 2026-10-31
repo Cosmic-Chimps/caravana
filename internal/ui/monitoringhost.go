@@ -138,13 +138,14 @@ func meterFill(used, total float64) float64 {
 	return max(0, min(100, used/total*100))
 }
 
-// vcpuText is an amount of CPU in vCPU, written as amountText does, except that a little use is
-// "<0.01" (a running app never reads as idle); exactly 0 stays "0".
+// vcpuText is the one way an amount of CPU is written in vCPU, on the server page, the Overview's
+// readouts and Monitoring: always two decimals ("1.00", "0.31", "12.00"), except that a little use is
+// "<0.01" (a running app never reads as idle).
 func vcpuText(v float64) string {
 	if v > 0 && v < 0.01 {
 		return "<0.01"
 	}
-	return amountText(v)
+	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
 // amountText is a number as the page writes an amount: whole from 10, one decimal from 1, up to
