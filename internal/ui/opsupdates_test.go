@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -982,10 +983,10 @@ func TestUpPastOf(t *testing.T) {
 	if len(got) != 10 {
 		t.Fatalf("%d rows, want the last 10", len(got))
 	}
-	if got[0].Date.Text != "Nov 2" || got[0].Date.Exact != "2026-11-02 12:00:00 UTC" || got[0].Mark != "healthy" || got[0].Text != "caravana 0.0.0 → 0.1.0" {
+	if got[0].Date.Text != "Nov 2" || got[0].Date.Exact != "2026-11-02 12:00:00 UTC" || got[0].Mark != "healthy" || got[0].Text.String() != "caravana 0.0.0 → 0.1.0" {
 		t.Errorf("first row = %+v", got[0])
 	}
-	if got[1].Mark != "idle" || got[1].Detail != "kernel 6.8.0-149 since then" {
+	if got[1].Mark != "idle" || got[1].Detail.String() != "kernel 6.8.0-149 since then" {
 		t.Errorf("a boot's row = %+v", got[1])
 	}
 	one := upPastOf(now, history[12:])
@@ -1051,6 +1052,37 @@ func TestNoteCodeKeepsShortSpansWhole(t *testing.T) {
 	for _, p := range got {
 		if !p.Mono && p.Nowrap {
 			t.Errorf("plain text %q is nowrap", p.Text)
+		}
+	}
+}
+
+// Past updates draws each version, or version pair, as one mono token that never breaks at its hyphen;
+// a count stays plain (designer's approval of page 3).
+func TestVersionTokens(t *testing.T) {
+	for _, tc := range []struct {
+		text  string
+		mono  []string
+		plain string // the whole line, as text
+	}{
+		{"caravana 0.12.0-dev.023 → 0.14.0", []string{"0.12.0-dev.023 → 0.14.0"}, "caravana 0.12.0-dev.023 → 0.14.0"},
+		{"kernel 6.8.0-149 since then", []string{"6.8.0-149"}, "kernel 6.8.0-149 since then"},
+		{"Ubuntu updates · 14 packages", nil, "Ubuntu updates · 14 packages"},
+		{"The server restarted", nil, "The server restarted"},
+		{"caravana 0.15.0.", []string{"0.15.0"}, "caravana 0.15.0."},
+		{"", nil, ""},
+	} {
+		got := versionTokens(tc.text)
+		var mono []string
+		for _, p := range got {
+			if p.Mono {
+				if !p.Nowrap {
+					t.Errorf("%q: the token %q can break", tc.text, p.Text)
+				}
+				mono = append(mono, p.Text)
+			}
+		}
+		if !slices.Equal(mono, tc.mono) || got.String() != tc.plain {
+			t.Errorf("versionTokens(%q) = mono %q, text %q; want %q, %q", tc.text, mono, got.String(), tc.mono, tc.plain)
 		}
 	}
 }

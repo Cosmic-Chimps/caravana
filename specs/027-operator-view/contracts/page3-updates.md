@@ -392,3 +392,10 @@ Verified:
   24 characters is nowrap. A longer one (`Frunchy__Auth__Providers__Umbral__ClientSecret`) keeps
   normal breaking, so it can't overflow the column. Apply it to every place that draws the notes'
   parts.
+
+**Approved 2026-10-31 at 624489a** (designer). Measured at 1440, 640 and 390, with and without
+script: "--domain" stays whole, no page scrolls sideways, and the nav ■ is in the failed hue. One
+condition, verified by a test and not by another look: Past updates' sentence ("caravana
+0.12.0-dev.023 → 0.14.0", `cv-uppasttext`) is plain text, so a version there can break at its
+hyphen at some widths. Draw its versions and package names through the same nowrap token parts as
+fix 2.

@@ -251,8 +251,12 @@ page 3.
     `GET /v1/updates` (`os.readable`, Ubuntu), `GET /v1/host` (`node.kernel`) and asks for the package names
     (`pro security-status` inside the unit's sandbox: 202, then no `packagesError`; a VM without `pro` skips that
     part with a note); after the upgrade it checks the reads again.
-- [ ] T032 [US3] Page 3 review cycle as T015, against `pg-updates.png`; record "Approved" in
+- [X] T032 [US3] Page 3 review cycle as T015, against `pg-updates.png`; record "Approved" in
   `contracts/page3-updates.md`.
+  - 2026-10-31: review of e7e8988 (1c1845a), fix pass with T034a (184c0c4, d155ebb, 6150c9d), recheck with every
+    state live (3da5182), critique 31/40 (3505c8a), fix pass (d0d095c), last look (e41d97a), last fix (624489a):
+    Approved; its one condition (Past updates' versions as nowrap tokens) in the commit after it.
+    Lab at d0d095c: console-ops-overview, -server, -updates (120 s) and os-updates (177 s) in one run.
 
 **Checkpoint**: all three pages work and are approved.
 

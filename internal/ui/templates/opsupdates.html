@@ -119,8 +119,8 @@
 <div class="cv-uppastrow">
   <span class="cv-uppastmark"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
   <span class="cv-uppastdate">{{template "up-time" .Date}}</span>
-  <span class="cv-uppasttext">{{.Text}}</span>
-  <span class="cv-uppastdetail">{{.Detail}}</span>
+  <span class="cv-uppasttext">{{template "sentence" .Text}}</span>
+  <span class="cv-uppastdetail">{{template "sentence" .Detail}}</span>
 </div>
 {{else}}
 <p class="cv-upnone">Nothing yet.</p>

@@ -132,7 +132,7 @@ func TestOpsUpdatesPastIsPastTense(t *testing.T) {
 		{At: now.Add(-3 * 24 * time.Hour), Kind: "os_packages", Text: "Ubuntu updates · 14 packages", Detail: "by Ubuntu's automatic updates · needed a reboot"},
 		{At: now.Add(-9 * 24 * time.Hour), Kind: "os_packages", Text: "Ubuntu updates · 1 package", Detail: "by hand · no reboot needed"},
 	})
-	if len(got) != 2 || got[0].Date.Text != "Oct 28" || got[1].Date.Text != "Oct 22" || got[0].Detail != "by Ubuntu's automatic updates · needed a reboot" {
+	if len(got) != 2 || got[0].Date.Text != "Oct 28" || got[1].Date.Text != "Oct 22" || got[0].Detail.String() != "by Ubuntu's automatic updates · needed a reboot" {
 		t.Errorf("rows = %+v", got)
 	}
 	// One format console-wide: Recent on the Server page writes the same.

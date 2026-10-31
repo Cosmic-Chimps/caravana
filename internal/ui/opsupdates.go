@@ -215,8 +215,8 @@ type upChecked struct {
 type upPast struct {
 	Mark   string
 	Date   when
-	Text   string
-	Detail string
+	Text   sentence
+	Detail sentence
 }
 
 // ---- handlers ---------------------------------------------------------------------------------
@@ -782,6 +782,29 @@ func upCheckedOf(now time.Time, v service.UpdatesView) upChecked {
 // ---- Past updates -----------------------------------------------------------------------------
 
 // upPastOf are the rows of Past updates, newest first as the service gives them.
+// versionToken is a version in Past updates' words, or a pair of them: a number with a dot, then
+// anything a version holds ("0.12.0-dev.023", "6.8.0-149", "2:1.2.3~ubuntu1"), optionally " → " and another.
+// A count ("14 packages") has no dot and stays plain.
+var versionToken = regexp.MustCompile(`\d+\.[0-9A-Za-z.~+:-]*[0-9A-Za-z~+]( → \d+\.[0-9A-Za-z.~+:-]*[0-9A-Za-z~+])?`)
+
+// versionTokens draws a Past updates line with each version, or version pair, as one mono token that never
+// breaks at its hyphen (designer's approval of page 3: the same class as review fix 2).
+func versionTokens(text string) sentence {
+	var out sentence
+	last := 0
+	for _, m := range versionToken.FindAllStringIndex(text, -1) {
+		if m[0] > last {
+			out = append(out, plain(text[last:m[0]]))
+		}
+		out = append(out, part{Text: text[m[0]:m[1]], Mono: true, Nowrap: true})
+		last = m[1]
+	}
+	if last < len(text) {
+		out = append(out, plain(text[last:]))
+	}
+	return out
+}
+
 func upPastOf(now time.Time, history []service.UpdateEvent) []upPast {
 	var out []upPast
 	for _, e := range history {
@@ -794,7 +817,7 @@ func upPastOf(now time.Time, history []service.UpdateEvent) []upPast {
 		if e.Kind == "boot" {
 			mark = "idle"
 		}
-		out = append(out, upPast{Mark: mark, Text: e.Text, Detail: e.Detail,
+		out = append(out, upPast{Mark: mark, Text: versionTokens(e.Text), Detail: versionTokens(e.Detail),
 			Date: when{Text: date, Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}})
 	}
 	return out
