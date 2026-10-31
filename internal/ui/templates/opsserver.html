@@ -14,9 +14,17 @@
   <h1 class="cv-srvname">{{if .Name}}{{.Name}}{{else}}Server{{end}}</h1>
   {{with .State}}{{template "status-pill" .}}{{end}}
   {{if .Reboot}}<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>reboot needed</a>{{end}}
-  {{with .Spec}}<span class="cv-srvspec">{{.}}</span>{{end}}
+  {{with .Spec}}<span class="cv-srvspec">{{template "srv-items" .}}</span>{{end}}
 </div>
 {{end}}
+
+{{/* srv-items: a " · " list whose items each stay whole when the line wraps (a nowrap span per item, as
+     page 1's stats line does); the separator goes with the item before it. Takes a []srvItem. */}}
+{{define "srv-items"}}{{range $i, $it := .}}{{if $i}} {{end}}<span class="cv-srvitem">{{$it.Text}}{{if $it.More}} ·{{end}}</span>{{end}}{{end}}
+
+{{/* srv-up: the Up cell: the phase's words and the needs-you item's crash signal beside them. The word
+     before the text is for the wide row; the fold's label already says it. Takes a srvUp. */}}
+{{define "srv-up"}}{{with .Word}}<span class="cv-srvupword">{{.}} </span>{{end}}{{.Text}}{{with .Crash}}<span class="cv-srvcrash"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span>{{.Text}}</span>{{end}}{{end}}
 
 {{/* srv-meter: the Meter without its label: used solid, reserved hatched above it, and a readout at the
      right (a percentage, or the mount of a second disk). Takes a monMeter. */}}
@@ -85,15 +93,23 @@
     {{if .Message}}
     <div class="cv-panel"><p class="cv-mnhostline cv-srvnote"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.Message}}</span></p></div>
     {{else if .Rows}}
-    <div class="cv-panel cv-srvrows" role="table" aria-label="Copies running here">
+    <div class="cv-panel cv-srvrows">
+     <div class="cv-srvtable" role="table" aria-label="Copies running here">
+      <div class="sr-only" role="row">
+        <span role="columnheader">Copy</span>
+        <span role="columnheader">CPU</span>
+        <span role="columnheader">Memory</span>
+        <span role="columnheader">Up</span>
+      </div>
       {{range .Rows}}
       <div class="cv-srvrow" role="row">
         <div role="cell" class="cv-srvwho"><span class="cv-copychip cv-srvchip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><a href="{{.Href}}" id="{{.ID}}" class="cv-srvlink cv-copychip-name">{{template "sentence" .Label}}</a> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></span></div>
         <div role="cell" class="cv-srvcell" data-label="CPU">{{template "srv-metric" .CPU}}</div>
         <div role="cell" class="cv-srvcell" data-label="Memory">{{template "srv-metric" .Mem}}</div>
-        <div role="cell" class="cv-srvcell cv-srvup" data-label="Up">{{.Up}}</div>
+        <div role="cell" class="cv-srvcell cv-srvup" data-label="{{.Up.Label}}">{{template "srv-up" .Up}}</div>
       </div>
       {{end}}
+     </div>
     </div>
     {{else}}
     <div class="cv-panel">
@@ -113,13 +129,16 @@
         <dl class="cv-srvdl">
           {{range .Facts}}
           <dt>{{.Key}}</dt>
-          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}} <span class="cv-srvafter">({{.}})</span>{{end}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
           {{end}}
         </dl>
       </div>
     </section>
     <section aria-labelledby="srv-recent-title">
-      <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>
+      <div class="cv-mnsec">
+        <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>
+        <span class="cv-mnsec-link">times in UTC</span>
+      </div>
       <div class="cv-panel cv-srvrecent">
         {{range .Recent}}
         <div class="cv-srvev" data-ev="{{.ID}}">

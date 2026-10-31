@@ -46,6 +46,10 @@ type NodeFacts struct {
 	// LastHeartbeat is the last time Caravana heard from the node: the moment
 	// its stats were read or, when they weren't, when its status last changed.
 	LastHeartbeat time.Time
+	// StatusAt is when Nomad last changed the node's status (the moment it
+	// marked it down, for a node that is down); zero when Nomad gives none.
+	// It is Nomad's own time, not Caravana's reading.
+	StatusAt time.Time
 	// Events are the node's own events (registered, heartbeat missed, back), in
 	// the order Nomad keeps them: oldest first.
 	Events []NodeEvent
@@ -82,6 +86,9 @@ func nodeFacts(n *api.Node, seen time.Time) NodeFacts {
 			f.TotalMHz = int(r.Cpu.CpuShares)
 		}
 		f.MemoryMB = int(r.Memory.MemoryMB)
+	}
+	if n.StatusUpdatedAt > 0 {
+		f.StatusAt = time.Unix(n.StatusUpdatedAt, 0).UTC()
 	}
 	switch {
 	case !seen.IsZero():
@@ -169,6 +176,14 @@ func (d *Deployer) NodeFacts(ctx context.Context) (NodeFacts, error) {
 	info, err := d.nodeInfo(ctx, stub.ID)
 	if err != nil {
 		return NodeFacts{}, err
+	}
+	// A node that went down since the record was cached has the record of a node that was up: its status
+	// time is when it was registered or last changed, not when Nomad lost it. Read it again once.
+	if stub.Status == "down" && info.Status != "down" {
+		d.forgetNodeInfo(stub.ID)
+		if info, err = d.nodeInfo(ctx, stub.ID); err != nil {
+			return NodeFacts{}, err
+		}
 	}
 	// The list's status is current; the cached record may be 10 minutes old.
 	f := nodeFacts(info, time.Time{})

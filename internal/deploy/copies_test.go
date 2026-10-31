@@ -474,3 +474,38 @@ func distinct(s []string) map[string]bool {
 
 // plainCopyOf is copyOf with no rollout known: what the status rules say from the stub alone.
 func plainCopyOf(a *api.AllocationListStub) Copy { return copyOf(a, nil) }
+
+// A copy says how its service's task last ended (feature 027's server page): the exit status of the
+// newest Terminated event, or that a start failure came after it. Never Nomad's text.
+func TestCopyLastEnd(t *testing.T) {
+	terminated := func(code string) *api.TaskEvent {
+		return &api.TaskEvent{Type: api.TaskTerminated, Details: map[string]string{"exit_code": code}}
+	}
+	started := &api.TaskEvent{Type: api.TaskStarted}
+	driver := &api.TaskEvent{Type: api.TaskDriverFailure, DisplayMessage: "Failed to pull `secret/image`"}
+	setup := &api.TaskEvent{Type: api.TaskSetupFailure}
+	tests := []struct {
+		name     string
+		states   map[string]*api.TaskState
+		wantExit *int
+		wantFail bool
+	}{
+		{"the newest exit", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{terminated("0"), started, terminated("3")}}}, new(3), false},
+		{"exit 0 is an exit", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{started, terminated("0")}}}, new(0), false},
+		{"a driver failure after the exit", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{terminated("1"), driver}}}, nil, true},
+		{"a setup failure and nothing else", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{setup}}}, nil, true},
+		{"an exit after an old start failure", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{driver, started, terminated("2")}}}, new(2), false},
+		{"an exit without a readable code", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{terminated("")}}}, nil, false},
+		{"no events", map[string]*api.TaskState{"web": {}}, nil, false},
+		{"only the sidecar ended", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{started}}, "names": {Events: []*api.TaskEvent{terminated("9")}}}, nil, false},
+		{"a nil event", map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{nil, terminated("4")}}}, new(4), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := plainCopyOf(&api.AllocationListStub{ClientStatus: "failed", TaskGroup: "web", TaskStates: tc.states})
+			if (got.ExitCode == nil) != (tc.wantExit == nil) || (got.ExitCode != nil && *got.ExitCode != *tc.wantExit) || got.StartFailed != tc.wantFail {
+				t.Errorf("ExitCode = %v, StartFailed = %v; want %v, %v", got.ExitCode, got.StartFailed, tc.wantExit, tc.wantFail)
+			}
+		})
+	}
+}

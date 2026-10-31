@@ -9,6 +9,8 @@ import (
 
 	"github.com/hashicorp/nomad/api"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
@@ -124,5 +126,177 @@ func TestOpsServerRecentHistory(t *testing.T) {
 	}
 	if version {
 		t.Errorf("a first start's version is in the feed:\n%+v", got)
+	}
+}
+
+// "last seen" is a row only when it has something to say: a node Nomad lost ("lost 3 minutes ago", at
+// the time Nomad marked it down), or a reading more than two sampler ticks old ("last reading 5 minutes
+// ago"). A ready node read lately has none.
+func TestLastSeenFact(t *testing.T) {
+	now := time.Date(2026, 10, 30, 14, 5, 0, 0, time.UTC)
+	const gap = time.Minute
+	ready := &service.HostNode{NodeFacts: deploy.NodeFacts{State: "ready"}}
+	down := &service.HostNode{NodeFacts: deploy.NodeFacts{State: "down", StatusAt: now.Add(-3 * time.Minute), LastHeartbeat: now.Add(-40 * time.Second)}}
+	for _, tc := range []struct {
+		name      string
+		node      *service.HostNode
+		read      time.Time
+		key, want string // key "" for no row
+		strong    bool
+	}{
+		{"read this tick", ready, now.Add(-10 * time.Second), "", "", false},
+		{"read two ticks ago exactly", ready, now.Add(-2 * gap), "", "", false},
+		{"read just over two ticks ago", ready, now.Add(-2*gap - time.Second), "last reading", "2 minutes ago", false},
+		{"read five minutes ago", ready, now.Add(-5 * time.Minute), "last reading", "5 minutes ago", false},
+		{"never read", ready, time.Time{}, "", "", false},
+		{"a lost node says when Nomad marked it down, not when it was read", down, now.Add(-5 * time.Second), "last seen", "lost 3 minutes ago", true},
+		{"a lost node with no status time has no row", &service.HostNode{NodeFacts: deploy.NodeFacts{State: "down"}}, now, "", "", false},
+	} {
+		f, ok := lastSeenFact(now, tc.node, tc.read, gap)
+		if !ok {
+			if tc.key != "" {
+				t.Errorf("%s: no row, want %s %q", tc.name, tc.key, tc.want)
+			}
+			continue
+		}
+		if tc.key == "" || f.Key != tc.key || f.Value != tc.want || f.Strong != tc.strong || (f.Mark == "failed") != tc.strong {
+			t.Errorf("%s: row = %+v, want %s %q", tc.name, f, tc.key, tc.want)
+		}
+	}
+	// A sample's time is the start of its window: the reading is taken at its end.
+	at := now.Add(-90 * time.Second)
+	if got := readAt(service.HostView{SampledAt: &at}, gap); !got.Equal(now.Add(-30 * time.Second)) {
+		t.Errorf("readAt = %v", got)
+	}
+	if got := readAt(service.HostView{}, gap); !got.IsZero() {
+		t.Errorf("readAt of a host never read = %v", got)
+	}
+}
+
+// The Up cell follows the phase: "Up" with a time, "Starting" with "for 40 s", "Stopping", and "Failed" with
+// when and why, in the words the schedules' runs use. A failed copy never reads "Up: failed".
+func TestCopyUpPhases(t *testing.T) {
+	now := time.Date(2026, 10, 30, 14, 5, 0, 0, time.UTC)
+	ago := func(d time.Duration) *time.Time { t := now.Add(-d); return &t }
+	exit := func(n int) *int { return &n }
+	cp := func(phase string, c deploy.Copy) service.HostCopy { return service.HostCopy{Copy: c, Phase: phase} }
+	for _, tc := range []struct {
+		name string
+		c    service.HostCopy
+		want srvUp
+	}{
+		{"running", cp(service.CopyPhaseRunning, deploy.Copy{StartedAt: ago(76*time.Hour + 30*time.Minute)}), srvUp{Label: "Up", Text: "3 d 4 h"}},
+		{"running, never started", cp(service.CopyPhaseRunning, deploy.Copy{}), srvUp{Label: "Up", Text: "—"}},
+		{"starting", cp(service.CopyPhaseStarting, deploy.Copy{StartedAt: ago(40 * time.Second)}), srvUp{Label: "Starting", Text: "for 40 s"}},
+		{"starting, minutes", cp(service.CopyPhaseStarting, deploy.Copy{StartedAt: ago(3 * time.Minute)}), srvUp{Label: "Starting", Text: "for 3 min"}},
+		{"starting, not placed", cp(service.CopyPhaseStarting, deploy.Copy{}), srvUp{Label: "Starting", Text: "—"}},
+		{"stopping", cp(service.CopyPhaseStopping, deploy.Copy{StartedAt: ago(5 * time.Hour)}), srvUp{Label: "Stopping", Text: "up 5 h"}},
+		{"failed with an exit code", cp(service.CopyPhaseFailed, deploy.Copy{FinishedAt: ago(26 * time.Second), ExitCode: exit(1)}), srvUp{Label: "Failed", Word: "failed", Text: "26 s ago · exit 1"}},
+		{"failed out of memory", cp(service.CopyPhaseFailed, deploy.Copy{FinishedAt: ago(3 * time.Minute), OutOfMemory: true, ExitCode: exit(137)}), srvUp{Label: "Failed", Word: "failed", Text: "3 min ago · out of memory"}},
+		{"failed, couldn't start", cp(service.CopyPhaseFailed, deploy.Copy{FinishedAt: ago(3 * time.Minute), StartFailed: true}), srvUp{Label: "Failed", Word: "failed", Text: "3 min ago · couldn't start"}},
+		{"failed, never started", cp(service.CopyPhaseFailed, deploy.Copy{StartFailed: true}), srvUp{Label: "Failed", Word: "failed", Text: "couldn't start"}},
+		{"failed, nothing said", cp(service.CopyPhaseFailed, deploy.Copy{FinishedAt: ago(2 * time.Hour)}), srvUp{Label: "Failed", Word: "failed", Text: "2 h ago"}},
+	} {
+		if got := copyUp(now, tc.c); got != tc.want {
+			t.Errorf("%s: Up = %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A copy whose service has an open restarting or out-of-memory item shows it beside its phase, from the
+// item: its count (the item's Crashes, crashesInHour) and its level (the list's mark). A copy of another
+// service shows none.
+func TestCrashSignal(t *testing.T) {
+	e := opsEnv(t)
+	now := e.Server.now()
+	att := service.Attention{Items: []service.AttentionItem{
+		{Kind: service.AttentionRestarting, AppID: "blog", Service: "worker", Crashes: 4, Copies: []string{"c1"}},
+		{Kind: service.AttentionOutOfMemory, AppID: "blog", Service: "web", Crashes: 2, Copies: []string{"c2"}},
+		{Kind: service.AttentionOutOfMemory, AppID: "blog", Service: "worker", Crashes: 1, Copies: []string{"c3"}},
+		{Kind: service.AttentionUnhealthy, AppID: "blog", Service: "api", Copies: []string{"c4"}},
+		{Kind: service.AttentionBackupFailed, AppID: "blog", Service: "db"},
+	}}
+	got := e.Server.crashesOf(now, att)
+	if len(got) != 2 {
+		t.Fatalf("crash pairs = %+v, want blog/worker and blog/web", got)
+	}
+	worker, web := got["blog/worker"], got["blog/web"]
+	if worker.Restarting == nil || *worker.Restarting != (srvCrash{Mark: "warning", Text: "restarted 4 times in 1 h"}) {
+		t.Errorf("restarting = %+v, want warning \"restarted 4 times in 1 h\"", worker.Restarting)
+	}
+	if worker.OOM == nil || *worker.OOM != (srvCrash{Mark: "failed", Text: "out of memory 1 time in 1 h"}) {
+		t.Errorf("worker's oom = %+v", worker.OOM)
+	}
+	if web.OOM == nil || *web.OOM != (srvCrash{Mark: "failed", Text: "out of memory 2 times in 1 h"}) || web.Restarting != nil {
+		t.Errorf("out of memory = %+v, want failed \"out of memory 2 times in 1 h\"", web)
+	}
+	// A copy killed for memory shows the memory item, any other the restarting one.
+	if c := worker.of(service.HostCopy{Copy: deploy.Copy{OutOfMemory: true}}); c != worker.OOM {
+		t.Errorf("an out-of-memory copy's signal = %+v", c)
+	}
+	if c := worker.of(service.HostCopy{}); c != worker.Restarting {
+		t.Errorf("another copy's signal = %+v", c)
+	}
+	if c := web.of(service.HostCopy{}); c != web.OOM {
+		t.Errorf("a copy of a service with only an out-of-memory item = %+v", c)
+	}
+	if c := (srvCrashPair{}).of(service.HostCopy{}); c != nil {
+		t.Errorf("no item, signal %+v", c)
+	}
+
+	// On the page: the signal is in the Up cell of every copy of that service, beside the phase.
+	ctx := context.Background()
+	sums, err := e.Svc.ListApps(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pl, err := e.Server.loadPlaces(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := now.Add(-20 * time.Second)
+	hour := now.Add(-time.Hour)
+	copies := []service.HostCopy{
+		{Copy: deploy.Copy{ID: "ffffffff-1", Service: "worker", Status: deploy.CopyStarting, StartedAt: &started}, AppID: "blog",
+			Place: app.Place{Project: "default", Environment: "production", Name: "blog"}, Phase: service.CopyPhaseStarting},
+		{Copy: deploy.Copy{ID: "aaaaaaaa-2", Service: "api", Status: deploy.CopyHealthy, StartedAt: &hour}, AppID: "blog",
+			Place: app.Place{Project: "default", Environment: "production", Name: "blog"}, Phase: service.CopyPhaseRunning},
+	}
+	r := e.Server.serverCopies(pl, sums, copies, nil, false, 1000, got)
+	if c := r.Rows[0].Up.Crash; c == nil || c.Text != "restarted 4 times in 1 h" || c.Mark != "warning" || r.Rows[0].Mark != "rolling" || r.Rows[0].Up.Text != "for 20 s" {
+		t.Errorf("a starting copy of a crash-looping service: up %+v, mark %q (the phase's mark stays)", r.Rows[0].Up, r.Rows[0].Mark)
+	}
+	if r.Rows[1].Up.Crash != nil {
+		t.Errorf("a copy of another service has a crash signal: %+v", r.Rows[1].Up)
+	}
+	var buf strings.Builder
+	if err := e.Server.pages["opsserver"].ExecuteTemplate(&buf, "srv-up", r.Rows[0].Up); err != nil {
+		t.Fatal(err)
+	}
+	if want := `for 20 s<span class="cv-srvcrash"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>restarted 4 times in 1 h</span>`; buf.String() != want {
+		t.Errorf("the Up cell:\n%s\nwant\n%s", buf.String(), want)
+	}
+	buf.Reset()
+	if err := e.Server.pages["opsserver"].ExecuteTemplate(&buf, "srv-up", srvUp{Label: "Failed", Word: "failed", Text: "26 s ago · exit 1"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := `<span class="cv-srvupword">failed </span>26 s ago · exit 1`; buf.String() != want {
+		t.Errorf("a failed copy's Up cell = %s, want %s", buf.String(), want)
+	}
+}
+
+// In the fold the Up cell's label is the phase's word, never "Up" for a copy that isn't up.
+func TestFoldLabelFollowsThePhase(t *testing.T) {
+	e := srvEnv(t)
+	_, body := e.get(t, "/ops/servers/lab")
+	for id, label := range map[string]string{
+		"srv-copy-s1eeeeee-0000": "Failed", "srv-copy-b2dddddd-0000": "Starting", "srv-copy-w2bbbbbb-0000": "Stopping",
+		"srv-copy-w1aaaaaa-0000": "Up", "srv-copy-b1cccccc-0000": "Up",
+	} {
+		row := body[strings.Index(body, `id="`+id+`"`):]
+		row = row[:strings.Index(row, `class="cv-srvcell cv-srvup" data-label="`)+len(`class="cv-srvcell cv-srvup" data-label="`)+len(label)+2]
+		if !strings.HasSuffix(row, `data-label="`+label+`">`) {
+			t.Errorf("%s: the Up cell isn't labelled %q:\n%s", id, label, row[max(0, len(row)-120):])
+		}
 	}
 }

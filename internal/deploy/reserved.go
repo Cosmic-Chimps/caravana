@@ -69,6 +69,10 @@ type Reserved struct {
 // against) and per job's service.
 type Reservations struct {
 	Copies []Reservation // ordered by job, group, then copy ID
+	// Failed are the copies that failed, each with what it held: they are not in
+	// Copies or the sums (Nomad has released it), and the server page shows the
+	// reservation of a failed copy as a fact of the copy (feature 027).
+	Failed []Reservation
 	Total  Reserved
 	ByKey  map[ServiceKey]Reserved
 }
@@ -145,16 +149,20 @@ func (d *Deployer) Reservations(ctx context.Context) (Reservations, error) {
 	seen := map[jobVersion]bool{}
 	for _, s := range stubs {
 		c := copyOf(s, nil) // only whether it is over is used here
-		if c.Terminal {
+		if c.Terminal && c.Status != CopyFailed {
 			continue
 		}
 		key := jobVersion{s.JobID, s.JobVersion}
 		seen[key] = true
 		hooks, err := d.lifecycles(ctx, key)
-		if err != nil {
+		if err != nil && !c.Terminal { // a failed copy is only shown: its reservation isn't worth failing the read
 			return Reservations{}, err
 		}
 		r := reservationOf(s, c, hooks[s.TaskGroup])
+		if c.Terminal {
+			out.Failed = append(out.Failed, r)
+			continue
+		}
 		out.Copies = append(out.Copies, r)
 		out.Total.CPUMHz += r.CPUMHz
 		out.Total.MemoryMB += r.MemoryMB

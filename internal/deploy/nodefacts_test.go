@@ -173,6 +173,22 @@ func TestNodeFactsOfADownNode(t *testing.T) {
 		t.Errorf("down node = %+v", f)
 	}
 
+	// Nomad's own time for the change of status is the node's StatusAt, even when the record was cached while it was up.
+	d2, _, nomad2 := newTestDeployer(t)
+	nomad2.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
+	nomad2.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
+	nomad2.SetHostStats(deploytest.LabHostStats())
+	if h, err := d2.HostStats(ctx, ""); err != nil || !h.Node.StatusAt.IsZero() {
+		t.Fatalf("a ready node with no status time: %+v, %v", h.Node.StatusAt, err)
+	}
+	lost := time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC)
+	nomad2.SetNode("node-1", "lab", "down", deploytest.LabNodeResources(), nil)
+	nomad2.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
+	nomad2.SetNodeStatusAt(lost)
+	if f2, err := d2.NodeFacts(ctx); err != nil || f2.State != "down" || !f2.StatusAt.Equal(lost) {
+		t.Errorf("a node that went down after its record was cached: StatusAt = %v, %v; want %v", f2.StatusAt, err, lost)
+	}
+
 	nomad.FailNodeReads(403)
 	if _, err := d.NodeFacts(ctx); !errors.Is(err, ErrNodeReadDenied) {
 		t.Errorf("a token without node:read: err = %v, want ErrNodeReadDenied", err)

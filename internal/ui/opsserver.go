@@ -63,7 +63,25 @@ type srvHead struct {
 	Name   string
 	State  *statusView // nil until the node is known
 	Reboot bool
-	Spec   string
+	// Spec is the spec line's items, each kept whole when the line wraps.
+	Spec []srvItem
+}
+
+// srvItem is one item of a " · " list (the spec line, the agent, the os, the cpu). It is drawn in a
+// span that doesn't break inside, so a narrow line wraps between items only, as page 1's stats line
+// does. More is set on every item but the last: the separator goes with the item before it.
+type srvItem struct {
+	Text string
+	More bool
+}
+
+// itemsOf makes the items of a list of texts.
+func itemsOf(texts []string) []srvItem {
+	out := make([]srvItem, len(texts))
+	for i, t := range texts {
+		out[i] = srvItem{Text: t, More: i < len(texts)-1}
+	}
+	return out
 }
 
 // srvBody is everything under the head, one live region: the notice, the banners, the numbers
@@ -132,7 +150,25 @@ type srvCopy struct {
 	Role  string
 	CPU   srvMetric
 	Mem   srvMetric
-	Up    string
+	Up    srvUp
+}
+
+// srvUp is the Up cell. Label is the fold's label, which follows the phase ("Up" for a copy that runs,
+// "Starting", "Stopping", "Failed"), so the folded row never reads "Up: failed". Word is said before
+// the text on a wide row only ("failed 3 min ago · exit 1"): the fold's label already says it. Crash is
+// the needs-you item's signal for the copy's service, beside the phase and never in place of it.
+type srvUp struct {
+	Label string
+	Word  string
+	Text  string
+	Crash *srvCrash
+}
+
+// srvCrash is the crash loop of a copy's service as the needs-you list says it: "restarted 4 times in
+// 1 h" in the item's level (◆ warning for restarting, ■ failed for out of memory).
+type srvCrash struct {
+	Mark string
+	Text string
 }
 
 // srvMetric is a LiveMetric: the value and its unit, and what it is of. Value is "—" when the
@@ -151,8 +187,10 @@ type srvMetric struct {
 // Second is the line under it, in fg-3, with its own SecondNote. Mark is drawn before the value (a
 // host that is down).
 type srvFact struct {
-	Key        string
-	Value      string
+	Key   string
+	Value string
+	// Items replaces Value for a " · " list (agent, os, cpu): each item is kept whole.
+	Items      []srvItem
 	Note       string
 	Clock      *clockTime
 	After      string
@@ -274,16 +312,17 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	if err != nil {
 		return srvData{}, err
 	}
-	items, err := s.hostItems(r, now)
+	att, err := s.svc.Attention(ctx)
 	if err != nil {
 		return srvData{}, err
 	}
+	items := s.hostItems(now, att)
 	recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true})
 	if err != nil {
 		return srvData{}, err
 	}
 
-	d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required, Spec: nodeSpec(n)}
+	d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required, Spec: itemsOf(nodeSpecItems(n))}
 	coreMHz := coreMHzOf(host.CPU)
 	if coreMHz == 0 && n.Cores > 0 && n.TotalMHz > 0 {
 		coreMHz = float64(n.TotalMHz) / float64(n.Cores)
@@ -291,8 +330,9 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	d.body.Banners = append(s.nodeBanners(now, n), items...)
 	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
 	d.body.Room = roomOf(host)
-	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz)
-	d.body.Facts = s.serverFacts(r, now, n)
+	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz, s.crashesOf(now, att))
+	gap := s.svc.MetricsSampleGap()
+	d.body.Facts = s.serverFacts(r, now, n, readAt(host, gap), gap)
 	for _, e := range recent {
 		ev := opsEventOf(e)
 		ev.Time = shortTime(now, e.Time)
@@ -304,11 +344,7 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 // hostItems are the banners of the host's open needs-you items: a disk nearly full, and the OS's
 // security updates and reboot (page 3's kinds). The row is the needs-you list's own, so the page
 // and the list say the same words and offer the same action.
-func (s *server) hostItems(r *http.Request, now time.Time) ([]srvBanner, error) {
-	att, err := s.svc.Attention(r.Context())
-	if err != nil {
-		return nil, err
-	}
+func (s *server) hostItems(now time.Time, att service.Attention) []srvBanner {
 	var out []srvBanner
 	for _, it := range att.Items {
 		if !isHostItem(it.Kind) {
@@ -324,7 +360,7 @@ func (s *server) hostItems(r *http.Request, now time.Time) ([]srvBanner, error) 
 		}
 		out = append(out, b)
 	}
-	return out, nil
+	return out
 }
 
 // isHostItem says a needs-you kind is about the host itself. The OS kinds are page 3's; naming
@@ -354,10 +390,19 @@ func (s *server) nodeBanners(now time.Time, n *service.HostNode) []srvBanner {
 		return nil
 	}
 	line := "Nomad lost this server's heartbeat"
-	if !n.LastHeartbeat.IsZero() {
-		line += " " + agoWords(now, n.LastHeartbeat)
+	if lost := lostAt(n); !lost.IsZero() {
+		line += " " + agoFull(now, lost)
 	}
 	return []srvBanner{{Mark: "failed", Line: plainS(line + ". Apps on it may be down.")}}
+}
+
+// lostAt is when Nomad marked the node down: its own status time. A node record without one falls back
+// to the last time Caravana heard from it.
+func lostAt(n *service.HostNode) time.Time {
+	if !n.StatusAt.IsZero() {
+		return n.StatusAt
+	}
+	return n.LastHeartbeat
 }
 
 // serverState is the node's state in the console's words: ready, draining, not taking new work
@@ -483,12 +528,13 @@ func diskCell(h service.HostView, asOf monSentence) srvCell {
 	d := h.Disks[first]
 	c.Value, c.Unit = splitUnit(sizeText(d.UsedMB))
 	c.Warn = meters[first].Warn
-	c.Sub = append(monSentence{mtext("of " + sizeText(d.TotalMB) + " · "), mname(d.Mount)}, asOf...)
+	c.Sub = append(monSentence{mtext("of " + sizeText(d.TotalMB) + " on "), mname(d.Mount)}, asOf...)
 	c.Meters = []monMeter{readPercent(&meters[first], float64(d.UsedMB), float64(d.TotalMB))}
 	for i, m := range meters {
 		if i != first {
-			// "/var/lib/docker 41/80G": the readout diskMeters writes when there is more than one.
-			m.Label, m.Split = "", false
+			// "on /var/lib/docker 41/80G": the readout diskMeters writes when there is more than one
+			// ("/var/lib/docker 41/80G"), with the "on" of the first disk's sub in front of the mount.
+			m.Label, m.Split, m.Read = "", false, "on "+m.Read
 			c.Meters = append(c.Meters, m)
 		}
 	}
@@ -500,7 +546,7 @@ func diskCell(h service.HostView, asOf monSentence) srvCell {
 // serverCopies builds the Running here panel from the service's copies, in its order (problems
 // first, then by app and service). The app's name is followed by the service only when the app
 // has several; the place leads outside Default › production, as on page 1.
-func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []service.HostCopy, copiesErr error, down bool, coreMHz float64) srvRunning {
+func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []service.HostCopy, copiesErr error, down bool, coreMHz float64, crashes map[string]srvCrashPair) srvRunning {
 	if copiesErr != nil {
 		return srvRunning{Message: "Can't read Nomad right now."}
 	}
@@ -524,6 +570,7 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 			Label: pl.label(c.Place, c.AppID, suffix), Short: shortID(c.ID), Mark: rowMark(c),
 			CPU: copyCPU(c.Usage, coreMHz), Mem: copyMemory(c.Usage), Up: copyUp(s.now(), c),
 		}
+		row.Up.Crash = crashes[c.AppID+"/"+c.Service].of(c)
 		switch c.Phase {
 		case service.CopyPhaseStopping:
 			row.State, row.Role = "draining", "stopping"
@@ -589,20 +636,110 @@ func copyMemory(u *service.CopyUsage) srvMetric {
 	return m
 }
 
-// copyUp is how long the copy has run: "3 d 4 h", "5 h 12 min", "12 min". A failed copy says
-// when it failed ("failed 3 min ago", "failed" when Nomad gave no time); one that never started
-// has none.
-func copyUp(now time.Time, c service.HostCopy) string {
-	if c.Phase == service.CopyPhaseFailed {
-		if c.FinishedAt == nil {
-			return "failed"
+// copyUp is the Up cell: how long a running copy has run ("3 d 4 h", "5 h 12 min", "12 min"), how long a
+// starting one has been starting ("for 40 s"), how long a stopping one ran ("up 3 d 4 h"), and when a
+// failed one failed and why ("failed 3 min ago · exit 1"). The words are short ("3 min"): this is a
+// dense column. A copy that never started has "—".
+func copyUp(now time.Time, c service.HostCopy) srvUp {
+	switch c.Phase {
+	case service.CopyPhaseFailed:
+		up := srvUp{Label: "Failed", Word: "failed"}
+		var parts []string
+		if c.FinishedAt != nil {
+			parts = append(parts, agoWords(now, *c.FinishedAt))
 		}
-		return "failed " + agoWords(now, *c.FinishedAt)
+		if why := failedWhy(c.Copy); why != "" {
+			parts = append(parts, why)
+		}
+		up.Text = strings.Join(parts, " · ")
+		return up
+	case service.CopyPhaseStarting:
+		up := srvUp{Label: "Starting", Text: "—"}
+		if c.StartedAt != nil {
+			up.Text = "for " + startingText(now.Sub(*c.StartedAt))
+		}
+		return up
+	case service.CopyPhaseStopping:
+		up := srvUp{Label: "Stopping", Text: "—"}
+		if c.StartedAt != nil {
+			up.Text = "up " + upText(now.Sub(*c.StartedAt))
+		}
+		return up
 	}
-	if c.StartedAt == nil {
-		return "—"
+	up := srvUp{Label: "Up", Text: "—"}
+	if c.StartedAt != nil {
+		up.Text = upText(now.Sub(*c.StartedAt))
 	}
-	return upText(now.Sub(*c.StartedAt))
+	return up
+}
+
+// failedWhy is why a copy failed, from the last event of its service's task, in the words the schedules'
+// runs use: "out of memory", "exit 1", "couldn't start". Empty when Nomad says nothing (a lost node).
+func failedWhy(c service.Copy) string {
+	switch {
+	case c.OutOfMemory:
+		return "out of memory"
+	case c.ExitCode != nil:
+		return "exit " + strconv.Itoa(*c.ExitCode)
+	case c.StartFailed:
+		return "couldn't start"
+	}
+	return ""
+}
+
+// startingText is how long a copy has been starting, in seconds under a minute ("40 s"), else upText.
+func startingText(d time.Duration) string {
+	if d < time.Minute {
+		return strconv.Itoa(max(int(d/time.Second), 0)) + " s"
+	}
+	return upText(d)
+}
+
+// srvCrashPair is the crash signals of one service: its restarting item and its out-of-memory item, each
+// nil when it has none open.
+type srvCrashPair struct {
+	Restarting, OOM *srvCrash
+}
+
+// of is the signal for a copy: the out-of-memory item's when the copy was killed for memory, else the
+// restarting item's, and the other when the copy has no reason of its own. Nil for none.
+func (p srvCrashPair) of(c service.HostCopy) *srvCrash {
+	switch {
+	case c.OutOfMemory && p.OOM != nil:
+		return p.OOM
+	case p.Restarting != nil:
+		return p.Restarting
+	}
+	return p.OOM
+}
+
+// crashesOf reads the crash loops of the needs-you list by "app/service". The count is the item's own
+// (service.AttentionItem.Crashes, 025's crashesInHour), so the page never disagrees with the list or
+// the notification; the level is the one the list draws the item in.
+func (s *server) crashesOf(now time.Time, att service.Attention) map[string]srvCrashPair {
+	out := map[string]srvCrashPair{}
+	for _, it := range att.Items {
+		var text string
+		switch it.Kind {
+		case service.AttentionRestarting:
+			text = "restarted " + plural(it.Crashes, "time") + " in 1 h"
+		case service.AttentionOutOfMemory:
+			text = "out of memory " + plural(it.Crashes, "time") + " in 1 h"
+		default:
+			continue
+		}
+		// The item's own row says its level (the list's mark), so it is drawn the same here.
+		sig := &srvCrash{Mark: s.attentionRow(now, it, places{}, nil).Mark, Text: text}
+		key := it.AppID + "/" + it.Service
+		pair := out[key]
+		if it.Kind == service.AttentionRestarting {
+			pair.Restarting = sig
+		} else {
+			pair.OOM = sig
+		}
+		out[key] = pair
+	}
+	return out
 }
 
 // upText writes a span of running time: days and hours from a day, hours and minutes from an
@@ -643,6 +780,19 @@ func agoWords(now, t time.Time) string {
 	return strconv.Itoa(int(d/(24*time.Hour))) + " d ago"
 }
 
+// agoFull is how long ago t was in full words, as the needs-you sentences say it: "3 minutes ago",
+// "1 minute ago", "under a minute ago". Sentences use it; the dense columns use agoWords.
+func agoFull(now, t time.Time) string {
+	if now.Sub(t) < time.Minute {
+		return "under a minute ago"
+	}
+	text := relative(now, t)
+	if !strings.HasSuffix(text, " ago") { // relative gives a date past two months
+		return "over 60 days ago"
+	}
+	return text
+}
+
 // shortTime is the time column of Recent: "14:02" for today (UTC), else "21 Oct". The whole
 // time, UTC, is in the title, with the local one added by the page's script.
 func shortTime(now, t time.Time) string {
@@ -658,7 +808,7 @@ func shortTime(now, t time.Time) string {
 // serverFacts are the facts panel's rows: only what is known. The public address is the console's
 // own host (Nomad doesn't know it), the private one is the node's caravana0 interface, left out
 // when the node has none. Each address says which it is.
-func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode) []srvFact {
+func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode, read time.Time, gap time.Duration) []srvFact {
 	var out []srvFact
 	if n.Pool != "" {
 		out = append(out, srvFact{Key: "pool", Value: n.Pool})
@@ -672,26 +822,52 @@ func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode
 	}
 	if !n.BootTime.IsZero() {
 		boot := n.BootTime.UTC()
-		c := clockAt(boot, boot.Format("2006-01-02 15:04")+" UTC", localDate)
-		out = append(out, srvFact{Key: "up since", Clock: &c, After: agoWords(now, boot)})
+		// Non-breaking spaces: the time is one word to the line breaker, which may only break after it.
+		c := clockAt(boot, strings.ReplaceAll(boot.Format("2006-01-02 15:04")+" UTC", " ", "\u00a0"), localDate)
+		// The relative words are one word to the line breaker (non-breaking spaces), so "(8 d ago)" is never split.
+		out = append(out, srvFact{Key: "up since", Clock: &c, After: strings.ReplaceAll(agoWords(now, boot), " ", "\u00a0")})
 	}
-	if agent := agentLine(n, s.version); agent != "" {
-		out = append(out, srvFact{Key: "agent", Value: agent})
+	if agent := agentItems(n, s.version); len(agent) > 0 {
+		out = append(out, srvFact{Key: "agent", Items: itemsOf(agent)})
 	}
-	if osLine := osLine(n); osLine != "" {
-		out = append(out, srvFact{Key: "os", Value: osLine})
+	if os := osItems(n); len(os) > 0 {
+		out = append(out, srvFact{Key: "os", Items: itemsOf(os)})
 	}
-	if cpu := cpuLine(n); cpu != "" {
-		out = append(out, srvFact{Key: "cpu", Value: cpu})
+	if cpu := cpuItems(n); len(cpu) > 0 {
+		out = append(out, srvFact{Key: "cpu", Items: itemsOf(cpu)})
 	}
-	if !n.LastHeartbeat.IsZero() {
-		f := srvFact{Key: "last seen", Value: agoWords(now, n.LastHeartbeat)}
-		if n.State == "down" {
-			f.Value, f.Mark, f.Strong = "lost "+agoWords(now, n.LastHeartbeat), "failed", true
-		}
+	if f, ok := lastSeenFact(now, n, read, gap); ok {
 		out = append(out, f)
 	}
 	return out
+}
+
+// readAt is when the newest sample was taken: the end of its window (a sample's time is the start of
+// the gap it covers). Zero when the host was never sampled.
+func readAt(h service.HostView, gap time.Duration) time.Time {
+	if h.SampledAt == nil {
+		return time.Time{}
+	}
+	return h.SampledAt.Add(gap)
+}
+
+// lastSeenFact is the "last seen" row, only when it has something to say:
+//   - a node Nomad lost: "lost 3 minutes ago" in fg-1 with the failed mark, at the time Nomad marked it
+//     down (its own status time, not the sampler's);
+//   - a ready node whose newest reading is older than two sampler ticks: "last reading 5 minutes ago";
+//   - a ready node read lately: no row, since "2 s ago" on every page load says nothing.
+func lastSeenFact(now time.Time, n *service.HostNode, read time.Time, gap time.Duration) (srvFact, bool) {
+	if n.State == "down" {
+		lost := lostAt(n)
+		if lost.IsZero() {
+			return srvFact{}, false
+		}
+		return srvFact{Key: "last seen", Value: "lost " + agoFull(now, lost), Mark: "failed", Strong: true}, true
+	}
+	if read.IsZero() || now.Sub(read) <= 2*gap {
+		return srvFact{}, false
+	}
+	return srvFact{Key: "last reading", Value: agoFull(now, read)}, true
 }
 
 // consoleHostOf is the console's own host name, without a port: the one the owner set as the public
@@ -713,6 +889,10 @@ func (s *server) consoleHostOf(r *http.Request) string {
 // agentLine is "nomad 1.9.4 · docker 27.3 · traefik 3.7.1 · caravana 0.13.0": the programs
 // Nomad and the Traefik job report, then the one running. Only the versions known are named.
 func agentLine(n *service.HostNode, caravana string) string {
+	return strings.Join(agentItems(n, caravana), " · ")
+}
+
+func agentItems(n *service.HostNode, caravana string) []string {
 	var parts []string
 	for _, p := range []struct{ name, version string }{
 		{"nomad", n.NomadVersion}, {"docker", n.DockerVersion},
@@ -722,11 +902,13 @@ func agentLine(n *service.HostNode, caravana string) string {
 			parts = append(parts, p.name+" "+p.version)
 		}
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // osLine is "Ubuntu 24.04 · kernel 6.8.0-147-generic".
-func osLine(n *service.HostNode) string {
+func osLine(n *service.HostNode) string { return strings.Join(osItems(n), " · ") }
+
+func osItems(n *service.HostNode) []string {
 	var parts []string
 	if n.OS != "" {
 		r, size := utf8.DecodeRuneInString(n.OS)
@@ -735,12 +917,14 @@ func osLine(n *service.HostNode) string {
 	if n.Kernel != "" {
 		parts = append(parts, "kernel "+n.Kernel)
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // cpuLine is "AMD EPYC-Rome · 2 cores · 2,445 MHz" or, where Nomad gives no model or per-core
 // speed (a virtual machine on arm), "2 cores · 4,890 MHz in total".
-func cpuLine(n *service.HostNode) string {
+func cpuLine(n *service.HostNode) string { return strings.Join(cpuItems(n), " · ") }
+
+func cpuItems(n *service.HostNode) []string {
 	var parts []string
 	if n.CPUModel != "" {
 		parts = append(parts, n.CPUModel)
@@ -754,7 +938,7 @@ func cpuLine(n *service.HostNode) string {
 	case n.TotalMHz > 0:
 		parts = append(parts, thousands(n.TotalMHz)+" MHz in total")
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // thousands writes n with a comma between each group of three digits: 4890 is "4,890".

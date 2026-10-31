@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	// coSrvSpecRe is the head's spec line.
-	coSrvSpecRe = regexp.MustCompile(`<span class="cv-srvspec">([^<]*)</span>`)
+	// coSrvSpecRe is the head's spec line (its items are spans of their own: read it as text).
+	coSrvSpecRe = regexp.MustCompile(`(?s)<span class="cv-srvspec">(.*)</span>\s*</div>`)
 	// coSrvFactRe is a row of the facts panel: its key and its value.
 	coSrvFactRe = regexp.MustCompile(`(?s)<dt>([^<]*)</dt>\s*<dd[^>]*>(.*?)</dd>`)
 	// coSrvCopyRe is a copy's link in Running here: the copy ID and the app it goes to.
@@ -84,7 +84,8 @@ func writeAptHistory(t *testing.T, root string) (remove func()) {
 //  3. The head: the node's name, ready, "reboot needed" linking to Updates, the spec line (cores
 //     and kernel checked against Nomad's own record), and no action (no button, no form).
 //  4. The facts are the lab's real ones: pool, the addresses (the private one only when the node has caravana0), the versions of Nomad, Docker,
-//     Traefik (its job's image tag) and Caravana, the OS and kernel, the cores, up since, last seen.
+//     Traefik (its job's image tag) and Caravana, the OS and kernel, the cores, up since; no "last seen"
+//     row for a node that is up and was read lately.
 //  5. Running here has a row for every running copy of both apps, linking to its app, the second
 //     with its place; the copy's memory is a value (Nomad collects it) and its Up a time.
 //  6. Recent on this server has the two apt runs as Caravana says them: Ubuntu's automatic updates
@@ -198,6 +199,7 @@ func (c *console) consoleOpsServer(t *testing.T) {
 	if spec == nil {
 		t.Fatalf("the head has no spec line:\n%s", pageText(head))
 	}
+	spec[1] = pageText(spec[1])
 	if m := coSpecRe.FindStringSubmatch(spec[1]); m == nil || m[1] != node.Attributes["cpu.numcores"] || m[2] != node.Attributes["kernel.version"] {
 		t.Errorf("the spec line is %q, want cores %s and kernel %s of Nomad's record", spec[1], node.Attributes["cpu.numcores"], node.Attributes["kernel.version"])
 	}
@@ -252,8 +254,12 @@ func (c *console) consoleOpsServer(t *testing.T) {
 	if got := facts["up since"]; !coSrvUpSinceRe.MatchString(got) || !strings.Contains(got, " ago)") && !strings.Contains(got, "just now)") {
 		t.Errorf("up since = %q, want a UTC time with how long ago", got)
 	}
-	if got := facts["last seen"]; got == "" || strings.Contains(got, "lost") {
-		t.Errorf("last seen = %q, want a heartbeat of a node that is up", got)
+	// A node that is up and was read lately has no "last seen" row; a row that says it was lost is wrong.
+	if got, ok := facts["last seen"]; ok {
+		t.Errorf("last seen = %q, want no row for a node that is up and was read lately", got)
+	}
+	if got := facts["last reading"]; got != "" {
+		t.Logf("last reading = %q: the sampler is more than two ticks late", got)
 	}
 
 	// 5. Running here: a row for every running copy of both apps.
@@ -331,7 +337,7 @@ func srvRowOf(page, copyID string) string {
 func upOf(page, copyID string) string {
 	for _, r := range strings.Split(page, `<div class="cv-srvrow"`)[1:] {
 		if strings.Contains(r, `id="srv-copy-`+copyID+`"`) {
-			m := regexp.MustCompile(`class="cv-srvcell cv-srvup" data-label="Up">([^<]*)<`).FindStringSubmatch(r)
+			m := regexp.MustCompile(`class="cv-srvcell cv-srvup" data-label="[A-Za-z]+">([^<]*)<`).FindStringSubmatch(r)
 			if m != nil {
 				return m[1]
 			}

@@ -1804,6 +1804,9 @@
   .cv-srvtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
   .cv-srvname { margin: 0; font: 500 26px/1.2 var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
   .cv-srvspec { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  /* One item of a " · " list stays whole: it moves to the next line before it breaks, and breaks inside
+     only when it alone is wider than the line (max-width 100%). The separator sits at its end. */
+  .cv-srvitem { display: inline-block; max-width: 100%; vertical-align: top; overflow-wrap: anywhere; }
   a.cv-srvreboot { text-decoration: none; }
   .cv-srvbody { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
 
@@ -1829,7 +1832,10 @@
 
   /* Running here: the chip, CPU, memory and Up. The row is one link (the chip's name stretches over it). */
   .cv-srvrows { container-type: inline-size; container-name: cvsrvrows; }
-  .cv-srvrow { position: relative; display: grid; grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr) 90px; column-gap: 24px; align-items: center; padding: 14px 18px; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); }
+  /* One grid for the panel, a subgrid per row: the Up column is as wide as its widest cell (a crash line,
+     "failed 3 min ago · exit 1"), and CPU and Memory still line up from row to row. */
+  .cv-srvtable { display: grid; grid-template-columns: minmax(10rem, 200px) minmax(0, 1fr) minmax(0, 1fr) minmax(90px, auto); column-gap: 24px; }
+  .cv-srvrow { position: relative; display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding: 14px 18px; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); }
   .cv-srvrow + .cv-srvrow { border-top: 1px solid var(--color-line-1); }
   .cv-srvrow > * { min-width: 0; }
   .cv-srvwho { display: flex; min-width: 0; }
@@ -1847,7 +1853,11 @@
   /* No value: "—" is quiet (400, fg-3), never the bold value. */
   .cv-srvval-none { font-weight: 400; color: var(--color-fg-3); }
   .cv-srvfailedn { color: var(--color-fg-3); }
-  .cv-srvup { text-align: right; color: var(--color-fg-3); font-variant-numeric: tabular-nums; }
+  .cv-srvup { text-align: right; white-space: nowrap; color: var(--color-fg-3); font-variant-numeric: tabular-nums; }
+  /* The crash loop the needs-you list names for the copy's service: the mark in the item's level, the words
+     in fg-2, on a line under the phase. */
+  .cv-srvcrash { display: block; margin-top: 2px; color: var(--color-fg-2); }
+  .cv-srvcrash .cv-mark { margin-right: 6px; }
 
   /* The facts: keys fg-3 beside values fg-2, 13px/1.4 mono, a 10px by 18px gap. */
   .cv-srvfacts { padding: 18px; }
@@ -1858,6 +1868,14 @@
   .cv-srvdl .cv-mark { margin-right: 4px; }
   .cv-srvsecond { display: block; color: var(--color-fg-3); }
   .cv-srvafter { color: var(--color-fg-3); }
+  /* Up since: the time, then the local time and the relative words as one piece. The one place the line may
+     break is after the time (its text has non-breaking spaces, and it isn't nowrap, which would hide the
+     opportunity): a zero-width space at its end, only when the script added the local time, and
+     the non-breaking spaces in "(9 h ago)" and before it (with word joiners, which Blink needs at the edge of a
+     nowrap span) keep it with the local time. */
+  .cv-srvdl .cv-clock-local { white-space: nowrap; }
+  .cv-srvdl time.cv-clock { white-space: normal; }
+  .cv-srvdl time.cv-clock:has(+ .cv-clock-local)::after { content: "\200b"; }
 
   /* Recent: a 54px time, a 7px mark and the sentence, 14px fg-2. */
   .cv-srvrecent { padding: 6px 0; }
@@ -1966,9 +1984,11 @@
 /* Running here folds when the panel has under 600px of its own: the chip on its own line, then CPU and
    Memory side by side, Up after (the labels come from data-label). */
 @container cvsrvrows (max-width: 599.98px) {
-  .cv-srvrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 10px; column-gap: 16px; }
+  .cv-srvtable { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; }
+  .cv-srvrow { row-gap: 10px; }
   .cv-srvwho { grid-column: 1 / -1; }
   .cv-srvup { grid-column: 1 / -1; text-align: left; }
+  .cv-srvupword { display: none; }
   .cv-srvcell::before { content: attr(data-label); display: block; margin-bottom: 2px; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
 }
 

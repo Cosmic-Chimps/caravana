@@ -47,6 +47,14 @@ func (n *Nomad) SetNodeFacts(attrs map[string]string, pool string, events []*api
 	n.host.node.Events = events
 }
 
+// SetNodeStatusAt sets when Nomad last changed the node's status (the node record's
+// StatusUpdatedAt): for a node that is down, when it was marked down. Call SetNode first.
+func (n *Nomad) SetNodeStatusAt(t time.Time) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.host.node.StatusUpdatedAt = t.Unix()
+}
+
 // SetNodeNetworks sets the interfaces the node record lists (NodeResources.Networks, as Nomad
 // fingerprints them). Call SetNode first.
 func (n *Nomad) SetNodeNetworks(nets []*api.NetworkResource) {

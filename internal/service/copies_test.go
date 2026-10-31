@@ -45,7 +45,7 @@ func TestHostCopies(t *testing.T) {
 		hostStub("c-stop", "web", run, api.AllocDesiredStatusStop, map[string][3]int{"web": {100, 64, 256}}),
 	)
 	e.nomad.SetCopies("shop--staging--web",
-		hostStub("s-fail", "web", api.AllocClientStatusFailed, api.AllocDesiredStatusRun, nil),
+		hostStub("s-fail", "web", api.AllocClientStatusFailed, api.AllocDesiredStatusRun, map[string][3]int{"web": {50, 128, 512}}),
 		hostStub("s-run", "web", run, api.AllocDesiredStatusRun, map[string][3]int{"web": {50, 128, 512}}),
 	)
 	// A job that isn't an app is left out.
@@ -92,12 +92,13 @@ func TestHostCopies(t *testing.T) {
 	if c := byID["s-run"]; c.Place.Project != "shop" || c.Place.Environment != "staging" || c.Place.Name != "web" {
 		t.Errorf("s-run place = %+v", c.Place)
 	}
-	// A copy that hasn't started has its reservation and no value (not 0 MB); a failed copy has neither.
+	// A copy that hasn't started has its reservation and no value (not 0 MB); so does a failed copy: the
+	// reservation is a fact of the copy in every phase.
 	if u := byID["c-start"].Usage; u == nil || !u.None || u.MemoryReservedMB != 64 || u.MemoryMB != 0 {
 		t.Errorf("c-start usage = %+v, want None with the reservation", u)
 	}
-	if u := byID["s-fail"].Usage; u != nil {
-		t.Errorf("a failed copy has usage %+v", u)
+	if u := byID["s-fail"].Usage; u == nil || !u.None || u.CPUReservedMHz != 50 || u.MemoryReservedMB != 128 || u.MemoryCeilingMB != 512 || u.MemoryMB != 0 {
+		t.Errorf("a failed copy's usage = %+v, want None with the reservation it held", u)
 	}
 	if _, ok := byID["t1"]; ok {
 		t.Error("a job that isn't an app is listed")

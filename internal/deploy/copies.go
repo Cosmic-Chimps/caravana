@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +46,15 @@ type Copy struct {
 	LastRestart       *time.Time // the newest restart of any task; nil if none restarted
 	FinishedAt        *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
 	OutOfMemory       bool       // the service's last stop was the kernel killing it for passing its memory ceiling
-	Terminal          bool       // true for stopped and failed: it will never run again
+	// ExitCode is the exit status in the service task's newest end event
+	// (Terminated); nil when its newest end is a start failure, or it has none.
+	// StartFailed says that newest end is a start failure (the image couldn't
+	// be pulled, the program isn't there: Driver or Setup Failure) and the task
+	// never ran after it. The server page says why a failed copy failed from
+	// these two (feature 027); neither carries Nomad's text.
+	ExitCode    *int
+	StartFailed bool
+	Terminal    bool // true for stopped and failed: it will never run again
 	// Replaced is true when Nomad has already made another copy to take this one's
 	// place (the stub's NextAllocation is set): a rescheduled failure. PreviousID is
 	// the copy this one replaced (the newest event of its reschedule tracker), ""
@@ -138,7 +147,31 @@ func copyOf(a *api.AllocationListStub, active rollouts) Copy {
 		}
 	}
 	c.OutOfMemory = killedForMemory(a.TaskStates[a.TaskGroup])
+	c.ExitCode, c.StartFailed = lastEnd(a.TaskStates[a.TaskGroup])
 	return c
+}
+
+// lastEnd is how the service's task last ended: the exit status of its newest
+// Terminated event, or startFailed when a Driver Failure or Setup Failure came
+// after it (or it never ended at all). Nomad appends events, newest last.
+func lastEnd(ts *api.TaskState) (exit *int, startFailed bool) {
+	if ts == nil {
+		return nil, false
+	}
+	for i := len(ts.Events) - 1; i >= 0; i-- {
+		e := ts.Events[i]
+		switch {
+		case e == nil:
+		case isStartFailure(e):
+			return nil, true
+		case e.Type == api.TaskTerminated:
+			if code, err := strconv.Atoi(e.Details["exit_code"]); err == nil {
+				return &code, false
+			}
+			return nil, false
+		}
+	}
+	return nil, false
 }
 
 // previousOf is the copy a rescheduled copy replaced, "" if it replaced none.

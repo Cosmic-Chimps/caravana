@@ -121,7 +121,6 @@ func TestOpsServerPage(t *testing.T) {
 		`<a href="/ops" class="cv-srvback">← Overview</a>`, `<h1 class="cv-srvname">lab</h1>`,
 		`cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>ready`,
 		`<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot">`,
-		`4 vCPU · 1.9 GB · Ubuntu 24.04 · kernel 6.8.0-88-generic`,
 		`id="srv-head"`, `id="srv-body"`, `hx-get="/parts/ops/servers/lab"`, `hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:sync"`,
 		`sse-connect="/live?watch=ops"`, `data-live`, `<script src="/static/js/ops.js?v=`,
 		`<a href="/ops/servers" class="cv-nav-item" aria-current="page">`,
@@ -131,6 +130,12 @@ func TestOpsServerPage(t *testing.T) {
 		}
 	}
 	head := body[strings.Index(body, `id="srv-head"`):strings.Index(body, `id="srv-body"`)]
+	// The spec line keeps each item whole: a span per item, the separator at the end of the one before.
+	if !strings.Contains(text(head), "4 vCPU · 1.9 GB · Ubuntu 24.04 · kernel 6.8.0-88-generic") ||
+		!strings.Contains(head, `<span class="cv-srvitem">kernel 6.8.0-88-generic</span>`) ||
+		!strings.Contains(head, `<span class="cv-srvitem">Ubuntu 24.04 ·</span> <span class="cv-srvitem">kernel`) {
+		t.Errorf("the spec line:\n%s", head)
+	}
 	for _, action := range []string{"<button", "<form", "Open shell", "Move work off", "Take work again"} {
 		if strings.Contains(head, action) {
 			t.Errorf("the head has an action (%s):\n%s", action, head)
@@ -139,7 +144,7 @@ func TestOpsServerPage(t *testing.T) {
 
 	// The three numbers, the room line, and the sections.
 	for _, want := range []string{
-		"CPU", "Memory", "Disk", "of 2 vCPU", "reserved", "of 1.9 GB", "of 18.3 GB · /",
+		"CPU", "Memory", "Disk", "of 2.00 vCPU", "reserved", "of 1.9 GB", "of 18.3 GB on /",
 		"Running here · 4 · 1 failed", "Server", "Recent on this server",
 	} {
 		if !strings.Contains(words, want) {
@@ -175,24 +180,46 @@ func TestOpsServerPage(t *testing.T) {
 	// (the host's 4000 MHz over 2 cores: 0.1 vCPU of 0.05), "3 d 4 h" up.
 	for _, want := range []string{
 		`<span class="cv-srvval">470 <span class="cv-srvunit">MB</span><span class="sr-only"> (near its limit)</span></span><span class="cv-srvsub">of 512 MB limit</span>`,
-		`<span class="cv-srvval">0.1 <span class="cv-srvunit">vCPU</span></span><span class="cv-srvsub">of 0.05 reserved</span>`,
+		`<span class="cv-srvval">0.10 <span class="cv-srvunit">vCPU</span></span><span class="cv-srvsub">of 0.05 reserved</span>`,
 		">3 d 4 h<",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("Running here lacks %q", want)
 		}
 	}
-	// A copy that hasn't started has no value, not 0; a failed one has none and no Up.
+	// A copy that hasn't started has no value, not 0, and says what it reserves; a failed one draws the
+	// same two cells, since the reservation is a fact of the copy in every phase.
 	pending := srvRowOf(t, body, "srv-copy-b2dddddd-0000")
 	if strings.Contains(pending, "0 MB") || !strings.Contains(pending, `<span class="cv-srvval cv-srvval-none">—</span><span class="cv-srvsub">of 64 MB limit</span>`) {
 		t.Errorf("a starting copy's row:\n%s", pending)
+	}
+	failed := srvRowOf(t, body, "srv-copy-s1eeeeee-0000")
+	for _, want := range []string{
+		`<span class="cv-srvval cv-srvval-none">—</span><span class="cv-srvsub">of 0.05 reserved</span>`,
+		`<span class="cv-srvval cv-srvval-none">—</span><span class="cv-srvsub">of 256 MB limit</span>`,
+	} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("a failed copy's row lacks %q:\n%s", want, failed)
+		}
+	}
+	// The table has a header row for screen readers (Copy, CPU, Memory, Up) and the columns of the ruling.
+	header := regionBetween(t, body, `<div class="sr-only" role="row">`, "</div>")
+	if n := strings.Count(header, `role="columnheader"`); n != 4 || text(header) != "Copy CPU Memory Up" {
+		t.Errorf("the header row = %q (%d columnheaders)", text(header), n)
+	}
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(css), "grid-template-columns:minmax(10rem,200px) minmax(0,1fr) minmax(0,1fr) minmax(90px,auto)") {
+		t.Error("the stylesheet's rows grid isn't minmax(10rem, 200px) minmax(0, 1fr) minmax(0, 1fr) minmax(90px, auto)")
 	}
 
 	// The facts: pool, both addresses, up since with the relative words, the agent line, os, cpu, last seen.
 	facts := text(regionBetween(t, body, `class="cv-srvdl"`, "</dl>"))
 	for _, want := range []string{
 		"pool default", "agent nomad 2.0.1 · docker 29.1.3 · traefik 3.7.13 · caravana 0.7.0",
-		"os Ubuntu 24.04 · kernel 6.8.0-88-generic", "cpu AMD EPYC 7763 64-Core Processor · 4 cores · 2,400 MHz", "last seen",
+		"os Ubuntu 24.04 · kernel 6.8.0-88-generic", "cpu AMD EPYC 7763 64-Core Processor · 4 cores · 2,400 MHz",
 	} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("the facts lack %q:\n%s", want, facts)
@@ -206,9 +233,16 @@ func TestOpsServerPage(t *testing.T) {
 	if !strings.Contains(facts, "address caravana.example.com · public10.99.0.1 · private") {
 		t.Errorf("the address reads:\n%s", facts)
 	}
-	if !regexp.MustCompile(`up since <time class="cv-clock" datetime="[^"]+" title="[^"]+" data-local="date">\d{4}-\d\d-\d\d \d\d:\d\d UTC</time> \(8 d ago\)`).MatchString(strings.Join(strings.Fields(regionBetween(t, body, `class="cv-srvdl"`, "</dl>")), " ")) &&
-		!strings.Contains(facts, "up since") {
-		t.Errorf("the facts lack up since:\n%s", facts)
+	// A fresh reading on a ready node: no "last seen" row (the sampler reads every 500 ms here).
+	if strings.Contains(facts, "last seen") || strings.Contains(facts, "last reading") {
+		t.Errorf("a ready node read lately has a last seen row:\n%s", facts)
+	}
+	if !regexp.MustCompile(`<dt>up since</dt> <dd><time class="cv-clock" datetime="[^"]+" title="[^"]+" data-local="date">\d{4}-\d\d-\d\d \d\d:\d\d UTC</time>&#8288;&nbsp;&#8288;<span class="cv-srvafter">\(8 d ago\)</span>`).MatchString(strings.Join(strings.Fields(regionBetween(t, body, `class="cv-srvdl"`, "</dl>")), " ")) {
+		t.Errorf("the facts lack up since with its relative words:\n%s", facts)
+	}
+	// The agent's items are each whole.
+	if !strings.Contains(body, `<span class="cv-srvitem">nomad 2.0.1 ·</span> <span class="cv-srvitem">docker 29.1.3 ·</span>`) {
+		t.Errorf("the agent's items aren't one span each:\n%s", regionBetween(t, body, `class="cv-srvdl"`, "</dl>"))
 	}
 	if !strings.Contains(facts, "(8 d ago)") {
 		t.Errorf("up since lacks its relative words:\n%s", facts)
@@ -220,6 +254,9 @@ func TestOpsServerPage(t *testing.T) {
 		if !strings.Contains(recent, want) {
 			t.Errorf("Recent lacks %q:\n%s", want, recent)
 		}
+	}
+	if !strings.Contains(text(regionBetween(t, body, `id="srv-recent-title"`, "</div>")), "Recent on this server times in UTC") {
+		t.Errorf("Recent's head doesn't say times in UTC:\n%s", regionBetween(t, body, `id="srv-recent-title"`, "</div>"))
 	}
 	if n := strings.Count(body, `class="cv-srvev"`); n > 8 {
 		t.Errorf("Recent lists %d entries, want at most 8", n)
@@ -405,7 +442,7 @@ func TestServerNumbers(t *testing.T) {
 		t.Fatalf("numbers = %+v", n)
 	}
 	cpu, mem, disk := n.Cells[0], n.Cells[1], n.Cells[2]
-	if cpu.Value != "1.2" || cpu.Unit != "vCPU" || cpu.Sub.String() != "of 2 vCPU · 0.8 reserved" || cpu.Warn || cpu.Meters[0].Read != "60%" {
+	if cpu.Value != "1.20" || cpu.Unit != "vCPU" || cpu.Sub.String() != "of 2.00 vCPU · 0.80 reserved" || cpu.Warn || cpu.Meters[0].Read != "60%" {
 		t.Errorf("cpu = %+v / %s", cpu, cpu.Sub)
 	}
 	if mem.Value != "1.7" || mem.Unit != "GB" || mem.Sub.String() != "of 1.9 GB · 1.2 GB reserved" || !mem.Warn || mem.Meters[0].Read != "87%" || mem.Meters[0].Mark != "warning" {
@@ -424,7 +461,7 @@ func TestServerNumbers(t *testing.T) {
 	if !mem.Meters[0].HasReserved || mem.Meters[0].Label != "" {
 		t.Errorf("the meter has no hatch or has a label: %+v", mem.Meters[0])
 	}
-	if disk.Value != "5.8" || disk.Unit != "GB" || disk.Sub.String() != "of 18.3 GB · /" || disk.Warn || len(disk.Meters) != 1 {
+	if disk.Value != "5.8" || disk.Unit != "GB" || disk.Sub.String() != "of 18.3 GB on /" || disk.Warn || len(disk.Meters) != 1 {
 		t.Errorf("disk = %+v / %s", disk, disk.Sub)
 	}
 
@@ -434,8 +471,8 @@ func TestServerNumbers(t *testing.T) {
 		{Mount: "/var/lib/docker", UsedMB: 41 * 1024, TotalMB: 80 * 1024, FreeMB: 39 * 1024, UsedPercent: 51.25, State: metrics.DiskOK},
 	}
 	disk = serverNumbers(now, h, false, 1000).Cells[2]
-	if disk.Value != "41" || disk.Sub.String() != "of 80 GB · /var/lib/docker" || len(disk.Meters) != 2 || disk.Meters[0].Read != "51%" ||
-		disk.Meters[1].Read != "/ 5.8/18.3G" {
+	if disk.Value != "41" || disk.Sub.String() != "of 80 GB on /var/lib/docker" || len(disk.Meters) != 2 || disk.Meters[0].Read != "51%" ||
+		disk.Meters[1].Read != "on / 5.8/18.3G" {
 		t.Errorf("two disks = %+v / %s", disk, disk.Sub)
 	}
 	// An open disk item puts its state on the meter and the number.
@@ -552,6 +589,15 @@ func TestServerTimeWords(t *testing.T) {
 			t.Errorf("agoWords(%v) = %q, want %q", d, got, want)
 		}
 	}
+	// Sentences use full words; the dense columns the short ones.
+	for d, want := range map[time.Duration]string{
+		0: "under a minute ago", 30 * time.Second: "under a minute ago", time.Minute: "1 minute ago", 3 * time.Minute: "3 minutes ago",
+		5 * time.Hour: "5 hours ago", 8 * 24 * time.Hour: "8 days ago", 90 * 24 * time.Hour: "over 60 days ago",
+	} {
+		if got := agoFull(now, now.Add(-d)); got != want {
+			t.Errorf("agoFull(%v) = %q, want %q", d, got, want)
+		}
+	}
 	if got := shortTime(now, now.Add(-time.Hour)); got != "13:05" {
 		t.Errorf("today's time = %q", got)
 	}
@@ -597,7 +643,7 @@ func TestServerDownAndBanners(t *testing.T) {
 	now := time.Date(2026, 10, 30, 14, 5, 0, 0, time.UTC)
 	n := &service.HostNode{NodeFacts: deploy.NodeFacts{Name: "lab", State: "down", LastHeartbeat: now.Add(-3 * time.Minute)}}
 	banners := e.Server.nodeBanners(now, n)
-	if len(banners) != 1 || banners[0].Mark != "failed" || banners[0].Line.String() != "Nomad lost this server's heartbeat 3 min ago. Apps on it may be down." || banners[0].Action != "" {
+	if len(banners) != 1 || banners[0].Mark != "failed" || banners[0].Line.String() != "Nomad lost this server's heartbeat 3 minutes ago. Apps on it may be down." || banners[0].Action != "" {
 		t.Errorf("banners = %+v", banners)
 	}
 	if got := e.Server.nodeBanners(now, &service.HostNode{NodeFacts: deploy.NodeFacts{State: "ready"}}); len(got) != 0 {
@@ -611,10 +657,19 @@ func TestServerDownAndBanners(t *testing.T) {
 		t.Errorf("the down banner:\n%s", html)
 	}
 
-	facts := e.Server.serverFacts(&http.Request{Host: "caravana.example.com"}, now, n)
+	facts := e.Server.serverFacts(&http.Request{Host: "caravana.example.com"}, now, n, now.Add(-time.Minute), time.Minute)
 	last := facts[len(facts)-1]
-	if last.Key != "last seen" || last.Value != "lost 3 min ago" || last.Mark != "failed" || !last.Strong {
+	if last.Key != "last seen" || last.Value != "lost 3 minutes ago" || last.Mark != "failed" || !last.Strong {
 		t.Errorf("last seen of a down node = %+v", last)
+	}
+	// The time is the one Nomad marked the node down, not the sampler's last reading or the heartbeat.
+	n.StatusAt = now.Add(-5 * time.Minute)
+	banners = e.Server.nodeBanners(now, n)
+	if got := banners[0].Line.String(); got != "Nomad lost this server's heartbeat 5 minutes ago. Apps on it may be down." {
+		t.Errorf("the banner with Nomad's status time = %q", got)
+	}
+	if f, ok := lastSeenFact(now, n, now, time.Minute); !ok || f.Value != "lost 5 minutes ago" {
+		t.Errorf("last seen with Nomad's status time = %+v", f)
 	}
 
 	if got := diskExplain([]string{"nomad", "docker"}); got.String() != "It holds Nomad's data and Docker's images." {
@@ -661,11 +716,11 @@ func TestServerCopiesRows(t *testing.T) {
 		{Copy: deploy.Copy{ID: "bbbbbbbb-3", Service: "web", Status: deploy.CopyHealthy, StartedAt: &started}, AppID: "whoami",
 			Place: app.Place{Project: "default", Environment: "production", Name: "whoami"}, Phase: service.CopyPhaseRunning},
 	}
-	r := e.Server.serverCopies(pl, sums, copies, nil, false, 1000)
+	r := e.Server.serverCopies(pl, sums, copies, nil, false, 1000, nil)
 	if r.Count != 2 || r.Failed != 1 || len(r.Rows) != 3 {
 		t.Fatalf("running = %+v", r)
 	}
-	if got := r.Rows[0].Label.String(); got != "Shop › staging › web" || r.Rows[0].Mark != "failed" || r.Rows[0].Up != "failed" || r.Rows[0].CPU.Value != "—" ||
+	if got := r.Rows[0].Label.String(); got != "Shop › staging › web" || r.Rows[0].Mark != "failed" || r.Rows[0].Up != (srvUp{Label: "Failed", Word: "failed"}) || r.Rows[0].CPU.Value != "—" ||
 		!r.Rows[0].CPU.None || !r.Rows[0].Mem.None {
 		t.Errorf("failed row = %q %+v", got, r.Rows[0])
 	}
@@ -674,16 +729,16 @@ func TestServerCopiesRows(t *testing.T) {
 	endedAt := e.Server.now().Add(-3 * time.Minute)
 	stopped := service.HostCopy{Copy: deploy.Copy{ID: "eeeeeeee-9", Service: "web", Status: deploy.CopyFailed, Terminal: true, Stopping: true, FinishedAt: &endedAt},
 		AppID: "whoami", Place: app.Place{Project: "default", Environment: "production", Name: "whoami"}, Phase: service.CopyPhaseFailed}
-	if row := e.Server.serverCopies(pl, sums, []service.HostCopy{stopped}, nil, false, 1000).Rows[0]; row.Mark != "failed" || row.Up != "failed 3 min ago" || row.Role != "failed" {
-		t.Errorf("a failed copy told to stop = mark %q, up %q, role %q", row.Mark, row.Up, row.Role)
+	if row := e.Server.serverCopies(pl, sums, []service.HostCopy{stopped}, nil, false, 1000, nil).Rows[0]; row.Mark != "failed" || row.Up.Text != "3 min ago" || row.Up.Word != "failed" || row.Role != "failed" {
+		t.Errorf("a failed copy told to stop = mark %q, up %+v, role %q", row.Mark, row.Up, row.Role)
 	}
-	if got := r.Rows[1].Label.String(); got != "blog/worker" || r.Rows[1].Up != "1 d 2 h" || r.Rows[1].Mark != "healthy" {
+	if got := r.Rows[1].Label.String(); got != "blog/worker" || r.Rows[1].Up != (srvUp{Label: "Up", Text: "1 d 2 h"}) || r.Rows[1].Mark != "healthy" {
 		t.Errorf("blog row = %q %+v", got, r.Rows[1])
 	}
 	if got := r.Rows[2].Label.String(); got != "whoami" || r.Rows[2].ID != "srv-copy-bbbbbbbb-3" || r.Rows[2].Href != "/apps/whoami" || r.Rows[2].Short != "bbbbbbbb" {
 		t.Errorf("whoami row = %q %+v", got, r.Rows[2])
 	}
-	if got := e.Server.serverCopies(pl, sums, nil, deploy.ErrNomadUnavailable, true, 1000); got.Message != "Can't read Nomad right now." || len(got.Rows) != 0 {
+	if got := e.Server.serverCopies(pl, sums, nil, deploy.ErrNomadUnavailable, true, 1000, nil); got.Message != "Can't read Nomad right now." || len(got.Rows) != 0 {
 		t.Errorf("Nomad down = %+v", got)
 	}
 	// None at all: the empty state, with New app.

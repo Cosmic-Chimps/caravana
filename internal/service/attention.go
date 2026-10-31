@@ -53,11 +53,16 @@ const recentFailure = time.Hour
 // AttentionItem is one thing that needs the owner. It holds the facts; the
 // console turns them into a sentence and the API sends them as they are.
 type AttentionItem struct {
-	Kind       AttentionKind
-	AppID      string   // "" for no_backup_destination
-	Service    string   // "" for deploy_failed and no_backup_destination
-	Copies     []string // the copy IDs it is about (copy kinds)
-	Deployment string   // deploy_failed: the deployment ID
+	Kind    AttentionKind
+	AppID   string   // "" for no_backup_destination
+	Service string   // "" for deploy_failed and no_backup_destination
+	Copies  []string // the copy IDs it is about (copy kinds)
+	// Crashes is how many crashes in the last hour the item stands for, by
+	// crashesInHour, the one counting rule (restarting and out_of_memory; the
+	// server page says it beside a copy: "restarted 4 times in 1 h"). Not in
+	// the API's item.
+	Crashes    int
+	Deployment string // deploy_failed: the deployment ID
 	// Project, Environment and AppName are where AppID is, from the stored place
 	// (empty without an AppID).
 	Project, Environment, AppName string
@@ -429,9 +434,11 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 		restarting := AttentionItem{Kind: AttentionRestarting, AppID: appID, Service: name}
 		unhealthy := AttentionItem{Kind: AttentionUnhealthy, AppID: appID, Service: name}
 		var crashing []Copy // the copies that aren't out of memory
+		var oomCopies []Copy
 		for _, c := range byService[name] {
 			if c.OutOfMemory {
 				oom.add(c, eventTime(c))
+				oomCopies = append(oomCopies, c)
 				continue
 			}
 			crashing = append(crashing, c)
@@ -443,6 +450,8 @@ func copyItems(now time.Time, appID string, copies []Copy, skip *uint64, rolling
 		if restarts < restartingAt {
 			restarting.Copies = nil // too few to be a loop: those copies are judged on their health alone
 		}
+		restarting.Crashes = restarts
+		oom.Crashes = max(crashesInHour(now, oomCopies), 1) // a kill that left no restart behind is still one
 		for _, c := range byService[name] {
 			if c.Status == deploy.CopyUnhealthy && !rollingOut && !c.OutOfMemory && !slices.Contains(restarting.Copies, c.ID) {
 				start := time.Time{}

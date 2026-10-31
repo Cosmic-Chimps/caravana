@@ -32,8 +32,9 @@ type HostCopy struct {
 	Place app.Place
 	// Phase is running, starting, stopping or failed.
 	Phase string
-	// Usage is what the copy uses now and the service's reservation and limit. Nil for a copy that
-	// has neither (a failed one). A copy that is starting has the reservation and None set.
+	// Usage is what the copy uses now and the service's reservation and limit. A copy that is starting
+	// or failed has the reservation (a fact of the copy in every phase) and None set. Nil for a copy
+	// that has neither (Nomad could not give its reservation).
 	Usage *CopyUsage
 }
 
@@ -93,7 +94,7 @@ func (s *Service) HostCopies(ctx context.Context) ([]HostCopy, error) {
 		s.log.Warn("can't read the copies' reservations for the server page", "error", resErr)
 	}
 	reserved := map[string]deploy.Reservation{}
-	for _, r := range res.Copies {
+	for _, r := range append(slices.Clone(res.Copies), res.Failed...) { // a failed copy still has what it held
 		reserved[r.CopyID] = r
 	}
 	for i := range out {

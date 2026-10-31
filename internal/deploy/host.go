@@ -201,6 +201,14 @@ func (d *Deployer) nodeInfo(ctx context.Context, id string) (*api.Node, error) {
 	return node, nil
 }
 
+// forgetNodeInfo drops a node's cached record, so the next nodeInfo reads it from Nomad.
+func (d *Deployer) forgetNodeInfo(id string) {
+	c := &d.cache
+	c.mu.Lock()
+	delete(c.nodes, id)
+	c.mu.Unlock()
+}
+
 // nodeError is callError for a call that needs node:read.
 func (d *Deployer) nodeError(action string, err error) error {
 	if statusOf(err) == http.StatusForbidden {

@@ -613,7 +613,10 @@ func nodeMark(state string) string {
 
 // nodeSpec is "4 vCPU · 7.8 GB · Ubuntu 24.04 · kernel 6.8.0-147-generic": only
 // what Nomad reported.
-func nodeSpec(n *service.HostNode) string {
+func nodeSpec(n *service.HostNode) string { return strings.Join(nodeSpecItems(n), " · ") }
+
+// nodeSpecItems are the spec line's items, which the server page keeps whole when the line wraps.
+func nodeSpecItems(n *service.HostNode) []string {
 	var parts []string
 	if n.Cores > 0 {
 		parts = append(parts, strconv.Itoa(n.Cores)+" vCPU")
@@ -629,7 +632,7 @@ func nodeSpec(n *service.HostNode) string {
 	if n.Kernel != "" {
 		parts = append(parts, "kernel "+n.Kernel)
 	}
-	return strings.Join(parts, " · ")
+	return parts
 }
 
 // opsMeters are 025's meters of the host with Monitoring's own split readouts ("1.5G used · 0.7G

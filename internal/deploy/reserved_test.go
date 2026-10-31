@@ -295,3 +295,31 @@ func TestReservationsEdges(t *testing.T) {
 		}
 	})
 }
+
+// A failed copy is not in the sums (Nomad has released what it held) but its reservation is listed apart,
+// so the server page can say what the copy reserved: the reservation is a fact of the copy in every phase.
+func TestReservationsFailedCopies(t *testing.T) {
+	d, _, nomad := newTestDeployer(t)
+	nomad.AddForeignJob(jobOf("web", "web", task("web", "", false)))
+	live := running("c1", "web", "web", 0, resources(map[string][3]int{"web": {100, 64, 256}}))
+	dead := running("c2", "web", "web", 0, resources(map[string][3]int{"web": {50, 32, 0}}))
+	dead.ClientStatus = api.AllocClientStatusFailed
+	dead.TaskStates = map[string]*api.TaskState{"web": {Events: []*api.TaskEvent{
+		{Type: api.TaskTerminated, Details: map[string]string{"exit_code": "1"}},
+	}}}
+	stopped := running("c3", "web", "web", 0, resources(map[string][3]int{"web": {10, 8, 0}}))
+	stopped.ClientStatus = api.AllocClientStatusComplete
+	nomad.SetCopies("web", live, dead, stopped)
+
+	got, err := d.Reservations(context.Background())
+	if err != nil {
+		t.Fatalf("Reservations: %v", err)
+	}
+	if len(got.Copies) != 1 || got.Copies[0].CopyID != "c1" || got.Total.CPUMHz != 100 || got.Total.MemoryMB != 64 {
+		t.Errorf("live copies = %+v, total %+v; want only c1 (100 MHz, 64 MB)", got.Copies, got.Total)
+	}
+	if len(got.Failed) != 1 || got.Failed[0].CopyID != "c2" || got.Failed[0].ServiceCPUMHz != 50 || got.Failed[0].ServiceMemoryLimitMB() != 32 ||
+		got.Failed[0].ExitCode == nil || *got.Failed[0].ExitCode != 1 {
+		t.Errorf("failed copies = %+v, want c2 holding 50 MHz and 32 MB, exit 1 (a stopped copy is in neither list)", got.Failed)
+	}
+}

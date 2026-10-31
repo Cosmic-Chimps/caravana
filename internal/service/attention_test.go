@@ -606,3 +606,49 @@ func TestAttentionNotices(t *testing.T) {
 		}
 	})
 }
+
+// An open restarting or out_of_memory item carries its count: crashesInHour, the one counting rule, so
+// the server page says "restarted 4 times in 1 h" from the item and never counts restarts itself.
+func TestAttentionItemCrashes(t *testing.T) {
+	apps := []store.AppRecord{appRec("blog", at(0), "web", "worker", "api")}
+	latest := map[string]store.DeploymentRecord{"blog": dep("blog", "blog-ok", store.StatusHealthy, ver(1), at(1), "")}
+	copies := map[string][]Copy{"blog": {
+		// worker: 3 crashes in one copy, one more copy that failed (+1) and one restart Caravana asked for (not counted).
+		{ID: "w1", Service: "worker", Version: 1, Status: deploy.CopyHealthy, Restarts: 4, RequestedRestarts: 1, LastRestart: tp(at(5))},
+		{ID: "w2", Service: "worker", Version: 1, Status: deploy.CopyFailed, Terminal: true, FinishedAt: tp(at(10))},
+		// web: killed for memory twice (two copies).
+		{ID: "b1", Service: "web", Version: 1, Status: deploy.CopyHealthy, OutOfMemory: true, Restarts: 1, LastRestart: tp(at(6))},
+		{ID: "b2", Service: "web", Version: 1, Status: deploy.CopyFailed, Terminal: true, OutOfMemory: true, FinishedAt: tp(at(7))},
+		// api: killed once and not restarted yet: still one.
+		{ID: "a1", Service: "api", Version: 1, Status: deploy.CopyHealthy, OutOfMemory: true},
+	}}
+	got := attentionOf(attNow, apps, latest, copies, nil, nil, nil, true, scheduleFacts{}, nil)
+	counts := map[string]int{}
+	for _, it := range got.Items {
+		counts[string(it.Kind)+"/"+it.Service] = it.Crashes
+	}
+	want := map[string]int{"restarting/worker": 4, "out_of_memory/web": 2, "out_of_memory/api": 1}
+	if len(counts) != len(want) {
+		t.Fatalf("items = %v, want %v", counts, want)
+	}
+	for k, n := range want {
+		if counts[k] != n {
+			t.Errorf("%s: Crashes = %d, want %d (all items %v)", k, counts[k], n, counts)
+		}
+	}
+	// The item's count is crashesInHour of the copies it names, never a count of its own.
+	for _, it := range got.Items {
+		if it.Kind != AttentionRestarting {
+			continue
+		}
+		var named []Copy
+		for _, c := range copies["blog"] {
+			if slices.Contains(it.Copies, c.ID) {
+				named = append(named, c)
+			}
+		}
+		if n := crashesInHour(attNow, named); n != it.Crashes {
+			t.Errorf("crashesInHour of the item's copies = %d, the item says %d", n, it.Crashes)
+		}
+	}
+}

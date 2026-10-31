@@ -111,6 +111,10 @@ func (s *Service) SetMetricsSampleGap(d time.Duration) {
 	}
 }
 
+// MetricsSampleGap is the time between two ticks of the sampler: a page that says how old a
+// reading is judges "fresh" by it (two ticks).
+func (s *Service) MetricsSampleGap() time.Duration { return s.metricsGap }
+
 // SetTraefikMetricsURL sets where Traefik serves its Prometheus numbers
 // (CARAVANA_TRAEFIK_METRICS_URL). Empty turns the request numbers off: the
 // source reads "disabled". Safe while the sampler runs (the lab switches it
