@@ -535,6 +535,16 @@ func logTail(t *testing.T, target gateTarget) {
 	if !t.Failed() || target.ServerLog == nil {
 		return
 	}
-	lines := strings.Split(strings.TrimSpace(target.ServerLog()), "\n")
+	full := target.ServerLog()
+	lines := strings.Split(strings.TrimSpace(full), "\n")
 	t.Logf("the last lines of Caravana's log:\n%s", strings.Join(lines[max(0, len(lines)-80):], "\n"))
+	// CARAVANA_LAB_LOG=<file> keeps the whole log of a failed step, for what happened minutes before the
+	// failure (the log holds no secret: Caravana never logs one).
+	if path := os.Getenv("CARAVANA_LAB_LOG"); path != "" {
+		if err := os.WriteFile(path, []byte(full), 0o600); err != nil {
+			t.Logf("write the whole log to %s: %v", path, err)
+		} else {
+			t.Logf("the whole log is in %s", path)
+		}
+	}
 }

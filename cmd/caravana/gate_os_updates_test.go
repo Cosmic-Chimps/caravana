@@ -109,25 +109,36 @@ func (g *gate) osUpdatesStep(t *testing.T) {
 		return func(m osMessage) bool { return m.Type == typ && m.Kind == "os_reboot_required" }
 	}
 
+	// An earlier step (console-ops-updates) may have left a reboot item that was cleared but not yet
+	// resolved: the notifier resolves only after the item has been gone for resolve-after, at its next check
+	// (30 s). A marker written back before that is the same problem still open (018's flap rule), and no
+	// new problem.opened is sent. So the item must be gone, and stay gone past one resolve.
+	waitFor(t, "no reboot item from an earlier step", time.Minute, func() bool { return !g.hasAttention(t, "os_reboot_required") })
+	time.Sleep(45 * time.Second) // the notifier's 30 s gap plus the lab's 10 s resolve-after, with a margin
+
 	// 1. A pending kernel.
+	// The receiver may already hold messages about an earlier step's item (its late "resolved"), so each
+	// wait counts only what arrives after the action it waits for.
+	openedBefore := len(osMessages(rx, isReboot("problem.opened")))
 	fx := newHostFixture(t, root)
 	fx.ubuntu()
 	fx.rebootNeeded()
 	waitFor(t, "problem.opened for the reboot to reach the receiver", 3*time.Minute, func() bool {
-		return len(osMessages(rx, isReboot("problem.opened"))) > 0
+		return len(osMessages(rx, isReboot("problem.opened"))) > openedBefore
 	})
 	up := g.updates(t)
 	if !up.OS.Reboot.Required || up.OS.Reboot.InstalledKernel != labInstalledKernel || up.OS.Updates.Total != 14 || up.OS.Updates.Security != 9 {
 		t.Errorf("GET /v1/updates = %+v, want the pending kernel and 14 updates (9 security)", up.OS)
 	}
-	if got := osMessages(rx, isReboot("problem.opened")); len(got) != 1 || !strings.Contains(strings.ToLower(got[0].Title), "reboot") {
+	if got := osMessages(rx, isReboot("problem.opened"))[openedBefore:]; len(got) != 1 || !strings.Contains(strings.ToLower(got[0].Title), "reboot") {
 		t.Errorf("problem.opened for the reboot = %+v, want one that says a reboot is needed", got)
 	}
 
 	// 2. The marker goes.
+	resolvedBefore := len(osMessages(rx, isReboot("problem.resolved")))
 	fx.rebootCleared()
 	waitFor(t, "problem.resolved for the reboot to reach the receiver", 3*time.Minute, func() bool {
-		return len(osMessages(rx, isReboot("problem.resolved"))) > 0
+		return len(osMessages(rx, isReboot("problem.resolved"))) > resolvedBefore
 	})
 	if g.hasAttention(t, "os_reboot_required") {
 		t.Error("the reboot item is still on the needs-you list after the marker went")

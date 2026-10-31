@@ -197,7 +197,9 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 	if n := strings.Count(page, ">Check now</button>"); n != 1 || strings.Contains(page, "Installed on ") {
 		t.Errorf("/ops/updates has %d Check now buttons and %v an \"Installed on\" line; want one button and no line", n, strings.Contains(page, "Installed on "))
 	}
-	pageOrder(t, "the banners", page, rebootWords, updatesWords, `id="available"`)
+	// The banners' names are mono spans now (one source for the needs-you wording), so their order is read
+	// in the page's text, not its markup.
+	pageOrder(t, "the banners", words, rebootWords, updatesWords, "Available 3 updates")
 	pageOrder(t, "Available's rows", page, `data-up="reboot"`, `data-up="ubuntu"`, `data-up="release"`, `id="apply"`)
 	pageOrder(t, "How to apply's steps", page, `id="up-cmd-os"`, `id="up-cmd-caravana"`, `id="up-cmd-reboot"`, `id="how"`)
 	for _, mark := range []string{"/ops/updates", "/ops"} {
@@ -275,8 +277,8 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 	fx.rebootCleared()
 	waitFor(t, "the reboot banner and item to go", 2*time.Minute, func() bool {
 		_, p := c.get(t, "/ops/updates")
-		return !c.g.hasAttention(t, "os_reboot_required") && !strings.Contains(p, rebootWords) && !strings.Contains(p, `data-up="reboot"`) &&
-			strings.Contains(p, updatesWords)
+		return !c.g.hasAttention(t, "os_reboot_required") && !strings.Contains(pageText(p), rebootWords) && !strings.Contains(p, `data-up="reboot"`) &&
+			strings.Contains(pageText(p), updatesWords)
 	})
 	_, p := c.get(t, "/ops/updates")
 	if side := p[strings.Index(p, `<aside class="cv-side">`):]; !strings.Contains(side[:strings.Index(side, "</aside>")], `<span aria-hidden="true">◆</span>`) {
