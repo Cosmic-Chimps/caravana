@@ -229,7 +229,7 @@ page 3.
   `POST /ops/updates/check` (`what=release|packages`, 303, the refusal drawn on the page) and `POST
   /ops/updates/settings` (303); `/parts/ops/updates` on `updates` and `host`; the Updates nav mark in the shell (■
   reboot, ◆ security, else the count); styles and `tools/ui-css.sh build`. Tests in `internal/ui/opsupdates_test.go`.
-- [ ] T030 [US3] [SC-001, SC-003, SC-004, SC-007] `cmd/caravana/console_ops_test.go` step `console-ops-updates` (a fake
+- [X] T030 [US3] [SC-001, SC-003, SC-004, SC-007] `cmd/caravana/console_ops_test.go` step `console-ops-updates` (a fake
   host root with a pending kernel and 14/9 counts, a fake release server: banner, item, steps, release row, nav ■; the
   check turned off makes no request; a second package check within 10 minutes refused) and
   `cmd/caravana/gate_os_updates_test.go` gate step `os-updates` (`problem.opened` for the reboot reaches a test
@@ -241,6 +241,9 @@ page 3.
     a recorded `pro` answer (`labPro`) and the host root's Ubuntu files (`hostFixture`: pending kernel 9.9.0-999, 14/9
     counts, automatic updates off). `problem.opened` for the reboot needs the sampler's tick (10 s) and the notifier's
     30 s check, so the gate step waits up to 3 minutes.
+  - 2026-10-31, lab: `console-ops-updates` passes in 120 s (with `console-ops-overview` 54 s and `console-ops-server`
+    40 s); the gate step `os-updates` passes alone in 131 s (opened, resolved, one `caravana.release`). One test fix:
+    "Run the installer of 0.16.0." spans the version, which pageText splits.
 - [ ] T031 [US3] [SC-001] `deploy/dev/install-test.sh`: after the install, `GET /v1/updates` answers `os.readable: true`
   with `distro.id: ubuntu` and `GET /v1/host` has `node.kernel`, proving the unit's sandbox allows the reads; shellcheck;
   run it on a throwaway VM if possible and record here (or note it as pending for the maintainer).

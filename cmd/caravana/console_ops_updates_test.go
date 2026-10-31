@@ -162,7 +162,8 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 		"3 updates", "kernel " + running + " → 9.9.0-999", "14 packages · 9 security", "0.15.0 → 0.16.0",
 		"Operator view.", "Updates page.", "Updates",
 		"Install the waiting updates: sudo apt update && sudo apt upgrade",
-		"Run the installer of 0.16.0.", "releases/download/v0.16.0/install.sh | sudo bash",
+		// the version is its own mono span, which pageText turns into "0.16.0 ."
+		"Run the installer of 0.16.0", "releases/download/v0.16.0/install.sh | sudo bash",
 		"Reboot the server: sudo reboot", "Every app stops for about a minute.",
 		"caravana doesn't apply updates from the console yet.",
 		"Ubuntu's automatic updates", "Off", "Automatic reboot", "Off: reboots wait for you.",
