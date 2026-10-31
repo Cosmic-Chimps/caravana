@@ -287,3 +287,35 @@ command boxes scroll inside themselves at 390 and 640, as contracted.
   enough).
 - The ◐ "Checking which packages…" and `caravana.release` are covered by the lab step. Name
   the tests.
+
+## Recheck rulings (designer, 2026-10-31, build 29b604e)
+
+Checked at 1440, 640 and 390 and without script in `reboot`, then at 1440 through every staged
+state while the builder switched them: `security-off`, `stale`, `clean`, the release check
+turned off and on again from the page, back to `reboot`, and GitHub unreachable through a dead
+proxy. Nothing scrolls sideways except inside the command boxes.
+
+### Verified
+
+- Fixes 1–7 are in: notes as bullets; whole version tokens; the banner action at 390; one Check
+  now; Past updates without the baseline, in the past tense, with "Oct 22"; the `apt list`
+  sentence; "Installed on Oct 28 by Ubuntu's automatic updates."
+- `security-off`: the ◆ banner, ◆ on the nav, the item on /ops, and no reboot step.
+- `stale`: no banner and no item. The row is ○ in fg-3, sorted last, with the apt update
+  sentence, and the nav shows "2" dimmed.
+- `clean`: only the caravana row, the installer the only step, and "1" on the nav.
+- Check off: 303 to `?saved=1`, "Saved.", "off", and Check now hidden.
+- GitHub unreachable: the caravana row and its step are gone; the meta reads "Couldn't check
+  GitHub (last checked 27 minutes ago)." from `checkedOkAt`; "· GitHub didn't answer" sits after
+  the form; Check now stays, to retry.
+- Kernel names are mono in the banner and on /ops.
+
+### Fixes for the next pass (with the critique's)
+
+1. Release-note bullets: the lead in 500 fg-1, then ": " and the first sentence of the rest in
+   fg-2. This corrects my fix 1, since a lead alone ("MCP") says nothing.
+2. When something else is listed, Available's meta adds "· Ubuntu has nothing waiting (checked 20
+   minutes ago)".
+3. With the check off: "off · last checked 24 min ago", or "off" when there was never a check.
+4. The GitHub-unreachable meta reads "2 updates · Couldn't check GitHub (last checked 27 minutes
+   ago)." It needs the separator, and the sentence is fg-3 (contract), not fg-2.
