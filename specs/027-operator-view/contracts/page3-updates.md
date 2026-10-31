@@ -198,3 +198,92 @@ The designer checks at 127.0.0.1:7070 against `pg-updates.png`:
 - the release check turned off; GitHub unreachable; a non-Ubuntu host (the OS sentence);
 - Past updates after a caravana upgrade and a reboot;
 - the nav mark on each state; 1440, 640 and 390 widths; without script.
+
+## Review rulings (designer, 2026-10-31, build e7e8988)
+
+Checked at 1440, 640, 390 and without script, against `pg-updates.png`, in the staged `reboot`
+state (kernel 7.0.0-40 installed, 7.0.0-38 running; 14 updates, 9 security, with
+unattended-upgrades on; 0.15.0 newer than the running 0.14.0). Nothing scrolls sideways; the
+command boxes scroll inside themselves at 390 and 640, as contracted.
+
+### Verified
+
+- The head and its sentence. The ■ reboot banner with its consequence line and **How to apply**.
+  No security banner inside the 24 hours with unattended-upgrades on (FR-022).
+- Available sorted ■, ◆, ○, with the names, metas and changes.
+- How to apply: three steps in order, the installer step's sentence, `sudo reboot` last with ◆
+  and its consequence. Copy buttons only with script.
+- How this server updates: both read-only rows, and the checkbox with Save.
+- Past updates from history.log, automatic and by hand.
+- The sidebar's Updates mark ■. The /ops needs-you list has the reboot item.
+
+### Fixes
+
+1. **The release notes are raw Markdown, cut mid-sentence, without bullets.** The row shows
+   "\*\*API 0.28.0\*\*: \`Deployment.registeredAt\` (the time Nomad accepted the job, \`null\`
+   until it did)," and stops there.
+   - Read each CHANGELOG bullet whole: join its wrapped lines.
+   - Draw a bullet as its bold lead when it has one ("**API 0.28.0**", in 500 fg-1). Otherwise
+     draw its first sentence. Never cut mid-sentence.
+   - Backticks become mono spans and `**` is dropped. No other Markdown is interpreted, and the
+     text is escaped as usual.
+   - Up to 6 bullets with the handoff's • markers, then the link **Release notes** to the
+     release's `url` (GitHub), which holds the whole text.
+2. **Versions break at their hyphen.** "kernel 7.0.0-38 → 7.0.0-" / "40" in the 200px change
+   column. A version or package token never breaks (nowrap per token), and lines break only at
+   spaces. That gives "kernel" / "7.0.0-38 → 7.0.0-40" when it doesn't fit. Apply it to the
+   banner sentence too.
+3. **The banner action collapses at 390.** **How to apply** is 20px wide with 49px of content,
+   drawn as "ow to apply". The action never shrinks (`flex: none`), and it moves under the text
+   when there's no room (023's rule). If this is the shared problem banner, fix it there, and
+   check page 2's reboot banner and /domains at 390.
+4. **One Check now.** Departure 6 put one beside the setting, and the caravana row still has
+   another. Keep the setting row's only, beside "checked 19 min ago".
+5. **Past updates:**
+   - Don't list the first recorded version ("caravana 0.14.0 · first start recorded"). Page 2's
+     baseline ruling applies here too: a version row is a change ("caravana 0.14.0 → 0.15.0").
+   - History speaks in the past: "needed a reboot", "no reboot needed". Today's Oct 28 row says
+     "a reboot is needed" although the server restarted on Oct 30.
+   - One date format console-wide: the handoff's "Oct 22". Page 2's Recent shows "22 Oct" for
+     older rows. Change it there to match, so both pages read alike.
+6. **The Ubuntu updates row says nothing without `pro`.** Under the change, write "Run
+   `apt list --upgradable` on the server to see which packages." in 14px fg-2. With `pro`,
+   **Check package names** takes that place, as contracted.
+7. **Who installed the kernel** (departure 3, revised): Caravana can know it. Page 2 already
+   matches history.log blocks to `reboot-required.pkgs`. When the newest block that installed a
+   package named there is found, the reboot row's note starts "Installed on Oct 28 by Ubuntu's
+   automatic updates." (or "by hand."). Without a match, the line is left out as you built it.
+
+### Departures
+
+1. Full time words in sentences, and short units only in dense mono lines: yes.
+2. GitHub unreachable: the caravana row and its step are left out, and the meta reads "Couldn't
+   check GitHub (last checked 3 days ago).": yes, with one change. "last checked" is the last
+   **successful** check, since that's what the sentence claims. With none, it reads "Couldn't
+   check GitHub yet." The cause stays after the form.
+3. Replaced by fix 7.
+4. "On, at 02:00 server time" and "On, right after an update that needs one.": yes.
+5. The two consequence sentences: yes.
+6. Check now beside the setting: yes, and only there (fix 4).
+7. Refusals as full sentences: yes.
+8. Kernel names plain in the banner and needs-you: no, do it in 027. Every other needs-you
+   sentence draws its names in mono, and page 1's activity takes parts. Make T034a's one
+   source of the wording part of this feature: kernels, packages and versions in mono.
+9. A "Saved." notice after the form: yes. It's drawn only on the redirect's `?saved=1`, as 023's
+   notices are.
+10. Check package names hidden without `pro`: yes, with fix 6's sentence.
+11. The nav mark: yes. With stale lists, it shows the count in fg-3 and never ◆.
+12. Release-check extras: yes, under the same rules: fixed URLs, the same User-Agent, the same
+    timeout, nothing about the server sent. Since two kinds of file are fetched now, the hint
+    becomes "Only the release and its files are fetched; nothing is sent about this server."
+
+### To see at the recheck (I'll ask you to switch states)
+
+- `security-off`: the ◆ banner after the ■ one, the item on /ops, and the nav still ■.
+- `stale`: counts in fg-3, "Ubuntu's list is 3 days old. Run `sudo apt update`…", no ◆ item,
+  and the nav count.
+- `clean`: "Nothing waiting. Checked … ago." (the caravana row stays while 0.15.0 is out).
+- The check off, then GitHub unreachable, if you can stage it (a wrong API host in the lab is
+  enough).
+- The ◐ "Checking which packages…" and `caravana.release` are covered by the lab step. Name
+  the tests.
