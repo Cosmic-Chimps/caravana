@@ -359,3 +359,10 @@ ready node; the same "—" over the reservation sub for a starting copy.
 
 - Freshness from the sample's window start plus one gap (call 2): yes.
 - ■ for out of memory and ◆ for restarting (call 3): yes, those are the list's own levels.
+
+## Approved
+
+Approved 2026-10-31 at 4344394 (designer). Measured: the fold below 720px of the panel (658 at 960),
+one line per row at 1440; crashy leads with ■ "failed 31 min ago · exit 1" and ◆ "restarted 3 times in
+1 h", "Running here · 11 · 1 failed"; "of 2 vCPU" on this page, page 1 and /monitoring; no horizontal
+scroll at 1440, 960, 720, 640 or 390.

@@ -164,7 +164,7 @@ and the designer's review cycle (review, impeccable critique with no detector, r
     On a target with no `HostRoot` the apt and reboot checks are skipped.
   - 2026-10-30, lab: `console-ops-server` passes in 40 s (with `console-ops-overview`, 48 s). One test fix on the
     way: the 404 check looked for the sentence across the page's `<span>`s, which `pageText` splits.
-- [ ] T021 [US2] Page 2 review cycle as T015, against `pf-node.png`; record "Approved" in `contracts/page2-server.md`.
+- [X] T021 [US2] Page 2 review cycle as T015, against `pf-node.png`; record "Approved" in `contracts/page2-server.md`.
   - 2026-10-30: review of 2d70ccd (6 fixes, 1419bc1); fixes in 02beb0f (a copy whose health isn't decided is starting,
     in a rollout from the job's active deployment and outside one from its checks: the shared copy status, so the
     Running tab and page 1 too) and 3f243f8. Lab at 3f243f8: every TestConsoleLab step passes (the full run to
@@ -175,6 +175,8 @@ and the designer's review cycle (review, impeccable critique with no detector, r
     (b9b8a10) and 3 of 3 at 1419bc1. The two failing runs overlapped a fix agent's parallel `go test` of
     service, api and ui on the same Mac. So the step is sensitive to load on the machine running it (its page reads
     have a 5 s deadline), not to the copy-status change.
+  - 2026-10-31: critique 27/40 (b9b8a10 rulings), one fix pass (6f8773e, 85785b4), last look (468f3e1) and its three
+    fixes (4344394): Approved. Lab at 4344394: console-monitoring, console-ops-overview (61 s), console-ops-server (40 s).
 
 **Checkpoint**: pages 1 and 2 work and are approved.
 
