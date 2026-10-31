@@ -884,6 +884,66 @@ migration 0019, no new Go module (our own parser of Traefik's text format; `expf
   clear the review apps before a lab step, or a deploy fails for lack of memory; and
   `TestRestartMidRolloutRestoresSecrets`'s fix belongs to 024, not to this feature.
 
+Feature 027 (`specs/027-operator-view`, Phase 2.6, moved from Phase 3) is implemented on branch
+`027-operator-view` (stacked on `025-monitoring`): the Operator view for the one host. A
+Developer/Operator toggle under the brand (the mode cookie; Settings and the app pages keep the view
+the owner was last in; `/` and sign-in still land on the Developer home) and three pages, each
+built in the designer's method (contract, live review, critique, last look) and approved: Overview at
+`/ops` (9210661), the server page at `/ops/servers/<name>` (4344394) and Updates at `/ops/updates`
+(624489a). It reads and never applies: nothing installs, restarts or reboots, and no vulnerability is
+named. New migration 0020 (`release_check`, `host_events`, `problem_events`, `host_marks`), no new Go
+module, no Nomad policy change.
+- `internal/hostos` is pure (reads through an `fs.FS`; only `real.go` touches the host): apt's
+  `history.log` and its rotated `.1.gz` (`ReadHistory`, runs and who made them), the
+  `reboot-required` marker with its packages, installed kernels, Ubuntu's `updates-available` counts
+  and unattended-upgrades' settings (`ReadState`), pro's `security-status` JSON (`ParseSecurityStatus`,
+  package names and a kernel flag) and release order (`version.go`). The sampler (025) reads the files
+  on each tick (`service/hostosstate.go`, `noteOS`); `pro` runs only when the owner asks (Check package
+  names: one at a time, 120 s, once per 10 minutes) and only on a host that is Ubuntu with `pro`.
+- Service: `service/activity.go` (`Activity`: the feed in Caravana's words from deployments, actions,
+  backups and restores, schedule runs, problem events and host events; first version ever recorded is a
+  baseline, not an event), `updates.go` (`Updates`, the release check, `CheckRelease`, `CheckPackages`,
+  settings), `attention_os.go` (`os_reboot_required`, and `os_security_updates` at once when automatic
+  updates are off, else after security updates have waited 24 hours; never judged from a list older than 48 hours), `hostnode.go` (the node block of `Host`,
+  boot events from uptime, Caravana's version events at start) and `HostCopies` (every copy on the
+  node with its use and reservation). The release check asks GitHub's latest release once a day with an
+  ETag (and on Check now, rate limited) and reads the release's installer and Traefik job for the pins;
+  it is on by default, can be turned off on Updates (then no request is made) and sends nothing about the
+  server. A new release is one `caravana.release` message to every channel that isn't paused.
+- Settings: `CARAVANA_HOST_ROOT` (`-host-root`) points the OS file reads at a folder; it is for dev and
+  tests only (the lab and `install-test.sh` use fixtures; a host leaves it unset and reads `/`). The
+  unit's `ProtectSystem=strict` still allows the reads.
+- Console (`internal/ui/ops.go`, `opsserver.go`, `opsupdates.go`, `static/js/ops.js`): one live stream
+  (`/live?watch=ops`) and parts per region (`/parts/ops/server`, `/apps`, `/activity`,
+  `/parts/ops/servers/<name>`, `/parts/ops/updates`), the Updates nav mark in the shell (■ reboot, ◆
+  security, else the count); `POST /ops/updates/check` (`what=release|packages`) and
+  `/ops/updates/settings` redirect with 303 and draw a refusal on the page. Forms work without
+  JavaScript.
+- Cross-cutting changes the review asked for: a copy is `starting` until Nomad decides its health (the shared copy
+  status: in a rollout from the job's active deployment, outside one from its checks), so the Running tab
+  and the Operator pages agree; the needs-you wording has **one source**, `service.ProblemParts`
+  (`sentenceparts.go`), which the home, the Operator pages, the feed and the notifications draw, with
+  names, kernels, packages and versions in mono (`TestEveryKindSaysTheSameWordsEverywhere` walks
+  `service.AttentionKinds`); one vCPU formatter (two decimals, whole totals); dates read "Oct 22" and
+  the local time leaves out its date when it is the UTC date; nav marks wear the hue.
+- API 0.29.0: `getHost`'s `node`, `listActivity`, `getUpdates`, `putUpdateSettings`, `checkUpdates`,
+  the attention kinds `os_reboot_required` and `os_security_updates`, and the `caravana.release`
+  notification (the webhook message has a `release` object). Deploy tokens are denied by the default deny.
+- Tests: a sentinel per package that can read the view (`operator_sentinel_test.go` in `service`, `api`
+  and `ui`: a secret, a command's output, pro's text and an apt command line never reach Activity,
+  Updates, Host, the pages, the notifications, the log or the SQLite file; release notes are public, so
+  only the log is checked for them). `TestConsoleLab` has the steps `console-ops-overview`,
+  `console-ops-server` and `console-ops-updates` (`console_ops_test.go`, `console_ops_updates_test.go`:
+  a fake host root with a pending kernel, a stand-in release server, a recorded `pro` answer) and the
+  gate has a step `os-updates` (`gate_os_updates_test.go`: `problem.opened` for the reboot, then
+  `problem.resolved` after the marker is removed, one `caravana.release`). `deploy/dev/install-test.sh`
+  checks `GET /v1/updates` and `GET /v1/host` inside the unit's sandbox.
+- **Merge condition:** a full `TestConsoleLab` green on a quiet machine (`console-logs` has been flaky
+  when the machine is busy; the copy-status change is not the cause, it passed 3 of 3 on an idle one),
+  and T031 (`install-test.sh` on a throwaway VM) run by the maintainer.
+- Not in 027: applying updates from the console (Phase 3), several servers (the server list, Move work
+  off, cluster-wide Updates), and the Activity, Logs and Proxy pages of the Operator view (Phase 3).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

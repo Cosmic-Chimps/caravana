@@ -271,10 +271,13 @@ page 3.
     `internal/ui/operator_sentinel_test.go` (the three pages and their parts, and the log). Planted: a service secret,
     a command's output, text of `pro security-status` that isn't a package name (and pro's own error text), a
     command line of apt's history, and release notes (public, shown on purpose: only the log is checked for them).
-- [ ] T034 [P] `CHANGELOG.md` `## Unreleased` (Added: the Operator view, its three pages, API 0.29.0, the two needs-you
+- [X] T034 [P] `CHANGELOG.md` `## Unreleased` (Added: the Operator view, its three pages, API 0.29.0, the two needs-you
   kinds, the release notification; Upgrade: nothing to rerun, the release check is on by default and can be turned off on
   Updates); `docs/plan.md` (the single-host Operator pages move to 2.6; Updates takes over the "update available"
   notice; the screen table's rows for `NowScreen`, `NodeScreen`, `UpdatesScreen`); `CLAUDE.md` paragraph for 027.
+  - Done: `CHANGELOG.md` `## Unreleased` (Added, Changed, Upgrade), `docs/plan.md` (a row 027 in Phase 2.6, the
+    notice moved from the 2.6 list to 027, the Phase 3 rows and the screen table say what 027 built and what
+    stays), `CLAUDE.md` paragraph for 027.
 - [x] T034a One source for the needs-you wording: page 1's review (f0fd007) copied the needs-you sentences into
   `internal/service/sentenceparts.go` (`problemParts`) because `service` can't import `ui`, so they now live there and in
   `internal/ui/attention.go`. Make the service's parts the one source and have `ui/attention.go` draw them (or add a test

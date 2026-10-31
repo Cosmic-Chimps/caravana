@@ -9,6 +9,37 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- **The Operator view**: a Developer/Operator toggle under the brand in the sidebar, and three
+  pages about the host Caravana runs on. **Overview** (`/ops`) has the server panel (size, OS,
+  kernel, CPU, memory and disk meters, every running copy), every app across projects and
+  environments, the needs-you list and a feed of what happened lately in Caravana's own words.
+  The **server page** (`/ops/servers/<name>`) has its state, numbers, the copies running on it,
+  its facts and recent events, including boots and Caravana upgrades. **Updates** (`/ops/updates`)
+  shows a newer Caravana (with its release notes and the command to run), the OS updates and the
+  pending reboot read from files on the host, how to apply each by hand, and past updates. It
+  reads and never applies: nothing here installs, restarts or reboots.
+- **API 0.29.0**: `getHost` gains a `node` block, `listActivity`, `getUpdates`,
+  `putUpdateSettings` and `checkUpdates`, the needs-you kinds `os_reboot_required` and
+  `os_security_updates`, and the `caravana.release` notification (one message per new release,
+  to every channel that isn't paused).
+
+### Changed
+- A copy is "starting" until Nomad decides its health, in a rollout and outside one, instead of
+  showing as healthy for a moment.
+- The needs-you wording has one source, so the home, the Operator pages, the feed and the
+  notifications say the same words, with names, versions and kernels in mono.
+- vCPU values have two decimals, and whole totals are whole.
+- Dates read "Oct 22". The local time leaves out its date when it is the UTC date.
+- The sidebar's nav marks wear their hue.
+
+### Upgrade
+- Nothing to rerun: no new Nomad capability and no installer change. The store gains four small
+  tables when the new version starts.
+- The release check is on by default and can be turned off on Updates. It fetches only GitHub's
+  latest release and its files (at most once a day, plus Check now) and sends nothing about the
+  server. Ubuntu's `pro` command runs only when you ask for package names.
+
 ## 0.15.0 - 2026-10-30
 
 ### Added
