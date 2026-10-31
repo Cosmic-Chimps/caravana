@@ -127,6 +127,10 @@ func problemParts(it AttentionItem, display func(string) string) []TextPart {
 		return parts(who, ": "+it.Detail)
 	case AttentionDiskNearlyFull:
 		return parts("The disk at ", mono(it.Mount), notify.DiskTail(it.UsedPercent, it.FreeBytes))
+	case AttentionOSRebootRequired:
+		return rebootParts(it)
+	case AttentionOSSecurityUpdates:
+		return parts(securitySentence(it.Updates, it.Security))
 	case AttentionDomainDNSElsewhere:
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")

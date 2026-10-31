@@ -34,6 +34,8 @@ const (
 	AttentionDomainDNSElsewhere  AttentionKind = "domain_dns_elsewhere"  // a domain's DNS points at another host (feature 023)
 	AttentionDomainCertExpiring  AttentionKind = "domain_cert_expiring"  // a domain's certificate is near its end and not renewed
 	AttentionDiskNearlyFull      AttentionKind = "disk_nearly_full"      // a watched filesystem of the host is 85 % full or more (feature 025)
+	AttentionOSRebootRequired    AttentionKind = "os_reboot_required"    // the host needs a reboot: a failed item (feature 027)
+	AttentionOSSecurityUpdates   AttentionKind = "os_security_updates"   // security updates are waiting: a warning (feature 027)
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -92,7 +94,15 @@ type AttentionItem struct {
 	UsedPercent float64
 	FreeBytes   int64
 	Level       metrics.DiskLevel
-	When        time.Time
+	// InstalledKernel, RunningKernel and Packages are the reboot item's facts
+	// (os_reboot_required): the newest installed kernel release, the node's, and
+	// the packages that asked for the reboot. Updates and Security are the
+	// security item's (os_security_updates): the counts the host's list says.
+	// The host's items have no app; Detail is their sentence.
+	InstalledKernel, RunningKernel string
+	Packages                       []string
+	Updates, Security              int
+	When                           time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -107,6 +117,10 @@ type Attention struct {
 	// ever): the disk kind is missing because it couldn't be judged, not
 	// because the disks are fine, so the notifier sends no "resolved" for it.
 	DisksUnknown bool
+	// OSUnknown says the host's OS files weren't read in the last 5 minutes (or
+	// ever): the two OS kinds are missing because they couldn't be judged, so the
+	// notifier sends no "resolved" for them.
+	OSUnknown bool
 }
 
 // Attention builds the needs-you list from what is stored and what Nomad
@@ -150,6 +164,9 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	}
 	out.DisksUnknown = !known
 	out.Items = append(out.Items, disks...)
+	osItems, osKnown := s.osItems(s.clock.Now().UTC())
+	out.OSUnknown = !osKnown
+	out.Items = append(out.Items, osItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

@@ -209,7 +209,7 @@ page 3.
   queued once per tag); setters `SetProRunner`, `SetReleaseURL`, `SetReleaseCheckGap`; started in `Service.Start`.
   Tests in `internal/service/updates_test.go` with a fake release server (ETag 304, a pre-release ignored, a dev build,
   off makes zero requests, notified once) and a fake `pro`.
-- [ ] T026 [US3] [FR-022] Attention kinds `os_reboot_required` (failed, both kernels or the package named) and
+- [x] T026 [US3] [FR-022] Attention kinds `os_reboot_required` (failed, both kernels or the package named) and
   `os_security_updates` (warning; fresh list under 48 h; with auto-updates on only after 24 h of `security_since`) in
   `internal/service/attention.go`; not judged when the host reading is stale; resolve by the existing rule; the
   notifier's words in `internal/service/notifier.go`; tests in `internal/service/attention_test.go`,

@@ -106,6 +106,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionDiskNearlyFull:
 		ev.Title = fmt.Sprintf("Disk nearly full: %s is %d%% full", it.Mount, int(it.UsedPercent))
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
+		ev.Title = osTitle(it.Kind)
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -235,6 +238,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/schedules#schedule-" + subject
 	case AttentionDiskNearlyFull:
 		return "/monitoring#host"
+	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
+		return "/ops/updates"
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
@@ -372,10 +377,14 @@ func problemSubject(it AttentionItem) string {
 // disk kind comes from the stored host samples and can't be judged while the
 // newest is older than 5 minutes. A kind that isn't judged is neither opened
 // nor resolved, so an outage sends no burst of "resolved".
-type judged struct{ Copies, Disks bool }
+//
+// The two OS kinds (feature 027) come from the files the sampler reads and are
+// judged only while its newest reading is under 5 minutes old, as the disk kind
+// is.
+type judged struct{ Copies, Disks, OS bool }
 
 // allJudged is a check that could read everything.
-var allJudged = judged{Copies: true, Disks: true}
+var allJudged = judged{Copies: true, Disks: true, OS: true}
 
 // notJudged says whether a kind of item is one the check couldn't judge. It
 // takes the kind as the list writes it or as the table stores it (a plain
@@ -386,6 +395,8 @@ func notJudged[K ~string](kind K, j judged) bool {
 		return !j.Copies
 	case AttentionDiskNearlyFull:
 		return !j.Disks
+	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
+		return !j.OS
 	}
 	return false
 }
@@ -517,7 +528,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 	display := s.projectDisplay(ctx)
 	now := s.clock.Now().UTC()
-	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown}, exists, now, s.resolveAfter)
+	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown}, exists, now, s.resolveAfter)
 
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event
