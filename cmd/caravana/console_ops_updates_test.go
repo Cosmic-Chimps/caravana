@@ -21,6 +21,9 @@ type labUpdates struct {
 		Latest       string `json:"latest"`
 		CheckEnabled bool   `json:"checkEnabled"`
 		Install      string `json:"install"`
+		// CheckedAt is the last attempt, CheckedOKAt the last one that worked (feature 027's review).
+		CheckedAt   *string `json:"checkedAt"`
+		CheckedOKAt *string `json:"checkedOkAt"`
 	} `json:"caravana"`
 	OS struct {
 		Readable bool `json:"readable"`
@@ -37,6 +40,7 @@ type labUpdates struct {
 			Required        bool   `json:"required"`
 			RunningKernel   string `json:"runningKernel"`
 			InstalledKernel string `json:"installedKernel"`
+			InstalledBy     string `json:"installedBy"`
 		} `json:"reboot"`
 	} `json:"os"`
 }
@@ -143,6 +147,11 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 	if !up.OS.Readable || up.OS.Distro.ID != "ubuntu" || up.OS.Updates.Total != 14 || up.OS.Updates.Security != 9 || up.Caravana.Current != labCurrentVersion {
 		t.Fatalf("GET /v1/updates = %+v, want Ubuntu with 14 updates (9 security) on caravana %s", up, labCurrentVersion)
 	}
+	// The check worked, so the last good check is the last attempt. The host has no apt history, so no
+	// run is named as the one that installed the kernel.
+	if up.Caravana.CheckedAt == nil || up.Caravana.CheckedOKAt == nil || *up.Caravana.CheckedAt != *up.Caravana.CheckedOKAt || up.OS.Reboot.InstalledBy != "" {
+		t.Errorf("checkedAt = %v, checkedOkAt = %v, installedBy = %q; want the same time twice and no installer", up.Caravana.CheckedAt, up.Caravana.CheckedOKAt, up.OS.Reboot.InstalledBy)
+	}
 	running := kernelNumberOf(up.OS.Reboot.RunningKernel)
 	waitFor(t, "both OS items on the needs-you list", 2*time.Minute, func() bool {
 		kinds := c.g.attentionKinds(t)
@@ -172,6 +181,21 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 		if !strings.Contains(words, want) {
 			t.Errorf("/ops/updates lacks %q:\n%.1500s", want, words)
 		}
+	}
+	// The review's fixes, on the real page: the notes are bullets with a link to the release, the one Check
+	// now is the one by the setting, a kernel is a token that never breaks, and no line says who installed
+	// the kernel when no apt run names it.
+	for _, want := range []string{
+		`class="cv-upnote-b"`, `>Release notes</a>`, `kernel <span class="cv-uptok">` + running + ` → 9.9.0-999</span>`,
+		`<span class="cv-inline-mono text-fg-1 cv-nowrap">9.9.0-999</span>`,
+		"Only the release and its files are fetched; nothing is sent about this server.",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("/ops/updates lacks %q", want)
+		}
+	}
+	if n := strings.Count(page, ">Check now</button>"); n != 1 || strings.Contains(page, "Installed on ") {
+		t.Errorf("/ops/updates has %d Check now buttons and %v an \"Installed on\" line; want one button and no line", n, strings.Contains(page, "Installed on "))
 	}
 	pageOrder(t, "the banners", page, rebootWords, updatesWords, `id="available"`)
 	pageOrder(t, "Available's rows", page, `data-up="reboot"`, `data-up="ubuntu"`, `data-up="release"`, `id="apply"`)

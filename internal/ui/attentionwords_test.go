@@ -90,6 +90,11 @@ func TestEveryKindSaysTheSameWordsEverywhere(t *testing.T) {
 						t.Errorf("the Server page's banner = %q, feed = %q", got, feed)
 					}
 				}
+				for _, b := range upBanners(att, pl) {
+					if got := monoWords(b.Line); got != feed {
+						t.Errorf("the Updates page's banner = %q, feed = %q", got, feed)
+					}
+				}
 			})
 		}
 	}

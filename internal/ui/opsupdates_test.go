@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,7 @@ type fakeRelease struct {
 	mu       sync.Mutex
 	status   int
 	requests int
+	body     string // the release's notes; "" is a short default
 }
 
 func newFakeRelease(t *testing.T) *fakeRelease {
@@ -50,8 +52,13 @@ func newFakeRelease(t *testing.T) *fakeRelease {
 			w.WriteHeader(g.status)
 			return
 		}
+		body := g.body
+		if body == "" {
+			body = "Highlights\n\n- Operator view.\n- Updates page.\n"
+		}
+		notes, _ := json.Marshal(body)
 		fmt.Fprint(w, `{"tag_name":"v0.16.0","html_url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0",`+
-			`"published_at":"2026-10-28T10:00:00Z","body":"Highlights\n\n- Operator view.\n- Updates page.\n","draft":false,"prerelease":false}`)
+			`"published_at":"2026-10-28T10:00:00Z","body":`+string(notes)+`,"draft":false,"prerelease":false}`)
 	}))
 	t.Cleanup(g.Close)
 	return g
@@ -238,7 +245,7 @@ func TestOpsUpdatesPage(t *testing.T) {
 		"Reboot since 2026-", " UTC kernel 6.8.0-147 → 6.8.0-149",
 		"Rebooting stops every app for about a minute; Nomad starts them again when the server is back.",
 		"Ubuntu updates checked by Ubuntu 3 h ago 14 packages · 9 security",
-		"caravana released Oct 28 0.15.0 → 0.16.0", "Operator view.", "Updates page.",
+		"caravana released Oct 28 0.15.0 → 0.16.0", "•Operator view.", "•Updates page.", "Release notes",
 	} {
 		if !strings.Contains(text(avail), want) {
 			t.Errorf("Available lacks %q:\n%s", want, text(avail))
@@ -248,11 +255,25 @@ func TestOpsUpdatesPage(t *testing.T) {
 		`cv-mark cv-mark-lg cv-mark-failed`, `cv-mark cv-mark-lg cv-mark-warning`, `cv-mark cv-mark-lg cv-mark-idle`,
 		`<time class="cv-clock" datetime="`, // the reboot's time takes localtime.js
 		`name="what" value="packages"`, `>Check package names</button>`,
-		`name="what" value="release"`, `>Check now</button>`,
+		`<a href="https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0" class="cv-upreleaselink"`,
 	} {
 		if !strings.Contains(avail, want) {
 			t.Errorf("Available lacks %q", want)
 		}
+	}
+	// One Check now on the page, the one beside the release-check setting: none in the caravana row.
+	if strings.Contains(avail, `value="release"`) || strings.Contains(avail, ">Check now</button>") {
+		t.Errorf("Available has a Check now:\n%s", text(avail))
+	}
+	if n := strings.Count(body, ">Check now</button>"); n != 1 {
+		t.Errorf("the page has %d Check now buttons, want the one by the setting", n)
+	}
+	// A version pair never breaks: it is one nowrap token, in the Change column and in the banner.
+	if !strings.Contains(avail, `kernel <span class="cv-uptok">6.8.0-147 → 6.8.0-149</span>`) {
+		t.Errorf("the reboot's change isn't a token:\n%s", avail)
+	}
+	if !strings.Contains(body, `<span class="cv-inline-mono text-fg-1 cv-nowrap">6.8.0-149</span>`) {
+		t.Error("the banner's kernels aren't mono tokens that never break")
 	}
 	// Nothing says a vulnerability's name.
 	if strings.Contains(strings.ToLower(words), "cve") {
@@ -285,7 +306,7 @@ func TestOpsUpdatesPage(t *testing.T) {
 	for _, want := range []string{
 		"Ubuntu's automatic updates Set on the server, in unattended-upgrades. Off",
 		"Automatic reboot Set on the server, in unattended-upgrades. Off: reboots wait for you.",
-		"New caravana versions Only the release list is fetched; nothing is sent about this server.",
+		"New caravana versions Only the release and its files are fetched; nothing is sent about this server.",
 		"Check GitHub for new releases once a day", "Save", "checked ", "Check now",
 	} {
 		if !strings.Contains(text(how), want) {
@@ -340,7 +361,8 @@ func TestOpsUpdatesNothingWaiting(t *testing.T) {
 func TestOpsUpdatesStaleList(t *testing.T) {
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-stale-list", listAge: 3 * 24 * time.Hour, edit: automaticUpdatesOff(t)})
 	_, body := e.get(t, "/ops/updates")
-	if !strings.Contains(text(body), "Ubuntu's list is 3 days old. Run `sudo apt update` on the server to refresh it.") {
+	if !strings.Contains(text(body), "Ubuntu's list is 3 days old. Run sudo apt update on the server to refresh it.") ||
+		!strings.Contains(body, `<span class="cv-inline-mono text-fg-1">sudo apt update</span>`) {
 		t.Errorf("the stale sentence:\n%s", text(body))
 	}
 	if !strings.Contains(body, `class="cv-uprow cv-uprow-dim"`) {
@@ -355,6 +377,9 @@ func TestOpsUpdatesStaleList(t *testing.T) {
 	side := sidebarRegion.FindString(body)
 	if strings.Contains(side, "◆") || !strings.Contains(side, `<span aria-hidden="true">1</span>`) {
 		t.Errorf("the sidebar's mark for a stale list (the count, never ◆):\n%s", side)
+	}
+	if !strings.Contains(side, `class="cv-nav-mark-dim"`) {
+		t.Errorf("the count of a stale list isn't in fg-3:\n%s", side)
 	}
 }
 
@@ -434,6 +459,20 @@ func TestOpsUpdatesNoPro(t *testing.T) {
 	if !strings.Contains(text(body), "14 packages · 9 security") {
 		t.Error("the Ubuntu row is gone")
 	}
+	// Where the button would be, the row says how to see the names, with the command in mono.
+	if !strings.Contains(text(body), "Run apt list --upgradable on the server to see which packages.") ||
+		!strings.Contains(body, `<p class="cv-uphint">Run <span class="cv-inline-mono text-fg-1">apt list --upgradable</span> on the server to see which packages.</p>`) {
+		t.Errorf("the hint of a host without pro:\n%s", text(regionBetween(t, body, `id="available"`, `id="apply"`)))
+	}
+}
+
+// With pro, the button takes the hint's place: the row never has both.
+func TestOpsUpdatesProHasNoHint(t *testing.T) {
+	e, _ := updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", edit: automaticUpdatesOff(t), pro: uiPro{ok: true}})
+	_, body := e.get(t, "/ops/updates")
+	if strings.Contains(body, "apt list --upgradable") || !strings.Contains(body, ">Check package names</button>") {
+		t.Errorf("with pro the row has the button and no hint:\n%s", text(regionBetween(t, body, `id="available"`, `id="apply"`)))
+	}
 }
 
 // The release check: turned off, it makes no request, the page says "off" with no Check now, a check
@@ -489,22 +528,33 @@ func TestOpsUpdatesGitHubUnreachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc.LatestTag, rc.PublishedAt, rc.URL = "v0.16.0", time.Now().Add(-48*time.Hour), "https://example.invalid/v0.16.0"
-	rc.CheckedAt, rc.Error = time.Now().Add(-3*24*time.Hour-time.Hour), "GitHub didn't answer"
+	// The last attempt was two hours ago and failed; the last good one was three days ago.
+	rc.CheckedAt, rc.CheckedOKAt, rc.Error = time.Now().Add(-2*time.Hour-time.Minute), time.Now().Add(-3*24*time.Hour-time.Hour), "GitHub didn't answer"
 	if err := e.Store.SaveReleaseCheck(context.Background(), rc); err != nil {
 		t.Fatal(err)
 	}
 	_, body := e.get(t, "/ops/updates")
 	words := text(body)
 	if !strings.Contains(words, "Couldn't check GitHub (last checked 3 days ago).") {
-		t.Errorf("the meta:\n%s", words)
+		t.Errorf("the meta says \"last checked\" of the last good check:\n%s", words)
 	}
 	for _, not := range []string{`data-up="release"`, "0.15.0 → 0.16.0", "Run the installer"} {
 		if strings.Contains(body, not) || strings.Contains(words, not) {
 			t.Errorf("the page has %q though GitHub couldn't be reached", not)
 		}
 	}
-	if !strings.Contains(words, "checked 3 d ago · GitHub didn't answer") {
-		t.Errorf("the line by the form:\n%s", words)
+	if !strings.Contains(words, "checked 2 h ago · GitHub didn't answer") {
+		t.Errorf("the line by the form (the last attempt):\n%s", words)
+	}
+
+	// With no good check ever, there is nothing to say was "last checked".
+	rc.CheckedOKAt = time.Time{}
+	if err := e.Store.SaveReleaseCheck(context.Background(), rc); err != nil {
+		t.Fatal(err)
+	}
+	_, body = e.get(t, "/ops/updates")
+	if words = text(body); !strings.Contains(words, "Couldn't check GitHub yet.") || strings.Contains(words, "last checked") {
+		t.Errorf("the meta with no good check:\n%s", words)
 	}
 	if strings.Contains(words, "Nothing waiting") && !strings.Contains(words, "Nothing waiting. Checked") {
 		t.Errorf("the meta of an empty list:\n%s", words)
@@ -603,11 +653,12 @@ func TestUpdatesMarkOf(t *testing.T) {
 			o := ubuntu(14, 9, false)
 			o.Reboot.Required = true
 			return o
-		}()}, navMark{"■", "reboot needed"}},
-		{"security is ◆", service.UpdatesView{OS: ubuntu(14, 9, false)}, navMark{"◆", "security updates waiting"}},
-		{"a stale list is no ◆: the count", service.UpdatesView{OS: ubuntu(14, 9, true)}, navMark{"1", "1 update available"}},
-		{"a newer caravana is 1", service.UpdatesView{Caravana: release, OS: ubuntu(0, 0, false)}, navMark{"1", "1 update available"}},
-		{"a newer caravana and other updates are 2", service.UpdatesView{Caravana: release, OS: ubuntu(3, 0, false)}, navMark{"2", "2 updates available"}},
+		}()}, navMark{Text: "■", Word: "reboot needed"}},
+		{"security is ◆", service.UpdatesView{OS: ubuntu(14, 9, false)}, navMark{Text: "◆", Word: "security updates waiting"}},
+		{"a stale list is no ◆: the count, in fg-3", service.UpdatesView{OS: ubuntu(14, 9, true)}, navMark{Text: "1", Word: "1 update available", Dim: true}},
+		{"a stale list and a newer caravana: the count, in fg-3", service.UpdatesView{Caravana: release, OS: ubuntu(14, 9, true)}, navMark{Text: "2", Word: "2 updates available", Dim: true}},
+		{"a newer caravana is 1", service.UpdatesView{Caravana: release, OS: ubuntu(0, 0, false)}, navMark{Text: "1", Word: "1 update available"}},
+		{"a newer caravana and other updates are 2", service.UpdatesView{Caravana: release, OS: ubuntu(3, 0, false)}, navMark{Text: "2", Word: "2 updates available"}},
 		{"a release GitHub couldn't confirm is no row", service.UpdatesView{Caravana: service.CaravanaUpdate{Current: "0.15.0", Latest: "0.16.0", CheckError: "GitHub didn't answer"}, OS: ubuntu(0, 0, false)}, navMark{}},
 		{"a host that can't be read", service.UpdatesView{}, navMark{}},
 	} {
@@ -630,8 +681,12 @@ func TestRebootChange(t *testing.T) {
 		{"five packages", service.RebootView{Packages: []string{"a", "b", "c", "d", "e"}}, "a, b, c and 2 more"},
 		{"no names", service.RebootView{}, "needed"},
 	} {
-		if got := rebootChange(tc.r); got != tc.want {
-			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		var got strings.Builder
+		for _, tok := range rebootChange(tc.r) {
+			got.WriteString(tok.Text)
+		}
+		if got.String() != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got.String(), tc.want)
 		}
 	}
 }
@@ -701,7 +756,7 @@ func TestUpPastOf(t *testing.T) {
 		t.Errorf("a boot's row = %+v", got[1])
 	}
 	one := upPastOf(now, history[12:])
-	if len(one) != 1 || one[0].Date.Text != "Dec 30 2025" {
+	if len(one) != 1 || one[0].Date.Text != "Dec 30, 2025" {
 		t.Errorf("a date of another year = %+v", one)
 	}
 	if upPastOf(now, nil) != nil {

@@ -1097,10 +1097,12 @@
   .cv-dmbanner-line { font-size: 15px; line-height: 1.5; color: var(--color-fg-1); overflow-wrap: anywhere; text-wrap: pretty; }
   .cv-dmbanner-explain { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
   .cv-dmmore { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
-  /* Below 640px the banner stacks: the mark and the text, then Check again under the text. */
+  /* The action never shrinks: its track is as wide as its content, whatever the text asks for. */
+  .cv-dmbanner > .cv-btn { flex: none; min-width: max-content; justify-self: start; }
+  /* Below 640px the banner stacks: the mark and the text, then the action under the text. */
   @media (max-width: 639.98px) {
     .cv-dmbanner { grid-template-columns: 14px minmax(0, 1fr); row-gap: 12px; }
-    .cv-dmbanner > .cv-dmcheckform { grid-column: 2; }
+    .cv-dmbanner > .cv-dmcheckform, .cv-dmbanner > .cv-btn { grid-column: 2; }
   }
 
   /* The table: a head, then one <details> per domain whose summary is the row. */
@@ -1712,6 +1714,7 @@
   .cv-view-link[aria-current="page"] { background: var(--color-ink-3); color: var(--color-fg-1); }
   /* The mark after Updates (a count, a square or a diamond): the page fills it, text never fg-4. */
   .cv-nav-mark { margin-left: auto; font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
+  .cv-nav-mark-dim { color: var(--color-fg-3); }
 
   /* The Operator Overview (/ops): the page is a container (cvops) so the aside drops by the room the
      page has; the stats line wraps between items, never inside one. Text is never fg-4. */
@@ -1899,9 +1902,18 @@
   .cv-upwho { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .cv-upname { margin: 0; font: 400 15px/1.4 var(--font-sans); color: var(--color-fg-1); overflow-wrap: anywhere; }
   .cv-upsub { margin: 0; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
-  .cv-upchange { margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); min-width: 0; overflow-wrap: anywhere; padding-top: 2px; }
+  .cv-upchange { margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); min-width: 0; padding-top: 2px; }
+  /* A version pair or a package name never breaks inside; lines break only at the spaces between them. */
+  .cv-uptok, .cv-nowrap { white-space: nowrap; }
   .cv-upnotes { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
   .cv-upnotelist { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; }
+  /* A release's notes: a bullet per line, its bold lead at 500 in fg-1. */
+  .cv-upnote-b { display: flex; gap: 8px; }
+  .cv-upbullet { flex: none; color: var(--color-fg-3); }
+  .cv-upnotelead { font-weight: 500; color: var(--color-fg-1); }
+  .cv-upreleaselink { font: 400 14px/1.45 var(--font-sans); }
+  .cv-uphint { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-uphint .cv-inline-mono { color: var(--color-fg-1); }
   .cv-uprow-dim .cv-upname, .cv-uprow-dim .cv-upchange, .cv-uprow-dim .cv-upnotelist { color: var(--color-fg-3); }
   .cv-upnames { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); overflow-wrap: anywhere; }
   .cv-upnamelist { font: 400 13px/1.45 var(--font-mono); color: var(--color-fg-1); }

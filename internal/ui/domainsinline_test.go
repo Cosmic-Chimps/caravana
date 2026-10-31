@@ -65,7 +65,7 @@ func TestDomainsConfirmationsInline(t *testing.T) {
 		}
 	}
 	// The banner stacks below 640px: Check again under the text.
-	if !strings.Contains(flat, ".cv-dmbanner>.cv-dmcheckform{grid-column:2") {
+	if !strings.Contains(flat, ".cv-dmbanner>.cv-dmcheckform,.cv-dmbanner>.cv-btn{grid-column:2") {
 		t.Error("the banner doesn't stack its button below 640px")
 	}
 }

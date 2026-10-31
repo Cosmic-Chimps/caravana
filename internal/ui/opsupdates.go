@@ -67,17 +67,20 @@ type upData struct {
 
 // navMark is the little mark after the sidebar's Updates item: ■ a reboot is needed, ◆ security
 // updates are waiting, else the count of what is available, else nothing. Word is its sentence for a
-// screen reader and the hover.
+// screen reader and the hover. Dim sets a count in fg-3: the package lists are stale, so the count may
+// be out of date and is never ◆.
 type navMark struct {
 	Text string
 	Word string
+	Dim  bool
 }
 
-// upBanner is a needs-you item of the page: the mark, the item's own sentence, what follows if it is
-// left, and (always) the link to How to apply.
+// upBanner is a needs-you item of the page: the mark, the item's own sentence (the service's parts, the
+// ones the needs-you list and the feed draw), what follows if it is left, and (always) the link to How
+// to apply.
 type upBanner struct {
 	Mark    string
-	Line    string
+	Line    sentence
 	Explain string
 }
 
@@ -85,7 +88,7 @@ type upBanner struct {
 // stale-list sentence when the list has no row of its own to carry it.
 type upAvailable struct {
 	Meta   string
-	Notice string
+	Notice sentence
 	Rows   []upRow
 	// OSMessage is the one sentence an unreadable OS gets ("caravana can't read this server's pending
 	// updates (not Ubuntu or Debian).") with its ○ mark, in place of the OS rows.
@@ -100,14 +103,42 @@ type upRow struct {
 	MarkWord string // the mark in words, for a screen reader
 	Name     string
 	Sub      upSub
-	Change   string
+	Change   upChange
 	Dim      bool
 	// Notes are the lines of the notes column: a release's bullets and what it pins, a stale list's
 	// sentence, the reboot's consequence.
-	Notes []string
-	// Check is the caravana row's Check now form; Names the Ubuntu updates row's package names.
-	Check *upCheck
+	Notes []upNote
+	// Link is the release's page, after its notes.
+	Link *upLink
+	// Hint is what the Ubuntu updates row says where Check package names would be, on a host that
+	// can't give names.
+	Hint sentence
+	// Names is the Ubuntu updates row's package names.
 	Names *upNames
+}
+
+// upChange is the change column: words and tokens. A token (a version pair, a package name) never
+// breaks inside, and lines break only at the spaces between them.
+type upChange []upTok
+
+// upTok is a piece of a change: a token or plain words.
+type upTok struct {
+	Text  string
+	Token bool
+}
+
+// upNote is one line of the notes column. Bullet puts a • before it; Lead draws it as a bullet's bold
+// lead (500, fg-1).
+type upNote struct {
+	Bullet bool
+	Lead   bool
+	Text   sentence
+}
+
+// upLink is a link out of the page.
+type upLink struct {
+	Label string
+	Href  string
 }
 
 // upSub is the 12px line under a row's name: a label, then a time ("released Oct 28", "checked by
@@ -163,7 +194,7 @@ type upSetting struct {
 // upChecked is the release-check setting and what follows its form: whether the check is on (the
 // checkbox, drawn once with the page: a refresh never replaces a box someone is changing), then
 // "checked 14 h ago", "off" or "not checked yet", why the last check failed, and the Check now
-// button or its running state (swapped by id).
+// button or its running state (swapped by id): the page's only Check now.
 type upChecked struct {
 	Enabled bool
 	Text    string
@@ -284,7 +315,7 @@ func (s *server) loadOpsUpdates(r *http.Request) (upData, error) {
 	}
 	now := s.now().UTC()
 	d := upData{
-		Banners: upBanners(att),
+		Banners: upBanners(att, places{}),
 		Avail:   upAvailableOf(now, v),
 		Auto:    upSettings(v.OS),
 		Checked: upCheckedOf(now, v),
@@ -305,7 +336,8 @@ func updatesMarkOf(now time.Time, v service.UpdatesView) navMark {
 		return navMark{Text: "◆", Word: "security updates waiting"}
 	}
 	if n := len(upAvailableOf(now, v).Rows); n > 0 {
-		return navMark{Text: strconv.Itoa(n), Word: plural(n, "update") + " available"}
+		// A stale list says the count may be out of date: fg-3, and never ◆.
+		return navMark{Text: strconv.Itoa(n), Word: plural(n, "update") + " available", Dim: v.OS.Readable && u.Known && u.Stale}
 	}
 	return navMark{}
 }
@@ -327,15 +359,16 @@ func (s *server) updatesMark(r *http.Request) navMark {
 // ---- banners ----------------------------------------------------------------------------------
 
 // upBanners are the needs-you items about the OS, ■ the reboot before ◆ the updates. The sentence is
-// the item's own (Detail), so the list, the notification and this page say the same.
-func upBanners(att service.Attention) []upBanner {
+// the item's own (service.ProblemParts, with the kernels and packages in mono), so the list, the feed
+// and this page say the same.
+func upBanners(att service.Attention, pl places) []upBanner {
 	var out []upBanner
 	for _, kind := range []service.AttentionKind{service.AttentionOSRebootRequired, service.AttentionOSSecurityUpdates} {
 		for _, it := range att.Items {
 			if it.Kind != kind {
 				continue
 			}
-			b := upBanner{Mark: "failed", Line: it.Detail}
+			b := upBanner{Mark: "failed", Line: problemSentence(it, pl)}
 			if kind == service.AttentionOSRebootRequired {
 				b.Explain = "Until it reboots, the server keeps running the old version of what was updated."
 				if kernelPending(it.InstalledKernel, it.RunningKernel) {
@@ -380,17 +413,17 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 	c := v.Caravana
 	released := c.Latest != "" && c.CheckError == ""
 	if released {
-		rows = append(rows, releaseRow(v))
+		rows = append(rows, releaseRow(now, v))
 	}
 	o := v.OS
-	var notice string
+	var notice sentence
 	if o.Readable && o.Updates.Known && o.Updates.Total > 0 {
 		rows = append(rows, ubuntuRow(now, v))
 	} else if o.Readable && o.Updates.Known && o.Updates.Stale {
 		notice = staleWords(now, o.Updates.CheckedAt)
 	}
 	if o.Reboot.Required {
-		rows = append(rows, rebootRow(o))
+		rows = append(rows, rebootRow(now, o))
 	}
 	slices.SortStableFunc(rows, func(a, b upRow) int { return cmp.Compare(upMarkRank[a.Mark], upMarkRank[b.Mark]) })
 
@@ -409,11 +442,12 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 		meta = append(meta, text)
 	}
 	if c.CheckError != "" {
-		text := "Couldn't check GitHub"
-		if !c.CheckedAt.IsZero() {
-			text += " (last checked " + agoFull(now, c.CheckedAt) + ")"
+		// "Last checked" is the last check that worked, since that is what the sentence claims.
+		text := "Couldn't check GitHub yet."
+		if !c.CheckedOKAt.IsZero() {
+			text = "Couldn't check GitHub (last checked " + agoFull(now, c.CheckedOKAt) + ")."
 		}
-		meta = append(meta, text+".")
+		meta = append(meta, text)
 	}
 	a.Meta = strings.Join(meta, " ")
 	return a
@@ -435,28 +469,49 @@ func releaseCheckedAt(c service.CaravanaUpdate) time.Time {
 	if !c.CheckEnabled {
 		return time.Time{}
 	}
-	return c.CheckedAt
+	return c.CheckedOKAt
 }
 
-// staleWords is the sentence of a list Ubuntu hasn't refreshed in two days.
-func staleWords(now, checked time.Time) string {
+// staleWords is the sentence of a list Ubuntu hasn't refreshed in two days, with the command in mono.
+func staleWords(now, checked time.Time) sentence {
 	age := now.Sub(checked)
 	days := max(int(age/(24*time.Hour)), 2)
-	return "Ubuntu's list is " + plural(days, "day") + " old. Run `sudo apt update` on the server to refresh it."
+	return sentence{plain("Ubuntu's list is " + plural(days, "day") + " old. Run "), mono("sudo apt update"), plain(" on the server to refresh it.")}
 }
 
-func releaseRow(v service.UpdatesView) upRow {
+func releaseRow(now time.Time, v service.UpdatesView) upRow {
 	c := v.Caravana
-	row := upRow{Kind: "release", Mark: "idle", MarkWord: "update available", Name: "caravana", Change: c.Current + " → " + c.Latest, Notes: slices.Clone(c.Notes)}
+	row := upRow{Kind: "release", Mark: "idle", MarkWord: "update available", Name: "caravana", Change: upChange{{Text: c.Current + " → " + c.Latest, Token: true}}}
+	for _, n := range c.Notes {
+		row.Notes = append(row.Notes, upNote{Bullet: true, Lead: n.Lead, Text: backticked(n.Text)})
+	}
 	if !c.ReleasedAt.IsZero() {
-		row.Sub = upSub{Label: "released", When: when{Text: c.ReleasedAt.UTC().Format("Jan 2"), Exact: c.ReleasedAt.UTC().Format("2006-01-02 15:04:05 UTC"),
+		row.Sub = upSub{Label: "released", When: when{Text: shortDate(now, c.ReleasedAt), Exact: c.ReleasedAt.UTC().Format("2006-01-02 15:04:05 UTC"),
 			ISO: c.ReleasedAt.UTC().Format(time.RFC3339)}}
 	}
-	if c.PinsText != "" {
-		row.Notes = append(row.Notes, c.PinsText)
+	if pins := pinsSentence(c.Pins); len(pins) > 0 {
+		row.Notes = append(row.Notes, upNote{Text: pins})
 	}
-	row.Check = releaseCheck(v)
+	if c.URL != "" {
+		row.Link = &upLink{Label: "Release notes", Href: c.URL}
+	}
 	return row
+}
+
+// pinsSentence is "Updates Nomad 2.0.7 → 2.1.0 and Traefik 3.7.13 → 3.8.0." with each version pair in
+// mono, so a pair never breaks inside. The words are the service's PinsText.
+func pinsSentence(pins []service.VersionPin) sentence {
+	if len(pins) == 0 {
+		return nil
+	}
+	out := sentence{plain("Updates ")}
+	for i, p := range pins {
+		if i > 0 {
+			out = append(out, plain(" and "))
+		}
+		out = append(out, plain(p.Name+" "), part{Text: p.From + " → " + p.To, Mono: true, Nowrap: true})
+	}
+	return append(out, plain("."))
 }
 
 // releaseCheck is the Check now button, or its running state. It is nil for a check that can't be asked
@@ -474,7 +529,7 @@ func releaseCheck(v service.UpdatesView) *upCheck {
 func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
 	u := v.OS.Updates
 	row := upRow{Kind: "ubuntu", Mark: "idle", MarkWord: "update available", Name: "Ubuntu updates", Dim: u.Stale,
-		Change: plural(u.Total, "package") + " · " + strconv.Itoa(u.Security) + " security"}
+		Change: upChange{{Text: plural(u.Total, "package") + " · " + strconv.Itoa(u.Security) + " security"}}}
 	if u.Security > 0 && !u.Stale {
 		row.Mark, row.MarkWord = "warning", "security updates"
 	}
@@ -482,9 +537,13 @@ func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
 		row.Sub = upSub{Label: "checked by Ubuntu", When: whenAgo(now, u.CheckedAt)}
 	}
 	if u.Stale {
-		row.Notes = append(row.Notes, staleWords(now, u.CheckedAt))
+		row.Notes = append(row.Notes, upNote{Text: staleWords(now, u.CheckedAt)})
 	}
 	row.Names = namesOf(now, v)
+	if row.Names == nil {
+		// No pro to ask: say how to see the names, where Check package names would be.
+		row.Hint = sentence{plain("Run "), mono("apt list --upgradable"), plain(" on the server to see which packages.")}
+	}
 	return row
 }
 
@@ -519,10 +578,14 @@ func namesOf(now time.Time, v service.UpdatesView) *upNames {
 	return n
 }
 
-func rebootRow(o service.OSUpdates) upRow {
+func rebootRow(now time.Time, o service.OSUpdates) upRow {
 	r := o.Reboot
+	note := "Rebooting stops every app for about a minute; Nomad starts them again when the server is back."
+	if by := installedBy(now, r); by != "" {
+		note = by + " " + note
+	}
 	row := upRow{Kind: "reboot", Mark: "failed", MarkWord: "reboot needed", Name: "Reboot", Change: rebootChange(r),
-		Notes: []string{"Rebooting stops every app for about a minute; Nomad starts them again when the server is back."}}
+		Notes: []upNote{{Text: plainS(note)}}}
 	if !r.Since.IsZero() {
 		c := clockAt(r.Since, r.Since.UTC().Format("2006-01-02 15:04")+" UTC", localDate)
 		row.Sub = upSub{Label: "since", Clock: &c}
@@ -530,21 +593,42 @@ func rebootRow(o service.OSUpdates) upRow {
 	return row
 }
 
-// rebootChange is the Reboot row's change: the two kernels, or the packages that asked for it.
-func rebootChange(r service.RebootView) string {
+// installedBy is "Installed on Oct 28 by Ubuntu's automatic updates." (or "by hand."): the apt run that
+// installed what the reboot is for, which the service matches against the marker's list as the history
+// does. "" when no run is known.
+func installedBy(now time.Time, r service.RebootView) string {
+	if r.InstalledAt.IsZero() {
+		return ""
+	}
+	who := "by hand"
+	if r.InstalledBy == "unattended" {
+		who = "by Ubuntu's automatic updates"
+	}
+	return "Installed on " + shortDate(now, r.InstalledAt) + " " + who + "."
+}
+
+// rebootChange is the Reboot row's change: the two kernels, or the packages that asked for it. Versions
+// and package names are tokens.
+func rebootChange(r service.RebootView) upChange {
 	if kernelPending(r.InstalledKernel, r.RunningKernel) {
-		return "kernel " + kernelNumber(r.RunningKernel) + " → " + kernelNumber(r.InstalledKernel)
+		return upChange{{Text: "kernel "}, {Text: kernelNumber(r.RunningKernel) + " → " + kernelNumber(r.InstalledKernel), Token: true}}
 	}
 	n := len(r.Packages)
 	if n == 0 {
-		return "needed"
+		return upChange{{Text: "needed"}}
 	}
 	shown := r.Packages[:min(n, upRebootNamesShown)]
-	text := strings.Join(shown, ", ")
-	if n > len(shown) {
-		text += " and " + strconv.Itoa(n-len(shown)) + " more"
+	var out upChange
+	for i, p := range shown {
+		if i > 0 {
+			out = append(out, upTok{Text: ", "})
+		}
+		out = append(out, upTok{Text: p, Token: true})
 	}
-	return text
+	if n > len(shown) {
+		out = append(out, upTok{Text: " and " + strconv.Itoa(n-len(shown)) + " more"})
+	}
+	return out
 }
 
 // ---- How to apply -----------------------------------------------------------------------------
@@ -631,10 +715,7 @@ func upPastOf(now time.Time, history []service.UpdateEvent) []upPast {
 			break
 		}
 		t := e.At.UTC()
-		date := t.Format("Jan 2")
-		if t.Year() != now.Year() {
-			date = t.Format("Jan 2 2006")
-		}
+		date := shortDate(now, t)
 		mark := "healthy"
 		if e.Kind == "boot" {
 			mark = "idle"

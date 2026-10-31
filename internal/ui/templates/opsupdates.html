@@ -15,7 +15,7 @@
 <div class="cv-panel cv-dmbanner">
   <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
   <div class="cv-dmbanner-text">
-    <p class="cv-dmbanner-line">{{.Line}}</p>
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
     <p class="cv-dmbanner-explain">{{.Explain}}</p>
   </div>
   <a href="#apply" class="cv-btn cv-btn-secondary cv-btn-sm">How to apply</a>
@@ -38,11 +38,12 @@
     <p class="cv-upname">{{.Name}}</p>
     {{if or .Sub.Clock .Sub.When.Text}}<p class="cv-upsub">{{.Sub.Label}} {{if .Sub.Clock}}{{template "clock" .Sub.Clock}}{{else}}{{template "up-time" .Sub.When}}{{end}}</p>{{end}}
   </div>
-  <p class="cv-upchange">{{.Change}}</p>
+  <p class="cv-upchange">{{range .Change}}{{if .Token}}<span class="cv-uptok">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</p>
   <div class="cv-upnotes">
-    {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}<li{{if .Bullet}} class="cv-upnote-b"{{end}}>{{if .Bullet}}<span class="cv-upbullet" aria-hidden="true">•</span>{{end}}<span class="{{if .Lead}}cv-upnotelead{{end}}">{{template "sentence" .Text}}</span></li>{{end}}</ul>{{end}}
+    {{with .Link}}<a href="{{.Href}}" class="cv-upreleaselink" rel="noopener noreferrer" target="_blank">{{.Label}}</a>{{end}}
+    {{with .Hint}}<p class="cv-uphint">{{template "sentence" .}}</p>{{end}}
     {{with .Names}}{{template "up-names" .}}{{end}}
-    {{with .Check}}{{template "up-check" .}}{{end}}
   </div>
 </div>
 {{end}}
@@ -67,7 +68,7 @@
     <h2 class="cv-label" id="up-avail-title">Available</h2>
     {{with .Avail.Meta}}<span class="cv-mnsec-meta">{{.}}</span>{{end}}
   </div>
-  {{with .Avail.Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+  {{with .Avail.Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{if .Avail.Rows}}
   <div class="cv-panel cv-uprows" role="list" aria-label="Available updates">{{range .Avail.Rows}}{{template "up-row" .}}{{end}}</div>
   {{end}}
@@ -153,7 +154,7 @@
       <div class="cv-setrow">
         <div class="cv-setrow-text">
           <span class="cv-setrow-label">New caravana versions</span>
-          <p class="cv-setrow-hint">Only the release list is fetched; nothing is sent about this server.</p>
+          <p class="cv-setrow-hint">Only the release and its files are fetched; nothing is sent about this server.</p>
         </div>
         <div class="cv-setrow-ctl">
           {{if .Saved}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved.</span></div>{{end}}
