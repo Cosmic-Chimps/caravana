@@ -290,7 +290,7 @@ page 3.
   - 2026-10-31 at 4694dc4: build, vet, staticcheck, gofmt, both cross-compiles, `go mod tidy -diff`, ui-css,
     ui-vendor, shellcheck and `go test -race -count=1 -timeout 30m ./...` all pass.
   - 2026-10-31 at 9035a14, the merge condition: the whole `TestConsoleLab` on a quiet machine (review apps cleared,
-    nothing else running) passes, 31 of 31 steps in 27.6 min, `console-logs` (108 s) and the three 027 steps included.
+    nothing else running) passes, all 30 steps in 27.6 min, `console-logs` (108 s) and the three 027 steps included.
 
 ## Dependencies & Execution Order
 
