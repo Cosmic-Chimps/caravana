@@ -333,3 +333,29 @@ Fold these in with the two recheck fixes, the "last seen" ruling and "3 minutes 
   owner should see it sooner, that change belongs to 025's function for every page, not to this
   page.
 - The crash signal comes from the needs-you item (above).
+
+## Last look (designer, 2026-10-31, build 7637b63)
+
+Checked at 1440, 1200, 960, 640, 390 and without script. No width scrolls sideways, and no word
+breaks across lines at any width. CPU and Memory start at the same x on every row (one grid with
+subgrid rows), and the four hidden columnheaders are there. Verified: the crash line ◆
+"restarted 3 times in 1 h" beside a truthful phase; "times in UTC"; "of 18.3 GB on /"; "up
+since … UTC · 08:46 local (10 h ago)" with the local date left out; no "last seen" on a fresh
+ready node; the same "—" over the reservation sub for a starting copy.
+
+### Last fixes, then approved
+
+1. **Fold at 720px of the panel** (your call 1): yes. At 640 every row is four lines ("0.00" /
+   "vCPU" / "of 0.05" / "reserved"). The fold at 720 is the right answer, not a narrower Up cell.
+2. **A crash-looping copy sorts with the problems.** At 1440, crashy, healthy between restarts,
+   sat in alphabetical order under clock, and it led the list only while it was starting.
+   "Problems first" includes a row with the crash signal, so it never moves with the restart
+   cycle. Order: failed, crash signal, starting, stopping, then by app and service.
+3. **Capacity totals stay whole.** "of 2.00 vCPU" becomes "of 2 vCPU". Two decimals are for
+   measured and reserved values ("0.22", "0.77 reserved", "0.00"). A whole number of cores is a
+   count. Apply it in the shared formatter, so page 1 and 025 match.
+
+### Calls
+
+- Freshness from the sample's window start plus one gap (call 2): yes.
+- ■ for out of memory and ◆ for restarting (call 3): yes, those are the list's own levels.
