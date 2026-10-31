@@ -198,10 +198,10 @@ page 3.
   among them) and `internal/hostos/real.go` (`Root()`, `RunPro(ctx, home)` with `pro security-status --format json`,
   `HOME` set, 120 s); a test in `internal/hostos/imports_test.go` forbids `net/http`, `os/exec` and `os.Open` outside
   `real.go`; tests with a recorded JSON in `testdata/`.
-- [ ] T024 [US3] [FR-018, FR-022] The sampler reads `hostos.ReadState` each tick and keeps it in memory with the running
+- [x] T024 [US3] [FR-018, FR-022] The sampler reads `hostos.ReadState` each tick and keeps it in memory with the running
   kernel from the node; `host_marks.security_since` set while the security count is above zero; `ChangeUpdates`
   ("updates") when the state changes; tests in `internal/service/updates_test.go`.
-- [ ] T025 [US3] [FR-016, FR-017, FR-019, FR-021, FR-023] `internal/service/updates.go`: `Updates(ctx)` (the
+- [x] T025 [US3] [FR-016, FR-017, FR-019, FR-021, FR-023] `internal/service/updates.go`: `Updates(ctx)` (the
   contracts/api.md shape), `SetReleaseCheck(ctx, enabled)`, `CheckRelease` and `CheckPackages` (one at a time, refused
   within 10 min with `ErrCheckTooSoon`, `ErrCheckDisabled`, `ErrCheckUnavailable`), `runReleaseCheck` (a minute after
   start, every 24 h with up to 1 h jitter; `If-None-Match`, 10 s, `User-Agent: caravana/<version>`, no request when off;

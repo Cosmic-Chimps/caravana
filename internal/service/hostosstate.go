@@ -60,13 +60,21 @@ func (s *Service) noteOS(ctx context.Context) {
 	st := &s.sampler
 	changed := false
 
-	reboot := hostos.ReadReboot(s.hostRoot)
+	state := hostos.ReadState(s.hostRoot)
+	reboot := state.Reboot
+	now := s.clock.Now().UTC()
 	st.mu.Lock()
 	if !st.rebootRead || !sameReboot(st.reboot, reboot) {
 		st.reboot, st.rebootRead = reboot, true
 		changed = true
 	}
+	updatesChanged := !st.osRead || !sameOSState(st.os, state)
+	st.os, st.osRead, st.osReadAt = state, true, now
 	st.mu.Unlock()
+	s.noteSecuritySince(ctx, state, now)
+	if updatesChanged {
+		s.publish(Change{What: ChangeUpdates})
+	}
 
 	runs, err := hostos.ReadHistory(s.hostRoot, osHistoryRuns)
 	if err != nil {
@@ -96,6 +104,82 @@ func (s *Service) noteOS(ctx context.Context) {
 	if changed {
 		s.publish(Change{What: ChangeHost})
 	}
+}
+
+// sameOSState says two readings tell the Updates page the same thing.
+func sameOSState(a, b hostos.State) bool {
+	return a.Readable == b.Readable && a.Distro == b.Distro && sameReboot(a.Reboot, b.Reboot) &&
+		a.Updates.Known == b.Updates.Known && a.Updates.Total == b.Updates.Total && a.Updates.Security == b.Updates.Security &&
+		a.Updates.CheckedAt.Equal(b.Updates.CheckedAt) &&
+		samePtr(a.Unattended.Enabled, b.Unattended.Enabled) && samePtr(a.Unattended.AutoReboot, b.Unattended.AutoReboot) &&
+		a.Unattended.AutoRebootTime == b.Unattended.AutoRebootTime
+}
+
+// samePtr says two optional values are both unknown or both the same.
+func samePtr[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// osState is a copy of the newest reading of the host's OS files and when it was
+// made; ok is false before the first tick.
+func (s *Service) osState() (state hostos.State, readAt time.Time, ok bool) {
+	st := &s.sampler
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	state = st.os
+	state.Reboot.Packages = slices.Clone(state.Reboot.Packages)
+	return state, st.osReadAt, st.osRead
+}
+
+// securityClock is when the count of waiting security updates first went above
+// zero, or the zero time when it isn't above zero (or isn't known).
+func (s *Service) securityClock() time.Time {
+	st := &s.sampler
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.securitySince
+}
+
+// noteSecuritySince keeps the mark of when security updates started waiting:
+// set the first time the count is above zero, dropped when it reads zero, and
+// left alone when the count isn't known (a missing file says nothing). It is
+// stored, so a restart doesn't start the clock again; the in-memory copy is
+// what the needs-you list reads.
+func (s *Service) noteSecuritySince(ctx context.Context, state hostos.State, now time.Time) {
+	if !state.Readable || !state.Updates.Known {
+		return
+	}
+	since, ok, err := s.store.HostMark(ctx, store.MarkSecuritySince)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("read the security updates mark", "error", err)
+		}
+		return
+	}
+	switch {
+	case state.Updates.Security > 0 && !ok:
+		since, ok = now, true
+		err = s.store.SetHostMark(ctx, store.MarkSecuritySince, since)
+	case state.Updates.Security == 0 && ok:
+		since, ok = time.Time{}, false
+		err = s.store.DeleteHostMark(ctx, store.MarkSecuritySince)
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("write the security updates mark", "error", err)
+		}
+		return
+	}
+	if !ok {
+		since = time.Time{}
+	}
+	st := &s.sampler
+	st.mu.Lock()
+	st.securitySince = since
+	st.mu.Unlock()
 }
 
 // osPackagesDetail is the JSON of an os_packages host event.

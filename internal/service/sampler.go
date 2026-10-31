@@ -93,13 +93,22 @@ type samplerState struct {
 	bootRef time.Time // the boot time last recorded as a host event (hostnode.go); only the tick touches it
 	osSeen  time.Time // the start of the newest apt run recorded as a host event (hostosstate.go); only the tick touches it
 
-	mu      sync.Mutex // guards sources, traefik, node and reboot
+	mu      sync.Mutex // guards sources, traefik, node, reboot, the OS state and the security mark
 	sources SamplerSources
 	node    *HostNode // the newest node facts (feature 027); nil before the first reading
 	// reboot is the newest reading of the host's reboot marker (hostosstate.go);
 	// rebootRead says there has been one.
 	reboot     hostos.Reboot
 	rebootRead bool
+	// os is the newest reading of everything the host's OS files say (feature 027
+	// page 3), osRead says there has been one and osReadAt when it was made; the
+	// Updates page and the needs-you list judge from it, and from its age.
+	os       hostos.State
+	osRead   bool
+	osReadAt time.Time
+	// securitySince is when the count of waiting security updates first went above
+	// zero (the stored host mark), the zero time when it isn't above zero.
+	securitySince time.Time
 }
 
 // SetMetricsSampleGap sets the time between two ticks of the sampler (a minute

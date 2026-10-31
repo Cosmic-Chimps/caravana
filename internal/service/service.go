@@ -110,6 +110,15 @@ type Service struct {
 	metricsGap time.Duration // between two ticks of the sampler
 	hostRoot   fs.FS         // the host's OS files the sampler reads (feature 027), see hostosstate.go
 	sampler    samplerState
+
+	// Updates (feature 027 page 3), see updates.go.
+	releaseURL         string        // what the release check asks; tests give a fake server
+	releaseDownloadURL string        // where a release's install.sh is read from, for its pins
+	releaseRawURL      string        // where its traefik.nomad.hcl is
+	releaseGap         time.Duration // between two release checks
+	releaseClient      *http.Client
+	pro                ProRunner // reads package names; nil means there is no pro command
+	updates            updatesState
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -182,6 +191,12 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		metricsGap: defaultMetricsGap,
 		sampler:    samplerState{offset: defaultSamplerOffset},
 		hostRoot:   hostos.Root(),
+
+		releaseURL:         DefaultReleaseURL,
+		releaseDownloadURL: defaultReleaseDownloadURL,
+		releaseRawURL:      defaultReleaseRawURL,
+		releaseGap:         defaultReleaseGap,
+		releaseClient:      newReleaseClient(),
 	}
 }
 
@@ -343,6 +358,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runSampler(ctx, sampleGap)
+	}()
+	// The release check asks GitHub about once a day (and never, with the owner's
+	// setting off or a build that isn't a release); it starts no watchers.
+	releaseGap := s.releaseGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runReleaseCheck(ctx, releaseGap)
 	}()
 	return nil
 }

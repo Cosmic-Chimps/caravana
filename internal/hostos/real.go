@@ -38,6 +38,20 @@ const ProTimeout = 120 * time.Second
 // hundred kilobytes at the most.
 const maxProOutput = 8 << 20
 
+// Pro is the host's own pro command, the one thing that says which waiting
+// updates are security updates. Home is the directory pro may keep its cache in
+// (see RunPro). It is what a service is given to read package names with.
+type Pro struct{ Home string }
+
+// Available says there is a pro command to run. Ubuntu has one; Debian does not.
+func (Pro) Available() bool {
+	_, err := exec.LookPath("pro")
+	return err == nil
+}
+
+// Run is RunPro with p.Home.
+func (p Pro) Run(ctx context.Context) ([]byte, error) { return RunPro(ctx, p.Home) }
+
 // RunPro runs `pro security-status --format json` and returns what it wrote to
 // standard output. home is a directory Caravana's user can write: pro keeps its
 // cache under $HOME, and the service's own home is not writable. It needs no

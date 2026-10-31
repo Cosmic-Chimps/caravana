@@ -226,6 +226,49 @@ func (s *Store) SaveReleaseCheck(ctx context.Context, rc ReleaseCheck) error {
 	return nil
 }
 
+// SetReleaseCheckEnabled stores the owner's setting and touches nothing else, so
+// it can't undo what a check that is running writes (SaveReleaseResult).
+func (s *Store) SetReleaseCheckEnabled(ctx context.Context, enabled bool) error {
+	if _, err := s.db.ExecContext(ctx, "UPDATE release_check SET enabled = ? WHERE id = 1", boolInt(enabled)); err != nil {
+		return fmt.Errorf("set release check: %w", err)
+	}
+	return nil
+}
+
+// SaveReleaseResult stores what a check found: every column of the row but the
+// owner's setting, which is only ever changed by SetReleaseCheckEnabled, so a
+// setting saved while a check is running isn't undone by it. deliveries are
+// queued in the same transaction (the message about a new release): the row
+// that says "notified" and the messages are written together or not at all.
+func (s *Store) SaveReleaseResult(ctx context.Context, rc ReleaseCheck, deliveries []Delivery) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("save release check: %w", err)
+	}
+	defer tx.Rollback() // does nothing once Commit succeeds
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE release_check SET latest_tag = ?, published_at = ?, url = ?, body = ?,
+			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, error = ?, notified_tag = ?
+		WHERE id = 1`,
+		rc.LatestTag, zeroOrTime(rc.PublishedAt), rc.URL, rc.Body,
+		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), rc.Error, rc.NotifiedTag); err != nil {
+		return fmt.Errorf("save release check: %w", err)
+	}
+	for _, d := range deliveries {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO notification_deliveries (`+deliveryColumns+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.ID, d.ChannelID, d.EventType, d.Title, d.Payload, d.Status, d.Attempts,
+			formatTime(d.NextAt), d.Error, formatTime(d.CreatedAt), optionalTime(d.FinishedAt)); err != nil {
+			return fmt.Errorf("save release check: queue delivery %q: %w", d.ID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("save release check: %w", err)
+	}
+	return nil
+}
+
 // parseTimeOrZero reads a stored time, where empty text is the zero time.
 func parseTimeOrZero(s string) (time.Time, error) {
 	if s == "" {

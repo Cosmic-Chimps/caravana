@@ -154,6 +154,54 @@ func TestReleaseCheck(t *testing.T) {
 	}
 }
 
+// The setting and the result of a check are written apart, so neither undoes the
+// other; the result and the messages about it are one transaction.
+func TestReleaseResult(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	if err := s.SaveNotificationChannel(ctx, newChannel("nch_aa")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetReleaseCheckEnabled(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	rc := ReleaseCheck{
+		Enabled:   true, // ignored: only SetReleaseCheckEnabled changes the setting
+		LatestTag: "v0.16.0", PublishedAt: opT0, URL: "https://example.test/r", Body: "- a", ETag: `"e"`,
+		CheckedAt: opT0, NotifiedTag: "v0.16.0",
+	}
+	if err := s.SaveReleaseResult(ctx, rc, []Delivery{newDelivery("ndl_r1", "nch_aa", opT0)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ReleaseCheck(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled || got.LatestTag != "v0.16.0" || got.NotifiedTag != "v0.16.0" || got.ETag != `"e"` || !got.CheckedAt.Equal(opT0) {
+		t.Errorf("row = %+v; want the result saved and the setting still off", got)
+	}
+	if ds, err := s.ListDeliveries(ctx, "nch_aa", 10); err != nil || len(ds) != 1 || ds[0].ID != "ndl_r1" {
+		t.Errorf("deliveries = %v, %v; want ndl_r1", ds, err)
+	}
+
+	// A delivery that can't be queued (no such channel) rolls the whole result back.
+	rc.LatestTag, rc.NotifiedTag = "v0.17.0", "v0.17.0"
+	if err := s.SaveReleaseResult(ctx, rc, []Delivery{newDelivery("ndl_r2", "nch_missing", opT0)}); err == nil {
+		t.Fatal("SaveReleaseResult with a delivery for no channel succeeded")
+	}
+	if got, _ = s.ReleaseCheck(ctx); got.LatestTag != "v0.16.0" || got.NotifiedTag != "v0.16.0" {
+		t.Errorf("after the failed save the row = %+v; want the old result", got)
+	}
+
+	if err := s.SetReleaseCheckEnabled(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.ReleaseCheck(ctx); !got.Enabled || got.LatestTag != "v0.16.0" {
+		t.Errorf("after turning it on = %+v; want the result kept", got)
+	}
+}
+
 func TestHostMarks(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
