@@ -319,3 +319,49 @@ proxy. Nothing scrolls sideways except inside the command boxes.
 3. With the check off: "off · last checked 24 min ago", or "off" when there was never a check.
 4. The GitHub-unreachable meta reads "2 updates · Couldn't check GitHub (last checked 27 minutes
    ago)." It needs the separator, and the sentence is fg-3 (contract), not fg-2.
+
+## Critique rulings (designer, 2026-10-31, critique 31/40)
+
+These go in one pass with the four recheck fixes.
+
+### P2
+
+1. **The security count and Ubuntu's automatic updates: yes, but say only what is known (the
+   answer to question 1).** "The other 5 wait for you" isn't safe, because the counts don't say
+   which origins unattended-upgrades allows. With unattended-upgrades on, the ◆ row's first note
+   line is:
+   - inside the 24 hours: "Ubuntu's automatic updates are on, so security updates usually install
+     by themselves overnight.";
+   - after them (when the item opens): "Still waiting after a day, although Ubuntu's automatic
+     updates are on. Check `/var/log/unattended-upgrades/` on the server."
+   Step 1's command stays, since `apt upgrade` installs everything waiting.
+2. **Release notes link: yes.** Make it underlined like the console's other stand-alone links, and
+   label it "Release notes on GitHub". Open it in the same tab: the console's links don't pick
+   tabs for the owner, so no `target`.
+3. **Commands at 390: yes, both.** Add the pure-CSS scroll shadow on the box's right edge while
+   there's more to scroll, and put the step number inline above the text under 480px, so the box
+   gets the full width. The command still never wraps.
+
+### P3
+
+- **Copy:** center the button on the command box, not on the row. Use one grid row for the box
+  and the button, `align-items: center`.
+- **Screen readers:** the visible label stays "Copy". Each button gets an `aria-label`: "Copy the
+  install command", "Copy the installer command", "Copy the reboot command".
+- **The reboot time (questions 3 and the wrap): the date once.** The row's sub reads "needed since
+  18:11 UTC" today, or "needed since Oct 28" before today (page 2's Recent rule). The full UTC and
+  local time go in its `title`. The note drops its own date: "Installed by Ubuntu's automatic
+  updates." (or "by hand."). The sub and the note describe the same install, so the date appears
+  once and nothing wraps in the 240px column.
+
+### Question 2: the nav marks wear their hue
+
+Status is shape plus colour, console-wide (the Shape-and-Color Rule). ■ is the failed hue and ◆
+the warn hue, as everywhere else. A count stays fg-2, or fg-3 when the lists are stale. That
+covers the three pages: the Updates mark is the only nav mark today.
+
+### Staging note
+
+The reboot file's time (today) and the history's Oct 28 disagree only because of the fixture.
+With the note's date dropped above, the page shows one date, the sub's, which is the reboot file's
+own time. Fine.
