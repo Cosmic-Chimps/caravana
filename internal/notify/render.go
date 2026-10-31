@@ -94,7 +94,8 @@ func renderChat(ch Channel, field, bold string, ev Event) (*http.Request, error)
 // renderNtfy renders an ntfy publish: the text is the body and everything else
 // travels in the headers ntfy documents for publishing. Problems and failures
 // are "high" priority with a warning tag; resolved problems, successful
-// deploys and tests are default priority with a check mark.
+// deploys and tests are default priority with a check mark; a new Caravana
+// release is default priority with a package.
 func renderNtfy(ch Channel, ev Event) (*http.Request, error) {
 	req, err := newPost(ch.Address, []byte(withDetail(ev)), "text/plain; charset=utf-8")
 	if err != nil {
@@ -104,6 +105,9 @@ func renderNtfy(ch Channel, ev Event) (*http.Request, error) {
 	tags, priority := "white_check_mark", "default"
 	if bad {
 		tags, priority = "warning", "high"
+	}
+	if ev.Type == EventCaravanaRelease {
+		tags = "package" // news, not a check mark: nothing was checked, and nothing is wrong
 	}
 	req.Header.Set("Title", oneLine(ev.Title)) // a header cannot hold a line break
 	req.Header.Set("Tags", tags)

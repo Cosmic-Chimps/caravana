@@ -1,0 +1,4 @@
+POST https://hooks.slack.com/services/T000/B000/XXXX
+Content-Type: application/json
+
+{"text":"*New release: caravana 0.16.0*\ncaravana 0.16.0 is out. You run 0.15.0.\nhttps://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0"}

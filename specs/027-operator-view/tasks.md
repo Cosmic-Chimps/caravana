@@ -214,7 +214,7 @@ page 3.
   `internal/service/attention.go`; not judged when the host reading is stale; resolve by the existing rule; the
   notifier's words in `internal/service/notifier.go`; tests in `internal/service/attention_test.go`,
   `notifier_test.go`.
-- [ ] T027 [P] [US3] [FR-023] `internal/notify`: `EventCaravanaRelease = "caravana.release"`, `Event.Release{Current,
+- [x] T027 [P] [US3] [FR-023] `internal/notify`: `EventCaravanaRelease = "caravana.release"`, `Event.Release{Current,
   Latest, URL}`, `Render` for webhook, Slack, Discord and ntfy ("caravana 0.16.0 is out. You run 0.15.0." with the
   link); tests in `internal/notify/render_test.go`.
 - [ ] T028 [US3] [FR-025] API: `getUpdates`, `putUpdateSettings`, `checkUpdates` (202; 429 `check_too_soon`, 409

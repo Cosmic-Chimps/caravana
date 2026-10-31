@@ -1,0 +1,7 @@
+POST https://hooks.example.com/caravana
+Caravana-Delivery: ndl_3f9a1c2b4d5e
+Caravana-Event: caravana.release
+Caravana-Signature: t=1792206041,v1=f18dd07daa74303d6e6201e5bf6085e2b0ec923c692bafec61428dfe4bb818c5
+Content-Type: application/json
+
+{"id":"ndl_3f9a1c2b4d5e","type":"caravana.release","title":"New release: caravana 0.16.0","text":"caravana 0.16.0 is out. You run 0.15.0.","release":{"current":"0.15.0","latest":"0.16.0","url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0"},"url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0","at":"2026-10-17T03:00:41Z"}

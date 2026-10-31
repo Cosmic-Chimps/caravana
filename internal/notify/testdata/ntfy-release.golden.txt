@@ -1,0 +1,8 @@
+POST https://ntfy.sh/my-topic
+Click: https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0
+Content-Type: text/plain; charset=utf-8
+Priority: default
+Tags: package
+Title: New release: caravana 0.16.0
+
+caravana 0.16.0 is out. You run 0.15.0.

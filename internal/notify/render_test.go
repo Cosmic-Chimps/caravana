@@ -173,6 +173,17 @@ var diskNearlyFull = Event{
 	At:          fixedNow,
 }
 
+// newRelease is a newer Caravana release (feature 027): not a problem, so the
+// title and the sentence are the whole message, and its link is the release's.
+var newRelease = Event{
+	Type:    EventCaravanaRelease,
+	Title:   ReleaseTitle("0.16.0"),
+	Text:    ReleaseSentence("0.16.0", "0.15.0"),
+	Release: &Release{Current: "0.15.0", Latest: "0.16.0", URL: "https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0"},
+	URL:     "https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0",
+	At:      fixedNow,
+}
+
 func TestRender(t *testing.T) {
 	tests := []struct {
 		name string
@@ -204,6 +215,10 @@ func TestRender(t *testing.T) {
 		{"slack-disk", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, diskNearlyFull},
 		{"discord-disk", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, diskNearlyFull},
 		{"ntfy-disk", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, diskNearlyFull},
+		{"webhook-release", Channel{KindWebhook, "https://hooks.example.com/caravana", "whsec_test"}, newRelease},
+		{"slack-release", Channel{KindSlack, "https://hooks.slack.com/services/T000/B000/XXXX", ""}, newRelease},
+		{"discord-release", Channel{KindDiscord, "https://discord.com/api/webhooks/123/abc", ""}, newRelease},
+		{"ntfy-release", Channel{KindNtfy, "https://ntfy.sh/my-topic", ""}, newRelease},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

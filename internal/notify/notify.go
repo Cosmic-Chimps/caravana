@@ -31,6 +31,10 @@ const (
 	EventProblemResolved = "problem.resolved"
 	EventDeploySucceeded = "deploy.succeeded"
 	EventDeployFailed    = "deploy.failed"
+	// EventCaravanaRelease says a newer Caravana release is out (feature 027):
+	// sent once per release to every channel, and not a needs-you item, since
+	// nothing is wrong.
+	EventCaravanaRelease = "caravana.release"
 	EventTest            = "test"
 )
 
@@ -83,13 +87,33 @@ type Event struct {
 	// how bad it was then ("warning" from 85 %, "failed" from 95 %); a
 	// problem.worsened carries the level it rose to. The host
 	// has no app, so such an event has no app, project or environment.
-	Mount       string    `json:"mount,omitempty"`
-	Holds       []string  `json:"holds,omitempty"`
-	UsedPercent float64   `json:"usedPercent,omitempty"`
-	FreeBytes   *int64    `json:"freeBytes,omitempty"`
-	Level       string    `json:"level,omitempty"`
-	URL         string    `json:"url,omitempty"` // the console page about it, when its address is known
-	At          time.Time `json:"at"`
+	Mount       string   `json:"mount,omitempty"`
+	Holds       []string `json:"holds,omitempty"`
+	UsedPercent float64  `json:"usedPercent,omitempty"`
+	FreeBytes   *int64   `json:"freeBytes,omitempty"`
+	Level       string   `json:"level,omitempty"`
+	// Release is the newer Caravana release of a caravana.release event.
+	Release *Release  `json:"release,omitempty"`
+	URL     string    `json:"url,omitempty"` // the console page about it, when its address is known; a caravana.release's is the release page
+	At      time.Time `json:"at"`
+}
+
+// ReleaseTitle is the title of a caravana.release message: "New release:
+// caravana 0.16.0". latest is written without a leading v.
+func ReleaseTitle(latest string) string { return "New release: caravana " + latest }
+
+// ReleaseSentence is the one wording of a newer release, the text of every
+// notification: "caravana 0.16.0 is out. You run 0.15.0."
+func ReleaseSentence(latest, current string) string {
+	return "caravana " + latest + " is out. You run " + current + "."
+}
+
+// Release is what a caravana.release event says: the version that runs, the
+// newer one and the release's page. Versions are written without a leading v.
+type Release struct {
+	Current string `json:"current"`
+	Latest  string `json:"latest"`
+	URL     string `json:"url"`
 }
 
 // Origin is where a deploy came from, as a CI step told Caravana. It has the
