@@ -48,11 +48,11 @@ func TestOpsUpdatesReleaseNotesAreBullets(t *testing.T) {
 	}
 	for _, want := range []string{
 		// A lead with its colon, then the rest's first sentence (backticks are mono).
-		`<span class="cv-upbullet" aria-hidden="true">•</span><span><span class="cv-upnotelead">API 0.28.0</span>: <span class="cv-inline-mono text-fg-1">Deployment.registeredAt</span> (the time Nomad accepted the job, `,
-		`<span class="cv-upnotelead">MCP</span>: <span class="cv-inline-mono text-fg-1">deploy_image</span>, <span class="cv-inline-mono text-fg-1">promote_app</span> and <span class="cv-inline-mono text-fg-1">redeploy_version</span> are marked destructive, so agent clients ask before running them.</span>`,
+		`<span class="cv-upbullet" aria-hidden="true">•</span><span><span class="cv-upnotelead">API 0.28.0</span>: <span class="cv-inline-mono text-fg-1 cv-nowrap">Deployment.registeredAt</span> (the time Nomad accepted the job, `,
+		`<span class="cv-upnotelead">MCP</span>: <span class="cv-inline-mono text-fg-1 cv-nowrap">deploy_image</span>, <span class="cv-inline-mono text-fg-1 cv-nowrap">promote_app</span> and <span class="cv-inline-mono text-fg-1 cv-nowrap">redeploy_version</span> are marked destructive, so agent clients ask before running them.</span>`,
 		// A lead the text goes on from takes a space, not a colon.
 		`<span class="cv-upnotelead">Configure of an app deployed from a Compose file</span> says why it looks different: Caravana keeps the file`,
-		`<span class="cv-upnotelead">The installer validates and quotes its options.</span> <span class="cv-inline-mono text-fg-1">--email</span>`,
+		`<span class="cv-upnotelead">The installer validates and quotes its options.</span> <span class="cv-inline-mono text-fg-1 cv-nowrap">--email</span>`,
 		// A bullet without a lead is its first sentence, never cut.
 		`<span>An upgrade that rolls back restores Caravana&#39;s binary and data only.</span>`,
 		// The link is underlined by the stylesheet and opens in the same tab.
@@ -75,7 +75,7 @@ func TestOpsUpdatesReleaseNotesAreBullets(t *testing.T) {
 // Backticks become mono spans, no other Markdown is read, and everything is escaped.
 func TestOpsUpdatesReleaseNotesMonoAndEscaping(t *testing.T) {
 	row := releaseRowWith(t, "- `Deployment.registeredAt` is mono, <b>x</b> is escaped.\n- _Not_ [a link](https://x.test) here.\n")
-	if !strings.Contains(row, `<span class="cv-inline-mono text-fg-1">Deployment.registeredAt</span> is mono, `) {
+	if !strings.Contains(row, `<span class="cv-inline-mono text-fg-1 cv-nowrap">Deployment.registeredAt</span> is mono, `) {
 		t.Errorf("the backticks aren't mono:\n%s", row)
 	}
 	if !strings.Contains(row, "&lt;b&gt;x&lt;/b&gt; is escaped.") || strings.Contains(row, "<b>") || strings.Contains(row, "<a href=\"https://x.test") {

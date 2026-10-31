@@ -499,13 +499,27 @@ func staleWords(now, checked time.Time) sentence {
 	return sentence{plain("Ubuntu's list is " + plural(days, "day") + " old. Run "), mono("sudo apt update"), plain(" on the server to refresh it.")}
 }
 
+// noteCodeNowrap is the longest code span of the release notes that is kept on one line ("--domain" never
+// breaks at its hyphen); a longer one keeps normal breaking, so it can't overflow a narrow column.
+const noteCodeNowrap = 24
+
+// noteCode keeps the notes' short code spans whole (designer's last look on page 3).
+func noteCode(s sentence) sentence {
+	for i := range s {
+		if s[i].Mono && utf8.RuneCountInString(s[i].Text) <= noteCodeNowrap {
+			s[i].Nowrap = true
+		}
+	}
+	return s
+}
+
 func releaseRow(now time.Time, v service.UpdatesView) upRow {
 	c := v.Caravana
 	row := upRow{Kind: "release", Mark: "idle", MarkWord: "update available", Name: "caravana", Change: upChange{{Text: c.Current + " → " + c.Latest, Token: true}}}
 	for _, n := range c.Notes {
-		note := upNote{Bullet: true, Colon: n.Colon, Text: backticked(n.Text)}
+		note := upNote{Bullet: true, Colon: n.Colon, Text: noteCode(backticked(n.Text))}
 		if n.Lead != "" {
-			note.Lead = backticked(n.Lead)
+			note.Lead = noteCode(backticked(n.Lead))
 		}
 		row.Notes = append(row.Notes, note)
 	}

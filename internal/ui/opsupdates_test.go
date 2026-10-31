@@ -1033,3 +1033,24 @@ func TestOpsLiveForwardsTheUpdatesNotice(t *testing.T) {
 }
 
 var _ = store.ErrNotFound // the store's types, used above
+
+// A release note's short code span never breaks at a hyphen ("--domain"); a long one may, so it can't
+// overflow a narrow column (designer's last look on page 3).
+func TestNoteCodeKeepsShortSpansWhole(t *testing.T) {
+	long := strings.Repeat("x", noteCodeNowrap+1)
+	got := noteCode(backticked("run `--domain` or `" + long + "` now"))
+	var nowrap []bool
+	for _, p := range got {
+		if p.Mono {
+			nowrap = append(nowrap, p.Nowrap)
+		}
+	}
+	if len(nowrap) != 2 || !nowrap[0] || nowrap[1] {
+		t.Fatalf("code spans nowrap = %v, want [true false]", nowrap)
+	}
+	for _, p := range got {
+		if !p.Mono && p.Nowrap {
+			t.Errorf("plain text %q is nowrap", p.Text)
+		}
+	}
+}
