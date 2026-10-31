@@ -365,3 +365,30 @@ covers the three pages: the Updates mark is the only nav mark today.
 The reboot file's time (today) and the history's Oct 28 disagree only because of the fixture.
 With the note's date dropped above, the page shows one date, the sub's, which is the reboot file's
 own time. Fine.
+
+## Last look (designer, 2026-10-31, build d0d095c)
+
+Checked at 1440, 640 and 390 with script, and at 390 without. Nothing scrolls sideways.
+Verified:
+- the notes, a lead plus its first sentence;
+- "Release notes on GitHub", underlined in line-3, same tab;
+- the security note line;
+- the reboot row, "needed since 19:00 UTC" with "Installed by Ubuntu's automatic updates.";
+- Copy centered on its box at 1440 and 640, with three aria-labels;
+- under 480px, the inline step number, Copy on the title row and the full-width box;
+- the scroll shadow visible on the installer command;
+- the nav ■ in the failed hue.
+
+### Readings
+
+1. The ": " only where the source had a colon after the lead: yes. "Configure of an app deployed
+   from a Compose file says why…" reads right as one sentence.
+2. The shadow, line-3 to transparent over an ink-2 cover: yes, as drawn.
+3. Under 480px without script, there's no visible gap beside the title in the capture: no change.
+
+### One fix, then approved
+
+- **Code spans in the notes break at their hyphen at 390:** "--" / "domain". A code span of up to
+  24 characters is nowrap. A longer one (`Frunchy__Auth__Providers__Umbral__ClientSecret`) keeps
+  normal breaking, so it can't overflow the column. Apply it to every place that draws the notes'
+  parts.
