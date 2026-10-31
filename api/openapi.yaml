@@ -1292,6 +1292,145 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/updates:
+    get:
+      operationId: getUpdates
+      summary: Read what is waiting for Caravana and for the server's operating system.
+      description: |
+        What the Updates page shows, in three parts. `caravana` is the running version and, when
+        the daily check has seen a newer release, that release (`latest`, its `notes`, the
+        Nomad and Traefik versions it changes in `pins`, and the `install` command). `os` is
+        what the server's own files say, with no elevated privilege: how many updates are
+        waiting and how many of them are security updates (`updates`, as fresh as Ubuntu's last
+        `apt update`, with `stale` set once that is over 48 hours ago), whether a reboot is
+        needed and which kernel runs against which is installed (`reboot`), and whether the host
+        installs updates and reboots by itself (`unattended`; a `null` field couldn't be read). A
+        host that isn't Debian or Ubuntu has `readable: false` and nothing else. `history` is
+        Past updates: Caravana's version changes, the server's boots and the package runs of the
+        operating system, newest first, at most 10.
+
+        Nothing here installs, upgrades or reboots anything, and nothing names a vulnerability:
+        security updates are waiting, or a fix is installed and the old kernel still runs. The
+        read never calls GitHub and never runs a program: the release comes from the last check
+        (`checkUpdates`) and package names (`updates.packages`) from the last package check, kept
+        an hour. Waiting security updates and a pending reboot are also items on `listAttention`
+        (`os_security_updates`, `os_reboot_required`). Deploy tokens are refused.
+      tags: [metrics]
+      responses:
+        "200":
+          description: What is waiting, from the last checks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Updates"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/updates/settings:
+    put:
+      operationId: putUpdateSettings
+      summary: Turn the daily check for a new Caravana release on or off.
+      description: |
+        The one setting Caravana owns on the Updates page. On by default. With it off Caravana
+        makes no request to GitHub at all (and `checkUpdates` with `release` is refused). The
+        check asks only for the latest release list, with `User-Agent: caravana/<version>`;
+        nothing about the server is sent. The answer is the `caravana` part of `getUpdates` as it
+        is now. A body without a boolean `checkEnabled` is 422 `invalid_field`. Deploy tokens are
+        refused.
+      tags: [metrics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequest"
+      responses:
+        "200":
+          description: The setting is stored; the Caravana block as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatesCaravana"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `checkEnabled`: it is missing or isn't true or false."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/updates/check:
+    post:
+      operationId: checkUpdates
+      summary: Check now for a newer Caravana release, or for the names of the waiting security packages.
+      description: |
+        Starts a check and answers 202 at once; the result arrives with `getUpdates` and the
+        `updates` live notice. `what` is `release` (ask GitHub for the latest release, as the
+        daily check does) or `packages` (run Ubuntu's `pro security-status`, which takes 4
+        seconds on an idle host and up to two minutes on a busy one; it never runs on a timer,
+        and its names are kept an hour). Each check may run once in 10 minutes, counted from the
+        last one (a daily check counts), and one runs at a time: a second request, or one
+        while it runs, is 429 `check_too_soon` and the message says when it may run again.
+        `release` is 409 `check_disabled` while the owner has the check off, and 409
+        `check_unavailable` on a build that isn't a release version. `packages` is 409
+        `check_unavailable`, with the reason in `message`, on a host that isn't Ubuntu or has no
+        `pro`. Deploy tokens are refused.
+      tags: [metrics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckUpdatesRequest"
+      responses:
+        "202":
+          description: The check started. `checking` says which checks are running now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckUpdatesStarted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "409":
+          description: "`check_disabled` or `check_unavailable`; `message` says why. Nothing started."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `what`: it is neither `release` nor `packages`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "`check_too_soon`: the same check ran less than 10 minutes ago, or is running; `message` says when it may run again."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/logs:
     get:
       operationId: listLogs
@@ -4337,7 +4476,7 @@ components:
 
     NotificationEventType:
       type: string
-      enum: [problem.opened, problem.worsened, problem.resolved, deploy.succeeded, deploy.failed, test]
+      enum: [problem.opened, problem.worsened, problem.resolved, deploy.succeeded, deploy.failed, caravana.release, test]
 
     NotificationEvent:
       description: |
@@ -4373,7 +4512,11 @@ components:
             (a schedule's latest run failed), `schedule_skipping` (its last 3 slots were
             skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
             `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
-            `disk_nearly_full` (a filesystem of the host is 85 % full or more). A
+            `disk_nearly_full` (a filesystem of the host is 85 % full or more),
+            `os_reboot_required` (the host needs a reboot) or `os_security_updates` (security
+            updates are waiting; a warning). Those two have no app: `title` is "Reboot needed" or
+            "Security updates waiting" and `text` is the sentence ("This server needs a reboot: kernel
+            6.8.0-149 is installed, but 6.8.0-147 is still running."). A
             schedule that keeps failing is one problem: one `problem.opened`, then one
             `problem.resolved` after a run succeeds; so is a domain, per host. A disk that rises
             from `warning` to `failed` after its `problem.opened` sends one `problem.worsened`
@@ -4461,6 +4604,19 @@ components:
         freeBytes:
           type: integer
           description: "`problem.opened` of `disk_nearly_full`: what is left, in bytes."
+        release:
+          type: object
+          additionalProperties: false
+          required: [current, latest, url]
+          description: |
+            `caravana.release`: a newer Caravana release is out. It is sent once per release to
+            every channel that isn't paused, whatever events the channel asked for, and is not a
+            needs-you item: nothing is wrong. `title` is "New release: caravana 0.16.0", `text` is
+            "caravana 0.16.0 is out. You run 0.15.0." and `url`, here and at the top, is the release's page.
+          properties:
+            current: {type: string, description: "The version that runs, without a leading v.", examples: ["0.15.0"]}
+            latest: {type: string, description: "The newer release's version.", examples: ["0.16.0"]}
+            url: {type: string, description: "The release's page."}
         level:
           type: string
           enum: [warning, failed]
@@ -4469,8 +4625,9 @@ components:
           type: string
           description: |
             The console page about it (for a schedule, the Schedules page at that schedule; for
-            a domain, the Domains page with it open).
-            Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`).
+            a domain, the Domains page with it open; for the OS items, the Updates page).
+            Absent when Caravana doesn't know its own address (`CARAVANA_PUBLIC_URL`). Of a
+            `caravana.release` it is the release's page on GitHub, and is always there.
         at: {type: string, format: date-time}
 
     RegistryRequest:
@@ -5984,6 +6141,219 @@ components:
             Whether the host's own files ask for a reboot (`/run/reboot-required`, which Ubuntu's package
             tools write). Left out until Caravana has read them once after it started.
 
+    Updates:
+      type: object
+      additionalProperties: false
+      required: [caravana, os, history, checking]
+      properties:
+        caravana:
+          $ref: "#/components/schemas/UpdatesCaravana"
+        os:
+          $ref: "#/components/schemas/UpdatesOS"
+        history:
+          type: array
+          description: Past updates, newest first, at most 10.
+          items:
+            $ref: "#/components/schemas/UpdateEvent"
+        checking:
+          $ref: "#/components/schemas/UpdatesChecking"
+
+    UpdatesCaravana:
+      type: object
+      additionalProperties: false
+      required: [current, notes, checkEnabled, checkedAt, checkError]
+      properties:
+        current:
+          type: string
+          description: The running version, without a leading `v` (`dev` for a build that isn't a release).
+          examples: ["0.15.0"]
+        latest:
+          type: string
+          description: |
+            The newest release's version, only when the check has seen one newer than `current`
+            (by the installer's version order; a pre-release never counts, and a build that isn't
+            a release version never compares). Left out otherwise; so are `releasedAt`, `url`,
+            `pins`, `pinsText` and `install`.
+          examples: ["0.16.0"]
+        releasedAt: {type: string, format: date-time}
+        url: {type: string, description: "The release's page.", format: uri}
+        notes:
+          type: array
+          description: The first six bullet lines of the release's notes, each cut at 240 characters. Empty without a `latest`.
+          items: {type: string}
+        pins:
+          type: object
+          additionalProperties: false
+          description: |
+            The versions this Caravana runs and the newer release's, for the parts the installer pins.
+            A part is left out when the release doesn't change it or either version isn't known.
+          properties:
+            nomad: {$ref: "#/components/schemas/UpdatesPin"}
+            traefik: {$ref: "#/components/schemas/UpdatesPin"}
+        pinsText:
+          type: string
+          description: '`pins` in a sentence: "Updates Nomad 2.0.7 → 2.1.0 and Traefik 3.7.13 → 3.8.0." Left out when no pin changes.'
+        install:
+          type: string
+          description: The command that installs `latest`, as the release publishes its installer. Run it on the server; Caravana never does.
+        checkEnabled:
+          type: boolean
+          description: The owner's setting (`putUpdateSettings`). With it off no request is made.
+        checkedAt:
+          type: [string, "null"]
+          format: date-time
+          description: The last attempt, whether it worked or not. `null` before the first.
+        checkError:
+          type: string
+          description: |
+            Why the last attempt failed, in Caravana's words ("GitHub didn't answer", "GitHub is
+            limiting requests from this host", "GitHub has no release of caravana yet", "GitHub's
+            answer wasn't a release"); empty when it worked. The earlier answer stays: `latest`
+            may still be there.
+
+    UpdatesPin:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: {type: string, examples: ["2.0.7"]}
+        to: {type: string, examples: ["2.1.0"]}
+
+    UpdatesOS:
+      type: object
+      additionalProperties: false
+      description: |
+        What the server's files say. A host that isn't Debian or Ubuntu has `readable` false, and
+        only `distro` and `reboot` mean anything.
+      required: [readable, distro, updates, reboot, unattended]
+      properties:
+        readable: {type: boolean}
+        distro:
+          type: object
+          additionalProperties: false
+          required: [id, version]
+          properties:
+            id: {type: string, examples: [ubuntu]}
+            version: {type: string, examples: ["24.04"]}
+        updates:
+          type: object
+          additionalProperties: false
+          required: [known, total, security, checkedAt, stale, packagesAvailable, packages, packagesKernel, packagesCheckedAt, packagesError]
+          properties:
+            known:
+              type: boolean
+              description: False when the host has no list of waiting updates (Debian has none) or it said nothing; the numbers are then 0.
+            total: {type: integer, description: How many updates can be applied.}
+            security: {type: integer, description: "How many of them are standard security updates (0 when Ubuntu's list has no such line)."}
+            checkedAt:
+              type: [string, "null"]
+              format: date-time
+              description: When the host last refreshed its list of updates (its last `apt update`).
+            stale:
+              type: boolean
+              description: The list is more than 48 hours old. It is still shown, and no needs-you item is made from it.
+            packagesAvailable:
+              type: boolean
+              description: '`checkUpdates` with `packages` can run here (Ubuntu with `pro`).'
+            packages:
+              type: array
+              description: |
+                The names of the packages that have a standard security update waiting, from the
+                last package check; empty until one is made, and again an hour after it. Only
+                Ubuntu's `pro` says what is a security update: a kernel waiting in the ordinary
+                updates is not one.
+              items: {type: string}
+            packagesKernel: {type: boolean, description: A kernel image is among `packages`.}
+            packagesCheckedAt:
+              type: [string, "null"]
+              format: date-time
+            packagesError:
+              type: string
+              description: Why the last package check failed, in Caravana's words; empty when it worked.
+        reboot:
+          type: object
+          additionalProperties: false
+          required: [required, since, packages, runningKernel, installedKernel]
+          properties:
+            required: {type: boolean, description: "The host's own marker asks for a reboot (`/run/reboot-required`)."}
+            since:
+              type: [string, "null"]
+              format: date-time
+              description: When the marker was written. `null` when no reboot is needed.
+            packages:
+              type: array
+              description: The packages that asked for the reboot, as the host lists them.
+              items: {type: string}
+            runningKernel:
+              type: string
+              description: "The kernel release that runs (Nomad's `kernel.version`); empty before the sampler's first reading."
+              examples: ["6.8.0-147-generic"]
+            installedKernel:
+              type: string
+              description: The newest kernel release installed; empty when the host doesn't say.
+              examples: ["6.8.0-149-generic"]
+        unattended:
+          type: object
+          additionalProperties: false
+          required: [enabled, autoReboot, autoRebootTime]
+          description: How the host updates itself. A `null` field couldn't be read.
+          properties:
+            enabled: {type: [boolean, "null"], description: Ubuntu's automatic updates (unattended-upgrades) are on.}
+            autoReboot: {type: [boolean, "null"], description: "It reboots by itself after an update that needs one."}
+            autoRebootTime:
+              type: string
+              description: 'When it reboots ("02:00" or "now"); empty when `autoReboot` isn''t true or the file gives none.'
+
+    UpdateEvent:
+      type: object
+      additionalProperties: false
+      required: [at, kind, text, detail]
+      properties:
+        at: {type: string, format: date-time}
+        kind:
+          type: string
+          enum: [version, os_packages, boot]
+          description: Caravana changed version, the OS's package manager ran, or the server restarted.
+        text:
+          type: string
+          examples: ["caravana 0.12.0 → 0.13.0", "Ubuntu updates · 14 packages", "The server restarted"]
+        detail:
+          type: string
+          description: A second phrase ("by Ubuntu's automatic updates · a reboot is needed", "kernel 6.8.0-149 since then"); may be empty.
+
+    UpdatesChecking:
+      type: object
+      additionalProperties: false
+      required: [release, packages]
+      description: Which checks are running now.
+      properties:
+        release: {type: boolean}
+        packages: {type: boolean}
+
+    UpdateSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [checkEnabled]
+      properties:
+        checkEnabled: {type: boolean}
+
+    CheckUpdatesRequest:
+      type: object
+      additionalProperties: false
+      required: [what]
+      properties:
+        what:
+          type: string
+          enum: [release, packages]
+
+    CheckUpdatesStarted:
+      type: object
+      additionalProperties: false
+      required: [checking]
+      properties:
+        checking:
+          $ref: "#/components/schemas/UpdatesChecking"
+
     ActivityList:
       type: object
       additionalProperties: false
@@ -6053,7 +6423,7 @@ components:
     Attention:
       type: object
       additionalProperties: false
-      required: [items, copiesUnknown, disksUnknown]
+      required: [items, copiesUnknown, disksUnknown, osUnknown]
       properties:
         items:
           type: array
@@ -6070,6 +6440,12 @@ components:
           description: |
             True when the host wasn't sampled in the last 5 minutes (or ever): `disk_nearly_full`
             may be missing because the disks couldn't be judged, not because they are fine.
+        osUnknown:
+          type: boolean
+          description: |
+            True when the host's operating system files weren't read in the last 5 minutes (or ever):
+            `os_reboot_required` and `os_security_updates` may be missing because they couldn't be
+            judged, not because nothing is waiting.
 
     AttentionItem:
       type: object
@@ -6079,7 +6455,8 @@ components:
         kind:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
-            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full]
+            schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
+            os_reboot_required, os_security_updates]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -6093,10 +6470,18 @@ components:
             `disk_nearly_full`: a filesystem the host watches is 85 % full or more (a `warning`;
             `failed` from 95 %), from the newest host sample (`getHost`). It is about the host, so
             it has no `appId`; it stays while the filesystem is at 83 % or more, and goes under
-            that. Clients should accept kinds they don't know.
+            that. `os_reboot_required`, a failure: the host needs a reboot, and `detail` says why
+            ("This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is still
+            running." or "…: libc6 was updated and needs a reboot."); it goes when the host's marker
+            does. `os_security_updates`, a warning: security updates are waiting ("14 updates are
+            waiting, 9 of them security updates."), from a list of updates under 48 hours old and,
+            when Ubuntu's own automatic updates are on, only after they have waited 24 hours; it goes
+            when the count reads zero. Both are about the host, so they have no `appId`, and both come
+            from `getUpdates`'s files. Neither names a vulnerability. Clients should accept kinds they
+            don't know.
         appId:
           type: string
-          description: Absent for `no_backup_destination` and `disk_nearly_full`, which are about the installation or the host.
+          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required` and `os_security_updates`, which are about the installation or the host.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.

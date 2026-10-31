@@ -66,6 +66,9 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/metrics", s.getMetrics, false, false},
 		{http.MethodGet, "/v1/host", s.getHost, false, false},
 		{http.MethodGet, "/v1/activity", s.listActivity, false, false},
+		{http.MethodGet, "/v1/updates", s.getUpdates, false, false},
+		{http.MethodPut, "/v1/updates/settings", s.putUpdateSettings, false, false},
+		{http.MethodPost, "/v1/updates/check", s.checkUpdates, false, false},
 		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
 		{http.MethodPost, "/v1/projects", s.createProject, false, false},
 		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
@@ -299,6 +302,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := domainError(err); e != nil {
+		return e
+	}
+	if e := updatesError(err); e != nil {
 		return e
 	}
 	switch {

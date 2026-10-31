@@ -217,7 +217,7 @@ page 3.
 - [x] T027 [P] [US3] [FR-023] `internal/notify`: `EventCaravanaRelease = "caravana.release"`, `Event.Release{Current,
   Latest, URL}`, `Render` for webhook, Slack, Discord and ntfy ("caravana 0.16.0 is out. You run 0.15.0." with the
   link); tests in `internal/notify/render_test.go`.
-- [ ] T028 [US3] [FR-025] API: `getUpdates`, `putUpdateSettings`, `checkUpdates` (202; 429 `check_too_soon`, 409
+- [x] T028 [US3] [FR-025] API: `getUpdates`, `putUpdateSettings`, `checkUpdates` (202; 429 `check_too_soon`, 409
   `check_disabled`, 409 `check_unavailable`, 422 `invalid_field`) in `internal/api/updates.go`; the two attention kinds,
   the `caravana.release` event and its webhook body in `api/openapi.yaml`; scope walk and parity; tests in
   `internal/api/updates_test.go`.

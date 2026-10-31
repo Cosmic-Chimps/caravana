@@ -63,7 +63,8 @@ func (s *server) listAttention(w http.ResponseWriter, r *http.Request) error {
 		Items         []attentionItemJSON `json:"items"`
 		CopiesUnknown bool                `json:"copiesUnknown"`
 		DisksUnknown  bool                `json:"disksUnknown"`
-	}{Items: make([]attentionItemJSON, 0, len(att.Items)), CopiesUnknown: att.CopiesUnknown, DisksUnknown: att.DisksUnknown}
+		OSUnknown     bool                `json:"osUnknown"`
+	}{Items: make([]attentionItemJSON, 0, len(att.Items)), CopiesUnknown: att.CopiesUnknown, DisksUnknown: att.DisksUnknown, OSUnknown: att.OSUnknown}
 	for _, it := range att.Items {
 		out.Items = append(out.Items, toAttentionItemJSON(it))
 	}

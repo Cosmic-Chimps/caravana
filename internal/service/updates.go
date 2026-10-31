@@ -77,7 +77,7 @@ var (
 type CheckTooSoonError struct{ Again time.Time }
 
 func (e *CheckTooSoonError) Error() string {
-	return "that check ran less than 10 minutes ago; it can run again at " + e.Again.UTC().Format("15:04") + " UTC"
+	return "That check ran less than 10 minutes ago. It can run again at " + e.Again.UTC().Format("15:04") + " UTC."
 }
 
 // Is makes errors.Is(err, ErrCheckTooSoon) true.

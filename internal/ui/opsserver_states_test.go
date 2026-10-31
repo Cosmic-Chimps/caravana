@@ -40,6 +40,18 @@ func bannersOf(body string) []string {
 	return out
 }
 
+// diskBanners keeps the banners about a disk. The host root these tests read has a kernel waiting for a
+// reboot, which is a banner of its own now that the needs-you list has os_reboot_required (page 3).
+func diskBanners(banners []string) []string {
+	var out []string
+	for _, b := range banners {
+		if strings.HasPrefix(b, "The disk at") {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // A disk nearly full is a banner under the head. When one filesystem holds Nomad's data and Docker's
 // images the banner says so; when they are on two, the banner names its own mount and has no such clause.
 func TestOpsServerDiskBanner(t *testing.T) {
@@ -57,7 +69,7 @@ func TestOpsServerDiskBanner(t *testing.T) {
 	var banners []string
 	srvWait(t, "the disk banner of one filesystem", func() bool {
 		_, body := one.get(t, "/ops/servers/lab")
-		banners = bannersOf(body)
+		banners = diskBanners(bannersOf(body))
 		return len(banners) > 0
 	})
 	if len(banners) != 1 || !strings.Contains(banners[0], "The disk at /") || !strings.Contains(banners[0], holdsBoth) ||
@@ -72,7 +84,7 @@ func TestOpsServerDiskBanner(t *testing.T) {
 	})
 	srvWait(t, "the disk banner of two filesystems", func() bool {
 		_, body := two.get(t, "/ops/servers/lab")
-		banners = bannersOf(body)
+		banners = diskBanners(bannersOf(body))
 		return len(banners) > 0
 	})
 	if len(banners) != 1 || !strings.Contains(banners[0], "The disk at /var/lib/docker") || strings.Contains(banners[0], holdsBoth) {
