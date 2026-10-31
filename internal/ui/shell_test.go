@@ -19,7 +19,7 @@ import (
 // The three parts of the frame, cut from a page, for the shell tests.
 var (
 	sidebarRegion = regexp.MustCompile(`(?s)<aside class="cv-side">.*?</aside>`)
-	navItem       = regexp.MustCompile(`<a href="([^"]*)" class="cv-nav-item"( aria-current="page")?>.*?<span>([^<]*)</span></a>`)
+	navItem       = regexp.MustCompile(`<a href="([^"]*)" class="cv-nav-item"( aria-current="page")?>.*?<span>([^<]*)</span>(?:<span class="cv-nav-mark".*?</span>)?</a>`)
 	appHeadRegion = regexp.MustCompile(`(?s)<header class="cv-apphead">.*?</header>`)
 )
 

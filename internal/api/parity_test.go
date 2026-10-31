@@ -219,6 +219,14 @@ var consoleParity = map[string]parity{
 	"GET /parts/ops/servers/{name}": {ops: []string{"getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
 	"GET /parts/ops/apps":           {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
 	"GET /parts/ops/activity":       {ops: []string{"listActivity"}},
+	// The Operator Updates page (feature 027 page 3): what is waiting (getUpdates) and the needs-you items about
+	// the OS (listAttention). The part is the same regions drawn again on the updates notice. The two forms start a
+	// check in the background (checkUpdates, what=release or packages) and save the one setting caravana owns
+	// (putUpdateSettings). Every Operator page also reads getUpdates for the sidebar's mark.
+	"GET /ops/updates":           {ops: []string{"getUpdates", "listAttention"}},
+	"GET /parts/ops/updates":     {ops: []string{"getUpdates", "listAttention"}},
+	"POST /ops/updates/check":    {ops: []string{"checkUpdates"}},
+	"POST /ops/updates/settings": {ops: []string{"putUpdateSettings"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and

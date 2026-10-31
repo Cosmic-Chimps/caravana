@@ -1,0 +1,178 @@
+{{/* The Operator Updates page (/ops/updates, feature 027 page 3): what is waiting for caravana and for the
+     server's OS, and the exact commands to run on the server. The page is complete without script and
+     nothing on it installs, upgrades or reboots anything. The main region (#up-top: the banners, Available
+     and How to apply) is drawn again from /parts/ops/updates on the notices; the read-only settings, the line
+     after the release-check form, Past updates and the sidebar's mark are swapped by id in the same answer.
+     The release-check checkbox sits outside every region, so a refresh never replaces it. */}}
+
+{{define "page-class"}} cv-page-upd{{end}}
+
+{{define "head"}}<script src="{{asset "js/ops.js"}}" defer></script>{{end}}
+
+{{/* up-banner: an OS needs-you item as the domains' banners draw one: the mark, the item's sentence over
+     what follows, and the one action, a link to How to apply. Takes an upBanner. */}}
+{{define "up-banner"}}
+<div class="cv-panel cv-dmbanner">
+  <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <div class="cv-dmbanner-text">
+    <p class="cv-dmbanner-line">{{.Line}}</p>
+    <p class="cv-dmbanner-explain">{{.Explain}}</p>
+  </div>
+  <a href="#apply" class="cv-btn cv-btn-secondary cv-btn-sm">How to apply</a>
+</div>
+{{end}}
+
+{{/* up-check: a check's button (a post that starts it in the background and answers 303), or its running
+     state. Takes an upCheck. */}}
+{{define "up-check"}}{{if .Checking}}<p class="cv-upchecking" role="status"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.Checking}}</span></p>{{else}}<form method="post" action="/ops/updates/check" class="cv-upcheckform"><input type="hidden" name="what" value="{{.What}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</button></form>{{end}}{{end}}
+
+{{/* up-time: a time in the short words of a dense line, with its exact UTC time on hover (ops.js adds the
+     viewer's local one). Takes a when. */}}
+{{define "up-time"}}<time{{with .ISO}} datetime="{{.}}"{{end}}{{with .Exact}} title="{{.}}"{{end}} data-ops-time>{{.Text}}</time>{{end}}
+
+{{/* up-row: one row of Available: the mark, the name over its line, the change, the notes. Takes an upRow. */}}
+{{define "up-row"}}
+<div class="cv-uprow{{if .Dim}} cv-uprow-dim{{end}}" role="listitem" data-up="{{.Kind}}">
+  <span class="cv-upmark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.MarkWord}}: </span></span>
+  <div class="cv-upwho">
+    <p class="cv-upname">{{.Name}}</p>
+    {{if or .Sub.Clock .Sub.When.Text}}<p class="cv-upsub">{{.Sub.Label}} {{if .Sub.Clock}}{{template "clock" .Sub.Clock}}{{else}}{{template "up-time" .Sub.When}}{{end}}</p>{{end}}
+  </div>
+  <p class="cv-upchange">{{.Change}}</p>
+  <div class="cv-upnotes">
+    {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{with .Names}}{{template "up-names" .}}{{end}}
+    {{with .Check}}{{template "up-check" .}}{{end}}
+  </div>
+</div>
+{{end}}
+
+{{/* up-names: the Ubuntu row's package names: running, the names (mono, at most 12, "and N more") with when
+     they were read, the reason a check failed, or the button. Takes an upNames. */}}
+{{define "up-names"}}
+{{if .Checking}}<p class="cv-upchecking" role="status"><span class="cv-mark cv-mark-rolling" aria-hidden="true"></span><span>{{.Checking}}</span></p>
+{{else if .Button}}
+{{with .Failed}}<p class="cv-upfailed">{{.}}</p>{{end}}
+{{template "up-check" .Button}}
+{{else}}
+<p class="cv-upnames">{{with .Names}}<span class="cv-upnamelist">{{range $i, $n := .}}{{if $i}}, {{end}}{{$n}}{{end}}</span>{{if $.More}} and {{$.More}} more{{end}}{{else}}{{.Empty}}{{end}} <span class="cv-upnamesnote">· checked {{template "up-time" .Checked}}</span></p>
+{{end}}
+{{end}}
+
+{{/* up-top: the main live region: the banners, Available and How to apply. Takes an upData. */}}
+{{define "up-top"}}
+{{range .Banners}}{{template "up-banner" .}}{{end}}
+<section id="available" class="cv-upsec" aria-labelledby="up-avail-title">
+  <div class="cv-mnsec">
+    <h2 class="cv-label" id="up-avail-title">Available</h2>
+    {{with .Avail.Meta}}<span class="cv-mnsec-meta">{{.}}</span>{{end}}
+  </div>
+  {{with .Avail.Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+  {{if .Avail.Rows}}
+  <div class="cv-panel cv-uprows" role="list" aria-label="Available updates">{{range .Avail.Rows}}{{template "up-row" .}}{{end}}</div>
+  {{end}}
+  {{with .Avail.OSMessage}}<div class="cv-panel"><p class="cv-mnhostline cv-upos"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></p></div>{{end}}
+</section>
+{{if .Apply.Steps}}
+<section id="apply" class="cv-upsec" aria-labelledby="up-apply-title">
+  <div class="cv-mnsec">
+    <h2 class="cv-label" id="up-apply-title">How to apply</h2>
+    <span class="cv-mnsec-meta">run these on the server, over SSH</span>
+  </div>
+  <ol class="cv-panel cv-upsteps">
+    {{range .Apply.Steps}}
+    <li class="cv-upstep">
+      <span class="cv-upstepn">{{.N}}</span>
+      <div class="cv-upstepbody">
+        <p class="cv-upsteptitle">{{template "sentence" .Title}}</p>
+        <div class="cv-upcmdrow">
+          <code class="cv-cmd cv-upcmd" id="{{.ID}}">{{.Command}}</code>
+          <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.ID}}" hidden>Copy</button>
+        </div>
+        {{with .Warn}}<p class="cv-upwarn"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  <p class="cv-upfoot">caravana doesn't apply updates from the console yet.</p>
+</section>
+{{end}}
+{{end}}
+
+{{/* up-auto: the two read-only settings of the host (a swapped region of its own). Takes a []upSetting. */}}
+{{define "up-auto"}}{{range .}}
+<div class="cv-setrow">
+  <div class="cv-setrow-text">
+    <span class="cv-setrow-label">{{.Label}}</span>
+    <p class="cv-setrow-hint">{{.Hint}}</p>
+  </div>
+  <div class="cv-setrow-ctl"><span class="cv-upvalue">{{.Value}}</span></div>
+</div>
+{{end}}{{end}}
+
+{{/* up-checked: the line after the release-check form: "checked 14 h ago", "off" or "not checked yet", why
+     the last check failed, and the Check now button or its running state. Takes an upChecked. */}}
+{{define "up-checked"}}<span class="cv-upchecked">{{.Text}}{{if .When.Text}} {{template "up-time" .When}}{{end}}{{with .Failed}} · {{.}}{{end}}</span>{{with .Check}}{{template "up-check" .}}{{end}}{{end}}
+
+{{/* up-past: the rows of Past updates: the mark, the date, what happened, and its detail. Takes a []upPast. */}}
+{{define "up-past"}}{{range .}}
+<div class="cv-uppastrow">
+  <span class="cv-uppastmark"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+  <span class="cv-uppastdate">{{template "up-time" .Date}}</span>
+  <span class="cv-uppasttext">{{.Text}}</span>
+  <span class="cv-uppastdetail">{{.Detail}}</span>
+</div>
+{{else}}
+<p class="cv-upnone">Nothing yet.</p>
+{{end}}{{end}}
+
+{{/* up-part: what /parts/ops/updates answers: the main region, and by id the read-only settings, the line
+     after the form, Past updates and the sidebar's mark. Takes an upData. */}}
+{{define "up-part"}}{{template "up-top" .}}
+<div hx-swap-oob="innerHTML:#up-auto">{{template "up-auto" .Auto}}</div>
+<div hx-swap-oob="innerHTML:#up-checked">{{template "up-checked" .Checked}}</div>
+<div hx-swap-oob="innerHTML:#up-past">{{template "up-past" .Past}}</div>
+<span hx-swap-oob="innerHTML:#nav-updates-mark">{{template "nav-updates-mark" .Mark}}</span>
+{{end}}
+
+{{define "content"}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Updates</h1>
+  <p class="cv-lede">What's waiting for caravana and this server's OS, and how to apply it.</p>
+</header>
+{{with .Refusal}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+<div class="cv-upbody">
+  <div id="up-top" class="cv-upbody" hx-get="/parts/ops/updates" hx-trigger="sse:updates, sse:host, sse:attention, sse:sync" hx-swap="innerHTML">{{template "up-top" .Data}}</div>
+
+  <section id="how" class="cv-upsec" aria-labelledby="up-how-title">
+    <div class="cv-mnsec">
+      <h2 class="cv-label" id="up-how-title">How this server updates</h2>
+    </div>
+    <div class="cv-panel">
+      <div id="up-auto">{{template "up-auto" .Data.Auto}}</div>
+      <div class="cv-setrow">
+        <div class="cv-setrow-text">
+          <span class="cv-setrow-label">New caravana versions</span>
+          <p class="cv-setrow-hint">Only the release list is fetched; nothing is sent about this server.</p>
+        </div>
+        <div class="cv-setrow-ctl">
+          {{if .Saved}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved.</span></div>{{end}}
+          <form method="post" action="/ops/updates/settings" class="cv-upform">
+            <label class="cv-check"><input type="checkbox" name="checkEnabled" value="1"{{if .Data.Checked.Enabled}} checked{{end}}><span>Check GitHub for new releases once a day</span></label>
+            <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save</button>
+          </form>
+          <div id="up-checked" class="cv-upcheckedrow">{{template "up-checked" .Data.Checked}}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cv-upsec" aria-labelledby="up-past-title">
+    <div class="cv-mnsec">
+      <h2 class="cv-label" id="up-past-title">Past updates</h2>
+      <span class="cv-mnsec-link">times in UTC</span>
+    </div>
+    <div class="cv-panel cv-uppast" id="up-past">{{template "up-past" .Data.Past}}</div>
+  </section>
+</div>
+{{end}}

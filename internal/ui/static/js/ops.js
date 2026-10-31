@@ -12,6 +12,11 @@
 //     "2026-10-30 14:02:14 UTC · 16:02:14 local", so the column stays narrow and the local time is
 //     one hover away.
 //
+//   - the Updates page (page 3) draws its copy buttons hidden, and a swapped region brings them back
+//     hidden: they are shown again here (console.js does it once at load). Its Past updates and the
+//     line after the release-check form are swapped by id out of band: their times get the local
+//     titles too.
+//
 // Text goes in with the title property (a string, never markup); the page's policy allows no
 // inline script or style, and none is used.
 (function () {
@@ -45,6 +50,12 @@
     });
   }
 
+  function reveal(root) {
+    root.querySelectorAll("[data-copy][hidden]").forEach(function (button) {
+      button.hidden = false;
+    });
+  }
+
   function ids(panel) {
     return Array.from(panel.querySelectorAll(ROWS), function (row) {
       return row.dataset.ev;
@@ -67,6 +78,7 @@
     }
     // Any swapped region may hold times: the server page's body has its Recent list in it.
     titles(target);
+    reveal(target);
     if (target.id !== PANEL) {
       return;
     }
@@ -78,6 +90,14 @@
         row.classList.add("cv-row-fresh");
       }
     });
+  });
+
+  document.addEventListener("htmx:oobAfterSwap", function (event) {
+    const target = event.detail && event.detail.target;
+    if (target) {
+      titles(target);
+      reveal(target);
+    }
   });
 
   function start() {

@@ -24,8 +24,9 @@ type shellView struct {
 	// current; see mode.go.
 	Mode string
 	// UpdatesMark is the little mark after the Operator sidebar's Updates item
-	// (a count, a ■ or a ◆). Empty draws nothing: page 3 of feature 027 fills it.
-	UpdatesMark string
+	// (a ■ reboot needed, a ◆ security updates waiting, else a count); empty
+	// draws nothing. shellPage fills it in the Operator view.
+	UpdatesMark navMark
 }
 
 // Ops says the page is drawn in the Operator view.
@@ -100,6 +101,9 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 	mode := s.modeOf(r)
 	d.Shell = &shellView{Host: host, Initial: initialOf(host), Version: s.versionLabel(), Email: email, Initials: initialsOf(email),
 		Active: activeIn(mode, active), Crumbs: crumbs, NewApp: s.newApp, Mode: mode}
+	if mode == "ops" {
+		d.Shell.UpdatesMark = s.updatesMark(r)
+	}
 	return d, nil
 }
 

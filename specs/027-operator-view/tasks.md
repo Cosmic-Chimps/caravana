@@ -221,7 +221,7 @@ page 3.
   `check_disabled`, 409 `check_unavailable`, 422 `invalid_field`) in `internal/api/updates.go`; the two attention kinds,
   the `caravana.release` event and its webhook body in `api/openapi.yaml`; scope walk and parity; tests in
   `internal/api/updates_test.go`.
-- [ ] T029 [US3] [FR-003, FR-020, FR-021] `internal/ui/opsupdates.go` and `internal/ui/templates/opsupdates.html` per
+- [x] T029 [US3] [FR-003, FR-020, FR-021] `internal/ui/opsupdates.go` and `internal/ui/templates/opsupdates.html` per
   `contracts/page3-updates.md`: head and banners (■ before ◆, "How to apply" anchor), Available (caravana, Ubuntu
   updates with "Check package names" and the ◐ checking state, Reboot with both kernels), How to apply (only the steps
   that apply, reboot last with its consequence, command boxes), How this server updates (two read-only rows, the

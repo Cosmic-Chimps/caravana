@@ -23,6 +23,11 @@
 </div>
 {{end}}
 
+{{/* nav-updates-mark: what sits inside the Updates item's mark: ■ a reboot is needed, ◆ security updates
+     are waiting, else a count; empty draws nothing. The Updates page swaps it by id (#nav-updates-mark) when
+     the notice says something changed. Takes a navMark. */}}
+{{define "nav-updates-mark"}}{{if .Text}}<span title="{{.Word}}"><span aria-hidden="true">{{.Text}}</span><span class="sr-only">{{.Word}}</span></span>{{end}}{{end}}
+
 {{/* shell-nav: the Workspace group. Only pages that exist are linked. */}}
 {{define "shell-nav"}}
 <nav aria-label="Main" class="cv-nav">
@@ -34,7 +39,7 @@
   </div>
   <div class="cv-nav-group">
     <span class="cv-label cv-nav-title">Platform</span>
-    <a href="/ops/updates" class="cv-nav-item"{{if eq .Active "ops-updates"}} aria-current="page"{{end}}>{{icon "download"}}<span>Updates</span>{{with .UpdatesMark}}<span class="cv-nav-mark">{{.}}</span>{{end}}</a>
+    <a href="/ops/updates" class="cv-nav-item"{{if eq .Active "ops-updates"}} aria-current="page"{{end}}>{{icon "download"}}<span>Updates</span><span class="cv-nav-mark" id="nav-updates-mark">{{template "nav-updates-mark" .UpdatesMark}}</span></a>
   </div>
   {{else}}
   <div class="cv-nav-group">

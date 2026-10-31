@@ -134,6 +134,14 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		row.Mark = "warning"
 		row.Text = domainExpiringSentence(pl.label(place, it.AppID, ""), now, it)
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
+	case service.AttentionOSRebootRequired:
+		// Detail is the service's sentence, the one the notification says (feature 027 page 3).
+		row.Text = plainS(it.Detail)
+		row.Action, row.Href = "Open updates", "/ops/updates"
+	case service.AttentionOSSecurityUpdates:
+		row.Mark = "warning"
+		row.Text = plainS(it.Detail)
+		row.Action, row.Href = "Open updates", "/ops/updates"
 	}
 	return row
 }
