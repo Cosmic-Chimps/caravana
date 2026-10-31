@@ -2,7 +2,8 @@
 // from plain files: apt's history of package runs, the reboot-required marker
 // and the installed kernels (feature 027). It is pure: it reads through an
 // fs.FS, so tests give it a fake root and the lab a folder of fixtures, and
-// only real.go touches the real file system.
+// only real.go touches the real host: its file system and the one program it
+// runs (pro security-status, on demand).
 package hostos
 
 import (

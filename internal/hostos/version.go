@@ -1,5 +1,10 @@
 package hostos
 
+import (
+	"regexp"
+	"strings"
+)
+
 // KernelNewer says whether kernel release a is newer than b, comparing the
 // numbers inside them as numbers ("6.8.0-149-generic" is newer than
 // "6.8.0-9-generic", which plain text order gets wrong) and the words between
@@ -47,6 +52,30 @@ func nextRun(s string) (run, rest string) {
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// releaseVersion is what tools/release.sh accepts as a version: X.Y.Z with an
+// optional -suffix, the shape `sort -V` orders.
+var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
+
+// IsReleaseVersion says v (with or without a leading "v") is the version of a
+// release build. "dev" (a plain go build) and 0.0.0-dev.<time> (the dev
+// releases deploy/vm/host.sh and install-test.sh build) are not: nothing is
+// newer or older than them.
+func IsReleaseVersion(v string) bool {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	return releaseVersion.MatchString(v) && !strings.HasPrefix(v, "0.0.0-dev")
+}
+
+// ReleaseNewer says release version latest is newer than the running version
+// current, in the order the installer uses (`sort -V`, install.sh's newer):
+// "0.10.0" is newer than "0.9.0". Either may start with "v". A version that
+// isn't a release version, on either side, never compares: the answer is false.
+func ReleaseNewer(latest, current string) bool {
+	if !IsReleaseVersion(latest) || !IsReleaseVersion(current) {
+		return false
+	}
+	return compareRelease(strings.TrimPrefix(strings.TrimSpace(latest), "v"), strings.TrimPrefix(strings.TrimSpace(current), "v")) > 0
+}
 
 // compareNumbers compares two runs of digits by value without parsing them, so
 // a long one can't overflow: leading zeros are dropped, then the longer is the

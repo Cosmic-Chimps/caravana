@@ -187,14 +187,14 @@ and the designer's review cycle (review, impeccable critique with no detector, r
 **Independent Test**: quickstart §4-5; `console-ops-updates` and the gate step `os-updates` pass; the designer approves
 page 3.
 
-- [ ] T022 [P] [US3] [FR-018] `internal/hostos/state.go`: `ReadState(fsys)` (distro from `etc/os-release`; reboot file,
+- [x] T022 [P] [US3] [FR-018] `internal/hostos/state.go`: `ReadState(fsys)` (distro from `etc/os-release`; reboot file,
   its mtime and `.pkgs`; the newest installed kernel from the newest history run or `boot/vmlinuz-*`; counts and age
   from `var/lib/update-notifier/updates-available`, defensive, missing security = 0; `20auto-upgrades` and
   `50unattended-upgrades` with `//` comments and quotes) and `version.go` (`KernelNewer`, `ReleaseNewer` with
   `sort -V` ordering; non-release versions never compare); fixtures for a pending kernel, a `libc6` reboot, counts with
   and without the security line, auto-upgrades on and off, auto-reboot at 02:00, a Debian host, a non-Debian host;
   tests in `internal/hostos/state_test.go`, `version_test.go`.
-- [ ] T023 [P] [US3] [FR-019] `internal/hostos/securitystatus.go` (`ParseSecurityStatus`: names, whether a kernel is
+- [x] T023 [P] [US3] [FR-019] `internal/hostos/securitystatus.go` (`ParseSecurityStatus`: names, whether a kernel is
   among them) and `internal/hostos/real.go` (`Root()`, `RunPro(ctx, home)` with `pro security-status --format json`,
   `HOME` set, 120 s); a test in `internal/hostos/imports_test.go` forbids `net/http`, `os/exec` and `os.Open` outside
   `real.go`; tests with a recorded JSON in `testdata/`.

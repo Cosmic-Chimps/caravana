@@ -1,0 +1,4 @@
+Start-Date: 2026-10-24  06:06:23
+Commandline: /usr/bin/unattended-upgrade
+Upgrade: libc6:amd64 (2.39-0ubuntu8.5, 2.39-0ubuntu8.6), libc-bin:amd64 (2.39-0ubuntu8.5, 2.39-0ubuntu8.6)
+End-Date: 2026-10-24  06:06:41
