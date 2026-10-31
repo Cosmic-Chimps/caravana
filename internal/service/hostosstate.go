@@ -79,6 +79,15 @@ func (s *Service) noteOS(ctx context.Context) {
 	runs, err := hostos.ReadHistory(s.hostRoot, osHistoryRuns)
 	if err != nil {
 		s.log.Warn("read the host's package history", "error", err)
+	} else {
+		cause := rebootRunOf(reboot, runs)
+		st.mu.Lock()
+		causeChanged := st.rebootRun != cause
+		st.rebootRun = cause
+		st.mu.Unlock()
+		if causeChanged {
+			s.publish(Change{What: ChangeUpdates})
+		}
 	}
 	// Oldest first, so the rows are written in the order things happened. A run
 	// at or before the newest one this process has recorded is skipped without
@@ -182,6 +191,32 @@ func (s *Service) noteSecuritySince(ctx context.Context, state hostos.State, now
 	st.mu.Unlock()
 }
 
+// rebootNeededBy says the run is the one that made the pending reboot necessary: it installed a
+// package the reboot marker names, and the marker is not older than the run (the marker of a past
+// boot can't belong to a run since). The history of a package run and the Updates page's "installed
+// by" share it.
+func rebootNeededBy(reboot hostos.Reboot, run hostos.Run) bool {
+	return reboot.Required && !reboot.Since.Before(run.Start) && reboot.ListedIn(run)
+}
+
+// rebootRun is the run that made a reboot necessary: when it started and whether Ubuntu's automatic
+// updates made it (else someone ran apt).
+type rebootRun struct {
+	Found     bool
+	At        time.Time
+	Automatic bool
+}
+
+// rebootRunOf is the newest of runs (newest first) that rebootNeededBy says made the reboot necessary.
+func rebootRunOf(reboot hostos.Reboot, runs []hostos.Run) rebootRun {
+	for _, run := range runs {
+		if rebootNeededBy(reboot, run) {
+			return rebootRun{Found: true, At: run.Start.UTC(), Automatic: run.Automatic}
+		}
+	}
+	return rebootRun{}
+}
+
 // osPackagesDetail is the JSON of an os_packages host event.
 type osPackagesDetail struct {
 	Packages int    `json:"packages"`
@@ -202,7 +237,7 @@ func (s *Service) recordPackageRun(ctx context.Context, run hostos.Run, reboot h
 	if run.Automatic {
 		d.By = "unattended"
 	}
-	d.Reboot = reboot.Required && !reboot.Since.Before(run.Start) && reboot.ListedIn(run)
+	d.Reboot = rebootNeededBy(reboot, run)
 	detail, err := json.Marshal(d)
 	if err != nil {
 		return false, err

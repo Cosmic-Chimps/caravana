@@ -178,9 +178,9 @@ caravana owns. `SectionHead` **"How this server updates"** over a `.cv-panel` of
 ## API (names only, for the spec)
 
 `getUpdates` (`GET /v1/updates` → `caravana{current, latest?, releasedAt?, notes[], url?,
-pins?{nomad, traefik}, checkedAt?, checkEnabled, checkError?}`, `os{readable, distro,
+pins?{nomad, traefik}, checkedAt?, checkedOkAt?, checkEnabled, checkError?}`, `os{readable, distro,
 updates{total, security, packages?[], checkedAt}, reboot{required, since?, packages[],
-runningKernel, installedKernel?}, unattended{enabled?, autoReboot?, autoRebootTime?}}`,
+runningKernel, installedKernel?, installedAt?, installedBy?}, unattended{enabled?, autoReboot?, autoRebootTime?}}`,
 `history[]{at, kind, text, detail}`); `putUpdateSettings` (`checkEnabled`); `checkUpdates` (`POST /v1/updates/check?what=release|packages`, 202, at most once per 10 minutes each; `packages` runs `pro security-status`); attention kinds
 `os_reboot_required`, `os_security_updates`; notification event `caravana.release`. Times RFC
 3339 UTC.

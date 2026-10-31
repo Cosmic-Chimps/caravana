@@ -52,8 +52,7 @@ const (
 	releaseResponseLimit  = 1 << 20          // what is read of GitHub's answer
 	releaseBodyLimit      = 16 << 10         // what is kept of the release notes
 	pinFileLimit          = 512 << 10        // what is read of the installer or the job
-	releaseNotesLines     = 6                // bullet lines of the notes the page shows
-	releaseNoteLength     = 240              // characters of one of them
+	releaseNotesLines     = 6                // bullets of the notes the page shows
 	checkMinGap           = 10 * time.Minute // between two checks of one kind
 	packageNamesFor       = time.Hour        // how long package names are kept
 	packageNamesShown     = 500
@@ -205,8 +204,9 @@ type CaravanaUpdate struct {
 	Latest     string
 	ReleasedAt time.Time
 	URL        string
-	// Notes are the first six bullet lines of the release's notes.
-	Notes []string
+	// Notes are up to six lines of the release's notes: each bullet's bold lead, else its first
+	// sentence (ParseReleaseNotes).
+	Notes []ReleaseNote
 	// Pins are the Nomad and Traefik versions this Caravana runs and the newer
 	// release's, only where they differ and both are known.
 	Pins []VersionPin
@@ -219,6 +219,9 @@ type CaravanaUpdate struct {
 	CheckEnabled bool
 	// CheckedAt is the last attempt, successful or not; zero before the first.
 	CheckedAt time.Time
+	// CheckedOKAt is the last attempt GitHub answered well; zero when none has. A later failed
+	// attempt leaves it alone, so "couldn't check (last checked 3 days ago)" is true.
+	CheckedOKAt time.Time
 	// CheckError is why the last attempt failed, in Caravana's words; empty when
 	// it worked.
 	CheckError string
@@ -268,6 +271,11 @@ type RebootView struct {
 	Packages []string
 	// RunningKernel is the node's kernel; InstalledKernel the newest installed.
 	RunningKernel, InstalledKernel string
+	// InstalledAt is when the newest apt run that installed a package the reboot marker names
+	// started, and InstalledBy says who ran it: "unattended" (Ubuntu's automatic updates) or "hand".
+	// Both are empty when no run in the history names one.
+	InstalledAt time.Time
+	InstalledBy string
 }
 
 // UpdateEvent is one row of Past updates.
@@ -302,6 +310,14 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 	var v UpdatesView
 	v.Caravana = s.caravanaUpdate(rc, node)
 	v.OS = s.osUpdates(state, node, now)
+	s.sampler.mu.Lock()
+	if run := s.sampler.rebootRun; run.Found && v.OS.Reboot.Required {
+		v.OS.Reboot.InstalledAt, v.OS.Reboot.InstalledBy = run.At, "hand"
+		if run.Automatic {
+			v.OS.Reboot.InstalledBy = "unattended"
+		}
+	}
+	s.sampler.mu.Unlock()
 	v.History = updateHistory(events, node)
 
 	u := &s.updates
@@ -315,14 +331,14 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 func (s *Service) caravanaUpdate(rc store.ReleaseCheck, node *HostNode) CaravanaUpdate {
 	current := strings.TrimPrefix(s.runningVersion, "v")
 	c := CaravanaUpdate{
-		Current: current, CheckEnabled: rc.Enabled, CheckedAt: rc.CheckedAt, CheckError: rc.Error,
+		Current: current, CheckEnabled: rc.Enabled, CheckedAt: rc.CheckedAt, CheckedOKAt: rc.CheckedOKAt, CheckError: rc.Error,
 	}
 	if !hostos.ReleaseNewer(rc.LatestTag, current) {
 		return c
 	}
 	c.Latest = strings.TrimPrefix(rc.LatestTag, "v")
 	c.ReleasedAt, c.URL = rc.PublishedAt, rc.URL
-	c.Notes = releaseNotes(rc.Body)
+	c.Notes = ParseReleaseNotes(rc.Body, notesCut(rc.Body))
 	c.Install = "curl -fsSL " + s.downloadBase() + "/" + rc.LatestTag + "/install.sh | sudo bash"
 	if node != nil {
 		c.Pins = pinsOf(node, rc)
@@ -363,33 +379,6 @@ func pinsText(pins []VersionPin) string {
 	return "Updates " + strings.Join(parts, " and ") + "."
 }
 
-// releaseNotes is the first six bullet lines of a release's notes, each without
-// its marker and cut at 240 characters.
-func releaseNotes(body string) []string {
-	var out []string
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimRight(line, " \t\r") // only a top-level bullet: an indented one belongs to the one above
-		text, ok := strings.CutPrefix(line, "- ")
-		if !ok {
-			text, ok = strings.CutPrefix(line, "* ")
-		}
-		if !ok {
-			continue
-		}
-		text = strings.TrimSpace(text)
-		if r := []rune(text); len(r) > releaseNoteLength {
-			text = string(r[:releaseNoteLength]) + "…"
-		}
-		if text != "" {
-			out = append(out, text)
-		}
-		if len(out) == releaseNotesLines {
-			break
-		}
-	}
-	return out
-}
-
 // osUpdates builds the OS block from a reading of the host's files.
 func (s *Service) osUpdates(state hostos.State, node *HostNode, now time.Time) OSUpdates {
 	o := OSUpdates{Readable: state.Readable, Distro: state.Distro, Unattended: state.Unattended}
@@ -427,10 +416,9 @@ func updateHistory(events []store.HostEvent, node *HostNode) []UpdateEvent {
 				continue
 			}
 			if d.From == "" {
-				row.Text, row.Detail = "caravana "+d.To, "first start recorded"
-			} else {
-				row.Text = "caravana " + d.From + " → " + d.To
+				continue // the first version recorded is where the history starts, not a change
 			}
+			row.Text = "caravana " + d.From + " → " + d.To
 		case store.HostEventOSPackages:
 			var d osPackagesDetail
 			if err := json.Unmarshal([]byte(e.Detail), &d); err != nil {
@@ -441,9 +429,10 @@ func updateHistory(events []store.HostEvent, node *HostNode) []UpdateEvent {
 			if d.By == "unattended" {
 				by = "by Ubuntu's automatic updates"
 			}
-			row.Detail = by + " · no reboot"
+			// History is in the past tense: whether a reboot was needed then, not whether one is now.
+			row.Detail = by + " · no reboot needed"
 			if d.Reboot {
-				row.Detail = by + " · a reboot is needed"
+				row.Detail = by + " · needed a reboot"
 			}
 		case store.HostEventBoot:
 			row.Text = "The server restarted"
@@ -681,10 +670,12 @@ func (s *Service) fetchAndRecordRelease(ctx context.Context) error {
 			rc.Error = failGitHubDown
 		}
 	case rel.notModified:
+		rc.CheckedOKAt = now
 		rc.Error = ""
 	case rel.ignored:
-		rc.ETag, rc.Error = rel.etag, ""
+		rc.ETag, rc.Error, rc.CheckedOKAt = rel.etag, "", now
 	default:
+		rc.CheckedOKAt = now
 		if rel.tag != rc.LatestTag {
 			rc.NomadPin, rc.TraefikPin = "", ""
 		}

@@ -49,6 +49,7 @@ type caravanaUpdateJSON struct {
 	Install      string     `json:"install,omitempty"`
 	CheckEnabled bool       `json:"checkEnabled"`
 	CheckedAt    *time.Time `json:"checkedAt"`
+	CheckedOKAt  *time.Time `json:"checkedOkAt"`
 	CheckError   string     `json:"checkError"`
 }
 
@@ -94,6 +95,9 @@ type rebootJSON struct {
 	Packages        []string   `json:"packages"`
 	RunningKernel   string     `json:"runningKernel"`
 	InstalledKernel string     `json:"installedKernel"`
+	// InstalledAt and InstalledBy say which apt run installed a package the reboot marker names.
+	InstalledAt *time.Time `json:"installedAt"`
+	InstalledBy string     `json:"installedBy"`
 }
 
 // unattendedJSON has null fields for what couldn't be read.
@@ -126,11 +130,12 @@ func timePtr(t time.Time) *time.Time {
 
 func toCaravanaUpdateJSON(c service.CaravanaUpdate) caravanaUpdateJSON {
 	out := caravanaUpdateJSON{
-		Current: c.Current, Latest: c.Latest, ReleasedAt: timePtr(c.ReleasedAt), URL: c.URL, Notes: c.Notes,
-		PinsText: c.PinsText, Install: c.Install, CheckEnabled: c.CheckEnabled, CheckedAt: timePtr(c.CheckedAt), CheckError: c.CheckError,
+		Current: c.Current, Latest: c.Latest, ReleasedAt: timePtr(c.ReleasedAt), URL: c.URL, Notes: []string{},
+		PinsText: c.PinsText, Install: c.Install, CheckEnabled: c.CheckEnabled, CheckedAt: timePtr(c.CheckedAt),
+		CheckedOKAt: timePtr(c.CheckedOKAt), CheckError: c.CheckError,
 	}
-	if out.Notes == nil {
-		out.Notes = []string{}
+	for _, n := range c.Notes {
+		out.Notes = append(out.Notes, n.Text)
 	}
 	for _, p := range c.Pins {
 		if out.Pins == nil {
@@ -159,7 +164,8 @@ func toUpdatesJSON(v service.UpdatesView) updatesJSON {
 				PackagesError: o.Updates.PackagesError,
 			},
 			Reboot: rebootJSON{Required: o.Reboot.Required, Since: timePtr(o.Reboot.Since), Packages: o.Reboot.Packages,
-				RunningKernel: o.Reboot.RunningKernel, InstalledKernel: o.Reboot.InstalledKernel},
+				RunningKernel: o.Reboot.RunningKernel, InstalledKernel: o.Reboot.InstalledKernel,
+				InstalledAt: timePtr(o.Reboot.InstalledAt), InstalledBy: o.Reboot.InstalledBy},
 			Unattended: unattendedJSON{Enabled: o.Unattended.Enabled, AutoReboot: o.Unattended.AutoReboot,
 				AutoRebootTime: o.Unattended.AutoRebootTime},
 		},

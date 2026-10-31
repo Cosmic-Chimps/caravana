@@ -6161,7 +6161,7 @@ components:
     UpdatesCaravana:
       type: object
       additionalProperties: false
-      required: [current, notes, checkEnabled, checkedAt, checkError]
+      required: [current, notes, checkEnabled, checkedAt, checkedOkAt, checkError]
       properties:
         current:
           type: string
@@ -6179,7 +6179,9 @@ components:
         url: {type: string, description: "The release's page.", format: uri}
         notes:
           type: array
-          description: The first six bullet lines of the release's notes, each cut at 240 characters. Empty without a `latest`.
+          description: |
+            Up to six lines of the release's notes, one per bullet: its bold lead (without the `**`), else its
+            first sentence, never cut in the middle. Backticks are left in. Empty without a `latest`.
           items: {type: string}
         pins:
           type: object
@@ -6203,6 +6205,10 @@ components:
           type: [string, "null"]
           format: date-time
           description: The last attempt, whether it worked or not. `null` before the first.
+        checkedOkAt:
+          type: [string, "null"]
+          format: date-time
+          description: The last attempt that worked. A later failed attempt leaves it alone. `null` when none has.
         checkError:
           type: string
           description: |
@@ -6273,7 +6279,7 @@ components:
         reboot:
           type: object
           additionalProperties: false
-          required: [required, since, packages, runningKernel, installedKernel]
+          required: [required, since, packages, runningKernel, installedKernel, installedAt, installedBy]
           properties:
             required: {type: boolean, description: "The host's own marker asks for a reboot (`/run/reboot-required`)."}
             since:
@@ -6292,6 +6298,16 @@ components:
               type: string
               description: The newest kernel release installed; empty when the host doesn't say.
               examples: ["6.8.0-149-generic"]
+            installedAt:
+              type: [string, "null"]
+              format: date-time
+              description: |
+                When the newest apt run that installed a package named in `packages` started. `null`
+                when no reboot is needed or no run in the host's history names one.
+            installedBy:
+              type: string
+              enum: ["", unattended, hand]
+              description: Who ran that apt run, Ubuntu's automatic updates (`unattended`) or someone (`hand`). Empty with `installedAt`.
         unattended:
           type: object
           additionalProperties: false

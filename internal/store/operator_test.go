@@ -124,7 +124,7 @@ func TestReleaseCheck(t *testing.T) {
 	want := ReleaseCheck{
 		Enabled: false, LatestTag: "v0.16.0", PublishedAt: opT0, URL: "https://example.test/r/v0.16.0",
 		Body: "- one\n- two", NomadPin: "2.0.1", TraefikPin: "v3.5.0", ETag: `W/"abc"`,
-		CheckedAt: opT0.Add(time.Hour), Error: "GitHub didn't answer", NotifiedTag: "v0.15.9",
+		CheckedAt: opT0.Add(time.Hour), CheckedOKAt: opT0.Add(30 * time.Minute), Error: "GitHub didn't answer", NotifiedTag: "v0.15.9",
 	}
 	if err := s.SaveReleaseCheck(ctx, want); err != nil {
 		t.Fatal(err)
@@ -135,17 +135,17 @@ func TestReleaseCheck(t *testing.T) {
 	}
 	if got.Enabled != want.Enabled || got.LatestTag != want.LatestTag || !got.PublishedAt.Equal(want.PublishedAt) ||
 		got.URL != want.URL || got.Body != want.Body || got.NomadPin != want.NomadPin || got.TraefikPin != want.TraefikPin ||
-		got.ETag != want.ETag || !got.CheckedAt.Equal(want.CheckedAt) || got.Error != want.Error || got.NotifiedTag != want.NotifiedTag {
+		got.ETag != want.ETag || !got.CheckedAt.Equal(want.CheckedAt) || !got.CheckedOKAt.Equal(want.CheckedOKAt) || got.Error != want.Error || got.NotifiedTag != want.NotifiedTag {
 		t.Errorf("ReleaseCheck() = %+v, want %+v", got, want)
 	}
 
 	// Saving again keeps one row, and clearing a field empties it.
-	want.Error, want.Enabled, want.CheckedAt = "", true, time.Time{}
+	want.Error, want.Enabled, want.CheckedAt, want.CheckedOKAt = "", true, time.Time{}, time.Time{}
 	if err := s.SaveReleaseCheck(ctx, want); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.ReleaseCheck(ctx)
-	if got.Error != "" || !got.Enabled || !got.CheckedAt.IsZero() {
+	if got.Error != "" || !got.Enabled || !got.CheckedAt.IsZero() || !got.CheckedOKAt.IsZero() {
 		t.Errorf("after clearing = %+v", got)
 	}
 	var n int
@@ -169,7 +169,7 @@ func TestReleaseResult(t *testing.T) {
 	rc := ReleaseCheck{
 		Enabled:   true, // ignored: only SetReleaseCheckEnabled changes the setting
 		LatestTag: "v0.16.0", PublishedAt: opT0, URL: "https://example.test/r", Body: "- a", ETag: `"e"`,
-		CheckedAt: opT0, NotifiedTag: "v0.16.0",
+		CheckedAt: opT0, CheckedOKAt: opT0, NotifiedTag: "v0.16.0",
 	}
 	if err := s.SaveReleaseResult(ctx, rc, []Delivery{newDelivery("ndl_r1", "nch_aa", opT0)}); err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestReleaseResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Enabled || got.LatestTag != "v0.16.0" || got.NotifiedTag != "v0.16.0" || got.ETag != `"e"` || !got.CheckedAt.Equal(opT0) {
+	if got.Enabled || got.LatestTag != "v0.16.0" || got.NotifiedTag != "v0.16.0" || got.ETag != `"e"` || !got.CheckedAt.Equal(opT0) || !got.CheckedOKAt.Equal(opT0) {
 		t.Errorf("row = %+v; want the result saved and the setting still off", got)
 	}
 	if ds, err := s.ListDeliveries(ctx, "nch_aa", 10); err != nil || len(ds) != 1 || ds[0].ID != "ndl_r1" {

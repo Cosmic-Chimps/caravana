@@ -18,7 +18,8 @@ CREATE TABLE release_check (
   nomad_pin    TEXT NOT NULL DEFAULT '',        -- from the release's installer, when it was read
   traefik_pin  TEXT NOT NULL DEFAULT '',
   etag         TEXT NOT NULL DEFAULT '',        -- for If-None-Match
-  checked_at   TEXT NOT NULL DEFAULT '',        -- the last attempt
+  checked_at   TEXT NOT NULL DEFAULT '',        -- the last attempt, good or not
+  checked_ok_at TEXT NOT NULL DEFAULT '',       -- the last attempt that GitHub answered well
   error        TEXT NOT NULL DEFAULT '',        -- the last failure in Caravana's words; empty when it worked
   notified_tag TEXT NOT NULL DEFAULT ''         -- the last tag a caravana.release message was queued for
 ) STRICT;

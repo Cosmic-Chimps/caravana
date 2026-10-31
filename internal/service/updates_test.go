@@ -155,8 +155,8 @@ func TestReleaseCheckFindsAndTellsOnce(t *testing.T) {
 		!v.ReleasedAt.Equal(time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)) || !v.CheckEnabled || v.CheckError != "" || v.CheckedAt.IsZero() {
 		t.Errorf("caravana = %+v", v)
 	}
-	if want := []string{"One thing.", "Another thing.", "Third, with a star."}; !slices.Equal(v.Notes, want) {
-		t.Errorf("notes = %q, want %q", v.Notes, want)
+	if want := []ReleaseNote{{Text: "One thing."}, {Text: "Another thing."}, {Text: "Third, with a star."}}; !slices.Equal(v.Notes, want) {
+		t.Errorf("notes = %v, want %v", v.Notes, want)
 	}
 	if want := "curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/v0.16.0/install.sh | sudo bash"; v.Install != want {
 		t.Errorf("install = %q", v.Install)
@@ -380,12 +380,17 @@ func TestReleaseCheckFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newUpdatesLab(t)
 			l.check(t) // a good answer first: what it found stays
+			goodAt := l.svc.clock.Now()
 			l.gh.set(func(g *fakeGitHub) {
 				g.etag, g.status, g.release = "", tc.status, tc.body
 			})
 			l.svc.clock.(*fakeClock).Advance(24 * time.Hour)
 			l.check(t)
 			v := l.view(t).Caravana
+			// The last good check stays where it was: "last checked" on the page is that one.
+			if !v.CheckedOKAt.Equal(goodAt) || !v.CheckedAt.After(v.CheckedOKAt) {
+				t.Errorf("checkedOkAt = %v, checkedAt = %v; want the good check at %v and a later attempt", v.CheckedOKAt, v.CheckedAt, goodAt)
+			}
 			if v.CheckError != tc.want {
 				t.Errorf("error = %q, want %q", v.CheckError, tc.want)
 			}
@@ -399,8 +404,8 @@ func TestReleaseCheckFailures(t *testing.T) {
 			l.gh.set(func(g *fakeGitHub) { g.status, g.release = 0, releaseBody("v0.16.0", "") })
 			l.svc.clock.(*fakeClock).Advance(24 * time.Hour)
 			l.check(t)
-			if got := l.view(t).Caravana.CheckError; got != "" {
-				t.Errorf("error after a good answer = %q", got)
+			if v := l.view(t).Caravana; v.CheckError != "" || !v.CheckedOKAt.Equal(v.CheckedAt) {
+				t.Errorf("after a good answer: error = %q, checkedOkAt = %v, checkedAt = %v", v.CheckError, v.CheckedOKAt, v.CheckedAt)
 			}
 			if n := len(l.deliveriesOf(t, l.problems)); n != 1 {
 				t.Errorf("messages = %d, want 1 (a failure and a retry tell nothing)", n)
@@ -411,8 +416,13 @@ func TestReleaseCheckFailures(t *testing.T) {
 		l := newUpdatesLab(t)
 		l.gh.Close()
 		l.check(t)
-		if got := l.view(t).Caravana.CheckError; got != failGitHubDown {
-			t.Errorf("error = %q", got)
+		v := l.view(t).Caravana
+		if v.CheckError != failGitHubDown {
+			t.Errorf("error = %q", v.CheckError)
+		}
+		// Never a good check: there is nothing to say was "last checked".
+		if !v.CheckedOKAt.IsZero() || v.CheckedAt.IsZero() {
+			t.Errorf("checkedOkAt = %v, checkedAt = %v; want none and an attempt", v.CheckedOKAt, v.CheckedAt)
 		}
 	})
 }
@@ -449,20 +459,6 @@ func TestPageURL(t *testing.T) {
 		if got := pageURL(given, "v0.16.0"); got != want {
 			t.Errorf("pageURL(%q) = %q, want %q", given, got, want)
 		}
-	}
-}
-
-func TestReleaseNotes(t *testing.T) {
-	body := "Intro\n\n## Added\n- one\n  - nested is not a top bullet\n* two\n-not a bullet\n- three\n- four\n- five\n- six\n- seven\n- eight\n"
-	if got, want := releaseNotes(body), []string{"one", "two", "three", "four", "five", "six"}; !slices.Equal(got, want) {
-		t.Errorf("notes = %q, want %q", got, want)
-	}
-	long := "- " + strings.Repeat("é", releaseNoteLength+10)
-	if got := releaseNotes(long); len(got) != 1 || len([]rune(got[0])) != releaseNoteLength+1 || !strings.HasSuffix(got[0], "…") {
-		t.Errorf("a long line = %q", got)
-	}
-	if got := releaseNotes("no bullets here"); got != nil {
-		t.Errorf("notes = %q", got)
 	}
 }
 
@@ -835,11 +831,11 @@ func TestUpdatesHistory(t *testing.T) {
 	}
 	want := []string{
 		"10-25 boot | The server restarted | kernel 6.8.0-149 since then",
-		"10-24 os_packages | Ubuntu updates · 1 package | by hand · no reboot",
-		"10-23 os_packages | Ubuntu updates · 14 packages | by Ubuntu's automatic updates · a reboot is needed",
+		"10-24 os_packages | Ubuntu updates · 1 package | by hand · no reboot needed",
+		"10-23 os_packages | Ubuntu updates · 14 packages | by Ubuntu's automatic updates · needed a reboot",
 		"10-22 boot | The server restarted | ",
 		"10-21 version | caravana 0.12.0 → 0.13.0 | ",
-		"10-20 version | caravana 0.12.0 | first start recorded",
+		// The first version recorded (from "") is where the history starts: it is not listed.
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("history =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

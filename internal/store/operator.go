@@ -182,7 +182,10 @@ type ReleaseCheck struct {
 	NomadPin    string
 	TraefikPin  string
 	ETag        string
-	CheckedAt   time.Time // the last attempt
+	CheckedAt   time.Time // the last attempt, good or not
+	// CheckedOKAt is the last attempt GitHub answered well: it stays when a later one fails, so the
+	// page can say how long ago the release list was last known to be current.
+	CheckedOKAt time.Time
 	// Error is the last failure in Caravana's words; empty when it worked.
 	Error string
 	// NotifiedTag is the last tag a caravana.release message was queued for.
@@ -194,11 +197,11 @@ type ReleaseCheck struct {
 func (s *Store) ReleaseCheck(ctx context.Context) (ReleaseCheck, error) {
 	var rc ReleaseCheck
 	var enabled int
-	var published, checked string
+	var published, checked, checkedOK string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT enabled, latest_tag, published_at, url, body, nomad_pin, traefik_pin, etag, checked_at, error, notified_tag
+		SELECT enabled, latest_tag, published_at, url, body, nomad_pin, traefik_pin, etag, checked_at, checked_ok_at, error, notified_tag
 		FROM release_check WHERE id = 1`).Scan(&enabled, &rc.LatestTag, &published, &rc.URL, &rc.Body,
-		&rc.NomadPin, &rc.TraefikPin, &rc.ETag, &checked, &rc.Error, &rc.NotifiedTag)
+		&rc.NomadPin, &rc.TraefikPin, &rc.ETag, &checked, &checkedOK, &rc.Error, &rc.NotifiedTag)
 	if err != nil {
 		return ReleaseCheck{}, fmt.Errorf("read release check: %w", err)
 	}
@@ -209,6 +212,9 @@ func (s *Store) ReleaseCheck(ctx context.Context) (ReleaseCheck, error) {
 	if rc.CheckedAt, err = parseTimeOrZero(checked); err != nil {
 		return ReleaseCheck{}, fmt.Errorf("read release check: %w", err)
 	}
+	if rc.CheckedOKAt, err = parseTimeOrZero(checkedOK); err != nil {
+		return ReleaseCheck{}, fmt.Errorf("read release check: %w", err)
+	}
 	return rc, nil
 }
 
@@ -216,10 +222,10 @@ func (s *Store) ReleaseCheck(ctx context.Context) (ReleaseCheck, error) {
 func (s *Store) SaveReleaseCheck(ctx context.Context, rc ReleaseCheck) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE release_check SET enabled = ?, latest_tag = ?, published_at = ?, url = ?, body = ?,
-			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, error = ?, notified_tag = ?
+			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, checked_ok_at = ?, error = ?, notified_tag = ?
 		WHERE id = 1`,
 		boolInt(rc.Enabled), rc.LatestTag, zeroOrTime(rc.PublishedAt), rc.URL, rc.Body,
-		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), rc.Error, rc.NotifiedTag)
+		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), zeroOrTime(rc.CheckedOKAt), rc.Error, rc.NotifiedTag)
 	if err != nil {
 		return fmt.Errorf("save release check: %w", err)
 	}
@@ -249,10 +255,10 @@ func (s *Store) SaveReleaseResult(ctx context.Context, rc ReleaseCheck, deliveri
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE release_check SET latest_tag = ?, published_at = ?, url = ?, body = ?,
-			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, error = ?, notified_tag = ?
+			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, checked_ok_at = ?, error = ?, notified_tag = ?
 		WHERE id = 1`,
 		rc.LatestTag, zeroOrTime(rc.PublishedAt), rc.URL, rc.Body,
-		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), rc.Error, rc.NotifiedTag); err != nil {
+		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), zeroOrTime(rc.CheckedOKAt), rc.Error, rc.NotifiedTag); err != nil {
 		return fmt.Errorf("save release check: %w", err)
 	}
 	for _, d := range deliveries {

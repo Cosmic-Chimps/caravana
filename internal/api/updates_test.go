@@ -79,7 +79,7 @@ func TestGetUpdatesBeforeAnyCheck(t *testing.T) {
 	u := getJSON(t, e, "/v1/updates", "Updates")
 
 	c := obj(t, u["caravana"], "caravana")
-	if c["current"] != "0.15.0" || c["checkEnabled"] != true || c["checkedAt"] != nil || c["checkError"] != "" {
+	if c["current"] != "0.15.0" || c["checkEnabled"] != true || c["checkedAt"] != nil || c["checkedOkAt"] != nil || c["checkError"] != "" {
 		t.Errorf("caravana = %v", c)
 	}
 	for _, k := range []string{"latest", "releasedAt", "url", "pins", "pinsText", "install"} {
@@ -148,7 +148,7 @@ func TestCheckUpdatesRelease(t *testing.T) {
 	}
 	c := obj(t, u["caravana"], "caravana")
 	if c["latest"] != "0.16.0" || c["url"] != "https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0" ||
-		c["releasedAt"] != "2026-11-02T10:00:00Z" || c["checkError"] != "" || c["checkedAt"] == nil ||
+		c["releasedAt"] != "2026-11-02T10:00:00Z" || c["checkError"] != "" || c["checkedAt"] == nil || c["checkedOkAt"] != c["checkedAt"] ||
 		c["install"] != "curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/v0.16.0/install.sh | sudo bash" {
 		t.Errorf("caravana = %v", c)
 	}

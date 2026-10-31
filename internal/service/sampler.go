@@ -106,6 +106,9 @@ type samplerState struct {
 	os       hostos.State
 	osRead   bool
 	osReadAt time.Time
+	// rebootRun is the newest apt run that made the pending reboot necessary (hostosstate.go): the
+	// Updates page says who installed it. Zero (Found false) when there is no reboot or no run names it.
+	rebootRun rebootRun
 	// securitySince is when the count of waiting security updates first went above
 	// zero (the stored host mark), the zero time when it isn't above zero.
 	securitySince time.Time

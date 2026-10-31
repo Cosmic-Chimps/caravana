@@ -47,11 +47,12 @@ caravana:
   latest: 0.16.0              # absent when not newer or never checked
   releasedAt: 2026-11-02T10:00:00Z
   url: https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0
-  notes: ["...", "..."]       # the body's first 6 bullet lines
+  notes: ["API 0.28.0", "..."]  # up to 6, one per bullet: its bold lead, else its first sentence (backticks kept)
   pins: { nomad: { from: 2.0.7, to: 2.1.0 }, traefik: { from: 3.7.13, to: 3.8.0 } }   # optional
   install: "curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/v0.16.0/install.sh | sudo bash"
   checkEnabled: true
-  checkedAt: 2026-10-30T03:10:00Z
+  checkedAt: 2026-10-30T03:10:00Z     # the last attempt
+  checkedOkAt: 2026-10-30T03:10:00Z   # the last attempt that worked (null when none has)
   checkError: ""              # e.g. "GitHub didn't answer"
 os:
   readable: true
@@ -59,10 +60,11 @@ os:
   updates: { total: 14, security: 9, checkedAt: 2026-10-30T06:05:00Z, stale: false,
              packages: [libc6, linux-image-6.8.0-149-generic], packagesCheckedAt: ..., packagesError: "" }
   reboot: { required: true, since: 2026-10-28T06:12:00Z, packages: [linux-image-6.8.0-149-generic],
-            runningKernel: 6.8.0-147-generic, installedKernel: 6.8.0-149-generic }
+            runningKernel: 6.8.0-147-generic, installedKernel: 6.8.0-149-generic,
+            installedAt: 2026-10-28T06:12:00Z, installedBy: unattended }   # who ran the apt run that installed what the marker names
   unattended: { enabled: true, autoReboot: false, autoRebootTime: "" }   # null fields when unreadable
 history:
-  - { at: 2026-10-28T06:12:00Z, kind: os_packages, text: "Ubuntu updates · 14 packages", detail: "a reboot is needed" }
+  - { at: 2026-10-28T06:12:00Z, kind: os_packages, text: "Ubuntu updates · 14 packages", detail: "by Ubuntu's automatic updates · needed a reboot" }
   - { at: 2026-10-22T10:00:00Z, kind: version, text: "caravana 0.12.0 → 0.13.0", detail: "" }
 checking: { release: false, packages: true }     # a check in progress
 ```
