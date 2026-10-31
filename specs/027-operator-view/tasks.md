@@ -285,8 +285,10 @@ page 3.
   Done: `service.ProblemParts` is the one source (kernels, packages and versions in mono; `service.FailureCause` for
   a deploy that never started); `ui/attention.go` and the host pages' banners draw its parts, and a failed deploy's
   row adds only what runs now. `TestEveryKindSaysTheSameWordsEverywhere` walks `service.AttentionKinds`.
-- [ ] T035 Full checks: build, vet, staticcheck, gofmt, both cross-compiles, `go mod tidy -diff`, `tools/ui-css.sh
+- [X] T035 Full checks: build, vet, staticcheck, gofmt, both cross-compiles, `go mod tidy -diff`, `tools/ui-css.sh
   check`, `tools/ui-vendor.sh check`, shellcheck, `go test -race -timeout 30m ./...`; record the result here.
+  - 2026-10-31 at 4694dc4: build, vet, staticcheck, gofmt, both cross-compiles, `go mod tidy -diff`, ui-css,
+    ui-vendor, shellcheck and `go test -race -count=1 -timeout 30m ./...` all pass.
 
 ## Dependencies & Execution Order
 
