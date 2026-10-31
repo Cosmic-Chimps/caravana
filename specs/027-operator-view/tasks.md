@@ -262,9 +262,15 @@ page 3.
 
 ## Phase 6: Polish and cross-cutting
 
-- [ ] T033 [P] [SC-006] A sentinel test across the feature (`internal/service/operator_sentinel_test.go`): a secret
+- [X] T033 [P] [SC-006] A sentinel test across the feature (`internal/service/operator_sentinel_test.go`): a secret
   value and a command's output never appear in `Activity`, `Updates`, `Host`, their API answers, the three pages, the
   server log or any notification.
+  - Done in three files, since `api` and `ui` import `service`: `internal/service/operator_sentinel_test.go`
+    (Activity, Updates, Host, Attention, HostCopies, every queued notification, the log, the SQLite file),
+    `internal/api/operator_sentinel_test.go` (the Operator reads' bytes and the log) and
+    `internal/ui/operator_sentinel_test.go` (the three pages and their parts, and the log). Planted: a service secret,
+    a command's output, text of `pro security-status` that isn't a package name (and pro's own error text), a
+    command line of apt's history, and release notes (public, shown on purpose: only the log is checked for them).
 - [ ] T034 [P] `CHANGELOG.md` `## Unreleased` (Added: the Operator view, its three pages, API 0.29.0, the two needs-you
   kinds, the release notification; Upgrade: nothing to rerun, the release check is on by default and can be turned off on
   Updates); `docs/plan.md` (the single-host Operator pages move to 2.6; Updates takes over the "update available"
