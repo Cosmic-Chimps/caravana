@@ -244,13 +244,16 @@ page 3.
   - 2026-10-31, lab: `console-ops-updates` passes in 120 s (with `console-ops-overview` 54 s and `console-ops-server`
     40 s); the gate step `os-updates` passes alone in 131 s (opened, resolved, one `caravana.release`). One test fix:
     "Run the installer of 0.16.0." spans the version, which pageText splits.
-- [ ] T031 [US3] [SC-001] `deploy/dev/install-test.sh`: after the install, `GET /v1/updates` answers `os.readable: true`
+- [X] T031 [US3] [SC-001] `deploy/dev/install-test.sh`: after the install, `GET /v1/updates` answers `os.readable: true`
   with `distro.id: ubuntu` and `GET /v1/host` has `node.kernel`, proving the unit's sandbox allows the reads; shellcheck;
   run it on a throwaway VM if possible and record here (or note it as pending for the maintainer).
   - Written, not yet run (shellcheck passes; the VM run is the maintainer's). After the whoami deploy it checks
     `GET /v1/updates` (`os.readable`, Ubuntu), `GET /v1/host` (`node.kernel`) and asks for the package names
     (`pro security-status` inside the unit's sandbox: 202, then no `packagesError`; a VM without `pro` skips that
     part with a note); after the upgrade it checks the reads again.
+  - 2026-10-31, run on a throwaway Lima VM (Ubuntu 24.04): INSTALL TEST PASSED. Inside the unit's sandbox,
+    `os.readable` with Ubuntu, `node.kernel`, and the package check (pro present: 202, then no `packagesError`), before
+    and after the upgrade; the earlier paths (rerun, upgrade, rollback, older refused, uninstall) pass too.
 - [X] T032 [US3] Page 3 review cycle as T015, against `pg-updates.png`; record "Approved" in
   `contracts/page3-updates.md`.
   - 2026-10-31: review of e7e8988 (1c1845a), fix pass with T034a (184c0c4, d155ebb, 6150c9d), recheck with every

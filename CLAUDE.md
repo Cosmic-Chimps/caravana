@@ -938,9 +938,10 @@ module, no Nomad policy change.
   gate has a step `os-updates` (`gate_os_updates_test.go`: `problem.opened` for the reboot, then
   `problem.resolved` after the marker is removed, one `caravana.release`). `deploy/dev/install-test.sh`
   checks `GET /v1/updates` and `GET /v1/host` inside the unit's sandbox.
-- **Merge condition:** a full `TestConsoleLab` green on a quiet machine (`console-logs` has been flaky
-  when the machine is busy; the copy-status change is not the cause, it passed 3 of 3 on an idle one),
-  and T031 (`install-test.sh` on a throwaway VM) run by the maintainer.
+- **Merge condition, met on 2026-10-31:** the whole `TestConsoleLab` passes on a quiet machine (30 of 30
+  steps). `console-logs` is flaky when the machine is busy: the copy-status change isn't the cause, since
+  it passed 3 of 3 on an idle one. `install-test.sh` passes on a throwaway VM, with `pro` running inside
+  the unit's sandbox.
 - Not in 027: applying updates from the console (Phase 3), several servers (the server list, Move work
   off, cluster-wide Updates), and the Activity, Logs and Proxy pages of the Operator view (Phase 3).
 
