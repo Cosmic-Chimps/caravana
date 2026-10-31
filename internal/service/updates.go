@@ -252,6 +252,10 @@ type UpdateCounts struct {
 	// Stale says the list is older than 48 hours: it is shown, with its age, and
 	// no needs-you item is made from it.
 	Stale bool
+	// SecuritySince is when the count of waiting security updates first went above zero, the clock
+	// the needs-you item waits on while the host's own automatic updates are on; zero when the count
+	// isn't above zero or isn't known (SecurityGraceOver).
+	SecuritySince time.Time
 	// PackagesAvailable says Check package names can run here (Ubuntu with pro).
 	PackagesAvailable bool
 	// Packages are the security packages by name, from the newest package check
@@ -262,6 +266,13 @@ type UpdateCounts struct {
 	PackagesKernel    bool
 	PackagesCheckedAt time.Time
 	PackagesError     string
+}
+
+// SecurityGraceOver says the security updates have waited as long as the host's automatic updates
+// are given to install them (24 hours since SecuritySince), which is when the needs-you item
+// opens. False inside the wait, and when the clock isn't known ("not yet").
+func (c UpdateCounts) SecurityGraceOver(now time.Time) bool {
+	return !c.SecuritySince.IsZero() && now.Sub(c.SecuritySince) >= securityGrace
 }
 
 // RebootView is the reboot row: whether one is needed and the kernels around it.
@@ -386,6 +397,9 @@ func (s *Service) osUpdates(state hostos.State, node *HostNode, now time.Time) O
 		Known: state.Updates.Known, Total: state.Updates.Total, Security: state.Updates.Security,
 		CheckedAt: state.Updates.CheckedAt, Stale: state.Updates.Known && state.Updates.Stale(now),
 		PackagesAvailable: s.packagesCheckable(state) == nil,
+	}
+	if state.Updates.Security > 0 {
+		o.Updates.SecuritySince = s.securityClock()
 	}
 	u := &s.updates
 	u.mu.Lock()

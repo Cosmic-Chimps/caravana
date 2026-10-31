@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The notes of a real release: 0.15.0's CHANGELOG section, as GitHub would carry it in the release body.
@@ -14,12 +15,12 @@ func TestParseReleaseNotesRealSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ReleaseNote{
-		{Text: "API 0.28.0", Lead: true},
-		{Text: "Configure of an app deployed from a Compose file", Lead: true},
-		{Text: "Secrets in the Compose form", Lead: true},
-		{Text: "MCP", Lead: true},
+		{Lead: "API 0.28.0", Colon: true, Text: "`Deployment.registeredAt` (the time Nomad accepted the job, `null` until it did), the time the console splits a deploy's stages on."},
+		{Lead: "Configure of an app deployed from a Compose file", Text: "says why it looks different: Caravana keeps the file, so the app is edited through it, while an app deployed from an image is edited field by field."},
+		{Lead: "Secrets in the Compose form", Text: "(New app, Deploy from Compose, Configure) are one row each: the name at the left, its input at the right, so a long name such as `Frunchy__Auth__Providers__Umbral__ClientSecret` no longer runs into the next one."},
+		{Lead: "MCP", Colon: true, Text: "`deploy_image`, `promote_app` and `redeploy_version` are marked destructive, so agent clients ask before running them."},
 		{Text: "An upgrade that rolls back restores Caravana's binary and data only."},
-		{Text: "The installer validates and quotes its options.", Lead: true},
+		{Lead: "The installer validates and quotes its options.", Text: "`--email` and `--acme-email` must be plain addresses and `--domain` a host name, or it refuses, naming the option, before changing anything."},
 	}
 	got := ParseReleaseNotes(string(data), false)
 	if !slices.Equal(got, want) {
@@ -53,8 +54,16 @@ func TestParseReleaseNotes(t *testing.T) {
 	}{
 		{"no bullets", "no bullets here", false, nil},
 		{"empty", "", false, nil},
-		{"bold lead", "- **API 0.28.0**: `Deployment.registeredAt` (the time it was accepted), more.", false,
-			[]ReleaseNote{{Text: "API 0.28.0", Lead: true}}},
+		{"bold lead and the first sentence of the rest", "- **API 0.28.0**: `Deployment.registeredAt` (the time it was accepted), more. Another.", false,
+			[]ReleaseNote{{Lead: "API 0.28.0", Colon: true, Text: "`Deployment.registeredAt` (the time it was accepted), more."}}},
+		{"a lead the text goes on from takes no colon", "- **Configure** says why: it is new. More.", false,
+			[]ReleaseNote{{Lead: "Configure", Text: "says why: it is new."}}},
+		{"a lead that ends in a stop takes no colon", "- **It validates.**: and quotes. More.", false,
+			[]ReleaseNote{{Lead: "It validates.", Text: "and quotes."}}},
+		{"a lead alone", "- **Only a lead**", false, []ReleaseNote{{Lead: "Only a lead"}}},
+		{"a colon with nothing after it", "- **Lead**:", false, []ReleaseNote{{Lead: "Lead"}}},
+		{"other bold in the rest is dropped", "- **Lead**: uses **bold** here. More.", false,
+			[]ReleaseNote{{Lead: "Lead", Colon: true, Text: "uses bold here."}}},
 		{"first sentence, never cut mid-sentence", "- Configure says why it looks different. And a second sentence.", false,
 			[]ReleaseNote{{Text: "Configure says why it looks different."}}},
 		{"a long sentence stays whole", "- " + strings.Repeat("word ", 80) + "end. Next.", false,
@@ -62,7 +71,7 @@ func TestParseReleaseNotes(t *testing.T) {
 		{"wrapped lines are joined", "- First line of a bullet\n  that goes on\n  and ends here. Second.\n- Next.", false,
 			[]ReleaseNote{{Text: "First line of a bullet that goes on and ends here."}, {Text: "Next."}}},
 		{"a lead that wraps", "- **A lead that\n  wraps** and the rest.", false,
-			[]ReleaseNote{{Text: "A lead that wraps", Lead: true}}},
+			[]ReleaseNote{{Lead: "A lead that wraps", Text: "and the rest."}}},
 		{"a dot inside backticks or a version is not a sentence end", "- Run `a. b` on 0.15.0 to see it. Then more.", false,
 			[]ReleaseNote{{Text: "Run `a. b` on 0.15.0 to see it."}}},
 		{"an abbreviation is not a sentence end", "- Set it up, e.g. with a flag, then go. More.", false,
@@ -90,6 +99,46 @@ func TestParseReleaseNotes(t *testing.T) {
 				t.Errorf("notes = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// The security updates' wait: over 24 hours after the count first went above zero, never when the
+// clock isn't known.
+func TestSecurityGraceOver(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name  string
+		since time.Time
+		want  bool
+	}{
+		{"no clock", time.Time{}, false},
+		{"an hour in", now.Add(-time.Hour), false},
+		{"a minute short of a day", now.Add(-24*time.Hour + time.Minute), false},
+		{"exactly a day", now.Add(-24 * time.Hour), true},
+		{"two days", now.Add(-48 * time.Hour), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (UpdateCounts{SecuritySince: tc.since}).SecurityGraceOver(now); got != tc.want {
+				t.Errorf("SecurityGraceOver = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A note is one line for the API: the lead, a colon or a space, then the sentence.
+func TestReleaseNoteString(t *testing.T) {
+	for _, tc := range []struct {
+		note ReleaseNote
+		want string
+	}{
+		{ReleaseNote{Text: "Only a sentence."}, "Only a sentence."},
+		{ReleaseNote{Lead: "MCP", Colon: true, Text: "`deploy_image` is destructive."}, "MCP: `deploy_image` is destructive."},
+		{ReleaseNote{Lead: "Configure", Text: "says why."}, "Configure says why."},
+		{ReleaseNote{Lead: "Only a lead"}, "Only a lead"},
+	} {
+		if got := tc.note.String(); got != tc.want {
+			t.Errorf("%+v = %q, want %q", tc.note, got, tc.want)
+		}
 	}
 }
 

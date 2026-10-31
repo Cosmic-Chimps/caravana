@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -242,10 +243,9 @@ func TestOpsUpdatesPage(t *testing.T) {
 	}
 	for _, want := range []string{
 		"3 updates",
-		"Reboot since 2026-", " UTC kernel 6.8.0-147 → 6.8.0-149",
 		"Rebooting stops every app for about a minute; Nomad starts them again when the server is back.",
 		"Ubuntu updates checked by Ubuntu 3 h ago 14 packages · 9 security",
-		"caravana released Oct 28 0.15.0 → 0.16.0", "•Operator view.", "•Updates page.", "Release notes",
+		"caravana released Oct 28 0.15.0 → 0.16.0", "•Operator view.", "•Updates page.", "Release notes on GitHub",
 	} {
 		if !strings.Contains(text(avail), want) {
 			t.Errorf("Available lacks %q:\n%s", want, text(avail))
@@ -253,13 +253,22 @@ func TestOpsUpdatesPage(t *testing.T) {
 	}
 	for _, want := range []string{
 		`cv-mark cv-mark-lg cv-mark-failed`, `cv-mark cv-mark-lg cv-mark-warning`, `cv-mark cv-mark-lg cv-mark-idle`,
-		`<time class="cv-clock" datetime="`, // the reboot's time takes localtime.js
 		`name="what" value="packages"`, `>Check package names</button>`,
 		`<a href="https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0" class="cv-upreleaselink"`,
 	} {
 		if !strings.Contains(avail, want) {
 			t.Errorf("Available lacks %q", want)
 		}
+	}
+	// The reboot's time is said once, in short words ("needed since 18:11 UTC" today, "needed since Oct 28"
+	// before), as plain text with its full UTC time in the title: no cv-clock, which localtime.js would
+	// extend and the 240px column would wrap.
+	if !regexp.MustCompile(`Reboot needed since (\d\d:\d\d UTC|[A-Z][a-z]{2} \d+(, \d{4})?) kernel 6\.8\.0-147 → 6\.8\.0-149`).MatchString(text(avail)) {
+		t.Errorf("the reboot row's sub:\n%s", text(avail))
+	}
+	if rebootRow := regionBetween(t, avail, `data-up="reboot"`, `data-up="ubuntu"`); strings.Contains(rebootRow, "cv-clock") ||
+		!regexp.MustCompile(`needed since <time datetime="[^"]+" title="\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC" data-ops-time>`).MatchString(rebootRow) {
+		t.Errorf("the reboot row's time:\n%s", rebootRow)
 	}
 	// One Check now on the page, the one beside the release-check setting: none in the caravana row.
 	if strings.Contains(avail, `value="release"`) || strings.Contains(avail, ">Check now</button>") {
@@ -294,10 +303,13 @@ func TestOpsUpdatesPage(t *testing.T) {
 			t.Errorf("How to apply lacks %q:\n%s", want, applyText)
 		}
 	}
-	for _, id := range []string{"up-cmd-os", "up-cmd-caravana", "up-cmd-reboot"} {
-		// The command box is selectable text, and its Copy button is hidden until the script shows it.
-		if !strings.Contains(apply, `id="`+id+`"`) || !strings.Contains(apply, `data-copy="`+id+`" hidden`) {
-			t.Errorf("step %s has no command box or a hidden copy button", id)
+	for id, label := range map[string]string{"up-cmd-os": "Copy the install command", "up-cmd-caravana": "Copy the installer command",
+		"up-cmd-reboot": "Copy the reboot command"} {
+		// The command box is selectable text, and its Copy button is hidden until the script shows it. Its
+		// visible word stays "Copy"; a screen reader hears which command it copies.
+		if !strings.Contains(apply, `id="`+id+`"`) ||
+			!strings.Contains(apply, `data-copy="`+id+`" aria-label="`+label+`" hidden>Copy</button>`) {
+			t.Errorf("step %s has no command box or a hidden copy button named %q", id, label)
 		}
 	}
 
@@ -326,9 +338,9 @@ func TestOpsUpdatesPage(t *testing.T) {
 		t.Errorf("Past updates:\n%s", text(past))
 	}
 
-	// The sidebar's mark: ■ for the reboot, with its words for a screen reader.
+	// The sidebar mark: ■ in the failed hue for the reboot, with its words for a screen reader.
 	side := sidebarRegion.FindString(body)
-	if !strings.Contains(side, `id="nav-updates-mark"><span title="reboot needed"><span aria-hidden="true">■</span><span class="sr-only">reboot needed</span></span>`) {
+	if !strings.Contains(side, `id="nav-updates-mark"><span title="reboot needed" class="cv-nav-mark-failed"><span aria-hidden="true">■</span><span class="sr-only">reboot needed</span></span>`) {
 		t.Errorf("the sidebar's mark:\n%s", side)
 	}
 }
@@ -653,8 +665,8 @@ func TestUpdatesMarkOf(t *testing.T) {
 			o := ubuntu(14, 9, false)
 			o.Reboot.Required = true
 			return o
-		}()}, navMark{Text: "■", Word: "reboot needed"}},
-		{"security is ◆", service.UpdatesView{OS: ubuntu(14, 9, false)}, navMark{Text: "◆", Word: "security updates waiting"}},
+		}()}, navMark{Text: "■", Word: "reboot needed", Hue: "failed"}},
+		{"security is ◆", service.UpdatesView{OS: ubuntu(14, 9, false)}, navMark{Text: "◆", Word: "security updates waiting", Hue: "warning"}},
 		{"a stale list is no ◆: the count, in fg-3", service.UpdatesView{OS: ubuntu(14, 9, true)}, navMark{Text: "1", Word: "1 update available", Dim: true}},
 		{"a stale list and a newer caravana: the count, in fg-3", service.UpdatesView{Caravana: release, OS: ubuntu(14, 9, true)}, navMark{Text: "2", Word: "2 updates available", Dim: true}},
 		{"a newer caravana is 1", service.UpdatesView{Caravana: release, OS: ubuntu(0, 0, false)}, navMark{Text: "1", Word: "1 update available"}},
@@ -665,6 +677,227 @@ func TestUpdatesMarkOf(t *testing.T) {
 		if got := updatesMarkOf(now, tc.v); got != tc.want {
 			t.Errorf("%s: mark = %+v, want %+v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// Available's meta: the count; with Ubuntu clean and something else listed, Ubuntu's own part is said
+// with its age; with nothing listed the old sentence; GitHub's failure follows after a separator, as its
+// own sentence (fg-3) or, after a sentence, a space.
+func TestUpAvailableMeta(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	clean := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, CheckedAt: now.Add(-20 * time.Minute)}}
+	release := service.CaravanaUpdate{Current: "0.15.0", Latest: "0.16.0", URL: "https://x.test/r", Install: "curl"}
+	failed := service.CaravanaUpdate{CheckError: "GitHub didn't answer", CheckedOKAt: now.Add(-27 * time.Minute)}
+	waiting := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 3, Security: 1, CheckedAt: now.Add(-time.Hour)}}
+	rebooting := clean
+	rebooting.Reboot = service.RebootView{Required: true, Since: now.Add(-time.Hour)}
+	stale := clean
+	stale.Updates.Stale = true
+	for _, tc := range []struct {
+		name  string
+		v     service.UpdatesView
+		meta  string
+		sep   string
+		fault string
+	}{
+		{"a release and a clean Ubuntu", service.UpdatesView{Caravana: release, OS: clean},
+			"1 update · Ubuntu has nothing waiting (checked 20 minutes ago)", "", ""},
+		{"a release and Ubuntu with updates", service.UpdatesView{Caravana: release, OS: waiting}, "2 updates", "", ""},
+		{"a reboot and a clean Ubuntu", service.UpdatesView{OS: rebooting},
+			"1 update · Ubuntu has nothing waiting (checked 20 minutes ago)", "", ""},
+		{"a stale clean list says it in its own notice, not here", service.UpdatesView{Caravana: release, OS: stale}, "1 update", "", ""},
+		{"nothing listed", service.UpdatesView{OS: clean}, "Nothing waiting. Checked 20 minutes ago.", "", ""},
+		{"GitHub unreachable with updates listed", service.UpdatesView{Caravana: failed, OS: waiting}, "1 update", " · ",
+			"Couldn't check GitHub (last checked 27 minutes ago)."},
+		{"GitHub unreachable, never checked", service.UpdatesView{Caravana: service.CaravanaUpdate{CheckError: "x"}, OS: waiting}, "1 update", " · ",
+			"Couldn't check GitHub yet."},
+		{"GitHub unreachable with nothing listed", service.UpdatesView{Caravana: failed, OS: clean}, "Nothing waiting. Checked 20 minutes ago.", " ",
+			"Couldn't check GitHub (last checked 27 minutes ago)."},
+		{"GitHub unreachable on a host that can't be read", service.UpdatesView{Caravana: failed}, "", "",
+			"Couldn't check GitHub (last checked 27 minutes ago)."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := upAvailableOf(now, tc.v)
+			if a.Meta != tc.meta || a.MetaSep != tc.sep || a.Fault != tc.fault {
+				t.Errorf("meta = %q sep %q fault %q, want %q %q %q", a.Meta, a.MetaSep, a.Fault, tc.meta, tc.sep, tc.fault)
+			}
+		})
+	}
+}
+
+// The line after the release-check form: "checked 2 h ago", or with the check off "off · last checked 24
+// min ago" (short units, from the last good check) and plain "off" when there never was one.
+func TestUpCheckedOf(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name     string
+		c        service.CaravanaUpdate
+		text     string
+		whenText string
+	}{
+		{"on, never checked", service.CaravanaUpdate{CheckEnabled: true}, "not checked yet", ""},
+		{"on", service.CaravanaUpdate{CheckEnabled: true, CheckedAt: now.Add(-2 * time.Hour)}, "checked", "2 h ago"},
+		{"off, last good check 24 min ago", service.CaravanaUpdate{CheckedOKAt: now.Add(-24 * time.Minute), CheckedAt: now.Add(-time.Minute)},
+			"off · last checked", "24 min ago"},
+		{"off, never checked", service.CaravanaUpdate{}, "off", ""},
+		{"off, the last attempt failed and no good one", service.CaravanaUpdate{CheckedAt: now.Add(-time.Minute), CheckError: "GitHub didn't answer"}, "off", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := upCheckedOf(now, service.UpdatesView{Caravana: tc.c})
+			if got.Text != tc.text || got.When.Text != tc.whenText || (!tc.c.CheckEnabled && got.Failed != "") {
+				t.Errorf("checked = %+v, want %q %q", got, tc.text, tc.whenText)
+			}
+		})
+	}
+}
+
+// While the host's automatic updates are on and security updates wait, the Ubuntu row says only what is
+// known: inside the 24-hour wait they usually install by themselves, after it they haven't and the log is
+// the place to look (the path in mono). Never "the other N wait for you".
+func TestSecurityHint(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	on, off := true, false
+	osWith := func(auto *bool, security int, since time.Time) service.OSUpdates {
+		o := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 14, Security: security, SecuritySince: since}}
+		o.Unattended.Enabled = auto
+		return o
+	}
+	for _, tc := range []struct {
+		name string
+		o    service.OSUpdates
+		want string
+	}{
+		{"inside the wait", osWith(&on, 9, now.Add(-3*time.Hour)),
+			"Ubuntu's automatic updates are on, so security updates usually install by themselves overnight."},
+		{"the clock isn't known yet", osWith(&on, 9, time.Time{}),
+			"Ubuntu's automatic updates are on, so security updates usually install by themselves overnight."},
+		{"after the wait", osWith(&on, 9, now.Add(-25*time.Hour)),
+			"Still waiting after a day, although Ubuntu's automatic updates are on. Check /var/log/unattended-upgrades/ on the server."},
+		{"automatic updates off", osWith(&off, 9, now.Add(-25*time.Hour)), ""},
+		{"automatic updates unreadable", osWith(nil, 9, now.Add(-25*time.Hour)), ""},
+		{"no security updates", osWith(&on, 0, time.Time{}), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := securityHint(now, tc.o)
+			if got.String() != tc.want {
+				t.Errorf("hint = %q, want %q", got.String(), tc.want)
+			}
+			if strings.Contains(got.String(), "the other") {
+				t.Errorf("the hint claims how many are left: %q", got.String())
+			}
+		})
+	}
+	// The path is mono, so it is a part of its own.
+	late := securityHint(now, osWith(&on, 9, now.Add(-25*time.Hour)))
+	if n := len(late); n != 3 || !late[1].Mono || late[1].Text != "/var/log/unattended-upgrades/" {
+		t.Errorf("the path isn't a mono part: %+v", late)
+	}
+}
+
+// The Ubuntu row carries the hint as its first note, before anything else (the stale sentence replaces it).
+func TestUbuntuRowStartsWithTheSecurityHint(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	on := true
+	o := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 14, Security: 9, CheckedAt: now.Add(-time.Hour), SecuritySince: now.Add(-time.Hour)}}
+	o.Unattended.Enabled = &on
+	row := ubuntuRow(now, service.UpdatesView{OS: o})
+	if len(row.Notes) == 0 || !strings.HasPrefix(row.Notes[0].Text.String(), "Ubuntu's automatic updates are on") {
+		t.Errorf("notes = %+v", row.Notes)
+	}
+	o.Updates.Stale = true
+	row = ubuntuRow(now, service.UpdatesView{OS: o})
+	if len(row.Notes) != 1 || !strings.HasPrefix(row.Notes[0].Text.String(), "Ubuntu's list is") {
+		t.Errorf("a stale list's notes = %+v", row.Notes)
+	}
+}
+
+// On the page: with Ubuntu's automatic updates on (the fixture's own state) the Ubuntu row starts with the
+// hint and the path is mono; a clean Ubuntu beside a new release says so in the meta, and the release
+// check turned off says when it last worked.
+func TestOpsUpdatesPageSentences(t *testing.T) {
+	e, _ := updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", pro: uiPro{ok: true}})
+	_, body := e.get(t, "/ops/updates")
+	row := regionBetween(t, body, `data-up="ubuntu"`, `id="apply"`)
+	if !strings.Contains(text(row), "Ubuntu's automatic updates are on, so security updates usually install by themselves overnight.") ||
+		strings.Contains(text(row), "the other") {
+		t.Errorf("the Ubuntu row:\n%s", text(row))
+	}
+
+	e, _ = updEnv(t, updOpts{fixture: "ubuntu-clean"})
+	releaseFound(t, e)
+	_, body = e.get(t, "/ops/updates")
+	if !strings.Contains(text(body), "Available 1 update · Ubuntu has nothing waiting (checked 3 hours ago)") {
+		t.Errorf("the meta beside a clean Ubuntu:\n%s", text(regionBetween(t, body, `id="available"`, `id="apply"`)))
+	}
+
+	// The check turned off, after one that worked a moment ago: the dense line says when, in short units.
+	if resp, _ := e.postForm(t, "/ops/updates/settings", url.Values{}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST settings = %d", resp.StatusCode)
+	}
+	_, body = e.get(t, "/ops/updates")
+	if !regexp.MustCompile(`<span class="cv-upchecked">off · last checked <time [^>]*>(just now|\d+ s ago|\d+ min ago)</time></span>`).MatchString(body) {
+		t.Errorf("the line after the form with the check off:\n%s", regionBetween(t, body, `id="up-checked"`, `</section>`))
+	}
+}
+
+// The reboot's time is said once: the clock time for today (UTC), the date before, with the whole UTC
+// time as the title.
+func TestSinceWhen(t *testing.T) {
+	now := time.Date(2026, 10, 31, 20, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+		text string
+	}{
+		{"today", time.Date(2026, 10, 31, 18, 11, 5, 0, time.UTC), "18:11 UTC"},
+		{"just after midnight", time.Date(2026, 10, 31, 0, 0, 1, 0, time.UTC), "00:00 UTC"},
+		{"yesterday", time.Date(2026, 10, 30, 23, 59, 0, 0, time.UTC), "Oct 30"},
+		{"before", time.Date(2026, 10, 28, 6, 12, 0, 0, time.UTC), "Oct 28"},
+		{"another year", time.Date(2025, 12, 28, 6, 12, 0, 0, time.UTC), "Dec 28, 2025"},
+		{"a local time that is today's date elsewhere", time.Date(2026, 10, 31, 23, 0, 0, 0, time.FixedZone("x", 5*3600)), "18:00 UTC"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sinceWhen(now, tc.at)
+			if got.Text != tc.text || got.Exact != tc.at.UTC().Format("2006-01-02 15:04:05 UTC") || got.ISO == "" {
+				t.Errorf("sinceWhen = %+v, want text %q", got, tc.text)
+			}
+		})
+	}
+}
+
+// The note under the reboot says who installed it, never when: the sub has the date.
+func TestInstalledBy(t *testing.T) {
+	at := time.Date(2026, 10, 28, 6, 12, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		r    service.RebootView
+		want string
+	}{
+		{"unattended", service.RebootView{InstalledAt: at, InstalledBy: "unattended"}, "Installed by Ubuntu's automatic updates."},
+		{"by hand", service.RebootView{InstalledAt: at, InstalledBy: "hand"}, "Installed by hand."},
+		{"no run known", service.RebootView{}, ""},
+	} {
+		if got := installedBy(tc.r); got != tc.want {
+			t.Errorf("%s: installedBy = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Each step's Copy button is named for its command, and the step is a title with its number in it (the
+// stylesheet puts the number in the gutter, or inline before the title under 480px).
+func TestUpApplyCopyLabels(t *testing.T) {
+	v := service.UpdatesView{
+		Caravana: service.CaravanaUpdate{Current: "0.15.0", Latest: "0.16.0", Install: "curl | sudo bash"},
+		OS: service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 3},
+			Reboot: service.RebootView{Required: true}},
+	}
+	var got []string
+	for _, s := range upApplyOf(v).Steps {
+		got = append(got, s.ID+"="+s.CopyLabel)
+	}
+	want := "up-cmd-os=Copy the install command up-cmd-caravana=Copy the installer command up-cmd-reboot=Copy the reboot command"
+	if strings.Join(got, " ") != want {
+		t.Errorf("labels = %q, want %q", strings.Join(got, " "), want)
 	}
 }
 

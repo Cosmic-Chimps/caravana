@@ -1715,6 +1715,9 @@
   /* The mark after Updates (a count, a square or a diamond): the page fills it, text never fg-4. */
   .cv-nav-mark { margin-left: auto; font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
   .cv-nav-mark-dim { color: var(--color-fg-3); }
+  /* ■ and ◆ wear the status hues, as every other mark does (shape plus colour); a count stays fg-2. */
+  .cv-nav-mark-failed { color: var(--color-failed); }
+  .cv-nav-mark-warning { color: var(--color-warn); }
 
   /* The Operator Overview (/ops): the page is a container (cvops) so the aside drops by the room the
      page has; the stats line wraps between items, never inside one. Text is never fg-4. */
@@ -1911,7 +1914,8 @@
   .cv-upnote-b { display: flex; gap: 8px; }
   .cv-upbullet { flex: none; color: var(--color-fg-3); }
   .cv-upnotelead { font-weight: 500; color: var(--color-fg-1); }
-  .cv-upreleaselink { font: 400 14px/1.45 var(--font-sans); }
+  .cv-upreleaselink { font: 400 14px/1.45 var(--font-sans); text-decoration: underline; text-decoration-color: var(--color-line-3); text-underline-offset: 3px; }
+  .cv-upreleaselink:hover { text-decoration-color: var(--color-fg-3); }
   .cv-uphint { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; }
   .cv-uphint .cv-inline-mono { color: var(--color-fg-1); }
   .cv-uprow-dim .cv-upname, .cv-uprow-dim .cv-upchange, .cv-uprow-dim .cv-upnotelist { color: var(--color-fg-3); }
@@ -1924,17 +1928,24 @@
   .cv-upcheckform { margin: 0; }
   .cv-upos { padding: 16px 20px; }
 
-  /* How to apply: a number and the step, grid 24px 1fr, gap 18, padding 14px 20px. A command is one line that
-     scrolls inside its own box: it must not wrap. */
+  /* How to apply: the step's number sits in the left gutter (absolute, inside the title, so that under
+     480px it can be drawn inline before the title instead), then the title over the command and its Copy
+     button, centred on the box. A command is one line that scrolls inside its own box: it must not wrap,
+     and while more of it lies to the right a 24px shadow on the box's right edge says so (a scroll-attached
+     gradient that a local, ink-2 cover hides once the end is in view; no script). */
   .cv-upsteps { margin: 0; padding: 0; list-style: none; }
-  .cv-upstep { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 18px; padding: 14px 20px; border-top: 1px solid var(--color-line-1); }
+  .cv-upstep { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); padding: 14px 20px 14px 62px; border-top: 1px solid var(--color-line-1); }
   .cv-upstep:first-child { border-top: 0; }
-  .cv-upstepn { font: 400 12px/1.8 var(--font-mono); color: var(--color-fg-3); }
+  .cv-upstepn { position: absolute; left: 20px; width: 24px; font: 400 12px/1.8 var(--font-mono); color: var(--color-fg-3); }
   .cv-upstepbody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .cv-upsteptitle { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; }
   .cv-upsteptitle .cv-inline-mono { color: var(--color-fg-1); }
-  .cv-upcmdrow { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-  .cv-upcmd { flex: 1; min-width: 0; white-space: pre; overflow-x: auto; overflow-wrap: normal; }
+  .cv-upcmdrow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cv-upcmd { flex: 1; min-width: 0; white-space: pre; overflow-x: auto; overflow-wrap: normal;
+    background:
+      linear-gradient(var(--color-ink-2), var(--color-ink-2)) right center / 24px 100% no-repeat local,
+      linear-gradient(to left, var(--color-line-3), transparent) right center / 24px 100% no-repeat scroll,
+      var(--color-ink-2); }
   .cv-upwarn { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 400 13px/1.45 var(--font-sans); color: var(--color-fg-1); }
   .cv-upwarn > .cv-mark { position: relative; top: 0.05em; }
   .cv-upfoot { margin: 0; font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-3); }
@@ -2085,6 +2096,20 @@
   .cv-upnotes { margin-top: 6px; }
   .cv-uppastrow { grid-template-columns: 14px 64px minmax(0, 1fr); row-gap: 2px; }
   .cv-uppastdetail { grid-column: 3; }
+}
+
+/* Under 480px the command box gets the whole width: the step's number goes inline before its title
+   ("1 · Install the waiting updates:"), Copy moves to the title's row, and the box takes the row under
+   them. The body and the box's row dissolve (display: contents) so that the step is one grid. */
+@container cvupd (max-width: 479.98px) {
+  .cv-upstep { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 20px; }
+  .cv-upstepbody, .cv-upcmdrow { display: contents; }
+  .cv-upstepn { position: static; width: auto; }
+  .cv-upstepn::after { content: " ·"; }
+  .cv-upsteptitle { grid-column: 1; grid-row: 1; }
+  .cv-upcmdrow > button { grid-column: 2; grid-row: 1; align-self: start; }
+  .cv-upcmd { grid-column: 1 / -1; grid-row: 2; }
+  .cv-upwarn { grid-column: 1 / -1; grid-row: 3; }
 }
 
 @media (max-width: 899.98px) {

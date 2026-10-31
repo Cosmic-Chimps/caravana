@@ -82,6 +82,7 @@ type updateCountJSON struct {
 	Security          int        `json:"security"`
 	CheckedAt         *time.Time `json:"checkedAt"`
 	Stale             bool       `json:"stale"`
+	SecuritySince     *time.Time `json:"securitySince"`
 	PackagesAvailable bool       `json:"packagesAvailable"`
 	Packages          []string   `json:"packages"`
 	PackagesKernel    bool       `json:"packagesKernel"`
@@ -135,7 +136,7 @@ func toCaravanaUpdateJSON(c service.CaravanaUpdate) caravanaUpdateJSON {
 		CheckedOKAt: timePtr(c.CheckedOKAt), CheckError: c.CheckError,
 	}
 	for _, n := range c.Notes {
-		out.Notes = append(out.Notes, n.Text)
+		out.Notes = append(out.Notes, n.String())
 	}
 	for _, p := range c.Pins {
 		if out.Pins == nil {
@@ -159,7 +160,7 @@ func toUpdatesJSON(v service.UpdatesView) updatesJSON {
 			Readable: o.Readable, Distro: distroJSON{ID: o.Distro.ID, Version: o.Distro.Version},
 			Updates: updateCountJSON{
 				Known: o.Updates.Known, Total: o.Updates.Total, Security: o.Updates.Security, CheckedAt: timePtr(o.Updates.CheckedAt),
-				Stale: o.Updates.Stale, PackagesAvailable: o.Updates.PackagesAvailable, Packages: o.Updates.Packages,
+				Stale: o.Updates.Stale, SecuritySince: timePtr(o.Updates.SecuritySince), PackagesAvailable: o.Updates.PackagesAvailable, Packages: o.Updates.Packages,
 				PackagesKernel: o.Updates.PackagesKernel, PackagesCheckedAt: timePtr(o.Updates.PackagesCheckedAt),
 				PackagesError: o.Updates.PackagesError,
 			},

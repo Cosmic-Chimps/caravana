@@ -6180,8 +6180,9 @@ components:
         notes:
           type: array
           description: |
-            Up to six lines of the release's notes, one per bullet: its bold lead (without the `**`), else its
-            first sentence, never cut in the middle. Backticks are left in. Empty without a `latest`.
+            Up to six lines of the release's notes, one per bullet: a bold lead (without the `**`) and the first
+            sentence of what follows it ("MCP: `deploy_image` is marked destructive."), else the bullet's first
+            sentence, never cut in the middle. Backticks are left in. Empty without a `latest`.
           items: {type: string}
         pins:
           type: object
@@ -6244,7 +6245,7 @@ components:
         updates:
           type: object
           additionalProperties: false
-          required: [known, total, security, checkedAt, stale, packagesAvailable, packages, packagesKernel, packagesCheckedAt, packagesError]
+          required: [known, total, security, checkedAt, stale, securitySince, packagesAvailable, packages, packagesKernel, packagesCheckedAt, packagesError]
           properties:
             known:
               type: boolean
@@ -6258,6 +6259,13 @@ components:
             stale:
               type: boolean
               description: The list is more than 48 hours old. It is still shown, and no needs-you item is made from it.
+            securitySince:
+              type: [string, "null"]
+              format: date-time
+              description: |
+                When the count of waiting security updates first went above zero. With the host's automatic
+                updates on, the needs-you item opens 24 hours after it (the updates usually install by
+                themselves before). `null` when no security update is waiting or the count isn't known.
             packagesAvailable:
               type: boolean
               description: '`checkUpdates` with `packages` can run here (Ubuntu with `pro`).'

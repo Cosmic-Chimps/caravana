@@ -186,7 +186,7 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 	// now is the one by the setting, a kernel is a token that never breaks, and no line says who installed
 	// the kernel when no apt run names it.
 	for _, want := range []string{
-		`class="cv-upnote-b"`, `>Release notes</a>`, `kernel <span class="cv-uptok">` + running + ` → 9.9.0-999</span>`,
+		`class="cv-upnote-b"`, `>Release notes on GitHub</a>`, `kernel <span class="cv-uptok">` + running + ` → 9.9.0-999</span>`,
 		`<span class="cv-inline-mono text-fg-1 cv-nowrap">9.9.0-999</span>`,
 		"Only the release and its files are fetched; nothing is sent about this server.",
 	} {
@@ -194,8 +194,8 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 			t.Errorf("/ops/updates lacks %q", want)
 		}
 	}
-	if n := strings.Count(page, ">Check now</button>"); n != 1 || strings.Contains(page, "Installed on ") {
-		t.Errorf("/ops/updates has %d Check now buttons and %v an \"Installed on\" line; want one button and no line", n, strings.Contains(page, "Installed on "))
+	if n := strings.Count(page, ">Check now</button>"); n != 1 || strings.Contains(page, "Installed by ") {
+		t.Errorf("/ops/updates has %d Check now buttons and %v an \"Installed by\" line; want one button and no line", n, strings.Contains(page, "Installed by "))
 	}
 	// The banners' names are mono spans now (one source for the needs-you wording), so their order is read
 	// in the page's text, not its markup.

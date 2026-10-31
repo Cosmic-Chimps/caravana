@@ -100,6 +100,13 @@ func TestGetUpdatesBeforeAnyCheck(t *testing.T) {
 		up["packagesAvailable"] != true || up["packagesCheckedAt"] != nil || len(list(t, up["packages"], "packages")) != 0 {
 		t.Errorf("updates = %v", up)
 	}
+	// With security updates waiting the clock the needs-you item waits on is told (a time, or null before
+	// the sampler has written it), never left out.
+	if since, has := up["securitySince"]; !has {
+		t.Error("updates has no securitySince")
+	} else if s, isString := since.(string); since != nil && !isString {
+		t.Errorf("securitySince = %v, want a time or null", s)
+	}
 	rb := obj(t, o["reboot"], "reboot")
 	if rb["required"] != true || rb["installedKernel"] != "6.8.0-149-generic" || rb["since"] == nil {
 		t.Errorf("reboot = %v", rb)

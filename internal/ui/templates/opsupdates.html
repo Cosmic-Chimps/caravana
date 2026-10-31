@@ -36,12 +36,12 @@
   <span class="cv-upmark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.MarkWord}}: </span></span>
   <div class="cv-upwho">
     <p class="cv-upname">{{.Name}}</p>
-    {{if or .Sub.Clock .Sub.When.Text}}<p class="cv-upsub">{{.Sub.Label}} {{if .Sub.Clock}}{{template "clock" .Sub.Clock}}{{else}}{{template "up-time" .Sub.When}}{{end}}</p>{{end}}
+    {{if .Sub.When.Text}}<p class="cv-upsub">{{.Sub.Label}} {{template "up-time" .Sub.When}}</p>{{end}}
   </div>
   <p class="cv-upchange">{{range .Change}}{{if .Token}}<span class="cv-uptok">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</p>
   <div class="cv-upnotes">
-    {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}<li{{if .Bullet}} class="cv-upnote-b"{{end}}>{{if .Bullet}}<span class="cv-upbullet" aria-hidden="true">•</span>{{end}}<span class="{{if .Lead}}cv-upnotelead{{end}}">{{template "sentence" .Text}}</span></li>{{end}}</ul>{{end}}
-    {{with .Link}}<a href="{{.Href}}" class="cv-upreleaselink" rel="noopener noreferrer" target="_blank">{{.Label}}</a>{{end}}
+    {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}{{$note := .}}<li{{if .Bullet}} class="cv-upnote-b"{{end}}>{{if .Bullet}}<span class="cv-upbullet" aria-hidden="true">•</span>{{end}}<span>{{with $note.Lead}}<span class="cv-upnotelead">{{template "sentence" .}}</span>{{if $note.Colon}}:{{end}}{{if $note.Text}} {{end}}{{end}}{{template "sentence" $note.Text}}</span></li>{{end}}</ul>{{end}}
+    {{with .Link}}<a href="{{.Href}}" class="cv-upreleaselink">{{.Label}}</a>{{end}}
     {{with .Hint}}<p class="cv-uphint">{{template "sentence" .}}</p>{{end}}
     {{with .Names}}{{template "up-names" .}}{{end}}
   </div>
@@ -66,7 +66,7 @@
 <section id="available" class="cv-upsec" aria-labelledby="up-avail-title">
   <div class="cv-mnsec">
     <h2 class="cv-label" id="up-avail-title">Available</h2>
-    {{with .Avail.Meta}}<span class="cv-mnsec-meta">{{.}}</span>{{end}}
+    {{if or .Avail.Meta .Avail.Fault}}<span class="cv-mnsec-meta">{{.Avail.Meta}}{{.Avail.MetaSep}}{{with .Avail.Fault}}<span class="text-fg-3">{{.}}</span>{{end}}</span>{{end}}
   </div>
   {{with .Avail.Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{if .Avail.Rows}}
@@ -83,12 +83,11 @@
   <ol class="cv-panel cv-upsteps">
     {{range .Apply.Steps}}
     <li class="cv-upstep">
-      <span class="cv-upstepn">{{.N}}</span>
       <div class="cv-upstepbody">
-        <p class="cv-upsteptitle">{{template "sentence" .Title}}</p>
+        <p class="cv-upsteptitle"><span class="cv-upstepn">{{.N}}</span> {{template "sentence" .Title}}</p>
         <div class="cv-upcmdrow">
           <code class="cv-cmd cv-upcmd" id="{{.ID}}">{{.Command}}</code>
-          <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.ID}}" hidden>Copy</button>
+          <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-copy="{{.ID}}" aria-label="{{.CopyLabel}}" hidden>Copy</button>
         </div>
         {{with .Warn}}<p class="cv-upwarn"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
       </div>

@@ -73,6 +73,9 @@ type navMark struct {
 	Text string
 	Word string
 	Dim  bool
+	// Hue is the status hue the mark wears: "failed" for ■, "warning" for ◆ (shape plus colour, as
+	// every other mark); empty for a count, which stays fg-2.
+	Hue string
 }
 
 // upBanner is a needs-you item of the page: the mark, the item's own sentence (the service's parts, the
@@ -84,12 +87,16 @@ type upBanner struct {
 	Explain string
 }
 
-// upAvailable is the Available section. Meta is the count or "Nothing waiting. ..."; Notice is the
-// stale-list sentence when the list has no row of its own to carry it.
+// upAvailable is the Available section. Meta is the count or "Nothing waiting. ..."; Fault is the
+// sentence of a check that failed (GitHub), drawn in fg-3 after Meta and MetaSep (" · ", or " " after
+// a Meta that is a sentence of its own); Notice is the stale-list sentence when the list has no row
+// of its own to carry it.
 type upAvailable struct {
-	Meta   string
-	Notice sentence
-	Rows   []upRow
+	Meta    string
+	MetaSep string
+	Fault   string
+	Notice  sentence
+	Rows    []upRow
 	// OSMessage is the one sentence an unreadable OS gets ("caravana can't read this server's pending
 	// updates (not Ubuntu or Debian).") with its ○ mark, in place of the OS rows.
 	OSMessage string
@@ -127,26 +134,26 @@ type upTok struct {
 	Token bool
 }
 
-// upNote is one line of the notes column. Bullet puts a • before it; Lead draws it as a bullet's bold
-// lead (500, fg-1).
+// upNote is one line of the notes column. Bullet puts a • before it. A release bullet with a bold
+// lead has Lead (drawn 500, fg-1), then ": " when Colon, else a space, then Text (fg-2).
 type upNote struct {
 	Bullet bool
-	Lead   bool
+	Lead   sentence
+	Colon  bool
 	Text   sentence
 }
 
-// upLink is a link out of the page.
+// upLink is a link out of the page; it opens in the same tab, like the console's other links.
 type upLink struct {
 	Label string
 	Href  string
 }
 
 // upSub is the 12px line under a row's name: a label, then a time ("released Oct 28", "checked by
-// Ubuntu 3 h ago") or a clock ("since 2026-10-27 06:12 UTC").
+// Ubuntu 3 h ago", "needed since 18:11 UTC").
 type upSub struct {
 	Label string
 	When  when
-	Clock *clockTime
 }
 
 // upCheck is a check's button, or its running state: the form posts what to check.
@@ -175,13 +182,14 @@ type upApply struct {
 }
 
 // upStep is one step: its number, the sentence that tells what to run, the command, and (reboot) the
-// consequence line.
+// consequence line. CopyLabel is the Copy button's name for a screen reader ("Copy the reboot command").
 type upStep struct {
-	N       int
-	ID      string // the command box's id, "up-cmd-os", for the copy button
-	Title   sentence
-	Command string
-	Warn    string
+	N         int
+	ID        string // the command box's id, "up-cmd-os", for the copy button
+	CopyLabel string
+	Title     sentence
+	Command   string
+	Warn      string
 }
 
 // upSetting is a read-only setting of the host: its label, hint and value.
@@ -331,9 +339,9 @@ func updatesMarkOf(now time.Time, v service.UpdatesView) navMark {
 	u := v.OS.Updates
 	switch {
 	case v.OS.Reboot.Required:
-		return navMark{Text: "■", Word: "reboot needed"}
+		return navMark{Text: "■", Word: "reboot needed", Hue: "failed"}
 	case u.Known && u.Security > 0 && !u.Stale:
-		return navMark{Text: "◆", Word: "security updates waiting"}
+		return navMark{Text: "◆", Word: "security updates waiting", Hue: "warning"}
 	}
 	if n := len(upAvailableOf(now, v).Rows); n > 0 {
 		// A stale list says the count may be out of date: fg-3, and never ◆.
@@ -431,25 +439,37 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 	if !o.Readable {
 		a.OSMessage = "caravana can't read this server's pending updates (not Ubuntu or Debian)."
 	}
-	var meta []string
-	if len(rows) > 0 {
-		meta = append(meta, plural(len(rows), "update"))
-	} else if a.OSMessage == "" {
-		text := "Nothing waiting."
-		if at := oldestCheck(v); !at.IsZero() {
-			text += " Checked " + agoFull(now, at) + "."
+	switch {
+	case len(rows) > 0:
+		a.Meta = plural(len(rows), "update")
+		// With something else listed, Ubuntu's own part is said too: a clean list is a fact the owner
+		// would otherwise have to guess at.
+		if o.Readable && o.Updates.Known && o.Updates.Total == 0 && !o.Updates.Stale {
+			a.Meta += " · Ubuntu has nothing waiting"
+			if !o.Updates.CheckedAt.IsZero() {
+				a.Meta += " (checked " + agoFull(now, o.Updates.CheckedAt) + ")"
+			}
 		}
-		meta = append(meta, text)
+	case a.OSMessage == "":
+		a.Meta = "Nothing waiting."
+		if at := oldestCheck(v); !at.IsZero() {
+			a.Meta += " Checked " + agoFull(now, at) + "."
+		}
 	}
 	if c.CheckError != "" {
 		// "Last checked" is the last check that worked, since that is what the sentence claims.
-		text := "Couldn't check GitHub yet."
+		a.Fault = "Couldn't check GitHub yet."
 		if !c.CheckedOKAt.IsZero() {
-			text = "Couldn't check GitHub (last checked " + agoFull(now, c.CheckedOKAt) + ")."
+			a.Fault = "Couldn't check GitHub (last checked " + agoFull(now, c.CheckedOKAt) + ")."
 		}
-		meta = append(meta, text)
+		switch {
+		case a.Meta == "":
+		case strings.HasSuffix(a.Meta, "."):
+			a.MetaSep = " "
+		default:
+			a.MetaSep = " · "
+		}
 	}
-	a.Meta = strings.Join(meta, " ")
 	return a
 }
 
@@ -483,7 +503,11 @@ func releaseRow(now time.Time, v service.UpdatesView) upRow {
 	c := v.Caravana
 	row := upRow{Kind: "release", Mark: "idle", MarkWord: "update available", Name: "caravana", Change: upChange{{Text: c.Current + " → " + c.Latest, Token: true}}}
 	for _, n := range c.Notes {
-		row.Notes = append(row.Notes, upNote{Bullet: true, Lead: n.Lead, Text: backticked(n.Text)})
+		note := upNote{Bullet: true, Colon: n.Colon, Text: backticked(n.Text)}
+		if n.Lead != "" {
+			note.Lead = backticked(n.Lead)
+		}
+		row.Notes = append(row.Notes, note)
 	}
 	if !c.ReleasedAt.IsZero() {
 		row.Sub = upSub{Label: "released", When: when{Text: shortDate(now, c.ReleasedAt), Exact: c.ReleasedAt.UTC().Format("2006-01-02 15:04:05 UTC"),
@@ -493,7 +517,7 @@ func releaseRow(now time.Time, v service.UpdatesView) upRow {
 		row.Notes = append(row.Notes, upNote{Text: pins})
 	}
 	if c.URL != "" {
-		row.Link = &upLink{Label: "Release notes", Href: c.URL}
+		row.Link = &upLink{Label: "Release notes on GitHub", Href: c.URL}
 	}
 	return row
 }
@@ -538,6 +562,8 @@ func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
 	}
 	if u.Stale {
 		row.Notes = append(row.Notes, upNote{Text: staleWords(now, u.CheckedAt)})
+	} else if hint := securityHint(now, v.OS); hint != nil {
+		row.Notes = append(row.Notes, upNote{Text: hint})
 	}
 	row.Names = namesOf(now, v)
 	if row.Names == nil {
@@ -545,6 +571,23 @@ func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
 		row.Hint = sentence{plain("Run "), mono("apt list --upgradable"), plain(" on the server to see which packages.")}
 	}
 	return row
+}
+
+// securityHint is the first line of the Ubuntu row's notes while the host's automatic updates are on
+// and security updates wait: it says only what is known. The counts don't say which origins
+// unattended-upgrades allows, so the page never claims that it will install these particular ones, nor
+// how many are left for the owner. Inside the service's 24-hour wait it says they usually install by
+// themselves; after it (when the needs-you item opens) it says they have not, and where to look.
+// nil without automatic updates, or without security updates.
+func securityHint(now time.Time, o service.OSUpdates) sentence {
+	if o.Unattended.Enabled == nil || !*o.Unattended.Enabled || o.Updates.Security == 0 {
+		return nil
+	}
+	if o.Updates.SecurityGraceOver(now) {
+		return sentence{plain("Still waiting after a day, although Ubuntu's automatic updates are on. Check "),
+			mono("/var/log/unattended-upgrades/"), plain(" on the server.")}
+	}
+	return plainS("Ubuntu's automatic updates are on, so security updates usually install by themselves overnight.")
 }
 
 // whenAgo is a time in the short words of a dense column, with its exact UTC time on hover.
@@ -581,30 +624,41 @@ func namesOf(now time.Time, v service.UpdatesView) *upNames {
 func rebootRow(now time.Time, o service.OSUpdates) upRow {
 	r := o.Reboot
 	note := "Rebooting stops every app for about a minute; Nomad starts them again when the server is back."
-	if by := installedBy(now, r); by != "" {
+	if by := installedBy(r); by != "" {
 		note = by + " " + note
 	}
 	row := upRow{Kind: "reboot", Mark: "failed", MarkWord: "reboot needed", Name: "Reboot", Change: rebootChange(r),
 		Notes: []upNote{{Text: plainS(note)}}}
 	if !r.Since.IsZero() {
-		c := clockAt(r.Since, r.Since.UTC().Format("2006-01-02 15:04")+" UTC", localDate)
-		row.Sub = upSub{Label: "since", Clock: &c}
+		row.Sub = upSub{Label: "needed since", When: sinceWhen(now, r.Since)}
 	}
 	return row
 }
 
-// installedBy is "Installed on Oct 28 by Ubuntu's automatic updates." (or "by hand."): the apt run that
+// sinceWhen is the reboot row's time, said once: "18:11 UTC" when it is from today (UTC), else the
+// date as the console says it in dense places ("Oct 28"). The full UTC time is its title (the page's
+// script adds the viewer's local one). It is plain text, so it never wraps in the 240px column.
+func sinceWhen(now, t time.Time) when {
+	t = t.UTC()
+	text := shortDate(now, t)
+	if t.Format("2006-01-02") == now.UTC().Format("2006-01-02") {
+		text = t.Format("15:04") + " UTC"
+	}
+	return when{Text: text, Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}
+}
+
+// installedBy is "Installed by Ubuntu's automatic updates." (or "Installed by hand."): the apt run that
 // installed what the reboot is for, which the service matches against the marker's list as the history
-// does. "" when no run is known.
-func installedBy(now time.Time, r service.RebootView) string {
+// does. The row's sub says when the reboot became needed, so the date isn't repeated here. "" when no
+// run is known.
+func installedBy(r service.RebootView) string {
 	if r.InstalledAt.IsZero() {
 		return ""
 	}
-	who := "by hand"
 	if r.InstalledBy == "unattended" {
-		who = "by Ubuntu's automatic updates"
+		return "Installed by Ubuntu's automatic updates."
 	}
-	return "Installed on " + shortDate(now, r.InstalledAt) + " " + who + "."
+	return "Installed by hand."
 }
 
 // rebootChange is the Reboot row's change: the two kernels, or the packages that asked for it. Versions
@@ -643,15 +697,15 @@ func upApplyOf(v service.UpdatesView) upApply {
 	}
 	o := v.OS
 	if o.Readable && o.Updates.Known && o.Updates.Total > 0 {
-		add(upStep{ID: "up-cmd-os", Title: plainS("Install the waiting updates:"), Command: upOSCommand})
+		add(upStep{ID: "up-cmd-os", CopyLabel: "Copy the install command", Title: plainS("Install the waiting updates:"), Command: upOSCommand})
 	}
 	if c := v.Caravana; c.Latest != "" && c.CheckError == "" && c.Install != "" {
-		add(upStep{ID: "up-cmd-caravana", Command: c.Install, Title: sentence{plain("Run the installer of "), mono(c.Latest),
+		add(upStep{ID: "up-cmd-caravana", CopyLabel: "Copy the installer command", Command: c.Install, Title: sentence{plain("Run the installer of "), mono(c.Latest),
 			plain(". It upgrades caravana, and Nomad and Traefik when their versions change; your apps keep running, and it puts "),
 			mono(c.Current), plain(" back if "), mono(c.Latest), plain(" fails its health check.")}})
 	}
 	if o.Reboot.Required {
-		add(upStep{ID: "up-cmd-reboot", Title: plainS("Reboot the server:"), Command: upRebootCommand,
+		add(upStep{ID: "up-cmd-reboot", CopyLabel: "Copy the reboot command", Title: plainS("Reboot the server:"), Command: upRebootCommand,
 			Warn: "Every app stops for about a minute. The console comes back when the server does."})
 	}
 	return upApply{Steps: steps}
@@ -695,7 +749,13 @@ func upCheckedOf(now time.Time, v service.UpdatesView) upChecked {
 	out := upChecked{Enabled: c.CheckEnabled, Failed: c.CheckError, Check: releaseCheck(v)}
 	switch {
 	case !c.CheckEnabled:
+		// The dense mono line says when the last good check was, in short units; plain "off" when
+		// there never was one.
 		out.Text, out.Failed = "off", ""
+		if !c.CheckedOKAt.IsZero() {
+			out.Text = "off · last checked"
+			out.When = whenAgo(now, c.CheckedOKAt)
+		}
 	case c.CheckedAt.IsZero():
 		out.Text = "not checked yet"
 	default:

@@ -6,19 +6,36 @@ import (
 	"unicode/utf8"
 )
 
-// ReleaseNote is one line of a release's notes as the Updates page draws it: the bold lead of a
-// bullet (Lead set, without its `**`), else the bullet's first sentence. Text may hold backticks,
-// which a page sets in its mono face; no other Markdown is read.
+// ReleaseNote is one line of a release's notes as the Updates page draws it. A bullet with a bold
+// lead ("**MCP**: `deploy_image` is marked destructive. More.") is Lead "MCP" (without its `**`),
+// Colon true (the bullet had its colon right after the lead) and Text the first sentence of what
+// follows ("`deploy_image` is marked destructive."); a bullet without a lead is only Text, its first
+// sentence. Lead and Text may hold backticks, which a page sets in its mono face; no other Markdown
+// is read. A lead with nothing after it has an empty Text.
 type ReleaseNote struct {
-	Text string
-	Lead bool
+	Lead  string
+	Colon bool
+	Text  string
+}
+
+// String is the note as one line: "MCP: `deploy_image` is ...". It is what the API's notes are.
+func (n ReleaseNote) String() string {
+	switch {
+	case n.Lead == "":
+		return n.Text
+	case n.Text == "":
+		return n.Lead
+	case n.Colon:
+		return n.Lead + ": " + n.Text
+	}
+	return n.Lead + " " + n.Text
 }
 
 // ParseReleaseNotes reads a release's notes, which are a CHANGELOG section in Markdown, into at most
 // six lines. Each top-level bullet ("- " or "* ") is read whole: its wrapped lines are joined with
 // single spaces, and a blank line, a heading, the next bullet or a nested bullet ends it. A bullet
-// that starts with a bold lead ("**API 0.28.0**: ...") is its lead; any other is its first sentence,
-// which is never cut in the middle.
+// that starts with a bold lead ("**API 0.28.0**: ...") is its lead and the first sentence of the
+// rest; any other is its first sentence. A sentence is never cut in the middle.
 //
 // cut says body was cut at the size the service keeps, so the bullet that was open at the end is
 // partial and is dropped.
@@ -83,12 +100,26 @@ func bulletsOf(body string) (bullets []string, openAtEnd bool) {
 func noteOf(bullet string) (ReleaseNote, bool) {
 	bullet = strings.TrimSpace(bullet)
 	if rest, ok := strings.CutPrefix(bullet, "**"); ok {
-		if lead, _, ok := strings.Cut(rest, "**"); ok && strings.TrimSpace(lead) != "" {
-			return ReleaseNote{Text: strings.TrimSpace(lead), Lead: true}, true
+		if lead, after, ok := strings.Cut(rest, "**"); ok && strings.TrimSpace(lead) != "" {
+			lead = strings.TrimSpace(lead)
+			after = strings.TrimSpace(after)
+			// A colon right after the lead is the page's separator. A lead that ends in its own
+			// punctuation, or one the text goes on from ("**Configure** says ..."), takes a space.
+			colon := false
+			if t, ok := strings.CutPrefix(after, ":"); ok {
+				after, colon = strings.TrimSpace(t), !endsInPunctuation(lead)
+			}
+			text := firstSentence(dropBold(after))
+			return ReleaseNote{Lead: lead, Colon: colon && text != "", Text: text}, true
 		}
 	}
 	text := firstSentence(dropBold(bullet))
 	return ReleaseNote{Text: text}, text != ""
+}
+
+// endsInPunctuation says a text ends with a stop, a colon, "!" or "?".
+func endsInPunctuation(s string) bool {
+	return s != "" && strings.ContainsRune(".:!?", rune(s[len(s)-1]))
 }
 
 // dropBold removes `**` marks outside backticks, keeping the words.

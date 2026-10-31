@@ -26,7 +26,7 @@
 {{/* nav-updates-mark: what sits inside the Updates item's mark: ■ a reboot is needed, ◆ security updates
      are waiting, else a count; empty draws nothing. The Updates page swaps it by id (#nav-updates-mark) when
      the notice says something changed. Takes a navMark. */}}
-{{define "nav-updates-mark"}}{{if .Text}}<span title="{{.Word}}"{{if .Dim}} class="cv-nav-mark-dim"{{end}}><span aria-hidden="true">{{.Text}}</span><span class="sr-only">{{.Word}}</span></span>{{end}}{{end}}
+{{define "nav-updates-mark"}}{{if .Text}}<span title="{{.Word}}"{{if .Dim}} class="cv-nav-mark-dim"{{else if .Hue}} class="cv-nav-mark-{{.Hue}}"{{end}}><span aria-hidden="true">{{.Text}}</span><span class="sr-only">{{.Word}}</span></span>{{end}}{{end}}
 
 {{/* shell-nav: the Workspace group. Only pages that exist are linked. */}}
 {{define "shell-nav"}}

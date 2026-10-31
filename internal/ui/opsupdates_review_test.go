@@ -37,8 +37,9 @@ func releaseRowWith(t *testing.T, notes string) string {
 	return regionBetween(t, body, `data-up="release"`, `id="how"`)
 }
 
-// The notes of a release are up to six bullets: a bullet's bold lead (500, fg-1, no `**`) or its
-// first sentence, never cut, then a link to the release.
+// The notes of a release are up to six bullets: a bullet's bold lead (500, fg-1, no `**`), then ": " and
+// the first sentence of the rest (fg-2), or a bullet's first sentence, never cut; then a link to the
+// release, underlined, in the same tab.
 func TestOpsUpdatesReleaseNotesAreBullets(t *testing.T) {
 	row := releaseRowWith(t, releaseNotesBody(t)+"\n## Other\n- `Deployment.registeredAt` is mono.\n")
 
@@ -46,23 +47,28 @@ func TestOpsUpdatesReleaseNotesAreBullets(t *testing.T) {
 		t.Errorf("%d bullets, want 6:\n%s", n, row)
 	}
 	for _, want := range []string{
-		`<span class="cv-upbullet" aria-hidden="true">•</span><span class="cv-upnotelead">API 0.28.0</span>`,
-		`<span class="cv-upnotelead">Configure of an app deployed from a Compose file</span>`,
-		`<span class="cv-upnotelead">The installer validates and quotes its options.</span>`,
+		// A lead with its colon, then the rest's first sentence (backticks are mono).
+		`<span class="cv-upbullet" aria-hidden="true">•</span><span><span class="cv-upnotelead">API 0.28.0</span>: <span class="cv-inline-mono text-fg-1">Deployment.registeredAt</span> (the time Nomad accepted the job, `,
+		`<span class="cv-upnotelead">MCP</span>: <span class="cv-inline-mono text-fg-1">deploy_image</span>, <span class="cv-inline-mono text-fg-1">promote_app</span> and <span class="cv-inline-mono text-fg-1">redeploy_version</span> are marked destructive, so agent clients ask before running them.</span>`,
+		// A lead the text goes on from takes a space, not a colon.
+		`<span class="cv-upnotelead">Configure of an app deployed from a Compose file</span> says why it looks different: Caravana keeps the file`,
+		`<span class="cv-upnotelead">The installer validates and quotes its options.</span> <span class="cv-inline-mono text-fg-1">--email</span>`,
 		// A bullet without a lead is its first sentence, never cut.
-		`<span class="">An upgrade that rolls back restores Caravana&#39;s binary and data only.</span>`,
-		`<a href="https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0" class="cv-upreleaselink" rel="noopener noreferrer" target="_blank">Release notes</a>`,
+		`<span>An upgrade that rolls back restores Caravana&#39;s binary and data only.</span>`,
+		// The link is underlined by the stylesheet and opens in the same tab.
+		`<a href="https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0" class="cv-upreleaselink">Release notes on GitHub</a>`,
 	} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the row lacks %q:\n%s", want, row)
 		}
 	}
-	if strings.Contains(row, "**") || strings.Contains(row, "`") {
-		t.Errorf("raw Markdown is on the page:\n%s", text(row))
+	if strings.Contains(row, "**") || strings.Contains(row, "`") || strings.Contains(row, "_blank") {
+		t.Errorf("raw Markdown or a new tab is on the page:\n%s", text(row))
 	}
-	// The seventh bullet and the one of another section are past the six.
-	if strings.Contains(text(row), "An exported jobspec") || strings.Contains(text(row), "is mono.") {
-		t.Errorf("a bullet past the sixth is on the page:\n%s", text(row))
+	// Only the first sentence of a bullet's rest: the MCP bullet's later sentences are left out. The
+	// seventh bullet and the one of another section are past the six.
+	if strings.Contains(text(row), "docs/mcp.md") || strings.Contains(text(row), "An exported jobspec") || strings.Contains(text(row), "is mono.") {
+		t.Errorf("more than a first sentence, or a bullet past the sixth, is on the page:\n%s", text(row))
 	}
 }
 
@@ -80,14 +86,15 @@ func TestOpsUpdatesReleaseNotesMonoAndEscaping(t *testing.T) {
 	}
 }
 
-var oct28 = regexp.MustCompile(`Installed on Oct 28(, 2026)? by Ubuntu&#39;s automatic updates\. Rebooting stops every app`)
+var byUnattended = regexp.MustCompile(`Installed by Ubuntu&#39;s automatic updates\. Rebooting stops every app`)
 
 // The reboot row says who installed what it is for, when a run in apt's history names a package of the
-// marker's list: "Installed on Oct 28 by Ubuntu's automatic updates." Without such a run, nothing.
+// marker's list: "Installed by Ubuntu's automatic updates." (no date: the sub says when the reboot became
+// needed, so the date is on the row once). Without such a run, nothing.
 func TestOpsUpdatesSaysWhoInstalledIt(t *testing.T) {
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", edit: automaticUpdatesOff(t)})
 	_, body := e.get(t, "/ops/updates")
-	if row := regionBetween(t, body, `data-up="reboot"`, `data-up="ubuntu"`); !oct28.MatchString(row) {
+	if row := regionBetween(t, body, `data-up="reboot"`, `data-up="ubuntu"`); !byUnattended.MatchString(row) || strings.Contains(row, "Installed on") {
 		t.Errorf("the reboot row:\n%s", text(row))
 	}
 
@@ -100,7 +107,7 @@ func TestOpsUpdatesSaysWhoInstalledIt(t *testing.T) {
 	}
 	e, _ = updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", edit: byHand})
 	_, body = e.get(t, "/ops/updates")
-	if got := text(body); !regexp.MustCompile(`Installed on Oct 26(, 2026)? by hand\. Rebooting stops`).MatchString(got) {
+	if got := text(body); !strings.Contains(got, "Installed by hand. Rebooting stops") {
 		t.Errorf("by hand:\n%s", got)
 	}
 
