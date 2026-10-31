@@ -170,7 +170,11 @@ and the designer's review cycle (review, impeccable critique with no detector, r
     Running tab and page 1 too) and 3f243f8. Lab at 3f243f8: every TestConsoleLab step passes (the full run to
     console-domains-states, then console-monitoring, console-ops-overview 48 s, console-ops-server 40 s), but
     console-logs failed 2 of 3 runs alone (the part, a download, or the sentinel count read nothing; a different check
-    each time) and passed the one run at 1419bc1. Its reads take about 1 s each; not yet explained, open.
+    each time) and passed the one run at 1419bc1. Its reads take about 1 s each.
+  - 2026-10-31, console-logs alone on a cleared lab and an otherwise idle Mac, alternating: 3 of 3 pass at HEAD
+    (b9b8a10) and 3 of 3 at 1419bc1. The two failing runs overlapped a fix agent's parallel `go test` of
+    service, api and ui on the same Mac. So the step is sensitive to load on the machine running it (its page reads
+    have a 5 s deadline), not to the copy-status change.
 
 **Checkpoint**: pages 1 and 2 work and are approved.
 
