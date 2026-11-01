@@ -54,6 +54,7 @@ job "kuma" {
     }
     task "web" {
       driver = "docker"
+      kill_timeout = "30s"
       config {
         image = "louislam/uptime-kuma@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }

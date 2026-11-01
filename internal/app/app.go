@@ -96,6 +96,32 @@ type Service struct {
 	// Health is the health check. Required when the service has ports, not
 	// allowed when it has none. nil means no check.
 	Health *HealthCheck `json:"health,omitempty"`
+	// StopTimeout is how many seconds Nomad waits after the stop signal
+	// before it kills the container, on a deploy, a restart, a stop and a
+	// volume backup. 0 uses the default: VolumeStopTimeout for a service with
+	// a volume, Nomad's own 5 seconds otherwise.
+	StopTimeout int `json:"stopTimeout,omitzero"`
+}
+
+// MaxStopTimeout is the longest stop timeout a service may ask for. Nomad
+// clients cap a task's kill timeout with max_kill_timeout, 30 s by default.
+const MaxStopTimeout = 30
+
+// VolumeStopTimeout is the stop timeout, in seconds, of a service with a
+// volume that doesn't set one: a database in the container needs time to shut
+// down cleanly before a backup archives its files.
+const VolumeStopTimeout = 30
+
+// StopTimeoutOrDefault is the stop timeout in seconds that the service's job
+// gets. 0 means Nomad's own 5 seconds.
+func (s Service) StopTimeoutOrDefault() int {
+	switch {
+	case s.StopTimeout > 0:
+		return s.StopTimeout
+	case len(s.Volumes) > 0:
+		return VolumeStopTimeout
+	}
+	return 0
 }
 
 // EnvVar is one plain environment variable. Values that must stay hidden go

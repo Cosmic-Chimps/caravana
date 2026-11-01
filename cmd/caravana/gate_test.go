@@ -139,6 +139,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"compose-app", false, g.composeAppStep},
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
+		{"stop-timeout", false, g.stopTimeoutStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
 		{"webhook-host-only-webhook", false, g.webhookOnly},

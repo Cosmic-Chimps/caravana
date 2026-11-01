@@ -51,7 +51,7 @@ before the check (`ports.[].mode`, `ports.[].protocol`, `volumes.*.name`,
 | `services.*.networks`, top-level `networks` | nothing | warning unless only `default`: all services of an app see each other |
 | `services.*.pull_policy` | nothing | warning: every deploy pins the digest |
 | `services.*.logging` | nothing | warning: Nomad keeps the logs |
-| `services.*.stop_grace_period` | nothing | warning: Nomad's kill timeout applies |
+| `services.*.stop_grace_period` | `StopTimeout` (seconds, rounded up) | at most 30 s, else refused (was a warning until the stop timeout) |
 | top-level `volumes.*` | the app's volumes | `driver`, `driver_opts`, `external`, `labels` refused |
 | `x-*` anywhere | nothing | Compose ignores them too |
 

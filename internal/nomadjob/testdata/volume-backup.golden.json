@@ -46,7 +46,7 @@
             },
             "RestartPolicy": null,
             "Meta": null,
-            "KillTimeout": null,
+            "KillTimeout": 30000000000,
             "LogConfig": null,
             "Artifacts": null,
             "Vault": null,

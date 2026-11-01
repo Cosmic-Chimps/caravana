@@ -105,6 +105,9 @@ func TestRefused(t *testing.T) {
 		{"a reservation above the limit", "services:\n  web:\n    image: x\n    mem_limit: 256m\n    mem_reservation: 512m\n", nil, "services.web.resources.memoryMB", "ceiling"},
 		{"build next to image", "services:\n  web:\n    image: x\n    build: .\n", nil, "services.web.build", "prebuilt images"},
 		{"empty entrypoint item", "services:\n  web:\n    image: x\n    entrypoint: [sh, \"\"]\n", nil, "services.web.entrypoint[1]", "empty"},
+		{"stop_grace_period over the cap", "services:\n  web:\n    image: x\n    stop_grace_period: 31s\n", nil, "services.web.stop_grace_period", "at most 30s"},
+		{"stop_grace_period of a minute", "services:\n  web:\n    image: x\n    stop_grace_period: 1m\n", nil, "services.web.stop_grace_period", "cap a task's kill timeout"},
+		{"stop_grace_period zero", "services:\n  web:\n    image: x\n    stop_grace_period: 0s\n", nil, "services.web.stop_grace_period", "at least 1s"},
 		{"env_file", "services:\n  web:\n    image: x\n    env_file: web.env\n", nil, "services.web.env_file", "files from your disk"},
 		{"service secrets", "services:\n  web:\n    image: x\n    secrets: [k]\nsecrets:\n  k:\n    file: k.txt\n", nil, "secrets", ""},
 		{"relative bind mount", "services:\n  web:\n    image: x\n    volumes: [\"./data:/data\"]\n", nil, "services.web.volumes[0]", "named volumes"},
@@ -169,7 +172,6 @@ func TestWarnings(t *testing.T) {
     networks: [front]
     pull_policy: always
     logging: {driver: json-file}
-    stop_grace_period: 5s
     healthcheck: {test: ["CMD", "true"]}
     cpus: 1.5
   db:
@@ -193,13 +195,51 @@ networks:
 	for _, f := range []string{
 		"services.web.ports[0]", "services.web.depends_on", "services.web.restart", "services.web.container_name",
 		"services.web.hostname", "services.web.labels", "services.web.pull_policy",
-		"services.web.logging", "services.web.stop_grace_period", "services.web.healthcheck",
+		"services.web.logging", "services.web.healthcheck",
 		"services.web.deploy.resources.limits.cpus", "networks",
 	} {
 		if !got[f] {
 			t.Errorf("no warning on %s; warnings: %+v", f, warnings)
 		}
 	}
+}
+
+// TestStopGracePeriod checks Compose's stop_grace_period becomes the service's
+// stop timeout in whole seconds, rounded up, with no warning.
+func TestStopGracePeriod(t *testing.T) {
+	tests := []struct {
+		period string
+		want   int
+	}{
+		{"20s", 20},
+		{"1500ms", 2},
+		{"100ms", 1},
+		{"30s", 30},
+	}
+	for _, tt := range tests {
+		t.Run(tt.period, func(t *testing.T) {
+			file := "services:\n  web:\n    image: x\n    stop_grace_period: " + tt.period + "\n"
+			a, warnings, err := Translate("blog", Request{Compose: file})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := a.Services[0].StopTimeout; got != tt.want {
+				t.Errorf("stopTimeout = %d, want %d", got, tt.want)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("warnings = %+v, want none", warnings)
+			}
+		})
+	}
+	t.Run("not set", func(t *testing.T) {
+		a, _, err := Translate("blog", Request{Compose: "services:\n  web:\n    image: x\n"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := a.Services[0].StopTimeout; got != 0 {
+			t.Errorf("stopTimeout = %d, want 0", got)
+		}
+	})
 }
 
 // TestDefaultDrivers checks the drivers Compose writes out in full are

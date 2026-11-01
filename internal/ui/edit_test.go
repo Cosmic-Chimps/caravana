@@ -34,14 +34,15 @@ func richApp() app.App {
 		Services: []app.Service{
 			{
 				Name: "web", Image: "ghcr.io/acme/shop:1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
-				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}, {Name: "FEATURES", Value: "a=1,b=2"}},
-				Secrets:   []app.Secret{{Name: "API_KEY"}},
-				Volumes:   []app.Volume{{Name: "uploads", Path: "/uploads"}},
-				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}, {Name: "metrics", ContainerPort: 9100}},
-				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}, {Host: "www.shop.example.com", Port: "http"}},
-				Health:    &app.HealthCheck{Path: "/healthz", Port: "metrics", Interval: 15 * time.Second, Timeout: 1500 * time.Millisecond},
-				Resources: app.Resources{CPUMHz: 250, MemoryMB: 256, MemoryMaxMB: 1024},
-				Replicas:  new(1),
+				Env:         []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}, {Name: "FEATURES", Value: "a=1,b=2"}},
+				Secrets:     []app.Secret{{Name: "API_KEY"}},
+				Volumes:     []app.Volume{{Name: "uploads", Path: "/uploads"}},
+				Ports:       []app.Port{{Name: "http", ContainerPort: 8080}, {Name: "metrics", ContainerPort: 9100}},
+				Domains:     []app.Domain{{Host: "shop.example.com", Port: "http"}, {Host: "www.shop.example.com", Port: "http"}},
+				Health:      &app.HealthCheck{Path: "/healthz", Port: "metrics", Interval: 15 * time.Second, Timeout: 1500 * time.Millisecond},
+				Resources:   app.Resources{CPUMHz: 250, MemoryMB: 256, MemoryMaxMB: 1024},
+				Replicas:    new(1),
+				StopTimeout: 20,
 			},
 			{
 				Name: "db", Image: "postgres:17", Ports: []app.Port{{Name: "pg", ContainerPort: 5432}},

@@ -223,6 +223,13 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 		return NewFieldError(field+".resources.memoryMB", "reserves %d MB, more than the service's ceiling of %d MB (memoryMaxMB)", r.MemoryMB, r.MemoryMaxMB)
 	}
 
+	if svc.StopTimeout < 0 {
+		return NewFieldError(field+".stopTimeout", "must be at least 1 (leave it out for the default)")
+	}
+	if svc.StopTimeout > MaxStopTimeout {
+		return NewFieldError(field+".stopTimeout", "is %d seconds; at most %d are allowed: Nomad clients cap a task's kill timeout at 30 s (max_kill_timeout)", svc.StopTimeout, MaxStopTimeout)
+	}
+
 	if err := validateEntrypoint(field, svc.Entrypoint); err != nil {
 		return err
 	}
