@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.16.0 - 2026-11-01
+
 ### Added
 - **The Operator view**: a Developer/Operator toggle under the brand in the sidebar, and three
   pages about the host Caravana runs on. **Overview** (`/ops`) has the server panel (size, OS,
