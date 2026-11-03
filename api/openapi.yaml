@@ -5592,7 +5592,9 @@ components:
         startedAt:
           type: string
           format: date-time
-          description: When the copy's first task started. Absent until one has.
+          description: |
+            When the copy's tasks last started (the earliest over its tasks). A restart moves
+            it. Absent until a task has started.
         description:
           type: string
           description: Nomad's own description of the copy's state, e.g. `Tasks are running`.

@@ -84,6 +84,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   (policies only ever add capabilities).
 
 ### Fixed
+- **Log lines written before a copy's last restart keep their own times.** The Logs page took a
+  copy's latest start as the earliest a line of its first log file could have been written, but a
+  restarted task keeps appending to the same file, so every line from before the restart was
+  refused and given an estimated time near the restart: an app restarted nightly by its volume
+  backup showed days-old failures as today's. The lower bound is now when Nomad made the copy,
+  which a restart doesn't move. The API's `Copy.startedAt` is documented as it always was: the
+  tasks' latest start.
 - **The installer validates and quotes its options.** `--email` and `--acme-email` must be plain
   addresses and `--domain` a host name, or it refuses, naming the option, before changing anything.
   The values it writes into `install.env` and `caravana.env` are quoted, and the installer reads

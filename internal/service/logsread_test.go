@@ -428,6 +428,42 @@ func TestReadLogsTimedLineBeforeTheCopyStart(t *testing.T) {
 	}
 }
 
+// A restarted task keeps appending to the same log file, and Nomad's StartedAt
+// moves to the latest start. The first file's lower bound is the copy's
+// creation, so a line written before the last restart keeps its own time; with
+// the latest start as the bound, every line from before it was refused and
+// given an estimated time near the restart (an app restarted nightly by its
+// volume backup showed days-old failures as today's).
+func TestReadLogsLinesBeforeTheLastRestartKeepTheirTimes(t *testing.T) {
+	e := readEnv(t)
+	created := readTime(t, "2026-10-20T23:00:00Z")   // day 1
+	restarted := readTime(t, "2026-10-24T23:00:00Z") // day 5
+	e.nomad.SetCopies("blog", api.AllocationListStub{ID: copyBlogWeb, TaskGroup: "web", JobVersion: 3, ClientStatus: "running",
+		CreateTime: created.UnixNano(),
+		TaskStates: map[string]*api.TaskState{"web": {Restarts: 1, StartedAt: restarted, LastRestart: restarted}}})
+	lines := []string{
+		"2026-10-20T23:00:05Z up",
+		"2026-10-21T08:15:00Z ERROR day 2 failed",
+		"2026-10-22T08:15:00Z ERROR day 3 failed",
+		"2026-10-23T08:15:00Z ERROR day 4 failed",
+		"2026-10-24T23:00:05Z up again",
+		"2026-10-25T00:30:00Z tick",
+	}
+	e.nomad.AddLogFile(copyBlogWeb, "stdout", 0, lines, wrote("00:30:01"))
+
+	read := mustRead(t, e, EnvLogQuery{App: "blog", Range: 7 * 24 * time.Hour})
+	if len(read.Lines) != len(lines) {
+		t.Fatalf("%d lines (%q), want %d", len(read.Lines), entryTexts(read.Lines), len(lines))
+	}
+	for i, l := range read.Lines { // newest first
+		want := lines[len(lines)-1-i]
+		own := readTime(t, want[:20])
+		if l.Text != want || l.TimeSource != logline.FromLine || !l.Time.Equal(own) {
+			t.Errorf("line %d = {%s %s %q}, want its own time %s, from the line, %q", i, l.TimeSource, l.Time.Format(time.RFC3339), l.Text, own.Format(time.RFC3339), want)
+		}
+	}
+}
+
 // In a file with timed lines, the untimed lines before its first timed line
 // are placed between the file's lower bound (the previous file's last write)
 // and that line, and the ones after it take its time.

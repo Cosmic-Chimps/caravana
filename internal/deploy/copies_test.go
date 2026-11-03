@@ -60,7 +60,7 @@ func TestCopyOf(t *testing.T) {
 		})
 	}
 
-	t.Run("restarts are summed over tasks and StartedAt is the first start", func(t *testing.T) {
+	t.Run("restarts are summed over tasks and StartedAt is the earliest task start", func(t *testing.T) {
 		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", TaskStates: map[string]*api.TaskState{
 			"web":     {Restarts: 2, StartedAt: t0.Add(time.Minute)},
 			"sidecar": {Restarts: 1, StartedAt: t0},
@@ -71,6 +71,17 @@ func TestCopyOf(t *testing.T) {
 		}
 		if got.StartedAt == nil || !got.StartedAt.Equal(t0) {
 			t.Errorf("StartedAt = %v, want %v", got.StartedAt, t0)
+		}
+	})
+
+	t.Run("CreatedAt is when Nomad made the copy, nil when it didn't say", func(t *testing.T) {
+		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", CreateTime: t0.UnixNano(),
+			TaskStates: map[string]*api.TaskState{"web": {StartedAt: t0.Add(time.Hour)}}})
+		if got.CreatedAt == nil || !got.CreatedAt.Equal(t0) {
+			t.Errorf("CreatedAt = %v, want %v", got.CreatedAt, t0)
+		}
+		if got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running"}); got.CreatedAt != nil {
+			t.Errorf("CreatedAt = %v, want nil without a CreateTime", got.CreatedAt)
 		}
 	})
 

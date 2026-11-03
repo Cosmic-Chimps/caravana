@@ -280,7 +280,7 @@ func (s *Service) tailStream(ctx context.Context, t logTarget) ([]LogLine, error
 		}
 		return nil, err
 	}
-	lines := parseLogStream(shortCopy(t.copy.ID), logline.Stream(t.stream), t.copy.StartedAt, files, res.raws)
+	lines := parseLogStream(shortCopy(t.copy.ID), logline.Stream(t.stream), logStart(t.copy), files, res.raws)
 	out := make([]LogLine, len(lines))
 	for i, l := range lines {
 		out[i] = logLineFrom(t.copy, l)
