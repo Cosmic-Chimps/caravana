@@ -56,7 +56,9 @@ type Service struct {
 	volume      volumeTiming
 
 	// Notifications (feature 018), see notifications.go.
-	publicURL      string        // the console's address for links; empty means no links
+	// publicURL is the console's address for links (empty: no links). It is atomic because tests set it
+	// after a deploy has started watchers that read it; read it through PublicURL.
+	publicURL      atomic.Pointer[string]
 	runningVersion string        // the running Caravana's version; empty (tests) records no version event
 	resolveAfter   time.Duration // how long a problem must be gone before "resolved" is sent
 	notifyClient   *http.Client  // what deliveries go through; tests may replace it
@@ -206,9 +208,10 @@ const defaultResolveAfter = 5 * time.Minute
 
 // SetPublicURL sets the console's own address (CARAVANA_PUBLIC_URL), which
 // notifications use to link to the page about an event. Empty means messages
-// carry no links. Call it before Start.
+// carry no links. Safe to call at any time.
 func (s *Service) SetPublicURL(u string) {
-	s.publicURL = strings.TrimRight(u, "/")
+	u = strings.TrimRight(u, "/")
+	s.publicURL.Store(&u)
 }
 
 // SetVersion tells the service which Caravana version is running (the build's
@@ -218,7 +221,12 @@ func (s *Service) SetVersion(v string) { s.runningVersion = strings.TrimSpace(v)
 
 // PublicURL is the console's own address as SetPublicURL was given it, without
 // a trailing slash, or "" when none was set.
-func (s *Service) PublicURL() string { return s.publicURL }
+func (s *Service) PublicURL() string {
+	if u := s.publicURL.Load(); u != nil {
+		return *u
+	}
+	return ""
+}
 
 // SetNotifyResolveAfter sets how long a problem must be gone before "resolved"
 // is sent (CARAVANA_NOTIFY_RESOLVE_AFTER, 5 minutes by default). Call it

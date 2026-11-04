@@ -305,8 +305,8 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id string) (store
 		Text:  fmt.Sprintf("If you can read this, the channel %q is set up.", row.Name),
 		At:    now,
 	}
-	if s.publicURL != "" {
-		ev.URL = s.publicURL + "/settings/notifications"
+	if s.PublicURL() != "" {
+		ev.URL = s.PublicURL() + "/settings/notifications"
 	}
 	payload, err := json.Marshal(ev)
 	if err != nil {

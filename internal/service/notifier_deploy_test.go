@@ -30,7 +30,7 @@ func newDeployNotifyEnv(t *testing.T) *deployNotifyEnv {
 	ctx := context.Background()
 	e := &deployNotifyEnv{env: newEnv(t)}
 	parkSender(e.svc)
-	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.SetPublicURL("https://caravana.example.com")
 	add := func(name string, events []string, paused bool) store.NotificationChannel {
 		in := channelInput(notify.KindNtfy, "https://ntfy.example.com/"+name)
 		in.Name, in.Events, in.Paused = name, events, paused

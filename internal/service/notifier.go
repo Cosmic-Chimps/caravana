@@ -312,7 +312,7 @@ const summaryListed = 20
 // logged and the message is lost, because a deploy that worked must not be
 // reported as failed over a notification. The sender does the sending.
 func (s *Service) notifyDeploy(rec store.DeploymentRecord) {
-	ev, ok := deployEvent(rec, s.publicURL)
+	ev, ok := deployEvent(rec, s.PublicURL())
 	if !ok {
 		return
 	}
@@ -533,7 +533,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event
 	for _, it := range changes.Opened {
-		ev := problemEvent(it, s.publicURL, now)
+		ev := problemEvent(it, s.PublicURL(), now)
 		opened = append(opened, ev)
 		check.Opened = append(check.Opened, store.SentProblem{
 			Key: problemKey(it), Kind: string(it.Kind), AppID: it.AppID, Service: it.Service,
@@ -543,7 +543,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 	var worsened []notify.Event
 	for _, it := range changes.Worsened {
-		worsened = append(worsened, worsenedEvent(it, s.publicURL, now))
+		worsened = append(worsened, worsenedEvent(it, s.PublicURL(), now))
 		if check.Levels == nil {
 			check.Levels = map[string]string{}
 			check.Sentences = map[string]string{}
@@ -552,12 +552,12 @@ func (s *Service) checkProblems(ctx context.Context) error {
 		check.Sentences[problemKey(it)] = encodeParts(ProblemParts(it, display))
 	}
 	for _, p := range changes.Resolved {
-		resolved = append(resolved, inPlace(resolvedEvent(p, s.publicURL, now), places[p.AppID]))
+		resolved = append(resolved, inPlace(resolvedEvent(p, s.PublicURL(), now), places[p.AppID]))
 		check.Removed = append(check.Removed, p.Key)
 	}
 
-	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.publicURL, now), worsened...)
-	events = append(events, summarize(resolved, "problems resolved", notify.EventProblemResolved, s.publicURL, now)...)
+	events := append(summarize(opened, "new problems", notify.EventProblemOpened, s.PublicURL(), now), worsened...)
+	events = append(events, summarize(resolved, "problems resolved", notify.EventProblemResolved, s.PublicURL(), now)...)
 	for _, ch := range channelsWanting(channels, EventProblems) {
 		for _, ev := range events {
 			d, err := newDelivery(ch.ID, ev, now)

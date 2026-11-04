@@ -156,7 +156,7 @@ func newOSRig(t *testing.T) *osRig {
 	r := &osRig{notifyEnv: newNotifyEnv(t), files: fstest.MapFS{}}
 	r.clockAt(osNow0)
 	r.svc.resolveAfter = 5 * time.Minute
-	r.svc.publicURL = "https://caravana.example.com"
+	r.svc.SetPublicURL("https://caravana.example.com")
 	r.svc.sampler.node = &HostNode{NodeFacts: deploy.NodeFacts{Kernel: "6.8.0-147-generic"}}
 	r.setFiles(t, osNow0, false, 0, 0, true)
 	return r

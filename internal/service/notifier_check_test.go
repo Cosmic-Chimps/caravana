@@ -279,7 +279,7 @@ func TestCheckProblems(t *testing.T) {
 
 	e := newNotifyEnv(t)
 	e.clockAt(t0)
-	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.SetPublicURL("https://caravana.example.com")
 	e.svc.resolveAfter = 5 * time.Minute
 
 	first, err := e.svc.Deploy(ctx, whoami(), app.TriggerManual)
@@ -508,7 +508,7 @@ func TestCheckProblemsSummary(t *testing.T) {
 	t.Run("eleven are one summary", func(t *testing.T) {
 		e := newNotifyEnv(t)
 		e.clockAt(t0)
-		e.svc.publicURL = "https://caravana.example.com"
+		e.svc.SetPublicURL("https://caravana.example.com")
 		failApps(e, 11)
 		e.check(t)
 		got := e.deliveriesOf(t, e.problems)

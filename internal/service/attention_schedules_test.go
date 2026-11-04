@@ -307,7 +307,7 @@ func TestDiffProblemsSchedules(t *testing.T) {
 func TestCheckProblemsSchedules(t *testing.T) {
 	ctx := context.Background()
 	e := newNotifyEnv(t)
-	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.SetPublicURL("https://caravana.example.com")
 	e.svc.resolveAfter = 5 * time.Minute
 	t0 := time.Now().UTC()
 	e.clockAt(t0)

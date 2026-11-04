@@ -140,7 +140,7 @@ func TestCheckProblemsDisk(t *testing.T) {
 	t0 := time.Date(2026, 10, 25, 3, 0, 30, 0, time.UTC)
 	e := newNotifyEnv(t)
 	e.clockAt(t0)
-	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.SetPublicURL("https://caravana.example.com")
 	e.svc.resolveAfter = 5 * time.Minute
 	const key = "disk_nearly_full|||/"
 
@@ -335,7 +335,7 @@ func TestCheckProblemsDiskWorsened(t *testing.T) {
 	t0 := time.Date(2026, 10, 25, 3, 0, 30, 0, time.UTC)
 	e := newNotifyEnv(t)
 	e.clockAt(t0)
-	e.svc.publicURL = "https://caravana.example.com"
+	e.svc.SetPublicURL("https://caravana.example.com")
 	e.svc.resolveAfter = 5 * time.Minute
 	types := func() []string { return problemTypes(e.deliveriesOf(t, e.problems)) }
 

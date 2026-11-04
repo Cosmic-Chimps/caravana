@@ -228,7 +228,7 @@ func (s *Service) HostAddresses(ctx context.Context) []netip.Addr {
 }
 
 func (s *Service) hostAddresses(ctx context.Context) []netip.Addr {
-	publicURL := s.publicURL
+	publicURL := s.PublicURL()
 	c := &s.hostAddrs
 	c.mu.Lock()
 	defer c.mu.Unlock()

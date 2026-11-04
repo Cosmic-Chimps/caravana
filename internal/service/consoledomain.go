@@ -13,7 +13,7 @@ import (
 // address is set (local development) or it has no host, and then nothing is
 // compared.
 func (s *Service) consoleHost() string {
-	u, err := url.Parse(s.publicURL)
+	u, err := url.Parse(s.PublicURL())
 	if err != nil {
 		return ""
 	}
