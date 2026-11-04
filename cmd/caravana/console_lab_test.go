@@ -103,6 +103,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-volumes", c.volumes},
 		{"console-notifications", c.notifications},
 		{"console-projects", c.projects},
+		{"console-project-page", c.projectPage},
 		{"console-create-only", c.createOnly},
 		{"console-app-actions", c.appActions},
 		{"console-terminal", c.terminal},

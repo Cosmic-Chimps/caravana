@@ -491,7 +491,7 @@ func TestAppPage(t *testing.T) {
 		`2 copies running <span class="cv-inline-mono text-fg-1">v7</span>. Last deployed 3 minutes ago, from the console.`,
 		// the breadcrumbs (project / environment, not the app: the h1 carries its name), the back link,
 		// and the stream and the region of this app
-		`<a href="/projects/default" class="cv-crumb">Default</a>`, `cv-crumb-current">production</span>`,
+		`<a href="/projects/default?env=production" class="cv-crumb">Default</a>`, `cv-crumb-current">production</span>`,
 		`<a href="/apps" class="cv-backlink" id="app-home">← Home</a>`,
 		`hx-ext="sse" sse-connect="/live/apps/whoami?tab=running" sse-close="ended" data-live`,
 		`hx-get="/parts/apps/whoami/header" hx-trigger="sse:app, sse:deleted, sse:sync"`,

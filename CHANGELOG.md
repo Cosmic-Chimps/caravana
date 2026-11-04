@@ -9,6 +9,14 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Changed
+- **The project page leads with the apps**: one tab per environment, the environment's apps as a table
+  (status, copies, address, version and when; problems first), and a rail with how the environment was last
+  deployed, what needs you there, the apps that can be promoted and its newest deploys. The display name,
+  environments and Delete project moved to **Project settings** (`/projects/<project>/settings`).
+- **The sidebar's order**: Home, Projects, Logs, Monitoring and Schedules under Workspace, Domains under a new
+  Configure group.
+
 ## 0.16.0 - 2026-11-01
 
 ### Added

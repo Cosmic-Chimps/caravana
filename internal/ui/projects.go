@@ -12,8 +12,9 @@ import (
 )
 
 // This file is the console's projects (feature 019): New project, a project's
-// page with its environments, and what changes them. Every form is a plain post
-// that answers with a redirect, or with the page again and the reason.
+// settings page with its environments, and what changes them. Every form is a
+// plain post that answers with a redirect, or with the page again and the
+// reason. A project's own page (feature 027.5) is in projectpage.go.
 
 // newProjectForm is the New project form with what was typed.
 type newProjectForm struct {
@@ -25,13 +26,13 @@ func newProjectFormOf(name, displayName string) newProjectForm {
 	return newProjectForm{Name: formField{ID: "name", Value: name}, DisplayName: formField{ID: "displayName", Value: displayName}}
 }
 
-// projectApp is an app in a list of a project's page.
+// projectApp is an app in a list of a project's settings page.
 type projectApp struct {
 	Name string
 	Href string
 }
 
-// envView is one environment on a project's page. Delete is offered unless the
+// envView is one environment on a project's settings page. Delete is offered unless the
 // environment is Default's production; Reason, when set, says why the button is
 // off (the apps are the ones to move or delete first).
 type envView struct {
@@ -54,10 +55,10 @@ type projectDelete struct {
 	Apps    []projectApp
 }
 
-// projectView is a project's page.
+// projectView is a project's settings page (/projects/{project}/settings).
 type projectView struct {
 	ID, Display string
-	Notice      sentence // a calm fact: created, saved
+	Notice      sentence // a calm fact: saved
 	Alert       sentence // a refusal of an environment's delete
 	Name        formField
 	Envs        []envView
@@ -79,12 +80,14 @@ type projectsIndex struct {
 	Rows []projectRow
 }
 
-// projectsPage is the Projects page, the New project page, or a project's page,
-// or the sentence that there is no such project (only one is set).
+// projectsPage is the Projects page, the New project page, a project's page
+// (Screen), a project's settings (Project), or the sentence that there is no
+// such project (only one is set).
 type projectsPage struct {
 	pageData
 	Index   *projectsIndex
 	New     *newProjectForm
+	Screen  *projectScreen
 	Project *projectView
 	Gone    sentence
 }
@@ -179,9 +182,9 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, session s
 	}
 }
 
-// ---- A project's page ----------------------------------------------------------------
+// ---- A project's settings ------------------------------------------------------------
 
-// projectExtras is what a response adds to the stored facts on a project's page:
+// projectExtras is what a response adds to the stored facts on a project's settings page:
 // what was typed in a refused form, and the sentences about what happened.
 type projectExtras struct {
 	Notice, Alert sentence
@@ -190,9 +193,9 @@ type projectExtras struct {
 	Delete        *projectDelete // the Delete project section, with its refusal
 }
 
-// projectPage draws a project's page with the given status. An unknown project
-// is the not-found sentence inside the shell (404).
-func (s *server) projectPage(w http.ResponseWriter, r *http.Request, status int, id string, extra projectExtras) {
+// settingsPage draws a project's settings page with the given status. An unknown
+// project is the not-found sentence inside the shell (404).
+func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int, id string, extra projectExtras) {
 	ctx := r.Context()
 	p, err := s.svc.Project(ctx, id)
 	if errors.Is(err, service.ErrProjectNotFound) {
@@ -241,7 +244,7 @@ func (s *server) projectPage(w http.ResponseWriter, r *http.Request, status int,
 		v.Envs = append(v.Envs, ev)
 	}
 
-	head, err := s.shellPage(r, p.DisplayName, navProjects, crumb{Label: p.DisplayName})
+	head, err := s.shellPage(r, p.DisplayName+" settings", navProjects, crumb{Label: p.DisplayName, Href: base}, crumb{Label: "Settings"})
 	if err != nil {
 		s.serverError(w, "read admin", err)
 		return
@@ -268,20 +271,14 @@ func (s *server) projectGone(w http.ResponseWriter, r *http.Request, id string) 
 		Gone: sentence{plain("There's no project called "), mono(id), plain(".")}})
 }
 
-// showProject answers GET /projects/{project}. ?created=1 and ?saved=1 are the
-// calm sentences after the posts that redirect here.
-func (s *server) showProject(w http.ResponseWriter, r *http.Request, session string) {
-	id := r.PathValue("project")
+// showProjectSettings answers GET /projects/{project}/settings. ?saved=1 is the calm
+// sentence after the display name's post redirects here.
+func (s *server) showProjectSettings(w http.ResponseWriter, r *http.Request, session string) {
 	var extra projectExtras
-	switch {
-	case r.URL.Query().Get("created") == "1":
-		if p, err := s.svc.Project(r.Context(), id); err == nil {
-			extra.Notice = sentence{plain("Project "), mono(p.DisplayName), plain(" created with a production environment.")}
-		}
-	case r.URL.Query().Get("saved") == "1":
+	if r.URL.Query().Get("saved") == "1" {
 		extra.Notice = sentence{plain("Display name saved.")}
 	}
-	s.projectPage(w, r, http.StatusOK, id, extra)
+	s.settingsPage(w, r, http.StatusOK, r.PathValue("project"), extra)
 }
 
 // updateProject answers POST /projects/{project}: the display name. The name
@@ -296,12 +293,12 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, session s
 	var fieldErr *app.FieldError
 	switch {
 	case err == nil:
-		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"?saved=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"/settings?saved=1", http.StatusSeeOther)
 	case errors.Is(err, service.ErrProjectNotFound):
 		s.projectGone(w, r, id)
 	case errors.As(err, &fieldErr):
 		f := formField{ID: "displayName", Value: typed, Alert: true, Error: sentence{plain("The display name " + fieldErr.Message + ".")}}
-		s.projectPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Name: &f})
+		s.settingsPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Name: &f})
 	default:
 		s.serverError(w, "set project display name", err)
 	}
@@ -316,17 +313,18 @@ func (s *server) addEnvironment(w http.ResponseWriter, r *http.Request, session 
 	typed := strings.TrimSpace(r.PostForm.Get("environment"))
 	refuse := func(status int, text sentence) {
 		f := formField{ID: "environment", Value: typed, Alert: true, Error: text}
-		s.projectPage(w, r, status, id, projectExtras{AddEnv: &f})
+		s.settingsPage(w, r, status, id, projectExtras{AddEnv: &f})
 	}
 	if typed == "" {
 		refuse(http.StatusUnprocessableEntity, sentence{plain("Enter a name for the environment.")})
 		return
 	}
-	_, err := s.svc.CreateEnvironment(r.Context(), id, typed)
+	env, err := s.svc.CreateEnvironment(r.Context(), id, typed)
 	var fieldErr *app.FieldError
 	switch {
 	case err == nil:
-		http.Redirect(w, r, "/projects/"+url.PathEscape(id), http.StatusSeeOther)
+		// The project's page, with the new environment's tab current.
+		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"?env="+url.QueryEscape(env.Name), http.StatusSeeOther)
 	case errors.Is(err, service.ErrProjectNotFound):
 		s.projectGone(w, r, id)
 	case errors.Is(err, service.ErrEnvironmentExists):
@@ -345,13 +343,13 @@ func (s *server) deleteEnvironment(w http.ResponseWriter, r *http.Request, sessi
 	err := s.svc.DeleteEnvironment(r.Context(), id, name)
 	switch {
 	case err == nil, errors.Is(err, service.ErrEnvironmentNotFound):
-		http.Redirect(w, r, "/projects/"+url.PathEscape(id), http.StatusSeeOther)
+		http.Redirect(w, r, "/projects/"+url.PathEscape(id)+"/settings", http.StatusSeeOther)
 	case errors.Is(err, service.ErrProjectNotFound):
 		s.projectGone(w, r, id)
 	case errors.Is(err, service.ErrNotEmpty):
-		s.projectPage(w, r, http.StatusConflict, id, projectExtras{Alert: refusedWithApps(sentence{plain("Can't delete "), mono(name), plain(": ")}, err)})
+		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Alert: refusedWithApps(sentence{plain("Can't delete "), mono(name), plain(": ")}, err)})
 	case errors.Is(err, service.ErrProtected):
-		s.projectPage(w, r, http.StatusConflict, id, projectExtras{Alert: sentence{plain("Can't delete "), mono(name),
+		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Alert: sentence{plain("Can't delete "), mono(name),
 			plain(": apps that existed before projects live there, and their IDs depend on it.")}})
 	default:
 		s.serverError(w, "delete environment", err)
@@ -384,7 +382,7 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, session s
 		return
 	}
 	if r.PostForm.Get("confirm") != id {
-		s.projectPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Delete: &projectDelete{Open: true,
+		s.settingsPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Delete: &projectDelete{Open: true,
 			Error: sentence{plain("Type "), mono(id), plain(" to confirm.")}}})
 		return
 	}
@@ -400,9 +398,9 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, session s
 				del.Apps = append(del.Apps, projectApp{Name: appID, Href: "/apps/" + url.PathEscape(appID)})
 			}
 		}
-		s.projectPage(w, r, http.StatusConflict, id, projectExtras{Delete: &del})
+		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Delete: &del})
 	case errors.Is(err, service.ErrProtected):
-		s.projectPage(w, r, http.StatusConflict, id, projectExtras{Delete: &projectDelete{Open: true,
+		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Delete: &projectDelete{Open: true,
 			Notice: sentence{plain("This project can't be deleted: apps that existed before projects live in it.")}}})
 	default:
 		s.serverError(w, "delete project", err)

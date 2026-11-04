@@ -688,9 +688,10 @@ func (c *console) consoleLogs(t *testing.T) {
 	}
 	for _, path := range []string{"/apps", "/logs", "/apps/" + idA + "/logs", "/domains"} {
 		body := page(path, http.StatusOK)
+		// The sidebar's order since 027.5: Logs is in Workspace, before Domains in Configure.
 		d, l := strings.Index(body, `<a href="/domains" class="cv-nav-item"`), strings.Index(body, `<a href="/logs" class="cv-nav-item"`)
-		if d < 0 || l < d {
-			errorf("%s's sidebar doesn't list Logs after Domains (at %d and %d)", path, d, l)
+		if l < 0 || d < l {
+			errorf("%s's sidebar doesn't list Logs before Domains (at %d and %d)", path, l, d)
 		}
 	}
 	empty := page("/logs?app="+idB+"&q=nothing-matches-this", http.StatusOK)

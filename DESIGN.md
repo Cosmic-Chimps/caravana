@@ -335,7 +335,8 @@ in place never shifts its neighbors.
 
 - **Shell:** a fixed left sidebar (248px, Unlit Panel, a Hairline at its edge) with the brand block
   on top (the host's initial, the host and `caravana <version>`, a link to Home), a Workspace group
-  (Home, Projects), Settings in a block of its own and, at the foot, the account row: initials,
+  (Home, Projects, Logs, Monitoring, Schedules), a Configure group (Domains), Settings in a block of
+  its own and, at the foot, the account row: initials,
   "Account", the email in mono and a Sign out icon button. A sticky top bar (52px, Unlit Panel, a
   Hairline under it) holds the breadcrumbs on the left (`Default / production`: project and
   environment, never the app, whose name is the page's h1), then the live indicator, then "New app"
@@ -439,6 +440,8 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   moves to Lit Control with a Strong Edge border.
 - **Ghost:** no fill, Body Text. Hover adds a Lit Control fill and Readout White text. For "Why?"
   and inline toolbar actions.
+- **Disabled:** every button, whatever its kind, at opacity 0.45 with `cursor: not-allowed`
+  (`.cv-btn:disabled`, one console-wide rule, feature 027.5). A disabled button says why beside it.
 - **Danger:** Fault Ember text on its tinted ground with the Fault Ember edge. The border goes
   full Fault Ember on hover. Destructive actions confirm in a `<details>` disclosure under their button (see
   Confirmation), never in a modal.
@@ -529,8 +532,9 @@ Data mono with "made …" under it, what the token can do, when it was last used
 time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
 
 ### Navigation
-- **Sidebar:** only pages that exist are linked: Home and Projects under a "Workspace" Label, and
-  Settings below. Each item is 34px tall with 4px corners, a 16px Lucide icon in Label Text and the
+- **Sidebar:** only pages that exist are linked, in the handoff's order (feature 027.5): Home, Projects,
+  Logs, Monitoring and Schedules under a "Workspace" Label, Domains under a "Configure" Label, and Settings
+  below. Each item is 34px tall with 4px corners, a 16px Lucide icon in Label Text and the
   name in Body. The current one sits on Raised Control with its text and icon in Readout White and a
   2px bar inside its left edge in Signal Blue (a bar, not a fill: the accent is kept for this and
   focus). Home is current on the Apps list, Projects on the Projects pages and on every page of an
@@ -539,7 +543,7 @@ time in the `title`. Only an active row has "Revoke", which opens a confirmation
   initials in a 30px disc, "Account", the email in mono (cut with an ellipsis) and a Sign out
   icon button, which stays a POST form.
 - **Menu (under 900px):** a `<details>` whose summary is a small secondary button, opening a panel
-  of the same three blocks on Panel Face with 6px corners and the overlay shadow, 360px at most.
+  of the same blocks on Panel Face with 6px corners and the overlay shadow, 360px at most.
 - **Tabs:** five, by intent (Running, Deployments, Configure, Logs, Backups). They are links to their own pages, 46px tall, 26px apart, sans 500 at
   13.5px, over a Hairline rule. Inactive tabs use Label Text, turn Body Text on hover, and the
   current one (`aria-current="page"`) is Readout White with a 2px Readout White underline. A mono
@@ -821,6 +825,63 @@ Deploying now, the filter, the groups.
   and the same in the needs-you list. The older deployment is the newest healthy one before the failed
   one with a recorded definition and pinned images (the one Nomad's message names, when the history has
   it). When none matches, the wording stays "v3".
+
+### The project page (feature 027.5)
+Values from `specs/027.5-project-page/contracts/project-screen.md`, the handoff's `ProjectScreen`. A
+project's page, `/projects/{project}` (`?env=<environment>`), leads with the apps; the forms that used to be it
+(display name, Add environment, the deletes) are on `/projects/{project}/settings`.
+- **Header.** Gap 18 between the title row and the tabs row. The title row: the h1 in **sans 500 26px
+  Readout White** (a project is a name the owner typed, not a Nomad name, so not the app title's mono), the
+  project's name in mono 15px muted beside it when it says something else than the display name (nothing for
+  `Default`), then one group (`cv-pj-actions`, pushed right, wrapping together under the title) of two
+  secondary sm buttons: "Project settings" (the `settings` icon) and "New app here" (the `plus` icon, to New
+  app with this environment chosen; the top bar's "New app" stays the page's one primary action). The tabs row
+  is a `<nav aria-label="Environments">`: gap 8, wrapping, a Hairline under it, 14px padding. Each environment
+  is a link badge (`EnvBadge`): 24px tall, 0 9px, 2px corners, mono 500 12px, Body Text on no ground with a 1px
+  Line border; the **current** one (`aria-current="page"`) wins on every channel: Readout White text, Raised
+  Control's third ground and the stronger Line (production gets no special color). Hover changes the ground
+  only. On a coarse pointer a badge is 44px tall, like the nav items. Then "+ Environment", a secondary sm
+  button to the settings page's Add environment. The row is drawn with one environment: it is the page that
+  grows a project. `?env=` names the environment; an unknown one (deleted meanwhile) is production when the
+  project has it, else its first, with no error.
+- **The table.** A label "Apps · N", then a panel of rows; each row is **one link** to the app. Grid
+  `minmax(0,1.3fr) 150px 90px minmax(0,1.3fr) 150px`, column gap 16, padding 0 18, min-height 48: the name (the
+  Apps home's cell: mono 500 14px and the kind word), the quiet sm pill with the console's words, the
+  **copy marks**, the address, and the version with when. Problems sort first. The panel is a container: under
+  720px of its own width a row is two lines (name, kind, pill and the copy marks; then the address and the
+  version), and nothing scrolls sideways at 390px.
+- **Copy marks.** One 7px mark per wanted copy, gap 4, from the app's per-service counts (no call to Nomad for
+  a list): the healthy ones ● first, then the rest in the app's kind: ◐ while it rolls out, ◆ when it is short
+  of copies, ■ when nothing runs, ○ when it is stopped. Services are groups 8px apart, each titled with its
+  service's name when there are several. Over 12 copies the cell says "N copies" in muted mono 12px; an app
+  never deployed or not defined draws "—". A screen reader hears "2 of 2 copies healthy" (or "none").
+- **Address and version.** The first domain in mono 13px Body Text, cut with an ellipsis (`title` holds it),
+  " +2" after it in muted text when there are more, "no address" muted when none; text, not a link, because the
+  row is the link. The version is right-aligned mono 13px muted: `v7 · 2 hours ago`, `v5 → v6` while rolling
+  out (the arrow is for the eye), "—" when never deployed.
+- **The rail** (the console's 400px, stacking under the table at its breakpoint) has up to three sections,
+  in the Problems-First order, 28 apart, each a label and a panel 10 apart. **Needs you** leads: the home's
+  rows for the environment's items only (the host's items stay on the home), without the place before the
+  app's name, not drawn with none. **Environment**: a panel with 18 padding and a two-column grid (keys in
+  Label Text, values in Body Text, 12px/18px gaps; under 640px each key sits over its value) with Deploys (how
+  the environment was last deployed, in the console's who-words capitalized and followed by "· when", which
+  never breaks: "Pushed to `main` by ana · 2 hours ago", "None yet"), Addresses and, for each other
+  environment, "Promote to `<env>`" with one secondary sm link per app that can be promoted there (the
+  header's cheap test and an app of the same name in the target; the promotion plan is never run to draw a
+  page). There is no Apps row: the table's label and the needs-you list say it. **Deploys in `<env>`**: the
+  Activity rows for the environment's newest 10 deployments without the `Where` prefix, or "No deploys in
+  `<env>` yet.".
+- **Settings** (`/projects/{project}/settings`). The four sections (Display name, Environments, Add
+  environment, Delete project) are each capped at the same 640px (`cv-narrow`). The lede doesn't link back
+  (the crumb does). The closed Delete project panel says "The project has to be empty first: no app is deleted
+  for you." before its `Delete project…` button; the confirmation keeps its own text.
+- **Back to the tab.** An app's project crumb, its environment crumb (a link only when it isn't the last) and
+  the narrow back-link row's project link lead to `/projects/{project}?env={environment}`.
+- **Live.** The table and the rail are two regions, each reloaded from its own `/parts/projects/{project}/...`
+  route; the header and the tabs sit outside both.
+- **Left out, and why.** The handoff's branch and deploy rule (they live in CI), shared variables (Phase 4's
+  `VariablesScreen`), a Backups workspace page (its own contract), and "Add service" (it reads "New app here":
+  one App is one Nomad job, and the console never calls an app a service).
 
 ### Schedules (feature 022, page 5)
 Values from `specs/022-schedules/contracts/schedules-screen.md`. A workspace page, `/schedules`: the

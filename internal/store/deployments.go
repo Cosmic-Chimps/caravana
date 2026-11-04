@@ -316,6 +316,27 @@ func (s *Store) ListRecentDeployments(ctx context.Context, limit int) ([]Deploym
 	return out, nil
 }
 
+// ListRecentDeploymentsIn is ListRecentDeployments for the apps of one project
+// and environment (feature 027.5): the newest deployments of the place, newest
+// first, at most limit of them. It filters in SQL, so an environment whose
+// deployments are old still lists them, which cutting down the global list
+// would not. A limit below 1 returns none.
+func (s *Store) ListRecentDeploymentsIn(ctx context.Context, project, environment string, limit int) ([]DeploymentRecord, error) {
+	if limit < 1 {
+		return []DeploymentRecord{}, nil
+	}
+	out, err := s.queryDeployments(ctx,
+		"SELECT "+deploymentColumns+" FROM "+deploymentSource+" WHERE project = ? AND environment = ? ORDER BY created_at DESC, id LIMIT ?",
+		project, environment, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent deployments of %s/%s: %w", project, environment, err)
+	}
+	if out == nil {
+		out = []DeploymentRecord{}
+	}
+	return out, nil
+}
+
 // terminalStatuses lists the final statuses, derived from allowedNext: a
 // status some other status may change to and that itself has no way out. The
 // list is sorted, so the SQL built from it never changes between calls.

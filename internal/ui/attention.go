@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/metrics"
@@ -32,9 +33,18 @@ type attentionRegion struct {
 // loadAttention reads the needs-you list and turns it into the region. The
 // items come back too, for the Apps headline, which counts the apps in them.
 func (s *server) loadAttention(r *http.Request, pl places, sums []service.AppSummary) (attentionRegion, []service.AttentionItem, error) {
+	return s.loadAttentionWhere(r, pl, sums, nil)
+}
+
+// loadAttentionWhere is loadAttention for the items keep accepts (nil keeps them
+// all): the project page's rail lists the items of one environment.
+func (s *server) loadAttentionWhere(r *http.Request, pl places, sums []service.AppSummary, keep func(service.AttentionItem) bool) (attentionRegion, []service.AttentionItem, error) {
 	att, err := s.svc.Attention(r.Context())
 	if err != nil {
 		return attentionRegion{}, nil, err
+	}
+	if keep != nil {
+		att.Items = slices.DeleteFunc(slices.Clone(att.Items), func(it service.AttentionItem) bool { return !keep(it) })
 	}
 	now := s.now()
 	byID := make(map[string]service.AppSummary, len(sums))

@@ -143,13 +143,19 @@ var consoleParity = map[string]parity{
 	// The terminal page (feature 020.6) holds xterm.js, which connects to the websocket.
 	"GET /apps/{id}/copies/{copyId}/terminal": {ops: []string{"openTerminal"}},
 	// Projects and environments (feature 019).
-	"GET /projects":                         {ops: []string{"listProjects"}},
-	"GET /projects/new":                     {why: "a blank form; creating the project is POST /projects"},
-	"POST /projects":                        {ops: []string{"createProject"}},
-	"GET /projects/{project}":               {ops: []string{"getProject", "listEnvironmentApps"}},
-	"POST /projects/{project}":              {ops: []string{"updateProject"}},
-	"POST /projects/{project}/delete":       {ops: []string{"deleteProject"}},
-	"POST /projects/{project}/environments": {ops: []string{"createEnvironment"}},
+	"GET /projects":     {ops: []string{"listProjects"}},
+	"GET /projects/new": {why: "a blank form; creating the project is POST /projects"},
+	"POST /projects":    {ops: []string{"createProject"}},
+	// The project's page (feature 027.5): the project, its apps, what needs the owner (listAttention) and the
+	// environment's newest deployments (listRecentDeployments; the API has no environment filter yet, the
+	// page reads the store by place). The settings page is the project and its apps, for the delete reasons.
+	"GET /projects/{project}":                                    {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
+	"GET /projects/{project}/settings":                           {ops: []string{"getProject", "listEnvironmentApps"}},
+	"GET /parts/projects/{project}/apps":                         {ops: []string{"getProject", "listEnvironmentApps"}},
+	"GET /parts/projects/{project}/rail":                         {ops: []string{"getProject", "listEnvironmentApps", "listAttention", "listRecentDeployments"}},
+	"POST /projects/{project}":                                   {ops: []string{"updateProject"}},
+	"POST /projects/{project}/delete":                            {ops: []string{"deleteProject"}},
+	"POST /projects/{project}/environments":                      {ops: []string{"createEnvironment"}},
 	"POST /projects/{project}/environments/{environment}/delete": {ops: []string{"deleteEnvironment"}},
 	// Promote and copy between environments. The page reads the preview, which is a POST in the API
 	// because it takes a body but changes nothing; the form posts the promotion.

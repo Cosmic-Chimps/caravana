@@ -1,6 +1,69 @@
-{{/* The project pages (feature 019): New project (/projects/new) and a project's own page
-     (/projects/{project}): its display name, its environments with their apps, a form to add
-     an environment, and Delete project. Every form is a plain post. Takes a projectsPage. */}}
+{{/* The project pages: New project (/projects/new, feature 019), a project's own page
+     (/projects/{project}, feature 027.5: the handoff's ProjectScreen, with a tab per environment, the
+     environment's apps as a table and a rail) and its settings (/projects/{project}/settings: display
+     name, environments, add environment, Delete project, each a plain post). Takes a projectsPage. */}}
+
+{{/* project-apps-region: the label and the table of the environment's apps, or the empty state. The page
+     draws it in #project-apps and /parts/projects/{project}/apps draws it alone. Takes a projectApps. */}}
+{{define "project-apps-region"}}
+<h2 class="cv-label">Apps · {{.Count}}</h2>
+<div class="cv-panel cv-pj">
+  {{range .Rows}}
+  <a href="{{.Href}}" class="cv-row cv-pj-row">
+    <span class="cv-pj-name cv-namecell" title="{{.Name}}"><span class="cv-app-name">{{.Name}}</span>{{with .Kind}}<span class="cv-kind">{{.}}</span>{{end}}</span>
+    <span class="cv-pj-status"><span class="cv-pill cv-pill-{{.Status.Kind}} cv-pill-quiet cv-pill-sm"><span class="cv-mark cv-mark-{{.Status.Kind}}" aria-hidden="true"></span>{{.Status.Word}}</span></span>
+    <span class="cv-pj-marks">{{with .Marks}}{{if .None}}<span class="cv-pj-none" aria-hidden="true">—</span>{{else if .Count}}<span class="cv-pj-none" aria-hidden="true">{{.Count}}</span>{{else}}<span class="cv-pj-groups" aria-hidden="true">{{range .Groups}}<span class="cv-pj-group"{{with .Service}} title="{{.}}"{{end}}>{{range .Kinds}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}</span>{{end}}</span>{{end}}<span class="sr-only">{{.Words}}</span>{{end}}</span>
+    <span class="cv-pj-addr">{{if .Address}}<span class="cv-pj-host" title="{{.Address}}">{{.Address}}</span>{{with .More}}<span class="cv-pj-more"> +{{.}}</span>{{end}}{{else}}<span class="cv-pj-none">no address</span>{{end}}</span>
+    <span class="cv-pj-ver">{{if .Deploy}}{{$v := .Version}}{{if $v}}{{$v}}{{end}}{{with .Next}}{{if $v}}<span aria-hidden="true"> → </span>{{end}}<span class="sr-only"> rolling out </span>{{.}}{{end}}{{if or .Version .Next}} · {{end}}{{template "time" .Deploy.When}}{{else}}—{{end}}</span>
+  </a>
+  {{else}}
+  <div class="cv-empty">
+    {{if .Env}}
+    <p class="cv-empty-title">No apps in <span class="cv-inline-mono text-fg-1">{{.Env}}</span> yet.</p>
+    {{with .NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New app here</a>{{end}}
+    {{else}}
+    <p class="cv-empty-title">This project has no environment yet.</p>
+    <a href="{{.AddEnvHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Environment</a>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* project-rail-region: what needs the owner in the environment (only with items, first), the Environment
+     panel and its newest deploys. The page draws it in #project-rail and /parts/projects/{project}/rail draws it
+     alone. Takes a projectRail. */}}
+{{define "project-rail-region"}}
+{{if .Env}}
+<div class="cv-pj-rail">
+  {{if .Attention.Rows}}
+  <section class="cv-pj-sec" aria-labelledby="pj-need-title">
+    <h2 class="cv-label" id="pj-need-title">Needs you</h2>
+    {{template "attention-region" .Attention}}
+  </section>
+  {{end}}
+  <section class="cv-pj-sec" aria-labelledby="pj-env-title">
+    <h2 class="cv-label" id="pj-env-title">Environment</h2>
+    <dl class="cv-panel cv-pj-env">
+      <dt class="cv-label">Deploys</dt>
+      <dd>{{if .HasDeploy}}{{template "sentence" .DeployWho}}<span class="cv-nowrap"> · {{template "time" .DeployWhen}}</span>{{else}}None yet{{end}}</dd>
+      <dt class="cv-label">Addresses</dt>
+      <dd>{{.Addresses}}</dd>
+      {{range .Promote}}
+      <dt class="cv-label">Promote to <span class="cv-inline-mono">{{.Env}}</span></dt>
+      <dd class="cv-pj-promote">{{range .Apps}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Name}}</a>{{end}}</dd>
+      {{end}}
+    </dl>
+  </section>
+  <section class="cv-pj-sec" aria-labelledby="pj-deploys-title">
+    <h2 class="cv-label" id="pj-deploys-title">Deploys in <span class="cv-inline-mono">{{.Env}}</span></h2>
+    <div class="cv-panel">
+      {{if .Activity}}{{template "activity-region" .}}{{else}}<p class="cv-pj-nodeploys">No deploys in <span class="cv-inline-mono text-fg-1">{{.Env}}</span> yet.</p>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}
+{{end}}
 
 {{define "content"}}
 {{if .Gone}}
@@ -54,19 +117,41 @@
     <div><button type="submit" class="cv-btn cv-btn-primary">Create project</button></div>
   </form>
 </section>
+{{else if .Screen}}
+{{with .Screen}}
+{{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<header class="cv-pj-head">
+  <div class="cv-pj-title">
+    <h1 class="cv-pj-h1">{{.Display}}</h1>
+    {{with .Slot}}<span class="cv-pj-slot cv-inline-mono">{{.}}</span>{{end}}
+    <span class="cv-pj-actions">
+      <a href="{{.SettingsHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "settings" 14}}Project settings</a>
+      {{with .NewHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}New app here</a>{{end}}
+    </span>
+  </div>
+  <nav aria-label="Environments" class="cv-pj-tabs">
+    {{range .Tabs}}<a href="{{.Href}}" class="cv-envtab"{{if .Current}} aria-current="page"{{end}}>{{.Name}}</a>{{end}}
+    <a href="{{.AddEnvHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "plus" 14}}Environment</a>
+  </nav>
+</header>
+<div class="cv-split">
+  <section class="cv-pj-sec" aria-label="Apps" id="project-apps" hx-get="{{.AppsHref}}" hx-trigger="sse:apps, sse:deployments, sse:copies, sse:sync" hx-swap="innerHTML">{{template "project-apps-region" .Apps}}</section>
+  <aside class="cv-rail" aria-label="{{.Env}} environment" id="project-rail" hx-get="{{.RailHref}}" hx-trigger="sse:apps, sse:attention, sse:activity, sse:deployments, sse:sync" hx-swap="innerHTML">{{template "project-rail-region" .Rail}}</aside>
+</div>
+{{end}}
 {{else}}
 {{with .Project}}
 <section class="cv-main">
   <header class="cv-pagehead">
-    <h1 class="cv-headline">{{.Display}}</h1>
-    <p class="cv-lede">Project <span class="cv-inline-mono text-fg-1">{{.ID}}</span>. Its environments and the apps in them.</p>
+    <h1 class="cv-headline">{{.Display}} settings</h1>
+    <p class="cv-lede">Project <span class="cv-inline-mono text-fg-1">{{.ID}}</span>. Its display name, its environments and, if it is empty, its deletion.</p>
   </header>
   {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 
-  <section aria-labelledby="display-title" class="flex flex-col gap-2">
+  <section aria-labelledby="display-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="display-title" class="cv-label">Display name</h2>
-    <form method="post" action="/projects/{{.ID}}" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
+    <form method="post" action="/projects/{{.ID}}" class="cv-panel p-4 flex flex-col gap-3">
       <label class="cv-fld" for="displayName">
         <span class="cv-label">Display name</span>
         <input class="cv-field cv-field-mono" id="displayName" type="text" name="displayName" value="{{.Name.Value}}" autocomplete="off" maxlength="100" required{{if .Name.Error}} aria-invalid="true" aria-describedby="displayName-error"{{end}}{{if .Name.Alert}} autofocus{{end}}>
@@ -77,7 +162,7 @@
     </form>
   </section>
 
-  <section aria-labelledby="envs-title" class="flex flex-col gap-2">
+  <section aria-labelledby="envs-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="envs-title" class="cv-label">Environments</h2>
     <div class="cv-panel" role="list" aria-label="Environments">
       {{range .Envs}}{{$env := .Name}}
@@ -99,9 +184,9 @@
     </div>
   </section>
 
-  <section aria-labelledby="add-env-title" class="flex flex-col gap-2">
+  <section id="add-environment" aria-labelledby="add-env-title" class="cv-narrow flex flex-col gap-2">
     <h2 id="add-env-title" class="cv-label">Add environment</h2>
-    <form method="post" action="/projects/{{.ID}}/environments" class="cv-panel p-4 flex flex-col gap-3 cv-narrow">
+    <form method="post" action="/projects/{{.ID}}/environments" class="cv-panel p-4 flex flex-col gap-3">
       <label class="cv-fld" for="environment">
         <span class="cv-label">Name</span>
         <input class="cv-field cv-field-mono" id="environment" type="text" name="environment" value="{{.AddEnv.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="63" required{{if .AddEnv.Error}} aria-invalid="true" aria-describedby="environment-error"{{end}}{{if .AddEnv.Alert}} autofocus{{end}}>
@@ -113,9 +198,10 @@
   </section>
 
   {{if .Delete.Offered}}
-  <section aria-labelledby="delete-title" class="cv-danger flex flex-col gap-2">
+  <section aria-labelledby="delete-title" class="cv-danger cv-narrow flex flex-col gap-2">
     <h2 id="delete-title" class="cv-label">Delete project</h2>
     <div class="cv-panel cv-danger-panel p-4">
+      <p class="cv-hint mb-3">The project has to be empty first: no app is deleted for you.</p>
       <details class="cv-confirm"{{if .Delete.Open}} open{{end}}>
         <summary class="cv-btn cv-btn-danger cv-btn-sm">Delete project…</summary>
         {{with .Delete}}

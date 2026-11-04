@@ -162,6 +162,9 @@ func (s *server) routeTable() []route {
 		{"GET", "/projects/new", s.requireSession(s.showNewProject)},
 		{"POST", "/projects", s.protected(s.requireSession(s.createProject))},
 		{"GET", "/projects/{project}", s.requireSession(s.showProject)},
+		{"GET", "/projects/{project}/settings", s.requireSession(s.showProjectSettings)},
+		{"GET", "/parts/projects/{project}/apps", s.requirePart(s.partProjectApps)},
+		{"GET", "/parts/projects/{project}/rail", s.requirePart(s.partProjectRail)},
 		{"POST", "/projects/{project}", s.protected(s.requireSession(s.updateProject))},
 		{"POST", "/projects/{project}/delete", s.protected(s.requireSession(s.deleteProject))},
 		{"POST", "/projects/{project}/environments", s.protected(s.requireSession(s.addEnvironment))},
@@ -346,8 +349,9 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/logs.html")
 		}
 		// The Operator Overview draws the Needs-you list with the Developer home's own template
-		// (feature 027): apps.html comes first, so the page's own "content" is the one the set keeps.
-		if name == "ops" {
+		// (feature 027), and a project's page its rail's Needs-you list and Activity rows (feature
+		// 027.5): apps.html comes first, so the page's own "content" is the one the set keeps.
+		if name == "ops" || name == "projects" {
 			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")

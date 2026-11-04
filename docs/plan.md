@@ -298,7 +298,7 @@ sense, even where the layout differs (007 and 014 record the differences).
 | --- | --- | --- |
 | `LoginScreen` | password sign-in | 2-step code in 2.6; SSO and reset link in Phase 4 |
 | `DevHome` | Apps home: headline, needs-you, activity | "Deploying now" card in 021; the Platform panel in 025 |
-| `DevHome` › `ProjectScreen` | project page, copy, promote (019) | environment switcher and "Deploys in staging" rail in 021 |
+| `DevHome` › `ProjectScreen` | project page, copy, promote (019); the environment tabs, the apps table and the rail with "Deploys in staging" (027.5, `specs/027.5-project-page`) | shared variables in Phase 4 |
 | `AppScreen` | Running, Deployments, Configure, Logs, Backups | Restart and Stop in 020.5; Configure's short form in 021 |
 | `DeployScreen` | a progress line in the deployment entry | 021 (stages); the Build stage with the build server in Phase 3 |
 | `NewAppScreen` | image and Compose sources | "From a GitHub repo" (CI builds) in 020, examples in 2.6, binary in 3.5, git built on a build server in Phase 3 |

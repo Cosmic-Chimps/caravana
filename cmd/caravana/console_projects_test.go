@@ -94,11 +94,12 @@ func (c *console) projects(t *testing.T) {
 
 	// Add an environment.
 	resp, body = c.post(t, "/projects/"+project+"/environments", url.Values{"environment": {"staging"}})
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/projects/"+project {
-		t.Fatalf("POST the environment = %d → %q, want 303 to the project's page: %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	// The project's page, with the new environment's tab current (feature 027.5).
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/projects/"+project+"?env=staging" {
+		t.Fatalf("POST the environment = %d → %q, want 303 to the project's page with staging's tab: %s", resp.StatusCode, resp.Header.Get("Location"), body)
 	}
-	if _, body = c.get(t, "/projects/"+project); !strings.Contains(body, "production") || !strings.Contains(body, "staging") {
-		t.Errorf("the project's page lacks its two environments:\n%s", pageText(body))
+	if _, body = c.get(t, "/projects/"+project+"?env=staging"); !strings.Contains(body, `>production</a>`) || !strings.Contains(body, `aria-current="page">staging</a>`) {
+		t.Errorf("the project's page lacks its two environments' tabs:\n%s", pageText(body))
 	}
 	if resp, _ = c.post(t, "/projects/"+project+"/environments", url.Values{"environment": {"staging"}}); resp.StatusCode != http.StatusConflict {
 		t.Errorf("POST the same environment again = %d, want 409", resp.StatusCode)
@@ -131,7 +132,7 @@ func (c *console) projects(t *testing.T) {
 	// The "/" between crumbs is its own element, so the spaces around it are the template's, not
 	// the page's meaning: any amount is fine.
 	crumbText := regexp.MustCompile(regexp.QuoteMeta(display) + `\s*/\s*staging`)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(where, `<a href="/projects/`+project+`" class="cv-crumb">`+display+`</a>`) ||
+	if resp.StatusCode != http.StatusOK || !strings.Contains(where, `<a href="/projects/`+project+`?env=staging" class="cv-crumb">`+display+`</a>`) ||
 		!crumbText.MatchString(pageText(where)) {
 		t.Fatalf("GET /apps/%s = %d; its crumbs are %q, want %q linked to the project", stagingID, resp.StatusCode, pageText(where), display+" / staging")
 	}
@@ -215,8 +216,8 @@ func (c *console) projects(t *testing.T) {
 	}
 	for _, environment := range []string{"staging", "production"} {
 		resp, body = c.post(t, "/projects/"+project+"/environments/"+environment+"/delete", nil)
-		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/projects/"+project {
-			t.Fatalf("POST the delete of %s = %d → %q: %s", environment, resp.StatusCode, resp.Header.Get("Location"), body)
+		if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/projects/"+project+"/settings" {
+			t.Fatalf("POST the delete of %s = %d → %q, want 303 to the settings page: %s", environment, resp.StatusCode, resp.Header.Get("Location"), body)
 		}
 	}
 	if resp, _ = c.post(t, "/projects/"+project+"/delete", url.Values{"confirm": {"wrong"}}); resp.StatusCode != http.StatusUnprocessableEntity {

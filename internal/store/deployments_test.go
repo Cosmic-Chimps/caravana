@@ -431,6 +431,57 @@ func TestListRecentDeployments(t *testing.T) {
 	}
 }
 
+func TestListRecentDeploymentsIn(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	for _, id := range []string{"lab--staging--web", "lab--production--web", "other--staging--web", "legacy"} {
+		a := apptest.Whoami().App
+		a.ID = id
+		if _, err := s.SaveApp(ctx, a, nil); err != nil {
+			t.Fatalf("SaveApp %s: %v", id, err)
+		}
+	}
+	if got, err := s.ListRecentDeploymentsIn(ctx, "lab", "staging", 10); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("with none = %#v, %v; want an empty, non-nil slice", got, err)
+	}
+
+	// Many deployments elsewhere must not push the place's old ones out of the list.
+	for _, d := range []struct{ app, id string }{
+		{"lab--staging--web", "s1"}, {"lab--production--web", "p1"}, {"lab--staging--web", "s2"},
+		{"other--staging--web", "o1"}, {"legacy", "l1"}, {"lab--production--web", "p2"}, {"other--staging--web", "o2"},
+	} {
+		if _, err := s.CreateDeployment(ctx, d.app, newDeployment(d.id), nil, nil, ""); err != nil {
+			t.Fatalf("create %s: %v", d.id, err)
+		}
+	}
+	for _, tc := range []struct {
+		name         string
+		project, env string
+		limit        int
+		want         []string
+	}{
+		{"staging of lab, newest first", "lab", "staging", 10, []string{"s2", "s1"}},
+		{"limited", "lab", "staging", 1, []string{"s2"}},
+		{"production of lab", "lab", "production", 10, []string{"p2", "p1"}},
+		{"another project's staging", "other", "staging", 10, []string{"o2", "o1"}},
+		{"an app from before projects is Default's production", "default", "production", 10, []string{"l1"}},
+		{"an environment without deployments", "lab", "preview", 10, []string{}},
+		{"a limit below 1 is none", "lab", "staging", 0, []string{}},
+	} {
+		list, err := s.ListRecentDeploymentsIn(ctx, tc.project, tc.env, tc.limit)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		got := deploymentIDs(list)
+		if len(got) == 0 && len(tc.want) == 0 {
+			continue
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestListDeploymentsBefore(t *testing.T) {
 	ctx := context.Background()
 	s := storeWithApps(t)

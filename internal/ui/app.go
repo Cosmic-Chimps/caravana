@@ -199,7 +199,7 @@ func (s *server) placeParts(ctx context.Context, h *appHeader, sum service.AppSu
 	}
 	h.Heading = cmp.Or(place.Name, sum.App.ID)
 	if !atHome(place) {
-		h.Place = &backPlace{Project: pl.display(place.Project), Href: "/projects/" + url.PathEscape(place.Project), Environment: place.Environment}
+		h.Place = &backPlace{Project: pl.display(place.Project), Href: projectEnvHref(place.Project, place.Environment), Environment: place.Environment}
 	}
 	if atHome(place) && pl.single() {
 		return

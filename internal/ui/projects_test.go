@@ -198,13 +198,14 @@ func TestNewProject(t *testing.T) {
 	}
 }
 
-func TestProjectPage(t *testing.T) {
+// The project's settings page (feature 027.5) holds the forms that were the project's page in 019.
+func TestProjectSettingsPage(t *testing.T) {
 	e := shopConsole(t)
 	e.deploy(t, shopWeb("staging", "latest"))
 
-	resp, body := e.get(t, "/projects/shop")
-	if resp.StatusCode != http.StatusOK || h1Text(t, body) != "Shop Floor" {
-		t.Fatalf("GET /projects/shop = %d, h1 %q", resp.StatusCode, h1Text(t, body))
+	resp, body := e.get(t, "/projects/shop/settings")
+	if resp.StatusCode != http.StatusOK || h1Text(t, body) != "Shop Floor settings" {
+		t.Fatalf("GET /projects/shop/settings = %d, h1 %q", resp.StatusCode, h1Text(t, body))
 	}
 	got := text(body)
 	for _, want := range []string{"production", "staging", "No apps in production yet.", "Move or delete its 1 app first."} {
@@ -214,6 +215,22 @@ func TestProjectPage(t *testing.T) {
 	}
 	if !strings.Contains(body, `<a href="/apps/shop--staging--web" class="cv-app-name">web</a>`) {
 		t.Errorf("staging doesn't list its app:\n%s", body)
+	}
+	// The sections are in the contract's order, and "+ Environment" has its target.
+	last := -1
+	for _, heading := range []string{`id="display-title"`, `id="envs-title"`, `id="add-env-title"`, `id="delete-title"`} {
+		i := strings.Index(body, heading)
+		if i < 0 || i < last {
+			t.Errorf("section %s is missing or out of order (at %d, after %d)", heading, i, last)
+		}
+		last = i
+	}
+	if !strings.Contains(body, `<section id="add-environment"`) {
+		t.Errorf("the Add environment section has no id add-environment:\n%s", body)
+	}
+	// The crumbs: the project (a link), then Settings; the sidebar's Projects is current.
+	if !strings.Contains(body, `<a href="/projects/shop" class="cv-crumb">Shop Floor</a>`) || !strings.Contains(body, `aria-current="page">Settings</span>`) {
+		t.Errorf("the crumbs aren't Shop Floor / Settings:\n%s", body)
 	}
 	// An environment with apps has its Delete off and says why; the empty one can be deleted.
 	if f := formWith(t, body, "/projects/shop/environments/staging/delete"); len(f.Disabled) != 1 {
@@ -227,9 +244,23 @@ func TestProjectPage(t *testing.T) {
 			t.Errorf("form %s = %+v, want a plain post", action, f)
 		}
 	}
+	// Every section is capped at one width, and the closed Delete panel says what it needs first.
+	if n := strings.Count(body, `class="cv-narrow flex flex-col gap-2"`) + strings.Count(body, `class="cv-danger cv-narrow flex flex-col gap-2"`); n != 4 {
+		t.Errorf("%d sections are capped with cv-narrow, want 4", n)
+	}
+	if !strings.Contains(got, "The project has to be empty first: no app is deleted for you. Delete project…") || strings.Contains(got, "Back to the project") {
+		t.Errorf("the Delete section or the lede is off:\n%s", got)
+	}
+	// The forms are not on the project's page any more: the table leads.
+	_, page := e.get(t, "/projects/shop")
+	for _, gone := range []string{`name="displayName"`, `name="environment"`, "Delete project", "/delete"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the project's page still holds %q", gone)
+		}
+	}
 
 	t.Run("Default offers neither delete", func(t *testing.T) {
-		_, page := e.get(t, "/projects/default")
+		_, page := e.get(t, "/projects/default/settings")
 		if strings.Contains(page, "/delete") || strings.Contains(text(page), "Delete project") {
 			t.Errorf("Default offers a delete:\n%s", text(page))
 		}
@@ -239,9 +270,11 @@ func TestProjectPage(t *testing.T) {
 	})
 
 	t.Run("an unknown project", func(t *testing.T) {
-		resp, body := e.get(t, "/projects/nope")
-		if resp.StatusCode != http.StatusNotFound || !strings.Contains(text(body), "There's no project called nope.") {
-			t.Errorf("GET = %d:\n%s", resp.StatusCode, text(body))
+		for _, path := range []string{"/projects/nope", "/projects/nope/settings"} {
+			resp, body := e.get(t, path)
+			if resp.StatusCode != http.StatusNotFound || !strings.Contains(text(body), "There's no project called nope.") {
+				t.Errorf("GET %s = %d:\n%s", path, resp.StatusCode, text(body))
+			}
 		}
 	})
 }
@@ -250,11 +283,11 @@ func TestProjectDisplayName(t *testing.T) {
 	e := shopConsole(t)
 
 	resp, _ := e.postForm(t, "/projects/shop", url.Values{"displayName": {"Shop & Co"}})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop?saved=1" {
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop/settings?saved=1" {
 		t.Fatalf("POST = %d to %q", resp.StatusCode, location(t, resp))
 	}
-	_, page := e.get(t, "/projects/shop?saved=1")
-	if h1Text(t, page) != "Shop & Co" || !strings.Contains(text(page), "Display name saved.") {
+	_, page := e.get(t, "/projects/shop/settings?saved=1")
+	if h1Text(t, page) != "Shop & Co settings" || !strings.Contains(text(page), "Display name saved.") {
 		t.Errorf("the page after saving:\n%s", text(page))
 	}
 
@@ -275,12 +308,13 @@ func TestAddAndDeleteEnvironments(t *testing.T) {
 	e.deploy(t, shopWeb("staging", "latest"))
 
 	resp, _ := e.postForm(t, "/projects/shop/environments", url.Values{"environment": {"qa"}})
-	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop" {
+	// The project's page with the new environment's tab current: it says what was made.
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop?env=qa" {
 		t.Fatalf("add = %d to %q", resp.StatusCode, location(t, resp))
 	}
-	_, page := e.get(t, "/projects/shop")
-	if !strings.Contains(text(page), "No apps in qa yet.") {
-		t.Errorf("qa isn't listed:\n%s", text(page))
+	_, page := e.get(t, location(t, resp))
+	if !strings.Contains(page, `aria-current="page">qa</a>`) || !strings.Contains(text(page), "No apps in qa yet.") {
+		t.Errorf("qa isn't the current tab, with its empty state:\n%s", text(page))
 	}
 
 	for _, tc := range []struct {
@@ -302,7 +336,7 @@ func TestAddAndDeleteEnvironments(t *testing.T) {
 
 	t.Run("delete an empty environment", func(t *testing.T) {
 		resp, _ := e.postForm(t, "/projects/shop/environments/qa/delete", nil)
-		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop" {
+		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/projects/shop/settings" {
 			t.Fatalf("delete = %d to %q", resp.StatusCode, location(t, resp))
 		}
 		if p, _ := e.Svc.Project(context.Background(), "shop"); len(p.Environments) != 2 {
@@ -522,8 +556,13 @@ func TestAppHeaderNamesPlaceAndOtherEnvironments(t *testing.T) {
 	if where != "Shop Floor /staging" {
 		t.Errorf("the crumbs = %q, want the project and the environment", where)
 	}
-	if !strings.Contains(body, `<a href="/projects/shop" class="cv-crumb">Shop Floor</a>`) {
-		t.Error("the project doesn't link to its page")
+	if !strings.Contains(body, `<a href="/projects/shop?env=staging" class="cv-crumb">Shop Floor</a>`) {
+		t.Error("the project doesn't link to its page on the app's environment")
+	}
+	// On a page that isn't a tab the environment isn't the last crumb, so it is a link too (the same one).
+	_, stop := e.get(t, "/apps/shop--staging--web/stop")
+	if !strings.Contains(stop, `<a href="/projects/shop?env=staging" class="cv-crumb">staging</a>`) {
+		t.Errorf("the environment's crumb doesn't lead back to its tab:\n%s", text(crumbLine.FindString(stop)))
 	}
 	if strings.Contains(body, "cv-where") {
 		t.Error("the header still has its place line")

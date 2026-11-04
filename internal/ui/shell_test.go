@@ -42,10 +42,11 @@ func navOf(t *testing.T, body string) []string {
 	return out
 }
 
-// The sidebar has exactly Home, Projects, Schedules and Settings on every page,
-// nothing that has no page yet, and the right one marked: Home on /apps, Projects on
-// the projects and on every page of an app, Schedules on /schedules (feature 022),
-// Settings on /settings. The top bar
+// The sidebar has exactly the handoff's order on every page (feature 027.5):
+// Workspace holds Home, Projects, Logs, Monitoring and Schedules, Configure holds
+// Domains, then Settings. It links nothing that has no page yet, and marks the right
+// one: Home on /apps, Projects on the projects and on every page of an app, Schedules
+// on /schedules (feature 022), Settings on /settings. The top bar
 // has New app, and the crumbs say where the page is (contracts/page1-shell.md).
 func TestShellOnEveryPage(t *testing.T) {
 	e := shopConsole(t)
@@ -61,6 +62,7 @@ func TestShellOnEveryPage(t *testing.T) {
 		{"/projects", "Projects", "Projects"},
 		{"/projects/default", "Projects", "Default"},
 		{"/projects/shop", "Projects", "Shop Floor"},
+		{"/projects/shop/settings", "Projects", "Shop Floor /Settings"},
 		{"/projects/new", "Projects", "Projects /New project"},
 		{"/apps/whoami", "Projects", "Default /production"},
 		{"/apps/whoami/deployments", "Projects", "Default /production"},
@@ -85,7 +87,7 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Fatalf("GET %s = %d:\n%s", tc.path, resp.StatusCode, text(body))
 			}
 
-			want := []string{"Home=/apps", "Projects=/projects", "Schedules=/schedules", "Domains=/domains", "Logs=/logs", "Monitoring=/monitoring", "Settings=/settings"}
+			want := []string{"Home=/apps", "Projects=/projects", "Logs=/logs", "Monitoring=/monitoring", "Schedules=/schedules", "Domains=/domains", "Settings=/settings"}
 			for i, item := range want {
 				if strings.HasPrefix(item, tc.active+"=") {
 					want[i] += "*"
@@ -95,6 +97,11 @@ func TestShellOnEveryPage(t *testing.T) {
 				t.Errorf("sidebar = %v, want %v", got, want)
 			}
 			side := text(sidebarRegion.FindString(body))
+			// Two group headings, in order: Workspace, then Configure with Domains under it.
+			if w, c := strings.Index(side, "Workspace"), strings.Index(side, "Configure"); w < 0 || c < w ||
+				strings.Index(side, "Domains") < c || strings.Index(side, "Schedules") > c {
+				t.Errorf("the sidebar's groups are not Workspace, then Configure with Domains: %s", side)
+			}
 			for _, absent := range []string{"Deploys", "Previews", "Backups"} {
 				if strings.Contains(side, absent) {
 					t.Errorf("the sidebar links %q, which has no page yet: %s", absent, side)
@@ -508,7 +515,7 @@ func TestAppHeaderBackRowForNarrowScreens(t *testing.T) {
 		t.Errorf("the back-link row reads %q, want the home link and the place", got)
 	}
 	for _, want := range []string{`<a href="/apps" class="cv-backlink" id="app-home">← Home</a>`,
-		`<span class="cv-backplace">`, `<a href="/projects/shop" class="cv-backlink">Shop Floor</a>`, `<span>staging</span>`} {
+		`<span class="cv-backplace">`, `<a href="/projects/shop?env=staging" class="cv-backlink">Shop Floor</a>`, `<span>staging</span>`} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the back-link row lacks %q:\n%s", want, row)
 		}

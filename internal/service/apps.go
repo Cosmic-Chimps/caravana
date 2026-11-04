@@ -240,6 +240,13 @@ func (s *Service) RecentDeployments(ctx context.Context, limit int) ([]store.Dep
 	return s.store.ListRecentDeployments(ctx, limit)
 }
 
+// RecentDeploymentsIn is RecentDeployments for one environment of a project
+// (feature 027.5): newest first, at most limit of them. The caller validates
+// limit.
+func (s *Service) RecentDeploymentsIn(ctx context.Context, project, environment string, limit int) ([]store.DeploymentRecord, error) {
+	return s.store.ListRecentDeploymentsIn(ctx, project, environment, limit)
+}
+
 // ListDeploymentsBefore returns the page of an app's deployments that comes
 // after one ending at before: the deployments created earlier, newest first,
 // at most limit of them (the caller validates limit). An unknown app is

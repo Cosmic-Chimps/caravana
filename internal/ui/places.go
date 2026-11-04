@@ -70,8 +70,9 @@ func atHome(pl app.Place) bool {
 // its environment, then more (a page that isn't one of the app's tabs adds the
 // app and itself). The app's own name is not a crumb when the page is a tab:
 // the header's h1 carries it. A project or environment is always named, also
-// at home ("Default / production"). The project links to its page; so does the
-// environment, which has none of its own. An app that can't be read is a
+// at home ("Default / production"). The project and the environment both link to
+// the project's page with the app's environment chosen (?env=; the environment's
+// crumb is a link only when it isn't the last). An app that can't be read is a
 // "Projects" crumb before more.
 func (s *server) appCrumbs(ctx context.Context, id string, more ...crumb) []crumb {
 	rec, err := s.svc.GetApp(ctx, id)
@@ -86,8 +87,13 @@ func (s *server) appCrumbs(ctx context.Context, id string, more ...crumb) []crum
 	if pl, err := s.loadPlaces(ctx); err == nil {
 		label = pl.display(project)
 	}
-	href := "/projects/" + url.PathEscape(project)
+	href := projectEnvHref(project, environment)
 	return append([]crumb{{Label: label, Href: href}, {Label: environment, Href: href, Container: true}}, more...)
+}
+
+// projectEnvHref is a project's page on one environment's tab.
+func projectEnvHref(project, environment string) string {
+	return "/projects/" + url.PathEscape(project) + "?env=" + url.QueryEscape(environment)
 }
 
 // label writes where an app is, as the console says it: the app's ID for an

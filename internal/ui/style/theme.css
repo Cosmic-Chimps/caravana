@@ -175,6 +175,8 @@
   .cv-btn-danger { background: var(--color-failed-bg); color: var(--color-failed); border-color: var(--color-failed-line); }
   .cv-btn-danger:hover { background: var(--color-danger-press); border-color: var(--color-failed); }
   .cv-btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
+  /* A button that can't be used looks it: dimmed, and the pointer says so (feature 027.5). */
+  .cv-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* Field (the handoff's Input md): raised control, 32px, sans values; a name, a path or a number
      adds .cv-field-mono (12.5px). The label above it is .cv-label. The sign-in's field is 42px. */
