@@ -33,6 +33,13 @@
   // DESIGN.md's dark colors as hex, since the terminal takes no oklch(): the
   // page ground, Readout White text, a Control Edge selection, and the four
   // status hues for the ANSI colors.
+  //
+  // This palette is the one permitted exception to DESIGN.md's Token-Only Color
+  // Rule (every colour is a token in theme.css with a dark and a light value).
+  // xterm.js takes hex, not CSS variables, and the terminal stays dark in both
+  // themes: programs write their colors assuming a dark terminal, and a terminal
+  // is a device set into the page, not a surface of the console (feature 028,
+  // contract section 4). theme_test.go skips this file by name.
   const term = new Terminal({
     fontFamily: '"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace',
     fontSize: 13,

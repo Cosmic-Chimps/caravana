@@ -185,12 +185,12 @@
      of mono text that wraps, with a ceiling so a long one scrolls instead of pushing the page down. */
   .cv-runfield { flex: 1 1 18rem; width: auto; min-width: 0; }
   .cv-output { margin: 0; padding: 10px 12px; max-height: 24rem; overflow: auto; background: var(--color-ink-2); border: 1px solid var(--color-line-2); border-radius: 4px; font: 400 12.5px/1.55 var(--font-mono); color: var(--color-fg-1); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .cv-output:focus-visible { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-output:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 
   /* The terminal page (feature 020.6): xterm.js fills the screen box. The box has the border and
      the height, the inner one none, because the fit addon measures the inner one; the padding is
      on xterm's own element, which the addon subtracts. The colors are set in static/js/terminal.js. */
-  .cv-terminal { height: clamp(16rem, 68vh, 44rem); background: var(--color-ink-0); border: 1px solid var(--color-line-2); border-radius: 4px; overflow: hidden; }
+  .cv-terminal { height: clamp(16rem, 68vh, 44rem); background: var(--color-terminal); border: 1px solid var(--color-line-2); border-radius: 4px; overflow: hidden; }
   .cv-terminal-screen { height: 100%; }
   .cv-terminal-screen .xterm { padding: 10px 12px; }
   .cv-terminal:focus-within { border-color: var(--color-line-3); }
@@ -266,14 +266,14 @@
   .cv-logform { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
   .cv-logpick { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   /* The console's one select: 32px like the field, with the field's 13px mono. */
-  .cv-select { width: auto; min-width: 11rem; max-width: 100%; height: 32px; border-radius: 2px; font: 400 13px/1 var(--font-mono); cursor: pointer; color-scheme: dark; }
+  .cv-select { width: auto; min-width: 11rem; max-width: 100%; height: 32px; border-radius: 2px; font: 400 13px/1 var(--font-mono); cursor: pointer; }
   /* The toolbar's buttons are as tall as its selects, so the row is one height. */
   .cv-logbar .cv-btn { height: 32px; }
 
   /* A checkbox with its label (Settings > Notifications: what a channel sends). The box takes
      the accent colour and sits on the first line of the label. */
   .cv-check { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); cursor: pointer; }
-  .cv-check input { flex: none; width: 14px; height: 14px; accent-color: var(--color-accent); color-scheme: dark; cursor: pointer; }
+  .cv-check input { flex: none; width: 14px; height: 14px; accent-color: var(--color-accent); cursor: pointer; }
   .cv-logtools { display: flex; gap: 8px; }
   .cv-logtools[hidden], .cv-log-note[hidden], .cv-log-empty[hidden] { display: none; }
   /* A toggle that is on: a lighter ground, a brighter edge and a bar under the label, not just a hue. */
@@ -281,7 +281,7 @@
   .cv-log { display: flex; flex-direction: column; min-width: 0; }
   .cv-log-note { padding: 8px 16px; border-bottom: 1px solid var(--color-line-1); font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); }
   .cv-log-lines { max-height: 70vh; overflow: auto; padding: 8px 0; font: 400 12.5px/1.6 var(--font-mono); font-variant-numeric: tabular-nums; }
-  .cv-log-lines:focus-visible { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-log-lines:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
   .cv-log-lines:empty { display: none; }
   .cv-log-line { display: grid; grid-template-columns: 5.5rem 3.25rem auto; column-gap: 10px; width: max-content; min-width: 100%; padding: 0 16px; }
   .cv-log-line:hover { background: var(--color-ink-2); }
@@ -506,7 +506,7 @@
 
   /* A field with a prefix or a suffix inside it (GET, MB, s): the box is the field, the input is bare. */
   .cv-field-box { display: flex; align-items: center; box-sizing: border-box; height: 32px; padding: 0; overflow: hidden; }
-  .cv-field-box:focus-within { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
+  .cv-field-box:focus-within { border-color: var(--color-line-3); outline: 2px solid var(--color-focus); outline-offset: 0; }
   .cv-field-box:has([aria-invalid="true"]) { border-color: var(--color-failed-line); }
   .cv-field-input { flex: 1; align-self: stretch; min-width: 0; height: auto; margin: 0; padding: 0 12px; background: transparent; border: 0; outline: 0; color: var(--color-fg-1); font: inherit; }
   .cv-affix { font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); white-space: nowrap; }
@@ -1307,7 +1307,7 @@
   .cv-logfilter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .cv-logfilter-div { flex: none; width: 1px; height: 22px; background: var(--color-line-2); }
   .cv-logsearch { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 280px; height: 36px; padding: 0 12px; border: 1px solid var(--color-line-2); border-radius: 4px; background: var(--color-ink-1); color: var(--color-fg-3); transition: border-color 120ms var(--ease-cv); }
-  .cv-logsearch:focus-within { border-color: var(--color-line-3); outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 0; }
+  .cv-logsearch:focus-within { border-color: var(--color-line-3); outline: 2px solid var(--color-focus); outline-offset: 0; }
   .cv-logsearch > .cv-icon { width: 14px; height: 14px; color: var(--color-fg-3); }
   .cv-logsearch-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; font: 400 14px/1 var(--font-mono); color: var(--color-fg-1); }
   .cv-logsearch-input::placeholder { color: var(--color-fg-4); opacity: 1; }
@@ -1355,12 +1355,12 @@
   /* The service hue: the console's one identity color, six low-chroma hues the template picks by a
      stable hash of <app>/<service> (cv-hue-0 .. cv-hue-5), never a status hue's exact value. Put the
      class on the row or rail item; .cv-svchue (the 8px square) and .cv-svcname (the name) read it. */
-  .cv-hue-0 { --cv-hue: oklch(0.78 0.08 250); }
-  .cv-hue-1 { --cv-hue: oklch(0.78 0.09 300); }
-  .cv-hue-2 { --cv-hue: oklch(0.80 0.07 200); }
-  .cv-hue-3 { --cv-hue: oklch(0.80 0.08 150); }
-  .cv-hue-4 { --cv-hue: oklch(0.80 0.08 80); }
-  .cv-hue-5 { --cv-hue: oklch(0.78 0.08 20); }
+  .cv-hue-0 { --cv-hue: var(--color-hue-0); }
+  .cv-hue-1 { --cv-hue: var(--color-hue-1); }
+  .cv-hue-2 { --cv-hue: var(--color-hue-2); }
+  .cv-hue-3 { --cv-hue: var(--color-hue-3); }
+  .cv-hue-4 { --cv-hue: var(--color-hue-4); }
+  .cv-hue-5 { --cv-hue: var(--color-hue-5); }
   .cv-svchue { flex: none; width: 8px; height: 8px; border-radius: 1px; background: var(--cv-hue, var(--color-fg-3)); }
   .cv-svcname { color: var(--cv-hue, var(--color-fg-2)); }
 
@@ -1375,7 +1375,7 @@
   /* An empty bin with nothing to show: a 2px stub. */
   .cv-hbar-empty { fill: var(--color-line-2); }
   /* A bin older than what was read: drawn hatched (a dashed outline, never a zero bar). */
-  .cv-hbar-unread { fill: oklch(0.500 0.010 255 / 0.12); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+  .cv-hbar-unread { fill: var(--color-hatch-fill); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
   /* A deploy marker: a 1px dashed vertical line in the rolling hue. */
   .cv-hmark { stroke: var(--color-rolling); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; fill: none; }
   .cv-hmark-failed { stroke: var(--color-failed); }
@@ -1424,19 +1424,19 @@
   /* The ×N chip of a folded run of equal lines. */
   .cv-repeat { align-self: center; padding: 3px 6px; border: 1px solid var(--color-line-2); border-radius: 3px; font: 500 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
   /* An error row: a 7% failed tint. */
-  .cv-row-error { background: oklch(0.68 0.17 40 / 0.07); }
-  a.cv-row-error:hover { background: oklch(0.68 0.17 40 / 0.11); }
+  .cv-row-error { background: var(--color-failed-wash); }
+  a.cv-row-error:hover { background: var(--color-failed-wash-hover); }
   /* A fresh row (it arrived live): a 5% fg-1 tint over whatever the row is, fading out once in 600ms
      (the One Tick Rule). A veil, not the row's own ground, so an error row keeps its tint after. Under
      reduced motion there is no veil at all. */
-  .cv-row-fresh::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: oklch(0.955 0.004 255 / 0.05); animation: cv-fresh 600ms var(--ease-cv) forwards; }
+  .cv-row-fresh::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--color-fresh-wash); animation: cv-fresh 600ms var(--ease-cv) forwards; }
   @keyframes cv-fresh { from { opacity: 1; } to { opacity: 0; } }
   /* The line the "around this" view is about: a stronger tint and a bar at the edge. */
-  .cv-row-anchor, .cv-lrow:target { background: oklch(0.955 0.004 255 / 0.09); box-shadow: inset 2px 0 0 var(--color-fg-1); }
+  .cv-row-anchor, .cv-lrow:target { background: var(--color-anchor-wash); box-shadow: inset 2px 0 0 var(--color-fg-1); }
   /* The open row: its text wraps, and a strip of actions sits under it. */
   .cv-row-open { background: var(--color-ink-1); }
   .cv-row-open .cv-ltext { overflow: visible; text-overflow: clip; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .cv-row-open.cv-row-error { background: oklch(0.68 0.17 40 / 0.07); }
+  .cv-row-open.cv-row-error { background: var(--color-failed-wash); }
   .cv-rowstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px 10px 180px; background: var(--color-ink-1); border-top: 1px solid var(--color-line-1); border-bottom: 1px solid var(--color-line-1); }
   .cv-rowstrip .cv-btn { text-decoration: none; }
   .cv-rowstrip-note { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
@@ -1449,14 +1449,14 @@
   .cv-rowraw > pre { margin: 6px 0 0; padding: 8px 12px; background: var(--color-ink-0); border: 1px solid var(--color-line-1); border-radius: 4px; font: 400 12px/1.5 var(--font-mono); color: var(--color-fg-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* A deploy row: a rolling 8% tint between two rolling lines; time, rocket, the sentence. */
-  .cv-row-deploy { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; background: oklch(0.84 0.09 300 / 0.08); border-top: 1px solid var(--color-rolling-line); border-bottom: 1px solid var(--color-rolling-line); font: 500 13px/1.4 var(--font-mono); color: var(--color-rolling); text-decoration: none; }
-  a.cv-row-deploy:hover { background: oklch(0.84 0.09 300 / 0.13); color: var(--color-rolling); }
+  .cv-row-deploy { display: flex; align-items: baseline; gap: 12px; padding: 8px 16px; background: var(--color-rolling-wash); border-top: 1px solid var(--color-rolling-line); border-bottom: 1px solid var(--color-rolling-line); font: 500 13px/1.4 var(--font-mono); color: var(--color-rolling); text-decoration: none; }
+  a.cv-row-deploy:hover { background: var(--color-rolling-wash-hover); color: var(--color-rolling); }
   .cv-row-deploy > .cv-icon { flex: none; width: 13px; height: 13px; align-self: center; }
   .cv-row-deploy .cv-ltime { flex: none; width: 96px; font-weight: 400; color: var(--color-fg-3); }
   .cv-row-deploy-text { min-width: 0; overflow-wrap: anywhere; }
   /* A deploy that failed keeps the shape and takes the failed hues. */
-  .cv-row-deploy-failed { background: oklch(0.68 0.17 40 / 0.08); border-color: var(--color-failed-line); color: var(--color-failed); }
-  a.cv-row-deploy-failed:hover { background: oklch(0.68 0.17 40 / 0.13); color: var(--color-failed); }
+  .cv-row-deploy-failed { background: var(--color-failed-wash); border-color: var(--color-failed-line); color: var(--color-failed); }
+  a.cv-row-deploy-failed:hover { background: var(--color-failed-wash-hover); color: var(--color-failed); }
 
   /* Under the rows: the notes that the read hit Nomad's tail or that more exists, the empty and error
      sentences, and the footer. */
@@ -1588,7 +1588,7 @@
   /* From when a service became unusual to now: an 8% warn rect. */
   .cv-mnwarn { fill: var(--color-warn); opacity: 0.08; stroke: none; }
   /* A stretch with no samples: faint ground and a dashed edge, never a zero. */
-  .cv-mngap { fill: oklch(0.500 0.010 255 / 0.12); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+  .cv-mngap { fill: var(--color-hatch-fill); stroke: var(--color-fg-4); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
   .cv-mndeploy { stroke: var(--color-rolling); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; fill: none; }
   .cv-mndeploy-failed { stroke: var(--color-failed); }
   .cv-mnline { fill: none; stroke: var(--color-fg-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
@@ -1625,7 +1625,7 @@
   a.cv-mnname-text::after { content: ""; position: absolute; inset: 0; }
   a.cv-mnname-text:hover { color: var(--color-fg-1); }
   a.cv-mnname-text:focus-visible { outline: none; }
-  a.cv-mnname-text:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  a.cv-mnname-text:focus-visible::after { outline: 2px solid var(--color-focus); outline-offset: -2px; }
   .cv-mncopies { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
   .cv-mnnumber { font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); text-align: right; overflow-wrap: anywhere; }
   .cv-mnnumber-warn { color: var(--color-warn); }
@@ -1747,7 +1747,7 @@
   .cv-node-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
   .cv-opschip { height: 22px; gap: 6px; padding: 0 8px; color: inherit; text-decoration: none; transition: border-color 120ms var(--ease-cv); }
   .cv-opschip:hover { border-color: var(--color-line-3); color: inherit; }
-  .cv-copychip-failed { border-color: var(--color-failed-line); background: oklch(0.68 0.17 40 / 0.08); }
+  .cv-copychip-failed { border-color: var(--color-failed-line); background: var(--color-failed-wash); }
   .cv-node-more { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
 
   /* The apps table: a 36px head on ink-2, rows of 40px, one grid for both. State has 136px and Last change 160px,
@@ -1768,7 +1768,7 @@
   a.cv-opsapp::after { content: ""; position: absolute; inset: 0; }
   a.cv-opsapp:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   a.cv-opsapp:focus-visible { outline: none; }
-  a.cv-opsapp:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  a.cv-opsapp:focus-visible::after { outline: 2px solid var(--color-focus); outline-offset: -2px; }
   .cv-opscopies .cv-opsval { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
   .cv-opsmark { width: 7px; height: 7px; margin: 0; }
   .cv-opsmark.cv-mark-warning { width: 5.46px; height: 5.46px; margin: 0.77px; }
@@ -1780,7 +1780,7 @@
   /* An unusual app: a 7px warn diamond and the line, one link to the app's row on /monitoring. */
   .cv-opsunusual { display: flex; align-items: center; gap: 6px; min-width: 0; color: inherit; text-decoration: none; }
   .cv-opsunusual:hover .cv-opsspark-line { stroke-width: 1.75; }
-  .cv-opsunusual:focus-visible { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: 2px; border-radius: 2px; }
+  .cv-opsunusual:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 2px; }
   .cv-opsflag { flex: none; width: 5.46px; height: 5.46px; margin: 0.77px; }
   .cv-opsmem .cv-opsval { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .cv-opsreach .cv-opsval { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1850,7 +1850,7 @@
   .cv-srvlink::after { content: ""; position: absolute; inset: 0; }
   .cv-srvlink:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-srvlink:focus-visible { outline: none; }
-  .cv-srvlink:focus-visible::after { outline: 2px solid oklch(0.76 0.12 245 / 0.55); outline-offset: -2px; }
+  .cv-srvlink:focus-visible::after { outline: 2px solid var(--color-focus); outline-offset: -2px; }
   .cv-srvmetric { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .cv-srvval { font: 500 14px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-1); }
   .cv-srvunit { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
