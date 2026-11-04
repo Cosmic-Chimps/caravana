@@ -129,7 +129,7 @@ func TestShownAddress(t *testing.T) {
 		{notify.KindSlack, "https://chat.example.com/", "chat.example.com"},
 		{notify.KindSlack, "https://chat.example.com/services/", "chat.example.com/••••"},
 		{notify.KindWebhook, "https://hooks.example.com/caravana?x=1", "https://hooks.example.com/caravana?x=1"},
-		{notify.KindNtfy, "https://ntfy.sh/my-topic", "https://ntfy.sh/my-topic"},
+		{notify.KindNtfy, "https://ntfy.sh/my-topic", "ntfy.sh/••••"},
 	}
 	for _, tc := range tests {
 		if got := shownAddress(tc.kind, tc.url); got != tc.want {
@@ -187,11 +187,14 @@ func TestNotificationChannelSecrets(t *testing.T) {
 	if got := items(discord.ID); got["url"] == "" || len(got) != 1 {
 		t.Errorf("discord items = %v, want only the url", got)
 	}
-	if got := items(ntfy.ID); got["token"] != "tk_"+notifySecret || len(got) != 1 {
-		t.Errorf("ntfy items = %v, want only the token", got)
+	if got := items(ntfy.ID); got["token"] != "tk_"+notifySecret || got["url"] != "https://ntfy.sh/my-topic" || len(got) != 2 {
+		t.Errorf("ntfy items = %v, want the url and the token", got)
 	}
-	if got := items(bare.ID); len(got) != 0 {
-		t.Errorf("an ntfy channel without a token has items %v", got)
+	if got := items(bare.ID); got["url"] != "https://ntfy.sh/open-topic" || len(got) != 1 {
+		t.Errorf("an ntfy channel without a token has items %v, want only the url", got)
+	}
+	if ntfy.Address != "ntfy.sh/••••" || bare.Address != "ntfy.sh/••••" {
+		t.Errorf("ntfy addresses = %q and %q, want the masked form", ntfy.Address, bare.Address)
 	}
 
 	// The webhook's secret: 32 bytes in hex, returned once, stored in the variable.
@@ -227,6 +230,9 @@ func TestNotificationChannelSecrets(t *testing.T) {
 		case ntfy.ID:
 			if !c.HasToken {
 				t.Error("the ntfy channel with a token lists HasToken false")
+			}
+			if c.Address != "ntfy.sh/••••" {
+				t.Errorf("the listed ntfy address = %q, want ntfy.sh/••••", c.Address)
 			}
 		default:
 			if c.HasToken {
@@ -309,8 +315,25 @@ func TestUpdateNotificationChannel(t *testing.T) {
 			t.Fatalf("an edit that does not name the token lost it: %+v, %v", got, err)
 		}
 		got, err = e.svc.UpdateNotificationChannel(ctx, ntfy.ID, NotificationChannelPatch{Token: new("")})
-		if err != nil || got.HasToken || len(e.secretItems(t, ntfy.ID)) != 0 {
-			t.Fatalf("remove the token: %+v, %v", got, err)
+		if err != nil || got.HasToken || len(e.secretItems(t, ntfy.ID)) != 1 || e.secretItems(t, ntfy.ID)["url"] != "https://ntfy.sh/my-topic" {
+			t.Fatalf("remove the token: %+v, %v (the url item must stay)", got, err)
+		}
+	})
+
+	t.Run("a new ntfy url replaces the url item and shows only its host", func(t *testing.T) {
+		got, err := e.svc.UpdateNotificationChannel(ctx, ntfy.ID, NotificationChannelPatch{URL: new("https://ntfy.example.com/other-" + notifySecret)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Address != "ntfy.example.com/••••" {
+			t.Errorf("address = %q, want ntfy.example.com/••••", got.Address)
+		}
+		if e.secretItems(t, ntfy.ID)["url"] != "https://ntfy.example.com/other-"+notifySecret {
+			t.Error("the url item was not replaced")
+		}
+		raw, _ := json.Marshal(got)
+		if strings.Contains(string(raw), notifySecret) {
+			t.Errorf("the answer holds the topic: %s", raw)
 		}
 	})
 
@@ -606,4 +629,95 @@ func TestNotificationSecretsStayInTheVariable(t *testing.T) {
 		}
 		check(f.Name(), string(raw))
 	}
+}
+
+// A channel made before the topic was a secret has the whole URL in its row.
+// Listing it, sending to it or editing it moves the URL into the variable and
+// masks the row, and no answer ever holds the topic.
+func TestNtfyTopicMovesIntoTheSecretStore(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	rcv := newReceiver(t, http.StatusOK)
+	masked := strings.TrimPrefix(rcv.URL, "http://") + "/••••"
+	whole := rcv.URL + "/topic-" + notifySecret
+
+	// legacy saves a row the old way: the whole URL in SQLite, no variable.
+	legacy := func(t *testing.T, id string) {
+		t.Helper()
+		now := time.Now().UTC()
+		row := store.NotificationChannel{
+			ID: id, Kind: notify.KindNtfy, Name: "phone", Address: whole,
+			Events: []string{EventProblems}, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := e.store.SaveNotificationChannel(ctx, row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkMoved := func(t *testing.T, id string) {
+		t.Helper()
+		if got := e.secretItems(t, id)["url"]; got != whole {
+			t.Errorf("the url item = %q, want the whole topic", got)
+		}
+		row, err := e.store.GetNotificationChannel(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.Address != masked {
+			t.Errorf("the stored address = %q, want %q", row.Address, masked)
+		}
+	}
+	noTopic := func(t *testing.T, vs ...any) {
+		t.Helper()
+		for _, v := range vs {
+			raw, _ := json.Marshal(v)
+			if strings.Contains(string(raw), notifySecret) {
+				t.Errorf("a returned value holds the topic: %s", raw)
+			}
+		}
+	}
+
+	t.Run("listing moves it", func(t *testing.T) {
+		legacy(t, "nch_aaaaaaaaaaaa")
+		list, err := e.svc.NotificationChannels(ctx)
+		if err != nil || len(list) != 1 {
+			t.Fatalf("NotificationChannels() = %d, %v", len(list), err)
+		}
+		if list[0].Address != masked {
+			t.Errorf("listed address = %q, want %q", list[0].Address, masked)
+		}
+		noTopic(t, list)
+		checkMoved(t, "nch_aaaaaaaaaaaa")
+	})
+
+	t.Run("sending moves it and delivers to the topic", func(t *testing.T) {
+		legacy(t, "nch_bbbbbbbbbbbb")
+		d, err := e.svc.TestNotificationChannel(ctx, "nch_bbbbbbbbbbbb")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Status != "sent" {
+			t.Errorf("delivery status = %q, want sent", d.Status)
+		}
+		if len(rcv.got) != 1 || rcv.got[0].URL.Path != "/topic-"+notifySecret {
+			t.Fatalf("receiver got %d requests, want one to the topic path", len(rcv.got))
+		}
+		noTopic(t, d)
+		checkMoved(t, "nch_bbbbbbbbbbbb")
+	})
+
+	t.Run("editing moves it and keeps the token", func(t *testing.T) {
+		legacy(t, "nch_cccccccccccc")
+		got, err := e.svc.UpdateNotificationChannel(ctx, "nch_cccccccccccc", NotificationChannelPatch{Token: new("tk")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Address != masked || !got.HasToken {
+			t.Errorf("update = %+v, want the masked address and a token", got)
+		}
+		noTopic(t, got)
+		checkMoved(t, "nch_cccccccccccc")
+		if e.secretItems(t, "nch_cccccccccccc")["token"] != "tk" {
+			t.Error("the token was not stored")
+		}
+	})
 }

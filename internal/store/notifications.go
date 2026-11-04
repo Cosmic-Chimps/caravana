@@ -12,16 +12,16 @@ import (
 
 // Notifications (feature 018): the channels Caravana tells things to, which
 // needs-you items it already told them about, and the queue of messages. The
-// secret parts of a channel (a Slack URL, an ntfy token, a webhook's signing
-// secret) are not here: they live in a Nomad Variable (constitution VII).
+// secret parts of a channel (a Slack, Discord or ntfy URL, an ntfy token, a
+// webhook's signing secret) are not here: they live in a Nomad Variable (constitution VII).
 
 // NotificationChannel is one place messages go, without its secrets.
 type NotificationChannel struct {
 	ID   string // "nch_" and 12 random hex digits
 	Kind string // webhook, slack, discord or ntfy
 	Name string
-	// Address is what the console shows. For Slack and Discord the path is
-	// masked, because the whole URL is the secret.
+	// Address is what the console shows. It is masked for Slack, Discord and
+	// ntfy, because the whole URL is the secret, and whole for a webhook.
 	Address string
 	// Events lists what the channel wants: "problems", "deploy_failed" and
 	// "deploy_succeeded", in any combination.

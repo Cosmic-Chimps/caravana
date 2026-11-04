@@ -17,8 +17,8 @@ const notificationVariablePrefix = "caravana/notifications/"
 
 // NotificationVariablePath is the Nomad Variable that holds the secrets of the
 // channel with this ID: "caravana/notifications/nch_0123456789ab". Its items
-// depend on the kind of channel: "url" for Slack and Discord, "token" for ntfy
-// when it has one, and "signing_secret" for a webhook.
+// depend on the kind of channel: "url" for Slack, Discord and ntfy (the topic
+// URL), "token" for ntfy when it has one, and "signing_secret" for a webhook.
 func NotificationVariablePath(channelID string) string {
 	return notificationVariablePrefix + channelID
 }

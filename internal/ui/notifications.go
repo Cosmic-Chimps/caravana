@@ -443,21 +443,6 @@ func kindLine(kind string, events []string) string {
 	return kindLabel(kind)
 }
 
-// shownAddress is a channel's address as the row shows it. The service already
-// masks a Slack or Discord URL before it stores it; an ntfy topic is stored whole
-// (the sender needs it), so the page shows the host only, as it does for the
-// others, and the topic never reaches a page.
-func shownAddress(kind, address string) string {
-	if kind != notify.KindNtfy {
-		return address
-	}
-	u, err := url.Parse(address)
-	if err != nil || u.Host == "" {
-		return "••••"
-	}
-	return u.Host + "/••••"
-}
-
 // kindIcon is the icon a channel's kind is drawn with.
 func kindIcon(kind string) string {
 	switch kind {
@@ -479,11 +464,11 @@ func notificationsSection(now time.Time, facts settingsFacts, st entryState, dat
 	data.Rows = make([]notificationRow, 0, len(facts.Channels))
 	for i, c := range facts.Channels {
 		row := notificationRow{
-			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), KindLine: kindLine(c.Kind, c.Events), Address: shownAddress(c.Kind, c.Address), Icon: kindIcon(c.Kind),
+			ID: c.ID, Name: c.Name, Kind: c.Kind, KindLabel: kindLabel(c.Kind), KindLine: kindLine(c.Kind, c.Events), Address: c.Address, Icon: kindIcon(c.Kind),
 			Mark: st.Rows[i], Paused: c.Paused, HasToken: c.HasToken, Sends: sendsLine(c.Events),
 		}
-		// A webhook's or ntfy topic's URL is shown, so it fills the edit form; a
-		// Slack, Discord or ntfy address is a secret, so that field starts empty.
+		// A webhook's URL is shown, so it fills the edit form; a Slack, Discord or
+		// ntfy address is a secret, so that field starts empty.
 		row.Edit = formFromEvents(notificationForm{Kind: c.Kind, Name: c.Name}, c.Events)
 		if c.Kind == notify.KindWebhook {
 			row.Edit.URL = c.Address

@@ -122,11 +122,14 @@ func TestNotificationEndpoints(t *testing.T) {
 		slackID = slack.ID
 
 		status, _, raw = call(t, http.MethodPost, base, "application/json",
-			jsonBody("kind", quote("ntfy"), "name", quote("phone"), "url", quote(okURL+"/topic"), "token", quote("tk_"+notifySecret), "events", `["problems"]`, "paused", "true"))
+			jsonBody("kind", quote("ntfy"), "name", quote("phone"), "url", quote(okURL+"/topic-"+notifySecret), "token", quote("tk_"+notifySecret), "events", `["problems"]`, "paused", "true"))
 		record(raw)
 		ntfy := decodeAs[notificationChannelJSON](t, raw)
 		if status != http.StatusCreated || !ntfy.HasToken || !ntfy.Paused || strings.Contains(string(raw), "signingSecret") {
 			t.Fatalf("POST ntfy = %d %s, want 201, hasToken and paused", status, raw)
+		}
+		if want := strings.TrimPrefix(okURL, "http://") + "/••••"; ntfy.Address != want {
+			t.Errorf("ntfy address = %q, want %q", ntfy.Address, want)
 		}
 		ntfyID = ntfy.ID
 	})

@@ -19,8 +19,8 @@ import (
 )
 
 // Notification channels (feature 018). SQLite keeps what the console shows;
-// the secret parts (a Slack or Discord URL, an ntfy token, a webhook's signing
-// secret) live in a Nomad Variable (package deploy), written before the row
+// the secret parts (a Slack, Discord or ntfy URL, an ntfy token, a webhook's
+// signing secret) live in a Nomad Variable (package deploy), written before the row
 // that lists the channel, so a listed channel always has what it needs.
 
 // The events a channel can ask for.
@@ -35,7 +35,7 @@ var NotificationEvents = []string{EventProblems, EventDeployFailed, EventDeployS
 
 // The items of a channel's secret variable.
 const (
-	secretURL           = "url"            // slack and discord: the whole URL
+	secretURL           = "url"            // slack, discord and ntfy: the whole URL
 	secretToken         = "token"          // ntfy: the access token
 	secretSigningSecret = "signing_secret" // webhook
 )
@@ -67,8 +67,8 @@ type NotificationChannelInput struct {
 
 // NotificationChannelPatch is what editing a channel takes; a nil field keeps
 // the stored value. Token set to "" removes the ntfy token. URL may not be
-// empty: leave it nil to keep the address (which for Slack and Discord is the
-// secret and is never shown).
+// empty: leave it nil to keep the address (which for Slack, Discord and ntfy is
+// the secret and is never shown).
 type NotificationChannelPatch struct {
 	Name   *string
 	URL    *string
@@ -94,15 +94,24 @@ func (s *Service) NotificationChannels(ctx context.Context) ([]NotificationChann
 	}
 	out := make([]NotificationChannel, 0, len(rows))
 	for _, c := range rows {
-		view := NotificationChannel{NotificationChannel: c}
+		hasToken := false
 		if c.Kind == notify.KindNtfy {
 			items, err := s.deployer.NotificationSecret(ctx, c.ID)
 			if err != nil {
 				s.log.Warn("read the secrets of a notification channel", "channel", c.ID, "error", err)
+			} else {
+				// A channel made before the topic was a secret moves now.
+				if err := s.moveNtfyTopic(ctx, &c, items); err != nil {
+					s.log.Warn("move the topic of an ntfy channel into the secret store", "channel", c.ID, "error", err)
+				}
+				hasToken = items[secretToken] != ""
 			}
-			view.HasToken = items[secretToken] != ""
 		}
-		out = append(out, view)
+		// Whatever happened above, the list never returns a whole topic.
+		if wholeURL(c.Address) {
+			c.Address = shownAddress(c.Kind, c.Address)
+		}
+		out = append(out, NotificationChannel{NotificationChannel: c, HasToken: hasToken})
 	}
 	return out, nil
 }
@@ -139,6 +148,7 @@ func (s *Service) CreateNotificationChannel(ctx context.Context, in Notification
 	case notify.KindSlack, notify.KindDiscord:
 		secrets[secretURL] = address
 	case notify.KindNtfy:
+		secrets[secretURL] = address
 		secrets[secretToken] = in.Token
 	case notify.KindWebhook:
 		if signing, err = newSigningSecret(); err != nil {
@@ -193,12 +203,13 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 
 	// Work out the new secret items, if any change.
 	var items map[string]string
-	if p.URL != nil || p.Token != nil {
+	if p.URL != nil || p.Token != nil || row.Kind == notify.KindNtfy {
 		if items, err = s.deployer.NotificationSecret(ctx, id); err != nil {
 			return NotificationChannel{}, err
 		}
 	}
-	changed := false
+	// A channel made before the topic was a secret moves with this save.
+	changed := carryNtfyTopic(&row, items)
 	if p.URL != nil {
 		if strings.TrimSpace(*p.URL) == "" {
 			return NotificationChannel{}, app.NewFieldError("url", "is empty; leave it out to keep the address set before")
@@ -208,7 +219,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 			return NotificationChannel{}, err
 		}
 		row.Address = shownAddress(row.Kind, address)
-		if row.Kind == notify.KindSlack || row.Kind == notify.KindDiscord {
+		if row.Kind != notify.KindWebhook {
 			items[secretURL] = address
 			changed = true
 		}
@@ -229,11 +240,7 @@ func (s *Service) UpdateNotificationChannel(ctx context.Context, id string, p No
 	}
 	view := NotificationChannel{NotificationChannel: row}
 	if row.Kind == notify.KindNtfy {
-		stored, err := s.deployer.NotificationSecret(ctx, id)
-		if err != nil {
-			return NotificationChannel{}, err
-		}
-		view.HasToken = stored[secretToken] != ""
+		view.HasToken = items[secretToken] != ""
 	}
 	return view, nil
 }
@@ -349,15 +356,19 @@ func (s *Service) notifyChannel(ctx context.Context, row store.NotificationChann
 	if err != nil {
 		return notify.Channel{}, err
 	}
+	if err := s.moveNtfyTopic(ctx, &row, items); err != nil {
+		return notify.Channel{}, err
+	}
 	ch := notify.Channel{Kind: row.Kind, Address: row.Address}
 	switch row.Kind {
-	case notify.KindSlack, notify.KindDiscord:
+	case notify.KindSlack, notify.KindDiscord, notify.KindNtfy:
 		if items[secretURL] == "" {
 			return notify.Channel{}, fmt.Errorf("the address of channel %q is missing from the secret store", row.Name)
 		}
 		ch.Address = items[secretURL]
-	case notify.KindNtfy:
-		ch.Secret = items[secretToken]
+		if row.Kind == notify.KindNtfy {
+			ch.Secret = items[secretToken]
+		}
 	case notify.KindWebhook:
 		if items[secretSigningSecret] == "" {
 			return notify.Channel{}, fmt.Errorf("the signing secret of channel %q is missing from the secret store", row.Name)
@@ -381,8 +392,8 @@ func channelName(name string) (string, error) {
 
 // channelURL checks a channel's address and returns it trimmed. It never
 // echoes the address in an error, because a Slack or Discord URL is a secret.
-// The address of a webhook or ntfy topic is shown in the console, so it may
-// not carry a user name and password.
+// The address of a webhook is shown in the console, and an ntfy topic may not
+// carry a user name and password because the token has its own field.
 func channelURL(kind, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -418,19 +429,24 @@ func channelEvents(events []string) ([]string, error) {
 	return out, nil
 }
 
-// shownAddress is what the console lists for a channel's address. A webhook or
-// ntfy topic is shown whole. A Slack or Discord incoming-webhook URL is itself
-// the secret, so only the host and the start of the path remain:
+// shownAddress is what the console lists for a channel's address. A webhook's
+// is shown whole. A Slack or Discord incoming-webhook URL is itself the secret,
+// so only the host and the start of the path remain. An ntfy topic is the only
+// access control of a public topic, so only its host is shown:
 //
 //	https://hooks.slack.com/services/T000/B000/XXXX → hooks.slack.com/services/T…/••••
 //	https://discord.com/api/webhooks/123/abc        → discord.com/api/webhooks/1…/••••
+//	https://ntfy.sh/my-topic                        → ntfy.sh/••••
 func shownAddress(kind, address string) string {
-	if kind != notify.KindSlack && kind != notify.KindDiscord {
+	if kind == notify.KindWebhook {
 		return address
 	}
 	u, err := url.Parse(address)
 	if err != nil || u.Host == "" {
 		return "••••" // can't happen after channelURL; never show the raw text
+	}
+	if kind == notify.KindNtfy {
+		return u.Host + "/••••"
 	}
 	path := strings.Trim(u.Path, "/")
 	if path == "" {
@@ -446,6 +462,42 @@ func shownAddress(kind, address string) string {
 		return u.Host + "/" + strings.Join(segments[:i+1], "/") + "/" + string(first) + "…/••••"
 	}
 	return u.Host + "/••••"
+}
+
+// wholeURL reports whether address is still a whole URL rather than the masked
+// form the row keeps.
+func wholeURL(address string) bool {
+	_, err := notify.ParseAddress(address)
+	return err == nil
+}
+
+// carryNtfyTopic moves the topic of an ntfy channel made before the topic was
+// a secret, whose row still holds the whole URL, into items (unless the
+// variable already has one) and masks the row. It reports whether it moved
+// anything; the caller writes the variable and the row.
+func carryNtfyTopic(row *store.NotificationChannel, items map[string]string) bool {
+	if row.Kind != notify.KindNtfy || !wholeURL(row.Address) {
+		return false
+	}
+	if items[secretURL] == "" {
+		items[secretURL] = row.Address
+	}
+	row.Address = shownAddress(row.Kind, row.Address)
+	return true
+}
+
+// moveNtfyTopic finishes the move of an ntfy topic into the secret store for
+// a channel made before the topic was a secret: the variable gets the url
+// item and the row the masked address. A channel already moved, or of
+// another kind, is left alone.
+func (s *Service) moveNtfyTopic(ctx context.Context, row *store.NotificationChannel, items map[string]string) error {
+	if !carryNtfyTopic(row, items) {
+		return nil
+	}
+	if err := s.deployer.SaveNotificationSecret(ctx, row.ID, items); err != nil {
+		return err
+	}
+	return s.store.SaveNotificationChannel(ctx, *row)
 }
 
 // newID returns prefix and 12 random hex digits.

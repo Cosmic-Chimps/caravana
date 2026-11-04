@@ -367,8 +367,11 @@ func TestSettingsNotifications(t *testing.T) {
 			t.Errorf("the edit didn't show:\n%s", got)
 		}
 		channels, err := e.Svc.NotificationChannels(context.Background())
-		if err == nil && channels[0].Address != okRcv.URL+"/topic" {
-			t.Errorf("an edit with an empty URL changed the ntfy topic to %q", channels[0].Address)
+		if got := e.notifySecretItems(ntfyID)["url"]; got != okRcv.URL+"/topic" {
+			t.Errorf("an edit with an empty URL changed the ntfy topic to %q", got)
+		}
+		if want := strings.TrimPrefix(okRcv.URL, "http://") + "/••••"; err == nil && channels[0].Address != want {
+			t.Errorf("the ntfy channel's address = %q, want %q", channels[0].Address, want)
 		}
 		if err != nil || channels[0].Name != "my phone" || len(channels[0].Events) != 1 || channels[0].Events[0] != "deploy_failed" {
 			t.Errorf("the edit stored %+v, %v; want the new name and only failed deploys", channels[0], err)

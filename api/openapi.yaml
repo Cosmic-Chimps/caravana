@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.29.0
+  version: 0.30.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -2028,8 +2028,8 @@ paths:
       description: |
         A channel is a place Caravana tells things to: what needs the owner (the `problems`
         events, sent when an item opens and when it has been gone for a while) and how deploys
-        end (`deploy_failed`, `deploy_succeeded`). The channel's secret parts (a Slack or
-        Discord URL, an ntfy token, a webhook's signing secret) are kept in the cluster's
+        end (`deploy_failed`, `deploy_succeeded`). The channel's secret parts (a Slack, Discord
+        or ntfy URL, an ntfy token, a webhook's signing secret) are kept in the cluster's
         secret store and are never returned. A webhook channel's answer carries its
         `signingSecret`, this once: `rotateNotificationSecret` makes a new one.
       tags: [notifications]
@@ -2071,8 +2071,8 @@ paths:
       summary: Change a notification channel.
       description: |
         Any of `name`, `url`, `token`, `events` and `paused`; a field left out keeps its value.
-        `url` may not be empty. For Slack and Discord the URL is itself the secret and is never
-        shown, so leave it out to keep it. `token` is for ntfy only: `""` removes the token.
+        `url` may not be empty. For Slack, Discord and ntfy the URL is itself the secret and is
+        never shown, so leave it out to keep it. `token` is for ntfy only: `""` removes the token.
         The kind never changes.
       tags: [notifications]
       requestBody:
@@ -4357,9 +4357,10 @@ components:
         address:
           type: string
           description: |
-            What the console shows. A webhook's URL and an ntfy topic URL are shown whole. A Slack
-            or Discord incoming-webhook URL is itself the secret, so only the host and the start
-            of the path remain, for example `hooks.slack.com/services/T…/••••`.
+            What the console shows. A webhook's URL is shown whole. A Slack or Discord
+            incoming-webhook URL is itself the secret, so only the host and the start of the path
+            remain, for example `hooks.slack.com/services/T…/••••`. An ntfy topic URL is the only
+            access control of a public topic, so only its host remains, for example `ntfy.sh/••••`.
         events:
           type: array
           items:
@@ -4446,7 +4447,7 @@ components:
         url:
           type: string
           minLength: 1
-          description: Leave it out to keep the address; for Slack and Discord that is the only way, since it is a secret.
+          description: Leave it out to keep the address; for Slack, Discord and ntfy that is the only way, since it is a secret.
         token:
           type: string
           writeOnly: true

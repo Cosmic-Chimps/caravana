@@ -9,6 +9,11 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Security
+- **An ntfy topic URL is a secret now**: it lives in the channel's Nomad Variable like a Slack or Discord URL,
+  SQLite and the API keep only its host (`ntfy.sh/••••`), and a channel from before moves there on its first
+  listing or send. API 0.30.0.
+
 ### Changed
 - **The project page leads with the apps**: one tab per environment, the environment's apps as a table
   (status, copies, address, version and when; problems first), and a rail with how the environment was last
