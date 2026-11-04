@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.17.0 - 2026-11-04
+
 ### Added
 - **A light theme.** The console follows the browser's choice: dark, as before, unless the browser
   prefers light. **Settings › This browser › Appearance** forces one (Match the system, Light, Dark),
