@@ -136,11 +136,12 @@
     {{range .Marks}}<line class="cv-hmark{{if .Failed}} cv-hmark-failed{{end}}" x1="{{.X}}" x2="{{.X}}" y1="0" y2="48"><title>{{.Title}}</title></line>
     {{end}}
   </svg>
-  <table class="sr-only">
+  {{/* In a clipped wrapper, not clipped itself: a table never shrinks below its rows (see monitoring.html). */}}
+  <div class="sr-only"><table>
     <caption>Lines read in each slice of the range</caption>
     <thead><tr><th scope="col">From (UTC)</th><th scope="col">Lines</th><th scope="col">Errors</th></tr></thead>
     <tbody>{{range .Table}}<tr><th scope="row">{{.From}}</th><td>{{.Lines}}</td><td>{{.Errors}}</td></tr>{{end}}</tbody>
-  </table>
+  </table></div>
   <div class="cv-hlabels">
     <span>{{.Start}}</span>
     {{with .Read}}<span class="cv-hlabel-read">{{.}}</span>{{end}}
