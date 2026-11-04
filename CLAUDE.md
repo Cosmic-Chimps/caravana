@@ -945,6 +945,28 @@ module, no Nomad policy change.
 - Not in 027: applying updates from the console (Phase 3), several servers (the server list, Move work
   off, cluster-wide Updates), and the Activity, Logs and Proxy pages of the Operator view (Phase 3).
 
+Feature 028 (`specs/028-light-theme`, Phase 2.6, from a CodeAlta task) is implemented on the worktree branch
+`alta/fluent-topaz-6qk8`: a light theme, the same look with the same rules. The designer's contract
+(`contracts/light-theme.md`, with `cr.py`, its oklch-to-WCAG calculator) decided every value.
+- Every colour is a token in `internal/ui/style/theme.css`, declared once as `light-dark(<dark>, <light>)`
+  (the daisyUI slots point at the ramp with `var()`), and `:root`'s `color-scheme` picks the side: dark by
+  default, light under `prefers-color-scheme: light` unless `data-cv-theme="dark"`, and `data-cv-theme="light"`
+  forces light. The pinned Tailwind build keeps `light-dark()` as written. The direct colours `input.css`
+  had are tokens now (`focus`, the washes, `hue-0…5`, `tick`, `ping`, `overlay-shade`, `hatch-fill`,
+  `terminal`); the `#000` stops in `mask-image` and `terminal.js`'s hex palette are the two named
+  exceptions (the terminal stays dark in both themes). The three hard-coded `color-scheme: dark` are gone.
+- The forced choice is the cookie `caravana_theme` (`httpx.ThemeCookie`/`SetThemeCookie`, the view cookie's
+  attributes; "Match the system" deletes it), read into `pageData.Theme` by `s.page(r, title)` (so
+  `s.message` and `s.serverError` take the request) and written by `base.html` as `data-cv-theme` on
+  `<html>` with a one-word `color-scheme` meta (`dark light` without it): no flash, and the sign-in page
+  follows it too. Settings › This browser › Appearance (`/settings/appearance`, a last nav group) has
+  Match the system (console.js adds "(now dark)"), Light and Dark; the post answers 303 to `?saved=1`.
+  No API change.
+- `internal/ui/theme_test.go` recomputes the contract's contrast ratios from `theme.css` for both palettes,
+  checks every token has both values and that no colour is written outside the tokens; `DESIGN.md` has the
+  Token-Only Color Rule and "depth is distance from the panel face". `TestConsoleLab` has a step
+  `console-appearance`.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
