@@ -270,7 +270,7 @@ an owner who prefers it.
 ## Colors
 
 One near-colorless steel ramp for everything structural, and four status colors kept for status
-alone. Every color is a token in `theme.css` with a dark and a light value, `light-dark(<dark>, <light>)`,
+alone. Every color is a token in `theme.css` with a light and a dark value, `light-dark(<light>, <dark>)`,
 and `:root`'s `color-scheme` picks the side: dark unless the browser prefers light, and a forced choice
 (Settings › This browser › Appearance, the cookie `caravana_theme`, `data-cv-theme` on `<html>`) wins
 either way. The names below describe roles, so they are the same in both themes; each gives its dark value

@@ -46,6 +46,10 @@ var consoleParity = map[string]parity{
 	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
 	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
+	// Appearance (feature 028): the theme is a preference of the browser, kept in its own cookie, like
+	// the Developer/Operator view; the API has no look and nothing to read or change for it.
+	"GET /settings/appearance":  {ops: settingsReads},
+	"POST /settings/appearance": {why: "sets the browser's own theme cookie; an API client has no theme"},
 	// The rail's Platform panel (feature 025) is getHost; the needs-you list's disk row is listAttention.
 	// The "Deploying now" card reads each rolling app's copies (listCopies) and the deployment it
 	// redeploys from and its progress (getDeployment).
@@ -265,8 +269,10 @@ func TestConsoleParity(t *testing.T) {
 		if len(p.ops) == 0 && strings.TrimSpace(p.why) == "" {
 			t.Errorf("%s names no API operation and gives no reason", key)
 		}
+		// Sign-in, sign-out and the browser's theme (feature 028) change only the browser's
+		// cookies, which an API client has none of.
 		changes := rt.Method != "GET"
-		if changes && len(p.ops) == 0 && key != "POST /login" && key != "POST /logout" {
+		if changes && len(p.ops) == 0 && key != "POST /login" && key != "POST /logout" && key != "POST /settings/appearance" {
 			t.Errorf("%s changes data but names no API operation", key)
 		}
 		// A page that changes data may also read (the edit form reads the

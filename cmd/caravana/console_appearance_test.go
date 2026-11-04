@@ -123,7 +123,7 @@ func (c *console) appearance(t *testing.T) {
 		if got := jarTheme(); got != theme {
 			t.Fatalf("after theme=%s the browser's cookie is %q", theme, got)
 		}
-		resp, body = c.get(t, "/apps")
+		_, body = c.get(t, "/apps")
 		if attribute, meta := pageTheme(t, "/apps", body); attribute != theme || meta != theme {
 			t.Fatalf("GET /apps after theme=%s: data-cv-theme %q and meta %q, want both %q", theme, attribute, meta, theme)
 		}
@@ -174,7 +174,7 @@ func (c *console) appearance(t *testing.T) {
 	if got := jarTheme(); got != "" {
 		t.Fatalf("after theme=system the browser still has the cookie %q", got)
 	}
-	resp, body = c.get(t, "/apps")
+	_, body = c.get(t, "/apps")
 	if attribute, meta := pageTheme(t, "/apps", body); attribute != "" || meta != "dark light" {
 		t.Fatalf("GET /apps after theme=system: data-cv-theme %q and meta %q, want none and \"dark light\"", attribute, meta)
 	}

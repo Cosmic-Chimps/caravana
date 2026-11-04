@@ -119,13 +119,14 @@ func TestAlphaIsBlendedOverTheGround(t *testing.T) {
 
 // ---- Reading the tokens of theme.css ----
 
-// themeDark and themeLight pick a side of light-dark().
+// themeLight and themeDark pick a side of light-dark(): the function takes the
+// light value first, then the dark one.
 const (
-	themeDark  = 0
-	themeLight = 1
+	themeLight = 0
+	themeDark  = 1
 )
 
-var themeNames = [2]string{"dark", "light"}
+var themeNames = [2]string{"light", "dark"}
 
 // A token declaration: a name, a colon and a value to the semicolon, all on one line.
 var colorDeclaration = regexp.MustCompile(`(?m)^\s*(--color-[a-z0-9-]+):\s*([^;]+);`)
@@ -207,7 +208,7 @@ func parseOklch(inside string) (color, error) {
 }
 
 // resolve gives the color a value has in a theme: oklch(...) itself, var(--color-x)
-// followed to its token, light-dark(a, b) as its dark or light side.
+// followed to its token, light-dark(light, dark) as the asked side.
 func resolve(tokens map[string]string, value string, theme int, depth int) (color, error) {
 	if depth > 10 {
 		return color{}, fmt.Errorf("var() chain too deep (a cycle?) at %q", value)
@@ -246,7 +247,7 @@ func token(t *testing.T, tokens map[string]string, name string, theme int) color
 	return c
 }
 
-// Every color token is one light-dark(dark, light) with a color on each side, or
+// Every color token is one light-dark(light, dark) with a color on each side, or
 // a var() to another token, so a token can't have a value for one theme only.
 func TestEveryColorTokenHasBothValues(t *testing.T) {
 	tokens, order := colorTokens(t)

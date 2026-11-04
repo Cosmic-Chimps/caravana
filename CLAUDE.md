@@ -948,7 +948,8 @@ module, no Nomad policy change.
 Feature 028 (`specs/028-light-theme`, Phase 2.6, from a CodeAlta task) is implemented on the worktree branch
 `alta/fluent-topaz-6qk8`: a light theme, the same look with the same rules. The designer's contract
 (`contracts/light-theme.md`, with `cr.py`, its oklch-to-WCAG calculator) decided every value.
-- Every colour is a token in `internal/ui/style/theme.css`, declared once as `light-dark(<dark>, <light>)`
+- Every colour is a token in `internal/ui/style/theme.css`, declared once as `light-dark(<light>, <dark>)`
+  (the light value first: the function's order)
   (the daisyUI slots point at the ramp with `var()`), and `:root`'s `color-scheme` picks the side: dark by
   default, light under `prefers-color-scheme: light` unless `data-cv-theme="dark"`, and `data-cv-theme="light"`
   forces light. The pinned Tailwind build keeps `light-dark()` as written. The direct colours `input.css`

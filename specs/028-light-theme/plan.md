@@ -6,7 +6,8 @@
 ## Summary
 
 Every colour of the console becomes a token in `theme.css` that carries its dark and its light value
-in one declaration, `light-dark(<dark>, <light>)`. The theme is then a matter of `color-scheme` on
+in one declaration, `light-dark(<light>, <dark>)` (the light value first, as the function takes them).
+The theme is then a matter of `color-scheme` on
 `:root`: dark by default, light when the browser prefers light and no cookie forces dark, and forced
 by the cookie `caravana_theme` through `data-cv-theme` on `<html>`. A Settings page sets the cookie.
 Tests keep the rules (no colour outside the tokens, both values per token, the contract's contrast
@@ -24,8 +25,9 @@ ratios), and DESIGN.md says how the two themes relate.
 
 ## Decisions (research)
 
-**R1. One declaration per token, not a second block.** `--color-ink-0: light-dark(oklch(0.165 0.006
-255), oklch(0.968 0.004 255));` reads as the contract's table, row for row, and the "both values"
+**R1. One declaration per token, not a second block.** `--color-ink-0: light-dark(oklch(0.968 0.004
+255), oklch(0.165 0.006 255));` (light first, dark second: the function's order, which the first build
+got backwards and the live review caught) holds the contract's table's two values in one line, and the "both values"
 test is a parse of each line. The alternative, a `@media (prefers-color-scheme: light)` block plus a
 forced-light block plus a forced-dark block, writes the light ramp twice and the dark ramp twice.
 `light-dark()` picks by the element's `color-scheme`, which only `:root` sets (FR-005), so every
@@ -49,14 +51,15 @@ daisyUI's. The three hard-coded `color-scheme: dark` on controls are removed.
 `var(--color-ink-2)`, `--color-neutral` `var(--color-ink-3)`, both `-content` `var(--color-fg-1)`;
 `--color-accent` and `--color-success` are `var(--color-healthy)`, `--color-info`
 `var(--color-rolling)`, `--color-warning` `var(--color-warn)`, `--color-error` `var(--color-failed)`;
-their `-content` is `light-dark(var(--color-ink-0), var(--color-ink-1))` (the fills are dark in
+their `-content` is `light-dark(var(--color-ink-1), var(--color-ink-0))` (the fills are dark in
 light, so the word on them is the panel's near-white). Primary isn't on the ramp, so the plugin block
-holds its two values: `--color-primary: light-dark(oklch(0.955 0.004 255), oklch(0.255 0.012 255))`,
-`--color-primary-content: light-dark(oklch(0.165 0.006 255), oklch(0.985 0.003 255))`; in `@theme`,
-`--color-primary-press: light-dark(oklch(0.88 0.006 255), oklch(0.330 0.014 255))` and
-`--color-danger-press: light-dark(oklch(0.31 0.07 40), oklch(0.925 0.035 40))`.
+holds its two values: `--color-primary: light-dark(oklch(0.255 0.012 255), oklch(0.955 0.004 255))`,
+`--color-primary-content: light-dark(oklch(0.985 0.003 255), oklch(0.165 0.006 255))`; in `@theme`,
+`--color-primary-press: light-dark(oklch(0.330 0.014 255), oklch(0.88 0.006 255))` and
+`--color-danger-press: light-dark(oklch(0.925 0.035 40), oklch(0.31 0.07 40))`.
 
-**R4. The tokens.** `@theme` in `theme.css`, dark first (today's value), light second (the contract's):
+**R4. The tokens.** `@theme` in `theme.css`; in the file the light value (the contract's) comes first and
+the dark one (today's) second, as `light-dark()` takes them. The tables keep dark first for reading:
 
 | Token | Dark | Light |
 | --- | --- | --- |

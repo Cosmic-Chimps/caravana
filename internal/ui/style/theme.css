@@ -8,14 +8,16 @@
    - the live-dot ping runs once per event, not forever (The One Tick Rule).
 
    Two themes, one declaration per color (feature 028): every --color-* is
-   light-dark(<dark>, <light>), and :root's color-scheme picks the side, so a
+   light-dark(<light>, <dark>) (the light value first, as the function takes
+   them), and :root's color-scheme picks the side, so a
    class reads a token and never a theme. A daisyUI slot that sits on the ramp
    points at it with var(--color-...), so the ramp is the only place with two
    values. Depth is distance from the panel face: in dark the panel is a step
    lighter than the page and controls step further up; in light the panel is the
    brightest surface and controls step down from it. Either way hover moves a
    surface one more step away from the panel. The light values are the contract's
-   (specs/028-light-theme/contracts/light-theme.md); the dark ones are unchanged. */
+   (specs/028-light-theme/contracts/light-theme.md); the dark ones, written second,
+   are unchanged. */
 
 @plugin "./daisyui.mjs" {
   themes: caravana --default;
@@ -38,26 +40,26 @@
 
   /* Primary is the "ink" button, the action with the most contrast against its
      ground: light on dark, dark on light. caravana has no brand hue. */
-  --color-primary: light-dark(oklch(0.955 0.004 255), oklch(0.255 0.012 255));
-  --color-primary-content: light-dark(oklch(0.165 0.006 255), oklch(0.985 0.003 255));
+  --color-primary: light-dark(oklch(0.255 0.012 255), oklch(0.955 0.004 255));
+  --color-primary-content: light-dark(oklch(0.985 0.003 255), oklch(0.165 0.006 255));
   --color-secondary: var(--color-ink-2);
   --color-secondary-content: var(--color-fg-1);
   --color-neutral: var(--color-ink-3);
   --color-neutral-content: var(--color-fg-1);
   --color-accent: var(--color-healthy);
-  --color-accent-content: light-dark(var(--color-ink-0), var(--color-ink-1));
+  --color-accent-content: light-dark(var(--color-ink-1), var(--color-ink-0));
 
   /* Status. Always paired with a shape mark, never color alone. A word on a
      status fill is the page's dark in dark, the panel's near-white in light,
      since the fills are dark in light. */
   --color-success: var(--color-healthy);
-  --color-success-content: light-dark(var(--color-ink-0), var(--color-ink-1));
+  --color-success-content: light-dark(var(--color-ink-1), var(--color-ink-0));
   --color-info: var(--color-rolling);
-  --color-info-content: light-dark(var(--color-ink-0), var(--color-ink-1));
+  --color-info-content: light-dark(var(--color-ink-1), var(--color-ink-0));
   --color-warning: var(--color-warn);
-  --color-warning-content: light-dark(var(--color-ink-0), var(--color-ink-1));
+  --color-warning-content: light-dark(var(--color-ink-1), var(--color-ink-0));
   --color-error: var(--color-failed);
-  --color-error-content: light-dark(var(--color-ink-0), var(--color-ink-1));
+  --color-error-content: light-dark(var(--color-ink-1), var(--color-ink-0));
 
   --radius-selector: 2px;
   --radius-field: 4px;
@@ -74,60 +76,60 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Raw ramps for things daisy has no slot for: bg-ink-2, border-line-1, text-fg-3 … */
-  --color-ink-0: light-dark(oklch(0.165 0.006 255), oklch(0.968 0.004 255));
-  --color-ink-1: light-dark(oklch(0.195 0.007 255), oklch(0.995 0.002 255));
-  --color-ink-2: light-dark(oklch(0.225 0.008 255), oklch(0.952 0.005 255));
-  --color-ink-3: light-dark(oklch(0.260 0.009 255), oklch(0.922 0.007 255));
-  --color-line-1: light-dark(oklch(0.275 0.009 255), oklch(0.905 0.006 255));
-  --color-line-2: light-dark(oklch(0.340 0.010 255), oklch(0.835 0.008 255));
-  --color-line-3: light-dark(oklch(0.440 0.012 255), oklch(0.700 0.010 255));
-  --color-fg-1: light-dark(oklch(0.955 0.004 255), oklch(0.215 0.010 255));
-  --color-fg-2: light-dark(oklch(0.810 0.008 255), oklch(0.360 0.012 255));
-  --color-fg-3: light-dark(oklch(0.680 0.010 255), oklch(0.475 0.012 255));
-  --color-fg-4: light-dark(oklch(0.500 0.010 255), oklch(0.640 0.010 255));
+  --color-ink-0: light-dark(oklch(0.968 0.004 255), oklch(0.165 0.006 255));
+  --color-ink-1: light-dark(oklch(0.995 0.002 255), oklch(0.195 0.007 255));
+  --color-ink-2: light-dark(oklch(0.952 0.005 255), oklch(0.225 0.008 255));
+  --color-ink-3: light-dark(oklch(0.922 0.007 255), oklch(0.260 0.009 255));
+  --color-line-1: light-dark(oklch(0.905 0.006 255), oklch(0.275 0.009 255));
+  --color-line-2: light-dark(oklch(0.835 0.008 255), oklch(0.340 0.010 255));
+  --color-line-3: light-dark(oklch(0.700 0.010 255), oklch(0.440 0.012 255));
+  --color-fg-1: light-dark(oklch(0.215 0.010 255), oklch(0.955 0.004 255));
+  --color-fg-2: light-dark(oklch(0.360 0.012 255), oklch(0.810 0.008 255));
+  --color-fg-3: light-dark(oklch(0.475 0.012 255), oklch(0.680 0.010 255));
+  --color-fg-4: light-dark(oklch(0.640 0.010 255), oklch(0.500 0.010 255));
 
-  --color-primary-press: light-dark(oklch(0.88 0.006 255), oklch(0.330 0.014 255));
-  --color-danger-press: light-dark(oklch(0.31 0.07 40), oklch(0.925 0.035 40));
+  --color-primary-press: light-dark(oklch(0.330 0.014 255), oklch(0.88 0.006 255));
+  --color-danger-press: light-dark(oklch(0.925 0.035 40), oklch(0.31 0.07 40));
 
   /* Status colors, with a tinted ground and an edge each. */
-  --color-healthy: light-dark(oklch(0.76 0.12 245), oklch(0.505 0.135 250));
-  --color-rolling: light-dark(oklch(0.84 0.09 300), oklch(0.525 0.130 300));
-  --color-warn: light-dark(oklch(0.90 0.13 88), oklch(0.510 0.108 75));
-  --color-failed: light-dark(oklch(0.68 0.17 40), oklch(0.530 0.165 38));
-  --color-healthy-bg: light-dark(oklch(0.27 0.05 245), oklch(0.952 0.022 245));
-  --color-rolling-bg: light-dark(oklch(0.28 0.045 300), oklch(0.955 0.022 300));
-  --color-warn-bg: light-dark(oklch(0.29 0.05 88), oklch(0.962 0.040 88));
-  --color-failed-bg: light-dark(oklch(0.27 0.06 40), oklch(0.952 0.022 40));
-  --color-healthy-line: light-dark(oklch(0.44 0.08 245), oklch(0.800 0.060 245));
-  --color-rolling-line: light-dark(oklch(0.46 0.07 300), oklch(0.810 0.060 300));
-  --color-warn-line: light-dark(oklch(0.50 0.08 88), oklch(0.830 0.085 85));
-  --color-failed-line: light-dark(oklch(0.46 0.10 40), oklch(0.800 0.075 40));
+  --color-healthy: light-dark(oklch(0.505 0.135 250), oklch(0.76 0.12 245));
+  --color-rolling: light-dark(oklch(0.525 0.130 300), oklch(0.84 0.09 300));
+  --color-warn: light-dark(oklch(0.510 0.108 75), oklch(0.90 0.13 88));
+  --color-failed: light-dark(oklch(0.530 0.165 38), oklch(0.68 0.17 40));
+  --color-healthy-bg: light-dark(oklch(0.952 0.022 245), oklch(0.27 0.05 245));
+  --color-rolling-bg: light-dark(oklch(0.955 0.022 300), oklch(0.28 0.045 300));
+  --color-warn-bg: light-dark(oklch(0.962 0.040 88), oklch(0.29 0.05 88));
+  --color-failed-bg: light-dark(oklch(0.952 0.022 40), oklch(0.27 0.06 40));
+  --color-healthy-line: light-dark(oklch(0.800 0.060 245), oklch(0.44 0.08 245));
+  --color-rolling-line: light-dark(oklch(0.810 0.060 300), oklch(0.46 0.07 300));
+  --color-warn-line: light-dark(oklch(0.830 0.085 85), oklch(0.50 0.08 88));
+  --color-failed-line: light-dark(oklch(0.800 0.075 40), oklch(0.46 0.10 40));
 
   /* Washes and rings: a status color at low strength over a row, and the focus ring.
      The light focus ring is full strength: at 55% it would be 1.8:1 on white. */
-  --color-focus: light-dark(oklch(0.76 0.12 245 / 0.55), oklch(0.505 0.135 250));
-  --color-failed-wash: light-dark(oklch(0.68 0.17 40 / 0.07), oklch(0.530 0.165 38 / 0.06));
-  --color-failed-wash-hover: light-dark(oklch(0.68 0.17 40 / 0.11), oklch(0.530 0.165 38 / 0.10));
-  --color-rolling-wash: light-dark(oklch(0.84 0.09 300 / 0.08), oklch(0.525 0.130 300 / 0.06));
-  --color-rolling-wash-hover: light-dark(oklch(0.84 0.09 300 / 0.13), oklch(0.525 0.130 300 / 0.10));
+  --color-focus: light-dark(oklch(0.505 0.135 250), oklch(0.76 0.12 245 / 0.55));
+  --color-failed-wash: light-dark(oklch(0.530 0.165 38 / 0.06), oklch(0.68 0.17 40 / 0.07));
+  --color-failed-wash-hover: light-dark(oklch(0.530 0.165 38 / 0.10), oklch(0.68 0.17 40 / 0.11));
+  --color-rolling-wash: light-dark(oklch(0.525 0.130 300 / 0.06), oklch(0.84 0.09 300 / 0.08));
+  --color-rolling-wash-hover: light-dark(oklch(0.525 0.130 300 / 0.10), oklch(0.84 0.09 300 / 0.13));
   /* A new log row's flash and the row a link points at: the text color at low strength. */
-  --color-fresh-wash: light-dark(oklch(0.955 0.004 255 / 0.05), oklch(0.215 0.010 255 / 0.05));
-  --color-anchor-wash: light-dark(oklch(0.955 0.004 255 / 0.09), oklch(0.215 0.010 255 / 0.09));
+  --color-fresh-wash: light-dark(oklch(0.215 0.010 255 / 0.05), oklch(0.955 0.004 255 / 0.05));
+  --color-anchor-wash: light-dark(oklch(0.215 0.010 255 / 0.09), oklch(0.955 0.004 255 / 0.09));
   /* The fill behind the dashes of an unread bin and a gap in a chart; the dashes are fg-4. */
-  --color-hatch-fill: light-dark(oklch(0.500 0.010 255 / 0.12), oklch(0.640 0.010 255 / 0.12));
+  --color-hatch-fill: light-dark(oklch(0.640 0.010 255 / 0.12), oklch(0.500 0.010 255 / 0.12));
 
   /* The six service hues (024): a service's name and its 8px square, never a status. */
-  --color-hue-0: light-dark(oklch(0.78 0.08 250), oklch(0.500 0.095 250));
-  --color-hue-1: light-dark(oklch(0.78 0.09 300), oklch(0.500 0.100 300));
-  --color-hue-2: light-dark(oklch(0.80 0.07 200), oklch(0.515 0.080 200));
-  --color-hue-3: light-dark(oklch(0.80 0.08 150), oklch(0.515 0.095 150));
-  --color-hue-4: light-dark(oklch(0.80 0.08 80), oklch(0.520 0.095 80));
-  --color-hue-5: light-dark(oklch(0.78 0.08 20), oklch(0.510 0.105 20));
+  --color-hue-0: light-dark(oklch(0.500 0.095 250), oklch(0.78 0.08 250));
+  --color-hue-1: light-dark(oklch(0.500 0.100 300), oklch(0.78 0.09 300));
+  --color-hue-2: light-dark(oklch(0.515 0.080 200), oklch(0.80 0.07 200));
+  --color-hue-3: light-dark(oklch(0.515 0.095 150), oklch(0.80 0.08 150));
+  --color-hue-4: light-dark(oklch(0.520 0.095 80), oklch(0.80 0.08 80));
+  --color-hue-5: light-dark(oklch(0.510 0.105 20), oklch(0.78 0.08 20));
 
   /* The live tick's flash and ping (The One Tick Rule), and the overlay shadow's first color. */
-  --color-tick: light-dark(oklch(0.76 0.12 245 / 0.16), oklch(0.505 0.135 250 / 0.12));
-  --color-ping: light-dark(oklch(0.76 0.12 245 / 0.6), oklch(0.505 0.135 250 / 0.5));
-  --color-overlay-shade: light-dark(oklch(0 0 0 / 0.45), oklch(0.30 0.02 255 / 0.16));
+  --color-tick: light-dark(oklch(0.505 0.135 250 / 0.12), oklch(0.76 0.12 245 / 0.16));
+  --color-ping: light-dark(oklch(0.505 0.135 250 / 0.5), oklch(0.76 0.12 245 / 0.6));
+  --color-overlay-shade: light-dark(oklch(0.30 0.02 255 / 0.16), oklch(0 0 0 / 0.45));
 
   /* The terminal is a screen set into the page, and programs write colors for a dark one:
      it stays dark in both themes (terminal.js has the same ground as hex). */
