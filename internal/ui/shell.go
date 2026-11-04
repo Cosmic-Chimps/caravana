@@ -92,7 +92,7 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 	if host == "" {
 		host = r.Host
 	}
-	d := s.page(title)
+	d := s.page(r, title)
 	// The last crumb is the page itself: it is not a link.
 	crumbs = slices.Clone(crumbs)
 	if n := len(crumbs); n > 0 {

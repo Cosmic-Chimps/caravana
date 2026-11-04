@@ -90,7 +90,7 @@ func (s *server) createFromGitHub(w http.ResponseWriter, r *http.Request, sessio
 	}
 	pl, err := s.loadPlaces(r.Context())
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	place, refusal, placed := pl.placeFor(form.Place.Value, form.Name.Value)
@@ -107,7 +107,7 @@ func (s *server) createFromGitHub(w http.ResponseWriter, r *http.Request, sessio
 	if _, err := s.svc.CreateAppOnly(r.Context(), a); err != nil {
 		status, known := refuseNewApp(&form, a.ID, err)
 		if !known {
-			s.serverError(w, "create app from a GitHub repository", err)
+			s.serverError(w, r, "create app from a GitHub repository", err)
 			return
 		}
 		form.markFirstError()
@@ -118,7 +118,7 @@ func (s *server) createFromGitHub(w http.ResponseWriter, r *http.Request, sessio
 	created, err := s.makeDeployToken(r, a.ID, place)
 	if err != nil {
 		s.log.Error("make the deploy token of a new GitHub app", "app", a.ID, "error", err)
-		s.message(w, http.StatusInternalServerError, "Deploy token", "The app was created, but its deploy token wasn't.",
+		s.message(w, r, http.StatusInternalServerError, "Deploy token", "The app was created, but its deploy token wasn't.",
 			"Open the app's Configure tab and create a deploy token there.")
 		return
 	}
@@ -134,7 +134,7 @@ func (s *server) createFromGitHub(w http.ResponseWriter, r *http.Request, sessio
 func (s *server) renderGitHubResult(w http.ResponseWriter, r *http.Request, res githubResult) {
 	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, http.StatusOK, "newapp", newAppPage{pageData: head, Result: &res})

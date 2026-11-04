@@ -181,17 +181,17 @@ type opsEvent struct {
 func (s *server) showOps(w http.ResponseWriter, r *http.Request, session string) {
 	data, needs, err := s.loadOps(r)
 	if err != nil {
-		s.serverError(w, "draw the Operator overview", err)
+		s.serverError(w, r, "draw the Operator overview", err)
 		return
 	}
 	activity, err := s.loadOpsActivity(r, data.Server.NomadDown)
 	if err != nil {
-		s.serverError(w, "read activity", err)
+		s.serverError(w, r, "read activity", err)
 		return
 	}
 	head, err := s.shellPage(r, "Overview", navOpsOverview, crumb{Label: "Overview"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live?watch=ops"

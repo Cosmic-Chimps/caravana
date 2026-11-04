@@ -247,7 +247,9 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
 		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
 		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
+		{"GET", "/settings/appearance", s.requireSession(s.showAppearance)},
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
+		{"POST", "/settings/appearance", s.protected(s.requireSession(s.saveAppearance))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},
 		{"POST", "/settings/tokens/{tokenId}/revoke", s.protected(s.requireSession(s.revokeToken))},
 		{"POST", "/settings/backups", s.protected(s.requireSession(s.setBackupDestination))},
@@ -372,10 +374,14 @@ type pageData struct {
 	Title   string
 	Shell   *shellView
 	LiveURL string
+	// Theme is the theme the owner forced in Settings › Appearance, "light" or
+	// "dark", or "" to match the system. base.html writes it on <html>, so it is
+	// in the first byte of the page and never flashes (feature 028).
+	Theme string
 }
 
-func (s *server) page(title string) pageData {
-	return pageData{Title: title}
+func (s *server) page(r *http.Request, title string) pageData {
+	return pageData{Title: title, Theme: httpx.ThemeCookie(r)}
 }
 
 // render writes a page. Rendering to a buffer first means a template error
@@ -425,17 +431,17 @@ type messageData struct {
 	Text    string
 }
 
-func (s *server) message(w http.ResponseWriter, status int, title, heading, text string) {
-	s.render(w, status, "message", messageData{pageData: s.page(title), Heading: heading, Text: text})
+func (s *server) message(w http.ResponseWriter, r *http.Request, status int, title, heading, text string) {
+	s.render(w, status, "message", messageData{pageData: s.page(r, title), Heading: heading, Text: text})
 }
 
 func (s *server) notFound(w http.ResponseWriter, r *http.Request) {
-	s.message(w, http.StatusNotFound, "Not found", "That page doesn't exist.", "Check the address, or go back to Apps.")
+	s.message(w, r, http.StatusNotFound, "Not found", "That page doesn't exist.", "Check the address, or go back to Apps.")
 }
 
-func (s *server) serverError(w http.ResponseWriter, what string, err error) {
+func (s *server) serverError(w http.ResponseWriter, r *http.Request, what string, err error) {
 	s.log.Error(what, "error", err)
-	s.message(w, http.StatusInternalServerError, "Something went wrong",
+	s.message(w, r, http.StatusInternalServerError, "Something went wrong",
 		"Something went wrong.", "caravana couldn't finish that. The details are in the server log.")
 }
 
@@ -489,7 +495,7 @@ func (s *server) serveStatic() http.Handler {
 func (s *server) protected(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := s.csrf.Check(r); err != nil {
-			s.message(w, http.StatusForbidden, "Request refused", "That request was refused.",
+			s.message(w, r, http.StatusForbidden, "Request refused", "That request was refused.",
 				"It came from another site, so caravana didn't act on it. Nothing was changed.")
 			return
 		}
@@ -533,7 +539,7 @@ func (s *server) requireSession(next sessionHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		value, state, err := s.current(r)
 		if err != nil {
-			s.serverError(w, "check session", err)
+			s.serverError(w, r, "check session", err)
 			return
 		}
 		if state != validSession {
@@ -607,7 +613,7 @@ func (s *server) home(w http.ResponseWriter, r *http.Request) {
 	_, state, err := s.current(r)
 	switch {
 	case err != nil:
-		s.serverError(w, "check session", err)
+		s.serverError(w, r, "check session", err)
 	case state == validSession:
 		http.Redirect(w, r, "/apps", http.StatusSeeOther)
 	case state == endedSession:

@@ -391,7 +391,7 @@ func (s *server) drawCompose(w http.ResponseWriter, r *http.Request, status int,
 	if !v.Existing {
 		pl, err := s.loadPlaces(r.Context())
 		if err != nil {
-			s.serverError(w, "list projects", err)
+			s.serverError(w, r, "list projects", err)
 			return
 		}
 		refusal := v.Place.Error
@@ -405,7 +405,7 @@ func (s *server) drawCompose(w http.ResponseWriter, r *http.Request, status int,
 		}
 		var buf bytes.Buffer
 		if err := s.pages[page].ExecuteTemplate(&buf, "compose-form", v); err != nil {
-			s.serverError(w, "render compose form", err)
+			s.serverError(w, r, "render compose form", err)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -420,7 +420,7 @@ func (s *server) drawCompose(w http.ResponseWriter, r *http.Request, status int,
 	}
 	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "newapp", newAppPage{pageData: head, Compose: &v})
@@ -436,13 +436,13 @@ func (s *server) composeAppPage(w http.ResponseWriter, r *http.Request, status i
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	head, err := s.shellPage(r, id+" compose", navProjects, s.appCrumbs(r.Context(), id,
 		crumb{Label: id, Href: "/apps/" + id}, crumb{Label: "Deploy from Compose"})...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
@@ -478,7 +478,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 			return
 		}
 		if err != nil {
-			s.serverError(w, "read app", err)
+			s.serverError(w, r, "read app", err)
 			return
 		}
 		stored = &rec
@@ -488,7 +488,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 	if err := r.ParseForm(); err != nil {
 		var tooBig *http.MaxBytesError
 		if !errors.As(err, &tooBig) {
-			s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+			s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 			return
 		}
 		// Nothing of it was read: the form comes back empty, with the app's revision as it is now.
@@ -505,7 +505,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 	if stored != nil {
 		if draft.Revision == "" {
 			if deploy {
-				s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open Deploy from Compose again and deploy from there.")
+				s.message(w, r, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open Deploy from Compose again and deploy from there.")
 				return
 			}
 			draft.Revision = stored.Revision
@@ -522,7 +522,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		v.Place.Value = strings.TrimSpace(r.PostForm.Get("place"))
 		pl, err := s.loadPlaces(ctx)
 		if err != nil {
-			s.serverError(w, "list projects", err)
+			s.serverError(w, r, "list projects", err)
 			return
 		}
 		place, refusal, placed := pl.placeFor(v.Place.Value, draft.Name.Value)
@@ -540,7 +540,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		case err == nil:
 			draft.Name.Error, ok, status = takenSentence(id), false, http.StatusConflict
 		case !errors.Is(err, store.ErrNotFound):
-			s.serverError(w, "read app", err)
+			s.serverError(w, r, "read app", err)
 			return
 		}
 	}
@@ -565,7 +565,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		s.drawComposeRefused(w, r, http.StatusUnprocessableEntity, v, draft)
 		return
 	case err != nil:
-		s.serverError(w, "preview compose", err)
+		s.serverError(w, r, "preview compose", err)
 		return
 	}
 	draft.ensureServices(prev)
@@ -610,7 +610,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 			s.appNotFound(w, r, id)
 			return
 		case getErr != nil:
-			s.serverError(w, "read app", getErr)
+			s.serverError(w, r, "read app", getErr)
 			return
 		}
 		draft.Revision = fresh.Revision
@@ -620,7 +620,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 	v.SecretsNote = slices.ContainsFunc(draft.Services, func(s draftService) bool { return len(s.Secrets) > 0 })
 	status, ok = v.refuseFailure(&draft, prev, id, err)
 	if !ok {
-		s.serverError(w, "deploy compose from the console", err)
+		s.serverError(w, r, "deploy compose from the console", err)
 		return
 	}
 	draft.markFirstError()

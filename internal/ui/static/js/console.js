@@ -8,7 +8,8 @@
 //   - let htmx show a form the server refused (422, 502),
 //   - copy a value to the clipboard,
 //   - keep a live region's open rows open when it is drawn again,
-//   - keep a delete button off until the app's name has been typed.
+//   - keep a delete button off until the app's name has been typed,
+//   - say which theme "Match the system" would pick right now.
 //
 // Why it looks like this, for a reader new to browser JavaScript:
 //
@@ -244,9 +245,24 @@
     });
   }
 
+  // ---- The system's theme -------------------------------------------------
+  //
+  // Settings › Appearance has an option "Match the system". Only the browser
+  // knows what the system chose (the server sees no such thing), so each
+  // [data-system-theme] element, empty in the HTML, gets " (now light)" or
+  // " (now dark)". Without script it stays empty, and the option reads
+  // "Match the system".
+  function showSystemTheme() {
+    const light = window.matchMedia("(prefers-color-scheme: light)").matches;
+    document.querySelectorAll("[data-system-theme]").forEach(function (word) {
+      word.textContent = light ? " (now light)" : " (now dark)";
+    });
+  }
+
   function start() {
     revealScriptButtons();
     syncAllConfirms();
+    showSystemTheme();
   }
 
   // The script is loaded with `defer`, so the page is already parsed.

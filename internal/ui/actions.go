@@ -358,7 +358,7 @@ func (s *server) showStop(w http.ResponseWriter, r *http.Request, session string
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	name := cmpName(sum)
@@ -380,7 +380,7 @@ func (s *server) showStop(w http.ResponseWriter, r *http.Request, session string
 	}
 	head, err := s.shellPage(r, "Stop "+name, navProjects, s.appCrumbs(r.Context(), id, crumb{Label: name, Href: v.Back}, crumb{Label: "Stop"})...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "stop", stopPage{pageData: head, stopView: v})
@@ -428,7 +428,7 @@ func (s *server) doAction(w http.ResponseWriter, r *http.Request, verb string, d
 	}
 	status, text, ok := actionRefusal(err, verb)
 	if !ok {
-		s.serverError(w, verb+" the app", err)
+		s.serverError(w, r, verb+" the app", err)
 		return
 	}
 	if status == http.StatusBadGateway {
@@ -488,7 +488,7 @@ func (s *server) runCommand(w http.ResponseWriter, r *http.Request, session stri
 		}
 		s.runningPage(w, r, http.StatusBadGateway, id, runningExtras{Refusal: sentence{plain(text)}, Typed: typed})
 	default:
-		s.serverError(w, "run a command", err)
+		s.serverError(w, r, "run a command", err)
 	}
 }
 

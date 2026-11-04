@@ -145,7 +145,7 @@ func (s *server) drawPromote(w http.ResponseWriter, r *http.Request, status int,
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	names := promoNames{App: cmpName(sum), From: sum.Place.Environment, To: to}
@@ -168,7 +168,7 @@ func (s *server) drawPromote(w http.ResponseWriter, r *http.Request, status int,
 	} else {
 		code, text, ok := promotionRefusal(err, names)
 		if !ok {
-			s.serverError(w, "preview promotion", err)
+			s.serverError(w, r, "preview promotion", err)
 			return
 		}
 		v.Refusal, status = text, code
@@ -180,7 +180,7 @@ func (s *server) drawPromote(w http.ResponseWriter, r *http.Request, status int,
 	head, err := s.shellPage(r, "Promote "+names.App, navProjects, s.appCrumbs(r.Context(), id,
 		crumb{Label: names.App, Href: "/apps/" + url.PathEscape(id)}, crumb{Label: "Promote"})...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "promote", promotePage{pageData: head, promoteView: v})
@@ -231,12 +231,12 @@ func (s *server) promoteApp(w http.ResponseWriter, r *http.Request, session stri
 	default:
 		sum, getErr := s.svc.AppSummary(r.Context(), id)
 		if getErr != nil {
-			s.serverError(w, "promote from the console", err)
+			s.serverError(w, r, "promote from the console", err)
 			return
 		}
 		code, text, ok := promotionRefusal(err, promoNames{App: cmpName(sum), From: sum.Place.Environment, To: to})
 		if !ok {
-			s.serverError(w, "promote from the console", err)
+			s.serverError(w, r, "promote from the console", err)
 			return
 		}
 		s.drawPromote(w, r, code, id, to, nil, text)
@@ -273,10 +273,10 @@ func (s *server) copyApp(w http.ResponseWriter, r *http.Request, session string)
 	}
 	status, text, ok := promotionRefusal(err, names)
 	if !ok {
-		s.serverError(w, "copy app from the console", err)
+		s.serverError(w, r, "copy app from the console", err)
 		return
 	}
-	s.message(w, status, "Copy refused", "That copy wasn't made.", text.String())
+	s.message(w, r, status, "Copy refused", "That copy wasn't made.", text.String())
 }
 
 // copiedNotice is the Configure tab's sentence after a copy: what the copy

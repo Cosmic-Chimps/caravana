@@ -943,7 +943,7 @@ func (s *server) showDomainsPage(w http.ResponseWriter, r *http.Request, session
 	q := domainsQueryOf(r.URL.Query())
 	add, err := s.addPanelFor(r.Context(), r, q.App, "")
 	if err != nil {
-		s.serverError(w, "draw the add form", err)
+		s.serverError(w, r, "draw the add form", err)
 		return
 	}
 	s.renderDomains(w, r, http.StatusOK, q, nil, add)
@@ -956,23 +956,23 @@ func (s *server) renderDomains(w http.ResponseWriter, r *http.Request, status in
 	if add == nil {
 		var err error
 		if add, err = s.domainAddFor(ctx, domainAddInput{App: q.App}, ""); err != nil {
-			s.serverError(w, "draw the add form", err)
+			s.serverError(w, r, "draw the add form", err)
 			return
 		}
 	}
 	region, err := s.loadDomains(ctx, q, domainsEmpty, false)
 	if err != nil {
-		s.serverError(w, "list domains", err)
+		s.serverError(w, r, "list domains", err)
 		return
 	}
 	filter, err := s.schedulesFilterOf(ctx, schedulesQuery{Project: q.Project, App: q.App})
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	head, err := s.shellPage(r, "Domains", navDomains, crumb{Label: "Domains"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live?watch=domains"
@@ -1020,10 +1020,10 @@ func (s *server) checkDomainAgain(w http.ResponseWriter, r *http.Request, sessio
 	var fieldErr *app.FieldError
 	switch {
 	case errors.As(err, &fieldErr):
-		s.message(w, http.StatusUnprocessableEntity, "Not a domain", fmt.Sprintf("%q is not a domain caravana can check.", host), "Go back to Domains and try again.")
+		s.message(w, r, http.StatusUnprocessableEntity, "Not a domain", fmt.Sprintf("%q is not a domain caravana can check.", host), "Go back to Domains and try again.")
 		return
 	case err != nil:
-		s.serverError(w, "check a domain", err)
+		s.serverError(w, r, "check a domain", err)
 		return
 	}
 	back := domainHref(host)

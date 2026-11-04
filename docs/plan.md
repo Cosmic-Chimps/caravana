@@ -324,7 +324,8 @@ sense, even where the layout differs (007 and 014 record the differences).
 | `UpdatesScreen` | the notice and how to apply by hand, for one host (027) | applying updates, cluster-wide, in Phase 3 |
 
 Not drawn by the handoff and to ask for: templates ("Start from an example"), Stop as an action,
-a shell or "run a command" into a copy, exposing a TCP port, a light theme.
+a shell or "run a command" into a copy, exposing a TCP port, a light theme (done in 2.6, 028: the
+system's choice, or Settings › This browser › Appearance).
 
 ## Backlog (found while running real apps, not scheduled yet)
 

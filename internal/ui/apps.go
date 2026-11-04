@@ -134,17 +134,17 @@ var deletedID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 func (s *server) showApps(w http.ResponseWriter, r *http.Request, session string) {
 	region, err := s.loadApps(r)
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	activity, err := s.loadActivity(r)
 	if err != nil {
-		s.serverError(w, "list recent deployments", err)
+		s.serverError(w, r, "list recent deployments", err)
 		return
 	}
 	head, err := s.shellPage(r, "Apps", navHome, crumb{Label: "Home"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live"

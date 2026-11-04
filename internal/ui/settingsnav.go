@@ -25,6 +25,7 @@ const (
 	entryNotifications = "notifications"
 	entryCertificates  = "certificates"
 	entryTokens        = "tokens"
+	entryAppearance    = "appearance"
 )
 
 // settingsEntry is one entry of the nav. Account's page is /settings itself.
@@ -44,6 +45,8 @@ var settingsGroups = []struct {
 		{entryNotifications, "Notifications", "/settings/notifications", "bell"},
 	}},
 	{"Security", []settingsEntry{{entryTokens, "API tokens", "/settings/tokens", "key"}}},
+	// This browser: what is kept in the browser, not on the installation (feature 028).
+	{"This browser", []settingsEntry{{entryAppearance, "Appearance", "/settings/appearance", "sun-moon"}}},
 }
 
 // settingsLabel is an entry's name, for the crumb and the title.

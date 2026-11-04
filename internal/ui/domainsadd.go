@@ -391,14 +391,14 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 		s.appNotFound(w, r, fixedApp)
 		return
 	case in.App != "" && err != nil && !errors.Is(err, store.ErrNotFound):
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	known := err == nil && in.App != ""
 
 	form, err := s.domainAddFor(ctx, in, fixedApp)
 	if err != nil {
-		s.serverError(w, "draw the add form", err)
+		s.serverError(w, r, "draw the add form", err)
 		return
 	}
 	refuse := func(status int) { s.showAddRefusal(w, r, status, form) }
@@ -421,7 +421,7 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	if host != "" {
 		other, err := s.takenBy(ctx, host, in.App)
 		if err != nil {
-			s.serverError(w, "read domains", err)
+			s.serverError(w, r, "read domains", err)
 			return
 		}
 		if other != "" {
@@ -438,7 +438,7 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 			fieldError(&form.Host, sentence{mono(host), plain(" is not a domain name: lowercase letters, digits, dashes and dots.")})
 			return
 		case err != nil:
-			s.serverError(w, "check a domain", err)
+			s.serverError(w, r, "check a domain", err)
 			return
 		}
 		// Answer 303 to the same page at the panel, so a reload doesn't post again.
@@ -467,7 +467,7 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	if fixedApp == "" {
 		revision = strings.TrimSpace(r.PostForm.Get("revision-" + in.App))
 		if revision == "" {
-			s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision for the app.", "Open the page again and add the domain from there.")
+			s.message(w, r, http.StatusBadRequest, "Bad request", "That form has no revision for the app.", "Open the page again and add the domain from there.")
 			return
 		}
 	}
@@ -530,7 +530,7 @@ func (s *server) postDomainAdd(w http.ResponseWriter, r *http.Request, fixedApp 
 	default:
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
-			s.serverError(w, "add a domain", err)
+			s.serverError(w, r, "add a domain", err)
 			return
 		}
 		form.Notice = notice

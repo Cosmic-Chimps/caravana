@@ -150,7 +150,7 @@ func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session stri
 func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int, form newAppForm) {
 	pl, err := s.loadPlaces(r.Context())
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	refusal := form.Place.Error
@@ -159,7 +159,7 @@ func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int
 	if r.Header.Get("HX-Request") == "true" {
 		var buf bytes.Buffer
 		if err := s.pages["newapp"].ExecuteTemplate(&buf, "newapp-form", form); err != nil {
-			s.serverError(w, "render new app form", err)
+			s.serverError(w, r, "render new app form", err)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -170,7 +170,7 @@ func (s *server) renderNewApp(w http.ResponseWriter, r *http.Request, status int
 	}
 	head, err := s.shellPage(r, "New app", navHome, crumb{Label: "New app"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "newapp", newAppPage{pageData: head, Form: form})
@@ -193,7 +193,7 @@ const (
 // nothing is deployed yet.
 func (s *server) createApp(w http.ResponseWriter, r *http.Request, session string) {
 	if err := r.ParseForm(); err != nil {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 		return
 	}
 	val := func(name string) string { return strings.TrimSpace(r.PostForm.Get(name)) }
@@ -207,7 +207,7 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 	a, ok := buildNewApp(&form, deployNow)
 	pl, err := s.loadPlaces(r.Context())
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	place, refusal, placed := pl.placeFor(form.Place.Value, form.Name.Value)
@@ -243,7 +243,7 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request, session strin
 
 	status, ok := refuseNewApp(&form, a.ID, err)
 	if !ok {
-		s.serverError(w, "create app from the console", err)
+		s.serverError(w, r, "create app from the console", err)
 		return
 	}
 	form.markFirstError()

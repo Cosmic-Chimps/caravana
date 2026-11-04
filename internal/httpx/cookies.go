@@ -98,3 +98,52 @@ func SetModeCookie(w http.ResponseWriter, mode string, https bool) {
 		SameSite: http.SameSiteLaxMode,
 	})
 }
+
+// The console's theme, light or dark, is kept the same way (feature 028): a
+// plain cookie, set from Settings › Appearance. No cookie means "match the
+// system", which the stylesheet decides with prefers-color-scheme. Like the
+// view, it is a preference and nothing trusts it: any other value reads as no
+// choice.
+const (
+	themeCookieName = "caravana_theme"
+	// ThemeLight and ThemeDark are the two values the cookie carries.
+	ThemeLight = "light"
+	ThemeDark  = "dark"
+	// themeCookieAge is how long the choice is kept: a year.
+	themeCookieAge = 365 * 24 * time.Hour
+)
+
+// ThemeCookie returns the theme the request's cookie forces: ThemeLight or
+// ThemeDark, or "" for no cookie, or one with another value (match the system).
+func ThemeCookie(r *http.Request) string {
+	c, err := r.Cookie(themeCookieName)
+	if err != nil {
+		return ""
+	}
+	switch c.Value {
+	case ThemeLight, ThemeDark:
+		return c.Value
+	}
+	return ""
+}
+
+// SetThemeCookie remembers a forced theme (ThemeLight or ThemeDark); any other
+// value, "" included, means "match the system" and deletes the cookie. It has
+// the mode cookie's attributes: no __Host- prefix, HttpOnly, Lax, for the whole
+// site and Secure when the client used HTTPS (Proxies.HTTPS).
+func SetThemeCookie(w http.ResponseWriter, theme string, https bool) {
+	cookie := &http.Cookie{
+		Name:     themeCookieName,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   https,
+		SameSite: http.SameSiteLaxMode,
+	}
+	if theme == ThemeLight || theme == ThemeDark {
+		cookie.Value = theme
+		cookie.MaxAge = int(themeCookieAge / time.Second)
+	} else {
+		cookie.MaxAge = -1 // sent as Max-Age=0
+	}
+	http.SetCookie(w, cookie)
+}

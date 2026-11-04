@@ -654,16 +654,16 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	if err := r.ParseForm(); err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			s.message(w, http.StatusRequestEntityTooLarge, "Too large", "That form is larger than 256 KiB.", "Shorten the longest field and try again.")
+			s.message(w, r, http.StatusRequestEntityTooLarge, "Too large", "That form is larger than 256 KiB.", "Shorten the longest field and try again.")
 			return
 		}
-		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 		return
 	}
 	// A form without its revision would save over whatever is there.
 	revision := strings.TrimSpace(r.PostForm.Get("revision"))
 	if revision == "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and save from there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and save from there.")
 		return
 	}
 	rec, err := s.svc.GetApp(ctx, id)
@@ -672,7 +672,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	// An app that keeps its Compose file is edited through the file. The page
@@ -704,7 +704,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 		s.appNotFound(w, r, id)
 		return
 	case getErr != nil:
-		s.serverError(w, "read app", getErr)
+		s.serverError(w, r, "read app", getErr)
 		return
 	}
 	if errors.Is(err, service.ErrAppChanged) {
@@ -717,7 +717,7 @@ func (s *server) saveConfigure(w http.ResponseWriter, r *http.Request, session s
 	form.Revision = fresh.Revision
 	status, ok := refuseEdit(&form, edited, err)
 	if !ok {
-		s.serverError(w, "save and deploy from the console", err)
+		s.serverError(w, r, "save and deploy from the console", err)
 		return
 	}
 	form.markFirstError()
@@ -815,12 +815,12 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 	id := r.PathValue("id")
 	r.Body = http.MaxBytesReader(w, r.Body, maxEditBytes)
 	if err := r.ParseForm(); err != nil {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 		return
 	}
 	revision := strings.TrimSpace(r.PostForm.Get("revision"))
 	if revision == "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and define the app from there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the Configure tab again and define the app from there.")
 		return
 	}
 	rec, err := s.svc.GetApp(ctx, id)
@@ -829,7 +829,7 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	if rec.App.Defined() {
@@ -866,7 +866,7 @@ func (s *server) defineApp(w http.ResponseWriter, r *http.Request, session strin
 
 	status, ok := refuseNewApp(&form, id, err)
 	if !ok {
-		s.serverError(w, "define app from the console", err)
+		s.serverError(w, r, "define app from the console", err)
 		return
 	}
 	var deployErr *service.DeployError

@@ -18,7 +18,7 @@ func (s *server) showComposeDeploy(w http.ResponseWriter, r *http.Request, sessi
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	// An app that keeps its file opens with it, as Configure does.

@@ -51,7 +51,7 @@ func (s *server) drawDomainPost(w http.ResponseWriter, r *http.Request, p domain
 	if p.page == "app" {
 		form, err := s.domainAddFor(r.Context(), domainAddInput{}, p.appID)
 		if err != nil {
-			s.serverError(w, "draw the add form", err)
+			s.serverError(w, r, "draw the add form", err)
 			return
 		}
 		form.Notice = notice
@@ -87,7 +87,7 @@ func (s *server) readDomainPost(w http.ResponseWriter, r *http.Request, what str
 		return p, false
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return p, false
 	}
 	p.rec = rec
@@ -129,7 +129,7 @@ func (s *server) refuseDomainChange(w http.ResponseWriter, r *http.Request, p do
 	default:
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
-			s.serverError(w, "change a domain", err)
+			s.serverError(w, r, "change a domain", err)
 			return
 		}
 		s.drawDomainPost(w, r, p, status, notice, domainsQuery{})
@@ -210,6 +210,6 @@ func (s *server) rotateTeamPassword(w http.ResponseWriter, r *http.Request, sess
 		s.log.Warn("can't write the Team-only passwords", "error", err)
 		s.drawDomainPost(w, r, p, http.StatusBadGateway, plainS("Nomad couldn't keep the new password, so the old one still works."), domainsQuery{})
 	default:
-		s.serverError(w, "make a new Team-only password", err)
+		s.serverError(w, r, "make a new Team-only password", err)
 	}
 }

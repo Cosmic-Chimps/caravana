@@ -273,6 +273,10 @@
   /* A checkbox with its label (Settings > Notifications: what a channel sends). The box takes
      the accent colour and sits on the first line of the label. */
   .cv-check { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); cursor: pointer; }
+  /* A radio group (Settings › Appearance): the check's box, stacked. The fieldset's own border and padding are dropped. */
+  .cv-radios { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+  .cv-radio { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); cursor: pointer; }
+  .cv-radio input { flex: none; width: 14px; height: 14px; accent-color: var(--color-accent); cursor: pointer; }
   .cv-check input { flex: none; width: 14px; height: 14px; accent-color: var(--color-accent); cursor: pointer; }
   .cv-logtools { display: flex; gap: 8px; }
   .cv-logtools[hidden], .cv-log-note[hidden], .cv-log-empty[hidden] { display: none; }

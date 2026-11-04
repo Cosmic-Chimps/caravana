@@ -306,7 +306,7 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 	sum, err := s.svc.AppSummary(r.Context(), id)
 	missing := errors.Is(err, store.ErrNotFound)
 	if err != nil && !missing {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	if missing {
@@ -315,7 +315,7 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 	}
 	head, err := s.shellPage(r, id, navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	// ?tab=running is what makes the stream send "usage" events: nothing reads
@@ -323,12 +323,12 @@ func (s *server) runningPage(w http.ResponseWriter, r *http.Request, status int,
 	head.LiveURL = "/live/apps/" + id + "?tab=running"
 	copies, err := s.loadCopies(r, id)
 	if err != nil {
-		s.serverError(w, "list copies", err)
+		s.serverError(w, r, "list copies", err)
 		return
 	}
 	actions, err := s.loadActions(r, id)
 	if err != nil {
-		s.serverError(w, "list actions", err)
+		s.serverError(w, r, "list actions", err)
 		return
 	}
 	page := appPage{pageData: head, appHeader: s.header(r.Context(), sum, "running"), Running: &copies, Actions: &actions,
@@ -850,7 +850,7 @@ func deployFormOf(a app.App) deployForm {
 func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) {
 	head, err := s.shellPage(r, id, navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: id})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	page := appPage{pageData: head, appHeader: appHeader{ID: id,
@@ -883,19 +883,19 @@ func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status 
 	}
 	switch {
 	case errors.Is(err, errBadCursor):
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
 			"The \"before\" value must be a time. Go back to the Deployments tab and use Show older.")
 		return
 	case errors.Is(err, store.ErrNotFound):
 		s.appNotFound(w, r, id)
 		return
 	case err != nil:
-		s.serverError(w, "list deployments", err)
+		s.serverError(w, r, "list deployments", err)
 		return
 	}
 	head, err := s.shellPage(r, id+" deployments", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
@@ -911,7 +911,7 @@ func (s *server) showDeployments(w http.ResponseWriter, r *http.Request, session
 	case errors.Is(err, store.ErrNotFound):
 		s.appNotFound(w, r, id)
 	case err != nil:
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 	default:
 		s.deploymentsPage(w, r, http.StatusOK, sum, deployFormOf(sum.App), nil)
 	}
@@ -953,11 +953,11 @@ func (s *server) deployApp(w http.ResponseWriter, r *http.Request, session strin
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 		return
 	}
 
@@ -994,7 +994,7 @@ func (s *server) deployApp(w http.ResponseWriter, r *http.Request, session strin
 			s.appNotFound(w, r, id)
 			return
 		}
-		s.serverError(w, "deploy from the console", err)
+		s.serverError(w, r, "deploy from the console", err)
 		return
 	}
 	form.Notice = notice
@@ -1092,29 +1092,29 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	hook, err := s.svc.WebhookStatus(ctx, id)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		s.serverError(w, "read webhook", err)
+		s.serverError(w, r, "read webhook", err)
 		return
 	}
 	deployments, err := s.svc.ListDeployments(ctx, id, 0)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		s.serverError(w, "list deployments", err)
+		s.serverError(w, r, "list deployments", err)
 		return
 	}
 	schedules, err := s.svc.ListSchedules(ctx, service.ScheduleFilter{App: id})
 	if err != nil {
-		s.serverError(w, "list schedules", err)
+		s.serverError(w, r, "list schedules", err)
 		return
 	}
 	newestRuns := map[string]service.ScheduleRun{}
 	for _, sc := range schedules {
 		runs, err := s.svc.ListScheduleRuns(ctx, sc.ID, 1)
 		if err != nil {
-			s.serverError(w, "list schedule runs", err)
+			s.serverError(w, r, "list schedule runs", err)
 			return
 		}
 		if len(runs) > 0 {
@@ -1123,7 +1123,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 	}
 	head, err := s.shellPage(r, id+" configure", navProjects, s.appCrumbs(r.Context(), id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
@@ -1198,7 +1198,7 @@ func (s *server) createWebhook(w http.ResponseWriter, r *http.Request, session s
 	case errors.Is(err, store.ErrNotFound):
 		s.appNotFound(w, r, id)
 	case err != nil:
-		s.serverError(w, "create webhook token", err)
+		s.serverError(w, r, "create webhook token", err)
 	default:
 		s.configurePage(w, r, http.StatusOK, id, configureExtras{WebhookURL: s.origin(r) + tok.Path})
 	}
@@ -1216,12 +1216,12 @@ func (s *server) createDeployToken(w http.ResponseWriter, r *http.Request, sessi
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	created, err := s.makeDeployToken(r, id, sum.Place)
 	if err != nil {
-		s.serverError(w, "create deploy token", err)
+		s.serverError(w, r, "create deploy token", err)
 		return
 	}
 	s.configurePage(w, r, http.StatusOK, id, configureExtras{
@@ -1236,7 +1236,7 @@ func (s *server) revokeWebhook(w http.ResponseWriter, r *http.Request, session s
 	case errors.Is(err, store.ErrNotFound):
 		s.appNotFound(w, r, id)
 	case err != nil:
-		s.serverError(w, "revoke webhook token", err)
+		s.serverError(w, r, "revoke webhook token", err)
 	default:
 		http.Redirect(w, r, "/apps/"+id+"/configure", http.StatusSeeOther)
 	}
@@ -1274,6 +1274,6 @@ func (s *server) deleteApp(w http.ResponseWriter, r *http.Request, session strin
 		s.configurePage(w, r, http.StatusBadGateway, id, configureExtras{
 			DeleteNotice: sentence{plain("The app's job is stopped, but its secrets couldn't be deleted, so the app is still here. Try again.")}})
 	default:
-		s.serverError(w, "delete app", err)
+		s.serverError(w, r, "delete app", err)
 	}
 }

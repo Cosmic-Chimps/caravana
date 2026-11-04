@@ -321,26 +321,26 @@ func (s *server) showMonitoring(w http.ResponseWriter, r *http.Request, session 
 	ctx := r.Context()
 	q, bad := monReqOf(r.URL.Query())
 	if bad != "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Monitoring and use the choices there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Monitoring and use the choices there.")
 		return
 	}
 	pl, err := s.loadPlaces(ctx)
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	if !pl.has(q.Project, q.Environment) {
-		s.message(w, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Monitoring and choose another.")
+		s.message(w, r, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Monitoring and choose another.")
 		return
 	}
 	view, err := s.monViewOf(ctx, q, pl)
 	if err != nil {
-		s.serverError(w, "draw monitoring", err)
+		s.serverError(w, r, "draw monitoring", err)
 		return
 	}
 	head, err := s.shellPage(r, "Monitoring", navMonitoring, crumb{Label: "Monitoring"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live?watch=monitoring"

@@ -157,7 +157,7 @@ func (s *server) saveRegistry(w http.ResponseWriter, r *http.Request, session st
 		data = registriesData{Add: data.Add, EditHost: data.EditHost, Edit: data.Edit,
 			Alert: &fieldError{Text: "Nomad couldn't keep the credentials, so nothing was saved: " + err.Error()}}
 	default:
-		s.serverError(w, "save registry", err)
+		s.serverError(w, r, "save registry", err)
 		return
 	}
 	s.renderSettings(w, r, entryRegistries, settingsData{Registries: data})
@@ -185,7 +185,7 @@ func (s *server) testRegistry(w http.ResponseWriter, r *http.Request, session st
 	case errors.Is(err, store.ErrNotFound):
 		http.Redirect(w, r, "/settings/registries", http.StatusSeeOther)
 	default:
-		s.serverError(w, "test registry", err)
+		s.serverError(w, r, "test registry", err)
 	}
 }
 
@@ -201,7 +201,7 @@ func (s *server) removeRegistry(w http.ResponseWriter, r *http.Request, session 
 		s.log.Warn("can't remove the registry credentials", "registry", r.PathValue("host"), "error", err)
 		s.renderSettings(w, r, entryRegistries, settingsData{Registries: registriesData{Alert: &fieldError{Text: err.Error()}}})
 	default:
-		s.serverError(w, "remove registry", err)
+		s.serverError(w, r, "remove registry", err)
 	}
 }
 

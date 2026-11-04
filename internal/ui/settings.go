@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
@@ -95,6 +96,16 @@ type settingsData struct {
 	Registries      registriesData
 	Notifications   notificationsData
 	Certificates    certificatesData
+	Appearance      appearanceForm
+}
+
+// appearanceForm is the Appearance page: the theme this browser keeps. Choice is
+// "system", "light" or "dark", read from the cookie on every render (a refused
+// post changes nothing, so it shows the choice that still holds).
+type appearanceForm struct {
+	Choice string
+	Saved  bool
+	Err    *fieldError
 }
 
 // destinationForm is the Backup storage page: the saved destination (or what
@@ -168,6 +179,31 @@ func (s *server) showTokens(w http.ResponseWriter, r *http.Request, session stri
 	s.renderSettings(w, r, entryTokens, settingsData{ShowOlder: r.URL.Query().Get("older") == "1"})
 }
 
+// showAppearance answers GET /settings/appearance.
+func (s *server) showAppearance(w http.ResponseWriter, r *http.Request, session string) {
+	s.renderSettings(w, r, entryAppearance, settingsData{Appearance: appearanceForm{Saved: r.URL.Query().Get("saved") == "1"}})
+}
+
+// saveAppearance answers POST /settings/appearance. "light" and "dark" force
+// that theme in this browser with a cookie, "system" deletes the cookie so the
+// browser's own choice decides again; anything else draws the page again
+// (422) and leaves the cookie as it was.
+func (s *server) saveAppearance(w http.ResponseWriter, r *http.Request, session string) {
+	if !s.readForm(w, r) {
+		return
+	}
+	switch theme := r.PostFormValue("theme"); theme {
+	case "system":
+		httpx.SetThemeCookie(w, "", s.proxies.HTTPS(r))
+	case httpx.ThemeLight, httpx.ThemeDark:
+		httpx.SetThemeCookie(w, theme, s.proxies.HTTPS(r))
+	default:
+		s.renderSettings(w, r, entryAppearance, settingsData{Appearance: appearanceForm{Err: &fieldError{Text: "Choose one of the three."}}})
+		return
+	}
+	http.Redirect(w, r, "/settings/appearance?saved=1", http.StatusSeeOther)
+}
+
 // setBackupDestination answers POST /settings/backups (feature 010). An
 // empty secret key keeps the one saved before. A refusal draws the page
 // again with what was typed, except the secret key.
@@ -200,7 +236,7 @@ func (s *server) setBackupDestination(w http.ResponseWriter, r *http.Request, se
 		s.log.Warn("can't save the backup destination", "error", err)
 		form.Err = &fieldError{Text: "Nomad couldn't keep the secret key, so nothing was saved: " + err.Error()}
 	default:
-		s.serverError(w, "set backup destination", err)
+		s.serverError(w, r, "set backup destination", err)
 		return
 	}
 	s.renderSettings(w, r, entryBackupStorage, settingsData{Dest: form})
@@ -253,14 +289,14 @@ func (s *server) settingsFacts(ctx context.Context) (settingsFacts, error) {
 func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry string, data settingsData) {
 	facts, err := s.settingsFacts(r.Context())
 	if err != nil {
-		s.serverError(w, "read settings", err)
+		s.serverError(w, r, "read settings", err)
 		return
 	}
 	now := s.now()
 	label := settingsLabel(entry)
 	head, err := s.shellPage(r, "Settings · "+label, navSettings, crumb{Label: "Settings", Href: "/settings"}, crumb{Label: label})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	states := facts.states(now)
@@ -270,6 +306,7 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 	data.Email = head.Shell.Email
 	data.Origin = s.origin(r)
 
+	status := http.StatusOK
 	switch entry {
 	case entryRegistries:
 		data.Registries = registriesSection(now, facts, states[entryRegistries], data.Registries)
@@ -280,16 +317,25 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 	case entryCertificates:
 		cert, err := s.certificatesSection(r.Context(), now, facts, data.Certificates)
 		if err != nil {
-			s.serverError(w, "read certificate settings", err)
+			s.serverError(w, r, "read certificate settings", err)
 			return
 		}
 		data.Certificates = cert
+	case entryAppearance:
+		// The cookie is what holds, whatever was just posted.
+		data.Appearance.Choice = "system"
+		if theme := httpx.ThemeCookie(r); theme != "" {
+			data.Appearance.Choice = theme
+		}
+		if data.Appearance.Err != nil {
+			status = http.StatusUnprocessableEntity
+		}
 	case entryTokens:
 		data.Tokens, data.OlderHidden = tokenRows(now, facts.Tokens, states[entryTokens], data.ShowOlder)
 		if s.svc != nil {
 			pl, err := s.loadPlaces(r.Context())
 			if err != nil {
-				s.serverError(w, "list projects", err)
+				s.serverError(w, r, "list projects", err)
 				return
 			}
 			data.Scope.Projects = nil
@@ -298,7 +344,7 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 			}
 		}
 	}
-	s.render(w, http.StatusOK, "settings", data)
+	s.render(w, status, "settings", data)
 }
 
 // destinationSection fills in the Backup storage page: the connection row and the
@@ -430,7 +476,7 @@ func (s *server) changePassword(w http.ResponseWriter, r *http.Request, session 
 	case errors.As(err, &fieldErr) && fieldErr.Field == "newPassword":
 		s.renderSettings(w, r, entryAccount, settingsData{NewErr: &fieldError{Text: "The new password " + fieldErr.Message + "."}})
 	default:
-		s.serverError(w, "change password", err)
+		s.serverError(w, r, "change password", err)
 	}
 }
 
@@ -491,7 +537,7 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 		data.Scope.AppErr = &fieldError{Text: "The app name " + strings.TrimPrefix(fieldErr.Message, `"`+data.Scope.App+`" `) + "."}
 		s.renderSettings(w, r, entryTokens, data)
 	default:
-		s.serverError(w, "create api token", err)
+		s.serverError(w, r, "create api token", err)
 	}
 }
 
@@ -501,7 +547,7 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, session str
 func (s *server) revokeToken(w http.ResponseWriter, r *http.Request, session string) {
 	err := s.auth.RevokeAPIToken(r.Context(), r.PathValue("tokenId"))
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		s.serverError(w, "revoke api token", err)
+		s.serverError(w, r, "revoke api token", err)
 		return
 	}
 	http.Redirect(w, r, "/settings/tokens", http.StatusSeeOther)
@@ -512,7 +558,7 @@ func (s *server) revokeToken(w http.ResponseWriter, r *http.Request, session str
 func (s *server) readForm(w http.ResponseWriter, r *http.Request) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 	if err := r.ParseForm(); err != nil {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form couldn't be read.", "Go back and try again.")
 		return false
 	}
 	return true

@@ -325,7 +325,7 @@ func (s *server) refuseNotification(w http.ResponseWriter, r *http.Request, err 
 			Alert: &fieldError{Text: "Nomad couldn't keep the channel's secret, so nothing was saved: " + err.Error()},
 		}})
 	default:
-		s.serverError(w, what, err)
+		s.serverError(w, r, what, err)
 	}
 }
 
@@ -345,7 +345,7 @@ func (s *server) testNotification(w http.ResponseWriter, r *http.Request, sessio
 			Alert: &fieldError{Text: "Nomad couldn't give the channel's secret, so no message was sent: " + err.Error()},
 		}})
 	default:
-		s.serverError(w, "test notification channel", err)
+		s.serverError(w, r, "test notification channel", err)
 	}
 }
 
@@ -373,7 +373,7 @@ func (s *server) rotateNotification(w http.ResponseWriter, r *http.Request, sess
 			Alert: &fieldError{Text: "Nomad couldn't keep the new secret, so the old one still works: " + err.Error()},
 		}})
 	default:
-		s.serverError(w, "rotate notification secret", err)
+		s.serverError(w, r, "rotate notification secret", err)
 	}
 }
 
@@ -388,7 +388,7 @@ func (s *server) removeNotification(w http.ResponseWriter, r *http.Request, sess
 		s.log.Warn("can't remove the notification channel's secrets", "error", err)
 		s.renderSettings(w, r, entryNotifications, settingsData{Notifications: notificationsData{Alert: &fieldError{Text: err.Error()}}})
 	default:
-		s.serverError(w, "remove notification channel", err)
+		s.serverError(w, r, "remove notification channel", err)
 	}
 }
 

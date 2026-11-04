@@ -30,13 +30,13 @@ type loginData struct {
 }
 
 func (s *server) loginPage(r *http.Request) loginData {
-	return loginData{pageData: s.page("Sign in"), Host: r.Host}
+	return loginData{pageData: s.page(r, "Sign in"), Host: r.Host}
 }
 
 // showLogin answers GET /login.
 func (s *server) showLogin(w http.ResponseWriter, r *http.Request) {
 	if _, state, err := s.current(r); err != nil {
-		s.serverError(w, "check session", err)
+		s.serverError(w, r, "check session", err)
 		return
 	} else if state == validSession {
 		http.Redirect(w, r, "/apps", http.StatusSeeOther)
@@ -57,7 +57,7 @@ func (s *server) renderLogin(w http.ResponseWriter, r *http.Request, data loginD
 		data.NoAdmin = true
 		data.Notice = nil
 	} else if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, http.StatusOK, "login", data)
@@ -95,7 +95,7 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 	case errors.As(err, &failure):
 		data.Notice = &notice{Kind: "warning", Text: failureSentence(failure.TriesLeft)}
 	default:
-		s.serverError(w, "sign in", err)
+		s.serverError(w, r, "sign in", err)
 		return
 	}
 	s.renderLogin(w, r, data)
@@ -131,7 +131,7 @@ func (s *server) signOut(w http.ResponseWriter, r *http.Request) {
 	https := s.proxies.HTTPS(r)
 	if value, ok := httpx.SessionCookie(r, https); ok {
 		if err := s.auth.SignOut(r.Context(), value); err != nil {
-			s.serverError(w, "sign out", err)
+			s.serverError(w, r, "sign out", err)
 			return
 		}
 	}

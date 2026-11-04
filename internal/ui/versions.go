@@ -89,11 +89,11 @@ func (s *server) redeployVersion(w http.ResponseWriter, r *http.Request, session
 		var ok bool
 		if status, why, ok = refuseDeploy(&deployForm{}, err); !ok {
 			if errors.Is(err, store.ErrNotFound) {
-				s.message(w, http.StatusNotFound, "Not found", "There's no such deployment.",
+				s.message(w, r, http.StatusNotFound, "Not found", "There's no such deployment.",
 					"Go back to the Deployments tab; the deployment may belong to another app.")
 				return
 			}
-			s.serverError(w, "redeploy a past version", err)
+			s.serverError(w, r, "redeploy a past version", err)
 			return
 		}
 	}
@@ -104,7 +104,7 @@ func (s *server) redeployVersion(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	s.deploymentsPage(w, r, status, sum, deployFormOf(sum.App), &refusedRedeploy{ID: depID, Why: why})
@@ -136,12 +136,12 @@ func (s *server) export(w http.ResponseWriter, r *http.Request, deploymentID str
 		_, _ = w.Write(hcl)
 	case errors.Is(err, service.ErrNoLiveDeployment), errors.Is(err, service.ErrDefinitionNotRecorded):
 		reason, _ := versionReason(err)
-		s.message(w, http.StatusConflict, "Nothing to export", reason,
+		s.message(w, r, http.StatusConflict, "Nothing to export", reason,
 			"Deploy the app, and export it once the deployment is healthy.")
 	case errors.Is(err, store.ErrNotFound):
-		s.message(w, http.StatusNotFound, "Not found", "There's no such app or deployment.", "Go back to the Apps page.")
+		s.message(w, r, http.StatusNotFound, "Not found", "There's no such app or deployment.", "Go back to the Apps page.")
 	default:
-		s.serverError(w, "export a jobspec", err)
+		s.serverError(w, r, "export a jobspec", err)
 	}
 }
 
@@ -162,10 +162,10 @@ func (s *server) downloadCompose(w http.ResponseWriter, r *http.Request, session
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(rec.Compose.Compose))
 	case err == nil, errors.Is(err, store.ErrNotFound):
-		s.message(w, http.StatusNotFound, "Not found", "There's no Compose file for that deployment.",
+		s.message(w, r, http.StatusNotFound, "Not found", "There's no Compose file for that deployment.",
 			"Only deployments made from a Compose file have one. Go back to the Deployments tab.")
 	default:
-		s.serverError(w, "download a Compose file", err)
+		s.serverError(w, r, "download a Compose file", err)
 	}
 }
 

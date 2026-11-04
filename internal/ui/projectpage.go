@@ -386,12 +386,12 @@ func (s *server) showProject(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read project", err)
+		s.serverError(w, r, "read project", err)
 		return
 	}
 	screen, err := s.projectScreenOf(r, d)
 	if err != nil {
-		s.serverError(w, "build project page", err)
+		s.serverError(w, r, "build project page", err)
 		return
 	}
 	if r.URL.Query().Get("created") == "1" {
@@ -399,7 +399,7 @@ func (s *server) showProject(w http.ResponseWriter, r *http.Request, session str
 	}
 	head, err := s.shellPage(r, d.Project.DisplayName, navProjects, crumb{Label: d.Project.DisplayName})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live"

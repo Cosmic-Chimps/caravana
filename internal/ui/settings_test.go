@@ -25,6 +25,7 @@ var settingsPages = []struct{ path, entry string }{
 	{"/settings/certificates", "Certificates"},
 	{"/settings/notifications", "Notifications"},
 	{"/settings/tokens", "API tokens"},
+	{"/settings/appearance", "Appearance"},
 }
 
 // settingsNavOf reads the Settings nav of a page: its groups (the title, "" for
@@ -55,7 +56,8 @@ func settingsNavOf(t *testing.T, body string) map[string][]string {
 }
 
 // Every Settings page has the same nav: Account, then Connections (Registries,
-// Backup storage, Notifications) and Security (API tokens), with this page's entry current.
+// Backup storage, Certificates, Notifications), Security (API tokens) and This browser
+// (Appearance, feature 028), with this page's entry current.
 func TestSettingsNavOnEveryPage(t *testing.T) {
 	e := newConsoleEnv(t)
 	for _, tc := range settingsPages {
@@ -64,9 +66,10 @@ func TestSettingsNavOnEveryPage(t *testing.T) {
 			t.Fatalf("GET %s = %d", tc.path, resp.StatusCode)
 		}
 		want := map[string][]string{
-			"":            {"Account=/settings"},
-			"Connections": {"Registries=/settings/registries", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "Notifications=/settings/notifications"},
-			"Security":    {"API tokens=/settings/tokens"},
+			"":             {"Account=/settings"},
+			"Connections":  {"Registries=/settings/registries", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "Notifications=/settings/notifications"},
+			"Security":     {"API tokens=/settings/tokens"},
+			"This browser": {"Appearance=/settings/appearance"},
 		}
 		for title, items := range want {
 			for i, item := range items {

@@ -243,12 +243,12 @@ func (s *server) partOpsUpdates(w http.ResponseWriter, r *http.Request, session 
 func (s *server) drawOpsUpdates(w http.ResponseWriter, r *http.Request, status int, refusal string) {
 	d, err := s.loadOpsUpdates(r)
 	if err != nil {
-		s.serverError(w, "draw the updates page", err)
+		s.serverError(w, r, "draw the updates page", err)
 		return
 	}
 	page, err := s.shellPage(r, "Updates", navOpsUpdates, crumb{Label: "Updates"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	page.LiveURL = "/live?watch=ops"
@@ -279,7 +279,7 @@ func (s *server) checkOpsUpdates(w http.ResponseWriter, r *http.Request, session
 	case errors.Is(err, service.ErrCheckDisabled), errors.Is(err, service.ErrCheckUnavailable):
 		s.drawOpsUpdates(w, r, http.StatusConflict, refusalWords(err))
 	default:
-		s.serverError(w, "start a check for updates", err)
+		s.serverError(w, r, "start a check for updates", err)
 	}
 }
 
@@ -302,7 +302,7 @@ func refusalWords(err error) string {
 // it asks GitHub for new releases. A checked box is on, a missing one is off.
 func (s *server) saveOpsUpdateSettings(w http.ResponseWriter, r *http.Request, session string) {
 	if err := s.svc.SetReleaseCheck(r.Context(), r.PostFormValue("checkEnabled") != ""); err != nil {
-		s.serverError(w, "save the update settings", err)
+		s.serverError(w, r, "save the update settings", err)
 		return
 	}
 	http.Redirect(w, r, "/ops/updates?saved=1#how", http.StatusSeeOther)

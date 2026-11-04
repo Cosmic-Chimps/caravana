@@ -1117,7 +1117,7 @@ func (s *server) showLogsPage(w http.ResponseWriter, r *http.Request, session st
 	ctx := r.Context()
 	q, bad := logsReqOf(r.URL.Query())
 	if bad != "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
 		return
 	}
 	if q.At != "" || q.Open != "" {
@@ -1125,25 +1125,25 @@ func (s *server) showLogsPage(w http.ResponseWriter, r *http.Request, session st
 	}
 	pl, err := s.loadPlaces(ctx)
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	if !pl.has(q.Project, q.Environment) {
-		s.message(w, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
+		s.message(w, r, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
 		return
 	}
 	reg, err := s.logsRegionOf(ctx, q)
-	if !s.logsRead(w, err) {
+	if !s.logsRead(w, r, err) {
 		return
 	}
 	view, err := s.logsViewOf(ctx, r, pl, q, reg)
 	if err != nil {
-		s.serverError(w, "draw the logs", err)
+		s.serverError(w, r, "draw the logs", err)
 		return
 	}
 	head, err := s.shellPage(r, "Logs", navLogs, crumb{Label: "Logs"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	if view.Following || reg.Head.Feed != nil {
@@ -1171,12 +1171,12 @@ func (s *server) showAppLogs(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	q, bad := logsReqOf(r.URL.Query())
 	if bad != "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to the Logs tab and use the choices there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to the Logs tab and use the choices there.")
 		return
 	}
 	q = q.inTab(sum.AppRecord)
@@ -1184,17 +1184,17 @@ func (s *server) showAppLogs(w http.ResponseWriter, r *http.Request, session str
 		q.Live = false // an open row, or the lines around one, is a page that is read, not followed
 	}
 	reg, err := s.logsRegionOf(ctx, q)
-	if !s.logsRead(w, err) {
+	if !s.logsRead(w, r, err) {
 		return
 	}
 	view, err := s.logsViewOf(ctx, r, places{}, q, reg)
 	if err != nil {
-		s.serverError(w, "draw the logs", err)
+		s.serverError(w, r, "draw the logs", err)
 		return
 	}
 	head, err := s.shellPage(r, id+" logs", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id + "?watch=logs"
@@ -1222,19 +1222,19 @@ func (s *server) appLogsWatch(id string) func() func() {
 
 // logsRead says whether reading the logs worked. A refused address is answered with a 400 page, a
 // place that went away with a 404 and anything else with a 500, and it returns false.
-func (s *server) logsRead(w http.ResponseWriter, err error) bool {
+func (s *server) logsRead(w http.ResponseWriter, r *http.Request, err error) bool {
 	var fe *app.FieldError
 	var pe *service.PlaceError
 	switch {
 	case err == nil:
 		return true
 	case errors.As(err, &fe):
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
 			fe.Field+" "+fe.Message+". Go back to Logs and use the choices there.")
 	case errors.As(err, &pe):
-		s.message(w, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
+		s.message(w, r, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
 	default:
-		s.serverError(w, "read logs", err)
+		s.serverError(w, r, "read logs", err)
 	}
 	return false
 }
@@ -1581,7 +1581,7 @@ func (s *server) downloadLogsFile(w http.ResponseWriter, r *http.Request, sessio
 	}
 	q, bad := logsReqOf(v)
 	if bad != "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.", bad+" Go back to Logs and use the choices there.")
 		return
 	}
 	// The service reads for up to two minutes before the first byte; the server's write timeout
@@ -1600,21 +1600,21 @@ func (s *server) downloadLogsFile(w http.ResponseWriter, r *http.Request, sessio
 	case dw.started:
 		s.log.Warn("log download ended early", "error", err)
 	case errors.Is(err, service.ErrDownloadBusy):
-		s.message(w, http.StatusConflict, "Download", logsDownloadBusy, "Only one download of logs runs at a time. Go back to Logs and press Download again.")
+		s.message(w, r, http.StatusConflict, "Download", logsDownloadBusy, "Only one download of logs runs at a time. Go back to Logs and press Download again.")
 	case errors.As(err, &fe):
-		s.message(w, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That address isn't one caravana made.",
 			fe.Field+" "+fe.Message+". Go back to Logs and use the choices there.")
 	case errors.As(err, &pe):
-		s.message(w, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
+		s.message(w, r, http.StatusNotFound, "Not found", "That project or environment doesn't exist.", "Go back to Logs and choose another.")
 	case errors.Is(err, service.ErrLogCopyNotFound):
-		s.message(w, http.StatusNotFound, "Not found", "That copy isn't there any more.", logsCopyGone)
+		s.message(w, r, http.StatusNotFound, "Not found", "That copy isn't there any more.", logsCopyGone)
 	case errors.Is(err, store.ErrNotFound):
-		s.message(w, http.StatusNotFound, "Not found", "That app isn't in this environment.", "Go back to Logs and choose another.")
+		s.message(w, r, http.StatusNotFound, "Not found", "That app isn't in this environment.", "Go back to Logs and choose another.")
 	case isNomadDown(err):
 		s.log.Warn("can't download logs from Nomad", "error", err)
-		s.message(w, http.StatusBadGateway, "Logs", "Nomad can't be reached.", logsNomadDown)
+		s.message(w, r, http.StatusBadGateway, "Logs", "Nomad can't be reached.", logsNomadDown)
 	default:
-		s.serverError(w, "download logs", err)
+		s.serverError(w, r, "download logs", err)
 	}
 }
 

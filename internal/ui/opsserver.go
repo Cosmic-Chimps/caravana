@@ -207,7 +207,7 @@ type srvFact struct {
 func (s *server) showOpsServers(w http.ResponseWriter, r *http.Request, session string) {
 	host, err := s.svc.Host(r.Context())
 	if err != nil {
-		s.serverError(w, "read the host", err)
+		s.serverError(w, r, "read the host", err)
 		return
 	}
 	if host.Node == nil {
@@ -226,14 +226,14 @@ func (s *server) showOpsServer(w http.ResponseWriter, r *http.Request, session s
 func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name string) {
 	data, err := s.loadOpsServer(r, name)
 	if err != nil {
-		s.serverError(w, "draw the server page", err)
+		s.serverError(w, r, "draw the server page", err)
 		return
 	}
 	title := cmp.Or(name, "Server")
 	crumbs := []crumb{{Label: "Overview", Href: "/ops"}, {Label: title}}
 	page, err := s.shellPage(r, title, navOpsServer, crumbs...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	page.LiveURL = "/live?watch=ops"

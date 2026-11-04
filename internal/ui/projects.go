@@ -107,7 +107,7 @@ const reservedProject = "new"
 func (s *server) showProjects(w http.ResponseWriter, r *http.Request, session string) {
 	projects, err := s.svc.Projects(r.Context())
 	if err != nil {
-		s.serverError(w, "list projects", err)
+		s.serverError(w, r, "list projects", err)
 		return
 	}
 	idx := &projectsIndex{Rows: make([]projectRow, 0, len(projects))}
@@ -123,7 +123,7 @@ func (s *server) showProjects(w http.ResponseWriter, r *http.Request, session st
 	}
 	head, err := s.shellPage(r, "Projects", navProjects, crumb{Label: "Projects"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, http.StatusOK, "projects", projectsPage{pageData: head, Index: idx})
@@ -139,7 +139,7 @@ func (s *server) showNewProject(w http.ResponseWriter, r *http.Request, session 
 func (s *server) renderNewProject(w http.ResponseWriter, r *http.Request, status int, form newProjectForm) {
 	head, err := s.shellPage(r, "New project", navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: "New project"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "projects", projectsPage{pageData: head, New: &form})
@@ -178,7 +178,7 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, session s
 	case errors.As(err, &fieldErr):
 		refuse(http.StatusUnprocessableEntity, &form.Name, sentence{plain("The name " + strings.TrimPrefix(fieldErr.Message, `"`+form.Name.Value+`" `) + ".")})
 	default:
-		s.serverError(w, "create project", err)
+		s.serverError(w, r, "create project", err)
 	}
 }
 
@@ -203,12 +203,12 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read project", err)
+		s.serverError(w, r, "read project", err)
 		return
 	}
 	sums, err := s.svc.ListAppsIn(ctx, id, "")
 	if err != nil {
-		s.serverError(w, "list apps of project", err)
+		s.serverError(w, r, "list apps of project", err)
 		return
 	}
 	byEnv := map[string][]projectApp{}
@@ -246,7 +246,7 @@ func (s *server) settingsPage(w http.ResponseWriter, r *http.Request, status int
 
 	head, err := s.shellPage(r, p.DisplayName+" settings", navProjects, crumb{Label: p.DisplayName, Href: base}, crumb{Label: "Settings"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "projects", projectsPage{pageData: head, Project: v})
@@ -264,7 +264,7 @@ func cmpName(sum service.AppSummary) string {
 func (s *server) projectGone(w http.ResponseWriter, r *http.Request, id string) {
 	head, err := s.shellPage(r, id, navProjects, crumb{Label: "Projects", Href: "/projects"}, crumb{Label: id})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, http.StatusNotFound, "projects", projectsPage{pageData: head,
@@ -300,7 +300,7 @@ func (s *server) updateProject(w http.ResponseWriter, r *http.Request, session s
 		f := formField{ID: "displayName", Value: typed, Alert: true, Error: sentence{plain("The display name " + fieldErr.Message + ".")}}
 		s.settingsPage(w, r, http.StatusUnprocessableEntity, id, projectExtras{Name: &f})
 	default:
-		s.serverError(w, "set project display name", err)
+		s.serverError(w, r, "set project display name", err)
 	}
 }
 
@@ -332,7 +332,7 @@ func (s *server) addEnvironment(w http.ResponseWriter, r *http.Request, session 
 	case errors.As(err, &fieldErr):
 		refuse(http.StatusUnprocessableEntity, sentence{plain("The name " + strings.TrimPrefix(fieldErr.Message, `"`+typed+`" `) + ".")})
 	default:
-		s.serverError(w, "add environment", err)
+		s.serverError(w, r, "add environment", err)
 	}
 }
 
@@ -352,7 +352,7 @@ func (s *server) deleteEnvironment(w http.ResponseWriter, r *http.Request, sessi
 		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Alert: sentence{plain("Can't delete "), mono(name),
 			plain(": apps that existed before projects live there, and their IDs depend on it.")}})
 	default:
-		s.serverError(w, "delete environment", err)
+		s.serverError(w, r, "delete environment", err)
 	}
 }
 
@@ -403,6 +403,6 @@ func (s *server) deleteProject(w http.ResponseWriter, r *http.Request, session s
 		s.settingsPage(w, r, http.StatusConflict, id, projectExtras{Delete: &projectDelete{Open: true,
 			Notice: sentence{plain("This project can't be deleted: apps that existed before projects live in it.")}}})
 	default:
-		s.serverError(w, "delete project", err)
+		s.serverError(w, r, "delete project", err)
 	}
 }

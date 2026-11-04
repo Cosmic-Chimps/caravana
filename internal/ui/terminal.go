@@ -66,32 +66,32 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	if rec.StoppedAt != nil {
-		s.message(w, http.StatusConflict, "Terminal", "The app is stopped.", appStoppedText)
+		s.message(w, r, http.StatusConflict, "Terminal", "The app is stopped.", appStoppedText)
 		return
 	}
 	copies, err := s.svc.Copies(r.Context(), id)
 	if errors.Is(err, deploy.ErrNomadUnavailable) || errors.Is(err, deploy.ErrNomadRejected) {
 		s.log.Warn("can't read copies for a terminal", "app", id, "error", err)
-		s.message(w, http.StatusBadGateway, "Terminal", "Nomad can't be reached.",
+		s.message(w, r, http.StatusBadGateway, "Terminal", "Nomad can't be reached.",
 			"The terminal needs to know the app's copies, and Nomad didn't answer. Try again in a moment.")
 		return
 	}
 	if err != nil {
-		s.serverError(w, "list copies", err)
+		s.serverError(w, r, "list copies", err)
 		return
 	}
 	i := slices.IndexFunc(copies, func(c service.Copy) bool { return c.ID == copyID })
 	if i < 0 {
-		s.message(w, http.StatusNotFound, "Terminal", "That copy isn't part of the app.",
+		s.message(w, r, http.StatusNotFound, "Terminal", "That copy isn't part of the app.",
 			"The Running tab lists the copies the app has now.")
 		return
 	}
 	if c := copies[i]; c.Terminal || c.Stopping {
-		s.message(w, http.StatusConflict, "Terminal", "That copy isn't running.",
+		s.message(w, r, http.StatusConflict, "Terminal", "That copy isn't running.",
 			"A terminal opens only into a copy that is running. The Running tab lists the copies the app has now.")
 		return
 	}
@@ -110,7 +110,7 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 	head, err := s.shellPage(r, "Terminal "+v.Short, navProjects, s.appCrumbs(r.Context(), id,
 		crumb{Label: id, Href: v.Back}, crumb{Label: "Terminal"})...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	// The middleware has set the console's policy; this page's replaces it.

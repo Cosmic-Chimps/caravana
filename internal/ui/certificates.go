@@ -209,6 +209,6 @@ func (s *server) setCertificates(w http.ResponseWriter, r *http.Request, session
 		data.Certificates.Alert, data.Certificates.Open = "Warn when "+fieldErr.Message+".", true
 		s.renderSettings(w, r, entryCertificates, data)
 	default:
-		s.serverError(w, "set the certificate warning window", err)
+		s.serverError(w, r, "set the certificate warning window", err)
 	}
 }

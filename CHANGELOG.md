@@ -9,6 +9,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Added
+- **A light theme.** The console follows the browser's choice: dark, as before, unless the browser
+  prefers light. **Settings › This browser › Appearance** forces one (Match the system, Light, Dark),
+  kept in a cookie of that browser only, so it holds on the sign-in page and after sign-out. It is the
+  same look with the same rules: status is the only colour, every status keeps its shape, depth is
+  distance from the panel face. The terminal page's terminal stays dark in both.
+
 ### Security
 - **An ntfy topic URL is a secret now**: it lives in the channel's Nomad Variable like a Slack or Discord URL,
   SQLite and the API keep only its host (`ntfy.sh/••••`), and a channel from before moves there on its first

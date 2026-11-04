@@ -145,12 +145,12 @@ func (s *server) variablesPage(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	head, err := s.shellPage(r, id+" variables", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
@@ -174,7 +174,7 @@ func serviceNamed(a app.App, name string) (int, bool) {
 func (s *server) formRevision(w http.ResponseWriter, r *http.Request, what string) (string, bool) {
 	revision := strings.TrimSpace(r.PostForm.Get("revision"))
 	if revision == "" {
-		s.message(w, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the page again and "+what+" from there.")
+		s.message(w, r, http.StatusBadRequest, "Bad request", "That form has no revision.", "Open the page again and "+what+" from there.")
 		return "", false
 	}
 	return revision, true
@@ -200,7 +200,7 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 
@@ -320,7 +320,7 @@ func (s *server) refuseVariable(w http.ResponseWriter, r *http.Request, id strin
 		var notice sentence
 		var ok bool
 		if status, notice, ok = refusalOf(edited, err); !ok {
-			s.serverError(w, "change a variable", err)
+			s.serverError(w, r, "change a variable", err)
 			return
 		}
 		form.Notice = notice
@@ -358,7 +358,7 @@ func (s *server) saveEnvText(w http.ResponseWriter, r *http.Request, session str
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	name := strings.TrimSpace(r.PostForm.Get("service"))
@@ -409,7 +409,7 @@ func (s *server) saveEnvText(w http.ResponseWriter, r *http.Request, session str
 	default:
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
-			s.serverError(w, "save variables", err)
+			s.serverError(w, r, "save variables", err)
 			return
 		}
 		s.variablesPage(w, r, status, id, variablesExtras{Env: typed, Notice: notice})
@@ -448,7 +448,7 @@ func (s *server) removeSecret(w http.ResponseWriter, r *http.Request, session st
 	default:
 		var ok bool
 		if status, notice, ok = refuseDeploy(&deployForm{}, err); !ok {
-			s.serverError(w, "remove a secret", err)
+			s.serverError(w, r, "remove a secret", err)
 			return
 		}
 	}

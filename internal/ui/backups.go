@@ -527,12 +527,12 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	backups, restores, err := s.svc.ListBackups(ctx, id)
 	if err != nil {
-		s.serverError(w, "list backups", err)
+		s.serverError(w, r, "list backups", err)
 		return
 	}
 	var dest *store.BackupDestination
@@ -540,19 +540,19 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 	case destErr == nil:
 		dest = &d
 	case !errors.Is(destErr, store.ErrNotFound):
-		s.serverError(w, "read backup destination", destErr)
+		s.serverError(w, r, "read backup destination", destErr)
 		return
 	}
 	head, err := s.shellPage(r, id+" backups", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
 
 	volumes, err := s.svc.Volumes(ctx, id)
 	if err != nil {
-		s.serverError(w, "read volumes", err)
+		s.serverError(w, r, "read volumes", err)
 		return
 	}
 	if extra.ShowAll == "" {
@@ -661,7 +661,7 @@ func (s *server) setBackupPolicy(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	name := strings.TrimSpace(r.PostForm.Get("service"))
@@ -695,7 +695,7 @@ func (s *server) setBackupPolicy(w http.ResponseWriter, r *http.Request, session
 	default:
 		status, notice, ok := refusalOf(edited, err)
 		if !ok {
-			s.serverError(w, "set a backup policy", err)
+			s.serverError(w, r, "set a backup policy", err)
 			return
 		}
 		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})

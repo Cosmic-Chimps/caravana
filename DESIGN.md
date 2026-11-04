@@ -1,6 +1,6 @@
 ---
 name: caravana console
-description: A dark, dense instrument panel for a small fleet of apps on Nomad. Calm when everything is fine, impossible to miss when something isn't.
+description: A dense instrument panel for a small fleet of apps on Nomad, dark by default with a light variant of the same ramp. Calm when everything is fine, impossible to miss when something isn't.
 colors:
   unlit-panel: "oklch(0.165 0.006 255)"
   panel-face: "oklch(0.195 0.007 255)"
@@ -27,6 +27,33 @@ colors:
   fault-ember-edge: "oklch(0.46 0.10 40)"
   primary-press: "oklch(0.88 0.006 255)"
   danger-press: "oklch(0.31 0.07 40)"
+  # The light theme (feature 028): the same names, the light side of each token.
+  unlit-panel-light: "oklch(0.968 0.004 255)"
+  panel-face-light: "oklch(0.995 0.002 255)"
+  raised-control-light: "oklch(0.952 0.005 255)"
+  lit-control-light: "oklch(0.922 0.007 255)"
+  hairline-light: "oklch(0.905 0.006 255)"
+  control-edge-light: "oklch(0.835 0.008 255)"
+  strong-edge-light: "oklch(0.700 0.010 255)"
+  readout-ink: "oklch(0.215 0.010 255)"
+  body-text-light: "oklch(0.360 0.012 255)"
+  label-text-light: "oklch(0.475 0.012 255)"
+  dim-mark-light: "oklch(0.640 0.010 255)"
+  signal-blue-light: "oklch(0.505 0.135 250)"
+  signal-blue-ground-light: "oklch(0.952 0.022 245)"
+  signal-blue-edge-light: "oklch(0.800 0.060 245)"
+  transit-lilac-light: "oklch(0.525 0.130 300)"
+  transit-lilac-ground-light: "oklch(0.955 0.022 300)"
+  transit-lilac-edge-light: "oklch(0.810 0.060 300)"
+  caution-amber-light: "oklch(0.510 0.108 75)"
+  caution-amber-ground-light: "oklch(0.962 0.040 88)"
+  caution-amber-edge-light: "oklch(0.830 0.085 85)"
+  fault-ember-light: "oklch(0.530 0.165 38)"
+  fault-ember-ground-light: "oklch(0.952 0.022 40)"
+  fault-ember-edge-light: "oklch(0.800 0.075 40)"
+  primary-light: "oklch(0.255 0.012 255)"
+  primary-press-light: "oklch(0.330 0.014 255)"
+  danger-press-light: "oklch(0.925 0.035 40)"
 typography:
   headline:
     fontFamily: "IBM Plex Sans, ui-sans-serif, system-ui, sans-serif"
@@ -228,10 +255,13 @@ underneath it in small mono detail lines, there for anyone who wants it.
 
 Confirmed rejections from the handoff: not a Dokploy look-alike, not a gradient "AI dashboard",
 not a Grafana wall of charts. An earlier light "field notebook" direction was tried and turned
-down. The information architecture survived, the look didn't.
+down. The information architecture survived, the look didn't. The light theme (feature 028) is not
+that direction: it is this look's own ramp inverted, with the same rules, for daylight, a projector or
+an owner who prefers it.
 
 **Key Characteristics:**
-- Dark, cool neutral ground (hue 255, chroma ≤ 0.012), with depth from lightness steps, never shadow.
+- Cool neutral ground (hue 255, chroma ≤ 0.012), dark by default with a light variant of the same
+  ramp, depth from lightness steps, never shadow.
 - Status is the only color, and every status pairs a shape with its color.
 - IBM Plex Sans for sentences, IBM Plex Mono for anything Nomad-real.
 - Flat hairline panels, small radii, no gradients.
@@ -240,47 +270,76 @@ down. The information architecture survived, the look didn't.
 ## Colors
 
 One near-colorless steel ramp for everything structural, and four status colors kept for status
-alone.
+alone. Every color is a token in `theme.css` with a dark and a light value, `light-dark(<dark>, <light>)`,
+and `:root`'s `color-scheme` picks the side: dark unless the browser prefers light, and a forced choice
+(Settings › This browser › Appearance, the cookie `caravana_theme`, `data-cv-theme` on `<html>`) wins
+either way. The names below describe roles, so they are the same in both themes; each gives its dark value
+first and its light value second. The light values were computed, not eyeballed
+(`specs/028-light-theme/contracts/cr.py`), and `theme_test.go` recomputes their ratios.
 
 ### Primary
-- **Readout White** (oklch 0.955 0.004 255): primary text, and the fill of the primary button.
-  The main action is "lit", not colored. caravana has no brand hue.
+- **Readout White** (oklch 0.955 0.004 255), and in light **Readout Ink** (0.215 0.010 255) for text
+  and (0.255 0.012 255) for the button, with near-white text (0.985 0.003 255) on it: primary text, and
+  the fill of the primary button. The main action keeps the most contrast with its ground: "lit" in
+  dark, "inked" in light, never colored. caravana has no brand hue.
 
 ### Neutral
-- **Unlit Panel** (oklch 0.165 0.006 255): the page ground, behind everything.
-- **Panel Face** (oklch 0.195 0.007 255): panels, the Menu panel.
-- **Raised Control** (oklch 0.225 0.008 255): inputs, chips, secondary buttons, table headers,
-  row hover inside a panel.
-- **Lit Control** (oklch 0.260 0.009 255): hover on raised controls, selected rows, ghost-button
-  hover.
-- **Hairline** (oklch 0.275 0.009 255): panel borders and row dividers.
-- **Control Edge** (oklch 0.340 0.010 255): input and button borders, overlay rims.
-- **Strong Edge** (oklch 0.440 0.012 255): the border of a hovered control, and link underlines.
-- **Body Text** (oklch 0.810 0.008 255): ordinary text.
-- **Label Text** (oklch 0.680 0.010 255): section labels, mono detail lines, timestamps.
-- **Dim Mark** (oklch 0.500 0.010 255): marks that aren't text (dashed edges,
-  hatching, separators) and a disabled control's text. It is about 3.3:1 against the panel, so it never
-  carries meaning on its own and never sets text that is meant to be read (see the No-Dim-Text Rule).
+- **Unlit Panel** (oklch 0.165 0.006 255 · light 0.968 0.004 255): the page ground, behind everything.
+- **Panel Face** (0.195 0.007 255 · light 0.995 0.002 255): panels, the Menu panel. In light it is the
+  brightest surface on the page.
+- **Raised Control** (0.225 0.008 255 · light 0.952 0.005 255): inputs, chips, secondary buttons, table
+  headers, row hover inside a panel.
+- **Lit Control** (0.260 0.009 255 · light 0.922 0.007 255): hover on raised controls, selected rows,
+  ghost-button hover.
+- **Hairline** (0.275 0.009 255 · light 0.905 0.006 255): panel borders and row dividers.
+- **Control Edge** (0.340 0.010 255 · light 0.835 0.008 255): input and button borders, overlay rims.
+- **Strong Edge** (0.440 0.012 255 · light 0.700 0.010 255): the border of a hovered control, and link
+  underlines.
+- **Body Text** (0.810 0.008 255 · light 0.360 0.012 255): ordinary text.
+- **Label Text** (0.680 0.010 255 · light 0.475 0.012 255): section labels, mono detail lines,
+  timestamps. It stays at or above 4.5:1 on every ground in both themes (5.3:1 at the least, on Lit Control
+  in light), so a label is legal text everywhere.
+- **Dim Mark** (0.500 0.010 255 · light 0.640 0.010 255): marks that aren't text (dashed edges,
+  hatching, separators) and a disabled control's text. It is about 3.3:1 against the panel in both
+  themes, so it never carries meaning on its own and never sets text that is meant to be read (see the
+  No-Dim-Text Rule).
+
+The light ramp keeps the dark ramp's text ratios step for step (on the panel: Readout 16.0 and 17.3,
+Body 10.1 and 10.7, Label 6.35 and 6.58, Dim 3.05 and 3.31).
 
 ### Status
-Each status has a full-strength color, a tinted ground and an edge. They differ in lightness as
-well as hue (failed 0.68 < healthy 0.76 < rolling 0.84 < warning 0.90), so they still separate
-in grayscale and for people with color vision deficiency.
-- **Signal Blue** (oklch 0.76 0.12 245), healthy ●. It's also the focus ring (at 55%), the current
-  sidebar item's bar and the live-tick flash (at 16%). Healthy is blue, not green.
-- **Transit Lilac** (oklch 0.84 0.09 300), rolling ◐: a deploy in progress, a copy starting or
-  draining.
-- **Caution Amber** (oklch 0.90 0.13 88), warning ◆: a human should look soon: a restarted copy's count, a deploy
-  warning, the Reconnecting indicator.
-- **Fault Ember** (oklch 0.68 0.17 40), failed ■: something is broken or was reverted. It's an
-  orange-red, deliberately not a pure red.
+Each status has a full-strength color, a tinted ground and an edge. In dark they differ in lightness as
+well as hue (failed 0.68 < healthy 0.76 < rolling 0.84 < warning 0.90), so they still separate in
+grayscale and for people with color vision deficiency. In light all four must sit near 0.51 to 0.53 to
+reach 4.5:1 as text on every ground (the pill's 12px mono word, and the mark, which needs only 3:1), so
+grayscale no longer separates them there: the shape does (the Shape-and-Color Rule).
+- **Signal Blue** (oklch 0.76 0.12 245 · light 0.505 0.135 250; ground 0.27 0.05 245 · 0.952 0.022 245;
+  edge 0.44 0.08 245 · 0.800 0.060 245), healthy ●. It's also the focus ring (at 55% in dark, full
+  strength in light, where 55% would be 1.8:1 on white), the current sidebar item's bar and the live-tick
+  flash (at 16%, 12% in light). Healthy is blue, not green.
+- **Transit Lilac** (0.84 0.09 300 · light 0.525 0.130 300; ground 0.28 0.045 300 · 0.955 0.022 300;
+  edge 0.46 0.07 300 · 0.810 0.060 300), rolling ◐: a deploy in progress, a copy starting or draining.
+- **Caution Amber** (0.90 0.13 88 · light 0.510 0.108 75, a dark amber toward ochre, since the dark
+  theme's amber is unreadable on white; ground 0.29 0.05 88 · 0.962 0.040 88; edge 0.50 0.08 88 ·
+  0.830 0.085 85), warning ◆: a human should look soon: a restarted copy's count, a deploy warning, the
+  Reconnecting indicator.
+- **Fault Ember** (0.68 0.17 40 · light 0.530 0.165 38; ground 0.27 0.06 40 · 0.952 0.022 40; edge
+  0.46 0.10 40 · 0.800 0.075 40), failed ■: something is broken or was reverted. It's an orange-red,
+  deliberately not a pure red.
+
+Every status color reaches 4.5:1 as text on every ground and on its own tinted ground in both themes;
+`TestThemeContrast` keeps it so. The washes a row takes (an error row, a deploy row, a fresh row, the
+anchor row) and the hatch fill are tokens too (`--color-failed-wash`, `-rolling-wash`, `-fresh-wash`,
+`-anchor-wash`, `-hatch-fill`, each with a hover where one exists), a status or text color at low
+strength in both themes.
 
 ### Named Rules
 **The Shape-and-Color Rule.** Status is never color alone. Every status shows its mark next to
 its color: ● healthy, ◐ rolling, ◆ warning, ■ failed, ○ idle. Hide the color and the status must
 still read. A mark is 7px, in pills and rows alike; the warning diamond is a 5.46px square turned
 45°, with a 0.77px margin (0.78 and 0.11 of 7), so it fills the same box. A tab's mark is 6px,
-by the same ratios.
+by the same ratios. In light, the four status colours sit close in lightness (0.51 to 0.53), so
+greyscale doesn't separate them; the shape always does.
 
 **The Status-Only Color Rule.** The four status hues mean status and nothing else. Buttons, links,
 tabs and decoration stay neutral. When a screen is fully healthy, the only color on it is Signal
@@ -297,6 +356,14 @@ breadcrumb's "/" stays fg-4: it is a separator mark, `aria-hidden`, not text a r
 
 **The Flat Ground Rule.** No gradients anywhere. The one exception is the hard-stop half fill of the
 rolling mark, which is a shape, not a blend.
+
+**The Token-Only Color Rule.** Every colour is a token in `theme.css` with a dark and a light value. A
+class reads tokens; it never writes `oklch()`, `#hex` or `rgb()`. Exceptions, named: the alpha masks
+(`#000` in `mask-image`, the Settings nav and the logs rail fades, which are the same in both themes) and
+the terminal's palette in `terminal.js` (xterm.js takes hex, not CSS variables). The terminal stays dark in
+both themes: programs write their colours for a dark terminal, and a terminal is a device set into the
+page, not a surface of the console; its box keeps the dark ground (`--color-terminal`) inside a Control
+Edge frame. `TestNoColorOutsideTokens` keeps the rule.
 
 ## Typography
 
@@ -405,16 +472,18 @@ What needs a human is always at the top.
 
 ## Elevation & Depth
 
-Flat. Depth comes from four lightness steps (Unlit Panel → Panel Face → Raised Control → Lit
-Control) and three border weights, never from shadow. Hovering a surface lifts it one step and
-moves its border up to Strong Edge. A toggle that is on (Pause, Wrap lines) is the one pressed
+Flat. Depth is distance from the panel face: four lightness steps (Unlit Panel, Panel Face, Raised
+Control, Lit Control) and three border weights, never shadow. In dark the steps go up in lightness from
+the page (the panel is a step lighter than the page, and controls step further up); in light they go
+down (the panel is the brightest surface, and controls step down from it). Hovering a surface moves it
+one more step away from the panel in both, and moves its border to Strong Edge. A toggle that is on (Pause, Wrap lines) is the one pressed
 state: Lit Control ground, a brighter edge and a 2px Readout White bar inside its bottom edge. That
 bar is a mark, like the underline of an active tab, not depth.
 
 ### Shadow Vocabulary
-- **Overlay** (`box-shadow: 0 12px 32px oklch(0 0 0 / 0.45), 0 0 0 1px oklch(0.340 0.010 255)`):
-  the Menu panel under 900px and the Revoke confirmation that opens under a token row. Nothing
-  else.
+- **Overlay** (`--shadow-overlay`: `0 12px 32px` of the overlay shade, black at 45% in dark and
+  oklch 0.30 0.02 255 at 16% in light, plus a 1px Control Edge rim): the Menu panel under 900px and the
+  Revoke confirmation that opens under a token row. Nothing else.
 
 ### Named Rules
 **The Overlays-Only Shadow Rule.** A shadow means "this is floating above the page". Panels,
@@ -434,8 +503,8 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
 ### Buttons
 - **Shape:** gently squared (4px). Heights 28 / 36 / 44px (sm / md / lg), text 13 / 14 / 15px,
   weight 500.
-- **Primary:** a Readout White fill with Unlit Panel text. At most one per view, for the page's
-  main action.
+- **Primary:** a Readout White fill with Unlit Panel text (in light, a Readout Ink fill with near-white
+  text). At most one per view, for the page's main action.
 - **Secondary (default):** Raised Control fill, Control Edge border, Readout White text. Hover
   moves to Lit Control with a Strong Edge border.
 - **Ghost:** no fill, Body Text. Hover adds a Lit Control fill and Readout White text. For "Why?"
@@ -446,7 +515,8 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   full Fault Ember on hover. Destructive actions confirm in a `<details>` disclosure under their button (see
   Confirmation), never in a modal.
 - **States:** transitions are 120ms on `cubic-bezier(0.2, 0.7, 0.2, 1)`. Pressing nudges the
-  button down 0.5px, with no scale. Focus is a 2px Signal Blue ring at 55%, offset 2px.
+  button down 0.5px, with no scale. Focus is a 2px Signal Blue ring (`--color-focus`: at 55% in dark,
+  full strength in light), offset 2px.
 - **Shipped as:** `cv-btn` with `cv-btn-primary`, `-secondary`, `-danger`, and the sizes `cv-btn-sm`
   (28px) and `cv-btn-lg` (42px, the sign-in button). A link that does a button's job (Deploy, Show
   older, Deploy again) is an `<a>` with the same classes. A `<summary>` that opens a confirmation
@@ -502,8 +572,8 @@ Precise and unadorned: controls feel like labeled switches on a panel, not soft 
   with the failed mark first, written as a sentence about what's wrong ("The new password must be at
   least 12 characters."). The field's border turns Fault Ember Edge (`aria-invalid="true"`), the
   error is announced (`role="alert"`), and the field is autofocused so the page lands on it.
-- **Date:** the same field, its value in mono and centered in the box, in the dark color scheme.
-- **Select:** the same ground and edge with a native menu in the dark color scheme (`cv-select`),
+- **Date:** the same field, its value in mono and centered in the box, in the page's color scheme.
+- **Select:** the same ground and edge with a native menu in the page's color scheme (`cv-select`),
   **32px** tall like the field, 2px corners, mono 13px (the field's size), 11rem at least, label above.
   It is the console's only select: the Apps filter's State and Kind, the Logs toolbar (Copy, Stream), the
   Variables page's Service, the Domains page's "Sends traffic to", Settings' Kind and Project. The
@@ -677,7 +747,9 @@ One page per entry, as the handoff draws Settings, with what the console has tod
 and the content, in the shell's frame; the shell's own page padding is off for these pages (`cv-page-settings`).
 - **Nav:** `<nav aria-label="Settings">`, sticky under the top bar (`top: 52px`, the rest of the window
   tall, scrolling by itself), a Hairline at its right. The word "Settings" at 18px, then the groups: Account
-  alone, **Connections** (Registries, Backup storage, Certificates, Notifications) and **Security** (API tokens). A group
+  alone, **Connections** (Registries, Backup storage, Certificates, Notifications), **Security** (API tokens)
+  and, last, **This browser** (Appearance: the theme, Match the system, Light or Dark, kept in a cookie of
+  this browser and not in the installation, which is why the group says so). A group
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
   Control ground and no left bar (the bar is the sidebar's). Under 900px the shell's own narrow rule applies
@@ -1145,12 +1217,16 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   named "web" would differ by hue alone.
 - **The service hue** is the console's one color of identity. Everywhere else a hue says status; here six
   low-chroma hues tell services apart: `oklch(0.78 0.08 250)`, `(0.78 0.09 300)`, `(0.80 0.07 200)`,
-  `(0.80 0.08 150)`, `(0.80 0.08 80)` and `(0.78 0.08 20)`, as `.cv-hue-0` to `.cv-hue-5`, picked by a stable
+  `(0.80 0.08 150)`, `(0.80 0.08 80)` and `(0.78 0.08 20)` in dark, and in light the same six angles
+  dark enough to set a name in, `(0.500 0.095 250)`, `(0.500 0.100 300)`, `(0.515 0.080 200)`,
+  `(0.515 0.095 150)`, `(0.520 0.095 80)` and `(0.510 0.105 20)` (each at least 4.5:1 on the panel and on
+  the chosen rail item), as the tokens `--color-hue-0` to `-5` read by `.cv-hue-0` to `.cv-hue-5`, picked by a stable
   hash of `<app>/<service>` (the same service has the same hue on every page, after every refresh, whatever
   else is listed). A hue is set once on the rail item or the row as a custom property; the square
   (`.cv-svchue`) and the name (`.cv-svcname`) read it. None is a status hue's exact value (they are low in chroma, 0.07 to 0.09, and sit at
   lightness 0.78 to 0.80; the nearest, `(0.78 0.09 300)`, is a step darker than the rolling hue's
-  `(0.84 0.09 300)`, which is why a name in it never reads as a rolling mark), and the exception is
+  `(0.84 0.09 300)`, which is why a name in it never reads as a rolling mark; in light hue-0 and healthy share
+  the angle 250 and differ in chroma, 0.095 against 0.135), and the exception is
   only for the service's name and square: never for a mark, a pill, a border or a background. Hues repeat
   beyond six services; the name beside the square is what identifies, the color only helps.
 - **The histogram** (`.cv-hist`, a panel, padding 14 16 10) is the console's one SVG chart, and the one place
@@ -1458,9 +1534,9 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Do** set every name, version, id, number and time in IBM Plex Mono with tabular figures.
 - **Do** open every overview with the headline sentence (30px, weight 400), with raw data in mono
   underneath.
-- **Do** build depth only from the four ink steps and the hairlines. Hover lifts a surface one
-  step.
-- **Do** keep the main action neutral: a Readout White fill, at most one per view.
+- **Do** build depth only from the four ink steps and the hairlines. Hover moves a surface one
+  step further from the panel (up in dark, down in light).
+- **Do** keep the main action neutral: a Readout White fill (Readout Ink in light), at most one per view.
 - **Do** sort lists failed → warning → rolling → healthy → idle.
 - **Do** explain a problem in a sentence plus one fix button, and put the raw Nomad error under it in
   muted mono.
@@ -1475,8 +1551,9 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
 - **Do** put every command to copy in its own `cv-cmd` block, and every error under its field with
   the field autofocused.
 - **Do** set every piece of text in fg-3 or brighter. fg-4 draws marks only (the No-Dim-Text Rule).
-- **Do** take every color from the theme tokens. If a color is missing, add a token instead of
-  writing a raw oklch value in a component.
+- **Do** take every color from the theme tokens, each with its dark and its light value. If a color is
+  missing, add a token instead of writing a raw oklch value in a component (the Token-Only Color Rule).
+- **Do** check a new surface in both themes, by the system's choice and forced from Settings › This browser.
 
 ### Don't:
 - **Don't** use the status hues for decoration, links, tabs or the main action.

@@ -20,7 +20,7 @@ func TestNoShipWords(t *testing.T) {
 		"/apps", "/projects", "/apps/new",
 		"/apps/duo", "/apps/duo/deployments", "/apps/duo/configure", "/apps/duo/variables",
 		"/apps/duo/domains", "/apps/duo/backups", "/apps/duo/logs",
-		"/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens",
+		"/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens", "/settings/appearance",
 		"/schedules", "/schedules/new", "/logs", "/monitoring",
 	} {
 		resp, body := e.get(t, path)

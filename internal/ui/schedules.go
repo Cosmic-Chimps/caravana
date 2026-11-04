@@ -863,17 +863,17 @@ func (s *server) renderSchedules(w http.ResponseWriter, r *http.Request, status 
 	ctx := r.Context()
 	region, err := s.loadSchedules(ctx, q)
 	if err != nil {
-		s.serverError(w, "list schedules", err)
+		s.serverError(w, r, "list schedules", err)
 		return
 	}
 	filter, err := s.schedulesFilterOf(ctx, q)
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	head, err := s.shellPage(r, "Schedules", navSchedules, crumb{Label: "Schedules"})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live"
@@ -965,7 +965,7 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read schedule", err)
+		s.serverError(w, r, "read schedule", err)
 		return
 	}
 	if sc.Builtin {
@@ -974,12 +974,12 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 	}
 	run, err := s.svc.GetScheduleRun(ctx, id, runID)
 	if errors.Is(err, service.ErrRunNotFound) {
-		s.message(w, http.StatusNotFound, "Not found", "That run isn't kept.",
+		s.message(w, r, http.StatusNotFound, "Not found", "That run isn't kept.",
 			"A schedule keeps its last 100 runs. Go back to Schedules to see the others.")
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read run", err)
+		s.serverError(w, r, "read run", err)
 		return
 	}
 
@@ -1002,12 +1002,12 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 	default:
 		stdout, cutOut, err := s.svc.GetScheduleRunOutput(ctx, id, runID, "stdout")
 		if err != nil && !errors.Is(err, service.ErrOutputNotKept) {
-			s.serverError(w, "read run output", err)
+			s.serverError(w, r, "read run output", err)
 			return
 		}
 		stderr, cutErr, err := s.svc.GetScheduleRunOutput(ctx, id, runID, "stderr")
 		if err != nil && !errors.Is(err, service.ErrOutputNotKept) {
-			s.serverError(w, "read run output", err)
+			s.serverError(w, r, "read run output", err)
 			return
 		}
 		page.Lines = append(outputLines(stdout, false), outputLines(stderr, true)...)
@@ -1019,7 +1019,7 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 
 	head, err := s.shellPage(r, sc.Name+" run", navSchedules, crumb{Label: "Schedules", Href: "/schedules"}, crumb{Label: sc.Name})
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	// The crumb names the schedule, and leads back to its row (a run has no
@@ -1030,7 +1030,7 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 
 // scheduleNotFound is the page for a schedule that doesn't exist (any more).
 func (s *server) scheduleNotFound(w http.ResponseWriter, r *http.Request) {
-	s.message(w, http.StatusNotFound, "Not found", "That schedule doesn't exist.",
+	s.message(w, r, http.StatusNotFound, "Not found", "That schedule doesn't exist.",
 		"It may have been deleted, or its app was. Go back to Schedules.")
 }
 

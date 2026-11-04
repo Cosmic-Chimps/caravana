@@ -112,12 +112,12 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 		return
 	}
 	if err != nil {
-		s.serverError(w, "read app", err)
+		s.serverError(w, r, "read app", err)
 		return
 	}
 	head, err := s.shellPage(r, id+" domains", navProjects, s.appCrumbs(ctx, id)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	head.LiveURL = "/live/apps/" + id + "?tab=domains"
@@ -129,12 +129,12 @@ func (s *server) domainsPageWith(w http.ResponseWriter, r *http.Request, status 
 			q.Open = extra.Open
 		}
 		if tab.Region, err = s.loadDomains(ctx, q, appDomainsEmpty(tab.CanEdit()), true); err != nil {
-			s.serverError(w, "list domains", err)
+			s.serverError(w, r, "list domains", err)
 			return
 		}
 		if add == nil {
 			if add, err = s.addPanelFor(ctx, r, "", id); err != nil {
-				s.serverError(w, "draw the add form", err)
+				s.serverError(w, r, "draw the add form", err)
 				return
 			}
 		}

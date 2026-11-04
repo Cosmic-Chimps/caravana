@@ -325,7 +325,7 @@ func (s *server) renderScheduleForm(w http.ResponseWriter, r *http.Request, stat
 	}
 	head, err := s.shellPage(r, title, navSchedules, append([]crumb{{Label: "Schedules", Href: "/schedules"}}, crumbs...)...)
 	if err != nil {
-		s.serverError(w, "read admin", err)
+		s.serverError(w, r, "read admin", err)
 		return
 	}
 	s.render(w, status, "schedules", schedulesPage{pageData: head, Form: &f})
@@ -338,7 +338,7 @@ func (s *server) showNewSchedule(w http.ResponseWriter, r *http.Request, session
 	in := scheduleInput{App: q.Get("app"), Skip: true, When: presetWords(q.Get("preset"))}
 	f, err := s.buildScheduleForm(r.Context(), in, in.App != "")
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	base := url.Values{}
@@ -372,7 +372,7 @@ func (s *server) showEditSchedule(w http.ResponseWriter, r *http.Request, sessio
 	}
 	f, err := s.editForm(r.Context(), sc, in)
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	f.Preview, _, _ = previewOf(s, in.When)
@@ -405,10 +405,10 @@ func (s *server) editableSchedule(w http.ResponseWriter, r *http.Request) (servi
 		s.scheduleNotFound(w, r)
 		return sc, false
 	case err != nil:
-		s.serverError(w, "read schedule", err)
+		s.serverError(w, r, "read schedule", err)
 		return sc, false
 	case sc.Builtin:
-		s.message(w, http.StatusConflict, "Made by Backups", scheduleName(sc)+" is made by Backups.",
+		s.message(w, r, http.StatusConflict, "Made by Backups", scheduleName(sc)+" is made by Backups.",
 			"Change its time or how many backups are kept in the app's Backups tab.")
 		return sc, false
 	}
@@ -424,7 +424,7 @@ func (s *server) createSchedule(w http.ResponseWriter, r *http.Request, session 
 	in := readScheduleInput(r.PostForm)
 	f, err := s.buildScheduleForm(r.Context(), in, in.App != "" || strings.Contains(in.Service, pairSep))
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	base := url.Values{}
@@ -448,7 +448,7 @@ func (s *server) saveSchedule(w http.ResponseWriter, r *http.Request, session st
 	in := readScheduleInput(r.PostForm)
 	f, err := s.editForm(r.Context(), sc, in)
 	if err != nil {
-		s.serverError(w, "list apps", err)
+		s.serverError(w, r, "list apps", err)
 		return
 	}
 	s.submitSchedule(w, r, f, in, &sc)
@@ -574,7 +574,7 @@ func (s *server) submitSchedule(w http.ResponseWriter, r *http.Request, f schedF
 			field.Error, field.Alert = plainS(upperFirst(strings.TrimSuffix(fe.Message, "."))+"."), true
 		}
 	default:
-		s.serverError(w, "save schedule", err)
+		s.serverError(w, r, "save schedule", err)
 		return
 	}
 	s.renderScheduleForm(w, r, http.StatusUnprocessableEntity, f, crumbs...)

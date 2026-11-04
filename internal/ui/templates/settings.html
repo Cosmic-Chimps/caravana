@@ -27,6 +27,7 @@
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
     {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
+    {{else if eq .Entry "appearance"}}{{template "settings-appearance" .}}
     {{end}}
   </div>
 </div>
@@ -42,6 +43,42 @@
   <div class="cv-setrow-ctl">{{end}}
 {{define "srow-close"}}</div>
 </div>{{end}}
+
+{{/* ------------------------------------------------------------- Appearance
+     The theme this browser uses (feature 028), kept in a cookie, not on the installation.
+     "Match the system" deletes the cookie. The bracket word after it is filled in by
+     console.js, since only the browser knows what the system chose; without script it is empty. */}}
+{{define "settings-appearance"}}
+{{with .Appearance}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Appearance</h1>
+    <p class="cv-lede">How the console looks in this browser.</p>
+  </div>
+</header>
+{{if .Saved}}
+<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>Saved.</span></div>
+{{end}}
+<form method="post" action="/settings/appearance" class="cv-panel">
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Theme</span>
+      <p class="cv-setrow-hint">Kept in this browser only.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <fieldset class="cv-radios"{{if .Err}} aria-invalid="true" aria-describedby="theme-error"{{end}}>
+        <legend class="sr-only">Theme</legend>
+        <label class="cv-radio"><input type="radio" name="theme" value="system"{{if eq .Choice "system"}} checked{{end}}><span>Match the system<span data-system-theme></span></span></label>
+        <label class="cv-radio"><input type="radio" name="theme" value="light"{{if eq .Choice "light"}} checked{{end}}><span>Light</span></label>
+        <label class="cv-radio"><input type="radio" name="theme" value="dark"{{if eq .Choice "dark"}} checked{{end}}><span>Dark</span></label>
+      </fieldset>
+      {{with .Err}}<span id="theme-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+      <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save</button>
+    </div>
+  </div>
+</form>
+{{end}}
+{{end}}
 
 {{/* ---------------------------------------------------------------- Account */}}
 {{define "settings-account"}}
