@@ -73,7 +73,27 @@ var (
 	clLinkRe = regexp.MustCompile(`(?s)<a href="([^"]*)"[^>]*>(.*?)</a>`)
 	// clClockRe is a row's time: hours to milliseconds, "~" first when estimated.
 	clClockRe = regexp.MustCompile(`^~?\d\d:\d\d:\d\d\.\d{3}$`)
+	// clCutRe is the note under the histogram of a read its deadline cut.
+	clCutRe = regexp.MustCompile(`<span class="cv-hlabel-read">([^<]*not all read in time[^<]*)</span>`)
 )
+
+// clCutOf is the note a page draws when its read was cut by the deadline
+// ("read from 14:02 UTC · not all read in time"), or "" when it wasn't.
+func clCutOf(page string) string {
+	if m := clCutRe.FindStringSubmatch(page); m != nil {
+		return html.UnescapeString(m[1])
+	}
+	return ""
+}
+
+// clBecause is what a failed check of lines adds when the read that missed
+// them was cut, so a busy machine reads as one and not as a lost line.
+func clBecause(cut string) string {
+	if cut == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (the read was cut by its deadline, also when read again: %q)", cut)
+}
 
 // clRow is one line's row as the page draws it.
 type clRow struct {
@@ -192,6 +212,23 @@ func (c *console) consoleLogs(t *testing.T) {
 		}
 		return body
 	}
+	// logsPage is page for a read of lines. A page read has a 5 s deadline
+	// (feature 024), which a busy machine can cut: the page says so ("not all
+	// read in time") and may lack lines the checks look for. Such a read is
+	// read once more; cut is the note of the read returned, "" when it covered
+	// its range, and every check of lines names it through clBecause. A read
+	// that covered its range is checked as strictly as ever.
+	logsPage := func(path string) (body, cut string) {
+		t.Helper()
+		body = page(path, http.StatusOK)
+		if cut = clCutOf(body); cut == "" {
+			return body, ""
+		}
+		t.Logf("GET %s was cut by its deadline (%q): reading it once more", path, cut)
+		time.Sleep(2 * time.Second)
+		body = page(path, http.StatusOK)
+		return body, clCutOf(body)
+	}
 
 	for _, id := range []string{idA, idB} {
 		c.removeLabApp(id) // a leftover from an aborted run, if any
@@ -235,7 +272,7 @@ func (c *console) consoleLogs(t *testing.T) {
 	})
 
 	// 2. The page with every level.
-	main := page("/logs?"+all, http.StatusOK)
+	main, mainCut := logsPage("/logs?" + all)
 	text := prose(main)
 	if !strings.Contains(text, "Logs Output from every copy of every service, newest first. Deploys show up in the stream.") {
 		errorf("/logs has no head sentence: %.300s", text)
@@ -256,7 +293,7 @@ func (c *console) consoleLogs(t *testing.T) {
 	}
 	rows := clRowsOf(main)
 	if len(rows) == 0 {
-		fatalf("/logs has no line rows: %.600s", text)
+		fatalf("/logs has no line rows%s: %.600s", clBecause(mainCut), text)
 	}
 	prev := ""
 	for i, r := range rows {
@@ -285,7 +322,7 @@ func (c *console) consoleLogs(t *testing.T) {
 	need := func(what string, got []clRow) []clRow {
 		t.Helper()
 		if len(got) == 0 {
-			fatalf("/logs has no row of %s", what)
+			fatalf("/logs has no row of %s%s", what, clBecause(mainCut))
 		}
 		return got
 	}
@@ -370,10 +407,10 @@ func (c *console) consoleLogs(t *testing.T) {
 	}
 
 	// 3. Filters.
-	boom := page("/logs?q=boom", http.StatusOK)
+	boom, boomCut := logsPage("/logs?q=boom")
 	boomRows := clRowsOf(boom)
 	if len(boomRows) == 0 {
-		errorf("q=boom found no row")
+		errorf("q=boom found no row%s", clBecause(boomCut))
 	}
 	n := 0
 	for _, r := range boomRows {
@@ -385,10 +422,10 @@ func (c *console) consoleLogs(t *testing.T) {
 	if !strings.Contains(boom, `<span class="cv-logsearch-n">`+clLines(n)+`</span>`) {
 		errorf("q=boom doesn't say %q beside the search", clLines(n))
 	}
-	warn := page("/logs?levels=warn&app="+idA, http.StatusOK)
+	warn, warnCut := logsPage("/logs?levels=warn&app=" + idA)
 	warnOnly := clRowsOf(warn)
 	if len(warnOnly) == 0 {
-		errorf("levels=warn found no row")
+		errorf("levels=warn found no row%s", clBecause(warnCut))
 	}
 	for _, r := range warnOnly {
 		if r.Level != "warn" || !strings.Contains(r.Text, "[warn] careful") {
@@ -418,12 +455,12 @@ func (c *console) consoleLogs(t *testing.T) {
 			errorf("with service=cl024a/web a row is %s copy %s", r.Service, r.Copy)
 		}
 	}
-	cp := page(clPath(html.UnescapeString(railCopies[0][1])), http.StatusOK)
+	cp, cpCut := logsPage(clPath(html.UnescapeString(railCopies[0][1])))
 	if m := clRailCopyRe.FindStringSubmatch(cp); m == nil || m[2] == "" || m[3] != short {
 		errorf("after choosing copy %s the rail's copy is %q, want it chosen", short, m)
 	}
 	if rs := clRowsOf(cp); len(rs) == 0 {
-		errorf("copy=%s shows no row", short)
+		errorf("copy=%s shows no row%s", short, clBecause(cpCut))
 	}
 	hour := page("/logs?range=1h", http.StatusOK)
 	if !strings.Contains(hour, `class="cv-seg-item cv-on" aria-current="true">1 h</a>`) {
@@ -442,10 +479,10 @@ func (c *console) consoleLogs(t *testing.T) {
 		if !strings.Contains(r.Href, "open=") || !strings.Contains(r.Href, "live=0") || !strings.HasSuffix(r.Href, "#"+r.Anchor) {
 			errorf("a row links to %q, want ?…open=…&live=0#%s", r.Href, r.Anchor)
 		}
-		body := page(clPath(r.Href), http.StatusOK)
+		body, cut := logsPage(clPath(r.Href))
 		strip := regexp.MustCompile(`(?s)<section class="cv-rowstrip" id="open-line" aria-label="The open line">(.*?)</section>`).FindStringSubmatch(body)
 		if strip == nil {
-			fatalf("the open row %s has no strip", r.Anchor)
+			fatalf("the open row %s has no strip%s", r.Anchor, clBecause(cut))
 		}
 		openRow := false
 		for _, o := range clRowsOf(body) {
@@ -454,7 +491,7 @@ func (c *console) consoleLogs(t *testing.T) {
 			}
 		}
 		if !openRow {
-			errorf("row %s isn't drawn open", r.Anchor)
+			errorf("row %s isn't drawn open%s", r.Anchor, clBecause(cut))
 		}
 		if m := clRegionRe.FindString(body); m == "" || strings.Contains(m, "hx-trigger") {
 			errorf("with a row open the live region is %q, want no hx-trigger", m)
@@ -572,10 +609,13 @@ func (c *console) consoleLogs(t *testing.T) {
 	if !strings.Contains(pausedPage, `<span>paused</span>`) || !strings.Contains(pausedPage, `aria-pressed="false">`) {
 		errorf("the paused page doesn't say paused")
 	}
-	part := page("/parts/logs?app="+idA, http.StatusOK)
-	if !strings.Contains(part, `class="cv-panel cv-hist"`) || len(clRowsOf(part)) == 0 || strings.Contains(part, "cv-rowstrip") ||
+	part, partCut := logsPage("/parts/logs?app=" + idA)
+	if !strings.Contains(part, `class="cv-panel cv-hist"`) || strings.Contains(part, "cv-rowstrip") ||
 		strings.Contains(part, "cv-logfilter") || strings.Contains(part, "<html") {
 		errorf("/parts/logs isn't the histogram and the rows alone: %.400s", pageText(part))
+	}
+	if len(clRowsOf(part)) == 0 {
+		errorf("/parts/logs has no row%s: %.400s", clBecause(partCut), pageText(part))
 	}
 	func() {
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
@@ -595,7 +635,10 @@ func (c *console) consoleLogs(t *testing.T) {
 	}()
 
 	// 7. Download (before the deploy below, whose new copy prints the sentinel again).
-	download := func(path string) (string, [][]string) {
+	// A download cut by its time limit ends with a "# cut: the time limit …"
+	// line per copy and is read once more, as a page is; cut is what the
+	// download returned says, "" when nothing was cut.
+	downloadOnce := func(path string) (string, [][]string) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(c.ctx, 3*time.Minute)
 		defer cancel()
@@ -654,9 +697,19 @@ func (c *console) consoleLogs(t *testing.T) {
 		}
 		return body, out
 	}
-	boomFile, boomLines := download("/logs/download?app=" + idA + "&q=boom")
+	download := func(path string) (body string, lines [][]string, cut string) {
+		t.Helper()
+		body, lines = downloadOnce(path)
+		if cut := downloadCut(body); cut != "" {
+			t.Logf("GET %s was cut (%q): downloading it once more", path, cut)
+			time.Sleep(2 * time.Second)
+			body, lines = downloadOnce(path)
+		}
+		return body, lines, downloadCut(body)
+	}
+	boomFile, boomLines, boomFileCut := download("/logs/download?app=" + idA + "&q=boom")
 	if len(boomLines) < 2 {
-		errorf("the boom download has %d lines, want both error lines at least", len(boomLines))
+		errorf("the boom download has %d lines, want both error lines at least%s", len(boomLines), clBecause(boomFileCut))
 	}
 	for _, f := range boomLines {
 		if len(f) == 6 && (f[4] != "error" || !strings.Contains(f[5], "boom") || f[2] != short) {
@@ -667,9 +720,9 @@ func (c *console) consoleLogs(t *testing.T) {
 	if strings.Contains(boomFile, sentinel) {
 		errorf("the boom download holds the sentinel, which isn't a boom line")
 	}
-	wholeFile, _ := download("/logs/download?app=" + idA)
+	wholeFile, _, wholeCut := download("/logs/download?app=" + idA)
 	if k := strings.Count(wholeFile, sentinel); k != 1 {
-		errorf("the whole download holds the sentinel %d times, want once", k)
+		errorf("the whole download holds the sentinel %d times, want once%s", k, clBecause(wholeCut))
 	}
 
 	// 8. The app's tab, the sidebar and the empty sentence.
@@ -762,9 +815,12 @@ func (c *console) consoleLogs(t *testing.T) {
 		if !strings.Contains(older, "before=") || !strings.Contains(older, "live=0") {
 			errorf("Show older links to %q", older)
 		}
-		ol := page(clPath(older), http.StatusOK)
-		if !regexp.MustCompile(`Lines before \d\d:\d\d UTC\. Back to the newest`).MatchString(prose(ol)) || len(clRowsOf(ol)) == 0 {
-			errorf("Show older's page doesn't say which lines it shows, or has none: %.300s", prose(ol))
+		ol, olCut := logsPage(clPath(older))
+		if !regexp.MustCompile(`Lines before \d\d:\d\d UTC\. Back to the newest`).MatchString(prose(ol)) {
+			errorf("Show older's page doesn't say which lines it shows: %.300s", prose(ol))
+		}
+		if len(clRowsOf(ol)) == 0 {
+			errorf("Show older's page has no row%s: %.300s", clBecause(olCut), prose(ol))
 		}
 	}
 
@@ -792,8 +848,8 @@ func (c *console) consoleLogs(t *testing.T) {
 	if c.g.target.ServerLog != nil && strings.Contains(c.g.target.ServerLog(), sentinel) {
 		errorf("Caravana's log holds the sentinel")
 	}
-	if found := page("/logs?app="+idA+"&q="+url.QueryEscape(sentinel), http.StatusOK); !strings.Contains(found, sentinel) {
-		errorf("cl024a's own page doesn't find the sentinel it printed")
+	if found, cut := logsPage("/logs?app=" + idA + "&q=" + url.QueryEscape(sentinel)); !strings.Contains(found, sentinel) {
+		errorf("cl024a's own page doesn't find the sentinel it printed%s", clBecause(cut))
 	}
 
 	// cl024b leaves through its delete form; cl024a through the clean-up.

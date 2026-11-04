@@ -132,7 +132,7 @@ func (g *gate) logsStep(t *testing.T) {
 		}
 		return status, body
 	}
-	read := func(path string) (gateLogRead, []byte) {
+	readOnce := func(path string) (gateLogRead, []byte) {
 		t.Helper()
 		status, body := get(path)
 		if status != http.StatusOK {
@@ -144,6 +144,28 @@ func (g *gate) logsStep(t *testing.T) {
 		}
 		checkClean(t, hide, path, body)
 		return r, body
+	}
+	// read is readOnce, and once more for a listLogs read whose coverage isn't
+	// complete: a page read has a 5 s deadline (feature 024) that a busy
+	// machine can cut, and the lab's streams are far under the budget, so an
+	// incomplete read here is the deadline's. A check of lines that fails on a
+	// read still cut names it with cutOf; a complete read is checked as
+	// strictly as ever. (getLogsAround has no deadline and is always complete.)
+	read := func(path string) (gateLogRead, []byte) {
+		t.Helper()
+		r, body := readOnce(path)
+		if r.Coverage.Complete || !strings.HasPrefix(path, "/v1/logs?") {
+			return r, body
+		}
+		t.Logf("GET %s was cut (coverage.complete false): reading it once more", hide(path))
+		time.Sleep(2 * time.Second)
+		return readOnce(path)
+	}
+	cutOf := func(r gateLogRead) string {
+		if r.Coverage.Complete {
+			return ""
+		}
+		return " (the read was cut by its deadline, also when read again: coverage.complete is false)"
 	}
 	refused := func(status int, code, field, path string) {
 		t.Helper()
@@ -224,7 +246,7 @@ func (g *gate) logsStep(t *testing.T) {
 		t.Helper()
 		got := byText(r, part)
 		if len(got) == 0 {
-			fatalf("listLogs has no line containing %q (%d lines)", part, len(r.Lines))
+			fatalf("listLogs has no line containing %q (%d lines)%s", part, len(r.Lines), cutOf(r))
 		}
 		return got
 	}
@@ -264,7 +286,7 @@ func (g *gate) logsStep(t *testing.T) {
 		errorLine = plainErrors[len(plainErrors)/2] // not the first line of the copy: see around=<time> below
 	}
 	if errorLine.ID == "" {
-		fatalf("listLogs has no ERROR line without raw")
+		fatalf("listLogs has no ERROR line without raw%s", cutOf(list))
 	}
 	if age := time.Since(errorLine.Time); age < -time.Minute || age > 5*time.Minute {
 		errorf("the ERROR line's time %s isn't from the line's own timestamp (now %s)", errorLine.Time, time.Now().UTC())
@@ -314,10 +336,10 @@ func (g *gate) logsStep(t *testing.T) {
 		errs += b.Errors
 	}
 	if count == 0 || errs == 0 {
-		errorf("the histogram counts %d lines and %d errors, want both above 0", count, errs)
+		errorf("the histogram counts %d lines and %d errors, want both above 0%s", count, errs, cutOf(list))
 	}
 	if !list.Coverage.Complete || list.Dropped {
-		errorf("coverage.complete %v, dropped %v, want true and false for a fresh app", list.Coverage.Complete, list.Dropped)
+		errorf("coverage.complete %v, dropped %v, want true and false for a fresh app%s", list.Coverage.Complete, list.Dropped, cutOf(list))
 	}
 	if len(list.Copies) != 1 {
 		t.FailNow()
@@ -325,7 +347,7 @@ func (g *gate) logsStep(t *testing.T) {
 	short := list.Copies[0].Short
 
 	if r, _ := read(base + "&q=boom"); len(r.Lines) == 0 {
-		errorf("q=boom found nothing")
+		errorf("q=boom found nothing%s", cutOf(r))
 	} else {
 		kinds := map[bool]bool{}
 		for _, l := range r.Lines {
@@ -335,11 +357,11 @@ func (g *gate) logsStep(t *testing.T) {
 			kinds[l.Raw != ""] = true
 		}
 		if len(kinds) != 2 {
-			errorf("q=boom kept lines with raw %v, want the plain ERROR line and the JSON line", kinds)
+			errorf("q=boom kept lines with raw %v, want the plain ERROR line and the JSON line%s", kinds, cutOf(r))
 		}
 	}
 	if r, _ := read(plain + "&levels=warn"); len(r.Lines) == 0 {
-		errorf("levels=warn found nothing")
+		errorf("levels=warn found nothing%s", cutOf(r))
 	} else {
 		for _, l := range r.Lines {
 			if l.Level != "warn" || !strings.Contains(l.Text, "[warn] careful") {
@@ -348,10 +370,10 @@ func (g *gate) logsStep(t *testing.T) {
 		}
 	}
 	if r, _ := read(base + "&range=1h"); len(r.Lines) == 0 {
-		errorf("range=1h found nothing")
+		errorf("range=1h found nothing%s", cutOf(r))
 	}
 	if r, _ := read(base + "&lines=2"); len(r.Lines) != 2 {
-		errorf("lines=2 gave %d entries", len(r.Lines))
+		errorf("lines=2 gave %d entries%s", len(r.Lines), cutOf(r))
 	}
 	refused(http.StatusUnprocessableEntity, "invalid_field", "levels", plain+"&levels=loud")
 	refused(http.StatusUnprocessableEntity, "invalid_field", "range", plain+"&range=2h")
@@ -402,7 +424,7 @@ func (g *gate) logsStep(t *testing.T) {
 	// 4. downloadLogs.
 	dl := g.logsDownload(t, hide, "/v1/logs/download?"+place+"&app="+id+"&levels=error,warn,info,debug&q=boom")
 	if len(dl.lines) < 2 {
-		errorf("the download has %d lines, want both error lines at least", len(dl.lines))
+		errorf("the download has %d lines, want both error lines at least%s", len(dl.lines), dl.because())
 	}
 	for _, f := range dl.lines {
 		if len(f) != 6 || f[2] != short || !strings.Contains(strings.ToLower(f[5]), "boom") {
@@ -412,7 +434,7 @@ func (g *gate) logsStep(t *testing.T) {
 	}
 	whole := g.logsDownload(t, hide, "/v1/logs/download?"+place+"&app="+id+"&levels=error,warn,info,debug")
 	if !strings.Contains(whole.body, sentinel) {
-		errorf("the whole download doesn't hold the sentinel the copy printed at its start")
+		errorf("the whole download doesn't hold the sentinel the copy printed at its start%s", whole.because())
 	}
 
 	// 5. The app's own getLogs.
@@ -529,7 +551,7 @@ func (g *gate) logsStep(t *testing.T) {
 		errorf("Caravana's log holds the sentinel")
 	}
 	if sent, _ := read(base + "&lines=1000&q=" + sentinel); len(sent.Lines) == 0 {
-		errorf("gate024's own listLogs doesn't find the sentinel it printed")
+		errorf("gate024's own listLogs doesn't find the sentinel it printed%s", cutOf(sent))
 	}
 }
 
@@ -538,11 +560,47 @@ func (g *gate) logsStep(t *testing.T) {
 type logsDownloaded struct {
 	body  string
 	lines [][]string
+	cut   string // downloadCut of body
 }
 
-// logsDownload reads a download and checks what every one must have: the
-// headers, the first two lines, no escape byte, and the lines oldest first.
+// because is what a failed check of the download's lines adds when the
+// download was cut by its time limit, or "".
+func (d logsDownloaded) because() string {
+	if d.cut == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (the download was cut by its time limit, also when read again: %q)", d.cut)
+}
+
+// downloadCut is the download's "# cut: the time limit …" lines, one per copy
+// whose older lines the time limit left out, or "". A cut by the budget isn't
+// one: the lab's streams are far under it, so that would be a regression.
+func downloadCut(body string) string {
+	var cuts []string
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "# cut: the time limit ") {
+			cuts = append(cuts, l)
+		}
+	}
+	return strings.Join(cuts, "; ")
+}
+
+// logsDownload is logsDownloadOnce, and once more when the time limit cut it
+// (a busy machine): see downloadCut.
 func (g *gate) logsDownload(t *testing.T, hide func(string) string, path string) logsDownloaded {
+	t.Helper()
+	d := g.logsDownloadOnce(t, hide, path)
+	if d.cut != "" {
+		t.Logf("the download was cut (%q): downloading it once more", d.cut)
+		time.Sleep(2 * time.Second)
+		d = g.logsDownloadOnce(t, hide, path)
+	}
+	return d
+}
+
+// logsDownloadOnce reads a download and checks what every one must have: the
+// headers, the first two lines, no escape byte, and the lines oldest first.
+func (g *gate) logsDownloadOnce(t *testing.T, hide func(string) string, path string) logsDownloaded {
 	t.Helper()
 	resp := g.api(t, http.MethodGet, path, "", "")
 	defer resp.Body.Close()
@@ -570,7 +628,7 @@ func (g *gate) logsDownload(t *testing.T, hide func(string) string, path string)
 	if len(rows) < 2 || rows[0] != "# newest last" || !strings.HasPrefix(rows[1], "# caravana logs ") {
 		t.Fatal(hide(fmt.Sprintf("the download starts %q, want \"# newest last\" then \"# caravana logs …\"", rows[:min(2, len(rows))])))
 	}
-	out := logsDownloaded{body: body}
+	out := logsDownloaded{body: body, cut: downloadCut(body)}
 	last := ""
 	for _, row := range rows[2:] {
 		if strings.HasPrefix(row, "#") {
