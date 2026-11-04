@@ -14,7 +14,9 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   prefers light. **Settings › This browser › Appearance** forces one (Match the system, Light, Dark),
   kept in a cookie of that browser only, so it holds on the sign-in page and after sign-out. It is the
   same look with the same rules: status is the only colour, every status keeps its shape, depth is
-  distance from the panel face. The terminal page's terminal stays dark in both.
+  distance from the panel face. The terminal page's terminal stays dark in both. Two things read a shade
+  darker in both themes on the way: a field's placeholder and the Logs level chip that is off are Label Text
+  now, and the terminal's box has no black band at its edges.
 
 ### Security
 - **An ntfy topic URL is a secret now**: it lives in the channel's Nomad Variable like a Slack or Discord URL,

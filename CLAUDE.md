@@ -966,7 +966,9 @@ Feature 028 (`specs/028-light-theme`, Phase 2.6, from a CodeAlta task) is implem
 - `internal/ui/theme_test.go` recomputes the contract's contrast ratios from `theme.css` for both palettes,
   checks every token has both values and that no colour is written outside the tokens; `DESIGN.md` has the
   Token-Only Color Rule and "depth is distance from the panel face". `TestConsoleLab` has a step
-  `console-appearance`.
+  `console-appearance`. The designer's review, the critique's rulings and the last look are the contract's
+  sections 8 to 10 (approved 2026-11-04); every `TestConsoleLab` step passed on the build that day, after
+  `console-domains-states` lost a stale expectation for a lab without `CARAVANA_PUBLIC_URL`.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

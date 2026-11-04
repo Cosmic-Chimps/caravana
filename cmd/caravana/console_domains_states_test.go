@@ -130,7 +130,8 @@ func (c *console) ensureSignedIn(t *testing.T) {
 //
 // dns_elsewhere needs the console's address (CARAVANA_PUBLIC_URL) to know which
 // addresses are this host's; the lab's resolver gives that name 203.0.113.1.
-// Without it elsewhere.test is "couldn't check" here, and the step says so.
+// Without it elsewhere.test reads "Traefik's own certificate" (DNS can't be judged, the handshake can)
+// and isn't an item, and the step says so.
 // Budget: nine deploys, each waited for up to 4 minutes, normally half one.
 func (c *console) domainsStates(t *testing.T) {
 	const (
@@ -366,8 +367,13 @@ func (c *console) domainsStates(t *testing.T) {
 	expectRow(page, www, "idle", "Traefik's own certificate", selfCert)
 	expectRow(page, rdWWW, "idle", "Traefik's own certificate", selfCert)
 	expectRow(page, nothing, "warning", "no DNS record", selfCert)
-	if got = text(page); !strings.Contains(got, "5 domains · 2 need you") {
-		t.Errorf("the count line of /domains?app=%s = %s, want \"5 domains · 2 need you\" (elsewhere.test and nothing.invalid)", id, got)
+	// Without the console's address, elsewhere.test can't be judged, so only nothing.invalid needs the owner.
+	wantCount := "5 domains · 1 needs you"
+	if expectElsewhere {
+		wantCount = "5 domains · 2 need you"
+	}
+	if got = text(page); !strings.Contains(got, wantCount) {
+		t.Errorf("the count line of /domains?app=%s = %s, want %q", id, got, wantCount)
 	}
 	if expectElsewhere {
 		expectRow(page, elsewhere, "failed", "DNS points elsewhere", selfCert)
@@ -394,7 +400,9 @@ func (c *console) domainsStates(t *testing.T) {
 			t.Errorf("the banner = %s, want only elsewhere.test's, with its explanation and Check again", got)
 		}
 	} else {
-		expectRow(page, elsewhere, "idle", "couldn't check", selfCert)
+		// With no address of this host to compare, DNS can't be judged, but the handshake still finds
+		// Traefik's own certificate, and that state wins over "couldn't check" (edge.StateOf, rule 6).
+		expectRow(page, elsewhere, "idle", "Traefik's own certificate", selfCert)
 	}
 	_, page = c.get(t, "/domains?app="+id+"&open="+nothing)
 	row = text(domainRow(page, nothing))

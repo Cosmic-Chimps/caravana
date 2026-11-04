@@ -301,3 +301,19 @@ visible, native controls following. Its nine findings, and what the designer rul
    light. Fixed: one unlayered rule paints the viewport with `--color-terminal`.
 9. **The Menu overlay is a white panel over white cards** under 900px. Kept: the 16 % shadow and the rim
    read as floating in the review's capture; raising the shadow would make it dirty.
+
+## 10. Last look (2026-11-04)
+
+After the fixes of section 9, the Logs page (the level chips, the search placeholder, the count bars at
+the 1 h range) and the terminal page were captured again in light and read right. The checks: `go build`,
+`go vet`, staticcheck, gofmt, the CGO-free cross-compile, `tools/ui-css.sh check`, `tools/ui-vendor.sh
+check` and `go test ./...` are green. In the lab, `TestConsoleLab` ran whole on this build: 24 steps passed
+in one run, then `console-domains-states` failed on an expectation that had gone stale before 028 (with no
+`CARAVANA_PUBLIC_URL` in the environment, elsewhere.test reads "Traefik's own certificate" and isn't an
+item, not "couldn't check"; the step's branch for a known address passed as it was); with the step's
+no-address branch corrected, it and every step after it (logs, monitoring, the three Operator steps,
+`console-appearance`, delete) passed in a second run.
+
+**Approved.** The light theme is a light variant of the same identity: status is the only colour and every
+status keeps its shape, depth is distance from the panel face, the primary inverts to Readout Ink, the
+terminal stays dark, and every colour is a token with both values that the tests keep honest.

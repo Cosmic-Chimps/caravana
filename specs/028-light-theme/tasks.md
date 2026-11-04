@@ -45,12 +45,12 @@ implements. Verification for every task: `go build ./... && go vet ./... && go t
 - [x] T010 [US3] [FR-014] CHANGELOG.md Unreleased (Added: the light theme and the Appearance
   setting; Changed: the status colours in light are darker), CLAUDE.md "Where we are" (a short 028
   paragraph), `docs/plan.md`'s "a light theme" mention marked done.
-- [ ] T011 The full check: `go test ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`,
+- [x] T011 The full check: `go test ./...`, `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`,
   `CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...`, `tools/ui-css.sh check`,
   `tools/ui-vendor.sh check`; `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab -v`.
 
 ## Review
 
-- [ ] T012 [SC-001] The designer's review (contract §7) at 1440 and 390, light and dark, by system
+- [x] T012 [SC-001] The designer's review (contract §7) at 1440 and 390, light and dark, by system
   and forced, on the listed pages; the impeccable critique (no detector); rulings written into the
   contract ("Critique rulings"); fixes; the last look ("Last look", dated).
