@@ -243,3 +243,61 @@ On each, I check:
 - the overlay shadow reads as floating, not dirty.
 
 Then the impeccable critique (no detector), my rulings, the fixes and the last look.
+
+
+## 8. The review, as it went (2026-11-04)
+
+The builder (Opus, this session) staged the console on the lab (`/tmp/lt-review/stage.sh`: whoami with two
+copies and a domain, a broken app whose deploy failed, an app never deployed, the project Shop Floor with
+staging and production, a schedule) and read every page listed in section 7 in Microsoft Edge 156, by
+emulated system preference and forced through the Appearance form, at 1440 and 390.
+
+**Found and fixed before the review proper:** the first build wrote every token as `light-dark(<dark>,
+<light>)`, but the function takes the light value first, so a light system got the dark palette and the
+default dark page would have shown the light one. The sign-in page's first capture caught it; every token's
+two values were swapped into the function's order (40705db), the contrast test's two sides with them.
+
+**Checked, and right:** the sign-in page, the Apps home (needs-you rows, the tables, the host meters with
+the hatched reserved part, Activity), Running (pills, meters), Deployments (the stages strip, a failed entry),
+Configure (the danger panel), Domains (the Add panel), Logs (the histogram's hatched bins, the service hues,
+the deploy rows in lilac), Monitoring (the gap hatch; the band couldn't be seen yet, the baseline was still
+building: it is `ink-3` at 70 % with a `line-2` edge, which reads on the light panel, so it needs no token),
+Schedules at 390, Settings › Appearance at 1440 and 390 ("(now light)" filled by script, "Saved." after a
+post), API tokens with the Revoke overlay open (the shadow reads as floating, the date field is light), the
+Operator Overview and Updates (the checkbox follows), the project page, the terminal page (the box stays
+dark inside a light page, the shell select is light), the Menu overlay at 390, a keyboard walk (the
+full-strength focus ring is visible on white), and dark pages after the fix (unchanged from before).
+Forced Dark under a light system and forced Light under a dark system both hold, and the sign-in page
+with the cookie alone carries the theme without script (curl).
+
+**Points of section 3:** the fg-4 hatch on the meters and the gap hatch read on white, faint but present,
+as a mark should; no `--color-hatch` or `--color-band` token was needed.
+
+## 9. Critique rulings (2026-11-04)
+
+The impeccable critique (a Sonnet session with browser tools, critique only, no detector) measured every
+text node's contrast on the main pages in the three combinations and found no blocker: no text under
+4.5:1 but the two items below, every status with its shape, the cookie and the sign-in page right, focus
+visible, native controls following. Its nine findings, and what the designer ruled:
+
+1. **The Logs level chip's off state is `fg-4` text** (3.06:1, an operable toggle). Fixed: the off chip is
+   `fg-3`, and the on debug chip `fg-2`, so the on state still steps up.
+2. **Placeholders are `fg-4`** (2.9:1 on the field fill). Fixed: `fg-3` in both themes (the field, the box
+   field and the logs search). A placeholder stays a step lighter than a value.
+3. **Field boundaries are faint in light** (`line-2` 1.6:1 on the panel). Kept, as the contract decided: a
+   field is told by its fill and its edge together, hover moves the edge to `line-3`, and focus draws the
+   full-strength ring. Recorded for the maintainer's eye on a real screen; a `--color-field-edge` token is
+   the change if it proves too faint.
+4. **The histogram's count bars are `ink-3` on the panel** (1.2:1 in light). Fixed with a token,
+   `--color-bar` (`ink-3` in dark, Dim Mark's value in light, about 3:1) and `--color-bar-hover`.
+5. **The level chips colour the words "error" and "warn" without a mark.** Ruled exempt: the word spells
+   the status and the chip is a filter, not a status; the Shape-and-Color Rule is about a status shown.
+6. **Checked radios and checkboxes take the healthy blue.** Kept: DESIGN.md already gives Signal Blue to the
+   accent of a checked control, the focus ring and the sidebar's current bar; a selection in blue is a
+   recorded exception of the Status-Only Color Rule, in both themes.
+7. **Monitoring's hidden data table makes a phantom scroll area** (the page is about 4,700px tall at
+   1440). Not a theme matter and verified; proposed as a follow-up task.
+8. **The terminal shows xterm's own black viewport as a band inside the box**, visible once the page is
+   light. Fixed: one unlayered rule paints the viewport with `--color-terminal`.
+9. **The Menu overlay is a white panel over white cards** under 900px. Kept: the 16 % shadow and the rim
+   read as floating in the review's capture; raising the shadow would make it dirty.

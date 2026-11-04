@@ -117,6 +117,10 @@
   --color-anchor-wash: light-dark(oklch(0.215 0.010 255 / 0.09), oklch(0.955 0.004 255 / 0.09));
   /* The fill behind the dashes of an unread bin and a gap in a chart; the dashes are fg-4. */
   --color-hatch-fill: light-dark(oklch(0.640 0.010 255 / 0.12), oklch(0.500 0.010 255 / 0.12));
+  /* The logs histogram's count bar, the chart's one data mark: ink-3 in dark, which on a white panel
+     would be 1.2:1, so light takes Dim Mark's value (about 3:1); hover one step stronger. */
+  --color-bar: light-dark(oklch(0.640 0.010 255), oklch(0.260 0.009 255));
+  --color-bar-hover: light-dark(oklch(0.475 0.012 255), oklch(0.340 0.010 255));
 
   /* The six service hues (024): a service's name and its 8px square, never a status. */
   --color-hue-0: light-dark(oklch(0.500 0.095 250), oklch(0.78 0.08 250));
@@ -235,7 +239,8 @@
      adds .cv-field-mono (12.5px). The label above it is .cv-label. The sign-in's field is 42px. */
   .cv-field { display: block; width: 100%; height: 32px; padding: 0 12px; background: var(--color-ink-2); border: 1px solid var(--color-line-2); border-radius: 4px; color: var(--color-fg-1); font: 400 13px/1 var(--font-sans); transition: border-color 120ms var(--ease-cv); }
   .cv-field-mono { font: 400 12.5px/1 var(--font-mono); }
-  .cv-field::placeholder, .cv-field-input::placeholder { color: var(--color-fg-4); opacity: 1; }
+  /* A placeholder is read, so it is Label Text, a step lighter than a value (the No-Dim-Text Rule; 028's critique). */
+  .cv-field::placeholder, .cv-field-input::placeholder { color: var(--color-fg-3); opacity: 1; }
   .cv-field:hover { border-color: var(--color-line-3); }
   .cv-field:focus { border-color: var(--color-line-3); outline: 2px solid var(--color-focus); outline-offset: 0; }
   .cv-field-lg { height: 42px; background: var(--color-ink-1); font: 400 14px/1 var(--font-mono); }

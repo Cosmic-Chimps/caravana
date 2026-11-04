@@ -1314,19 +1314,19 @@
   .cv-logsearch:focus-within { border-color: var(--color-line-3); outline: 2px solid var(--color-focus); outline-offset: 0; }
   .cv-logsearch > .cv-icon { width: 14px; height: 14px; color: var(--color-fg-3); }
   .cv-logsearch-input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; font: 400 14px/1 var(--font-mono); color: var(--color-fg-1); }
-  .cv-logsearch-input::placeholder { color: var(--color-fg-4); opacity: 1; }
+  .cv-logsearch-input::placeholder { color: var(--color-fg-3); opacity: 1; }
   .cv-logsearch-n { flex: none; font: 400 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
   .cv-logsearch-submit { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); border: 0; padding: 0; }
   .cv-lvlchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   /* A level chip: off is quiet (transparent, line-1, fg-4); on is raised (ink-2, line-3) and wears the
      level's hue; the count of error and warn sits in fg-3. */
-  .cv-lvlchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--color-line-1); border-radius: 4px; background: transparent; font: 500 12px/1 var(--font-mono); color: var(--color-fg-4); text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv), border-color 120ms var(--ease-cv); }
+  .cv-lvlchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--color-line-1); border-radius: 4px; background: transparent; font: 500 12px/1 var(--font-mono); color: var(--color-fg-3); text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color 120ms var(--ease-cv), color 120ms var(--ease-cv), border-color 120ms var(--ease-cv); }
   .cv-lvlchip:hover { border-color: var(--color-line-2); }
   .cv-lvlchip.cv-on, .cv-lvlchip[aria-pressed="true"] { background: var(--color-ink-2); border-color: var(--color-line-3); }
   .cv-lvlchip.cv-on.cv-lvl-error, .cv-lvlchip[aria-pressed="true"].cv-lvl-error { color: var(--color-failed); }
   .cv-lvlchip.cv-on.cv-lvl-warn, .cv-lvlchip[aria-pressed="true"].cv-lvl-warn { color: var(--color-warn); }
   .cv-lvlchip.cv-on.cv-lvl-info, .cv-lvlchip[aria-pressed="true"].cv-lvl-info { color: var(--color-fg-2); }
-  .cv-lvlchip.cv-on.cv-lvl-debug, .cv-lvlchip[aria-pressed="true"].cv-lvl-debug { color: var(--color-fg-3); }
+  .cv-lvlchip.cv-on.cv-lvl-debug, .cv-lvlchip[aria-pressed="true"].cv-lvl-debug { color: var(--color-fg-2); }
   .cv-lvlchip-n { font-weight: 400; font-variant-numeric: tabular-nums; color: var(--color-fg-3); }
 
   /* The notice of the "lines around this" view. */
@@ -1372,8 +1372,8 @@
      viewBox "0 0 300 48" with preserveAspectRatio none, so strokes don't scale (non-scaling-stroke). */
   .cv-hist { padding: 14px 16px 10px; }
   .cv-hist-svg { display: block; width: 100%; height: 48px; overflow: visible; }
-  .cv-hbar { fill: var(--color-ink-3); }
-  .cv-hbar:hover { fill: var(--color-line-2); }
+  .cv-hbar { fill: var(--color-bar); }
+  .cv-hbar:hover { fill: var(--color-bar-hover); }
   .cv-hbar-err { fill: var(--color-failed); }
   .cv-hbar-err:hover { fill: var(--color-failed); opacity: 0.85; }
   /* An empty bin with nothing to show: a 2px stub. */
@@ -1998,204 +1998,9 @@
 }
 
 /* Touch screens: the chips are 44px tall. */
-@media (pointer: coarse) {
-  .cv-opschip { min-height: 44px; }
-}
 
-/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
-   gutters; the Overview keeps its own gap. */
-@media (max-width: 899.98px) {
-  .cv-page-ops { gap: 28px; padding: 24px 16px 40px; }
-}
-
-
-/* Under 1200px of room (the page's container) the charts are a 2x2 grid; under 640px, one column. The
-   issue rows stack their action under the text under 640px. */
-@container cvmon (max-width: 1199.98px) {
-  .cv-mncharts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@container cvmon (max-width: 639.98px) {
-  .cv-mncharts { grid-template-columns: minmax(0, 1fr); }
-  .cv-mnissue { padding: 14px 16px; }
-  .cv-mnissue-act { grid-column: 2; justify-self: start; margin-top: 10px; }
-  .cv-mnfilter-spacer { display: none; }
-  .cv-mnsec-tools { margin-left: 0; }
-}
-
-/* The table folds when it has under 980px of its own (nine columns and the CPU figure need about that much; the contract's
-   640px would overflow): mark, name and copies on the first line, then each fact as a label and its value
-   (the labels come from data-label), the memory meter across, and Restarts with the logs link last. */
-@container cvmntbl (max-width: 979.98px) {
-  .cv-mnthead { display: none; }
-  .cv-mnrow { grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 6px; padding-block: 12px; }
-  .cv-mnrow > .cv-mark { align-self: start; margin-top: 5px; }
-  .cv-mnrow > .cv-mnname { grid-column: 2 / -1; }
-  .cv-mnrow > [data-label] { grid-column: 2 / -1; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); column-gap: 10px; align-items: baseline; text-align: left; }
-  .cv-mnrow > [data-label]::before { content: attr(data-label); font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
-  .cv-mnrow > .cv-mncpu { align-items: center; }
-  .cv-mnrow > .cv-mnmem { grid-column: 2 / -1; display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; align-items: center; }
-  .cv-mnrow > .cv-mnmem .cv-mnmeter-svg { max-width: none; }
-  .cv-mnrow > .cv-mnrestarts { grid-column: 2; }
-  .cv-mnrow > .cv-mnlogscell { grid-column: 3; justify-self: end; }
-  .cv-mnnumber, .cv-mnrestarts { text-align: left; }
-}
-
-/* Touch screens: the logs link is 44px. */
-@media (pointer: coarse) {
-  .cv-mnlogs { width: 44px; height: 44px; }
-}
-
-/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
-   gutters; the Monitoring page keeps the tighter gap. */
-@media (max-width: 899.98px) {
-  .cv-page-mon { gap: 18px; padding: 24px 16px 40px; }
-}
-
-/* The server page: under 1200px of room the aside drops under the main column; under 640px the three
-   numbers stack with the line on top instead of the left. */
-@container cvsrv (max-width: 1199.98px) {
-  .cv-srvgrid { grid-template-columns: minmax(0, 1fr); }
-}
-/* Stacked but wide enough (900px of room or more): Server and Recent sit side by side, two equal columns
-   with the main column's gap, Server first. Under 900 they stack. */
-@container cvsrv (min-width: 900px) and (max-width: 1199.98px) {
-  .cv-srvaside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; align-items: start; }
-}
-@container cvsrv (max-width: 639.98px) {
-  .cv-srvnums { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
-  .cv-srvnum + .cv-srvnum { border-left: 0; border-top: 1px solid var(--color-line-1); }
-}
-
-/* Running here folds when the panel has under 720px of its own (designer's last look: under it a long
-   Up cell squeezed CPU and Memory to four lines): the chip on its own line, then CPU and
-   Memory side by side, Up after (the labels come from data-label). */
-@container cvsrvrows (max-width: 719.98px) {
-  .cv-srvtable { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; }
-  .cv-srvrow { row-gap: 10px; }
-  .cv-srvwho { grid-column: 1 / -1; }
-  .cv-srvup { grid-column: 1 / -1; text-align: left; }
-  .cv-srvupword { display: none; }
-  .cv-srvcell::before { content: attr(data-label); display: block; margin-bottom: 2px; font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); }
-}
-
-/* Touch screens: the copies' rows are 44px tall. */
-@media (pointer: coarse) {
-  .cv-srvrow { min-height: 44px; }
-}
-
-/* The shell's own narrow rule (unlayered, so it wins over the layer) gives .cv-page its gap and 16px
-   gutters; the server page keeps its own gap. */
-@media (max-width: 899.98px) {
-  .cv-page-srv { gap: 24px; padding: 24px 16px 40px; }
-}
-
-/* Available folds when the page has under 760px: the mark, then the name and the change on the first
-   lines, the notes under them; a banner stacks its action under its text (023's rule). Past updates
-   puts the detail under the sentence. */
-@container cvupd (max-width: 759.98px) {
-  .cv-uprow { grid-template-columns: 14px minmax(0, 1fr); gap: 6px 14px; }
-  .cv-upmark { grid-row: 1; }
-  .cv-upwho, .cv-upchange, .cv-upnotes { grid-column: 2; }
-  .cv-upchange { padding-top: 0; }
-  .cv-upnotes { margin-top: 6px; }
-  .cv-uppastrow { grid-template-columns: 14px 64px minmax(0, 1fr); row-gap: 2px; }
-  .cv-uppastdetail { grid-column: 3; }
-}
-
-/* Under 480px the command box gets the whole width: the step's number goes inline before its title
-   ("1 · Install the waiting updates:"), Copy moves to the title's row, and the box takes the row under
-   them. The body and the box's row dissolve (display: contents) so that the step is one grid. */
-@container cvupd (max-width: 479.98px) {
-  .cv-upstep { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 20px; }
-  .cv-upstepbody, .cv-upcmdrow { display: contents; }
-  .cv-upstepn { position: static; width: auto; }
-  .cv-upstepn::after { content: " ·"; }
-  .cv-upsteptitle { grid-column: 1; grid-row: 1; }
-  .cv-upcmdrow > button { grid-column: 2; grid-row: 1; align-self: start; }
-  .cv-upcmd { grid-column: 1 / -1; grid-row: 2; }
-  .cv-upwarn { grid-column: 1 / -1; grid-row: 3; }
-}
-
-@media (max-width: 899.98px) {
-  .cv-page-upd { gap: 24px; padding: 24px 16px 40px; }
-}
-
-/* ---------------------------------------------------------------------------
-   The project page (feature 027.5, the handoff's ProjectScreen): the header with one tab
-   per environment, the environment's apps as a table of links, and the rail's panels.
-   Values are specs/027.5-project-page/contracts/project-screen.md's.
-   --------------------------------------------------------------------------- */
-@layer components {
-  .cv-pj-head { display: flex; flex-direction: column; gap: 18px; }
-  .cv-pj-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
-  .cv-pj-title .cv-btn { align-self: center; text-decoration: none; }
-  /* The two header buttons are one group, pushed right, that wraps together under the title. */
-  .cv-pj-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-  /* A project is a name the owner typed, not a Nomad name: sans, not the app title's mono. */
-  .cv-pj-h1 { font: 500 26px/1.2 var(--font-sans); color: var(--color-fg-1); overflow-wrap: anywhere; }
-  .cv-pj-slot { font-size: 15px; font-weight: 400; color: var(--color-fg-3); overflow-wrap: anywhere; }
-  .cv-pj-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--color-line-1); }
-  .cv-pj-tabs .cv-btn { text-decoration: none; }
-  /* The environment's badge (EnvBadge): every badge reads in fg-2 on no ground; the current one (the page's
-     environment) wins on every channel: fg-1 text, the third ground and the stronger edge. Hover changes the
-     ground only. */
-  .cv-envtab { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border: 1px solid var(--color-line-2); border-radius: 2px; font: 500 12px/1 var(--font-mono); white-space: nowrap; color: var(--color-fg-2); text-decoration: none; transition: background-color 120ms var(--ease-cv); }
-  .cv-envtab:hover { background: var(--color-ink-2); color: var(--color-fg-2); }
-  .cv-envtab[aria-current="page"] { color: var(--color-fg-1); border-color: var(--color-line-3); background: var(--color-ink-3); }
-  .cv-envtab[aria-current="page"]:hover { color: var(--color-fg-1); }
-
-  /* A section of the page: a label and a panel, 10px apart. The main column and the rail's sections. */
-  .cv-pj-sec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .cv-pj-rail { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
-
-  /* The apps table: each row is one link to the app. The panel is a container, so the row folds by the
-     room the table has (the rail may sit beside it), not by the screen. */
-  .cv-pj { container-type: inline-size; }
-  .cv-pj-row { display: grid; grid-template-columns: minmax(0, 1.3fr) 150px 90px minmax(0, 1.3fr) 150px; column-gap: 16px; align-items: center; min-height: 48px; padding: 0 18px; font-size: 14px; color: var(--color-fg-2); text-decoration: none; }
-  .cv-pj-row:hover { color: var(--color-fg-2); }
-  .cv-pj-row:focus-visible { outline-offset: -2px; }
-  .cv-pj-row > * { min-width: 0; }
-  .cv-pj-name { padding-block: 6px; }
-  .cv-pj-name > .cv-app-name { display: block; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
-  .cv-pj-row .cv-pill-sm { padding: 0; }
-  .cv-pj-marks { display: flex; align-items: center; min-width: 0; }
-  .cv-pj-groups { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-  .cv-pj-group { display: inline-flex; align-items: center; gap: 4px; }
-  .cv-pj-none { font: 400 12px/1.35 var(--font-mono); color: var(--color-fg-3); }
-  .cv-pj-addr { display: flex; align-items: baseline; min-width: 0; font: 400 13px/1.35 var(--font-mono); color: var(--color-fg-2); }
-  .cv-pj-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cv-pj-more { flex: none; color: var(--color-fg-3); white-space: pre; }
-  .cv-pj-addr > .cv-pj-none { font-size: 13px; }
-  .cv-pj-ver { justify-self: end; text-align: right; font: 400 13px/1.35 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-3); white-space: nowrap; }
-  .cv-pj-ver .cv-data { color: inherit; }
-
-  /* The Environment panel: keys (the console's labels) and values, baseline-aligned. */
-  .cv-pj-env { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 18px; align-items: baseline; margin: 0; padding: 18px; font-size: 14px; line-height: 1.4; color: var(--color-fg-2); }
-  .cv-pj-env > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .cv-pj-env .cv-data { color: inherit; font-size: inherit; }
-  .cv-pj-promote { display: flex; flex-wrap: wrap; gap: 8px; }
-  .cv-pj-promote .cv-btn { text-decoration: none; }
-  .cv-pj-nodeploys { padding: 18px; font-size: 14px; color: var(--color-fg-3); }
-  /* In the rail's 400px a needs-you row stacks: the sentence on a line, then its time and action. */
-  .cv-pj-rail .cv-need { grid-template-columns: minmax(0, 1fr) auto; }
-  .cv-pj-rail .cv-need-text { grid-column: 1 / -1; }
-  .cv-pj-rail .cv-need-act { grid-column: auto; width: auto; }
-}
-
-/* Under 720px of table a row is two lines: name, kind, the pill and the marks; then the address and the
-   version. Nothing scrolls sideways at 390px. Unlayered, so it wins over the grid above. */
-@container (max-width: 719.98px) {
-  .cv-pj-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name status marks" "addr addr ver"; row-gap: 6px; padding: 12px 16px; }
-  .cv-pj-row .cv-pj-name { grid-area: name; padding-block: 0; }
-  .cv-pj-row .cv-pj-status { grid-area: status; }
-  .cv-pj-row .cv-pj-marks { grid-area: marks; }
-  .cv-pj-row .cv-pj-addr { grid-area: addr; }
-  .cv-pj-row .cv-pj-ver { grid-area: ver; }
-}
-
-/* Under 640px the Environment panel stacks each key over its value. */
-@media (max-width: 639.98px) {
-  .cv-pj-env { grid-template-columns: minmax(0, 1fr); gap: 4px 0; }
-  .cv-pj-env > dd { margin-bottom: 10px; }
-  .cv-pj-env > dd:last-child { margin-bottom: 0; }
-}
+/* The terminal page (020.6): xterm.css paints its own viewport pure black, which showed as a thin band
+   at the box's right and bottom edges once the page around it could be light (028's critique). The box's
+   ground is the one colour here. Unlayered, like xterm.css, so it wins on order; three classes, so it wins
+   on specificity. */
+.cv-terminal .cv-terminal-screen .xterm-viewport { background-color: var(--color-terminal); }

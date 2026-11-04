@@ -1199,7 +1199,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   "N lines" 12px mono fg-3 at its right end once a search is set (`.cv-logsearch-n`); Enter applies through a
   visually hidden submit. **Level chips** (`.cv-lvlchip`, 30px, 0 10px, radius 4, 500 12px mono, gap 6): on
   (`.cv-on`) is ink-2 with a 1px line-3 edge and wears the level's hue (`.cv-lvl-error` failed, `.cv-lvl-warn`
-  warn, `.cv-lvl-info` fg-2, `.cv-lvl-debug` fg-3); off is transparent with a line-1 edge in fg-4; error and
+  warn, `.cv-lvl-info` fg-2, `.cv-lvl-debug` fg-2); off is transparent with a line-1 edge in fg-3 (it is an
+  operable toggle, so text, never fg-4: 028's critique); error and
   warn carry their count in fg-3 (`.cv-lvlchip-n`) while they are on: the range's count, the histogram's own
   numbers (every line of the range that passed the filters, folded or not), not the rows the stream holds.
   Defaults: error, warn, info on, debug off. Each chip is a
@@ -1233,7 +1234,8 @@ entry, the stream is in the open row). Caravana stores no lines: every read goes
   the console draws a chart with elements instead of `<meter>`: `<svg class="cv-hist-svg" viewBox="0 0 300 48"
   preserveAspectRatio="none" role="img" aria-labelledby=…>` 48px tall, 30 bins of equal time (the range / 30),
   one `<rect>` per bar part with `x`, `y`, `width` and `height` as attributes and the colors from classes,
-  never a `style` attribute (the page's policy forbids it) and no script. A bar is `.cv-hbar` (ink-3) with the
+  never a `style` attribute (the page's policy forbids it) and no script. A bar is `.cv-hbar` (`--color-bar`: ink-3
+  in dark, and in light Dim Mark's value, since ink-3 on the white panel would be 1.2:1; hover one step stronger) with the
   error share on top as `.cv-hbar-err` (failed); its height is count / the busiest bin × 44, at least 2px when
   non-zero; an empty bin is a 2px stub (`.cv-hbar-empty`, line-2). **A bin older than what was read is never
   zero**: it is `.cv-hbar-unread`, a dashed outline over a faint ground, with the `title` "not read: older output
