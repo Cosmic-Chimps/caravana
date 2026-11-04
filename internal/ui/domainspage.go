@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -396,13 +397,53 @@ func dnsFactText(d edge.DNS) string {
 // certificate says they are in front of it): information, not a failure. "" for DNS that
 // isn't elsewhere.
 func proxyNote(d edge.DNS) string {
-	if d.Status != edge.DNSElsewhere {
+	if d.Status != edge.DNSElsewhere || !d.Fronted() {
 		return ""
 	}
 	if d.Proxy == edge.ProxyCloudflare {
 		return " · Cloudflare's proxy"
 	}
 	return " · a proxy or CDN in front of this host"
+}
+
+// alsoHere says DNS answers this host's own address beside one that is neither this host's nor a
+// proxy's: some visitors reach another host, so the record to that host is the one to remove.
+func alsoHere(d edge.DNS) bool {
+	return d.Status == edge.DNSElsewhere && !d.Fronted()
+}
+
+// foreignAddrs are the addresses DNS answered that aren't this host's.
+func foreignAddrs(d edge.DNS) []netip.Addr {
+	var out []netip.Addr
+	for _, a := range d.Seen {
+		if !slices.ContainsFunc(d.Expected, func(e netip.Addr) bool { return e.Unmap() == a.Unmap() }) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// recordWord is "record", or "records" when more than one foreign address is to be removed.
+func recordWord(d edge.DNS) string {
+	if len(foreignAddrs(d)) > 1 {
+		return "records"
+	}
+	return "record"
+}
+
+// removeBoxFor is the record box of a half-pointed host: one record per address that isn't this
+// host's, the ones to remove where the owner manages DNS.
+func removeBoxFor(host string, d edge.DNS) recordBox {
+	name := service.DNSRecordName(host)
+	var box recordBox
+	for _, a := range foreignAddrs(d) {
+		typ := "A"
+		if a.Is6() {
+			typ = "AAAA"
+		}
+		box.Records = append(box.Records, dnsRecord{Type: typ, Name: name, Value: a.String(), Known: true})
+	}
+	return box
 }
 
 // expectedTexts are this host's own addresses as the "A · 203.0.113.1" parts addressesOf reads.
@@ -459,6 +500,20 @@ func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check do
 	switch {
 	case v.State == edge.StateDNSElsewhere && banner:
 		seen := seenElsewhere(v.DNS)
+		if alsoHere(v.DNS) {
+			remove := removeBoxFor(v.Host, v.DNS)
+			d.Sentence = plainS("Remove this record:")
+			if len(remove.Records) > 1 {
+				d.Sentence = plainS("Remove these records:")
+			}
+			d.Records = &remove
+			d.Facts = []domainFact{
+				{Key: "now", Value: plainS(strings.Join(seen, ", ")), Failed: true},
+				{Key: "keep", Value: plainS(expectedText(v.DNS))},
+				{Key: "last check", Checked: &checked, After: " · " + checksEvery},
+			}
+			return d
+		}
 		d.Sentence = plainS("Change the record to:")
 		d.Records = &box
 		d.Facts = []domainFact{
@@ -478,6 +533,17 @@ func domainDetailOf(now time.Time, v service.DomainView, box recordBox, check do
 	switch v.State {
 	case edge.StateDNSElsewhere:
 		seen := seenElsewhere(v.DNS)
+		if alsoHere(v.DNS) {
+			word := recordWord(v.DNS)
+			d.Sentence = sentence{plain("The domain points here and at "), mono(addressesOf(seen)), plain(", which isn't this host: some visitors reach that host instead of "), mono(appName), plain(". Remove the " + word + " where you manage DNS.")}
+			d.Facts = []domainFact{
+				{Key: "now", Value: plainS(strings.Join(seen, ", ")), Failed: true},
+				{Key: "keep", Value: plainS(expectedText(v.DNS))},
+				{Key: "last check", Checked: &checked, After: " · " + checksEvery},
+			}
+			d.Check = &check
+			break
+		}
 		d.Sentence = sentence{plain("The domain points at "), mono(addressesOf(seen)), plain(", which isn't this host. Until it changes, caravana can't get a certificate and visitors won't reach "), mono(appName), plain(".")}
 		d.Facts = []domainFact{
 			{Key: "now", Value: plainS(strings.Join(seen, ", ")), Failed: true},
@@ -549,6 +615,13 @@ func bannerOf(now time.Time, v service.DomainView, check domainCheckForm) (domai
 	b := domainBanner{Host: v.Host, Mark: stateInfo(v.State).Mark, Check: check}
 	switch v.State {
 	case edge.StateDNSElsewhere:
+		if alsoHere(v.DNS) {
+			addrs := addressesOf(seenElsewhere(v.DNS))
+			word := recordWord(v.DNS)
+			b.Line = sentence{mono(v.Host), plain(" points here and at "), mono(addrs), plain(": remove the " + word + " to "), mono(addrs), plain(".")}
+			b.Explain = sentence{plain("Some visitors reach that host instead of "), mono(domainAppText(v)), plain(", and the certificate may fail to renew. Remove the " + word + " where you manage DNS.")}
+			break
+		}
 		b.Line = sentence{mono(v.Host), plain(" points at "), mono(addressesOf(seenElsewhere(v.DNS))), plain(", which isn't this host.")}
 		b.Explain = sentence{plain("Until it changes, caravana can't get a certificate and visitors won't reach "), mono(domainAppText(v)), plain(". Change the record where you manage DNS.")}
 	case edge.StateCertExpiring:

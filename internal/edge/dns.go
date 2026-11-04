@@ -27,7 +27,9 @@ type DNS struct {
 	Expected []netip.Addr
 	// Proxy names the proxy the "elsewhere" addresses belong to ("Cloudflare"),
 	// or is empty. It is set only with Status elsewhere, and is a pure function of
-	// Seen and Expected (ProxyOf), so a stored check recomputes it.
+	// Seen and Expected (ProxyOf), so a stored check recomputes it. Fronted is
+	// the same kind of function: it says whether a trusted certificate can
+	// explain an elsewhere answer.
 	Proxy string
 }
 

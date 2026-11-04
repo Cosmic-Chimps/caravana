@@ -53,8 +53,8 @@ func TestDomainItems(t *testing.T) {
 					When: at(32), Detail: "www.example.com points at 198.51.100.7, which isn't this host."},
 				{Kind: AttentionDomainCertExpiring, AppID: "shop", Service: "web", Domain: "bi.example.com", ExpiresAt: expiring.CertNotAfter,
 					When: at(31), Detail: "The certificate for bi.example.com expires in 6 days and hasn't been renewed."},
-				{Kind: AttentionDomainDNSElsewhere, AppID: "shop", Service: "web", Domain: "shop.example.com", AddressSeen: "198.51.100.9",
-					When: at(30), Detail: "shop.example.com points at 198.51.100.9, which isn't this host."},
+				{Kind: AttentionDomainDNSElsewhere, AppID: "shop", Service: "web", Domain: "shop.example.com", AddressSeen: "198.51.100.9", AlsoHere: true,
+					When: at(30), Detail: "shop.example.com points here and at 198.51.100.9: remove the record to 198.51.100.9."},
 			}},
 		{"the other states are no item", []store.AppRecord{shop},
 			[]store.DomainCheckRecord{

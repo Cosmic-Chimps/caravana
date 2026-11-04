@@ -16,6 +16,14 @@ func factsProxy(cert string, seen ...string) Facts {
 	return Facts{DNS: DNS{Status: DNSElsewhere, Seen: s, Expected: expected, Proxy: ProxyOf(s, expected)}, Certificate: Certificate{Status: cert}}
 }
 
+// factsMixed are facts whose DNS answered this host's own address (203.0.113.7)
+// and the addresses in seen.
+func factsMixed(cert string, seen ...string) Facts {
+	expected := addrs("203.0.113.7")
+	s := addrs(append([]string{"203.0.113.7"}, seen...)...)
+	return Facts{DNS: DNS{Status: DNSElsewhere, Seen: s, Expected: expected, Proxy: ProxyOf(s, expected)}, Certificate: Certificate{Status: cert}}
+}
+
 func TestStateOf(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -37,6 +45,11 @@ func TestStateOf(t *testing.T) {
 		{"cloudflare with a pending certificate is dns_elsewhere", factsProxy(CertPending, "188.114.96.3"), true, false, StateDNSElsewhere},
 		{"cloudflare over IPv6 with an issued certificate is live", factsProxy(CertIssued, "2a06:98c1:3120::3"), true, false, StateLive},
 		{"another proxy with an issued certificate is live", factsProxy(CertIssued, "198.51.100.9"), true, false, StateLive},
+		{"the host and a cloudflare address with an issued certificate is live", factsMixed(CertIssued, "188.114.96.3"), true, false, StateLive},
+		{"the host and a cloudflare IPv6 address with an issued certificate is live", factsMixed(CertIssued, "2a06:98c1:3120::3"), true, false, StateLive},
+		{"the host and an unknown address with an issued certificate is dns_elsewhere", factsMixed(CertIssued, "198.51.100.9"), true, false, StateDNSElsewhere},
+		{"the host and an unknown address with an expiring certificate is dns_elsewhere", factsMixed(CertExpiring, "198.51.100.9"), true, false, StateDNSElsewhere},
+		{"the host's IPv4 and an unknown AAAA with an issued certificate is dns_elsewhere", factsMixed(CertIssued, "2001:db8::9"), true, false, StateDNSElsewhere},
 		{"expiring beats pending's neighbours", facts(DNSNone, CertExpiring), true, false, StateCertExpiring},
 		{"expiring beats a redirect", facts(DNSOK, CertExpiring), true, true, StateCertExpiring},
 		{"pending beats no record", facts(DNSNone, CertPending), true, false, StateCertPending},

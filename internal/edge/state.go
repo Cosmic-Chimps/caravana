@@ -25,23 +25,27 @@ var States = []State{
 // StateOf derives the state from the facts: the first rule that applies.
 //
 //  1. not served (the app is stopped, or has no healthy deployment): not_served;
-//  2. DNS points elsewhere and the certificate isn't a valid one: dns_elsewhere.
-//     A trusted certificate for the host (issued or expiring) proves the issuer
-//     reached this host, so DNS points at something in front of it (Cloudflare's
-//     proxy, another CDN) and the state follows the certificate;
+//  2. DNS points elsewhere, unless a valid certificate and a fronted DNS
+//     (DNS.Fronted) explain it: dns_elsewhere. A trusted certificate for the
+//     host (issued or expiring) proves the issuer reached this host, so DNS
+//     points at something in front of it (Cloudflare's proxy, another CDN) and
+//     the state follows the certificate. That holds only when none of the
+//     answers is this host's own address beside a foreign one: a proxy never
+//     hands out the origin's address, so such a mix sends some visitors to
+//     another host and stays dns_elsewhere;
 //  3. the certificate is expiring: cert_expiring;
 //  4. the certificate is pending: cert_pending;
 //  5. DNS has no record: dns_none;
 //  6. Traefik's own certificate with no resolver: self_signed;
 //  7. the host only redirects to its pair: redirect;
-//  8. the certificate issued and DNS ok, elsewhere (behind a proxy) or not
-//     answering: live;
+//  8. the certificate issued and DNS ok, elsewhere behind a proxy (a fronted
+//     DNS) or not answering: live;
 //  9. anything else (a check that couldn't be made): unknown.
 func StateOf(f Facts, served, redirecting bool) State {
 	switch {
 	case !served:
 		return StateNotServed
-	case f.DNS.Status == DNSElsewhere && !f.Certificate.Valid():
+	case f.DNS.Status == DNSElsewhere && !(f.Certificate.Valid() && f.DNS.Fronted()):
 		return StateDNSElsewhere
 	case f.Certificate.Status == CertExpiring:
 		return StateCertExpiring

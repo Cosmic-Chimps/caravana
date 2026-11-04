@@ -76,3 +76,52 @@ func TestDomainsBehindAProxyAreLive(t *testing.T) {
 		t.Errorf("the count isn't 2 needing the owner:\n%s", text(body))
 	}
 }
+
+// A domain whose DNS answers this host's own address and another one is not behind a proxy, even
+// with a valid certificate: a proxy never answers with the origin's address, so some visitors reach
+// the other host. Its row is "DNS points elsewhere" with a banner and a box naming the record to
+// remove. The same mix with a Cloudflare address is a proxy and stays live.
+func TestDomainsPointingHereAndElsewhere(t *testing.T) {
+	e := newConsoleEnv(t)
+	e.seed(t, domainsApp("shop", "split.example.com", "cfsplit.example.com"),
+		seedDeploy{ID: "d1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+	here := []string{"203.0.113.1"}
+	for _, c := range []checkSeed{
+		{host: "split.example.com", dns: edge.DNSElsewhere, seen: []string{"203.0.113.1", "198.51.100.9"}, expected: here, cert: edge.CertIssued, issuer: "Let's Encrypt", notAfterFromNow: 50 * day},
+		{host: "cfsplit.example.com", dns: edge.DNSElsewhere, seen: []string{"203.0.113.1", "188.114.96.3"}, expected: here, cert: edge.CertIssued, issuer: "Let's Encrypt", notAfterFromNow: 50 * day},
+	} {
+		c.app = "shop"
+		e.seedCheck(t, c)
+	}
+
+	body := e.pageOf(t, "/domains")
+	row := dmRowOf(body, "split.example.com")
+	for _, want := range []string{
+		"DNS points elsewhere",
+		"Remove this record: Type A Name split Value 198.51.100.9",
+		"keep A · 203.0.113.1",
+	} {
+		if !strings.Contains(text(row), want) {
+			t.Errorf("the split row lacks %q:\n%s", want, text(row))
+		}
+	}
+	if !strings.Contains(row, "cv-mark-failed") {
+		t.Errorf("the split row isn't drawn in the failed colour")
+	}
+	if strings.Contains(row, "cv-iconlink") {
+		t.Errorf("the split row has an Open link")
+	}
+	if !strings.Contains(text(body), "split.example.com points here and at 198.51.100.9: remove the record to 198.51.100.9.") {
+		t.Errorf("no banner for the split domain:\n%s", text(body))
+	}
+
+	cf := dmRowOf(body, "cfsplit.example.com")
+	for _, want := range []string{"live · HTTPS", "· Cloudflare's proxy"} {
+		if !strings.Contains(text(cf), want) {
+			t.Errorf("cfsplit's row lacks %q:\n%s", want, text(cf))
+		}
+	}
+	if strings.Contains(text(body), "cfsplit.example.com points") {
+		t.Errorf("a banner names cfsplit:\n%s", text(body))
+	}
+}

@@ -66,3 +66,69 @@ func TestDomainBehindCloudflareIsNotAnItem(t *testing.T) {
 		t.Errorf("domain items for %v, want only fresh.example.com (no certificate yet)", elsewhere)
 	}
 }
+
+// A domain whose DNS answers this host's own address and another one is not behind a proxy: a proxy
+// never hands out the origin's address, so some visitors reach the other host, whatever the
+// certificate says. It stays dns_elsewhere and is an item that says which record to remove. The same
+// mix with a Cloudflare address is a proxy (the host's address is among Cloudflare's answers), so it is
+// live.
+func TestDomainPointingHereAndElsewhereIsAnItem(t *testing.T) {
+	ctx := context.Background()
+	resolver := edgetest.FakeResolver{Hosts: map[string][]string{
+		"split.example.com":   {"203.0.113.1", "198.51.100.9"},
+		"cfsplit.example.com": {"203.0.113.1", "188.114.96.3"},
+	}}
+	dialer := edgeOf(t, "split.example.com", "cfsplit.example.com")
+	e := domainEnv(t, resolver, dialer)
+	seedDomainApp(t, e, domainApp("shop", app.Domain{Host: "split.example.com"}, app.Domain{Host: "cfsplit.example.com"}), true)
+
+	if err := e.svc.checkDomainTargets(ctx, DomainFilter{}, true); err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	for host, want := range map[string]edge.State{
+		"split.example.com":   edge.StateDNSElsewhere,
+		"cfsplit.example.com": edge.StateLive,
+	} {
+		row, err := e.store.GetDomainCheck(ctx, host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if row.State != string(want) || row.DNSStatus != edge.DNSElsewhere {
+			t.Errorf("%s: stored state %q with DNS %q, want %q with DNS elsewhere", host, row.State, row.DNSStatus, want)
+		}
+	}
+	views, err := e.svc.Domains(ctx, DomainFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range views {
+		switch v.Host {
+		case "split.example.com":
+			if v.DNS.Proxy != "" || v.DNS.Fronted() {
+				t.Errorf("split: proxy %q, fronted %v, want no proxy and not fronted", v.DNS.Proxy, v.DNS.Fronted())
+			}
+		case "cfsplit.example.com":
+			if v.DNS.Proxy != edge.ProxyCloudflare {
+				t.Errorf("cfsplit: proxy %q, want %q", v.DNS.Proxy, edge.ProxyCloudflare)
+			}
+		}
+	}
+	got, err := e.svc.Attention(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var items []AttentionItem
+	for _, it := range got.Items {
+		if it.Kind == AttentionDomainDNSElsewhere || it.Kind == AttentionDomainCertExpiring {
+			items = append(items, it)
+		}
+	}
+	if len(items) != 1 {
+		t.Fatalf("domain items %+v, want exactly one", items)
+	}
+	it := items[0]
+	const detail = "split.example.com points here and at 198.51.100.9: remove the record to 198.51.100.9."
+	if it.Kind != AttentionDomainDNSElsewhere || it.Domain != "split.example.com" || it.AddressSeen != "198.51.100.9" || !it.AlsoHere || it.Detail != detail {
+		t.Errorf("item = %+v, want dns_elsewhere for split.example.com, address 198.51.100.9, also here, detail %q", it, detail)
+	}
+}

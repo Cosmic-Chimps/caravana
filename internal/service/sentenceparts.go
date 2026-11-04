@@ -145,6 +145,9 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")
 		}
+		if it.AlsoHere {
+			return parts(who, ": ", mono(it.Domain), " points here and at ", mono(it.AddressSeen), ": remove the record to ", mono(it.AddressSeen), ".")
+		}
 		return parts(who, ": ", mono(it.Domain), " points at ", mono(it.AddressSeen), ", which isn't this host.")
 	case AttentionDomainCertExpiring:
 		// Detail is "The certificate for <host> expires in 6 days and hasn't been renewed."

@@ -266,7 +266,7 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 	// The lines' marks and words are the state table's (domainstates.go): the state the result
 	// would give the row in the list.
 	v.DNS = checkLine{Mark: "healthy", Words: "DNS points at caravana"}
-	behindProxy := chk.DNS.Status == edge.DNSElsewhere && (chk.Certificate.Valid() || chk.DNS.Proxy != "")
+	behindProxy := chk.DNS.Status == edge.DNSElsewhere && (chk.Certificate.Valid() && chk.DNS.Fronted() || chk.DNS.Proxy != "")
 	if behindProxy {
 		// An address that isn't this host's is not a failure when something stands in front of the
 		// host: a trusted certificate (edge.StateOf's rule, for a host already served) or Cloudflare's
@@ -285,7 +285,12 @@ func (v *domainAddView) applyCheck(chk service.DomainCheck) {
 		v.DNS.Mark, v.DNS.Reason = info.Mark, plainS(info.Words)
 		switch st {
 		case edge.StateDNSElsewhere:
-			v.DNS.Reason = sentence{plain("points at "), mono(addressesOf(seenElsewhere(chk.DNS)))}
+			addrs := mono(addressesOf(seenElsewhere(chk.DNS)))
+			if alsoHere(chk.DNS) {
+				v.DNS.Reason = sentence{plain("points here and at "), addrs, plain(": remove the record to "), addrs}
+			} else {
+				v.DNS.Reason = sentence{plain("points at "), addrs}
+			}
 		case edge.StateUnknown:
 			if len(chk.Records) == 0 {
 				v.DNS.Reason = plainS(info.Words + ": this host's public address isn't known")

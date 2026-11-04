@@ -42,6 +42,8 @@ func TestProblemParts(t *testing.T) {
 			"The disk at /var/lib/docker is 87% full: 1.0 GB left.", "/var/lib/docker"},
 		{"dns", AttentionItem{Kind: AttentionDomainDNSElsewhere, AppID: "blog", Domain: "bi.example.com", AddressSeen: "185.199.108.153"},
 			"blog: bi.example.com points at 185.199.108.153, which isn't this host.", "blog|bi.example.com|185.199.108.153"},
+		{"dns, also here", AttentionItem{Kind: AttentionDomainDNSElsewhere, AppID: "blog", Domain: "bi.example.com", AddressSeen: "185.199.108.153", AlsoHere: true},
+			"blog: bi.example.com points here and at 185.199.108.153: remove the record to 185.199.108.153.", "blog|bi.example.com|185.199.108.153|185.199.108.153"},
 		{"certificate", AttentionItem{Kind: AttentionDomainCertExpiring, AppID: "blog", Domain: "bi.example.com", ExpiresAt: &exp,
 			Detail: "The certificate for bi.example.com expires in 6 days and hasn't been renewed."},
 			"blog: the certificate for bi.example.com expires in 6 days and hasn't been renewed.", "blog|bi.example.com"},

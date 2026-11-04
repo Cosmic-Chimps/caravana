@@ -84,7 +84,11 @@ type AttentionItem struct {
 	// domain_cert_expiring, when its certificate ends.
 	Domain      string
 	AddressSeen string
-	ExpiresAt   *time.Time
+	// AlsoHere is, for domain_dns_elsewhere, true when DNS also answers this
+	// host's own address, so AddressSeen is a record to remove, not to change.
+	// It is not in the API's item: Detail says it.
+	AlsoHere  bool
+	ExpiresAt *time.Time
 	// Mount is the filesystem of disk_nearly_full (feature 025; the item has no
 	// app). Holds is what is on it ("nomad", "docker"), UsedPercent how full
 	// the newest sample says it is, FreeBytes what is left, and Level whether
@@ -617,7 +621,10 @@ func domainItems(now time.Time, apps map[string]store.AppRecord, checks []store.
 		it := AttentionItem{Kind: kind, AppID: c.AppID, Service: c.Service, Domain: c.Host, When: c.CheckedAt}
 		if kind == AttentionDomainDNSElsewhere {
 			it.AddressSeen = firstElsewhere(c.DNSSeen, c.DNSExpected)
-			if it.AddressSeen != "" {
+			it.AlsoHere = it.AddressSeen != "" && slices.ContainsFunc(c.DNSSeen, func(a string) bool { return slices.Contains(c.DNSExpected, a) })
+			if it.AlsoHere {
+				it.Detail = fmt.Sprintf("%s points here and at %s: remove the record to %s.", c.Host, it.AddressSeen, it.AddressSeen)
+			} else if it.AddressSeen != "" {
 				it.Detail = fmt.Sprintf("%s points at %s, which isn't this host.", c.Host, it.AddressSeen)
 			} else {
 				it.Detail = fmt.Sprintf("%s points at another host.", c.Host)

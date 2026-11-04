@@ -31,6 +31,7 @@ func addEnv(t *testing.T) *consoleEnv {
 		"here.example.com":    {"203.0.113.1", "2001:db8::1"},
 		"away.example.com":    {"185.199.108.153"},
 		"cf.example.com":      {"188.114.96.3", "2a06:98c1:3120::3"},
+		"split.example.com":   {"203.0.113.1", "198.51.100.9"},
 	}}, nil)
 	return e
 }
@@ -112,6 +113,7 @@ func TestDomainAddCheckNow(t *testing.T) {
 		{"here.example.com", "healthy", []string{"passed: DNS points at caravana", "not yet: HTTPS certificate issued after you add it", "Name here Value 203.0.113.1"}},
 		{"away.example.com", "failed", []string{"failed: DNS points at caravana points at 185.199.108.153"}},
 		{"cf.example.com", "warning", []string{"warning: DNS points at caravana points at Cloudflare's proxy (188.114.96.3, 2a06:98c1:3120::3). That works when Cloudflare forwards to this host: its origin should be 203.0.113.1, 2001:db8::1. The certificate is checked after the deploy."}},
+		{"split.example.com", "failed", []string{"failed: DNS points at caravana points here and at 198.51.100.9: remove the record to 198.51.100.9"}},
 		{"nothing.example.com", "warning", []string{"warning: DNS points at caravana no DNS record"}},
 		{"example.com", "warning", []string{"Name @ Value 203.0.113.1"}},
 	}

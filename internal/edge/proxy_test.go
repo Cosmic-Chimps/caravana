@@ -60,3 +60,33 @@ func TestClassifyDNSSetsProxy(t *testing.T) {
 		})
 	}
 }
+
+func TestFronted(t *testing.T) {
+	v4 := addrs("152.53.190.88")
+	both := addrs("152.53.190.88", "2001:db8::1")
+	tests := []struct {
+		name     string
+		seen     []netip.Addr
+		expected []netip.Addr
+		want     bool
+	}{
+		{"host and cloudflare IPv4", addrs("152.53.190.88", "188.114.96.3"), v4, true},
+		{"host and cloudflare IPv6", addrs("152.53.190.88", "2a06:98c1:3120::3"), v4, true},
+		{"host and an unknown address", addrs("152.53.190.88", "198.51.100.9"), v4, false},
+		{"host IPv4 and an unknown AAAA", addrs("152.53.190.88", "2001:db8::9"), v4, false},
+		{"unknown only", addrs("198.51.100.9"), v4, true},
+		{"cloudflare only", addrs("188.114.96.3"), v4, true},
+		{"nothing seen", nil, v4, true},
+		{"host only", addrs("152.53.190.88"), v4, true},
+		{"host IPv6 and an unknown address", addrs("2001:db8::1", "198.51.100.9"), both, false},
+		{"IPv4-in-IPv6 form of the host and an unknown address", []netip.Addr{netip.MustParseAddr("::ffff:152.53.190.88"), netip.MustParseAddr("198.51.100.9")}, v4, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := DNS{Status: DNSElsewhere, Seen: tt.seen, Expected: tt.expected}
+			if got := d.Fronted(); got != tt.want {
+				t.Errorf("Fronted = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

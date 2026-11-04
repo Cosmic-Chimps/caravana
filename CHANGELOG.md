@@ -17,6 +17,13 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 - **The sidebar's order**: Home, Projects, Logs, Monitoring and Schedules under Workspace, Domains under a new
   Configure group.
 
+### Fixed
+- **A domain that points here and at another address is "DNS points elsewhere" again, even with a valid
+  certificate.** An old A record left beside the new one, or an AAAA record to another server, sends some
+  visitors to that host, and a proxy never answers with the origin's own address. The row, its banner and
+  the needs-you item name the record to remove. A domain whose addresses are all a proxy's (or none this
+  host's) stays live by its certificate.
+
 ## 0.16.0 - 2026-11-01
 
 ### Added
