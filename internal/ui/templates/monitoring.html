@@ -129,11 +129,13 @@
   {{with .Scale}}<span class="cv-mnscale" aria-hidden="true">{{.}}</span>{{end}}
   {{with .Labels}}<div class="cv-mnlabels">{{range .}}<span class="cv-mndeploy-label">{{.}}</span>{{end}}</div>{{end}}
 </div>
-<table class="sr-only">
+{{/* The table sits in a clipped wrapper, not clipped itself: a table never shrinks below its rows, so
+     one that is sr-only still adds its full height to the document's scroll area. */}}
+<div class="sr-only"><table>
   <caption>{{.Table.Caption}}</caption>
   <thead><tr><th scope="col">Time (UTC)</th><th scope="col">{{.Table.Head}}</th>{{with .Table.Head2}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
   <tbody>{{range .Table.Rows}}<tr><th scope="row">{{.Time}}</th><td>{{.Value}}</td>{{if $.Table.Head2}}<td>{{.Value2}}</td>{{end}}</tr>{{end}}</tbody>
-</table>
+</table></div>
 {{end}}
 
 {{define "mon-numtext"}}{{.Text}}{{with .Usual}} <span class="cv-mnusual">· {{.}}</span>{{end}}{{end}}

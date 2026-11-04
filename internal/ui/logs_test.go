@@ -384,7 +384,7 @@ func TestLogsPageHistogram(t *testing.T) {
 	if hist == "" {
 		t.Fatal("no histogram")
 	}
-	lgWant(t, "the histogram", hist, `viewBox="0 0 300 48" preserveAspectRatio="none" role="img"`, `<table class="sr-only">`)
+	lgWant(t, "the histogram", hist, `viewBox="0 0 300 48" preserveAspectRatio="none" role="img"`, `<div class="sr-only"><table>`)
 	// 30 bins: one base rect each (a bar, a stub for nothing), the errors stacked on some.
 	bars := regexp.MustCompile(`<rect class="(cv-hbar|cv-hbar-empty|cv-hbar-unread)" `).FindAllStringSubmatch(hist, -1)
 	if len(bars) != 30 {

@@ -618,7 +618,7 @@ func TestMonitoringPage(t *testing.T) {
 		`hx-get="/parts/monitoring" hx-trigger="sse:metrics"`, `id="mon-live"`, `data-live`, `sse-connect="/live?watch=monitoring"`,
 		`id="mon-chart-requests"`, `id="mon-chart-errors"`, `id="mon-chart-p95"`, `id="mon-chart-memory"`,
 		`<svg class="cv-mnsvg" viewBox="0 0 300 120" preserveAspectRatio="none"`, `class="cv-mnline"`, `class="cv-mngrid"`,
-		`<a href="/apps/whoami" id="mon-row-whoami-web-link" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<table class="sr-only">`,
+		`<a href="/apps/whoami" id="mon-row-whoami-web-link" class="cv-mnname-text">whoami</a>`, `aria-label="Logs of whoami"`, `<div class="sr-only"><table>`,
 		`<script src="/static/js/monitoring.js?v=`, `data-mon-plot`, `data-mon-now>last 10 min</span>`,
 	} {
 		if !strings.Contains(body, want) {
@@ -652,6 +652,25 @@ func TestMonitoringPage(t *testing.T) {
 	// A chart head is the last 10 minutes, said so: never "now".
 	if n := strings.Count(body, `data-mon-now>last 10 min</span>`); n != 4 || strings.Contains(body, `data-mon-now>now</span>`) {
 		t.Errorf("%d chart heads say \"last 10 min\", or one still says \"now\"", n)
+	}
+}
+
+// Each chart's hidden data table sits inside an sr-only wrapper, never sr-only itself: a table never
+// shrinks below its rows, so a clipped table still added its full height (about 1,500 px per chart) to
+// the document's scroll area, and the page scrolled far below its last panel.
+func TestMonHiddenTablesAreWrapped(t *testing.T) {
+	e := monEnv(t)
+	for _, path := range []string{"/monitoring", "/parts/monitoring"} {
+		_, body := e.get(t, path)
+		if strings.Contains(body, `<table class="sr-only"`) {
+			t.Errorf("%s has a table that is sr-only itself", path)
+		}
+		if n := strings.Count(body, `<div class="sr-only"><table>`); n != 4 {
+			t.Errorf("%s has %d wrapped chart tables, want 4", path, n)
+		}
+		if n := strings.Count(body, `</table></div>`); n != 4 {
+			t.Errorf("%s closes %d wrapped chart tables, want 4", path, n)
+		}
 	}
 }
 
