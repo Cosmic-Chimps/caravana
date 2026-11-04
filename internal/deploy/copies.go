@@ -42,10 +42,17 @@ type Copy struct {
 	// crash-loop rule). Nomad keeps only each task's last events, so it is an
 	// undercount for a copy restarted many times.
 	RequestedRestarts int
-	StartedAt         *time.Time // the first start of any task; nil while none has started
-	LastRestart       *time.Time // the newest restart of any task; nil if none restarted
-	FinishedAt        *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
-	OutOfMemory       bool       // the service's last stop was the kernel killing it for passing its memory ceiling
+	// CreatedAt is when Nomad made the copy (the allocation's CreateTime); nil
+	// when Nomad didn't say. A restart doesn't move it, which is why the log
+	// readers take it as the lower bound of a copy's first log file.
+	CreatedAt *time.Time
+	// StartedAt is the earliest of the tasks' last starts. Nomad's StartedAt
+	// per task is its latest start: a restart moves it, so after one this is
+	// about when the copy came back, not when it first ran (see CreatedAt).
+	StartedAt   *time.Time // nil while no task has started
+	LastRestart *time.Time // the newest restart of any task; nil if none restarted
+	FinishedAt  *time.Time // the newest end of any task; nil if none ended. Only meaningful for terminal copies
+	OutOfMemory bool       // the service's last stop was the kernel killing it for passing its memory ceiling
 	// ExitCode is the exit status in the service task's newest end event
 	// (Terminated); nil when its newest end is a start failure, or it has none.
 	// StartFailed says that newest end is a start failure (the image couldn't
@@ -126,6 +133,10 @@ func copyOf(a *api.AllocationListStub, active rollouts) Copy {
 	}
 	c.Terminal = c.Status == CopyStopped || c.Status == CopyFailed
 	c.Stopping = a.DesiredStatus != "" && a.DesiredStatus != api.AllocDesiredStatusRun
+	if a.CreateTime > 0 {
+		t := time.Unix(0, a.CreateTime).UTC()
+		c.CreatedAt = &t
+	}
 
 	for _, ts := range a.TaskStates {
 		if ts == nil {

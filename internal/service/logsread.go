@@ -441,9 +441,22 @@ func streamBudget(n int) int64 {
 	return logStreamBudget
 }
 
+// logStart is the lower bound of a copy's first log file: when Nomad made the
+// copy, which a restart doesn't move, since a restarted task keeps appending to
+// the same file (research R8); the copy's start when Nomad didn't say when it
+// was made (a fake). StartedAt alone is wrong here: it is the latest start, so
+// every line written before the copy's last restart would fall before it and
+// be given an estimated time.
+func logStart(c deploy.Copy) *time.Time {
+	if c.CreatedAt != nil {
+		return c.CreatedAt
+	}
+	return c.StartedAt
+}
+
 // fileBounds says when the lines of files[i] can have been written: after the
-// previous file's last write (or the copy's start for the first file) and
-// before this file's last write, each with a minute of slack.
+// previous file's last write (or the copy's creation, started, for the first
+// file) and before this file's last write, each with a minute of slack.
 func fileBounds(files []deploy.LogFile, i int, started *time.Time) logline.Bounds {
 	var b logline.Bounds
 	if m := files[i].ModTime; !m.IsZero() {
@@ -459,8 +472,8 @@ func fileBounds(files []deploy.LogFile, i int, started *time.Time) logline.Bound
 }
 
 // writeSpan is when the lines of files[i] were written, as the listing says:
-// from the previous file's last write (the copy's start for the first file) to
-// this file's last write, without slack. Either end is zero when unknown.
+// from the previous file's last write (the copy's creation for the first file)
+// to this file's last write, without slack. Either end is zero when unknown.
 func writeSpan(files []deploy.LogFile, i int, started *time.Time) (lo, hi time.Time) {
 	switch {
 	case i > 0:
@@ -489,7 +502,7 @@ func between(lo, hi time.Time, off, size int64) time.Time {
 // placeLines settles the times of one file's lines that carry none of their
 // own (research R2 and its gate follow-up). group is what logline.Parse made
 // of a run of files[fi]'s lines, oldest first, each with its offset in its ID;
-// started is the copy's first start. Every line it places is Estimated.
+// started is the copy's creation (logStart). Every line it places is Estimated.
 //
 //   - A file with no timed line in the group, or a skewed one (whose times
 //     aren't believed), has every line placed by its byte offset between the
@@ -560,8 +573,8 @@ walk:
 		if i > 0 && !lim.upper.IsZero() && files[i-1].ModTime.Add(-logline.Slack).After(lim.upper) {
 			continue
 		}
-		bounds := fileBounds(files, i, c.StartedAt)
-		lo, hi := writeSpan(files, i, c.StartedAt)
+		bounds := fileBounds(files, i, logStart(c))
+		lo, hi := writeSpan(files, i, logStart(c))
 		sawTimed := false // a timed line was read in this file
 
 		pos := f.Size
@@ -907,7 +920,7 @@ func (s *Service) readLogStreams(parent, ctx context.Context, q EnvLogQuery, win
 // kept line is its own row, with its own time and ID.
 func finishLogStream(ls *logStream, win logWindow, filter logFilter, fold bool) {
 	short := ls.copy.short
-	lines := parseLogStream(short, ls.stream, ls.copy.StartedAt, ls.files, ls.res.raws)
+	lines := parseLogStream(short, ls.stream, logStart(ls.copy.Copy), ls.files, ls.res.raws)
 	ls.res.raws = nil
 	if len(lines) > 0 {
 		ls.oldest = lines[0].Time

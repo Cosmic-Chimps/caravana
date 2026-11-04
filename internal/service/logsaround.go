@@ -445,7 +445,7 @@ func (s *Service) seekTime(ctx context.Context, c logCopy, files []deploy.LogFil
 	if f.Size == 0 {
 		return 0, nil
 	}
-	bounds := fileBounds(files, i, c.StartedAt)
+	bounds := fileBounds(files, i, logStart(c.Copy))
 
 	firstOff, first, ok, err := s.probeAhead(ctx, c, f, bounds, 0)
 	if err != nil {
@@ -562,7 +562,7 @@ func (s *Service) probeTimed(ctx context.Context, c logCopy, f deploy.LogFile, b
 // placed at or just before t.
 func (s *Service) placeByProportion(ctx context.Context, c logCopy, files []deploy.LogFile, i int, t time.Time) (int64, error) {
 	f := files[i]
-	begin, end := writeSpan(files, i, c.StartedAt)
+	begin, end := writeSpan(files, i, logStart(c.Copy))
 	span := end.Sub(begin)
 	if begin.IsZero() || end.IsZero() || span <= 0 {
 		return 0, nil
@@ -602,7 +602,7 @@ func (s *Service) parseWindow(ctx context.Context, c logCopy, stream logline.Str
 		end := fileRunEnd(raws, g)
 		fi := raws[g].file
 		f := files[fi]
-		group := parseFileRun(c.short, stream, c.StartedAt, files, raws[g:end], prev)
+		group := parseFileRun(c.short, stream, logStart(c.Copy), files, raws[g:end], prev)
 
 		last := raws[end-1]
 		var skew bool
@@ -610,11 +610,11 @@ func (s *Service) parseWindow(ctx context.Context, c logCopy, stream logline.Str
 			skew = skewed(group, f.ModTime)
 		} else {
 			var err error
-			if skew, err = s.tailSkewed(ctx, c, f, fileBounds(files, fi, c.StartedAt)); err != nil {
+			if skew, err = s.tailSkewed(ctx, c, f, fileBounds(files, fi, logStart(c.Copy))); err != nil {
 				return nil, err
 			}
 		}
-		placeLines(group, files, fi, c.StartedAt, skew)
+		placeLines(group, files, fi, logStart(c.Copy), skew)
 		lines = append(lines, group...)
 		l := lines[len(lines)-1]
 		prev = &l

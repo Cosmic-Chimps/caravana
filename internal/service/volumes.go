@@ -168,7 +168,7 @@ func (s *Service) refreshVolumeSizes(ctx context.Context, a app.App) {
 }
 
 // measuredAt is when the copy's caravana-volumes task last ran: its tasks'
-// first start or their newest restart, whichever is later; now when the copy
+// last start or their newest restart, whichever is later; now when the copy
 // has neither.
 func measuredAt(c deploy.Copy, now time.Time) time.Time {
 	var at time.Time
