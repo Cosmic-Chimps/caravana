@@ -499,7 +499,6 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"revision":               revision,
-		"svc.web.domains":        "shop.example.com",
 		"svc.web.healthPath":     "/health",
 		"svc.web.secret.API_KEY": "",
 		"svc.db.backupKeep":      "5",
@@ -507,6 +506,10 @@ func TestComposeDeployFormKeptFile(t *testing.T) {
 		if got, ok := f.Values[name]; !ok || got[0] != want {
 			t.Errorf("input %s = %v, want %q", name, got, want)
 		}
+	}
+	// Domains are edited on the Domains page (ruling 12), and the form says so.
+	if _, ok := f.Values["svc.web.domains"]; ok || strings.Contains(body, `name="svc.web.domains"`) {
+		t.Error("the form of an existing app has a Domains input")
 	}
 	for _, want := range []string{`wrap="off"`, "Put passwords and keys in secrets below, not in the file."} {
 		if !strings.Contains(body, want) {
@@ -535,7 +538,7 @@ func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 		"svc.web.secret.API_KEY":   {sentinel015 + "-typed"},
 		"svc.web.newSecret.0":      {"TOKEN"},
 		"svc.web.newSecretValue.0": {sentinel015 + "-new"},
-		"svc.web.domains":          {"bad domain:xx"},
+		"svc.web.healthInterval":   {"often"}, // refused: not a number of seconds
 	})
 
 	resp, body := e.postForm(t, "/apps/shop/compose", typed)
@@ -554,12 +557,13 @@ func TestComposeDeployRefusedKeptFileEchoesNoSecret(t *testing.T) {
 }
 
 // Feature 015: Configure's form is drawn with the services filled in, so the
-// owner can change one (a domain) and deploy at once, without a preview. The
-// deploy checks the file itself; the change is kept and deployed.
+// owner can change one (a health check) and deploy at once, without a preview.
+// The deploy checks the file itself; the change is kept and deployed, and the
+// service's domain stays as it was.
 func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
 	e, _ := keptSentinelEnv(t)
 	_, page := e.get(t, "/apps/shop/configure")
-	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.domains": {"edited.example.com"}}))
+	resp, body := e.postForm(t, "/apps/shop/compose", shopFormOf(t, page, url.Values{"svc.web.healthPath": {"/edited"}}))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("deploy = %d:\n%s", resp.StatusCode, text(body))
 	}
@@ -571,12 +575,12 @@ func TestConfigureKeptFileDeployWithoutPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	web := rec.Compose.Services["web"]
-	if len(web.Domains) != 1 || web.Domains[0].Host != "edited.example.com" {
-		t.Errorf("kept overlay domains = %+v, want edited.example.com", web.Domains)
+	if len(web.Domains) != 1 || web.Domains[0].Host != "shop.example.com" || web.Health == nil || web.Health.Path != "/edited" {
+		t.Errorf("kept overlay = %+v, want shop.example.com kept and the new health path", web)
 	}
 	for _, svc := range rec.App.Services {
-		if svc.Name == "web" && (len(svc.Domains) != 1 || svc.Domains[0].Host != "edited.example.com") {
-			t.Errorf("app domains = %+v, want edited.example.com", svc.Domains)
+		if svc.Name == "web" && (len(svc.Domains) != 1 || svc.Domains[0].Host != "shop.example.com" || svc.Health.Path != "/edited") {
+			t.Errorf("app web = domains %+v, health %+v; want shop.example.com kept and /edited", svc.Domains, svc.Health)
 		}
 	}
 }

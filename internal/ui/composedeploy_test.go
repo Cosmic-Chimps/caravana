@@ -123,9 +123,9 @@ func TestComposeDeployPreviewPrefills(t *testing.T) {
 		t.Fatalf("preview = %d:\n%s", resp.StatusCode, text(body))
 	}
 	f := formWith(t, body, "/apps/shop/compose/preview")
-	if f.Values.Get("svc.web.domains") != "shop.example.com" || f.Values.Get("svc.web.healthPath") != "/health" ||
+	if _, ok := f.Values["svc.web.domains"]; ok || f.Values.Get("svc.web.healthPath") != "/health" ||
 		f.Values.Get("svc.db.backupKeep") != "5" || f.Values.Get("revision") != revision {
-		t.Errorf("the overlay isn't the app's: %v", f.Values)
+		t.Errorf("the overlay isn't the app's (and has no domains input): %v", f.Values)
 	}
 	// The secrets are names, as inputs that start empty, and the stored values are nowhere.
 	for _, name := range []string{"svc.web.secret.API_KEY", "svc.db.secret.POSTGRES_PASSWORD"} {
@@ -168,8 +168,9 @@ func TestComposeDeployPreviewNamesAddedAndRemoved(t *testing.T) {
 	if strings.Contains(body, `name="svc.db.`) || !strings.Contains(body, `name="svc.cache.newSecret.0"`) {
 		t.Errorf("the overlay isn't the file's services':\n%s", page)
 	}
-	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("svc.web.domains") != "shop.example.com" {
-		t.Errorf("web's domain = %q, want the app's", f.Values.Get("svc.web.domains"))
+	// Domains aren't an input of an existing app's form (ruling 12): they are kept as they are.
+	if f := formWith(t, body, "/apps/shop/compose/preview"); strings.Contains(body, `name="svc.web.domains"`) || f.Values.Get("svc.web.healthPath") != "/health" {
+		t.Errorf("web has a domains input, or lost its health check: %v", f.Values)
 	}
 }
 

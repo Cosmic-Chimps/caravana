@@ -244,7 +244,6 @@ func TestConfigureKeptFile(t *testing.T) {
 	// The overlay, the secret names with empty inputs, and the revision.
 	for name, want := range map[string]string{
 		"revision":                        revision,
-		"svc.web.domains":                 "shop.example.com",
 		"svc.web.healthPath":              "/health",
 		"svc.web.secret.API_KEY":          "",
 		"svc.db.secret.POSTGRES_PASSWORD": "",
@@ -268,7 +267,7 @@ func TestConfigureKeptFile(t *testing.T) {
 
 	// The definition is read-only: facts, no inputs, no save.
 	got := text(body)
-	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Domains shop.example.com", "Manage variables and secrets"} {
+	for _, want := range []string{"This app is edited through its Compose file.", "Image postgres:17", "Manage variables and secrets"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the page lacks %q:\n%s", want, got)
 		}
@@ -327,7 +326,6 @@ func TestConfigureNotKeptFile(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"revision":                        revision,
-		"svc.web.domains":                 "shop.example.com",
 		"svc.web.healthPath":              "/health",
 		"svc.web.secret.API_KEY":          "",
 		"svc.db.secret.POSTGRES_PASSWORD": "",
@@ -378,9 +376,9 @@ func TestConfigureAfterADefinitionDeploy(t *testing.T) {
 	if !strings.Contains(got, "This app's Compose file wasn't kept. Paste it once to edit it here from now on.") {
 		t.Errorf("Configure lacks the notice after the drop:\n%s", got)
 	}
-	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" || f.Values.Get("svc.web.domains") != "shop.example.com" {
-		t.Errorf("the Compose form: file %q, domains %q; want an empty file and the overlay from the app",
-			f.Values.Get("compose"), f.Values.Get("svc.web.domains"))
+	if f := formWith(t, body, "/apps/shop/compose/preview"); f.Values.Get("compose") != "" || f.Values.Get("svc.web.healthPath") != "/health" {
+		t.Errorf("the Compose form: file %q, health path %q; want an empty file and the overlay from the app",
+			f.Values.Get("compose"), f.Values.Get("svc.web.healthPath"))
 	}
 	for _, want := range []string{`class="cv-svcform"`, "and deploy", `name="svc.web.image"`} {
 		if !strings.Contains(body, want) {

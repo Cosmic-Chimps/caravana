@@ -32,7 +32,7 @@
     <span class="cv-label">Compose file</span>
     <textarea class="cv-field cv-field-area cv-field-file cv-field-mono" id="compose" name="compose" rows="{{.FileRows}}" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required{{if .Draft.File.Error}} aria-invalid="true" aria-describedby="compose-error"{{end}}{{if .Draft.File.Alert}} autofocus{{end}}>
 {{.Draft.File.Value}}</textarea>
-    <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. Domains, health checks and secrets are set below, after the preview.</span>
+    <span class="cv-data-muted cv-hint">A compose.yaml as docker compose reads it. {{if .Existing}}Health checks and secrets{{else}}Domains, health checks and secrets{{end}} are set below, after the preview.</span>
     <span class="cv-data-muted cv-hint">Put passwords and keys in secrets below, not in the file.</span>
     {{template "field-error" .Draft.File}}
   </label>
@@ -69,6 +69,7 @@
 
   <section aria-labelledby="services-title" class="flex flex-col gap-3">
     <h2 id="services-title" class="cv-label">{{if or .Previewed .Kept .NotKept}}Services{{else}}Services (fix what is marked, then preview again){{end}}</h2>
+    {{if .Existing}}<p class="cv-note">Domains aren't set here: a deploy from this form keeps them as they are. Add and change them on the <a href="/apps/{{.AppID}}/domains">Domains page</a>.</p>{{end}}
     {{range .Services}}
     {{$svc := .}}
     <div class="cv-panel cv-edit" role="group" aria-labelledby="svc-{{.Name}}-title">
@@ -174,7 +175,7 @@
 {{define "compose-deploy"}}
 <section aria-labelledby="compose-title" class="flex flex-col gap-3">
   <h2 id="compose-title" class="cv-label">Deploy from Compose</h2>
-  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Domains, health checks and secret names start from the app's. <a href="/apps/{{.AppID}}/configure">Back to Configure</a></p>
+  <p class="text-sm text-fg-3">The file replaces the app's definition, as a Compose deploy through the API does: a service it doesn't have is removed, and what you changed on Configure is replaced. Health checks and secret names start from the app's, and its domains are kept as they are. <a href="/apps/{{.AppID}}/configure">Back to Configure</a></p>
   {{template "compose-form" .}}
 </section>
 {{end}}

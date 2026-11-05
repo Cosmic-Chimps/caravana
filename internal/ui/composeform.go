@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // This file is the Compose forms' draft (feature 014, research R11): what
@@ -34,6 +35,13 @@ type composeDraft struct {
 	Services []draftService
 
 	values map[string]map[string]string // service, secret name: the value typed; absent means keep
+
+	// keptDomains is, for an app that exists, each service's domains as the app
+	// has them, with their ports and options (feature 021, ruling 12). The form
+	// has no Domains input then (the Domains page edits them), so request sends
+	// these and the typed text is never read. Nil for a new app, whose domains
+	// come from the textarea.
+	keptDomains map[string][]compose.Domain
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -150,6 +158,21 @@ func (d *composeDraft) markFirstError() {
 			}
 		}
 	}
+}
+
+// hasError says some input of the draft carries an error.
+func (d composeDraft) hasError() bool {
+	if len(d.Name.Error) > 0 || len(d.File.Error) > 0 {
+		return true
+	}
+	for i := range d.Services {
+		for _, f := range d.Services[i].allFields() {
+			if len(f.Error) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // forPage is the draft as a page may draw it: the same inputs, and no secret
@@ -333,6 +356,9 @@ func (d composeDraft) request() compose.Request {
 	for _, s := range d.Services {
 		ov := s.overlay
 		ov.Secrets = nil
+		if d.keptDomains != nil {
+			ov.Domains = d.keptDomains[s.Name]
+		}
 		for _, sec := range s.Secrets {
 			secret := app.Secret{Name: sec.Name}
 			if v, ok := d.values[s.Name][sec.Name]; ok {
@@ -457,5 +483,49 @@ func (d *composeDraft) keepStored(stored app.App) {
 			s.Secrets[i].Exists = true
 		}
 		slices.SortFunc(s.Secrets, func(a, b draftSecret) int { return strings.Compare(a.Name, b.Name) })
+	}
+}
+
+// keepDomains makes the draft carry the domains the stored app has, as they
+// are, for every service that has some (feature 021, ruling 12): the Compose
+// form of an existing app has no Domains input, so a preview or a deploy from
+// it must not drop a domain's port or options (constitution IV). An app that
+// keeps its file has them in the file's overlay, exactly as written; any other
+// app has them on its services, which are written back the way SetDomainsIf
+// writes them: no port for a service's only port, else the container port of
+// the domain's port name. A service the draft lacks gets its inputs, so its
+// domains travel; one the new file doesn't have is dropped with them, and
+// composeChanges says so.
+func (d *composeDraft) keepDomains(rec store.AppRecord) {
+	d.keptDomains = map[string][]compose.Domain{}
+	for _, svc := range rec.App.Services {
+		var domains []compose.Domain
+		if rec.Compose != nil {
+			domains = slices.Clone(rec.Compose.Services[svc.Name].Domains)
+		} else {
+			for _, dom := range svc.Domains {
+				port := 0
+				if len(svc.Ports) != 1 {
+					if i := slices.IndexFunc(svc.Ports, func(p app.Port) bool { return p.Name == dom.Port }); i >= 0 {
+						port = svc.Ports[i].ContainerPort
+					}
+				}
+				domains = append(domains, compose.Domain{Host: dom.Host, Port: port, Path: dom.Path,
+					WWWRedirect: dom.WWWRedirect, TeamOnly: dom.TeamOnly})
+			}
+		}
+		if len(domains) == 0 {
+			continue
+		}
+		d.keptDomains[svc.Name] = domains
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+	// Nothing typed for domains is read any more: a stale form's text must not
+	// leave an error on an input that isn't drawn.
+	for i := range d.Services {
+		d.Services[i].Domains = formField{ID: d.Services[i].Domains.ID}
 	}
 }

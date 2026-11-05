@@ -9,6 +9,15 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+### Fixed
+- **Deploying an app's Compose file from the console keeps its domains' options.** Saving the file on
+  Configure (or Deploy from Compose of an app that exists) dropped each domain's path, www redirect and
+  Team only, since the form's Domains box held host names only. The form of an existing app has no
+  Domains box now: a deploy from it keeps every domain as it is, and domains are added and changed on the
+  app's Domains page, which also works for an app that keeps its Compose file. Configure lists each
+  domain once, in its Domains panel, with Add domain. A file that removes a service names the domains
+  that stop answering. New app › Compose file still takes its domains in the form.
+
 ## 0.17.0 - 2026-11-04
 
 ### Added
