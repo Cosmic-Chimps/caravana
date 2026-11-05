@@ -975,6 +975,30 @@ Feature 028 (`specs/028-light-theme`, Phase 2.6, from a CodeAlta task) is implem
   sections 8 to 10 (approved 2026-11-04); every `TestConsoleLab` step passed on the build that day, after
   `console-domains-states` lost a stale expectation for a lab without `CARAVANA_PUBLIC_URL`.
 
+Feature 029 (`specs/029-sqlite-backups`, from a CodeAlta task) is implemented on the worktree branch
+`alta/cozy-kiln-6m49`: the backup engine `sqlite`, `backup: {engine: sqlite, file: /data/app.db}`.
+- `file` is the database's path as the service sees it, inside one of its writable volumes
+  (`app.Service.SQLiteFile()` gives the volume and the path in it; `validateSQLiteBackup`).
+- A sqlite-backed service gets two idle poststart sidecars (`nomadjob/sqlite.go`; constitution 1.1.1
+  names them): `caravana-sqlite` (`alpine/sqlite` pinned by digest, `CARAVANA_SQLITE_IMAGE`, the db's
+  volume at `/caravana-volumes/<v>`) and `caravana-upload` (the rclone image). Caravana runs the
+  scripts in them with alloc exec (`deploy/sqliterun.go`): a backup is `VACUUM INTO` plus
+  `PRAGMA quick_check` into `/alloc/data/caravana/sqlite/<request>.db`, then gzip and `rclone rcat` to
+  `<BACKUP_PATH>/<ts>.sqlite.gz` with retention, the service never stopped.
+- The destination's credentials go on the exec's standard input only (`deploy.Exec` takes a reader):
+  no variable, file or argument holds them.
+- A restore downloads and stages the checked file on the db's volume
+  (`.caravana-restore/<request>.db`) while the service runs, then writes a `restore-sqlite` request
+  (`FILE=<volume>/<path>`) and restarts the copy: `VolumeScript` swaps the file (owner and mode kept,
+  `-wal`/`-shm`/`-journal` moved aside, everything put back on failure).
+- Runs share 016's claim, IDs, scheduler and records (`service/sqlitebackup.go`); at start a running
+  sqlite backup is failed, a sqlite restore resumes only if its request was written (`VolumeRequestIs`).
+- Docker facts (research D1–D5): root's SQLite gives created `-wal`/`-shm` to the db's owner, and
+  `sqlite3` on a missing path creates an empty file (the copy script checks first).
+- Migration 0022 (engine CHECK), API 0.32.0 (`BackupPolicy.file`, engine `sqlite`), console (Compose
+  form engine and Database file, Backups tab "A SQLite file instead"), gate step
+  `sqlite-backup-restore`.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

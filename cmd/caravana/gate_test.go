@@ -139,6 +139,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"compose-app", false, g.composeAppStep},
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
+		{"sqlite-backup-restore", false, g.sqliteBackupRestoreStep},
 		{"stop-timeout", false, g.stopTimeoutStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},

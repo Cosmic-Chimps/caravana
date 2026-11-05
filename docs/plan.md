@@ -151,9 +151,9 @@ node, and the rule from 008 on holds: each feature ships its console part with i
 Also in this phase, with no screen of their own: "Start from an example" on New app, fed by
 `deploy/examples/` (the handoff has no templates screen; one to ask for), Telegram and email
 channels in Notifications (`NotifySettings` draws Email), 2-step sign-in for the one admin
-(`LoginScreen` draws the code step), a `sqlite` backup engine (`VACUUM INTO`, so an app that
-keeps SQLite in its volume, like Umbral and Fhodor, is backed up without being stopped; "Backups
-for more than Postgres" below), and, done in 027, "Caravana X.Y.Z is available" with its release notes (step 1
+(`LoginScreen` draws the code step), a `sqlite` backup engine (done in 029: `VACUUM INTO`, so an
+app that keeps SQLite in its volume, like Umbral and Fhodor, is backed up without being stopped;
+"Backups for more than Postgres" below), and, done in 027, "Caravana X.Y.Z is available" with its release notes (step 1
 of "Updates from the console" below, on the Operator view's Updates page; the sidebar has shown the running version since 019.5).
 
 Last in this phase: **the API becomes 1.0.** `api/openapi.yaml` changed in every feature so far
@@ -413,13 +413,14 @@ Check before building:
 - in the lab, that a task restarted after its variable changed pulls with the new value;
 - against a real ECR repository (needs an AWS account), the challenge and the manifest answer.
 
-### Backups for more than Postgres (sqlite: Phase 2.6; the rest later)
+### Backups for more than Postgres (sqlite: done in 029; the rest later)
 
 Added 2026-10-11. Feature 010 backs up PostgreSQL only. Real apps also keep data in SQLite files
 (Fhodor) and in plain volumes (Hollo's uploaded media). Next engines:
 
-- `sqlite`: a consistent copy with `sqlite3 .backup` or `VACUUM INTO`, never a raw copy of a
-  file in use
+- `sqlite`: done in feature 029 (a `VACUUM INTO` copy made beside the running service, checked,
+  gzipped and uploaded; a restore stops the service only to put the file in place). One file per
+  service; several files are for later
 - `volume`: done in feature 016 (a tarball of each volume, taken while the service is stopped)
 - MySQL/MariaDB and Redis, as 010 already planned
 
@@ -538,7 +539,7 @@ names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
 | 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.6 (New app, no screen) |
 | 7 | More notification kinds | Email, Telegram, Teams, Gotify, Resend, Lark | Telegram is one HTTPS call with a bot token; email needs SMTP settings. Both are 018 channels | `SettingsScreen` | 2.6 (Notifications) |
 | 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | Run a command: done in 2.6 (020.5). The terminal into a copy: done in 2.6 (020.6). A shell into a server: 3 |
-| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines beyond Postgres ("Backups for more than Postgres" above), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 2.6 (the sqlite engine), 3 (TCP ports) |
+| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines for MySQL, MariaDB, Mongo and Redis ("Backups for more than Postgres" above; sqlite is done in 029), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 3 (TCP ports) |
 | 10 | Preview deployments | A pull request gets its own deploy on a wildcard domain | An environment per pull request on top of 019 and 020 | `PreviewsScreen` | 4 |
 | 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
 | 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 4 (`VariablesScreen` grid) |

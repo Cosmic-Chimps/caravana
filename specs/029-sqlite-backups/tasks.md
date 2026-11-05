@@ -126,9 +126,9 @@ green for the packages it touched.
 
 ## Phase 6: Lab, docs, finish
 
-- [ ] T020 Gate step `sqlite-backup-restore` (`cmd/caravana/gate_sqlite_test.go`) per
+- [x] T020 Gate step `sqlite-backup-restore` (`cmd/caravana/gate_sqlite_test.go`) per
   [quickstart.md](quickstart.md) §3, added to `runGate` after `volume-backup-restore`.
-- [ ] T021 Docs: `CHANGELOG.md` (Unreleased), `docs/plan.md` (Backlog "Backups for more than
+- [x] T021 Docs: `CHANGELOG.md` (Unreleased), `docs/plan.md` (Backlog "Backups for more than
   Postgres": sqlite done in 029; the table row 9), `CLAUDE.md` "Where we are" (a short 029
   paragraph), `docs/mcp.md` only if it lists engines.
 - [ ] T022 `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`,
