@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 1.1.0 → 1.1.1 (2026-11-05, PATCH: II's list of today's helper tasks names the
+  `caravana-sqlite` and `caravana-upload` sidecars of feature 029, which its plan names; the rule
+  itself is unchanged)
+- Modified principles: II. One Model, Many Inputs (the list only)
+- Added sections: none
+- Removed sections: none
+- Templates: ✅ no change (plan, spec and tasks templates read this file); ✅ CLAUDE.md links here
+- Deferred TODOs: none
+
+Earlier report (1.1.0):
 - Version change: 1.0.1 → 1.1.0 (2026-10-29, MINOR: II is materially expanded; V and VI gain
   clarifications; from the QA review, issues #10, #11 and #21)
 - Modified principles:
@@ -79,7 +89,8 @@ Rationale: the target user runs budget VMs; every extra moving part is a cost th
 - One `App` is one Nomad job; one `Service` is one task group with one task. That is the rule for
   the user's model. Caravana may add helper tasks to a service's group and helper jobs beside the
   app's job, each named in the feature's plan. Today these are the `names` prestart sidecar (009),
-  the `caravana-volumes` prestart task (016), the backup and restore jobs
+  the `caravana-volumes` prestart task (016), the `caravana-sqlite` and `caravana-upload`
+  poststart sidecars of a service with a `sqlite` backup (029), the backup and restore jobs
   `<app>_<service>_backup` and `<app>_<service>_restore` (010) and the schedule run jobs
   `<app>_run-<id>` (022).
 - `nomadjob.Translate` MUST stay a pure function (no I/O, same input gives the same job) and is
@@ -205,4 +216,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-29
+**Version**: 1.1.1 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-05
