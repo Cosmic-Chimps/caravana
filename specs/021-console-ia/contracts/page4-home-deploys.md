@@ -222,6 +222,9 @@ All five accepted:
 10. **The card's height shift** is accepted: the card inserts above the filter and moves it down by its height while a rollout runs.
 11. **The reverted entry's raw Nomad line** is prefixed "Nomad said: …".
 12. **The rail at 1440** stacks under the tables (page 1's 1452px breakpoint). No change for page 4; filed in CodeAlta.
+    Resolved 2026-11-04 (CodeAlta task `activity-rail-at-1440px`): under 1452px the rail narrows to 360px and stays
+    beside the main column, which keeps its 720px; it stacks only under 1412px. Chosen over capping the stacked rail
+    or moving it above the groups, which both leave the 1440px laptop with a one-column home the handoff doesn't draw.
 
 ## Last look (designer, 2026-10-22)
 

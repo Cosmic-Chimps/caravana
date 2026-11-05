@@ -425,7 +425,8 @@ in place never shifts its neighbors.
   grid with 1px dividers between them, 46-50px tall for list rows and 36px for table heads.
 - **Apps page:** a main column plus a 400px right rail holding Activity (one deployment per row, the
   whole row a link to its app). What needs a human is said in the headline, not in a rail panel.
-  The rail drops below the main column under 1452px, when the column beside it would be under 720px.
+  Under 1452px the rail narrows to 360px, so it stays beside the main column on a 1440px laptop; it drops
+  below the main column under 1412px, when the column beside even the narrow rail would be under 720px.
 - **App pages:** five tabs by intent, in this order: Running, Deployments, Configure, Logs, Backups. The tab
   is named "Deployments", never "Ship". Running is the app's own page (the copies in a live
   table), Deployments holds the deploy form and the history, Configure the grid of Copies & size and
@@ -861,8 +862,8 @@ Deploying now, the filter, the groups.
   name column is its 96px floor). `.cv-namecell` wraps (`flex-wrap`, gap 2 10): the name is one line
   (`white-space: nowrap`, `min-width: 0`, an ellipsis when it alone is wider than its cell; the cell's `title`
   has the whole name) and the kind word (`flex: none`) drops under it when the two don't fit side by side.
-  At 1600px the table is about 870px wide (name 96), at 1440 and 1100 the rail is below the table (name 158 and
-  96); under 720px of its own width the row folds and the name has the whole line, so nothing scrolls sideways
+  At 1600px the table is about 870px wide (name 96), at 1440 the 360px rail is beside a table of about 748px
+  (name 96), at 1100 the rail is below the table (name 96); under 720px of its own width the row folds and the name has the whole line, so nothing scrolls sideways
   at 390. On touch screens the name's 44px target is padding, so the ellipsis still works.
 - **The kind word.** After an app's name in the table, mono 12px muted, gap 10, baseline-aligned (under the name when it wraps). One rule
   (`kindOf`), shared with the kind filter, the first that applies: **compose** (source Compose or a kept

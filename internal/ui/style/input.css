@@ -112,7 +112,8 @@
   .cv-headline { font-size: 30px; line-height: 1.2; font-weight: 400; color: var(--color-fg-1); text-wrap: pretty; overflow-wrap: anywhere; }
   .cv-lede { font-size: 15px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
 
-  /* A main column with a 400px rail beside it; the rail drops below when the main column would be under 720px. */
+  /* A main column with a 400px rail beside it; the rail narrows to 360px, then drops below, when the main column
+     would be under 720px (the rules after the shell's narrow ones). */
   .cv-split { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 32px; align-items: start; }
   .cv-main { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
   .cv-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -411,10 +412,14 @@
   .cv-page { padding: 24px 16px 40px; gap: 24px; }
 }
 
-/* The rail goes below the main column when the column beside it would be under 720px wide, which
-   is what the apps table needs for its six columns (1452 = 720 + 400 rail + 32 gap + 248 sidebar +
-   2 x 26 gutters, rounded up). */
+/* The main column beside the rail needs 720px, which is what the apps table needs for its six
+   columns. Under 1452px (720 + 400 rail + 32 gap + 248 sidebar + 2 x 26 gutters) the rail narrows
+   to 360px, so it stays beside the column on a 1440px laptop instead of sitting under every table;
+   under 1412px (the same sum with the 360px rail) it goes below the main column. */
 @media (max-width: 1451.98px) {
+  .cv-split { grid-template-columns: minmax(0, 1fr) 360px; }
+}
+@media (max-width: 1411.98px) {
   .cv-split { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -2176,7 +2181,7 @@
   .cv-pj-promote { display: flex; flex-wrap: wrap; gap: 8px; }
   .cv-pj-promote .cv-btn { text-decoration: none; }
   .cv-pj-nodeploys { padding: 18px; font-size: 14px; color: var(--color-fg-3); }
-  /* In the rail's 400px a needs-you row stacks: the sentence on a line, then its time and action. */
+  /* In the rail's 400px (360px under 1452px) a needs-you row stacks: the sentence on a line, then its time and action. */
   .cv-pj-rail .cv-need { grid-template-columns: minmax(0, 1fr) auto; }
   .cv-pj-rail .cv-need-text { grid-column: 1 / -1; }
   .cv-pj-rail .cv-need-act { grid-column: auto; width: auto; }
