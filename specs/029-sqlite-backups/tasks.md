@@ -6,31 +6,31 @@ green for the packages it touched.
 
 ## Phase 1: Model and validation (`internal/app`)
 
-- [ ] T001 `app.BackupSQLite = "sqlite"`, `Backup.File string json:"file,omitempty"` (doc comment),
+- [x] T001 `app.BackupSQLite = "sqlite"`, `Backup.File string json:"file,omitempty"` (doc comment),
   the engine list in `Backup.Engine`'s comment. Reserved task names `SQLiteTaskName =
   "caravana-sqlite"`, `UploadTaskName = "caravana-upload"` beside `ReservedServiceName`, refused as
   service names with a message like the existing one.
-- [ ] T002 `func (s Service) SQLiteFile() (volume app.Volume, inVolume string, ok bool)`: the volume
+- [x] T002 `func (s Service) SQLiteFile() (volume app.Volume, inVolume string, ok bool)`: the volume
   whose `Path` is the longest prefix of `Backup.File` + "/", and the path inside it (no leading
   "/"). Pure. ok false when no sqlite backup or no volume holds it.
-- [ ] T003 `validateBackup`: accept `sqlite`; the engine error lists three engines; `file` with
+- [x] T003 `validateBackup`: accept `sqlite`; the engine error lists three engines; `file` with
   another engine is refused on `.file`; `validateSQLiteBackup` (no volume → `.engine`, "the database
   file must be on a volume, and the service has none"; FR-001's rules on `.file`; the cron check of
   `validateVolumeBackup`). Table tests in `validate_test.go` for every rule.
 
 ## Phase 2: Job shape (`internal/nomadjob`, pure)
 
-- [ ] T004 `Settings.SQLiteImage`, `DefaultSQLiteImage =
+- [x] T004 `Settings.SQLiteImage`, `DefaultSQLiteImage =
   "alpine/sqlite@sha256:8df11342ae10bd360896a1f721d6e9e0a606520b58289e8a0398854d513b6555"`
   (comment: 3.53.4 on Alpine 3.24, an index for amd64 and arm64), `sqliteImage()`, pinned check in
   `Settings.Validate`. `internal/config`: `CARAVANA_SQLITE_IMAGE` / `-sqlite-image`, like
   `CARAVANA_NAMES_IMAGE`, with its tests; wired in `cmd/caravana/main.go` where the other images are.
-- [ ] T005 `sqlite.go`: `sqliteTask` and `uploadTask` (poststart, `Sidecar: true`, entrypoint
+- [x] T005 `sqlite.go`: `sqliteTask` and `uploadTask` (poststart, `Sidecar: true`, entrypoint
   `/bin/sh -c`, `IdleScript`, `KillTimeout` 1 s, resources from research R1, the db's volume
   mounted read-write at `VolumeRoot/<volume>` on `caravana-sqlite` only). `Translate` appends both
   after `caravana-volumes` for a sqlite-backed service. `volumeTask` mounts the database's volume
   writable (validation already refuses a read-only one; keep the guard explicit).
-- [ ] T006 Scripts, `const`s with doc comments, POSIX sh, `$VAR`/`$(...)` only, arguments
+- [x] T006 Scripts, `const`s with doc comments, POSIX sh, `$VAR`/`$(...)` only, arguments
   positional (the exec passes `sh -c <script> sh <args…>`):
   - `IdleScript`: `trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done`.
   - `SQLiteCopyScript <db> <db as the service sees it> <out> <seconds>`: clear and create the work
@@ -52,11 +52,11 @@ green for the packages it touched.
     <volume dir>/.caravana-restore`; `cp` to `.caravana-restore/<request>.db`; remove the download.
   - `ParseSQLiteOutput(stdout string) SQLiteOutput{Bytes, Object, Expired []string (timestamps),
     Warning}` for the three markers.
-- [ ] T007 `VolumeScript`: action `restore-sqlite` (`do_restore_sqlite`) per research R5 step 3,
+- [x] T007 `VolumeScript`: action `restore-sqlite` (`do_restore_sqlite`) per research R5 step 3,
   with `FILE` (`<volume>/<path in volume>`; refuse empty, absolute, or with a `..` component) read
   with the request. Keep every existing behaviour; add `FILE=` to the reset list in
   `handle_request`.
-- [ ] T008 Tests: script tests like `volumes_backup_test.go` / `volumes_restore_test.go` (run the
+- [x] T008 Tests: script tests like `volumes_backup_test.go` / `volumes_restore_test.go` (run the
   scripts with `sh` and fake `rclone`/`sqlite3`/`timeout` on `PATH` where needed; the real
   `sqlite3` may be used when present, skipping otherwise) for each script and for
   `restore-sqlite` (owner and mode kept, `-wal`/`-shm`/`-journal` moved away, rollback on a failed
@@ -66,10 +66,10 @@ green for the packages it touched.
 
 ## Phase 3: Nomad side (`internal/deploy`)
 
-- [ ] T009 `Exec` takes `stdin io.Reader` (nil for none) and passes it to Nomad's exec; update
+- [x] T009 `Exec` takes `stdin io.Reader` (nil for none) and passes it to Nomad's exec; update
   `RunCommand`'s and every other caller and fake (`deploytest`).
-- [ ] T010 `VolumeRequest.File` and the `FILE` key (in `volumeRequestKeys`, written when set).
-- [ ] T011 `sqliterun.go`: `SQLiteCopy(ctx, copyID, svc, request)`, `SQLiteUpload(ctx, copyID, appID,
+- [x] T010 `VolumeRequest.File` and the `FILE` key (in `volumeRequestKeys`, written when set).
+- [x] T011 `sqliterun.go`: `SQLiteCopy(ctx, copyID, svc, request)`, `SQLiteUpload(ctx, copyID, appID,
   svc, dest, ts, keep)`, `SQLiteDownload(ctx, copyID, object, request)`, `SQLiteStage(ctx, copyID,
   svc, request)`, each building the argv from `nomadjob`'s scripts and paths, running `Exec` with a
   16 KiB limit in the right task, and returning the parsed output or an error whose message is

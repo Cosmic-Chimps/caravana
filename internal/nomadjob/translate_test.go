@@ -71,6 +71,7 @@ func goldenCases() []goldenCase {
 	w := apptest.Whoami()
 	cases = append(cases, goldenCase{name: "letsencrypt", app: w.App, deployment: w.Deployment, settings: letsEncrypt})
 	cases = append(cases, volumeBackupCases()...)
+	cases = append(cases, sqliteBackupCases()...)
 	cases = append(cases, entrypointCases()...)
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, domainCases()...)
@@ -343,6 +344,9 @@ func TestTranslateErrors(t *testing.T) {
 		{"default cpu zero", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultCPUMHz = 0 }, "settings.defaultCPUMHz"},
 		{"default memory below minimum", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultMemoryMB = 9 }, "settings.defaultMemoryMB"},
 		{"default ceiling below the default reservation", func(a *app.App, d *app.Deployment, s *Settings) { s.DefaultMemoryMaxMB = 32 }, "settings.defaultMemoryMaxMB"},
+		{"names image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.NamesImage = "busybox:1.37" }, "settings.namesImage"},
+		{"backup image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.BackupImage = "rclone/rclone:latest" }, "settings.backupImage"},
+		{"sqlite image with a tag", func(a *app.App, d *app.Deployment, s *Settings) { s.SQLiteImage = "alpine/sqlite:latest" }, "settings.sqliteImage"},
 
 		{"memory below minimum", func(a *app.App, d *app.Deployment, s *Settings) {
 			a.Services[0].Resources.MemoryMB = 5

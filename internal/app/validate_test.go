@@ -244,6 +244,120 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Backup = &Backup{Engine: BackupVolume}
 		}, "services[1].volumes[0].name"},
 
+		// SQLite backups: the file lies inside a writable volume of the service.
+		{"valid sqlite backup", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Schedule: "*/15 * * * *", Keep: 3}
+		}, ""},
+		{"valid sqlite backup in a subdirectory with ports", func(a *App, d *Deployment) {
+			a.Services[0].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[0].Backup = &Backup{Engine: BackupSQLite, File: "/data/db/my-app_1@2+3.sqlite3"}
+		}, ""},
+		{"valid sqlite backup in a nested writable volume", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data", ReadOnly: true}, {Name: "db", Path: "/data/db"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/db/app.db"}
+		}, ""},
+		{"sqlite backup without a volume", func(a *App, d *Deployment) {
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db"}
+		}, "services[1].backup.engine"},
+		{"sqlite backup without a file", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite}
+		}, "services[1].backup.file"},
+		{"sqlite backup file too long", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/" + strings.Repeat("a", 1024)}
+		}, "services[1].backup.file"},
+		{"sqlite backup file relative", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "data/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file not clean", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/x/../app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file with a space", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/my app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file with a quote", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/a'b.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file with a newline", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/a\nb.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file is the mount", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file outside every volume", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/other/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file beside a volume's name", func(a *App, d *Deployment) {
+			// /database is not inside /data: the prefix must end at a "/".
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/database/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file on a read-only volume", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data", ReadOnly: true}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file on a read-only nested volume", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}, {Name: "ro", Path: "/data/ro", ReadOnly: true}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/ro/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file is a wal file", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db-wal"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file is a shm file", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db-shm"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file is a journal file", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db-journal"}
+		}, "services[1].backup.file"},
+		{"sqlite backup file under the restore directory", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/.caravana-restore/app.db"}
+		}, "services[1].backup.file"},
+		{"sqlite backup keep too many", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Keep: 101}
+		}, "services[1].backup.keep"},
+		{"sqlite backup schedule not five fields", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Schedule: "daily"}
+		}, "services[1].backup.schedule"},
+		{"sqlite backup schedule out of range", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Schedule: "99 * * * *"}
+		}, "services[1].backup.schedule"},
+		{"file with the volume engine", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, File: "/data/app.db"}
+		}, "services[1].backup.file"},
+		{"file with the postgres engine", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, File: "/data/app.db"}
+		}, "services[0].backup.file"},
+
+		// The tasks Caravana adds beside a service with a sqlite backup own their names.
+		{"reserved sqlite task name", func(a *App, d *Deployment) {
+			a.Services[1].Name = SQLiteTaskName
+			delete(d.Digests, "worker")
+			d.Digests[SQLiteTaskName] = testDigest
+		}, "services[1].name"},
+		{"reserved upload task name", func(a *App, d *Deployment) {
+			a.Services[1].Name = UploadTaskName
+			delete(d.Digests, "worker")
+			d.Digests[UploadTaskName] = testDigest
+		}, "services[1].name"},
+
 		// The task Caravana adds beside a service with a volume owns its name.
 		{"reserved service name", func(a *App, d *Deployment) {
 			a.Services[1].Name = ReservedServiceName
@@ -393,5 +507,57 @@ func TestWithoutSecretValues(t *testing.T) {
 	}
 	if v := a.Services[0].Secrets[0].Value; v == nil || *v != "one" {
 		t.Error("WithoutSecretValues changed the original app")
+	}
+}
+
+func TestSQLiteFile(t *testing.T) {
+	tests := []struct {
+		name       string
+		svc        Service
+		wantVolume string
+		wantInside string
+		wantOK     bool
+	}{
+		{"no backup", Service{Volumes: []Volume{{Name: "data", Path: "/data"}}}, "", "", false},
+		{"another engine", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupVolume, File: "/data/app.db"},
+		}, "", "", false},
+		{"in the volume", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/data/app.db"},
+		}, "data", "app.db", true},
+		{"in a subdirectory", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/data/db/app.db"},
+		}, "data", "db/app.db", true},
+		{"the longest volume wins", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}, {Name: "db", Path: "/data/db"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/data/db/app.db"},
+		}, "db", "app.db", true},
+		{"the longest volume wins, listed first", Service{
+			Volumes: []Volume{{Name: "db", Path: "/data/db"}, {Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/data/db/app.db"},
+		}, "db", "app.db", true},
+		{"the mount itself", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/data"},
+		}, "", "", false},
+		{"a path that only starts like the volume", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/database/app.db"},
+		}, "", "", false},
+		{"no volume holds it", Service{
+			Volumes: []Volume{{Name: "data", Path: "/data"}},
+			Backup:  &Backup{Engine: BackupSQLite, File: "/other/app.db"},
+		}, "", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vol, inside, ok := tc.svc.SQLiteFile()
+			if ok != tc.wantOK || vol.Name != tc.wantVolume || inside != tc.wantInside {
+				t.Errorf("SQLiteFile() = (%q, %q, %v), want (%q, %q, %v)", vol.Name, inside, ok, tc.wantVolume, tc.wantInside, tc.wantOK)
+			}
+		})
 	}
 }

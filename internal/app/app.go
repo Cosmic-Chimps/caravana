@@ -161,6 +161,14 @@ type Volume struct {
 // task can't be confused with a service's own.
 const ReservedServiceName = "caravana-volumes"
 
+// The tasks Caravana adds beside a service with a sqlite backup (feature 029):
+// SQLiteTaskName makes and checks the copies of the database, UploadTaskName
+// uploads and downloads them. A service can't take either name.
+const (
+	SQLiteTaskName = "caravana-sqlite"
+	UploadTaskName = "caravana-upload"
+)
+
 // Backup engines.
 const (
 	// BackupPostgres is pg_dump and pg_restore, with the credentials the
@@ -170,14 +178,21 @@ const (
 	// BackupVolume archives the service's volumes with the service stopped, so
 	// it works for any app that keeps its data in a volume (feature 016).
 	BackupVolume = "volume"
+	// BackupSQLite is a consistent copy of one SQLite file on a volume, made
+	// while the service runs (feature 029).
+	BackupSQLite = "sqlite"
 )
 
 // Backup is a service's backup policy.
 type Backup struct {
 	// Engine is how the service is backed up: BackupPostgres, for a database
-	// Caravana reaches over its port, or BackupVolume, for the files of the
-	// service's volumes.
+	// Caravana reaches over its port, BackupVolume, for the files of the
+	// service's volumes, or BackupSQLite, for one SQLite file on a volume.
 	Engine string `json:"engine"`
+	// File is the SQLite database's absolute path as the service sees it.
+	// Only the sqlite engine takes it, and it is required there: it must lie
+	// inside one of the service's writable volumes.
+	File string `json:"file,omitempty"`
 	// Schedule is a five-field cron expression, in UTC. Empty means every day
 	// at 03:00 (DefaultBackupSchedule).
 	Schedule string `json:"schedule,omitempty"`
@@ -206,6 +221,29 @@ func (b Backup) KeepOrDefault() int {
 		return DefaultBackupKeep
 	}
 	return b.Keep
+}
+
+// SQLiteFile finds where the database of a sqlite backup is: the service's
+// volume that holds Backup.File (the one with the longest path when volumes
+// are nested) and the file's path inside it, with no leading "/". ok is false
+// when the service has no sqlite backup or no volume holds the file; the
+// mount itself is not a file inside it. Pure: it only reads the model.
+func (s Service) SQLiteFile() (volume Volume, inVolume string, ok bool) {
+	if s.Backup == nil || s.Backup.Engine != BackupSQLite {
+		return Volume{}, "", false
+	}
+	best := -1
+	for i, v := range s.Volumes {
+		prefix := v.Path + "/"
+		if strings.HasPrefix(s.Backup.File, prefix) && (best < 0 || len(v.Path) > len(s.Volumes[best].Path)) {
+			best = i
+		}
+	}
+	if best < 0 {
+		return Volume{}, "", false
+	}
+	v := s.Volumes[best]
+	return v, s.Backup.File[len(v.Path)+1:], true
 }
 
 // WithoutSecretValues returns a copy of a whose secrets have names only, the

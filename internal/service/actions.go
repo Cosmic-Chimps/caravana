@@ -156,7 +156,7 @@ func (s *Service) RunCommand(ctx context.Context, appID, copyID string, command 
 
 	runCtx, cancel := context.WithTimeout(ctx, s.commandTimeout)
 	defer cancel()
-	res, err := s.deployer.Exec(runCtx, copyID, c.Service, command, commandOutputLimit)
+	res, err := s.deployer.Exec(runCtx, copyID, c.Service, command, nil, commandOutputLimit)
 
 	// The record says how it ended in words of ours, never the output and
 	// never Nomad's text (which could repeat an argument).

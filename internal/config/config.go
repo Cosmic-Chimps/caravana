@@ -119,6 +119,7 @@ var (
 	memoryMaxSetting     = setting{"CARAVANA_DEFAULT_MEMORY_MAX_MB", "default-memory-max-mb"}
 	namesImageSetting    = setting{"CARAVANA_NAMES_IMAGE", "names-image"}
 	backupImageSetting   = setting{"CARAVANA_BACKUP_IMAGE", "backup-image"}
+	sqliteImageSetting   = setting{"CARAVANA_SQLITE_IMAGE", "sqlite-image"}
 	volumeTimeoutSetting = setting{"CARAVANA_VOLUME_BACKUP_TIMEOUT", "volume-backup-timeout"}
 	publicURLSetting     = setting{"CARAVANA_PUBLIC_URL", "public-url"}
 	resolveAfterSetting  = setting{"CARAVANA_NOTIFY_RESOLVE_AFTER", "notify-resolve-after"}
@@ -145,6 +146,7 @@ var translatorSettings = map[string]setting{
 	"settings.defaultMemoryMaxMB": memoryMaxSetting,
 	"settings.namesImage":         namesImageSetting,
 	"settings.backupImage":        backupImageSetting,
+	"settings.sqliteImage":        sqliteImageSetting,
 }
 
 // Load reads the configuration. args are the command-line arguments without
@@ -168,6 +170,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	memoryMax := fs.String(memoryMaxSetting.flag, envOr(memoryMaxSetting, "1024"), "default memory a service may burst to while the node has it spare, in MB")
 	namesImage := fs.String(namesImageSetting.flag, envOr(namesImageSetting, ""), "image of the sidecar that lets an app's services reach each other by name, pinned by digest; empty means the built-in busybox")
 	backupImage := fs.String(backupImageSetting.flag, envOr(backupImageSetting, ""), "image that uploads and downloads backups (rclone), pinned by digest; empty means the built-in one")
+	sqliteImage := fs.String(sqliteImageSetting.flag, envOr(sqliteImageSetting, ""), "image of the caravana-sqlite sidecar that makes and checks copies of a SQLite database (sqlite3), pinned by digest; empty means the built-in one")
 	volumeTimeout := fs.String(volumeTimeoutSetting.flag, envOr(volumeTimeoutSetting, "30m"), "longest a volume backup or restore may take, as a duration such as 30m; the service stays stopped meanwhile")
 	publicURL := fs.String(publicURLSetting.flag, envOr(publicURLSetting, ""), "the console's own address, such as https://caravana.example.com, used for links in notifications; empty means no links")
 	resolveAfter := fs.String(resolveAfterSetting.flag, envOr(resolveAfterSetting, "5m"), "how long a problem must be gone before a notification says it is resolved, as a duration such as 5m; at least 10s")
@@ -187,7 +190,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	c := Config{
 		Listen:        *listen,
 		DataDir:       *dataDir,
-		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage, BackupImage: *backupImage},
+		Settings:      nomadjob.Settings{Entrypoint: *entrypoint, CertResolver: *certResolver, NamesImage: *namesImage, BackupImage: *backupImage, SQLiteImage: *sqliteImage},
 		NomadAddr:     *nomadAddr,
 		WebhookListen: *webhookListen,
 		NomadToken:    Secret(getenv(nomadTokenEnv)),

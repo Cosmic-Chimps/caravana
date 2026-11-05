@@ -22,6 +22,10 @@ type ExecRequest struct {
 	Task    string
 	Command []string
 	TTY     bool
+	// Stdin is what the client sent on the command's standard input, in full
+	// once the command's reply was played (a non-terminal exec ends its input
+	// before it reads the output).
+	Stdin string
 }
 
 // ExecReply is what a scripted command does.
@@ -123,6 +127,7 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 
 	n.mu.Lock()
 	n.execs = append(n.execs, req)
+	index := len(n.execs) - 1
 	hook := n.onExec
 	n.mu.Unlock()
 	reply := ExecReply{}
@@ -141,13 +146,28 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 
-	// Read the client's frames (stdin, heartbeats) so its close is noticed.
+	// Read the client's frames (stdin, heartbeats) so its close is noticed,
+	// and keep the standard input for the test to read (Execs).
 	gone := make(chan struct{})
+	stdinClosed := make(chan struct{})
 	go func() {
 		defer close(gone)
+		closed := false
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
 				return
+			}
+			var in api.ExecStreamingInput
+			if json.Unmarshal(data, &in) != nil || in.Stdin == nil {
+				continue
+			}
+			n.mu.Lock()
+			n.execs[index].Stdin += string(in.Stdin.Data)
+			n.mu.Unlock()
+			if in.Stdin.Close && !closed {
+				closed = true
+				close(stdinClosed)
 			}
 		}
 	}()
@@ -156,6 +176,15 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 		_ = conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, reply.Fail), time.Now().Add(time.Second))
 		return
+	}
+	// A client that is not a terminal ends its standard input at once. Wait
+	// for that, so a test that reads Execs after the command sees all of it.
+	if !req.TTY {
+		select {
+		case <-stdinClosed:
+		case <-gone:
+		case <-time.After(time.Second):
+		}
 	}
 	send := func(frame api.ExecStreamingOutput) bool { return conn.WriteJSON(frame) == nil }
 	for _, c := range []struct {

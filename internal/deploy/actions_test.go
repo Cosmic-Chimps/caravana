@@ -58,7 +58,7 @@ func TestExec(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
 			return deploytest.ExecReply{Stdout: "out\n", Stderr: "err\n", ExitCode: 3}
 		})
-		res, err := d.Exec(ctx, id, "web", []string{"sh", "-c", "exit 3"}, 1024)
+		res, err := d.Exec(ctx, id, "web", []string{"sh", "-c", "exit 3"}, nil, 1024)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestExec(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
 			return deploytest.ExecReply{Stdout: big, Stderr: "short"}
 		})
-		res, err := d.Exec(ctx, id, "web", []string{"gen"}, 10000)
+		res, err := d.Exec(ctx, id, "web", []string{"gen"}, nil, 10000)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +100,7 @@ func TestExec(t *testing.T) {
 		})
 		tctx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 		defer cancel()
-		res, err := d.Exec(tctx, id, "web", []string{"sleep", "120"}, 1024)
+		res, err := d.Exec(tctx, id, "web", []string{"sleep", "120"}, nil, 1024)
 		if err != nil {
 			t.Fatalf("Exec = %v, want the timeout in the result", err)
 		}
@@ -115,7 +115,7 @@ func TestExec(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply { return deploytest.ExecReply{Hold: true} })
 		cctx, cancel := context.WithCancel(ctx)
 		time.AfterFunc(100*time.Millisecond, cancel)
-		if _, err := d.Exec(cctx, id, "web", []string{"sleep", "120"}, 1024); !errors.Is(err, context.Canceled) {
+		if _, err := d.Exec(cctx, id, "web", []string{"sleep", "120"}, nil, 1024); !errors.Is(err, context.Canceled) {
 			t.Errorf("Exec = %v, want context.Canceled", err)
 		}
 	})
@@ -123,7 +123,7 @@ func TestExec(t *testing.T) {
 	t.Run("a copy that isn't running", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		id := execCopy(nomad, "complete")
-		if _, err := d.Exec(ctx, id, "web", []string{"true"}, 1024); !errors.Is(err, ErrCopyNotRunning) {
+		if _, err := d.Exec(ctx, id, "web", []string{"true"}, nil, 1024); !errors.Is(err, ErrCopyNotRunning) {
 			t.Errorf("Exec = %v, want ErrCopyNotRunning", err)
 		}
 		if len(nomad.Execs()) != 0 {
@@ -133,7 +133,7 @@ func TestExec(t *testing.T) {
 
 	t.Run("an unknown copy", func(t *testing.T) {
 		d, _, _ := newTestDeployer(t)
-		if _, err := d.Exec(ctx, "nope", "web", []string{"true"}, 1024); !errors.Is(err, ErrCopyNotFound) {
+		if _, err := d.Exec(ctx, "nope", "web", []string{"true"}, nil, 1024); !errors.Is(err, ErrCopyNotFound) {
 			t.Errorf("Exec = %v, want ErrCopyNotFound", err)
 		}
 	})
@@ -144,7 +144,7 @@ func TestExec(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
 			return deploytest.ExecReply{Fail: `exec: "nope": executable file not found in $PATH`}
 		})
-		_, err := d.Exec(ctx, id, "web", []string{"nope"}, 1024)
+		_, err := d.Exec(ctx, id, "web", []string{"nope"}, nil, 1024)
 		if !errors.Is(err, ErrExecFailed) || !strings.Contains(err.Error(), "executable file not found") {
 			t.Errorf("Exec = %v, want ErrExecFailed with Nomad's text", err)
 		}
@@ -154,7 +154,7 @@ func TestExec(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		id := execCopy(nomad, "running")
 		nomad.FailExec(403)
-		_, err := d.Exec(ctx, id, "web", []string{"true"}, 1024)
+		_, err := d.Exec(ctx, id, "web", []string{"true"}, nil, 1024)
 		if !errors.Is(err, ErrNomadUnavailable) || !strings.Contains(err.Error(), "alloc-exec") {
 			t.Errorf("Exec = %v, want ErrNomadUnavailable naming alloc-exec", err)
 		}

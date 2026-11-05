@@ -84,7 +84,9 @@ const (
 // service's group asks for it writable, which is when the service has a
 // volume backup (see volumeRequests); a group's mount can't be writable
 // where its request is read-only, and a task that only measures a volume
-// shouldn't be able to change it.
+// shouldn't be able to change it. The volume that holds a sqlite backup's
+// database is writable too, for the restore's swap (app.Validate refuses a
+// read-only one, so this is a guard, not a case).
 func volumeTask(appID string, svc app.Service, s Settings) *api.Task {
 	t := &api.Task{
 		Name:      VolumeTaskName,
@@ -109,7 +111,7 @@ func volumeTask(appID string, svc app.Service, s Settings) *api.Task {
 		t.VolumeMounts = append(t.VolumeMounts, &api.VolumeMount{
 			Volume:      new(v.Name),
 			Destination: new(VolumeRoot + "/" + v.Name),
-			ReadOnly:    new(v.ReadOnly && !hasVolumeBackup(svc)),
+			ReadOnly:    new(v.ReadOnly && !hasVolumeBackup(svc) && !holdsSQLiteFile(svc, v)),
 		})
 	}
 	return t
@@ -188,8 +190,8 @@ func volumeTemplate(appID, service, destPath string, destination bool) *api.Temp
 // ROOT, DATA, REQUEST_FILE and DEST_FILE can be set in the environment, for
 // tests; the defaults are the task's real paths.
 //
-// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS and
-// BACKUP_PATH) is sourced from REQUEST_FILE, and the destination's
+// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS, BACKUP_PATH
+// and FILE) is sourced from REQUEST_FILE, and the destination's
 // RCLONE_CONFIG_DEST_* from DEST_FILE, in a subshell, so a damaged file ends
 // that subshell and nothing more. They are two files because only one of them
 // may be readable through Nomad's file system API (see volumeDestinationDest).
@@ -491,11 +493,126 @@ clear_entries() {
   done
 }
 
+# do_restore_sqlite swaps the staged database into place (feature 029,
+# research R5). caravana-sqlite already downloaded and checked the file and
+# staged it at <volume>/.caravana-restore/<request>.db, so the service is
+# stopped only for renames. FILE is the database relative to ROOT,
+# "<volume>/<path in the volume>". The steps:
+#   1. read the owner and mode of the current file (of its directory, and 0644,
+#      when there is none) to give them to the staged file;
+#   2. move the file and its -wal, -shm and -journal (a restored database must
+#      not meet the old one's log) into .caravana-restore/old: a rename;
+#   3. give the staged file the owner and mode, and rename it into place;
+#   4. on any failure, move the old files back, and say so if that failed too;
+#   5. remove .caravana-restore, the old files with it.
+do_restore_sqlite() {
+  # FILE comes from a request file and is the one path this script builds
+  # commands from, so it is checked here too: relative, clean, plain
+  # characters, and a volume followed by a path in it.
+  case "$FILE" in
+    ''|/*|*/|*//*|.|..|./*|../*|*/.|*/..|*/./*|*/../*|*[!A-Za-z0-9._@+/-]*)
+      MESSAGE="the request names no valid database file"; return 1 ;;
+  esac
+  case "$FILE" in */*) ;; *) MESSAGE="the request names no valid database file"; return 1 ;; esac
+  sqlite_volume=$(echo "$FILE" | cut -d/ -f1)
+  dir="$ROOT/$sqlite_volume"
+  db="$ROOT/$FILE"
+  stage="$dir/.caravana-restore/$REQUEST.db"
+  old="$dir/.caravana-restore/old"
+  [ -d "$dir" ] || { MESSAGE="the volume $sqlite_volume is not mounted"; return 1; }
+  # Old files left by an earlier restore that was cut off or could not put
+  # them back may be the only copy of someone's data: refuse until a person has
+  # looked.
+  if [ -e "$old" ]; then
+    MESSAGE="$sqlite_volume has files left in .caravana-restore/old by an earlier restore; check them, then delete that directory"
+    return 1
+  fi
+  [ -f "$stage" ] || { MESSAGE="the restored database is not staged at .caravana-restore/$REQUEST.db"; return 1; }
+
+  parent=$(dirname "$db")
+  ancestor=$parent
+  while [ ! -d "$ancestor" ]; do ancestor=$(dirname "$ancestor"); done
+  if [ -e "$db" ]; then
+    owner=$(stat -c %u:%g "$db")
+    mode=$(stat -c %a "$db")
+  else
+    owner=$(stat -c %u:%g "$ancestor")
+    mode=644
+  fi
+  if [ -z "$owner" ] || [ -z "$mode" ]; then
+    MESSAGE="the owner of $FILE could not be read"
+    rm -rf "$dir/.caravana-restore"
+    return 1
+  fi
+  # A directory the file needs and the volume doesn't have (a volume made
+  # again) is made, owned like the nearest directory that exists.
+  if [ ! -d "$parent" ]; then
+    mkdir -p "$parent" 2> "$WORK/mkdir.err"
+    status=$?
+    if [ "$status" -ne 0 ]; then
+      step_failed "preparing the directory of $FILE" "$WORK/mkdir.err" "$status"
+      rm -rf "$dir/.caravana-restore"
+      return 1
+    fi
+    made=$parent
+    while [ "$made" != "$ancestor" ]; do
+      chown "$owner" "$made" 2>/dev/null
+      made=$(dirname "$made")
+    done
+  fi
+
+  mkdir "$old" 2> "$WORK/mkdir.err"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    step_failed "preparing $sqlite_volume for the restore" "$WORK/mkdir.err" "$status"
+    rm -rf "$dir/.caravana-restore"
+    return 1
+  fi
+  base=$(basename "$db")
+  for suffix in "" -wal -shm -journal; do
+    if [ -e "$db$suffix" ] || [ -L "$db$suffix" ]; then
+      if ! mv "$db$suffix" "$old/$base$suffix"; then
+        MESSAGE="the files of $FILE could not be moved aside"
+        put_back_sqlite
+        return 1
+      fi
+    fi
+  done
+  if ! chown "$owner" "$stage" || ! chmod "$mode" "$stage" || ! mv "$stage" "$db"; then
+    MESSAGE="the restored database could not be put in place at $FILE"
+    put_back_sqlite
+    return 1
+  fi
+  if ! rm -rf "$dir/.caravana-restore"; then
+    MESSAGE="the database is restored, but the old files could not be removed from .caravana-restore"
+  fi
+  return 0
+}
+
+# put_back_sqlite moves the old files back after a failed swap and removes the
+# staging directory. It never deletes the database's own path: when it runs,
+# either that file is still the old one or it was moved aside. When it can't
+# put the files back it says so, and leaves .caravana-restore/old alone: the
+# old files are still there.
+put_back_sqlite() {
+  failed=0
+  for suffix in "" -wal -shm -journal; do
+    if [ -e "$old/$base$suffix" ] || [ -L "$old/$base$suffix" ]; then
+      mv "$old/$base$suffix" "$db$suffix" || failed=1
+    fi
+  done
+  if [ "$failed" -ne 0 ]; then
+    MESSAGE="$MESSAGE; the old files could not all be put back, they are in the .caravana-restore/old directory of $sqlite_volume"
+    return 0
+  fi
+  rm -rf "$dir/.caravana-restore"
+}
+
 # --- The request.
 
 handle_request() {
   [ -f "$REQUEST_FILE" ] || return 0
-  REQUEST= ACTION= OBJECT= NOT_AFTER= LIMIT= KEEP= TS= BACKUP_PATH=
+  REQUEST= ACTION= OBJECT= NOT_AFTER= LIMIT= KEEP= TS= BACKUP_PATH= FILE=
   set -a
   . "$REQUEST_FILE"
   [ ! -f "$DEST_FILE" ] || . "$DEST_FILE"
@@ -519,6 +636,7 @@ handle_request() {
   case "$ACTION" in
     backup) if do_backup; then finish succeeded; else finish failed; fi ;;
     restore) if do_restore; then finish succeeded; else finish failed; fi ;;
+    restore-sqlite) if do_restore_sqlite; then finish succeeded; else finish failed; fi ;;
     *) MESSAGE="unknown action"; finish failed ;;
   esac
 }

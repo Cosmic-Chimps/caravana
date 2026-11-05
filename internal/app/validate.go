@@ -107,8 +107,11 @@ func validateBackup(field string, svc Service) error {
 	if b == nil {
 		return nil
 	}
-	if b.Engine != BackupPostgres && b.Engine != BackupVolume {
-		return NewFieldError(field+".engine", "%q is not supported; it is %q or %q", b.Engine, BackupPostgres, BackupVolume)
+	if b.Engine != BackupPostgres && b.Engine != BackupVolume && b.Engine != BackupSQLite {
+		return NewFieldError(field+".engine", "%q is not supported; it is %q, %q or %q", b.Engine, BackupPostgres, BackupVolume, BackupSQLite)
+	}
+	if b.File != "" && b.Engine != BackupSQLite {
+		return NewFieldError(field+".file", "only the %q engine names a file", BackupSQLite)
 	}
 	if b.Keep < 0 || b.Keep > 100 {
 		return NewFieldError(field+".keep", "must be between 1 and 100 (leave it out for %d), got %d", DefaultBackupKeep, b.Keep)
@@ -118,8 +121,11 @@ func validateBackup(field string, svc Service) error {
 			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", b.Schedule, DefaultBackupSchedule)
 		}
 	}
-	if b.Engine == BackupVolume {
+	switch b.Engine {
+	case BackupVolume:
 		return validateVolumeBackup(field, svc)
+	case BackupSQLite:
+		return validateSQLiteBackup(field, svc)
 	}
 	if len(svc.Ports) == 0 {
 		return NewFieldError(field, "the backup reaches the database over its port, and the service has none")
@@ -153,6 +159,63 @@ func validateVolumeBackup(field string, svc Service) error {
 		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
 			return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", svc.Backup.Schedule, err)
 		}
+	}
+	return nil
+}
+
+// Limits of a sqlite backup's file path.
+const (
+	maxSQLiteFileBytes = 1024
+	// RestoreDir is the directory a restore stages files in, at the top of
+	// the database's volume. A database can't live there.
+	RestoreDir = ".caravana-restore"
+)
+
+// sqliteFileRE is the characters a database path may have: they need no
+// quoting anywhere the path travels (a shell argument, a request file).
+var sqliteFileRE = regexp.MustCompile(`^[A-Za-z0-9._@+/-]+$`)
+
+// validateSQLiteBackup checks what only a sqlite backup needs (FR-001): the
+// file is named, it lies inside one of the service's writable volumes, and the
+// schedule is one Caravana's scheduler can run. The file is the database
+// itself: the -wal, -shm and -journal files are SQLite's, not databases.
+func validateSQLiteBackup(field string, svc Service) error {
+	if len(svc.Volumes) == 0 {
+		return NewFieldError(field+".engine", "the database file must be on a volume, and the service has none")
+	}
+	if svc.Backup.Schedule != "" {
+		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
+			return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", svc.Backup.Schedule, err)
+		}
+	}
+	file := svc.Backup.File
+	fileField := field + ".file"
+	switch {
+	case file == "":
+		return NewFieldError(fileField, "is required: the SQLite database's path inside the service, e.g. /data/app.db")
+	case len(file) > maxSQLiteFileBytes:
+		return NewFieldError(fileField, "is %d bytes; at most %d are allowed", len(file), maxSQLiteFileBytes)
+	case !path.IsAbs(file) || path.Clean(file) != file || !sqliteFileRE.MatchString(file):
+		return NewFieldError(fileField, "%q must be a clean absolute path of letters, digits and . _ - @ + /", file)
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if strings.HasSuffix(file, suffix) {
+			return NewFieldError(fileField, "%q is a file SQLite keeps beside the database; name the database itself", file)
+		}
+	}
+	vol, inVolume, ok := svc.SQLiteFile()
+	if !ok {
+		names := make([]string, len(svc.Volumes))
+		for i, v := range svc.Volumes {
+			names[i] = v.Path
+		}
+		return NewFieldError(fileField, "%q must be a file inside one of the service's volumes (%s), not the volume itself", file, strings.Join(names, ", "))
+	}
+	if vol.ReadOnly {
+		return NewFieldError(fileField, "%q is on the read-only volume %q: the service can't write its database there, and a restore couldn't either", file, vol.Name)
+	}
+	if inVolume == RestoreDir || strings.HasPrefix(inVolume, RestoreDir+"/") {
+		return NewFieldError(fileField, "%q is under %s, where Caravana stages restores", file, RestoreDir)
 	}
 	return nil
 }
@@ -195,6 +258,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	names[svc.Name] = true
 	if svc.Name == ReservedServiceName {
 		return NewFieldError(field+".name", "%q is reserved: Caravana runs a task of that name beside every service with a volume", svc.Name)
+	}
+	if svc.Name == SQLiteTaskName || svc.Name == UploadTaskName {
+		return NewFieldError(field+".name", "%q is reserved: Caravana runs a task of that name beside every service with a sqlite backup", svc.Name)
 	}
 	if n := len(appID) + 1 + len(svc.Name); n > maxLabelLen {
 		return NewFieldError(field+".name", "%s-%s is %d characters; the Nomad service name allows at most %d", appID, svc.Name, n, maxLabelLen)

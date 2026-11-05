@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -83,16 +84,19 @@ func (w *cappedWriter) result() (data []byte, truncated bool) {
 	return append([]byte(nil), w.buf...), w.truncated
 }
 
-// Exec runs command in the service's task of the copy, without a terminal and
-// with an empty stdin, and returns what it wrote (each stream cut at limit
-// bytes) and its exit code. The caller's context carries the time limit: when
+// Exec runs command in the task of the copy, without a terminal, and returns
+// what it wrote (each stream cut at limit bytes) and its exit code. stdin is
+// what the command reads; nil means an empty standard input. It is how a
+// command gets a secret that must not be in its arguments, which any process
+// in the container can read (the sqlite backups' destination credentials,
+// sqliterun.go). The caller's context carries the time limit: when
 // it ends because its deadline passed, the result says TimedOut and has no
 // exit code, and the error is nil. Any other end of the context is its error.
 //
 // A copy Nomad doesn't have is ErrCopyNotFound and one that isn't running is
 // ErrCopyNotRunning. When Nomad can't start the command the error wraps
 // ErrExecFailed.
-func (d *Deployer) Exec(ctx context.Context, copyID, task string, command []string, limit int) (ExecResult, error) {
+func (d *Deployer) Exec(ctx context.Context, copyID, task string, command []string, stdin io.Reader, limit int) (ExecResult, error) {
 	q := (&api.QueryOptions{}).WithContext(ctx)
 	alloc, _, err := d.nomad.Allocations().Info(copyID, q)
 	if err != nil {
@@ -105,11 +109,14 @@ func (d *Deployer) Exec(ctx context.Context, copyID, task string, command []stri
 		return ExecResult{}, fmt.Errorf("%w: %s is %s", ErrCopyNotRunning, copyID, alloc.ClientStatus)
 	}
 
+	if stdin == nil {
+		stdin = strings.NewReader("")
+	}
 	stdout, stderr := newCappedWriter(limit), newCappedWriter(limit)
 	// A nil terminal-size channel is never ready: no terminal, nothing to resize.
 	var noSizes <-chan api.TerminalSize
 	code, err := d.nomad.Allocations().Exec(ctx, alloc, task, false, command,
-		strings.NewReader(""), stdout, stderr, noSizes, (&api.QueryOptions{}).WithContext(ctx))
+		stdin, stdout, stderr, noSizes, (&api.QueryOptions{}).WithContext(ctx))
 
 	res := ExecResult{}
 	res.Stdout, res.StdoutTruncated = stdout.result()

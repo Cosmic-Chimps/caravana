@@ -42,6 +42,10 @@ type Settings struct {
 	// BackupImage is the image that uploads and downloads backups (rclone).
 	// It must be pinned by digest. Empty means DefaultBackupImage.
 	BackupImage string
+	// SQLiteImage is the image of the caravana-sqlite sidecar, which makes
+	// and checks copies of a SQLite database (feature 029). It must be pinned
+	// by digest. Empty means DefaultSQLiteImage.
+	SQLiteImage string
 }
 
 // DefaultBackupImage is rclone 1.71, pinned by digest (an index, so it runs
@@ -54,6 +58,18 @@ func (s Settings) backupImage() string {
 		return DefaultBackupImage
 	}
 	return s.BackupImage
+}
+
+// DefaultSQLiteImage is SQLite 3.53.4 on Alpine 3.24 (the alpine/sqlite
+// image), pinned by digest (an index, so it runs on amd64 and arm64).
+const DefaultSQLiteImage = "alpine/sqlite@sha256:8df11342ae10bd360896a1f721d6e9e0a606520b58289e8a0398854d513b6555"
+
+// sqliteImage is the sqlite sidecar image these settings use.
+func (s Settings) sqliteImage() string {
+	if s.SQLiteImage == "" {
+		return DefaultSQLiteImage
+	}
+	return s.SQLiteImage
 }
 
 // DefaultNamesImage is busybox 1.37, pinned by digest (an index, so it runs
@@ -181,6 +197,9 @@ func (s Settings) Validate() error {
 	if s.BackupImage != "" && !pinnedImageRE.MatchString(s.BackupImage) {
 		return app.NewFieldError("settings.backupImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.BackupImage)
 	}
+	if s.SQLiteImage != "" && !pinnedImageRE.MatchString(s.SQLiteImage) {
+		return app.NewFieldError("settings.sqliteImage", "%q must be an image pinned by digest (repo@sha256:...), without a tag", s.SQLiteImage)
+	}
 	return nil
 }
 
@@ -293,6 +312,9 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 	if len(svc.Volumes) > 0 {
 		tg.Tasks = append(tg.Tasks, volumeTask(a.ID, svc, s))
 	}
+	if hasSQLiteBackup(svc) {
+		tg.Tasks = append(tg.Tasks, sqliteTask(svc, s), uploadTask(s))
+	}
 	return tg
 }
 
@@ -311,7 +333,7 @@ func volumeRequests(appID string, svc app.Service) map[string]*api.VolumeRequest
 			Name:           v.Name,
 			Type:           "host",
 			Source:         VolumeName(appID, v.Name),
-			ReadOnly:       v.ReadOnly && !hasVolumeBackup(svc),
+			ReadOnly:       v.ReadOnly && !hasVolumeBackup(svc) && !holdsSQLiteFile(svc, v),
 			AccessMode:     "single-node-single-writer",
 			AttachmentMode: "file-system",
 		}

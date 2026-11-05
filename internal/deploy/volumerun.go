@@ -39,6 +39,8 @@ var (
 const (
 	VolumeBackup  = "backup"
 	VolumeRestore = "restore"
+	// VolumeRestoreSQLite swaps in a staged SQLite database (feature 029).
+	VolumeRestoreSQLite = "restore-sqlite"
 )
 
 // DefaultVolumeLimit is the run's time limit while no request says another.
@@ -48,12 +50,16 @@ const DefaultVolumeLimit = 30 * time.Minute
 type VolumeRequest struct {
 	// ID names the run, and the result file: "<service>-<unix seconds>".
 	ID string
-	// Action is VolumeBackup or VolumeRestore.
+	// Action is VolumeBackup, VolumeRestore or VolumeRestoreSQLite.
 	Action string
 	// TS names the directory a backup's archives go into.
 	TS string
 	// Object is the backup a restore loads: its directory in the destination.
 	Object string
+	// File is the database a VolumeRestoreSQLite swaps, relative to the root
+	// of the volumes: "<volume>/<path in the volume>"
+	// (nomadjob.SQLiteRestoreFile).
+	File string
 	// NotAfter is when the task stops honoring the request: a later start of
 	// the copy (a deploy, a reboot) must never repeat the run.
 	NotAfter time.Time
@@ -63,7 +69,7 @@ type VolumeRequest struct {
 
 // The variable's keys that make up a request. The rest are the destination,
 // KEEP and LIMIT, which outlast any one request.
-var volumeRequestKeys = []string{"REQUEST", "ACTION", "TS", "OBJECT", "NOT_AFTER"}
+var volumeRequestKeys = []string{"REQUEST", "ACTION", "TS", "OBJECT", "FILE", "NOT_AFTER"}
 
 // isDestinationKey reports whether k is one of the variable's keys that hold
 // the destination: what destinationItems makes, and KEEP.
@@ -91,6 +97,9 @@ func volumeItems(a app.App, svc app.Service, dest *BackupDestination, keep int, 
 		}
 		if req.Object != "" {
 			items["OBJECT"] = req.Object
+		}
+		if req.File != "" {
+			items["FILE"] = req.File
 		}
 		if req.Limit > 0 {
 			items["LIMIT"] = strconv.Itoa(int(req.Limit / time.Second))
