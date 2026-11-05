@@ -9,6 +9,8 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
 
 ## Unreleased
 
+## 0.18.0 - 2026-11-05
+
 ### Fixed
 - **Deploying an app's Compose file from the console keeps its domains' options.** Saving the file on
   Configure (or Deploy from Compose of an app that exists) dropped each domain's path, www redirect and
