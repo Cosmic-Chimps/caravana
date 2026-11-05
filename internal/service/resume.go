@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -65,6 +66,12 @@ type unsettledRun struct {
 	startedAt time.Time
 	// settle records how the run ended, in its backup or restore record.
 	settle func(volumeOutcome)
+	// requestFirst says the run may have ended before it asked the copy for
+	// anything: a sqlite restore downloads and stages the backup before it
+	// writes its request. When the copy's variable doesn't hold the request,
+	// no result will ever come, and the run is failed at once instead of
+	// holding the app until its time is up.
+	requestFirst bool
 }
 
 // resumeVolumeRuns settles each volume backup and restore a previous run of
@@ -87,15 +94,22 @@ func (s *Service) resumeVolumeRuns(ctx context.Context) error {
 		}
 		var running []unsettledRun
 		for _, b := range backups {
+			// A sqlite backup runs commands Caravana was waiting on, which ended
+			// with it: there is nothing to resume, and the copy it left in the
+			// copy's work directory is deleted by the next run.
+			if b.Engine == app.BackupSQLite && b.Status == store.BackupRunning {
+				s.settleSQLiteBackup(b, nomadjob.SQLiteOutput{}, sqliteRestartedMessage)
+				continue
+			}
 			if b.Engine == app.BackupVolume && b.Status == store.BackupRunning {
 				running = append(running, unsettledRun{requestID: b.ID, service: b.Service, startedAt: b.StartedAt,
 					settle: func(out volumeOutcome) { s.settleVolumeBackup(b, out) }})
 			}
 		}
 		for _, r := range restores {
-			if r.Engine == app.BackupVolume && r.Status == store.BackupRunning {
+			if (r.Engine == app.BackupVolume || r.Engine == app.BackupSQLite) && r.Status == store.BackupRunning {
 				running = append(running, unsettledRun{requestID: requestIDOfRestore(appID, r.ID), service: r.Service, startedAt: r.CreatedAt,
-					settle: func(out volumeOutcome) { s.settleVolumeRestore(r, out) }})
+					settle: func(out volumeOutcome) { s.settleVolumeRestore(r, out) }, requestFirst: r.Engine == app.BackupSQLite})
 			}
 		}
 		if len(running) == 0 {
@@ -139,9 +153,24 @@ func (s *Service) settleVolumeRuns(ctx context.Context, appID string, runs []uns
 // and that left no result.
 const restartedMessage = "Caravana restarted during the run"
 
+// sqliteRestartedMessage is the failure of a sqlite backup Caravana's restart
+// cut off.
+const sqliteRestartedMessage = "Caravana restarted during the backup; run it again"
+
 func (s *Service) settleOneVolumeRun(ctx context.Context, appID string, run unsettledRun) {
 	// What is left of the time the run was given, from when it was recorded.
 	until := run.startedAt.Add(s.volume.limit + s.volume.grace)
+	if run.requestFirst {
+		requested, err := s.deployer.VolumeRequestIs(ctx, appID, run.service, run.requestID)
+		if err == nil && !requested {
+			if ctx.Err() == nil {
+				run.settle(failedOutcome(restartedMessage, nil))
+			}
+			return
+		}
+		// When the variable can't be read, the result file decides, as for a
+		// volume run.
+	}
 	copyID, ok := s.liveCopy(ctx, appID, run.service, until)
 	if !ok {
 		if ctx.Err() == nil {

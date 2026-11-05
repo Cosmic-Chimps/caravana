@@ -80,29 +80,29 @@ green for the packages it touched.
 
 ## Phase 4: Runs (`internal/service`)
 
-- [ ] T012 Store: migration `0022_sqlite_backups.sql` rebuilding `backups` and `restores` so
+- [x] T012 Store: migration `0022_sqlite_backups.sql` rebuilding `backups` and `restores` so
   `engine`'s CHECK allows `'sqlite'` (keep every column, default, index and the other CHECKs;
   read migrations 0005, 0008, 0021 and how 0014 rebuilt a table). A store test saves both with
   `engine = sqlite`.
-- [ ] T013 `sqlitebackup.go`: `hasSQLiteBackup`; `startSQLiteBackup(ctx, appID, service, trigger)`:
+- [x] T013 `sqlitebackup.go`: `hasSQLiteBackup`; `startSQLiteBackup(ctx, appID, service, trigger)`:
   claim (`claimVolumeRun`), re-check as `prepareVolumeRun` does (backed up, not stopped, destination,
   busy, `RunningCopy`), `freshVolumeRequest`, save the running record (engine `sqlite`, job ID
   `<app>_<service>_sqlite/<ts>`), then a tracked goroutine with the run's limit + grace: copy, upload,
   settle (`ExpireBackups` with `<service>-<ts>`, `Bytes`, `Object`, the warning as the message of a
   succeeded run), release, `backupsChanged`. Stopped stays nil.
-- [ ] T014 `startSQLiteRestore(ctx, appID, b)`: the same claim and checks; save the running restore
+- [x] T014 `startSQLiteRestore(ctx, appID, b)`: the same claim and checks; save the running restore
   (engine `sqlite`, ID `restoreRecordID`); goroutine: download, stage (a failure settles failed, the
   service never stopped), `WriteVolumeVariable(…, nil dest, 0 keep, request with File)`,
   `WaitRequestRendered` (tolerate `ErrRequestNotRendered` as `prepareVolumeRun` does),
   `RestartCopy`, `awaitVolumeResult`, `awaitStop`, `settleVolumeRestore`, clear the request, release.
-- [ ] T015 Routing: `backUpNow` and `Restore` send sqlite services to these; the scheduler
+- [x] T015 Routing: `backUpNow` and `Restore` send sqlite services to these; the scheduler
   (`runDueVolumeBackups`) runs sqlite backups too (log words stay generic: "scheduled backup");
   `resumeVolumeRuns`: a running sqlite backup is settled failed at once ("Caravana restarted during
   the backup; run it again"); a running sqlite restore resumes like a volume one, but fails at once
   when the `caravana-volumes` variable doesn't hold its request (it never reached the swap).
   `checkBackups`, `syncBackups`, `SetBackupDestination` need nothing (check, and say so in a
   comment where a reader would wonder).
-- [ ] T016 Tests with the fakes, as `volumebackup_test.go`/`volumerestore_test.go`: a backup that
+- [x] T016 Tests with the fakes, as `volumebackup_test.go`/`volumerestore_test.go`: a backup that
   succeeds (record, bytes, object, expired), each failing step, the service never restarted, a
   restore that fails before the stop (no restart call), one that succeeds (stopped set), busy and
   stopped refusals, the scheduler picking a sqlite service, resume of both kinds, and a sentinel

@@ -257,6 +257,9 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 	if hasVolumeBackup(svc) {
 		return s.startVolumeBackup(ctx, appID, service, trigger)
 	}
+	if hasSQLiteBackup(svc) {
+		return s.startSQLiteBackup(ctx, appID, service, trigger)
+	}
 	jobID, err := s.deployer.ForceBackup(ctx, appID, service)
 	if err != nil {
 		return store.BackupRecord{}, err
@@ -343,6 +346,9 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	}
 	if hasVolumeBackup(svc) {
 		return s.startVolumeRestore(ctx, appID, b)
+	}
+	if hasSQLiteBackup(svc) {
+		return s.startSQLiteRestore(ctx, appID, b)
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {

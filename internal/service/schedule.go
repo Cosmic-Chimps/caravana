@@ -107,7 +107,7 @@ func (s *Service) runDueVolumeBackups(ctx context.Context, noted map[string]stri
 			continue // a stopped app's backups wait for Start: no run, and nothing reported (feature 020.5)
 		}
 		for _, svc := range rec.App.Services {
-			if !hasVolumeBackup(svc) {
+			if !runsInCopy(svc) { // Postgres backups are Nomad's periodic jobs
 				continue
 			}
 			key := rec.App.ID + "/" + svc.Name
@@ -141,7 +141,7 @@ func (s *Service) lastBackupStart(ctx context.Context, rec store.AppRecord, svc 
 		return time.Time{}, err
 	}
 	for _, b := range backups {
-		if b.Service == svc.Name && b.Engine == app.BackupVolume {
+		if b.Service == svc.Name && b.Engine == svc.Backup.Engine {
 			return b.StartedAt, nil
 		}
 	}

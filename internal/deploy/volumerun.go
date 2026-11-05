@@ -130,6 +130,17 @@ func (d *Deployer) ClearVolumeRequest(ctx context.Context, appID, service string
 	return d.writeVariable(ctx, path, withoutRequest(items))
 }
 
+// VolumeRequestIs reports whether the service's caravana-volumes variable
+// holds the request requestID now: whether a run that writes its request late
+// (a sqlite restore) got that far. A variable that isn't there holds none.
+func (d *Deployer) VolumeRequestIs(ctx context.Context, appID, service, requestID string) (bool, error) {
+	items, found, err := d.readVariableIfAny(ctx, nomadjob.VolumeVariablePath(appID, service))
+	if err != nil || !found {
+		return false, err
+	}
+	return items["REQUEST"] == requestID, nil
+}
+
 // withoutRequest is items with an empty request, and everything else kept.
 func withoutRequest(items map[string]string) map[string]string {
 	out := maps.Clone(items)
