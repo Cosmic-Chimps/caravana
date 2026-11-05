@@ -131,5 +131,5 @@ green for the packages it touched.
 - [x] T021 Docs: `CHANGELOG.md` (Unreleased), `docs/plan.md` (Backlog "Backups for more than
   Postgres": sqlite done in 029; the table row 9), `CLAUDE.md` "Where we are" (a short 029
   paragraph), `docs/mcp.md` only if it lists engines.
-- [ ] T022 `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`,
+- [x] T022 `go vet ./...`, `go tool staticcheck ./...`, `gofmt -l .`, `go test -race ./...`,
   `go mod tidy -diff`, the CGO-free cross-compile, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`.
