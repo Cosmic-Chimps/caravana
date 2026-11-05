@@ -104,6 +104,10 @@ func TestBackups(t *testing.T) {
 		b, err := e.store.GetBackup(ctx, "whoami", first.ID)
 		return err == nil && b.Status == store.BackupSucceeded
 	})
+	// Back up now is the owner's run, and the watcher's record of it keeps that.
+	if b, _ := e.store.GetBackup(ctx, "whoami", first.ID); first.Trigger != store.BackupTriggerOwner || b.Trigger != store.BackupTriggerOwner {
+		t.Errorf("trigger = %q started, %q recorded; want owner", first.Trigger, b.Trigger)
+	}
 
 	second, err := e.svc.BackUpNow(ctx, "whoami", "web")
 	if err != nil {

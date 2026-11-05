@@ -145,11 +145,12 @@ func TestVolumeBackupRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		if rec.ID != id || rec.Status != store.BackupRunning || rec.Engine != app.BackupVolume ||
-			rec.JobID != fmt.Sprintf("whoami_web_volumes/%d", l.t0.Unix()) {
+			rec.JobID != fmt.Sprintf("whoami_web_volumes/%d", l.t0.Unix()) || rec.Trigger != store.BackupTriggerOwner {
 			t.Fatalf("started record = %+v", rec)
 		}
 		got := l.settled(id)
-		if got.Status != store.BackupSucceeded || got.Message != "" || got.Object != "backups/caravana/whoami/web/1791990000/" {
+		if got.Status != store.BackupSucceeded || got.Message != "" || got.Object != "backups/caravana/whoami/web/1791990000/" ||
+			got.Trigger != store.BackupTriggerOwner {
 			t.Fatalf("settled record = %+v", got)
 		}
 		if got.Bytes != 2300 || len(got.Volumes) != 2 || got.Volumes[0] != (store.VolumeArchive{Name: "data", Bytes: 2000, SizeKB: 5000}) {

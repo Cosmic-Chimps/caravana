@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.30.0
+  version: 0.31.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -4657,7 +4657,7 @@ components:
     Backup:
       type: object
       additionalProperties: false
-      required: [id, service, engine, status, bytes, startedAt]
+      required: [id, service, engine, status, trigger, bytes, startedAt]
       properties:
         id: {type: string, examples: ["db-1791386036"]}
         service: {type: string}
@@ -4667,6 +4667,12 @@ components:
         status:
           type: string
           enum: [running, succeeded, failed]
+        trigger:
+          type: string
+          enum: [timer, owner]
+          description: |
+            Who started the run: `timer`, the service's backup schedule, or `owner`, `backUpNow`
+            (the console's Back up now, or the API). Runs recorded before API 0.31.0 read `timer`.
         bytes:
           type: integer
           description: The dump's size, or for a `volume` backup the sum of its archives.
@@ -5176,7 +5182,9 @@ components:
         trigger:
           type: string
           enum: [timer, owner]
-          description: "`timer`: a slot of the cron line. `owner`: `runSchedule`."
+          description: |
+            `timer`: a slot of the cron line. `owner`: `runSchedule`, or for a built-in schedule
+            (a service's backup) `backUpNow`.
         slotAt:
           type: [string, "null"]
           format: date-time

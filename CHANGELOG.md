@@ -19,6 +19,9 @@ more than rerunning the installer. Add to "Unreleased" as you go; a release rena
   distance from the panel face. The terminal page's terminal stays dark in both. Two things read a shade
   darker in both themes on the way: a field's placeholder and the Logs level chip that is off are Label Text
   now, and the terminal's box has no black band at its edges.
+- **A backup run says who started it.** A run started with Back up now reads "by you" on the Backups tab,
+  and `owner` as its `trigger` in the API (`Backup.trigger`, and the runs of a built-in schedule); a run its
+  schedule started reads `timer`. Runs from before this release read `timer`. API 0.31.0.
 
 ### Security
 - **An ntfy topic URL is a secret now**: it lives in the channel's Nomad Variable like a Slack or Discord URL,

@@ -73,6 +73,12 @@ type VolumeArchive struct {
 	SizeKB int64 `json:"sizeKB"`
 }
 
+// Who started a backup run: its schedule, or the owner (Back up now).
+const (
+	BackupTriggerTimer = "timer"
+	BackupTriggerOwner = "owner"
+)
+
 // BackupRecord is one backup run of one service.
 type BackupRecord struct {
 	AppID, ID, Service, JobID string
@@ -90,17 +96,24 @@ type BackupRecord struct {
 	Stopped *time.Duration
 	// Volumes lists the archives of a volume backup, one per volume.
 	Volumes []VolumeArchive
+	// Trigger is BackupTriggerTimer or BackupTriggerOwner. Empty means timer
+	// when saved. Once a run is recorded as the owner's it stays so: the
+	// watcher, which can't tell a forced run from a timed one, writes timer.
+	Trigger string
 }
 
 // backupColumns is the column order scanBackups reads.
 const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-	engine, stopped_ms, volumes`
+	engine, stopped_ms, volumes, trigger`
 
 // SaveBackup creates or updates a backup record. A final record never goes
 // back to running: a later write of running is ignored.
 func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
 	if b.Engine == "" {
 		b.Engine = enginePostgres
+	}
+	if b.Trigger == "" {
+		b.Trigger = BackupTriggerTimer
 	}
 	var volumes any // NULL, not "null", when there are none
 	if len(b.Volumes) > 0 {
@@ -112,16 +125,24 @@ func (s *Store) SaveBackup(ctx context.Context, b BackupRecord) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO backups (app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-			engine, stopped_ms, volumes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			engine, stopped_ms, volumes, trigger)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (app_id, id) DO UPDATE SET status = excluded.status, object = excluded.object,
 			bytes = excluded.bytes, message = excluded.message, expired = excluded.expired,
 			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms, volumes = excluded.volumes
 		WHERE backups.status = 'running' OR excluded.status != 'running'`,
 		b.AppID, b.ID, b.Service, b.JobID, b.Status, b.Object, b.Bytes, b.Message, boolInt(b.Expired),
-		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes)
+		formatTime(b.StartedAt), optionalTime(b.FinishedAt), b.Engine, optionalMillis(b.Stopped), volumes, b.Trigger)
 	if err != nil {
 		return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
+	}
+	// The owner's word is kept whatever the upsert above did: the watcher may
+	// have recorded a forced run (as timer, even as finished) before Back up
+	// now wrote its own record.
+	if b.Trigger == BackupTriggerOwner {
+		if _, err := s.db.ExecContext(ctx, "UPDATE backups SET trigger = 'owner' WHERE app_id = ? AND id = ?", b.AppID, b.ID); err != nil {
+			return fmt.Errorf("save backup %s of %q: %w", b.ID, b.AppID, err)
+		}
 	}
 	return nil
 }
@@ -169,7 +190,7 @@ func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 		var finished, volumes sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
-			&expired, &started, &finished, &b.Engine, &stopped, &volumes); err != nil {
+			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger); err != nil {
 			return nil, err
 		}
 		var err error

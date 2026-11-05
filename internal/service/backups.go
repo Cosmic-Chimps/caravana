@@ -228,11 +228,13 @@ func (s *Service) backedUpService(ctx context.Context, appID, service string) (a
 // own copy and stops the service while it runs (see startVolumeBackup), which
 // can also be ErrNoRunningCopy.
 func (s *Service) BackUpNow(ctx context.Context, appID, service string) (store.BackupRecord, error) {
-	return s.backUpNow(ctx, appID, service, "manual")
+	return s.backUpNow(ctx, appID, service, store.BackupTriggerOwner)
 }
 
-// backUpNow is BackUpNow for a trigger: "manual", or "schedule" from the
-// scheduler of volume backups.
+// backUpNow is BackUpNow for a trigger, recorded on the run:
+// store.BackupTriggerOwner for Back up now, or store.BackupTriggerTimer from
+// the scheduler of volume backups. (Postgres backups on their schedule are
+// Nomad's periodic jobs, which the watcher records as timer.)
 func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
 	_, svc, err := s.backedUpService(ctx, appID, service)
 	if err != nil {
@@ -260,6 +262,7 @@ func (s *Service) backUpNow(ctx context.Context, appID, service, trigger string)
 		return store.BackupRecord{}, err
 	}
 	rec := runRecord(appID, service, deploy.BackupRun{JobID: jobID, Status: deploy.RunRunning, Started: runTime(jobID)})
+	rec.Trigger = trigger
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		return store.BackupRecord{}, err
 	}

@@ -99,6 +99,54 @@ func TestBackupRecords(t *testing.T) {
 	}
 }
 
+// Who started a run: timer unless the owner did, and the owner's word holds
+// whatever the watcher (which only knows timer) writes before or after it.
+func TestBackupTrigger(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	if _, err := s.SaveApp(ctx, app.App{ID: "blog", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{{Name: "db", Image: "postgres"}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
+	done := t0.Add(time.Minute)
+	save := func(b BackupRecord) {
+		t.Helper()
+		if err := s.SaveBackup(ctx, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	timed := BackupRecord{AppID: "blog", ID: "db-1", Service: "db", Status: BackupRunning, StartedAt: t0}
+	save(timed)
+	// Back up now, then the watcher's records of the same run.
+	owned := BackupRecord{AppID: "blog", ID: "db-2", Service: "db", Status: BackupRunning, StartedAt: t0.Add(time.Hour), Trigger: BackupTriggerOwner}
+	save(owned)
+	owned.Trigger = ""
+	save(owned)
+	owned.Status, owned.FinishedAt = BackupSucceeded, &done
+	save(owned)
+	// The watcher recorded the forced run, finished, before Back up now wrote its own.
+	raced := BackupRecord{AppID: "blog", ID: "db-3", Service: "db", Status: BackupFailed, StartedAt: t0.Add(2 * time.Hour), FinishedAt: &done, Message: "pg_dump: error"}
+	save(raced)
+	save(BackupRecord{AppID: "blog", ID: "db-3", Service: "db", Status: BackupRunning, StartedAt: raced.StartedAt, Trigger: BackupTriggerOwner})
+
+	want := map[string]string{"db-1": BackupTriggerTimer, "db-2": BackupTriggerOwner, "db-3": BackupTriggerOwner}
+	list, err := s.ListBackups(ctx, "blog", 0)
+	if err != nil || len(list) != 3 {
+		t.Fatalf("List = %+v, %v", list, err)
+	}
+	for _, b := range list {
+		if b.Trigger != want[b.ID] {
+			t.Errorf("%s trigger = %q, want %q", b.ID, b.Trigger, want[b.ID])
+		}
+		if b.ID == "db-3" && (b.Status != BackupFailed || b.Message != "pg_dump: error") {
+			t.Errorf("db-3 = %+v, want the watcher's final record kept", b)
+		}
+	}
+	if latest, _, err := s.LatestBackupRuns(ctx); err != nil || len(latest) != 1 || latest[0].Trigger != BackupTriggerOwner {
+		t.Errorf("LatestBackupRuns = %+v, %v; want db-3 with its trigger", latest, err)
+	}
+}
+
 func TestLatestBackupRuns(t *testing.T) {
 	ctx := context.Background()
 	t0 := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)

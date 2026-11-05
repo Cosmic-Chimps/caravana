@@ -213,18 +213,18 @@ func TestBackupJSONFields(t *testing.T) {
 		{
 			name: "postgres, an old record",
 			in:   store.BackupRecord{ID: "db-1", Service: "db", Status: "succeeded", Bytes: 10},
-			want: `{"id":"db-1","service":"db","engine":"postgres","status":"succeeded","bytes":10,"startedAt":"0001-01-01T00:00:00Z"}`,
+			want: `{"id":"db-1","service":"db","engine":"postgres","status":"succeeded","trigger":"timer","bytes":10,"startedAt":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name: "volume, running: no stop time yet",
-			in:   store.BackupRecord{ID: "web-2", Service: "web", Engine: "volume", Status: "running"},
-			want: `{"id":"web-2","service":"web","engine":"volume","status":"running","bytes":0,"startedAt":"0001-01-01T00:00:00Z"}`,
+			in:   store.BackupRecord{ID: "web-2", Service: "web", Engine: "volume", Status: "running", Trigger: "owner"},
+			want: `{"id":"web-2","service":"web","engine":"volume","status":"running","trigger":"owner","bytes":0,"startedAt":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name: "volume, finished: stop time and archives",
 			in: store.BackupRecord{ID: "web-3", Service: "web", Engine: "volume", Status: "succeeded", Bytes: 2300, Stopped: &stopped,
 				Volumes: []store.VolumeArchive{{Name: "data", Bytes: 2000, SizeKB: 5}, {Name: "uploads", Bytes: 300, SizeKB: 1}}},
-			want: `{"id":"web-3","service":"web","engine":"volume","status":"succeeded","bytes":2300,"startedAt":"0001-01-01T00:00:00Z",` +
+			want: `{"id":"web-3","service":"web","engine":"volume","status":"succeeded","trigger":"timer","bytes":2300,"startedAt":"0001-01-01T00:00:00Z",` +
 				`"stoppedSeconds":4.2,"volumes":[{"name":"data","bytes":2000,"sizeBytes":5120},{"name":"uploads","bytes":300,"sizeBytes":1024}]}`,
 		},
 	}

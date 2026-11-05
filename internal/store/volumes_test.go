@@ -32,6 +32,7 @@ func TestVolumeRunRecords(t *testing.T) {
 			Status: BackupSucceeded, Object: "kuma/web/1/", Bytes: 3000, StartedAt: t0, FinishedAt: &done,
 			Stopped: &stopped,
 			Volumes: []VolumeArchive{{Name: "data", Bytes: 2000, SizeKB: 5000}, {Name: "logs", Bytes: 1000, SizeKB: 1200}},
+			Trigger: BackupTriggerTimer,
 		}
 		running := want
 		running.Status, running.Object, running.Bytes, running.FinishedAt, running.Stopped, running.Volumes = BackupRunning, "", 0, nil, nil, nil

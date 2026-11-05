@@ -29,10 +29,13 @@ func toDestinationJSON(d store.BackupDestination) backupDestinationJSON {
 // backupJSON is one backup (schema Backup). Engine, StoppedSeconds and Volumes
 // are feature 016's: only a volume run has the last two.
 type backupJSON struct {
-	ID         string     `json:"id"`
-	Service    string     `json:"service"`
-	Engine     string     `json:"engine"`
-	Status     string     `json:"status"`
+	ID      string `json:"id"`
+	Service string `json:"service"`
+	Engine  string `json:"engine"`
+	Status  string `json:"status"`
+	// Trigger is who started the run: timer (its schedule) or owner (Back up
+	// now).
+	Trigger    string     `json:"trigger"`
 	Bytes      int64      `json:"bytes"`
 	Message    string     `json:"message,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
@@ -57,8 +60,8 @@ type backupVolumeJSON struct {
 }
 
 func toBackupJSON(b store.BackupRecord) backupJSON {
-	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Bytes: b.Bytes,
-		Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped)}
+	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Trigger: triggerOrTimer(b.Trigger),
+		Bytes: b.Bytes, Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped)}
 	for _, v := range b.Volumes {
 		out.Volumes = append(out.Volumes, backupVolumeJSON{Name: v.Name, Bytes: v.Bytes, SizeBytes: v.SizeKB * 1024})
 	}
@@ -72,6 +75,15 @@ func engineOrPostgres(engine string) string {
 		return app.BackupPostgres
 	}
 	return engine
+}
+
+// triggerOrTimer is the trigger of a record: the store defaults it when it
+// saves, but a record built by hand may not have one.
+func triggerOrTimer(trigger string) string {
+	if trigger == "" {
+		return store.BackupTriggerTimer
+	}
+	return trigger
 }
 
 // seconds is d in seconds, or nil when d is nil.

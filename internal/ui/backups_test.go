@@ -134,6 +134,11 @@ func TestBackupsTab(t *testing.T) {
 		!strings.Contains(body, "/backups/"+backupID+"/restore") || !strings.Contains(body, `href="#backup-`+backupID+`"`) {
 		t.Errorf("the tab after the backup:\n%s", got)
 	}
+	// Back up now's run says who started it, in its row.
+	byYou := regexp.MustCompile(`(?s)id="backup-` + regexp.QuoteMeta(backupID) + `".*?class="cv-brun-fact">took [^<]* · by you</span>`)
+	if !byYou.MatchString(body) {
+		t.Errorf("the run started with Back up now doesn't say \"by you\":\n%s", body)
+	}
 
 	resp, _ = e.postForm(t, "/apps/duo/backups/"+backupID+"/restore", url.Values{"confirm": {"we"}})
 	if resp.StatusCode != http.StatusUnprocessableEntity || e.Nomad.Job("duo_web_restore") != nil {
@@ -221,6 +226,9 @@ func TestBackupsTabVolume(t *testing.T) {
 	}
 	if strings.Contains(body, "pg_restore") || strings.Contains(got, "Clients connected meanwhile") {
 		t.Error("the tab shows the database words for a volume backup")
+	}
+	if strings.Contains(got, "by you") {
+		t.Error("a run its schedule started says it was started by you")
 	}
 
 	// A wrong name opens the confirmation again with its error.
