@@ -352,3 +352,36 @@ The impeccable critique (snapshot in `.impeccable/critique/`, local) and the des
 10. **Configure's panel head** becomes "Variables & secrets". It counts both: "5 variables · 3 secrets. Values of secrets are never shown here.", or "No variables or secrets."
 11. **After a failed run,** "Restore from …" is secondary and "Back up now" is primary. Otherwise as before.
 12. **Kept-file Configure** still lists the same domain three times. Left for the 015 form's redraw (a CodeAlta task).
+    Resolved on 2026-11-04: see "Ruling 12: each domain once" below.
+
+## Ruling 12: each domain once (2026-11-04)
+
+From the CodeAlta task "Kept-file Configure: show each domain once". The handoff has no Compose
+editor; its Configure lists an app's domains once, in the Domains panel, and edits them on the
+Domains screen. Since 023 the console's Domains page edits a kept-file app too (through its
+overlay, `SetDomainsIf`), with what a host list can't say: the path, the www redirect, Team only,
+the checks and the DNS record. The Compose form's Domains textarea (one host per line) had none of
+that, so saving the kept file from Configure **dropped every domain's options** (constitution IV).
+
+1. **Domains are edited on the Domains page**, for every app that exists (a kept file, a file not
+   kept yet, or an image app deployed from a file). The Compose form of an existing app has **no
+   Domains input**: a preview or a deploy from it keeps each service's domains as the app has them,
+   with their ports and options. New app › Compose file keeps its Domains textarea (there is no
+   Domains page before the app exists).
+2. **The form says so once**, under its "Services" heading, as a `.cv-note` (13px fg-3): "Domains
+   aren't set here: a deploy from this form keeps them as they are. Add and change them on the
+   [Domains page](/apps/{id}/domains)." The file's hint loses "Domains," for an existing app:
+   "Health checks and secrets are set below, after the preview."
+3. **Configure of a kept-file app lists each domain once**, in the Domains panel. The read-only
+   definition loses its Domains row, and the kept-file legend says "the file, then each service's
+   health check, secrets and backup" (no domains).
+4. **The Domains panel offers Add domain** for a kept-file app (the Domains page can add one since
+   023); only a stopped app's panel leaves it out. Critique ruling 5's "kept-file" no longer applies.
+5. **A file that removes a service with domains says it**: the change sentence becomes "Removes
+   service `api`: its copies stop and `api.example.com` stops answering." (each host in mono,
+   joined by ", ", "stop answering" for several). A domain the file can't keep (its port is gone
+   from the service) is refused in the list of refusals with its path
+   (`services.api.domains[0].port`), since the form has no input for it: change it on the Domains
+   page first.
+6. Nothing else of the 015 form is redrawn here; the rest of its duplication (image and ports in
+   both the form's facts and the definition) is left as it is.

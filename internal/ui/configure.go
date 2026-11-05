@@ -142,8 +142,9 @@ type configureTab struct {
 type domainsPanel struct {
 	Rows []domainRow
 	Many bool
-	// CanAdd says the Domains page has a form to add one: not for an app that keeps its
-	// Compose file or is stopped, which would link to a page that can't.
+	// CanAdd says the Domains page has a form to add one: not for a stopped app, whose
+	// page has none. It can add one to an app that keeps its Compose file, through the
+	// file's overlay (feature 023).
 	CanAdd     bool
 	ManageHref string
 	AddHref    string
@@ -465,7 +466,8 @@ func stopTimeoutText(svc app.Service) string {
 
 // servicePanels shows each service of the app as a panel of facts, for the
 // Configure tab of an app that is edited through its Compose file: what the
-// file and its overlay made, read-only. Environment values are shown, as the
+// file and its overlay made, read-only, but for the domains, which the Domains
+// panel lists. Environment values are shown, as the
 // edit form shows them; secrets are not here (their names are in the Secrets
 // section, their values nowhere).
 func servicePanels(a app.App) []defPanel {
@@ -493,11 +495,7 @@ func servicePanels(a app.App) []defPanel {
 			ports = append(ports, p.Name+" → "+strconv.Itoa(p.ContainerPort))
 		}
 		rows = append(rows, defRow{Label: "Ports", Values: ports})
-		var domains []string
-		for _, d := range svc.Domains {
-			domains = append(domains, d.Host)
-		}
-		rows = append(rows, defRow{Label: "Domains", Values: domains})
+		// No Domains row: the Domains panel lists each domain once (feature 021, ruling 12).
 		if svc.Replicas != nil {
 			rows = append(rows, defRow{Label: "Copies", Values: []string{strconv.Itoa(*svc.Replicas)}})
 		}

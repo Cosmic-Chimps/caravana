@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	keptLegendFirst = "This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's domains, health check and secrets. An app deployed from an image is edited field by field instead."
+	keptLegendFirst = "This app was deployed from a Compose file, so Caravana keeps the file and you edit the app through it: the file, then each service's health check, secrets and backup. An app deployed from an image is edited field by field instead."
 	keptLegendCI    = "Its last deploy came from CI (acme/shop). A deploy from CI can replace changes made here, so make lasting changes in the source."
 )
 

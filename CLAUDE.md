@@ -625,6 +625,11 @@ last look.
   32px select.
 - `TestConsoleLab` gained `console-domains` and `console-backup-daily`; `TestNoShipWords` keeps "ship"
   off every page.
+- Ruling 12 (2026-11-04, `page2-app-pages.md` "Ruling 12: each domain once"): the Compose form of an
+  app that exists has no Domains input. `composeDraft.keepDomains` carries each service's domains (the
+  kept overlay's as written, else the app's) with their options, so a deploy from the form never drops
+  a path, www redirect or Team only; domains are edited on the Domains page. Configure lists each domain
+  once (the Domains panel, with Add domain for a kept-file app too). New app › Compose keeps the box.
 
 Feature 022 (`specs/022-schedules`, Phase 2.6) is implemented on branch `022-schedules`: a
 command on a timer in a fresh copy of one service of an app.

@@ -1139,7 +1139,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Copied:  copiedNotice(r, sum),
 		Stopped: sum.StoppedAt != nil,
 		Edit:    editViewOf(sum.App, form, extra.Stale),
-		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.Compose == nil && sum.StoppedAt == nil,
+		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
 		Secrets:   secretsPanelOf(sum.App),
 		Schedules: schedulesPanelOf(id, schedules, newestRuns),

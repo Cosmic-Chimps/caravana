@@ -1369,10 +1369,11 @@ func TestCritiqueRulings(t *testing.T) {
 			t.Errorf("a hint is inside a label: %s", m)
 		}
 	}
-	// A kept-file app and a stopped one have no Add domain link in Configure.
+	// A stopped app has no Add domain link in Configure; a kept-file app has one, since
+	// the Domains page adds to its file (feature 021, ruling 12).
 	k, _ := keptShopEnv(t)
-	if strings.Contains(text(k.pageOf(t, "/apps/shop/configure")), "Add domain") {
-		t.Error("Configure of a kept-file app links to a form that isn't there")
+	if !strings.Contains(text(k.pageOf(t, "/apps/shop/configure")), "Add domain") {
+		t.Error("Configure of a kept-file app has no Add domain link")
 	}
 	if resp, _ := e.postAction(t, "/apps/duet/stop"); resp.StatusCode != http.StatusSeeOther {
 		t.Fatal("stop")

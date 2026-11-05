@@ -166,6 +166,8 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 				v.ShowBackup = ds.hasBackupInput() || strings.Contains(strings.ToLower(svc.Image), "postgres") || len(svc.Volumes) > 0
 			}
 		}
+		// An existing app's domains are edited on its Domains page, not here.
+		v.ShowDomains = v.ShowDomains && d.keptDomains == nil
 		out = append(out, v)
 	}
 	return out
@@ -241,7 +243,8 @@ func (d *composeDraft) dropService(name string) bool {
 }
 
 // composeChanges says which services the file adds to the stored app and
-// which it removes.
+// which it removes. A removed service that has domains says they stop
+// answering, since the form has no domains to show that on (ruling 12).
 func composeChanges(stored, previewed app.App) []sentence {
 	has := func(a app.App, name string) bool {
 		return slices.ContainsFunc(a.Services, func(s app.Service) bool { return s.Name == name })
@@ -254,7 +257,23 @@ func composeChanges(stored, previewed app.App) []sentence {
 	}
 	for _, svc := range stored.Services {
 		if !has(previewed, svc.Name) {
-			out = append(out, sentence{plain("Removes service "), mono(svc.Name), plain(": its copies stop.")})
+			s := sentence{plain("Removes service "), mono(svc.Name), plain(": its copies stop")}
+			for i, dom := range svc.Domains {
+				if i == 0 {
+					s = append(s, plain(" and "))
+				} else {
+					s = append(s, plain(", "))
+				}
+				s = append(s, mono(dom.Host))
+			}
+			switch len(svc.Domains) {
+			case 0:
+			case 1:
+				s = append(s, plain(" stops answering"))
+			default:
+				s = append(s, plain(" stop answering"))
+			}
+			out = append(out, append(s, plain(".")))
 		}
 	}
 	return out
@@ -285,6 +304,10 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 	}
 	switch {
 	case hasPathPrefix(tail, "domains"):
+		if d.keptDomains != nil {
+			// The form has no input for the domains of an existing app: the list of refusals says it.
+			return nil, ""
+		}
 		return &s.Domains, "The domain"
 	case tail == "health.port":
 		return &s.HealthPort, "The check port"
@@ -363,6 +386,7 @@ func keptComposeView(rec store.AppRecord) composeView {
 	v.Draft = draftOf(*rec.Compose)
 	v.Draft.Revision = rec.Revision
 	v.Draft.keepStored(rec.App)
+	v.Draft.keepDomains(rec)
 	v.Draft.ensureServices(rec.App)
 	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
@@ -378,6 +402,7 @@ func notKeptComposeView(rec store.AppRecord) composeView {
 	v.NotKept = true
 	v.Draft = draftFrom(rec.App)
 	v.Draft.File = formField{ID: "compose"}
+	v.Draft.keepDomains(rec)
 	v.Draft.Revision = rec.Revision
 	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
@@ -515,6 +540,10 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 			draft.Services = draftFrom(stored.App).Services
 		}
 		draft.keepStored(stored.App)
+		draft.keepDomains(*stored)
+		// A form drawn before ruling 12 may still post a domains text that didn't
+		// parse; keepDomains dropped it with its error, so judge what is left.
+		ok = !draft.hasError()
 	}
 
 	id := appID
@@ -615,6 +644,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		}
 		draft.Revision = fresh.Revision
 		draft.keepStored(fresh.App)
+		draft.keepDomains(fresh)
 		v.Changes = composeChanges(fresh.App, prev)
 	}
 	v.SecretsNote = slices.ContainsFunc(draft.Services, func(s draftService) bool { return len(s.Secrets) > 0 })
