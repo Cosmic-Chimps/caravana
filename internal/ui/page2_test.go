@@ -536,7 +536,8 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 			t.Errorf("the tab lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "worker has no backup") || strings.Count(body, `action="/apps/gaps/backups/policy"`) != 2 {
+	// Three forms: db's and files' Back up daily, and files' SQLite file instead (feature 029).
+	if strings.Contains(got, "worker has no backup") || strings.Count(body, `action="/apps/gaps/backups/policy"`) != 3 {
 		t.Errorf("a service with neither a database nor a volume got an offer, or a gap has no form:\n%s", got)
 	}
 
@@ -545,7 +546,7 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 	for _, tc := range []struct{ service, engine string }{{"db", app.BackupPostgres}, {"files", app.BackupVolume}} {
 		var f plainForm
 		for _, c := range formsIn(page) {
-			if c.Action == "/apps/gaps/backups/policy" && c.Values.Get("service") == tc.service {
+			if c.Action == "/apps/gaps/backups/policy" && c.Values.Get("service") == tc.service && c.Values.Get("engine") == "" {
 				f = c
 			}
 		}
@@ -592,6 +593,42 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 		resp, body := e.submit(t, f, nil)
 		if resp.StatusCode != http.StatusConflict || !strings.Contains(text(body), changedSincePage) || !reflect.DeepEqual(e.storedApp(t, "gaps"), before) {
 			t.Errorf("a stale post = %d:\n%s", resp.StatusCode, text(body))
+		}
+	})
+
+	// Feature 029: a service with a volume may back up one SQLite file instead.
+	// The form offers the first volume's path; the model checks the file.
+	t.Run("a SQLite file instead", func(t *testing.T) {
+		e := backupsEnv(t, true)
+		a := mk()
+		a.Services = a.Services[1:2]
+		e.seed(t, a, seedDeploy{ID: "g1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+		var f plainForm
+		for _, c := range formsIn(e.pageOf(t, "/apps/gaps/backups")) {
+			if c.Action == "/apps/gaps/backups/policy" && c.Values.Get("engine") == app.BackupSQLite {
+				f = c
+			}
+		}
+		if f.Action == "" || f.Values.Get("file") != "/files/" || f.Values.Get("service") != "files" {
+			t.Fatalf("the SQLite form = %+v", f)
+		}
+
+		resp, body := e.submit(t, f, nil)
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "must be a clean absolute path") {
+			t.Errorf("the offered path as it is = %d:\n%s", resp.StatusCode, text(body))
+		}
+
+		resp, body = e.submit(t, f, url.Values{"file": {"/files/app.db"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("a SQLite file = %d:\n%s", resp.StatusCode, text(body))
+		}
+		want := &app.Backup{Engine: app.BackupSQLite, File: "/files/app.db", Schedule: "0 3 * * *", Keep: 7}
+		if got := e.storedApp(t, "gaps").Services[0].Backup; !reflect.DeepEqual(got, want) {
+			t.Errorf("policy = %+v, want %+v", got, want)
+		}
+		got := text(e.pageOf(t, "/apps/gaps/backups"))
+		if !strings.Contains(got, "files SQLite · /files/app.db") || !strings.Contains(got, "The service keeps running.") {
+			t.Errorf("the backed-up row:\n%s", got)
 		}
 	})
 

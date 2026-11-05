@@ -67,12 +67,19 @@ type backupGap struct {
 	Engine  string
 	// Confirm is what "Back up daily" says it will do, before it does it.
 	Confirm sentence
+	// SQLiteFile is the start of the database path the "SQLite file instead"
+	// form offers (the first volume's path and "/"), for a service with a
+	// volume; empty when the service has none (feature 029).
+	SQLiteFile string
 }
 
 // backupSvcRow is one backed-up service: the row, and what opens under it.
 type backupSvcRow struct {
 	Name   string
 	Volume bool
+	// SQLite says the service backs up one SQLite file (feature 029): it keeps
+	// running during a backup, and stops briefly for a restore.
+	SQLite bool
 	Open   bool
 	What   string // "PostgreSQL", "Volume · /data, /cache"
 	// Mark is the row's mark: rolling while a run is going, failed when the
@@ -121,6 +128,9 @@ type backupRun struct {
 	Clock      clockTime
 	CanRestore bool
 	Volume     bool
+	SQLite     bool
+	// File is the database a sqlite restore replaces, as the service sees it.
+	File string
 	// ByYou says the owner started the run (Back up now), not its schedule.
 	ByYou bool
 }
@@ -183,6 +193,15 @@ func backupEngineFor(svc app.Service) (engine string, ok bool) {
 	return "", false
 }
 
+// engineText is a policy's engine as Configure lists it: the engine, and for
+// a sqlite backup its file ("sqlite /data/app.db").
+func engineText(b app.Backup) string {
+	if b.Engine == app.BackupSQLite && b.File != "" {
+		return b.Engine + " " + b.File
+	}
+	return b.Engine
+}
+
 // mountsOf is the paths a service mounts its volumes at: "/data, /cache".
 func mountsOf(svc app.Service) string {
 	paths := make([]string, len(svc.Volumes))
@@ -227,6 +246,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 				if size, ok := serviceVolumeBytes(svc.Name, volumes); ok {
 					gap.Meta += " · " + humanBytes(size)
 				}
+				gap.SQLiteFile = svc.Volumes[0].Path + "/"
 			} else {
 				gap.Confirm = sentence{plain("Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app.")}
 				gap.Meta = "PostgreSQL · 0 copies kept"
@@ -345,7 +365,7 @@ func causeOf(message string) string {
 // backupRowOf builds one backed-up service's row. runs are its backups, newest first.
 func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.BackupRecord, volumes []service.VolumeView, tab backupsTab) backupSvcRow {
 	b := svc.Backup
-	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, Mark: "idle", LastNever: true,
+	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, SQLite: b.Engine == app.BackupSQLite, Mark: "idle", LastNever: true,
 		Schedule: upperFirst(scheduleText(b.ScheduleOrDefault())), Keep: plural(b.KeepOrDefault(), "backup"),
 		CanBackUp: tab.Destination && !tab.Stopped}
 	if row.Volume {
@@ -363,6 +383,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			}
 			row.VolumeFacts = append(row.VolumeFacts, fact)
 		}
+	} else if row.SQLite {
+		row.What = "SQLite · " + b.File
 	} else {
 		row.What = "PostgreSQL"
 	}
@@ -381,6 +403,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	for i, r := range runs {
 		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
 			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
+			SQLite: r.Engine == app.BackupSQLite, File: b.File,
 			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped,
 			ByYou:      r.Trigger == store.BackupTriggerOwner}
 		if r.Status == store.BackupSucceeded {
@@ -679,6 +702,11 @@ func (s *server) setBackupPolicy(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	policy := app.Backup{Engine: engine, Schedule: app.DefaultBackupSchedule, Keep: app.DefaultBackupKeep}
+	// "Back up a SQLite file instead" (feature 029) names the engine and the
+	// file; the model checks the file, and a refusal is drawn as the notice.
+	if r.PostForm.Get("engine") == app.BackupSQLite {
+		policy.Engine, policy.File = app.BackupSQLite, strings.TrimSpace(r.PostForm.Get("file"))
+	}
 	deployment, err := s.svc.SetBackupPolicy(ctx, id, name, policy, service.Condition{IfRevision: revision}, app.TriggerConsole)
 	if err == nil {
 		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)

@@ -52,7 +52,7 @@ type draftService struct {
 	Name string
 
 	Domains, HealthPath, HealthInterval, HealthTimeout, HealthPort formField
-	BackupEngine, BackupSchedule, BackupKeep                       formField
+	BackupEngine, BackupFile, BackupSchedule, BackupKeep           formField
 
 	// Secrets are the names the service has: the ones the form was drawn
 	// with and the ones just typed. Their inputs are password inputs, always
@@ -108,7 +108,7 @@ func (s *draftService) inputs() []struct {
 	}{
 		{"domains", &s.Domains}, {"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval},
 		{"healthTimeout", &s.HealthTimeout}, {"healthPort", &s.HealthPort},
-		{"backupEngine", &s.BackupEngine}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
+		{"backupEngine", &s.BackupEngine}, {"backupFile", &s.BackupFile}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
 	}
 }
 
@@ -231,6 +231,7 @@ func (s *draftService) read(post url.Values, values map[string]string) bool {
 	s.HealthPath.Value = text("healthPath")
 	s.HealthInterval.Value, s.HealthTimeout.Value, s.HealthPort.Value = text("healthInterval"), text("healthTimeout"), text("healthPort")
 	s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupKeep.Value = text("backupEngine"), text("backupSchedule"), text("backupKeep")
+	s.BackupFile.Value = text("backupFile")
 
 	// The names of the secrets drawn, then the ones typed in the blank rows.
 	prefix := inputName(s.Name, "secret.")
@@ -319,10 +320,14 @@ func (s *draftService) build() bool {
 	}
 
 	switch engine := s.BackupEngine.Value; {
-	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != ""):
-		refuse(&s.BackupEngine, "Choose an engine to set a schedule or how many to keep.")
-	case engine == app.BackupPostgres || engine == app.BackupVolume:
-		b := app.Backup{Engine: engine, Schedule: s.BackupSchedule.Value}
+	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != "" || s.BackupFile.Value != ""):
+		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file or how many to keep.")
+	case engine != app.BackupSQLite && s.BackupFile.Value != "":
+		refuse(&s.BackupFile, "Only the SQLite engine backs up a file; clear it, or choose SQLite file.")
+	case engine == app.BackupPostgres || engine == app.BackupVolume || engine == app.BackupSQLite:
+		// The file's rules are the model's (app.Validate); its errors come back
+		// on this input (fieldFor).
+		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value}
 		if s.BackupKeep.Value != "" {
 			if n, err := strconv.Atoi(s.BackupKeep.Value); err != nil || n < 1 || n > 100 {
 				refuse(&s.BackupKeep, "Enter a whole number from 1 to 100.")
@@ -332,7 +337,7 @@ func (s *draftService) build() bool {
 		}
 		s.overlay.Backup = &b
 	case engine != "":
-		refuse(&s.BackupEngine, "Choose none, PostgreSQL or Volume.")
+		refuse(&s.BackupEngine, "Choose none, PostgreSQL, Volume or SQLite file.")
 	}
 	return ok
 }
@@ -407,7 +412,7 @@ func draftFrom(a app.App) composeDraft {
 			s.HealthPort.Value = strings.TrimPrefix(portNumber(h.Port), ":")
 		}
 		if b := svc.Backup; b != nil {
-			s.BackupEngine.Value, s.BackupSchedule.Value = b.Engine, b.Schedule
+			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
 			s.BackupKeep.Value = numberText(b.Keep)
 		}
 		for _, sec := range svc.Secrets {
@@ -450,7 +455,7 @@ func draftOf(req compose.Request) composeDraft {
 			s.HealthInterval.Value, s.HealthTimeout.Value = secondsText(h.Interval), secondsText(h.Timeout)
 		}
 		if b := ov.Backup; b != nil {
-			s.BackupEngine.Value, s.BackupSchedule.Value = b.Engine, b.Schedule
+			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
 			s.BackupKeep.Value = numberText(b.Keep)
 		}
 		for _, sec := range ov.Secrets {

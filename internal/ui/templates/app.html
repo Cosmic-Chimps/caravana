@@ -146,6 +146,7 @@
 {{if .Gaps}}
 <div class="cv-panel cv-gaps" role="list" aria-label="Services with no backup">
   {{range .Gaps}}
+  {{$gap := .}}
   <div class="cv-row cv-gap cv-confirm-row" role="listitem">
     <span class="cv-mark cv-mark-warning cv-gap-mark" aria-hidden="true"></span>
     <div class="cv-gap-body">
@@ -163,6 +164,23 @@
         <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up daily and deploy</button></div>
       </form>
     </details>
+    {{with .SQLiteFile}}
+    <details class="cv-confirm">
+      <summary class="cv-btn cv-btn-secondary cv-btn-sm">A SQLite file instead</summary>
+      <form method="post" action="/apps/{{$.ID}}/backups/policy" class="cv-confirm-body">
+        <input type="hidden" name="revision" value="{{$.Revision}}">
+        <input type="hidden" name="service" value="{{$gap.Service}}">
+        <input type="hidden" name="engine" value="sqlite">
+        <p>Backs up one SQLite database every day at 03:00 UTC and keeps 7, while the service keeps running. This deploys the app.</p>
+        <label class="cv-fld" for="sqlite-file-{{$gap.Service}}">
+          <span class="cv-label">Database file</span>
+          <input class="cv-field cv-field-mono" id="sqlite-file-{{$gap.Service}}" type="text" name="file" value="{{.}}" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <span class="cv-data-muted cv-hint">Its path inside the service, on one of its volumes.</span>
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up the file daily and deploy</button></div>
+      </form>
+    </details>
+    {{end}}
     {{end}}
   </div>
   {{end}}
@@ -190,6 +208,7 @@
       <span class="cv-bwhen">
         <span class="cv-bline">{{.Schedule}}</span>
         {{if .Volume}}<span class="cv-bnote">The service stops while it runs.</span>{{end}}
+        {{if .SQLite}}<span class="cv-bnote">The service keeps running.</span>{{end}}
         <span class="cv-bmeta">{{.Keep}}</span>
       </span>
       <span class="cv-blast">
@@ -271,7 +290,7 @@
 {{else if not .Gaps}}
 <div class="cv-panel"><div class="cv-empty">
   <p class="cv-empty-title">Nothing to back up.</p>
-  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume), through the API or the Compose request.</p>
+  <p class="cv-empty-text">No service of this app has a database image or a volume. A service can be given a backup policy in its definition (<span class="cv-inline-mono">backup: {engine: postgres}</span> for a database, <span class="cv-inline-mono">backup: {engine: volume}</span> for a service with a volume, <span class="cv-inline-mono">backup: {engine: sqlite, file: /data/app.db}</span> for a SQLite database on a volume), through the API or the Compose request.</p>
 </div></div>
 {{end}}
 
@@ -311,13 +330,14 @@
 {{define "restore-confirm"}}
 <form method="post" action="/apps/{{.AppID}}/backups/{{.Run.ID}}/restore" class="cv-confirm-body">
   {{if .Run.Volume}}<p>The service stops, its volumes are replaced by the files of the backup from {{.When}}, and it starts again. Files added since the backup are deleted.</p>
+  {{else if .Run.SQLite}}<p>The backup from {{.When}} is downloaded and checked while <span class="cv-inline-mono">{{.Run.Service}}</span> runs. Then the service stops for a few seconds while <span class="cv-inline-mono">{{.Run.File}}</span> is replaced, and starts again. Changes made since the backup are lost.</p>
   {{else}}<p>This replaces everything <span class="cv-inline-mono">{{.Run.Service}}</span> holds now with the backup from {{.When}}. Clients connected meanwhile may see errors. It can't be undone, except by restoring another backup.</p>{{end}}
   <label class="cv-fld" for="confirm-{{.Prefix}}{{.Run.ID}}">
     <span class="cv-label">Type <span class="cv-inline-mono">{{.Run.Service}}</span> to confirm</span>
     <input class="cv-field cv-field-mono" id="confirm-{{.Prefix}}{{.Run.ID}}" type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Failed}} autofocus aria-invalid="true"{{end}}>
     {{if .Failed}}<span role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>Type {{.Run.Service}} to confirm.</span></span>{{end}}
   </label>
-  <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">{{if .Run.Volume}}Restore and stop the service while it runs{{else}}Restore {{.Run.Service}}{{end}}</button></div>
+  <div><button type="submit" class="cv-btn cv-btn-danger cv-btn-sm">{{if .Run.Volume}}Restore and stop the service while it runs{{else if .Run.SQLite}}Restore and stop the service briefly{{else}}Restore {{.Run.Service}}{{end}}</button></div>
 </form>
 {{end}}
 

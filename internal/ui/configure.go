@@ -443,7 +443,7 @@ func alsoSet(svc app.Service, s editService) []defRow {
 	}
 	if b := svc.Backup; b != nil {
 		rows = append(rows, defRow{Label: "Backup", Values: []string{
-			fmt.Sprintf("%s, %s, keeping %d", b.Engine, scheduleText(b.ScheduleOrDefault()), b.KeepOrDefault())}})
+			fmt.Sprintf("%s, %s, keeping %d", engineText(*b), scheduleText(b.ScheduleOrDefault()), b.KeepOrDefault())}})
 	}
 	if text := stopTimeoutText(svc); text != "" {
 		rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})
@@ -534,7 +534,7 @@ func servicePanels(a app.App) []defPanel {
 		rows = append(rows, defRow{Label: "Volumes", Values: volumes})
 		if b := svc.Backup; b != nil {
 			rows = append(rows, defRow{Label: "Backup", Values: []string{
-				fmt.Sprintf("%s, %s (UTC), keeping the last %d", b.Engine, b.ScheduleOrDefault(), b.KeepOrDefault())}})
+				fmt.Sprintf("%s, %s (UTC), keeping the last %d", engineText(*b), b.ScheduleOrDefault(), b.KeepOrDefault())}})
 		}
 		if text := stopTimeoutText(svc); text != "" {
 			rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})

@@ -110,12 +110,12 @@ green for the packages it touched.
 
 ## Phase 5: API and console
 
-- [ ] T017 `api/openapi.yaml` per `contracts/api.md`, version 0.32.0; the API's engine handling and
+- [x] T017 `api/openapi.yaml` per `contracts/api.md`, version 0.32.0; the API's engine handling and
   tests (`internal/api/backups*_test.go`), the openapi sync test.
-- [ ] T018 Compose form: engine option `sqlite` "SQLite file (the service keeps running)" and a
+- [x] T018 Compose form: engine option `sqlite` "SQLite file (the service keeps running)" and a
   "Database file" field (`backupFile`), parsed, prefilled from a kept overlay, errors on
   `services[i].backup.file` drawn on it; "Choose none, PostgreSQL, Volume or SQLite file." Tests.
-- [ ] T019 Backups tab: a service with a volume and no policy keeps "Back up daily" (volume) and gains
+- [x] T019 Backups tab: a service with a volume and no policy keeps "Back up daily" (volume) and gains
   a small form "Back up a SQLite file instead" (a Database file field, prefilled with the first
   volume's path and "/", posting to `/apps/{id}/backups/policy` with `engine=sqlite&file=…`;
   `setBackupPolicy` accepts them, and a field error on `.file` is drawn on that field). Runs and

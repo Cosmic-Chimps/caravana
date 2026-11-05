@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.31.0
+  version: 0.32.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -2874,10 +2874,11 @@ paths:
       description: |
         Starts a backup of a service with a backup policy. It runs in the background: list the
         backups to follow it. 409 `backup_running` while a backup or restore of that service
-        runs (for a `volume` backup, also while one runs for another service of the app);
-        409 `no_backup_destination` when none is set; 409 `no_running_copy` when a `volume`
-        backup finds no running copy to stop. A `volume` backup stops the service for the
-        time it takes and starts it again; the job and its version don't change. If the copy
+        runs (for a `volume` or `sqlite` backup, also while one runs for another service of
+        the app); 409 `no_backup_destination` when none is set; 409 `no_running_copy` when a
+        `volume` or `sqlite` backup finds no running copy. A `volume` backup stops the service
+        for the time it takes and starts it again; a `sqlite` backup runs beside the service,
+        which keeps running; the job and its version don't change. If the copy
         never picked up the request, the answer is 202 with a record already `failed`, and
         its `message` says why.
       tags: [backups]
@@ -2929,8 +2930,10 @@ paths:
         For a database, replaces what the service's database holds with the backup
         (`pg_restore --clean`). Clients connected meanwhile may see errors. For a `volume`
         backup, stops the service, replaces its volumes with the backup's files and starts it
-        again; 409 `no_running_copy` when there is no copy to stop. It runs in the
-        background: list the backups to follow the restore. One restore per service at a time.
+        again; 409 `no_running_copy` when there is no copy to stop. For a `sqlite` backup,
+        downloads and checks the backup while the service runs, then stops it only to put
+        the file in place, and starts it again; a backup that can't be downloaded or fails its
+        check stops nothing. It runs in the background: list the backups to follow the restore. One restore per service at a time.
       tags: [backups]
       responses:
         "202":
@@ -4277,10 +4280,32 @@ components:
         `invalid_field` on `services[i].backup.engine`), and its schedule must be a cron
         expression Caravana can run. Every volume belongs to one service, so no other service
         shares the one that is archived, and no service is named `caravana-volumes`.
+
+        `sqlite`: a consistent copy of the SQLite database named by `file`, made with
+        `VACUUM INTO` while the service keeps running, checked with `PRAGMA quick_check`,
+        gzipped and uploaded as `<ts>.sqlite.gz`. A restore downloads and checks the backup
+        first, then stops the service for the few seconds it takes to put the file in place
+        (keeping the old file's owner and mode, and removing its `-wal`, `-shm` and
+        `-journal`). In WAL mode the copy never blocks the app's writers; with a rollback
+        journal they wait while it reads. The service must mount a volume (else 400
+        `invalid_field` on `services[i].backup.engine`), its schedule must be a cron
+        expression Caravana can run, and no service is named `caravana-sqlite` or
+        `caravana-upload`.
       properties:
         engine:
           type: string
-          enum: [postgres, volume]
+          enum: [postgres, volume, sqlite]
+        file:
+          type: string
+          maxLength: 1024
+          examples: ["/data/app.db"]
+          description: |
+            `sqlite` only, and required there: the database's absolute path as the service
+            sees it. It must be inside one of the service's volumes (not the mount itself)
+            and that volume must not be `readOnly`; a clean path of letters, digits and
+            `. _ - @ + /`; not ending in `-wal`, `-shm` or `-journal`; not under the
+            volume's `.caravana-restore`. Set with another engine, or broken, it is 400
+            `invalid_field` on `services[i].backup.file`.
         schedule:
           type: string
           description: Five-field cron, in UTC. Leave it out for `0 3 * * *`.
@@ -4663,7 +4688,7 @@ components:
         service: {type: string}
         engine:
           type: string
-          enum: [postgres, volume]
+          enum: [postgres, volume, sqlite]
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -4675,19 +4700,23 @@ components:
             (the console's Back up now, or the API). Runs recorded before API 0.31.0 read `timer`.
         bytes:
           type: integer
-          description: The dump's size, or for a `volume` backup the sum of its archives.
+          description: |
+            The dump's size; for a `volume` backup the sum of its archives; for a `sqlite`
+            backup the gzipped database's.
         message:
           type: string
           description: |
-            Why it failed, as the dump or the upload said. A succeeded `volume` backup may
-            carry a warning here, for instance that retention couldn't remove an old backup.
+            Why it failed, as the dump, the copy or the upload said. A succeeded `volume` or
+            `sqlite` backup may carry a warning here, for instance that retention couldn't
+            remove an old backup.
         startedAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
         stoppedSeconds:
           type: number
           description: |
-            `volume` backups only: how long the service was stopped, once measured. Absent
-            while the run is going, and when Caravana couldn't measure it.
+            `volume` backups only (a `sqlite` backup doesn't stop the service): how long the
+            service was stopped, once measured. Absent while the run is going, and when
+            Caravana couldn't measure it.
         volumes:
           type: array
           description: "`volume` backups only: one archive per volume."
@@ -4782,7 +4811,7 @@ components:
         backupId: {type: string}
         engine:
           type: string
-          enum: [postgres, volume]
+          enum: [postgres, volume, sqlite]
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -4791,7 +4820,7 @@ components:
         finishedAt: {type: string, format: date-time}
         stoppedSeconds:
           type: number
-          description: "`volume` restores only: how long the service was stopped, once measured."
+          description: "`volume` and `sqlite` restores only: how long the service was stopped, once measured."
 
     BackupList:
       type: object
@@ -7448,8 +7477,8 @@ components:
       description: |
         `backup_running`: a backup or restore of this service is running; try again when it
         ends. `no_backup_destination`: no backup destination is set. `no_running_copy`: a
-        backup or restore of a service with a `volume` backup, and the service has no running
-        copy to stop (it was never deployed, is still starting, or has stopped).
+        backup or restore of a service with a `volume` or `sqlite` backup, and the service has
+        no running copy (it was never deployed, is still starting, or has stopped).
         `app_stopped`: the app is stopped (`stopApp`); start it first.
       content:
         application/json:

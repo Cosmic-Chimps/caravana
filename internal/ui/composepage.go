@@ -112,6 +112,8 @@ var composeSpecs = map[string]inputSpec{
 	"healthPort":     {Name: "healthPort", Numeric: true, Label: "Check port", Hint: "The container port to check."},
 	"backupSchedule": {Name: "backupSchedule", Label: "Backup schedule (UTC)", Placeholder: "0 3 * * *", Hint: "A cron expression with five fields."},
 	"backupKeep":     {Name: "backupKeep", Numeric: true, Label: "Backups to keep", Placeholder: "7"},
+	"backupFile": {Name: "backupFile", Label: "Database file", Placeholder: "/data/app.db",
+		Hint: "SQLite file only: the database's path inside the service, on one of its volumes."},
 }
 
 // Inputs lists the plain inputs the service has, in the order they show.
@@ -137,9 +139,11 @@ func (s composeServiceView) Inputs() []editInput {
 	return out
 }
 
-// BackupInputs are the schedule and keep inputs, which follow the engine's.
+// BackupInputs are the file, schedule and keep inputs, which follow the
+// engine's.
 func (s composeServiceView) BackupInputs() []editInput {
 	return []editInput{
+		{inputSpec: composeSpecs["backupFile"], Field: &s.BackupFile},
 		{inputSpec: composeSpecs["backupSchedule"], Field: &s.BackupSchedule},
 		{inputSpec: composeSpecs["backupKeep"], Field: &s.BackupKeep},
 	}
@@ -176,7 +180,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 // hasBackupInput says the service has something in its backup inputs, or an
 // error on them, so they must be drawn whatever the image is.
 func (s draftService) hasBackupInput() bool {
-	for _, f := range []formField{s.BackupEngine, s.BackupSchedule, s.BackupKeep} {
+	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep} {
 		if f.Value != "" || len(f.Error) > 0 {
 			return true
 		}
@@ -321,6 +325,8 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 		return &s.BackupSchedule, "The schedule"
 	case tail == "backup.keep":
 		return &s.BackupKeep, "The number to keep"
+	case tail == "backup.file":
+		return &s.BackupFile, "The database file"
 	case hasPathPrefix(tail, "backup"):
 		return &s.BackupEngine, "The backup"
 	case strings.HasPrefix(tail, "secrets["):

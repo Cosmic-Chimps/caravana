@@ -265,12 +265,15 @@ func commandLine(words []string) string {
 }
 
 // builtinCommand is a built-in schedule's command in words: "pg_dump →
-// backups", "volumes → backups"; bucket is the backup destination's ("" when
+// backups", "volumes → backups", "sqlite copy → backups"; bucket is the backup destination's ("" when
 // none is set).
 func builtinCommand(engine, bucket string) string {
 	what := "pg_dump"
-	if engine == app.BackupVolume {
+	switch engine {
+	case app.BackupVolume:
 		what = "volumes"
+	case app.BackupSQLite:
+		what = "sqlite copy"
 	}
 	if bucket == "" {
 		return what + ", no destination set"
