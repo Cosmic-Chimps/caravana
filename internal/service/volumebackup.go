@@ -230,7 +230,8 @@ func (s *Service) startVolumeRun(run volumeRun) {
 }
 
 // startVolumeBackup starts a backup of one service's volumes now, and returns
-// its record, running. trigger ("manual" or "schedule") is for the log. See
+// its record, running. trigger (store.BackupTriggerOwner or Timer) is recorded
+// on the run. See
 // prepareVolumeRun for what it checks and holds; a copy that never shows the
 // request is restarted all the same.
 func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger string) (store.BackupRecord, error) {
@@ -243,7 +244,7 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 		return store.BackupRecord{}, err
 	}
 	rec := store.BackupRecord{AppID: appID, ID: run.req.ID, Service: service, JobID: volumeJobID(appID, service, run.req.TS),
-		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: run.started}
+		Engine: app.BackupVolume, Status: store.BackupRunning, StartedAt: run.started, Trigger: trigger}
 
 	if err := s.store.SaveBackup(ctx, rec); err != nil {
 		s.clearVolumeRequest(appID, service)

@@ -42,7 +42,7 @@ func TestBuiltinSchedules(t *testing.T) {
 	for i, b := range []store.BackupRecord{
 		{AppID: "pg", ID: "pg-1", Service: "db", JobID: "pg_db_backup/periodic-1", Status: store.BackupSucceeded, Bytes: 10},
 		{AppID: "pg", ID: "pg-2", Service: "db", JobID: "pg_db_backup/periodic-2", Status: store.BackupFailed,
-			Message: "pg_dump: connection refused"},
+			Message: "pg_dump: connection refused", Trigger: store.BackupTriggerOwner},
 		{AppID: "pg", ID: "pg-3", Service: "db", JobID: "pg_db_backup/periodic-3", Status: store.BackupRunning},
 		{AppID: "kuma", ID: "kuma-1", Service: "kuma", Engine: "volume", Status: store.BackupSucceeded, Bytes: 20},
 	} {
@@ -112,16 +112,16 @@ func TestBuiltinSchedules(t *testing.T) {
 		}
 		checkSchema(t, doc, raw, "ScheduleRunList")
 		runs := decodeAs[struct{ Runs []service.ScheduleRun }](t, raw).Runs
-		want := []struct{ id, status, err string }{
-			{"pg-3", "running", ""}, {"pg-2", "failed", "pg_dump: connection refused"}, {"pg-1", "ok", ""},
+		want := []struct{ id, status, err, trigger string }{
+			{"pg-3", "running", "", "timer"}, {"pg-2", "failed", "pg_dump: connection refused", "owner"}, {"pg-1", "ok", "", "timer"},
 		}
 		if len(runs) != len(want) {
 			t.Fatalf("runs = %s, want %d", raw, len(want))
 		}
 		for i, w := range want {
 			r := runs[i]
-			if r.ID != w.id || r.Status != w.status || r.Error != w.err || r.ScheduleID != "backup:pg:db" || r.OutputKept {
-				t.Errorf("run %d = %+v, want %s %s %q", i, r, w.id, w.status, w.err)
+			if r.ID != w.id || r.Status != w.status || r.Error != w.err || r.Trigger != w.trigger || r.ScheduleID != "backup:pg:db" || r.OutputKept {
+				t.Errorf("run %d = %+v, want %s %s %q by %s", i, r, w.id, w.status, w.err, w.trigger)
 			}
 		}
 		if runs[0].DurationSeconds != nil || runs[2].DurationSeconds == nil || *runs[2].DurationSeconds != 42 {

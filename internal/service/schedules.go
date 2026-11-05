@@ -807,6 +807,15 @@ func (s *Service) builtinSchedule(ctx context.Context, rec store.AppRecord, svc 
 	return sc, nil
 }
 
+// backupTrigger is a backup's trigger as a run's: the two words are the same,
+// and a record without one is the timer's.
+func backupTrigger(t string) string {
+	if t == store.BackupTriggerOwner {
+		return RunTriggerOwner
+	}
+	return RunTriggerTimer
+}
+
 // backupRuns are a service's backups as the runs of its built-in schedule,
 // newest first: ok, failed or running, with the backup's message as the
 // error of a failed one, and never any output.
@@ -821,7 +830,7 @@ func (s *Service) backupRuns(ctx context.Context, rec store.AppRecord, svc app.S
 		if b.Service != svc.Name {
 			continue
 		}
-		r := ScheduleRun{ID: b.ID, ScheduleID: id, Trigger: RunTriggerTimer, StartedAt: b.StartedAt,
+		r := ScheduleRun{ID: b.ID, ScheduleID: id, Trigger: backupTrigger(b.Trigger), StartedAt: b.StartedAt,
 			FinishedAt: b.FinishedAt, Command: []string{}}
 		switch b.Status {
 		case store.BackupSucceeded:

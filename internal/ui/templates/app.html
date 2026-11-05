@@ -221,7 +221,7 @@
           <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
           <span role="cell" class="cv-brun-when">{{template "clock" .Clock}}</span>
           <span role="cell" class="cv-brun-fact">{{.Size}}</span>
-          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
+          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if .ByYou}}{{if or .Took .Stopped}} · {{end}}by you{{end}}</span>
           <span role="cell" class="cv-brun-act">
             {{if .CanRestore}}
             <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>

@@ -122,7 +122,7 @@ func (s *Service) runDueVolumeBackups(ctx context.Context, noted map[string]stri
 				s.noteOnce(noted, key, "skipped:"+last.String(), "a volume backup slot was missed and is too old to run; waiting for the next one",
 					"app", rec.App.ID, "service", svc.Name, "schedule", svc.Backup.ScheduleOrDefault())
 			case due:
-				if _, err := s.backUpNow(ctx, rec.App.ID, svc.Name, "schedule"); err != nil {
+				if _, err := s.backUpNow(ctx, rec.App.ID, svc.Name, store.BackupTriggerTimer); err != nil {
 					s.noteOnce(noted, key, "failed:"+slot.String()+err.Error(), "scheduled volume backup didn't start; it is tried again until its slot is an hour old",
 						"app", rec.App.ID, "service", svc.Name, "slot", slot, "error", err)
 				}

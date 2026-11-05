@@ -121,6 +121,8 @@ type backupRun struct {
 	Clock      clockTime
 	CanRestore bool
 	Volume     bool
+	// ByYou says the owner started the run (Back up now), not its schedule.
+	ByYou bool
 }
 
 // stripCell is one day of the restore-points strip. Kind is healthy (a day with
@@ -379,7 +381,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 	for i, r := range runs {
 		run := backupRun{ID: r.ID, Service: r.Service, Status: r.Status, Mark: runMark(r.Status), Message: r.Message,
 			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
-			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped}
+			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped,
+			ByYou:      r.Trigger == store.BackupTriggerOwner}
 		if r.Status == store.BackupSucceeded {
 			run.Size = humanBytes(r.Bytes)
 		}

@@ -79,7 +79,7 @@ func TestRunDueVolumeBackups(t *testing.T) {
 
 		l.svc.runDueVolumeBackups(ctx, noted)
 		got := l.settled(id)
-		if got.Status != store.BackupSucceeded || !got.StartedAt.Equal(day(15, 3, 20)) {
+		if got.Status != store.BackupSucceeded || !got.StartedAt.Equal(day(15, 3, 20)) || got.Trigger != store.BackupTriggerTimer {
 			t.Fatalf("the scheduled backup = %+v", got)
 		}
 		l.released()
