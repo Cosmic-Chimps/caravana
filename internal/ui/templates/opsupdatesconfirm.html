@@ -1,0 +1,28 @@
+{{/* The confirmation page of an update of caravana (/ops/updates/caravana?version=, feature 030): what the
+     update does, and the one button that asks for it, in the Stop page's shape. A refusal takes the panel's and the
+     button's place and says why, with only the way back. Takes an upConfirmPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    <a href="/ops/updates" class="cv-btn cv-btn-secondary">Back to Updates</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    {{range .Paras}}<p class="text-base text-fg-1">{{template "sentence" .}}</p>{{end}}
+    <p class="text-sm text-fg-2">{{.Note}}</p>
+  </div>
+  <form method="post" action="/ops/updates/caravana" class="cv-actions">
+    <input type="hidden" name="version" value="{{.Version}}">
+    <button type="submit" class="cv-btn cv-btn-primary">Update to <span class="cv-uptok">{{.Version}}</span></button>
+    <a href="/ops/updates" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

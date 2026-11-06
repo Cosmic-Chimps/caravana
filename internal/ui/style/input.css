@@ -1965,6 +1965,19 @@
   .cv-upcheckedrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .cv-upchecked { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
 
+  /* Updating caravana from here (feature 030). The caravana row's action sits 12px under the notes. The run
+     panel is a banner row (.cv-dmbanner): its meta is the dense mono line, and the log path, which is long,
+     breaks anywhere. The wrappers that hold the swapped regions add no box of their own, so the page's
+     gap between its sections stays the same. The Automatic row's controls wrap, so at 390px the hour
+     select goes under the checkbox. */
+  .cv-upwrap { display: contents; }
+  .cv-upaction { margin-top: 12px; }
+  .cv-uprunmeta { margin: 0; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-uplog { overflow-wrap: anywhere; word-break: break-all; color: var(--color-fg-1); }
+  .cv-upauto { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .cv-upautoat { display: inline-flex; align-items: center; gap: 8px; font: 400 14px/1.5 var(--font-sans); color: var(--color-fg-2); }
+  .cv-upautoat label { cursor: default; }
+
   /* Past updates: grid 14px 80px 1fr 1fr, gap 18, min-height 46, padding 8px 20px. */
   .cv-uppast { padding: 0; }
   .cv-uppastrow { display: grid; grid-template-columns: 14px 80px minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: center; min-height: 46px; padding: 8px 20px; border-top: 1px solid var(--color-line-1); }
@@ -2111,6 +2124,7 @@
    ("1 · Install the waiting updates:"), Copy moves to the title's row, and the box takes the row under
    them. The body and the box's row dissolve (display: contents) so that the step is one grid. */
 @container cvupd (max-width: 479.98px) {
+  .cv-upautoat { flex-basis: 100%; }
   .cv-upstep { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 20px; }
   .cv-upstepbody, .cv-upcmdrow { display: contents; }
   .cv-upstepn { position: static; width: auto; }

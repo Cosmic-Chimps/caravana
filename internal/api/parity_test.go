@@ -237,6 +237,13 @@ var consoleParity = map[string]parity{
 	"GET /parts/ops/updates":     {ops: []string{"getUpdates", "listAttention"}},
 	"POST /ops/updates/check":    {ops: []string{"checkUpdates"}},
 	"POST /ops/updates/settings": {ops: []string{"putUpdateSettings"}},
+	// Updating caravana from the page (feature 030). The confirmation page reads what the update changes
+	// (getUpdates: the versions and the pins) and asks whether it would be accepted; its post is requestUpdate. The
+	// run panel's part reads the run (getUpdates), and the main region and Past updates too once it has finished
+	// (with listAttention for the banners).
+	"GET /ops/updates/caravana":  {ops: []string{"getUpdates"}},
+	"POST /ops/updates/caravana": {ops: []string{"requestUpdate"}},
+	"GET /parts/ops/updates/run": {ops: []string{"getUpdates", "listAttention"}},
 }
 
 // postsThatOnlyRead are operations that are POSTs because they take a body and
