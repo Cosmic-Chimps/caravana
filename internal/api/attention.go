@@ -47,6 +47,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 		out.Mount, out.Holds, out.Level = it.Mount, it.Holds, string(it.Level)
 		out.UsedPercent, out.FreeBytes = &it.UsedPercent, &it.FreeBytes
 	}
+	if it.Kind == service.AttentionCaravanaUpdateFailed {
+		out.Level = string(it.Level) // failed for a run that failed, else warning
+	}
 	return out
 }
 

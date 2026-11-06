@@ -109,6 +109,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
 		ev.Title = osTitle(it.Kind)
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionCaravanaUpdateFailed:
+		ev.Title = updateFailedTitle
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -238,7 +241,7 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/schedules#schedule-" + subject
 	case AttentionDiskNearlyFull:
 		return "/monitoring#host"
-	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
+	case AttentionOSRebootRequired, AttentionOSSecurityUpdates, AttentionCaravanaUpdateFailed:
 		return "/ops/updates"
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
@@ -360,6 +363,9 @@ func problemKey(it AttentionItem) string {
 // the schedule kinds, the host of the domain kinds, the mount of a disk, else
 // nothing.
 func problemSubject(it AttentionItem) string {
+	if it.UpdateRunID != "" {
+		return it.UpdateRunID
+	}
 	if it.ScheduleID != "" {
 		return it.ScheduleID
 	}

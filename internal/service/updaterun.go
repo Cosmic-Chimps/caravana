@@ -620,6 +620,41 @@ func (s *Service) SetAutoUpdate(ctx context.Context, enabled bool, hour int) err
 	return nil
 }
 
+// UpdateSettings is what the owner can change about updates; a nil field keeps its value.
+type UpdateSettings struct {
+	CheckEnabled   *bool // ask GitHub for new releases (the release check)
+	AutoUpdate     *bool // install patch releases by themselves
+	AutoUpdateHour *int  // the UTC hour, 0-23
+}
+
+// PutUpdateSettings stores the settings that are set. An hour outside 0-23 is an *app.FieldError on
+// `autoUpdateHour` and nothing is stored.
+func (s *Service) PutUpdateSettings(ctx context.Context, in UpdateSettings) error {
+	if in.AutoUpdateHour != nil && (*in.AutoUpdateHour < 0 || *in.AutoUpdateHour > 23) {
+		return app.NewFieldError("autoUpdateHour", "must be an hour from 0 to 23")
+	}
+	if in.CheckEnabled != nil {
+		if err := s.SetReleaseCheck(ctx, *in.CheckEnabled); err != nil {
+			return err
+		}
+	}
+	if in.AutoUpdate != nil || in.AutoUpdateHour != nil {
+		rc, err := s.store.ReleaseCheck(ctx)
+		if err != nil {
+			return err
+		}
+		enabled, hour := rc.AutoUpdate, rc.AutoUpdateHour
+		if in.AutoUpdate != nil {
+			enabled = *in.AutoUpdate
+		}
+		if in.AutoUpdateHour != nil {
+			hour = *in.AutoUpdateHour
+		}
+		return s.SetAutoUpdate(ctx, enabled, hour)
+	}
+	return nil
+}
+
 // ListUpdateRuns returns the update runs, newest first, at most limit (20 when limit is under 1).
 func (s *Service) ListUpdateRuns(ctx context.Context, limit int) ([]store.UpdateRun, error) {
 	if limit < 1 {

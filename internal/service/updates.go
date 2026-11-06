@@ -217,6 +217,13 @@ type CaravanaUpdate struct {
 	// empty without a Latest.
 	Install      string
 	CheckEnabled bool
+	// Updater says whether an update can be started from here (feature 030), Run is the update run
+	// to show and Auto the automatic setting.
+	Updater UpdaterView
+	// Run is the open update run, else the newest run that finished within the last 24 hours,
+	// else nil.
+	Run  *store.UpdateRun
+	Auto AutoUpdateView
 	// CheckedAt is the last attempt, successful or not; zero before the first.
 	CheckedAt time.Time
 	// CheckedOKAt is the last attempt GitHub answered well; zero when none has. A later failed
@@ -225,6 +232,28 @@ type CaravanaUpdate struct {
 	// CheckError is why the last attempt failed, in Caravana's words; empty when
 	// it worked.
 	CheckError string
+}
+
+// UpdaterView is the state of the server's updater: the root timer that runs an update the console
+// asked for.
+type UpdaterView struct {
+	// Installed is true when the installer's marker is there.
+	Installed bool
+	// Unavailable is why RequestUpdate would answer ErrUpdateUnavailable right now, in Caravana's
+	// words; empty when it wouldn't.
+	Unavailable string
+}
+
+// AutoUpdateView is the automatic-update setting and what it will do.
+type AutoUpdateView struct {
+	Enabled bool
+	Hour    int // UTC, 0-23
+	// Next is when the next automatic request is made: set when it is on and a patch release
+	// is out that never had a run, with the check on and the updater installed; zero otherwise.
+	Next time.Time
+	// Blocked says why automatic updates can't run here, in Caravana's words ("It needs the release
+	// check: ..."), whether the setting is on or not; empty when nothing stands in the way.
+	Blocked string
 }
 
 // VersionPin is one part Caravana's installer pins and the versions around a
@@ -292,11 +321,14 @@ type RebootView struct {
 // UpdateEvent is one row of Past updates.
 type UpdateEvent struct {
 	At time.Time
-	// Kind is "version" (Caravana changed version), "os_packages" (a package run)
-	// or "boot" (the server restarted).
+	// Kind is "version" (Caravana changed version), "os_packages" (a package run),
+	// "boot" (the server restarted) or "update" (an update run that finished, feature 030).
 	Kind   string
 	Text   string
 	Detail string
+	// State is an update row's run state (updated, rolled_back, failed, refused or lost), for
+	// the mark; empty for the other kinds.
+	State string
 }
 
 // Updates reads the Updates page: the release row from the store, the OS from
@@ -307,7 +339,12 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 	if err != nil {
 		return UpdatesView{}, err
 	}
-	events, err := s.store.HostEvents(ctx, "", historyShown)
+	// More events than are shown: the version changes an update run explains are dropped below.
+	events, err := s.store.HostEvents(ctx, "", 2*historyShown)
+	if err != nil {
+		return UpdatesView{}, err
+	}
+	runs, err := s.store.UpdateRuns(ctx, historyShown)
 	if err != nil {
 		return UpdatesView{}, err
 	}
@@ -320,6 +357,9 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 
 	var v UpdatesView
 	v.Caravana = s.caravanaUpdate(rc, node)
+	if err := s.fillUpdater(ctx, &v.Caravana, rc, runs, now); err != nil {
+		return UpdatesView{}, err
+	}
 	v.OS = s.osUpdates(state, node, now)
 	s.sampler.mu.Lock()
 	if run := s.sampler.rebootRun; run.Found && v.OS.Reboot.Required {
@@ -329,7 +369,7 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 		}
 	}
 	s.sampler.mu.Unlock()
-	v.History = updateHistory(events, node)
+	v.History = updateHistory(events, runs, node)
 
 	u := &s.updates
 	u.mu.Lock()
@@ -417,9 +457,65 @@ func (s *Service) osUpdates(state hostos.State, node *HostNode, now time.Time) O
 	return o
 }
 
-// updateHistory turns host events into Past updates' rows, newest first.
-func updateHistory(events []store.HostEvent, node *HostNode) []UpdateEvent {
+// fillUpdater adds what feature 030 shows on the Caravana row: the updater's state, the update
+// run to show and the automatic setting. runs are the newest runs, newest first.
+func (s *Service) fillUpdater(ctx context.Context, c *CaravanaUpdate, rc store.ReleaseCheck, runs []store.UpdateRun, now time.Time) error {
+	c.Updater.Installed = s.UpdaterInstalled()
+	switch {
+	case !hostos.IsReleaseVersion(s.runningVersion):
+		c.Updater.Unavailable = reasonDevBuild
+	case !c.Updater.Installed:
+		c.Updater.Unavailable = updaterMissing(rc.LatestTag)
+	}
+
+	// The run to show: the open one, else the newest that finished within a day.
+	open := false
+	for i := range runs {
+		r := runs[i]
+		if !store.UpdateRunFinal(r.State) {
+			c.Run, open = &r, true
+			break
+		}
+	}
+	if !open {
+		finished, ok, err := s.store.LatestFinishedUpdateRun(ctx)
+		if err != nil {
+			return err
+		}
+		if ok && !finished.FinishedAt.IsZero() && now.Sub(finished.FinishedAt) < updateRecent {
+			c.Run = &finished
+		}
+	}
+
+	c.Auto = AutoUpdateView{Enabled: rc.AutoUpdate, Hour: rc.AutoUpdateHour}
+	switch {
+	case !hostos.IsReleaseVersion(s.runningVersion):
+		c.Auto.Blocked = reasonAutoDevBuild
+	case !rc.Enabled:
+		c.Auto.Blocked = reasonAutoNeedsCheck
+	case !c.Updater.Installed:
+		c.Auto.Blocked = reasonAutoNeedsUpdater
+	}
+	in, err := s.autoInput(ctx, rc, now)
+	if err != nil {
+		return err
+	}
+	if next, ok := autoUpdateNext(in); ok {
+		c.Auto.Next = next
+	}
+	return nil
+}
+
+// updateHistory turns host events and finished update runs into Past updates' rows, newest first,
+// at most historyShown. A version change that an update run which went through explains (the same
+// version, within an hour) is left out: the run's own row tells it.
+func updateHistory(events []store.HostEvent, runs []store.UpdateRun, node *HostNode) []UpdateEvent {
 	var out []UpdateEvent
+	for _, r := range runs {
+		if store.UpdateRunFinal(r.State) {
+			out = append(out, updateRunRow(r))
+		}
+	}
 	firstBoot := true
 	for _, e := range events {
 		row := UpdateEvent{At: e.At.UTC(), Kind: e.Kind}
@@ -431,6 +527,9 @@ func updateHistory(events []store.HostEvent, node *HostNode) []UpdateEvent {
 			}
 			if d.From == "" {
 				continue // the first version recorded is where the history starts, not a change
+			}
+			if explainedByRun(e.At, d.To, runs) {
+				continue
 			}
 			row.Text = "caravana " + d.From + " → " + d.To
 		case store.HostEventOSPackages:
@@ -459,7 +558,113 @@ func updateHistory(events []store.HostEvent, node *HostNode) []UpdateEvent {
 		}
 		out = append(out, row)
 	}
+	slices.SortStableFunc(out, func(a, b UpdateEvent) int { return b.At.Compare(a.At) })
+	if len(out) > historyShown {
+		out = out[:historyShown]
+	}
 	return out
+}
+
+// explainedByRun says a version change to `to` at `at` is told by an update run that went through:
+// an `updated` run for that version that finished within an hour of it.
+func explainedByRun(at time.Time, to string, runs []store.UpdateRun) bool {
+	for _, r := range runs {
+		if r.State == store.UpdateUpdated && r.Version == to && !r.FinishedAt.IsZero() &&
+			at.Sub(r.FinishedAt).Abs() <= time.Hour {
+			return true
+		}
+	}
+	return false
+}
+
+// updateRunRow is a finished update run as a row of Past updates: "caravana 0.16.0 → 0.17.0" with
+// who asked and how it went.
+func updateRunRow(r store.UpdateRun) UpdateEvent {
+	at := r.FinishedAt
+	if at.IsZero() {
+		at = r.RequestedAt
+	}
+	row := UpdateEvent{At: at.UTC(), Kind: "update", State: r.State, Text: "caravana " + r.Version}
+	if r.FromVersion != "" {
+		row.Text = "caravana " + r.FromVersion + " → " + r.Version
+	}
+	switch r.State {
+	case store.UpdateUpdated:
+		row.Detail = updateTriggerWords(r.Trigger) + " · " + runDuration(r)
+	case store.UpdateRolledBack:
+		row.Detail = "rolled back"
+		if short := shortReason(r.Reason); short != "" {
+			row.Detail += " · " + short
+		}
+	case store.UpdateFailed:
+		row.Detail = "failed"
+		if short := shortReason(r.Reason); short != "" {
+			row.Detail += " · " + short
+		}
+	case store.UpdateRefused:
+		row.Detail = "refused"
+	case store.UpdateLost:
+		row.Detail = "didn't finish"
+	}
+	return row
+}
+
+// updateTriggerWords says who asked, in the words of a deployment's trigger.
+func updateTriggerWords(trigger string) string {
+	switch trigger {
+	case store.UpdateByConsole:
+		return "from the console"
+	case store.UpdateByAPI:
+		return "through the API"
+	case store.UpdateByAutomatic:
+		return "automatic"
+	}
+	return "by " + trigger
+}
+
+// runDuration is how long a run took, from its start (else its request) to its end, as "40 s",
+// "2 min" or "1 min 40 s".
+func runDuration(r store.UpdateRun) string {
+	from := r.StartedAt
+	if from.IsZero() {
+		from = r.RequestedAt
+	}
+	d := max(r.FinishedAt.Sub(from), 0).Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d s", int(d/time.Second))
+	case d < time.Hour:
+		if sec := int(d/time.Second) % 60; sec != 0 {
+			return fmt.Sprintf("%d min %d s", int(d/time.Minute), sec)
+		}
+		return fmt.Sprintf("%d min", int(d/time.Minute))
+	}
+	h, m := int(d/time.Hour), int(d/time.Minute)%60
+	if m == 0 {
+		return fmt.Sprintf("%d h", h)
+	}
+	return fmt.Sprintf("%d h %d min", h, m)
+}
+
+// shortReason is a reason cut at its first sentence break (a semicolon, or a full stop that ends a
+// word: version numbers keep theirs), at most 60 characters, with "…" when something was left out.
+func shortReason(reason string) string {
+	reason = strings.TrimSpace(reason)
+	cut := len(reason)
+	for i := 0; i < len(reason); i++ {
+		if reason[i] == ';' || (reason[i] == '.' && (i+1 == len(reason) || reason[i+1] == ' ')) {
+			cut = i
+			break
+		}
+	}
+	short, more := reason[:cut], cut < len(reason) && strings.TrimSpace(strings.TrimLeft(reason[cut:], ".;")) != ""
+	if r := []rune(short); len(r) > 60 {
+		short, more = strings.TrimSpace(string(r[:60])), true
+	}
+	if more {
+		short += "…"
+	}
+	return short
 }
 
 func packagesWord(n int) string {

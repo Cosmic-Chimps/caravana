@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -101,6 +102,11 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	svc.SetTraefikMetricsURL(cfg.TraefikMetricsURL)
 	svc.SetDockerRoot(cfg.DockerRoot)
 	svc.SetHostRoot(hostos.Dir(cfg.HostRoot))
+	// Update from the console (feature 030): the request is a file in the data directory, the only
+	// place Caravana can write that the root updater reads; the updater's own directory is read-only here.
+	svc.SetReleaseURL(cfg.ReleaseURL)
+	svc.SetUpdaterDir(cfg.UpdaterDir)
+	svc.SetUpdateRequestPath(filepath.Join(cfg.DataDir, "update-request"))
 	// Package names come from the host's own pro command, on demand; pro keeps its
 	// cache under HOME, which is the data directory (the service's own home isn't writable).
 	svc.SetProRunner(hostos.Pro{Home: cfg.DataDir})

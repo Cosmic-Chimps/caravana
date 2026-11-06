@@ -141,6 +141,8 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 		return rebootParts(it)
 	case AttentionOSSecurityUpdates:
 		return parts(securitySentence(it.Updates, it.Security))
+	case AttentionCaravanaUpdateFailed:
+		return updateFailedParts(it)
 	case AttentionDomainDNSElsewhere:
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")
@@ -171,6 +173,7 @@ var AttentionKinds = []AttentionKind{
 	AttentionScheduleFailed, AttentionScheduleSkipping,
 	AttentionDomainDNSElsewhere, AttentionDomainCertExpiring,
 	AttentionDiskNearlyFull, AttentionOSRebootRequired, AttentionOSSecurityUpdates,
+	AttentionCaravanaUpdateFailed,
 }
 
 // slashed is "/web" for a service name, "" for none.

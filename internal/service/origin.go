@@ -50,6 +50,11 @@ func WithTokenName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, tokenNameKey{}, name)
 }
 
+// TokenName is the name of the API token the request came with, as the API put it in ctx
+// (WithTokenName); "" for a signed-in session and anything else. A caller that records who asked
+// for something that isn't a deploy (an update of Caravana) reads it here.
+func TokenName(ctx context.Context) string { return tokenNameFrom(ctx) }
+
 // tokenNameFrom is the name WithTokenName put in ctx, or "".
 func tokenNameFrom(ctx context.Context) string {
 	name, _ := ctx.Value(tokenNameKey{}).(string)

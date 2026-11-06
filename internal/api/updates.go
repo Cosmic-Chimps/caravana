@@ -3,9 +3,12 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // The updates codes (feature 027 page 3).
@@ -13,6 +16,11 @@ const (
 	codeCheckTooSoon     = "check_too_soon"
 	codeCheckDisabled    = "check_disabled"
 	codeCheckUnavailable = "check_unavailable"
+
+	// The update codes (feature 030).
+	codeUpdateUnavailable = "update_unavailable"
+	codeUpdateRunning     = "update_running"
+	codeUpdateNotOffered  = "update_not_offered"
 )
 
 // updatesError maps the check refusals to their codes; mapError calls it.
@@ -24,6 +32,12 @@ func updatesError(err error) *Error {
 		return &Error{Status: http.StatusConflict, Code: codeCheckDisabled, Field: "what", Message: err.Error()}
 	case errors.Is(err, service.ErrCheckUnavailable):
 		return &Error{Status: http.StatusConflict, Code: codeCheckUnavailable, Field: "what", Message: err.Error()}
+	case errors.Is(err, service.ErrUpdateUnavailable):
+		return &Error{Status: http.StatusConflict, Code: codeUpdateUnavailable, Field: "version", Message: err.Error()}
+	case errors.Is(err, service.ErrUpdateRunning):
+		return &Error{Status: http.StatusConflict, Code: codeUpdateRunning, Message: err.Error()}
+	case errors.Is(err, service.ErrUpdateNotOffered):
+		return &Error{Status: http.StatusConflict, Code: codeUpdateNotOffered, Field: "version", Message: err.Error()}
 	}
 	return nil
 }
@@ -51,6 +65,47 @@ type caravanaUpdateJSON struct {
 	CheckedAt    *time.Time `json:"checkedAt"`
 	CheckedOKAt  *time.Time `json:"checkedOkAt"`
 	CheckError   string     `json:"checkError"`
+	// Updating from the console (feature 030).
+	Updater    updaterJSON    `json:"updater"`
+	Run        *updateRunJSON `json:"run"`
+	AutoUpdate autoUpdateJSON `json:"autoUpdate"`
+}
+
+// updaterJSON is schema UpdaterState.
+type updaterJSON struct {
+	Installed   bool   `json:"installed"`
+	Unavailable string `json:"unavailable"`
+}
+
+// autoUpdateJSON is schema AutoUpdate. Next is null unless an automatic request is due.
+type autoUpdateJSON struct {
+	Enabled bool       `json:"enabled"`
+	Hour    int        `json:"hour"`
+	Next    *time.Time `json:"next"`
+}
+
+// updateRunJSON is schema UpdateRun. StartedAt and FinishedAt are null until known; Log is where
+// the updater keeps the installer's output on the server (root only), empty until it started the run.
+type updateRunJSON struct {
+	ID          string     `json:"id"`
+	Version     string     `json:"version"`
+	FromVersion string     `json:"fromVersion"`
+	Trigger     string     `json:"trigger"`
+	TokenName   string     `json:"tokenName"`
+	State       string     `json:"state"`
+	Reason      string     `json:"reason"`
+	RequestedAt time.Time  `json:"requestedAt"`
+	StartedAt   *time.Time `json:"startedAt"`
+	FinishedAt  *time.Time `json:"finishedAt"`
+	Log         string     `json:"log"`
+}
+
+func toUpdateRunJSON(r store.UpdateRun) updateRunJSON {
+	return updateRunJSON{
+		ID: r.ID, Version: r.Version, FromVersion: r.FromVersion, Trigger: r.Trigger, TokenName: r.TokenName,
+		State: r.State, Reason: r.Reason, RequestedAt: r.RequestedAt.UTC(),
+		StartedAt: timePtr(r.StartedAt), FinishedAt: timePtr(r.FinishedAt), Log: r.Log,
+	}
 }
 
 type pinsJSON struct {
@@ -113,6 +168,8 @@ type updateEventJSON struct {
 	Kind   string    `json:"kind"`
 	Text   string    `json:"text"`
 	Detail string    `json:"detail"`
+	// State is an update run's final state, for the kind "update"; left out for the others.
+	State string `json:"state,omitempty"`
 }
 
 type checkingJSON struct {
@@ -134,6 +191,12 @@ func toCaravanaUpdateJSON(c service.CaravanaUpdate) caravanaUpdateJSON {
 		Current: c.Current, Latest: c.Latest, ReleasedAt: timePtr(c.ReleasedAt), URL: c.URL, Notes: []string{},
 		PinsText: c.PinsText, Install: c.Install, CheckEnabled: c.CheckEnabled, CheckedAt: timePtr(c.CheckedAt),
 		CheckedOKAt: timePtr(c.CheckedOKAt), CheckError: c.CheckError,
+		Updater:    updaterJSON{Installed: c.Updater.Installed, Unavailable: c.Updater.Unavailable},
+		AutoUpdate: autoUpdateJSON{Enabled: c.Auto.Enabled, Hour: c.Auto.Hour, Next: timePtr(c.Auto.Next)},
+	}
+	if c.Run != nil {
+		run := toUpdateRunJSON(*c.Run)
+		out.Run = &run
 	}
 	for _, n := range c.Notes {
 		out.Notes = append(out.Notes, n.String())
@@ -180,7 +243,7 @@ func toUpdatesJSON(v service.UpdatesView) updatesJSON {
 		out.OS.Reboot.Packages = []string{}
 	}
 	for _, h := range v.History {
-		out.History = append(out.History, updateEventJSON{At: h.At.UTC(), Kind: h.Kind, Text: h.Text, Detail: h.Detail})
+		out.History = append(out.History, updateEventJSON{At: h.At.UTC(), Kind: h.Kind, Text: h.Text, Detail: h.Detail, State: h.State})
 	}
 	return out
 }
@@ -197,28 +260,40 @@ func (s *server) getUpdates(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// updateSettingsRequest is schema UpdateSettingsRequest. CheckEnabled is a
-// pointer so that leaving it out is told from false.
+// updateSettingsRequest is schema UpdateSettingsRequest. Every field is a pointer so that leaving
+// one out (keep it) is told from false and from 0.
 type updateSettingsRequest struct {
-	CheckEnabled *bool `json:"checkEnabled"`
+	CheckEnabled   *bool `json:"checkEnabled"`
+	AutoUpdate     *bool `json:"autoUpdate"`
+	AutoUpdateHour *int  `json:"autoUpdateHour"`
 }
 
-// putUpdateSettings answers PUT /v1/updates/settings: whether Caravana asks
-// GitHub for new releases. The answer is the Caravana block as it is now. A
-// body without a boolean checkEnabled is 422 invalid_field, naming it.
+// putUpdateSettings answers PUT /v1/updates/settings: whether Caravana asks GitHub for new releases
+// and whether it installs patch releases by itself, and at which UTC hour. Every field is optional,
+// and a missing one keeps its value. The answer is the Caravana block as it is now. A field of the
+// wrong type, or an hour outside 0-23, is 422 invalid_field, naming it.
 func (s *server) putUpdateSettings(w http.ResponseWriter, r *http.Request) error {
 	var in updateSettingsRequest
 	if err := decodeJSON(r, &in); err != nil {
 		var e *Error
-		if errors.As(err, &e) && e.Field == "checkEnabled" && (e.Code == codeInvalidField) {
-			return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "checkEnabled", Message: "must be true or false"}
+		if errors.As(err, &e) && e.Code == codeInvalidField {
+			switch e.Field {
+			case "checkEnabled", "autoUpdate":
+				return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: e.Field, Message: "must be true or false"}
+			case "autoUpdateHour":
+				return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: e.Field, Message: "must be an hour from 0 to 23"}
+			}
 		}
 		return err
 	}
-	if in.CheckEnabled == nil {
-		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "checkEnabled", Message: "is required: true or false"}
+	err := s.svc.PutUpdateSettings(r.Context(), service.UpdateSettings{
+		CheckEnabled: in.CheckEnabled, AutoUpdate: in.AutoUpdate, AutoUpdateHour: in.AutoUpdateHour,
+	})
+	var fe *app.FieldError
+	if errors.As(err, &fe) {
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: fe.Field, Message: fe.Message}
 	}
-	if err := s.svc.SetReleaseCheck(r.Context(), *in.CheckEnabled); err != nil {
+	if err != nil {
 		return err
 	}
 	v, err := s.svc.Updates(r.Context())
@@ -226,6 +301,62 @@ func (s *server) putUpdateSettings(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	writeJSON(w, http.StatusOK, toUpdatesJSON(v).Caravana)
+	return nil
+}
+
+// requestUpdateRequest is schema RequestUpdateRequest.
+type requestUpdateRequest struct {
+	Version string `json:"version"`
+}
+
+// requestUpdate answers POST /v1/updates/runs: asks the server's updater to install a newer Caravana
+// release. It records the request and answers 202 with the run in the state requested; the
+// updater picks the request up within a minute, and the run is followed in getUpdates
+// (caravana.run) and listUpdateRuns. The trigger is "console" for a signed-in session and "api" for
+// an API token, whose name is recorded.
+//
+// 422 invalid_field (version) when it isn't X.Y.Z[-suffix]; 409 update_unavailable on a
+// development build or a host without the updater, update_running while a run is open,
+// update_not_offered when the version isn't the newest release seen or isn't newer than the
+// running one. Deploy tokens are refused.
+func (s *server) requestUpdate(w http.ResponseWriter, r *http.Request) error {
+	var in requestUpdateRequest
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	in.Version = strings.TrimSpace(in.Version)
+	if in.Version == "" {
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: "version", Message: "is required, such as 0.17.0"}
+	}
+	trigger, name := store.UpdateByConsole, ""
+	if tn := service.TokenName(r.Context()); tn != "" {
+		trigger, name = store.UpdateByAPI, tn
+	}
+	run, err := s.svc.RequestUpdate(r.Context(), in.Version, trigger, name)
+	var fe *app.FieldError
+	if errors.As(err, &fe) {
+		return &Error{Status: http.StatusUnprocessableEntity, Code: codeInvalidField, Field: fe.Field, Message: fe.Message}
+	}
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusAccepted, toUpdateRunJSON(run))
+	return nil
+}
+
+// listUpdateRuns answers GET /v1/updates/runs: the update runs, newest first, at most 20.
+func (s *server) listUpdateRuns(w http.ResponseWriter, r *http.Request) error {
+	runs, err := s.svc.ListUpdateRuns(r.Context(), 20)
+	if err != nil {
+		return err
+	}
+	out := struct {
+		Runs []updateRunJSON `json:"runs"`
+	}{Runs: make([]updateRunJSON, 0, len(runs))}
+	for _, run := range runs {
+		out.Runs = append(out.Runs, toUpdateRunJSON(run))
+	}
+	writeJSON(w, http.StatusOK, out)
 	return nil
 }
 
