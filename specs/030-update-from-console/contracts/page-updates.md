@@ -152,3 +152,30 @@ At 127.0.0.1:7070 with a fake updater directory (`CARAVANA_UPDATER_DIR`), a fake
 panel at 1440, 640 and 390 and without script; the confirmation page with and without pin changes; the
 refusals; the automatic row in each of its states; Past updates with runs; the nav and /ops needs-you
 item after a rolled-back run. On a VM, `install-test.sh` runs the real thing.
+
+## Review rulings (2026-11-06, build 8af3568)
+
+Checked live at 1440 and 500 (the narrowest the browser window took; nothing scrolls sideways) on a
+staged 0.18.0 with a fake 0.18.1 release and a fake updater folder, the status file written by hand:
+requested, running, Caravana stopped for 12 s and started again, then rolled back. The page came back
+by itself after the restart and drew the rollback; Past updates, the needs-you item on Overview (◆,
+Open updates) and the Activity line were right.
+
+Verified: the confirmation page (no pin change), the requested and running panels, the poll, the
+automatic row (off, the hour select), Past updates' run row, the departures the builder listed (own
+regions for the banners and the panel, one Save through `form=`, "on · nothing due yet").
+
+Fixes, made in the same pass:
+1. The version in **Update to 0.18.1…** and the confirmation page's button sat in a nowrap span, which the
+   button's gap drew as "Update to  0.18.1  …". Plain text in buttons.
+2. `/ops/updates#run` stopped the panel under the sticky top bar: `scroll-margin-top` as the log rows have.
+3. A rollback's explanation repeated the line ("…; 0.18.0 runs again, with its data as it was"). The panel
+   and Activity show the installer's reason up to its first ";" (`service.RollbackCause`).
+4. The log sentence is its own line, so the long path doesn't run on from the reason.
+5. After a failed run of the newest release the panel's **Try again…** is the one way to ask again: the
+   caravana row leaves its button out.
+6. While a run is open, How to apply's caravana step no longer points at the row's button: "Run the
+   installer of `0.18.1` on the server:".
+
+Not checked here: a release with pin changes (the table test covers its sentences) and the dark theme
+(no new colour).

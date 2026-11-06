@@ -673,6 +673,9 @@ func updateAction(c service.CaravanaUpdate) *upUpdate {
 		return nil
 	case c.Run != nil && !store.UpdateRunFinal(c.Run.State):
 		return nil
+	case c.Run != nil && c.Run.State != store.UpdateUpdated && c.Run.Version == c.Latest && c.Updater.Unavailable == "":
+		// The run panel offers Try again… for this version: one way to ask for it again.
+		return nil
 	case !c.Updater.Installed:
 		return &upUpdate{Version: c.Latest, Missing: true}
 	}
@@ -865,7 +868,10 @@ func upApplyOf(v service.UpdatesView) upApply {
 		title := sentence{plain("Run the installer of "), mono(c.Latest),
 			plain(". It upgrades caravana, and Nomad and Traefik when their versions change; your apps keep running, and it puts "),
 			mono(c.Current), plain(" back if "), mono(c.Latest), plain(" fails its health check.")}
-		if c.Updater.Installed {
+		if c.Run != nil && !store.UpdateRunFinal(c.Run.State) {
+			// An update is under way (the run panel): the row has no button now.
+			title = sentence{plain("Run the installer of "), mono(c.Latest), plain(" on the server:")}
+		} else if c.Updater.Installed {
 			// The updater is there: the console can ask for it, and the installer is the other way.
 			title = sentence{plain("Update from the caravana row above, or run the installer of "), mono(c.Latest), plain(" on the server:")}
 		} else {
@@ -1027,6 +1033,8 @@ func upRunOf(now time.Time, v service.UpdatesView) *upRun {
 		out.Explain += " in " + service.UpdateRunDuration(*r) + "."
 	case store.UpdateRolledBack:
 		out.Line = sentence{plain("caravana "), ver, plain(" didn't start, so "), part{Text: r.FromVersion, Mono: true, Nowrap: true}, plain(" runs again with its data as it was.")}
+		// The installer's sentence goes on to say the old version runs again, which the line says.
+		out.Reason = service.RollbackCause(r.Reason)
 		out.Log = r.Log
 	case store.UpdateFailed:
 		out.Line = sentence{plain("The update to caravana "), ver, plain(" failed.")}

@@ -365,7 +365,10 @@ func updateRunWords(r store.ActivityRow) (string, []TextPart) {
 		}
 		return ActivityHealthy, parts("caravana was updated from ", mono(from), " to ", mono(to), " "+how+".")
 	case store.UpdateRolledBack:
-		return ActivityWarning, parts("The update to caravana ", mono(to), " was rolled back"+reason())
+		if cause := RollbackCause(r.Error); cause != "" {
+			return ActivityWarning, parts("The update to caravana ", mono(to), " was rolled back: "+cause)
+		}
+		return ActivityWarning, parts("The update to caravana ", mono(to), " was rolled back.")
 	case store.UpdateFailed:
 		return ActivityFailed, parts("The update to caravana ", mono(to), " failed"+reason())
 	case store.UpdateRefused:

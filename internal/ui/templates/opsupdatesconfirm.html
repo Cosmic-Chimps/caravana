@@ -20,7 +20,7 @@
   </div>
   <form method="post" action="/ops/updates/caravana" class="cv-actions">
     <input type="hidden" name="version" value="{{.Version}}">
-    <button type="submit" class="cv-btn cv-btn-primary">Update to <span class="cv-uptok">{{.Version}}</span></button>
+    <button type="submit" class="cv-btn cv-btn-primary">Update to {{.Version}}</button>
     <a href="/ops/updates" class="cv-btn cv-btn-secondary">Cancel</a>
   </form>
   {{end}}

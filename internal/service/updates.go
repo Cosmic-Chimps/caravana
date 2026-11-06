@@ -652,6 +652,18 @@ func runDuration(r store.UpdateRun) string {
 
 // shortReason is a reason cut at its first sentence break (a semicolon, or a full stop that ends a
 // word: version numbers keep theirs), at most 60 characters, with "…" when something was left out.
+// RollbackCause is a rolled-back run's reason up to its first ";": the installer's sentence is
+// "Caravana 0.17.0 didn't answer its health check within 60 s; 0.16.0 runs again, with its data as it
+// was", and the run panel and Activity already say the second half.
+func RollbackCause(reason string) string {
+	cause, _, _ := strings.Cut(strings.TrimSpace(reason), ";")
+	cause = strings.TrimRight(strings.TrimSpace(cause), ".")
+	if cause == "" {
+		return ""
+	}
+	return cause + "."
+}
+
 func shortReason(reason string) string {
 	reason = strings.TrimSpace(reason)
 	cut := len(reason)

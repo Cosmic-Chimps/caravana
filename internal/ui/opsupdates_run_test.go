@@ -84,7 +84,7 @@ func TestUpdateRunPanelStates(t *testing.T) {
 			"Updating caravana 0.15.0 → 0.16.0. The console stops for about a minute while the new version starts. This page comes back by itself; your apps keep running."}},
 		{store.UpdateUpdated, nil, "healthy", []string{"caravana 0.16.0 is running. Updated from 0.15.0 in 1 min 40 s."}},
 		{store.UpdateRolledBack, func(r *store.UpdateRun) { r.Reason, r.Log = reason, runLog }, "warning", []string{
-			"caravana 0.16.0 didn't start, so 0.15.0 runs again with its data as it was. " + reason + ". " + logSentence}},
+			"caravana 0.16.0 didn't start, so 0.15.0 runs again with its data as it was. caravana 0.16.0 didn't answer its health check within 60 s. " + logSentence}},
 		{store.UpdateFailed, func(r *store.UpdateRun) { r.Reason, r.Log = "The installer exited with status 1.", runLog }, "failed", []string{
 			"The update to caravana 0.16.0 failed. The installer exited with status 1. " + logSentence}},
 		{store.UpdateRefused, func(r *store.UpdateRun) { r.Reason = "0.16.0 isn't a release version." }, "warning", []string{
@@ -259,7 +259,7 @@ func TestUpdateRunPart(t *testing.T) {
 }
 
 func TestCaravanaRowAction(t *testing.T) {
-	update := `<a href="/ops/updates/caravana?version=0.16.0" class="cv-btn cv-btn-primary cv-btn-sm">Update to <span class="cv-uptok">0.16.0</span>…</a>`
+	update := `<a href="/ops/updates/caravana?version=0.16.0" class="cv-btn cv-btn-primary cv-btn-sm">Update to 0.16.0…</a>`
 
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-clean", updater: true})
 	releaseFound(t, e)
@@ -278,8 +278,20 @@ func TestCaravanaRowAction(t *testing.T) {
 	if strings.Contains(body, update) || strings.Contains(body, "/ops/updates/caravana?version=") {
 		t.Error("the Update action stays while a run is open")
 	}
+	if apply := text(regionBetween(t, body, `id="apply"`, `id="how"`)); !strings.Contains(apply, "Run the installer of 0.16.0 on the server:") ||
+		strings.Contains(apply, "caravana row above") {
+		t.Errorf("How to apply's caravana step while a run is open:\n%s", apply)
+	}
 	dropRun(t, e, runID1)
-	// A finished run leaves it (and Try again) in place.
+	// A rolled-back run of this version: the run panel's Try again… is the one way to ask again.
+	putRun(t, e, store.UpdateRolledBack, nil)
+	_, body = e.get(t, "/ops/updates")
+	if strings.Contains(regionBetween(t, body, `data-up="release"`, `id="apply"`), "/ops/updates/caravana?version=") ||
+		!strings.Contains(body, "Try again…") {
+		t.Error("after a rolled-back run the row still has its Update action, or the panel has no Try again")
+	}
+	dropRun(t, e, runID1)
+	// A finished run leaves it in place.
 	putRun(t, e, store.UpdateUpdated, nil)
 	_, body = e.get(t, "/ops/updates")
 	if !strings.Contains(body, update) {
@@ -335,7 +347,7 @@ func TestUpdateConfirmPage(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<form method="post" action="/ops/updates/caravana" class="cv-actions">`, `<input type="hidden" name="version" value="0.16.0">`,
-		`class="cv-btn cv-btn-primary">Update to <span class="cv-uptok">0.16.0</span></button>`,
+		`class="cv-btn cv-btn-primary">Update to 0.16.0</button>`,
 		`<a href="/ops/updates" class="cv-btn cv-btn-secondary">Cancel</a>`,
 		`<span class="cv-inline-mono text-fg-1 cv-nowrap">0.15.0 → 0.16.0</span>`,
 	} {

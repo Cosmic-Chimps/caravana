@@ -43,7 +43,7 @@
   <div class="cv-upnotes">
     {{if .Notes}}<ul class="cv-upnotelist">{{range .Notes}}{{$note := .}}<li{{if .Bullet}} class="cv-upnote-b"{{end}}>{{if .Bullet}}<span class="cv-upbullet" aria-hidden="true">•</span>{{end}}<span>{{with $note.Lead}}<span class="cv-upnotelead">{{template "sentence" .}}</span>{{if $note.Colon}}:{{end}}{{if $note.Text}} {{end}}{{end}}{{template "sentence" $note.Text}}</span></li>{{end}}</ul>{{end}}
     {{with .Link}}<a href="{{.Href}}" class="cv-upreleaselink">{{.Label}}</a>{{end}}
-    {{with .Update}}<div class="cv-upaction">{{if .Missing}}<p class="cv-uphint">To update from here, run the installer of <span class="cv-inline-mono text-fg-1 cv-nowrap">{{.Version}}</span> once on the server (<a href="#apply" class="cv-upreleaselink">How to apply</a>). It adds the updater.</p>{{else}}<a href="{{.Href}}" class="cv-btn cv-btn-primary cv-btn-sm">Update to <span class="cv-uptok">{{.Version}}</span>…</a>{{end}}</div>{{end}}
+    {{with .Update}}<div class="cv-upaction">{{if .Missing}}<p class="cv-uphint">To update from here, run the installer of <span class="cv-inline-mono text-fg-1 cv-nowrap">{{.Version}}</span> once on the server (<a href="#apply" class="cv-upreleaselink">How to apply</a>). It adds the updater.</p>{{else}}<a href="{{.Href}}" class="cv-btn cv-btn-primary cv-btn-sm">Update to {{.Version}}…</a>{{end}}</div>{{end}}
     {{with .Hint}}<p class="cv-uphint">{{template "sentence" .}}</p>{{end}}
     {{with .Names}}{{template "up-names" .}}{{end}}
   </div>
@@ -113,7 +113,8 @@
   <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{.MarkWord}}: </span></span>
   <div class="cv-dmbanner-text">
     <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
-    {{if or .Explain .Reason .Log}}<p class="cv-dmbanner-explain">{{.Explain}}{{.Reason}}{{if .Log}} The whole log is on the server: <code class="cv-inline-mono cv-uplog">sudo cat {{.Log}}</code>{{end}}</p>{{end}}
+    {{if or .Explain .Reason}}<p class="cv-dmbanner-explain">{{.Explain}}{{.Reason}}</p>{{end}}
+    {{with .Log}}<p class="cv-dmbanner-explain">The whole log is on the server: <code class="cv-inline-mono cv-uplog">sudo cat {{.}}</code></p>{{end}}
     <p class="cv-uprunmeta">{{template "sentence" .Meta}}{{template "up-time" .Asked}}</p>
   </div>
   {{with .Again}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Try again…</a>{{end}}
