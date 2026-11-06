@@ -1519,6 +1519,18 @@ column in that order, so Needs you is never under a long table. The Needs-you ac
 Developer home) has a minimum width that fits "View deployment", the button at its right edge, so the times
 line up from row to row.
 
+### Updating caravana (feature 030)
+The Updates page asks for caravana's own update in two steps, and neither runs anything: **Update to
+0.17.0…** (a primary small link in the caravana row's notes) opens a **confirmation page** in the Stop
+page's shape (the headline, one panel of plain sentences about what restarts, then the primary button
+and Cancel), and its post only records a request that the server's root updater picks up. What the update
+is doing is the **run panel**, a banner row (the domains banner's grid: a 9px mark, the sentence, the
+explanation in fg-2, a mono meta line in fg-3, and Try again… in the action column after a failure) placed
+between the needs-you banners and Available. While a run is open it asks for itself every 5 s and ignores
+failed requests, since the console restarts during the update; without script the page has a 15 s
+`noscript` refresh, only then. The panel says the outcome for 24 hours (● updated, ◆ rolled back,
+refused or not finished, ■ failed), so the page never needs a banner of its own for the needs-you item.
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

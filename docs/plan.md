@@ -235,7 +235,7 @@ screen. Features are numbered when they are specified, in about this order:
 | Placement | `PlacementScreen`, `SchedulerScreen` | Why a copy can't be placed, with the free memory per server and the ways to fix it (use less, add a server, undo); the scheduler's settings in plain words (spread or pack, priorities per environment, crash and server-loss rules); placement rules per app (only on, never two on one server, servers with a label). Nomad affinity, spread and constraints behind the words. |
 | Proxy and routing | `ProxyScreen` | A proxy per server with req/s, p95 and errors, take one out of rotation, routes with healthy copies per domain, and the defaults for every route (HTTP to HTTPS, timeout, upload size, requests per visitor, health check, slow start). |
 | Certificates | `CertsScreen` | The cluster parts: the cluster CA and the server and client certificates Caravana renews (Nomad TLS), and wildcard certificates through a DNS provider (`SettingsScreen` › DNS providers), which previews need later. |
-| Updates | `UpdatesScreen` | 027 built the one-host page (the notice, the OS's pending updates and reboot, how to apply them by hand); applying is not built. The backlog's "Updates from the console", cluster-wide: available updates (Caravana, Nomad, OS security fixes), the plan server by server with what stops, an update window, past runs. |
+| Updates | `UpdatesScreen` | 027 built the one-host page (the notice, the OS's pending updates and reboot, how to apply them by hand); 030 applies caravana's own update on that host. The backlog's "Updates from the console", cluster-wide: available updates (Caravana, Nomad, OS security fixes), the plan server by server with what stops, an update window, past runs. |
 | Operator logs | `LogsScreen` (Operator mode) | 024 plus the scheduler, Docker and Caravana sources per server. |
 | Capacity | `CapacityScreen` | 025 across servers: memory by server and project, "sizes worth changing" from 30-day peaks, what still fits per size, the reserved-memory trend and the date it runs out. |
 | A shell into a server | `NodeScreen` has "Open shell" for a server only | The terminal into a copy shipped in 2.6 (020.6); this is the same page for the server itself (SSH from Caravana to the node, over the cluster's keys). Exposing a TCP port (a ufw rule beside Traefik) belongs here too. |
@@ -479,7 +479,7 @@ meta, so Nomad starts new copies as canaries hidden from Traefik until healthy, 
 stops the old ones. That is a new job version per restart, and an app with a volume (one copy,
 stop-then-start) can't be hitless either way.
 
-### Updates from the console (the notice: done in 027; updating: Phase 3)
+### Updates from the console (the notice: done in 027; updating one host: done in 030)
 
 Added 2026-10-11. Today Caravana is updated by running the install command again on the
 server (feature 012: newer versions upgrade with rollback, apps keep running). Nothing tells the
@@ -493,8 +493,16 @@ owner a new version exists. Two steps:
    console never gets root: Caravana's service user can't touch `/opt/caravana` or systemd, so a
    compromised console can't take over the host.
 
-Phase 3 adds nodes over SSH with the same install, so updating Nomad and Caravana on every node
-belongs with it.
+Step 2 is built for one host in 030 (`specs/030-update-from-console`, 2026-11-06), moved out of
+Phase 3 at the maintainer's request (2026-11-04): on one server it needs no Phase 3 piece. The request
+holds an ID and a version; `caravana-update.timer` runs `/usr/local/libexec/caravana-update` as root
+every minute, which validates the version, downloads the release's `SHA256SUMS`, `install.sh` and
+tarball, checks them and runs the installer; its status file says how it went, the Updates page follows
+the run across Caravana's restart, and a rolled-back or failed run is a needs-you item and a message.
+Automatic updates (patch releases at a set UTC hour) are off by default.
+
+Phase 3 adds nodes over SSH with the same install, so updating Nomad and Caravana on every node, one
+at a time with the update window, stays with it.
 
 ### Bring your own Nomad (Phase 4)
 
@@ -544,7 +552,7 @@ names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
 | 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
 | 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 4 (`VariablesScreen` grid) |
 | 13 | Requests log | Traefik's access log, filterable, with a cleanup schedule | Traefik's JSON access log, shown as per-app request counts and status mix. Watch disk use | none | 2.6 (025 reads Traefik's metrics), 3 (the log itself) |
-| 14 | Updates and host upkeep | "Check for updates", a cleanup button, Let's Encrypt email in settings | "Updates from the console" above. Nomad's docker driver removes unused images by default, so a daily image cleanup is covered; 020's build cache will need its own pruning | `UpdatesScreen` | 2.6 (027, the notice), 3 (updating) |
+| 14 | Updates and host upkeep | "Check for updates", a cleanup button, Let's Encrypt email in settings | "Updates from the console" above. Nomad's docker driver removes unused images by default, so a daily image cleanup is covered; 020's build cache will need its own pruning | `UpdatesScreen` | 2.6 (027, the notice; 030, updating one host), 3 (updating every node) |
 | 15 | List ergonomics | Filter, type and status selects, tags, bulk select | The Apps page has no filter. The design feedback (5.2) already asks at what size one appears | none | 2.6 (021) |
 
 Not to copy: the Traefik file editor, the Docker containers, images, networks and events pages

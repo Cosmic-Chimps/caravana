@@ -89,7 +89,8 @@ Never offered, with or without `--allow-actions`:
 - Run a command and the terminal (their output can hold secrets, and whatever a tool returns
   goes to the agent's model);
 - tokens, webhooks, registries, the backup destination and notification settings;
-- writing a whole new definition or Compose file.
+- writing a whole new definition or Compose file;
+- updating Caravana itself, or its update settings.
 
 Do those in the console.
 
