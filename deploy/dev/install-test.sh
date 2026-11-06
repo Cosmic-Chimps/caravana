@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests the installer (deploy/install/install.sh) end to end on a throwaway Lima VM: a fresh
 # Ubuntu 24.04, nothing else. It installs, reruns, upgrades with an app answering throughout,
-# rolls back a release that doesn't come up, refuses an older one, and uninstalls with the app
-# still answering. Then it deletes the VM. About 10 minutes.
+# rolls back a release that doesn't come up, updates from the API through the root updater (a
+# crafted request runs nothing, a release is installed, a broken one is rolled back), refuses an
+# older one, and uninstalls with the app still answering. Then it deletes the VM. About 20 minutes.
 #
 #   deploy/dev/install-test.sh          run it (KEEP=1 keeps the VM for a look afterwards)
 #
@@ -145,18 +146,240 @@ watch_app() {
 
 api() { vm_curl -H "Authorization: Bearer $TOKEN" "$@"; }
 
+# ---- feature 030: updating from the API, through the root updater -----------------------------
+
+# A real release version for each of the three releases the update steps use. Caravana calls a
+# 0.0.0-dev.* build a development build and refuses to update it, so these are plain 0.0.N.
+SERVE_PORT=8099
+RELEASE_URL="http://127.0.0.1:$SERVE_PORT/repos/x/releases/latest"
+
+# serve_release VERSION: lay a release's files out as GitHub serves them: download/v<version>/<file>.
+serve_release() {
+  local v="$1" dir="$WORK/served/download/v$1"
+  mkdir -p "$dir"
+  cp "$WORK/$v/install.sh" "$WORK/$v/SHA256SUMS" "$WORK/$v/caravana_${v}_linux_amd64.tar.gz" \
+    "$WORK/$v/caravana_${v}_linux_arm64.tar.gz" "$dir/"
+}
+
+# serve_latest VERSION: make the fake "latest release" answer name VERSION.
+serve_latest() {
+  mkdir -p "$WORK/served/repos/x/releases"
+  printf '{"tag_name":"v%s","html_url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/v%s","body":"A release for the installer test.","published_at":"2026-11-06T12:00:00Z","draft":false,"prerelease":false}\n' \
+    "$1" "$1" >"$WORK/served/repos/x/releases/latest"
+}
+
+# start_server: serve $WORK/served inside the VM on loopback, so the updater and Caravana's release
+# check have a "GitHub" to ask. Extensionless files (the fake latest release) are sent as JSON.
+start_server() {
+  cat >"$WORK/serve.py" <<'PY'
+import functools
+import http.server
+import sys
+
+handler = http.server.SimpleHTTPRequestHandler
+handler.extensions_map = {**handler.extensions_map, "": "application/json"}
+http.server.ThreadingHTTPServer(
+    ("127.0.0.1", int(sys.argv[2])), functools.partial(handler, directory=sys.argv[1])
+).serve_forever()
+PY
+  vm sh -c "setsid python3 '$WORK/serve.py' '$WORK/served' $SERVE_PORT >/dev/null 2>&1 </dev/null &"
+  local end=$((SECONDS + 15))
+  until vm curl -fsS --max-time 2 -o /dev/null "$RELEASE_URL"; do
+    [ "$SECONDS" -lt "$end" ] || die "the test release server doesn't answer on $RELEASE_URL"
+    sleep 1
+  done
+}
+
+# point_at_server: Caravana asks the test server for the latest release (a systemd drop-in, so the
+# unit is the one the installer wrote), and the updater downloads from it (its root-owned test file).
+point_at_server() {
+  printf '[Service]\nEnvironment=CARAVANA_RELEASE_URL=%s\n' "$RELEASE_URL" >"$WORK/test.conf"
+  printf 'CARAVANA_UPDATE_RELEASES=http://127.0.0.1:%s/download\n' "$SERVE_PORT" >"$WORK/update.env"
+  vm sudo install -D -m 0644 -o root -g root "$WORK/test.conf" /etc/systemd/system/caravana.service.d/test.conf
+  vm sudo install -D -m 0644 -o root -g root "$WORK/update.env" /etc/caravana/update.env
+  vm sudo systemctl daemon-reload
+}
+
+# run_field FIELD: one string field of "run" in GET /v1/updates, or nothing (Caravana may be down).
+run_field() {
+  api -fsS "https://$DOMAIN/v1/updates" 2>/dev/null | grep -o '"run":{[^}]*}' | grep -o "\"$1\":\"[^\"]*\"" | head -1 | cut -d'"' -f4 || true
+}
+
+# wait_run STATE SECONDS: wait until the run in GET /v1/updates is in STATE.
+wait_run() {
+  local want="$1" end=$((SECONDS + $2)) got=""
+  until [ "$got" = "$want" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "the update run should be $want within $2 s; last seen: ${got:-nothing}\n$(api -sS "https://$DOMAIN/v1/updates" 2>&1 | head -c 1500)"
+    sleep 5
+    got="$(run_field state)"
+  done
+}
+
+# wait_health VERSION SECONDS: wait until Caravana's health check answers VERSION.
+wait_health() {
+  local end=$((SECONDS + $2))
+  until vm_curl "https://$DOMAIN/v1/health" 2>/dev/null | grep -q "\"version\":\"$1\""; do
+    [ "$SECONDS" -lt "$end" ] || die "Caravana should answer $1 within $2 s"
+    sleep 3
+  done
+}
+
+# wait_status ID STATE SECONDS: wait until the updater's status file is for ID and in STATE. It
+# leaves the file in UPDATER_STATUS.
+UPDATER_STATUS=""
+wait_status() {
+  local end=$((SECONDS + $3))
+  until UPDATER_STATUS="$(vm sudo cat /var/lib/caravana-update/status 2>/dev/null)" &&
+    grep -qx "ID=$1" <<<"$UPDATER_STATUS" && grep -qx "STATE=$2" <<<"$UPDATER_STATUS"; do
+    [ "$SECONDS" -lt "$end" ] || die "the updater's status should be $2 for $1 within $3 s:\n$UPDATER_STATUS"
+    sleep 3
+  done
+}
+
+# post_run VERSION: POST /v1/updates/runs. Leaves the status in POST_CODE and the answer in POST_BODY.
+POST_CODE="" POST_BODY=""
+post_run() {
+  local resp
+  resp="$(api -X POST -H 'Content-Type: application/json' -w '\n%{http_code}' "https://$DOMAIN/v1/updates/runs" -d "{\"version\":\"$1\"}")" || resp=$'\n000'
+  POST_CODE="${resp##*$'\n'}"
+  POST_BODY="${resp%$'\n'*}"
+}
+
+# request_update VERSION: check for releases, then ask for the update until Caravana accepts it. The
+# check runs on its own; until it has seen the release the answer is 409 update_not_offered.
+request_update() {
+  local end=$((SECONDS + 150))
+  while :; do
+    api -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/updates/check" -d '{"what":"release"}' || true
+    post_run "$1"
+    [ "$POST_CODE" = 202 ] && return 0
+    if [ "$POST_CODE" != 409 ] || ! grep -q '"code":"update_not_offered"' <<<"$POST_BODY" || [ "$SECONDS" -ge "$end" ]; then
+      die "POST /v1/updates/runs for $1 answered $POST_CODE: $POST_BODY"
+    fi
+    sleep 10
+  done
+}
+
+# check_console_update U1 U2 UBAD: the console's update path, end to end, on the VM that runs the
+# earlier steps. U1 and U2 are good releases, UBAD one whose Caravana exits at once.
+check_console_update() {
+  local u1="$1" u2="$2" ubad="$3" out id i
+  local flag="$WORK/watching-update" fails
+
+  say "update: the test release server, and Caravana and the updater pointed at it"
+  serve_release "$u1"
+  serve_release "$u2"
+  serve_latest "$u2"
+  start_server
+  point_at_server
+
+  say "update: install $u1 by hand; it brings the updater and its timer"
+  out="$(install "$u1")" || { echo "$out"; die "install $u1"; }
+  wait_health "$u1" 60
+  [ "$(vm sudo cat /var/lib/caravana-update/updater)" = 1 ] || die "/var/lib/caravana-update/updater should say 1"
+  vm sudo test -x /usr/local/libexec/caravana-update || die "the updater script isn't installed and executable"
+  [ "$(vm stat -c '%U %a' /usr/local/libexec/caravana-update)" = "root 755" ] || die "the updater script should be root 0755"
+  [ "$(vm stat -c '%U %a' /var/lib/caravana-update)" = "root 755" ] || die "/var/lib/caravana-update should be root 0755"
+  [ "$(vm sudo stat -c '%U %a' /var/lib/caravana-update/logs)" = "root 700" ] || die "/var/lib/caravana-update/logs should be root 0700"
+  vm systemctl is-active --quiet caravana-update.timer || die "caravana-update.timer isn't active"
+  vm systemctl is-enabled --quiet caravana-update.timer || die "caravana-update.timer isn't enabled"
+  api -fsS "https://$DOMAIN/v1/updates" | grep -q '"installed":true' || die "GET /v1/updates should say the updater is installed"
+
+  say "update: a crafted request runs nothing"
+  id="$(printf '%032x' "$(date +%s)")"
+  printf 'ID=%s\nVERSION=%s\n' "$id" '0.0.1;touch /tmp/pwned' >"$WORK/request"
+  vm sudo install -m 0600 -o caravana -g caravana "$WORK/request" /var/lib/caravana/update-request
+  wait_status "$id" refused 120
+  grep -q '^REASON=The request.s version isn.t a release version\.$' <<<"$UPDATER_STATUS" ||
+    die "a crafted version should be refused as not a release version:\n$UPDATER_STATUS"
+  grep -q '^VERSION=$' <<<"$UPDATER_STATUS" || die "the status shouldn't repeat the request's version:\n$UPDATER_STATUS"
+  [ "$(vm readlink /opt/caravana/current)" = "$u1" ] || die "a refused request changed what runs"
+  vm test ! -e /tmp/pwned || die "the crafted version ran something"
+  vm sudo rm -f /var/lib/caravana/update-request
+
+  # A symlink to a file root can read: no new status, and the journal says it isn't a plain file.
+  local before
+  before="$(vm sudo cat /var/lib/caravana-update/status)"
+  vm sudo ln -s /etc/shadow /var/lib/caravana/update-request
+  local end=$((SECONDS + 120)) journal=""
+  until journal="$(vm sudo journalctl -u caravana-update -o cat --since=-3min)" && grep -q "isn't a plain file" <<<"$journal"; do
+    [ "$SECONDS" -lt "$end" ] || die "the updater should log that a symlinked request isn't a plain file:\n$journal"
+    sleep 5
+  done
+  [ "$(vm sudo cat /var/lib/caravana-update/status)" = "$before" ] || die "a symlinked request changed the status"
+  ! grep -q '^root:' <<<"$journal" || die "the updater printed a line of /etc/shadow"
+  vm sudo rm -f /var/lib/caravana/update-request
+
+  say "update: from the API to $u2, with whoami answering throughout"
+  touch "$flag"
+  watch_app "$flag" >"$WORK/fails" &
+  request_update "$u2"
+  id="$(grep -o '"id":"[0-9a-f]\{32\}"' <<<"$POST_BODY" | head -1 | cut -d'"' -f4)"
+  [ -n "$id" ] || die "the 202 answer has no run id: $POST_BODY"
+  grep -q '"state":"requested"' <<<"$POST_BODY" || die "the new run should be requested: $POST_BODY"
+  post_run "$u2"
+  { [ "$POST_CODE" = 409 ] && grep -q '"code":"update_running"' <<<"$POST_BODY"; } ||
+    die "a second request at once should be 409 update_running, got $POST_CODE: $POST_BODY"
+  wait_health "$u2" 240
+  wait_run updated 120
+  rm -f "$flag"
+  wait
+  fails="$(cat "$WORK/fails")"
+  [ "$fails" = 0 ] || die "whoami failed $fails times during the update"
+  [ "$(vm readlink /opt/caravana/current)" = "$u2" ] || die "current should point at $u2"
+  i=0
+  until vm sudo test ! -e /var/lib/caravana/update-request; do
+    i=$((i + 1))
+    [ "$i" -lt 10 ] || die "Caravana didn't remove the update request once the run ended"
+    sleep 3
+  done
+  out="$(vm sudo cat /var/lib/caravana-update/status)"
+  if ! { grep -qx "ID=$id" <<<"$out" && grep -qx "STATE=updated" <<<"$out" && grep -qx "FROM=$u1" <<<"$out" && grep -qx "VERSION=$u2" <<<"$out"; }; then
+    die "the updater's status should say $u1 updated to $u2 for run $id:\n$out"
+  fi
+  vm sudo test -s "/var/lib/caravana-update/logs/$id.log" || die "the installer's log of run $id is missing"
+  [ "$(vm sudo stat -c '%a' "/var/lib/caravana-update/logs/$id.log")" = 600 ] || die "the log should be 0600"
+  api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the API token didn't survive the update"
+
+  say "update: a broken $ubad is rolled back to $u2, and the owner is told"
+  serve_release "$ubad"
+  serve_latest "$ubad"
+  request_update "$ubad"
+  id="$(grep -o '"id":"[0-9a-f]\{32\}"' <<<"$POST_BODY" | head -1 | cut -d'"' -f4)"
+  wait_status "$id" rolled_back 360
+  grep -q "^REASON=.*$u2 runs again" <<<"$UPDATER_STATUS" || die "the rolled back status should say $u2 runs again:\n$UPDATER_STATUS"
+  wait_health "$u2" 120
+  wait_run rolled_back 120
+  [ -n "$(run_field reason)" ] || die "the rolled back run should have a reason"
+  api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the data didn't come back with $u2"
+  out="$(api -fsS "https://$DOMAIN/v1/attention")"
+  grep -q '"kind":"caravana_update_failed"' <<<"$out" || die "GET /v1/attention should have a caravana_update_failed item:\n$out"
+  vm sudo test ! -e /var/lib/caravana/update-request || die "the rolled back run's request is still there"
+
+  say "update: put the test wiring away"
+  vm sudo rm -rf /etc/systemd/system/caravana.service.d /etc/caravana/update.env
+  vm sudo systemctl daemon-reload
+  vm sudo pkill -f '[s]erve\.py' || true
+}
+
 main() {
   command -v limactl >/dev/null || die "Lima isn't installed"
   trap cleanup EXIT
   rm -rf "$WORK" && mkdir -p "$WORK"
-  local base v1 v2 bad old out
+  local base v1 v2 bad old out u1 u2 ubad
   base="$(date +%s)"
   old="0.0.0-dev.$((base - 1))" v1="0.0.0-dev.$base" v2="0.0.0-dev.$((base + 1))" bad="0.0.0-dev.$((base + 2))"
+  # Release versions for the update steps (0.0.N is newer than every 0.0.0-dev.*).
+  u1="0.0.$base" u2="0.0.$((base + 1))" ubad="0.0.$((base + 2))"
   say "building releases $old, $v1, $v2 and a broken $bad"
   release "$old"
   release "$v1"
   release "$v2"
   broken "$bad"
+  say "building the releases for the update steps: $u1, $u2 and a broken $ubad"
+  release "$u1"
+  release "$u2"
+  broken "$ubad"
 
   say "a fresh Ubuntu 24.04 VM"
   limactl delete --force "$NAME" >/dev/null 2>&1 || true
@@ -260,6 +483,8 @@ main() {
   vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v2\"" || die "$v2 isn't answering after the rollback"
   api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the data didn't come back with $v2"
 
+  check_console_update "$u1" "$u2" "$ubad"
+
   say "an older $old is refused"
   set +e
   install "$old" >/dev/null 2>&1
@@ -276,6 +501,14 @@ main() {
   fails="$(cat "$WORK/fails")"
   [ "$fails" = 0 ] || die "whoami failed $fails times during the uninstall"
   ! vm systemctl is-active --quiet caravana || die "caravana still runs"
+  say "the uninstall removed the updater, its timer and its directory"
+  local gone
+  for gone in /usr/local/libexec/caravana-update /etc/systemd/system/caravana-update.service \
+    /etc/systemd/system/caravana-update.timer /var/lib/caravana-update; do
+    vm sudo test ! -e "$gone" || die "the uninstall left $gone"
+  done
+  ! vm systemctl is-active --quiet caravana-update.timer || die "caravana-update.timer still runs"
+  ! vm systemctl is-enabled --quiet caravana-update.timer || die "caravana-update.timer is still enabled"
   app_answers || die "whoami stopped answering after the uninstall"
   [ "$(vm_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/v1/health")" = 502 ] ||
     die "the console domain should answer 502 with Caravana gone"
