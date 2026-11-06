@@ -36,7 +36,8 @@ func itemFor(kind service.AttentionKind, elsewhere bool) service.AttentionItem {
 		Deployment: "d1", DeploymentStatus: store.StatusReverted, Version: &three, Schedule: "nightly", ScheduleID: "s1",
 		Domain: "bi.example.com", AddressSeen: "185.199.108.153", ExpiresAt: &exp, Mount: "/var/lib/docker", UsedPercent: 87, FreeBytes: 1 << 30,
 		InstalledKernel: "7.0.0-40-generic", RunningKernel: "7.0.0-38-generic", Packages: []string{"libc6", "linux-base"},
-		Updates: 14, Security: 9}
+		Updates: 14, Security: 9,
+		UpdateRunID: "3f6c0d2a9b7e41c58d0f2e6a1b9c7d40", UpdateVersion: "0.17.0", UpdateFrom: "0.16.0", UpdateState: store.UpdateRolledBack}
 	if elsewhere {
 		it.AppID, it.Project, it.Environment = "shop--staging--web", "shop", "staging"
 		it.AppName = "web"
@@ -52,7 +53,8 @@ func itemFor(kind service.AttentionKind, elsewhere bool) service.AttentionItem {
 		it.Detail = "ghcr.io: x:1: image not found"
 	}
 	switch kind {
-	case service.AttentionNoBackupDestination, service.AttentionDiskNearlyFull, service.AttentionOSRebootRequired, service.AttentionOSSecurityUpdates:
+	case service.AttentionNoBackupDestination, service.AttentionDiskNearlyFull, service.AttentionOSRebootRequired, service.AttentionOSSecurityUpdates,
+		service.AttentionCaravanaUpdateFailed:
 		it.AppID, it.Project, it.Environment, it.AppName, it.Service = "", "", "", "", ""
 	}
 	return it

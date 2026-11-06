@@ -132,6 +132,13 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	case service.AttentionOSSecurityUpdates:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open updates", "/ops/updates"
+	case service.AttentionCaravanaUpdateFailed:
+		// A rolled back, refused or lost update is a warning; one that failed is a failure.
+		row.Mark = "warning"
+		if it.Level == metrics.DiskFailed {
+			row.Mark = "failed"
+		}
+		row.Action, row.Href = "Open updates", "/ops/updates"
 	}
 	return row
 }
