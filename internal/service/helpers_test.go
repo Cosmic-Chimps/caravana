@@ -129,6 +129,9 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.metricsGap = time.Hour
 	// The host's OS files: none, so a test never reads the machine it runs on.
 	svc.SetHostRoot(fstest.MapFS{})
+	// The updater: no pass after Start's first, which finds nothing. Tests of the watcher call
+	// updatePass or followUpdateRun.
+	svc.updater.gap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

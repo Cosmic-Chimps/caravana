@@ -121,6 +121,7 @@ type Service struct {
 	releaseClient      *http.Client
 	pro                ProRunner // reads package names; nil means there is no pro command
 	updates            updatesState
+	updater            updaterState // update runs and the root updater's files (feature 030), see updaterun.go
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -199,6 +200,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		releaseRawURL:      defaultReleaseRawURL,
 		releaseGap:         defaultReleaseGap,
 		releaseClient:      newReleaseClient(),
+
+		updater: updaterState{gap: defaultUpdateWatchGap},
 	}
 }
 
@@ -374,6 +377,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runReleaseCheck(ctx, releaseGap)
+	}()
+	// The updater's run is followed across Caravana's own restart: the first pass picks up a run the
+	// last process left, and it starts no watchers either.
+	updateGap := s.updater.gap
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.watchUpdates(ctx, updateGap)
 	}()
 	return nil
 }
