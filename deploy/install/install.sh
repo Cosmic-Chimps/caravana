@@ -15,6 +15,10 @@
 #   --uninstall [--purge]  remove Caravana, keep Nomad, Traefik and every app (--purge: its data too)
 #
 # Exit codes: 0 done, 1 a step failed, 2 refused before changing anything.
+#
+# It also installs a small root updater (a systemd timer), so the console's Updates page can ask
+# for an update: deploy/install/caravana-update.sh, which runs this installer from the release it
+# downloads and checks.
 set -euo pipefail
 
 CARAVANA_VERSION=dev # set by tools/release.sh
@@ -27,6 +31,8 @@ STATE=/var/lib/caravana-host # installer state, Nomad's bootstrap token, Traefik
 OPT=/opt/caravana            # one directory per installed version, and the "current" link
 DATA=/var/lib/caravana       # Caravana's data
 ENV_FILE=/etc/caravana/caravana.env
+UPDATER=/usr/local/libexec/caravana-update # the root updater, run every minute by its timer
+UPDATE_DIR=/var/lib/caravana-update        # its status and logs; only root writes here
 
 changed=()
 step() { echo "==> $*"; }
@@ -484,6 +490,28 @@ EOF
   systemctl enable caravana >/dev/null 2>&1
 }
 
+# install_updater: the root updater and its timer (feature 030). The console can't be root, so
+# it writes a request (a version and nothing else) into its own data directory, and the updater
+# checks that request and runs this installer from a checksum-verified release. It is installed
+# before Caravana starts, so the timer exists when the new version runs. The status and logs it
+# writes are in UPDATE_DIR, which Caravana can read but never write.
+install_updater() {
+  step "the updater (a root timer that runs an update the console asked for)"
+  local src="$OPT/$CARAVANA_VERSION" f units_changed=0
+  for f in caravana-update.sh caravana-update.service caravana-update.timer; do
+    [ -f "$src/$f" ] || fail "$src has no $f"
+  done
+  install -d -m 0755 "$UPDATE_DIR"
+  install -d -m 0700 "$UPDATE_DIR/logs"
+  # The marker tells Caravana the updater is installed. Its status file is the updater's to write.
+  echo 1 | write_if_changed "$UPDATE_DIR/updater" 0644 updater || true
+  write_if_changed "$UPDATER" 0755 updater <"$src/caravana-update.sh" || true
+  write_if_changed /etc/systemd/system/caravana-update.service 0644 updater <"$src/caravana-update.service" && units_changed=1
+  write_if_changed /etc/systemd/system/caravana-update.timer 0644 updater <"$src/caravana-update.timer" && units_changed=1
+  [ "$units_changed" = 0 ] || systemctl daemon-reload
+  systemctl enable --now caravana-update.timer >/dev/null 2>&1
+}
+
 # point_current VERSION: make "current" point at VERSION, in one step.
 point_current() {
   ln -sfn "$1" "$OPT/current.new"
@@ -574,6 +602,7 @@ install_caravana() {
   install_packages
   install_nomad
   configure_caravana
+  install_updater
   start_version
   ensure_admin
   step "Traefik: https://$domain to Caravana"
@@ -609,6 +638,10 @@ uninstall_caravana() {
   step "stop Caravana"
   systemctl disable --now caravana >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/caravana.service /usr/local/bin/caravana
+  # The updater goes with it: without Caravana there is nothing to ask for an update.
+  systemctl disable --now caravana-update.timer >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/caravana-update.timer /etc/systemd/system/caravana-update.service "$UPDATER"
+  rm -rf "$UPDATE_DIR"
   systemctl daemon-reload
 
   if [ -s "$STATE/bootstrap.token" ] && command -v nomad >/dev/null; then
