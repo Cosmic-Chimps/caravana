@@ -36,6 +36,15 @@ jobs:
       - name: shellcheck
         run: shellcheck deploy/dev/*.sh deploy/vm/*.sh deploy/install/*.sh deploy/examples/*/*.sh tools/*.sh
 
+      # Release notes live one file per change in changelog.d/, so a merge never touches a shared
+      # section. This fails a push with a bad note file or a "## Unreleased" section (a branch
+      # started before that rule), and the next step tests the commands themselves.
+      - name: release notes in changelog.d are well formed
+        run: tools/release.sh check
+
+      - name: changelog script tests
+        run: bash tools/changelog-test.sh
+
       # The release a v* tag would publish still builds (tools/release.sh, release.yml).
       - name: release builds
         run: |

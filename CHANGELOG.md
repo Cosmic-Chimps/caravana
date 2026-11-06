@@ -1,32 +1,14 @@
 # Changelog
 
 What changed in each release, for people who run Caravana. Newest first. A release's notes on
-GitHub are its section here: `tools/release.sh notes <version>` prints it, and the release
-workflow turns "Unreleased" into the version's section when it has none yet.
+GitHub are its section here: `tools/release.sh notes <version>` prints it.
 
-Each section has the changes that matter to a user, then **Upgrade** when an upgrade needs
-more than rerunning the installer. Add to "Unreleased" as you go; a release renames it.
+Notes are not written here. Each change adds one file in `changelog.d/` (see its README), and the
+release gathers those files into the new version's section below and deletes them, so this file holds
+released sections only. `tools/release.sh unreleased` shows what the next release will say.
 
-## Unreleased
-
-### Added
-- **SQLite backups that don't stop the app.** A service that keeps its data in one SQLite file on a
-  volume can be backed up with the `sqlite` engine: `backup: {engine: sqlite, file: /data/app.db}` in
-  its definition or Compose overlay, **SQLite file** in the Compose form, or **A SQLite file instead** on
-  the Backups tab. Each backup is a consistent copy made with `VACUUM INTO` while the service keeps
-  running, checked with `PRAGMA quick_check`, gzipped and uploaded as `<time>.sqlite.gz` to the backup
-  destination, with the same schedule, retention, Back up now, needs-you items and notifications as the
-  other engines. A restore downloads and checks the backup while the service runs, then stops it only for
-  the few seconds it takes to put the file in place, keeping the file's owner and mode. In WAL mode the
-  copy never blocks the app's writes; with a rollback journal they wait while it reads. A service with a
-  sqlite backup runs two small idle helper tasks beside it (`caravana-sqlite` and `caravana-upload`,
-  48 MB reserved together). API 0.32.0 (`BackupPolicy.file`, the `sqlite` engine).
-
-### Upgrade
-- Nothing to rerun. Every app with a volume gets an updated `caravana-volumes` task on its next deploy;
-  an app needs one deploy with this version before its first sqlite restore (setting the policy is one).
-  `CARAVANA_SQLITE_IMAGE` (`-sqlite-image`) replaces the pinned `alpine/sqlite` image if you mirror
-  images.
+Each section has the changes that matter to a user, in this order and only as needed: Added,
+Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
 ## 0.18.0 - 2026-11-05
 

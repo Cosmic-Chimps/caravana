@@ -1087,9 +1087,15 @@ deploy/dev/lab.sh shell            # inside the VM: sudo lab-nomad <cmd> (manage
 ```bash
 tools/release.sh build 0.0.0-dev.1 /tmp/rel   # a release: tarballs per arch, install.sh, SHA256SUMS
 tools/release.sh notes 0.3.0       # that version's CHANGELOG.md section: the release's notes (a v* tag without one fails)
-gh workflow run release.yml -f version=0.6.0   # release: renames Unreleased, commits, tags, builds, publishes
-git tag v0.6.0 && git push origin v0.6.0        # also releases: the run renames Unreleased for the notes, then commits it to main if main is still the tag
-tools/release.sh prepare 0.6.0     # what both run: "## Unreleased" becomes "## 0.6.0 - <today>"
+# Release notes: each branch adds changelog.d/<name>.md (### Added|Changed|Fixed|Security|Upgrade bullets,
+# changelog.d/README.md); CHANGELOG.md holds released sections only and never gets "## Unreleased" back.
+tools/release.sh unreleased        # what the next release will say, gathered from changelog.d/
+tools/release.sh check             # fails on a bad note file or a "## Unreleased" section (CI runs it)
+bash tools/changelog-test.sh       # tests notes, unreleased, prepare, commit and check (CI runs it)
+gh workflow run release.yml -f version=0.6.0   # release: gathers changelog.d/, commits, tags, builds, publishes
+git tag v0.6.0 && git push origin v0.6.0        # also releases: the run gathers the tag's notes, then commits the section and the deleted notes to main if main is still the tag
+tools/release.sh prepare 0.6.0     # what both run: changelog.d/*.md become "## 0.6.0 - <today>" and are deleted
+tools/release.sh commit 0.6.0      # then both commit CHANGELOG.md and the deletions (git add -A), so no note is gathered twice
 deploy/dev/install-test.sh         # the installer on a throwaway Lima VM: install, rerun, upgrade, rollback, uninstall (~10 min)
 deploy/vm/host.sh up               # build a dev release and install/upgrade it on the public VM (settings in deploy/vm/host.env)
 deploy/vm/host.sh prove            # the gate against the VM (~15 min), ends GATE PASSED/FAILED

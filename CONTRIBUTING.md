@@ -14,7 +14,8 @@ Thanks for wanting to help. Caravana is a self-hosted PaaS on HashiCorp Nomad. B
 
 - One change per pull request, with tests (table-driven, standard `testing` package).
 - Product features go through Spec Kit (`specs/<number>-<name>/`): spec, plan, tasks.
-- Add a line to `CHANGELOG.md` under "Unreleased" for anything a user of Caravana would notice.
+- Add a file in `changelog.d/` for anything a user of Caravana would notice (its README says how).
+  Don't edit `CHANGELOG.md`: a release gathers the files into it.
 - Keep code, docs and names your own: don't copy from other PaaS projects.
 
 ## Contributor agreement

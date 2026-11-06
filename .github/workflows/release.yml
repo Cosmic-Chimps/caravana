@@ -7,17 +7,18 @@ name: release
 #
 #   gh workflow run release.yml -f version=0.6.0
 #
-# It renames CHANGELOG.md's "## Unreleased" to "## 0.6.0 - <today>" (tools/release.sh prepare),
-# commits that to main, tags the commit v0.6.0, then builds and publishes from that tag. Nothing
-# is done by hand, so the tag can't point at a changelog that wasn't prepared (what broke the
-# first runs of v0.4.0 and v0.5.0). A version whose section is already there (prepared and merged
-# by hand) skips the rename.
+# It gathers the notes in changelog.d/ into "## 0.6.0 - <today>" of CHANGELOG.md and deletes those
+# files (tools/release.sh prepare), commits both to main (tools/release.sh commit), tags the commit
+# v0.6.0, then builds and publishes from that tag. Nothing is done by hand, so the tag can't point
+# at a changelog that wasn't prepared (what broke the first runs of v0.4.0 and v0.5.0). A version
+# whose section is already there (prepared and merged by hand) skips the gathering.
 #
 # Pushing a v* tag by hand (git tag v0.6.0 && git push origin v0.6.0) works too. When the tagged
-# commit has no "## 0.6.0" section, the run prepares it in its own checkout, so the notes are
-# the "Unreleased" entries, and after publishing commits that rename to main, as long as main is
-# still at the tagged commit. The tag itself never moves. If main has moved on, the release is
-# still published and the run ends with a warning saying how to fix the changelog by hand.
+# commit has no "## 0.6.0" section, the run prepares it in its own checkout, so the notes are the
+# tagged commit's changelog.d/ files, and after publishing commits the new section and the deleted
+# files to main, as long as main is still at the tagged commit. The tag itself never moves. If main
+# has moved on, the release is still published and the run ends with a warning saying how to fix
+# the changelog by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -72,7 +73,8 @@ jobs:
 
       # The changelog, prepared here unless it already has the version's section: for a
       # dispatched run and for a pushed tag alike. prepare fails, before anything is built, when
-      # "## Unreleased" is empty: then there is nothing to say about this release.
+      # changelog.d/ has no notes (then there is nothing to say about this release) or a note
+      # file is malformed (tools/release.sh check names it).
       - name: prepare the changelog
         run: |
           if ! tools/release.sh notes "$VERSION" >/dev/null 2>&1; then
@@ -96,9 +98,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- CHANGELOG.md; then
-            git commit -m "chore(release): $VERSION" -- CHANGELOG.md
-          fi
+          # The new section and the deleted notes in one commit (git add -A), or the next
+          # release would gather the same notes again. Nothing when the section was there already.
+          tools/release.sh commit "$VERSION"
           git tag -a "$TAG" -m "$TAG"
           git push --atomic origin HEAD:main "refs/tags/$TAG"
 
@@ -113,24 +115,24 @@ jobs:
           gh release create "$TAG" dist/* --title "Caravana $VERSION"
           --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
 
-      # A pushed tag whose changelog was prepared above: main gets the rename, so the next
-      # release starts from an empty "Unreleased". Only when main is still the tagged commit;
-      # otherwise its "Unreleased" may hold newer entries, which a rename would wrongly claim.
-      # The release is out either way, so this step warns rather than fails.
+      # A pushed tag whose changelog was prepared above: main gets the new section and loses the
+      # notes it gathered, so the next release doesn't gather them again. Only when main is still
+      # the tagged commit; otherwise main's changelog.d/ may hold newer notes, which the section
+      # must not claim. The release is out either way, so this step warns rather than fails.
       - name: record the changelog on main
         if: github.event_name == 'push'
         run: |
-          if git diff --quiet -- CHANGELOG.md; then
+          if [ -z "$(git status --porcelain -- CHANGELOG.md changelog.d)" ]; then
             exit 0 # the tagged commit had its section already
           fi
           git fetch -q origin main
           if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]; then
-            echo "::warning::main has moved past $TAG, so its CHANGELOG.md still lists $VERSION's entries under \"## Unreleased\". Move them under \"## $VERSION - $(date -u +%F)\" by hand."
+            echo "::warning::main has moved past $TAG, so its changelog.d/ still holds $VERSION's notes. On main, add the release's notes to CHANGELOG.md as \"## $VERSION - $(date -u +%F)\" and delete the files $TAG had (git ls-tree --name-only $TAG changelog.d/), keeping any newer ones."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(release): $VERSION" -- CHANGELOG.md
+          tools/release.sh commit "$VERSION"
           if ! git push origin HEAD:main; then
-            echo "::warning::Couldn't push the changelog rename to main. Run tools/release.sh prepare $VERSION on main and commit it."
+            echo "::warning::Couldn't push the changelog to main. On main, add the release's notes to CHANGELOG.md as \"## $VERSION - $(date -u +%F)\" and delete the files $TAG had (git ls-tree --name-only $TAG changelog.d/)."
           fi
