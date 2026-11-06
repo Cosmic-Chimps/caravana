@@ -1,0 +1,12 @@
+# Caravana's updater, installed by deploy/install/install.sh (feature 030). It runs as root, started
+# only by caravana-update.timer, and does nothing without a valid request that the console wrote to
+# /var/lib/caravana/update-request (deploy/install/caravana-update.sh says what it checks).
+[Unit]
+Description=Caravana's updater: runs an update the console asked for
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/caravana-update
+TimeoutStartSec=30min

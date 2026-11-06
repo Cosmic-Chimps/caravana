@@ -1,0 +1,12 @@
+# Starts caravana-update.service every minute, installed by deploy/install/install.sh (feature 030).
+# With no request waiting, a run does nothing and logs nothing.
+[Unit]
+Description=Look for an update the console asked for, every minute
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
