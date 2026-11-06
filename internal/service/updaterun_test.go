@@ -774,6 +774,23 @@ func TestAutoUpdatePassRunsOncePerMinute(t *testing.T) {
 	}
 }
 
+// A pass that finds the setting off doesn't use up the minute: turned on in the same minute, the
+// next pass still makes the request (the watcher's own first pass raced the test this way).
+func TestAutoUpdateOffPassKeepsTheMinute(t *testing.T) {
+	ctx := context.Background()
+	e := newUpdEnv(t)
+	e.seen(t, "v0.16.3")
+	e.svc.clock.(*fakeClock).Set(time.Date(2026, 11, 7, 3, 5, 10, 0, time.UTC))
+	e.svc.updatePass(ctx)
+	if err := e.svc.SetAutoUpdate(ctx, true, 3); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.updatePass(ctx)
+	if runs, _ := e.store.UpdateRuns(ctx, 5); len(runs) != 1 {
+		t.Fatalf("the pass made %d runs, want 1", len(runs))
+	}
+}
+
 func TestSetAutoUpdateHour(t *testing.T) {
 	e := newUpdEnv(t)
 	for _, hour := range []int{-1, 24, 99} {

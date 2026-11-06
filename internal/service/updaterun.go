@@ -426,16 +426,8 @@ func (s *Service) updatePass(ctx context.Context) {
 	if err := s.followUpdateRun(ctx); err != nil && ctx.Err() == nil {
 		s.log.Warn("follow the update run", "error", err)
 	}
-	now := s.clock.Now().UTC()
-	s.updater.mu.Lock()
-	minute := now.Truncate(time.Minute)
-	due := !minute.Equal(s.updater.lastAuto)
-	s.updater.lastAuto = minute
-	s.updater.mu.Unlock()
-	if due {
-		if err := s.autoUpdate(ctx); err != nil && ctx.Err() == nil {
-			s.log.Warn("automatic update", "error", err)
-		}
+	if err := s.autoUpdate(ctx); err != nil && ctx.Err() == nil {
+		s.log.Warn("automatic update", "error", err)
 	}
 }
 
@@ -614,7 +606,18 @@ func (s *Service) autoUpdate(ctx context.Context) error {
 	if err != nil || !rc.AutoUpdate {
 		return err
 	}
-	in, err := s.autoInput(ctx, rc, s.clock.Now().UTC())
+	// Once a minute is enough. The minute is only taken while the setting is on, so a pass that
+	// found it off doesn't use up the minute the owner turns it on in.
+	now := s.clock.Now().UTC()
+	minute := now.Truncate(time.Minute)
+	s.updater.mu.Lock()
+	due := !minute.Equal(s.updater.lastAuto)
+	s.updater.lastAuto = minute
+	s.updater.mu.Unlock()
+	if !due {
+		return nil
+	}
+	in, err := s.autoInput(ctx, rc, now)
 	if err != nil {
 		return err
 	}
