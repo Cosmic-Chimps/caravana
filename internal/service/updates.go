@@ -622,6 +622,10 @@ func updateTriggerWords(trigger string) string {
 	return "by " + trigger
 }
 
+// UpdateRunDuration is how long a finished update run took, in the words Past updates uses
+// ("40 s", "2 min", "1 min 40 s"), so the console's run panel says the same.
+func UpdateRunDuration(r store.UpdateRun) string { return runDuration(r) }
+
 // runDuration is how long a run took, from its start (else its request) to its end, as "40 s",
 // "2 min" or "1 min 40 s".
 func runDuration(r store.UpdateRun) string {

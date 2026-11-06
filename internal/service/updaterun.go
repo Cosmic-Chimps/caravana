@@ -180,37 +180,13 @@ func (s *Service) RequestUpdate(ctx context.Context, version, trigger, tokenName
 	default:
 		return store.UpdateRun{}, fmt.Errorf("request an update: unknown trigger %q", trigger)
 	}
-	current := strings.TrimPrefix(s.runningVersion, "v")
 
 	s.updater.mu.Lock()
 	defer s.updater.mu.Unlock()
 
-	rc, err := s.store.ReleaseCheck(ctx)
+	current, err := s.offerLocked(ctx, version)
 	if err != nil {
 		return store.UpdateRun{}, err
-	}
-	if !hostos.IsReleaseVersion(current) {
-		return store.UpdateRun{}, &UpdateUnavailableError{reasonDevBuild}
-	}
-	if !s.updaterInstalledLocked() {
-		return store.UpdateRun{}, &UpdateUnavailableError{updaterMissing(rc.LatestTag)}
-	}
-	open, ok, err := s.store.OpenUpdateRun(ctx)
-	if err != nil {
-		return store.UpdateRun{}, err
-	}
-	if ok {
-		return store.UpdateRun{}, &UpdateRunningError{Version: open.Version}
-	}
-	switch latest := strings.TrimPrefix(rc.LatestTag, "v"); {
-	case version == current:
-		return store.UpdateRun{}, &UpdateNotOfferedError{"caravana " + current + " already runs here."}
-	case !hostos.ReleaseNewer(version, current):
-		return store.UpdateRun{}, &UpdateNotOfferedError{"caravana " + current + " runs here, and " + version + " isn't newer."}
-	case latest == "":
-		return store.UpdateRun{}, &UpdateNotOfferedError{"caravana hasn't seen a release yet. Check for releases first."}
-	case version != latest:
-		return store.UpdateRun{}, &UpdateNotOfferedError{version + " isn't the newest release caravana has seen (" + latest + "). Check for releases first."}
 	}
 
 	id, err := newUpdateRunID()
@@ -234,6 +210,57 @@ func (s *Service) RequestUpdate(ctx context.Context, version, trigger, tokenName
 	}
 	s.publish(Change{What: ChangeUpdates})
 	return run, nil
+}
+
+// offerLocked is what RequestUpdate checks before it writes anything, in its order: a development
+// build or a host without the updater (ErrUpdateUnavailable), a run that is open
+// (ErrUpdateRunning), and a version that isn't the newest release seen or isn't newer than the
+// running one (ErrUpdateNotOffered). The caller holds updater.mu and has checked that version is
+// release-shaped. It returns the running version.
+func (s *Service) offerLocked(ctx context.Context, version string) (string, error) {
+	current := strings.TrimPrefix(s.runningVersion, "v")
+	rc, err := s.store.ReleaseCheck(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !hostos.IsReleaseVersion(current) {
+		return "", &UpdateUnavailableError{reasonDevBuild}
+	}
+	if !s.updaterInstalledLocked() {
+		return "", &UpdateUnavailableError{updaterMissing(rc.LatestTag)}
+	}
+	open, ok, err := s.store.OpenUpdateRun(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return "", &UpdateRunningError{Version: open.Version}
+	}
+	switch latest := strings.TrimPrefix(rc.LatestTag, "v"); {
+	case version == current:
+		return "", &UpdateNotOfferedError{"caravana " + current + " already runs here."}
+	case !hostos.ReleaseNewer(version, current):
+		return "", &UpdateNotOfferedError{"caravana " + current + " runs here, and " + version + " isn't newer."}
+	case latest == "":
+		return "", &UpdateNotOfferedError{"caravana hasn't seen a release yet. Check for releases first."}
+	case version != latest:
+		return "", &UpdateNotOfferedError{version + " isn't the newest release caravana has seen (" + latest + "). Check for releases first."}
+	}
+	return current, nil
+}
+
+// CheckUpdateOffer says whether RequestUpdate would accept version right now, with the same
+// errors and sentences, and changes nothing: the console's confirmation page asks it before it
+// draws the button.
+func (s *Service) CheckUpdateOffer(ctx context.Context, version string) error {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if !releaseShaped.MatchString(version) {
+		return app.NewFieldError("version", "must be a release version such as 0.17.0")
+	}
+	s.updater.mu.Lock()
+	defer s.updater.mu.Unlock()
+	_, err := s.offerLocked(ctx, version)
+	return err
 }
 
 // updaterInstalledLocked is UpdaterInstalled for a caller that holds updater.mu.
