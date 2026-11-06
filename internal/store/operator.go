@@ -190,22 +190,29 @@ type ReleaseCheck struct {
 	Error string
 	// NotifiedTag is the last tag a caravana.release message was queued for.
 	NotifiedTag string
+	// AutoUpdate is the owner's setting for automatic patch updates (feature 030) and
+	// AutoUpdateHour the UTC hour (0-23) they are requested at. A new store has it off, at 3.
+	AutoUpdate     bool
+	AutoUpdateHour int
 }
 
 // ReleaseCheck returns the release row. It always exists: the migration makes
 // it, with Enabled on.
 func (s *Store) ReleaseCheck(ctx context.Context) (ReleaseCheck, error) {
 	var rc ReleaseCheck
-	var enabled int
+	var enabled, auto int
 	var published, checked, checkedOK string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT enabled, latest_tag, published_at, url, body, nomad_pin, traefik_pin, etag, checked_at, checked_ok_at, error, notified_tag
+		SELECT enabled, latest_tag, published_at, url, body, nomad_pin, traefik_pin, etag, checked_at, checked_ok_at, error, notified_tag,
+		       auto_update, auto_update_hour
 		FROM release_check WHERE id = 1`).Scan(&enabled, &rc.LatestTag, &published, &rc.URL, &rc.Body,
-		&rc.NomadPin, &rc.TraefikPin, &rc.ETag, &checked, &checkedOK, &rc.Error, &rc.NotifiedTag)
+		&rc.NomadPin, &rc.TraefikPin, &rc.ETag, &checked, &checkedOK, &rc.Error, &rc.NotifiedTag,
+		&auto, &rc.AutoUpdateHour)
 	if err != nil {
 		return ReleaseCheck{}, fmt.Errorf("read release check: %w", err)
 	}
 	rc.Enabled = enabled == 1
+	rc.AutoUpdate = auto == 1
 	if rc.PublishedAt, err = parseTimeOrZero(published); err != nil {
 		return ReleaseCheck{}, fmt.Errorf("read release check: %w", err)
 	}
@@ -222,10 +229,12 @@ func (s *Store) ReleaseCheck(ctx context.Context) (ReleaseCheck, error) {
 func (s *Store) SaveReleaseCheck(ctx context.Context, rc ReleaseCheck) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE release_check SET enabled = ?, latest_tag = ?, published_at = ?, url = ?, body = ?,
-			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, checked_ok_at = ?, error = ?, notified_tag = ?
+			nomad_pin = ?, traefik_pin = ?, etag = ?, checked_at = ?, checked_ok_at = ?, error = ?, notified_tag = ?,
+			auto_update = ?, auto_update_hour = ?
 		WHERE id = 1`,
 		boolInt(rc.Enabled), rc.LatestTag, zeroOrTime(rc.PublishedAt), rc.URL, rc.Body,
-		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), zeroOrTime(rc.CheckedOKAt), rc.Error, rc.NotifiedTag)
+		rc.NomadPin, rc.TraefikPin, rc.ETag, zeroOrTime(rc.CheckedAt), zeroOrTime(rc.CheckedOKAt), rc.Error, rc.NotifiedTag,
+		boolInt(rc.AutoUpdate), rc.AutoUpdateHour)
 	if err != nil {
 		return fmt.Errorf("save release check: %w", err)
 	}

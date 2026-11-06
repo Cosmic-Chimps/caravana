@@ -25,6 +25,7 @@ const (
 	ActivitySchedule   = "schedule_runs"  // only runs that failed or were stopped at their limit; Label is the schedule's name
 	ActivityProblem    = "problem_events" // Label is the attention kind, Status the change, Detail the sentence as JSON parts
 	ActivityHost       = "host_events"    // Label is the kind (boot, version, os_packages), Detail its JSON
+	ActivityUpdate     = "update_runs"    // a finished update of Caravana (feature 030): Status its state, Label the version, Program the version it left, Error the reason, Detail the token name
 )
 
 // ServerProblemKinds are the needs-you kinds about the server itself: the host
@@ -33,6 +34,7 @@ const (
 var ServerProblemKinds = []string{
 	"disk_nearly_full", "os_reboot_required", "os_security_updates", // the host
 	"out_of_memory", "restarting", // the copies on it
+	"caravana_update_failed", // an update of Caravana that didn't go through (feature 030)
 }
 
 // OpenedProblemKinds are the needs-you kinds whose "opened" (and "worsened") entry the feed
@@ -131,6 +133,15 @@ FROM (
          '', detail
   FROM host_events WHERE (?1 = '' OR at < ?1)
     AND NOT (kind = 'version' AND COALESCE(json_extract(detail, '$.from'), '') = '')
+    -- the version change an update that went through explains is told by that run's own row
+    AND NOT (kind = 'version' AND EXISTS (SELECT 1 FROM update_runs ur
+        WHERE ur.state = 'updated' AND ur.version = json_extract(host_events.detail, '$.to')
+          AND abs(julianday(ur.finished_at) - julianday(host_events.at)) <= 1.0 / 24))
+  UNION ALL
+  SELECT 'update_runs', id, '', COALESCE(finished_at, requested_at), '',
+         '', state, trigger, version, from_version, NULL, NULL,
+         reason, token_name
+  FROM update_runs WHERE state NOT IN ('requested', 'running') AND (?1 = '' OR COALESCE(finished_at, requested_at) < ?1)
 ) u
 LEFT JOIN apps a ON a.id = u.app_id
 ORDER BY u.at DESC, u.source, u.row_id DESC, u.phase

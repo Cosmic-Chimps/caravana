@@ -79,7 +79,17 @@ type Config struct {
 	// under (apt's history, the reboot marker; feature 027) in place of "/". Empty
 	// means "/". For development and tests; the files are only ever read.
 	HostRoot string
+	// ReleaseURL is the address of GitHub's "latest release" answer the release check asks (feature
+	// 027), in place of GitHub's own. Empty keeps GitHub's. https, or http to a loopback host: for
+	// the lab and tests (feature 030).
+	ReleaseURL string
+	// UpdaterDir is the directory the root updater writes its marker, status and logs in (feature
+	// 030); Caravana only reads it. /var/lib/caravana-update unless said.
+	UpdaterDir string
 }
+
+// DefaultUpdaterDir is where the installer makes the root updater's directory (feature 030).
+const DefaultUpdaterDir = "/var/lib/caravana-update"
 
 // Secret is a string that never prints. Formatting it with fmt or logging it
 // with slog gives "[redacted]"; Reveal returns the value for the one place
@@ -129,6 +139,8 @@ var (
 	dockerRootSetting    = setting{"CARAVANA_DOCKER_ROOT", "docker-root"}
 	metricsURLSetting    = setting{"CARAVANA_TRAEFIK_METRICS_URL", "traefik-metrics-url"}
 	hostRootSetting      = setting{"CARAVANA_HOST_ROOT", "host-root"}
+	releaseURLSetting    = setting{"CARAVANA_RELEASE_URL", "release-url"}
+	updaterDirSetting    = setting{"CARAVANA_UPDATER_DIR", "updater-dir"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
 	nomadAddrSetting      = setting{"NOMAD_ADDR", "nomad-addr"}
@@ -180,6 +192,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	dockerRoot := fs.String(dockerRootSetting.flag, envOr(dockerRootSetting, "/var/lib/docker"), "the directory Docker keeps images and layers in (docker info's Docker Root Dir), an absolute path; Monitoring watches its disk")
 	metricsURL := fs.String(metricsURLSetting.flag, envOr(metricsURLSetting, "http://127.0.0.1:8081/metrics"), "where Traefik serves its Prometheus numbers, an http:// URL on this machine's loopback; an empty flag value (-traefik-metrics-url=) turns the request numbers off")
 	hostRoot := fs.String(hostRootSetting.flag, envOr(hostRootSetting, ""), "for development and tests: read the host's OS files (apt's history, the reboot marker) under this directory instead of /; the files are only read, never written; empty means /")
+	releaseURL := fs.String(releaseURLSetting.flag, envOr(releaseURLSetting, ""), "for development and tests: the address of the latest-release answer the release check asks, https:// or http:// on this machine's loopback; empty means GitHub's")
+	updaterDir := fs.String(updaterDirSetting.flag, envOr(updaterDirSetting, DefaultUpdaterDir), "the directory the server's updater keeps its marker, status and logs in, an absolute path; Caravana only reads it")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
 	trustedProxies := fs.String(trustedProxiesSetting.flag, envOr(trustedProxiesSetting, ""), "comma-separated IPs or CIDRs of proxies whose X-Forwarded-* headers are trusted; empty means none")
 	nomadAddr := fs.String(nomadAddrSetting.flag, envOr(nomadAddrSetting, "http://127.0.0.1:4646"), "Nomad HTTP API address; the token comes from "+nomadTokenEnv)
@@ -238,6 +252,14 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	if c.HostRoot != "" && !path.IsAbs(c.HostRoot) {
 		return Config{}, fmt.Errorf("%s: %q must be an absolute path, or empty for /", hostRootSetting, c.HostRoot)
 	}
+	c.ReleaseURL = strings.TrimSpace(*releaseURL)
+	if err := checkReleaseURL(c.ReleaseURL); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", releaseURLSetting, err)
+	}
+	if !path.IsAbs(*updaterDir) {
+		return Config{}, fmt.Errorf("%s: %q must be an absolute path, such as %s", updaterDirSetting, *updaterDir, DefaultUpdaterDir)
+	}
+	c.UpdaterDir = *updaterDir
 	if err := checkListen(c.Listen); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", listenSetting, err)
 	}
@@ -319,6 +341,26 @@ func checkMetricsURL(raw string) error {
 	host := u.Hostname()
 	if ip, err := netip.ParseAddr(host); host != "localhost" && (err != nil || !ip.IsLoopback()) {
 		return fmt.Errorf("%q must point at this machine's loopback (127.0.0.1, ::1 or localhost), not %q", raw, host)
+	}
+	return nil
+}
+
+// checkReleaseURL accepts nothing (GitHub's own address), an https:// URL, or an http:// URL whose
+// host is this machine's loopback, as for a fake release server in the lab. The URL is asked with
+// Caravana's own User-Agent and nothing else, so it carries no user name or password.
+func checkReleaseURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%q must be an https:// URL (or http:// on this machine's loopback) with a host and no query", raw)
+	}
+	if u.Scheme == "http" {
+		host := u.Hostname()
+		if ip, err := netip.ParseAddr(host); host != "localhost" && (err != nil || !ip.IsLoopback()) {
+			return fmt.Errorf("%q: http:// is only accepted for this machine's loopback (127.0.0.1, ::1 or localhost), not %q; use https://", raw, host)
+		}
 	}
 	return nil
 }
