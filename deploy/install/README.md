@@ -50,6 +50,9 @@ sudo caravana admin init --email you@example.com
 | `/var/lib/caravana/` | Caravana's data (one SQLite file) |
 | `/etc/caravana/caravana.env` | Caravana's settings, including its own Nomad token (limited to what Caravana does) |
 | `/var/lib/caravana-host/` | The installer's choices (`install.env`), Nomad's management token, Traefik's certificates |
+| `/usr/local/libexec/caravana-update` | The updater: a root script that runs an update the console asked for (see Updating) |
+| `caravana-update.timer`, `caravana-update.service` | The timer starts the updater every minute; it does nothing unless a request is waiting |
+| `/var/lib/caravana-update/` | The updater's status and logs. Only root writes here; Caravana reads the status |
 
 From the internet only ports 22, 80 and 443 answer. Nomad, Caravana's own port and Traefik's
 dashboard listen on loopback. Apps' ports are on a private interface, `caravana0`, and reach the
@@ -81,6 +84,48 @@ Run the same command again, without options: it reuses the ones you gave the fir
 
 Options given on a later run replace the recorded ones, for example a new `--domain`.
 
+## Updating
+
+Two ways, with the same installer and the same rollback.
+
+**From the console.** The Updates page (Operator view) shows a newer release with an **Update** button. The
+console is not root and never gets to be: pressing the button writes a request that holds a version
+and nothing else (`/var/lib/caravana/update-request`). A root timer, `caravana-update.timer`, looks
+for it every minute and starts the updater, which:
+
+1. ignores anything that isn't a plain, small file with a valid request ID and a version it can
+   read as `X.Y.Z`, and refuses a version that isn't newer than the one running;
+2. downloads that release's `SHA256SUMS`, `install.sh` and tarball from the release's address
+   on GitHub, and refuses to go on unless the installer and the tarball match `SHA256SUMS` and the
+   installer is for that version;
+3. runs that installer, which does the upgrade above, with its rollback.
+
+The console is down for about a minute while the new version starts, and comes back on it. The
+Updates page says how it went: updated, rolled back (the old version runs again, with its data as it
+was), failed or refused. A rolled back or failed update also shows on the needs-you list and is sent
+to your notification channels. Apps keep running throughout.
+
+The updater's status and the installer's whole output are kept in `/var/lib/caravana-update/`, which
+only root can write. `status` is the newest run; `logs/<id>.log` is that run's output, root-only,
+and the newest 10 are kept.
+
+```bash
+sudo cat /var/lib/caravana-update/status
+sudo less /var/lib/caravana-update/logs/<id>.log
+journalctl -u caravana-update         # what the updater itself said
+systemctl status caravana-update.timer
+```
+
+A host installed before the updater existed doesn't have it: run the newer release's installer by
+hand once (below), and later updates can start from the console.
+
+**By hand.** Rerun the installer of the newer release over SSH, as under Upgrade. The Updates page
+shows the exact command.
+
+The updater reads one optional file, `/etc/caravana/update.env`, only when root owns it and nobody
+else can write it. Its `CARAVANA_UPDATE_RELEASES=<address>` line replaces GitHub's download address.
+It exists for the installer's own tests; leave it out.
+
 ## Uninstall
 
 ```bash
@@ -88,7 +133,7 @@ curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/latest/download/in
   sudo bash -s -- --uninstall
 ```
 
-This removes Caravana's service and binary and revokes its Nomad token. Nomad, Docker, Traefik
+This removes Caravana's service and binary, the updater and its timer, and revokes its Nomad token. Nomad, Docker, Traefik
 and every app keep running; the console's domain answers 502 until Caravana is installed again. Export the apps' jobspecs first (Configure › Export in the console,
 or `GET /v1/apps/<id>/jobspec`) to manage them with plain Nomad. The data stays in
 `/var/lib/caravana`, and installing again picks it up. Add `--purge` to delete it.
@@ -106,7 +151,8 @@ sudo apt-get purge docker.io
 `tools/release.sh build <version> <dir>` builds what a release publishes:
 
 - `install.sh`, with its version set
-- one tarball per architecture, with the binary and the host files from this folder
+- one tarball per architecture, with the binary and the host files from this folder (the updater and
+  its two systemd units are among them)
 - `SHA256SUMS`
 
 The installer checks the tarball against `SHA256SUMS` before using it. Pushing a `v<version>` tag
