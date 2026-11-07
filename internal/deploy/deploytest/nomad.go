@@ -948,8 +948,13 @@ func jobPath(r *http.Request) (id, sub string) {
 
 // runClock is the time of the next periodic run the fake makes: each force
 // takes the next second, so two forces never share a run (the real Nomad
-// would, within one second; the service refuses that case).
-var runClock = time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC).Unix()
+// would, within one second; the service refuses that case). It starts an hour
+// before the test process does, not on a fixed date: the service records a
+// run's finish at the real time and pages read both against a clock near it,
+// so a fixed date drifted out of windows such as the last 30 days' restore
+// points as the calendar moved on. An hour of head start keeps every run in
+// the past for the first 3,600 forces.
+var runClock = time.Now().Add(-time.Hour).Unix()
 
 // listJobs answers GET /v1/jobs?prefix=: the latest version of each job whose
 // ID starts with prefix.
