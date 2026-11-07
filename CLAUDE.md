@@ -999,6 +999,37 @@ Feature 029 (`specs/029-sqlite-backups`, from a CodeAlta task) is implemented on
   form engine and Database file, Backups tab "A SQLite file instead"), gate step
   `sqlite-backup-restore`.
 
+Feature 030 (`specs/030-update-from-console`, from a CodeAlta task) is implemented on the worktree branch
+`alta/earthy-thistle-j2m8`: Caravana updates itself from Operator › Updates, and the console still never gets
+root. The contracts are `contracts/updater.md` (the files both sides read), `api.md` and `page-updates.md`.
+- The request: `RequestUpdate` (`service/updaterun.go`) writes a row in `update_runs` (migration 0023) and
+  `<data dir>/update-request` with only `ID=<32 hex>` and `VERSION=`. It refuses a dev build, a host without the
+  updater, an open run, and any version but the newest release seen that is newer than the running one.
+- The updater: `deploy/install/caravana-update.sh` → `/usr/local/libexec/caravana-update`, root, run every minute
+  by `caravana-update.timer`. It reads the request as text with size and symlink checks, validates both values,
+  checks the version is newer than `/opt/caravana/current`, downloads `SHA256SUMS`, `install.sh` and the tarball,
+  verifies both and runs `install.sh --from`. It writes `status` (`running`, then `updated`, `rolled_back`,
+  `failed` or `refused`, with a one-line reason) and a root-only log in `/var/lib/caravana-update`, a folder
+  Caravana reads and never writes. Root never writes inside `/var/lib/caravana`; Caravana removes its own request
+  when the run is final. The script's body is one `main` call, since the installer rewrites it mid-run.
+- The watcher reads the status every 5 s while a run is open and once at start, so a run is followed across
+  Caravana's restart (and a rollback's copied data still holds the row). `lost` comes after 5 minutes without a
+  start or 45 minutes running. A rolled-back, failed, refused or lost run is the needs-you kind
+  `caravana_update_failed` until a later update succeeds.
+- Automatic updates (`release_check.auto_update`, `auto_update_hour`, off by default) request a patch release
+  of the running version at the set UTC hour, and never a version that already had a run.
+- For tests and dev only: `CARAVANA_RELEASE_URL` (`-release-url`) and `CARAVANA_UPDATER_DIR` (`-updater-dir`), and
+  a root-owned `/etc/caravana/update.env` (`CARAVANA_UPDATE_RELEASES`) that only `install-test.sh` writes.
+- API 0.33.0: `requestUpdate` (`POST /v1/updates/runs`), `listUpdateRuns`, `caravana.updater`/`run`/`autoUpdate`
+  on `getUpdates`, `autoUpdate`/`autoUpdateHour` on `putUpdateSettings`, codes `update_unavailable`,
+  `update_running`, `update_not_offered`.
+- Console: the caravana row's **Update to X…**, the confirmation page `/ops/updates/caravana?version=`, the run
+  panel (`#run`, polled from `/parts/ops/updates/run` while open, a `noscript` refresh without script), Automatic
+  caravana updates in the release-check form, and update runs in Past updates.
+- `install-test.sh` updates a VM through the API (releases `0.0.<time>` served inside the VM). It also checks
+  that a crafted or symlinked request runs nothing and that a broken release is rolled back with the item. It
+  passed on 2026-11-06.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

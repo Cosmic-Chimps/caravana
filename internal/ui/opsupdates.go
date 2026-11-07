@@ -3,7 +3,9 @@ package ui
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -12,8 +14,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/service"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // The Operator Updates page (feature 027, page 3): /ops/updates, what is waiting for Caravana and
@@ -57,12 +61,67 @@ type opsUpdatesPage struct {
 // release-check form, Past updates and the sidebar's mark).
 type upData struct {
 	Banners []upBanner
+	// Run is the update run panel (feature 030): the open run, or the newest one that finished within a
+	// day; nil draws nothing. It sits between the banners and Available, outside #up-top, and polls its
+	// own part while it is open.
+	Run     *upRun
 	Avail   upAvailable
 	Apply   upApply
 	Auto    []upSetting
 	Checked upChecked
-	Past    []upPast
-	Mark    navMark
+	// Caravana is the Automatic caravana updates row: its controls (drawn once with the page) and the
+	// line under it (swapped by id).
+	Caravana upAutoUpdate
+	Past     []upPast
+	Mark     navMark
+}
+
+// upRun is the run panel: a banner row that says what the update of caravana is doing, or how it ended.
+// Explain is the state's own sentence; Reason is the updater's one line (plain text); Log is the path of
+// the installer's log on the server, "" when there is none to point at.
+type upRun struct {
+	Open     bool
+	Mark     string
+	MarkWord string
+	Line     sentence
+	Explain  string
+	Reason   string
+	Log      string
+	// Meta is who asked and when ("from the console · asked "), then Asked, the time.
+	Meta  sentence
+	Asked when
+	// Again is the link of Try again…, set for a run that ended without the update and a release that is
+	// still newer.
+	Again string
+}
+
+// upAutoUpdate is the Automatic caravana updates row. Disabled turns the checkbox and the hour off (no
+// updater: a disabled control isn't posted, so the form carries no marker then). Blocked is why it
+// can't run, in the service's words; else Next is when the next one is due, Enabled says "on", and
+// "off" is the rest.
+type upAutoUpdate struct {
+	Enabled  bool
+	Disabled bool
+	Hour     int
+	Hours    []upHour
+	Hint     sentence
+	Blocked  string
+	Next     when
+}
+
+// upHour is one option of the hour select.
+type upHour struct {
+	Value    int
+	Label    string
+	Selected bool
+}
+
+// upUpdate is the action of the caravana row: the link to the confirmation page, or (Missing) the
+// sentence that says to run the installer once.
+type upUpdate struct {
+	Version string
+	Href    string
+	Missing bool
 }
 
 // navMark is the little mark after the sidebar's Updates item: ■ a reboot is needed, ◆ security
@@ -122,6 +181,8 @@ type upRow struct {
 	Hint sentence
 	// Names is the Ubuntu updates row's package names.
 	Names *upNames
+	// Update is the caravana row's action (feature 030), after the notes and the release link.
+	Update *upUpdate
 }
 
 // upChange is the change column: words and tokens. A token (a version pair, a package name) never
@@ -238,6 +299,32 @@ func (s *server) partOpsUpdates(w http.ResponseWriter, r *http.Request, session 
 	s.renderPart(w, "opsupdates", "up-part", d)
 }
 
+// partOpsUpdatesRun answers GET /parts/ops/updates/run, which the run panel asks for every 5 seconds while
+// its run is open: the panel itself, and (once the run is finished) the main region, the banners, the
+// settings' lines, Past updates and the sidebar's mark by id, so that the caravana row and its step agree
+// with the version that now runs.
+func (s *server) partOpsUpdatesRun(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	v, err := s.svc.Updates(ctx)
+	if err != nil {
+		s.log.Error("read the update run", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	now := s.now().UTC()
+	d := upData{Run: upRunOf(now, v)}
+	if d.Run != nil && !d.Run.Open {
+		att, err := s.svc.Attention(ctx)
+		if err != nil {
+			s.log.Error("read the update run", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		d = upDataOf(now, v, att)
+	}
+	s.renderPart(w, "opsupdates", "up-runpart", d)
+}
+
 // drawOpsUpdates draws the page with the given status; refusal, when set, is the sentence of a check
 // that was turned down.
 func (s *server) drawOpsUpdates(w http.ResponseWriter, r *http.Request, status int, refusal string) {
@@ -252,6 +339,10 @@ func (s *server) drawOpsUpdates(w http.ResponseWriter, r *http.Request, status i
 		return
 	}
 	page.LiveURL = "/live?watch=ops"
+	if d.Run != nil && d.Run.Open {
+		// Without script the page reloads itself while an update is under way (base.html draws the meta).
+		page.Refresh = upRefreshSeconds
+	}
 	s.render(w, status, "opsupdates", opsUpdatesPage{pageData: page, Refusal: refusal,
 		Saved: r.URL.Query().Get("saved") == "1", Data: d})
 }
@@ -298,14 +389,43 @@ func refusalWords(err error) string {
 	return text
 }
 
-// saveOpsUpdateSettings answers POST /ops/updates/settings: the one setting caravana owns, whether
-// it asks GitHub for new releases. A checked box is on, a missing one is off.
+// upBadHour is the refusal of an hour the select can't have sent.
+const upBadHour = "Choose an hour from 00:00 UTC to 23:00 UTC."
+
+// upRefreshSeconds is how often a page without script reloads itself while an update is under way.
+const upRefreshSeconds = 15
+
+// saveOpsUpdateSettings answers POST /ops/updates/settings: what caravana owns about updates, whether it
+// asks GitHub for new releases and (feature 030) whether it installs patch releases by itself, and at
+// which UTC hour. A checked box is on and a missing one is off, so the form always posts both boxes'
+// states, with the hidden marker autoForm that says it had them: a form without the marker (an older
+// one) leaves the automatic setting alone, and so does one whose controls were disabled (a disabled
+// control posts nothing, and that isn't the owner turning it off).
 func (s *server) saveOpsUpdateSettings(w http.ResponseWriter, r *http.Request, session string) {
-	if err := s.svc.SetReleaseCheck(r.Context(), r.PostFormValue("checkEnabled") != ""); err != nil {
-		s.serverError(w, r, "save the update settings", err)
-		return
+	check := r.PostFormValue("checkEnabled") != ""
+	in := service.UpdateSettings{CheckEnabled: &check}
+	if r.PostFormValue("autoForm") != "" {
+		on := r.PostFormValue("autoUpdate") != ""
+		in.AutoUpdate = &on
+		if raw := strings.TrimSpace(r.PostFormValue("autoUpdateHour")); raw != "" {
+			hour, err := strconv.Atoi(raw)
+			if err != nil {
+				s.drawOpsUpdates(w, r, http.StatusUnprocessableEntity, upBadHour)
+				return
+			}
+			in.AutoUpdateHour = &hour
+		}
 	}
-	http.Redirect(w, r, "/ops/updates?saved=1#how", http.StatusSeeOther)
+	err := s.svc.PutUpdateSettings(r.Context(), in)
+	var fe *app.FieldError
+	switch {
+	case err == nil:
+		http.Redirect(w, r, "/ops/updates?saved=1#how", http.StatusSeeOther)
+	case errors.As(err, &fe):
+		s.drawOpsUpdates(w, r, http.StatusUnprocessableEntity, upBadHour)
+	default:
+		s.serverError(w, r, "save the update settings", err)
+	}
 }
 
 // ---- loader -----------------------------------------------------------------------------------
@@ -321,17 +441,23 @@ func (s *server) loadOpsUpdates(r *http.Request) (upData, error) {
 	if err != nil {
 		return upData{}, err
 	}
-	now := s.now().UTC()
-	d := upData{
-		Banners: upBanners(att, places{}),
-		Avail:   upAvailableOf(now, v),
-		Auto:    upSettings(v.OS),
-		Checked: upCheckedOf(now, v),
-		Past:    upPastOf(now, v.History),
-		Mark:    updatesMarkOf(now, v),
+	return upDataOf(s.now().UTC(), v, att), nil
+}
+
+// upDataOf builds everything the page and its parts draw from one read of the updates and of the
+// needs-you items.
+func upDataOf(now time.Time, v service.UpdatesView, att service.Attention) upData {
+	return upData{
+		Banners:  upBanners(att, places{}),
+		Run:      upRunOf(now, v),
+		Avail:    upAvailableOf(now, v),
+		Apply:    upApplyOf(v),
+		Auto:     upSettings(v.OS),
+		Checked:  upCheckedOf(now, v),
+		Caravana: upAutoUpdateOf(now, v.Caravana),
+		Past:     upPastOf(now, v.History),
+		Mark:     updatesMarkOf(now, v),
 	}
-	d.Apply = upApplyOf(v)
-	return d, nil
 }
 
 // updatesMarkOf is the sidebar's mark: the same facts the page's rows say, so the two never differ.
@@ -533,7 +659,32 @@ func releaseRow(now time.Time, v service.UpdatesView) upRow {
 	if c.URL != "" {
 		row.Link = &upLink{Label: "Release notes on GitHub", Href: c.URL}
 	}
+	row.Update = updateAction(c)
 	return row
+}
+
+// updateAction is what the caravana row offers (feature 030): the link to the confirmation page when the
+// updater is installed and no run is open; the sentence that says to run the installer once when the
+// updater isn't there; nothing for a development build, which has no release to compare with, or
+// while a run is open (the run panel says what happens).
+func updateAction(c service.CaravanaUpdate) *upUpdate {
+	switch {
+	case !hostos.IsReleaseVersion(c.Current):
+		return nil
+	case c.Run != nil && !store.UpdateRunFinal(c.Run.State):
+		return nil
+	case c.Run != nil && c.Run.State != store.UpdateUpdated && c.Run.Version == c.Latest && c.Updater.Unavailable == "":
+		// The run panel offers Try again… for this version: one way to ask for it again.
+		return nil
+	case !c.Updater.Installed:
+		return &upUpdate{Version: c.Latest, Missing: true}
+	}
+	return &upUpdate{Version: c.Latest, Href: upConfirmHref(c.Latest)}
+}
+
+// upConfirmHref is the confirmation page of an update to version.
+func upConfirmHref(version string) string {
+	return "/ops/updates/caravana?version=" + url.QueryEscape(version)
 }
 
 // pinsSentence is "Updates Nomad 2.0.7 → 2.1.0 and Traefik 3.7.13 → 3.8.0." with each version pair in
@@ -714,9 +865,19 @@ func upApplyOf(v service.UpdatesView) upApply {
 		add(upStep{ID: "up-cmd-os", CopyLabel: "Copy the install command", Title: plainS("Install the waiting updates:"), Command: upOSCommand})
 	}
 	if c := v.Caravana; c.Latest != "" && c.CheckError == "" && c.Install != "" {
-		add(upStep{ID: "up-cmd-caravana", CopyLabel: "Copy the installer command", Command: c.Install, Title: sentence{plain("Run the installer of "), mono(c.Latest),
+		title := sentence{plain("Run the installer of "), mono(c.Latest),
 			plain(". It upgrades caravana, and Nomad and Traefik when their versions change; your apps keep running, and it puts "),
-			mono(c.Current), plain(" back if "), mono(c.Latest), plain(" fails its health check.")}})
+			mono(c.Current), plain(" back if "), mono(c.Latest), plain(" fails its health check.")}
+		if c.Run != nil && !store.UpdateRunFinal(c.Run.State) {
+			// An update is under way (the run panel): the row has no button now.
+			title = sentence{plain("Run the installer of "), mono(c.Latest), plain(" on the server:")}
+		} else if c.Updater.Installed {
+			// The updater is there: the console can ask for it, and the installer is the other way.
+			title = sentence{plain("Update from the caravana row above, or run the installer of "), mono(c.Latest), plain(" on the server:")}
+		} else {
+			title = append(title, plain(" Running it once also adds the updater, so later updates can start from this page."))
+		}
+		add(upStep{ID: "up-cmd-caravana", CopyLabel: "Copy the installer command", Command: c.Install, Title: title})
 	}
 	if o.Reboot.Required {
 		add(upStep{ID: "up-cmd-reboot", CopyLabel: "Copy the reboot command", Title: plainS("Reboot the server:"), Command: upRebootCommand,
@@ -814,11 +975,231 @@ func upPastOf(now time.Time, history []service.UpdateEvent) []upPast {
 		t := e.At.UTC()
 		date := shortDate(now, t)
 		mark := "healthy"
-		if e.Kind == "boot" {
+		switch e.Kind {
+		case "boot":
 			mark = "idle"
+		case "update":
+			mark = upRunMark(e.State)
 		}
 		out = append(out, upPast{Mark: mark, Text: versionTokens(e.Text), Detail: versionTokens(e.Detail),
 			Date: when{Text: date, Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}})
 	}
 	return out
+}
+
+// upRunMark is the mark of an update run in a state: ● updated, ■ failed, ◆ rolled back, refused or lost,
+// ◐ while it is open.
+func upRunMark(state string) string {
+	switch state {
+	case store.UpdateUpdated:
+		return "healthy"
+	case store.UpdateFailed:
+		return "failed"
+	case store.UpdateRequested, store.UpdateRunning:
+		return "rolling"
+	}
+	return "warning"
+}
+
+// ---- the run panel ----------------------------------------------------------------------------
+
+// upRunOf builds the run panel from the view's run, nil when there is none to show.
+func upRunOf(now time.Time, v service.UpdatesView) *upRun {
+	c := v.Caravana
+	r := c.Run
+	if r == nil {
+		return nil
+	}
+	ver := part{Text: r.Version, Mono: true, Nowrap: true}
+	pair := ver
+	if r.FromVersion != "" {
+		pair = part{Text: r.FromVersion + " → " + r.Version, Mono: true, Nowrap: true}
+	}
+	out := &upRun{Open: !store.UpdateRunFinal(r.State), Mark: upRunMark(r.State), Reason: r.Reason}
+	out.MarkWord = map[string]string{"rolling": "update under way", "healthy": "updated", "failed": "failed", "warning": "needs a look"}[out.Mark]
+	switch r.State {
+	case store.UpdateRequested:
+		out.Line = sentence{plain("Waiting for the server's updater to start the update to "), ver, plain(".")}
+		out.Explain = "It looks for a request every minute."
+	case store.UpdateRunning:
+		out.Line = sentence{plain("Updating caravana "), pair, plain(".")}
+		out.Explain = "The console stops for about a minute while the new version starts. This page comes back by itself; your apps keep running."
+	case store.UpdateUpdated:
+		out.Line = sentence{plain("caravana "), ver, plain(" is running.")}
+		out.Explain = "Updated"
+		if r.FromVersion != "" {
+			out.Explain += " from " + r.FromVersion
+		}
+		out.Explain += " in " + service.UpdateRunDuration(*r) + "."
+	case store.UpdateRolledBack:
+		out.Line = sentence{plain("caravana "), ver, plain(" didn't start, so "), part{Text: r.FromVersion, Mono: true, Nowrap: true}, plain(" runs again with its data as it was.")}
+		// The installer's sentence goes on to say the old version runs again, which the line says.
+		out.Reason = service.RollbackCause(r.Reason)
+		out.Log = r.Log
+	case store.UpdateFailed:
+		out.Line = sentence{plain("The update to caravana "), ver, plain(" failed.")}
+		out.Log = r.Log
+	case store.UpdateRefused:
+		out.Line = sentence{plain("The server's updater didn't start the update to "), ver, plain(".")}
+	case store.UpdateLost:
+		out.Line = sentence{plain("The update to caravana "), ver, plain(" didn't finish.")}
+	}
+	if r.State == store.UpdateRolledBack && r.FromVersion == "" {
+		out.Line = sentence{plain("caravana "), ver, plain(" didn't start, so the version before it runs again with its data as it was.")}
+	}
+	if out.Reason != "" && !strings.ContainsAny(out.Reason[len(out.Reason)-1:], ".!?") {
+		out.Reason += "."
+	}
+
+	asked := r.RequestedAt.UTC()
+	switch r.Trigger {
+	case store.UpdateByAutomatic:
+		out.Meta = sentence{plain("automatic, at ")}
+	case store.UpdateByAPI:
+		out.Meta = sentence{plain("through the API by "), mono(r.TokenName), plain(" · asked ")}
+		if r.TokenName == "" {
+			out.Meta = sentence{plain("through the API · asked ")}
+		}
+	default:
+		out.Meta = sentence{plain("from the console · asked ")}
+	}
+	out.Asked = when{Text: runClock(now, asked), Exact: asked.Format("2006-01-02 15:04:05 UTC"), ISO: asked.Format(time.RFC3339)}
+
+	if !out.Open && r.State != store.UpdateUpdated && c.Latest != "" && c.Updater.Unavailable == "" {
+		out.Again = upConfirmHref(c.Latest)
+	}
+	return out
+}
+
+// runClock is a time of the run panel: "14:02 UTC" for today (UTC), else with its date ("Nov 5, 14:02 UTC").
+func runClock(now, t time.Time) string {
+	t = t.UTC()
+	if t.Format("2006-01-02") == now.UTC().Format("2006-01-02") {
+		return t.Format("15:04") + " UTC"
+	}
+	return shortDate(now, t) + ", " + t.Format("15:04") + " UTC"
+}
+
+// ---- Automatic caravana updates ---------------------------------------------------------------
+
+// patchSeries is "0.16" of "0.16.2": the release line the automatic setting stays on.
+var patchSeries = regexp.MustCompile(`^(\d+\.\d+)\.\d+`)
+
+// upAutoUpdateOf builds the Automatic caravana updates row.
+func upAutoUpdateOf(now time.Time, c service.CaravanaUpdate) upAutoUpdate {
+	a := upAutoUpdate{Enabled: c.Auto.Enabled, Disabled: !c.Updater.Installed, Hour: c.Auto.Hour, Blocked: c.Auto.Blocked}
+	a.Hint = sentence{plain("Only patch releases")}
+	if m := patchSeries.FindStringSubmatch(c.Current); m != nil {
+		a.Hint = append(a.Hint, plain(" ("), part{Text: m[1] + ".x", Mono: true}, plain(")"))
+	}
+	a.Hint = append(a.Hint, plain(", which fix without changing how things work. A newer minor release waits for you, and a version that failed is never tried again by itself."))
+	for h := range 24 {
+		a.Hours = append(a.Hours, upHour{Value: h, Label: fmt.Sprintf("%02d:00 UTC", h), Selected: h == c.Auto.Hour})
+	}
+	if !c.Auto.Next.IsZero() && a.Blocked == "" {
+		t := c.Auto.Next.UTC()
+		a.Next = when{Text: shortDate(now, t) + ", " + t.Format("15:04") + " UTC", Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}
+	}
+	return a
+}
+
+// ---- the confirmation page --------------------------------------------------------------------
+
+// upConfirmPage is the page that asks before caravana is updated (contracts/page-updates.md §2): the
+// Stop page's shape. Refusal takes the panel's and the button's place.
+type upConfirmPage struct {
+	pageData
+	Headline sentence
+	Version  string
+	Paras    []sentence
+	Note     string
+	Refusal  sentence
+}
+
+// upConfirmOf builds the panel's sentences for an update from current to version, with the pins the
+// release changes.
+func upConfirmOf(c service.CaravanaUpdate, version string) upConfirmPage {
+	cur := c.Current
+	p := upConfirmPage{Version: version, Headline: sentence{plain("Update caravana to "), part{Text: version, Mono: true, Nowrap: true}}}
+	ver := part{Text: version, Mono: true, Nowrap: true}
+	p.Paras = []sentence{
+		{plain("caravana "), part{Text: cur + " → " + version, Mono: true, Nowrap: true},
+			plain(". The server's updater starts it within a minute, as root, from the installer: the console only asks.")},
+		plainS("The console stops for about a minute while the new version starts. Your apps keep running and keep answering."),
+	}
+	for _, pin := range c.Pins {
+		pair := part{Text: pin.From + " → " + pin.To, Mono: true, Nowrap: true}
+		switch pin.Name {
+		case "Nomad":
+			p.Paras = append(p.Paras, sentence{plain("Nomad "), pair, plain(" is installed in the same run. Nomad restarts; apps keep running.")})
+		case "Traefik":
+			p.Paras = append(p.Paras, sentence{plain("Traefik "), pair, plain(" is installed in the same run. Traefik restarts, so every app's address stops answering for a few seconds.")})
+		}
+	}
+	if len(c.Pins) == 0 {
+		p.Paras = append(p.Paras, plainS("Nomad and Traefik stay as they are, unless the installer changes their settings."))
+	}
+	p.Paras = append(p.Paras, sentence{plain("If "), ver, plain(" doesn't answer its health check within a minute, "),
+		part{Text: cur, Mono: true, Nowrap: true}, plain(" comes back with its data as it was, and this page says why.")})
+	p.Note = "OS updates and the reboot aren't part of it: they stay on the server."
+	return p
+}
+
+// showOpsUpdateConfirm answers GET /ops/updates/caravana?version=: what the update does, and the button
+// that asks for it. A version the service wouldn't accept right now is refused with its own sentence
+// (409), so the page never offers a button that would only be turned down.
+func (s *server) showOpsUpdateConfirm(w http.ResponseWriter, r *http.Request, session string) {
+	s.drawOpsUpdateConfirm(w, r, strings.TrimSpace(r.URL.Query().Get("version")), nil)
+}
+
+// requestOpsUpdate answers POST /ops/updates/caravana: the update is requested and the browser goes to
+// the run panel (303). A refusal draws the confirmation page again with the service's sentence and the
+// status the API gives it, never a redirect.
+func (s *server) requestOpsUpdate(w http.ResponseWriter, r *http.Request, session string) {
+	version := strings.TrimSpace(r.PostFormValue("version"))
+	_, err := s.svc.RequestUpdate(r.Context(), version, store.UpdateByConsole, "")
+	if err == nil {
+		http.Redirect(w, r, "/ops/updates#run", http.StatusSeeOther)
+		return
+	}
+	s.drawOpsUpdateConfirm(w, r, version, err)
+}
+
+// drawOpsUpdateConfirm draws the confirmation page. refused is why a post was turned down; with none, the
+// page asks the service whether the version would be accepted.
+func (s *server) drawOpsUpdateConfirm(w http.ResponseWriter, r *http.Request, version string, refused error) {
+	ctx := r.Context()
+	if refused == nil {
+		refused = s.svc.CheckUpdateOffer(ctx, version)
+	}
+	v, err := s.svc.Updates(ctx)
+	if err != nil {
+		s.serverError(w, r, "draw the update confirmation", err)
+		return
+	}
+	version = strings.TrimPrefix(version, "v")
+	page := upConfirmOf(v.Caravana, version)
+	status := http.StatusOK
+	if refused != nil {
+		var fe *app.FieldError
+		switch {
+		case errors.Is(refused, service.ErrUpdateUnavailable), errors.Is(refused, service.ErrUpdateRunning), errors.Is(refused, service.ErrUpdateNotOffered):
+			status = http.StatusConflict
+			page.Refusal = versionTokens(refused.Error())
+		case errors.As(refused, &fe):
+			status = http.StatusUnprocessableEntity
+			page.Refusal = plainS(refusalWords(errors.New(fe.Message)))
+		default:
+			s.serverError(w, r, "request an update of caravana", refused)
+			return
+		}
+		page.Paras, page.Note = nil, ""
+	}
+	head, err := s.shellPage(r, "Update caravana", navOpsUpdates, crumb{Label: "Updates", Href: "/ops/updates"}, crumb{Label: "Update caravana"})
+	if err != nil {
+		s.serverError(w, r, "read admin", err)
+		return
+	}
+	page.pageData = head
+	s.render(w, status, "opsupdatesconfirm", page)
 }

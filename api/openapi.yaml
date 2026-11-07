@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.32.0
+  version: 0.33.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -1315,6 +1315,12 @@ paths:
         (`checkUpdates`) and package names (`updates.packages`) from the last package check, kept
         an hour. Waiting security updates and a pending reboot are also items on `listAttention`
         (`os_security_updates`, `os_reboot_required`). Deploy tokens are refused.
+
+        `caravana` also says whether an update can be started from here (`updater`), the update
+        run to show (`run`: the open one, else the newest that finished within 24 hours) and the
+        automatic setting (`autoUpdate`); `requestUpdate` starts one. `history` also lists update
+        runs that finished (`kind` `update`), and leaves out a version change that an update run
+        which went through explains.
       tags: [metrics]
       responses:
         "200":
@@ -1333,14 +1339,19 @@ paths:
   /v1/updates/settings:
     put:
       operationId: putUpdateSettings
-      summary: Turn the daily check for a new Caravana release on or off.
+      summary: Turn the daily check for a new Caravana release, and automatic updates, on or off.
       description: |
-        The one setting Caravana owns on the Updates page. On by default. With it off Caravana
-        makes no request to GitHub at all (and `checkUpdates` with `release` is refused). The
-        check asks only for the latest release list, with `User-Agent: caravana/<version>`;
-        nothing about the server is sent. The answer is the `caravana` part of `getUpdates` as it
-        is now. A body without a boolean `checkEnabled` is 422 `invalid_field`. Deploy tokens are
-        refused.
+        The settings Caravana owns on the Updates page. Every field is optional, and a missing one
+        keeps its value. `checkEnabled` is on by default: with it off Caravana makes no request
+        to GitHub at all (and `checkUpdates` with `release` is refused). The check asks only for the
+        latest release list, with `User-Agent: caravana/<version>`; nothing about the server is
+        sent. `autoUpdate` (off by default) lets Caravana ask for the newest release by itself at
+        `autoUpdateHour` (UTC, 0 to 23, 3 by default), when it is a patch release of the running
+        version (`0.16.x`; never a new minor, and never one with a suffix), the release check is
+        on, the updater is installed, no run is open and no run was ever made for that version, so
+        a release that failed isn't tried again. The answer is the `caravana` part of `getUpdates`
+        as it is now. A field of the wrong type, or an hour outside 0 to 23, is 422
+        `invalid_field`, naming it. Deploy tokens are refused.
       tags: [metrics]
       requestBody:
         required: true
@@ -1364,11 +1375,101 @@ paths:
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "422":
-          description: "`invalid_field`, `field` `checkEnabled`: it is missing or isn't true or false."
+          description: "`invalid_field`, `field` `checkEnabled`, `autoUpdate` or `autoUpdateHour`: it isn't true or false, or the hour isn't 0 to 23."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/updates/runs:
+    post:
+      operationId: requestUpdate
+      summary: Ask the server's updater to install a newer Caravana release.
+      description: |
+        Records a request for one version and answers 202 with the run, `state` `requested`. The
+        console never gets root: the request is a row and a small file in Caravana's data
+        directory that holds an ID and the version, and a root timer on the server (the installer's
+        `caravana-update`) looks for it every minute, checks it, downloads that release's installer
+        and tarball from the release address, checks both against the release's `SHA256SUMS` and
+        runs the installer, which upgrades with a rollback: the data is copied first, and the old
+        version and its data come back if the new one doesn't answer its health check. Caravana
+        restarts during the run; the run is followed across it and ends `updated`, `rolled_back`,
+        `failed`, `refused` or `lost` (nothing started within 5 minutes, or nothing finished within
+        45), and any of the last four is an item on `listAttention` (`caravana_update_failed`). A
+        leading `v` on `version` is dropped. `trigger` is `console` for a signed-in session and
+        `api` for an API token, whose name is `tokenName`. There is no read of one run: it is in
+        `getUpdates` (`caravana.run`) and `listUpdateRuns`. Only a full token or a session may
+        ask; deploy tokens are refused, and the MCP server doesn't offer it.
+
+        409 `update_unavailable` (`field` `version`): this is a development build, or the server's
+        updater isn't installed (run the newer installer once on the server, which adds it).
+        409 `update_running`: a run is `requested` or `running`. 409 `update_not_offered` (`field`
+        `version`): the version isn't the newest release Caravana has seen (`checkUpdates` first),
+        or isn't newer than the running one. 422 `invalid_field` (`field` `version`): it is
+        missing, or isn't `X.Y.Z` with an optional `-suffix`. 500: the request file couldn't be
+        written (the run is removed again).
+      tags: [metrics]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUpdateRequest"
+      responses:
+        "202":
+          description: The request is recorded; the updater starts it within a minute.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "409":
+          description: "`update_unavailable`, `update_running` or `update_not_offered`; `message` says why. Nothing was recorded."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `version`: it is missing, or isn't a release version."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listUpdateRuns
+      summary: List the updates of Caravana that were asked for.
+      description: |
+        The update runs, newest first, at most 20, in any state. Deploy tokens are refused.
+      tags: [metrics]
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UpdateRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -4548,10 +4649,12 @@ components:
             skipped), `domain_dns_elsewhere` (a domain's DNS points at another host) or
             `domain_cert_expiring` (a domain's certificate is near its end and not renewed) or
             `disk_nearly_full` (a filesystem of the host is 85 % full or more),
-            `os_reboot_required` (the host needs a reboot) or `os_security_updates` (security
-            updates are waiting; a warning). Those two have no app: `title` is "Reboot needed" or
-            "Security updates waiting" and `text` is the sentence ("This server needs a reboot: kernel
-            6.8.0-149 is installed, but 6.8.0-147 is still running."). A
+            `os_reboot_required` (the host needs a reboot), `os_security_updates` (security
+            updates are waiting; a warning) or `caravana_update_failed` (an update of Caravana was
+            rolled back, failed, was refused or got lost). Those three have no app: `title` is
+            "Reboot needed", "Security updates waiting" or "caravana update failed" and `text` is the
+            sentence ("This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is
+            still running."). A
             schedule that keeps failing is one problem: one `problem.opened`, then one
             `problem.resolved` after a run succeeds; so is a domain, per host. A disk that rises
             from `warning` to `failed` after its `problem.opened` sends one `problem.worsened`
@@ -6210,8 +6313,19 @@ components:
     UpdatesCaravana:
       type: object
       additionalProperties: false
-      required: [current, notes, checkEnabled, checkedAt, checkedOkAt, checkError]
+      required: [current, notes, checkEnabled, checkedAt, checkedOkAt, checkError, updater, run, autoUpdate]
       properties:
+        updater:
+          $ref: "#/components/schemas/UpdaterState"
+        run:
+          description: |
+            The update run to show: the open one (`requested` or `running`), else the newest run
+            that finished within the last 24 hours, else `null`.
+          oneOf:
+            - $ref: "#/components/schemas/UpdateRun"
+            - type: "null"
+        autoUpdate:
+          $ref: "#/components/schemas/AutoUpdate"
         current:
           type: string
           description: The running version, without a leading `v` (`dev` for a build that isn't a release).
@@ -6266,6 +6380,89 @@ components:
             limiting requests from this host", "GitHub has no release of caravana yet", "GitHub's
             answer wasn't a release"); empty when it worked. The earlier answer stays: `latest`
             may still be there.
+
+    UpdaterState:
+      type: object
+      additionalProperties: false
+      required: [installed, unavailable]
+      description: The server's updater, the root timer that runs an update `requestUpdate` asked for.
+      properties:
+        installed:
+          type: boolean
+          description: The installer's marker file is there (the installer of a release with updates from the console has run once).
+        unavailable:
+          type: string
+          description: |
+            Why `requestUpdate` would answer `update_unavailable` right now, in words ("This is a
+            development build, which has no release to compare with.", "This server's updater isn't
+            installed. Run the installer of 0.17.0 once on the server; it adds the updater, and
+            later updates can start here."); empty when it wouldn't.
+
+    AutoUpdate:
+      type: object
+      additionalProperties: false
+      required: [enabled, hour, next]
+      properties:
+        enabled: {type: boolean, description: "The owner's setting (`putUpdateSettings`); off by default."}
+        hour: {type: integer, minimum: 0, maximum: 23, description: "The UTC hour the request is made at; 3 by default."}
+        next:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When the next automatic request is made, when one is due: the setting is on, a patch
+            release is out that never had a run, the release check is on and the updater is
+            installed. The current time while the clock is inside the set hour. `null` otherwise.
+
+    UpdateRun:
+      type: object
+      additionalProperties: false
+      required: [id, version, fromVersion, trigger, tokenName, state, reason, requestedAt, startedAt, finishedAt, log]
+      properties:
+        id:
+          type: string
+          description: 32 lowercase hex characters, the ID in the request file.
+          examples: ["3f6c0d2a9b7e41c58d0f2e6a1b9c7d40"]
+        version: {type: string, description: "The version asked for, without a leading `v`.", examples: ["0.17.0"]}
+        fromVersion: {type: string, description: "The version that ran when it was asked for.", examples: ["0.16.0"]}
+        trigger:
+          type: string
+          enum: [console, api, automatic]
+          description: A signed-in session, an API token (`tokenName`) or the automatic setting.
+        tokenName: {type: string, description: "The API token's name for `api`; empty otherwise."}
+        state:
+          type: string
+          enum: [requested, running, updated, rolled_back, failed, refused, lost]
+          description: |
+            `requested` (waiting for the updater), `running`, then final: `updated`;
+            `rolled_back` (the new version didn't answer its health check, so the old one and its
+            data came back); `failed`; `refused` (the updater or the installer refused before
+            changing anything); `lost` (nothing started within 5 minutes, or nothing finished
+            within 45).
+        reason:
+          type: string
+          description: |
+            One line of printable ASCII, at most 300 characters, from the updater (its own sentence,
+            or the installer's last `caravana install:` line) or, for `lost`, Caravana's. Empty for
+            `requested`, `running` and `updated`. Never the installer's log.
+        requestedAt: {type: string, format: date-time}
+        startedAt: {type: [string, "null"], format: date-time, description: "When the updater started it; `null` until known."}
+        finishedAt: {type: [string, "null"], format: date-time, description: "When it ended; `null` while it is open."}
+        log:
+          type: string
+          description: |
+            Where the updater keeps the installer's whole output on the server (root only), such as
+            `/var/lib/caravana-update/logs/<id>.log`. Empty before the updater started the run, for a
+            `refused` one and for a `lost` one that never started. The API never returns its content.
+
+    RequestUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: string
+          description: The release to install, `X.Y.Z` with an optional `-suffix`; a leading `v` is dropped. It must be the newest release Caravana has seen.
+          examples: ["0.17.0"]
 
     UpdatesPin:
       type: object
@@ -6385,8 +6582,18 @@ components:
         at: {type: string, format: date-time}
         kind:
           type: string
-          enum: [version, os_packages, boot]
-          description: Caravana changed version, the OS's package manager ran, or the server restarted.
+          enum: [version, os_packages, boot, update]
+          description: |
+            Caravana changed version, the OS's package manager ran, the server restarted, or an
+            update of Caravana that was asked for finished (`update`, with its `state`; its `text` is
+            "caravana 0.16.0 → 0.17.0" and its `detail` who asked and how it went, such as "from the
+            console · 1 min 40 s" or "rolled back · didn't answer its health check…"). A `version` row
+            that an `updated` run for the same version, finished within an hour of it, explains is
+            left out.
+        state:
+          type: string
+          enum: [updated, rolled_back, failed, refused, lost]
+          description: An `update` row's final state; absent for the other kinds.
         text:
           type: string
           examples: ["caravana 0.12.0 → 0.13.0", "Ubuntu updates · 14 packages", "The server restarted"]
@@ -6406,9 +6613,11 @@ components:
     UpdateSettingsRequest:
       type: object
       additionalProperties: false
-      required: [checkEnabled]
+      description: Every field is optional; a missing one keeps its value.
       properties:
         checkEnabled: {type: boolean}
+        autoUpdate: {type: boolean, description: "Install patch releases by themselves, at `autoUpdateHour`."}
+        autoUpdateHour: {type: integer, minimum: 0, maximum: 23, description: "The UTC hour for automatic updates."}
 
     CheckUpdatesRequest:
       type: object
@@ -6529,7 +6738,7 @@ components:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
-            os_reboot_required, os_security_updates]
+            os_reboot_required, os_security_updates, caravana_update_failed]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -6550,11 +6759,16 @@ components:
             waiting, 9 of them security updates."), from a list of updates under 48 hours old and,
             when Ubuntu's own automatic updates are on, only after they have waited 24 hours; it goes
             when the count reads zero. Both are about the host, so they have no `appId`, and both come
-            from `getUpdates`'s files. Neither names a vulnerability. Clients should accept kinds they
-            don't know.
+            from `getUpdates`'s files. Neither names a vulnerability. `caravana_update_failed`: the
+            newest update of Caravana that finished didn't go through (`rolled_back`, `refused` and
+            `lost` are a `warning`, `failed` is `failed`) and the running version is still older than
+            the run's. `detail` says it ("caravana 0.17.0 didn't start, so 0.16.0 runs again."; "The
+            update to caravana 0.17.0 failed: <the updater's reason>."). It is about the server, so it
+            has no `appId`, and it goes when a later update succeeds or the running version catches up;
+            a failed update is never retried by itself. Clients should accept kinds they don't know.
         appId:
           type: string
-          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required` and `os_security_updates`, which are about the installation or the host.
+          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates` and `caravana_update_failed`, which are about the installation or the host.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.
@@ -6601,7 +6815,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.

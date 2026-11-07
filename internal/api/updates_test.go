@@ -286,11 +286,21 @@ func TestPutUpdateSettings(t *testing.T) {
 		t.Errorf("put true = %d %s", status, raw)
 	}
 
-	for _, body := range []string{`{}`, `{"checkEnabled":"yes"}`, `{"checkEnabled":null}`, `{"checkEnabled":1}`} {
-		status, raw := put(body)
+	// Every field is optional: a missing one (or a null) keeps its value.
+	for _, body := range []string{`{}`, `{"checkEnabled":null}`} {
+		if status, raw := put(body); status != http.StatusOK || decodeAs[map[string]any](t, raw)["checkEnabled"] != true {
+			t.Errorf("%s = %d %s, want 200 with the setting kept", body, status, raw)
+		}
+	}
+	for _, c := range []struct{ body, field string }{
+		{`{"checkEnabled":"yes"}`, "checkEnabled"}, {`{"checkEnabled":1}`, "checkEnabled"},
+		{`{"autoUpdate":"yes"}`, "autoUpdate"}, {`{"autoUpdateHour":"3"}`, "autoUpdateHour"},
+		{`{"autoUpdateHour":24}`, "autoUpdateHour"}, {`{"autoUpdateHour":-1}`, "autoUpdateHour"}, {`{"autoUpdateHour":2.5}`, "autoUpdateHour"},
+	} {
+		status, raw := put(c.body)
 		eb := decodeAs[errorBody](t, raw)
-		if status != http.StatusUnprocessableEntity || eb.Error.Code != "invalid_field" || eb.Error.Field != "checkEnabled" {
-			t.Errorf("%s = %d %s, want 422 invalid_field checkEnabled", body, status, raw)
+		if status != http.StatusUnprocessableEntity || eb.Error.Code != "invalid_field" || eb.Error.Field != c.field {
+			t.Errorf("%s = %d %s, want 422 invalid_field %s", c.body, status, raw, c.field)
 		}
 	}
 	if status, raw := put(`{"checkEnabled":true,"x":1}`); status != http.StatusBadRequest {
@@ -302,7 +312,7 @@ func TestPutUpdateSettings(t *testing.T) {
 	}
 }
 
-// A deploy token may call none of the three: the default deny refuses them (the
+// A deploy token may call none of the five: the default deny refuses them (the
 // scope walk checks every route; this names these).
 func TestUpdatesAreRefusedToADeployToken(t *testing.T) {
 	e, _ := updatesEnv(t, "0.15.0", ubuntuFiles(time.Now()), nil)
@@ -312,6 +322,8 @@ func TestUpdatesAreRefusedToADeployToken(t *testing.T) {
 		{http.MethodGet, "/v1/updates", ""},
 		{http.MethodPut, "/v1/updates/settings", `{"checkEnabled":false}`},
 		{http.MethodPost, "/v1/updates/check", `{"what":"release"}`},
+		{http.MethodPost, "/v1/updates/runs", `{"version":"0.16.0"}`},
+		{http.MethodGet, "/v1/updates/runs", ""},
 	} {
 		req, err := http.NewRequest(c.method, e.RawURL+c.path, strings.NewReader(c.body))
 		if err != nil {

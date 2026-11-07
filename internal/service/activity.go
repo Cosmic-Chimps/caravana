@@ -154,6 +154,10 @@ func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow, displa
 		e.Kind = ActivityServer
 		e.AppID, e.AppName = "", ""
 		e.Status, e.Parts = hostEventWords(r)
+	case store.ActivityUpdate:
+		e.Kind = ActivityServer
+		e.AppID, e.AppName = "", ""
+		e.Status, e.Parts = updateRunWords(r)
 	default:
 		return ActivityEntry{}, false
 	}
@@ -332,6 +336,45 @@ func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 		return osPackagesWords(d)
 	}
 	return ActivityIdle, parts("The server changed.")
+}
+
+// updateRunWords says an update of Caravana that finished (feature 030): the row's Label is the
+// version it was for, Program the one it left, Error the updater's one-line reason and Trigger
+// who asked.
+func updateRunWords(r store.ActivityRow) (string, []TextPart) {
+	to, from := r.Label, r.Program
+	how := "by " + r.Trigger
+	switch r.Trigger {
+	case store.UpdateByConsole:
+		how = "from the console"
+	case store.UpdateByAPI:
+		how = "through the API"
+	case store.UpdateByAutomatic:
+		how = "automatically"
+	}
+	reason := func() string {
+		if x := strings.TrimRight(strings.TrimSpace(r.Error), "."); x != "" {
+			return ": " + x + "."
+		}
+		return "."
+	}
+	switch r.Status {
+	case store.UpdateUpdated:
+		if from == "" {
+			return ActivityHealthy, parts("caravana was updated to ", mono(to), " "+how+".")
+		}
+		return ActivityHealthy, parts("caravana was updated from ", mono(from), " to ", mono(to), " "+how+".")
+	case store.UpdateRolledBack:
+		if cause := RollbackCause(r.Error); cause != "" {
+			return ActivityWarning, parts("The update to caravana ", mono(to), " was rolled back: "+cause)
+		}
+		return ActivityWarning, parts("The update to caravana ", mono(to), " was rolled back.")
+	case store.UpdateFailed:
+		return ActivityFailed, parts("The update to caravana ", mono(to), " failed"+reason())
+	case store.UpdateRefused:
+		return ActivityWarning, parts("The server's updater refused caravana ", mono(to), reason())
+	}
+	return ActivityWarning, parts("The update to caravana ", mono(to), " didn't finish"+reason())
 }
 
 // nodeEventEntry puts one of the node's events from Nomad in Caravana's words.

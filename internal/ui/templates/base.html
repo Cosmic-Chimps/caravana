@@ -12,6 +12,7 @@
 <script src="{{asset "js/console.js"}}" defer></script>
 <script src="{{asset "js/localtime.js"}}" defer></script>
 {{block "head" .}}{{end}}
+{{if .Refresh}}<noscript><meta http-equiv="refresh" content="{{.Refresh}}"></noscript>{{end}}
 </head>
 <body class="min-h-screen"{{with .LiveURL}} hx-ext="sse" sse-connect="{{.}}" sse-close="ended" data-live{{end}}>
 {{if .Shell}}{{template "shell" .}}{{else}}{{template "content" .}}{{end}}

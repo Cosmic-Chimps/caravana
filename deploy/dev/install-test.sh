@@ -344,6 +344,11 @@ check_console_update() {
   say "update: a broken $ubad is rolled back to $u2, and the owner is told"
   serve_release "$ubad"
   serve_latest "$ubad"
+  # Check now runs at most once per 10 minutes, which the first update's check may still hold.
+  # Caravana's own first check comes a minute after it starts, whatever that limit says, so a
+  # restart makes it see $ubad within request_update's wait.
+  vm sudo systemctl restart caravana
+  wait_health "$u2" 60
   request_update "$ubad"
   id="$(grep -o '"id":"[0-9a-f]\{32\}"' <<<"$POST_BODY" | head -1 | cut -d'"' -f4)"
   wait_status "$id" rolled_back 360

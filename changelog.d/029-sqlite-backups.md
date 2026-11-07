@@ -12,7 +12,7 @@
   48 MB reserved together). API 0.32.0 (`BackupPolicy.file`, the `sqlite` engine).
 
 ### Upgrade
-- Nothing to rerun. Every app with a volume gets an updated `caravana-volumes` task on its next deploy;
+- Every app with a volume gets an updated `caravana-volumes` task on its next deploy;
   an app needs one deploy with this version before its first sqlite restore (setting the policy is one).
   `CARAVANA_SQLITE_IMAGE` (`-sqlite-image`) replaces the pinned `alpine/sqlite` image if you mirror
   images.

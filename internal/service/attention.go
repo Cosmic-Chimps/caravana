@@ -36,6 +36,9 @@ const (
 	AttentionDiskNearlyFull      AttentionKind = "disk_nearly_full"      // a watched filesystem of the host is 85 % full or more (feature 025)
 	AttentionOSRebootRequired    AttentionKind = "os_reboot_required"    // the host needs a reboot: a failed item (feature 027)
 	AttentionOSSecurityUpdates   AttentionKind = "os_security_updates"   // security updates are waiting: a warning (feature 027)
+	// AttentionCaravanaUpdateFailed: the newest update of Caravana that finished didn't go through
+	// (rolled back, failed, refused or lost) and the running version is still older (feature 030).
+	AttentionCaravanaUpdateFailed AttentionKind = "caravana_update_failed"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -106,7 +109,12 @@ type AttentionItem struct {
 	InstalledKernel, RunningKernel string
 	Packages                       []string
 	Updates, Security              int
-	When                           time.Time
+	// UpdateRunID, UpdateVersion, UpdateFrom, UpdateState and UpdateReason are the update item's
+	// facts (caravana_update_failed, feature 030): the run, the version it was for and the one it
+	// left, its final state and the updater's one-line reason. The item has no app; Detail is its
+	// sentence and Level says failed (state failed) or warning (the other states).
+	UpdateRunID, UpdateVersion, UpdateFrom, UpdateState, UpdateReason string
+	When                                                              time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -171,6 +179,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	osItems, osKnown := s.osItems(s.clock.Now().UTC())
 	out.OSUnknown = !osKnown
 	out.Items = append(out.Items, osItems...)
+	updateItems, err := s.updateItems(ctx)
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.Items = append(out.Items, updateItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

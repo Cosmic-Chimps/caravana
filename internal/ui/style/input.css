@@ -1917,6 +1917,8 @@
   .cv-upchange { margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); min-width: 0; padding-top: 2px; }
   /* A version pair or a package name never breaks inside; lines break only at the spaces between them. */
   .cv-uptok, .cv-nowrap { white-space: nowrap; }
+  /* /ops/updates#run: the run panel stops under the sticky top bar, not behind it (030). */
+  .cv-uprun { scroll-margin-top: calc(52px + 12px); }
   .cv-upnotes { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
   .cv-upnotelist { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font: 400 14px/1.45 var(--font-sans); color: var(--color-fg-2); text-wrap: pretty; }
   /* A release's notes: a bullet per line, its bold lead at 500 in fg-1. */
@@ -1964,6 +1966,19 @@
   .cv-upform { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 0; }
   .cv-upcheckedrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .cv-upchecked { font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+
+  /* Updating caravana from here (feature 030). The caravana row's action sits 12px under the notes. The run
+     panel is a banner row (.cv-dmbanner): its meta is the dense mono line, and the log path, which is long,
+     breaks anywhere. The wrappers that hold the swapped regions add no box of their own, so the page's
+     gap between its sections stays the same. The Automatic row's controls wrap, so at 390px the hour
+     select goes under the checkbox. */
+  .cv-upwrap { display: contents; }
+  .cv-upaction { margin-top: 12px; }
+  .cv-uprunmeta { margin: 0; font: 400 12px/1.4 var(--font-mono); color: var(--color-fg-3); overflow-wrap: anywhere; }
+  .cv-uplog { overflow-wrap: anywhere; word-break: break-all; color: var(--color-fg-1); }
+  .cv-upauto { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .cv-upautoat { display: inline-flex; align-items: center; gap: 8px; font: 400 14px/1.5 var(--font-sans); color: var(--color-fg-2); }
+  .cv-upautoat label { cursor: default; }
 
   /* Past updates: grid 14px 80px 1fr 1fr, gap 18, min-height 46, padding 8px 20px. */
   .cv-uppast { padding: 0; }
@@ -2111,6 +2126,7 @@
    ("1 · Install the waiting updates:"), Copy moves to the title's row, and the box takes the row under
    them. The body and the box's row dissolve (display: contents) so that the step is one grid. */
 @container cvupd (max-width: 479.98px) {
+  .cv-upautoat { flex-basis: 100%; }
   .cv-upstep { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 20px; }
   .cv-upstepbody, .cv-upcmdrow { display: contents; }
   .cv-upstepn { position: static; width: auto; }

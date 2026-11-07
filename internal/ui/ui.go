@@ -148,6 +148,9 @@ func (s *server) routeTable() []route {
 		{"GET", "/parts/ops/servers/{name}", s.requirePart(s.partOpsServerBody)},
 		{"GET", "/ops/updates", s.requireSession(s.showOpsUpdates)},
 		{"GET", "/parts/ops/updates", s.requirePart(s.partOpsUpdates)},
+		{"GET", "/parts/ops/updates/run", s.requirePart(s.partOpsUpdatesRun)},
+		{"GET", "/ops/updates/caravana", s.requireSession(s.showOpsUpdateConfirm)},
+		{"POST", "/ops/updates/caravana", s.protected(s.requireSession(s.requestOpsUpdate))},
 		{"POST", "/ops/updates/check", s.protected(s.requireSession(s.checkOpsUpdates))},
 		{"POST", "/ops/updates/settings", s.protected(s.requireSession(s.saveOpsUpdateSettings))},
 		{"GET", "/parts/ops/apps", s.requirePart(s.partOpsApps)},
@@ -327,7 +330,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -378,6 +381,10 @@ type pageData struct {
 	// "dark", or "" to match the system. base.html writes it on <html>, so it is
 	// in the first byte of the page and never flashes (feature 028).
 	Theme string
+	// Refresh, when set, is how many seconds a visitor without script waits before the page reloads
+	// itself (the Updates page while an update is under way). base.html draws it as a meta in a
+	// <noscript>, only when set.
+	Refresh int
 }
 
 func (s *server) page(r *http.Request, title string) pageData {

@@ -37,6 +37,7 @@ type fakeRelease struct {
 	status   int
 	requests int
 	body     string // the release's notes; "" is a short default
+	tag      string // the latest release's tag; "" is v0.16.0
 }
 
 func newFakeRelease(t *testing.T) *fakeRelease {
@@ -59,7 +60,11 @@ func newFakeRelease(t *testing.T) *fakeRelease {
 			body = "Highlights\n\n- Operator view.\n- Updates page.\n"
 		}
 		notes, _ := json.Marshal(body)
-		fmt.Fprint(w, `{"tag_name":"v0.16.0","html_url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/v0.16.0",`+
+		tag := g.tag
+		if tag == "" {
+			tag = "v0.16.0"
+		}
+		fmt.Fprint(w, `{"tag_name":"`+tag+`","html_url":"https://github.com/Cosmic-Chimps/caravana/releases/tag/`+tag+`",`+
 			`"published_at":"2026-10-28T10:00:00Z","body":`+string(notes)+`,"draft":false,"prerelease":false}`)
 	}))
 	t.Cleanup(g.Close)
@@ -102,6 +107,8 @@ type updOpts struct {
 	pro       service.ProRunner
 	version   string // the running version; "" is 0.15.0
 	kernel    string // the node's kernel; "" is 6.8.0-147-generic
+	updater   bool   // the server's updater is installed (feature 030)
+	tag       string // the latest release's tag; "" is v0.16.0
 }
 
 // updEnv is a console whose sampler has read the node and a copy of the fixture host.
@@ -128,6 +135,7 @@ func updEnv(t *testing.T, o updOpts) (*consoleEnv, *fakeRelease) {
 	age("run/reboot-required", cmpDur(o.rebootAge, 30*time.Hour))
 
 	gh := newFakeRelease(t)
+	gh.tag = o.tag
 	kernel := cmpStr(o.kernel, "6.8.0-147-generic")
 	e := newConsoleEnvWith(t, func(svc *service.Service, n *deploytest.Nomad) {
 		svc.SetMetricsSampleGap(500 * time.Millisecond)
@@ -136,6 +144,14 @@ func updEnv(t *testing.T, o updOpts) (*consoleEnv, *fakeRelease) {
 		svc.SetReleaseURL(gh.URL + "/repos/x/releases/latest")
 		svc.SetReleasePinURLs(gh.URL+"/download", gh.URL+"/raw")
 		svc.SetReleaseCheckGap(time.Hour)
+		if o.updater {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "updater"), []byte("installed\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			svc.SetUpdaterDir(dir)
+			svc.SetUpdateRequestPath(filepath.Join(t.TempDir(), "update-request"))
+		}
 		if o.pro != nil {
 			svc.SetProRunner(o.pro)
 		}
@@ -296,9 +312,9 @@ func TestOpsUpdatesPage(t *testing.T) {
 	for _, want := range []string{
 		"How to apply run these on the server, over SSH",
 		"1 Install the waiting updates: sudo apt update && sudo apt upgrade Copy",
-		"2 Run the installer of 0.16.0. It upgrades caravana, and Nomad and Traefik when their versions change; your apps keep running, and it puts 0.15.0 back if 0.16.0 fails its health check. curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/v0.16.0/install.sh | sudo bash Copy",
+		"2 Run the installer of 0.16.0. It upgrades caravana, and Nomad and Traefik when their versions change; your apps keep running, and it puts 0.15.0 back if 0.16.0 fails its health check. Running it once also adds the updater, so later updates can start from this page. curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/v0.16.0/install.sh | sudo bash Copy",
 		"3 Reboot the server: sudo reboot Copy Every app stops for about a minute. The console comes back when the server does.",
-		"caravana doesn't apply updates from the console yet.",
+		"caravana updates only itself from here. The OS's updates and the reboot stay on the server.",
 	} {
 		if !strings.Contains(applyText, want) {
 			t.Errorf("How to apply lacks %q:\n%s", want, applyText)
@@ -608,7 +624,7 @@ func TestOpsUpdatesPart(t *testing.T) {
 // The forms post only with a session and from the console's own origin.
 func TestOpsUpdatesFormsAreProtected(t *testing.T) {
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-clean"})
-	for _, path := range []string{"/ops/updates/check", "/ops/updates/settings"} {
+	for _, path := range []string{"/ops/updates/check", "/ops/updates/settings", "/ops/updates/caravana"} {
 		resp, _ := e.do(t, request{method: http.MethodPost, path: path, form: url.Values{"what": {"release"}},
 			headers: map[string]string{"Sec-Fetch-Site": "cross-site"}, cookies: []*http.Cookie{e.Cookie}})
 		if resp.StatusCode != http.StatusForbidden {
