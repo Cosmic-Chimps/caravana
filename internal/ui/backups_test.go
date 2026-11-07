@@ -127,8 +127,8 @@ func TestBackupsTab(t *testing.T) {
 		t.Fatal("the backup wasn't recorded")
 	}
 	_, body = e.get(t, "/apps/duo/backups")
-	// The run is recorded at the real time and the page reads it against the test's fixed clock, so
-	// its day words change with the calendar: any "Restore from … UTC" clock time is right.
+	// The fake's run started an hour before the test process, so its day words depend on the hour
+	// the test runs at ("yesterday" just after midnight UTC): any "Restore from … UTC" clock time is right.
 	restoreFrom := regexp.MustCompile(`Restore from [0-9a-zA-Z :·-]+ UTC`)
 	if got := text(body); !strings.Contains(got, "2 KB") || !strings.Contains(got, "2 KB all") || !strings.Contains(got, "Restore…") || !restoreFrom.MatchString(got) ||
 		!strings.Contains(body, "/backups/"+backupID+"/restore") || !strings.Contains(body, `href="#backup-`+backupID+`"`) {
