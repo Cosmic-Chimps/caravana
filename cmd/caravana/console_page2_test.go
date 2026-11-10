@@ -336,7 +336,14 @@ func (c *console) backupDaily(t *testing.T) {
 	backupsPath, policyPath := "/apps/"+id+"/backups", "/apps/"+id+"/backups/policy"
 	resp, page := c.get(t, backupsPath)
 	text := pageText(page)
-	forms := formsPosting(page, policyPath)
+	// Each service has two forms that post the policy since 029: "Back up daily" (its volumes) and
+	// "A SQLite file instead". This step is about the first.
+	var forms []url.Values
+	for _, f := range formsPosting(page, policyPath) {
+		if f.Get("engine") != "sqlite" {
+			forms = append(forms, f)
+		}
+	}
 	webForm, okWeb := formWhere(forms, "service", "web")
 	workerForm, okWorker := formWhere(forms, "service", "worker")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(text, "web · /data has no backup.") || !strings.Contains(text, "worker · /cache has no backup.") ||
