@@ -118,10 +118,10 @@ func TestOpsServerPage(t *testing.T) {
 
 	// The head: the back link, the name, the state, the reboot pill that links to Updates, the spec line.
 	for _, want := range []string{
-		`<a href="/ops" class="cv-srvback">← Overview</a>`, `<h1 class="cv-srvname">lab</h1>`,
+		`<a href="/ops/servers" class="cv-srvback">← Servers</a>`, `<h1 class="cv-srvname">lab</h1>`,
 		`cv-pill cv-pill-healthy"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span>ready`,
 		`<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot">`,
-		`id="srv-head"`, `id="srv-body"`, `hx-get="/parts/ops/servers/lab"`, `hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:sync"`,
+		`id="srv-head"`, `id="srv-body"`, `hx-get="/parts/ops/servers/lab"`, `hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:servers, sse:sync"`,
 		`sse-connect="/live?watch=ops"`, `data-live`, `<script src="/static/js/ops.js?v=`,
 		`<a href="/ops/servers" class="cv-nav-item" aria-current="page">`,
 	} {
@@ -315,12 +315,13 @@ func regionBetween(t *testing.T, body, start, end string) string {
 	return rest[:j]
 }
 
-// /ops/servers goes to the one server (302); a name that isn't its own is a 404 page that names the real one.
-func TestOpsServersRedirectAndMissing(t *testing.T) {
+// /ops/servers is the list, with the one server in it; a name that isn't its own is a 404 page that names
+// the real one.
+func TestOpsServersListAndMissing(t *testing.T) {
 	e := srvEnv(t)
-	resp, _ := e.get(t, "/ops/servers")
-	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/ops/servers/lab" {
-		t.Errorf("/ops/servers = %d %s, want 302 to /ops/servers/lab", resp.StatusCode, resp.Header.Get("Location"))
+	resp, list := e.get(t, "/ops/servers")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(list, `<a href="/ops/servers/lab" id="srv-row-`) {
+		t.Errorf("/ops/servers = %d, want the list with lab in it:\n%s", resp.StatusCode, text(list))
 	}
 	resp, body := e.get(t, "/ops/servers/nope")
 	if resp.StatusCode != http.StatusNotFound {
@@ -348,14 +349,17 @@ func TestOpsServersRedirectAndMissing(t *testing.T) {
 	}
 }
 
-// Before the sampler's first reading the node's name isn't known: /ops/servers says so instead of redirecting.
+// Before the sampler's first reading the node's name isn't known: the server's page says so. The list
+// has no server to show yet, and says that.
 func TestOpsServersBeforeTheFirstReading(t *testing.T) {
 	e := newConsoleEnv(t)
-	for _, path := range []string{"/ops/servers", "/ops/servers/lab"} {
-		resp, body := e.get(t, path)
-		if resp.StatusCode != 200 || !strings.Contains(text(body), "Waiting for the first reading of the server.") {
-			t.Errorf("%s = %d:\n%s", path, resp.StatusCode, text(body))
-		}
+	resp, body := e.get(t, "/ops/servers/lab")
+	if resp.StatusCode != 200 || !strings.Contains(text(body), "Waiting for the first reading of the server.") {
+		t.Errorf("/ops/servers/lab = %d:\n%s", resp.StatusCode, text(body))
+	}
+	resp, body = e.get(t, "/ops/servers")
+	if resp.StatusCode != 200 || !strings.Contains(text(body), "No servers yet.") {
+		t.Errorf("/ops/servers = %d:\n%s", resp.StatusCode, text(body))
 	}
 }
 

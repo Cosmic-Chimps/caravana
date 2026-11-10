@@ -1,0 +1,74 @@
+{{/* The Servers list (/ops/servers, feature 031): every server of the cluster with its state and numbers, and
+     the button that adds one. The page is complete without script; #srv-list is drawn again from
+     /parts/ops/servers on the notices that change a server, the host's numbers and the copies, and the part
+     draws the same define as the page, so a refresh and a load can't differ. */}}
+
+{{define "page-class"}} cv-page-srvs{{end}}
+
+{{/* sl-meter: one meter of a row: its label, the track with what is used solid and what is reserved hatched,
+     and the readout. A server with no numbers yet has a dash; a down server keeps its last numbers, grey and
+     with no fill. Takes a slMeter. */}}
+{{define "sl-meter"}}
+<div role="cell" class="cv-slmeter{{if .Grey}} cv-slmeter-grey{{end}}">
+  <span class="cv-slmeter-label">{{.Label}}</span>
+  {{if .None}}<span class="cv-slmeter-none" title="Not read yet">—</span>
+  {{else}}<svg class="cv-mnmeter-svg" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{.Title}}"><title>{{.Title}}</title><rect class="cv-mntrack" x="0" y="0" width="100" height="6"/>{{if not .Grey}}<rect class="cv-mnfill{{if .Warn}} cv-mnfill-warn{{end}}" x="0" y="0" width="{{.Fill}}" height="6"/>{{if .HasReserved}}<line class="cv-mnreserved" x1="0" x2="{{.ResW}}" y1="3" y2="3"/>{{end}}{{end}}</svg>
+  <span class="cv-slmeter-read{{if .Warn}} cv-mnwarntext{{end}}">{{if .Warn}}<span class="cv-mark cv-mark-warning" aria-hidden="true"></span> {{end}}{{.Read}}{{if .Warn}}<span class="sr-only"> (near its limit)</span>{{end}}</span>
+  {{end}}
+</div>
+{{end}}
+
+{{/* sl-row: one server. The whole row is the link of the name (a stretched ::after), so the Cancel form of a
+     waiting row sits above it. Takes a serverRow. */}}
+{{define "sl-row"}}
+<div class="cv-row cv-slrow{{if .Down}} cv-slrow-down{{end}}" role="row">
+  <div role="cell" class="cv-slname">
+    <a href="{{.Href}}" id="{{.ID}}" class="cv-sllink{{if .NoName}} cv-sllink-words{{end}}">{{.Name}}</a>
+    {{with .Spec}}<span class="cv-slspec">{{.}}</span>{{end}}
+    {{if .Unmanaged}}<span class="cv-slspec">Not set up for a cluster yet.</span>{{end}}
+    {{if .Marks}}<span class="cv-slmarks">{{range .Marks}}<span class="cv-slrole">{{.}}</span>
+    {{end}}</span>{{end}}
+  </div>
+  <div role="cell" class="cv-slstate">{{template "status-quiet" .State}}</div>
+  {{if .Cell}}
+  <div role="cell" class="cv-slcell">{{.Cell}}</div>
+  <div role="cell" class="cv-slend">{{with .Cancel}}<form method="post" action="{{.}}" class="cv-slcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</button></form>{{end}}</div>
+  {{else}}
+  {{range .Meters}}{{template "sl-meter" .}}{{end}}
+  <div role="cell" class="cv-slcopies">{{.Copies}}</div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* sl-region: the head (the title, the sums and Add server), the cluster's sentence, the notice when no
+     server can be added yet, and the list. Takes a serversRegion. */}}
+{{define "sl-region"}}
+<header class="cv-slhead">
+  <h1 class="cv-headline">Servers</h1>
+  <span class="cv-slline">{{.Line}}</span>
+  <span class="cv-spacer"></span>
+  <a href="/ops/servers/new" class="cv-btn cv-btn-primary cv-btn-sm"{{if not .CanAdd}} aria-disabled="true"{{end}}>{{icon "plus" 14}}Add server</a>
+</header>
+{{with .Cluster}}<p class="cv-slcluster"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Text}}</span></p>{{end}}
+{{if .NomadDown}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+  <span>Nomad can't be reached right now, so the servers' states aren't judged.</span>
+</div>
+{{end}}
+{{if not .CanAdd}}
+<div role="status" class="cv-notice">
+  <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
+  <span>{{template "sentence" .Reason}}</span>
+</div>
+{{end}}
+<div class="cv-panel cv-sllist" role="table" aria-label="Servers">
+  {{range .Rows}}{{template "sl-row" .}}{{else}}
+  <div class="cv-empty"><p class="cv-empty-title">No servers yet.</p></div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "content"}}
+<div id="srv-list" class="cv-slregion" hx-get="/parts/ops/servers" hx-trigger="sse:servers, sse:metrics, sse:copies, sse:sync" hx-swap="innerHTML">{{template "sl-region" .List}}</div>
+{{end}}

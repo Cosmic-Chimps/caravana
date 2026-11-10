@@ -1,0 +1,26 @@
+{{/* The confirmation page of removing a server (/ops/servers/{name}/remove, feature 031), in the Stop page's
+     shape: what goes and what stays, then the one button and Cancel. A refusal takes the panel's and the
+     button's place and says why, with only the way back. Takes a removeServerPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Back to {{.Name}}</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    {{range .Paras}}<p class="text-base text-fg-1">{{template "sentence" .}}</p>{{end}}
+  </div>
+  <form method="post" action="/ops/servers/{{.Name}}/remove" class="cv-actions">
+    <button type="submit" class="cv-btn cv-btn-primary">Remove {{.Name}}</button>
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
+  </form>
+  {{end}}
+</section>
+{{end}}

@@ -203,6 +203,14 @@
   <h2 class="cv-label">This host</h2>
   <span class="cv-mnsec-meta">{{.Meta}}</span>
 </div>
+{{with .Pick}}
+<form method="get" action="{{.Action}}" class="cv-mnpick">
+  <label class="cv-label" for="mon-server">Server</label>
+  <select class="cv-field cv-select cv-mnpick-select" id="mon-server" name="server">{{range .Options}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+  {{range .Hidden}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+  <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Show</button>
+</form>
+{{end}}
 <div class="cv-panel cv-mnhost">
   {{range .Lines}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{template "mon-sentence" .Text}}</span></p>{{end}}
   {{range .Meters}}{{template "mon-meter" .}}{{end}}

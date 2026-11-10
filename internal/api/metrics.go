@@ -378,6 +378,10 @@ type hostJSON struct {
 	// Node is what Nomad says about the node (feature 027); null before the
 	// sampler's first reading.
 	Node *hostNodeJSON `json:"node"`
+	// Server is the name of the server the numbers are of; OSRead says it is the server Caravana runs on,
+	// the only one whose operating system Caravana reads (feature 031).
+	Server string `json:"server"`
+	OSRead bool   `json:"osRead"`
 }
 
 func toHostJSON(h service.HostView) hostJSON {
@@ -389,6 +393,7 @@ func toHostJSON(h service.HostView) hostJSON {
 			Points: make([]time.Time, 0, len(h.History.Points)), MemoryUsed: h.History.MemoryUsed, MemoryReserved: h.History.MemoryReserved,
 		},
 		Stale: h.Stale, Baseline: toBaselineJSON(h.Baseline), Sources: toSourcesJSON(h.Sources),
+		Server: h.Server, OSRead: h.OSRead,
 	}
 	if out.History.MemoryUsed == nil {
 		out.History.MemoryUsed = []*float64{}

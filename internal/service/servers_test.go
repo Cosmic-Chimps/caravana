@@ -176,7 +176,7 @@ func TestCreateJoin(t *testing.T) {
 	})
 	t.Run("names", func(t *testing.T) {
 		e := newClusterEnv(t)
-		for _, bad := range []string{"Fsn 2", "-x", strings.Repeat("a", 64)} {
+		for _, bad := range []string{"Fsn 2", "-x", strings.Repeat("a", 64), "new", "joins"} {
 			var fe *app.FieldError
 			if _, err := e.svc.CreateJoin(ctx, bad, "", ""); !errors.As(err, &fe) || fe.Field != "name" {
 				t.Errorf("CreateJoin(%q) = %v, want a field error on name", bad, err)
@@ -203,7 +203,7 @@ func TestCreateJoin(t *testing.T) {
 		e := newClusterEnv(t)
 		old := e.newJoin(t, "old")
 		e.svc.clock.(*fakeClock).Set(e.svc.clock.Now().Add(2 * time.Hour))
-		e.newJoin(t, "new")
+		e.newJoin(t, "fresh")
 		if _, err := e.store.ServerByID(ctx, old.Server.ID); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("the expired join is still stored: %v", err)
 		}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -22,8 +24,11 @@ import (
 // room), so this page and Monitoring never disagree; what is new here is the head, the copies
 // with their use against their reservation, the facts and the server's own history.
 //
-// With one host there is no list of servers: /ops/servers redirects to the one, and Phase 3
-// turns it into the list without moving this page (contracts/page2-server.md).
+// Since feature 031 the page works for every server of the cluster: the numbers, the copies and the
+// facts are the named server's, /ops/servers is the list (servers.go), and a server that is down has
+// a banner and the link to remove it (contracts/page-servers.md). The server Caravana runs on keeps
+// everything it had; another server has no operating-system block, because Caravana reads the
+// operating system of the machine it runs on only.
 
 // srvRecentLimit is how many entries "Recent on this server" lists.
 const srvRecentLimit = 8
@@ -47,6 +52,8 @@ type srvMissing struct {
 	Asked string
 	Real  string
 	Href  string
+	// Several says the cluster has more than one server, so the page points at the list, not at one.
+	Several bool
 }
 
 // srvPart is what /parts/ops/servers/{name} answers: the body (swapped into its own element) and
@@ -63,8 +70,12 @@ type srvHead struct {
 	Name   string
 	State  *statusView // nil until the node is known
 	Reboot bool
-	// Spec is the spec line's items, each kept whole when the line wraps.
+	// Spec is the spec line's items, each kept whole when the line wraps; the role marks follow the
+	// hardware as words.
 	Spec []srvItem
+	// Remove is the address of the page that confirms the removal of a server that is down; empty for any
+	// other server, since a running one can't be removed.
+	Remove string
 }
 
 // srvItem is one item of a " · " list (the spec line, the agent, the os, the cpu). It is drawn in a
@@ -97,7 +108,16 @@ type srvBody struct {
 	Room    *monRoom
 	Running srvRunning
 	Facts   []srvFact
-	Recent  []opsEvent
+	// AgentNote says the server's agent is older than the console.
+	AgentNote string
+	Recent    []opsEvent
+	// ReadOn replaces Recent on a server whose operating system Caravana doesn't read.
+	ReadOn *srvReadOn
+}
+
+// srvReadOn is the line that says where updates and restarts are read: on the server Caravana runs on.
+type srvReadOn struct {
+	Name string
 }
 
 // srvBanner is a problem of the host as the contract draws it: the mark, the sentence, its
@@ -190,9 +210,11 @@ type srvFact struct {
 	Key   string
 	Value string
 	// Items replaces Value for a " · " list (agent, os, cpu): each item is kept whole.
-	Items      []srvItem
-	Note       string
-	Clock      *clockTime
+	Items []srvItem
+	Note  string
+	Clock *clockTime
+	// When is a relative time with the exact one in its title (joined, last seen).
+	When       *when
 	After      string
 	Second     string
 	SecondNote string
@@ -202,22 +224,7 @@ type srvFact struct {
 
 // ---- handlers ---------------------------------------------------------------------------------
 
-// showOpsServers answers GET /ops/servers: one host, so it goes to the host's page. Before the
-// sampler's first reading the node's name isn't known: the page says so instead.
-func (s *server) showOpsServers(w http.ResponseWriter, r *http.Request, session string) {
-	host, err := s.svc.Host(r.Context(), "")
-	if err != nil {
-		s.serverError(w, r, "read the host", err)
-		return
-	}
-	if host.Node == nil {
-		s.drawOpsServer(w, r, "")
-		return
-	}
-	http.Redirect(w, r, "/ops/servers/"+url.PathEscape(host.Node.Name), http.StatusFound)
-}
-
-// showOpsServer answers GET /ops/servers/{name}.
+// showOpsServer answers GET /ops/servers/{name}. (/ops/servers itself is the list, servers.go.)
 func (s *server) showOpsServer(w http.ResponseWriter, r *http.Request, session string) {
 	s.drawOpsServer(w, r, r.PathValue("name"))
 }
@@ -229,8 +236,12 @@ func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name stri
 		s.serverError(w, r, "draw the server page", err)
 		return
 	}
+	if data.redirect != "" {
+		http.Redirect(w, r, data.redirect, http.StatusFound)
+		return
+	}
 	title := cmp.Or(name, "Server")
-	crumbs := []crumb{{Label: "Overview", Href: "/ops"}, {Label: title}}
+	crumbs := []crumb{{Label: "Servers", Href: "/ops/servers"}, {Label: title}}
 	page, err := s.shellPage(r, title, navOpsServer, crumbs...)
 	if err != nil {
 		s.serverError(w, r, "read admin", err)
@@ -245,7 +256,7 @@ func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name stri
 	if data.missing != nil {
 		out.Missing, status = data.missing, http.StatusNotFound
 		out.Title, out.LiveURL = "Server not found", ""
-		out.Shell.Crumbs = []crumb{{Label: "Overview", Href: "/ops"}, {Label: "Server not found"}}
+		out.Shell.Crumbs = []crumb{{Label: "Servers", Href: "/ops/servers"}, {Label: "Server not found"}}
 	} else {
 		out.Head, out.Body = data.head, data.body
 	}
@@ -260,7 +271,7 @@ func (s *server) partOpsServerBody(w http.ResponseWriter, r *http.Request, sessi
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if data.missing != nil {
+	if data.missing != nil || data.redirect != "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -272,33 +283,67 @@ func (s *server) partOpsServerBody(w http.ResponseWriter, r *http.Request, sessi
 // srvData is what one read gives the page and its part.
 type srvData struct {
 	missing *srvMissing
-	head    srvHead
-	body    srvBody
+	// redirect is the join's page, for a server that hasn't finished joining.
+	redirect string
+	head     srvHead
+	body     srvBody
 }
 
-// loadOpsServer reads the host, its copies, the needs-you items about the host and the server's
-// own history, and builds the head and the body. A name that isn't the node's is a missing page;
-// before the node is known any name is the page of a host not read yet.
+// loadOpsServer reads the server, its copies, the needs-you items about it and, for the server Caravana
+// runs on, its own history, and builds the head and the body. A name no server has is a missing page;
+// before the node of the server Caravana runs on is known, that server's page is the sentence that says
+// so. A server that is still joining is the join's page.
 func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	ctx := r.Context()
-	host, err := s.svc.Host(ctx, "")
+	local, err := s.svc.Host(ctx, "")
 	if err != nil {
 		return srvData{}, err
 	}
 	now := s.now().UTC()
+	n := local.Node
+	view, err := s.svc.Server(ctx, name)
+	found := err == nil
+	if err != nil && !errors.Is(err, service.ErrServerNotFound) {
+		return srvData{}, err
+	}
+	isLocal := n != nil && (name == n.Name || (local.Server != "" && name == local.Server))
+
 	d := srvData{head: srvHead{Name: name}}
-	d.body.NomadDown = nomadUnread(host)
-	n := host.Node
-	if n == nil {
+	d.body.NomadDown = nomadUnread(local)
+	switch {
+	case isLocal:
+	case n == nil && (!found || (local.Server != "" && name == local.Server)):
+		if !found && s.anyServer(ctx) {
+			d.missing = s.missingServer(ctx, name)
+			return d, nil
+		}
 		d.body.Waiting = "Waiting for the first reading of the server. It appears a minute after Caravana starts."
 		return d, nil
-	}
-	if name != n.Name {
-		d.missing = &srvMissing{Asked: name, Real: n.Name, Href: "/ops/servers/" + url.PathEscape(n.Name)}
+	case found && (view.State == "waiting" || view.State == "joining"):
+		d.redirect = "/ops/servers/joins/" + url.PathEscape(view.ID)
+		return d, nil
+	case found:
+	default:
+		d.missing = s.missingServer(ctx, name)
 		return d, nil
 	}
+	managed := found && view.Managed
 
-	copies, copiesErr := s.svc.HostCopies(ctx, "")
+	host := local
+	copiesOf := ""
+	if !isLocal {
+		host, err = s.svc.Host(ctx, name)
+		if errors.Is(err, service.ErrServerNotFound) {
+			d.missing = s.missingServer(ctx, name)
+			return d, nil
+		}
+		if err != nil {
+			return srvData{}, err
+		}
+		copiesOf = name
+		d.body.NomadDown = nomadUnread(host)
+	}
+	copies, copiesErr := s.svc.HostCopies(ctx, copiesOf)
 	if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
 		s.log.Warn("can't read the copies for the server page", "error", copiesErr)
 	}
@@ -316,42 +361,154 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	if err != nil {
 		return srvData{}, err
 	}
-	items := s.hostItems(now, att)
-	recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true})
-	if err != nil {
-		return srvData{}, err
-	}
 
-	d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required, Spec: itemsOf(nodeSpecItems(n))}
+	var spec []string
 	coreMHz := coreMHzOf(host.CPU)
-	if coreMHz == 0 && n.Cores > 0 && n.TotalMHz > 0 {
-		coreMHz = float64(n.TotalMHz) / float64(n.Cores)
+	if isLocal {
+		d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required}
+		spec = nodeSpecItems(n)
+		if coreMHz == 0 && n.Cores > 0 && n.TotalMHz > 0 {
+			coreMHz = float64(n.TotalMHz) / float64(n.Cores)
+		}
+		d.body.Banners = s.nodeBanners(now, n)
+	} else {
+		st := serverRowState(view)
+		d.head = srvHead{Name: view.Name, State: &st}
+		spec = serverSpecItems(view, "")
+		if view.State == "down" {
+			d.body.Banners = []srvBanner{downBanner(now, view)}
+		}
 	}
-	d.body.Banners = append(s.nodeBanners(now, n), items...)
+	if managed {
+		spec = append(spec, serverRoleWords(view)...)
+		if view.State == "down" && !view.First {
+			d.head.Remove = "/ops/servers/" + url.PathEscape(view.Name) + "/remove"
+		}
+	}
+	d.head.Spec = itemsOf(spec)
+
+	d.body.Banners = append(d.body.Banners, s.hostItemsFor(now, att, d.head.Name, isLocal)...)
 	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
 	d.body.Room = roomOf(host)
 	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz, s.crashesOf(now, att))
+	if !isLocal && view.State == "down" {
+		d.body.Running = srvRunning{Message: "Nothing runs here while the server is down."}
+	}
 	gap := s.svc.MetricsSampleGap()
-	d.body.Facts = s.serverFacts(r, now, n, readAt(host, gap), gap)
-	for _, e := range recent {
-		ev := opsEventOf(e)
-		ev.Time = shortTime(now, e.Time)
-		d.body.Recent = append(d.body.Recent, ev)
+	switch {
+	case isLocal:
+		d.body.Facts = s.serverFacts(r, now, n, readAt(host, gap), gap)
+		if managed {
+			d.body.Facts = withManagedFacts(now, d.body.Facts, view)
+		}
+		recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true})
+		if err != nil {
+			return srvData{}, err
+		}
+		for _, e := range recent {
+			ev := opsEventOf(e)
+			ev.Time = shortTime(now, e.Time)
+			d.body.Recent = append(d.body.Recent, ev)
+		}
+	default:
+		d.body.Facts = remoteFacts(now, view)
+		d.body.ReadOn = &srvReadOn{Name: cmp.Or(local.Server, "the server Caravana runs on")}
+		if a := view.Agent; a != nil && hostos.ReleaseNewer(s.version, a.Caravana) {
+			d.body.AgentNote = "This server's agent is " + a.Caravana + "; the console is " + strings.TrimPrefix(s.version, "v") + ". Run the newer installer on it."
+		}
 	}
 	return d, nil
 }
 
-// hostItems are the banners of the host's open needs-you items: a disk nearly full, and the OS's
-// security updates and reboot (page 3's kinds). The row is the needs-you list's own, so the page
-// and the list say the same words and offer the same action.
+// anyServer says some server is known: a row or a Nomad node.
+func (s *server) anyServer(ctx context.Context) bool {
+	v, err := s.svc.ListServers(ctx)
+	return err == nil && len(v.Servers) > 0
+}
+
+// missingServer is the 404 page: with one server it names that one, with several it points at the list.
+func (s *server) missingServer(ctx context.Context, asked string) *srvMissing {
+	m := &srvMissing{Asked: asked, Several: true}
+	v, err := s.svc.ListServers(ctx)
+	if err != nil {
+		return m
+	}
+	for _, sv := range v.Servers {
+		if sv.State != "waiting" && sv.State != "joining" && sv.Name != "" {
+			m.Real, m.Href = sv.Name, "/ops/servers/"+url.PathEscape(sv.Name)
+			break
+		}
+	}
+	m.Several = joinedServers(v) != 1 || m.Real == ""
+	return m
+}
+
+// serverRoleWords are the roles of a managed server as words for the spec line.
+func serverRoleWords(v service.ServerView) []string {
+	var out []string
+	if v.ControlPlane {
+		out = append(out, "runs the console")
+	}
+	if v.Ingress {
+		out = append(out, "public traffic enters here")
+	}
+	if v.NomadServer {
+		out = append(out, "runs the scheduler")
+	}
+	return out
+}
+
+// downBanner is the banner of a server that is down: since when, and what became of its copies.
+func downBanner(now time.Time, v service.ServerView) srvBanner {
+	line := sentence{mono(v.Name), plain(" is down")}
+	if !v.SeenAt.IsZero() {
+		at := v.SeenAt.UTC()
+		stamp := at.Format("15:04") + " UTC"
+		if at.Format("2006-01-02") != now.Format("2006-01-02") {
+			stamp = shortDate(now, at) + ", " + stamp
+		}
+		line = append(line, plain(" since "+stamp))
+	}
+	line = append(line, plain(". Its copies were replaced on other servers; what has a volume here waits for it."))
+	return srvBanner{Mark: "failed", Line: line}
+}
+
+// hostItems are the banners of the open needs-you items about the server Caravana runs on: a disk
+// nearly full, and the OS's security updates and reboot (page 3's kinds). The row is the needs-you
+// list's own, so the page and the list say the same words and offer the same action.
 func (s *server) hostItems(now time.Time, att service.Attention) []srvBanner {
+	return s.hostItemsFor(now, att, "", true)
+}
+
+// hostItemsFor is hostItems for the server called name. A disk item belongs to the server it names (a
+// cluster of one names none: it is the local server's); the OS kinds are the local server's; a
+// certificate that is ending belongs to its server. A server that is down has its own banner, so its
+// item is left out.
+func (s *server) hostItemsFor(now time.Time, att service.Attention, name string, isLocal bool) []srvBanner {
 	var out []srvBanner
 	for _, it := range att.Items {
 		if !isHostItem(it.Kind) {
 			continue
 		}
+		switch it.Kind {
+		case service.AttentionDiskNearlyFull:
+			if (it.Server == "" && !isLocal) || (it.Server != "" && it.Server != name) {
+				continue
+			}
+		case service.AttentionOSRebootRequired, service.AttentionOSSecurityUpdates:
+			if !isLocal {
+				continue
+			}
+		case service.AttentionServerCertExpiring:
+			if it.Server != name {
+				continue
+			}
+		}
 		row := s.attentionRow(now, it, places{}, nil)
 		b := srvBanner{Mark: row.Mark, Line: row.Text, Action: row.Action, Href: row.Href}
+		if it.Kind == service.AttentionServerCertExpiring {
+			b.Action, b.Href = "", "" // the page is the server's own
+		}
 		if it.Kind == service.AttentionDiskNearlyFull {
 			b.Explain = diskExplain(it.Holds)
 		}
@@ -360,11 +517,11 @@ func (s *server) hostItems(now time.Time, att service.Attention) []srvBanner {
 	return out
 }
 
-// isHostItem says a needs-you kind is about the host itself. The OS kinds are page 3's; naming
+// isHostItem says a needs-you kind is about a server itself. The OS kinds are page 3's; naming
 // them here lets their banners appear as soon as the list has them.
 func isHostItem(kind service.AttentionKind) bool {
 	switch kind {
-	case service.AttentionDiskNearlyFull, "os_reboot_required", "os_security_updates":
+	case service.AttentionDiskNearlyFull, "os_reboot_required", "os_security_updates", service.AttentionServerCertExpiring:
 		return true
 	}
 	return false
@@ -882,6 +1039,84 @@ func (s *server) serverFacts(r *http.Request, now time.Time, n *service.HostNode
 		out = append(out, f)
 	}
 	return out
+}
+
+// withManagedFacts adds what Caravana knows of a managed server to the facts of the server it runs on:
+// its addresses are the cluster's (public, and on the private network), then when it joined, and
+// until when its Nomad certificate lasts.
+func withManagedFacts(now time.Time, facts []srvFact, v service.ServerView) []srvFact {
+	out := make([]srvFact, 0, len(facts)+4)
+	for _, f := range facts {
+		if f.Key != "address" {
+			out = append(out, f)
+		}
+	}
+	own := append(addressFacts(v), joinedFact(now, v)...)
+	at := 0
+	if len(out) > 0 && out[0].Key == "pool" {
+		at = 1
+	}
+	out = slices.Insert(out, at, own...)
+	return append(out, certificateFact(now, v)...)
+}
+
+// remoteFacts are the facts of a server Caravana doesn't run on: only what its agent and the cluster told.
+func remoteFacts(now time.Time, v service.ServerView) []srvFact {
+	var out []srvFact
+	if v.Pool != "" {
+		out = append(out, srvFact{Key: "pool", Value: v.Pool})
+	}
+	out = append(out, addressFacts(v)...)
+	out = append(out, joinedFact(now, v)...)
+	if a := v.Agent; a != nil {
+		var items []string
+		for _, p := range []struct{ name, version string }{{"caravana", a.Caravana}, {"nomad", a.Nomad}, {"docker", a.Docker}} {
+			if p.version != "" {
+				items = append(items, p.name+" "+p.version)
+			}
+		}
+		if len(items) > 0 {
+			out = append(out, srvFact{Key: "agent", Items: itemsOf(items)})
+		}
+	}
+	if !v.SeenAt.IsZero() {
+		w := whenOf(now, &v.SeenAt, "")
+		f := srvFact{Key: "last seen", When: &w}
+		if v.State == "down" {
+			f.Mark, f.Strong = "failed", true
+		}
+		out = append(out, f)
+	}
+	return append(out, certificateFact(now, v)...)
+}
+
+// addressFacts are the public address and the one on the private network.
+func addressFacts(v service.ServerView) []srvFact {
+	var out []srvFact
+	if v.Address != "" {
+		out = append(out, srvFact{Key: "address", Value: v.Address})
+	}
+	if v.PrivateAddress != "" {
+		out = append(out, srvFact{Key: "private address", Value: v.PrivateAddress})
+	}
+	return out
+}
+
+// joinedFact is when the server joined, relative with the exact time in its title.
+func joinedFact(now time.Time, v service.ServerView) []srvFact {
+	if v.JoinedAt.IsZero() {
+		return nil
+	}
+	w := whenOf(now, &v.JoinedAt, "")
+	return []srvFact{{Key: "joined", When: &w}}
+}
+
+// certificateFact is the day by which the server's Nomad certificate must be renewed.
+func certificateFact(now time.Time, v service.ServerView) []srvFact {
+	if v.CertificateExpiresAt.IsZero() {
+		return nil
+	}
+	return []srvFact{{Key: "certificate", Value: "renews by " + shortDate(now, v.CertificateExpiresAt)}}
 }
 
 // readAt is when the newest sample was taken: the end of its window (a sample's time is the start of

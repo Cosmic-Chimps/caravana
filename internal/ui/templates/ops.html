@@ -23,10 +23,11 @@
 </div>
 {{end}}
 <div class="cv-mnsec">
-  <h2 class="cv-label" id="ops-server-title">Server</h2>
+  <h2 class="cv-label" id="ops-server-title">{{if .Panels}}Servers{{else}}Server{{end}}</h2>
   {{with .Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
+  {{if .Panels}}<a href="/ops/servers" class="cv-mnsec-link">All servers</a>{{end}}
 </div>
-{{template "ops-node" .Node}}
+{{if .Panels}}{{range .Panels}}{{template "ops-node" .}}{{end}}{{else}}{{template "ops-node" .Node}}{{end}}
 {{end}}
 
 {{/* ops-apps-region: the Apps section, a live region of its own (#ops-apps). Takes an opsApps. */}}

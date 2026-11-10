@@ -6618,8 +6618,19 @@ components:
         MHz. A resource the sampler couldn't read is `null`.
       type: object
       additionalProperties: false
-      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources, node]
+      required: [memory, cpu, disks, room, history, sampledAt, stale, baseline, sources, node, server, osRead]
       properties:
+        server:
+          type: string
+          description: |
+            The name of the server the numbers are of: the one asked for with `server`, else the one
+            Caravana runs on. Empty when the cluster's servers aren't known yet (Nomad couldn't be read
+            and no sampler tick has read it).
+        osRead:
+          type: boolean
+          description: |
+            Whether this is the server Caravana runs on, the only one whose operating system Caravana
+            reads (`node` is filled for it alone).
         node:
           oneOf:
             - $ref: "#/components/schemas/HostNode"

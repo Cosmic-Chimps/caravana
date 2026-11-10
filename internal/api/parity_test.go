@@ -222,13 +222,25 @@ var consoleParity = map[string]parity{
 	// use (getHost) and the copies (listCopies); the server panel is getHost's node and meters with the copies; the apps
 	// table adds the CPU line and memory of 025 (getMetrics, one call per place, whose places are listProjects); Live
 	// activity is listActivity. The parts are the same regions drawn again on the live notices.
-	"GET /ops":                      {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity"}},
-	"GET /parts/ops/server":         {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
-	"GET /ops/servers":              {ops: []string{"getHost"}},
-	"GET /ops/servers/{name}":       {ops: []string{"getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
-	"GET /parts/ops/servers/{name}": {ops: []string{"getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
-	"GET /parts/ops/apps":           {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
-	"GET /parts/ops/activity":       {ops: []string{"listActivity"}},
+	// With several servers (feature 031) the Overview has a panel for each (listServers, with getHost and listCopies of each).
+	"GET /ops":              {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listActivity", "listServers"}},
+	"GET /parts/ops/server": {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects", "listServers"}},
+	// The Servers list (feature 031): listServers is the list, the sums and whether one can be added; getHost names the
+	// server Caravana runs on and its architecture. A server's page reads that server (getServer, and getHost with
+	// `server`) and its copies. Add a server: the form is addServer (the command is its answer, shown once), the join's page
+	// and its part are getServerJoin (the four checks), and cancelling a join or removing a server is removeServer.
+	"GET /ops/servers":                    {ops: []string{"listServers", "getHost"}},
+	"GET /parts/ops/servers":              {ops: []string{"listServers", "getHost"}},
+	"GET /ops/servers/new":                {ops: []string{"listServers", "getUpdates"}},
+	"POST /ops/servers":                   {ops: []string{"addServer"}},
+	"GET /ops/servers/{name}":             {ops: []string{"getServer", "getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
+	"GET /ops/servers/{kind}/{rest}":      {ops: []string{"getServerJoin", "listServers", "getServer"}},
+	"POST /ops/servers/{name}/remove":     {ops: []string{"removeServer"}},
+	"POST /ops/servers/joins/{id}/cancel": {ops: []string{"removeServer"}},
+	"GET /parts/ops/servers/joins/{id}":   {ops: []string{"getServerJoin", "listServers"}},
+	"GET /parts/ops/servers/{name}":       {ops: []string{"getServer", "getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
+	"GET /parts/ops/apps":                 {ops: []string{"listApps", "listAttention", "getHost", "listCopies", "getMetrics", "listProjects"}},
+	"GET /parts/ops/activity":             {ops: []string{"listActivity"}},
 	// The Operator Updates page (feature 027 page 3): what is waiting (getUpdates) and the needs-you items about
 	// the OS (listAttention). The part is the same regions drawn again on the updates notice. The two forms start a
 	// check in the background (checkUpdates, what=release or packages) and save the one setting caravana owns

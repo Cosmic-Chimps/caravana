@@ -68,6 +68,9 @@ type opsServerRegion struct {
 	NomadDown bool
 	Room      *monRoom
 	Node      opsNode
+	// Panels are the servers' panels, in index order, when the cluster has more than one server (feature
+	// 031); Node is then not drawn. The section's label reads "Servers" and links to the list.
+	Panels []opsNode
 }
 
 // opsServerPart is what /parts/ops/server answers: the region, and the headline and stats,
@@ -283,6 +286,13 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 		Head:   opsHead{Headline: headlineOf(sums, items), Stats: opsStats(host, len(sums), copies, copiesErr, len(items))},
 		Apps:   opsAppsOf(rows, sums, copies, copiesErr),
 		Server: opsServerRegion{NomadDown: down, Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)},
+	}
+	// With several servers the headline counts them and the section has a panel for each.
+	if list, err := s.svc.ListServers(ctx); err == nil && joinedServers(list) > 1 {
+		d.Head.Stats[0] = plural(joinedServers(list), "server")
+		if !down {
+			d.Server.Panels = s.opsPanels(ctx, now, list, rows)
+		}
 	}
 	switch n := len(items); n {
 	case 0:
@@ -687,4 +697,77 @@ func opsEventOf(e service.ActivityEntry) opsEvent {
 		ev.Href = "/apps/" + url.PathEscape(e.AppID)
 	}
 	return ev
+}
+
+// opsPanels builds the server panels of a cluster of several servers, in the order ListServers gives (the
+// index order). Each has its own numbers and the copies that run on it. A server that has not joined is
+// not drawn: the Servers list says what it is waiting for.
+func (s *server) opsPanels(ctx context.Context, now time.Time, list service.ServersView, rows []opsAppRow) []opsNode {
+	names := map[string]string{} // app ID to the name its chips carry
+	order := map[string]int{}
+	for i, row := range rows {
+		names[row.ID], order[row.ID] = row.Name, i
+	}
+	var out []opsNode
+	for _, sv := range list.Servers {
+		if sv.State == "waiting" || sv.State == "joining" {
+			continue
+		}
+		host, err := s.svc.Host(ctx, sv.Name)
+		if err != nil {
+			s.log.Warn("can't read a server for the Operator overview", "server", sv.Name, "error", err)
+			continue
+		}
+		copies, copiesErr := s.svc.HostCopies(ctx, sv.Name)
+		if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
+			s.log.Warn("can't read a server's copies for the Operator overview", "server", sv.Name, "error", copiesErr)
+		}
+		out = append(out, opsNodeOfServer(sv, host, copies, copiesErr, names, order))
+	}
+	return out
+}
+
+// opsNodeOfServer is the panel of one server of several: its state, name and pool, its spec line, its
+// meters and the copies that run on it as chips, grouped by app as the table lists the apps.
+func opsNodeOfServer(sv service.ServerView, h service.HostView, copies []service.HostCopy, copiesErr error, names map[string]string, order map[string]int) opsNode {
+	st := serverRowState(sv)
+	node := opsNode{Name: sv.Name, Href: "/ops/servers/" + url.PathEscape(sv.Name), Pool: sv.Pool, Mark: st.Kind}
+	if st.Word != "ready" {
+		node.State = &statusView{Kind: st.Kind, Word: st.Word}
+	}
+	if h.Node != nil {
+		node.Spec = nodeSpec(h.Node)
+	} else {
+		node.Spec = strings.Join(serverSpecItems(sv, ""), " · ")
+	}
+	node.Meters = opsMeters(h)
+	if sv.State == "down" || copiesErr != nil {
+		return node // a server that is down runs nothing, and a read that failed says nothing
+	}
+	slices.SortStableFunc(copies, func(a, b service.HostCopy) int {
+		return cmp.Or(order[a.AppID]-order[b.AppID], strings.Compare(a.Service, b.Service))
+	})
+	all := 0
+	for _, c := range copies {
+		all++
+		if len(node.Chips) >= opsChipLimit {
+			continue
+		}
+		name := cmp.Or(names[c.AppID], c.AppID)
+		chip := opsChip{ID: "ops-copy-" + c.ID, Name: name, Short: shortID(c.ID), Href: "/apps/" + url.PathEscape(c.AppID), Mark: rowMark(c)}
+		word := copyStatusView(c.Status).Word
+		switch {
+		case c.Stopping:
+			chip.State, chip.Role = "draining", "draining"
+		case c.Status == deploy.CopyStarting:
+			chip.State, chip.Role = "starting", word
+		default:
+			chip.Role = word
+		}
+		chip.Title = "copy " + c.ID + ", " + c.Service + ", " + chip.Role + ", v" + strconv.FormatUint(c.Version, 10)
+		node.Chips = append(node.Chips, chip)
+	}
+	node.More = all - len(node.Chips)
+	node.Copies = copyCount(all)
+	return node
 }

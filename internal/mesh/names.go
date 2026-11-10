@@ -35,5 +35,14 @@ func NameOfHost(host string, index int) string {
 	if host == "" {
 		return fmt.Sprintf("server-%d", index)
 	}
+	if ReservedName(host) {
+		return fmt.Sprintf("%s-%d", host, index)
+	}
 	return host
+}
+
+// ReservedName says name can't be a server's: the console has pages at /ops/servers/new and
+// /ops/servers/joins/…, so a server with one of these names would have no page of its own.
+func ReservedName(name string) bool {
+	return name == "new" || name == "joins"
 }

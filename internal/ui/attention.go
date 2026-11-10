@@ -122,6 +122,9 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 			row.Mark = "failed"
 		}
 		row.Action, row.Href = "Open monitoring", "/monitoring#host"
+		if it.Server != "" { // a cluster of several: the server's own numbers (feature 031)
+			row.Href = "/monitoring?server=" + url.QueryEscape(it.Server) + "#host"
+		}
 	case service.AttentionDomainDNSElsewhere:
 		row.Action, row.Href = "Open domain", domainHref(it.Domain)
 	case service.AttentionDomainCertExpiring:
@@ -231,6 +234,5 @@ func (s *server) partAttention(w http.ResponseWriter, r *http.Request, session s
 	s.renderPart(w, "apps", "attention-region", region)
 }
 
-// serverHref is a server's page. The Servers pages are built in a later phase of feature 031; until
-// then the link is the one they will answer at.
+// serverHref is a server's page (feature 031).
 func serverHref(name string) string { return "/ops/servers/" + url.PathEscape(name) }

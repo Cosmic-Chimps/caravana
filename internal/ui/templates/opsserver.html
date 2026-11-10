@@ -7,14 +7,16 @@
 
 {{define "head"}}<script src="{{asset "js/ops.js"}}" defer></script>{{end}}
 
-{{/* srv-head: the back link, the name, the state, "reboot needed" when staged, and the spec line. No actions. */}}
+{{/* srv-head: the back link to the list, the name, the state, "reboot needed" when staged, the spec line with the
+     server's roles, and, for a server that is down, the quiet link to remove it. A running server has no action. */}}
 {{define "srv-head"}}
-<a href="/ops" class="cv-srvback">← Overview</a>
+<a href="/ops/servers" class="cv-srvback">← Servers</a>
 <div class="cv-srvtitle">
   <h1 class="cv-srvname">{{if .Name}}{{.Name}}{{else}}Server{{end}}</h1>
   {{with .State}}{{template "status-pill" .}}{{end}}
   {{if .Reboot}}<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>reboot needed</a>{{end}}
   {{with .Spec}}<span class="cv-srvspec">{{template "srv-items" .}}</span>{{end}}
+  {{with .Remove}}<span class="cv-spacer"></span><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Remove server…</a>{{end}}
 </div>
 {{end}}
 
@@ -129,11 +131,15 @@
         <dl class="cv-srvdl">
           {{range .Facts}}
           <dt>{{.Key}}</dt>
-          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else if .When}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "time" .When}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
           {{end}}
         </dl>
+        {{with .AgentNote}}<p class="cv-srvagentnote">{{.}}</p>{{end}}
       </div>
     </section>
+    {{with .ReadOn}}
+    <p class="cv-srvreadon"><a href="/ops/updates">Updates</a> and restarts are read on <span class="cv-inline-mono text-fg-1">{{.Name}}</span> only.</p>
+    {{else}}
     <section aria-labelledby="srv-recent-title">
       <div class="cv-mnsec">
         <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>
@@ -151,6 +157,7 @@
         {{end}}
       </div>
     </section>
+    {{end}}
   </div>
 </div>
 {{end}}
@@ -165,17 +172,22 @@
 {{define "content"}}
 {{if .Missing}}
 <header class="cv-srvhead">
-  <a href="/ops" class="cv-srvback">← Overview</a>
+  <a href="/ops/servers" class="cv-srvback">← Servers</a>
   <div class="cv-srvtitle"><h1 class="cv-srvname">Server not found</h1></div>
 </header>
 <div class="cv-panel">
   <div class="cv-empty">
+    {{if .Missing.Several}}
+    <p class="cv-empty-title">No server called <span class="cv-inline-mono text-fg-1">{{.Missing.Asked}}</span>.</p>
+    <a href="/ops/servers" class="cv-btn cv-btn-secondary cv-btn-sm">All servers</a>
+    {{else}}
     <p class="cv-empty-title">No server called <span class="cv-inline-mono text-fg-1">{{.Missing.Asked}}</span>. This caravana has one: <span class="cv-inline-mono text-fg-1">{{.Missing.Real}}</span>.</p>
     <a href="{{.Missing.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">Open {{.Missing.Real}}</a>
+    {{end}}
   </div>
 </div>
 {{else}}
 <header class="cv-srvhead" id="srv-head">{{template "srv-head" .Head}}</header>
-<div class="cv-srvbody" id="srv-body"{{with .PartHref}} hx-get="{{.}}" hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:sync" hx-swap="innerHTML"{{end}}>{{template "srv-body" .Body}}</div>
+<div class="cv-srvbody" id="srv-body"{{with .PartHref}} hx-get="{{.}}" hx-trigger="sse:metrics, sse:host, sse:copies, sse:attention, sse:actions, sse:servers, sse:sync" hx-swap="innerHTML"{{end}}>{{template "srv-body" .Body}}</div>
 {{end}}
 {{end}}

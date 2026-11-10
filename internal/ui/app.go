@@ -463,6 +463,9 @@ type copyEntry struct {
 	Live bool
 	// Stopping says Nomad has told the copy to stop: a terminal can't be opened into it.
 	Stopping bool
+	// Server is the server the copy runs on, set only when the cluster has more than one; ServerHref is
+	// its page (feature 031).
+	Server, ServerHref string
 }
 
 // usageView is a copy's CPU and memory cells. A copy that isn't running has
@@ -550,10 +553,14 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 	}
 
 	now := s.now()
+	several := len(copies) > 0 && s.multiServer(ctx)
 	for _, c := range copies {
 		e := copyEntryOf(now, c)
 		if u, ok := usage[c.ID]; ok {
 			e.Usage = usageViewOf(u)
+		}
+		if several && c.Node != "" {
+			e.Server, e.ServerHref = c.Node, "/ops/servers/"+url.PathEscape(c.Node)
 		}
 		region.Rows = append(region.Rows, e)
 	}

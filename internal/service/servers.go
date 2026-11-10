@@ -259,6 +259,9 @@ func (s *Service) CreateJoin(ctx context.Context, name, pool, fallbackURL string
 	if name != "" && !mesh.ValidName(name) {
 		return ServerJoin{}, app.NewFieldError("name", "must be lowercase letters, digits and dashes, 63 characters at most")
 	}
+	if mesh.ReservedName(name) {
+		return ServerJoin{}, app.NewFieldError("name", "can't be %q: the console uses that word in its addresses", name)
+	}
 	if pool == "" {
 		pool = "default"
 	}

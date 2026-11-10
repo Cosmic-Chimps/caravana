@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -74,6 +75,9 @@ type upData struct {
 	Caravana upAutoUpdate
 	Past     []upPast
 	Mark     navMark
+	// ReadOn is the name of the server whose operating system these updates are of, set only when the
+	// cluster has more than one server (feature 031): "Read on <first>, where Caravana runs."
+	ReadOn string
 }
 
 // upRun is the run panel: a banner row that says what the update of caravana is doing, or how it ended.
@@ -321,6 +325,7 @@ func (s *server) partOpsUpdatesRun(w http.ResponseWriter, r *http.Request, sessi
 			return
 		}
 		d = upDataOf(now, v, att)
+		d.ReadOn = s.readOnServer(ctx)
 	}
 	s.renderPart(w, "opsupdates", "up-runpart", d)
 }
@@ -441,7 +446,27 @@ func (s *server) loadOpsUpdates(r *http.Request) (upData, error) {
 	if err != nil {
 		return upData{}, err
 	}
-	return upDataOf(s.now().UTC(), v, att), nil
+	d := upDataOf(s.now().UTC(), v, att)
+	d.ReadOn = s.readOnServer(ctx)
+	return d, nil
+}
+
+// readOnServer is the name of the server Caravana runs on, whose operating system the Updates page
+// reads, when the cluster has more than one server; "" with one, where nothing needs saying.
+func (s *server) readOnServer(ctx context.Context) string {
+	view, err := s.svc.ListServers(ctx)
+	if err != nil || joinedServers(view) < 2 {
+		return ""
+	}
+	for _, sv := range view.Servers {
+		if sv.First {
+			return sv.Name
+		}
+	}
+	if h, err := s.svc.Host(ctx, ""); err == nil {
+		return h.Server
+	}
+	return ""
 }
 
 // upDataOf builds everything the page and its parts draw from one read of the updates and of the

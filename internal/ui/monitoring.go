@@ -47,12 +47,15 @@ type monReq struct {
 	Project, Environment string
 	Range                metrics.Range
 	Sort                 service.MetricsSort
+	// Server is the server the host section shows (feature 031); "" is the one Caravana runs on.
+	Server string
 }
 
 // monReqOf reads the address. bad is "" or a sentence saying what is wrong with it: a value this
 // page never writes is refused, not guessed at.
 func monReqOf(v url.Values) (q monReq, bad string) {
-	q = monReq{Project: v.Get("project"), Environment: v.Get("environment"), Range: metrics.Range6h, Sort: service.SortUnusual}
+	q = monReq{Project: v.Get("project"), Environment: v.Get("environment"), Range: metrics.Range6h, Sort: service.SortUnusual,
+		Server: strings.TrimSpace(v.Get("server"))}
 	if q.Project == "" {
 		q.Project = app.DefaultProject
 	}
@@ -90,6 +93,9 @@ func (q monReq) values() url.Values {
 	}
 	if q.Sort != service.SortUnusual {
 		v.Set("sort", string(q.Sort))
+	}
+	if q.Server != "" {
+		v.Set("server", q.Server)
 	}
 	return v
 }
@@ -334,6 +340,10 @@ func (s *server) showMonitoring(w http.ResponseWriter, r *http.Request, session 
 		return
 	}
 	view, err := s.monViewOf(ctx, q, pl)
+	if errors.Is(err, service.ErrServerNotFound) {
+		s.message(w, r, http.StatusNotFound, "Not found", "That server doesn't exist.", "Go back to Monitoring and choose another.")
+		return
+	}
 	if err != nil {
 		s.serverError(w, r, "draw monitoring", err)
 		return
@@ -403,9 +413,16 @@ func (s *server) monViewOf(ctx context.Context, q monReq, pl places) (*monView, 
 	if err != nil {
 		return nil, err
 	}
-	v := &monView{Region: reg, RegionHref: "/parts/monitoring", Host: hostViewOf(s.now().UTC(), host), HostHref: "/parts/monitoring/host"}
+	hostSection, err := s.hostSectionOf(ctx, q, host)
+	if err != nil {
+		return nil, err
+	}
+	v := &monView{Region: reg, RegionHref: "/parts/monitoring", Host: hostSection, HostHref: "/parts/monitoring/host"}
 	if enc := q.values().Encode(); enc != "" {
 		v.RegionHref += "?" + enc
+	}
+	if q.Server != "" {
+		v.HostHref += "?server=" + url.QueryEscape(q.Server)
 	}
 	for _, rng := range metrics.Ranges() {
 		v.Ranges = append(v.Ranges, logsBarItem{Label: monRangeLabel(rng), On: rng.Name == q.Range.Name, Href: q.href(monWithRange(rng))})

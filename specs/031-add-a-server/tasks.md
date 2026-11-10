@@ -138,20 +138,20 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 
 ## Phase E: the console
 
-- [ ] T035 The nav item "Servers"; `/ops/servers` (the list, `servers.html`), `/parts/ops/servers`.
-- [ ] T036 `/ops/servers/new`, `POST /ops/servers`, `/ops/servers/joins/{id}`,
+- [x] T035 The nav item "Servers"; `/ops/servers` (the list, `servers.html`), `/parts/ops/servers`.
+- [x] T036 `/ops/servers/new`, `POST /ops/servers`, `/ops/servers/joins/{id}`,
   `/parts/ops/servers/joins/{id}`, `POST /ops/servers/joins/{id}/cancel` (`addserver.html`,
   `addserver.go`); `ops.js`'s 5 s refetch while a check is open and `data-copy`.
-- [ ] T037 The server page for every server, the down banner, `GET` and `POST
+- [x] T037 The server page for every server, the down banner, `GET` and `POST
   /ops/servers/{name}/remove`.
-- [ ] T038 Overview's panel per server and headline; the Running tab's server; Monitoring's server
+- [x] T038 Overview's panel per server and headline; the Running tab's server; Monitoring's server
   select; Volumes' column; Updates' line; the two attention kinds' links.
-- [ ] T039 `tools/ui-css.sh build` (and `check` passes); `DESIGN.md` gains the role marks ("facts, not
+- [x] T039 `tools/ui-css.sh build` (and `check` passes); `DESIGN.md` gains the role marks ("facts, not
   statuses").
-- [ ] T040 UI tests: each page with one server, three servers, a waiting join, a joining one, a down
+- [x] T040 UI tests: each page with one server, three servers, a waiting join, a joining one, a down
   server, an unmanaged node, `cluster_not_ready`; forms without script; the token appears in the POST's
   answer and in no later page; the light and dark parity test lists the new routes; `TestNoShipWords`.
-- [ ] T041 `TestConsoleLab` step `console-servers` (`cmd/caravana/console_servers_test.go`): the lab's
+- [x] T041 `TestConsoleLab` step `console-servers` (`cmd/caravana/console_servers_test.go`): the lab's
   one node is listed (unmanaged), Add a server shows `cluster_not_ready`'s sentence, `GET /v1/servers`
   agrees; no join is made (the lab has no mesh).
 - [ ] T042 The designer's live review against page-servers.md, with staged data (a script like 030's

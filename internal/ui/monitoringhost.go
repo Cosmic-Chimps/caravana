@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/metrics"
@@ -60,7 +64,9 @@ type monHostChart struct {
 
 // monHostView is what #host draws (and /parts/monitoring/host alone).
 type monHostView struct {
-	Meta   string
+	Meta string
+	// Pick is the select that says which server the section shows; nil with one server (feature 031).
+	Pick   *monServerPick
 	Lines  []monHostLine
 	Meters []monMeter
 	Room   *monRoom
@@ -69,12 +75,83 @@ type monHostView struct {
 
 // partMonitoringHost answers GET /parts/monitoring/host: the section alone.
 func (s *server) partMonitoringHost(w http.ResponseWriter, r *http.Request, session string) {
-	host, err := s.svc.Host(r.Context(), "")
+	q, bad := monReqOf(r.URL.Query())
+	if bad != "" {
+		http.Error(w, bad, http.StatusBadRequest)
+		return
+	}
+	host, err := s.svc.Host(r.Context(), q.Server)
+	if errors.Is(err, service.ErrServerNotFound) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		s.partFailed(w, "read the host", err)
 		return
 	}
-	s.renderPart(w, "monitoring", "mon-host", hostViewOf(s.now().UTC(), host))
+	v, err := s.hostSectionWith(r.Context(), q, host)
+	if err != nil {
+		s.partFailed(w, "read the servers", err)
+		return
+	}
+	s.renderPart(w, "monitoring", "mon-host", v)
+}
+
+// monServerPick is the "Server" select above the host section: a plain GET form that keeps the page's
+// other choices, so it works without script. Options are the servers by name.
+type monServerPick struct {
+	Action  string
+	Hidden  []monHidden
+	Options []monServerOption
+}
+
+// monHidden is a choice of the page the form carries along.
+type monHidden struct{ Name, Value string }
+
+// monServerOption is one server of the select.
+type monServerOption struct {
+	Name     string
+	Selected bool
+}
+
+// hostSectionOf reads the server the page asks for (the one Caravana runs on by default; a name no
+// server has is service.ErrServerNotFound) and builds its section.
+func (s *server) hostSectionOf(ctx context.Context, q monReq, local service.HostView) (*monHostView, error) {
+	host := local
+	if q.Server != "" {
+		h, err := s.svc.Host(ctx, q.Server)
+		if err != nil {
+			return nil, err
+		}
+		host = h
+	}
+	return s.hostSectionWith(ctx, q, host)
+}
+
+// hostSectionWith builds the section of host, and with several servers the select that chooses which
+// one it shows, and the server's name in place of "1 server".
+func (s *server) hostSectionWith(ctx context.Context, q monReq, host service.HostView) (*monHostView, error) {
+	v := hostViewOf(s.now().UTC(), host)
+	view, err := s.svc.ListServers(ctx)
+	if err != nil || joinedServers(view) < 2 {
+		return v, nil // the section is as it was with one server
+	}
+	v.Meta = host.Server
+	pick := &monServerPick{Action: "/monitoring#host"}
+	rest := q
+	rest.Server = ""
+	for name, values := range rest.values() {
+		pick.Hidden = append(pick.Hidden, monHidden{Name: name, Value: values[0]})
+	}
+	slices.SortFunc(pick.Hidden, func(a, b monHidden) int { return strings.Compare(a.Name, b.Name) })
+	for _, sv := range view.Servers {
+		if sv.State == "waiting" || sv.State == "joining" || sv.Name == "" {
+			continue
+		}
+		pick.Options = append(pick.Options, monServerOption{Name: sv.Name, Selected: sv.Name == host.Server})
+	}
+	v.Pick = pick
+	return v, nil
 }
 
 // hostViewOf builds the section from the host's numbers read at now.
