@@ -1091,8 +1091,10 @@ installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima 
   `deploy/dev/cluster-test.sh` runs three Lima VMs on `lima:user-v2` (`vzNAT` isolates guests): the
   conversion of a host installed from `d13c37c`, two joins from API tokens, three raft voters, the spread,
   names across servers, volumes on one server, the loss of server 3 and of server 1, a renewal, a removal
-  and `--leave`. `TestConsoleLab` has a step `console-servers` (the lab is one node with no mesh: listed as
-  unmanaged, and Add a server says to run the installer first).
+  and `--leave`. It passed on 2026-11-10 (0 calls failed during the conversion, 11 while a server was lost);
+  the five runs before it each failed one step and found a real problem (L14, L16, L17, L18). It takes 20
+  to 40 minutes and keeps its VMs with `KEEP=1`. `TestConsoleLab` has a step `console-servers` (the lab is
+  one node with no mesh: listed as unmanaged, and Add a server says to run the installer first).
 - Not in 031: moving work off a live server, a proxy on every server, shared certificates, updating joined
   servers from the console, reading their OS updates, SSH as a way to add a server, Caravana's own high
   availability (its data is one SQLite file on the first server).

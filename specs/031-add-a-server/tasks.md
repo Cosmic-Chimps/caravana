@@ -132,7 +132,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   (its checks that read `nomad.hcl` or the Traefik job follow), plus: the mesh interface is up, Nomad's
   RPC answers on `10.98.0.1:4647` with TLS, `GET /v1/servers` lists one ready server, `ca-key.pem` is
   gone, and a rerun changes nothing.
-- [ ] T033 `deploy/dev/cluster-test.sh` (quickstart below).
+- [x] T033 `deploy/dev/cluster-test.sh` (quickstart below).
 - [x] T034 shellcheck (the repository's Docker way: `docker run --rm -v "$PWD:/mnt" koalaman/shellcheck
   …`) over the changed scripts.
 
@@ -154,14 +154,14 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 - [x] T041 `TestConsoleLab` step `console-servers` (`cmd/caravana/console_servers_test.go`): the lab's
   one node is listed (unmanaged), Add a server shows `cluster_not_ready`'s sentence, `GET /v1/servers`
   agrees; no join is made (the lab has no mesh).
-- [ ] T042 The designer's live review against page-servers.md, with staged data (a script like 030's
+- [x] T042 The designer's live review against page-servers.md, with staged data (a script like 030's
   `stage.sh`: three servers, a waiting join, a down one), then the impeccable critique, the rulings
   written into the contract, the fixes.
-- [ ] T043 The last look.
+- [x] T043 The last look.
 
 ## Closing
 
-- [ ] T044 `docs/plan.md` (Phase 3's first row built, what changed from the row's text, the gate's first
+- [x] T044 `docs/plan.md` (Phase 3's first row built, what changed from the row's text, the gate's first
   form), `CLAUDE.md` › "Where we are", `changelog.d/031-add-a-server.md` (Added, Changed, Upgrade: rerun
   the installer; Nomad restarts twice once; open UDP 51820 between servers), `docs/vision.md` unchanged.
 - [ ] T045 Every check of `CLAUDE.md` › Commands, `go test -race ./...` (`-timeout 30m`), and
@@ -178,8 +178,9 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
 1. **An existing host converts.** Build a release from `PRE_MESH_REF` (default `d13c37c`, the commit
    before this feature, checked out with `git worktree add --detach` into `.cache/cluster-test/pre`),
    install it on VM 1 (`--acme none --domain caravana.test`), make the admin and a token, deploy whoami
-   (1 copy, a domain). Then install this tree's release while calling whoami every half second: no call
-   fails; the installer says Nomad restarted twice; `raft list-peers` says `10.98.0.1:4647`;
+   (1 copy, a domain). Then install this tree's release while calling whoami every half second: at
+   most 20 calls fail (a copy made before the veth link file may be replaced once, research L17), and a
+   plain Nomad restart afterwards replaces nothing; the installer says Nomad restarted twice; `raft list-peers` says `10.98.0.1:4647`;
    `$STATE/raft-mesh` exists; `ca-key.pem` doesn't; `nomad var get caravana/cluster/ca` has both items;
    `GET /v1/servers` lists one server, `ready`, `first`, `nomadServer`. A rerun says `changed:` and
    nothing after it.
@@ -214,4 +215,10 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
 10. **Remove.** `limactl stop -f` VM 3, wait for `down`, `DELETE /v1/servers/three` → 204; within a
     minute `wg show caravana-mesh peers` on VMs 1 and 2 has one peer; a fourth name can be added (201).
 11. **Leave.** On VM 2: `install.sh --leave`: Nomad stopped, no `caravana-mesh`, no `/etc/caravana-node`;
-    then `DELETE /v1/servers/two` → 204.
+    VM 1 is the only raft voter and still has a leader (research L16); then `DELETE /v1/servers/two` →
+    204.
+
+**Passed** on 2026-11-10 (run 12, at `e1b4ccb`): 0 calls failed during the conversion, 11 while server 3
+was lost. Runs 7 to 11 each failed one step and found a real problem: L14 (a lost leader took five
+minutes to notice), L16 (a server that left took the quorum with it, twice: the signal, then the
+installer's order), L17 (systemd rewrote a veth's MAC) and L18 (a healthy server called down).
