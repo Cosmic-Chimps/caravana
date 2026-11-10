@@ -49,6 +49,7 @@ var hclCovers = []string{
 	"Update.ProgressDeadline", "Update.Canary", "Update.AutoRevert", "Update.AutoPromote",
 	"TaskGroups[].Name", "TaskGroups[].Count", "TaskGroups[].ShutdownDelay",
 	"TaskGroups[].Update.Canary", "TaskGroups[].Update.AutoPromote",
+	"TaskGroups[].Spreads[].Attribute", "TaskGroups[].Spreads[].Weight",
 	"TaskGroups[].Networks[].Mode", "TaskGroups[].Networks[].DynamicPorts[].Label", "TaskGroups[].Networks[].DynamicPorts[].To",
 	"TaskGroups[].Volumes{}.Name", "TaskGroups[].Volumes{}.Type", "TaskGroups[].Volumes{}.Source",
 	"TaskGroups[].Volumes{}.ReadOnly", "TaskGroups[].Volumes{}.AccessMode", "TaskGroups[].Volumes{}.AttachmentMode",

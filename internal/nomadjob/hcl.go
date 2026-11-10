@@ -47,6 +47,14 @@ func (w *hclWriter) group(g *api.TaskGroup) {
 		w.optInt("count", g.Count)
 		w.optDuration("shutdown_delay", g.ShutdownDelay)
 		w.update(g.Update)
+		for _, sp := range g.Spreads {
+			w.block("spread", nil, func() {
+				w.optString("attribute", &sp.Attribute)
+				if sp.Weight != nil {
+					w.attr("weight", strconv.Itoa(int(*sp.Weight)))
+				}
+			})
+		}
 		for _, n := range g.Networks {
 			w.block("network", nil, func() {
 				w.optString("mode", &n.Mode)

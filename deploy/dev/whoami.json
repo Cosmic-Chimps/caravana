@@ -22,6 +22,7 @@
         "Name": "web",
         "Count": 2,
         "Update": { "Canary": 2 },
+        "Spreads": [{ "Attribute": "${node.unique.id}", "Weight": 100 }],
         "ShutdownDelay": 5000000000,
         "Networks": [
           {
