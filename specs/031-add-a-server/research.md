@@ -129,6 +129,18 @@ peers and the nodes stayed as they were. So a renewal needs no restart.
 With several servers, two volumes of one service can land on different servers and the service can never
 be placed (read in the code, not provoked). They must be created on one server.
 
+## L13. Three small facts the installer relies on
+
+- `nomad var put -force caravana/cluster/ca cert=@ca.pem key=@ca-key.pem` stores the files' contents, and
+  `nomad var get -item key caravana/cluster/ca` gives back bytes equal to the file (lab, observed with
+  `cmp`).
+- With ACLs on, `GET /v1/status/leader` and `GET /v1/status/peers` answer 200 without a token
+  (`["10.98.0.2:4647","10.98.0.3:4647","10.98.0.1:4647"]`); `GET /v1/agent/self` answers 403. So the
+  agent can tell whether its Nomad knows a leader and is a raft peer with no token of its own.
+- Adding the `meta.caravana_ingress` constraint to the running Traefik job is an in-place update: the job
+  went to version 1 and the allocation kept its ID and kept running (lab, observed). So the rerun on an
+  existing host doesn't restart Traefik for it.
+
 ## Decisions
 
 | # | Decision | Why |
