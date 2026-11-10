@@ -1,0 +1,21 @@
+[Interface]
+PrivateKey = PRIVATE-KEY-PLACEHOLDER
+ListenPort = 51820
+
+[Peer]
+PublicKey = hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=
+Endpoint = 203.0.113.4:51820
+AllowedIPs = 10.98.0.1/32, 10.99.0.1/32, 172.26.64.0/20
+PersistentKeepalive = 25
+
+[Peer]
+PublicKey = 3p7bfXt9wbTTW2HC7OQ1Nz+DQ8hbeGdNrfx+FG+IK08=
+Endpoint = 198.51.100.7:51820
+AllowedIPs = 10.98.0.2/32, 10.99.0.2/32, 10.97.8.0/22
+PersistentKeepalive = 25
+
+[Peer]
+PublicKey = 3p7bfXt9wbTTW2HC7OQ1Nz+DQ8hbeGdNrfx+FG+IK08=
+Endpoint = [2001:db8::3]:51820
+AllowedIPs = 10.98.0.3/32, 10.99.0.3/32, 10.97.12.0/22
+PersistentKeepalive = 25

@@ -8,7 +8,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 
 ## Phase A: the pure packages and the agent
 
-- [ ] T001 `internal/mesh`: `addresses.go` (`MaxIndex`, `Port`, `Of`, `IndexOfApp`, `Routes`),
+- [x] T001 `internal/mesh`: `addresses.go` (`MaxIndex`, `Port`, `Of`, `IndexOfApp`, `Routes`),
   `keys.go` (`NewKey`, `PublicKey`, `ValidPublicKey`), `config.go` (`Peer`, `ParseEndpoint`, `Config`),
   exactly node.md §1. Table tests: every index's three values (1, 2, 63; 0 and 64 refused), a key made
   here gives the public key `wg pubkey` would (a fixed vector from RFC 7748 §6.1: Alice's private key
@@ -16,7 +16,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   `8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a`), endpoints refused (a name,
   loopback, `0.0.0.0`, multicast, no port), and a golden `Config`. An import test forbids `net/http`,
   `os`, `os/exec`.
-- [ ] T002 `internal/clusterca`: `New(now) (certPEM, keyPEM []byte, err)` (ECDSA P-256, CN "Caravana
+- [x] T002 `internal/clusterca`: `New(now) (certPEM, keyPEM []byte, err)` (ECDSA P-256, CN "Caravana
   cluster CA", 10 years, CA, key usage cert sign and CRL sign), `NewKeyAndCSR() (keyPEM, csrPEM)`,
   `Sign(caCert, caKey, csrPEM []byte, kind Kind, meshIP netip.Addr, now) (certPEM, error)` (`Server` or
   `Client`; 90 days, not-before 5 minutes back; CN and first DNS name `server.global.nomad` or
@@ -28,29 +28,29 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   `x509.VerifyOptions{DNSName: "server.global.nomad"}`; a client certificate fails that name; a CSR with
   an RSA key, a bad signature or two blocks is refused; `Check` refuses another CA, another key, an
   expired one.
-- [ ] T003 `internal/nodeagent/state.go`: `State`, reading and writing `state.json` (temp file, rename,
+- [x] T003 `internal/nodeagent/state.go`: `State`, reading and writing `state.json` (temp file, rename,
   0600), `node.env` read as text (the installer's `env_value` rule) and written, the paths under a root
   folder, the valid name of a host name (node.md §3). Tests.
-- [ ] T004 `internal/nodeagent/nomadhcl.go`: `RenderNomad(State, gossipKey string) string` with
+- [x] T004 `internal/nodeagent/nomadhcl.go`: `RenderNomad(State, gossipKey string) string` with
   `text/template`, node.md §4, the comments of `deploy/install/nomad.hcl.tpl` carried over. Goldens in
   `testdata/`: `first.golden.hcl`, `first-with-servers.golden.hcl`, `client.golden.hcl`,
   `server.golden.hcl`, `client-cpu.golden.hcl`. A test checks the first server's golden against today's
   template: the same `client` settings (`cni_path`, `network_interface`, the `traefik-acme` volume), the
   `acl`, `plugin "docker"` and `telemetry` blocks.
-- [ ] T005 `internal/nodeagent/validate.go`: node.md §5, each rule a table case; the error names the
+- [x] T005 `internal/nodeagent/validate.go`: node.md §5, each rule a table case; the error names the
   field and never quotes a key, a token or a certificate.
-- [ ] T006 `internal/nodeagent/up.go` and `report.go`: `Up` (the `ip` and `wg` calls of node.md §3,
+- [x] T006 `internal/nodeagent/up.go` and `report.go`: `Up` (the `ip` and `wg` calls of node.md §3,
   through the `Runner`; the config text goes to a 0600 temp file under the agent's folder, removed after
   `wg setconf`/`syncconf`), `Report` (node.md §6). Tests with a recording runner: the exact commands for
   index 1 and index 3, idempotent second run, no key in any argument.
-- [ ] T007 `internal/nodeagent/join.go`, `sync.go`, `initfirst.go`, `leave.go`: the commands of node.md
+- [x] T007 `internal/nodeagent/join.go`, `sync.go`, `initfirst.go`, `leave.go`: the commands of node.md
   §3 and §6. Tests against an `httptest` console: a join writes the five files with their modes and
   nothing on a refusal; a second `join` makes no call; `sync` applies new peers with `wg syncconf` and no
   Nomad restart; a promotion asks for a certificate, writes `gossip.key`, renders a server's `nomad.hcl`
   and restarts Nomad once; a renewal under 30 days writes key then certificate and reloads; a bad answer
   (each rule of §5) changes no file; a 401 and a 503 exit 0 and change nothing; `init-first` twice is one
   CA; a sentinel token, private key and gossip key appear in no stderr line.
-- [ ] T008 `cmd/caravana/node.go`: `caravana node init-first|join|up|sync|show|leave` with the flags of
+- [x] T008 `cmd/caravana/node.go`: `caravana node init-first|join|up|sync|show|leave` with the flags of
   node.md §3, wired to the real host (root folder `/`, `exec.CommandContext` runner with a 30 s timeout,
   an HTTP client with a 20 s timeout that doesn't follow redirects and skips verification only with
   `--insecure` or `CARAVANA_INSECURE=1`). It refuses to run when not root (`CARAVANA_NODE_ROOT`, a folder,
