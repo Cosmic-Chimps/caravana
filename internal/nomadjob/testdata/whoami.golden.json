@@ -66,7 +66,13 @@
             "Schedule": null
           }
         ],
-        "Spreads": null,
+        "Spreads": [
+          {
+            "Attribute": "${node.unique.id}",
+            "Weight": 100,
+            "SpreadTarget": null
+          }
+        ],
         "Volumes": null,
         "RestartPolicy": null,
         "Disconnect": null,

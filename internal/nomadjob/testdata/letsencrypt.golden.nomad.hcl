@@ -24,6 +24,10 @@ job "whoami" {
     update {
       canary = 2
     }
+    spread {
+      attribute = "$${node.unique.id}"
+      weight = 100
+    }
     network {
       mode = "bridge"
       port "http" {
