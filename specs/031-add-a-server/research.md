@@ -141,6 +141,27 @@ be placed (read in the code, not provoked). They must be created on one server.
   went to version 1 and the allocation kept its ID and kept running (lab, observed). So the rerun on an
   existing host doesn't restart Traefik for it.
 
+## L14. When the lost server is Nomad's leader, nothing is called down for five minutes
+
+Cluster test, 2026-11-10 (lab, observed): VM 3 was the leader when it was stopped. VM 1 logged `cluster
+leadership acquired` at 19:27:36 and `node TTL expired` for VM 3's node at 19:32:37, five minutes and one
+second later. That is `failover_heartbeat_ttl`, the time a new leader gives every node to heartbeat
+before it calls one down, and its default is 5 minutes. Until then the lost server's copies stay
+registered, Traefik keeps sending them a share of the requests, and nothing is replaced. When the lost
+server isn't the leader the node is down in about half a minute (L10).
+
+The agent writes `failover_heartbeat_ttl = "1m"` in every Nomad server's config. A node heartbeats every
+10 to 20 seconds, so a minute leaves room for a cluster of this size (63 servers at most) to find the
+new leader; Nomad's five minutes are for clusters of thousands.
+
+## L15. A Nomad server's own client must not list the servers
+
+Cluster test, 2026-11-10 (lab, observed): with `client { servers = [...] }` on an agent that is both
+server and client, its client heartbeats to one of the listed servers instead of its own. When that
+server was lost the heartbeat hung until the connection's keepalive failed, the node's TTL expired, and
+the first server's node was marked down and its copies replaced, though the machine was fine. Only a
+joined server that is a client alone lists the servers.
+
 ## Decisions
 
 | # | Decision | Why |

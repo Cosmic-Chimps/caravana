@@ -374,9 +374,16 @@ main() {
   [ "$(jsonq 'd[0]["server"]' <<<"$out")" = "$(copy_node vol main)" ] || die "vol's copy should run on its volumes' server:\n$out"
 
   # ---- 7. lose server 3 --------------------------------------------------------------------------
-  say "7. stop VM 3 for good while spread is called every half second for 90 seconds"
-  local stop_at
-  vm 1 bash "$WORK/calls.sh" spread.test 90 >"$WORK/spread-calls" </dev/null &
+  say "7. stop VM 3 for good while spread is called every half second for 120 seconds"
+  # When the lost server is Nomad's leader, the new leader waits failover_heartbeat_ttl (1 minute, set
+  # by the agent; Nomad's default is 5) before it calls the node down, so its copy stays registered
+  # for about a minute longer (research L14). The bounds follow which case this run is.
+  local stop_at was_leader=0 max_failed=12 quiet_after=60
+  if [ "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" = "10.98.0.3:4647" ]; then
+    was_leader=1 max_failed=50 quiet_after=100
+    echo "    (server 3 is Nomad's leader in this run)"
+  fi
+  vm 1 bash "$WORK/calls.sh" spread.test 120 >"$WORK/spread-calls" </dev/null &
   watcher=$!
   sleep 3
   stop_at="$(vm 1 date +%s)"
@@ -384,9 +391,10 @@ main() {
   wait "$watcher" || true
   local failed late
   failed="$(awk '$2 != 200' "$WORK/spread-calls" | wc -l | tr -d ' ')"
-  late="$(awk -v s="$stop_at" '$2 != 200 && $1 > s + 60' "$WORK/spread-calls" | wc -l | tr -d ' ')"
-  [ "$failed" -le 12 ] || die "$failed calls failed after server 3 was lost (at most 12 may)"
-  [ "$late" = 0 ] || die "$late calls failed more than 60 seconds after server 3 was lost"
+  late="$(awk -v s="$stop_at" -v q="$quiet_after" '$2 != 200 && $1 > s + q' "$WORK/spread-calls" | wc -l | tr -d ' ')"
+  echo "    $failed calls failed (leader lost: $was_leader)"
+  [ "$failed" -le "$max_failed" ] || die "$failed calls failed after server 3 was lost (at most $max_failed may)"
+  [ "$late" = 0 ] || die "$late calls failed more than $quiet_after seconds after server 3 was lost"
   healthy_copies spread 3 || die "spread should have three healthy copies again:\n$(copies_json spread)"
   [ "$(copies_json spread | jsonq 'len(set(c["node"] for c in d["copies"] if c["status"]=="healthy"))')" = 2 ] ||
     die "spread's three copies should be on two servers:\n$(copies_json spread)"

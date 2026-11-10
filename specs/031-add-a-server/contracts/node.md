@@ -111,6 +111,7 @@ server {                                # S
   enabled          = true
   bootstrap_expect = 1                  # F
   encrypt          = "<gossip key>"
+  failover_heartbeat_ttl = "1m"         # S (research L14; Nomad's default is 5 minutes)
   server_join {                         # S and not F, and F once there are other servers
     retry_join = ["10.98.0.1:4648"]     # every other Nomad server, by index
   }
@@ -122,7 +123,7 @@ client {
   node_pool             = "default"
   network_interface     = "caravana0"
   bridge_network_subnet = "10.97.12.0/22"   # J
-  servers               = ["10.98.0.1:4647"] # every Nomad server but itself; omitted when empty
+  servers               = ["10.98.0.1:4647"] # J and not S: every Nomad server (research L15)
   cpu_total_compute     = 4000               # only when given
   meta {                                     # F
     caravana_ingress = "true"

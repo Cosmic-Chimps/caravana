@@ -63,6 +63,11 @@ server {
   bootstrap_expect = 1
 {{- end}}
   encrypt          = {{q .GossipKey}}
+
+  # After a new leader is elected, Nomad gives every node this long to heartbeat before it calls one
+  # down. Its default is 5 minutes: when the server that was lost was the leader, its copies stayed
+  # registered, and Traefik kept sending them requests, for five minutes (cluster test, research L14).
+  failover_heartbeat_ttl = "1m"
 {{- if .RetryJoin}}
   server_join {
     retry_join = {{.RetryJoin}}
