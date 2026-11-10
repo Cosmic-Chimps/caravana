@@ -799,3 +799,28 @@ func TestServerErrorsNeverQuoteTheirInput(t *testing.T) {
 		}
 	}
 }
+
+// A server that is down can't hold up a join: the network check asks for the servers that are up,
+// so a dead server can be replaced.
+func TestADownServerDoesNotBlockAJoin(t *testing.T) {
+	ctx := context.Background()
+	e := newClusterEnv(t)
+	_, two := e.join(t, "two", "")
+	e.nomad.AddNode("node-2", "two", "ready", "10.99.0.2")
+	if out, err := e.svc.NodeSync(ctx, two.NodeToken, healthyReport(1)); err != nil || out.State != "ready" {
+		t.Fatalf("two didn't get ready: %+v, %v", out, err)
+	}
+	e.nomad.SetNodeStatusOf("node-2", "down")
+
+	_, three := e.join(t, "three", "")
+	e.nomad.AddNode("node-3", "three", "ready", "10.99.0.3")
+	report := healthyReport(1)
+	report.Reach = append(report.Reach, NodeReach{Index: two.Index, OK: false}) // two is down: no answer
+	out, err := e.svc.NodeSync(ctx, three.NodeToken, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.State != "ready" || !allPass(out.Checks) {
+		t.Errorf("three should be ready though two is down: %+v", out.Checks)
+	}
+}

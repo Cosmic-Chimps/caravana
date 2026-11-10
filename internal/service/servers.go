@@ -583,13 +583,22 @@ func nodeOf(nodes []deploy.Node, index int) *deploy.Node {
 	return nil
 }
 
-// othersOf are the joining and ready servers but index.
-func othersOf(rows []store.Server, index int) []otherServer {
+// othersOf are the servers a joining server must reach on the private network: every other ready
+// server that Nomad doesn't say is down. A server that is down, or still joining itself, can't hold
+// up a join: otherwise a dead server could never be replaced. While Nomad can't be read, every
+// ready server counts.
+func othersOf(rows []store.Server, index int, nodes []deploy.Node, nomadKnown bool) []otherServer {
 	var out []otherServer
 	for _, r := range rows {
-		if r.Index != index && r.State != store.ServerWaiting {
-			out = append(out, otherServer{Index: r.Index, Name: r.Name})
+		if r.Index == index || r.State != store.ServerReady {
+			continue
 		}
+		if nomadKnown {
+			if node := nodeOf(nodes, r.Index); node == nil || node.Down() {
+				continue
+			}
+		}
+		out = append(out, otherServer{Index: r.Index, Name: r.Name})
 	}
 	return out
 }
@@ -673,7 +682,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 		return NodeAnswer{}, fmt.Errorf("sync: %w", err)
 	}
 	nodes, nodesErr := s.deployer.Nodes(ctx)
-	checks := serverChecks(checkInput{Report: &report, Others: othersOf(rows, row.Index),
+	checks := serverChecks(checkInput{Report: &report, Others: othersOf(rows, row.Index, nodes, nodesErr == nil),
 		NomadKnown: nodesErr == nil, Node: nodeOf(nodes, row.Index)})
 	state := row.State
 	if state == store.ServerJoining && allPass(checks) {
@@ -871,7 +880,7 @@ func (s *Service) rowView(ctx context.Context, r store.Server, rows []store.Serv
 	if r.State == store.ServerReady && !nomadOK {
 		v.AcceptsWork = true // unknown; not judged
 	}
-	in := checkInput{NomadKnown: nomadOK, Node: node, Others: othersOf(rows, r.Index)}
+	in := checkInput{NomadKnown: nomadOK, Node: node, Others: othersOf(rows, r.Index, nodes, nomadOK)}
 	if hasReport {
 		in.Report = &report
 	}

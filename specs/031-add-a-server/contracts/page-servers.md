@@ -197,4 +197,42 @@ without script.
 
 ## Review
 
-(The designer's review, the critique's rulings and the last look are added here as they happen.)
+### Live review (designer, 2026-11-10, build 6c22fcb, staged: six servers, a joining one, a waiting join, an unmanaged node)
+
+Verified at 1440 and at 500 wide (no sideways overflow): the nav word; the list's grid, role marks,
+pills, meters with the hatched reserved part and "—" for no numbers; the waiting row with Cancel; the
+joining row with its open check; "Not set up for a cluster yet."; Add a server before and after (the
+command block, "The token works once and for one hour.", the facts, Cancel this join, the Checks panel
+in its three mark states); the down server's pill, banner and Remove server…; the per-server panels on
+the Overview; the facts of a managed server.
+
+Rulings:
+
+1. **The cluster sentence was mine and wrong for more than three servers** ("Three servers: two more
+   are starting…" with five). It reads, while promotion is under way: "Two more servers are starting to
+   run the scheduler. Once three do, the cluster survives the loss of one." ("One more server is…" for
+   one). The other four states stay.
+2. **A down server must not hold up a join.** The network check asks for the ready servers that are up
+   (fixed in the service; api.md §3). The staged joining row named a down server among those it can't
+   reach.
+3. **A joining server needs a way out.** `/ops/servers/joins/{id}` of a server that called in and isn't
+   ready shows, under the facts: "<name> called in <relative time>. If it never gets ready, remove it
+   and make a new command." and the quiet button **Remove this server** (the cancel post; the service
+   refuses when Nomad has a running node for it, and the page draws that refusal). While it waits for
+   the call, the contract's "The command was shown once…" line stays.
+4. **The room sentence is the cluster's**, so it doesn't belong on one server's page once there is more
+   than one server: it stays on the Overview and on Monitoring. And it must be true: the staged Overview
+   said "Nothing is running yet" beside five running copies. Find out whether that is the staging or the
+   sum, and fix the one that is wrong.
+5. **A down server's numbers are old.** Its page shows no meters panel: one line in its place, "<name>'s
+   numbers were last read at 17:54 UTC." (the `cv-srvnums-line` form). The list's greyed readouts stay.
+6. **"Updates and restarts are read on <first> only."** goes under the facts panel, in the same column,
+   not alone in the other column.
+7. **Overview: the server panels are a grid**, as the handoff's `NowScreen` has them: three columns
+   (`repeat(3, minmax(0,1fr))`, gap 13) at 1200 and wider, two from 800, one below. With one server the
+   panel is full width as today.
+8. **"This server needs a reboot"** and the security-updates item name the server once there is more
+   than one: "<first> needs a reboot: …". One source, `ProblemParts`.
+9. The list's head line counts every server Nomad or Caravana knows that isn't waiting or joining, and
+   sums the ready ones. An unmanaged node has no spec line, so its memory and vCPU aren't in the sums
+   either: the numbers under a name and the sum in the head must agree.

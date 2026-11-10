@@ -102,7 +102,7 @@ down, disconnected or gone), or `ready` with `acceptsWork: false` (ineligible or
 | --- | --- | --- |
 | `connected` | the join call was answered | "Connected to the cluster" |
 | `docker` | the last report says Docker answers | "Docker running, 160 GB disk free" (the disk under Nomad's data, from the report) |
-| `network` | the last report's `reach` has every other `ready` or `joining` server, all `ok` | "Reaches hel-1 and fsn-1 on the private network"; open: "Can't reach fsn-1 yet" with the names |
+| `network` | the last report's `reach` has every other `ready` server that Nomad doesn't say is down, all `ok` (a server that is down or still joining can't hold up a join, or a dead server could never be replaced) | "Reaches hel-1 and fsn-1 on the private network"; open: "Can't reach fsn-1 yet" with the names |
 | `ready` | Nomad has a node at this server's app address that is `ready` and eligible | "Ready to take work" |
 
 They are reported in this order, and one that follows an open one is open too. A lone joining server
