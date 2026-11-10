@@ -455,11 +455,16 @@ main() {
   [ "$REQ_CODE" = 204 ] || die "a waiting join is removed without conditions: got $REQ_CODE: $REQ_BODY"
 
   # ---- 11. leave ---------------------------------------------------------------------------------
-  say "11. VM 2 leaves; then the console removes it"
+  say "11. VM 2 leaves: it goes out of raft and VM 1 keeps a leader; then the console removes it"
   install_ok 2 "$NEW" --leave
   vm 2 systemctl is-active --quiet nomad && die "Nomad still runs on VM 2 after --leave"
   vm 2 ip link show caravana-mesh >/dev/null 2>&1 && die "caravana-mesh is still on VM 2 after --leave"
   vm 2 sudo test ! -e /etc/caravana-node || die "/etc/caravana-node is still on VM 2 after --leave"
+  # Two Nomad servers were left (server 3 is gone): VM 2 left raft before it stopped, so VM 1 is one
+  # voter of one and still has a leader. Stopping VM 2's Nomad without that left VM 1 with no quorum
+  # (research L16).
+  wait_for 60 "server 1 should be the only raft voter after server 2 left, with a leader" voters_are 1 1
+  [ -n "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" ] || die "Nomad has no leader after server 2 left"
   # Until Nomad notices the node is gone it says running, and the console refuses.
   wait_for 180 "two can be removed once Nomad says it is down" remove_two
 

@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
@@ -174,6 +175,10 @@ func (a *Agent) Leave(ctx context.Context) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	// Nomad leaves the cluster before it stops: SIGTERM is its signal for that (leave_on_terminate in
+	// nomad.hcl). A Nomad server tells the others it is going, so the leader takes it out of raft.
+	// Stopping it without that left a cluster of two Nomad servers with no quorum (research L16).
+	a.leaveNomad(ctx)
 	// Each step is tried even when an earlier one failed, so a half-left server can finish leaving.
 	var problems []string
 	for _, cmd := range [][]string{
@@ -195,4 +200,35 @@ func (a *Agent) Leave(ctx context.Context) error {
 	}
 	a.out("This server left the cluster. Remove it in the console too.")
 	return nil
+}
+
+// leaveWait is how long Nomad gets to leave the cluster and exit after SIGTERM, and leaveStep how
+// often that is checked.
+const (
+	leaveWait = 30 * time.Second
+	leaveStep = time.Second
+)
+
+// leaveNomad sends Nomad SIGTERM and waits until its unit is no longer active. A Nomad that isn't
+// running, or that doesn't stop in time, is left to the stop that follows: leaving is best effort,
+// and the server goes out either way.
+func (a *Agent) leaveNomad(ctx context.Context) {
+	if _, err := a.run(ctx, "systemctl", "is-active", "--quiet", "nomad"); err != nil {
+		return // not running: nothing to leave
+	}
+	if _, err := a.run(ctx, "systemctl", "kill", "--signal=SIGTERM", "nomad"); err != nil {
+		a.warn("caravana node leave: couldn't ask Nomad to leave the cluster: %v", err)
+		return
+	}
+	for waited := time.Duration(0); waited < leaveWait; waited += leaveStep {
+		if _, err := a.run(ctx, "systemctl", "is-active", "--quiet", "nomad"); err != nil {
+			return // it left and exited
+		}
+		if a.Sleep != nil {
+			a.Sleep(leaveStep)
+		} else {
+			time.Sleep(leaveStep)
+		}
+	}
+	a.warn("caravana node leave: Nomad didn't exit within %s of being asked to leave; it is stopped now", leaveWait)
 }

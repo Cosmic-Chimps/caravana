@@ -69,7 +69,7 @@ except validated keys and endpoints, passed to `wg` through the config text on a
 | `up` | From `state.json`, no network needed: make `caravana0` (dummy) and `caravana-mesh` (wireguard) if missing, set their addresses, `wg setconf`, bring them up, replace the routes. Idempotent. Without `state.json`: exit 0, nothing. |
 | `sync [--renew] [--checks]` | `--renew` renews the certificate now, whatever its age. `--checks` prints what the console reports, for the installer: one line `check <name> ok\|open <detail>` per check, then `state <joining\|ready>`. Without `node.env`: exit 0 ("not registered yet"). Gather the report, `POST /v1/node/sync`, validate, apply (§6). A console that can't be reached or answers 5xx: a line on stderr, exit 0, nothing changes. A 401: stderr says the server was removed from the cluster, exit 0, nothing changes. |
 | `show FIELD` | Prints one of `public-key`, `name`, `index`, `role`, `first` and a newline. For the installer. |
-| `leave` | Stops and disables Nomad, deletes `caravana-mesh` and `caravana0`, removes `/etc/caravana-node` and `/etc/nomad.d/tls`. Refuses on the first server. |
+| `leave` | Sends Nomad SIGTERM, on which it leaves the cluster (`leave_on_terminate = true` in `nomad.hcl`; a Nomad server goes out of raft, research L16), waits up to 30 s for it to exit, then stops and disables Nomad, deletes `caravana-mesh` and `caravana0`, removes `/etc/caravana-node` and `/etc/nomad.d/tls`. Refuses on the first server. |
 
 The valid name of a host name: lowercase, the first label only, every character outside `[a-z0-9-]`
 turned into `-`, dashes trimmed from the ends, at most 63; empty becomes `server-<index>`.
@@ -83,6 +83,7 @@ server's.
 # Written by `caravana node`: the next sync rewrites it. Change it through Caravana.
 name       = "fsn-2"                    # J (the first server keeps its host name)
 datacenter = "dc1"
+leave_on_terminate = true               # SIGTERM leaves the cluster; a stop sends SIGINT (L16)
 data_dir   = "/opt/nomad/data"
 bind_addr  = "127.0.0.1"
 

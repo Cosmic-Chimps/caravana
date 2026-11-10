@@ -59,6 +59,8 @@ type Agent struct {
 	HTTP *http.Client
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Sleep waits between checks of something that takes time; nil means time.Sleep. Tests set it.
+	Sleep func(time.Duration)
 	// Version is this agent's version, sent in the facts and the report.
 	Version string
 	// NomadAddr is the local Nomad's HTTP address; empty means http://127.0.0.1:4646.

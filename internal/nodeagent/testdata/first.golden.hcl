@@ -6,6 +6,12 @@
 # through Traefik (spec FR-005, FR-005a).
 
 datacenter = "dc1"
+
+# SIGTERM makes Nomad leave the cluster before it exits; "caravana node leave" sends it. A stop, a
+# restart and a reboot send SIGINT (the unit's KillSignal), which leaves nothing: a Nomad server that
+# only restarts must keep its place in raft. Without a graceful leave, a server taken out of a cluster
+# with two Nomad servers left the other without a quorum (cluster test, research L16).
+leave_on_terminate = true
 data_dir   = "/opt/nomad/data"
 bind_addr  = "127.0.0.1"
 

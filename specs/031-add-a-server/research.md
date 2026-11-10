@@ -162,6 +162,21 @@ server was lost the heartbeat hung until the connection's keepalive failed, the 
 the first server's node was marked down and its copies replaced, though the machine was fine. Only a
 joined server that is a client alone lists the servers.
 
+## L16. A Nomad server must leave raft before it stops, or two servers become none
+
+Cluster test, 2026-11-10 (lab, observed): after server 3 was removed the cluster had two Nomad servers.
+`--leave` on server 2 stopped its Nomad (SIGINT), which leaves nothing: raft still had two voters, one of
+them gone, and server 1 had no quorum. It logged `Election timeout reached, restarting election` and
+answered `No cluster leader` to everything, so nothing could be deployed, read or removed. Nomad leaves
+the cluster gracefully on SIGTERM when `leave_on_terminate = true` (a server announces it, and the leader
+takes it out of raft), exits 0, and has 5 seconds for it. The agent writes that setting on every server,
+`caravana node leave` sends SIGTERM and waits for Nomad to exit before it takes the network away, and a
+stop, a restart and a reboot keep sending SIGINT (the unit's `KillSignal`), so a Nomad server that only
+restarts keeps its place.
+
+A server that is lost, not retired, can still take the quorum with it when only two Nomad servers are
+left: that is what "can't lose another" on the Servers page says.
+
 ## Decisions
 
 | # | Decision | Why |
