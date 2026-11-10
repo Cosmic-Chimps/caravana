@@ -1,7 +1,8 @@
 # Installing Caravana
 
 One command turns a fresh Ubuntu 24.04 VM into a Caravana host: Docker, Nomad with ACLs on,
-Traefik with Let's Encrypt certificates, and Caravana under systemd.
+Traefik with Let's Encrypt certificates, and Caravana under systemd. The same installer turns more
+VMs into servers of that host's cluster (see Adding a server).
 
 ## What you need
 
@@ -32,7 +33,11 @@ address. Sign in there and deploy your first app.
 | `--domain` | `<ip>.sslip.io` | The console's domain. It serves the console, the API and webhooks. |
 | `--acme` | `production` | `staging`: Let's Encrypt's staging CA (no rate limits, untrusted certificates). `none`: Traefik's own certificate, for private networks. |
 | `--acme-email` | `--email` | The Let's Encrypt account email (expiry notices). |
+| `--address` | the public IP (first server) | The address the other servers reach this one at, an IPv4 or IPv6 address. Only the first server needs it when it has no public IP to find. |
+| `--first` | (the default) | This is the first server, the one that runs Caravana and Traefik. |
 | `--from DIR` | download | Use a release's files from `DIR` (made with `tools/release.sh build`). |
+
+`--join`, `--url`, `--insecure` and `--leave` are for the other servers: see Adding a server.
 
 Run from a script, without a terminal, the installer can't ask for a password. It then prints
 the command that creates the admin:
@@ -53,10 +58,25 @@ sudo caravana admin init --email you@example.com
 | `/usr/local/libexec/caravana-update` | The updater: a root script that runs an update the console asked for (see Updating) |
 | `caravana-update.timer`, `caravana-update.service` | The timer starts the updater every minute; it does nothing unless a request is waiting |
 | `/var/lib/caravana-update/` | The updater's status and logs. Only root writes here; Caravana reads the status |
+| `/usr/local/libexec/caravana-node` | The server agent: a copy of the release's binary, so a rolled-back Caravana never takes it away. Runs on every server |
+| `/etc/caravana-node/` | The agent's folder (root only): its WireGuard key, what it last applied (`state.json`), where the console is and the token it calls it with (`node.env`), Nomad's gossip key on a Nomad server |
+| `/etc/nomad.d/nomad.hcl`, `/etc/nomad.d/tls/` | Nomad's config and certificates. The agent writes them; change them through Caravana, not by hand |
+| `caravana-mesh.service` | Makes `caravana0` and the WireGuard interface `caravana-mesh` at boot, before Nomad starts (Nomad requires it) |
+| `caravana-node.timer`, `caravana-node.service` | The timer starts the agent every 30 seconds: it asks the console for this server's peers, role and certificate and applies them |
 
-From the internet only ports 22, 80 and 443 answer. Nomad, Caravana's own port and Traefik's
-dashboard listen on loopback. Apps' ports are on a private interface, `caravana0`, and reach the
-internet only through Traefik.
+Every server runs Docker, Nomad, the agent and the mesh. Only the first one runs Caravana, Traefik
+and the updater, and so answers on 80 and 443.
+
+From the internet only ports 22, 80 and 443 answer on the first server, and 22 on the others; all of
+them also answer WireGuard on 51820/udp. Nomad, Caravana's own port and Traefik's dashboard listen on
+loopback, and Nomad's RPC on the private mesh address. Apps' ports are on a private interface,
+`caravana0`, and reach the internet only through Traefik.
+
+Caravana's servers use these private ranges between them, on every server: `10.98.0.N` for the mesh,
+`10.99.0.N` for app ports (`caravana0`) and `10.97.0.0/16` for the containers of servers after the
+first (the first keeps Nomad's `172.26.64.0/20`). N is the server's number, 1 to 63, given by the
+console. The installer refuses a host that already has an address or a route inside
+`10.97.0.0/16`, `10.98.0.0/24` or `10.99.0.0/24` on another interface.
 
 Apps on one host are not isolated from each other: any app's container can reach another app's
 port directly. An app that believes `X-Forwarded-*` headers should believe them only from
@@ -71,6 +91,57 @@ sudo caravana admin status | reset-password | create-token --name ci
 sudo caravana-nomad status          # Nomad's CLI with the management token
 journalctl -u caravana              # Caravana's log
 ```
+
+## Adding a server
+
+In the console, Servers › Add a server makes a one-hour, single-use join token and shows the command
+to run on the new VM (Ubuntu 24.04, 2 GB, Docker and Nomad not installed yet):
+
+```bash
+curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/vX.Y.Z/install.sh |
+  sudo bash -s -- --join cvjn_... --url https://caravana.example.com
+```
+
+The VM needs to reach the console's address over HTTPS, and **UDP 51820 must be open between the
+servers** (in the provider's firewall too: the installer opens it on the host itself). Each server
+must be reachable by the others at one address, which the console sees on the join call; give
+`--address IP` when it isn't the one the VM calls from.
+
+The installer installs Docker, Nomad and the agent, joins (the agent sends the token, its WireGuard
+public key and a certificate request; the console answers with the peers and a certificate signed by
+the cluster's CA, and no private key ever leaves the server), starts Nomad and then waits, up to three
+minutes, for the console to confirm four checks, which it prints as they pass: connected, Docker,
+network (every other server answers on the private network) and ready. It ends with "This server
+joined as NAME." or, on a timeout, the checks still open (exit 1); the agent keeps trying every 30
+seconds either way.
+
+- A console on Traefik's own certificate (`--acme none`) needs `--insecure`, which the console's
+  command adds by itself in that case.
+- The token goes only to the agent's command line, once. It isn't written anywhere and a rerun
+  doesn't need it: run the same command again to upgrade the server with a newer release; a server
+  that joined already makes no call.
+- With three servers ready, the console makes the first and the two oldest others Nomad servers
+  (three voters survive losing one); the agent promotes the server when the console says so and Nomad
+  restarts once on it, keeping its copies.
+- A host already running Caravana from before servers existed converts when you run this release's
+  installer on it: Nomad restarts twice, once only, to move to the private network and to correct its
+  raft peer address (its jobs, tokens and variables are kept, apps keep running). Its old Nomad config
+  is kept once as `/var/lib/caravana-host/nomad.hcl.before-mesh`. If Nomad has no leader within two
+  minutes after either restart, the installer stops and says what it did and where that file is.
+
+## Taking a server out
+
+A server that is down (or a join nobody used) is removed in the console: Servers › the server ›
+Remove. A server that is running is taken out on the server first:
+
+```bash
+sudo bash install.sh --leave        # the install.sh of the release it joined with
+```
+
+That stops the agent and Nomad, deletes `caravana0` and the mesh interface, removes the agent, its
+units, its certificates and Nomad's config, and keeps Docker, Nomad's binary and the packages. Remove
+the server in the console too, or it stays listed as down. Containers the apps left running are not
+touched (`docker ps`). The first server can't leave: its `--uninstall` removes Caravana as before.
 
 ## Upgrade
 
@@ -133,16 +204,21 @@ curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/latest/download/in
   sudo bash -s -- --uninstall
 ```
 
-This removes Caravana's service and binary, the updater and its timer, and revokes its Nomad token. Nomad, Docker, Traefik
-and every app keep running; the console's domain answers 502 until Caravana is installed again. Export the apps' jobspecs first (Configure › Export in the console,
-or `GET /v1/apps/<id>/jobspec`) to manage them with plain Nomad. The data stays in
-`/var/lib/caravana`, and installing again picks it up. Add `--purge` to delete it.
+This is for the first server (on a server that joined, `--leave` is the command: see Taking a server
+out). It removes Caravana's service and binary, the updater and its timer, the agent's timer and its
+`node.env`, and revokes its Nomad token. Nomad, the private network, Docker, Traefik and every app keep
+running, and so do the agent and its units, which Nomad needs. The console's domain answers 502 until
+Caravana is installed again; other servers can't sync until then, and keep running what they run.
+Export the apps' jobspecs first (Configure › Export in the console, or `GET /v1/apps/<id>/jobspec`) to
+manage them with plain Nomad. The data stays in `/var/lib/caravana`, and installing again picks it up
+(and registers the server again). Add `--purge` to delete it.
 
 Removing the rest is up to you, because the apps depend on it:
 
 ```bash
 sudo caravana-nomad job stop -purge <job>    # each app, and traefik
-sudo systemctl disable --now nomad && sudo rm -rf /etc/nomad.d /opt/nomad /usr/local/bin/nomad
+sudo systemctl disable --now nomad caravana-mesh && sudo rm -rf /etc/nomad.d /opt/nomad /usr/local/bin/nomad
+sudo rm -rf /etc/caravana-node /usr/local/libexec/caravana-node /etc/systemd/system/{nomad,caravana-mesh,caravana-node}.service
 sudo apt-get purge docker.io
 ```
 
@@ -152,7 +228,7 @@ sudo apt-get purge docker.io
 
 - `install.sh`, with its version set
 - one tarball per architecture, with the binary and the host files from this folder (the updater and
-  its two systemd units are among them)
+  its two systemd units, and the units of Nomad, the private network and the server agent, are among them)
 - `SHA256SUMS`
 
 The installer checks the tarball against `SHA256SUMS` before using it. Pushing a `v<version>` tag

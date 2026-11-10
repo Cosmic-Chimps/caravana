@@ -116,17 +116,17 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 
 ## Phase D: the host
 
-- [ ] T027 `deploy/install/nomad.service`, `caravana-mesh.service`, `caravana-node.service`,
+- [x] T027 `deploy/install/nomad.service`, `caravana-mesh.service`, `caravana-node.service`,
   `caravana-node.timer` (node.md §7), each with a comment header like `caravana.service`'s;
   `deploy/install/nomad.hcl.tpl` deleted.
-- [ ] T028 `install.sh`: options and their checks, `install.env`'s new lines, the roles' refusals
+- [x] T028 `install.sh`: options and their checks, `install.env`'s new lines, the roles' refusals
   (node.md §8). The header comment and `--help` say both roles.
-- [ ] T029 `install.sh --first`: steps 1 to 10 of node.md §8. The old `nomad.hcl` is kept once as
+- [x] T029 `install.sh --first`: steps 1 to 10 of node.md §8. The old `nomad.hcl` is kept once as
   `$STATE/nomad.hcl.before-mesh` (not in `/etc/nomad.d`, which Nomad reads whole). After each Nomad
   restart of the conversion, no leader within 2 minutes is a failure that says what was done and where
   the old file is.
-- [ ] T030 `install.sh --join`, `--leave`, and `--uninstall`'s additions.
-- [ ] T031 `tools/release.sh`: the host files (node.md §8). `deploy/install/README.md`: "What runs
+- [x] T030 `install.sh --join`, `--leave`, and `--uninstall`'s additions.
+- [x] T031 `tools/release.sh`: the host files (node.md §8). `deploy/install/README.md`: "What runs
   where" for both roles, "Adding a server", "Taking a server out", the ranges and the port to open.
 - [ ] T032 `deploy/dev/install-test.sh`: the single-VM run still passes with the new first-server steps
   (its checks that read `nomad.hcl` or the Traefik job follow), plus: the mesh interface is up, Nomad's
