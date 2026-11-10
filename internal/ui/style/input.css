@@ -2307,6 +2307,9 @@
   a.cv-k-server:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-srvreadon { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
   .cv-srvagentnote { margin: 14px 0 0; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  /* The Overview's server panels (the handoff's NowScreen): a grid with a 13px gap, one column below 800px, two from 800,
+     three from 1200. One server isn't in it: its panel is the section's full width. */
+  .cv-nodegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; align-items: start; }
   .cv-upreadon { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
   .cv-mnpick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 }
@@ -2325,4 +2328,11 @@
 }
 @media (max-width: 899.98px) {
   .cv-page-srvs, .cv-page-adds { gap: 24px; padding: 24px 16px 40px; }
+}
+
+@media (min-width: 800px) {
+  .cv-nodegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1200px) {
+  .cv-nodegrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

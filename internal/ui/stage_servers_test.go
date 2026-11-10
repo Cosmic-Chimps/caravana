@@ -20,7 +20,7 @@ import (
 // What it shows: hel-1 (the server Caravana runs on, its node read by the sampler), fsn-1 (ready), fsn-2 (a disk at 89%,
 // so "disk filling"), fsn-3 (down, its copies replaced), build-1 (ready, in the pool "build", not taking work),
 // fsn-4 (joining: it can't reach hel-1 yet), a waiting command for fsn-9, and a Nomad node called lab that Caravana
-// doesn't manage. The three standard apps run on them. Reload the pages to see them; the data doesn't change by itself.
+// doesn't manage. The three standard apps run on them, and the room sentence is true (their copies reserve memory, and the stager waits for the sampler to record them). Reload the pages to see them; the data doesn't change by itself.
 func TestStageServers(t *testing.T) {
 	if os.Getenv("CARAVANA_STAGE_SERVERS") == "" {
 		t.Skip("set CARAVANA_STAGE_SERVERS=1 to stage the Servers pages")
@@ -42,12 +42,33 @@ func TestStageServers(t *testing.T) {
 	e.sample(t, "node-5", 100, 0, 1958, 20, 4000, 2, 3000, 19000)
 	e.Nomad.SetNodeStatusOf("node-4", "down")
 	e.Nomad.SetNodeEligibilityOf("node-5", "ineligible", false)
+	// The copies reserve memory and CPU, as real ones do: the room sentence counts how many more apps like the usual
+	// one fit by what the running apps reserve, and a copy with no reservation leaves it nothing to count.
 	run := func(id, node, name string) api.AllocationListStub {
-		return api.AllocationListStub{ID: id, TaskGroup: "web", JobVersion: 7, ClientStatus: "running", DesiredStatus: "run", NodeID: node, NodeName: name}
+		return api.AllocationListStub{ID: id, TaskGroup: "web", JobVersion: 7, ClientStatus: "running", DesiredStatus: "run", NodeID: node, NodeName: name,
+			AllocatedResources: &api.AllocatedResources{Tasks: map[string]*api.AllocatedTaskResources{"web": {
+				Cpu:    api.AllocatedCpuResources{CpuShares: 100},
+				Memory: api.AllocatedMemoryResources{MemoryMB: 128, MemoryMaxMB: 256},
+			}}}}
 	}
 	e.Nomad.SetCopies("whoami", run("w1aaaaaa-0000", "node-1", "hel-1"), run("w2bbbbbb-0000", "node-2", "fsn-1"))
 	e.Nomad.SetCopies("blog", run("b1cccccc-0000", "node-3", "fsn-2"))
 	e.Nomad.SetCopies("api", run("a1dddddd-0000", "node-2", "fsn-1"), run("a2eeeeee-0000", "node-1", "hel-1"))
+
+	// The room sentence reads the apps' newest samples, which the sampler writes: wait until it has recorded the
+	// copies above, so the review never sees "Nothing is running yet" beside running copies (they are set after
+	// the sampler's first tick).
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		h, err := e.Svc.Host(t.Context(), "")
+		if err == nil && h.Room.HasYardstick {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the sampler never recorded the staged copies: %+v, %v", h.Room, err)
+		}
+		time.Sleep(time.Second)
+	}
 
 	fmt.Printf("\nThe Servers pages are staged.\n  open     %s/ops/servers\n  sign in  %s / %s\n  (ctrl-c or the timeout ends it)\n\n", e.URL, testEmail, testPassword)
 	wait := 3 * time.Hour

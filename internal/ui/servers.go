@@ -189,12 +189,27 @@ func clusterHead(v service.ServersView, joined int) string {
 		}
 		count = strings.Join(parts, ", ")
 	}
-	out := []string{count}
-	if v.Cluster.MemoryMB > 0 {
-		out = append(out, gbText(float64(v.Cluster.MemoryMB))+" GB")
+	// The sums are of the ready servers' own numbers, the ones the rows' spec lines say, so the head and the rows
+	// agree: a server with no numbers yet, a node Caravana doesn't manage and has no sample of, and one that is
+	// down add nothing.
+	var memoryMB, cores int64
+	for _, sv := range v.Servers {
+		if sv.State != "ready" {
+			continue
+		}
+		if sv.Memory != nil {
+			memoryMB += sv.Memory.Total
+		}
+		if sv.CPU != nil {
+			cores += sv.CPU.Cores
+		}
 	}
-	if v.Cluster.CPUCores > 0 {
-		out = append(out, strconv.FormatInt(v.Cluster.CPUCores, 10)+" vCPU")
+	out := []string{count}
+	if memoryMB > 0 {
+		out = append(out, gbText(float64(memoryMB))+" GB")
+	}
+	if cores > 0 {
+		out = append(out, strconv.FormatInt(cores, 10)+" vCPU")
 	}
 	return strings.Join(out, " · ")
 }
@@ -214,7 +229,12 @@ func clusterSentence(v service.ServersView, joined int) *clusterLine {
 	case c.SurvivesLoss:
 		return &clusterLine{Mark: "healthy", Text: "The cluster survives the loss of one server."}
 	case c.Ready >= 3:
-		return &clusterLine{Mark: "rolling", Text: "Three servers: two more are starting to run the scheduler."}
+		// Promotion is under way: the schedulers still to start, until three run.
+		more := "Two more servers are"
+		if c.NomadServers >= 2 {
+			more = "One more server is"
+		}
+		return &clusterLine{Mark: "rolling", Text: more + " starting to run the scheduler. Once three do, the cluster survives the loss of one."}
 	case c.Ready == 2 && joined >= 2:
 		return &clusterLine{Mark: "idle", Text: "With one more server the cluster survives the loss of one."}
 	}

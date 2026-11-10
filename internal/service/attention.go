@@ -202,6 +202,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	out.Items = append(out.Items, disks...)
 	osItems, osKnown := s.osItems(s.clock.Now().UTC())
 	out.OSUnknown = !osKnown
+	if dir, err := s.directory(ctx); err == nil && dir.multi() {
+		if n, ok := dir.local(); ok {
+			nameOSItems(osItems, n.Name)
+		}
+	}
 	out.Items = append(out.Items, osItems...)
 	updateItems, err := s.updateItems(ctx)
 	if err != nil {

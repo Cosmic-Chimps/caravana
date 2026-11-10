@@ -110,7 +110,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		}
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
-		ev.Title = osTitle(it.Kind)
+		ev.Title = osTitle(it)
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	case AttentionCaravanaUpdateFailed:
 		ev.Title = updateFailedTitle
@@ -390,7 +390,8 @@ func problemSubject(it AttentionItem) string {
 	if it.Kind == AttentionDiskNearlyFull {
 		return it.Mount
 	}
-	if it.Server != "" {
+	// The OS kinds name their server once there are several, and keep their key (feature 031).
+	if it.Server != "" && it.Kind != AttentionOSRebootRequired && it.Kind != AttentionOSSecurityUpdates {
 		return it.Server
 	}
 	if it.UpdateRunID != "" {

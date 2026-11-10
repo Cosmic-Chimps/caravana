@@ -41,6 +41,7 @@
 </header>
 <div class="cv-adds{{if .Unavailable}} cv-adds-one{{end}}">
   <div class="cv-addsmain">
+    {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
     {{if .Join}}
     {{with .Join}}
     {{if .Command}}
@@ -62,6 +63,10 @@
       <dd>{{.Pool}}</dd>
     </dl>
     {{if .Waiting}}<form method="post" action="{{.Cancel}}" class="cv-jcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel this join</button></form>{{end}}
+    {{if .Joining}}
+    <p class="cv-jrun">{{.Name}} called in{{if .CalledIn.Text}} {{template "time" .CalledIn}}{{end}}. If it never gets ready, remove it and make a new command.</p>
+    <form method="post" action="{{.Cancel}}" class="cv-jcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Remove this server</button></form>
+    {{end}}
     {{end}}
     {{else if .Unavailable}}
     <div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .Unavailable.Reason}}</span></div>

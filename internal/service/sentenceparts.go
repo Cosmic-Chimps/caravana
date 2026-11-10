@@ -143,6 +143,9 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 	case AttentionOSRebootRequired:
 		return rebootParts(it)
 	case AttentionOSSecurityUpdates:
+		if it.Server != "" {
+			return parts(mono(it.Server), ": "+securitySentence(it.Updates, it.Security))
+		}
 		return parts(securitySentence(it.Updates, it.Security))
 	case AttentionCaravanaUpdateFailed:
 		return updateFailedParts(it)

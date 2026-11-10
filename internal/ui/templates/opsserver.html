@@ -136,10 +136,10 @@
         </dl>
         {{with .AgentNote}}<p class="cv-srvagentnote">{{.}}</p>{{end}}
       </div>
+      {{/* Under the facts panel, in its section: the same column, the same 12px gap as a panel's label. */}}
+      {{with .ReadOn}}<p class="cv-srvreadon"><a href="/ops/updates">Updates</a> and restarts are read on <span class="cv-inline-mono text-fg-1">{{.Name}}</span> only.</p>{{end}}
     </section>
-    {{with .ReadOn}}
-    <p class="cv-srvreadon"><a href="/ops/updates">Updates</a> and restarts are read on <span class="cv-inline-mono text-fg-1">{{.Name}}</span> only.</p>
-    {{else}}
+    {{if not .ReadOn}}
     <section aria-labelledby="srv-recent-title">
       <div class="cv-mnsec">
         <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>

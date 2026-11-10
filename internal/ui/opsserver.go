@@ -389,7 +389,15 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 
 	d.body.Banners = append(d.body.Banners, s.hostItemsFor(now, att, d.head.Name, isLocal)...)
 	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
-	d.body.Room = roomOf(host)
+	if !isLocal && view.State == "down" {
+		// A server that is down has old numbers: one line says when they were last read, in place of the panel.
+		d.body.Numbers = srvNumbers{Line: downNumbersLine(now, view.Name, host)}
+	}
+	// The room sentence is the cluster's: with one server it is under the numbers, with several it stays on the
+	// Overview and on Monitoring, where it isn't taken for this server's own room.
+	if !s.multiServer(ctx) {
+		d.body.Room = roomOf(host)
+	}
 	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz, s.crashesOf(now, att))
 	if !isLocal && view.State == "down" {
 		d.body.Running = srvRunning{Message: "Nothing runs here while the server is down."}
@@ -424,6 +432,20 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 func (s *server) anyServer(ctx context.Context) bool {
 	v, err := s.svc.ListServers(ctx)
 	return err == nil && len(v.Servers) > 0
+}
+
+// downNumbersLine is "fsn-1's numbers were last read at 17:54 UTC." (with the date when it isn't today), or
+// that none were read.
+func downNumbersLine(now time.Time, name string, h service.HostView) string {
+	if h.SampledAt == nil {
+		return "No numbers were ever read from " + name + "."
+	}
+	at := h.SampledAt.UTC()
+	stamp := at.Format("15:04") + " UTC"
+	if at.Format("2006-01-02") != now.Format("2006-01-02") {
+		stamp = shortDate(now, at) + ", " + stamp
+	}
+	return name + "'s numbers were last read at " + stamp + "."
 }
 
 // missingServer is the 404 page: with one server it names that one, with several it points at the list.

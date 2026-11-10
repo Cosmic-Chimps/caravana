@@ -455,3 +455,56 @@ func TestUpdatesOSBlock(t *testing.T) {
 		t.Errorf("a Fedora host = %+v", v.OS)
 	}
 }
+
+// Once the cluster has more than one server, the OS items name the server ("fsn-1 needs a reboot: …") in one
+// place, ProblemParts, so every page, the feed and the notifications read the same; the key doesn't change, so
+// going from one server to several opens nothing again. With one server the words are as they were.
+func TestOSItemsNameTheServerWithSeveralServers(t *testing.T) {
+	plain := func(string) string { return "" }
+	items := osItemsOf(osNow0, hostos.State{
+		Readable: true, Distro: hostos.Distro{ID: "ubuntu", Version: "24.04"},
+		Reboot:  hostos.Reboot{Required: true, InstalledKernel: "6.8.0-149-generic", Packages: []string{"libc6"}},
+		Updates: hostos.Updates{Known: true, Total: 14, Security: 9, CheckedAt: osNow0},
+	}, "6.8.0-147-generic", osNow0.Add(-48*time.Hour))
+	if len(items) != 2 {
+		t.Fatalf("items = %+v, want the reboot and the security item", items)
+	}
+	one := map[AttentionKind]string{}
+	keyOf := map[AttentionKind]string{}
+	for _, it := range items {
+		one[it.Kind] = plainText(ProblemParts(it, plain))
+		keyOf[it.Kind] = problemKey(it)
+		if it.Server != "" || one[it.Kind] != it.Detail {
+			t.Errorf("%s with one server: server %q, parts %q, detail %q", it.Kind, it.Server, one[it.Kind], it.Detail)
+		}
+	}
+	if one[AttentionOSRebootRequired] != "This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is still running." {
+		t.Errorf("one server's words changed: %q", one[AttentionOSRebootRequired])
+	}
+
+	nameOSItems(items, "hel-1")
+	want := map[AttentionKind]string{
+		AttentionOSRebootRequired:  "hel-1 needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is still running.",
+		AttentionOSSecurityUpdates: "hel-1: 14 updates are waiting, 9 of them security updates.",
+	}
+	for _, it := range items {
+		got := ProblemParts(it, plain)
+		if plainText(got) != want[it.Kind] || it.Detail != want[it.Kind] || it.Server != "hel-1" {
+			t.Errorf("%s: parts %q, detail %q, server %q; want %q", it.Kind, plainText(got), it.Detail, it.Server, want[it.Kind])
+		}
+		if !got[0].Mono || got[0].Text != "hel-1" {
+			t.Errorf("%s: the server's name isn't the first, mono part: %+v", it.Kind, got[0])
+		}
+		if problemKey(it) != keyOf[it.Kind] {
+			t.Errorf("%s: the key changed from %q to %q", it.Kind, keyOf[it.Kind], problemKey(it))
+		}
+	}
+	// A reboot named for packages, too.
+	pk := AttentionItem{Kind: AttentionOSRebootRequired, Packages: []string{"libc6", "linux-base"}, Server: "hel-1"}
+	if got := plainText(ProblemParts(pk, plain)); got != "hel-1 needs a reboot: libc6 and linux-base were updated and need a reboot." {
+		t.Errorf("packages: %q", got)
+	}
+	if got := osTitle(pk); got != "Reboot needed on hel-1" {
+		t.Errorf("title = %q", got)
+	}
+}

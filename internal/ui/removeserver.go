@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -49,7 +50,7 @@ func (s *server) removeServer(w http.ResponseWriter, r *http.Request, session st
 	switch {
 	case err == nil, errors.Is(err, service.ErrServerNotFound):
 		http.Redirect(w, r, "/ops/servers", http.StatusSeeOther)
-	case errors.Is(err, service.ErrServerRunning), errors.Is(err, service.ErrFirstServer):
+	case errors.Is(err, service.ErrServerRunning), errors.Is(err, service.ErrFirstServer), errors.Is(err, deploy.ErrNomadUnavailable):
 		s.drawRemoveServer(w, r, name, err)
 	default:
 		s.serverError(w, r, "remove a server", err)
@@ -76,7 +77,10 @@ func (s *server) drawRemoveServer(w http.ResponseWriter, r *http.Request, name s
 	status := http.StatusOK
 	if refused != nil {
 		status = http.StatusConflict
-		page.Refusal = plainS(serverRefusalWords(refused))
+		if errors.Is(refused, deploy.ErrNomadUnavailable) {
+			status = http.StatusBadGateway
+		}
+		page.Refusal = plainS(removeRefusalWords(refused, v.Name))
 	} else {
 		page.Paras = []sentence{
 			{plain("Its place in the cluster and its token are deleted. The other servers stop talking to it at their next sync.")},

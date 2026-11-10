@@ -107,7 +107,9 @@ func TestEveryKindSaysTheSameWordsEverywhere(t *testing.T) {
 func TestOSWordsDrawNamesInMono(t *testing.T) {
 	s := newConsoleEnv(t).Server
 	now := time.Now()
-	row := s.attentionRow(now, itemFor(service.AttentionOSRebootRequired, false), places{}, nil)
+	one := itemFor(service.AttentionOSRebootRequired, false)
+	one.Server = "" // with one server the items name none
+	row := s.attentionRow(now, one, places{}, nil)
 	if got := monoWords(row.Text); got != "This server needs a reboot: kernel [7.0.0-40] is installed, but [7.0.0-38] is still running." {
 		t.Errorf("kernels = %q", got)
 	}
@@ -116,10 +118,15 @@ func TestOSWordsDrawNamesInMono(t *testing.T) {
 			t.Errorf("the mono part %q can break", p.Text)
 		}
 	}
-	it := itemFor(service.AttentionOSRebootRequired, false)
+	it := one
 	it.InstalledKernel = ""
 	if got := monoWords(s.attentionRow(now, it, places{}, nil).Text); got != "This server needs a reboot: [libc6] and [linux-base] were updated and need a reboot." {
 		t.Errorf("packages = %q", got)
+	}
+	// With several servers the first words name the server, in mono.
+	many := itemFor(service.AttentionOSRebootRequired, false) // Server: fsn-2
+	if got := monoWords(s.attentionRow(now, many, places{}, nil).Text); got != "[fsn-2] needs a reboot: kernel [7.0.0-40] is installed, but [7.0.0-38] is still running." {
+		t.Errorf("with several servers = %q", got)
 	}
 }
 

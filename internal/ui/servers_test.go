@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -266,7 +267,7 @@ func TestServersListWithThreeServers(t *testing.T) {
 		t.Errorf("fsn-1 has a role it doesn't have:\n%s", r)
 	}
 	// Three are ready and none runs the scheduler yet but the first: the promotion is under way.
-	if !strings.Contains(words, "Three servers: two more are starting to run the scheduler.") || !strings.Contains(body, `cv-mark cv-mark-rolling`) {
+	if !strings.Contains(words, "Two more servers are starting to run the scheduler. Once three do, the cluster survives the loss of one.") || !strings.Contains(body, `cv-mark cv-mark-rolling`) {
 		t.Errorf("the cluster sentence for a promotion under way is missing:\n%s", words)
 	}
 	// Memory in use at 85 % warns with a mark and words, not only a colour.
@@ -304,7 +305,10 @@ func TestClusterSentence(t *testing.T) {
 	}{
 		{"one server", service.ServersView{Cluster: service.ClusterView{Ready: 1}}, 1, "", ""},
 		{"two servers", service.ServersView{Cluster: service.ClusterView{Ready: 2}}, 2, "idle", "With one more server the cluster survives the loss of one."},
-		{"promotion under way", service.ServersView{Cluster: service.ClusterView{Ready: 3, NomadServers: 1}}, 3, "rolling", "Three servers: two more are starting to run the scheduler."},
+		{"promotion under way, none yet", service.ServersView{Cluster: service.ClusterView{Ready: 3, NomadServers: 1}}, 3, "rolling", "Two more servers are starting to run the scheduler. Once three do, the cluster survives the loss of one."},
+		{"promotion under way, one done", service.ServersView{Cluster: service.ClusterView{Ready: 3, NomadServers: 2}}, 3, "rolling", "One more server is starting to run the scheduler. Once three do, the cluster survives the loss of one."},
+		{"five servers, promotion under way", service.ServersView{Cluster: service.ClusterView{Ready: 5, NomadServers: 1}}, 5, "rolling", "Two more servers are starting to run the scheduler. Once three do, the cluster survives the loss of one."},
+		{"three wanted, not all running", service.ServersView{Cluster: service.ClusterView{Ready: 5, NomadServers: 3}}, 5, "rolling", "One more server is starting to run the scheduler. Once three do, the cluster survives the loss of one."},
 		{"three schedulers running", service.ServersView{Cluster: service.ClusterView{Ready: 3, NomadServers: 3, SurvivesLoss: true}}, 3, "healthy", "The cluster survives the loss of one server."},
 		{"a scheduler is down", service.ServersView{
 			Cluster: service.ClusterView{Ready: 2, NomadServers: 3},
@@ -438,8 +442,8 @@ func TestServersListNamedPool(t *testing.T) {
 	e := serversEnv(t)
 	e.readyServerInPool(t, "fsn-1", "build")
 	_, body := e.get(t, "/ops/servers")
-	if !strings.Contains(text(body), "1 in default, 1 in build ·") {
-		t.Errorf("the pools aren't in the head line:\n%s", text(body))
+	if got := coHead(t, body); got != "1 in default, 1 in build" {
+		t.Errorf("the pools aren't in the head line: %q", coHead(t, body))
 	}
 }
 
@@ -1160,5 +1164,221 @@ func TestServerPagesThemeAndWords(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// ---- the designer's rulings (2026-11-10) -------------------------------------------------------
+
+// Ruling 9: the head line counts every server that isn't waiting or joining and sums the ready ones' own numbers,
+// the ones the spec lines say: a down server, a node with no numbers and a joining server add nothing, so the head
+// and the rows agree.
+func TestServersHeadLineAgreesWithTheRows(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.AddNode("node-lab", "lab", "ready", "") // unmanaged, never sampled: no spec line, no sums
+	e.join(t, "fsn-4")                              // joining: not counted
+	_, body := e.get(t, "/ops/servers")
+	if got := coHead(t, body); got != "4 servers · 5.7 GB · 6 vCPU" {
+		t.Errorf("head line = %q, want 4 servers (the unmanaged node counts), 5.7 GB and 6 vCPU (three servers' own numbers)", got)
+	}
+	if r := rowOfServer(t, body, "lab"); strings.Contains(text(r), "vCPU") || strings.Contains(text(r), " GB ·") {
+		t.Errorf("the unmanaged node has a spec line:\n%s", text(r))
+	}
+	// A server that is down counts, and adds nothing to the sums.
+	e.Nomad.SetNodeStatusOf("node-2", "down")
+	_, body = e.get(t, "/ops/servers")
+	if got := coHead(t, body); got != "4 servers · 3.8 GB · 4 vCPU" {
+		t.Errorf("head line with fsn-1 down = %q, want 4 servers, 3.8 GB and 4 vCPU", got)
+	}
+}
+
+// coHead is the Servers list's line of sums.
+func coHead(t *testing.T, body string) string {
+	t.Helper()
+	m := regexp.MustCompile(`<span class="cv-slline">([^<]*)</span>`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no head line in:\n%s", text(body))
+	}
+	return html.UnescapeString(m[1])
+}
+
+// Ruling 3: a server that called in and isn't ready has its page with the line that says so and a way out; the
+// post removes it. The service refuses a server Nomad runs, and Nomad being out of reach: the page is drawn again
+// with the reason and its status, never a redirect.
+func TestJoiningServerCanBeRemoved(t *testing.T) {
+	e := serversEnv(t)
+	j, _ := e.join(t, "fsn-1") // called in; Nomad has no node for it
+	path := "/ops/servers/joins/" + j.Server.ID
+	_, body := e.get(t, path)
+	words := text(body)
+	if !regexp.MustCompile(`fsn-1 called in .*\. If it never gets ready, remove it and make a new command\.`).MatchString(words) ||
+		!strings.Contains(body, `action="`+path+`/cancel"`) || !strings.Contains(body, ">Remove this server</button>") {
+		t.Errorf("the joining server's page:\n%s", words)
+	}
+	if strings.Contains(words, "The command was shown once") || strings.Contains(words, "Cancel this join") {
+		t.Errorf("a server that called in still has the waiting page's lines:\n%s", words)
+	}
+	// The waiting page keeps its own.
+	w, err := e.Svc.CreateJoin(context.Background(), "fsn-9", "", "https://console.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, wait := e.get(t, "/ops/servers/joins/"+w.Server.ID)
+	if !strings.Contains(text(wait), "The command was shown once.") || strings.Contains(wait, "Remove this server") {
+		t.Errorf("the waiting page changed:\n%s", text(wait))
+	}
+
+	// Nomad out of reach: 502, the join's page, the sentence, nothing removed.
+	e.Nomad.Down()
+	resp, refused := e.postForm(t, path+"/cancel", url.Values{})
+	if resp.StatusCode != http.StatusBadGateway || resp.Header.Get("Location") != "" ||
+		!strings.Contains(text(refused), "Nomad can't be reached right now, so caravana can't tell whether fsn-1 is running. Try again in a moment.") ||
+		!strings.Contains(refused, "Remove this server") {
+		t.Errorf("POST with Nomad down = %d %q:\n%s", resp.StatusCode, resp.Header.Get("Location"), text(refused))
+	}
+	e.Nomad.Up()
+
+	// Nomad has a node that runs: 409, the sentence, the page, nothing removed.
+	e.Nomad.AddNode("node-2", "fsn-1", "ready", "10.99.0.2")
+	resp, refused = e.postForm(t, path+"/cancel", url.Values{})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(refused), "fsn-1 is running. Stop it, or run the installer with --leave on it, then remove it.") ||
+		!strings.Contains(refused, "Remove this server") {
+		t.Errorf("POST with a running node = %d:\n%s", resp.StatusCode, text(refused))
+	}
+	if _, err := e.Svc.Server(context.Background(), "fsn-1"); err != nil {
+		t.Errorf("a refused removal removed it: %v", err)
+	}
+
+	// The node is gone: the post removes the server and goes to the list.
+	e.Nomad.RemoveNode("node-2")
+	resp, _ = e.postForm(t, path+"/cancel", url.Values{})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/ops/servers" {
+		t.Errorf("POST with no node = %d %q, want 303 to /ops/servers", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if _, err := e.Svc.Server(context.Background(), "fsn-1"); err == nil {
+		t.Error("the removal left the server")
+	}
+}
+
+// The Remove page's post says the same when Nomad is out of reach.
+func TestRemovePostWithNomadDown(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.Down()
+	resp, body := e.postForm(t, "/ops/servers/fsn-1/remove", url.Values{})
+	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(text(body), "Nomad can't be reached right now, so caravana can't tell whether fsn-1 is running.") ||
+		strings.Contains(body, `action="/ops/servers/fsn-1/remove"`) {
+		t.Errorf("POST remove with Nomad down = %d:\n%s", resp.StatusCode, text(body))
+	}
+}
+
+// Ruling 4: the room sentence is the cluster's, so a server's page has it only with one server; the Overview keeps
+// it, and it is true: the cluster's free memory, and how many more apps like the usual one fit by what the running
+// apps reserve (the staged review once read "Nothing is running yet" because its copies reserved nothing).
+func TestRoomIsTheClusters(t *testing.T) {
+	e := threeServers(t)
+	series, err := e.Store.EnsureSeries(context.Background(), "whoami", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Minute)
+	i64 := func(n int64) *int64 { return &n }
+	if err := e.Store.WriteMetricsTick(context.Background(), store.MetricsTick{At: at, Minute: store.MetricsRows{Samples: []store.MetricsSample{
+		{Series: series, TS: at, Minutes: 1, MemoryMB: i64(100), MemoryReservedMB: i64(128), CPUMHz: i64(40), CPUReservedMHz: i64(100), Copies: i64(2)}}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.seedStandard(t)
+	_, over := e.get(t, "/ops")
+	words := text(over)
+	if strings.Contains(words, "Nothing is running yet") || !strings.Contains(words, "Room for about") || !strings.Contains(words, "more apps like whoami") {
+		t.Errorf("the Overview's room sentence isn't a true one:\n%s", words)
+	}
+	for _, name := range []string{"hel-1", "fsn-1"} {
+		_, page := e.get(t, "/ops/servers/"+name)
+		if strings.Contains(page, `class="cv-mnroom`) {
+			t.Errorf("%s's page has the cluster's room sentence", name)
+		}
+	}
+	// With one server it stays under the numbers.
+	one := sampledServersEnv(t)
+	_, page := one.get(t, "/ops/servers/hel-1")
+	if !strings.Contains(page, `class="cv-mnroom`) {
+		t.Errorf("a cluster of one lost the room sentence on its server's page")
+	}
+}
+
+// Ruling 5: a down server's page has no panel of numbers: one line says when they were last read.
+func TestDownServerPageHasOneLineForItsNumbers(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.SetNodeStatusOf("node-2", "down")
+	_, body := e.get(t, "/ops/servers/fsn-1")
+	if strings.Contains(body, `class="cv-panel cv-srvnums"`) || !strings.Contains(body, `cv-srvnums-line`) ||
+		!regexp.MustCompile(`fsn-1&#39;s numbers were last read at \d\d:\d\d UTC\.`).MatchString(body) {
+		t.Errorf("a down server's numbers:\n%s", text(body))
+	}
+	// A server that runs keeps its panel.
+	_, up := e.get(t, "/ops/servers/fsn-2")
+	if !strings.Contains(up, `class="cv-panel cv-srvnums"`) || strings.Contains(up, "numbers were last read") {
+		t.Errorf("a running server lost its numbers panel")
+	}
+	// A down server that was never sampled says so.
+	e.Nomad.AddNode("node-9", "fsn-9", "down", "10.99.0.9")
+	if got := downNumbersLine(time.Now(), "fsn-9", service.HostView{}); got != "No numbers were ever read from fsn-9." {
+		t.Errorf("never read: %q", got)
+	}
+}
+
+// Ruling 6: where updates are read goes under the facts panel, inside its section.
+func TestReadOnLineIsUnderTheFacts(t *testing.T) {
+	e := threeServers(t)
+	_, body := e.get(t, "/ops/servers/fsn-1")
+	facts := regionBetween(t, body, `id="srv-facts-title"`, "</section>")
+	if !strings.Contains(facts, `<p class="cv-srvreadon">`) || strings.Index(facts, `cv-srvfacts`) > strings.Index(facts, `cv-srvreadon`) {
+		t.Errorf("the line isn't under the facts panel, in its section:\n%s", facts)
+	}
+}
+
+// Ruling 7: with several servers the Overview's panels are a grid; one server's panel isn't in it. The stylesheet
+// has the three widths.
+func TestOverviewPanelsAreAGrid(t *testing.T) {
+	e := threeServers(t)
+	_, body := e.get(t, "/ops")
+	server := regionOf(t, body, `id="ops-server"`)
+	if strings.Count(server, `class="cv-nodegrid"`) != 1 || strings.Count(server, `class="cv-panel cv-node"`) != 3 ||
+		strings.Index(server, `cv-nodegrid`) > strings.Index(server, `cv-panel cv-node`) {
+		t.Errorf("the three panels aren't in one grid:\n%s", server)
+	}
+	_, one := serversEnv(t).get(t, "/ops")
+	if strings.Contains(one, "cv-nodegrid") {
+		t.Error("one server's panel is in the grid")
+	}
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`.cv-nodegrid`, `min-width:800px`, `repeat(2,minmax(0,1fr))`, `min-width:1200px`, `repeat(3,minmax(0,1fr))`, `gap:13px`} {
+		if !strings.Contains(strings.ReplaceAll(string(css), " ", ""), want) {
+			t.Errorf("the stylesheet lacks %q", want)
+		}
+	}
+}
+
+// Ruling 8: with several servers the OS items say which server ("hel-1 needs a reboot: …"), everywhere; with one
+// server the words are as they were.
+func TestOSItemsNameTheServer(t *testing.T) {
+	e := sampledServersEnv(t)
+	_, page := e.get(t, "/ops/servers/hel-1")
+	if !strings.Contains(text(page), "This server needs a reboot: kernel") || strings.Contains(text(page), "hel-1 needs a reboot") {
+		t.Errorf("with one server the reboot's words changed:\n%s", text(page))
+	}
+	e.readyServer(t, "fsn-1")
+	for _, path := range []string{"/ops/servers/hel-1", "/ops", "/parts/attention"} {
+		_, body := e.get(t, path)
+		if !strings.Contains(text(body), "hel-1 needs a reboot: kernel") || strings.Contains(text(body), "This server needs a reboot") {
+			t.Errorf("GET %s with two servers:\n%s", path, text(body))
+		}
+	}
+	// The server's name is mono, so it reads as a name.
+	_, page = e.get(t, "/ops/servers/hel-1")
+	if !strings.Contains(page, `<span class="cv-inline-mono text-fg-1 cv-nowrap">hel-1</span> needs a reboot`) {
+		t.Errorf("the name isn't mono:\n%s", page)
 	}
 }

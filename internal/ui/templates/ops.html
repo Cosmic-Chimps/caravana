@@ -27,7 +27,7 @@
   {{with .Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
   {{if .Panels}}<a href="/ops/servers" class="cv-mnsec-link">All servers</a>{{end}}
 </div>
-{{if .Panels}}{{range .Panels}}{{template "ops-node" .}}{{end}}{{else}}{{template "ops-node" .Node}}{{end}}
+{{if .Panels}}<div class="cv-nodegrid">{{range .Panels}}{{template "ops-node" .}}{{end}}</div>{{else}}{{template "ops-node" .Node}}{{end}}
 {{end}}
 
 {{/* ops-apps-region: the Apps section, a live region of its own (#ops-apps). Takes an opsApps. */}}

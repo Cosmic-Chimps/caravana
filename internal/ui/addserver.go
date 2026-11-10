@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
@@ -37,6 +38,9 @@ type addServerPage struct {
 	// Join is the join once it exists; its Command is set only on the answer of the POST.
 	Join   *joinView
 	Checks joinChecks
+	// Refusal is why a cancel or a removal was turned down (a server that runs, Nomad out of reach); it is drawn
+	// above the facts with the status the refusal has, never as a redirect.
+	Refusal sentence
 	// Missing says the join asked for doesn't exist (it was cancelled, or its command expired and was cleared).
 	Missing bool
 }
@@ -60,9 +64,12 @@ type joinView struct {
 	Note string
 	// Insecure says the console has no trusted certificate, so the command has --insecure.
 	Insecure bool
-	// Waiting says nobody called in yet: only then can the join be cancelled here.
-	Waiting bool
-	Cancel  string
+	// Waiting says nobody called in yet: the command can be cancelled. Joining says the server called in and
+	// isn't ready, and CalledIn is when: it can be removed (the same post), and the service refuses if Nomad
+	// has a node for it that runs.
+	Waiting, Joining bool
+	CalledIn         when
+	Cancel           string
 	// Expires says when the command stops working.
 	Expires time.Time
 }
@@ -209,19 +216,46 @@ func (s *server) partServerJoin(w http.ResponseWriter, r *http.Request, session 
 	s.renderPart(w, "addserver", "join-checks-region", page.Checks)
 }
 
-// cancelServerJoin answers POST /ops/servers/joins/{id}/cancel: it removes the join (303 to the list). A
-// join that already joined and runs can't be cancelled here: the refusal says so.
+// cancelServerJoin answers POST /ops/servers/joins/{id}/cancel: it removes the join, or a server that called in
+// and never got ready (303 to the list). The service refuses a server Nomad has running, and one it can't ask
+// Nomad about; the join's page is drawn again with the reason and the status the refusal has (409, 502), never
+// a redirect.
 func (s *server) cancelServerJoin(w http.ResponseWriter, r *http.Request, session string) {
 	err := s.svc.RemoveServer(r.Context(), r.PathValue("id"))
 	var re *service.RefusalError
 	switch {
 	case err == nil, errors.As(err, &re) && errors.Is(err, service.ErrServerNotFound):
 		http.Redirect(w, r, "/ops/servers", http.StatusSeeOther)
-	case errors.Is(err, service.ErrServerRunning), errors.Is(err, service.ErrFirstServer):
-		s.message(w, r, http.StatusConflict, "Can't cancel", "This join can't be cancelled.", serverRefusalWords(err))
+		return
+	case errors.Is(err, service.ErrServerRunning), errors.Is(err, service.ErrFirstServer), errors.Is(err, deploy.ErrNomadUnavailable):
 	default:
 		s.serverError(w, r, "cancel a join", err)
+		return
 	}
+	page, status, lerr := s.loadJoinPage(r)
+	if lerr != nil {
+		s.serverError(w, r, "draw the join", lerr)
+		return
+	}
+	if status != http.StatusOK { // the join is gone meanwhile
+		s.drawAddServer(w, r, status, page)
+		return
+	}
+	page.Refusal = plainS(removeRefusalWords(err, page.Join.Name))
+	status = http.StatusConflict
+	if errors.Is(err, deploy.ErrNomadUnavailable) {
+		status = http.StatusBadGateway
+	}
+	s.drawAddServer(w, r, status, page)
+}
+
+// removeRefusalWords is the sentence for a refused removal. Nomad being out of reach is said in words that
+// tell the owner what to do; every other refusal is the service's.
+func removeRefusalWords(err error, name string) string {
+	if errors.Is(err, deploy.ErrNomadUnavailable) {
+		return "Nomad can't be reached right now, so caravana can't tell whether " + name + " is running. Try again in a moment."
+	}
+	return serverRefusalWords(err)
 }
 
 // ---- loaders ----------------------------------------------------------------------------------
@@ -289,12 +323,15 @@ const joinRefreshSeconds = 10
 // joinViewOf is the join's facts. command is the join command, "" when it isn't shown.
 func joinViewOf(sv service.ServerView, command, note string, insecure bool) *joinView {
 	v := &joinView{ID: sv.ID, Name: sv.Name, NoName: sv.Name == "", Pool: cmp.Or(sv.Pool, "default"), Note: note,
-		Insecure: insecure, Waiting: sv.State == "waiting", Cancel: "/ops/servers/joins/" + url.PathEscape(sv.ID) + "/cancel", Expires: sv.ExpiresAt}
+		Insecure: insecure, Waiting: sv.State == "waiting", Joining: sv.State == "joining", Cancel: "/ops/servers/joins/" + url.PathEscape(sv.ID) + "/cancel", Expires: sv.ExpiresAt}
 	if v.NoName {
 		v.Name = "the machine's own name"
 	}
 	if command != "" {
 		v.Command = formatJoinCommand(command)
+	}
+	if v.Joining && !sv.JoinedAt.IsZero() {
+		v.CalledIn = whenOf(time.Now().UTC(), &sv.JoinedAt, "")
 	}
 	return v
 }
