@@ -84,6 +84,12 @@ cleanup() {
   git -C "$ROOT" worktree remove --force "$WORK/pre" >/dev/null 2>&1 || true
 }
 
+# start_vm N: create and start VM N on the user-v2 network.
+start_vm() {
+  limactl start --name "cv-cluster-$1" --tty=false --cpus 2 --memory 2 --containerd none \
+    --network lima:user-v2 template:ubuntu-24.04 >/dev/null 2>&1
+}
+
 # release VERSION: build this tree's release into $WORK/VERSION.
 release() { "$ROOT/tools/release.sh" build "$1" "$WORK/$1" >/dev/null; }
 
@@ -206,14 +212,17 @@ main() {
   write_watchers
 
   say "three Ubuntu 24.04 VMs on one network"
+  # The first VM starts Lima's user-v2 network daemon, which stops when no VM is on the network:
+  # starting all three at once on a cold network races for its socket ("connect: no such file"),
+  # so VM 1 starts first and the other two follow in parallel.
   local pids=()
-  for n in 1 2 3; do
-    limactl delete --force "cv-cluster-$n" >/dev/null 2>&1 || true
-    limactl start --name "cv-cluster-$n" --tty=false --cpus 2 --memory 2 --containerd none \
-      --network lima:user-v2 template:ubuntu-24.04 >/dev/null 2>&1 &
+  for n in 1 2 3; do limactl delete --force "cv-cluster-$n" >/dev/null 2>&1 || true; done
+  start_vm 1 || die "VM 1 didn't start"
+  for n in 2 3; do
+    start_vm "$n" &
     pids+=($!)
   done
-  for n in 0 1 2; do wait "${pids[$n]}" || die "a VM didn't start"; done
+  for n in 0 1; do wait "${pids[$n]}" || die "a VM didn't start"; done
   for n in 1 2 3; do
     ADDR[n]="$(vm "$n" ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
     [ -n "${ADDR[$n]}" ] || die "can't find VM $n's address"
