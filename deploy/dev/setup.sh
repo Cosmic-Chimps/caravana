@@ -54,6 +54,23 @@ net.bridge.bridge-nf-call-iptables = 1
 EOF
 sysctl --system >/dev/null
 
+# A container's interface keeps the MAC address it was made with. Ubuntu's default link policy
+# (MACAddressPolicy=persistent) gives a new veth another address a moment after the CNI bridge
+# plugin made it and wrote its address down. When Nomad's agent restarts it checks each copy's
+# network, finds an address it doesn't know ("Mac doesn't match") and replaces the copy, so a lab
+# step could fail for a reason that isn't the code under test. The installer writes the same file
+# from feature 031 on (its research L17). It applies to interfaces made after it, so it is written
+# before Nomad starts.
+mkdir -p /etc/systemd/network
+cat >/etc/systemd/network/10-caravana-veth.link <<'EOF'
+[Match]
+Driver=veth
+
+[Link]
+MACAddressPolicy=none
+EOF
+udevadm control --reload
+
 # Nomad under systemd. The client runs as root; it has to manage containers and networks.
 mkdir -p /opt/nomad/data /etc/nomad.d
 cat >/etc/systemd/system/nomad.service <<'EOF'

@@ -41,13 +41,40 @@ ports below 1024 on `127.0.0.1`.
 
 - `lab.yaml`: the Lima VM (2 CPUs, 2 GiB, Ubuntu LTS).
 - `setup.sh`: installs Docker, CNI plugins and Nomad, and bootstraps ACLs. It runs on every boot
-  and is safe to repeat. It's a prototype of the one-command installer (plan item 012).
+  and is safe to repeat. It's a prototype of the one-command installer (plan item 012). Like
+  `nomad.hcl`, it's copied in when the VM is created, so a change to it reaches an existing lab
+  only after `lab.sh delete` then `lab.sh up`.
 - `nomad.hcl`: Nomad agent config. It's copied in when the VM is created, so after changing it
   run `lab.sh delete` then `lab.sh up`.
 - `traefik.nomad.hcl` and `traefik-policy.hcl`: Traefik as a Nomad system job. It reads services
   with a workload identity token limited by the policy.
 - `whoami.json`: a hand-written job in Nomad API JSON, the shape Caravana's translator must
   produce. Feature 001 uses it as a golden file.
+
+## A lab made before the veth link file
+
+`setup.sh` writes `/etc/systemd/network/10-caravana-veth.link`, which tells systemd to leave the
+MAC address of a container's interface alone. Without it, Ubuntu changes the address a moment
+after the network plugin made the interface, and a later `systemctl restart nomad` can find a
+copy's network "misconfigured" (`Mac doesn't match`) and replace the copy: a lab step then fails
+for a reason that has nothing to do with the code under test.
+
+A lab created before this file was added doesn't have it. Either make the lab again
+(`lab.sh delete`, then `lab.sh up`), or write the file by hand:
+
+```bash
+limactl shell --workdir / caravana-lab sudo sh -c '
+  printf "[Match]\nDriver=veth\n\n[Link]\nMACAddressPolicy=none\n" >/etc/systemd/network/10-caravana-veth.link
+  udevadm control --reload'
+```
+
+It applies to interfaces made from then on. Copies that were already running keep their changed
+address and can still be replaced by the next Nomad restart; redeploy them (or restart Nomad once
+and let it replace them) to be past it. To check a lab, every line of this should end in `1`:
+
+```bash
+limactl shell --workdir / caravana-lab sh -c 'grep . /sys/class/net/veth*/addr_assign_type'
+```
 
 The Nomad management token never leaves the VM except in `deploy/dev/.data/env`, which is
 gitignored and readable only by you.
