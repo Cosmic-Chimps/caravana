@@ -1,0 +1,61 @@
+# Codemagic Patch (https://patch.codemagic.io), over-the-air updates for React Native and Capacitor
+# apps, on Caravana. It is the upstream self-host stack without Caddy and Silo: Traefik serves the
+# API and dashboard over HTTPS, and the apps download updates from two Cloudflare R2 buckets (one
+# public, behind its own domain, and one private for the server's own files). So it is two
+# services: the Patch server, and Postgres on a volume.
+#
+# Upstream publishes no server image. build-image.yml builds it from the release tag into a private
+# GHCR image, which Caravana pulls with the credentials in Settings › Registries.
+#
+# The placeholders in double underscores (the domain, the buckets...) are filled by deploy.sh from
+# overlay.json's "vars", one per name. Secrets are not in
+# this file: they come from overlay.json's "services", which deploy.sh sends with it. See RUNBOOK.md.
+name: codemagic-patch
+services:
+  server:
+    image: ghcr.io/cosmic-chimps/codemagic-patch-server:__PATCH_VERSION__
+    expose: ["3000"]
+    # Node with the dashboard built in: it reserves 512 MB and may burst to 1 GB.
+    mem_reservation: 512m
+    mem_limit: 1024m
+    environment:
+      MODE: all # API and release worker in one process, as upstream's self-host stack runs it
+      HOST: 0.0.0.0
+      PORT: "3000"
+      RUN_MIGRATIONS: "true"
+      LOGGER: "true"
+      # The API and dashboard's address, and where apps download updates from. Both are written into
+      # the app's store builds (CodemagicPatchApiUrl, CodemagicPatchDownloadBaseUrl).
+      SERVER_URL: https://__PATCH_DOMAIN__
+      PUBLIC_BASE_URL: https://__PATCH_FILES_DOMAIN__
+      # R2 through its S3 API. Objects sit at the public bucket's root, so the public URL has no prefix.
+      STORAGE_ADAPTER: s3
+      S3_BUCKET: __S3_BUCKET__
+      S3_INTERNAL_BUCKET: __S3_INTERNAL_BUCKET__
+      S3_REGION: auto
+      S3_ENDPOINT: https://__R2_ACCOUNT_ID__.r2.cloudflarestorage.com
+      S3_FORCE_PATH_STYLE: "true"
+      # Manifests are sent with "revalidate always", so Cloudflare in front of the bucket never serves
+      # a stale one and no cache purge is needed.
+      DELIVERY_ADAPTER: base-url
+      # Sign-in to the dashboard and `cmpatch login`, through a GitHub OAuth app.
+      GITHUB_OAUTH_CLIENT_ID: __GITHUB_OAUTH_CLIENT_ID__
+      INITIAL_ADMIN_EMAILS: __ADMIN_EMAILS__
+      REGISTRATION_MODE: invite_only
+      # No daily anonymous report to Codemagic. The dashboard still checks GitHub for a newer release.
+      SERVER_TELEMETRY: "false"
+      SERVER_UPDATE_CHECK: "true"
+    depends_on: [postgres]
+
+  postgres:
+    image: postgres:16
+    expose: ["5432"]
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: patch
+      POSTGRES_DB: patch
+    volumes:
+      - db:/var/lib/postgresql/data
+
+volumes:
+  db: {}

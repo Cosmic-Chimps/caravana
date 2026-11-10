@@ -1,0 +1,32 @@
+{
+  "vars": {
+    "PATCH_VERSION": "0.9.0",
+    "PATCH_DOMAIN": "patch.example.com",
+    "PATCH_FILES_DOMAIN": "patch-files.example.com",
+    "S3_BUCKET": "patch-public",
+    "S3_INTERNAL_BUCKET": "patch-internal",
+    "R2_ACCOUNT_ID": "REPLACE: Cloudflare account ID (R2 overview page)",
+    "GITHUB_OAUTH_CLIENT_ID": "REPLACE: from the GitHub OAuth app",
+    "ADMIN_EMAILS": "you@example.com"
+  },
+  "services": {
+    "server": {
+      "domains": [{"host": "patch.example.com", "port": 3000}],
+      "health": {"path": "/health/ready"},
+      "secrets": [
+        {"name": "DATABASE_URL", "value": "postgres://patch:REPLACE-DB-PASSWORD@postgres:5432/patch"},
+        {"name": "WORKER_SHARED_SECRET", "value": "REPLACE: openssl rand -hex 32"},
+        {"name": "OAUTH_CLI_AUTH_SECRET", "value": "REPLACE: openssl rand -hex 32"},
+        {"name": "GITHUB_OAUTH_CLIENT_SECRET", "value": "REPLACE: from the GitHub OAuth app"},
+        {"name": "S3_ACCESS_KEY_ID", "value": "REPLACE: R2 API token's access key ID"},
+        {"name": "S3_SECRET_ACCESS_KEY", "value": "REPLACE: R2 API token's secret access key"}
+      ]
+    },
+    "postgres": {
+      "secrets": [
+        {"name": "POSTGRES_PASSWORD", "value": "REPLACE-DB-PASSWORD"}
+      ],
+      "backup": {"engine": "postgres", "keep": 14}
+    }
+  }
+}
