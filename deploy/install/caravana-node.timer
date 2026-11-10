@@ -1,0 +1,12 @@
+# Starts caravana-node.service every 30 seconds, installed by deploy/install/install.sh (feature 031).
+# Before the server is registered with the console the agent has nothing to do and exits at once.
+[Unit]
+Description=Ask the console what this server should be, every 30 seconds
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
