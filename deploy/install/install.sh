@@ -1,24 +1,40 @@
 #!/usr/bin/env bash
-# Caravana's installer: turns a fresh Ubuntu 24.04 VM into a Caravana host (Docker, Nomad with
-# ACLs, Traefik with Let's Encrypt, Caravana under systemd), upgrades it when run again, and
-# removes Caravana with --uninstall. Each release publishes this file with its version set.
+# Caravana's installer: turns a fresh Ubuntu 24.04 VM into a Caravana server, upgrades it when run
+# again, and takes it out again. The first server (--first, the default) runs everything: Docker,
+# Nomad with ACLs, the private network between servers, Traefik with Let's Encrypt, Caravana under
+# systemd. Another server (--join) runs Docker, Nomad and Caravana's agent, and joins the first one.
+# Each release publishes this file with its version set.
 #
 #   curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/latest/download/install.sh |
 #     sudo bash -s -- --email you@example.com --domain caravana.example.com
 #
-# Options (a later run reuses the ones recorded on the host):
-#   --email ADDRESS        the admin's email (required the first time)
-#   --domain NAME          the console's domain; default <public-ip>.sslip.io
+# Another server runs the command the console's Add a server page shows:
+#
+#   curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/vX.Y.Z/install.sh |
+#     sudo bash -s -- --join cvjn_... --url https://caravana.example.com
+#
+# Options (a later run reuses the ones recorded on the host; a join token is never recorded):
+#   --first                this is the first server, the one that runs Caravana (the default)
+#   --email ADDRESS        the admin's email (first server; required the first time)
+#   --domain NAME          the console's domain (first server); default <public-ip>.sslip.io
 #   --acme MODE            production (default), staging, or none (Traefik's own certificate)
 #   --acme-email ADDRESS   the Let's Encrypt account email; default --email
+#   --join TOKEN           join the cluster of the console at --url, with a token made there
+#   --url URL              the console's address: https://NAME[:PORT] (http:// only for localhost)
+#   --insecure             don't check the console's certificate (it uses Traefik's own: --acme none)
+#   --address IP           the address other servers reach this one at; default: the public IP on
+#                          the first server, the address the console sees on a joined one
 #   --from DIR             use this release's files from DIR instead of downloading them
-#   --uninstall [--purge]  remove Caravana, keep Nomad, Traefik and every app (--purge: its data too)
+#   --leave                take a joined server out of the cluster (remove it in the console too)
+#   --uninstall [--purge]  remove Caravana from the first server, keep Nomad, Traefik and every app
+#                          (--purge: its data too)
 #
 # Exit codes: 0 done, 1 a step failed, 2 refused before changing anything.
 #
 # It also installs a small root updater (a systemd timer), so the console's Updates page can ask
 # for an update: deploy/install/caravana-update.sh, which runs this installer from the release it
-# downloads and checks.
+# downloads and checks. Every server runs the agent (caravana-node, a copy of the release's binary):
+# it keeps the private network, Nomad's role and Nomad's certificate in line with the console.
 set -euo pipefail
 
 CARAVANA_VERSION=dev # set by tools/release.sh
@@ -33,6 +49,10 @@ DATA=/var/lib/caravana       # Caravana's data
 ENV_FILE=/etc/caravana/caravana.env
 UPDATER=/usr/local/libexec/caravana-update # the root updater, run every minute by its timer
 UPDATE_DIR=/var/lib/caravana-update        # its status and logs; only root writes here
+AGENT=/usr/local/libexec/caravana-node     # the server agent: a copy of the release's binary (feature 031)
+AGENT_DIR=/etc/caravana-node               # the agent's folder: keys, state, node.env (root only)
+NODE_ENV=$AGENT_DIR/node.env               # where the console is and this server's token; says "registered"
+MESH_UNITS="caravana-mesh.service caravana-node.service caravana-node.timer"
 
 changed=()
 step() { echo "==> $*"; }
@@ -99,9 +119,10 @@ newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail 
 # ---- options -------------------------------------------------------------------------------
 
 email="" domain="" acme="" acme_email="" from="" uninstall=0 purge=0
+first_flag=0 join_token="" url="" address="" insecure="" leave=0
 while [ $# -gt 0 ]; do
   case "$1" in
-  --email | --domain | --acme | --acme-email | --from)
+  --email | --domain | --acme | --acme-email | --from | --join | --url | --address)
     [ $# -ge 2 ] || refuse "$1 needs a value"
     case "$1" in
     --email) email="$2" ;;
@@ -109,18 +130,59 @@ while [ $# -gt 0 ]; do
     --acme) acme="$2" ;;
     --acme-email) acme_email="$2" ;;
     --from) from="$2" ;;
+    --join) join_token="$2" ;;
+    --url) url="$2" ;;
+    --address) address="$2" ;;
     esac
     shift 2
     ;;
+  --first) first_flag=1 && shift ;;
+  --insecure) insecure=1 && shift ;;
+  --leave) leave=1 && shift ;;
   --uninstall) uninstall=1 && shift ;;
   --purge) purge=1 && shift ;;
   -h | --help)
-    sed -n '2,17p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true
+    sed -n '2,32p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true
     exit 0
     ;;
+  # A join token must never come back in a message: a stray one is named by its shape.
+  cvjn_*) refuse "unexpected argument (it looks like a join token: give it as --join TOKEN)" ;;
   *) refuse "unknown option $1 (see --help)" ;;
   esac
 done
+
+[ "$first_flag" = 0 ] || [ -z "$join_token" ] || refuse "--first and --join are for different servers: the first one, or one that joins it"
+[ "$leave" = 0 ] || [ "$uninstall" = 0 ] || refuse "--leave is for a joined server and --uninstall for the first one: not both"
+
+# Which server this is. An install.env without a role was written before servers could join.
+recorded_role=""
+if [ -f "$STATE/install.env" ]; then
+  recorded_role="$(env_value "$STATE/install.env" CARAVANA_ROLE)"
+  recorded_role="${recorded_role:-first}"
+fi
+if [ -n "$join_token" ]; then
+  role="join"
+elif [ "$first_flag" = 1 ]; then
+  role="first"
+else
+  role="${recorded_role:-first}"
+fi
+if [ "$leave" = 0 ] && [ "$uninstall" = 0 ] && [ -n "$recorded_role" ] && [ "$role" != "$recorded_role" ]; then
+  case "$recorded_role" in
+  first) refuse "this is the first server of its cluster, which runs Caravana: --join is for another server" ;;
+  *) refuse "this server joined a cluster: --first is for the one server that runs Caravana" ;;
+  esac
+fi
+if [ "$uninstall" = 1 ] && [ "$recorded_role" = join ]; then
+  refuse "this server joined a cluster: --uninstall removes Caravana from the first server. Use --leave to take this one out"
+fi
+# Each role has its own options: a wrong one is a mistake, not something to ignore.
+if [ "$role" = join ]; then
+  { [ -z "$email" ] && [ -z "$domain" ] && [ -z "$acme" ] && [ -z "$acme_email" ]; } ||
+    refuse "--email, --domain, --acme and --acme-email are for the first server; this one joins"
+else
+  { [ -z "$url" ] && [ -z "$insecure" ]; } || refuse "--url and --insecure are for --join: the first server has no console to call"
+fi
 
 # Options not given on this run come from the last one.
 if [ -f "$STATE/install.env" ]; then
@@ -129,11 +191,110 @@ if [ -f "$STATE/install.env" ]; then
   domain="${domain:-$(env_value "$STATE/install.env" CARAVANA_DOMAIN)}"
   acme="${acme:-$(env_value "$STATE/install.env" CARAVANA_ACME)}"
   acme_email="${acme_email:-$(env_value "$STATE/install.env" CARAVANA_ACME_EMAIL)}"
+  address="${address:-$(env_value "$STATE/install.env" CARAVANA_ADDRESS)}"
+  if [ "$role" = join ]; then
+    url="${url:-$(env_value "$STATE/install.env" CARAVANA_URL)}"
+    insecure="${insecure:-$(env_value "$STATE/install.env" CARAVANA_INSECURE)}"
+  fi
 fi
 acme="${acme:-production}"
 acme_email="${acme_email:-$email}"
+insecure="${insecure:-0}"
+url="${url%/}"
 
 # ---- preflight: nothing changes until every check passes ------------------------------------
+
+# is_hostname NAME: dot-separated labels of letters, digits and dashes (none at either end), at
+# least two labels, at most 253 characters.
+is_hostname() {
+  local label='[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+  local re="^${label}(\\.${label})+\$"
+  [ "${#1}" -le 253 ] && [[ "$1" =~ $re ]]
+}
+
+# valid_url URL: https:// and a host name with an optional port, or http:// for 127.0.0.1 and
+# localhost only. No path, no credentials.
+valid_url() {
+  local u="${1%/}" hostport host port=""
+  case "$u" in
+  https://*) hostport="${u#https://}" ;;
+  http://*) hostport="${u#http://}" ;;
+  *) return 1 ;;
+  esac
+  [[ "$hostport" != */* ]] || return 1
+  host="${hostport%%:*}"
+  if [[ "$hostport" == *:* ]]; then
+    port="${hostport#*:}"
+    [[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$port))" -ge 1 ] && [ "$((10#$port))" -le 65535 ] || return 1
+  fi
+  if [[ "$u" == https://* ]]; then
+    is_hostname "$host"
+  else
+    [ "$host" = 127.0.0.1 ] || [ "$host" = localhost ]
+  fi
+}
+
+# valid_address ADDR: an IPv4 or IPv6 literal that other servers could reach: not loopback,
+# unspecified, link-local or multicast.
+valid_address() {
+  local a="$1" o o1 o2
+  if [[ "$a" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    o1="${BASH_REMATCH[1]}" o2="${BASH_REMATCH[2]}"
+    for o in "$o1" "$o2" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"; do
+      [[ "$o" =~ ^(0|[1-9][0-9]*)$ ]] && [ "$o" -le 255 ] || return 1
+    done
+    [ "$o1" -ne 0 ] && [ "$o1" -ne 127 ] && [ "$o1" -lt 224 ] && ! { [ "$o1" -eq 169 ] && [ "$o2" -eq 254 ]; }
+  elif [[ "$a" =~ ^[0-9A-Fa-f:]+$ ]] && [[ "$a" == *:*:* ]] && [ "${#a}" -le 39 ]; then
+    case "${a,,}" in
+    :: | ::1 | fe[89ab][0-9a-f]:* | ff[0-9a-f][0-9a-f]:*) return 1 ;;
+    esac
+    getent ahostsv6 "$a" >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+# ip_int A.B.C.D: the address as a number.
+ip_int() {
+  local a b c d
+  IFS=. read -r a b c d <<<"$1"
+  echo $(((10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d))
+}
+
+# inside ADDR LEN NET NETLEN: ADDR/LEN lies inside NET/NETLEN.
+inside() {
+  local mask
+  [ "$2" -ge "$4" ] || return 1
+  mask=$(((0xFFFFFFFF << (32 - $4)) & 0xFFFFFFFF))
+  [ $(($(ip_int "$1") & mask)) -eq "$(ip_int "$3")" ]
+}
+
+# check_private_ranges: Caravana's servers use 10.97.0.0/16, 10.98.0.0/24 and 10.99.0.0/24 between
+# them. A host that already has an address or a route inside one of them, on an interface that
+# isn't ours, would send that traffic the wrong way.
+check_private_ranges() {
+  local ifname cidr dst dev rest net len prefix found=""
+  while read -r _ ifname _ cidr _; do
+    case "$ifname" in caravana0 | caravana-mesh | nomad) continue ;; esac
+    [[ "$cidr" =~ ^([0-9.]+)/([0-9]+)$ ]] || continue
+    for prefix in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
+      inside "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${prefix%/*}" "${prefix#*/}" && found="the address $cidr on $ifname"
+    done
+  done < <(ip -4 -o addr show 2>/dev/null)
+  while read -r dst rest; do
+    [ "$dst" != default ] || continue
+    [[ "$dst" == */* ]] || dst="$dst/32"
+    net="${dst%/*}" len="${dst#*/}"
+    [[ "$net" =~ ^[0-9.]+$ ]] && [[ "$len" =~ ^[0-9]+$ ]] || continue
+    dev="$(sed -n 's/.* dev \([^ ]*\).*/\1/p' <<<" $rest")"
+    case "$dev" in caravana0 | caravana-mesh | nomad) continue ;; esac
+    for prefix in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
+      inside "$net" "$len" "${prefix%/*}" "${prefix#*/}" && found="the route $dst on ${dev:-an unnamed interface}"
+    done
+  done < <(ip -4 route show 2>/dev/null)
+  [ -z "$found" ] ||
+    refuse "this host has $found, which is inside 10.97.0.0/16, 10.98.0.0/24 or 10.99.0.0/24: Caravana's servers use those between them. Change that network first"
+}
 
 preflight() {
   [ "$(id -u)" = 0 ] || refuse "run it as root (sudo bash ...)"
@@ -155,18 +316,15 @@ preflight() {
 
   [ "$CARAVANA_VERSION" != dev ] ||
     refuse "this install.sh has no version: use the one published with a release, or build one with tools/release.sh"
-  case "$acme" in production | staging | none) ;; *) refuse "--acme is production, staging or none, not $acme" ;; esac
-  [ -n "$email" ] || refuse "--email is required the first time: the admin signs in with it"
-  # The options end up in files the shell and systemd read, and in a Let's Encrypt account: refuse
-  # anything that isn't a plain address or host name, before anything changes.
-  local addr_re='^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
-  [[ "$email" =~ $addr_re ]] || refuse "--email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
-  [[ "$acme_email" =~ $addr_re ]] || refuse "--acme-email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
-  if [ -n "$domain" ]; then
-    local label='[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
-    local domain_re="^${label}(\\.${label})+\$"
-    { [ "${#domain}" -le 253 ] && [[ "$domain" =~ $domain_re ]]; } ||
-      refuse "--domain is not a host name (labels of letters, digits and dashes, no dash at either end, at least one dot, at most 253 characters)"
+  # The values end up in files the shell and systemd read, in a Let's Encrypt account and on the
+  # agent's command line: refuse anything that isn't plain, before anything changes.
+  if [ -n "$address" ]; then
+    valid_address "$address" || refuse "--address is not an IPv4 or IPv6 address that other servers could reach (not loopback, unspecified, link-local or multicast)"
+  fi
+  if [ "$role" = join ]; then
+    preflight_join
+  else
+    preflight_first
   fi
 
   local installed
@@ -184,6 +342,19 @@ preflight() {
       refuse "Docker is already installed here; Caravana installs its own on a fresh VM"
     fi
   fi
+  check_private_ranges
+}
+
+preflight_first() {
+  case "$acme" in production | staging | none) ;; *) refuse "--acme is production, staging or none, not $acme" ;; esac
+  [ -n "$email" ] || refuse "--email is required the first time: the admin signs in with it"
+  local addr_re='^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
+  [[ "$email" =~ $addr_re ]] || refuse "--email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
+  [[ "$acme_email" =~ $addr_re ]] || refuse "--acme-email is not a plain email address (letters, digits and . _ % + - before one @, then a host name)"
+  if [ -n "$domain" ]; then
+    is_hostname "$domain" ||
+      refuse "--domain is not a host name (labels of letters, digits and dashes, no dash at either end, at least one dot, at most 253 characters)"
+  fi
 
   local port holder
   for port in 80 443; do
@@ -193,16 +364,34 @@ preflight() {
     fi
   done
 
-  if [ -z "$domain" ] || [ "$acme" != none ]; then
+  # The public IP names this server to the others (--address) and the console's domain to Let's
+  # Encrypt. With neither needing it, no lookup is made.
+  if [ -z "$domain" ] || [ "$acme" != none ] || [ -z "$address" ]; then
     public_ip="$(curl -fsS --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')" ||
-      refuse "can't find this machine's public IP address (https://checkip.amazonaws.com)"
+      refuse "can't find this machine's public IP address (https://checkip.amazonaws.com); give --address (and --domain with --acme none) to go without it"
+    valid_address "$public_ip" || refuse "https://checkip.amazonaws.com didn't answer an IP address"
   fi
   domain="${domain:-${public_ip//./-}.sslip.io}"
+  address="${address:-$public_ip}"
   if [ "$acme" != none ]; then
     local resolved
     resolved="$(getent ahostsv4 "$domain" | awk 'NR == 1 {print $1}')"
     [ "$resolved" = "$public_ip" ] ||
       refuse "$domain resolves to ${resolved:-nothing}, not this machine ($public_ip); Let's Encrypt can't issue its certificate until it does"
+  fi
+}
+
+preflight_join() {
+  # A server that joined already needs neither; a first run needs both.
+  if [ ! -f "$NODE_ENV" ]; then
+    [ -n "$join_token" ] || refuse "--join TOKEN is required: make one in the console (Servers, Add a server), which shows the whole command"
+    [ -n "$url" ] || refuse "--url is required with --join: the console's address, https://caravana.example.com"
+  fi
+  if [ -n "$join_token" ]; then
+    [[ "$join_token" =~ ^cvjn_[A-Za-z0-9_-]{43}$ ]] || refuse "--join is not a join token: it is cvjn_ and 43 letters, digits, - or _. Copy the command from the console"
+  fi
+  if [ -n "$url" ]; then
+    valid_url "$url" || refuse "--url must be https:// and the console's host name, with an optional port (http:// only for localhost), no path"
   fi
 }
 
@@ -237,7 +426,7 @@ install_packages() {
   step "packages"
   export DEBIAN_FRONTEND=noninteractive
   local missing=()
-  for pkg in docker.io unzip curl ca-certificates ufw; do
+  for pkg in docker.io unzip curl ca-certificates ufw wireguard-tools; do
     dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
   if [ ${#missing[@]} -gt 0 ]; then
@@ -251,7 +440,8 @@ install_packages() {
   systemctl enable --now docker >/dev/null 2>&1
 }
 
-install_nomad() {
+# install_nomad_binaries: Nomad, the CNI plugins and the bridge sysctl, for either role.
+install_nomad_binaries() {
   step "Nomad $NOMAD_VERSION and CNI plugins $CNI_VERSION"
   local tmp base file
   if [ "$(nomad version 2>/dev/null | head -1)" != "Nomad v${NOMAD_VERSION}" ]; then
@@ -288,7 +478,12 @@ net.bridge.bridge-nf-call-iptables = 1
 EOF
     sysctl --system >/dev/null
   fi
+}
 
+# private_interface_first: caravana0 on the first server, made by systemd-networkd as before. The
+# agent makes it too when it is missing (and the mesh unit runs first at boot), so a joined server,
+# whose address is 10.99.0.N, has no networkd files.
+private_interface_first() {
   step "private interface caravana0 (allocation ports bind here, never publicly)"
   write_if_changed /etc/systemd/network/10-caravana0.netdev 0644 caravana0 <<'EOF' || true
 [NetDev]
@@ -306,49 +501,154 @@ EOF
   networkctl reload
   timeout 30s bash -c 'until ip -4 addr show dev caravana0 2>/dev/null | grep -q 10.99.0.1; do sleep 1; done' ||
     fail "the caravana0 interface didn't come up"
+}
 
-  step "Nomad (one node, ACLs on)"
-  mkdir -p "$STATE/traefik" /opt/nomad/data /etc/nomad.d
-  chmod 700 "$STATE"
-  local cpu_line=""
+# install_agent: the server agent (a copy of the release's caravana, so a rolled-back Caravana never
+# takes its commands away) and the units of the private network, Nomad and the agent's timer.
+units_changed=0
+install_agent() {
+  step "the server agent and its units"
+  local src="$OPT/$CARAVANA_VERSION" f
+  for f in caravana nomad.service $MESH_UNITS; do
+    [ -f "$src/$f" ] || fail "$src has no $f"
+  done
+  units_changed=0
+  write_if_changed "$AGENT" 0755 agent <"$src/caravana" || true
+  write_if_changed /etc/systemd/system/nomad.service 0644 nomad-unit <"$src/nomad.service" && units_changed=1
+  for f in $MESH_UNITS; do
+    write_if_changed "/etc/systemd/system/$f" 0644 "$f" <"$src/$f" && units_changed=1
+  done
+  [ "$units_changed" = 0 ] || systemctl daemon-reload
+  systemctl enable caravana-mesh.service >/dev/null 2>&1
+}
+
+# cpu_flags: the agent's --cpu-total-compute, for VMs that report no clock speed (ARM ones often
+# don't: Nomad then sees 0 MHz and places nothing).
+cpu_flags() {
   if ! lscpu | grep -qi 'mhz'; then
-    # ARM VMs often report no clock speed; Nomad then sees 0 MHz and places nothing.
-    cpu_line="cpu_total_compute = $(($(nproc) * 2000))"
+    echo "--cpu-total-compute $(($(nproc) * 2000))"
   fi
-  sed "s|#CPU_TOTAL_COMPUTE#|$cpu_line|" "$OPT/$CARAVANA_VERSION/nomad.hcl.tpl" |
-    write_if_changed /etc/nomad.d/nomad.hcl 0644 nomad-config || true
-  write_if_changed /etc/systemd/system/nomad.service 0644 nomad-unit <<'EOF' || true
-[Unit]
-Description=Nomad agent
-Wants=network-online.target
-After=network-online.target docker.service
+}
 
-[Service]
-ExecStart=/usr/local/bin/nomad agent -config /etc/nomad.d
-ExecReload=/bin/kill -HUP $MAINPID
-KillMode=process
-KillSignal=SIGINT
-Restart=on-failure
-LimitNOFILE=65536
-TasksMax=infinity
-OOMScoreAdjust=-1000
+# nomad_sum: what decides that Nomad must restart: its binary, its unit, its config and its
+# certificates.
+nomad_sum() {
+  {
+    cat /usr/local/bin/nomad /etc/systemd/system/nomad.service
+    find /etc/nomad.d -type f -print0 | sort -z | xargs -0 cat
+  } | sha256sum
+}
 
-[Install]
-WantedBy=multi-user.target
-EOF
-  systemctl daemon-reload
-  # Restart Nomad only when its binary, unit or config changed, so a rerun leaves it alone.
+# restart_nomad_if_changed: restart Nomad only when its binary, unit, config or certificates changed
+# (or it isn't running), so a rerun leaves it alone. Returns 0 when it restarted, 1 when it didn't.
+restart_nomad_if_changed() {
   local sum
-  sum="$(cat /usr/local/bin/nomad /etc/systemd/system/nomad.service /etc/nomad.d/*.hcl | sha256sum)"
+  sum="$(nomad_sum)"
   if [ "$(cat "$STATE/nomad.sum" 2>/dev/null)" != "$sum" ] || ! systemctl is-active --quiet nomad; then
     systemctl enable nomad >/dev/null 2>&1
     systemctl restart nomad
     echo "$sum" >"$STATE/nomad.sum"
     changed+=(nomad)
+    return 0
   fi
+  return 1
+}
+
+# wait_leader SECONDS: wait until Nomad knows a leader.
+wait_leader() {
   # shellcheck disable=SC2016 # expanded by the inner bash, on each try
-  timeout 120s bash -c 'until [ -n "$(curl -fsS http://127.0.0.1:4646/v1/status/leader 2>/dev/null | tr -d "\"")" ]; do sleep 2; done' ||
-    fail "Nomad didn't elect a leader within 2 minutes (journalctl -u nomad)"
+  timeout "${1}s" bash -c 'until [ -n "$(curl -fsS http://127.0.0.1:4646/v1/status/leader 2>/dev/null | tr -d "\"")" ]; do sleep 2; done'
+}
+
+# no_leader WHAT: Nomad has no leader 2 minutes after WHAT was done to it. During the conversion
+# of an existing host the message says what was done and where the old config is.
+converting=0
+no_leader() {
+  local msg="Nomad didn't elect a leader within 2 minutes${1:+ $1} (journalctl -u nomad)"
+  if [ "$converting" = 1 ]; then
+    msg="$msg. This host's Nomad was moving to the private network: its old config is $STATE/nomad.hcl.before-mesh (put it back as /etc/nomad.d/nomad.hcl and run: systemctl restart nomad); its jobs, tokens and variables are still in /opt/nomad/data"
+  fi
+  fail "$msg"
+}
+
+# keep_old_nomad_config: the first conversion keeps the config an older installer wrote, once, here
+# and not in /etc/nomad.d, which Nomad reads whole.
+keep_old_nomad_config() {
+  local conf=/etc/nomad.d/nomad.hcl
+  [ -f "$conf" ] || return 0
+  [ ! -f "$STATE/nomad.hcl.before-mesh" ] || return 0
+  # shellcheck disable=SC2016 # the backticks are in the file's header
+  head -1 "$conf" | grep -q '^# Written by `caravana node`' && return 0
+  install -m 0600 "$conf" "$STATE/nomad.hcl.before-mesh"
+  step "the config this host's Nomad had is kept as $STATE/nomad.hcl.before-mesh"
+}
+
+# convert_raft_once: Nomad's raft on a host installed before the private network still lists this
+# server at 127.0.0.1:4647, and a second server could never reach it. Once per host, after Nomad runs
+# with the new config, Nomad is stopped, told its one peer's new address (peers.json, Nomad's outage
+# recovery: research L2) and started again. Its state is kept.
+convert_raft_once() {
+  [ ! -f "$STATE/raft-mesh" ] || return 0
+  if [ "$raft_before" != 1 ]; then
+    echo mesh >"$STATE/raft-mesh"
+    return 0
+  fi
+  local peers node_id
+  peers="$(curl -fsS http://127.0.0.1:4646/v1/status/peers 2>/dev/null || true)"
+  if grep -q '"10.98.0.1:4647"' <<<"$peers"; then
+    echo mesh >"$STATE/raft-mesh"
+    return 0
+  fi
+  step "Nomad's raft peer moves to 10.98.0.1:4647 (once per host)"
+  node_id="$(cat /opt/nomad/data/server/node-id 2>/dev/null || true)"
+  [[ "$node_id" =~ ^[0-9a-fA-F-]{36}$ ]] ||
+    fail "Nomad's node ID isn't in /opt/nomad/data/server/node-id, so its raft peer can't be moved. Nomad runs with the private network's config; its old config is $STATE/nomad.hcl.before-mesh"
+  systemctl stop nomad
+  printf '[{"id": "%s", "address": "10.98.0.1:4647", "non_voter": false}]\n' "$node_id" >/opt/nomad/data/server/raft/peers.json
+  systemctl start nomad
+  changed+=(nomad-raft)
+  wait_leader 120 || no_leader "after its raft peer was set to 10.98.0.1:4647 (peers.json) and it was started again"
+  peers="$(curl -fsS http://127.0.0.1:4646/v1/status/peers 2>/dev/null || true)"
+  grep -q '"10.98.0.1:4647"' <<<"$peers" ||
+    fail "Nomad's raft still doesn't list 10.98.0.1:4647 after the recovery (sudo caravana-nomad operator raft list-peers; journalctl -u nomad). Its old config is $STATE/nomad.hcl.before-mesh"
+  echo mesh >"$STATE/raft-mesh"
+}
+
+# init_first_server: the agent makes server 1 offline: keys, the cluster's CA and this server's
+# certificate, Nomad's config and the private network. The old config is kept first.
+raft_before=0
+init_first_server() {
+  step "the first server: private network, cluster certificates, Nomad's config"
+  [ ! -d /opt/nomad/data/server/raft ] || raft_before=1
+  keep_old_nomad_config
+  if [ "$raft_before" = 1 ] && [ ! -f "$STATE/raft-mesh" ]; then
+    converting=1
+  elif [ "$raft_before" = 0 ] && [ ! -f "$STATE/raft-mesh" ]; then
+    echo mesh >"$STATE/raft-mesh" # a fresh host starts on the mesh address: nothing to convert
+  fi
+  local flags=()
+  # shellcheck disable=SC2207 # two words, no spaces inside them
+  flags=($(cpu_flags))
+  "$AGENT" node init-first --address "$address" "${flags[@]}" ||
+    fail "the server agent couldn't set this server up (see above)"
+  systemctl start caravana-mesh.service
+}
+
+# nomad_first: Nomad restarts when its binary, unit, config or certificates changed; on a host
+# installed before the private network the raft peer is moved once.
+nomad_first() {
+  step "Nomad (first server, ACLs on)"
+  mkdir -p "$STATE/traefik" /opt/nomad/data /etc/nomad.d
+  chmod 700 "$STATE"
+  if [ "$converting" = 1 ]; then
+    echo "  Nomad restarts twice, once only: this host's Nomad moves to the private network (jobs, tokens and"
+    echo "  variables are kept, apps keep running). The old config is kept as $STATE/nomad.hcl.before-mesh"
+  fi
+  if restart_nomad_if_changed; then
+    wait_leader 120 || no_leader "after it was restarted with the private network's config"
+  fi
+  convert_raft_once
+  wait_leader 120 || no_leader
 
   # ACLs are bootstrapped once, with a token generated here, so it is on disk before Nomad
   # accepts it. It stays root-only on this host.
@@ -365,18 +665,7 @@ EOF
 NOMAD_ADDR=http://127.0.0.1:4646 NOMAD_TOKEN="\$(cat $STATE/bootstrap.token)" exec nomad "\$@"
 EOF
 
-  step "firewall: only 22, 80 and 443 from the internet"
-  local before
-  before="$(ufw status verbose 2>/dev/null || true)"
-  ufw allow 22/tcp >/dev/null
-  ufw allow 80/tcp >/dev/null
-  ufw allow 443/tcp >/dev/null
-  ufw default deny incoming >/dev/null
-  ufw default allow outgoing >/dev/null
-  # Containers on Nomad's bridge need forwarding; inbound exposure is handled by caravana0.
-  ufw default allow routed >/dev/null
-  ufw --force enable >/dev/null
-  [ "$before" = "$(ufw status verbose)" ] || changed+=(firewall)
+  configure_firewall first
 
   step "Nomad scheduler: services may burst into spare memory"
   # A service reserves its memory and may use up to its ceiling (memory_max) while the node has
@@ -391,6 +680,57 @@ EOF
     -description "Traefik reads service registrations" traefik-read "$OPT/$CARAVANA_VERSION/traefik-policy.hcl" >/dev/null
   nomad_cli acl policy apply -description "Caravana registers jobs and follows deployments" \
     caravana "$OPT/$CARAVANA_VERSION/caravana-policy.hcl" >/dev/null
+}
+
+# configure_firewall ROLE: only SSH, WireGuard's port and, on the first server, HTTP and HTTPS from
+# the internet; everything the other servers send over the mesh is allowed.
+configure_firewall() {
+  local before
+  if [ "$1" = first ]; then
+    step "firewall: only 22, 80, 443 and 51820/udp (the mesh) from the internet"
+  else
+    step "firewall: only 22 and 51820/udp (the mesh) from the internet"
+  fi
+  before="$(ufw status verbose 2>/dev/null || true)"
+  ufw allow 22/tcp >/dev/null
+  if [ "$1" = first ]; then
+    ufw allow 80/tcp >/dev/null
+    ufw allow 443/tcp >/dev/null
+  fi
+  ufw allow 51820/udp >/dev/null
+  ufw allow in on caravana-mesh >/dev/null
+  ufw default deny incoming >/dev/null
+  ufw default allow outgoing >/dev/null
+  # Containers on Nomad's bridge need forwarding; inbound exposure is handled by caravana0.
+  ufw default allow routed >/dev/null
+  ufw --force enable >/dev/null
+  [ "$before" = "$(ufw status verbose)" ] || changed+=(firewall)
+}
+
+# store_cluster_secrets: the cluster's CA key lives in a Nomad Variable, never on disk beyond this
+# run, and so does the gossip key (constitution VII). A failure stops the install with the key
+# still on disk.
+store_cluster_secrets() {
+  local ca_key="$AGENT_DIR/ca-key.pem" ca=/etc/nomad.d/tls/ca.pem
+  if [ -f "$ca_key" ]; then
+    step "the cluster's CA key goes into a Nomad Variable (caravana/cluster/ca)"
+    nomad_cli var put -force caravana/cluster/ca cert=@"$ca" key=@"$ca_key" >/dev/null 2>&1 ||
+      fail "storing the cluster's CA in the Nomad Variable caravana/cluster/ca failed; its key is still in $ca_key"
+    if ! { cmp -s <(nomad_cli var get -item key caravana/cluster/ca) "$ca_key" &&
+      cmp -s <(nomad_cli var get -item cert caravana/cluster/ca) "$ca"; }; then
+      fail "the Nomad Variable caravana/cluster/ca doesn't read back as the CA that was stored; its key is still in $ca_key"
+    fi
+    shred -u "$ca_key"
+    changed+=(cluster-ca)
+  fi
+  if ! nomad_cli var get -item key caravana/cluster/gossip >/dev/null 2>&1; then
+    step "the gossip key goes into a Nomad Variable (caravana/cluster/gossip)"
+    # The value goes in as JSON on standard input: no key on a command line, no trailing newline.
+    printf '{"Items":{"key":"%s"}}\n' "$(tr -d '[:space:]' <"$AGENT_DIR/gossip.key")" |
+      nomad_cli var put -force -in json caravana/cluster/gossip - >/dev/null 2>&1 ||
+      fail "storing the gossip key in the Nomad Variable caravana/cluster/gossip failed"
+    changed+=(cluster-gossip)
+  fi
 }
 
 # run_traefik [CONSOLE_DOMAIN]: run Traefik, routing CONSOLE_DOMAIN to Caravana when given.
@@ -518,6 +858,16 @@ point_current() {
   mv -T "$OPT/current.new" "$OPT/current"
 }
 
+# prune_versions OLD: keep this version and the one before it. "current" is a link, not a version.
+prune_versions() {
+  local dir
+  for dir in "$OPT"/*; do
+    if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+      case "$(basename "$dir")" in "$CARAVANA_VERSION" | "$1") ;; *) rm -rf "$dir" ;; esac
+    fi
+  done
+}
+
 # start_version: run this version. On a first install it just starts. On the same version it
 # restarts only when its settings changed. On an upgrade it stops the old version, keeps a copy
 # of the data (a new version may migrate it, and the old one can't read a migrated store),
@@ -554,13 +904,7 @@ start_version() {
       fail "Caravana $CARAVANA_VERSION didn't answer its health check within 60 s; $installed runs again, with its data as it was"
     fi
     changed+=(caravana)
-    # Keep this version and the one before it. "current" is a link, not a version.
-    local dir
-    for dir in "$OPT"/*; do
-      if [ -d "$dir" ] && [ ! -L "$dir" ]; then
-        case "$(basename "$dir")" in "$CARAVANA_VERSION" | "$installed") ;; *) rm -rf "$dir" ;; esac
-      fi
-    done
+    prune_versions "$installed"
   fi
   health_is "$CARAVANA_VERSION" || {
     journalctl -u caravana -n 20 --no-pager >&2
@@ -583,13 +927,51 @@ ensure_admin() {
   fi
 }
 
+# record_options: what a later run reuses. Never a token: a join token is for one use.
 record_options() {
-  write_if_changed "$STATE/install.env" 0600 options <<EOF || true
+  if [ "$role" = join ]; then
+    write_if_changed "$STATE/install.env" 0600 options <<EOF || true
+CARAVANA_ROLE=join
+CARAVANA_URL=$(envq "$url")
+CARAVANA_INSECURE=$(envq "$insecure")
+CARAVANA_ADDRESS=$(envq "$address")
+EOF
+  else
+    write_if_changed "$STATE/install.env" 0600 options <<EOF || true
 CARAVANA_ADMIN_EMAIL=$(envq "$email")
 CARAVANA_DOMAIN=$(envq "$domain")
 CARAVANA_ACME=$(envq "$acme")
 CARAVANA_ACME_EMAIL=$(envq "$acme_email")
+CARAVANA_ROLE=first
+CARAVANA_ADDRESS=$(envq "$address")
 EOF
+  fi
+}
+
+# register_first_server: Caravana learns about this server (it is server 1) and hands the agent a
+# node token to sync with. The token is printed once by the CLI and goes only into node.env.
+register_first_server() {
+  [ ! -f "$NODE_ENV" ] || return 0
+  step "register this server with Caravana"
+  local name key out token
+  name="$("$AGENT" node show name)"
+  key="$("$AGENT" node show public-key)"
+  # The CLI opens Caravana's store beside the running server, as `admin init` does. A Caravana
+  # that doesn't know the command would start as a server instead, so the call has a time limit.
+  if ! out="$(umask 077 && timeout 60 /usr/local/bin/caravana server adopt-first --name "$name" --public-key "$key" --address "$address" 2>"$STATE/adopt.err")"; then
+    tail -5 "$STATE/adopt.err" >&2
+    fail "registering this server with Caravana failed: 'caravana server adopt-first' exited with an error. Does Caravana $CARAVANA_VERSION have that command? The server is set up; run the installer again once it does"
+  fi
+  token="$out"
+  [[ "$token" =~ ^cvnd_[A-Za-z0-9_-]{43}$ ]] ||
+    fail "'caravana server adopt-first' didn't print a node token, so this server can't sync with Caravana yet. Does Caravana $CARAVANA_VERSION have that command? Run the installer again once it does"
+  (
+    umask 077
+    printf 'CARAVANA_URL=%s\nCARAVANA_NODE_TOKEN=%s\nCARAVANA_INSECURE=0\n' "$(envq http://127.0.0.1:7070)" "$(envq "$token")" >"$NODE_ENV.tmp"
+  )
+  mv "$NODE_ENV.tmp" "$NODE_ENV"
+  rm -f "$STATE/adopt.err"
+  changed+=(server-registered)
 }
 
 install_caravana() {
@@ -600,11 +982,18 @@ install_caravana() {
   command -v curl >/dev/null || { apt-get update -qq && apt-get install -y -qq curl >/dev/null; }
   fetch_release
   install_packages
-  install_nomad
+  install_nomad_binaries
+  private_interface_first
+  install_agent
+  init_first_server
+  nomad_first
+  store_cluster_secrets
   configure_caravana
   install_updater
   start_version
   ensure_admin
+  register_first_server
+  systemctl enable --now caravana-node.timer >/dev/null 2>&1
   step "Traefik: https://$domain to Caravana"
   run_traefik "$domain"
   # The address printed below must answer: wait until Traefik routes the domain to Caravana
@@ -623,7 +1012,139 @@ install_caravana() {
   else
     echo "  Next:     sign in at https://$domain/login as $email"
   fi
+  echo "  Servers:  add another one in the console (Servers, Add a server); it shows the command"
   echo "  Nomad:    sudo caravana-nomad status"
+}
+
+# ---- another server ---------------------------------------------------------------------------
+
+# join_cluster: the agent calls the console with the join token (the one place it goes: its own
+# command line, once) and writes the server's keys, certificate and config. A server that joined
+# already has node.env: the agent then only renders its config and brings the network up, with no
+# call.
+join_cluster() {
+  local args=(node join)
+  if [ ! -f "$NODE_ENV" ]; then
+    step "join the cluster of $url"
+    args+=(--url "$url" --token "$join_token")
+    [ -z "$address" ] || args+=(--address "$address")
+    [ "$insecure" != 1 ] || args+=(--insecure)
+  else
+    step "this server has joined already: its config and network are made again"
+  fi
+  # shellcheck disable=SC2207 # two words, no spaces inside them
+  args+=($(cpu_flags))
+  "$AGENT" "${args[@]}" ||
+    fail "the join didn't go through (see above), so this server is not part of the cluster. Make a new command in the console and run it again"
+  systemctl start caravana-mesh.service
+}
+
+# start_node_timer: the agent's timer runs, so the server keeps in line with the console. It is
+# started after the installer's own checks, which would otherwise run beside it.
+start_node_timer() { systemctl start caravana-node.timer >/dev/null 2>&1 || true; }
+
+# wait_joined: sync every 5 seconds, up to 3 minutes, and print each check as the console reports it
+# passed. A server the console says is ready has joined.
+wait_joined() {
+  step "waiting for the console to confirm this server (up to 3 minutes)"
+  local end=$((SECONDS + 180)) out line rest cname word detail state shown=" " open="" name
+  while :; do
+    out="$(umask 077 && "$AGENT" node sync --checks 2>"$STATE/sync.err" || true)"
+    state="" open=""
+    while IFS= read -r line; do
+      case "$line" in
+      "check "*)
+        rest="${line#check }"
+        cname="${rest%% *}"
+        rest="${rest#"$cname"}"
+        rest="${rest# }"
+        word="${rest%% *}"
+        detail="${rest#"$word"}"
+        detail="${detail# }"
+        if [ "$word" = ok ]; then
+          case "$shown" in *" $cname "*) ;; *)
+            echo "  ok: $detail"
+            shown="$shown$cname "
+            ;;
+          esac
+        else
+          open="$open  open: $detail"$'\n'
+        fi
+        ;;
+      "state "*) state="${line#state }" ;;
+      esac
+    done <<<"$out"
+    [ "$state" != ready ] || break
+    if [ "$SECONDS" -ge "$end" ]; then
+      start_node_timer
+      if [ -n "$open" ]; then
+        printf '%s' "$open" >&2
+      else
+        echo "  the console didn't answer: $(tail -1 "$STATE/sync.err" 2>/dev/null)" >&2
+      fi
+      fail "this server hasn't joined after 3 minutes: the checks above are still open. It keeps trying every 30 seconds; the console's Servers page shows them too"
+    fi
+    sleep 5
+  done
+  start_node_timer
+  name="$("$AGENT" node show name)"
+  echo
+  echo "This server joined as $name."
+}
+
+install_join() {
+  preflight
+  mkdir -p "$STATE" && chmod 700 "$STATE"
+  record_options
+  step "Caravana $CARAVANA_VERSION release files"
+  command -v curl >/dev/null || { apt-get update -qq && apt-get install -y -qq curl >/dev/null; }
+  fetch_release
+  install_packages
+  install_nomad_binaries
+  mkdir -p /opt/nomad/data /etc/nomad.d
+  install_agent
+  local installed
+  installed="$(installed_version)"
+  point_current "$CARAVANA_VERSION"
+  [ "$installed" = "$CARAVANA_VERSION" ] || { [ -z "$installed" ] || prune_versions "$installed"; }
+  join_cluster
+  step "Nomad (joined server)"
+  restart_nomad_if_changed || true
+  configure_firewall join
+  systemctl enable caravana-node.timer >/dev/null 2>&1
+  wait_joined
+  echo "changed: $(printf '%s\n' "${changed[@]}" | awk 'NF && !seen[$0]++' | paste -sd ' ' -)"
+}
+
+# leave_server: this joined server goes out of the cluster on its own side. Docker and the
+# packages stay; the console still lists the server until it is removed there.
+leave_server() {
+  [ "$(id -u)" = 0 ] || refuse "run it as root (sudo bash ...)"
+  case "$recorded_role" in
+  join) ;;
+  first) refuse "this is the first server, which runs Caravana: --leave is for a server that joined. Use --uninstall to remove Caravana" ;;
+  *)
+    echo "This server hasn't joined a cluster; nothing to leave."
+    exit 0
+    ;;
+  esac
+  step "stop the agent and the private network"
+  systemctl disable --now caravana-node.timer >/dev/null 2>&1 || true
+  # Nomad requires the mesh unit, so this stops Nomad too.
+  systemctl disable --now caravana-mesh.service >/dev/null 2>&1 || true
+  if [ -x "$AGENT" ]; then
+    "$AGENT" node leave || fail "the agent couldn't take this server out of the cluster (see above)"
+  fi
+  step "remove the agent and its units"
+  local f
+  for f in $MESH_UNITS nomad.service; do rm -f "/etc/systemd/system/$f"; done
+  rm -f "$AGENT" /etc/nomad.d/nomad.hcl "$STATE/nomad.sum"
+  systemctl daemon-reload
+  systemctl reset-failed nomad.service caravana-mesh.service >/dev/null 2>&1 || true
+  echo
+  echo "This server left the cluster. Nomad is stopped and the private network and the agent are gone."
+  echo "  Remove it in the console too (Servers), or it stays there as down."
+  echo "  Docker, Nomad's binary and any containers the apps left running are still here (docker ps)."
 }
 
 # uninstall_caravana removes Caravana and leaves Nomad, Docker, Traefik, the firewall and every
@@ -642,6 +1163,10 @@ uninstall_caravana() {
   systemctl disable --now caravana-update.timer >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/caravana-update.timer /etc/systemd/system/caravana-update.service "$UPDATER"
   rm -rf "$UPDATE_DIR"
+  # So does the agent's timer: without Caravana there is nothing to sync with. The private network
+  # and Nomad stay, with the apps; so do the agent and its units, which they need.
+  systemctl disable --now caravana-node.timer >/dev/null 2>&1 || true
+  rm -f "$NODE_ENV"
   systemctl daemon-reload
 
   if [ -s "$STATE/bootstrap.token" ] && command -v nomad >/dev/null; then
@@ -672,6 +1197,10 @@ uninstall_caravana() {
 
 if [ "$uninstall" = 1 ]; then
   uninstall_caravana
+elif [ "$leave" = 1 ]; then
+  leave_server
+elif [ "$role" = join ]; then
+  install_join
 else
   install_caravana
 fi

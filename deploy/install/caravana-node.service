@@ -1,0 +1,13 @@
+# One round of Caravana's server agent, started by caravana-node.timer (feature 031), installed by
+# deploy/install/install.sh. It asks the console for this server's peers, role and certificate and
+# applies them; with the console out of reach it changes nothing. It runs as root, and the agent is
+# its own copy of the binary, so a rolled-back Caravana never takes it away.
+[Unit]
+Description=Caravana's server agent: ask the console what this server should be and apply it
+After=nomad.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/caravana-node node sync
+TimeoutStartSec=5min

@@ -43,7 +43,7 @@
 # build writes into OUT_DIR:
 #   caravana_<VERSION>_linux_amd64.tar.gz   the binary (built with that version) and
 #   caravana_<VERSION>_linux_arm64.tar.gz   the files deploy/install/install.sh needs on the host,
-#                                           the root updater and its two systemd units among them
+#                                           the root updater and the units of the server agent among them
 #   caravana_<VERSION>_darwin_amd64.tar.gz  the binary alone, for a Mac where an agent runs
 #   caravana_<VERSION>_darwin_arm64.tar.gz  `caravana mcp` (docs/mcp.md)
 #   install.sh                              the installer, with CARAVANA_VERSION set
@@ -64,7 +64,8 @@ fragdir="${CHANGELOG_DIR:-$root/changelog.d}"
 kinds="Added Changed Fixed Security Upgrade"
 
 # The files every tarball carries next to the binary.
-host_files=(nomad.hcl.tpl traefik.nomad.hcl caravana-policy.hcl traefik-policy.hcl caravana.service
+host_files=(nomad.service caravana-mesh.service caravana-node.service caravana-node.timer
+  traefik.nomad.hcl caravana-policy.hcl traefik-policy.hcl caravana.service
   caravana-update.sh caravana-update.service caravana-update.timer)
 
 usage() {
