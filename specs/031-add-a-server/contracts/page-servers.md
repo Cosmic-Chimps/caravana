@@ -310,3 +310,17 @@ attributes, the meters the sample: both read the sample now).
 the list's column gap is 16px where the handoff has 24, and its rows stack under 1100px of room, not
 900. Measured: every `cpu`, `mem` and `disk` track is 44.7px at 1440 and 274px at 500.
 
+
+### Last look (designer, 2026-11-10, build a303695, staged as before)
+
+At 1440: the list's tracks are equal down each column and the head line's sums (7.6 GB, 8 vCPU) are the
+four ready servers' own; the cluster sentence counts what is still to come; the joining row no longer
+names the down server; the unmanaged row's pill is "not set up". The Overview says `cpu 9%` and `mem 51%`
+for the cluster, "Room for about 23 more apps like api", and "hel-1 needs a reboot". fsn-3's page has the
+banner, "fsn-3's numbers were last read at 19:21 UTC.", "last seen 19:21 UTC" and no read-on line; its
+confirmation has the two sentences about volumes and the other servers. fsn-2's page opens with its disk
+banner. hel-1 says 2 vCPU everywhere.
+
+## Approved
+
+Servers, Add a server and the server page for every server are approved (designer, 2026-11-10).
