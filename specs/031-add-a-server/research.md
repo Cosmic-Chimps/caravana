@@ -174,6 +174,11 @@ takes it out of raft), exits 0, and has 5 seconds for it. The agent writes that 
 stop, a restart and a reboot keep sending SIGINT (the unit's `KillSignal`), so a Nomad server that only
 restarts keeps its place.
 
+The order in the installer matters as much as the signal. The first version of this fix still failed
+the same step: `--leave` disabled the mesh unit before it called the agent, Nomad's unit requires that
+unit, so systemd stopped Nomad with SIGINT (`serf: Shutdown without a Leave`) before the agent could
+send SIGTERM (lab, observed). The agent is called first now.
+
 A server that is lost, not retired, can still take the quorum with it when only two Nomad servers are
 left: that is what "can't lose another" on the Servers page says.
 

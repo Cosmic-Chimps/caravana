@@ -1145,13 +1145,16 @@ leave_server() {
     exit 0
     ;;
   esac
-  step "stop the agent and the private network"
+  step "leave the cluster, then stop the agent and the private network"
   systemctl disable --now caravana-node.timer >/dev/null 2>&1 || true
-  # Nomad requires the mesh unit, so this stops Nomad too.
-  systemctl disable --now caravana-mesh.service >/dev/null 2>&1 || true
+  # The agent goes first: it asks Nomad to leave the cluster (SIGTERM) and waits for it, so a Nomad
+  # server goes out of raft while it can still reach the others. Stopping the mesh unit first would
+  # stop Nomad with it (Nomad requires that unit) by SIGINT, which leaves nothing: in a cluster with
+  # two Nomad servers the other one then has no quorum (research L16).
   if [ -x "$AGENT" ]; then
     "$AGENT" node leave || fail "the agent couldn't take this server out of the cluster (see above)"
   fi
+  systemctl disable --now caravana-mesh.service >/dev/null 2>&1 || true
   step "remove the agent and its units"
   local f
   for f in $MESH_UNITS nomad.service; do rm -f "/etc/systemd/system/$f"; done

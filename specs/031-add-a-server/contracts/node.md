@@ -241,8 +241,10 @@ check as the console reports it passed (the sync answer's `checks`), ending "Thi
 NAME." or, on a timeout, the checks still open and exit 1. No Caravana user, service, env file, updater,
 CLI wrapper, Traefik or admin.
 
-**`--leave`** (a joined server): disable the timer and the mesh unit, `caravana-node node leave`, remove
-the units and the agent, keep Docker and the packages, and say to remove the server in the console.
+**`--leave`** (a joined server): disable the timer, `caravana-node node leave` (first, while Nomad still
+runs and reaches the others: stopping the mesh unit stops Nomad with it, by SIGINT, which leaves
+nothing; research L16), then disable the mesh unit, remove the units and the agent, keep Docker and the
+packages, and say to remove the server in the console.
 
 **`--uninstall`** (the first server) also disables `caravana-node.timer` and removes `node.env`: without
 Caravana there is nothing to sync with. The mesh, Nomad and the apps stay.
