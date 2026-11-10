@@ -29,6 +29,12 @@
   `server` on volumes and on the disk item, and the needs-you kinds `server_down` and
   `server_certificate_expiring`.
 
+### Fixed
+- A restart of Nomad (an installer run that changes Nomad) could replace running copies: systemd gave a
+  container's network interface a new address just after it was made, and Nomad, checking each copy
+  after its restart, no longer knew it. The installer now tells systemd to leave those addresses alone.
+  Copies started before that can still be replaced once, by the next Nomad restart.
+
 ### Changed
 - All volumes of one service are created on the same server. Before, with more than one server, Nomad
   could have placed them on different ones and the service could never start.
@@ -37,6 +43,8 @@
 ### Upgrade
 - Rerun the installer on your server. It sets up the private network's interface and Nomad's
   certificates, and Nomad restarts twice, once only (the second restart moves its raft address to the
-  private network). Apps keep answering. Until then, Add server says to run the installer first.
+  private network). Apps keep running, but Nomad may replace a copy whose network it can't verify after
+  the restart: an app with one copy may not answer for a few seconds. Until then, Add server says to run
+  the installer first.
 - To add servers, open UDP 51820 between them at your provider's firewall. The ranges `10.97.0.0/16`,
   `10.98.0.0/24` and `10.99.0.0/24` must be free on every server.

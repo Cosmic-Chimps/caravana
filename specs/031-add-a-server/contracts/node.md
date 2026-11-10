@@ -208,8 +208,9 @@ interface that isn't `caravana0`, `caravana-mesh` or `nomad`.
 
 **`--first`**, in order (new steps in bold):
 
-1. Preflight, release files, packages (**plus `wireguard-tools`**), Nomad's binary, CNI, sysctl,
-   `caravana0` through systemd-networkd as today.
+1. Preflight, release files, packages (**plus `wireguard-tools`**), Nomad's binary, CNI, sysctl, **the
+   veth link file** (`/etc/systemd/network/10-caravana-veth.link`, `MACAddressPolicy=none`, research
+   L17; both roles), `caravana0` through systemd-networkd as today.
 2. **Install the agent** (`/usr/local/libexec/caravana-node`, from the release's `caravana`) **and the
    units** of §7. Remember whether `/opt/nomad/data/server/raft` existed.
 3. **`caravana-node node init-first --address ADDR`** (with `--cpu-total-compute` when `lscpu` has no

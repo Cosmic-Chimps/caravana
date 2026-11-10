@@ -1033,7 +1033,7 @@ root. The contracts are `contracts/updater.md` (the files both sides read), `api
 Feature 031 (`specs/031-add-a-server`, Phase 3's first feature, from a CodeAlta task) is implemented on the
 worktree branch `alta/genuine-skiff-rmbk`: a server joins from a command made in the console, and three
 servers survive the loss of one. The contracts are `contracts/node.md` (addresses, files, the agent, the
-installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima VMs showed (L1 to L15).
+installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima VMs showed (L1 to L17).
 - Addresses (`internal/mesh`, pure): every server has an index N (1 to 63; the first is 1) and everything
   derives from it: mesh `10.98.0.N` on `caravana-mesh` (WireGuard, UDP 51820), app ports `10.99.0.N` on
   `caravana0`, containers `172.26.64.0/20` (N = 1, Nomad's default) or `10.97.(4N).0/22`. A peer's allowed
@@ -1076,6 +1076,11 @@ installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima 
 - Console: Operator › Servers (`/ops/servers`, the list), Add a server (`/ops/servers/new`, then the
   command and the live checks; the token is in that one answer only), a page per server with Remove for a
   down one, and the per-server pieces on Overview, Running, Monitoring, Volumes and Updates.
+- Two facts every Nomad restart depends on: the installer writes `/etc/systemd/network/10-caravana-veth.link`
+  (`MACAddressPolicy=none`), because systemd rewrote a container veth's MAC after the CNI plugin recorded
+  it and Nomad then replaced the copy at its next restart (L17; copies made before the file can still be
+  replaced once); and every server has `leave_on_terminate = true`, with `caravana node leave` sending
+  SIGTERM so a retiring Nomad server leaves raft (L16; a stop or restart sends SIGINT and leaves nothing).
 - Installer: `--first` (the default), `--join TOKEN --url URL`, `--address`, `--insecure`, `--leave`. A host
   installed before this feature is converted by the next run: Nomad restarts twice, once only (the second
   moves its raft address with `peers.json`, L2), with the old config kept as

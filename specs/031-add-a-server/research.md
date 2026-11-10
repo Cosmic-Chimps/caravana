@@ -35,7 +35,7 @@ A fresh install starts on the mesh address, so it never needs step 2.
 
 On the first of the two restarts one copy (a group without ports) failed its network hook (`network
 namespace already exists but was misconfigured`) and Nomad replaced it; the second restart failed none.
-It looks like a Nomad restart hazard, not something this change causes; noted, not chased.
+The cluster test met it again and L17 has the cause and the fix.
 
 ## L3. Nomad needs its interfaces before it starts
 
@@ -176,6 +176,30 @@ restarts keeps its place.
 
 A server that is lost, not retired, can still take the quorum with it when only two Nomad servers are
 left: that is what "can't lose another" on the Servers page says.
+
+## L17. A Nomad restart can replace a copy whose interface systemd renamed the MAC of
+
+Cluster test, 2026-11-10 (lab, observed): during the conversion of a host installed from `d13c37c`, the
+app's only copy failed Nomad's network check after the restart (`network namespace already exists but
+was misconfigured: Interface veth5995cbdd Mac doesn't match: 7a:69:e8:fb:a4:ce not found`), couldn't be
+set up again (`duplicate allocation is not allowed`) and was replaced: four calls failed over three
+seconds. The first lab session saw the same once (L2) and didn't chase it.
+
+The cause is systemd, not this feature. Ubuntu's `99-default.link` has `MACAddressPolicy=persistent` for
+every new interface, so udev gives a container's host-side veth a new MAC a moment after the CNI bridge
+plugin made it. `/sys/class/net/<veth>/addr_assign_type` was 3 (set from userspace) on every veth. When
+the plugin wrote the address down before udev changed it, Nomad's check at its next restart finds an
+address it doesn't know. It is a race per copy, so most copies survive and some don't; four of the five
+earlier runs of this step had no failed call.
+
+With `/etc/systemd/network/10-caravana-veth.link` (`[Match] Driver=veth`, `[Link]
+MACAddressPolicy=none`) and `udevadm control --reload`, a new veth had `addr_assign_type` 1 (the
+kernel's random address, untouched), `udevadm test-builtin net_setup_link` said the file is applied, and
+the copy survived three Nomad restarts with no failed check (lab, observed). The installer writes the
+file for both roles. It can't repair copies made before it: at the conversion's restart such a copy may
+be replaced once, a few seconds without an answer for an app with one copy. Before this feature the
+hazard was there for every Nomad restart the installer made (a new Nomad version); it just restarted
+Nomad rarely.
 
 ## Decisions
 

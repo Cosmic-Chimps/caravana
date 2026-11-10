@@ -114,6 +114,7 @@ jsonq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.ar
 check_mesh_host() {
   local route out
   vm ip -4 -o addr show dev caravana0 | grep -q ' 10.99.0.1/32 ' || die "caravana0 should have 10.99.0.1/32"
+  vm grep -q '^MACAddressPolicy=none$' /etc/systemd/network/10-caravana-veth.link || die "the veth link file isn't there (research L17)"
   vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "caravana-mesh should have 10.98.0.1/32"
   for route in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
     vm ip -4 route show "$route" | grep -q 'dev caravana-mesh' || die "no route $route through caravana-mesh"

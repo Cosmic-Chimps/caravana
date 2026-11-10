@@ -66,8 +66,9 @@ as the first server. Every app keeps answering, and every job, secret, token and
 
 **Acceptance**:
 1. Given a host installed by the release before this feature, with an app running, when the new
-   installer runs, then the app answers throughout, Nomad's raft address is the private one, Nomad's RPC
-   uses TLS, and Servers lists the host as ready.
+   installer runs, then the app keeps answering (a copy whose network Nomad can't verify after its
+   restart is replaced, which is a few seconds for an app with one copy: research L17), Nomad's raft
+   address is the private one, Nomad's RPC uses TLS, and Servers lists the host as ready.
 2. Given a rerun, then nothing changes.
 3. Given a host that hasn't been rerun (or a dev setup with no private network), then Servers lists what
    Nomad knows and Add server says to run the installer again first; nothing else in the console changes.
@@ -164,7 +165,9 @@ the other servers drop it as a peer. A server that is running can't be removed h
 
 - **NFR-001** No new runtime dependency and no new Go module (`golang.org/x/crypto` is already direct).
   `wireguard-tools` is a package the installer adds.
-- **NFR-002** A converted single server needs at most two Nomad restarts, and apps answer throughout.
+- **NFR-002** A converted single server needs at most two Nomad restarts. Apps keep answering, but for a
+  copy made before the installer's veth link file and replaced at the restart (research L17): at most
+  ten seconds for an app with one copy.
 - **NFR-003** A join, from the command to `ready`, takes under five minutes on a fresh VM with a normal
   connection, most of it package installs.
 

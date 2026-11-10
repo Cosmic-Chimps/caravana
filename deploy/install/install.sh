@@ -478,6 +478,21 @@ net.bridge.bridge-nf-call-iptables = 1
 EOF
     sysctl --system >/dev/null
   fi
+
+  # A container's interface keeps the MAC address it was made with. systemd's default link policy
+  # gives a new veth a "persistent" address a moment after the network plugin made it and wrote its
+  # address down. Nomad checks each copy's network when its agent restarts, finds an address it
+  # doesn't know ("Mac doesn't match") and replaces the copy (research L17). Copies made before
+  # this file existed can still be replaced by the next Nomad restart; copies made after can't.
+  if write_if_changed /etc/systemd/network/10-caravana-veth.link 0644 veth-mac <<'EOF'; then
+[Match]
+Driver=veth
+
+[Link]
+MACAddressPolicy=none
+EOF
+    udevadm control --reload
+  fi
 }
 
 # private_interface_first: caravana0 on the first server, made by systemd-networkd as before. The
@@ -643,6 +658,8 @@ nomad_first() {
   if [ "$converting" = 1 ]; then
     echo "  Nomad restarts twice, once only: this host's Nomad moves to the private network (jobs, tokens and"
     echo "  variables are kept, apps keep running). The old config is kept as $STATE/nomad.hcl.before-mesh"
+    echo "  A copy whose network Nomad can't verify after its restart is replaced: an app with one copy"
+    echo "  may not answer for a few seconds."
   fi
   if restart_nomad_if_changed; then
     wait_leader 120 || no_leader "after it was restarted with the private network's config"

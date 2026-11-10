@@ -162,6 +162,8 @@ copies_json() { api -fsS "https://$DOMAIN/v1/apps/$1/copies"; }
 healthy_copies() { [ "$(copies_json "$1" | jsonq 'len([c for c in d["copies"] if c["status"]=="healthy"])')" = "$2" ]; }
 # copy_node APP SERVICE: the node of the service's healthy copy.
 copy_node() { copies_json "$1" | jsonq "[c['node'] for c in d['copies'] if c['service']=='$2' and c['status']=='healthy'][0]" 2>/dev/null; }
+# nomad_has_leader N: the Nomad on VM N knows a leader.
+nomad_has_leader() { [ -n "$(vm "$1" curl -fsS http://127.0.0.1:4646/v1/status/leader 2>/dev/null | tr -d '"')" ]; }
 # voters: how many raft voters Nomad lists, asked on VM N.
 voters() { nomad_on "$1" operator raft list-peers | awk 'NR > 1 && $(NF - 1) == "true"' | wc -l | tr -d ' '; }
 voters_are() { [ "$(voters "$1")" = "$2" ]; }
@@ -254,7 +256,24 @@ main() {
   wait "$watcher" || true
   [ "$INSTALL_CODE" = 0 ] || die "the conversion exited $INSTALL_CODE:\n$INSTALL_OUT"
   grep -q 'Nomad restarts twice, once only' <<<"$INSTALL_OUT" || die "the installer should say Nomad restarts twice, once:\n$INSTALL_OUT"
-  [ "$(tail -1 "$WORK/conv-fails")" = 0 ] || die "conv.test failed $(tail -1 "$WORK/conv-fails") times during the conversion:\n$(cat "$WORK/conv-fails")"
+  # The old release made conv's copy without the installer's veth link file, so systemd may have
+  # rewritten its interface's MAC after the network plugin wrote it down. Nomad then replaces the copy
+  # at its first restart (research L17): a few seconds without an answer, never more than ten.
+  local conv_failed
+  conv_failed="$(tail -1 "$WORK/conv-fails")"
+  echo "    $conv_failed calls failed during the conversion"
+  [ "$conv_failed" -le 20 ] || die "conv.test failed $conv_failed times during the conversion (at most 20, ten seconds, may):\n$(cat "$WORK/conv-fails")"
+  # From here on a Nomad restart replaces nothing: the link file is there, and whatever copy runs now
+  # passed Nomad's check or was made after it.
+  vm 1 test -f /etc/systemd/network/10-caravana-veth.link || die "the installer didn't write the veth link file"
+  wait_for 120 "conv.test should answer after the conversion" app_answers conv.test
+  local conv_copy
+  conv_copy="$(vm 1 sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' conv)"
+  vm 1 sudo systemctl restart nomad
+  wait_for 120 "Nomad should have a leader after a plain restart" nomad_has_leader 1
+  sleep 10
+  [ "$(vm 1 sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' conv)" = "$conv_copy" ] ||
+    die "a plain Nomad restart replaced conv's copy $conv_copy:\n$(vm 1 sudo caravana-nomad job allocs conv)"
   vm 1 sudo caravana-nomad operator raft list-peers | grep -Eq '10\.98\.0\.1:4647 +leader' || die "raft should list 10.98.0.1:4647 after the conversion"
   vm 1 sudo test -f "$STATE/raft-mesh" || die "no raft-mesh marker after the conversion"
   vm 1 sudo test -f "$STATE/nomad.hcl.before-mesh" || die "the old nomad.hcl wasn't kept"
