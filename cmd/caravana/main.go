@@ -95,6 +95,13 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 		fmt.Fprintln(stdout, version)
 		return 0
 	}
+	// The configuration loader ignores positional arguments, so a mistyped command ("caravana servr
+	// adopt-first") would start a whole second server. A first argument that isn't a flag and isn't
+	// one of the commands above is a usage error.
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		fmt.Fprintf(stderr, "caravana: unknown command %q\n\n%s", args[0], rootUsage)
+		return 2
+	}
 	log := slog.New(slog.NewJSONHandler(stderr, nil))
 
 	cfg, err := config.Load(args, getenv)
