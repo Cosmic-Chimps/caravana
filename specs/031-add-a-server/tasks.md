@@ -128,7 +128,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 - [x] T030 `install.sh --join`, `--leave`, and `--uninstall`'s additions.
 - [x] T031 `tools/release.sh`: the host files (node.md §8). `deploy/install/README.md`: "What runs
   where" for both roles, "Adding a server", "Taking a server out", the ranges and the port to open.
-- [ ] T032 `deploy/dev/install-test.sh`: the single-VM run still passes with the new first-server steps
+- [x] T032 `deploy/dev/install-test.sh`: the single-VM run still passes with the new first-server steps
   (its checks that read `nomad.hcl` or the Traefik job follow), plus: the mesh interface is up, Nomad's
   RPC answers on `10.98.0.1:4647` with TLS, `GET /v1/servers` lists one ready server, `ca-key.pem` is
   gone, and a rerun changes nothing.
@@ -164,7 +164,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 - [x] T044 `docs/plan.md` (Phase 3's first row built, what changed from the row's text, the gate's first
   form), `CLAUDE.md` › "Where we are", `changelog.d/031-add-a-server.md` (Added, Changed, Upgrade: rerun
   the installer; Nomad restarts twice once; open UDP 51820 between servers), `docs/vision.md` unchanged.
-- [ ] T045 Every check of `CLAUDE.md` › Commands, `go test -race ./...` (`-timeout 30m`), and
+- [x] T045 Every check of `CLAUDE.md` › Commands, `go test -race ./...` (`-timeout 30m`), and
   `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab`.
 
 ## Quickstart: `deploy/dev/cluster-test.sh` (T033)
@@ -222,3 +222,13 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
 was lost. Runs 7 to 11 each failed one step and found a real problem: L14 (a lost leader took five
 minutes to notice), L16 (a server that left took the quorum with it, twice: the signal, then the
 installer's order), L17 (systemd rewrote a veth's MAC) and L18 (a healthy server called down).
+
+**The closing checks** (2026-11-10, on `e1b4ccb`; later commits change docs and lab tests only): the
+cluster test a second time (0 calls failed during the conversion, 10 while server 3 was lost),
+`install-test.sh`, `go test -race ./...`, and `TestConsoleLab` (33 steps, 26 minutes). The console lab
+needed four of its steps brought up to date first. Three had been failing on `main` (`console-compose-
+file-edit` since 021's ruling 12, `console-backup-daily` since 029, `console-ops-updates` since 030),
+which stopped the lab before every step after them; one was this feature's (`console-ops-server` expected
+`/ops/servers` to redirect). `console-schedules` showed "No output." for a one-second run once in three
+runs; the cause wasn't found and this feature doesn't touch schedules.
+

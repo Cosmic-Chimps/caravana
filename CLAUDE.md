@@ -1094,7 +1094,10 @@ installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima 
   and `--leave`. It passed on 2026-11-10 (0 calls failed during the conversion, 11 while a server was lost);
   the five runs before it each failed one step and found a real problem (L14, L16, L17, L18). It takes 20
   to 40 minutes and keeps its VMs with `KEEP=1`. `TestConsoleLab` has a step `console-servers` (the lab is
-  one node with no mesh: listed as unmanaged, and Add a server says to run the installer first).
+  one node with no mesh: listed as unmanaged, and Add a server says to run the installer first). The whole
+  `TestConsoleLab` passed on 2026-11-10 (33 steps, 26 minutes), after three steps that had been failing on
+  `main` since 021's ruling 12, 029 and 030 were brought up to date; the lab stops at its first failure, so
+  a stale step hides every step after it.
 - Not in 031: moving work off a live server, a proxy on every server, shared certificates, updating joined
   servers from the console, reading their OS updates, SSH as a way to add a server, Caravana's own high
   availability (its data is one SQLite file on the first server).
