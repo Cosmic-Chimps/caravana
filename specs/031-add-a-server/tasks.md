@@ -133,7 +133,7 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   RPC answers on `10.98.0.1:4647` with TLS, `GET /v1/servers` lists one ready server, `ca-key.pem` is
   gone, and a rerun changes nothing.
 - [ ] T033 `deploy/dev/cluster-test.sh` (quickstart below).
-- [ ] T034 shellcheck (the repository's Docker way: `docker run --rm -v "$PWD:/mnt" koalaman/shellcheck
+- [x] T034 shellcheck (the repository's Docker way: `docker run --rm -v "$PWD:/mnt" koalaman/shellcheck
   …`) over the changed scripts.
 
 ## Phase E: the console
