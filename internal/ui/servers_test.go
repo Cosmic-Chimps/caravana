@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
@@ -46,6 +48,8 @@ func clusterEnv(t *testing.T, sampled bool) *consoleEnv {
 		svc.SetMetricsSampleGap(time.Hour)
 		n.SetNode("node-1", "hel-1", "ready", deploytest.LabNodeResources(), nil)
 		n.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
+		// A real node is in the pool "default" (the room is counted over the servers of that pool).
+		n.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
 		if sampled {
 			svc.SetMetricsSampleGap(500 * time.Millisecond)
 			svc.SetHostRoot(hostos.Dir("../hostos/testdata/host"))
@@ -150,16 +154,20 @@ func (e *consoleEnv) readyServerInPool(t *testing.T, name, pool string) (service
 // sample stores a host sample for a Nomad node: memory and CPU used, reserved and total, and one disk.
 func (e *consoleEnv) sample(t *testing.T, nodeID string, memUsed, memReserved, memTotal, cpuUsed, cpuTotal, cores, diskUsed, diskTotal int64) {
 	t.Helper()
+	if err := e.writeSample(nodeID, memUsed, memReserved, memTotal, cpuUsed, cpuTotal, cores, diskUsed, diskTotal); err != nil {
+		t.Fatalf("write a sample: %v", err)
+	}
+}
+
+// writeSample is sample returning its error, for a goroutine (the stager rewrites its samples to keep them fresh).
+func (e *consoleEnv) writeSample(nodeID string, memUsed, memReserved, memTotal, cpuUsed, cpuTotal, cores, diskUsed, diskTotal int64) error {
 	at := time.Now().UTC().Truncate(time.Minute)
 	i64 := func(n int64) *int64 { return &n }
-	err := e.Store.WriteMetricsTick(context.Background(), store.MetricsTick{At: at, Minute: store.MetricsRows{
+	return e.Store.WriteMetricsTick(context.Background(), store.MetricsTick{At: at, Minute: store.MetricsRows{
 		Hosts: []store.HostSample{{Node: nodeID, TS: at, MemoryUsedMB: i64(memUsed), MemoryReservedMB: i64(memReserved), MemoryTotalMB: i64(memTotal),
 			CPUUsedMHz: i64(cpuUsed), CPUReservedMHz: i64(cpuUsed), CPUTotalMHz: i64(cpuTotal), CPUCores: i64(cores)}},
 		Disks: []store.DiskSample{{Node: nodeID, TS: at, Mount: "/", Holds: "nomad,docker", UsedMB: diskUsed, TotalMB: diskTotal, FreeMB: diskTotal - diskUsed}},
 	}})
-	if err != nil {
-		t.Fatalf("write a sample: %v", err)
-	}
 }
 
 // threeServers is serversEnv with fsn-1 and fsn-2 ready and every server sampled.
@@ -421,8 +429,9 @@ func TestServersListDownUnmanagedAndNotTakingWork(t *testing.T) {
 	if r := rowOfServer(t, body, "fsn-2"); !strings.Contains(text(r), "not taking work") || !strings.Contains(r, "cv-pill-idle cv-pill-quiet") {
 		t.Errorf("an ineligible server doesn't say it takes no work:\n%s", r)
 	}
-	// A Nomad node Caravana doesn't manage is a normal row with Nomad's state, and says why it is different.
-	if r := rowOfServer(t, body, "lab"); !strings.Contains(text(r), "Not set up for a cluster yet.") || !strings.Contains(text(r), "ready") {
+	// A Nomad node Caravana doesn't manage has the idle pill "not set up" (never "ready"), and says why.
+	if r := rowOfServer(t, body, "lab"); !strings.Contains(text(r), "Not set up for a cluster yet.") || !strings.Contains(text(r), "not set up") ||
+		!strings.Contains(r, "cv-pill-idle cv-pill-quiet") || strings.Contains(text(r), " ready ") {
 		t.Errorf("the unmanaged node's row:\n%s", r)
 	}
 }
@@ -695,7 +704,7 @@ func TestJoinChecksOpenInTurn(t *testing.T) {
 
 	lines := func(body string) []string {
 		var out []string
-		for _, m := range regexp.MustCompile(`<p class="cv-jline cv-jtone-(\w+)"><span class="cv-mark cv-mark-(\w+)" aria-hidden="true"></span><span>([^<]*)</span>`).FindAllStringSubmatch(body, -1) {
+		for _, m := range regexp.MustCompile(`<p class="cv-jline cv-jtone-(\w+)"><span class="cv-mark cv-mark-(\w+)" aria-hidden="true"></span><span class="cv-jtext"><span>([^<]*)</span>`).FindAllStringSubmatch(body, -1) {
 			out = append(out, m[1]+"/"+m[2]+": "+html.UnescapeString(m[3]))
 		}
 		return out
@@ -839,7 +848,7 @@ func TestServerPageOfTheFirstServer(t *testing.T) {
 	_, body := e.get(t, "/ops/servers/hel-1")
 	words := text(body)
 	for _, want := range []string{"runs the console", "public traffic enters here", "runs the scheduler", "Recent on this server", "private address 10.98.0.1",
-		"address 203.0.113.4", "joined", "reboot needed", "4 vCPU · 1.9 GB · Ubuntu 24.04"} {
+		"address 203.0.113.4", "joined", "reboot needed", "2 vCPU · 1.9 GB · Ubuntu 24.04"} {
 		if !strings.Contains(words, want) {
 			t.Errorf("hel-1's page lacks %q:\n%s", want, words)
 		}
@@ -899,9 +908,10 @@ func TestServerPageOfADownServerAndItsRemoval(t *testing.T) {
 	resp, confirm := e.get(t, "/ops/servers/fsn-1/remove")
 	cw := text(confirm)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(cw, "Remove fsn-1?") || !strings.Contains(cw, "Its place in the cluster and its token are deleted.") ||
-		!strings.Contains(cw, "Nothing on the server is touched.") ||
+		!strings.Contains(cw, "The other servers stop talking to it within a minute.") || strings.Contains(cw, "sync") ||
+		!strings.Contains(cw, "Apps with a volume on fsn-1 can't start on another server: their data is on fsn-1's disk, and removing it here deletes nothing there.") ||
 		!strings.Contains(confirm, `<form method="post" action="/ops/servers/fsn-1/remove"`) ||
-		!strings.Contains(confirm, `<button type="submit" class="cv-btn cv-btn-primary">Remove fsn-1</button>`) ||
+		!strings.Contains(confirm, `<button type="submit" class="cv-btn cv-btn-danger">Remove fsn-1</button>`) ||
 		!strings.Contains(confirm, `<a href="/ops/servers/fsn-1" class="cv-btn cv-btn-secondary">Cancel</a>`) {
 		t.Errorf("the confirmation = %d:\n%s", resp.StatusCode, cw)
 	}
@@ -1201,18 +1211,30 @@ func coHead(t *testing.T, body string) string {
 	return html.UnescapeString(m[1])
 }
 
-// Ruling 3: a server that called in and isn't ready has its page with the line that says so and a way out; the
-// post removes it. The service refuses a server Nomad runs, and Nomad being out of reach: the page is drawn again
-// with the reason and its status, never a redirect.
+// Ruling 3 and critique rulings 6, 7, 8, 9: a server that called in and isn't ready has its own page, titled "<name> is
+// joining", with the line that says so and a link to the same confirmation a down server has. The confirmation's post
+// removes it; the service refuses a server Nomad has running, and Nomad being out of reach: the confirmation is drawn
+// again with the reason and its status, never a redirect.
 func TestJoiningServerCanBeRemoved(t *testing.T) {
 	e := serversEnv(t)
 	j, _ := e.join(t, "fsn-1") // called in; Nomad has no node for it
 	path := "/ops/servers/joins/" + j.Server.ID
-	_, body := e.get(t, path)
+	resp, body := e.get(t, path)
 	words := text(body)
-	if !regexp.MustCompile(`fsn-1 called in .*\. If it never gets ready, remove it and make a new command\.`).MatchString(words) ||
-		!strings.Contains(body, `action="`+path+`/cancel"`) || !strings.Contains(body, ">Remove this server</button>") {
-		t.Errorf("the joining server's page:\n%s", words)
+	if resp.StatusCode != http.StatusOK || h1Text(t, body) != "fsn-1 is joining" || !strings.Contains(words, "Servers /fsn-1 is joining") ||
+		strings.Contains(words, "Any machine with Ubuntu") {
+		t.Errorf("the joining page's title, crumbs and lede:\n%s", words)
+	}
+	// One phrase in the sentence's own type: only the name is mono; the relative time isn't a mono value.
+	if !strings.Contains(body, `<p class="cv-jrun"><span class="cv-inline-mono text-fg-1">fsn-1</span> called in <time datetime="`) ||
+		regexp.MustCompile(`<time[^>]*class="cv-data"`).MatchString(body) ||
+		!regexp.MustCompile(`fsn-1 called in .*\. If it never gets ready, remove it and make a new command\.`).MatchString(words) {
+		t.Errorf("the 'called in' line:\n%s", body)
+	}
+	// The way out is a link to the confirmation, not a post of its own.
+	if !strings.Contains(body, `<a href="/ops/servers/fsn-1/remove" class="cv-btn cv-btn-secondary cv-btn-sm">Remove this server</a>`) ||
+		strings.Contains(body, `action="`+path+`/cancel"`) {
+		t.Errorf("the joining server's way out:\n%s", words)
 	}
 	if strings.Contains(words, "The command was shown once") || strings.Contains(words, "Cancel this join") {
 		t.Errorf("a server that called in still has the waiting page's lines:\n%s", words)
@@ -1223,26 +1245,34 @@ func TestJoiningServerCanBeRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, wait := e.get(t, "/ops/servers/joins/"+w.Server.ID)
-	if !strings.Contains(text(wait), "The command was shown once.") || strings.Contains(wait, "Remove this server") {
+	if !strings.Contains(text(wait), "The command was shown once.") || strings.Contains(wait, "Remove this server") || h1Text(t, wait) != "Add a server" {
 		t.Errorf("the waiting page changed:\n%s", text(wait))
 	}
 
-	// Nomad out of reach: 502, the join's page, the sentence, nothing removed.
+	// The confirmation is the down server's: two sentences on data and on the others, the danger button.
+	resp, confirm := e.get(t, "/ops/servers/fsn-1/remove")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(confirm, `<button type="submit" class="cv-btn cv-btn-danger">Remove fsn-1</button>`) ||
+		!strings.Contains(text(confirm), "removing it here deletes nothing there.") {
+		t.Errorf("the confirmation of a joining server = %d:\n%s", resp.StatusCode, text(confirm))
+	}
+
+	// Nomad out of reach: 502, the confirmation drawn again with the sentence, nothing removed.
 	e.Nomad.Down()
-	resp, refused := e.postForm(t, path+"/cancel", url.Values{})
+	resp, refused := e.postForm(t, "/ops/servers/fsn-1/remove", url.Values{})
 	if resp.StatusCode != http.StatusBadGateway || resp.Header.Get("Location") != "" ||
-		!strings.Contains(text(refused), "Nomad can't be reached right now, so caravana can't tell whether fsn-1 is running. Try again in a moment.") ||
-		!strings.Contains(refused, "Remove this server") {
+		!strings.Contains(text(refused), "Nomad can't be reached right now, so caravana can't tell whether fsn-1 is running. Try again in a moment.") {
 		t.Errorf("POST with Nomad down = %d %q:\n%s", resp.StatusCode, resp.Header.Get("Location"), text(refused))
 	}
 	e.Nomad.Up()
 
-	// Nomad has a node that runs: 409, the sentence, the page, nothing removed.
+	// Nomad has a node that runs: 409, the sentence, nothing removed, and the confirmation doesn't offer it.
 	e.Nomad.AddNode("node-2", "fsn-1", "ready", "10.99.0.2")
-	resp, refused = e.postForm(t, path+"/cancel", url.Values{})
-	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(refused), "fsn-1 is running. Stop it, or run the installer with --leave on it, then remove it.") ||
-		!strings.Contains(refused, "Remove this server") {
+	resp, refused = e.postForm(t, "/ops/servers/fsn-1/remove", url.Values{})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(refused), "fsn-1 is running. Stop it, or run the installer with --leave on it, then remove it.") {
 		t.Errorf("POST with a running node = %d:\n%s", resp.StatusCode, text(refused))
+	}
+	if resp, again := e.get(t, "/ops/servers/fsn-1/remove"); resp.StatusCode != http.StatusConflict || strings.Contains(again, `action="/ops/servers/fsn-1/remove"`) {
+		t.Errorf("the confirmation of a server that runs = %d", resp.StatusCode)
 	}
 	if _, err := e.Svc.Server(context.Background(), "fsn-1"); err != nil {
 		t.Errorf("a refused removal removed it: %v", err)
@@ -1250,7 +1280,7 @@ func TestJoiningServerCanBeRemoved(t *testing.T) {
 
 	// The node is gone: the post removes the server and goes to the list.
 	e.Nomad.RemoveNode("node-2")
-	resp, _ = e.postForm(t, path+"/cancel", url.Values{})
+	resp, _ = e.postForm(t, "/ops/servers/fsn-1/remove", url.Values{})
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/ops/servers" {
 		t.Errorf("POST with no node = %d %q, want 303 to /ops/servers", resp.StatusCode, resp.Header.Get("Location"))
 	}
@@ -1380,5 +1410,296 @@ func TestOSItemsNameTheServer(t *testing.T) {
 	_, page = e.get(t, "/ops/servers/hel-1")
 	if !strings.Contains(page, `<span class="cv-inline-mono text-fg-1 cv-nowrap">hel-1</span> needs a reboot`) {
 		t.Errorf("the name isn't mono:\n%s", page)
+	}
+}
+
+// ---- the critique's rulings (2026-11-10) --------------------------------------------------------
+
+// cssOf is the stylesheet with its white space taken out, so a rule is found whatever its spacing.
+func cssOf(t *testing.T) string {
+	t.Helper()
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.ReplaceAll(string(css), " ", "")
+}
+
+// Critique 1: with several servers the stats line's cpu and mem and the room's "already at N%" are the cluster's: the
+// sums of used over the sums of totals of the ready servers. With one server they are that server's own.
+func TestStatsAndRoomAreTheClusters(t *testing.T) {
+	e := threeServers(t)
+	e.sample(t, "node-2", 1700, 600, 1958, 3000, 4000, 2, 8000, 19000) // fsn-1 is busy; hel-1 is not
+	_, body := e.get(t, "/ops")
+	// (480 + 1700 + 100) / (3 x 1958) = 39% of the memory; (60 + 3000 + 20) / 12000 = 26% of the CPU. hel-1 alone is 25% and 2%.
+	stats := strings.Join(opsStatsOfPage(body), " · ")
+	if !strings.Contains(stats, "mem 39%") || !strings.Contains(stats, "cpu 26%") || !strings.Contains(stats, "3 servers") {
+		t.Errorf("the stats line = %q, want the cluster's mem 39%% and cpu 26%%", stats)
+	}
+	// The room sentence says it from 85%: all three servers' memory at 1700 of 1958 is 87%, though hel-1 alone is at 24%.
+	series, err := e.Store.EnsureSeries(context.Background(), "whoami", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Minute)
+	i64 := func(n int64) *int64 { return &n }
+	if err := e.Store.WriteMetricsTick(context.Background(), store.MetricsTick{At: at, Minute: store.MetricsRows{Samples: []store.MetricsSample{
+		{Series: series, TS: at, Minutes: 1, MemoryMB: i64(100), MemoryReservedMB: i64(8), CPUMHz: i64(40), CPUReservedMHz: i64(10), Copies: i64(2)}}}}); err != nil {
+		t.Fatal(err)
+	}
+	e.seedStandard(t)
+	for _, n := range []string{"node-1", "node-2", "node-3"} {
+		e.sample(t, n, 1700, 600, 1958, 60, 4000, 2, 6000, 19000)
+	}
+	_, over := e.get(t, "/ops")
+	if !strings.Contains(text(over), "but memory in use is already at 86%.") {
+		t.Errorf("the room sentence doesn't say the cluster's memory is at 86%%:\n%s", text(over))
+	}
+	// One server: nothing changes. Its percentages are its own.
+	one := serversEnv(t)
+	one.sample(t, "node-1", 480, 144, 1958, 60, 4000, 2, 6000, 19000)
+	_, page := one.get(t, "/ops")
+	if got := strings.Join(opsStatsOfPage(page), " · "); !strings.Contains(got, "mem 25%") || !strings.Contains(got, "cpu 2%") || !strings.Contains(got, "1 server") {
+		t.Errorf("one server's stats line = %q", got)
+	}
+}
+
+// opsStatsOfPage reads the items of the Overview's stats line.
+func opsStatsOfPage(body string) []string {
+	var out []string
+	for _, m := range regexp.MustCompile(`<span class="cv-opsstat">([^<]*)</span>`).FindAllStringSubmatch(body, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// Critique 2: the command's minutes are the service's time against the page's, and a fresh command never says more
+// than the hour it works. (The 105 minutes of the staged review were a console whose clock stood still for 45 minutes
+// while the service's ran: the stager keeps one clock now.)
+func TestFreshJoinNeverSaysMoreThanAnHour(t *testing.T) {
+	e := serversEnv(t)
+	if _, err := e.Svc.CreateJoin(context.Background(), "fsn-9", "", "https://console.test"); err != nil {
+		t.Fatal(err)
+	}
+	_, body := e.get(t, "/ops/servers")
+	m := regexp.MustCompile(`the command works for (\d+) more minutes`).FindStringSubmatch(text(body))
+	if m == nil {
+		t.Fatalf("no minutes in:\n%s", text(body))
+	}
+	if n, _ := strconv.Atoi(m[1]); n < 1 || n > 60 {
+		t.Errorf("a fresh command works for %d more minutes, want 60 at most", n)
+	}
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		left time.Duration
+		want string
+	}{{time.Hour, "60 more minutes"}, {43*time.Minute + 20*time.Second, "43 more minutes"}, {90 * time.Second, "1 more minute"}, {20 * time.Second, "under a minute more"}} {
+		if got := minutesLeft(now, now.Add(tc.left)); got != tc.want {
+			t.Errorf("minutesLeft(%v) = %q, want %q", tc.left, got, tc.want)
+		}
+	}
+}
+
+// Critique 3: a down server's "last seen" is a clock time (the exact one in its title), never "just now" beside "down since".
+func TestDownServerLastSeenIsAClockTime(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.SetNodeStatusOf("node-2", "down")
+	_, body := e.get(t, "/ops/servers/fsn-1")
+	facts := regionBetween(t, body, `id="srv-facts-title"`, "</section>")
+	if !regexp.MustCompile(`last seen</dt>\s*<dd class="cv-srvstrong"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span> <time class="cv-clock" datetime="[^"]*" title="\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC"[^>]*>\d\d:\d\d UTC</time>`).MatchString(facts) ||
+		strings.Contains(text(facts), "just now") && strings.Contains(text(facts), "last seen just now") {
+		t.Errorf("a down server's last seen:\n%s", facts)
+	}
+	// A server that runs keeps the relative words.
+	_, up := e.get(t, "/ops/servers/fsn-2")
+	if !strings.Contains(text(regionBetween(t, up, `id="srv-facts-title"`, "</section>")), "last seen just now") {
+		t.Errorf("a running server's last seen isn't relative")
+	}
+}
+
+// Critique 5: one vCPU number per server: the spec line and the cpu fact use the cores the meters were counted with.
+func TestOneNumberOfVCPU(t *testing.T) {
+	n := &service.HostNode{NodeFacts: deploy.NodeFacts{Cores: 4}}
+	h := service.HostView{CPU: service.HostCPU{Cores: i64(2)}}
+	if got := withSampleCores(n, h); got.Cores != 2 || n.Cores != 4 {
+		t.Errorf("cores = %d (the node's own %d), want the sample's 2 and the original untouched", got.Cores, n.Cores)
+	}
+	if got := withSampleCores(n, service.HostView{}); got.Cores != 4 {
+		t.Errorf("with no sample the node's own cores: %d", got.Cores)
+	}
+	// The server Caravana runs on: its page and its list row say the same number, whatever the node's attributes say.
+	e := sampledServersEnv(t) // the fake node's attributes say 4 cores, its resources 2
+	_, page := e.get(t, "/ops/servers/hel-1")
+	_, list := e.get(t, "/ops/servers")
+	if !strings.Contains(text(page), "2 vCPU ·") || regexp.MustCompile(`(^|[^.\d])4 vCPU`).MatchString(text(page)) || strings.Contains(text(page), "4 cores") ||
+		!strings.Contains(text(rowOfServer(t, list, "hel-1")), "2 vCPU") {
+		t.Errorf("the page and the list disagree on the vCPU:\n%s", text(page))
+	}
+}
+
+// Critique 9, 19: the join's first line before the command has no mark (it isn't a check); an open network check says what to look at.
+func TestChecksNotesAndMarks(t *testing.T) {
+	e := serversEnv(t)
+	_, before := e.get(t, "/ops/servers/new")
+	if !strings.Contains(before, `<p class="cv-jline cv-jintro cv-jtone-later"><span>Make the command to start.</span></p>`) {
+		t.Errorf("the idle first line has a mark or the wrong tone:\n%s", regionBetween(t, before, `id="join-checks"`, "</aside>"))
+	}
+	j, ans := e.join(t, "fsn-1")
+	note := `<span class="cv-jnote">Check that UDP port 51820 is open between the servers.</span>`
+	_, body := e.get(t, "/ops/servers/joins/"+j.Server.ID) // the network check is the open one
+	if !strings.Contains(body, note) {
+		t.Errorf("an open network check has no note:\n%s", text(body))
+	}
+	e.sync(t, ans.NodeToken, healthy(1))
+	_, body = e.get(t, "/ops/servers/joins/"+j.Server.ID) // the network passes: the ready check is the open one
+	if strings.Contains(body, "cv-jnote") {
+		t.Errorf("a check other than the network has the network's note")
+	}
+}
+
+// Critique 11: each Cancel in the list says whose it is.
+func TestCancelButtonsSayWhoseTheyAre(t *testing.T) {
+	e := serversEnv(t)
+	if _, err := e.Svc.CreateJoin(context.Background(), "fsn-9", "", "https://console.test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Svc.CreateJoin(context.Background(), "", "", "https://console.test"); err != nil {
+		t.Fatal(err)
+	}
+	_, body := e.get(t, "/ops/servers")
+	for _, want := range []string{`aria-label="Cancel the join of fsn-9">Cancel</button>`, `aria-label="Cancel the join of the server that hasn&#39;t called in">Cancel</button>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the list lacks %q", want)
+		}
+	}
+}
+
+// Critique 12: a server whose disk is filling says so on its own page, in the needs-you list's words.
+func TestDiskFillingBannerOnTheServersPage(t *testing.T) {
+	e := threeServers(t)
+	e.sample(t, "node-3", 100, 0, 1958, 20, 4000, 2, 17000, 19000) // fsn-2: 89%
+	for _, name := range []string{"fsn-2"} {
+		_, body := e.get(t, "/ops/servers/"+name)
+		if !strings.Contains(text(body), "The disk at / on fsn-2 is 89% full: 2.0 GB left.") {
+			t.Errorf("%s's page has no banner for its disk:\n%s", name, text(body))
+		}
+	}
+	// Another server's page doesn't have it.
+	if _, other := e.get(t, "/ops/servers/fsn-1"); strings.Contains(text(other), "The disk at") {
+		t.Errorf("fsn-1's page has fsn-2's disk")
+	}
+}
+
+// Critique 13: the Overview's panel of a down server has no meters: one line says when its numbers were last read.
+func TestOverviewPanelOfADownServer(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.SetNodeStatusOf("node-2", "down")
+	_, body := e.get(t, "/ops")
+	panels := strings.Split(regionOf(t, body, `id="ops-server"`), `class="cv-panel cv-node"`)
+	if len(panels) != 4 {
+		t.Fatalf("%d panels", len(panels)-1)
+	}
+	down := panels[2] // index order: hel-1, fsn-1, fsn-2
+	if !strings.Contains(down, "fsn-1") || strings.Contains(down, "cv-node-meters") || !regexp.MustCompile(`fsn-1&#39;s numbers were last read at \d\d:\d\d UTC\.`).MatchString(down) {
+		t.Errorf("the down server's panel:\n%s", text(down))
+	}
+	if !strings.Contains(panels[1], "cv-node-meters") || !strings.Contains(panels[3], "cv-node-meters") {
+		t.Errorf("a server that runs lost its meters")
+	}
+}
+
+// Critique 22: a down server's page doesn't say where updates are read.
+func TestDownServerHasNoReadOnLine(t *testing.T) {
+	e := threeServers(t)
+	_, up := e.get(t, "/ops/servers/fsn-1")
+	e.Nomad.SetNodeStatusOf("node-2", "down")
+	_, down := e.get(t, "/ops/servers/fsn-1")
+	if !strings.Contains(up, "cv-srvreadon") || strings.Contains(down, "cv-srvreadon") || strings.Contains(down, "Recent on this server") {
+		t.Errorf("read-on line: up %v, down %v (a down server has neither it nor a Recent list)", strings.Contains(up, "cv-srvreadon"), strings.Contains(down, "cv-srvreadon"))
+	}
+}
+
+// ruleOf is the declarations of the stylesheet's rules for selector (all of them, joined), in cssOf's form.
+func ruleOf(css, selector string) string {
+	sel := strings.ReplaceAll(selector, " ", "") + "{"
+	var out []string
+	for rest := css; ; {
+		i := strings.Index(rest, sel)
+		if i < 0 {
+			break
+		}
+		// A rule starts at the start of the sheet or right after a closing brace or semicolon.
+		if i == 0 || strings.ContainsRune("}{;", rune(rest[i-1])) {
+			body := rest[i+len(sel):]
+			if j := strings.Index(body, "}"); j >= 0 {
+				out = append(out, body[:j])
+			}
+		}
+		rest = rest[i+len(sel):]
+	}
+	return strings.Join(out, ";")
+}
+
+// The stylesheet carries the rulings that are a matter of CSS: what each looks like is the designer's to check; that the rule
+// is there, and says what the ruling says, is the test's. (Ruling 15's arithmetic is in the next test.)
+func TestCriticRulingsInTheStylesheet(t *testing.T) {
+	css := cssOf(t)
+	for name, c := range map[string]struct{ selector, want string }{
+		"10 the read-on link is underlined":       {".cv-srvreadon a", "text-decoration:underline"},
+		"14 a server's name never breaks":         {".cv-nodegrid .cv-node-name", "white-space:nowrap"},
+		"14 the pool tag wraps under it":          {".cv-nodegrid .cv-node-head", "flex-wrap:wrap"},
+		"14 All servers stays on the head's line": {".cv-mnsec-spread", "flex-wrap:nowrap"},
+		"15 the readout has one width":            {".cv-slmeter-read", "width:112px"},
+		"17 the command clears the Copy button":   {".cv-jcmd", "padding:16px80px16px18px"},
+		"23 the panels of a row have one height":  {".cv-nodegrid", "align-items:stretch"},
+	} {
+		if got := ruleOf(css, c.selector); !strings.Contains(got, c.want) {
+			t.Errorf("ruling %s: the rule of %s is {%s}, want %q in it", name, c.selector, got, c.want)
+		}
+	}
+	// The grid of panels is three columns from 1200px, two from 800px, one below.
+	for _, want := range []string{`@media(min-width:800px){.cv-nodegrid{grid-template-columns:repeat(2,minmax(0,1fr))}}`,
+		`@media(min-width:1200px){.cv-nodegrid{grid-template-columns:repeat(3,minmax(0,1fr))}}`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("the stylesheet lacks %q", want)
+		}
+	}
+}
+
+// Critique 15: the meters line up down the list. The readout is a fixed 112px column, so a track's length is the column's
+// width less the label, the readout and two gaps, the same in every row. The arithmetic at the two widths the review used:
+//
+//	1440 wide: the content is 1440-248 (sidebar)-52 (padding) = 1140 inside the page; a row has 18px padding each side,
+//	  and its other columns take 200+120+100 and five 16px gaps; a meter column is (1140-36-500)/3 = 201px; its track is
+//	  201-32-112-2x6 = 45px, for cpu, mem and disk alike.
+//	500 wide: the rows stack under 1100px of room, a meter is the row's width (500-32 padding-36 = 432px): its track is
+//	  432-32-112-12 = 276px, the same for every row and every column.
+func TestListMetersLineUp(t *testing.T) {
+	css := cssOf(t)
+	if got := ruleOf(css, ".cv-slmeter"); !strings.Contains(got, "grid-template-columns:32pxminmax(24px,1fr)112px") {
+		t.Errorf("the meter's columns: {%s}", got)
+	}
+	if got := ruleOf(css, ".cv-slmeter-read"); !strings.Contains(got, "width:112px") {
+		t.Errorf("the readout's width: {%s}", got)
+	}
+	if !strings.Contains(css, `@containercvsrvs(max-width:1099.98px)`) {
+		t.Error("the rows don't stack under 1100px of room")
+	}
+	const readout = 112.0
+	meterColumn := (1140.0 - 36 - (200 + 120 + 100 + 5*16)) / 3
+	if track := meterColumn - 32 - readout - 12; track < 40 || track != 45 && (track < 44.9 || track > 45.8) {
+		t.Errorf("at 1440 the track is %.1fpx, want about 45", track)
+	}
+	// The widest readout, "16.6 / 18.6 GB" with the warning mark, fits the column: 14 mono characters of 12px (7.2px
+	// each) and the mark with its space (9px).
+	if widest := 14*7.2 + 9; widest > readout {
+		t.Errorf("the widest readout is %.1fpx, wider than its %vpx column", widest, readout)
+	}
+	// Every readout of a column has the same width in the markup: it is the one class.
+	e := threeServers(t)
+	e.sample(t, "node-3", 1900, 0, 1958, 20, 4000, 2, 17000, 19000)
+	_, body := e.get(t, "/ops/servers")
+	if n := strings.Count(body, `class="cv-slmeter-read`); n != 9 {
+		t.Errorf("%d readouts for three servers, want 9", n)
 	}
 }

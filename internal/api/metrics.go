@@ -357,6 +357,11 @@ type hostRoomJSON struct {
 	CPUMhz       *int64  `json:"cpuMhz"`
 	LimitedBy    *string `json:"limitedBy"`
 	FreeMemoryMB *int64  `json:"freeMemoryMb"`
+	// What the room is counted over: the ready servers' sums (a cluster of one: that server's own).
+	UsedMemoryMB  *int64 `json:"usedMemoryMb"`
+	TotalMemoryMB *int64 `json:"totalMemoryMb"`
+	UsedCPUMhz    *int64 `json:"usedCpuMhz"`
+	TotalCPUMhz   *int64 `json:"totalCpuMhz"`
 }
 
 type hostHistoryJSON struct {
@@ -417,6 +422,8 @@ func toHostJSON(h service.HostView) hostJSON {
 	}
 	if rm := h.Room; rm.Known {
 		out.Room.FreeMemoryMB = new(rm.FreeMemoryMB)
+		out.Room.UsedMemoryMB, out.Room.TotalMemoryMB = rm.MemoryUsedMB, rm.MemoryTotalMB
+		out.Room.UsedCPUMhz, out.Room.TotalCPUMhz = rm.CPUUsedMHz, rm.CPUTotalMHz
 		if rm.HasYardstick {
 			out.Room.Count = new(rm.Count)
 			out.Room.LikeApp, out.Room.LikeAppName = new(rm.LikeApp), new(rm.LikeAppName)

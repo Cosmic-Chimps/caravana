@@ -70,6 +70,8 @@ type joinView struct {
 	Waiting, Joining bool
 	CalledIn         when
 	Cancel           string
+	// RemoveHref is the confirmation page that takes a joining server out (the same as a down server's).
+	RemoveHref string
 	// Expires says when the command stops working.
 	Expires time.Time
 }
@@ -99,6 +101,8 @@ type joinLine struct {
 	Mark string
 	Tone string
 	Text string
+	// Note is a second line under an open check that says what to look at.
+	Note string
 }
 
 // joinReady is the ending: all four checks pass.
@@ -121,7 +125,7 @@ func (s *server) showAddServer(w http.ResponseWriter, r *http.Request, session s
 	if !view.Cluster.CanAdd {
 		page.Unavailable = s.unavailableOf(r, view.Cluster, nil)
 	}
-	page.Checks = joinChecks{Intro: &joinIntro{Mark: "idle", Text: "Make the command to start."}, Lines: joinLinesOf(nil)}
+	page.Checks = joinChecks{Intro: &joinIntro{Text: "Make the command to start."}, Lines: joinLinesOf(nil)}
 	s.drawAddServer(w, r, http.StatusOK, page)
 }
 
@@ -271,7 +275,7 @@ func (s *server) loadJoinPage(r *http.Request) (addServerPage, int, error) {
 	}
 	for _, sv := range view.Servers {
 		if sv.ID == id && sv.ID != "" && sv.Managed {
-			page.Join = joinViewOf(sv, "", "", false)
+			page.Join = joinViewOf(s.now().UTC(), sv, "", "", false)
 			page.Checks = joinChecksOf(s.now().UTC(), sv, view)
 			return page, http.StatusOK, nil
 		}
@@ -282,7 +286,7 @@ func (s *server) loadJoinPage(r *http.Request) (addServerPage, int, error) {
 
 // drawJoinAnswer draws the page of a join just made: the command, the facts and the live checks.
 func (s *server) drawJoinAnswer(w http.ResponseWriter, r *http.Request, page addServerPage, j service.ServerJoin) {
-	page.Join = joinViewOf(j.Server, j.Command, j.CommandNote, strings.Contains(j.Command, " --insecure"))
+	page.Join = joinViewOf(s.now().UTC(), j.Server, j.Command, j.CommandNote, strings.Contains(j.Command, " --insecure"))
 	page.Join.Expires = j.ExpiresAt
 	if view, err := s.svc.ListServers(r.Context()); err == nil {
 		page.Checks = joinChecksOf(s.now().UTC(), j.Server, view)
@@ -296,8 +300,11 @@ func (s *server) drawJoinAnswer(w http.ResponseWriter, r *http.Request, page add
 // script (a meta refresh of the join's own address, never of the POST).
 func (s *server) drawAddServer(w http.ResponseWriter, r *http.Request, status int, page addServerPage) {
 	title := "Add a server"
-	if page.Missing {
+	switch {
+	case page.Missing:
 		title = "Join not found"
+	case page.Join != nil && page.Join.Joining:
+		title = page.Join.Name + " is joining"
 	}
 	head, err := s.shellPage(r, title, navOpsServer, crumb{Label: "Servers", Href: "/ops/servers"}, crumb{Label: title})
 	if err != nil {
@@ -321,7 +328,7 @@ const joinRefreshSeconds = 10
 // ---- views ------------------------------------------------------------------------------------
 
 // joinViewOf is the join's facts. command is the join command, "" when it isn't shown.
-func joinViewOf(sv service.ServerView, command, note string, insecure bool) *joinView {
+func joinViewOf(now time.Time, sv service.ServerView, command, note string, insecure bool) *joinView {
 	v := &joinView{ID: sv.ID, Name: sv.Name, NoName: sv.Name == "", Pool: cmp.Or(sv.Pool, "default"), Note: note,
 		Insecure: insecure, Waiting: sv.State == "waiting", Joining: sv.State == "joining", Cancel: "/ops/servers/joins/" + url.PathEscape(sv.ID) + "/cancel", Expires: sv.ExpiresAt}
 	if v.NoName {
@@ -331,7 +338,8 @@ func joinViewOf(sv service.ServerView, command, note string, insecure bool) *joi
 		v.Command = formatJoinCommand(command)
 	}
 	if v.Joining && !sv.JoinedAt.IsZero() {
-		v.CalledIn = whenOf(time.Now().UTC(), &sv.JoinedAt, "")
+		v.CalledIn = whenOf(now, &sv.JoinedAt, "")
+		v.RemoveHref = "/ops/servers/" + url.PathEscape(sv.Name) + "/remove"
 	}
 	return v
 }
@@ -395,6 +403,9 @@ func joinLinesOf(checks []service.ServerCheck) []joinLine {
 				line = joinLine{Mark: "healthy", Tone: "done", Text: c.Detail}
 			case !open:
 				line = joinLine{Mark: "rolling", Tone: "work", Text: cmp.Or(c.Detail, words)}
+				if c.Name == "network" {
+					line.Note = "Check that UDP port " + strconv.Itoa(mesh.Port) + " is open between the servers."
+				}
 				open = true
 			default:
 				open = true

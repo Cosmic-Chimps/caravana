@@ -131,7 +131,7 @@ func TestOpsServerPage(t *testing.T) {
 	}
 	head := body[strings.Index(body, `id="srv-head"`):strings.Index(body, `id="srv-body"`)]
 	// The spec line keeps each item whole: a span per item, the separator at the end of the one before.
-	if !strings.Contains(text(head), "4 vCPU · 1.9 GB · Ubuntu 24.04 · kernel 6.8.0-88-generic") ||
+	if !strings.Contains(text(head), "2 vCPU · 1.9 GB · Ubuntu 24.04 · kernel 6.8.0-88-generic") ||
 		!strings.Contains(head, `<span class="cv-srvitem">kernel 6.8.0-88-generic</span>`) ||
 		!strings.Contains(head, `<span class="cv-srvitem">Ubuntu 24.04 ·</span> <span class="cv-srvitem">kernel`) {
 		t.Errorf("the spec line:\n%s", head)
@@ -219,7 +219,7 @@ func TestOpsServerPage(t *testing.T) {
 	facts := text(regionBetween(t, body, `class="cv-srvdl"`, "</dl>"))
 	for _, want := range []string{
 		"pool default", "agent nomad 2.0.1 · docker 29.1.3 · traefik 3.7.13 · caravana 0.7.0",
-		"os Ubuntu 24.04 · kernel 6.8.0-88-generic", "cpu AMD EPYC 7763 64-Core Processor · 4 cores · 2,400 MHz",
+		"os Ubuntu 24.04 · kernel 6.8.0-88-generic", "cpu AMD EPYC 7763 64-Core Processor · 2 cores · 2,400 MHz",
 	} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("the facts lack %q:\n%s", want, facts)

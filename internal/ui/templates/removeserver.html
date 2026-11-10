@@ -15,10 +15,12 @@
   </div>
   {{else}}
   <div class="cv-panel p-4 flex flex-col gap-3">
-    {{range .Paras}}<p class="text-base text-fg-1">{{template "sentence" .}}</p>{{end}}
+    {{range .Paras}}
+    <p class="text-base text-fg-1">{{template "sentence" .}}</p>
+    {{end}}
   </div>
   <form method="post" action="/ops/servers/{{.Name}}/remove" class="cv-actions">
-    <button type="submit" class="cv-btn cv-btn-primary">Remove {{.Name}}</button>
+    <button type="submit" class="cv-btn cv-btn-danger">Remove {{.Name}}</button>
     <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
   </form>
   {{end}}

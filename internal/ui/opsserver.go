@@ -111,7 +111,9 @@ type srvBody struct {
 	// AgentNote says the server's agent is older than the console.
 	AgentNote string
 	Recent    []opsEvent
-	// ReadOn replaces Recent on a server whose operating system Caravana doesn't read.
+	// Remote says the server isn't the one Caravana runs on: its page has no Recent list, and says where
+	// updates are read (ReadOn) unless the server is down, whose page has nothing to say about updates.
+	Remote bool
 	ReadOn *srvReadOn
 }
 
@@ -307,6 +309,9 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		return srvData{}, err
 	}
 	isLocal := n != nil && (name == n.Name || (local.Server != "" && name == local.Server))
+	if isLocal {
+		n = withSampleCores(n, local)
+	}
 
 	d := srvData{head: srvHead{Name: name}}
 	d.body.NomadDown = nomadUnread(local)
@@ -409,7 +414,7 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		if managed {
 			d.body.Facts = withManagedFacts(now, d.body.Facts, view)
 		}
-		recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true})
+		recent, err := s.svc.Activity(ctx, service.ActivityQuery{Limit: srvRecentLimit, Server: true, ForServer: d.head.Name, Local: true})
 		if err != nil {
 			return srvData{}, err
 		}
@@ -420,7 +425,10 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		}
 	default:
 		d.body.Facts = remoteFacts(now, view)
-		d.body.ReadOn = &srvReadOn{Name: cmp.Or(local.Server, "the server Caravana runs on")}
+		d.body.Remote = true
+		if view.State != "down" {
+			d.body.ReadOn = &srvReadOn{Name: cmp.Or(local.Server, "the server Caravana runs on")}
+		}
 		if a := view.Agent; a != nil && hostos.ReleaseNewer(s.version, a.Caravana) {
 			d.body.AgentNote = "This server's agent is " + a.Caravana + "; the console is " + strings.TrimPrefix(s.version, "v") + ". Run the newer installer on it."
 		}
@@ -1102,10 +1110,15 @@ func remoteFacts(now time.Time, v service.ServerView) []srvFact {
 		}
 	}
 	if !v.SeenAt.IsZero() {
-		w := whenOf(now, &v.SeenAt, "")
-		f := srvFact{Key: "last seen", When: &w}
+		f := srvFact{Key: "last seen"}
 		if v.State == "down" {
-			f.Mark, f.Strong = "failed", true
+			// A server that is down was last seen at a time, never "just now" beside "down since 18:12 UTC": the
+			// clock time, with the exact one in its title.
+			c := clockOf(now, v.SeenAt)
+			f.Clock, f.Mark, f.Strong = &c, "failed", true
+		} else {
+			w := whenOf(now, &v.SeenAt, "")
+			f.When = &w
 		}
 		out = append(out, f)
 	}

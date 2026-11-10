@@ -131,7 +131,7 @@
         <dl class="cv-srvdl">
           {{range .Facts}}
           <dt>{{.Key}}</dt>
-          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else if .When}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "time" .When}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else if .When}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "time" .When}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
           {{end}}
         </dl>
         {{with .AgentNote}}<p class="cv-srvagentnote">{{.}}</p>{{end}}
@@ -139,7 +139,7 @@
       {{/* Under the facts panel, in its section: the same column, the same 12px gap as a panel's label. */}}
       {{with .ReadOn}}<p class="cv-srvreadon"><a href="/ops/updates">Updates</a> and restarts are read on <span class="cv-inline-mono text-fg-1">{{.Name}}</span> only.</p>{{end}}
     </section>
-    {{if not .ReadOn}}
+    {{if not .Remote}}
     <section aria-labelledby="srv-recent-title">
       <div class="cv-mnsec">
         <h2 class="cv-label" id="srv-recent-title">Recent on this server</h2>

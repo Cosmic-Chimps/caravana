@@ -507,7 +507,9 @@ func TestOpsNodePanel(t *testing.T) {
 	if n.Copies != "3 copies" {
 		t.Errorf("copies = %q, want 3 copies (a failed copy isn't running)", n.Copies)
 	}
-	if n.Spec != "4 vCPU · 7.8 GB · Ubuntu 24.04 · kernel 6.8.0-147-generic" {
+	// The node says 4 cores and the sample the meters were counted with says 2: the panel says 2, one number of
+	// vCPU for the server (critique ruling 5).
+	if n.Spec != "2 vCPU · 7.8 GB · Ubuntu 24.04 · kernel 6.8.0-147-generic" {
 		t.Errorf("spec = %q", n.Spec)
 	}
 	var reads []string

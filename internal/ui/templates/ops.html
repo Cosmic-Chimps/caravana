@@ -22,12 +22,21 @@
   <span>Nomad can't be reached right now, so the server's state isn't shown.</span>
 </div>
 {{end}}
-<div class="cv-mnsec">
-  <h2 class="cv-label" id="ops-server-title">{{if .Panels}}Servers{{else}}Server{{end}}</h2>
-  {{with .Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
-  {{if .Panels}}<a href="/ops/servers" class="cv-mnsec-link">All servers</a>{{end}}
+{{if .Panels}}
+{{/* With several servers the head is the label and the link, on one line whatever the width; the cluster's room is a line of its own under it. */}}
+<div class="cv-mnsec cv-mnsec-spread">
+  <h2 class="cv-label" id="ops-server-title">Servers</h2>
+  <a href="/ops/servers" class="cv-mnsec-link">All servers</a>
 </div>
-{{if .Panels}}<div class="cv-nodegrid">{{range .Panels}}{{template "ops-node" .}}{{end}}</div>{{else}}{{template "ops-node" .Node}}{{end}}
+{{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+<div class="cv-nodegrid">{{range .Panels}}{{template "ops-node" .}}{{end}}</div>
+{{else}}
+<div class="cv-mnsec">
+  <h2 class="cv-label" id="ops-server-title">Server</h2>
+  {{with .Room}}<span class="cv-mnsec-meta{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</span>{{end}}
+</div>
+{{template "ops-node" .Node}}
+{{end}}
 {{end}}
 
 {{/* ops-apps-region: the Apps section, a live region of its own (#ops-apps). Takes an opsApps. */}}
@@ -67,6 +76,7 @@
     {{with .State}}{{template "status-pill" .}}{{else}}{{with $.Copies}}<span class="cv-node-copies">{{.}}</span>{{end}}{{end}}
   </div>
   {{with .Spec}}<p class="cv-node-spec">{{.}}</p>{{end}}
+  {{with .Line}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{if .Meters}}<div class="cv-node-meters">{{range .Meters}}{{template "mon-meter" .}}{{end}}</div>{{end}}
   {{if .Chips}}
   <div class="cv-node-chips">

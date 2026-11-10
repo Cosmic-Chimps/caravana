@@ -355,3 +355,35 @@ func TestServerNumbersAreEachServersOwn(t *testing.T) {
 		t.Errorf("three has no sample: memory %+v, cpu %+v, disks %+v; want nil", three.Memory, three.CPU, three.Disks)
 	}
 }
+
+// The room is counted over the cluster, and so are the sums its percentages are measured against: the ready servers'
+// used and total memory and CPU together (critique ruling 1). With one server they are that server's own.
+func TestRoomUseIsTheClusters(t *testing.T) {
+	ctx := context.Background()
+	l := newServersLab(t)
+	l.tick(t, 1)
+	h, err := l.svc.Host(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := h.Room
+	if !r.Known || r.MemoryUsedMB == nil || r.MemoryTotalMB == nil || *r.MemoryUsedMB != 1000+2000 || *r.MemoryTotalMB != 2*4096 {
+		t.Errorf("the room's memory sums = %v of %v, want 3000 of 8192 (both servers)", r.MemoryUsedMB, r.MemoryTotalMB)
+	}
+	if r.CPUUsedMHz == nil || r.CPUTotalMHz == nil || *r.CPUUsedMHz != 2*400 {
+		t.Errorf("the room's CPU sums = %v of %v, want 800 used (400 a server)", r.CPUUsedMHz, r.CPUTotalMHz)
+	}
+	// One server's own numbers are the same as the cluster's of one.
+	one := newClusterEnv(t)
+	one.nomad.SetHostStatsOf("node-1", statsAt(1000, 50))
+	one.svc.metricsGap = time.Minute
+	sl := &serversLab{clusterEnv: one, now: time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)}
+	sl.tick(t, 1)
+	h, err = one.svc.Host(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Room.Known || *h.Room.MemoryUsedMB != *h.Memory.Used || *h.Room.MemoryTotalMB != *h.Memory.Total {
+		t.Errorf("with one server the room's sums %v of %v differ from the server's own %v of %v", h.Room.MemoryUsedMB, h.Room.MemoryTotalMB, h.Memory.Used, h.Memory.Total)
+	}
+}

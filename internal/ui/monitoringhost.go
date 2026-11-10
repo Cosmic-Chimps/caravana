@@ -366,8 +366,9 @@ func roomOf(h service.HostView) *monRoom {
 			cpu = vcpuText(float64(r.CPUMHz)/perCore) + " vCPU"
 		}
 		end := "."
-		if h.Memory.Used != nil && h.Memory.Total != nil && *h.Memory.Total > 0 {
-			if pct := float64(*h.Memory.Used) / float64(*h.Memory.Total) * 100; pct >= meterWarnPercent {
+		// The use beside the room is the cluster's, as the room is (a cluster of one: the server's own).
+		if _, _, used, total := clusterUse(h); used != nil && total != nil && *total > 0 {
+			if pct := float64(*used) / float64(*total) * 100; pct >= meterWarnPercent {
 				end = ", but memory in use is already at " + strconv.Itoa(int(pct)) + "%."
 			}
 		}

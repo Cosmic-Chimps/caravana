@@ -64,10 +64,11 @@ type serverRow struct {
 	Meters    []slMeter
 	// Cell replaces the three meters: what a waiting or joining server is doing.
 	Cell string
-	// Cancel is the form's action for a waiting join; empty for any other row.
-	Cancel string
-	Copies string
-	Down   bool
+	// Cancel is the form's action for a waiting join; empty for any other row. CancelLabel names the join for a
+	// screen reader.
+	Cancel, CancelLabel string
+	Copies              string
+	Down                bool
 }
 
 // slMeter is one meter of a row: the server page's meter without its fill when the server is down.
@@ -265,6 +266,10 @@ func serverRowOf(now time.Time, sv service.ServerView, isLocal bool, arch string
 	case "waiting":
 		row.Cell = "Waiting for the server to call in · the command works for " + minutesLeft(now, sv.ExpiresAt)
 		row.Cancel = "/ops/servers/joins/" + url.PathEscape(sv.ID) + "/cancel"
+		row.CancelLabel = "Cancel the join of the server that hasn't called in"
+		if sv.Name != "" {
+			row.CancelLabel = "Cancel the join of " + sv.Name
+		}
 		return row
 	case "joining":
 		row.Cell = firstOpenCheck(sv.Checks)
@@ -297,6 +302,10 @@ func serverRowState(sv service.ServerView) statusView {
 		return statusView{Kind: "rolling", Word: "joining"}
 	case sv.State == "down":
 		return statusView{Kind: "failed", Word: "down"}
+	}
+	if !sv.Managed {
+		// A node Nomad knows and Caravana doesn't manage: its state is Nomad's, but it isn't one of the cluster's.
+		return statusView{Kind: "idle", Word: "not set up"}
 	}
 	for _, d := range sv.Disks {
 		if d.State == metrics.DiskWarning || d.State == metrics.DiskFailed {

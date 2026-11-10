@@ -83,7 +83,7 @@ func (c *console) consoleServers(t *testing.T) {
 		t.Errorf("the line of sums = %v, want \"1 server · … GB · … vCPU\"", line)
 	}
 	words := htmlText(list)
-	for _, want := range []string{"Not set up for a cluster yet.", notReady} {
+	for _, want := range []string{"Not set up for a cluster yet.", "not set up", notReady} {
 		if !strings.Contains(words, want) {
 			t.Errorf("the list lacks %q:\n%s", want, words)
 		}

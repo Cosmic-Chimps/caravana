@@ -53,6 +53,11 @@ type HostRoom struct {
 	metrics.RoomResult
 	// LikeAppName is the yardstick app's name (LikeApp is its ID).
 	LikeAppName string
+	// MemoryUsedMB and MemoryTotalMB, CPUUsedMHz and CPUTotalMHz are what the room is counted over: the sums
+	// of the ready servers' newest samples (feature 031; with one server, that server's own, as Memory and
+	// CPU say). nil when no sample had them. A page that says "memory in use is already at 89%" beside the
+	// room, or the cluster's use in a stats line, reads these, never one server's.
+	MemoryUsedMB, MemoryTotalMB, CPUUsedMHz, CPUTotalMHz *int64
 }
 
 // HostHistory is the host's memory over seven days, an hour per point (the
@@ -294,7 +299,8 @@ func (s *Service) hostRoom(ctx context.Context, dir serverDirectory, viewed stor
 	}
 
 	res := metrics.Room(apps, free.memoryMB, free.cpuMHz)
-	return HostRoom{Known: true, RoomResult: res, LikeAppName: names[res.LikeApp]}, nil
+	return HostRoom{Known: true, RoomResult: res, LikeAppName: names[res.LikeApp],
+		MemoryUsedMB: free.memUsed, MemoryTotalMB: free.memTotal, CPUUsedMHz: free.cpuUsed, CPUTotalMHz: free.cpuTotal}, nil
 }
 
 // clusterFreeRoom is what the cluster has left to reserve.
@@ -302,6 +308,8 @@ type clusterFreeRoom struct {
 	known            bool
 	memoryMB, cpuMHz int64
 	at               time.Time // the newest sample that counted
+	// The sums of used and total over the servers that counted, for the cluster's percentages.
+	memUsed, memTotal, cpuUsed, cpuTotal *int64
 }
 
 // clusterFree sums, over the ready servers of the pool "default", the totals less the reservations of
@@ -322,7 +330,21 @@ func (s *Service) clusterFree(ctx context.Context, dir serverDirectory, viewed s
 		}
 	}
 	var out clusterFreeRoom
+	add := func(sum **int64, n int64) {
+		if *sum == nil {
+			*sum = new(int64)
+		}
+		**sum += n
+	}
 	for _, h := range rows {
+		if h.MemoryUsedMB != nil && h.MemoryTotalMB != nil {
+			add(&out.memUsed, *h.MemoryUsedMB)
+			add(&out.memTotal, *h.MemoryTotalMB)
+		}
+		if h.CPUUsedMHz != nil && h.CPUTotalMHz != nil {
+			add(&out.cpuUsed, *h.CPUUsedMHz)
+			add(&out.cpuTotal, *h.CPUTotalMHz)
+		}
 		if h.MemoryTotalMB == nil || h.MemoryReservedMB == nil || h.CPUTotalMHz == nil || h.CPUReservedMHz == nil {
 			continue
 		}

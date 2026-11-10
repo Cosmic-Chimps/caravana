@@ -11,9 +11,9 @@
      pass it stops by not having the attribute. Takes a joinChecks. */}}
 {{define "join-checks-region"}}
 <div class="cv-panel cv-jchecks"{{if .Open}} hx-get="{{.PartHref}}" hx-trigger="every 5s" hx-target="#join-checks" hx-swap="innerHTML"{{end}}>
-  {{with .Intro}}<p class="cv-jline cv-jintro cv-jtone-{{if eq .Mark "idle"}}later{{else}}work{{end}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Text}}{{with .Href}} <a href="{{.}}" class="cv-jlink">{{$.Intro.LinkText}}</a>{{end}}</span></p>{{end}}
+  {{with .Intro}}<p class="cv-jline cv-jintro cv-jtone-{{if .Mark}}work{{else}}later{{end}}">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}<span>{{.Text}}{{with .Href}} <a href="{{.}}" class="cv-jlink">{{$.Intro.LinkText}}</a>{{end}}</span></p>{{end}}
   {{range .Lines}}
-  <p class="cv-jline cv-jtone-{{.Tone}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Text}}</span></p>
+  <p class="cv-jline cv-jtone-{{.Tone}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-jtext"><span>{{.Text}}</span>{{with .Note}}<span class="cv-jnote">{{.}}</span>{{end}}</span></p>
   {{end}}
   {{with .Ready}}
   <div class="cv-jready">
@@ -35,10 +35,14 @@
   </div>
 </div>
 {{else}}
+{{if and .Join .Join.Joining}}
+<header class="cv-pagehead"><h1 class="cv-headline">{{.Join.Name}} is joining</h1></header>
+{{else}}
 <header class="cv-pagehead">
   <h1 class="cv-headline">Add a server</h1>
   <p class="cv-lede cv-addslede">Any machine with Ubuntu 24.04 and 2 GB of memory or more. Caravana installs what it needs, and the server starts taking work once its checks pass.</p>
 </header>
+{{end}}
 <div class="cv-adds{{if .Unavailable}} cv-adds-one{{end}}">
   <div class="cv-addsmain">
     {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -64,8 +68,8 @@
     </dl>
     {{if .Waiting}}<form method="post" action="{{.Cancel}}" class="cv-jcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel this join</button></form>{{end}}
     {{if .Joining}}
-    <p class="cv-jrun">{{.Name}} called in{{if .CalledIn.Text}} {{template "time" .CalledIn}}{{end}}. If it never gets ready, remove it and make a new command.</p>
-    <form method="post" action="{{.Cancel}}" class="cv-jcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Remove this server</button></form>
+    <p class="cv-jrun"><span class="cv-inline-mono text-fg-1">{{.Name}}</span> called in{{with .CalledIn.Text}} <time datetime="{{$.Join.CalledIn.ISO}}" title="{{$.Join.CalledIn.Exact}}">{{.}}</time>{{end}}. If it never gets ready, remove it and make a new command.</p>
+    <div class="cv-jcancel"><a href="{{.RemoveHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Remove this server</a></div>
     {{end}}
     {{end}}
     {{else if .Unavailable}}

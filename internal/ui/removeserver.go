@@ -83,9 +83,11 @@ func (s *server) drawRemoveServer(w http.ResponseWriter, r *http.Request, name s
 		page.Refusal = plainS(removeRefusalWords(refused, v.Name))
 	} else {
 		page.Paras = []sentence{
-			{plain("Its place in the cluster and its token are deleted. The other servers stop talking to it at their next sync.")},
-			{plain("Nothing on the server is touched.")},
+			{plain("Its place in the cluster and its token are deleted. The other servers stop talking to it within a minute.")},
+			{plain("Apps with a volume on "), mono(v.Name), plain(" can't start on another server: their data is on "), mono(v.Name),
+				plain("'s disk, and removing it here deletes nothing there.")},
 		}
+
 	}
 	head, err := s.shellPage(r, "Remove "+v.Name, navOpsServer, crumb{Label: "Servers", Href: "/ops/servers"},
 		crumb{Label: v.Name, Href: page.Back}, crumb{Label: "Remove"})

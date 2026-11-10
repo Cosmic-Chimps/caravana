@@ -26,6 +26,23 @@ func TestStageServers(t *testing.T) {
 		t.Skip("set CARAVANA_STAGE_SERVERS=1 to stage the Servers pages")
 	}
 	e := sampledServersEnv(t)
+	// One clock: the console's pages read the test's fake clock, which stands still while the service runs on the
+	// real one, so a stager left open for an hour showed "the command works for 105 more minutes" (the command's
+	// end is the service's time, the page's now was an hour old). Keep the page's clock on the real one.
+	go func() {
+		tick := time.NewTicker(time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-t.Context().Done():
+				return
+			case now := <-tick.C:
+				e.Clock.mu.Lock()
+				e.Clock.t = now
+				e.Clock.mu.Unlock()
+			}
+		}
+	}()
 	e.seedStandard(t)
 	e.readyServer(t, "fsn-1")
 	e.readyServer(t, "fsn-2")
@@ -36,10 +53,37 @@ func TestStageServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.Nomad.AddNode("node-lab", "lab", "ready", "")
-	e.sample(t, "node-2", 700, 300, 1958, 120, 4000, 2, 6000, 19000)
-	e.sample(t, "node-3", 1500, 1200, 1958, 800, 4000, 2, 17000, 19000)
-	e.sample(t, "node-4", 300, 200, 1958, 60, 4000, 2, 4000, 19000)
-	e.sample(t, "node-5", 100, 0, 1958, 20, 4000, 2, 3000, 19000)
+	samples := func(down bool) error {
+		for _, n := range []struct {
+			id                                                   string
+			memUsed, memReserved, cpuUsed, cpuReserved, diskUsed int64
+		}{{"node-2", 700, 300, 120, 0, 6000}, {"node-3", 1500, 1200, 800, 0, 17000}, {"node-4", 300, 200, 60, 0, 4000}, {"node-5", 100, 0, 20, 0, 3000}} {
+			if n.id == "node-4" && !down {
+				continue // fsn-3 is down: its numbers stay the last ones read
+			}
+			if err := e.writeSample(n.id, n.memUsed, n.memReserved, 1958, n.cpuUsed, 4000, 2, n.diskUsed, 19000); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := samples(true); err != nil {
+		t.Fatal(err)
+	}
+	// A sample older than five minutes isn't judged (no disk item, "stale"), so a stager left open writes them again
+	// every 30 seconds, as the sampler would; the review sees a console that is alive.
+	go func() {
+		tick := time.NewTicker(30 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-t.Context().Done():
+				return
+			case <-tick.C:
+				_ = samples(false)
+			}
+		}
+	}()
 	e.Nomad.SetNodeStatusOf("node-4", "down")
 	e.Nomad.SetNodeEligibilityOf("node-5", "ineligible", false)
 	// The copies reserve memory and CPU, as real ones do: the room sentence counts how many more apps like the usual

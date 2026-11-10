@@ -299,3 +299,14 @@ every text in both themes. Its findings, ruled:
 **The three questions:** an unmanaged server's pill is "not set up" (20); yes, one confirmation (7);
 the Overview's percentages are the cluster's (1).
 
+### Applied (build after 37d4e76)
+
+Every "Yes" above is in. The two causes: the "105 more minutes" was the staging (its pages stood on a
+frozen clock while the service ran on the real one; the product can't show more than 60, and a test says
+so); the 4 vCPU against 2 was both the staging and the product (the spec line read the node's
+attributes, the meters the sample: both read the sample now).
+
+**Departures**, accepted: to give the readout a fixed 112px and keep the tracks long enough (ruling 15),
+the list's column gap is 16px where the handoff has 24, and its rows stack under 1100px of room, not
+900. Measured: every `cpu`, `mem` and `disk` track is 44.7px at 1440 and 274px at 500.
+

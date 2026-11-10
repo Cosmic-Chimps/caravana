@@ -6663,8 +6663,13 @@ components:
         room:
           type: object
           additionalProperties: false
-          required: [count, likeApp, likeAppName, memoryMb, cpuMhz, limitedBy, freeMemoryMb]
-          description: "Room for about `count` more apps like `likeApp`, by reservation."
+          required: [count, likeApp, likeAppName, memoryMb, cpuMhz, limitedBy, freeMemoryMb, usedMemoryMb, totalMemoryMb, usedCpuMhz, totalCpuMhz]
+          description: |
+            Room for about `count` more apps like `likeApp`, by reservation. It is the cluster's: what the ready
+            servers of the node pool `default` have left together. `usedMemoryMb` and `totalMemoryMb`, `usedCpuMhz`
+            and `totalCpuMhz` are the sums over the same servers' newest samples, which is what "memory in use is
+            already at N%" beside the room is measured against; with one server they are that server's own numbers.
+            `null` when no server was sampled.
           properties:
             count:
               type: [integer, "null"]
@@ -6686,6 +6691,10 @@ components:
             freeMemoryMb:
               type: [integer, "null"]
               description: Memory left to reserve (never negative); `null` when the totals weren't sampled.
+            usedMemoryMb: {type: [integer, "null"]}
+            totalMemoryMb: {type: [integer, "null"]}
+            usedCpuMhz: {type: [integer, "null"]}
+            totalCpuMhz: {type: [integer, "null"]}
         history:
           type: object
           additionalProperties: false

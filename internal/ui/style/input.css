@@ -2245,7 +2245,7 @@
   .cv-sllist { min-width: 0; }
   /* One grid for every row: name 200px, state 120px, three meters, copies 100px. The whole row is the name's
      link (a stretched ::after, as the server page's copy rows do), so the Cancel form of a waiting row sits above it. */
-  .cv-slrow { position: relative; display: grid; grid-template-columns: 200px 120px repeat(3, minmax(0, 1fr)) 100px; column-gap: 24px; align-items: center; padding: 16px 18px; min-width: 0; }
+  .cv-slrow { position: relative; display: grid; grid-template-columns: 200px 120px repeat(3, minmax(0, 1fr)) 100px; column-gap: 16px; align-items: center; padding: 16px 18px; min-width: 0; }
   .cv-slrow > * { min-width: 0; }
   .cv-slname { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
   .cv-sllink { font: 500 15px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow-wrap: anywhere; }
@@ -2265,9 +2265,11 @@
   .cv-slcopies { font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-3); text-align: right; white-space: nowrap; }
   /* The list's meter: a 36px label, the track and the readout at the right. A down server keeps its last
      numbers, grey: fg-3 readouts and no fill. */
-  .cv-slmeter { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+  .cv-slmeter { display: grid; grid-template-columns: 32px minmax(24px, 1fr) 112px; column-gap: 6px; align-items: center; }
   .cv-slmeter-label { font: 500 11px/1 var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-fg-3); }
-  .cv-slmeter-read { font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-2); text-align: right; white-space: nowrap; }
+  /* The readout has one width, the widest form ("16.6 / 18.6 GB" with the warning mark, 14 mono 12px characters at
+     7.2px and the 9px mark: 110px), so every track of a column is as long as the next and 31% looks like 31%. */
+  .cv-slmeter-read { width: 112px; font: 400 12px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--color-fg-2); text-align: right; white-space: nowrap; }
   .cv-slmeter-read.cv-mnwarntext { color: var(--color-warn); }
   .cv-slmeter-read .cv-mark { margin-right: 2px; }
   .cv-slmeter-none { grid-column: 2 / -1; font: 400 13px/1 var(--font-mono); color: var(--color-fg-3); }
@@ -2283,7 +2285,7 @@
   .cv-jform { display: flex; flex-direction: column; gap: 20px; }
   .cv-jrun { margin: 0; font-size: 15px; line-height: 1.5; color: var(--color-fg-1); }
   .cv-jcmdwrap { position: relative; }
-  .cv-jcmd { padding: 16px 18px; background: var(--color-ink-0); border-color: var(--color-line-2); border-radius: 6px; font: 400 13px/22px var(--font-mono); color: var(--color-fg-1); }
+  .cv-jcmd { padding: 16px 80px 16px 18px; background: var(--color-ink-0); border-color: var(--color-line-2); border-radius: 6px; font: 400 13px/22px var(--font-mono); color: var(--color-fg-1); }
   .cv-jcopy { position: absolute; top: 10px; right: 10px; }
   .cv-jhint { margin: 0; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
   .cv-jfacts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 18px; margin: 0; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-1); }
@@ -2293,7 +2295,7 @@
   .cv-jcancel { margin: 0; }
   .cv-jchecks { display: flex; flex-direction: column; gap: 14px; padding: 18px; }
   .cv-jline { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
-  .cv-jline > .cv-mark { align-self: center; }
+  .cv-jline > .cv-mark { align-self: flex-start; margin-top: 0.5em; }
   .cv-jline > .cv-mark:not(.cv-mark-warning) { width: 8px; height: 8px; }
   .cv-jtone-done { color: var(--color-fg-1); }
   .cv-jtone-work { color: var(--color-fg-2); }
@@ -2306,17 +2308,27 @@
   a.cv-k-server { font: 400 12px/1.3 var(--font-mono); color: var(--color-fg-3); text-decoration: none; }
   a.cv-k-server:hover { color: var(--color-fg-1); text-decoration: underline; text-decoration-color: var(--color-line-3); }
   .cv-srvreadon { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-srvreadon a { text-decoration: underline; text-decoration-color: var(--color-line-3); }
+  .cv-jtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .cv-jnote { font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-3); }
+  .cv-jrun time { font: inherit; }
+  /* The section head of the Overview's servers: the label and the link stay on one line. */
+  .cv-mnsec-spread { flex-wrap: nowrap; justify-content: space-between; }
+  .cv-mnsec-spread .cv-mnsec-link { margin-left: 0; flex: none; white-space: nowrap; }
   .cv-srvagentnote { margin: 14px 0 0; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
   /* The Overview's server panels (the handoff's NowScreen): a grid with a 13px gap, one column below 800px, two from 800,
      three from 1200. One server isn't in it: its panel is the section's full width. */
-  .cv-nodegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; align-items: start; }
+  .cv-nodegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; align-items: stretch; }
+  /* A server's name never breaks ("fsn-2" stays whole); the pool tag wraps under it instead. */
+  .cv-nodegrid .cv-node-head { flex-wrap: wrap; }
+  .cv-nodegrid .cv-node-name { overflow-wrap: normal; white-space: nowrap; }
   .cv-upreadon { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
   .cv-mnpick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 }
 
-/* Under 900px of room the list's rows stack: the name and its marks, the state, the three meters across,
+/* Under 1100px of room the list's rows stack: the name and its marks, the state, the three meters across,
    the copies. Unlayered, so it wins over the grid above. Add a server is one column, Checks below. */
-@container cvsrvs (max-width: 899.98px) {
+@container cvsrvs (max-width: 1099.98px) {
   .cv-slrow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; padding-block: 14px; }
   .cv-slmeter, .cv-slcell, .cv-slend { grid-column: 1 / -1; }
   .cv-slcopies { grid-column: 1 / -1; text-align: left; }

@@ -32,7 +32,7 @@
   <div role="cell" class="cv-slstate">{{template "status-quiet" .State}}</div>
   {{if .Cell}}
   <div role="cell" class="cv-slcell">{{.Cell}}</div>
-  <div role="cell" class="cv-slend">{{with .Cancel}}<form method="post" action="{{.}}" class="cv-slcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</button></form>{{end}}</div>
+  <div role="cell" class="cv-slend">{{with .Cancel}}<form method="post" action="{{.}}" class="cv-slcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="{{$.CancelLabel}}">Cancel</button></form>{{end}}</div>
   {{else}}
   {{range .Meters}}{{template "sl-meter" .}}{{end}}
   <div role="cell" class="cv-slcopies">{{.Copies}}</div>
