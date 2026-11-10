@@ -236,3 +236,66 @@ Rulings:
 9. The list's head line counts every server Nomad or Caravana knows that isn't waiting or joining, and
    sums the ready ones. An unmanaged node has no spec line, so its memory and vCPU aren't in the sums
    either: the numbers under a name and the sum in the head must agree.
+
+### Critique rulings (designer, 2026-11-10, impeccable critique of build ba2852b: 29/40)
+
+The critique found no overflow at 1440, 900, 500 or a real 390, and contrast of 5.59:1 or better on
+every text in both themes. Its findings, ruled:
+
+**Yes, wrong for the data shown (P1)**
+
+1. **The Overview's stats line and the room sentence mix one server with the cluster.** With several
+   servers, `cpu` and `mem` in the stats line, and "memory in use is already at N%" in the room
+   sentence, are the cluster's: the sums of used over the sums of totals of the ready servers. With one
+   server nothing changes.
+2. **"The command works for 105 more minutes"** for a fresh join. Find the cause. If the staged console
+   runs the pages on a frozen clock and the service on the real one, fix the staging (one clock); if the
+   product can show more than 60, fix it and test it.
+3. **A down server's "last seen" is a clock time** ("last seen 18:12 UTC", the exact time in `title`),
+   never "just now" beside "down since 18:12 UTC".
+4. **"Recent on this server" is this server's.** Items about another server (its disk, it being down)
+   don't appear on this one's page.
+5. **One vCPU number per server.** hel-1's spec line and facts said 4 vCPU while its meter and the list
+   said 2. Find which source is wrong (the staging's node facts, or two reads that can differ) and make
+   the page say one.
+
+**Yes (P2)**
+
+6. "<name> called in 46 minutes ago." is one phrase in the sentence's own type; only the name is mono.
+7. **Remove this server** (a joining server) goes through the same confirmation page as **Remove
+   server…**. Both take a server out of the cluster; one confirmation.
+8. The confirmation says what removal means for data, without "sync": "Apps with a volume on <name>
+   can't start on another server: their data is on <name>'s disk, and removing it here deletes nothing
+   there." and "The other servers stop talking to it within a minute."
+9. The join page of a server that called in is titled **"<name> is joining"** (breadcrumb, `h1`), with
+   no lede. An open `network` check has a second line, 13px fg-3: "Check that UDP port 51820 is open
+   between the servers."
+10. The link in "Updates and restarts are read on <first> only." is underlined, as inline links are.
+11. Each Cancel in the list has `aria-label="Cancel the join of <name>"` (or "…of the server that hasn't
+    called in" for a join without a name).
+12. A server whose disk is filling says so on its own page: a banner in `ProblemParts`' words ("The disk
+    at / is 89% full: 2.0 GB left.").
+13. The Overview's panel of a down server has no meters: the one line of ruling 5.
+14. At 900 wide a server's name never breaks ("fsn-2" stays whole: the name doesn't wrap, the pool tag
+    wraps under it), and "All servers" stays on the section head's line.
+15. **Meters line up down the list.** The readout has a fixed width (the widest form, `16.6 / 18.6 GB`
+    with its warning mark), so every track in a column has the same length and 31% looks the same in
+    every row.
+17. The command block's first line keeps clear of Copy (right padding the width of the button).
+19. "Make the command to start." has no mark: it isn't a check.
+20. A server Nomad knows and Caravana doesn't manage has the idle pill **not set up**, not "ready".
+22. (in part) A down server's page doesn't show "Updates and restarts are read on <first> only."; the
+    confirmation's button **Remove <name>** has the console's danger style, as Delete app has.
+23. The Overview's server panels in a row have one height (`align-items: stretch`).
+
+**No**
+
+- 16 (the placeholder names an existing server): it is an example of the form, not a suggestion.
+- 18 (the token sentence): the contract's words stay.
+- 21 ("G" on the Overview's panels, "GB" on the server page): the panel is 027's, approved with "G".
+- 22 (28px buttons at 390; the nav group "Server" over the item "Servers"): the console's small button is
+  28px everywhere, and the group label is 027's.
+
+**The three questions:** an unmanaged server's pill is "not set up" (20); yes, one confirmation (7);
+the Overview's percentages are the cluster's (1).
+
