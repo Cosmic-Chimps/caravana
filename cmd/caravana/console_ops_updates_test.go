@@ -174,7 +174,9 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 		// the version is its own mono span, which pageText turns into "0.16.0 ."
 		"Run the installer of 0.16.0", "releases/download/v0.16.0/install.sh | sudo bash",
 		"Reboot the server: sudo reboot", "Every app stops for about a minute.",
-		"caravana doesn't apply updates from the console yet.",
+		// Since 030 the console applies caravana's own update. The lab has no updater (it isn't an
+		// installed host), so the row says how to get one instead of offering the button.
+		"To update from here, run the installer of", "It adds the updater.",
 		"Ubuntu's automatic updates", "Off", "Automatic reboot", "Off: reboots wait for you.",
 		"Check GitHub for new releases once a day", "Check package names", "Past updates", "times in UTC",
 	} {
