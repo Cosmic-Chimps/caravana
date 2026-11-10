@@ -101,9 +101,11 @@ func (s *server) consoleHost(r *http.Request) string {
 
 // getHost answers GET /v1/host: the host's memory, CPU and disks, the room
 // for more apps, seven days of memory and the node's facts. It reads the
-// store and the sampler's last reading and never calls Nomad.
+// store and the sampler's last reading and never calls Nomad. ?server=<name> asks for one server's
+// numbers (default: the one Caravana runs on; 404 server_not_found); only the server Caravana runs on
+// has a node block.
 func (s *server) getHost(w http.ResponseWriter, r *http.Request) error {
-	view, err := s.svc.Host(r.Context())
+	view, err := s.svc.Host(r.Context(), r.URL.Query().Get("server"))
 	if err != nil {
 		return err
 	}

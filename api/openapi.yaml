@@ -342,7 +342,20 @@ paths:
         versions, cores, memory, addresses, boot time), from the sampler's last reading. It is
         `null` before the first reading, and after a restart of Caravana until the next one.
         A field Nomad doesn't report is left out, never invented.
+
+        `server` asks for one server's numbers (`listServers` has the names); without it the answer
+        is about the server Caravana runs on. The numbers, the disks and the seven days of memory
+        are that server's own. `room` is the cluster's: what the ready servers of the node pool
+        `default` have left, together, against the usual app. `node` is the node block of the
+        server Caravana runs on only: Caravana reads that server's operating system and no other,
+        so it is `null` for any other server.
       tags: [metrics]
+      parameters:
+        - name: server
+          in: query
+          required: false
+          description: A server's name. Default, the server Caravana runs on.
+          schema: {type: string}
       responses:
         "200":
           description: The host, from the stored samples.
@@ -354,6 +367,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -5184,7 +5203,7 @@ components:
           description: "`problem.opened` of `domain_cert_expiring` and `server_certificate_expiring`: when the certificate ends."
         server:
           type: string
-          description: "`problem.opened` of `server_down` and `server_certificate_expiring`: the server's name. Such an event has no app, project or environment."
+          description: "`problem.opened` of `server_down` and `server_certificate_expiring`: the server's name, and of `disk_nearly_full` when the cluster has more than one server. Such an event has no app, project or environment."
         mount:
           type: string
           description: "`problem.opened` of `disk_nearly_full`: the filesystem's mount point."
@@ -5315,6 +5334,11 @@ components:
           description: |
             The directory on the node that holds the volume's files. Absent when Nomad couldn't
             be read.
+        server:
+          type: string
+          description: |
+            The name of the server the volume is on (a volume stays on one server, and so do all
+            the volumes of one service). Absent when Nomad doesn't say which node holds it.
         size:
           $ref: "#/components/schemas/AppVolumeSize"
         backedUp:
@@ -7479,9 +7503,11 @@ components:
             which is how a failing renewal shows. Both come from Caravana's last check of the
             domain (`listDomains`) and go when a check finds it fixed, or the domain is removed.
             `disk_nearly_full`: a filesystem the host watches is 85 % full or more (a `warning`;
-            `failed` from 95 %), from the newest host sample (`getHost`). It is about the host, so
-            it has no `appId`; it stays while the filesystem is at 83 % or more, and goes under
-            that. `os_reboot_required`, a failure: the host needs a reboot, and `detail` says why
+            `failed` from 95 %), from the newest host sample (`getHost`). It is about a server, so
+            it has no `appId`, and there is one item for each server and mount; `server` names the
+            server when the cluster has more than one. It stays while the filesystem is at 83 % or
+            more, and goes under that. A server whose newest sample is over 5 minutes old isn't
+            judged: its items stay as they are. `os_reboot_required`, a failure: the host needs a reboot, and `detail` says why
             ("This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is still
             running." or "…: libc6 was updated and needs a reboot."); it goes when the host's marker
             does. `os_security_updates`, a warning: security updates are waiting ("14 updates are
@@ -7535,7 +7561,7 @@ components:
           description: For `domain_cert_expiring` and `server_certificate_expiring`, when the certificate ends.
         server:
           type: string
-          description: The server's name, for `server_down` and `server_certificate_expiring` (`getServer`).
+          description: The server's name, for `server_down` and `server_certificate_expiring` (`getServer`), and for `disk_nearly_full` when the cluster has more than one server.
         mount:
           type: string
           description: For `disk_nearly_full`, the filesystem's mount point, such as `/`.

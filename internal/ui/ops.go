@@ -236,7 +236,7 @@ func (s *server) partOpsActivity(w http.ResponseWriter, r *http.Request, session
 // nomadDown says Nomad can't be read right now, judged by the sampler's last
 // reading of it: the cheap answer a part uses when it doesn't read the copies.
 func (s *server) nomadDown(ctx context.Context) bool {
-	h, err := s.svc.Host(ctx)
+	h, err := s.svc.Host(ctx, "")
 	return err == nil && nomadUnread(h)
 }
 
@@ -262,7 +262,7 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 	if err != nil {
 		return opsData{}, attentionRegion{}, err
 	}
-	host, err := s.svc.Host(ctx)
+	host, err := s.svc.Host(ctx, "")
 	if err != nil {
 		return opsData{}, attentionRegion{}, err
 	}

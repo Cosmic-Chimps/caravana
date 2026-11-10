@@ -55,6 +55,9 @@ type VolumeView struct {
 	Mounts  []VolumeMount
 	// HostPath is the directory on the node. Empty when Nomad couldn't be read.
 	HostPath string
+	// Server is the name of the server the volume is on (feature 031). Empty when Nomad doesn't say,
+	// or when the cluster's servers couldn't be read.
+	Server string
 	// Size is nil until the volume has been measured.
 	Size *VolumeSize
 	// BackedUp says the service that mounts the volume has a volume backup.
@@ -96,7 +99,33 @@ func (s *Service) Volumes(ctx context.Context, appID string) ([]VolumeView, erro
 	if err != nil {
 		return nil, err
 	}
-	return volumeViews(rec.App, hostVols, sizes, backups), nil
+	views := volumeViews(rec.App, hostVols, sizes, backups)
+	s.nameVolumeServers(ctx, views, hostVols)
+	return views, nil
+}
+
+// nameVolumeServers sets each volume's Server from the Nomad node it is on. Nothing is read from
+// Nomad unless a volume says its node, and a read that fails leaves the names empty.
+func (s *Service) nameVolumeServers(ctx context.Context, views []VolumeView, hostVols map[string]deploy.HostVolumeInfo) {
+	var dir serverDirectory
+	read := false
+	for i := range views {
+		id := hostVols[views[i].Name].NodeID
+		if id == "" {
+			continue
+		}
+		if !read {
+			read = true
+			var err error
+			if dir, err = s.directory(ctx); err != nil {
+				s.log.Warn("volumes: list servers", "error", err)
+				return
+			}
+		}
+		if n, ok := dir.byID(id); ok {
+			views[i].Server = n.Name
+		}
+	}
 }
 
 // refreshVolumeSizes reads the sizes file of every running copy of a service

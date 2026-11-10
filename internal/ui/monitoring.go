@@ -364,7 +364,7 @@ func (s *server) partMonitoring(w http.ResponseWriter, r *http.Request, session 
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	host, err := s.svc.Host(r.Context())
+	host, err := s.svc.Host(r.Context(), "")
 	if err != nil {
 		s.log.Error("read the host", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -395,7 +395,7 @@ func (s *server) partFailed(w http.ResponseWriter, what string, err error) {
 
 // monViewOf builds the page around its regions: the filter row, the live region and the host.
 func (s *server) monViewOf(ctx context.Context, q monReq, pl places) (*monView, error) {
-	host, err := s.svc.Host(ctx)
+	host, err := s.svc.Host(ctx, "")
 	if err != nil {
 		return nil, err
 	}

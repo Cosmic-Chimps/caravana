@@ -252,6 +252,23 @@ func DiskSentence(mount string, usedPercent float64, freeBytes int64) string {
 	return "The disk at " + mount + DiskTail(usedPercent, freeBytes)
 }
 
+// DiskSentenceOn is DiskSentence for a server that is one of several (feature 031): "The disk at /
+// on fsn-2 is 87% full: 1.1 GB left." An empty server is DiskSentence.
+func DiskSentenceOn(server, mount string, usedPercent float64, freeBytes int64) string {
+	if server == "" {
+		return DiskSentence(mount, usedPercent, freeBytes)
+	}
+	return "The disk at " + mount + " on " + server + DiskTail(usedPercent, freeBytes)
+}
+
+// DiskNowSentenceOn is DiskNowSentence for a server that is one of several.
+func DiskNowSentenceOn(server, mount string, usedPercent float64, freeBytes int64) string {
+	if server == "" {
+		return DiskNowSentence(mount, usedPercent, freeBytes)
+	}
+	return "The disk at " + mount + " on " + server + " is now" + strings.TrimPrefix(DiskTail(usedPercent, freeBytes), " is")
+}
+
 // DiskNowSentence is DiskSentence for a disk that got worse, the words of a
 // problem.worsened: "The disk at / is now 96% full: 0.4 GB left."
 func DiskNowSentence(mount string, usedPercent float64, freeBytes int64) string {

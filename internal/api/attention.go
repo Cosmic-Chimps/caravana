@@ -47,7 +47,7 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 		DeploymentID: it.Deployment, DeploymentStatus: string(it.DeploymentStatus), JobVersion: it.Version,
 		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, At: it.When, Detail: it.Detail}
 	if it.Kind == service.AttentionDiskNearlyFull {
-		out.Mount, out.Holds, out.Level = it.Mount, it.Holds, string(it.Level)
+		out.Mount, out.Holds, out.Level, out.Server = it.Mount, it.Holds, string(it.Level), it.Server
 		out.UsedPercent, out.FreeBytes = &it.UsedPercent, &it.FreeBytes
 	}
 	if it.Kind == service.AttentionServerDown || it.Kind == service.AttentionServerCertExpiring {

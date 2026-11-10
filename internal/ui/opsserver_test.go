@@ -97,7 +97,7 @@ func srvEnvStats(t *testing.T, edit func(*api.HostStats)) *consoleEnv {
 
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		h, err := e.Svc.Host(ctx)
+		h, err := e.Svc.Host(ctx, "")
 		if err == nil && h.Node != nil && h.SampledAt != nil && h.Reboot != nil {
 			return e
 		}

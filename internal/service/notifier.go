@@ -105,6 +105,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		ev.Text, ev.Detail = it.Detail, ""
 	case AttentionDiskNearlyFull:
 		ev.Title = fmt.Sprintf("Disk nearly full: %s is %d%% full", it.Mount, int(it.UsedPercent))
+		if it.Server != "" {
+			ev.Title = fmt.Sprintf("Disk nearly full on %s: %s is %d%% full", it.Server, it.Mount, int(it.UsedPercent))
+		}
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
 		ev.Title = osTitle(it.Kind)
@@ -133,7 +136,10 @@ func worsenedEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	ev.Type = notify.EventProblemWorsened
 	if it.Kind == AttentionDiskNearlyFull {
 		ev.Title = fmt.Sprintf("Disk nearly full: %s is now %d%% full", it.Mount, int(it.UsedPercent))
-		ev.Text = notify.DiskNowSentence(it.Mount, it.UsedPercent, it.FreeBytes)
+		if it.Server != "" {
+			ev.Title = fmt.Sprintf("Disk nearly full on %s: %s is now %d%% full", it.Server, it.Mount, int(it.UsedPercent))
+		}
+		ev.Text = notify.DiskNowSentenceOn(it.Server, it.Mount, it.UsedPercent, it.FreeBytes)
 	}
 	ev.At = at // when it got worse, not when it opened
 	return ev
@@ -362,15 +368,28 @@ func (s *Service) notifyDeploy(rec store.DeploymentRecord) {
 // subject (problemSubject). Copy IDs are left out on purpose: a crash loop
 // swaps its copies and is still one problem. So is a schedule's name: a
 // schedule renamed while it fails is still the one problem.
+//
+// A disk of a server other than the one Caravana runs on (feature 031) has the server's name in the
+// service's place: disk_nearly_full||<server>|<mount>. The server Caravana runs on keeps
+// disk_nearly_full|||<mount>, so a problem sent before there were servers isn't resolved and
+// opened again by the upgrade.
 func problemKey(it AttentionItem) string {
-	return strings.Join([]string{string(it.Kind), it.AppID, it.Service, problemSubject(it)}, "|")
+	service := it.Service
+	if it.Kind == AttentionDiskNearlyFull && it.Remote {
+		service = it.Server
+	}
+	return strings.Join([]string{string(it.Kind), it.AppID, service, problemSubject(it)}, "|")
 }
 
 // problemSubject is the last part of an item's key, what the item is about
 // within its service: the deployment of a failed deploy, the schedule's ID of
-// the schedule kinds, the host of the domain kinds, the mount of a disk, else
-// nothing.
+// the schedule kinds, the host of the domain kinds, the mount of a disk (its
+// server is in the key's service place, problemKey), the server of the server
+// kinds, else nothing.
 func problemSubject(it AttentionItem) string {
+	if it.Kind == AttentionDiskNearlyFull {
+		return it.Mount
+	}
 	if it.Server != "" {
 		return it.Server
 	}
@@ -401,7 +420,29 @@ func problemSubject(it AttentionItem) string {
 //
 // server_down (feature 031) comes from Nomad's node list and is judged only while Nomad's nodes could be
 // read.
-type judged struct{ Copies, Disks, OS, Servers bool }
+//
+// A disk problem is also not judged while its own server isn't (feature 031): DisksUnjudged names the
+// servers whose newest host sample is too old, "" being the one Caravana runs on.
+type judged struct {
+	Copies, Disks, OS, Servers bool
+	DisksUnjudged              []string
+}
+
+// problemDiskSlot is the server part of a disk problem's key: "" for the server Caravana runs on, else
+// the server's name (the key's third part). ok is false for a key that has none.
+func problemDiskSlot(key string) (slot string, ok bool) {
+	parts := strings.SplitN(key, "|", 4)
+	if len(parts) != 4 {
+		return "", false
+	}
+	return parts[2], true
+}
+
+// diskUnjudged says a disk problem's server wasn't judged by this check.
+func diskUnjudged(key string, j judged) bool {
+	slot, ok := problemDiskSlot(key)
+	return ok && slices.Contains(j.DisksUnjudged, slot)
+}
 
 // allJudged is a check that could read everything.
 var allJudged = judged{Copies: true, Disks: true, OS: true, Servers: true}
@@ -467,6 +508,8 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps 
 			continue
 		case notJudged(it.Kind, j):
 			continue
+		case it.Kind == AttentionDiskNearlyFull && diskUnjudged(key, j):
+			continue
 		}
 		present[key] = true
 		if p, ok := sent[key]; ok {
@@ -484,7 +527,7 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps 
 		case present[p.Key]:
 		case p.AppID != "" && !apps[p.AppID]:
 			out.Dropped = append(out.Dropped, p.Key)
-		case notJudged(p.Kind, j):
+		case notJudged(p.Kind, j), AttentionKind(p.Kind) == AttentionDiskNearlyFull && diskUnjudged(p.Key, j):
 			// Not judged: it may well still be there.
 		case at.Sub(p.LastSeenAt) >= resolveAfter:
 			out.Resolved = append(out.Resolved, p)
@@ -550,7 +593,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 	display := s.projectDisplay(ctx)
 	now := s.clock.Now().UTC()
-	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown, Servers: !att.ServersUnknown}, exists, now, s.resolveAfter)
+	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown, Servers: !att.ServersUnknown, DisksUnjudged: att.DisksUnjudged}, exists, now, s.resolveAfter)
 
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event

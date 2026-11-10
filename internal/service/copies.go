@@ -51,10 +51,25 @@ type HostCopy struct {
 // copy Nomad can't give numbers for has Usage.Error set and doesn't affect the others; reservations
 // that can't be read leave the reserved numbers at zero.
 //
+// server is a server's name; "" is the server Caravana runs on. Only the copies on that server's node
+// are listed (a copy that carries no node name, as the dev lab's, counts for the only node there is). A
+// name no server has is ErrServerNotFound.
+//
 // The list is ordered problems first (failed, starting, stopping), then by project, environment,
 // app name, service, start time and ID. When Nomad can't be read the error is deploy's
 // (ErrNomadUnavailable): a list of copies has no stored fallback.
-func (s *Service) HostCopies(ctx context.Context) ([]HostCopy, error) {
+func (s *Service) HostCopies(ctx context.Context, server string) ([]HostCopy, error) {
+	dir, err := s.directory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list the copies on the node: %w", err)
+	}
+	node, target, err := s.hostTarget(ctx, dir, server)
+	if err != nil {
+		return nil, err
+	}
+	if target == targetNoNode {
+		return nil, nil // joined, no Nomad node yet: no copy can be there
+	}
 	byJob, err := s.deployer.AllCopies(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list the copies on the node: %w", err)
@@ -74,6 +89,9 @@ func (s *Service) HostCopies(ctx context.Context) ([]HostCopy, error) {
 			}
 		}
 		for _, c := range byJob[rec.App.ID] {
+			if target == targetNode && dir.multi() && c.Node != node.NodeName {
+				continue
+			}
 			if c.Terminal && c.Status != deploy.CopyFailed {
 				continue
 			}

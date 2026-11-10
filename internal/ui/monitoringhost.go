@@ -69,7 +69,7 @@ type monHostView struct {
 
 // partMonitoringHost answers GET /parts/monitoring/host: the section alone.
 func (s *server) partMonitoringHost(w http.ResponseWriter, r *http.Request, session string) {
-	host, err := s.svc.Host(r.Context())
+	host, err := s.svc.Host(r.Context(), "")
 	if err != nil {
 		s.partFailed(w, "read the host", err)
 		return
@@ -416,7 +416,7 @@ func (s *server) partPlatform(w http.ResponseWriter, r *http.Request, session st
 
 // loadPlatform reads the host for the panel (the store only, never Nomad).
 func (s *server) loadPlatform(r *http.Request) (*monPlatform, error) {
-	h, err := s.svc.Host(r.Context())
+	h, err := s.svc.Host(r.Context(), "")
 	if err != nil {
 		return nil, err
 	}

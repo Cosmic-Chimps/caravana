@@ -106,6 +106,12 @@ type AttentionItem struct {
 	UsedPercent float64
 	FreeBytes   int64
 	Level       metrics.DiskLevel
+	// Remote is true for a disk of a server other than the one Caravana runs on (feature 031): its key
+	// carries the server's name, while the local server's keeps the key it had with one server. Server
+	// (below) is set for a disk item only when the cluster has more than one server.
+	Remote bool
+	// node is the Nomad node ID of a disk item, until diskItems has named its server.
+	node string
 	// InstalledKernel, RunningKernel and Packages are the reboot item's facts
 	// (os_reboot_required): the newest installed kernel release, the node's, and
 	// the packages that asked for the reboot. Updates and Security are the
@@ -121,7 +127,7 @@ type AttentionItem struct {
 	UpdateRunID, UpdateVersion, UpdateFrom, UpdateState, UpdateReason string
 	// Server is the name of the server of the server kinds (feature 031); ExpiresAt is then, for
 	// server_certificate_expiring, when its certificate ends. The items have no app; Detail is their
-	// sentence.
+	// sentence. A disk_nearly_full item has it too, when the cluster has more than one server.
 	Server string
 	When   time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
@@ -138,6 +144,12 @@ type Attention struct {
 	// ever): the disk kind is missing because it couldn't be judged, not
 	// because the disks are fine, so the notifier sends no "resolved" for it.
 	DisksUnknown bool
+	// DisksUnjudged names the servers whose disks weren't judged: their newest host sample is over 5
+	// minutes old or there is none (feature 031). "" is the server Caravana runs on, else the server's
+	// name; it is the second part of a disk item's key. A problem of such a server is neither opened nor
+	// resolved. DisksUnknown is true when no server was judged.
+	DisksUnjudged []string
+
 	// OSUnknown says the host's OS files weren't read in the last 5 minutes (or
 	// ever): the two OS kinds are missing because they couldn't be judged, so the
 	// notifier sends no "resolved" for them.
@@ -182,11 +194,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		s.log.Warn("can't read copies from Nomad; the needs-you list leaves them out", "error", copiesErr)
 	}
 	out := attentionOf(time.Now(), apps, latest, copies, copiesErr, backups, restores, destErr == nil, scheds, domains)
-	disks, known, err := s.diskItems(ctx, s.clock.Now().UTC())
+	disks, known, unjudged, err := s.diskItems(ctx, s.clock.Now().UTC())
 	if err != nil {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
-	out.DisksUnknown = !known
+	out.DisksUnknown, out.DisksUnjudged = !known, unjudged
 	out.Items = append(out.Items, disks...)
 	osItems, osKnown := s.osItems(s.clock.Now().UTC())
 	out.OSUnknown = !osKnown
@@ -207,31 +219,104 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 }
 
 // diskItems is the disk kind (feature 025, ruling 8), derived from the stored
-// host rows on every read like the rest of the list. known is false when the
-// newest host sample is older than 5 minutes or there is none: the disks are
-// then not judged and the list has no disk item either way. The history is read
-// only for a filesystem that is at 83 % or more in the newest sample, since an
-// item can't be open below that.
-func (s *Service) diskItems(ctx context.Context, now time.Time) (items []AttentionItem, known bool, err error) {
-	h, err := s.store.NewestHost(ctx)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, false, nil
-	}
+// host rows on every read like the rest of the list, one item per server and
+// mount (feature 031). A server is judged when its newest host sample is under 5
+// minutes old: one that is older, or that has none, is not judged, and neither
+// is another server's disks affected. known is false when no server could be
+// judged, and the list then has no disk item either way. unjudged names the
+// servers that weren't (see Attention.DisksUnjudged). The history is read only
+// for a filesystem that is at 83 % or more in the newest sample, since an item
+// can't be open below that.
+func (s *Service) diskItems(ctx context.Context, now time.Time) (items []AttentionItem, known bool, unjudged []string, err error) {
+	hosts, err := s.store.NewestHosts(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
-	if metrics.Stale(h.TS, now) {
-		return nil, false, nil
+	if len(hosts) == 0 {
+		return nil, false, nil, nil
 	}
-	newest, err := s.store.DiskRows(ctx, store.MinuteRes, h.TS, h.TS.Add(time.Second))
+	dir, err := s.directory(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
-	history, err := s.diskHistory(ctx, now, h.TS, newest)
+	if len(dir.nodes) == 0 && len(hosts) > 1 {
+		return nil, false, nil, nil // several nodes were sampled and none can be named: judge nothing
+	}
+	// With no directory the one node sampled is the server Caravana runs on.
+	slotOf := func(nodeID string) (slot string, remote, ok bool) {
+		n, found := dir.byID(nodeID)
+		switch {
+		case !found && len(dir.nodes) == 0:
+			return "", false, true
+		case !found:
+			return "", false, false // a server that is gone: nothing is judged for it
+		case n.Local:
+			return "", false, true
+		}
+		return n.Name, true, true
+	}
+
+	var newest []store.DiskSample
+	var latest time.Time
+	fresh := map[string]bool{} // node IDs judged
+	for _, h := range hosts {
+		slot, _, ok := slotOf(h.Node)
+		if !ok {
+			continue
+		}
+		if metrics.Stale(h.TS, now) {
+			unjudged = append(unjudged, slot)
+			continue
+		}
+		fresh[h.Node] = true
+		if h.TS.After(latest) {
+			latest = h.TS
+		}
+		rows, err := s.store.DiskRows(ctx, store.MinuteRes, h.TS, h.TS.Add(time.Second))
+		if err != nil {
+			return nil, false, nil, err
+		}
+		for _, d := range rows {
+			if d.Node == h.Node {
+				newest = append(newest, d)
+			}
+		}
+	}
+	// A server of the directory that was never sampled isn't judged either: nothing is known of its disks.
+	sampled := map[string]bool{}
+	for _, h := range hosts {
+		sampled[h.Node] = true
+	}
+	for _, n := range dir.nodes {
+		if !sampled[n.ID] {
+			slot, _, _ := slotOf(n.ID)
+			unjudged = append(unjudged, slot)
+		}
+	}
+	if len(fresh) == 0 {
+		return nil, false, unjudged, nil
+	}
+	history, err := s.diskHistory(ctx, now, latest, newest)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
-	return diskItemsOf(newest, history), true, nil
+	for _, it := range diskItemsOf(newest, history) {
+		slot, remote, ok := slotOf(it.node)
+		if !ok {
+			continue
+		}
+		it.Remote = remote
+		if dir.multi() {
+			it.Server = slot
+			if slot == "" {
+				n, _ := dir.byID(it.node)
+				it.Server = n.Name
+			}
+		}
+		it.Detail = notify.DiskSentenceOn(it.Server, it.Mount, it.UsedPercent, it.FreeBytes)
+		items = append(items, it)
+	}
+	return items, true, unjudged, nil
 }
 
 // diskHistory reads the disk rows that decide whether an item is open: the
@@ -268,7 +353,7 @@ func (s *Service) diskHistory(ctx context.Context, now, sampleAt time.Time, newe
 func diskRun(mount string, d store.DiskSample, history []store.DiskSample) (open bool, when time.Time) {
 	var samples []metrics.DiskSample
 	for _, r := range history {
-		if r.Mount == mount {
+		if r.Mount == mount && r.Node == d.Node {
 			samples = append(samples, metrics.DiskSample{At: r.TS, UsedPercent: metrics.UsedPercent(r.UsedMB, r.FreeMB)})
 		}
 	}
@@ -281,30 +366,25 @@ func diskRun(mount string, d store.DiskSample, history []store.DiskSample) (open
 	return metrics.DiskRun(samples)
 }
 
-// diskItemsOf is the pure part: one item for each filesystem of the newest
-// sample whose history, oldest first, leaves it open (metrics.DiskRun: it
-// opens at 85 % and stays open down to 83 %). A filesystem only the history
-// has (no longer watched) gives none. With several nodes a mount is judged on
-// its fullest. history may be empty when no filesystem is near the line.
+// diskItemsOf is the pure part: one item for each filesystem (of each node) of
+// the newest samples whose history, oldest first, leaves it open (metrics.DiskRun:
+// it opens at 85 % and stays open down to 83 %). A filesystem only the history
+// has (no longer watched) gives none. The item has the node's ID until
+// diskItems names the server. history may be empty when no filesystem is near
+// the line.
 func diskItemsOf(newest, history []store.DiskSample) []AttentionItem {
-	fullest := map[string]store.DiskSample{}
-	for _, d := range newest {
-		if old, ok := fullest[d.Mount]; !ok || metrics.UsedPercent(d.UsedMB, d.FreeMB) > metrics.UsedPercent(old.UsedMB, old.FreeMB) {
-			fullest[d.Mount] = d
-		}
-	}
 	var items []AttentionItem
-	for mount, d := range fullest {
+	for _, d := range newest {
 		pct := metrics.UsedPercent(d.UsedMB, d.FreeMB)
-		open, when := diskRun(mount, d, history)
+		open, when := diskRun(d.Mount, d, history)
 		if !open {
 			continue
 		}
 		free := d.FreeMB << 20
 		items = append(items, AttentionItem{
-			Kind: AttentionDiskNearlyFull, Mount: mount, Holds: strings.Split(d.Holds, ","),
+			Kind: AttentionDiskNearlyFull, Mount: d.Mount, Holds: strings.Split(d.Holds, ","), node: d.Node,
 			UsedPercent: pct, FreeBytes: free, Level: metrics.DiskState(pct, true).Level, When: when,
-			Detail: notify.DiskSentence(mount, pct, free),
+			Detail: notify.DiskSentence(d.Mount, pct, free),
 		})
 	}
 	return items

@@ -205,7 +205,7 @@ type srvFact struct {
 // showOpsServers answers GET /ops/servers: one host, so it goes to the host's page. Before the
 // sampler's first reading the node's name isn't known: the page says so instead.
 func (s *server) showOpsServers(w http.ResponseWriter, r *http.Request, session string) {
-	host, err := s.svc.Host(r.Context())
+	host, err := s.svc.Host(r.Context(), "")
 	if err != nil {
 		s.serverError(w, r, "read the host", err)
 		return
@@ -281,7 +281,7 @@ type srvData struct {
 // before the node is known any name is the page of a host not read yet.
 func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	ctx := r.Context()
-	host, err := s.svc.Host(ctx)
+	host, err := s.svc.Host(ctx, "")
 	if err != nil {
 		return srvData{}, err
 	}
@@ -298,7 +298,7 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		return d, nil
 	}
 
-	copies, copiesErr := s.svc.HostCopies(ctx)
+	copies, copiesErr := s.svc.HostCopies(ctx, "")
 	if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
 		s.log.Warn("can't read the copies for the server page", "error", copiesErr)
 	}

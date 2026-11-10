@@ -159,6 +159,11 @@ func bootTime(read time.Time, uptimeSeconds uint64) time.Time {
 // else the first node there is, so a node that is down still shows what it is.
 // It is the fallback when HostStats can't read a node's stats.
 func (d *Deployer) NodeFacts(ctx context.Context) (NodeFacts, error) {
+	return d.NodeFactsOf(ctx, "")
+}
+
+// NodeFactsOf is NodeFacts for one node (feature 031); "" is NodeFacts' own choice.
+func (d *Deployer) NodeFactsOf(ctx context.Context, nodeID string) (NodeFacts, error) {
 	q := (&api.QueryOptions{}).WithContext(ctx)
 	nodes, _, err := d.nomad.Nodes().List(q)
 	if err != nil {
@@ -166,7 +171,10 @@ func (d *Deployer) NodeFacts(ctx context.Context) (NodeFacts, error) {
 	}
 	var stub *api.NodeListStub
 	for _, n := range nodes {
-		if n != nil && (stub == nil || (stub.Status != "ready" && n.Status == "ready")) {
+		if n == nil || (nodeID != "" && n.ID != nodeID) {
+			continue
+		}
+		if stub == nil || (stub.Status != "ready" && n.Status == "ready") {
 			stub = n
 		}
 	}

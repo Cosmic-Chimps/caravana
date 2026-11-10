@@ -226,7 +226,7 @@ func TestOperatorViewKeepsSecretsAndOutputOut(t *testing.T) {
 	}
 
 	// Every surface of this package, as the text a leak would be found in.
-	host, err := l.svc.Host(ctx)
+	host, err := l.svc.Host(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestOperatorViewKeepsSecretsAndOutputOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	copies, err := l.svc.HostCopies(ctx)
+	copies, err := l.svc.HostCopies(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

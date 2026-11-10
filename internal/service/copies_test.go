@@ -54,7 +54,7 @@ func TestHostCopies(t *testing.T) {
 	e.nomad.SetStats("c-stop", statsFor("web", 1, 5))
 	e.nomad.SetStats("s-run", statsFor("web", 20, 500))
 
-	got, err := e.svc.HostCopies(ctx)
+	got, err := e.svc.HostCopies(ctx, "")
 	if err != nil {
 		t.Fatalf("HostCopies: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestHostCopiesUsageErrorsAreOneCopys(t *testing.T) {
 	e.nomad.SetStats("c1", statsFor("web", 5, 10))
 	e.nomad.SetStats("c2", deploytest.DeadAllocUsage("web"))
 	// c3 has no stats: the fake answers 404 for it.
-	got, err := e.svc.HostCopies(ctx)
+	got, err := e.svc.HostCopies(ctx, "")
 	if err != nil {
 		t.Fatalf("HostCopies: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestHostCopiesUsageErrorsAreOneCopys(t *testing.T) {
 	}
 
 	e.nomad.Down()
-	if _, err := e.svc.HostCopies(ctx); !errors.Is(err, deploy.ErrNomadUnavailable) {
+	if _, err := e.svc.HostCopies(ctx, ""); !errors.Is(err, deploy.ErrNomadUnavailable) {
 		t.Errorf("HostCopies with Nomad down = %v, want ErrNomadUnavailable", err)
 	}
 }
@@ -147,7 +147,7 @@ func TestHostCopiesUsageErrorsAreOneCopys(t *testing.T) {
 func TestHostCopiesWithNoCopies(t *testing.T) {
 	e := newEnv(t)
 	saveApp(t, e, appWith("blog", 1))
-	got, err := e.svc.HostCopies(context.Background())
+	got, err := e.svc.HostCopies(context.Background(), "")
 	if err != nil || len(got) != 0 {
 		t.Errorf("HostCopies = %v, %v; want none", got, err)
 	}

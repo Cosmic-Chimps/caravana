@@ -136,6 +136,9 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 	case AttentionScheduleSkipping:
 		return parts(who, ": "+it.Detail)
 	case AttentionDiskNearlyFull:
+		if it.Server != "" { // set when the cluster has more than one server
+			return parts("The disk at ", mono(it.Mount), " on ", mono(it.Server), notify.DiskTail(it.UsedPercent, it.FreeBytes))
+		}
 		return parts("The disk at ", mono(it.Mount), notify.DiskTail(it.UsedPercent, it.FreeBytes))
 	case AttentionOSRebootRequired:
 		return rebootParts(it)

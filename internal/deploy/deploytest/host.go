@@ -22,6 +22,8 @@ type hostFake struct {
 	stats    api.HostStats
 	failWith int         // non-zero: every node read answers it
 	extra    []*api.Node // the nodes AddNode made, oldest first
+	// statsOf is what SetHostStatsOf set, by node ID: an AddNode node has no stats until it does.
+	statsOf  map[string]api.HostStats
 	infoReqs int
 	listReqs int
 	statReqs int
@@ -117,6 +119,18 @@ func (n *Nomad) SetHostStats(s api.HostStats) {
 	n.host.stats = s
 }
 
+// SetHostStatsOf sets what GET /v1/client/stats answers for a node AddNode made (a node with
+// none answers 404, as one whose client is unreachable does). The node SetNode made uses
+// SetHostStats.
+func (n *Nomad) SetHostStatsOf(id string, s api.HostStats) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.host.statsOf == nil {
+		n.host.statsOf = map[string]api.HostStats{}
+	}
+	n.host.statsOf[id] = s
+}
+
 // FailNodeReads makes every node read answer status (0 undoes it): 403 is a
 // token whose policy has no node:read.
 func (n *Nomad) FailNodeReads(status int) {
@@ -177,11 +191,16 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 		}
 		n.writeJSON(w, stubs)
 	case r.URL.Path == "/v1/client/stats":
-		if !h.set || r.URL.Query().Get("node_id") != h.node.ID {
-			http.Error(w, "node not found", http.StatusNotFound)
+		id := r.URL.Query().Get("node_id")
+		if h.set && id == h.node.ID {
+			n.writeJSON(w, h.stats)
 			return
 		}
-		n.writeJSON(w, h.stats)
+		if st, ok := h.statsOf[id]; ok {
+			n.writeJSON(w, st)
+			return
+		}
+		http.Error(w, "node not found", http.StatusNotFound)
 	default:
 		id := strings.TrimPrefix(r.URL.Path, "/v1/node/")
 		if h.set && id == h.node.ID {

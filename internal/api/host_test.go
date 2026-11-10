@@ -100,3 +100,20 @@ func TestHostAndActivityAreRefusedToADeployToken(t *testing.T) {
 		}
 	}
 }
+
+// Feature 031: getHost?server= reads one server's numbers. A name no server has is 404
+// server_not_found; a server that joined and has no Nomad node yet has a host with nothing sampled.
+func TestGetHostOfAServer(t *testing.T) {
+	e := monEnv(t)
+	withCluster(t, e)
+	addServer(t, e, `{"name": "later"}`)
+
+	for _, path := range []string{"/v1/host", "/v1/host?server=hel-1", "/v1/host?server=later"} {
+		body := getJSON(t, e, path, "Host")
+		if body["sampledAt"] != nil {
+			t.Errorf("GET %s: sampledAt = %v, want null (never sampled)", path, body["sampledAt"])
+		}
+	}
+	status, _, raw := call(t, http.MethodGet, e.URL+"/v1/host?server=nobody", "", "")
+	wantError(t, "GET /v1/host?server=nobody", status, raw, http.StatusNotFound, codeServerNotFound, "")
+}
