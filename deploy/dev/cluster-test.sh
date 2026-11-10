@@ -413,7 +413,7 @@ main() {
   wait_for 60 "a leader that isn't server 1 should be elected" leader_is_not_server_1 2
   local id
   for id in $survivors; do
-    nomad_on 2 alloc status -short "$id" | grep -qE 'Client Status +=+ +running' || die "the copy $id of spread stopped running when server 1 was lost"
+    [ "$(nomad_on 2 alloc status -t '{{.ClientStatus}}' "$id")" = running ] || die "the copy $id of spread stopped running when server 1 was lost"
   done
   say "8. start VM 1 again: the console answers through Traefik, spread answers, three voters"
   limactl start cv-cluster-1 >/dev/null 2>&1
