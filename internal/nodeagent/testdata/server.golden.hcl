@@ -45,6 +45,12 @@ server {
   # down. Its default is 5 minutes: when the server that was lost was the leader, its copies stayed
   # registered, and Traefik kept sending them requests, for five minutes (cluster test, research L14).
   failover_heartbeat_ttl = "1m"
+
+  # How long past its heartbeat's time a node may be before Nomad calls it down. Nomad's default is
+  # 10 seconds. A node's heartbeat goes to any Nomad server; when that server is the one that was
+  # lost, the heartbeat hangs until the connection fails (24 seconds in the cluster test), and with
+  # the default a healthy server was called down and its copies were moved (research L18).
+  heartbeat_grace = "30s"
   server_join {
     retry_join = ["10.98.0.1:4648", "10.98.0.2:4648"]
   }

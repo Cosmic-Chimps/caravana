@@ -113,6 +113,7 @@ server {                                # S
   bootstrap_expect = 1                  # F
   encrypt          = "<gossip key>"
   failover_heartbeat_ttl = "1m"         # S (research L14; Nomad's default is 5 minutes)
+  heartbeat_grace = "30s"               # S (research L18; Nomad's default is 10 seconds)
   server_join {                         # S and not F, and F once there are other servers
     retry_join = ["10.98.0.1:4648"]     # every other Nomad server, by index
   }

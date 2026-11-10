@@ -198,9 +198,9 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
    `caravana-nomad`, then eligible again) and read `front`'s log: it has whoami's answer.
 6. **Volumes.** Deploy `vol` (busybox, two volumes): `listVolumes` names one `server` for both, and the
    copy's `node` is that server.
-7. **Lose server 3.** `limactl stop -f`. Calling `spread` every half second for 120 s: at most 12 calls
-   fail and none after the 60th second (when server 3 was Nomad's leader: at most 50, none after the
-   100th second, research L14); `listCopies` shows three healthy copies on two servers;
+7. **Lose server 3.** `limactl stop -f`. Calling `spread` every half second for 120 s: at most 25 calls
+   fail and none after the 75th second (research L18; when server 3 was Nomad's leader: at most 50, none
+   after the 100th second, research L14); `listCopies` shows three healthy copies on two servers;
    `GET /v1/servers` says `three` is `down`; `GET /v1/attention` has `server_down`; `DELETE
    /v1/servers/two` is 409 `server_running`. Start it again: within 3 minutes it is `ready` and a raft
    voter (its interfaces and Nomad came up by themselves after the boot, research L3).

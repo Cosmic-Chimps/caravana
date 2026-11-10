@@ -201,6 +201,25 @@ be replaced once, a few seconds without an answer for an app with one copy. Befo
 hazard was there for every Nomad restart the installer made (a new Nomad version); it just restarted
 Nomad rarely.
 
+## L18. A healthy server was called down because its heartbeat was on its way to the lost one
+
+Cluster test, 2026-11-10 (lab, observed): server 3 was stopped. Server 1's client had its heartbeat in
+flight to server 3 (`rpc=Node.UpdateStatus server=10.98.0.3:4647`): a node heartbeats to any Nomad server
+it knows, also when it runs one itself, and leaving the servers out of its config (L15) doesn't change
+which ones it learns. The call hung until the connection gave `EOF`, the client logged `missed heartbeat:
+heartbeat_ttl=12.36s since_last_heartbeat=24.38s`, and two seconds before that Nomad had logged `node TTL
+expired` for server 1: the time allowed is the heartbeat's time plus `heartbeat_grace`, 10 seconds by
+default, 22.4 here. Server 1's two copies were replaced on server 2 and stopped when it came back a
+moment later. The app kept answering (7 failed calls), but a service with a volume on server 1 would
+have been restarted for nothing.
+
+The agent writes `heartbeat_grace = "30s"` on every Nomad server, which allows about 42 seconds where 24
+were needed. The price is that a server that is really lost is called down later, about 45 seconds after
+it went instead of about 25, so a share of the requests to an app with a copy there time out for that
+long. A connection that takes longer than that to fail would still get a healthy server called down;
+Nomad's `disconnect` block per group (keep the original copy when its server comes back) is the fuller
+answer and belongs to the scheduler's settings ("Placement" in `docs/plan.md`).
+
 ## Decisions
 
 | # | Decision | Why |

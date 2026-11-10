@@ -1033,7 +1033,7 @@ root. The contracts are `contracts/updater.md` (the files both sides read), `api
 Feature 031 (`specs/031-add-a-server`, Phase 3's first feature, from a CodeAlta task) is implemented on the
 worktree branch `alta/genuine-skiff-rmbk`: a server joins from a command made in the console, and three
 servers survive the loss of one. The contracts are `contracts/node.md` (addresses, files, the agent, the
-installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima VMs showed (L1 to L17).
+installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima VMs showed (L1 to L18).
 - Addresses (`internal/mesh`, pure): every server has an index N (1 to 63; the first is 1) and everything
   derives from it: mesh `10.98.0.N` on `caravana-mesh` (WireGuard, UDP 51820), app ports `10.99.0.N` on
   `caravana0`, containers `172.26.64.0/20` (N = 1, Nomad's default) or `10.97.(4N).0/22`. A peer's allowed
@@ -1052,7 +1052,9 @@ installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima 
 - Roles (`service/serverroles.go`): one Nomad server until three servers are ready, then the first and the
   two oldest others, promoted one at a time (a client gets a server certificate, the gossip key and one
   Nomad restart; its copies keep running). Every Nomad server has `failover_heartbeat_ttl = "1m"`: with
-  Nomad's 5 minutes a lost leader's copies stayed registered for five minutes (L14). A Nomad server's own
+  Nomad's 5 minutes a lost leader's copies stayed registered for five minutes (L14). It also has
+  `heartbeat_grace = "30s"`: with Nomad's 10 seconds a healthy server whose heartbeat was on its way to the
+  lost one was called down and its copies moved (L18); a lost server is called down after about 45 seconds. A Nomad server's own
   client lists no servers (L15).
 - Store and service: migration `0024_servers.sql` (`servers`: index, name, pool, state `waiting`, `joining`
   or `ready`, hashes of the join token and the node token, the agent's last report). `CreateJoin` (token

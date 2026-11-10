@@ -397,7 +397,9 @@ main() {
   # When the lost server is Nomad's leader, the new leader waits failover_heartbeat_ttl (1 minute, set
   # by the agent; Nomad's default is 5) before it calls the node down, so its copy stays registered
   # for about a minute longer (research L14). The bounds follow which case this run is.
-  local stop_at was_leader=0 max_failed=12 quiet_after=60
+  # A server that isn't the leader is called down after its heartbeat's time plus heartbeat_grace (30
+  # seconds, research L18): up to about 50 seconds in which a third of the calls time out.
+  local stop_at was_leader=0 max_failed=25 quiet_after=75
   if [ "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" = "10.98.0.3:4647" ]; then
     was_leader=1 max_failed=50 quiet_after=100
     echo "    (server 3 is Nomad's leader in this run)"
