@@ -1030,6 +1030,66 @@ root. The contracts are `contracts/updater.md` (the files both sides read), `api
   that a crafted or symlinked request runs nothing and that a broken release is rolled back with the item. It
   passed on 2026-11-06.
 
+Feature 031 (`specs/031-add-a-server`, Phase 3's first feature, from a CodeAlta task) is implemented on the
+worktree branch `alta/genuine-skiff-rmbk`: a server joins from a command made in the console, and three
+servers survive the loss of one. The contracts are `contracts/node.md` (addresses, files, the agent, the
+installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima VMs showed (L1 to L15).
+- Addresses (`internal/mesh`, pure): every server has an index N (1 to 63; the first is 1) and everything
+  derives from it: mesh `10.98.0.N` on `caravana-mesh` (WireGuard, UDP 51820), app ports `10.99.0.N` on
+  `caravana0`, containers `172.26.64.0/20` (N = 1, Nomad's default) or `10.97.(4N).0/22`. A peer's allowed
+  addresses are those three, so Traefik reaches a copy on any server and service names resolve across
+  servers. No address ever comes from the console.
+- The agent: `caravana node init-first|join|up|sync|show|leave` (`internal/nodeagent`), root, the same
+  binary copied to `/usr/local/libexec/caravana-node` (so a rolled-back Caravana never takes it away), run by
+  `caravana-node.timer` every 30 s; `caravana-mesh.service` runs `node up` before Nomad at boot. It renders
+  `nomad.hcl` (goldens; `deploy/install/nomad.hcl.tpl` is gone), keeps `state.json`, and applies the
+  console's answer only after checking every value (`validate.go`): it takes no command, path or address
+  from it. Files in `/etc/caravana-node` (0700) and `/etc/nomad.d/tls`.
+- Nomad: TLS on RPC and raft only (`http = false`: the HTTP API stays on loopback), `verify_server_hostname`,
+  gossip encryption. Caravana is the CA (`internal/clusterca`): the CA's key is in the Nomad Variable
+  `caravana/cluster/ca`, the gossip key in `caravana/cluster/gossip`; a server sends a CSR and keeps its key.
+  Certificates last 90 days and the agent renews them at 30 with `systemctl reload nomad` (no restart).
+- Roles (`service/serverroles.go`): one Nomad server until three servers are ready, then the first and the
+  two oldest others, promoted one at a time (a client gets a server certificate, the gossip key and one
+  Nomad restart; its copies keep running). Every Nomad server has `failover_heartbeat_ttl = "1m"`: with
+  Nomad's 5 minutes a lost leader's copies stayed registered for five minutes (L14). A Nomad server's own
+  client lists no servers (L15).
+- Store and service: migration `0024_servers.sql` (`servers`: index, name, pool, state `waiting`, `joining`
+  or `ready`, hashes of the join token and the node token, the agent's last report). `CreateJoin` (token
+  `cvjn_…`, once, one hour, shown once), `Join` (a client certificate for the CSR, a node token `cvnd_…`),
+  `NodeSync` (the four checks: connected, docker, network, ready; a down server doesn't hold up a join),
+  `NodeCertificate`, `ListServers` (rows joined with Nomad's nodes by app address; a node without a row is
+  `managed: false`), `RemoveServer` (a waiting join, or a server Nomad says is down), `AdoptFirst`
+  (`caravana server adopt-first`, called by the installer). The names `new` and `joins` are reserved.
+- What assumed one server: `nomadjob.Translate` spreads a multi-copy group over `${node.unique.id}`;
+  `deploy.EnsureVolumes` puts all volumes of a service on one server; `deploy.HostStats` takes a node and the
+  sampler writes rows per server; `Host(ctx, server)` and `HostCopies(ctx, server)`; the room for more apps
+  is the cluster's sum; `disk_nearly_full` is per server (the key of the server Caravana runs on is
+  unchanged); Traefik's job has a constraint on `meta.caravana_ingress`, so it runs on the first server
+  only (one ingress: shared certificates and a proxy per server are later Phase 3 features).
+- Needs-you kinds `server_down` and `server_certificate_expiring`; the OS items name their server once
+  there is more than one.
+- API 0.34.0: `listServers`, `getServer`, `addServer`, `getServerJoin`, `removeServer`, the node calls
+  `joinServer`, `syncNode`, `renewNodeCertificate` (their own credentials, outside `authenticate`; a failed
+  join counts against the address like a failed sign-in), `getHost?server=` with `server` and `osRead`,
+  `AppVolume.server`. Deploy tokens are denied by the default deny.
+- Console: Operator › Servers (`/ops/servers`, the list), Add a server (`/ops/servers/new`, then the
+  command and the live checks; the token is in that one answer only), a page per server with Remove for a
+  down one, and the per-server pieces on Overview, Running, Monitoring, Volumes and Updates.
+- Installer: `--first` (the default), `--join TOKEN --url URL`, `--address`, `--insecure`, `--leave`. A host
+  installed before this feature is converted by the next run: Nomad restarts twice, once only (the second
+  moves its raft address with `peers.json`, L2), with the old config kept as
+  `/var/lib/caravana-host/nomad.hcl.before-mesh`.
+- Tests: `deploy/dev/install-test.sh` checks the first server's network, certificates and registration;
+  `deploy/dev/cluster-test.sh` runs three Lima VMs on `lima:user-v2` (`vzNAT` isolates guests): the
+  conversion of a host installed from `d13c37c`, two joins from API tokens, three raft voters, the spread,
+  names across servers, volumes on one server, the loss of server 3 and of server 1, a renewal, a removal
+  and `--leave`. `TestConsoleLab` has a step `console-servers` (the lab is one node with no mesh: listed as
+  unmanaged, and Add a server says to run the installer first).
+- Not in 031: moving work off a live server, a proxy on every server, shared certificates, updating joined
+  servers from the console, reading their OS updates, SSH as a way to add a server, Caravana's own high
+  availability (its data is one SQLite file on the first server).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -1065,7 +1125,11 @@ was done out of order and passed its gate on 2026-10-21 with Frunchy. Bella Baxt
 Caravana; its secrets provider (was 027) is in the backlog. Phase 2.6 resumes with 021. From 2.6 on, `docs/plan.md` names each feature after the screen it builds
 and ends Phase 4 with "The handoff, screen by screen".
 
-Out of scope for now: multi-node, WireGuard, teams and roles, secrets from Bella Baxter (backlog),
+Phase 3 (Cluster) has started with 031 Add a server, built from a CodeAlta task before Phase 2.6's API
+1.0; its gate is three servers that survive the loss of one (`deploy/dev/cluster-test.sh` is its first form).
+
+Out of scope for now: the rest of Phase 3 unless asked (moving work off a server, a proxy per server,
+cluster certificates and updates), teams and roles, secrets from Bella Baxter (backlog),
 GPUs and binaries, Amazon ECR (backlog).
 
 ## Architecture
