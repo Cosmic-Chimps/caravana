@@ -3,7 +3,11 @@
 # Ubuntu 24.04, nothing else. It installs, reruns, upgrades with an app answering throughout,
 # rolls back a release that doesn't come up, updates from the API through the root updater (a
 # crafted request runs nothing, a release is installed, a broken one is rolled back), refuses an
-# older one, and uninstalls with the app still answering. Then it deletes the VM. About 20 minutes.
+# older one, and uninstalls with the app still answering. Feature 031's first-server steps are in it:
+# the private network (caravana0, the WireGuard mesh), Nomad's RPC on the mesh address with TLS, the
+# cluster's CA and gossip key in Nomad Variables with no key left on disk, the server registered with
+# Caravana, the refusals of both roles, and what --uninstall leaves. Then it deletes the VM. About 20
+# minutes. Adding a server and converting an older host need more machines: deploy/dev/cluster-test.sh.
 #
 #   deploy/dev/install-test.sh          run it (KEEP=1 keeps the VM for a look afterwards)
 #
@@ -97,6 +101,75 @@ check_updates_host() {
   done
   grep -q '"packagesError":""' <<<"$up" ||
     die "the package check failed inside the unit's sandbox (pro needs HOME, which is the data directory, and may write elsewhere):\n$up"
+}
+
+# jsonq PYTHON_EXPRESSION: the value of an expression over the JSON on standard input (d is the document).
+jsonq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+
+# check_mesh_host: what feature 031 makes of the first server (contracts/node.md): the two private
+# interfaces with their addresses and routes, Nomad's config written by the agent (root only) and
+# its RPC on the mesh address with TLS, the cluster's secrets in Nomad Variables and no CA key left on
+# disk, the units, the firewall's two rules, and node.env, which never holds anything but the console's
+# loopback address and the node token. The rpc-tls.py file is written by main.
+check_mesh_host() {
+  local route out
+  vm ip -4 -o addr show dev caravana0 | grep -q ' 10.99.0.1/32 ' || die "caravana0 should have 10.99.0.1/32"
+  vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "caravana-mesh should have 10.98.0.1/32"
+  for route in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
+    vm ip -4 route show "$route" | grep -q 'dev caravana-mesh' || die "no route $route through caravana-mesh"
+  done
+  [ "$(vm sudo wg show caravana-mesh listen-port)" = 51820 ] || die "the mesh should listen on 51820"
+  [ "$(vm sudo stat -c '%a %U' /etc/nomad.d/nomad.hcl)" = "600 root" ] || die "nomad.hcl should be root 0600 (it holds the gossip key)"
+  [ "$(vm sudo stat -c '%a' /etc/nomad.d/tls/agent-key.pem)" = 600 ] || die "agent-key.pem should be 0600"
+  vm sudo grep -q 'Written by' /etc/nomad.d/nomad.hcl || die "nomad.hcl wasn't written by the agent"
+  vm sudo grep -q 'rpc  = "10.98.0.1"' /etc/nomad.d/nomad.hcl || die "nomad.hcl should put Nomad's RPC on 10.98.0.1"
+  [ "$(vm sudo stat -c '%a' /etc/caravana-node)" = 700 ] || die "/etc/caravana-node should be 0700"
+  out="$(vm sudo caravana-nomad operator raft list-peers)"
+  grep -Eq '10\.98\.0\.1:4647 +leader' <<<"$out" || die "raft should list this server at 10.98.0.1:4647 as the leader:\n$out"
+  ! vm sudo ss -ltnH | awk '{print $4}' | grep -Eq '^(0\.0\.0\.0|\*|\[::\]):(4647|4648)$' || die "Nomad's RPC or serf listens on every address"
+  out="$(vm sudo python3 "$WORK/rpc-tls.py")" || die "Nomad's RPC on 10.98.0.1:4647 doesn't answer a TLS handshake against the cluster's CA:\n$out"
+  grep -q 'TLSv1.3 server.global.nomad' <<<"$out" || die "unexpected RPC handshake: $out"
+  vm sudo test ! -e /etc/caravana-node/ca-key.pem || die "the CA's key is still on disk"
+  vm sudo test -f /var/lib/caravana-host/raft-mesh || die "no raft-mesh marker"
+  vm sudo test ! -e /var/lib/caravana-host/nomad.hcl.before-mesh || die "a fresh host has no config to keep"
+  vm sudo caravana-nomad var get -item key caravana/cluster/ca | head -1 | grep -q 'BEGIN' || die "the CA's key isn't in the Nomad Variable caravana/cluster/ca"
+  vm sudo caravana-nomad var get -item cert caravana/cluster/ca | head -1 | grep -q 'BEGIN CERTIFICATE' || die "the CA's certificate isn't in caravana/cluster/ca"
+  [ "$(vm sudo caravana-nomad var get -item key caravana/cluster/gossip | wc -c)" -ge 24 ] || die "the gossip key isn't in caravana/cluster/gossip"
+  vm systemctl is-active --quiet caravana-mesh || die "caravana-mesh.service isn't active"
+  vm systemctl is-enabled --quiet caravana-mesh || die "caravana-mesh.service isn't enabled"
+  vm systemctl is-active --quiet caravana-node.timer || die "caravana-node.timer isn't active"
+  vm systemctl is-enabled --quiet caravana-node.timer || die "caravana-node.timer isn't enabled"
+  vm sudo ufw status | grep -q '^51820/udp .*ALLOW' || die "ufw should allow 51820/udp"
+  vm sudo ufw status | grep -q 'on caravana-mesh .*ALLOW' || die "ufw should allow everything in on caravana-mesh"
+  [ "$(vm sudo stat -c '%a %U' /etc/caravana-node/node.env)" = "600 root" ] || die "node.env should be root 0600"
+  vm sudo grep -qx 'CARAVANA_URL=http://127.0.0.1:7070' /etc/caravana-node/node.env || die "node.env should name the console on loopback"
+  vm sudo grep -Eqx 'CARAVANA_NODE_TOKEN=cvnd_[A-Za-z0-9_-]{43}' /etc/caravana-node/node.env || die "node.env should hold a node token"
+}
+
+# check_servers_api: the first server is registered with Caravana and listed as the one ready server.
+check_servers_api() {
+  local out
+  out="$(api -fsS "https://$DOMAIN/v1/servers")" || die "GET /v1/servers failed"
+  [ "$(jsonq 'len(d["servers"])' <<<"$out")" = 1 ] || die "GET /v1/servers should list one server:\n$out"
+  [ "$(jsonq 'd["servers"][0]["state"]' <<<"$out")" = ready ] || die "the first server should be ready:\n$out"
+  [ "$(jsonq 'd["servers"][0]["first"]' <<<"$out")" = True ] || die "the server should be the first:\n$out"
+  [ "$(jsonq 'd["servers"][0]["nomadServer"]' <<<"$out")" = True ] || die "the first server should be a Nomad server:\n$out"
+  [ "$(jsonq 'd["servers"][0]["index"]' <<<"$out")" = 1 ] || die "the first server's index should be 1:\n$out"
+  [ "$(jsonq 'd["servers"][0]["privateAddress"]' <<<"$out")" = 10.98.0.1 ] || die "the first server's private address should be 10.98.0.1:\n$out"
+  [ "$(jsonq 'd["cluster"]["survivesLoss"]' <<<"$out")" = False ] || die "one server can't survive a loss:\n$out"
+  ! grep -q 'cvnd_' <<<"$out" || die "the servers list holds a node token"
+}
+
+# refuses LABEL EXPECTED ARGS...: the installer exits 2 and says EXPECTED.
+refuses() {
+  local label="$1" expected="$2" out code
+  shift 2
+  set +e
+  out="$(vm sudo bash "$WORK/$V1/install.sh" --from "$WORK/$V1" "$@" 2>&1)"
+  code=$?
+  set -e
+  [ "$code" = 2 ] || die "$label: install.sh should exit 2, got $code:\n$out"
+  grep -qF -- "$expected" <<<"$out" || die "$label: the refusal should say '$expected':\n$out"
 }
 
 cleanup() {
@@ -367,6 +440,7 @@ check_console_update() {
   vm sudo pkill -f '[s]erve\.py' || true
 }
 
+V1="" ADDR=""
 main() {
   command -v limactl >/dev/null || die "Lima isn't installed"
   trap cleanup EXIT
@@ -374,6 +448,7 @@ main() {
   local base v1 v2 bad old out u1 u2 ubad
   base="$(date +%s)"
   old="0.0.0-dev.$((base - 1))" v1="0.0.0-dev.$base" v2="0.0.0-dev.$((base + 1))" bad="0.0.0-dev.$((base + 2))"
+  V1="$v1"
   # Release versions for the update steps (0.0.N is newer than every 0.0.0-dev.*).
   u1="0.0.$base" u2="0.0.$((base + 1))" ubad="0.0.$((base + 2))"
   say "building releases $old, $v1, $v2 and a broken $bad"
@@ -389,6 +464,30 @@ main() {
   say "a fresh Ubuntu 24.04 VM"
   limactl delete --force "$NAME" >/dev/null 2>&1 || true
   limactl start --name "$NAME" --tty=false --cpus 2 --memory 2 --containerd none template:ubuntu-24.04 >/dev/null
+  # The address other servers would reach this one at (--address), so the run needs no lookup of a public IP.
+  ADDR="$(vm ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+  [ -n "$ADDR" ] || die "can't find the VM's address"
+  # What check_mesh_host asks of Nomad's RPC: a TLS handshake with the cluster's CA and no plain RPC.
+  cat >"$WORK/rpc-tls.py" <<'PY'
+import socket, ssl, sys
+
+ctx = ssl.create_default_context(cafile="/etc/nomad.d/tls/ca.pem")
+ctx.load_cert_chain("/etc/nomad.d/tls/agent.pem", "/etc/nomad.d/tls/agent-key.pem")
+s = socket.create_connection(("10.98.0.1", 4647), 5)
+s.sendall(b"\x04")  # Nomad's RPC type byte for "TLS follows"
+t = ctx.wrap_socket(s, server_hostname="server.global.nomad")
+print(t.version(), t.getpeercert()["subjectAltName"][0][1])
+t.close()
+
+plain = socket.create_connection(("10.98.0.1", 4647), 5)
+plain.settimeout(5)
+plain.sendall(b"\x01" + b"\x82\xa6Method\xabStatus.Ping\xa3Seq\x01")  # Nomad's plain RPC type, then a request
+try:
+    if plain.recv(100):
+        sys.exit("plain RPC was answered")
+except ConnectionError:
+    pass
+PY
 
   say "the installer refuses a version it wasn't built with"
   set +e
@@ -406,12 +505,35 @@ main() {
     set -e
     grep -q -- "${bad_arg%%=*} is not" <<<"$out" || die "the refusal should name ${bad_arg%%=*}:\n$out"
   done
-  for path in /etc/caravana /var/lib/caravana-host /opt/caravana /etc/nomad.d; do
+  say "the installer refuses the options of the other role and values that aren't plain, and changes nothing (feature 031)"
+  local good_token
+  good_token="cvjn_$(printf 'x%.0s' $(seq 43))"
+  refuses "--join without --url" "--url is required" --join "$good_token"
+  refuses "--url without --join, on a first server" "--url and --insecure are for --join" --email "$EMAIL" --url https://caravana.test
+  refuses "--insecure on a first server" "--url and --insecure are for --join" --email "$EMAIL" --insecure
+  refuses "a short join token" "--join is not a join token" --join cvjn_short --url https://caravana.test
+  refuses "a join token with a bad character" "--join is not a join token" --join "cvjn_$(printf 'x%.0s' $(seq 42))!" --url https://caravana.test
+  refuses "an http console" "--url must be https://" --join "$good_token" --url http://caravana.test
+  refuses "a console with a path" "--url must be https://" --join "$good_token" --url https://caravana.test/console
+  # shellcheck disable=SC2016 # the $( ) is the point: it must reach the installer as text
+  refuses "a console that isn't a host name" "--url must be https://" --join "$good_token" --url 'https://a$(id).test'
+  refuses "an address that isn't one" "--address is not" --join "$good_token" --url https://caravana.test --address 999.1.1.1
+  refuses "a loopback address" "--address is not" --email "$EMAIL" --address 127.0.0.1
+  refuses "--first with --join" "--first and --join" --first --join "$good_token" --url https://caravana.test
+  refuses "--first options with --join" "are for the first server" --join "$good_token" --url https://caravana.test --email "$EMAIL"
+  refuses "--leave with --uninstall" "not both" --leave --uninstall
+  refuses "a stray join token" "looks like a join token" "$good_token"
+  out="$(vm sudo bash "$WORK/$v1/install.sh" --from "$WORK/$v1" --leave)" || die "--leave on a host that never installed anything should exit 0"
+  grep -q "nothing to leave" <<<"$out" || die "--leave on a fresh host should say there is nothing to leave:\n$out"
+  ! grep -q "$good_token" <<<"$(vm sudo bash "$WORK/$v1/install.sh" --from "$WORK/$v1" --join "$good_token" --url https://caravana.test --email "$EMAIL" 2>&1 || true)" ||
+    die "a refusal printed the join token"
+  for path in /etc/caravana /var/lib/caravana-host /opt/caravana /etc/nomad.d /etc/caravana-node /usr/local/libexec/caravana-node; do
     vm test ! -e "$path" || die "a refused install changed the host: $path exists"
   done
 
   say "install $v1"
-  out="$(install "$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none)" || { echo "$out"; die "install"; }
+  out="$(install "$v1" --email "$EMAIL" --domain "$DOMAIN" --acme none --address "$ADDR")" || { echo "$out"; die "install"; }
+  ! grep -q 'cvnd_' <<<"$out" || die "the installer printed a node token"
   grep -q "Create the admin: sudo caravana admin init --email $EMAIL" <<<"$out" ||
     die "without a terminal the installer should print the admin command:\n$out"
   vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v1\"" || die "the console doesn't answer over HTTPS with $v1"
@@ -431,12 +553,21 @@ main() {
   check_domains_host
   say "the Docker root, node:read and Traefik's request numbers (feature 025)"
   check_monitoring_host
+  say "the private network, Nomad's certificates, the cluster's variables and the registered server (feature 031)"
+  check_mesh_host
   say "a rerun changes nothing"
   out="$(install "$v1")"
   grep -q '^changed: $' <<<"$out" || die "a rerun with nothing new changed: $(grep '^changed:' <<<"$out")"
   ! grep -q 'Traefik is restarted once' <<<"$out" || die "a rerun said Traefik is restarted:\n$out"
+  ! grep -q 'Nomad restarts twice' <<<"$out" || die "a rerun said Nomad restarts:\n$out"
+  out="$(install "$v1" --first)"
+  grep -q '^changed: $' <<<"$out" || die "a rerun with --first changed: $(grep '^changed:' <<<"$out")"
   check_domains_host
   check_monitoring_host
+  check_mesh_host
+  say "the other role's options are refused on a first server, and --uninstall's partner --leave too"
+  refuses "--join on a first server" "this is the first server of its cluster" --join "$good_token" --url https://caravana.test
+  refuses "--leave on a first server" "this is the first server" --leave
 
   say "a Traefik job from before feature 025 is restarted once for its request numbers, and says so"
   vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
@@ -450,6 +581,7 @@ main() {
 
   say "deploy whoami"
   TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"
+  check_servers_api
 
   say "Updates reads the host's files, and pro runs, inside the unit's sandbox (feature 027)"
   check_updates_host packages
@@ -477,6 +609,8 @@ main() {
   vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v2\"" || die "$v2 isn't the one answering"
   api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the API token didn't survive the upgrade"
   check_updates_host reads
+  check_servers_api
+  check_mesh_host
 
   say "a broken $bad is rolled back to $v2"
   set +e
@@ -514,6 +648,13 @@ main() {
   done
   ! vm systemctl is-active --quiet caravana-update.timer || die "caravana-update.timer still runs"
   ! vm systemctl is-enabled --quiet caravana-update.timer || die "caravana-update.timer is still enabled"
+  say "the uninstall stopped the agent's timer and removed node.env, and left the mesh, Nomad and the agent"
+  vm sudo test ! -e /etc/caravana-node/node.env || die "the uninstall left node.env"
+  ! vm systemctl is-active --quiet caravana-node.timer || die "caravana-node.timer still runs"
+  ! vm systemctl is-enabled --quiet caravana-node.timer || die "caravana-node.timer is still enabled"
+  vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "the uninstall took the mesh away"
+  vm systemctl is-active --quiet nomad || die "the uninstall stopped Nomad"
+  vm sudo test -x /usr/local/libexec/caravana-node || die "the uninstall removed the agent, which Nomad's unit needs"
   app_answers || die "whoami stopped answering after the uninstall"
   [ "$(vm_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/v1/health")" = 502 ] ||
     die "the console domain should answer 502 with Caravana gone"
