@@ -100,6 +100,11 @@ openssl rand -hex 24                     # the database password
 Secrets travel only in the overlay. Caravana keeps them in Nomad Variables, and no page, answer or
 log shows them.
 
+Keep `overlay.json` (and the signing key of step 8) outside any repository or worktree once the
+deploy works, for example in `~/.secrets/codemagic-patch/` (`chmod 600`), and back it up: it is the
+only copy of the server's secrets outside Caravana. `deploy.sh` reads it from there with
+`OVERLAY=~/.secrets/codemagic-patch/overlay.json ./deploy.sh deploy`.
+
 ## 7. Deploy
 
 ```bash

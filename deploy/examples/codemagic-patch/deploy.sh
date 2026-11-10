@@ -5,16 +5,18 @@
 #   deploy/examples/codemagic-patch/deploy.sh deploy    deploy it (the first time, and after every change)
 #
 # Needs CARAVANA_URL (e.g. https://caravana.example.com) and CARAVANA_TOKEN (an API token, from
-# the console's Settings), and python3. overlay.json holds secret values: it is gitignored.
+# the console's Settings), and python3. overlay.json holds secret values: it is gitignored, and
+# OVERLAY points at it when it lives elsewhere (e.g. OVERLAY=~/.secrets/codemagic-patch/overlay.json).
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="${APP:-codemagic-patch}"
+OVERLAY="${OVERLAY:-$DIR/overlay.json}"
 
 : "${CARAVANA_URL:?set CARAVANA_URL, e.g. https://caravana.example.com}"
 : "${CARAVANA_TOKEN:?set CARAVANA_TOKEN to an API token from Settings in the console}"
-[ -f "$DIR/overlay.json" ] || { echo "missing $DIR/overlay.json: copy overlay.example.json and fill it in" >&2; exit 1; }
-if grep -q REPLACE "$DIR/overlay.json"; then
+[ -f "$OVERLAY" ] || { echo "missing $OVERLAY: copy overlay.example.json and fill it in, or set OVERLAY" >&2; exit 1; }
+if grep -q REPLACE "$OVERLAY"; then
   echo "overlay.json still has REPLACE placeholders" >&2
   exit 1
 fi
@@ -23,14 +25,14 @@ case "${1:-}" in
 preview) path="/v1/apps/$APP/compose/preview" ;;
 deploy) path="/v1/apps/$APP/compose" ;;
 *)
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
   ;;
 esac
 
 # The request body: the Compose file as a string, with each __NAME__ replaced by overlay.json's
 # vars.NAME, plus the overlay's services. The vars are not sent on their own.
-body="$(python3 - "$DIR/compose.yaml" "$DIR/overlay.json" <<'EOF'
+body="$(python3 - "$DIR/compose.yaml" "$OVERLAY" <<'EOF'
 import json, re, sys
 overlay = json.load(open(sys.argv[2]))
 names = overlay.get("vars", {})
