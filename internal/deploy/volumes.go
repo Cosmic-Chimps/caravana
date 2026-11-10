@@ -27,16 +27,23 @@ const volumeMode = "0777"
 
 // EnsureVolumes creates every volume of a that Nomad doesn't have yet, and
 // waits until all of them are ready. A volume that exists is used as it is,
-// with its data. Register calls it, so the first deploy that names a volume
-// creates it.
+// with its data, and is never moved. Register calls it, so the first deploy
+// that names a volume creates it.
+//
+// All the volumes of one service live on one server, or the service could
+// never be placed (feature 031, research L12 and D9). So per service: when one
+// of its volumes exists, its node decides and the volumes still to create go
+// on that node; otherwise the first one is created with no node (Nomad picks
+// one in the "default" pool), and the others follow it to the node Nomad
+// chose. Two services may end up on different servers.
 func (d *Deployer) EnsureVolumes(ctx context.Context, a app.App) error {
-	var want []string
+	haveAny := false
 	for _, svc := range a.Services {
-		for _, v := range svc.Volumes {
-			want = append(want, nomadjob.VolumeName(a.ID, v.Name))
+		if len(svc.Volumes) > 0 {
+			haveAny = true
 		}
 	}
-	if len(want) == 0 {
+	if !haveAny {
 		return nil
 	}
 	have, err := d.listVolumes(ctx, nomadjob.VolumePrefix(a.ID))
@@ -44,37 +51,99 @@ func (d *Deployer) EnsureVolumes(ctx context.Context, a app.App) error {
 		return err
 	}
 
-	ids := make([]string, 0, len(want))
-	for _, name := range want {
-		if stub, ok := have[name]; ok {
-			ids = append(ids, stub.ID)
-			continue
-		}
-		resp, _, err := d.nomad.HostVolumes().Create(&api.HostVolumeCreateRequest{Volume: &api.HostVolume{
-			Namespace:  "default",
-			Name:       name,
-			PluginID:   "mkdir",
-			Parameters: map[string]string{"mode": volumeMode},
-			RequestedCapabilities: []*api.HostVolumeCapability{{
-				AccessMode:     api.HostVolumeAccessModeSingleNodeSingleWriter,
-				AttachmentMode: api.HostVolumeAttachmentModeFilesystem,
-			}},
-		}}, (&api.WriteOptions{}).WithContext(ctx))
+	// Decide every service's node before creating anything, so a service
+	// whose volumes are already split refuses the deploy with nothing changed.
+	nodes := make([]string, len(a.Services))
+	for i, svc := range a.Services {
+		node, err := existingNode(a.ID, svc, have)
 		if err != nil {
-			return d.volumeError("create volume "+name, err)
+			return err
 		}
-		if resp == nil || resp.Volume == nil {
-			return fmt.Errorf("%w: Nomad answered no volume for %s", ErrNomadRejected, name)
+		nodes[i] = node
+	}
+
+	var ids, names []string
+	for i, svc := range a.Services {
+		node := nodes[i]
+		for _, v := range svc.Volumes {
+			name := nomadjob.VolumeName(a.ID, v.Name)
+			names = append(names, name)
+			if stub, ok := have[name]; ok {
+				ids = append(ids, stub.ID)
+				continue
+			}
+			vol, err := d.createVolume(ctx, name, node)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, vol.ID)
+			if node == "" {
+				// The first volume of the service: the rest go where it went.
+				if vol.NodeID == "" {
+					return fmt.Errorf("%w: Nomad answered no node for volume %s", ErrNomadRejected, name)
+				}
+				node = vol.NodeID
+			}
 		}
-		ids = append(ids, resp.Volume.ID)
 	}
 
 	for i, id := range ids {
-		if err := d.waitReady(ctx, id, want[i]); err != nil {
+		if err := d.waitReady(ctx, id, names[i]); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// existingNode returns the node of svc's volumes that Nomad already has, or
+// "" when it has none. Two of them on different nodes is an error naming the
+// service and both volumes: nothing can be done about it by creating more.
+func existingNode(appID string, svc app.Service, have map[string]*api.HostVolumeStub) (string, error) {
+	node, first := "", ""
+	for _, v := range svc.Volumes {
+		name := nomadjob.VolumeName(appID, v.Name)
+		stub, ok := have[name]
+		if !ok || stub.NodeID == "" {
+			continue
+		}
+		switch {
+		case node == "":
+			node, first = stub.NodeID, name
+		case stub.NodeID != node:
+			return "", fmt.Errorf("%w: service %s has its volumes on different servers (%s on node %s, %s on node %s); a service's volumes must be on one server",
+				ErrNomadRejected, svc.Name, first, node, name, stub.NodeID)
+		}
+	}
+	return node, nil
+}
+
+// createVolume creates one dynamic host volume and returns what Nomad
+// answered. With a node the volume goes there; without one Nomad picks a node
+// of the "default" pool.
+func (d *Deployer) createVolume(ctx context.Context, name, nodeID string) (*api.HostVolume, error) {
+	vol := &api.HostVolume{
+		Namespace:  "default",
+		Name:       name,
+		PluginID:   "mkdir",
+		Parameters: map[string]string{"mode": volumeMode},
+		RequestedCapabilities: []*api.HostVolumeCapability{{
+			AccessMode:     api.HostVolumeAccessModeSingleNodeSingleWriter,
+			AttachmentMode: api.HostVolumeAttachmentModeFilesystem,
+		}},
+	}
+	if nodeID != "" {
+		vol.NodeID = nodeID
+	} else {
+		vol.NodePool = "default"
+	}
+	resp, _, err := d.nomad.HostVolumes().Create(&api.HostVolumeCreateRequest{Volume: vol}, (&api.WriteOptions{}).WithContext(ctx))
+	if err != nil {
+		return nil, d.volumeError("create volume "+name, err)
+	}
+	if resp == nil || resp.Volume == nil {
+		return nil, fmt.Errorf("%w: Nomad answered no volume for %s", ErrNomadRejected, name)
+	}
+	return resp.Volume, nil
 }
 
 // waitReady waits until the volume id is ready. Creating one takes a few
@@ -133,6 +202,8 @@ func (d *Deployer) DeleteVolumes(ctx context.Context, appID string) error {
 type HostVolumeInfo struct {
 	// HostPath is the directory on the node that holds the volume's files.
 	HostPath string
+	// NodeID is the Nomad node the volume is on.
+	NodeID string
 }
 
 // HostVolumes returns the host volumes Nomad has for appID, by the name the
@@ -154,7 +225,7 @@ func (d *Deployer) HostVolumes(ctx context.Context, appID string) (map[string]Ho
 			}
 			return nil, d.volumeError("read volume "+name, err)
 		}
-		out[strings.TrimPrefix(name, prefix)] = HostVolumeInfo{HostPath: v.HostPath}
+		out[strings.TrimPrefix(name, prefix)] = HostVolumeInfo{HostPath: v.HostPath, NodeID: v.NodeID}
 	}
 	return out, nil
 }

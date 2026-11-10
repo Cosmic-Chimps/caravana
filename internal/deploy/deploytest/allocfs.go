@@ -209,6 +209,11 @@ func (n *Nomad) recordRestartEvents(stub *api.AllocationListStub, now time.Time)
 // AddHostVolume makes a ready host volume called name, as a deploy would, and
 // returns its path on the node. A volume with that name is returned as it is.
 func (n *Nomad) AddHostVolume(name string) (hostPath string) {
+	return n.AddHostVolumeOn(name, "node-1")
+}
+
+// AddHostVolumeOn is AddHostVolume with the node the volume is on.
+func (n *Nomad) AddHostVolumeOn(name, nodeID string) (hostPath string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	for _, v := range n.volumes {
@@ -219,7 +224,7 @@ func (n *Nomad) AddHostVolume(name string) (hostPath string) {
 	n.index++
 	id := fmt.Sprintf("vol-%d", n.index)
 	v := api.HostVolume{
-		ID: id, Name: name, Namespace: "default", PluginID: "mkdir", NodeID: "node-1",
+		ID: id, Name: name, Namespace: "default", PluginID: "mkdir", NodeID: nodeID,
 		HostPath: "/opt/nomad/data/host_volumes/" + id, State: api.HostVolumeStateReady,
 	}
 	n.volumes[id] = &hostVolume{vol: v, reads: 2}
