@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.33.0
+  version: 0.34.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -43,6 +43,13 @@ info:
     `deployApp`, `deployCompose`, `promoteApp` and `callWebhook` accept optional
     `Caravana-Origin-*` headers saying where the deploy came from (a CI run); see
     `Deployment.origin`.
+
+    Servers (`listServers`, `addServer`, `getServer`, `getServerJoin`, `removeServer`) are managed
+    with an API token or a session. Three more calls are the server's own agent talking to
+    Caravana and have credentials of their own: `joinServer` (`POST /v1/join`) carries a one-use
+    join token in its body, and `syncNode` and `renewNodeCertificate` carry the node token
+    `joinServer` answered as `Authorization: Bearer cvnd_…`. An API token never stands in for
+    them, nor a node token for an API token. They are served on the main listener only.
 
     `POST /v1/webhooks/{id}` needs the app's webhook token instead, and is also served, alone,
     on the optional webhook-only listener. Webhook tokens and API tokens never stand in for
@@ -347,6 +354,446 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/servers:
+    get:
+      operationId: listServers
+      summary: List the servers of the cluster and the cluster's totals.
+      description: |
+        Every server Caravana manages (a row of its own: waiting for its join command to be run,
+        joining, or ready), joined with what Nomad says about its node by the node's app address,
+        and the Nomad nodes that have no row (`managed: false`: the dev lab's node, or a host that
+        wasn't set up by the newer installer). Never 502: when Nomad can't be read the rows are still
+        listed, `cluster.nomad` is `unreachable` and no server is judged `down`.
+
+        `state` is `waiting`, `joining`, or for a server that has joined what Nomad says: `ready`,
+        or `down` (the node is down, disconnected or gone). A ready server that Nomad won't place work
+        on (ineligible or draining) is `ready` with `acceptsWork: false`. `memory`, `cpu` and `disks`
+        come from the newest stored sample of the server's node and are `null` for a server with none,
+        never 0. `survivesLoss` is true when three Nomad servers are wanted and each reports its Nomad
+        server running.
+      tags: [servers]
+      responses:
+        "200":
+          description: The cluster and its servers, by index; the unmanaged nodes last.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [cluster, servers]
+                properties:
+                  cluster:
+                    $ref: "#/components/schemas/Cluster"
+                  servers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Server"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: addServer
+      summary: Make the command that adds a server to the cluster.
+      description: |
+        Makes a join command and a waiting server for it, answered 201. Run the command as root
+        on a fresh Ubuntu 24.04 machine: it installs the server's side of Caravana, joins the
+        private network and Nomad, and reports back until the server's four checks pass (`connected`,
+        `docker`, `network`, `ready`); follow them with `getServerJoin`. The command works for an
+        hour and once. `token` (`cvjn_…`) is in this answer and nowhere else: Caravana keeps only its
+        hash, and the answer is `Cache-Control: no-store`. `name` may be empty (the machine's host
+        name is used, with `-2`, `-3`… added while taken) and `pool` too (`default`).
+
+        `command` is `curl -fsSL <release address>/v<version>/install.sh | sudo bash -s -- --join
+        <token> --url <console address>`, plus ` --insecure` when the console's certificate mode is
+        `none`. A development build has no download: the command runs `install.sh --from <the release
+        folder>` and `commandNote` says the installer has to be copied to the server first. Servers
+        can only be added to an installation the newer installer set up (409 `cluster_not_ready`).
+      tags: [servers]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  description: "A lowercase DNS label, at most 63 characters, not used by a server or a Nomad node; empty to leave it to the machine."
+                pool:
+                  type: string
+                  description: "The Nomad node pool the server joins; a lowercase DNS label. Empty is `default`."
+      responses:
+        "201":
+          description: The waiting server and its command.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerJoin"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "409":
+          description: |
+            `cluster_not_ready`: no first server is registered, or the cluster's CA can't be read
+            ("Run the installer again on this server first: it sets up the private network and
+            Nomad's certificates."). `server_exists` (`field` `name`): a server or a Nomad node has
+            that name. `cluster_full`: all 63 server indexes are taken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `name` or `pool`: not a lowercase DNS label."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/servers/joins/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The server's ID, from `addServer`'s answer. It exists before the server has a name.
+        schema: {type: string}
+    get:
+      operationId: getServerJoin
+      summary: Read a server by the ID of its join.
+      description: |
+        The same `Server` as `getServer`, found by the ID `addServer` answered. A waiting join has
+        `expiresAt`, no checks and no address; once the server has joined it has its name, its
+        address and the four `checks`, which the console follows until they pass.
+      tags: [servers]
+      responses:
+        "200":
+          description: The server.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no server has that ID (an expired join is removed)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/servers/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A server's name. `removeServer` also takes a server's ID.
+        schema: {type: string}
+    get:
+      operationId: getServer
+      summary: Read one server.
+      tags: [servers]
+      responses:
+        "200":
+          description: The server.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: removeServer
+      summary: Take a server out of the cluster.
+      description: |
+        `{name}` is the server's name or ID: a waiting join is cancelled by its ID. A waiting
+        server can always be removed. A server that has joined can only be removed when Nomad has no
+        node for it or says the node is `down` (409 `server_running` otherwise: "<name> is running.
+        Stop it, or run the installer with --leave on it, then remove it."); a Nomad that can't be
+        read can't say, and is a 502. The first server, the one Caravana runs on, is never removed
+        (409 `protected`). The row is deleted, so the server's node token stops working and it leaves
+        every other server's peers at their next sync; a removed Nomad server's place is taken by
+        another ready server.
+      tags: [servers]
+      responses:
+        "204":
+          description: The server is removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`server_running` or `protected`; `message` says why. Nothing was changed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`nomad_unavailable`: Nomad couldn't be read, so it can't be told whether the server is running."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/join:
+    post:
+      operationId: joinServer
+      summary: "Node call: a new server joins the cluster."
+      description: |
+        Called by the installer's agent (`caravana node join`) on the new server, not by clients.
+        There is no header credential: the join token (`cvjn_…`, made by `addServer`) is in the body,
+        and works once, within an hour. The server sends the public key it made for the private
+        network, a certificate request for its Nomad certificate (its private key never leaves it),
+        the address other servers reach it at (when it isn't where the call came from) and facts about
+        the machine. Everything that can be wrong in the request is checked before the token is
+        spent, so a mistake leaves the command usable until it ends.
+
+        The answer gives the server its name and index (every address of the server derives from the
+        index), the cluster's CA, a **client** certificate for its key, its node token (`cvnd_…`,
+        shown once; only its hash is kept) and the servers it must peer with.
+
+        Failed tries (a token that isn't valid) are limited per address like sign-ins: 5 in 15 minutes,
+        then 429 `too_many_attempts`. Answers are `Cache-Control: no-store`, bodies at most 64 KiB.
+        Served on the main listener only. An API token, a session or a deploy token isn't involved.
+      tags: [servers]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinRequest"
+      responses:
+        "200":
+          description: The server joined; it is `joining` until its four checks pass.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinAnswer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: |
+            `join_token_invalid`: the token was used, expired, or never existed ("This join token isn't
+            valid: it was used, expired, or never existed. Make a new command in the console."), the same
+            for every reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`cluster_not_ready`: the cluster's CA can't be read. `server_exists` (`field` `name`): another server took the name first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: "`body_too_large`: more than 64 KiB."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `publicKey`, `csr`, `address` or `facts.…`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "`too_many_attempts`: too many failed tries from this address."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/node/sync:
+    post:
+      operationId: syncNode
+      summary: "Node call: a server reports and learns what it should be."
+      description: |
+        Called every 30 seconds by each server's agent (`caravana node sync`) with the node token
+        it got from `joinServer` as `Authorization: Bearer cvnd_…`. An API token, a session, a deploy
+        token or no credential is the same 401 `node_token_invalid`; a node token is accepted on these
+        two node calls and nowhere else.
+
+        The report says what the agent sees: versions, Docker, the disk under Nomad's data, the
+        kernel, its role, whether its Nomad knows a leader or runs its server, when its certificate
+        ends, and per peer whether one ping over the private network got through. Caravana stores it,
+        evaluates a joining server's four checks (`connected`, `docker`, `network`, `ready`) and marks
+        the server ready when they pass, then answers what the server should be: its peers (every
+        other server that is `joining` or `ready`), the Nomad servers, its role, and `renew` when its
+        certificate ends in under 30 days. `gossipKey` is there only when `role` is `server`. With
+        three ready servers the two oldest that joined are promoted to Nomad servers, one at a time.
+        Answers are `Cache-Control: no-store`, bodies at most 64 KiB.
+      tags: [servers]
+      security:
+        - nodeBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeReport"
+      responses:
+        "200":
+          description: What the server should be.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeSyncAnswer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NodeUnauthorized"
+        "409":
+          description: "`cluster_not_ready`: the gossip key can't be read."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: "`body_too_large`: more than 64 KiB."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`: a text or a number of the report is out of range."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`nomad_unavailable`: the gossip key couldn't be read from Nomad."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/node/certificate:
+    post:
+      operationId: renewNodeCertificate
+      summary: "Node call: a server asks for a certificate for a new key."
+      description: |
+        Same credentials as `syncNode`. The server makes a new key and sends its certificate request
+        when it is promoted to a Nomad server or when its certificate is about to end. Caravana
+        signs a certificate of the kind the server should be now (a Nomad server's, else a client's),
+        for the server's private address, and answers it with the CA's certificate. Nothing in the
+        request but the key's public half is used. Answers are `Cache-Control: no-store`.
+      tags: [servers]
+      security:
+        - nodeBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [csr]
+              properties:
+                csr:
+                  type: string
+                  description: A PEM certificate request with an ECDSA P-256 or Ed25519 key.
+      responses:
+        "200":
+          description: The certificate.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [certificate, ca]
+                properties:
+                  certificate: {type: string, description: "A PEM certificate, valid for 90 days."}
+                  ca: {type: string, description: "The cluster CA's PEM certificate."}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NodeUnauthorized"
+        "409":
+          description: "`cluster_not_ready`: the CA can't be read."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: "`body_too_large`: more than 64 KiB."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `csr`: not a certificate request this CA signs."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -4031,6 +4478,10 @@ components:
       description: |
         The web UI's session, set by signing in at `/login`. Over HTTPS the cookie is named
         `__Host-caravana_session`. State-changing requests must come from caravana's own pages.
+    nodeBearer:
+      type: http
+      scheme: bearer
+      description: "A server's node token as `Authorization: Bearer cvnd_…`, from `joinServer`. Only the agent's `syncNode` and `renewNodeCertificate` take it."
     webhookBearer:
       type: http
       scheme: bearer
@@ -4651,7 +5102,9 @@ components:
             `disk_nearly_full` (a filesystem of the host is 85 % full or more),
             `os_reboot_required` (the host needs a reboot), `os_security_updates` (security
             updates are waiting; a warning) or `caravana_update_failed` (an update of Caravana was
-            rolled back, failed, was refused or got lost). Those three have no app: `title` is
+            rolled back, failed, was refused or got lost), `server_down` (a server's node is
+            down; `title` is "Server down: <name>") or `server_certificate_expiring` (a server's Nomad
+            certificate is near its end; "Server certificate ending: <name>"). Those five have no app: `title` is
             "Reboot needed", "Security updates waiting" or "caravana update failed" and `text` is the
             sentence ("This server needs a reboot: kernel 6.8.0-149 is installed, but 6.8.0-147 is
             still running."). A
@@ -4728,7 +5181,10 @@ components:
         expiresAt:
           type: string
           format: date-time
-          description: "`problem.opened` of `domain_cert_expiring`: when the certificate ends."
+          description: "`problem.opened` of `domain_cert_expiring` and `server_certificate_expiring`: when the certificate ends."
+        server:
+          type: string
+          description: "`problem.opened` of `server_down` and `server_certificate_expiring`: the server's name. Such an event has no app, project or environment."
         mount:
           type: string
           description: "`problem.opened` of `disk_nearly_full`: the filesystem's mount point."
@@ -6168,25 +6624,7 @@ components:
           type: array
           description: The watched filesystems of the newest sample; empty before the first.
           items:
-            type: object
-            additionalProperties: false
-            required: [mount, holds, usedMb, totalMb, freeMb, usedPercent, state]
-            properties:
-              mount: {type: string}
-              holds:
-                type: array
-                description: "What is on it. `nomad`: the copies' files and host volumes. `docker`: the images."
-                items: {type: string, enum: [nomad, docker]}
-              usedMb: {type: integer}
-              totalMb: {type: integer}
-              freeMb: {type: integer}
-              usedPercent:
-                type: number
-                description: Used over used plus free, as `df` prints it.
-              state:
-                type: string
-                enum: [ok, warning, failed]
-                description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %; and at least `warning` while the filesystem's `disk_nearly_full` item is open (it stays open until the disk reads under 83 %)."
+            $ref: "#/components/schemas/HostDisk"
         room:
           type: object
           additionalProperties: false
@@ -6729,6 +7167,297 @@ components:
             `os_reboot_required` and `os_security_updates` may be missing because they couldn't be
             judged, not because nothing is waiting.
 
+    HostDisk:
+      type: object
+      additionalProperties: false
+      required: [mount, holds, usedMb, totalMb, freeMb, usedPercent, state]
+      properties:
+        mount: {type: string}
+        holds:
+          type: array
+          description: "What is on it. `nomad`: the copies' files and host volumes. `docker`: the images."
+          items: {type: string, enum: [nomad, docker]}
+        usedMb: {type: integer}
+        totalMb: {type: integer}
+        freeMb: {type: integer}
+        usedPercent:
+          type: number
+          description: Used over used plus free, as `df` prints it.
+        state:
+          type: string
+          enum: [ok, warning, failed]
+          description: "`ok` below 85 %, `warning` from 85 %, `failed` from 95 %; and at least `warning` while the filesystem's `disk_nearly_full` item is open (it stays open until the disk reads under 83 %)."
+    ServerCheck:
+      type: object
+      additionalProperties: false
+      description: One of a joining server's four checks.
+      required: [name, ok, detail]
+      properties:
+        name:
+          type: string
+          enum: [connected, docker, network, ready]
+          description: |
+            In this order, and one that follows an open one is open too. `connected`: the join call was
+            answered. `docker`: the server's last report says Docker answers. `network`: its last
+            report reaches every other joining or ready server over the private network. `ready`:
+            Nomad has a node at the server's app address that is ready and eligible.
+        ok: {type: boolean}
+        detail:
+          type: string
+          description: "A sentence for people: \"Docker running, 156 GB disk free\", \"Can't reach fsn-1 yet\"."
+    Server:
+      type: object
+      additionalProperties: false
+      description: |
+        One server of the cluster. A time is RFC 3339, or an empty string for "not yet". `memory`
+        (MB), `cpu` (MHz) and `disks` come from the newest stored sample of the server's node and are
+        `null` when it has none, never 0.
+      required: [id, name, index, pool, state, managed, first, ingress, controlPlane, nomadServer, acceptsWork, address,
+        privateAddress, createdAt, joinedAt, readyAt, seenAt, expiresAt, checks, agent, certificateExpiresAt, memory,
+        cpu, disks, copies, unreachable]
+      properties:
+        id:
+          type: string
+          description: A join's handle, which exists before the name does. For an unmanaged node, Nomad's node ID.
+        name:
+          type: string
+          description: Empty while a join that leaves the name to the machine waits.
+        index:
+          type: integer
+          minimum: 0
+          maximum: 63
+          description: 1 to 63; every address of the server derives from it. 0 for a node Caravana doesn't manage.
+        pool: {type: string}
+        state:
+          type: string
+          enum: [waiting, joining, ready, down]
+          description: "`down` is a server that was ready whose Nomad node is down, disconnected or gone."
+        managed:
+          type: boolean
+          description: "False for a Nomad node with no row: the dev lab's node, or a host not set up by the newer installer."
+        first: {type: boolean, description: "The server Caravana runs on and the first one installed."}
+        ingress: {type: boolean, description: "Traefik runs here: ports 80 and 443 answer here."}
+        controlPlane: {type: boolean, description: "Caravana runs here."}
+        nomadServer:
+          type: boolean
+          description: Whether Caravana wants the server to be a Nomad server (a voter in Nomad's raft), a role it only ever adds.
+        acceptsWork:
+          type: boolean
+          description: Nomad places work on it (eligible and not draining). False for a server that isn't ready.
+        address:
+          type: string
+          description: The address other servers reach it at, without the port; empty until it has joined.
+        privateAddress:
+          type: string
+          description: Its address on the private network, `10.98.0.<index>`.
+        createdAt: {type: string}
+        joinedAt: {type: string}
+        readyAt: {type: string}
+        seenAt: {type: string, description: "The agent's last sync."}
+        expiresAt: {type: string, description: "When a waiting join's command stops working; empty once it joined."}
+        checks:
+          type: array
+          description: The four checks of a joined server; empty for a waiting one.
+          items:
+            $ref: "#/components/schemas/ServerCheck"
+        agent:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [caravana, nomad, docker, kernel]
+              properties:
+                caravana: {type: string}
+                nomad: {type: string}
+                docker: {type: string}
+                kernel: {type: string}
+            - type: "null"
+          description: What the agent said about the machine; `null` before it did.
+        certificateExpiresAt: {type: string, description: "When the server's Nomad certificate ends."}
+        memory:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [used, reserved, total]
+              properties:
+                used: {type: integer}
+                reserved: {type: integer}
+                total: {type: integer}
+            - type: "null"
+        cpu:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [used, reserved, total, cores]
+              properties:
+                used: {type: integer}
+                reserved: {type: integer}
+                total: {type: integer}
+                cores: {type: integer}
+            - type: "null"
+        disks:
+          oneOf:
+            - type: array
+              items:
+                $ref: "#/components/schemas/HostDisk"
+            - type: "null"
+        copies:
+          type: integer
+          minimum: 0
+          description: How many copies run on it now.
+        unreachable:
+          type: array
+          items: {type: string}
+          description: The names of the servers its last report couldn't reach.
+    Cluster:
+      type: object
+      additionalProperties: false
+      required: [servers, ready, nomadServers, survivesLoss, memoryMb, cpuCores, canAdd, cannotAddReason, nomad]
+      properties:
+        servers: {type: integer, description: "Every server listed, the unmanaged nodes and waiting joins included."}
+        ready: {type: integer}
+        nomadServers: {type: integer, description: "How many servers Caravana wants as Nomad servers."}
+        survivesLoss:
+          type: boolean
+          description: True when three Nomad servers are wanted and each reports its Nomad server running.
+        memoryMb: {type: integer, description: "The memory Nomad offers on the nodes that are up."}
+        cpuCores: {type: integer}
+        canAdd: {type: boolean}
+        cannotAddReason: {type: string, description: "Why `addServer` would be refused; empty when `canAdd`."}
+        nomad:
+          type: string
+          enum: [ok, unreachable]
+    ServerJoin:
+      type: object
+      additionalProperties: false
+      required: [server, token, command, commandNote, expiresAt]
+      properties:
+        server:
+          $ref: "#/components/schemas/Server"
+        token:
+          type: string
+          description: The join token, `cvjn_` and 43 characters. Shown here only.
+        command: {type: string}
+        commandNote:
+          type: string
+          description: "Empty, or what else the command needs: a development build's installer has to be copied to the server."
+        expiresAt: {type: string, description: "When the command stops working: an hour after it was made."}
+    JoinRequest:
+      type: object
+      additionalProperties: false
+      required: [token, publicKey, csr]
+      properties:
+        token: {type: string, description: "The join token, `cvjn_…`."}
+        publicKey:
+          type: string
+          description: The server's WireGuard public key, 44 characters of base64; not another server's.
+        csr:
+          type: string
+          description: A PEM certificate request for its Nomad certificate, ECDSA P-256 or Ed25519.
+        address:
+          type: string
+          description: An IP address other servers reach this one at, when it isn't where the call came from.
+        facts:
+          type: object
+          additionalProperties: false
+          description: What the machine says about itself. Only displayed; texts are at most 200 characters.
+          properties:
+            hostname: {type: string}
+            arch: {type: string}
+            memoryMb: {type: integer}
+            diskFreeMb: {type: integer}
+            diskTotalMb: {type: integer}
+            kernel: {type: string}
+            docker: {type: string}
+            nomad: {type: string}
+            agent: {type: string}
+    NodePeer:
+      type: object
+      additionalProperties: false
+      required: [index, name, publicKey, endpoint]
+      properties:
+        index: {type: integer, minimum: 1, maximum: 63}
+        name: {type: string}
+        publicKey: {type: string}
+        endpoint: {type: string, description: '`ip:51820`, a literal address.'}
+    JoinAnswer:
+      type: object
+      additionalProperties: false
+      required: [name, index, pool, role, servers, ca, certificate, nodeToken, peers]
+      properties:
+        name: {type: string}
+        index: {type: integer, minimum: 1, maximum: 63}
+        pool: {type: string}
+        role: {type: string, enum: [client, server]}
+        servers:
+          type: array
+          items: {type: integer}
+          description: The indexes of the Nomad servers.
+        ca: {type: string, description: "The cluster CA's PEM certificate."}
+        certificate: {type: string, description: "A PEM **client** certificate for the key of `csr`."}
+        nodeToken:
+          type: string
+          description: The server's node token, `cvnd_` and 43 characters. Shown here only; Caravana keeps its hash.
+        peers:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodePeer"
+    NodeReport:
+      type: object
+      additionalProperties: false
+      description: What a server's agent tells Caravana at each sync.
+      required: [agent, nomad, docker, dockerRunning, diskFreeMb, diskTotalMb, memoryMb, kernel, role, nomadLeader,
+        serverRunning, reach]
+      properties:
+        agent: {type: string}
+        nomad: {type: string}
+        docker: {type: string}
+        dockerRunning: {type: boolean}
+        diskFreeMb: {type: integer, minimum: 0, description: "Under Nomad's data directory."}
+        diskTotalMb: {type: integer, minimum: 0}
+        memoryMb: {type: integer, minimum: 0}
+        kernel: {type: string}
+        role: {type: string, enum: [client, server]}
+        nomadLeader: {type: boolean, description: "Whether its Nomad knows a leader."}
+        serverRunning: {type: boolean, description: "For a Nomad server, whether it is among Nomad's raft peers."}
+        certificateNotAfter: {type: string, format: date-time}
+        reach:
+          type: array
+          description: One ping over the private network per peer.
+          items:
+            type: object
+            additionalProperties: false
+            required: [index, ok]
+            properties:
+              index: {type: integer, minimum: 1, maximum: 63}
+              ok: {type: boolean}
+    NodeSyncAnswer:
+      type: object
+      additionalProperties: false
+      required: [name, index, pool, role, servers, peers, renew, state, checks]
+      properties:
+        name: {type: string}
+        index: {type: integer, minimum: 1, maximum: 63}
+        pool: {type: string}
+        role: {type: string, enum: [client, server]}
+        servers:
+          type: array
+          items: {type: integer}
+        peers:
+          type: array
+          description: Every other server that is `joining` or `ready`.
+          items:
+            $ref: "#/components/schemas/NodePeer"
+        gossipKey:
+          type: string
+          description: Nomad's gossip key; there only when `role` is `server`.
+        renew:
+          type: boolean
+          description: True when the certificate the server reported ends in under 30 days.
+        state: {type: string, enum: [joining, ready]}
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServerCheck"
     AttentionItem:
       type: object
       additionalProperties: false
@@ -6738,7 +7467,7 @@ components:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
-            os_reboot_required, os_security_updates, caravana_update_failed]
+            os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -6765,10 +7494,18 @@ components:
             the run's. `detail` says it ("caravana 0.17.0 didn't start, so 0.16.0 runs again."; "The
             update to caravana 0.17.0 failed: <the updater's reason>."). It is about the server, so it
             has no `appId`, and it goes when a later update succeeds or the running version catches up;
-            a failed update is never retried by itself. Clients should accept kinds they don't know.
+            a failed update is never retried by itself. `server_down`, a failure: a server that was ready
+            has a Nomad node that is down, disconnected or gone ("fsn-3 is down. Its copies are being
+            replaced on other servers; what has a volume there waits for it."); it isn't judged while
+            Nomad can't be read, and goes when the node is back or the server is removed.
+            `server_certificate_expiring`, a warning: a joining or ready server's Nomad certificate ends
+            in under 14 days, so its agent couldn't renew it ("fsn-3's Nomad certificate ends Nov 29.
+            Its agent couldn't renew it; run the installer on it again."), `expiresAt` says when. Both
+            are about a server, so they have `server` (its name) and no `appId`. Clients should accept
+            kinds they don't know.
         appId:
           type: string
-          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates` and `caravana_update_failed`, which are about the installation or the host.
+          description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
         project:
           type: string
           description: The project of `appId`'s app. Absent when `appId` is.
@@ -6795,7 +7532,10 @@ components:
         expiresAt:
           type: string
           format: date-time
-          description: For `domain_cert_expiring`, when the certificate ends.
+          description: For `domain_cert_expiring` and `server_certificate_expiring`, when the certificate ends.
+        server:
+          type: string
+          description: The server's name, for `server_down` and `server_certificate_expiring` (`getServer`).
         mount:
           type: string
           description: For `disk_nearly_full`, the filesystem's mount point, such as `/`.
@@ -6815,7 +7555,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring`, `warning`.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -7681,6 +8421,19 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NodeUnauthorized:
+      description: |
+        `node_token_invalid`: no node token, or one that isn't a server's (wrong, or the server
+        was removed), or another kind of credential. The same for every reason.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     UnsupportedMediaType:
       description: The body isn't `application/json` in UTF-8.
       content:
@@ -7971,6 +8724,8 @@ tags:
     description: "Monitoring and capacity: the numbers of an environment's or an app's services, and the host's memory, CPU and disks."
   - name: logs
     description: "The output of an environment's copies, read from Nomad's files: search, lines around one line, download."
+  - name: servers
+    description: The servers of the cluster, how one joins, and the calls their agents make.
   - name: tokens
     description: API tokens for clients (CI, scripts, the Aspire integration).
   - name: account

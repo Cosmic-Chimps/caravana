@@ -48,7 +48,8 @@ error)` (every Nomad node: ID, name, status, eligible, draining, pool, app addre
 - `ClusterStatus(ctx)`: can servers be added? Yes when a first server row exists and the CA is readable.
   Otherwise `ErrClusterNotReady` (409 `cluster_not_ready`): "Run the installer again on this server
   first: it sets up the private network and Nomad's certificates."
-- `CreateJoin(ctx, name, pool) (ServerJoin, error)`: `name` empty or a valid name (lowercase label, at
+- `CreateJoin(ctx, name, pool, fallbackURL) (ServerJoin, error)` (`fallbackURL` is the request's own
+  scheme and host, which only the API can see; used when `CARAVANA_PUBLIC_URL` isn't set): `name` empty or a valid name (lowercase label, at
   most 63) not used by a server or a Nomad node (`ErrServerExists`, 409 `server_exists`, field `name`);
   `pool` empty (then `default`) or a valid name. Deletes expired joins first. Makes the token (`cvjn_` and
   32 random bytes base64url), stores its hash and `now + 1 h`, returns the server, the token, the command
@@ -172,7 +173,7 @@ three node calls (401).
 | `getServer` | `GET /v1/servers/{name}` | 200 `Server`; 404 `server_not_found` |
 | `addServer` | `POST /v1/servers` `{"name": "", "pool": ""}` | 201 `{"server": Server, "token": "cvjn_…", "command": "…", "commandNote": "", "expiresAt": "…"}`, `no-store`; 409 `cluster_not_ready`, `server_exists`, `cluster_full`; 422 `invalid_field` |
 | `getServerJoin` | `GET /v1/servers/joins/{id}` | 200 `Server` (by the join's ID, which exists before the name does); 404 |
-| `removeServer` | `DELETE /v1/servers/{nameOrId}` | 204; 404; 409 `server_running`, `protected` |
+| `removeServer` | `DELETE /v1/servers/{name}` (a name or a join's ID: OpenAPI allows one parameter name per path) | 204; 404; 409 `server_running`, `protected` |
 
 `getHost` gains `?server=<name>` (default: the server Caravana runs on; 404 `server_not_found`), and
 `listVolumes`' `AppVolume` gains `server`. `Copy.node` exists already.

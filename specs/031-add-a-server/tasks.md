@@ -56,45 +56,45 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   `--insecure` or `CARAVANA_INSECURE=1`). It refuses to run when not root (`CARAVANA_NODE_ROOT`, a folder,
   lifts that for tests only). Usage text in `caravana help`. `--token` is read from the flag (the
   installer passes it) and never echoed.
-- [ ] T009 `cmd/caravana/server.go`: `caravana server adopt-first --name N --public-key K --address A`
+- [x] T009 `cmd/caravana/server.go`: `caravana server adopt-first --name N --public-key K --address A`
   (opens the store beside a running server, as `admin` does; prints the node token and nothing else on
   stdout). The service method is T013's; until then a stub that fails the build is fine inside phase A's
   own commits only if phase B follows at once. Prefer: write it in phase B.
 
 ## Phase B: store, service, API
 
-- [ ] T010 `internal/store/migrations/0024_servers.sql` and `store/servers.go`, api.md §1. Tests: the
+- [x] T010 `internal/store/migrations/0024_servers.sql` and `store/servers.go`, api.md §1. Tests: the
   lowest free index (1, 2, then 2 again after a delete), `ErrClusterFull` at 63, `ConsumeJoin` wins once
   under two goroutines, an expired or used hash misses, the unique name.
-- [ ] T011 `internal/deploy/nodes.go` (`Node`, `Nodes(ctx)`: `Nodes().List` with resources, the app
+- [x] T011 `internal/deploy/nodes.go` (`Node`, `Nodes(ctx)`: `Nodes().List` with resources, the app
   address from `privateAddress`) and `cluster.go` (`ClusterCA`, `GossipKey`, `ErrNoCluster`), with
   `deploytest` fakes (nodes that can be added, marked down, removed; the two variables).
-- [ ] T012 `internal/service/servers.go`: `ClusterStatus`, `CreateJoin` (the command of api.md §2),
+- [x] T012 `internal/service/servers.go`: `ClusterStatus`, `CreateJoin` (the command of api.md §2),
   `Join`, `NodeSync`, `NodeCertificate`, `ListServers`, `Server`, `ServerJoin`, `RemoveServer`,
   `AdoptFirst`; `serverchecks.go` (the four checks, pure, table-tested); the `servers` change notice.
-- [ ] T013 `internal/service/serverroles.go`: `wantedServers` (pure) and `reconcileRoles`. Table tests:
+- [x] T013 `internal/service/serverroles.go`: `wantedServers` (pure) and `reconcileRoles`. Table tests:
   two ready servers add nothing; three add one per call and only when the wanted ones report
   `serverRunning`; a fourth isn't added; a removed Nomad server's place is taken; the first is always
   one.
-- [ ] T014 `internal/service/attention_servers.go`: `server_down`, `server_certificate_expiring` and the
+- [x] T014 `internal/service/attention_servers.go`: `server_down`, `server_certificate_expiring` and the
   per-server `disk_nearly_full` (api.md §6) in `Attention`, `AttentionKinds`, `ProblemParts`,
   `diffProblems`' not-judged rule, `notify.Event.Server` and the four renderers.
   `TestEveryKindSaysTheSameWordsEverywhere` covers them.
-- [ ] T015 `internal/api/servers.go` and `nodecalls.go`: the routes of api.md §4 and §5, the join limit
+- [x] T015 `internal/api/servers.go` and `nodecalls.go`: the routes of api.md §4 and §5, the join limit
   (the sign-in limiter's store, its own key), node-token authentication, the error codes
   (`cluster_not_ready`, `cluster_full`, `server_exists`, `server_not_found`, `server_running`,
   `join_token_invalid`, `node_token_invalid`). The node calls are not behind `authenticate` and are not
   mounted on the webhook-only listener.
-- [ ] T016 `api/openapi.yaml` 0.34.0: the eight operations, `Server`, `Cluster`, `ServerCheck`,
+- [x] T016 `api/openapi.yaml` 0.34.0: the eight operations, `Server`, `Cluster`, `ServerCheck`,
   `ServerJoin`, the node calls' schemas with a security scheme of their own, the codes,
   `AppVolume.server`, `getHost`'s `server` parameter, the two attention kinds and `server` on the webhook
   message. The route-sync test passes.
-- [ ] T017 `TestScopedTokenWalksEveryRoute`: the five console operations denied to a deploy token; the
+- [x] T017 `TestScopedTokenWalksEveryRoute`: the five console operations denied to a deploy token; the
   node calls listed as not reachable with any API token.
-- [ ] T018 Sentinel test (`service`, `api`): a join token, a node token, a CSR's key, the CA's key and
+- [x] T018 Sentinel test (`service`, `api`): a join token, a node token, a CSR's key, the CA's key and
   the gossip key reach no log line, error, record (the SQLite file), list answer or notification;
   `addServer`'s answer is the only place the join token is.
-- [ ] T019 `cmd/caravana/server.go` (T009) and `main.go` wiring.
+- [x] T019 `cmd/caravana/server.go` (T009) and `main.go` wiring.
 
 ## Phase C: what assumed one server
 

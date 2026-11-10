@@ -2,6 +2,7 @@ package deploytest
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,7 +20,8 @@ type hostFake struct {
 	node     api.Node
 	status   string
 	stats    api.HostStats
-	failWith int // non-zero: every node read answers it
+	failWith int         // non-zero: every node read answers it
+	extra    []*api.Node // the nodes AddNode made, oldest first
 	infoReqs int
 	listReqs int
 	statReqs int
@@ -148,7 +150,7 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Permission denied", h.failWith)
 		return
 	}
-	if !h.set {
+	if !h.set && len(h.extra) == 0 {
 		if r.URL.Path == "/v1/nodes" {
 			n.writeJSON(w, []*api.NodeListStub{})
 			return
@@ -158,24 +160,96 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.URL.Path == "/v1/nodes":
-		n.writeJSON(w, []*api.NodeListStub{{
-			ID: h.node.ID, Name: h.node.Name, Status: h.status,
-			Drain: h.node.Drain, SchedulingEligibility: h.node.SchedulingEligibility, NodePool: h.node.NodePool,
-			NodeResources: h.node.NodeResources, ReservedResources: h.node.ReservedResources,
-		}})
+		stubs := []*api.NodeListStub{}
+		if h.set {
+			stubs = append(stubs, &api.NodeListStub{
+				ID: h.node.ID, Name: h.node.Name, Status: h.status, CreateIndex: 1,
+				Drain: h.node.Drain, SchedulingEligibility: h.node.SchedulingEligibility, NodePool: h.node.NodePool,
+				NodeResources: h.node.NodeResources, ReservedResources: h.node.ReservedResources,
+			})
+		}
+		for i, x := range h.extra {
+			stubs = append(stubs, &api.NodeListStub{
+				ID: x.ID, Name: x.Name, Status: x.Status, CreateIndex: uint64(i + 2),
+				Drain: x.Drain, SchedulingEligibility: x.SchedulingEligibility, NodePool: x.NodePool,
+				NodeResources: x.NodeResources, ReservedResources: x.ReservedResources,
+			})
+		}
+		n.writeJSON(w, stubs)
 	case r.URL.Path == "/v1/client/stats":
-		if r.URL.Query().Get("node_id") != h.node.ID {
+		if !h.set || r.URL.Query().Get("node_id") != h.node.ID {
 			http.Error(w, "node not found", http.StatusNotFound)
 			return
 		}
 		n.writeJSON(w, h.stats)
 	default:
-		if strings.TrimPrefix(r.URL.Path, "/v1/node/") != h.node.ID {
-			http.Error(w, "node not found", http.StatusNotFound)
+		id := strings.TrimPrefix(r.URL.Path, "/v1/node/")
+		if h.set && id == h.node.ID {
+			n.writeJSON(w, h.node)
 			return
 		}
-		n.writeJSON(w, h.node)
+		for _, x := range h.extra {
+			if x.ID == id {
+				n.writeJSON(w, x)
+				return
+			}
+		}
+		http.Error(w, "node not found", http.StatusNotFound)
 	}
+}
+
+// AddNode adds a node beside the one SetNode makes, as a joined server's Nomad client would
+// register: its ID, name, status ("ready", "down") and the app address of its caravana0
+// interface ("10.99.0.3"; "" for none). It offers 4000 MHz on 2 cores and 4096 MB. Adding an ID
+// again replaces the node.
+func (n *Nomad) AddNode(id, name, status, appAddress string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	res := &api.NodeResources{
+		Cpu:    api.NodeCpuResources{CpuShares: 4000, TotalCpuCores: 2},
+		Memory: api.NodeMemoryResources{MemoryMB: 4096},
+	}
+	if appAddress != "" {
+		res.Networks = Caravana0Networks(appAddress)
+	}
+	node := &api.Node{ID: id, Name: name, Status: status, NodePool: "default", SchedulingEligibility: "eligible", NodeResources: res}
+	for i, x := range n.host.extra {
+		if x.ID == id {
+			n.host.extra[i] = node
+			return
+		}
+	}
+	n.host.extra = append(n.host.extra, node)
+}
+
+// SetNodeStatusOf changes the status of a node AddNode made ("ready", "down", "disconnected").
+func (n *Nomad) SetNodeStatusOf(id, status string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, x := range n.host.extra {
+		if x.ID == id {
+			x.Status = status
+		}
+	}
+}
+
+// SetNodeEligibilityOf makes a node AddNode made eligible or not ("eligible", "ineligible") and
+// sets its drain flag.
+func (n *Nomad) SetNodeEligibilityOf(id, eligibility string, drain bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, x := range n.host.extra {
+		if x.ID == id {
+			x.SchedulingEligibility, x.Drain = eligibility, drain
+		}
+	}
+}
+
+// RemoveNode takes a node AddNode made out of Nomad's list.
+func (n *Nomad) RemoveNode(id string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.host.extra = slices.DeleteFunc(n.host.extra, func(x *api.Node) bool { return x.ID == id })
 }
 
 // LabHostStats is a client's stats as the lab showed them (research R3, R8):

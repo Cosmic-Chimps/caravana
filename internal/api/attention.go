@@ -29,13 +29,16 @@ type attentionItemJSON struct {
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 	// disk_nearly_full (feature 025): the filesystem, what is on it, how full
 	// it is, what is left and the level. Host-level, so there is no appId.
-	Mount       string    `json:"mount,omitempty"`
-	Holds       []string  `json:"holds,omitempty"`
-	UsedPercent *float64  `json:"usedPercent,omitempty"`
-	FreeBytes   *int64    `json:"freeBytes,omitempty"`
-	Level       string    `json:"level,omitempty"`
-	At          time.Time `json:"at"`
-	Detail      string    `json:"detail,omitempty"`
+	Mount       string   `json:"mount,omitempty"`
+	Holds       []string `json:"holds,omitempty"`
+	UsedPercent *float64 `json:"usedPercent,omitempty"`
+	FreeBytes   *int64   `json:"freeBytes,omitempty"`
+	Level       string   `json:"level,omitempty"`
+	// server_down and server_certificate_expiring (feature 031): the server's name. The certificate
+	// kind's end is expiresAt above; the items have no appId.
+	Server string    `json:"server,omitempty"`
+	At     time.Time `json:"at"`
+	Detail string    `json:"detail,omitempty"`
 }
 
 func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
@@ -46,6 +49,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	if it.Kind == service.AttentionDiskNearlyFull {
 		out.Mount, out.Holds, out.Level = it.Mount, it.Holds, string(it.Level)
 		out.UsedPercent, out.FreeBytes = &it.UsedPercent, &it.FreeBytes
+	}
+	if it.Kind == service.AttentionServerDown || it.Kind == service.AttentionServerCertExpiring {
+		out.Server, out.Level = it.Server, string(it.Level) // failed for a server that is down, else warning
 	}
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning

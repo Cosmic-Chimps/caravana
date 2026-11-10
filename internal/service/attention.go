@@ -39,6 +39,11 @@ const (
 	// AttentionCaravanaUpdateFailed: the newest update of Caravana that finished didn't go through
 	// (rolled back, failed, refused or lost) and the running version is still older (feature 030).
 	AttentionCaravanaUpdateFailed AttentionKind = "caravana_update_failed"
+	// AttentionServerDown: a server that was ready has a Nomad node that is down, disconnected or gone
+	// (feature 031). AttentionServerCertExpiring: a joining or ready server's Nomad certificate ends in
+	// under 14 days and its agent hasn't renewed it.
+	AttentionServerDown         AttentionKind = "server_down"
+	AttentionServerCertExpiring AttentionKind = "server_certificate_expiring"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -114,7 +119,11 @@ type AttentionItem struct {
 	// left, its final state and the updater's one-line reason. The item has no app; Detail is its
 	// sentence and Level says failed (state failed) or warning (the other states).
 	UpdateRunID, UpdateVersion, UpdateFrom, UpdateState, UpdateReason string
-	When                                                              time.Time
+	// Server is the name of the server of the server kinds (feature 031); ExpiresAt is then, for
+	// server_certificate_expiring, when its certificate ends. The items have no app; Detail is their
+	// sentence.
+	Server string
+	When   time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -133,6 +142,9 @@ type Attention struct {
 	// ever): the two OS kinds are missing because they couldn't be judged, so the
 	// notifier sends no "resolved" for them.
 	OSUnknown bool
+	// ServersUnknown says Nomad's nodes couldn't be read: server_down is missing because it couldn't be
+	// judged, not because the servers are up, so the notifier sends no "resolved" for it.
+	ServersUnknown bool
 }
 
 // Attention builds the needs-you list from what is stored and what Nomad
@@ -184,6 +196,12 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		return Attention{}, fmt.Errorf("attention: %w", err)
 	}
 	out.Items = append(out.Items, updateItems...)
+	serverItems, serversKnown, err := s.serverItems(ctx, s.clock.Now().UTC())
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.ServersUnknown = !serversKnown
+	out.Items = append(out.Items, serverItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

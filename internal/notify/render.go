@@ -170,6 +170,9 @@ func withDetail(ev Event) string {
 	if line := diskLine(ev); line != "" {
 		text += "\n" + line
 	}
+	if line := serverLine(ev); line != "" {
+		text += "\n" + line
+	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
 	if detail == "" {
 		return text
@@ -206,6 +209,19 @@ func domainLine(ev Event) string {
 	}
 	if ev.ExpiresAt != nil {
 		line += ", certificate expires " + ev.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	return line
+}
+
+// serverLine is "Server: fsn-3" or "Server: fsn-3, certificate ends 2026-11-29 14:00 UTC" for an event
+// about a server, or "" for another.
+func serverLine(ev Event) string {
+	if ev.Server == "" {
+		return ""
+	}
+	line := "Server: " + oneLine(ev.Server)
+	if ev.ExpiresAt != nil {
+		line += ", certificate ends " + ev.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
 	}
 	return line
 }

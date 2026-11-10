@@ -71,6 +71,11 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/updates/check", s.checkUpdates, false, false},
 		{http.MethodPost, "/v1/updates/runs", s.requestUpdate, false, false},
 		{http.MethodGet, "/v1/updates/runs", s.listUpdateRuns, false, false},
+		{http.MethodGet, "/v1/servers", s.listServers, false, false},
+		{http.MethodPost, "/v1/servers", s.addServer, false, false},
+		{http.MethodGet, "/v1/servers/joins/{id}", s.getServerJoin, false, false},
+		{http.MethodGet, "/v1/servers/{name}", s.getServer, false, false},
+		{http.MethodDelete, "/v1/servers/{name}", s.removeServer, false, false},
 		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
 		{http.MethodPost, "/v1/projects", s.createProject, false, false},
 		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
@@ -152,6 +157,11 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/tokens", s.createToken, false, false},
 		{http.MethodGet, "/v1/tokens", s.listTokens, false, false},
 		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false, false},
+		// The node calls (feature 031) carry their own credentials, so they skip authenticate: the join
+		// token is in the body, the node token is the Bearer value (see nodecalls.go).
+		{http.MethodPost, "/v1/join", s.joinServer, true, false},
+		{http.MethodPost, "/v1/node/sync", s.syncNode, true, false},
+		{http.MethodPost, "/v1/node/certificate", s.renewNodeCertificate, true, false},
 		s.webhookRoute(),
 	}
 }
@@ -307,6 +317,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := updatesError(err); e != nil {
+		return e
+	}
+	if e := serversError(err); e != nil {
 		return e
 	}
 	switch {

@@ -52,7 +52,7 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 		Project: it.Project, Environment: it.Environment, AppName: it.AppName,
 		Detail: limitDetail(it.Detail), URL: consoleLink(base, problemPath(it.Kind, it.AppID, problemSubject(it))), At: at,
 		Schedule: it.Schedule, ExitCode: it.ExitCode,
-		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt,
+		Domain: it.Domain, AddressSeen: it.AddressSeen, ExpiresAt: it.ExpiresAt, Server: it.Server,
 	}
 	if it.Kind == AttentionDiskNearlyFull {
 		ev.Mount, ev.Holds, ev.UsedPercent, ev.FreeBytes, ev.Level =
@@ -112,6 +112,12 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionCaravanaUpdateFailed:
 		ev.Title = updateFailedTitle
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionServerDown:
+		ev.Title = "Server down: " + it.Server
+		ev.Text, ev.Detail = it.Detail, ""
+	case AttentionServerCertExpiring:
+		ev.Title = "Server certificate ending: " + it.Server
+		ev.Text, ev.Detail = it.Detail, ""
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -243,6 +249,8 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/monitoring#host"
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates, AttentionCaravanaUpdateFailed:
 		return "/ops/updates"
+	case AttentionServerDown, AttentionServerCertExpiring:
+		return "/ops/servers/" + url.PathEscape(subject)
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
 	}
@@ -363,6 +371,9 @@ func problemKey(it AttentionItem) string {
 // the schedule kinds, the host of the domain kinds, the mount of a disk, else
 // nothing.
 func problemSubject(it AttentionItem) string {
+	if it.Server != "" {
+		return it.Server
+	}
 	if it.UpdateRunID != "" {
 		return it.UpdateRunID
 	}
@@ -387,10 +398,13 @@ func problemSubject(it AttentionItem) string {
 // The two OS kinds (feature 027) come from the files the sampler reads and are
 // judged only while its newest reading is under 5 minutes old, as the disk kind
 // is.
-type judged struct{ Copies, Disks, OS bool }
+//
+// server_down (feature 031) comes from Nomad's node list and is judged only while Nomad's nodes could be
+// read.
+type judged struct{ Copies, Disks, OS, Servers bool }
 
 // allJudged is a check that could read everything.
-var allJudged = judged{Copies: true, Disks: true, OS: true}
+var allJudged = judged{Copies: true, Disks: true, OS: true, Servers: true}
 
 // notJudged says whether a kind of item is one the check couldn't judge. It
 // takes the kind as the list writes it or as the table stores it (a plain
@@ -403,6 +417,8 @@ func notJudged[K ~string](kind K, j judged) bool {
 		return !j.Disks
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
 		return !j.OS
+	case AttentionServerDown:
+		return !j.Servers
 	}
 	return false
 }
@@ -534,7 +550,7 @@ func (s *Service) checkProblems(ctx context.Context) error {
 	}
 	display := s.projectDisplay(ctx)
 	now := s.clock.Now().UTC()
-	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown}, exists, now, s.resolveAfter)
+	changes := diffProblems(prev, att.Items, judged{Copies: !att.CopiesUnknown, Disks: !att.DisksUnknown, OS: !att.OSUnknown, Servers: !att.ServersUnknown}, exists, now, s.resolveAfter)
 
 	check := store.ProblemCheck{Seen: changes.Seen, SeenAt: now, Removed: slices.Clone(changes.Dropped), Dropped: changes.Dropped}
 	var opened, resolved []notify.Event

@@ -132,6 +132,11 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	case service.AttentionOSSecurityUpdates:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open updates", "/ops/updates"
+	case service.AttentionServerDown:
+		row.Action, row.Href = "Open server", serverHref(it.Server)
+	case service.AttentionServerCertExpiring:
+		row.Mark = "warning"
+		row.Action, row.Href = "Open server", serverHref(it.Server)
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"
@@ -225,3 +230,7 @@ func (s *server) partAttention(w http.ResponseWriter, r *http.Request, session s
 	}
 	s.renderPart(w, "apps", "attention-region", region)
 }
+
+// serverHref is a server's page. The Servers pages are built in a later phase of feature 031; until
+// then the link is the one they will answer at.
+func serverHref(name string) string { return "/ops/servers/" + url.PathEscape(name) }

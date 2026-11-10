@@ -34,7 +34,8 @@ const (
 var ServerProblemKinds = []string{
 	"disk_nearly_full", "os_reboot_required", "os_security_updates", // the host
 	"out_of_memory", "restarting", // the copies on it
-	"caravana_update_failed", // an update of Caravana that didn't go through (feature 030)
+	"caravana_update_failed",                     // an update of Caravana that didn't go through (feature 030)
+	"server_down", "server_certificate_expiring", // a server of the cluster (feature 031)
 }
 
 // OpenedProblemKinds are the needs-you kinds whose "opened" (and "worsened") entry the feed
@@ -46,6 +47,7 @@ var OpenedProblemKinds = []string{
 	"disk_nearly_full", "unhealthy", "restarting", "out_of_memory",
 	"domain_dns_elsewhere", "domain_cert_expiring",
 	"os_reboot_required", "os_security_updates", "no_backup_destination",
+	"server_down", "server_certificate_expiring",
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on
