@@ -113,11 +113,12 @@ app_answers() { [ "$(app_code "$1")" = 200 ]; }
 write_watchers() {
   cat >"$WORK/watch.sh" <<'EOF'
 #!/bin/bash
-# watch.sh HOST FLAG: call https://HOST/ every half second until FLAG is gone; print how many calls failed.
+# watch.sh HOST FLAG: call https://HOST/ every half second until FLAG is gone; print the time and status
+# of each failed call, then, on the last line, how many failed.
 fails=0
 while [ -e "$2" ]; do
   code="$(curl -ksS --max-time 2 -o /dev/null -w '%{http_code}' --resolve "$1:443:127.0.0.1" "https://$1/" 2>/dev/null || true)"
-  [ "$code" = 200 ] || fails=$((fails + 1))
+  [ "$code" = 200 ] || { fails=$((fails + 1)) && echo "failed at $(date +%T) with ${code:-000}"; }
   sleep 0.5
 done
 echo "$fails"
@@ -244,7 +245,7 @@ main() {
   wait "$watcher" || true
   [ "$INSTALL_CODE" = 0 ] || die "the conversion exited $INSTALL_CODE:\n$INSTALL_OUT"
   grep -q 'Nomad restarts twice, once only' <<<"$INSTALL_OUT" || die "the installer should say Nomad restarts twice, once:\n$INSTALL_OUT"
-  [ "$(cat "$WORK/conv-fails")" = 0 ] || die "conv.test failed $(cat "$WORK/conv-fails") times during the conversion"
+  [ "$(tail -1 "$WORK/conv-fails")" = 0 ] || die "conv.test failed $(tail -1 "$WORK/conv-fails") times during the conversion:\n$(cat "$WORK/conv-fails")"
   vm 1 sudo caravana-nomad operator raft list-peers | grep -Eq '10\.98\.0\.1:4647 +leader' || die "raft should list 10.98.0.1:4647 after the conversion"
   vm 1 sudo test -f "$STATE/raft-mesh" || die "no raft-mesh marker after the conversion"
   vm 1 sudo test -f "$STATE/nomad.hcl.before-mesh" || die "the old nomad.hcl wasn't kept"

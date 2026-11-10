@@ -192,7 +192,13 @@ func renderNomad(s State, gossipKey string) (string, error) {
 	if d.Server {
 		d.RetryJoin = hclList(serf)
 	}
-	d.ClientServers = hclList(rpc)
+	// A Nomad server's own client talks to its own server. Given a servers list, it heartbeats to one
+	// of the listed servers, and when that one is lost the heartbeat hangs until the connection's
+	// keepalive fails: the node's TTL expires and its copies are replaced (cluster test, 2026-11-10:
+	// the first server's node was marked down when server 3 was lost). Only a client lists servers.
+	if !d.Server {
+		d.ClientServers = hclList(rpc)
+	}
 
 	var b bytes.Buffer
 	if err := nomadTmpl.Execute(&b, d); err != nil {

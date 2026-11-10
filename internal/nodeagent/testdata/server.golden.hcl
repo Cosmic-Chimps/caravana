@@ -52,8 +52,6 @@ client {
   # Each server's containers have a subnet of their own, routed through the mesh, so a service
   # name resolves to a container on another server. The first server keeps Nomad's default.
   bridge_network_subnet = "10.97.12.0/22"
-
-  servers               = ["10.98.0.1:4647", "10.98.0.2:4647"]
 }
 
 acl {

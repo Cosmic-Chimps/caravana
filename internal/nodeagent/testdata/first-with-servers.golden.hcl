@@ -49,8 +49,6 @@ client {
   # keeps http://<public-ip>:<port> closed (research R4).
   network_interface     = "caravana0"
 
-  servers               = ["10.98.0.2:4647", "10.98.0.3:4647"]
-
   # Traefik, the one ingress, runs on the server marked here.
   meta {
     caravana_ingress = "true"

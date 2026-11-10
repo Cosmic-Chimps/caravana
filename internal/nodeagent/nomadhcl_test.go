@@ -155,3 +155,17 @@ func normBlock(s, header string) string {
 	}
 	return ""
 }
+
+// A Nomad server's own client must not list servers: it would heartbeat to a listed server, and when
+// that one is lost the node is marked down and its copies are replaced (cluster test, 2026-11-10). Only
+// a pure client lists the Nomad servers.
+func TestOnlyAClientListsServers(t *testing.T) {
+	listed := regexp.MustCompile(`(?m)^\s*servers\s*=`)
+	for name, c := range renderCases() {
+		got := listed.MatchString(RenderNomad(c.state, c.key))
+		want := c.state.Role == RoleClient
+		if got != want {
+			t.Errorf("%s: client.servers listed = %v, want %v", name, got, want)
+		}
+	}
+}
