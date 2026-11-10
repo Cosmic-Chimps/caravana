@@ -105,13 +105,13 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   `Metrics`' room is the cluster's sum. Tests with two fake nodes.
 - [ ] T022 `getHost?server=`, `Server`'s numbers in `ListServers` from the newest rows (never 0 for
   none).
-- [ ] T023 `nomadjob.Translate`: `Spreads` for a group with more than one copy; `nomadjob.HCL` writes
+- [x] T023 `nomadjob.Translate`: `Spreads` for a group with more than one copy; `nomadjob.HCL` writes
   the block; goldens for a multi-copy app change, single-copy ones don't; the reflection test passes.
 - [ ] T024 `deploy.EnsureVolumes`: one server per service (api.md §6); `AppVolume.Server`. Test: two
   volumes of one service get one `NodeID`; a service with an existing volume puts a new one beside it.
 - [ ] T025 `disk_nearly_full` per server (keys as api.md §6), with its level and the stale rule per
   server.
-- [ ] T026 `deploy/install/traefik.nomad.hcl`: the constraint (node.md §8). The lab's
+- [x] T026 `deploy/install/traefik.nomad.hcl`: the constraint (node.md §8). The lab's
   `deploy/dev/traefik.nomad.hcl` is unchanged.
 
 ## Phase D: the host
