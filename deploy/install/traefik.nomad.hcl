@@ -30,7 +30,17 @@ locals {
 }
 
 job "traefik" {
-  type = "system" # one instance on every client node
+  type = "system" # one instance on every client node that passes the constraint below
+
+  # One ingress: Traefik runs on the first server only, whose Nomad client has
+  # meta { caravana_ingress = "true" } (the installer's --first sets it). Let's Encrypt's
+  # HTTP-01 challenge must reach the server that holds the certificates, and a
+  # joined server's client has no such meta, so a system job would otherwise start a
+  # second Traefik there, with its own empty certificate store (feature 031, research D6).
+  constraint {
+    attribute = "${meta.caravana_ingress}"
+    value     = "true"
+  }
 
   group "traefik" {
     network {
