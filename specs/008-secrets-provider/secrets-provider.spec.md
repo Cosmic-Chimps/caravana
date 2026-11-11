@@ -233,7 +233,10 @@ create an app with the same name and check it has no secrets.
   a violation fails the deploy with an error naming the field, and nothing is saved or written.
 - **FR-008**: A keep for a name with no stored value, and a stored name whose value is missing
   from the store at deploy time, MUST fail the deploy with an error naming the secret.
-- **FR-009**: Values MUST live in Nomad Variables under `nomad/jobs/<app-id>`, and only there.
+- **FR-009**: Values MUST live in Nomad Variables under `nomad/jobs/<app-id>/…`, and only there:
+  one variable per service, `nomad/jobs/<app>/<service>`, which only that service's tasks can read,
+  plus `nomad/jobs/<app>/caravana/previous` for the set a deployment replaced (data-model.md).
+  Amended 2026-11-11 (QA #12) to the layout the design and code use; constitution 1.1.2 says the same.
 - **FR-010**: Changing a value in the store MUST NOT restart or change running copies; new values
   reach copies only through a deploy's rollout.
 - **FR-011**: When the secret store is unreachable, a deploy MUST fail before Nomad is asked to
@@ -315,5 +318,5 @@ create an app with the same name and check it has no secrets.
 ## Verbatim Constraints
 
 - Package and interface: `internal/secrets`, `secrets.Provider`
-- Store path: `nomad/jobs/<app-id>`
+- Store path: `nomad/jobs/<app-id>` (built as one variable per service under it; see FR-009)
 - Contract file: `api/openapi.yaml`

@@ -64,11 +64,11 @@ talk to Nomad (constitution VI). It satisfies `secrets.Provider` without naming 
 | --- | --- |
 | I. Small by Default | PASS. Nomad Variables is part of Nomad. No new module, no new service, no Vault. |
 | II. One Model, Many Inputs | PASS. Secrets are a field of `app.Service`, and `Translate` stays pure: it only emits the template that names the variable path. |
-| III. Safe, Reversible Deploys | PASS. Each deploy declares the full set per service. A name with no value is an explicit keep, never kept by omission. Every change goes through a health-checked rollout, and a failed one puts the previous set back. |
+| III. Safe, Reversible Deploys | PASS. Each deploy declares the full set per service. A name with no value is an explicit keep, never kept by omission, so it is not a merge: the deploy names every secret it holds and only the stored value is carried over (constitution 1.1.2 says so in III; QA #33). Every change goes through a health-checked rollout, and a failed one puts the previous set back. |
 | IV. Fail Loudly | PASS. Bad names, bad values, a keep with no value, a missing stored value and an oversized set all fail, naming the field. |
 | V. API-First | PASS. No console-only feature: set and remove are deploys the API can send too. `api/openapi.yaml` changes in the same commit. |
 | VI. Nomad-Native | PASS. Uses the official client's `Variables()`, keeps Nomad code in `deploy` and `nomadjob`, and the job stays exportable (it holds a path, not values). |
-| VII. Secure by Default | PASS. Values live in Nomad Variables under `nomad/jobs/<app-id>`, never in SQLite, the job, logs or responses. A task can only read its own service's variable. The scoped token gains only the variables rules. |
+| VII. Secure by Default | PASS. Values live in Nomad Variables under `nomad/jobs/<app-id>/…` (one variable per service), never in SQLite, the job, logs or responses. A task can only read its own service's variable. The scoped token gains only the variables rules. |
 | VIII. Plain, Tested Go | PASS. Table tests, a golden job, a fake Nomad over HTTP, an in-memory store for the service tests, and lab and gate steps. |
 
 No violations, so no Complexity Tracking table.

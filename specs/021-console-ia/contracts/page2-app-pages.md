@@ -139,7 +139,9 @@ or service filter bar (with several services the table has a "Used by" column in
   (mono), a checkbox **"Keep as a secret (the value is never shown again)"**, and **Set and
   deploy** (primary sm). Unchecked it sets or replaces the variable in that service's env;
   checked it sets the secret as today. A name that is both a variable and a secret is a field
-  error on Name ("already a secret"/"already a variable").
+  error on Name ("already a secret"/"already a variable"). An unticked box sends nothing, so the
+  form also sends `secretChoice`; a post without it (a form that isn't this one) saves the value as
+  a secret, the side that shows nothing (QA #32, 2026-11-11).
 - **Edit as .env** (`id="env-editor"`, a `.cv-panel`, padding 18, head "Variables as .env",
   one per service with its name when several): today's Environment textarea exactly (ink-0,
   line-2, radius 4, 400 13px/24px mono fg-1, min-height 300, the hint "One NAME=value per line.
