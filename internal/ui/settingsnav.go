@@ -311,19 +311,29 @@ func policyServices(apps []store.AppRecord) int {
 	return n
 }
 
-// registryUse counts, by registry host, the apps with a service whose image is
-// on it. An app counts once per host.
-func registryUse(apps []store.AppRecord) map[string]int {
+// registryUse counts, by registry entry, the apps with a service whose image
+// that entry covers: the most specific stored entry (a host, or host/path) that
+// matches the image's repository, as a deploy would pick it. An app counts once
+// per entry.
+func registryUse(apps []store.AppRecord, regs []store.Registry) map[string]int {
+	entries := make(map[string]bool, len(regs))
+	for _, r := range regs {
+		entries[r.Key()] = true
+	}
 	use := map[string]int{}
 	for _, a := range apps {
 		seen := map[string]bool{}
 		for _, svc := range a.App.Services {
 			ref, err := registry.Parse(svc.Image)
-			if err != nil || seen[ref.Registry] {
+			if err != nil {
 				continue
 			}
-			seen[ref.Registry] = true
-			use[ref.Registry]++
+			entry, ok := registry.MatchEntry(entries, ref.Registry, ref.Repository)
+			if !ok || seen[entry] {
+				continue
+			}
+			seen[entry] = true
+			use[entry]++
 		}
 	}
 	return use

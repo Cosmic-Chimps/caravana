@@ -127,9 +127,9 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
 	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},
 	// Registry credentials (feature 017): the add and edit forms are one PUT, an empty password leaves it out.
-	"POST /settings/registries":               {ops: []string{"putRegistry"}},
-	"POST /settings/registries/{host}/test":   {ops: []string{"testRegistry"}},
-	"POST /settings/registries/{host}/remove": {ops: []string{"deleteRegistry"}},
+	"POST /settings/registries":        {ops: []string{"putRegistry"}},
+	"POST /settings/registries/test":   {ops: []string{"testRegistry"}},
+	"POST /settings/registries/remove": {ops: []string{"deleteRegistry"}},
 	// Notification channels (feature 018): the add form is a create; a row's edit form is a patch, and so are
 	// Pause and Resume (a patch of "paused"); a new signing secret and the test are their own operations.
 	"POST /settings/notifications":             {ops: []string{"createNotificationChannel"}},

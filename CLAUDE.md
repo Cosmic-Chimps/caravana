@@ -1102,6 +1102,42 @@ installer), `api.md` and `page-servers.md`; `research.md` holds what three Lima 
   servers from the console, reading their OS updates, SSH as a way to add a server, Caravana's own high
   availability (its data is one SQLite file on the first server).
 
+Feature 032 (`specs/032-registry-paths`, registry entries per path, from CodeAlta task 7239) is implemented on the worktree branch
+`alta/arctic-palm-fhmv`: private-registry credentials may be limited to a path on a host.
+- An entry is a host or `host/path` (`ghcr.io`, `ghcr.io/acme`). The path is lowercase repository segments
+  without a leading or trailing `/` (`service.canonicalRegistryEntry`; a bad one is a field error `path`,
+  shown at the console's registry input). `internal/registry/entry.go` is the pure rule: an image
+  (host, repository) uses the most specific entry whose path is a whole-segment prefix of the repository
+  (`EntryCandidates`, `MatchEntry`; `ghcr.io/acme` matches `acme` and `acme/x`, never `acme-old/x`), the
+  host-only entry is the fallback, no match is anonymous. Existing rows and variables are host-only
+  entries, so nothing moved and the translator's goldens are unchanged.
+- `Client.Credentials` is `func(ctx, host, repository)` and `Client.Test(ctx, host, repository)` only passes
+  the repository to the hook (the request is still `GET /v2/`, so a test of a path entry checks the login
+  only; the stored message says the first deploy shows which images it reads). `deploy.pullCredentials`
+  tries `EntryCandidates` in order.
+- Variable path: `caravana/registries/<host key>[/<path with "." as "~">]` (`RegistryVariablePath(entry)`;
+  host keys unchanged). The per-task copy's `registry` item holds the ENTRY; the docker `auth` block's
+  `server_address` is still the host. `nomadjob.PrivateRegistry` returns the matching entry from the set of
+  entries (`private` is now the set of entries, `Registry.Key()`).
+- `SyncRegistryCopies(ctx, entry, private)` (`private` after the change) rewrites a copy only where the
+  entry that covers its image (read from its job; the old "item == entry" rule when the job or image isn't
+  there) changed or has new credentials: saving one prefix leaves the others and the host entry's copies
+  untouched, adding a prefix moves the copies under it off the host entry, removing one moves them back (or
+  empties them). Backup and restore variables follow the image of their dump or restore task and never get
+  a `registry` item.
+- Store: migration `0025_registry_paths.sql` (`registries` keyed by `(host, path)`, `path` `''` for a host
+  entry); `store.Registry.Path` and `Key()`; `GetRegistry`, `DeleteRegistry`, `SaveRegistryTest`,
+  `ClearRegistryTest` take `(host, path)`.
+- API 0.35.0: optional `?path=` on `putRegistry`, `deleteRegistry` and `testRegistry` (route unchanged),
+  `Registry.path`, 422 `invalid_field` on `path`. Console: the Registry field takes `host/path`, rows show
+  the entry, Test and Remove are `POST /settings/registries/test` and `/remove` with the entry in the
+  hidden `host` field, "used by" counts the apps each entry covers.
+- The gate's `private-registry` step has two htpasswd users, four images (`gate`, `teama`, `teamb`,
+  `other`) and a per-path part (wrong host entry, two path entries, two-service app healthy, `other/` is 422
+  `registry_auth_failed`, saving teamb leaves teama's copy's ModifyIndex alone, deleting teama moves its
+  copy to the host entry). It passed in the lab on 2026-11-11 (53 s; run alone with
+  `-run 'TestLab/^private-registry$'`).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

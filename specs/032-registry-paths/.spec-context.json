@@ -1,0 +1,517 @@
+{
+  "workflow": "companion",
+  "specName": "Registry credentials per path",
+  "branch": "alta/arctic-palm-fhmv",
+  "currentStep": "implement",
+  "status": "completed",
+  "history": [
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-11-11T19:38:37.811Z"
+    },
+    {
+      "step": "specify",
+      "substep": null,
+      "kind": "complete",
+      "by": "extension",
+      "at": "2026-11-11T19:39:37.993Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-11-11T19:39:44.957Z"
+    },
+    {
+      "step": "plan",
+      "substep": "research",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T19:40:23.715Z"
+    },
+    {
+      "step": "plan",
+      "substep": "design",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T19:40:45.927Z"
+    },
+    {
+      "step": "plan",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T19:40:46.840Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-11-11T19:40:52.841Z"
+    },
+    {
+      "step": "tasks",
+      "substep": "generate",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T19:41:29.420Z"
+    },
+    {
+      "step": "tasks",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T19:41:30.209Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "start",
+      "by": "extension",
+      "at": "2026-11-11T19:41:37.277Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T001",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:19.802Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T002",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:23.138Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T003",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:25.902Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T004",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:28.825Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T005",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:31.503Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T006",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:36.854Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T007",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:39.827Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T008",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:42.680Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T009",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:45.977Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T010",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:48.986Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T011",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:51.837Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T012",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:56.114Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T014",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:08:59.309Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T013",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:11:13.712Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "task": "T015",
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:17:08.670Z"
+    },
+    {
+      "step": "implement",
+      "substep": null,
+      "kind": "complete",
+      "by": "ai",
+      "at": "2026-11-11T21:17:08.778Z"
+    }
+  ],
+  "unattended": true,
+  "last_action": "all 15 tasks done; go test ./... green; lab private-registry passed",
+  "coverage": {
+    "FR-001": {
+      "title": "An entry names a host and may name a path under it",
+      "tasks": "T001,T003,T007"
+    },
+    "FR-002": {
+      "title": "Longest whole-part path prefix wins, else host-only, else no login",
+      "tasks": "T002,T005,T009",
+      "tests": "internal/registry/entry_test.go::TestMatchEntry,internal/nomadjob/private_test.go::TestPrivateRegistryEntryWithPath"
+    },
+    "FR-003": {
+      "title": "Digest lookup and pull use the same entry",
+      "tasks": "T004,T006,T008",
+      "tests": "internal/service/registries_deploy_test.go::TestDeployWithEntriesPerPath"
+    },
+    "FR-004": {
+      "title": "Existing entries keep working as host-only entries",
+      "tasks": "T001,T003,T009",
+      "tests": "internal/store/registries_test.go::TestUpgradeTo0025"
+    },
+    "FR-005": {
+      "title": "Save or remove rewrites exactly the stored pull logins whose entry changes",
+      "tasks": "T006,T010",
+      "tests": "internal/deploy/registries_copies_test.go::TestSyncRegistryCopiesPerPath,cmd/caravana/gate_test.go::privateRegistryStep"
+    },
+    "FR-006": {
+      "title": "Save or remove deploys, restarts or stops nothing",
+      "tasks": "T006,T010"
+    },
+    "FR-007": {
+      "title": "An invalid path is refused naming the path",
+      "tasks": "T007,T011,T012",
+      "tests": "internal/service/registries_test.go"
+    },
+    "FR-008": {
+      "title": "Test on a path entry says it checked the login only",
+      "tasks": "T007,T012",
+      "tests": "internal/service/registries_deploy_test.go::TestTestRegistryWithAPath"
+    },
+    "FR-009": {
+      "title": "API lists, saves, tests and removes path entries; old calls keep their meaning",
+      "tasks": "T011",
+      "tests": "internal/api/registries_test.go"
+    },
+    "FR-010": {
+      "title": "Console accepts host/path and shows each entry with its path",
+      "tasks": "T012",
+      "tests": "internal/ui/registries_test.go"
+    },
+    "FR-011": {
+      "title": "App count per entry counts the apps that entry serves",
+      "tasks": "T012",
+      "tests": "internal/ui/registries_test.go::TestRegistryUseCountsByEntry"
+    },
+    "FR-012": {
+      "title": "No password or token in any page, answer, error, log, job, export or record",
+      "tasks": "T013,T015"
+    }
+  },
+  "size": "oversized",
+  "classification": {
+    "projectedFiles": 30,
+    "projectedTasks": 18,
+    "scopeSignal": "none",
+    "verdict": "oversized"
+  },
+  "expectations": [
+    "no per-app registry choice in Configure",
+    "no change to the docker auth block or the job shape",
+    "no node-level credential helper"
+  ],
+  "context": [
+    "area: internal/registry (client, reference)",
+    "area: internal/deploy/registries.go (variables, per-task copies, sync)",
+    "area: internal/store/registries.go",
+    "area: internal/service/registries.go",
+    "area: internal/api/registries.go + api/openapi.yaml",
+    "area: internal/ui/registries.go + settings.html",
+    "area: cmd/caravana gate private-registry step",
+    "constraint: constitution VII secrets in Nomad Variables, never logged",
+    "constraint: constitution V openapi changes with the endpoint, no breaking change"
+  ],
+  "intent": "Registry entries may name a host and a path prefix so two accounts on one registry host each pull their own images",
+  "decisions": [
+    {
+      "decision": "Entry = host or host/path; first stored of the most-specific candidates wins",
+      "why": "whole-part prefix as the task asks; one function for translator and digest lookup",
+      "rejected": "string HasPrefix; per-app registry choice"
+    },
+    {
+      "decision": "Path entry secret at caravana/registries/<host key>/<path, . as ~>",
+      "why": "no collision with host keys; existing variables keep their path",
+      "rejected": "one variable per host holding every path"
+    },
+    {
+      "decision": "Credentials hook takes the repository; deployer reads candidate variables in order",
+      "why": "only called on a login challenge; keeps the deployer free of the store",
+      "rejected": "passing the entry set into every Resolve"
+    },
+    {
+      "decision": "Sync recomputes each copy entry from its job image on the entry host",
+      "why": "adding or removing a prefix must move copies between entries; unchanged variables are not written",
+      "rejected": "matching the stored registry item only"
+    },
+    {
+      "decision": "API keeps routes, adds optional ?path=, API 0.35.0",
+      "why": "a path segment cannot carry / safely through proxies; no breaking change",
+      "rejected": "%2F in the segment"
+    },
+    {
+      "decision": "Test with a path checks the login only and says so",
+      "why": "registry token scopes name one repository; a prefix scope does not exist",
+      "rejected": "repository:<path>:pull token"
+    },
+    {
+      "decision": "Console Test and Remove post the entry in a hidden host field at /settings/registries/test and /remove",
+      "why": "an entry holds a /, which a path segment cannot carry",
+      "rejected": "keeping /settings/registries/{host}/test with ?path="
+    },
+    {
+      "decision": "Remove confirmation sentence differs for a path entry and a host entry",
+      "why": "a path entry falls back to the host entry; a host entry does not",
+      "rejected": "one sentence for both"
+    }
+  ],
+  "step_summaries": {
+    "plan": {
+      "summary": "Plan: entries host[/path] matched by whole-part prefix, deeper Nomad Variables, ?path= on the API, migration 0025",
+      "key_finding": "SyncRegistryCopies must recompute entries from job images, not match the stored registry item"
+    },
+    "tasks": {
+      "summary": "15 tasks: setup, foundational in 3 waves, one phase per story (US1-US4), polish with gate step and validation"
+    },
+    "implement": {
+      "summary": "Registry entries per path shipped: entry rule, deeper variables, sync by entry, API 0.35.0 ?path=, console, migration 0025, gate step green in the lab"
+    }
+  },
+  "approach": "Registry entries become host or host/path; one pure matching function in internal/registry picks the most specific stored entry for an image, used by the translator, the digest lookup and the per-task pull logins. Path secrets are deeper Nomad Variables, the API adds ?path=, migration 0025 keys the table by host and path, and the sync recomputes each copy's entry from its job image.",
+  "currentTask": "T015",
+  "task_summaries": {
+    "T001": {
+      "status": "DONE",
+      "did": "Migration 0025 rebuilds registries keyed by (host, path); reviewed, TestUpgradeTo0025 passes",
+      "files": [
+        "internal/store/migrations/0025_registry_paths.sql"
+      ]
+    },
+    "T002": {
+      "status": "DONE",
+      "did": "EntryCandidates/MatchEntry/SplitEntry/EntryHost with table tests; reviewed",
+      "files": [
+        "internal/registry/entry.go",
+        "internal/registry/entry_test.go"
+      ]
+    },
+    "T003": {
+      "status": "DONE",
+      "did": "Registry.Path and Key(), store methods keyed by (host, path); TestRegistryPaths, TestRegistryKey pass",
+      "files": [
+        "internal/store/registries.go",
+        "internal/store/registries_test.go"
+      ]
+    },
+    "T004": {
+      "status": "DONE",
+      "did": "Credentials hook takes the repository, Test(host, repository); doc comment rewritten in review",
+      "files": [
+        "internal/registry/client.go",
+        "internal/registry/client_test.go"
+      ]
+    },
+    "T005": {
+      "status": "DONE",
+      "did": "PrivateRegistry returns the matched entry; auth server_address stays the host; goldens unchanged",
+      "files": [
+        "internal/nomadjob/translate.go",
+        "internal/nomadjob/private_test.go"
+      ]
+    },
+    "T006": {
+      "status": "DONE",
+      "did": "Deployer: entry variable path, candidate lookup hook, registry item = entry, SyncRegistryCopies recomputing entries from job images; reviewed",
+      "files": [
+        "internal/deploy/registries.go",
+        "internal/deploy/deploy.go",
+        "internal/deploy/export.go",
+        "internal/deploy/registries_test.go"
+      ]
+    },
+    "T007": {
+      "status": "DONE",
+      "did": "Service takes entries, path field errors, Test note reworded in review so the console notice doesn't repeat itself",
+      "files": [
+        "internal/service/registries.go",
+        "internal/service/export.go",
+        "internal/service/registries_test.go"
+      ]
+    },
+    "T008": {
+      "status": "DONE",
+      "did": "TestDeployWithEntriesPerPath: two prefixes on one host, each copy holds its own entry, auth block names the host",
+      "files": [
+        "internal/service/registries_deploy_test.go"
+      ]
+    },
+    "T009": {
+      "status": "DONE",
+      "did": "Fallback covered in TestDeployWithEntriesPerPath (other/ uses host entry, no entry is anonymous) and TestPrivateRegistryEntryWithPath (acm vs acme); hostport test file unchanged",
+      "files": [
+        "internal/service/registries_deploy_test.go",
+        "internal/nomadjob/private_test.go"
+      ]
+    },
+    "T010": {
+      "status": "DONE",
+      "did": "TestSyncRegistryCopiesPerPath (save, add, remove prefix, remove host, job gone) and the backup variant pass",
+      "files": [
+        "internal/deploy/registries_copies_test.go"
+      ]
+    },
+    "T011": {
+      "status": "DONE",
+      "did": "API ?path= on put/delete/test, Registry.path, openapi 0.35.0; api tests pass",
+      "files": [
+        "internal/api/registries.go",
+        "internal/api/registries_test.go",
+        "api/openapi.yaml"
+      ]
+    },
+    "T012": {
+      "status": "DONE",
+      "did": "Console host/path field, test/remove routes with hidden entry, count per entry, Test note; review split the Remove sentence for path vs host entries",
+      "files": [
+        "internal/ui/registries.go",
+        "internal/ui/settingsnav.go",
+        "internal/ui/ui.go",
+        "internal/ui/templates/settings.html",
+        "internal/ui/registries_test.go",
+        "internal/ui/settings_test.go",
+        "internal/api/parity_test.go"
+      ]
+    },
+    "T014": {
+      "status": "DONE",
+      "did": "changelog.d/registry-paths.md and the CLAUDE.md paragraph; tools/release.sh check passes",
+      "files": [
+        "changelog.d/registry-paths.md",
+        "CLAUDE.md"
+      ]
+    },
+    "T013": {
+      "status": "DONE",
+      "did": "Gate private-registry step with two htpasswd users and teama/teamb/other paths; lab run passed in 53 s after nesting memoryMB under resources",
+      "files": [
+        "cmd/caravana/gate_test.go"
+      ]
+    },
+    "T015": {
+      "status": "DONE",
+      "did": "go test ./... green (5m43s), vet, staticcheck, gofmt, linux cross-builds, tidy, ui-css/vendor/release checks, lab private-registry step passed",
+      "files": [
+        "-"
+      ]
+    }
+  },
+  "verified": [
+    {
+      "what": "vet",
+      "command": "go vet ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 4.3,
+      "result": "no output"
+    },
+    {
+      "what": "staticcheck",
+      "command": "go tool staticcheck ./...",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 3.1,
+      "result": "no output"
+    },
+    {
+      "what": "registry, store, nomadjob, deploy tests",
+      "command": "go test ./internal/registry ./internal/store ./internal/nomadjob ./internal/deploy",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 1.5,
+      "result": "ok  \tgithub.com/cosmic-chimps/caravana/internal/store\t(cached) · ok  \tgithub.com/cosmic-chimps/caravana/internal/nomadjob\t(cached) · ok  \tgithub.com/cosmic-chimps/caravana/internal/deploy\t(cached)"
+    },
+    {
+      "what": "ui css up to date",
+      "command": "tools/ui-css.sh check",
+      "source": "derived",
+      "exitCode": 0,
+      "durationSeconds": 2.2,
+      "result": "internal/ui/static/app.css is up to date · ≈ tailwindcss v4.3.3 · Done in 457ms"
+    }
+  ],
+  "concerns": [
+    {
+      "note": "go test -race ran in the child session before the review edits (wording, a template sentence, one bool field); not rerun afterwards",
+      "step": "implement"
+    },
+    {
+      "note": "the full go test ./... (5m43s) and the lab private-registry step ran as background jobs and are not recorded as --verify-run",
+      "step": "implement"
+    }
+  ]
+}

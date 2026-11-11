@@ -17,13 +17,16 @@ type RegistryTest struct {
 	Message string
 }
 
-// Registry is a container registry Caravana has credentials for, without the
-// secret, which lives in a Nomad Variable (constitution VII), as the backup
-// destination's does.
+// Registry is a container registry entry Caravana has credentials for, without
+// the secret, which lives in a Nomad Variable (constitution VII), as the backup
+// destination's does. An entry is a host, or a host with a path prefix.
 type Registry struct {
 	// Host is lowercased, with ":port" when it has one; "docker.io" is Docker
 	// Hub.
-	Host      string
+	Host string
+	// Path is the repository prefix the credentials are limited to ("acme"),
+	// "" for the whole host.
+	Path      string
 	Username  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -31,27 +34,35 @@ type Registry struct {
 	LastTest *RegistryTest
 }
 
-// registryColumns is the column order scanRegistry reads.
-const registryColumns = "host, username, created_at, updated_at, last_test_at, last_test_ok, last_test_message"
+// Key is the entry as Caravana names it: the host, or host/path.
+func (r Registry) Key() string {
+	if r.Path == "" {
+		return r.Host
+	}
+	return r.Host + "/" + r.Path
+}
 
-// SaveRegistry adds a registry, or updates the user name and update time of
-// the one with this host. The creation time of an existing one is kept, and so
+// registryColumns is the column order scanRegistry reads.
+const registryColumns = "host, path, username, created_at, updated_at, last_test_at, last_test_ok, last_test_message"
+
+// SaveRegistry adds a registry entry, or updates the user name and update time
+// of the one with this host and path. The creation time of an existing one is kept, and so
 // is its last test: the store can't tell that the secret changed, so the
 // service records a new test (or leaves the old one) as it sees fit.
 func (s *Store) SaveRegistry(ctx context.Context, r Registry) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO registries (host, username, created_at, updated_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (host) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at`,
-		r.Host, r.Username, formatTime(r.CreatedAt), formatTime(r.UpdatedAt))
+		INSERT INTO registries (host, path, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (host, path) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at`,
+		r.Host, r.Path, r.Username, formatTime(r.CreatedAt), formatTime(r.UpdatedAt))
 	if err != nil {
-		return fmt.Errorf("save registry %q: %w", r.Host, err)
+		return fmt.Errorf("save registry %q: %w", r.Key(), err)
 	}
 	return nil
 }
 
-// ListRegistries returns every registry, ordered by host.
+// ListRegistries returns every registry entry, ordered by host, then path.
 func (s *Store) ListRegistries(ctx context.Context) ([]Registry, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+registryColumns+" FROM registries ORDER BY host")
+	rows, err := s.db.QueryContext(ctx, "SELECT "+registryColumns+" FROM registries ORDER BY host, path")
 	if err != nil {
 		return nil, fmt.Errorf("list registries: %w", err)
 	}
@@ -70,50 +81,56 @@ func (s *Store) ListRegistries(ctx context.Context) ([]Registry, error) {
 	return out, nil
 }
 
-// GetRegistry returns the registry with this host, or ErrNotFound.
-func (s *Store) GetRegistry(ctx context.Context, host string) (Registry, error) {
-	r, err := scanRegistry(s.db.QueryRowContext(ctx, "SELECT "+registryColumns+" FROM registries WHERE host = ?", host))
+// registryKey is host, or host/path, for messages.
+func registryKey(host, path string) string {
+	return Registry{Host: host, Path: path}.Key()
+}
+
+// GetRegistry returns the registry entry with this host and path (path "" for
+// a host-only entry), or ErrNotFound.
+func (s *Store) GetRegistry(ctx context.Context, host, path string) (Registry, error) {
+	r, err := scanRegistry(s.db.QueryRowContext(ctx, "SELECT "+registryColumns+" FROM registries WHERE host = ? AND path = ?", host, path))
 	if errors.Is(err, sql.ErrNoRows) {
-		return Registry{}, fmt.Errorf("registry %q: %w", host, ErrNotFound)
+		return Registry{}, fmt.Errorf("registry %q: %w", registryKey(host, path), ErrNotFound)
 	}
 	if err != nil {
-		return Registry{}, fmt.Errorf("get registry %q: %w", host, err)
+		return Registry{}, fmt.Errorf("get registry %q: %w", registryKey(host, path), err)
 	}
 	return r, nil
 }
 
-// DeleteRegistry removes the registry with this host. An unknown host is
-// ErrNotFound.
-func (s *Store) DeleteRegistry(ctx context.Context, host string) error {
-	res, err := s.db.ExecContext(ctx, "DELETE FROM registries WHERE host = ?", host)
+// DeleteRegistry removes the registry entry with this host and path. An
+// unknown entry is ErrNotFound.
+func (s *Store) DeleteRegistry(ctx context.Context, host, path string) error {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM registries WHERE host = ? AND path = ?", host, path)
 	if err != nil {
-		return fmt.Errorf("delete registry %q: %w", host, err)
+		return fmt.Errorf("delete registry %q: %w", registryKey(host, path), err)
 	}
-	return affectedOrNotFound(res, "registry "+host)
+	return affectedOrNotFound(res, "registry "+registryKey(host, path))
 }
 
 // SaveRegistryTest records the outcome of testing a registry's credentials,
-// replacing the one before it. An unknown host is ErrNotFound.
-func (s *Store) SaveRegistryTest(ctx context.Context, host string, t RegistryTest) error {
+// replacing the one before it. An unknown entry is ErrNotFound.
+func (s *Store) SaveRegistryTest(ctx context.Context, host, path string, t RegistryTest) error {
 	res, err := s.db.ExecContext(ctx,
-		"UPDATE registries SET last_test_at = ?, last_test_ok = ?, last_test_message = ? WHERE host = ?",
-		formatTime(t.At), boolInt(t.OK), t.Message, host)
+		"UPDATE registries SET last_test_at = ?, last_test_ok = ?, last_test_message = ? WHERE host = ? AND path = ?",
+		formatTime(t.At), boolInt(t.OK), t.Message, host, path)
 	if err != nil {
-		return fmt.Errorf("save test of registry %q: %w", host, err)
+		return fmt.Errorf("save test of registry %q: %w", registryKey(host, path), err)
 	}
-	return affectedOrNotFound(res, "registry "+host)
+	return affectedOrNotFound(res, "registry "+registryKey(host, path))
 }
 
 // ClearRegistryTest forgets the last test of a registry, because its
 // credentials changed and the old outcome no longer says anything about them.
-// An unknown host is ErrNotFound.
-func (s *Store) ClearRegistryTest(ctx context.Context, host string) error {
+// An unknown entry is ErrNotFound.
+func (s *Store) ClearRegistryTest(ctx context.Context, host, path string) error {
 	res, err := s.db.ExecContext(ctx,
-		"UPDATE registries SET last_test_at = NULL, last_test_ok = NULL, last_test_message = '' WHERE host = ?", host)
+		"UPDATE registries SET last_test_at = NULL, last_test_ok = NULL, last_test_message = '' WHERE host = ? AND path = ?", host, path)
 	if err != nil {
-		return fmt.Errorf("clear test of registry %q: %w", host, err)
+		return fmt.Errorf("clear test of registry %q: %w", registryKey(host, path), err)
 	}
-	return affectedOrNotFound(res, "registry "+host)
+	return affectedOrNotFound(res, "registry "+registryKey(host, path))
 }
 
 // affectedOrNotFound is ErrNotFound, naming what, when the statement changed
@@ -135,7 +152,7 @@ func scanRegistry(row scanner) (Registry, error) {
 	var testAt sql.NullString
 	var testOK sql.NullInt64
 	var message string
-	if err := row.Scan(&r.Host, &r.Username, &created, &updated, &testAt, &testOK, &message); err != nil {
+	if err := row.Scan(&r.Host, &r.Path, &r.Username, &created, &updated, &testAt, &testOK, &message); err != nil {
 		return Registry{}, err
 	}
 	var err error

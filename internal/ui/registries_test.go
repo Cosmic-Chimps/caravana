@@ -4,11 +4,15 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
 // registrySecret is a password no page, redirect or log line may contain.
@@ -29,6 +33,19 @@ func registryForms(page string) (add plainForm, edits map[string]plainForm) {
 		}
 	}
 	return add, edits
+}
+
+// registryRowForm is the form of a registry row posting to action for this
+// entry (the row's hidden "host" field).
+func registryRowForm(t *testing.T, page, action, entry string) plainForm {
+	t.Helper()
+	for _, f := range formsIn(page) {
+		if f.Action == action && f.Values.Get("host") == entry {
+			return f
+		}
+	}
+	t.Fatalf("no form posts to %s for %q in:\n%s", action, entry, page)
+	return plainForm{}
 }
 
 // storedCredentials reads what Caravana keeps for host in the fake Nomad.
@@ -156,7 +173,7 @@ func TestSettingsRegistries(t *testing.T) {
 			t.Fatalf("POST add = %d", resp.StatusCode)
 		}
 		_, page := e.get(t, "/settings/registries")
-		resp, body := e.submit(t, formWith(t, page, "/settings/registries/"+host+"/test"), nil)
+		resp, body := e.submit(t, registryRowForm(t, page, "/settings/registries/test", host), nil)
 		want := "/settings/registries?tested=" + url.QueryEscape(host)
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != want {
 			t.Fatalf("POST test = %d to %q, want 303 to %q:\n%s", resp.StatusCode, location(t, resp), want, body)
@@ -184,7 +201,7 @@ func TestSettingsRegistries(t *testing.T) {
 		if !strings.Contains(page, `cv-mark cv-mark-lg cv-mark-idle`) || strings.Contains(page, `sr-only">a registry refused`) {
 			t.Error("a changed secret leaves the refused mark on the row or the nav")
 		}
-		resp, _ = e.submit(t, formWith(t, page, "/settings/registries/"+host+"/test"), nil)
+		resp, _ = e.submit(t, registryRowForm(t, page, "/settings/registries/test", host), nil)
 		_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
 		got = text(page)
 		if !strings.Contains(got, host+" accepted the credentials.") || !strings.Contains(got, "works tested just now") {
@@ -201,7 +218,7 @@ func TestSettingsRegistries(t *testing.T) {
 		if !regexp.MustCompile(`<details class="cv-confirm cv-confirm-row" name="conn-\d+">\s*<summary[^>]*aria-label="Remove credentials for ghcr.io"`).MatchString(page) {
 			t.Error("Remove isn't a <details>")
 		}
-		resp, body := e.submit(t, formWith(t, page, "/settings/registries/ghcr.io/remove"), nil)
+		resp, body := e.submit(t, registryRowForm(t, page, "/settings/registries/remove", "ghcr.io"), nil)
 		if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/settings/registries" {
 			t.Fatalf("POST remove = %d to %q:\n%s", resp.StatusCode, location(t, resp), body)
 		}
@@ -213,7 +230,7 @@ func TestSettingsRegistries(t *testing.T) {
 			t.Error("the row is still listed")
 		}
 		// A host that isn't stored is not an error.
-		if resp, _ := e.postForm(t, "/settings/registries/ghcr.io/remove", nil); resp.StatusCode != http.StatusSeeOther {
+		if resp, _ := e.postForm(t, "/settings/registries/remove", url.Values{"host": {"ghcr.io"}}); resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("POST remove of an unknown host = %d, want 303", resp.StatusCode)
 		}
 	})
@@ -228,7 +245,7 @@ func TestRegistryPostsAreProtected(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{"host": {"quay.io"}, "username": {"forged"}, "password": {"x"}}
-	for _, path := range []string{"/settings/registries", "/settings/registries/ghcr.io/test", "/settings/registries/ghcr.io/remove"} {
+	for _, path := range []string{"/settings/registries", "/settings/registries/test", "/settings/registries/remove"} {
 		resp, body := e.do(t, request{method: http.MethodPost, path: path, form: form, cookies: []*http.Cookie{e.Cookie},
 			headers: map[string]string{"Sec-Fetch-Site": "cross-site"}})
 		if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "refused") {
@@ -242,5 +259,97 @@ func TestRegistryPostsAreProtected(t *testing.T) {
 	regs, _ := e.Svc.Registries(ctx)
 	if len(regs) != 1 || regs[0].Host != "ghcr.io" || regs[0].LastTest != nil || regs[0].Username != "acme-bot" {
 		t.Errorf("a refused post changed the registries: %+v", regs)
+	}
+}
+
+// An entry with a path: the form takes host/path, a bad path is an error at the
+// registry input, the row shows the entry, and Test and Remove post the entry.
+func TestSettingsRegistriesWithAPath(t *testing.T) {
+	ctx := context.Background()
+	e := newConsoleEnv(t)
+	e.Reg.RequireToken(true)
+	e.Reg.RequireLogin("deploy", registrySecret)
+	host := e.Reg.Host()
+	entry := host + "/teama"
+
+	_, page := e.get(t, "/settings/registries")
+	add, _ := registryForms(page)
+	if !strings.Contains(text(page), "Add a path, like ghcr.io/acme, to limit the credentials to images under it") {
+		t.Error("the Registry field doesn't explain the path")
+	}
+
+	// A bad path is an error at the registry input, with what was typed kept.
+	resp, body := e.submit(t, add, url.Values{"host": {host + "/Team A"}, "username": {"deploy"}, "password": {registrySecret}})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `id="registry-add-host-error"`) || !strings.Contains(text(body), "isn't an image path") {
+		t.Errorf("a bad path = %d, want the page with the error at the registry input:\n%s", resp.StatusCode, text(body))
+	}
+	leaks(t, "bad path", body)
+
+	// The host entry and a path entry, side by side.
+	for _, in := range []string{host, entry} {
+		if resp, body := e.submit(t, add, url.Values{"host": {in}, "username": {"deploy"}, "password": {registrySecret}}); resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST add %q = %d:\n%s", in, resp.StatusCode, text(body))
+		}
+	}
+	regs, _ := e.Svc.Registries(ctx)
+	if len(regs) != 2 || regs[0].Key() != host || regs[1].Key() != entry {
+		t.Fatalf("stored = %+v, want the host entry and %s", regs, entry)
+	}
+	if user, pass, ok := e.storedCredentials(entry); !ok || user != "deploy" || pass != registrySecret {
+		t.Error("the path entry's secret isn't in its own Nomad Variable")
+	}
+
+	// Test posts the entry, and the notice says what the check can't.
+	_, page = e.get(t, "/settings/registries")
+	resp, _ = e.submit(t, registryRowForm(t, page, "/settings/registries/test", entry), nil)
+	want := "/settings/registries?tested=" + url.QueryEscape(entry)
+	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != want {
+		t.Fatalf("POST test = %d to %q, want 303 to %q", resp.StatusCode, location(t, resp), want)
+	}
+	_, page = e.get(t, strings.TrimSuffix(location(t, resp), "#registries"))
+	got := text(page)
+	if !strings.Contains(got, entry+" accepted the credentials. A registry doesn't say which images a login can read: the first deploy of an image under "+entry+"/ shows it.") {
+		t.Errorf("the notice after a path entry's test:\n%s", got)
+	}
+	leaks(t, "path test", page, e.Logs.String())
+	if !strings.Contains(got, "The next deploy of a private image under this path uses the registry's own entry if there is one") ||
+		!strings.Contains(got, "The next deploy of a private image from this registry fails until you add credentials again.") {
+		t.Errorf("the Remove confirmations don't tell a path entry from the host's:\n%s", got)
+	}
+
+	// Remove posts the entry and leaves the host's alone.
+	resp, _ = e.submit(t, registryRowForm(t, page, "/settings/registries/remove", entry), nil)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST remove = %d", resp.StatusCode)
+	}
+	if _, _, ok := e.storedCredentials(entry); ok {
+		t.Error("the path entry's credentials are still in Nomad")
+	}
+	if _, _, ok := e.storedCredentials(host); !ok {
+		t.Error("removing the path entry removed the host's")
+	}
+}
+
+// "Used by" counts the apps each entry covers: the most specific one wins.
+func TestRegistryUseCountsByEntry(t *testing.T) {
+	appWith := func(images ...string) store.AppRecord {
+		var a app.App
+		for i, img := range images {
+			a.Services = append(a.Services, app.Service{Name: "s" + strconv.Itoa(i), Image: img})
+		}
+		return store.AppRecord{App: a}
+	}
+	regs := []store.Registry{{Host: "ghcr.io"}, {Host: "ghcr.io", Path: "acme"}, {Host: "quay.io", Path: "team"}}
+	apps := []store.AppRecord{
+		appWith("ghcr.io/acme/shop:v1", "ghcr.io/acme/db:v1"), // one app, one entry, counted once
+		appWith("ghcr.io/acme-old/shop:v1"),                   // not under acme: the host entry
+		appWith("ghcr.io/acme/shop:v1", "ghcr.io/other/x:v1"), // both entries
+		appWith("quay.io/team/x:v1", "quay.io/other/x:v1"),    // quay.io has only a prefix entry
+		appWith("traefik/whoami"),                             // docker.io: none
+	}
+	got := registryUse(apps, regs)
+	want := map[string]int{"ghcr.io/acme": 2, "ghcr.io": 2, "quay.io/team": 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("registryUse() = %v, want %v", got, want)
 	}
 }

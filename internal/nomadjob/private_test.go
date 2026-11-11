@@ -377,3 +377,42 @@ func TestPrivateRegistry(t *testing.T) {
 		t.Error("PrivateRegistry with no set answered true")
 	}
 }
+
+// An entry with a path prefix covers the images under it by whole segments,
+// and the docker auth block still names the registry's host.
+func TestPrivateRegistryEntryWithPath(t *testing.T) {
+	tc := goldenCaseNamed(t, "private-registry") // image ghcr.io/acme/shop:v1
+	tests := []struct {
+		name    string
+		private map[string]bool
+		want    string // the entry PrivateRegistry names; "" for none
+	}{
+		{"prefix entry", map[string]bool{"ghcr.io/acme": true}, "ghcr.io/acme"},
+		{"the most specific entry wins", map[string]bool{"ghcr.io": true, "ghcr.io/acme": true, "ghcr.io/acme/shop": true}, "ghcr.io/acme/shop"},
+		{"host entry is the fallback", map[string]bool{"ghcr.io": true, "ghcr.io/other": true}, "ghcr.io"},
+		{"a neighbouring prefix never matches", map[string]bool{"ghcr.io/acm": true}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry, ok := PrivateRegistry(tc.app.Services[0].Image, tt.private)
+			if entry != tt.want || ok != (tt.want != "") {
+				t.Fatalf("PrivateRegistry() = %q, %v; want %q", entry, ok, tt.want)
+			}
+			res, err := Translate(tc.app, tc.deployment, tc.settings, tt.private)
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := taskNamed(t, res.Job.TaskGroups[0], "web")
+			got, has := task.Config["auth"]
+			if tt.want == "" {
+				if has {
+					t.Errorf("config.auth = %#v, want none", got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got, wantAuth("ghcr.io")) {
+				t.Errorf("config.auth = %#v, want server_address to be the host: %#v", got, wantAuth("ghcr.io"))
+			}
+		})
+	}
+}

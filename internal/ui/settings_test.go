@@ -338,8 +338,8 @@ func TestSettingsPostsRedirectToTheirEntry(t *testing.T) {
 		{"destination", "/settings/backups", url.Values{"endpoint": {"http://10.0.0.5:9000"}, "region": {"us-east-1"}, "bucket": {"backups"}, "accessKeyId": {"AK"}, "secretAccessKey": {"s"}},
 			"/settings/backup-storage?backups=saved"},
 		{"registry save", "/settings/registries", url.Values{"host": {"quay.io"}, "username": {"u"}, "password": {"p"}}, "/settings/registries?registries=saved"},
-		{"registry test", "/settings/registries/ghcr.io/test", nil, ""},
-		{"registry remove", "/settings/registries/quay.io/remove", nil, "/settings/registries"},
+		{"registry test", "/settings/registries/test", url.Values{"host": {"ghcr.io"}}, ""},
+		{"registry remove", "/settings/registries/remove", url.Values{"host": {"quay.io"}}, "/settings/registries"},
 		{"channel add", "/settings/notifications", url.Values{"kind": {"ntfy"}, "name": {"tablet"}, "url": {rcv.URL + "/t"}, "events": {"problems"}}, "/settings/notifications?notifications=saved"},
 		{"channel pause", "/settings/notifications/" + ntfy.ID, url.Values{"paused": {"1"}}, "/settings/notifications?notifications=saved"},
 		{"channel test", "/settings/notifications/" + ntfy.ID + "/test", nil, "/settings/notifications?notified=" + url.QueryEscape(ntfy.ID)},
@@ -455,10 +455,10 @@ func TestSettingsRegistryRows(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := e.Store.SaveRegistryTest(ctx, "ghcr.io", store.RegistryTest{At: e.Clock.Now(), OK: true}); err != nil {
+	if err := e.Store.SaveRegistryTest(ctx, "ghcr.io", "", store.RegistryTest{At: e.Clock.Now(), OK: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Store.SaveRegistryTest(ctx, "quay.io", store.RegistryTest{At: e.Clock.Now().Add(-2 * time.Hour), Message: "401 unauthorized: the user name or password is wrong"}); err != nil {
+	if err := e.Store.SaveRegistryTest(ctx, "quay.io", "", store.RegistryTest{At: e.Clock.Now().Add(-2 * time.Hour), Message: "401 unauthorized: the user name or password is wrong"}); err != nil {
 		t.Fatal(err)
 	}
 	a := duoApp()
@@ -891,7 +891,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		if _, err := e.Svc.SaveRegistry(ctx, "quay.io", "bot", new("p")); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.Store.SaveRegistryTest(ctx, "quay.io", store.RegistryTest{At: e.Clock.Now(), Message: "401"}); err != nil {
+		if err := e.Store.SaveRegistryTest(ctx, "quay.io", "", store.RegistryTest{At: e.Clock.Now(), Message: "401"}); err != nil {
 			t.Fatal(err)
 		}
 		focused := regexp.MustCompile(`<input[^>]*name="password"[^>]* autofocus`)

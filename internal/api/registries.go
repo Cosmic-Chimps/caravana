@@ -13,6 +13,7 @@ import (
 // The password is not a field here, so no answer can carry it.
 type registryJSON struct {
 	Host      string            `json:"host"`
+	Path      string            `json:"path,omitempty"`
 	Username  string            `json:"username"`
 	CreatedAt time.Time         `json:"createdAt"`
 	UpdatedAt time.Time         `json:"updatedAt"`
@@ -27,7 +28,7 @@ type registryTestJSON struct {
 }
 
 func toRegistryJSON(r store.Registry) registryJSON {
-	out := registryJSON{Host: r.Host, Username: r.Username, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+	out := registryJSON{Host: r.Host, Path: r.Path, Username: r.Username, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 	if r.LastTest != nil {
 		out.LastTest = &registryTestJSON{At: r.LastTest.At, OK: r.LastTest.OK, Message: r.LastTest.Message}
 	}
@@ -59,9 +60,20 @@ func (s *server) listRegistries(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// putRegistry answers PUT /v1/registries/{host}. A body without password keeps
-// the secret stored before. {host} may hold a port ("registry.example.com:5000"):
-// the mux's wildcard takes everything up to the next "/".
+// registryEntry is the entry a registry call names: {host}, and with the
+// optional ?path= that path prefix as host/path.
+func registryEntry(r *http.Request) string {
+	entry := r.PathValue("host")
+	if path := r.URL.Query().Get("path"); path != "" {
+		entry += "/" + path
+	}
+	return entry
+}
+
+// putRegistry answers PUT /v1/registries/{host}[?path=]. A body without password
+// keeps the secret stored before. {host} may hold a port
+// ("registry.example.com:5000"): the mux's wildcard takes everything up to the
+// next "/".
 func (s *server) putRegistry(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Username string  `json:"username"`
@@ -70,7 +82,7 @@ func (s *server) putRegistry(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &in); err != nil {
 		return err
 	}
-	reg, err := s.svc.SaveRegistry(r.Context(), r.PathValue("host"), in.Username, in.Password)
+	reg, err := s.svc.SaveRegistry(r.Context(), registryEntry(r), in.Username, in.Password)
 	if err != nil {
 		return registryInvalid(err)
 	}
@@ -78,19 +90,19 @@ func (s *server) putRegistry(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// deleteRegistry answers DELETE /v1/registries/{host}.
+// deleteRegistry answers DELETE /v1/registries/{host}[?path=].
 func (s *server) deleteRegistry(w http.ResponseWriter, r *http.Request) error {
-	if err := s.svc.DeleteRegistry(r.Context(), r.PathValue("host")); err != nil {
+	if err := s.svc.DeleteRegistry(r.Context(), registryEntry(r)); err != nil {
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
-// testRegistry answers POST /v1/registries/{host}/test. A refusal is an
+// testRegistry answers POST /v1/registries/{host}/test[?path=]. A refusal is an
 // outcome in lastTest, so the answer is 200 either way.
 func (s *server) testRegistry(w http.ResponseWriter, r *http.Request) error {
-	reg, err := s.svc.TestRegistry(r.Context(), r.PathValue("host"))
+	reg, err := s.svc.TestRegistry(r.Context(), registryEntry(r))
 	if err != nil {
 		return err
 	}

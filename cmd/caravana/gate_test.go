@@ -1345,11 +1345,12 @@ const gateRegistryHost = "127.0.0.1:15000"
 // gateRegistryJob is a registry (registry:2) with htpasswd auth on
 // gateRegistryHost, run with the gate's own token like the S3 bucket. A
 // prestart task writes the htpasswd file from the per-run user and password
-// into the allocation's shared directory; the registry task then reads it. Both
+// into the allocation's shared directory (a second user for the per-path part
+// of the step); the registry task then reads it. Both
 // tasks use the host's network, so the registry binds the node's loopback. The
 // password is in this job's env, which is fine for a throwaway one: the job is
 // the gate's, not an app, and it lives only for the step.
-func gateRegistryJob(user, pass string) *api.Job {
+func gateRegistryJob(user, pass, user2, pass2 string) *api.Job {
 	return &api.Job{
 		ID: new("gate-registry"), Name: new("gate-registry"), Type: new("service"), Datacenters: []string{"*"},
 		TaskGroups: []*api.TaskGroup{{
@@ -1359,11 +1360,11 @@ func gateRegistryJob(user, pass string) *api.Job {
 				{
 					Name: "htpasswd", Driver: "docker",
 					Lifecycle: &api.TaskLifecycle{Hook: "prestart"},
-					Env:       map[string]string{"U": user, "P": pass},
+					Env:       map[string]string{"U": user, "P": pass, "U2": user2, "P2": pass2},
 					Config: map[string]any{
 						"image":   "httpd:2-alpine",
 						"command": "sh",
-						"args":    []string{"-c", `htpasswd -Bbn "$U" "$P" > /alloc/data/htpasswd`},
+						"args":    []string{"-c", `htpasswd -Bbn "$U" "$P" > /alloc/data/htpasswd && htpasswd -Bbn "$U2" "$P2" >> /alloc/data/htpasswd`},
 					},
 					Resources: &api.Resources{CPU: new(50), MemoryMB: new(64)},
 				},
@@ -1384,8 +1385,8 @@ func gateRegistryJob(user, pass string) *api.Job {
 }
 
 // gateSkopeoJob is a batch job that copies busybox into the gate's registry as
-// gate/busybox:v1, with the per-run credentials from its env (so they are not
-// in the command line). It runs through a shell, whatever the image's own
+// gate/busybox:v1, teama/busybox:v1, teamb/busybox:v1 and other/busybox:v1, with
+// the per-run credentials from its env (so they are not in the command line). It runs through a shell, whatever the image's own
 // entrypoint is.
 func gateSkopeoJob(user, pass string) *api.Job {
 	return &api.Job{
@@ -1403,8 +1404,9 @@ func gateSkopeoJob(user, pass string) *api.Job {
 					"image":        "quay.io/skopeo/stable",
 					"network_mode": "host",
 					"entrypoint":   []string{"/bin/sh", "-c"},
-					"args": []string{`exec skopeo copy --dest-creds "$U:$P" --dest-tls-verify=false ` +
-						`docker://busybox:1.37 docker://` + gateRegistryHost + `/gate/busybox:v1`},
+					"args": []string{`set -e; for r in gate teama teamb other; do ` +
+						`skopeo copy --dest-creds "$U:$P" --dest-tls-verify=false ` +
+						`docker://busybox:1.37 docker://` + gateRegistryHost + `/$r/busybox:v1; done`},
 				},
 				Resources: &api.Resources{CPU: new(200), MemoryMB: new(256)},
 			}},
@@ -1423,6 +1425,44 @@ const gatePrivateApp = `{
     "args": ["-f", "-p", "8080", "-h", "/tmp"],
     "ports": [{"name": "http", "containerPort": 8080}],
     "health": {"interval": "5s", "timeout": "2s"}
+  }]
+}`
+
+// gatePathApp is the per-path app of the private-registry step: two busybox
+// services, each from its own path of the gate's registry.
+const gatePathApp = `{
+  "source": {"kind": "image"},
+  "services": [{
+    "name": "web",
+    "image": "` + gateRegistryHost + `/teama/busybox:v1",
+    "command": "httpd",
+    "args": ["-f", "-p", "8080", "-h", "/tmp"],
+    "ports": [{"name": "http", "containerPort": 8080}],
+    "health": {"interval": "5s", "timeout": "2s"},
+    "resources": {"memoryMB": 64}
+  }, {
+    "name": "api",
+    "image": "` + gateRegistryHost + `/teamb/busybox:v1",
+    "command": "httpd",
+    "args": ["-f", "-p", "8080", "-h", "/tmp"],
+    "ports": [{"name": "http", "containerPort": 8080}],
+    "health": {"interval": "5s", "timeout": "2s"},
+    "resources": {"memoryMB": 64}
+  }]
+}`
+
+// gateOtherApp is one image under a path no entry names (other/), so it is
+// pulled with the host's own entry.
+const gateOtherApp = `{
+  "source": {"kind": "image"},
+  "services": [{
+    "name": "web",
+    "image": "` + gateRegistryHost + `/other/busybox:v1",
+    "command": "httpd",
+    "args": ["-f", "-p", "8080", "-h", "/tmp"],
+    "ports": [{"name": "http", "containerPort": 8080}],
+    "health": {"interval": "5s", "timeout": "2s"},
+    "resources": {"memoryMB": 64}
   }]
 }`
 
@@ -1514,23 +1554,37 @@ func (g *gate) runningCopies(t *testing.T, appID string) []string {
 //  5. removing the credentials leaves the running app running (its copy keeps
 //     its pull credentials until it starts again, so the variable is only
 //     emptied);
-//  6. deleting the app leaves no variable of it, and the step's jobs and
+//  6. per-path entries (task 7239): with a wrong password on the host entry,
+//     `?path=teama` (one user) and `?path=teamb` (another) make an app with
+//     one service under each path healthy, each copy naming its own entry and
+//     user; an image under `other/` is 422 registry_auth_failed (the host
+//     entry is the fallback); saving teamb again changes only teamb's copy
+//     (teama's variable keeps its ModifyIndex); deleting teama's entry moves
+//     its copy to the host entry;
+//  7. deleting the apps leaves no variable of them, and the step's jobs and
 //     credentials are gone.
 //
-// The user and password are made for each run.
+// The users and passwords are made for each run.
 func (g *gate) privateRegistryStep(t *testing.T) {
 	const appID = "priv"
 	nomad := g.target.Nomad
 	user, pass := "gate"+g.run, "pw-"+g.run
+	user2, pass2 := "gateb"+g.run, "pw2-"+g.run
 	wrong := "wrong-" + pass
+	wrong2 := "wrong-" + pass2
 	registryPath := "/v1/registries/" + gateRegistryHost
 	copyPath := nomadjob.PullCredentialsPath(appID, "web")
+	const pathAppID, otherAppID = "privpath", "privother"
+	teamA, teamB := gateRegistryHost+"/teama", gateRegistryHost+"/teamb"
 
 	// clean removes everything the step makes, whatever state it is in: it
 	// runs first (an aborted earlier run may have left some) and when the step
 	// ends.
 	clean := func() {
-		for _, req := range [][2]string{{http.MethodDelete, "/v1/apps/" + appID}, {http.MethodDelete, registryPath}} {
+		for _, req := range [][2]string{
+			{http.MethodDelete, "/v1/apps/" + appID}, {http.MethodDelete, "/v1/apps/" + pathAppID}, {http.MethodDelete, "/v1/apps/" + otherAppID},
+			{http.MethodDelete, registryPath}, {http.MethodDelete, registryPath + "?path=teama"}, {http.MethodDelete, registryPath + "?path=teamb"},
+		} {
 			if resp, err := g.apiRequest(req[0], req[1], "", ""); err == nil {
 				resp.Body.Close()
 			}
@@ -1538,10 +1592,14 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 		for _, id := range []string{"gate-skopeo", "gate-registry"} {
 			_, _, _ = nomad.Jobs().Deregister(id, true, nil)
 		}
-		_, _ = nomad.Variables().Delete(deploy.RegistryVariablePath(gateRegistryHost), nil)
-		if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+appID+"/", nil); err == nil {
-			for _, m := range metas {
-				_, _ = nomad.Variables().Delete(m.Path, nil)
+		for _, entry := range []string{gateRegistryHost, teamA, teamB} {
+			_, _ = nomad.Variables().Delete(deploy.RegistryVariablePath(entry), nil)
+		}
+		for _, id := range []string{appID, pathAppID, otherAppID} {
+			if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+id+"/", nil); err == nil {
+				for _, m := range metas {
+					_, _ = nomad.Variables().Delete(m.Path, nil)
+				}
 			}
 		}
 	}
@@ -1549,7 +1607,7 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 	t.Cleanup(clean)
 
 	// The registry, and an image in it.
-	if _, _, err := nomad.Jobs().Register(gateRegistryJob(user, pass), nil); err != nil {
+	if _, _, err := nomad.Jobs().Register(gateRegistryJob(user, pass, user2, pass2), nil); err != nil {
 		t.Fatalf("register the registry job: %v", err)
 	}
 	waitFor(t, "the registry to answer 401 on "+gateRegistryHost, 3*time.Minute, g.registryAnswers401)
@@ -1557,7 +1615,7 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 		t.Fatalf("register the skopeo job: %v", err)
 	}
 	var copyFailure string
-	waitFor(t, "skopeo to copy the image into the registry", 6*time.Minute, func() bool {
+	waitFor(t, "skopeo to copy the images into the registry", 10*time.Minute, func() bool {
 		stubs, _, err := nomad.Jobs().Allocations("gate-skopeo", false, nil)
 		if err != nil {
 			return false
@@ -1592,12 +1650,16 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 		}
 		return raw
 	}
-	// deployPrivate deploys the app and answers the status and body.
-	deployPrivate := func() (int, []byte) {
+	// deployApp deploys an app and answers the status and body.
+	deployApp := func(id, definition string) (int, []byte) {
 		t.Helper()
-		resp := g.api(t, http.MethodPost, "/v1/apps/"+appID+"/deployments", "application/json", gatePrivateApp)
+		resp := g.api(t, http.MethodPost, "/v1/apps/"+id+"/deployments", "application/json", definition)
 		status := resp.StatusCode
 		return status, body(resp)
+	}
+	deployPrivate := func() (int, []byte) {
+		t.Helper()
+		return deployApp(appID, gatePrivateApp)
 	}
 	// refusal is the code, field and message of an error answer.
 	refusal := func(raw []byte) (code, field, message string) {
@@ -1635,7 +1697,7 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 	// noSecret fails when an answer holds a password the step used.
 	noSecret := func(what string, raw []byte) {
 		t.Helper()
-		for _, secret := range []string{pass, wrong} {
+		for _, secret := range []string{pass, wrong, pass2, wrong2} {
 			if strings.Contains(string(raw), secret) {
 				t.Errorf("%s holds a password", what)
 			}
@@ -1732,19 +1794,118 @@ func (g *gate) privateRegistryStep(t *testing.T) {
 		t.Errorf("after the removal the running copies are %v, want the same one, %v", after, before)
 	}
 
-	// 6. Deleting the app leaves nothing of it in Nomad Variables, and the
-	// step's own jobs and credentials go.
-	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
+	// 6. Per-path entries (task 7239). The host entry gets a WRONG password, so
+	// only an entry for the image's own path can make a pull work; the registry
+	// accepts both users, so which entry was used shows in the copies' variables.
+	putEntry := func(path, username, password string) {
+		t.Helper()
+		query := ""
+		if path != "" {
+			query = "?path=" + path
+		}
+		payload, _ := json.Marshal(map[string]string{"username": username, "password": password})
+		resp := g.api(t, http.MethodPut, registryPath+query, "application/json", string(payload))
+		status := resp.StatusCode
+		raw := body(resp)
+		if status != http.StatusOK || strings.Contains(string(raw), password) {
+			t.Fatalf("PUT %s%s = %d %s, want 200 without the secret", registryPath, query, status, raw)
+		}
+	}
+	// pullCopy reads a service's pull-credentials variable.
+	pullCopy := func(service string) *api.Variable {
+		t.Helper()
+		v, _, err := nomad.Variables().Peek(nomadjob.PullCredentialsPath(pathAppID, service), nil)
+		if err != nil || v == nil {
+			t.Fatalf("the pull credentials of %s/%s: %+v (%v), want them there", pathAppID, service, v, err)
+		}
+		return v
+	}
+	putEntry("", user, wrong)
+	putEntry("teama", user, pass)
+	putEntry("teamb", user2, pass2)
+
+	// Two services, one under each path: both pull, with their own entry.
+	status, raw = deployApp(pathAppID, gatePathApp)
+	var pd gateDeployment
+	if status != http.StatusAccepted || json.Unmarshal(raw, &pd) != nil {
+		t.Fatalf("deploy of the two-path app = %d %s, want 202", status, raw)
+	}
+	if final := g.waitFinalOf(t, pathAppID, pd.ID, 5*time.Minute); final.Status != "healthy" {
+		t.Fatalf("the two-path app ended %s: %s", final.Status, final.Error)
+	}
+	for service, want := range map[string]struct{ entry, user string }{"web": {teamA, user}, "api": {teamB, user2}} {
+		items := pullCopy(service).Items
+		if items["registry"] != want.entry || items[nomadjob.RegistryUsernameEnv] != want.user {
+			t.Errorf("%s's copy names entry %q and user %q, want %q and %q", service, items["registry"], items[nomadjob.RegistryUsernameEnv], want.entry, want.user)
+		}
+	}
+	pathJob, _, err := nomad.Jobs().Info(pathAppID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathJobJSON, _ := json.Marshal(pathJob)
+	noSecret("the two-path job", pathJobJSON)
+	for _, tk := range pathJob.TaskGroups {
+		auth, _ := tk.Tasks[0].Config["auth"].([]any)
+		var block map[string]any
+		if len(auth) == 1 {
+			block, _ = auth[0].(map[string]any)
+		}
+		if block["server_address"] != gateRegistryHost {
+			t.Errorf("%s's auth = %v, want one block for the host %s (not the path)", *tk.Name, auth, gateRegistryHost)
+		}
+	}
+
+	// An image under another path uses the host entry, whose password is wrong.
+	status, raw = deployApp(otherAppID, gateOtherApp)
+	code, field, _ = refusal(raw)
+	if status != http.StatusUnprocessableEntity || code != "registry_auth_failed" || field != "services[0].image" {
+		t.Fatalf("deploy of an image under other/ = %d %s, want 422 registry_auth_failed (the host entry is the fallback)", status, raw)
+	}
+	noSecret("the refused other/ deploy's answer", raw)
+
+	// Saving teamb again rewrites only teamb's copy.
+	webBefore := pullCopy("web").ModifyIndex
+	putEntry("teamb", user2, wrong2)
+	if after := pullCopy("web"); after.ModifyIndex != webBefore {
+		t.Errorf("saving teamb rewrote teama's copy (ModifyIndex %d, was %d)", after.ModifyIndex, webBefore)
+	}
+	if items := pullCopy("api").Items; items[nomadjob.RegistryPasswordEnv] != wrong2 || items["registry"] != teamB {
+		t.Errorf("after saving teamb the api copy names %q, want %q with the new password", items["registry"], teamB)
+	}
+
+	// Removing teama moves its copy to the host entry.
+	resp = g.api(t, http.MethodDelete, registryPath+"?path=teama", "", "")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("delete %s: %d", appID, resp.StatusCode)
+		t.Fatalf("DELETE %s?path=teama = %d, want 204", registryPath, resp.StatusCode)
 	}
-	if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+appID+"/", nil); err != nil || len(metas) != 0 {
-		t.Errorf("variables left after deleting %s: %d (%v)", appID, len(metas), err)
+	if items := pullCopy("web").Items; items["registry"] != gateRegistryHost || items[nomadjob.RegistryUsernameEnv] != user || items[nomadjob.RegistryPasswordEnv] != wrong {
+		t.Errorf("after removing teama the web copy names %q (user %q), want the host entry %q", items["registry"], items[nomadjob.RegistryUsernameEnv], gateRegistryHost)
+	}
+	for _, path := range []string{"/v1/registries", "/v1/apps/" + pathAppID} {
+		resp := g.api(t, http.MethodGet, path, "", "")
+		answer := body(resp)
+		noSecret("GET "+path, answer)
+	}
+
+	// 7. Deleting the app leaves nothing of it in Nomad Variables, and the
+	// step's own jobs and credentials go.
+	for _, id := range []string{appID, pathAppID, otherAppID} {
+		resp = g.api(t, http.MethodDelete, "/v1/apps/"+id, "", "")
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("delete %s: %d", id, resp.StatusCode)
+		}
+		if metas, _, err := nomad.Variables().PrefixList("nomad/jobs/"+id+"/", nil); err != nil || len(metas) != 0 {
+			t.Errorf("variables left after deleting %s: %d (%v)", id, len(metas), err)
+		}
 	}
 	clean()
-	if v, _, err := nomad.Variables().Peek(deploy.RegistryVariablePath(gateRegistryHost), nil); err != nil || v != nil {
-		t.Errorf("the registry's credentials are still stored: %+v (%v)", v, err)
+	for _, entry := range []string{gateRegistryHost, teamA, teamB} {
+		if v, _, err := nomad.Variables().Peek(deploy.RegistryVariablePath(entry), nil); err != nil || v != nil {
+			t.Errorf("the credentials of %s are still stored: %+v (%v)", entry, v, err)
+		}
 	}
 	for _, id := range []string{"gate-skopeo", "gate-registry"} {
 		if j, _, err := nomad.Jobs().Info(id, nil); err == nil && j != nil && j.Status != nil && *j.Status != "dead" {

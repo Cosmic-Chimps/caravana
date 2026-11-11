@@ -57,11 +57,13 @@ type Client struct {
 	// "registry.example.com:5000") to its base URL, overriding Endpoint(host).
 	// Tests point it at a fake.
 	Endpoints map[string]string
-	// Credentials returns the user name and secret stored for a registry
-	// host. ok is false when there are none. It is called only when a
-	// registry asks for a login, so a public image costs no lookup. Nil means
-	// anonymous.
-	Credentials func(ctx context.Context, host string) (user, pass string, ok bool, err error)
+	// Credentials returns the user name and secret stored for an image's
+	// registry host and repository ("acme/shop"): the entry that covers the
+	// repository (see MatchEntry). repository is "" when the caller has none
+	// (Test of a host-only entry). ok is false when there are none. It is
+	// called only when a registry asks for a login, so a public image costs no
+	// lookup. Nil means anonymous.
+	Credentials func(ctx context.Context, host, repository string) (user, pass string, ok bool, err error)
 
 	retryDelays []time.Duration // nil means 0.5 s, then 1 s
 }
@@ -80,6 +82,9 @@ func (c *Client) endpoint(host string) string {
 // an error, a log line or a URL.
 type session struct {
 	host string
+	// repository is what the credentials lookup is for: the image's
+	// repository, "" for a Test of a host-only entry.
+	repository string
 	// secure is true when the registry is reached over HTTPS. Credentials are
 	// then sent only to HTTPS addresses.
 	secure     bool
@@ -90,8 +95,8 @@ type session struct {
 	looked bool
 }
 
-func (c *Client) newSession(host string) *session {
-	return &session{host: host, secure: strings.HasPrefix(c.endpoint(host), "https://")}
+func (c *Client) newSession(host, repository string) *session {
+	return &session{host: host, repository: repository, secure: strings.HasPrefix(c.endpoint(host), "https://")}
 }
 
 // basic is the Authorization header value for HTTP Basic.
@@ -105,7 +110,7 @@ func (c *Client) login(ctx context.Context, s *session) error {
 	if c.Credentials == nil {
 		return nil
 	}
-	user, pass, ok, err := c.Credentials(ctx, s.host)
+	user, pass, ok, err := c.Credentials(ctx, s.host, s.repository)
 	if err != nil {
 		return fmt.Errorf("%w: read the stored credentials for %s: %w", ErrUnavailable, s.host, err)
 	}
@@ -206,7 +211,7 @@ func statusError(code int, who string) (retry bool, err error) {
 // challenge if it makes one, and read the digest. retry says whether another
 // attempt could help.
 func (c *Client) try(ctx context.Context, ref Reference, manifestURL string) (digest string, retry bool, err error) {
-	s := c.newSession(ref.Registry)
+	s := c.newSession(ref.Registry, ref.Repository)
 	resp, err := c.request(ctx, http.MethodHead, manifestURL, "")
 	if err != nil {
 		return "", retryable(err), err
@@ -270,15 +275,17 @@ func (c *Client) hashManifest(ctx context.Context, manifestURL, authorization st
 }
 
 // Test checks that host's registry answers and accepts the credentials stored
-// for it: GET <endpoint>/v2/, answering the login challenge the way a pull
-// does. For a Bearer challenge it asks the token service for a token with no
+// for an entry: GET <endpoint>/v2/, answering the login challenge the way a pull
+// does. repository picks the entry through the Credentials hook ("" for a
+// host-only entry, the path for an entry with one); the request itself checks
+// the login only and says nothing about which images it can read. For a Bearer challenge it asks the token service for a token with no
 // scope, which only a valid login gets from Docker Hub, GHCR and GitLab. It
 // returns nil only when the registry's last answer is 200. Otherwise the error
 // wraps ErrUnauthorized (the credentials were refused) or ErrUnavailable
 // (unreachable, no HTTPS, not a registry), or says that the registry wants a
 // login and none is stored. It makes one attempt and never retries.
-func (c *Client) Test(ctx context.Context, host string) error {
-	s := c.newSession(host)
+func (c *Client) Test(ctx context.Context, host, repository string) error {
+	s := c.newSession(host, repository)
 	err := c.test(ctx, s)
 	switch {
 	case err == nil || s.creds || !(errors.Is(err, errLoginRequired) || errors.Is(err, ErrNotFound)):

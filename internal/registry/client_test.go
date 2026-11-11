@@ -231,16 +231,16 @@ const sentinelPass = "s3cr3t-SENTINEL-pw"
 
 // storedCredentials returns a Client.Credentials that answers user and pass
 // for any host, and the hosts it was asked about.
-func storedCredentials(user, pass string) (fn func(context.Context, string) (string, string, bool, error), asked *[]string) {
+func storedCredentials(user, pass string) (fn func(context.Context, string, string) (string, string, bool, error), asked *[]string) {
 	asked = new([]string)
-	return func(_ context.Context, host string) (string, string, bool, error) {
+	return func(_ context.Context, host, _ string) (string, string, bool, error) {
 		*asked = append(*asked, host)
 		return user, pass, true, nil
 	}, asked
 }
 
 // noCredentials is a Client.Credentials with nothing stored.
-func noCredentials(context.Context, string) (string, string, bool, error) {
+func noCredentials(context.Context, string, string) (string, string, bool, error) {
 	return "", "", false, nil
 }
 
@@ -311,7 +311,7 @@ func TestResolveWithCredentials(t *testing.T) {
 		})
 
 		t.Run(mode.name+": no stored credentials say where to add them", func(t *testing.T) {
-			for name, creds := range map[string]func(context.Context, string) (string, string, bool, error){
+			for name, creds := range map[string]func(context.Context, string, string) (string, string, bool, error){
 				"nothing stored": noCredentials,
 				"no Credentials": nil,
 			} {
@@ -340,6 +340,39 @@ func TestResolveWithCredentials(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("the credentials hook gets the image's repository", func(t *testing.T) {
+		fake := loginFake(t, true)
+		fake.AddIndex("acme/team/shop", "v1", testDigest)
+		c := newClient(fake)
+		var host, repository string
+		c.Credentials = func(_ context.Context, h, r string) (string, string, bool, error) {
+			host, repository = h, r
+			return "deploy", sentinelPass, true, nil
+		}
+		if _, err := c.Resolve(ctx, mustParse(t, fake.Host()+"/acme/team/shop:v1")); err != nil {
+			t.Fatalf("Resolve() = %v", err)
+		}
+		if host != fake.Host() || repository != "acme/team/shop" {
+			t.Errorf("Credentials(host, repository) = %q, %q; want %q, %q", host, repository, fake.Host(), "acme/team/shop")
+		}
+	})
+
+	t.Run("Test passes its repository to the credentials hook", func(t *testing.T) {
+		fake := loginFake(t, false)
+		c := newClient(fake)
+		var repository string
+		c.Credentials = func(_ context.Context, _, r string) (string, string, bool, error) {
+			repository = r
+			return "deploy", sentinelPass, true, nil
+		}
+		if err := c.Test(ctx, fake.Host(), "acme"); err != nil {
+			t.Fatalf("Test() = %v", err)
+		}
+		if repository != "acme" {
+			t.Errorf("Credentials repository = %q, want acme", repository)
+		}
+	})
 
 	t.Run("a public image never asks for credentials", func(t *testing.T) {
 		fake := registrytest.New(t)
@@ -392,7 +425,7 @@ func TestResolveWithCredentials(t *testing.T) {
 	t.Run("the stored credentials can't be read", func(t *testing.T) {
 		fake := loginFake(t, false)
 		c := newClient(fake)
-		c.Credentials = func(context.Context, string) (string, string, bool, error) {
+		c.Credentials = func(context.Context, string, string) (string, string, bool, error) {
 			return "", "", false, errors.New("nomad is down")
 		}
 		_, err := c.Resolve(ctx, mustParse(t, fake.Host()+"/acme/shop:v1"))
@@ -458,7 +491,7 @@ func TestTest(t *testing.T) {
 			fake := loginFake(t, mode.bearer)
 			c := newClient(fake)
 			c.Credentials, _ = storedCredentials("deploy", sentinelPass)
-			if err := c.Test(ctx, fake.Host()); err != nil {
+			if err := c.Test(ctx, fake.Host(), ""); err != nil {
 				t.Fatalf("Test() = %v, want nil", err)
 			}
 			if mode.bearer {
@@ -472,7 +505,7 @@ func TestTest(t *testing.T) {
 			fake := loginFake(t, mode.bearer)
 			c := newClient(fake)
 			c.Credentials, _ = storedCredentials("deploy", "wrong-"+sentinelPass)
-			err := c.Test(ctx, fake.Host())
+			err := c.Test(ctx, fake.Host(), "")
 			if !errors.Is(err, ErrUnauthorized) {
 				t.Fatalf("Test() error = %v, want ErrUnauthorized", err)
 			}
@@ -483,7 +516,7 @@ func TestTest(t *testing.T) {
 			fake := loginFake(t, mode.bearer)
 			c := newClient(fake)
 			c.Credentials = noCredentials
-			err := c.Test(ctx, fake.Host())
+			err := c.Test(ctx, fake.Host(), "")
 			if err == nil || !strings.Contains(err.Error(), "no credentials are stored for it") {
 				t.Errorf("Test() error = %v, want one saying no credentials are stored", err)
 			}
@@ -492,7 +525,7 @@ func TestTest(t *testing.T) {
 
 	t.Run("an open registry answers 200", func(t *testing.T) {
 		fake := registrytest.New(t)
-		if err := newClient(fake).Test(ctx, fake.Host()); err != nil {
+		if err := newClient(fake).Test(ctx, fake.Host(), ""); err != nil {
 			t.Errorf("Test() = %v, want nil", err)
 		}
 	})
@@ -502,7 +535,7 @@ func TestTest(t *testing.T) {
 		fake.FailToken(http.StatusUnauthorized)
 		c := newClient(fake)
 		c.Credentials, _ = storedCredentials("deploy", sentinelPass)
-		if err := c.Test(ctx, fake.Host()); !errors.Is(err, ErrUnauthorized) {
+		if err := c.Test(ctx, fake.Host(), ""); !errors.Is(err, ErrUnauthorized) {
 			t.Errorf("Test() error = %v, want ErrUnauthorized", err)
 		}
 	})
@@ -513,7 +546,7 @@ func TestTest(t *testing.T) {
 		srv.Close()
 		c := newClient(registrytest.New(t))
 		c.Credentials, _ = storedCredentials("deploy", sentinelPass)
-		err := c.Test(ctx, host)
+		err := c.Test(ctx, host, "")
 		if !errors.Is(err, ErrUnavailable) {
 			t.Errorf("Test() error = %v, want ErrUnavailable", err)
 		}
@@ -529,7 +562,7 @@ func TestTest(t *testing.T) {
 		defer srv.Close()
 		c := &Client{}
 		c.Credentials, _ = storedCredentials("deploy", sentinelPass)
-		err := c.Test(ctx, strings.TrimPrefix(srv.URL, "http://"))
+		err := c.Test(ctx, strings.TrimPrefix(srv.URL, "http://"), "")
 		if err == nil || strings.Contains(err.Error(), "no credentials are stored") ||
 			!strings.Contains(err.Error(), "refused access without asking for a login") {
 			t.Errorf("Test() error = %v, want one saying it refused before asking for a login", err)
@@ -540,7 +573,7 @@ func TestTest(t *testing.T) {
 	t.Run("not a registry", func(t *testing.T) {
 		srv := httptest.NewServer(http.NotFoundHandler())
 		defer srv.Close()
-		err := (&Client{}).Test(ctx, strings.TrimPrefix(srv.URL, "http://"))
+		err := (&Client{}).Test(ctx, strings.TrimPrefix(srv.URL, "http://"), "")
 		if !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "didn't answer as a container registry") {
 			t.Errorf("Test() error = %v, want ErrUnavailable: didn't answer as a container registry", err)
 		}
@@ -575,7 +608,7 @@ func TestRegistryHosts(t *testing.T) {
 			if time.Since(start) > 2*time.Second {
 				t.Errorf("%s: a TLS failure was retried", name)
 			}
-			err = c.Test(ctx, "registry.example.com")
+			err = c.Test(ctx, "registry.example.com", "")
 			if !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "must serve the registry API over HTTPS") {
 				t.Errorf("%s: Test() error = %v, want ErrUnavailable saying HTTPS is required", name, err)
 			}

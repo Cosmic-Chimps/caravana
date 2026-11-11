@@ -154,12 +154,12 @@ func NewNomadClient(addr, token string) (*api.Client, error) {
 }
 
 // New returns a Deployer. It sets reg.Credentials to read the credentials
-// Caravana keeps for a registry (RegistryCredentials), unless the caller set
+// Caravana keeps for a registry (pullCredentials), unless the caller set
 // its own, so every digest lookup through reg can log in to a private one.
 func New(nomad *api.Client, reg *registry.Client, s nomadjob.Settings) *Deployer {
 	d := &Deployer{nomad: nomad, registry: reg, settings: s}
 	if reg != nil && reg.Credentials == nil {
-		reg.Credentials = d.RegistryCredentials
+		reg.Credentials = d.pullCredentials
 	}
 	return d
 }

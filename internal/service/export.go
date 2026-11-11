@@ -42,8 +42,8 @@ func (s *Service) Export(ctx context.Context, appID, deploymentID string) (name 
 	return appID + ".nomad.hcl", hcl, nil
 }
 
-// privateRegistries is the set of registry hosts Caravana holds credentials
-// for, as nomadjob.Translate takes it. It reads the store's list, not Nomad:
+// privateRegistries is the set of registry entries (a host, or host/path)
+// Caravana holds credentials for, as nomadjob.Translate takes it. It reads the store's list, not Nomad:
 // the secrets don't matter to the shape of a job. Deploys, backups, restores
 // and the export all ask it, so a job is the same shape wherever it is made.
 func (s *Service) privateRegistries(ctx context.Context) (map[string]bool, error) {
@@ -56,7 +56,7 @@ func (s *Service) privateRegistries(ctx context.Context) (map[string]bool, error
 	}
 	private := make(map[string]bool, len(regs))
 	for _, r := range regs {
-		private[r.Host] = true
+		private[r.Key()] = true
 	}
 	return private, nil
 }

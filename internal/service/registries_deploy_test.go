@@ -200,3 +200,153 @@ func TestPrivatePostgresBackup(t *testing.T) {
 		t.Errorf("the restore variable = %v, want the pull credentials", r)
 	}
 }
+
+// saveEntry stores credentials for an entry (the env registry's host, or host +
+// "/" + path) with this user and password.
+func saveEntry(t *testing.T, e *env, entry, user, password string) {
+	t.Helper()
+	if _, err := e.svc.SaveRegistry(context.Background(), entry, user, &password); err != nil {
+		t.Fatalf("SaveRegistry(%q): %v", entry, err)
+	}
+}
+
+// Per-path credentials: images under two prefixes of one registry host deploy
+// with two different logins, the host's own entry covers the rest, and an image
+// no entry covers is looked up anonymously.
+func TestDeployWithEntriesPerPath(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	host := e.registry.Host()
+	e.registry.RequireToken(true)
+	e.registry.RequireLogin("deploy", registryPassword)
+	for _, repo := range []string{"teama/shop", "teamb/shop", "other/shop"} {
+		e.registry.AddIndex(repo, "v1", whoamiDigest)
+	}
+	// Both prefixes accept the same login in the fake, so what tells the entries
+	// apart is which one is stored: the host entry holds a WRONG secret.
+	saveEntry(t, e, host, "deploy", "wrong-"+registryPassword)
+	saveEntry(t, e, host+"/teama", "deploy", registryPassword)
+	saveEntry(t, e, host+"/teamb", "deploy", registryPassword)
+
+	two := whoami()
+	two.Services = []app.Service{
+		{Name: "web", Image: host + "/teama/shop:v1", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Domains: []app.Domain{{Host: "a.example.com", Port: "http"}}, Health: &app.HealthCheck{Path: "/"}},
+		{Name: "api", Image: host + "/teamb/shop:v1", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Health: &app.HealthCheck{Path: "/"}},
+	}
+	rec, err := e.svc.Deploy(ctx, two, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy() of two prefixes = %v", err)
+	}
+	if final := waitFinal(t, e.store, rec.Deployment.ID); final.Status != store.StatusHealthy {
+		t.Fatalf("final = %s (%s), want healthy", final.Status, final.Error)
+	}
+	if got, want := e.nomad.Variable("nomad/jobs/whoami/web/web"), pullItems(host+"/teama", "deploy", registryPassword); !maps.Equal(got, want) {
+		t.Errorf("web's copy = %v, want the teama entry", got)
+	}
+	if got, want := e.nomad.Variable("nomad/jobs/whoami/api/api"), pullItems(host+"/teamb", "deploy", registryPassword); !maps.Equal(got, want) {
+		t.Errorf("api's copy = %v, want the teamb entry", got)
+	}
+	// The docker auth block names the registry host, whatever the entry.
+	for _, task := range e.nomad.Job("whoami").TaskGroups {
+		auth, _ := task.Tasks[0].Config["auth"].([]any)
+		block, _ := auth[0].(map[string]any)
+		if len(auth) != 1 || block["server_address"] != host {
+			t.Errorf("%s auth = %v, want one block for %s", *task.Name, auth, host)
+		}
+	}
+
+	// An image under another path uses the host entry, whose secret is wrong.
+	other := whoami()
+	other.ID = "other"
+	other.Services[0].Image = host + "/other/shop:v1"
+	_, err = e.svc.Deploy(ctx, other, app.TriggerManual)
+	if !errors.Is(err, deploy.ErrRegistryAuth) {
+		t.Fatalf("Deploy() of an image under no prefix = %v, want the host entry's refusal (ErrRegistryAuth)", err)
+	}
+
+	// A prefix that matches no image of the app changes nothing for it.
+	saveEntry(t, e, host+"/unrelated", "deploy", "wrong-"+registryPassword)
+	if _, err := e.svc.Deploy(ctx, two, app.TriggerManual); err != nil {
+		t.Errorf("Deploy() after an unrelated entry = %v", err)
+	}
+
+	// Removing the host entry leaves the image under no entry anonymous: the
+	// registry then says it is missing or private.
+	if err := e.svc.DeleteRegistry(ctx, host); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.svc.Deploy(ctx, other, app.TriggerManual)
+	if !errors.Is(err, deploy.ErrImageNotFound) || !strings.Contains(err.Error(), "add credentials for "+host) {
+		t.Errorf("Deploy() of an image no entry covers = %v, want ErrImageNotFound saying to add credentials", err)
+	}
+	if strings.Contains(mustMarshal(t, e.nomad.Job("whoami")), registryPassword) {
+		t.Error("the job holds a secret")
+	}
+}
+
+// Saving and removing entries touches only the copies that use them.
+func TestRegistryEntryChangesTouchOnlyTheirCopies(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	host := e.registry.Host()
+	e.registry.RequireToken(true)
+	e.registry.RequireLogin("deploy", registryPassword)
+	for _, repo := range []string{"teama/shop", "teamb/shop"} {
+		e.registry.AddIndex(repo, "v1", whoamiDigest)
+	}
+	saveEntry(t, e, host+"/teama", "deploy", registryPassword)
+	saveEntry(t, e, host+"/teamb", "deploy", registryPassword)
+	two := whoami()
+	two.Services = []app.Service{
+		{Name: "web", Image: host + "/teama/shop:v1", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Health: &app.HealthCheck{Path: "/"}},
+		{Name: "api", Image: host + "/teamb/shop:v1", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Health: &app.HealthCheck{Path: "/"}},
+	}
+	deployHealthy(t, e, two)
+	apiBefore := maps.Clone(e.nomad.Variable("nomad/jobs/whoami/api/api"))
+
+	saveEntry(t, e, host+"/teama", "deploy2", "new-"+registryPassword)
+	if got, want := e.nomad.Variable("nomad/jobs/whoami/web/web"), pullItems(host+"/teama", "deploy2", "new-"+registryPassword); !maps.Equal(got, want) {
+		t.Errorf("web's copy = %v, want the new teama credentials", got)
+	}
+	if !maps.Equal(e.nomad.Variable("nomad/jobs/whoami/api/api"), apiBefore) {
+		t.Error("api's copy changed when only teama was saved")
+	}
+
+	if err := e.svc.DeleteRegistry(ctx, host+"/teama"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := e.nomad.Variable("nomad/jobs/whoami/web/web"), pullItems(host+"/teama", "", ""); !maps.Equal(got, want) {
+		t.Errorf("web's copy = %v, want empty credentials (no entry covers it now)", got)
+	}
+	if !maps.Equal(e.nomad.Variable("nomad/jobs/whoami/api/api"), apiBefore) {
+		t.Error("api's copy changed when teama was removed")
+	}
+}
+
+// TestRegistry of an entry with a path says what the login check can't.
+func TestTestRegistryWithAPath(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	host := e.registry.Host()
+	e.registry.RequireToken(true)
+	e.registry.RequireLogin("deploy", registryPassword)
+	saveEntry(t, e, host+"/teama", "deploy", registryPassword)
+	saveEntry(t, e, host, "deploy", registryPassword)
+
+	rec, err := e.svc.TestRegistry(ctx, host+"/teama")
+	if err != nil || rec.LastTest == nil || !rec.LastTest.OK || rec.Path != "teama" {
+		t.Fatalf("TestRegistry(path) = %+v, %v", rec, err)
+	}
+	if want := "first deploy of an image under " + host + "/teama/ shows it."; !strings.Contains(rec.LastTest.Message, want) {
+		t.Errorf("message = %q, want it to say %q", rec.LastTest.Message, want)
+	}
+	if strings.Contains(rec.LastTest.Message, registryPassword) {
+		t.Error("the message holds the secret")
+	}
+	if rec, err := e.svc.TestRegistry(ctx, host); err != nil || rec.LastTest == nil || !rec.LastTest.OK || rec.LastTest.Message != "" {
+		t.Errorf("TestRegistry(host) = %+v, %v; want ok with no message", rec.LastTest, err)
+	}
+	if _, err := e.svc.TestRegistry(ctx, host+"/nothere"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("TestRegistry() of an unknown path = %v, want ErrNotFound", err)
+	}
+}

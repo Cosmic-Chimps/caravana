@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.34.0
+  version: 0.35.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -2463,8 +2463,10 @@ paths:
   /v1/registries:
     get:
       operationId: listRegistries
-      summary: List the registries Caravana has credentials for, never the secrets.
-      description: Ordered by host. Public images from any registry deploy without an entry here.
+      summary: List the registry entries Caravana has credentials for, never the secrets.
+      description: |
+        Ordered by host, then path. An entry is a host (`ghcr.io`) or a host with a path prefix
+        (`ghcr.io/acme`, `path` set). Public images from any registry deploy without an entry here.
       tags: [registries]
       responses:
         "200":
@@ -2483,15 +2485,23 @@ paths:
   /v1/registries/{host}:
     parameters:
       - $ref: "#/components/parameters/RegistryHost"
+      - $ref: "#/components/parameters/RegistryPath"
     put:
       operationId: putRegistry
-      summary: Store the credentials for a private registry.
+      summary: Store the credentials for a private registry, or for a path on it.
       description: |
-        Creates the entry or replaces the one with this host. `password` is required when
+        The entry is the host, or with `path` the host and that path prefix. An image uses the
+        most specific entry whose path is a whole-segment prefix of its repository (`ghcr.io`
+        with `path=acme` covers `acme/shop` and `acme`, never `acme-old/shop`); the entry with
+        no path is the fallback for every other image on the host, and an image no entry covers
+        is pulled without credentials.
+
+        Creates the entry or replaces the one with this host and path. `password` is required when
         creating and optional when updating: leave it out to keep the secret stored before.
         It is never returned. Nothing is deployed or restarted: the next deploy of an image
         from this registry uses the credentials, and apps already running pick them up the next
-        time they start. A save that changes the credentials forgets the last test.
+        time they start. A save that changes the credentials forgets the last test. Apps already
+        deployed are rewritten only where this entry is the one that covers their image now.
       tags: [registries]
       requestBody:
         required: true
@@ -2524,10 +2534,12 @@ paths:
           $ref: "#/components/responses/BadGateway"
     delete:
       operationId: deleteRegistry
-      summary: Forget the credentials for a registry.
+      summary: Forget the credentials for a registry entry.
       description: |
-        Apps already running keep running. The next deploy of a private image from this
-        registry fails until credentials are added again.
+        The entry is the host, or with `path` the host and that path prefix. Apps already
+        running keep running. The next deploy of a private image this entry covered uses the
+        entry that covers it next (the host's own, if there is one), or fails until credentials
+        are added again.
       tags: [registries]
       responses:
         "204":
@@ -2546,11 +2558,15 @@ paths:
   /v1/registries/{host}/test:
     parameters:
       - $ref: "#/components/parameters/RegistryHost"
+      - $ref: "#/components/parameters/RegistryPath"
     post:
       operationId: testRegistry
       summary: Ask the registry to accept the stored credentials.
       description: |
-        Makes one request to the registry and records the outcome with its time. A registry
+        Makes one request to the registry and records the outcome with its time. The request
+        checks the login only: a registry doesn't say which images a login can read, so for an
+        entry with a `path` an accepted login comes with a `lastTest.message` saying that the
+        first deploy of an image under the path shows that. A registry
         that refuses the credentials or can't be reached is an answer, not an error: the
         response is 200 and `lastTest.ok` is false, with the reason in `lastTest.message`.
       tags: [registries]
@@ -4445,6 +4461,19 @@ components:
           value: ghcr.io
         selfHosted:
           value: registry.example.com:5000
+    RegistryPath:
+      name: path
+      in: query
+      required: false
+      description: |
+        A path prefix that limits the entry to the images under it: lowercase parts separated by
+        `/`, like `acme` or `acme/team`. Left out, the entry is the whole host. A path that isn't
+        an image path is `422 invalid_field` with `field` `path`.
+      schema:
+        type: string
+      examples:
+        owner:
+          value: acme
     NotificationChannelID:
       name: id
       in: path
@@ -4921,6 +4950,10 @@ components:
           type: string
           description: The canonical host, lowercase, with its port; `docker.io` for Docker Hub.
           examples: [ghcr.io]
+        path:
+          type: string
+          description: The path prefix the credentials are limited to, like `acme`. Absent for the whole host.
+          examples: [acme]
         username: {type: string}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -4936,7 +4969,10 @@ components:
               description: True when the registry accepted the credentials.
             message:
               type: string
-              description: Why the registry refused them or couldn't be reached. Absent when `ok`.
+              description: |
+                Why the registry refused them or couldn't be reached. For an entry with a `path`
+                that the registry accepted, a note that the login check doesn't say which images
+                it can read. Absent otherwise when `ok`.
 
     NotificationChannel:
       type: object
@@ -8432,15 +8468,16 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     RegistryNotFound:
-      description: Caravana has no credentials for this registry host (`not_found`).
+      description: Caravana has no credentials for this registry host and path (`not_found`).
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     RegistryInvalid:
       description: |
-        `invalid_field`: `field` is `host` (not a registry host), `username` (empty) or
-        `password` (missing when creating, or present but empty). Nothing was saved.
+        `invalid_field`: `field` is `host` (not a registry host), `path` (not an image path),
+        `username` (empty) or `password` (missing when creating, or present but empty). Nothing
+        was saved.
       content:
         application/json:
           schema:

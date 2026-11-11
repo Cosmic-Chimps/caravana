@@ -7,6 +7,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
+	"github.com/cosmic-chimps/caravana/internal/registry"
 )
 
 // Export returns deployment dep of app a as a Nomad jobspec in HCL: the job
@@ -43,7 +44,8 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 
 	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups []string
 	for _, svc := range a.Services {
-		if host, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
+		if entry, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
+			host := registry.EntryHost(entry)
 			// Without the variable, the task's template waits for it and the
 			// service never starts.
 			path := nomadjob.PullCredentialsPath(a.ID, svc.Name)

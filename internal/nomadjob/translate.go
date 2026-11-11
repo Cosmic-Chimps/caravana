@@ -133,9 +133,10 @@ var traefikNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // Translate builds the Nomad job for an app and one of its deployments. On
 // invalid input it returns a *app.FieldError naming the field, and no job.
 //
-// private is the set of registry hosts ("ghcr.io", "registry.example.com:5000",
-// "docker.io") Caravana holds credentials for, true for each. A service whose
-// image comes from one of them pulls with those credentials (see pullAuth).
+// private is the set of registry entries ("ghcr.io", "registry.example.com:5000",
+// "docker.io", or a host with a path prefix like "ghcr.io/acme") Caravana holds
+// credentials for, true for each. A service whose image is covered by one of
+// them pulls with those credentials (see PrivateRegistry).
 // It is an argument, not a Setting: it belongs to the moment of the deploy,
 // not to the installation's configuration. nil means none, and gives the job
 // every service had before private registries existed.
@@ -462,28 +463,31 @@ const (
 // image comes from a registry in private. The JSON job format takes a block as
 // a list holding one object. The values are placeholders, never credentials.
 func pullAuth(image string, private map[string]bool) (auth []map[string]any, ok bool) {
-	host, ok := PrivateRegistry(image, private)
+	entry, ok := PrivateRegistry(image, private)
 	if !ok {
 		return nil, false
 	}
 	return []map[string]any{{
-		"username":       "${" + RegistryUsernameEnv + "}",
-		"password":       "${" + RegistryPasswordEnv + "}",
-		"server_address": host,
+		"username": "${" + RegistryUsernameEnv + "}",
+		"password": "${" + RegistryPasswordEnv + "}",
+		// The registry's host: a path prefix is Caravana's own notion.
+		"server_address": registry.EntryHost(entry),
 	}}, true
 }
 
-// PrivateRegistry returns the canonical registry host of image, and true, when
-// that host is in private.
-func PrivateRegistry(image string, private map[string]bool) (host string, ok bool) {
+// PrivateRegistry returns the registry entry whose credentials image is pulled
+// with, and true: the most specific entry of private (a host, or a host with a
+// path prefix) that covers the image's repository by whole path segments. ok is
+// false when no entry covers it: the image is pulled anonymously.
+func PrivateRegistry(image string, private map[string]bool) (entry string, ok bool) {
 	if len(private) == 0 {
 		return "", false
 	}
 	ref, err := registry.Parse(image)
-	if err != nil || !private[ref.Registry] {
+	if err != nil {
 		return "", false
 	}
-	return ref.Registry, true
+	return registry.MatchEntry(private, ref.Registry, ref.Repository)
 }
 
 // PullCredentialsPath is the Nomad Variable that holds the credentials a

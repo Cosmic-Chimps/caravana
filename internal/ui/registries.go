@@ -21,12 +21,13 @@ import (
 // registryCheck is the outcome of the last "Test" of a registry's credentials.
 type registryCheck struct {
 	OK      bool
-	Message string // why it was refused or couldn't be reached; "" when OK
+	Message string // why it was refused or couldn't be reached; when OK, what the test can't tell (an entry with a path)
 	When    when
 }
 
-// registryForm is what a Registries form shows: the host and user name as saved
-// or as typed, and the field a refusal names. Never the password.
+// registryForm is what a Registries form shows: the registry entry (a host, or
+// host/path; the "host" field) and user name as saved or as typed, and the
+// field a refusal names. Never the password.
 type registryForm struct {
 	Host, Username string
 	Field          string // the field at fault, after a refusal
@@ -36,9 +37,10 @@ type registryForm struct {
 	Focus bool
 }
 
-// registryRow is one registry, one connection row.
+// registryRow is one registry entry, one connection row.
 type registryRow struct {
-	Host, Username string
+	Host, Username string // Host is the entry: a host, or host/path
+	Limited        bool   // the entry has a path: the host's own entry, if any, covers its images after a removal
 	Mark           string // registriesState's: failed, healthy or idle
 	UsedBy         string // "used by 3 apps", or "not used"
 	// State and Event are the row's two lines: how the credentials stand ("works",
@@ -66,12 +68,12 @@ type registriesData struct {
 	Notice *registryNotice
 	Alert  *fieldError // a refusal that names no field, such as Nomad being down
 	Add    registryForm
-	// EditHost says which row's edit form is open; Edit is what it was refused with
+	// EditHost says which row's (entry's) edit form is open; Edit is what it was refused with
 	// (its Host is empty when it wasn't refused).
 	EditHost string
 	Edit     registryForm
 	// Saved and Tested come from the redirect after a save or a test: Tested is
-	// the host whose result to announce.
+	// the entry whose result to announce.
 	Saved  bool
 	Tested string
 }
@@ -104,7 +106,7 @@ func regField(f registryForm, idPrefix, name, label, placeholder, hint string) r
 }
 
 // showRegistries answers GET /settings/registries. The notice comes from the
-// redirect after a save or a test; ?edit=<host> opens that registry's edit form.
+// redirect after a save or a test; ?edit=<entry> opens that registry's edit form.
 func (s *server) showRegistries(w http.ResponseWriter, r *http.Request, session string) {
 	q := r.URL.Query()
 	s.renderSettings(w, r, entryRegistries, settingsData{Registries: registriesData{
@@ -142,6 +144,9 @@ func (s *server) saveRegistry(w http.ResponseWriter, r *http.Request, session st
 	switch {
 	case errors.As(err, &fieldErr):
 		form.Field, form.Err = fieldErr.Field, &fieldError{Text: registryFieldMessage(fieldErr)}
+		if form.Field == "path" {
+			form.Field = "host" // the path is typed in the registry field: host/path
+		}
 		if edit {
 			data.Edit = form
 		} else {
@@ -166,7 +171,7 @@ func (s *server) saveRegistry(w http.ResponseWriter, r *http.Request, session st
 // registryFieldMessage is a field error as a sentence for the input it names: the
 // service's messages are written to follow the field's name ("is required").
 func registryFieldMessage(fe *app.FieldError) string {
-	name := map[string]string{"host": "The registry", "username": "The user name", "password": "The password or token"}[fe.Field]
+	name := map[string]string{"host": "The registry", "path": "The path", "username": "The user name", "password": "The password or token"}[fe.Field]
 	// A message about the value itself already starts with it: "acme" isn't a
 	// registry host.
 	if name == "" || strings.HasPrefix(fe.Message, "\"") {
@@ -175,13 +180,17 @@ func registryFieldMessage(fe *app.FieldError) string {
 	return name + " " + fe.Message
 }
 
-// testRegistry answers POST /settings/registries/{host}/test. The outcome is
-// stored, and the page it goes back to announces it.
+// testRegistry answers POST /settings/registries/test, with the entry (a host,
+// or host/path) in the form's "host" field. The outcome is stored, and the page
+// it goes back to announces it.
 func (s *server) testRegistry(w http.ResponseWriter, r *http.Request, session string) {
-	reg, err := s.svc.TestRegistry(r.Context(), r.PathValue("host"))
+	if !s.readForm(w, r) {
+		return
+	}
+	reg, err := s.svc.TestRegistry(r.Context(), r.PostFormValue("host"))
 	switch {
 	case err == nil:
-		http.Redirect(w, r, "/settings/registries?tested="+url.QueryEscape(reg.Host), http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/registries?tested="+url.QueryEscape(reg.Key()), http.StatusSeeOther)
 	case errors.Is(err, store.ErrNotFound):
 		http.Redirect(w, r, "/settings/registries", http.StatusSeeOther)
 	default:
@@ -189,16 +198,20 @@ func (s *server) testRegistry(w http.ResponseWriter, r *http.Request, session st
 	}
 }
 
-// removeRegistry answers POST /settings/registries/{host}/remove. The page asks
-// first (a <details>); this is the post it sends. Apps already running keep
-// running.
+// removeRegistry answers POST /settings/registries/remove, with the entry in the
+// form's "host" field. The page asks first (a <details>); this is the post it
+// sends. Apps already running keep running.
 func (s *server) removeRegistry(w http.ResponseWriter, r *http.Request, session string) {
-	err := s.svc.DeleteRegistry(r.Context(), r.PathValue("host"))
+	if !s.readForm(w, r) {
+		return
+	}
+	entry := r.PostFormValue("host")
+	err := s.svc.DeleteRegistry(r.Context(), entry)
 	switch {
 	case err == nil, errors.Is(err, store.ErrNotFound):
 		http.Redirect(w, r, "/settings/registries", http.StatusSeeOther)
 	case errors.Is(err, deploy.ErrNomadUnavailable), errors.Is(err, deploy.ErrNomadRejected):
-		s.log.Warn("can't remove the registry credentials", "registry", r.PathValue("host"), "error", err)
+		s.log.Warn("can't remove the registry credentials", "registry", entry, "error", err)
 		s.renderSettings(w, r, entryRegistries, settingsData{Registries: registriesData{Alert: &fieldError{Text: err.Error()}}})
 	default:
 		s.serverError(w, r, "remove registry", err)
@@ -210,14 +223,15 @@ func (s *server) removeRegistry(w http.ResponseWriter, r *http.Request, session 
 // the same function the nav counts with; refused registries come first, then
 // the others by host.
 func registriesSection(now time.Time, facts settingsFacts, st entryState, data registriesData) registriesData {
-	use := registryUse(facts.Apps)
+	use := registryUse(facts.Apps, facts.Registries)
 	data.Rows = make([]registryRow, 0, len(facts.Registries))
 	for i, reg := range facts.Registries {
-		row := registryRow{Host: reg.Host, Username: reg.Username, Mark: st.Rows[i], UsedBy: usedBy(use[reg.Host], "app"),
-			Edit: registryForm{Host: reg.Host, Username: reg.Username}}
+		entry := reg.Key()
+		row := registryRow{Host: entry, Limited: reg.Path != "", Username: reg.Username, Mark: st.Rows[i], UsedBy: usedBy(use[entry], "app"),
+			Edit: registryForm{Host: entry, Username: reg.Username}}
 		switch t := reg.LastTest; {
 		case t != nil && t.OK:
-			row.Check = &registryCheck{OK: true, When: whenOf(now, &t.At, "")}
+			row.Check = &registryCheck{OK: true, Message: t.Message, When: whenOf(now, &t.At, "")}
 			row.State, row.Event = "works", "tested "+row.Check.When.Text
 		case t != nil:
 			row.Check = &registryCheck{Message: t.Message, When: whenOf(now, &t.At, "")}
@@ -229,7 +243,7 @@ func registriesSection(now time.Time, facts settingsFacts, st entryState, data r
 		default:
 			row.State, row.Event = "not tested yet", "added "+whenOf(now, &reg.CreatedAt, "").Text
 		}
-		if reg.Host == data.EditHost {
+		if entry == data.EditHost {
 			row.Open = true
 			if data.Edit.Host != "" {
 				row.Edit = data.Edit
@@ -252,7 +266,11 @@ func registriesSection(now time.Time, facts settingsFacts, st entryState, data r
 			switch {
 			case row.Host != data.Tested || row.Check == nil:
 			case row.Check.OK:
-				data.Notice = &registryNotice{Text: row.Host + " accepted the credentials."}
+				text := row.Host + " accepted the credentials."
+				if row.Check.Message != "" {
+					text += " " + row.Check.Message
+				}
+				data.Notice = &registryNotice{Text: text}
 			default:
 				data.Notice = &registryNotice{Text: row.Host + " refused the credentials: " + strings.TrimSuffix(row.Check.Message, ".") + ".", Bad: true}
 			}

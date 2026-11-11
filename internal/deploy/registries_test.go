@@ -29,6 +29,11 @@ func TestRegistryVariablePath(t *testing.T) {
 		"my-registry.example.com":         "caravana/registries/my-registry~example~com",
 		"registry.example.com":            "caravana/registries/registry~example~com",
 		"registry.example.com.5000.local": "caravana/registries/registry~example~com~5000~local",
+		// An entry with a path prefix: the host's key, "/", the path with "." as "~".
+		"ghcr.io/acme":                      "caravana/registries/ghcr~io/acme",
+		"ghcr.io/acme/team.one/sub_dir":     "caravana/registries/ghcr~io/acme/team~one/sub_dir",
+		"127.0.0.1:15000/teama":             "caravana/registries/127~0~0~1_15000/teama",
+		"registry.example.com:5000/my-team": "caravana/registries/registry~example~com_5000/my-team",
 	}
 	seen := map[string]string{}
 	for host, want := range tests {
@@ -197,7 +202,7 @@ func TestResolveWithStoredCredentials(t *testing.T) {
 	})
 
 	t.Run("a Client of the caller's own keeps its Credentials", func(t *testing.T) {
-		own := func(context.Context, string) (string, string, bool, error) { return "x", "y", true, nil }
+		own := func(context.Context, string, string) (string, string, bool, error) { return "x", "y", true, nil }
 		client := &registry.Client{Credentials: own}
 		_, _, nomad := newTestDeployer(t)
 		nc, err := NewNomadClient(nomad.Addr(), "")
@@ -205,7 +210,7 @@ func TestResolveWithStoredCredentials(t *testing.T) {
 			t.Fatal(err)
 		}
 		New(nc, client, labSettings)
-		if u, _, _, _ := client.Credentials(context.Background(), "x"); u != "x" {
+		if u, _, _, _ := client.Credentials(context.Background(), "x", ""); u != "x" {
 			t.Error("New replaced the caller's Credentials")
 		}
 	})
@@ -238,5 +243,69 @@ func TestTestRegistry(t *testing.T) {
 	}
 	if err := d.TestRegistry(ctx, reg.Host()); err != nil {
 		t.Errorf("TestRegistry() with the right secret = %v, want nil", err)
+	}
+}
+
+// An image is looked up with the most specific stored entry that covers it, the
+// host's entry being the fallback, and none at all is anonymous.
+func TestPullCredentialsPicksTheMostSpecificEntry(t *testing.T) {
+	ctx := context.Background()
+	d, _, _ := newTestDeployer(t)
+	for entry, user := range map[string]string{
+		"ghcr.io":          "host-user",
+		"ghcr.io/acme":     "acme-user",
+		"ghcr.io/acme/web": "web-user",
+		"quay.io/other":    "quay-user",
+	} {
+		if err := d.SaveRegistrySecret(ctx, entry, user, "pw-"+user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tests := []struct {
+		host, repository string
+		wantUser         string // "" means anonymous
+	}{
+		{"ghcr.io", "acme/web/api", "web-user"},
+		{"ghcr.io", "acme/web", "web-user"},
+		{"ghcr.io", "acme/db", "acme-user"},
+		{"ghcr.io", "acme", "acme-user"},
+		{"ghcr.io", "acme-old/db", "host-user"},
+		{"ghcr.io", "someone/else", "host-user"},
+		{"ghcr.io", "", "host-user"},
+		{"quay.io", "other/x", "quay-user"},
+		{"quay.io", "mine/x", ""}, // a prefix entry alone is no fallback
+		{"docker.io", "library/nginx", ""},
+	}
+	for _, tt := range tests {
+		user, pass, ok, err := d.pullCredentials(ctx, tt.host, tt.repository)
+		if err != nil || ok != (tt.wantUser != "") || user != tt.wantUser || (ok && pass != "pw-"+tt.wantUser) {
+			t.Errorf("pullCredentials(%q, %q) = %q, ok %v, %v; want user %q", tt.host, tt.repository, user, ok, err, tt.wantUser)
+		}
+	}
+}
+
+// A digest lookup logs in with the entry of the image's own path.
+func TestResolveUsesTheEntryOfTheImagePath(t *testing.T) {
+	ctx := context.Background()
+	d, reg, _ := newTestDeployer(t)
+	a, _ := privateRegistry(t, reg, true) // acme/shop needs deploy / registrySecret
+	// The host entry holds the wrong secret; only the path's entry is right.
+	if err := d.SaveRegistrySecret(ctx, reg.Host(), "deploy", "wrong-"+registrySecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.Resolve(ctx, a); !errors.Is(err, ErrRegistryAuth) {
+		t.Fatalf("Resolve() with only the wrong host entry = %v, want ErrRegistryAuth", err)
+	}
+	if err := d.SaveRegistrySecret(ctx, reg.Host()+"/acme", "deploy", registrySecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := d.Resolve(ctx, a); err != nil {
+		t.Errorf("Resolve() with the acme entry = %v, want it used over the host's", err)
+	}
+	// An image under another path falls back to the host entry (still wrong).
+	reg.AddIndex("other/shop", "v1", whoamiDigest)
+	a.Services[0].Image = reg.Host() + "/other/shop:v1"
+	if _, _, err := d.Resolve(ctx, a); !errors.Is(err, ErrRegistryAuth) {
+		t.Errorf("Resolve() of another path = %v, want the host entry's refusal", err)
 	}
 }

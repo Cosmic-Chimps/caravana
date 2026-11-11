@@ -159,7 +159,8 @@
       <span class="cv-conn-used">{{.UsedBy}}</span>
       <div class="cv-conn-acts">
         {{if eq .Mark "failed"}}<a href="{{.EditHref}}" class="cv-btn cv-btn-primary cv-btn-sm">Update password</a>{{end}}
-        <form method="post" action="/settings/registries/{{.Host}}/test">
+        <form method="post" action="/settings/registries/test">
+          <input type="hidden" name="host" value="{{.Host}}">
           <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test credentials for {{.Host}}">Test</button>
         </form>
         <details class="cv-confirm cv-confirm-row" id="registry-edit-{{$i}}" name="conn-{{$i}}"{{if .Open}} open{{end}}>
@@ -174,8 +175,9 @@
         </details>
         <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
           <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove credentials for {{.Host}}">Remove</summary>
-          <form method="post" action="/settings/registries/{{.Host}}/remove" class="cv-confirm-body">
-            <p>Apps already running keep running. The next deploy of a private image from this registry fails until you add credentials again.</p>
+          <form method="post" action="/settings/registries/remove" class="cv-confirm-body">
+            <input type="hidden" name="host" value="{{.Host}}">
+            <p>Apps already running keep running. {{if .Limited}}The next deploy of a private image under this path uses the registry's own entry if there is one, else fails until you add credentials again.{{else}}The next deploy of a private image from this registry fails until you add credentials again.{{end}}</p>
             <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
           </form>
         </details>
@@ -194,7 +196,7 @@
 
 <form method="post" action="/settings/registries" id="add" class="cv-panel" autocomplete="off">
   <h2 class="cv-label cv-addhead">Add a registry</h2>
-  {{template "srow-open" (srow "Registry" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub." "registry-add-host")}}
+  {{template "srow-open" (srow "Registry" "The host in the image name: ghcr.io, registry.gitlab.com, registry.example.com:5000. docker.io for Docker Hub. Add a path, like ghcr.io/acme, to limit the credentials to images under it; the host alone covers the rest of that registry." "registry-add-host")}}
   {{template "registry-input" (regField .Add "registry-add" "host" "Registry" "ghcr.io" "")}}
   {{template "srow-close"}}
   {{template "srow-open" (srow "User name" "" "registry-add-username")}}

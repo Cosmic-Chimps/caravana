@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
+	"github.com/cosmic-chimps/caravana/internal/registry"
 	"github.com/cosmic-chimps/caravana/internal/registry/registrytest"
 	"github.com/cosmic-chimps/caravana/internal/secrets/secretstest"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -33,7 +34,15 @@ func TestSaveRegistryValidation(t *testing.T) {
 	}{
 		{"empty host", "", "u", new("p"), "host", ""},
 		{"a Docker Hub user is not a host", "acme", "u", new("p"), "host", ""},
-		{"an image is not a host", "ghcr.io/acme/shop", "u", new("p"), "host", ""},
+		{"a path with capitals", "ghcr.io/Acme", "u", new("p"), "path", "isn't an image path"},
+		{"a path with a tag", "ghcr.io/acme/shop:v1", "u", new("p"), "path", "isn't an image path"},
+		{"a path with spaces", "ghcr.io/ac me", "u", new("p"), "path", "isn't an image path"},
+		{"a path with empty parts", "ghcr.io/acme//shop", "u", new("p"), "path", "isn't an image path"},
+		{"a bad host before a path", "acme/shop", "u", new("p"), "host", ""},
+		{"a path is an entry", "GHCR.io/acme", "u", new("p"), "", "ghcr.io/acme"},
+		{"slashes around a path are trimmed", "ghcr.io//acme/", "u", new("p"), "", "ghcr.io/acme"},
+		{"a deeper path", "ghcr.io/acme/team", "u", new("p"), "", "ghcr.io/acme/team"},
+		{"a trailing slash is the host", "quay.io/", "u", new("p"), "", "quay.io"},
 		{"a bad port", "ghcr.io:port", "u", new("p"), "host", ""},
 		{"no user name", "ghcr.io", "  ", new("p"), "username", ""},
 		{"no password the first time", "ghcr.io", "u", nil, "password", "is required the first time"},
@@ -53,10 +62,11 @@ func TestSaveRegistryValidation(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got.Host != tc.want {
-				t.Fatalf("SaveRegistry() = %+v, %v; want host %q", got, err, tc.want)
+			if err != nil || got.Key() != tc.want {
+				t.Fatalf("SaveRegistry() = %+v, %v; want entry %q", got, err, tc.want)
 			}
-			if _, err := e.store.GetRegistry(ctx, tc.want); err != nil {
+			host, path := registry.SplitEntry(tc.want)
+			if _, err := e.store.GetRegistry(ctx, host, path); err != nil {
 				t.Errorf("registry %q isn't stored: %v", tc.want, err)
 			}
 		})
@@ -190,7 +200,7 @@ func TestDeleteRegistry(t *testing.T) {
 	if err := e.svc.DeleteRegistry(ctx, "GHCR.io"); err != nil {
 		t.Fatalf("DeleteRegistry() = %v", err)
 	}
-	if _, err := e.store.GetRegistry(ctx, "ghcr.io"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := e.store.GetRegistry(ctx, "ghcr.io", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the registry is still stored: %v", err)
 	}
 	if _, _, ok, _ := e.svc.deployer.RegistryCredentials(ctx, "ghcr.io"); ok {

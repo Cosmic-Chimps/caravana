@@ -187,3 +187,74 @@ func TestRegistrySchemaHasNoPassword(t *testing.T) {
 		t.Errorf("the Registry schema refused a plain registry: %v", err)
 	}
 }
+
+// An entry with a path: ?path= on the three calls, the 422 on a bad path, the
+// host's own entry beside it, and a Registry answer that says which is which.
+func TestRegistryEndpointsWithAPath(t *testing.T) {
+	e := newTestEnv(t, "")
+	doc := loadContract(t)
+	e.Registry.RequireToken(true)
+	e.Registry.RequireLogin("deploy", registrySecret)
+	host := e.Registry.Host()
+	var seen []string
+
+	put := func(query, user, password string) (int, []byte) {
+		status, _, raw := call(t, http.MethodPut, e.URL+"/v1/registries/"+host+query, "application/json", registryBody(user, password))
+		seen = append(seen, string(raw))
+		return status, raw
+	}
+	for _, bad := range []string{"?path=Acme", "?path=acme/shop:v1", "?path=ac%20me", "?path=acme//shop"} {
+		status, raw := put(bad, "deploy", registrySecret)
+		got := decodeAs[errorBody](t, raw).Error
+		if status != http.StatusUnprocessableEntity || got.Code != codeInvalidField || got.Field != "path" {
+			t.Errorf("PUT %s = %d %s, want 422 invalid_field on path", bad, status, raw)
+		}
+	}
+
+	status, raw := put("?path=teama", "deploy", registrySecret)
+	reg := decodeAs[registryJSON](t, raw)
+	if status != http.StatusOK || reg.Host != host || reg.Path != "teama" || reg.Username != "deploy" {
+		t.Fatalf("PUT ?path=teama = %d %s", status, raw)
+	}
+	checkSchema(t, doc, raw, "Registry")
+	if stored := e.Nomad.Variable("caravana/registries/" + strings.NewReplacer(".", "~", ":", "_").Replace(host) + "/teama"); stored["password"] != registrySecret {
+		t.Error("the path entry's secret isn't in its own variable")
+	}
+	if status, raw := put("", "hostuser", "hostpass"); status != http.StatusOK || decodeAs[registryJSON](t, raw).Path != "" {
+		t.Fatalf("PUT of the host entry = %d %s", status, raw)
+	}
+
+	status, _, raw = call(t, http.MethodGet, e.URL+"/v1/registries", "", "")
+	list := decodeAs[[]registryJSON](t, raw)
+	if status != http.StatusOK || len(list) != 2 || list[0].Path != "" || list[1].Path != "teama" {
+		t.Fatalf("GET = %d %s, want the host entry then teama", status, raw)
+	}
+	if strings.Contains(string(raw), `"path":""`) {
+		t.Error("the host entry lists an empty path instead of leaving it out")
+	}
+
+	status, _, raw = call(t, http.MethodPost, e.URL+"/v1/registries/"+host+"/test?path=teama", "", "")
+	seen = append(seen, string(raw))
+	reg = decodeAs[registryJSON](t, raw)
+	if status != http.StatusOK || reg.Path != "teama" || reg.LastTest == nil || !reg.LastTest.OK || !strings.Contains(reg.LastTest.Message, "first deploy") {
+		t.Fatalf("test ?path=teama = %d %s, want ok with the login-only note", status, raw)
+	}
+	checkSchema(t, doc, raw, "Registry")
+
+	if status, _, raw := call(t, http.MethodDelete, e.URL+"/v1/registries/"+host+"?path=nothere", "", ""); status != http.StatusNotFound {
+		t.Errorf("DELETE of an unknown path = %d %s, want 404", status, raw)
+	}
+	if status, _, raw := call(t, http.MethodDelete, e.URL+"/v1/registries/"+host+"?path=teama", "", ""); status != http.StatusNoContent {
+		t.Fatalf("DELETE ?path=teama = %d %s, want 204", status, raw)
+	}
+	_, _, raw = call(t, http.MethodGet, e.URL+"/v1/registries", "", "")
+	if list := decodeAs[[]registryJSON](t, raw); len(list) != 1 || list[0].Path != "" {
+		t.Errorf("after the delete GET = %s, want only the host entry", raw)
+	}
+	seen = append(seen, e.Logs.String())
+	for i, out := range seen {
+		if strings.Contains(out, registrySecret) || strings.Contains(out, "hostpass") {
+			t.Errorf("output %d contains a secret", i)
+		}
+	}
+}

@@ -160,7 +160,7 @@ func TestSyncRegistryCopies(t *testing.T) {
 		if err := d.SaveRegistrySecret(ctx, privHost, "deploy2", "new-"+registrySecret); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.SyncRegistryCopies(ctx, privHost); err != nil {
+		if err := d.SyncRegistryCopies(ctx, privHost, privHosts); err != nil {
 			t.Fatalf("SyncRegistryCopies() = %v", err)
 		}
 		want := map[string]string{"registry": privHost, nomadjob.RegistryUsernameEnv: "deploy2", nomadjob.RegistryPasswordEnv: "new-" + registrySecret}
@@ -183,7 +183,7 @@ func TestSyncRegistryCopies(t *testing.T) {
 		if err := d.DeleteRegistrySecret(ctx, privHost); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.SyncRegistryCopies(ctx, privHost); err != nil {
+		if err := d.SyncRegistryCopies(ctx, privHost, nil); err != nil {
 			t.Fatalf("SyncRegistryCopies() = %v", err)
 		}
 		want := map[string]string{"registry": privHost, nomadjob.RegistryUsernameEnv: "", nomadjob.RegistryPasswordEnv: ""}
@@ -199,7 +199,7 @@ func TestSyncRegistryCopies(t *testing.T) {
 	})
 
 	t.Run("a registry with no copies is nothing to do", func(t *testing.T) {
-		if err := d.SyncRegistryCopies(ctx, "quay.io"); err != nil {
+		if err := d.SyncRegistryCopies(ctx, "quay.io", privHosts); err != nil {
 			t.Errorf("SyncRegistryCopies() = %v", err)
 		}
 	})
@@ -207,7 +207,7 @@ func TestSyncRegistryCopies(t *testing.T) {
 	t.Run("an unreadable store is an error", func(t *testing.T) {
 		nomad.FailVariables(403)
 		defer nomad.FailVariables(0)
-		if err := d.SyncRegistryCopies(ctx, privHost); err == nil {
+		if err := d.SyncRegistryCopies(ctx, privHost, privHosts); err == nil {
 			t.Error("SyncRegistryCopies() = nil, want an error")
 		}
 	})
@@ -262,7 +262,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 		if err := d.SaveRegistrySecret(ctx, privHost, "deploy", "new-"+registrySecret); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.SyncRegistryCopies(ctx, privHost); err != nil {
+		if err := d.SyncRegistryCopies(ctx, privHost, privHosts); err != nil {
 			t.Fatal(err)
 		}
 		for _, path := range []string{"nomad/jobs/shop_db_backup", "nomad/jobs/shop_db_restore"} {
@@ -280,7 +280,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 		if err := d.DeleteRegistrySecret(ctx, privHost); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.SyncRegistryCopies(ctx, privHost); err != nil {
+		if err := d.SyncRegistryCopies(ctx, privHost, nil); err != nil {
 			t.Fatal(err)
 		}
 		for _, path := range []string{"nomad/jobs/shop_db_backup", "nomad/jobs/shop_db_restore"} {
@@ -335,5 +335,198 @@ func TestPublicBackupHasNoPullCredentials(t *testing.T) {
 	_, hasPass := v[nomadjob.RegistryPasswordEnv]
 	if hasUser || hasPass || v["PGPASSWORD"] != "pw" {
 		t.Errorf("the backup variable of a public image = %v, want the database's items and no pull credentials", v)
+	}
+}
+
+// The per-path flows: one host, two prefixes and the host's own entry. The apps
+// are deployed through Register so their jobs say which image each copy has.
+func TestSyncRegistryCopiesPerPath(t *testing.T) {
+	ctx := context.Background()
+	const (
+		a1 = "nomad/jobs/team/web/web"   // under privHost/teama
+		a2 = "nomad/jobs/team/api/api"   // under privHost/teamb
+		a3 = "nomad/jobs/team/misc/misc" // under privHost/other: the host entry
+		a4 = "nomad/jobs/outer/web/web"  // another host
+		ea = privHost + "/teama"
+		eb = privHost + "/teamb"
+	)
+	image := func(path string) string { return privHost + "/" + path + "/busybox@" + whoamiDigest }
+	d, _, nomad := newTestDeployer(t)
+	team := whoami()
+	team.ID = "team"
+	team.Services = []app.Service{
+		{Name: "web", Image: privHost + "/teama/busybox:v1"},
+		{Name: "api", Image: privHost + "/teamb/busybox:v1"},
+		{Name: "misc", Image: privHost + "/other/busybox:v1"},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"web": image("teama"), "api": image("teamb"), "misc": image("other")}}
+
+	save := func(entry, user string) {
+		t.Helper()
+		if err := d.SaveRegistrySecret(ctx, entry, user, "pw-"+user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(privHost, "host-user")
+	save(ea, "a-user")
+	save(eb, "b-user")
+	all := map[string]bool{privHost: true, ea: true, eb: true}
+	if _, err := d.Register(ctx, team, dep, ownsIDs(), all); err != nil {
+		t.Fatalf("Register() = %v", err)
+	}
+	nomad.SetVariable(a4, map[string]string{"registry": "ghcr.io", nomadjob.RegistryUsernameEnv: "bot", nomadjob.RegistryPasswordEnv: "ghp"})
+	holds := func(path, entry, user string) {
+		t.Helper()
+		want := map[string]string{"registry": entry, nomadjob.RegistryUsernameEnv: user, nomadjob.RegistryPasswordEnv: ""}
+		if user != "" {
+			want[nomadjob.RegistryPasswordEnv] = "pw-" + user
+		}
+		if got := nomad.Variable(path); !maps.Equal(got, want) {
+			t.Errorf("%s = %v, want %v", path, got, want)
+		}
+	}
+	holds(a1, ea, "a-user")
+	holds(a2, eb, "b-user")
+	holds(a3, privHost, "host-user")
+
+	// Writes are counted by watching which variables change: snapshot the three.
+	snapshot := func() map[string]map[string]string {
+		m := map[string]map[string]string{}
+		for _, p := range []string{a1, a2, a3} {
+			m[p] = maps.Clone(nomad.Variable(p))
+		}
+		return m
+	}
+
+	t.Run("saving one prefix rewrites only the copies under it", func(t *testing.T) {
+		save(eb, "b-user2")
+		before := snapshot()
+		if err := d.SyncRegistryCopies(ctx, eb, all); err != nil {
+			t.Fatal(err)
+		}
+		after := snapshot()
+		holds(a2, eb, "b-user2")
+		if !maps.Equal(before[a1], after[a1]) || !maps.Equal(before[a3], after[a3]) {
+			t.Error("a copy outside teamb changed")
+		}
+		if !maps.Equal(nomad.Variable(a4), map[string]string{"registry": "ghcr.io", nomadjob.RegistryUsernameEnv: "bot", nomadjob.RegistryPasswordEnv: "ghp"}) {
+			t.Error("a copy on another host changed")
+		}
+	})
+
+	t.Run("saving the host entry leaves the copies under a prefix alone", func(t *testing.T) {
+		save(privHost, "host-user2")
+		before := snapshot()
+		if err := d.SyncRegistryCopies(ctx, privHost, all); err != nil {
+			t.Fatal(err)
+		}
+		holds(a3, privHost, "host-user2")
+		after := snapshot()
+		if !maps.Equal(before[a1], after[a1]) || !maps.Equal(before[a2], after[a2]) {
+			t.Error("a copy under a prefix was rewritten by the host entry's save")
+		}
+	})
+
+	t.Run("removing a prefix moves its copies back to the host entry", func(t *testing.T) {
+		if err := d.DeleteRegistrySecret(ctx, ea); err != nil {
+			t.Fatal(err)
+		}
+		left := map[string]bool{privHost: true, eb: true}
+		if err := d.SyncRegistryCopies(ctx, ea, left); err != nil {
+			t.Fatal(err)
+		}
+		holds(a1, privHost, "host-user2")
+		holds(a2, eb, "b-user2")
+	})
+
+	t.Run("adding a prefix moves the copies under it off the host entry", func(t *testing.T) {
+		save(privHost+"/other", "other-user")
+		now := map[string]bool{privHost: true, eb: true, privHost + "/other": true}
+		if err := d.SyncRegistryCopies(ctx, privHost+"/other", now); err != nil {
+			t.Fatal(err)
+		}
+		holds(a3, privHost+"/other", "other-user")
+		holds(a1, privHost, "host-user2")
+	})
+
+	t.Run("removing the host entry empties the copies that only it covered", func(t *testing.T) {
+		if err := d.DeleteRegistrySecret(ctx, privHost); err != nil {
+			t.Fatal(err)
+		}
+		left := map[string]bool{eb: true, privHost + "/other": true}
+		if err := d.SyncRegistryCopies(ctx, privHost, left); err != nil {
+			t.Fatal(err)
+		}
+		// a1 (teama) now has no entry: empty credentials, the registry item stays.
+		want := map[string]string{"registry": privHost, nomadjob.RegistryUsernameEnv: "", nomadjob.RegistryPasswordEnv: ""}
+		if got := nomad.Variable(a1); !maps.Equal(got, want) {
+			t.Errorf("%s = %v, want empty credentials and the registry item kept", a1, got)
+		}
+		holds(a2, eb, "b-user2")
+		holds(a3, privHost+"/other", "other-user")
+	})
+
+	t.Run("a copy whose job is gone follows only its own entry", func(t *testing.T) {
+		nomad.SetVariable("nomad/jobs/gone/web/web", map[string]string{
+			"registry": ea, nomadjob.RegistryUsernameEnv: "old", nomadjob.RegistryPasswordEnv: "old"})
+		nomad.SetVariable("nomad/jobs/gone/api/api", map[string]string{
+			"registry": eb, nomadjob.RegistryUsernameEnv: "old", nomadjob.RegistryPasswordEnv: "old"})
+		save(eb, "b-user3")
+		if err := d.SyncRegistryCopies(ctx, eb, map[string]bool{eb: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := nomad.Variable("nomad/jobs/gone/api/api"); got[nomadjob.RegistryUsernameEnv] != "b-user3" || got["registry"] != eb {
+			t.Errorf("the copy of the saved entry = %v, want b-user3", got)
+		}
+		if got := nomad.Variable("nomad/jobs/gone/web/web"); got[nomadjob.RegistryUsernameEnv] != "old" {
+			t.Errorf("the copy of another entry = %v, want it untouched", got)
+		}
+	})
+}
+
+// A backup job's variable follows the entry that covers its image, not the host.
+func TestSyncRegistryCopiesPerPathBackup(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+	a := backedUp()
+	a.Services[0].Image = privHost + "/teama/pg:17"
+	digests := map[string]string{"db": privHost + "/teama/pg@" + whoamiDigest}
+	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
+	for entry, user := range map[string]string{privHost: "host-user", privHost + "/teama": "a-user"} {
+		if err := d.SaveRegistrySecret(ctx, entry, user, "pw-"+user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	both := map[string]bool{privHost: true, privHost + "/teama": true}
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, both); err != nil {
+		t.Fatal(err)
+	}
+	v := nomad.Variable("nomad/jobs/shop_db_backup")
+	if v[nomadjob.RegistryUsernameEnv] != "a-user" {
+		t.Fatalf("the backup variable = %v, want the teama entry's user", v)
+	}
+	if _, has := v[registryItem]; has {
+		t.Error("the backup variable got a registry item; it is exported as env")
+	}
+
+	// The host entry changing doesn't touch it; the prefix entry changing does.
+	if err := d.SaveRegistrySecret(ctx, privHost, "host-user", "pw-new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SyncRegistryCopies(ctx, privHost, both); err != nil {
+		t.Fatal(err)
+	}
+	if got := nomad.Variable("nomad/jobs/shop_db_backup"); got[nomadjob.RegistryPasswordEnv] != "pw-a-user" {
+		t.Errorf("after the host entry's save: %v, want the teama password kept", got)
+	}
+	if err := d.SaveRegistrySecret(ctx, privHost+"/teama", "a-user", "pw-a2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SyncRegistryCopies(ctx, privHost+"/teama", both); err != nil {
+		t.Fatal(err)
+	}
+	if got := nomad.Variable("nomad/jobs/shop_db_backup"); got[nomadjob.RegistryPasswordEnv] != "pw-a2" || got["PGPASSWORD"] != "pw" {
+		t.Errorf("after the prefix entry's save: %v, want the new password and the database's kept", got)
 	}
 }
