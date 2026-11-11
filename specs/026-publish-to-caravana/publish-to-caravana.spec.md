@@ -43,8 +43,11 @@ of the same app.
 4. **Given** a deploy that fails or is reverted, **When** the step waits, **Then** `aspire deploy`
    fails with Caravana's reason and the deploy's warnings.
 5. **Given** the same AppHost deployed again, **When** nothing changed but the images, **Then** the
-   same app is redeployed (no duplicate apps), and changes someone made in the console to things
-   the AppHost doesn't describe (secrets set by hand) are kept.
+   same app is redeployed (no duplicate apps). Each deploy fully replaces each service's secrets
+   (principle III), so a secret the AppHost doesn't send is removed, with the deploy's warning that
+   its value is deleted: a value set by hand in the console must be declared in the AppHost to
+   survive the next `aspire deploy`. (Amended 2026-11-11, QA #29: this is what the publisher does,
+   since it sends only secrets with a value in the AppHost.)
 
 ---
 

@@ -510,6 +510,41 @@ func TestDeployIf(t *testing.T) {
 	})
 }
 
+func TestPlainBackupPasswords(t *testing.T) {
+	pg := &app.Backup{Engine: app.BackupPostgres}
+	tests := []struct {
+		name      string
+		svc       app.Service
+		wantField string // "" means no warning
+	}{
+		{"password in env", app.Service{Name: "db", Backup: pg,
+			Env: []app.EnvVar{{Name: "POSTGRES_USER", Value: "app"}, {Name: "POSTGRES_PASSWORD", Value: "pw"}}}, "services[0].env[1]"},
+		{"password as a secret", app.Service{Name: "db", Backup: pg,
+			Secrets: []app.Secret{{Name: "POSTGRES_PASSWORD"}}}, ""},
+		{"no backup", app.Service{Name: "db",
+			Env: []app.EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}}, ""},
+		{"volume backup", app.Service{Name: "db", Backup: &app.Backup{Engine: app.BackupVolume},
+			Env: []app.EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PlainBackupPasswords(app.App{Services: []app.Service{tt.svc}})
+			if tt.wantField == "" {
+				if len(got) != 0 {
+					t.Errorf("got %+v, want none", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Field != tt.wantField {
+				t.Fatalf("got %+v, want one warning on %s", got, tt.wantField)
+			}
+			if !strings.Contains(got[0].Message, `"db"`) || strings.Contains(got[0].Message, "pw") {
+				t.Errorf("%q should name the service and never the value", got[0].Message)
+			}
+		})
+	}
+}
+
 func TestRemovedSecrets(t *testing.T) {
 	svc := func(name string, secrets ...string) app.Service {
 		s := app.Service{Name: name}

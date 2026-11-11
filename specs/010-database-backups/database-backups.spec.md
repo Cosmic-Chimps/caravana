@@ -161,7 +161,10 @@ next backup goes to the new bucket.
   after typing the service's name in the console; one restore per service at a time.
 - **FR-008**: A restore MUST report running, then succeeded or failed with the tool's message.
 - **FR-009**: Destination credentials and database passwords MUST NOT appear in any API
-  response, page, log line or Nomad job.
+  response, page, log line or Nomad job. A password the owner gives as a plain environment
+  variable is part of the app's definition and shows where env does (the app, the job, an export):
+  the deploy succeeds with a warning on that field saying to make it a secret (amended 2026-11-11,
+  QA #36; research R3 reads either).
 - **FR-010**: A deploy asking for backups MUST be refused, naming the field, when no destination
   is set, the engine isn't `postgres`, the service has no ports, or there is no password.
 - **FR-011**: Deleting an app MUST remove its backup schedules and restore jobs and keep its
