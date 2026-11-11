@@ -1,5 +1,19 @@
 <!--
 Sync Impact Report
+- Version change: 1.1.1 → 1.1.2 (2026-11-11, PATCH: wording only, decided by the maintainer in the
+  secrets talk; closes QA issues #33, #30 and VII's part of #12)
+- Modified principles:
+  III. Safe, Reversible Deploys (naming a secret without a value, an explicit keep, is not a merge:
+  the deploy still names every secret it holds; 008 FR-002)
+  VII. Secure by Default (secrets live at `nomad/jobs/<app-id>/…`, one variable per service, as
+  008 built it; a secret is a value that grants access when read, so one-way hashes and verifiers
+  may live in SQLite, as 004, 006 and 023 do)
+- Added sections: none
+- Removed sections: none
+- Templates: ✅ no change (plan, spec and tasks templates read this file); ✅ CLAUDE.md links here
+- Deferred TODOs: none
+
+Earlier report (1.1.1):
 - Version change: 1.1.0 → 1.1.1 (2026-11-05, PATCH: II's list of today's helper tasks names the
   `caravana-sqlite` and `caravana-upload` sidecars of feature 029, which its plan names; the rule
   itself is unchanged)
@@ -105,7 +119,9 @@ Rationale: one model keeps translation, routing and deploys testable and the sam
 - The update strategy MUST be health-checked with `AutoRevert: true`. Every service that
   receives traffic MUST have a health check.
 - Env and secrets are declarative: each deploy fully replaces them. Values are never merged with
-  earlier ones; keys the new deploy doesn't send are removed.
+  earlier ones; keys the new deploy doesn't send are removed. Naming a secret without a value (an
+  explicit keep) is not a merge: the deploy still names every secret it holds, and only the stored
+  value is carried over.
 - Deploys are idempotent upserts keyed by app ID: the same payload twice changes nothing except
   a new deployment record.
 
@@ -160,11 +176,14 @@ Rationale: Nomad is the product's reason to exist; users must never be trapped b
 
 ### VII. Secure by Default
 
-- Secrets live in Nomad Variables at `nomad/jobs/<app-id>` and are rendered as env by a template.
+- Secrets live in Nomad Variables at `nomad/jobs/<app-id>/…` (one variable per service) and are
+  rendered as env by a template.
   External secret providers (Bella Baxter) are optional; Caravana MUST work fully without them.
 - Secret values and tokens MUST NEVER be logged. Request logging redacts env values and tokens.
 - The control plane's own secrets, and those of any secret provider, live in Nomad Variables. A
-  cold start of the cluster MUST NOT wait on an external secret provider being up.
+  cold start of the cluster MUST NOT wait on an external secret provider being up. A secret here is
+  a value that grants access when read; one-way hashes and verifiers (token, password, session and
+  Team-only hashes) are not secrets and may live in SQLite.
 - If an external secret provider is unreachable, running apps keep their last rendered env; only
   new deploys fail, with a clear error.
 - Installs enable Nomad ACLs from the first install; multi-node clusters add Nomad TLS and an
@@ -216,4 +235,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.1.1 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-05
+**Version**: 1.1.2 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-11
