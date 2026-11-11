@@ -1,0 +1,25 @@
+# Nomad agent, installed by deploy/install/install.sh (it was a heredoc there until feature 031).
+# It needs the private interfaces (caravana0 and the WireGuard mesh) before it starts, because its
+# config names their addresses: after a reboot, Nomad that started first failed five times and
+# systemd's start limit left it stopped (feature 031, research L3). So it requires the mesh unit
+# and never gives up restarting.
+[Unit]
+Description=Nomad agent
+Wants=network-online.target
+Requires=caravana-mesh.service
+After=network-online.target docker.service caravana-mesh.service
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/local/bin/nomad agent -config /etc/nomad.d
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=65536
+TasksMax=infinity
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target

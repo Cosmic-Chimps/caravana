@@ -118,8 +118,11 @@ type Nomad struct {
 	statsInFlight int
 	statsMax      int
 
-	volumes      map[string]*hostVolume // by ID
-	volumeStatus int                    // non-zero: every host volume request answers it
+	volumes       map[string]*hostVolume // by ID
+	volumeStatus  int                    // non-zero: every host volume request answers it
+	volumeNodes   []string               // the nodes Nomad places a volume on when none is asked for, in turn
+	volumeNext    int                    // how many placements Nomad has chosen
+	volumeCreates []VolumeCreate         // every create request, as sent
 
 	// Copies' files and restarts (allocfs.go).
 	files         map[string]map[string]string // text by path, by copy ID
@@ -1202,6 +1205,42 @@ func (n *Nomad) HostVolumes() []string {
 	return names
 }
 
+// VolumeCreate is one host volume create request as the fake received it.
+type VolumeCreate struct {
+	Name, NodeID, NodePool string
+}
+
+// SetVolumeNodes sets the nodes Nomad places a new volume on when the request
+// names none: one after the other, round and round, so a test sees two
+// volumes created without a node land on different ones. The default is the
+// one node "node-1". A request that names a node is placed there.
+func (n *Nomad) SetVolumeNodes(ids ...string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.volumeNodes = slices.Clone(ids)
+	n.volumeNext = 0
+}
+
+// VolumeCreates returns every host volume create request received, in order,
+// with the node and pool it asked for ("" for none).
+func (n *Nomad) VolumeCreates() []VolumeCreate {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return slices.Clone(n.volumeCreates)
+}
+
+// HostVolumeNode returns the node the host volume name is on, or "".
+func (n *Nomad) HostVolumeNode(name string) string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, v := range n.volumes {
+		if v.vol.Name == name {
+			return v.vol.NodeID
+		}
+	}
+	return ""
+}
+
 // FailVolumes makes every host volume request answer status (0 undoes it).
 func (n *Nomad) FailVolumes(status int) {
 	n.mu.Lock()
@@ -1243,7 +1282,16 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 		n.index++
 		v := *req.Volume
 		v.ID = fmt.Sprintf("vol-%d", n.index)
-		v.NodeID, v.HostPath, v.State = "node-1", "/opt/nomad/data/host_volumes/"+v.ID, api.HostVolumeStatePending
+		n.volumeCreates = append(n.volumeCreates, VolumeCreate{Name: v.Name, NodeID: v.NodeID, NodePool: v.NodePool})
+		if v.NodeID == "" {
+			nodes := n.volumeNodes
+			if len(nodes) == 0 {
+				nodes = []string{"node-1"}
+			}
+			v.NodeID = nodes[n.volumeNext%len(nodes)]
+			n.volumeNext++
+		}
+		v.HostPath, v.State = "/opt/nomad/data/host_volumes/"+v.ID, api.HostVolumeStatePending
 		n.volumes[v.ID] = &hostVolume{vol: v}
 		n.writeJSON(w, api.HostVolumeCreateResponse{Volume: &v})
 	case r.Method == http.MethodGet:

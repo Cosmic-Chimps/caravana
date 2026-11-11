@@ -1,0 +1,18 @@
+# The private network of a Caravana server, installed by deploy/install/install.sh (feature 031):
+# caravana0 (where app ports bind) and caravana-mesh (WireGuard to the other servers), made from
+# what the agent last applied (/etc/caravana-node/state.json). No network is needed. It runs before
+# Nomad, which requires it, and before systemd-networkd, which also configures caravana0 on the
+# first server, so the two never both make it. A reboot brings the network and Nomad back by
+# themselves.
+[Unit]
+Description=Caravana's private network (caravana0 and the WireGuard mesh)
+After=network-pre.target
+Before=nomad.service systemd-networkd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/caravana-node node up
+
+[Install]
+WantedBy=multi-user.target

@@ -291,6 +291,13 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		// The service's own task is always the first.
 		Tasks: []*api.Task{task(a.ID, svc, image, s, private)},
 	}
+	if count > 1 {
+		// Spread the copies over the cluster's servers. Without it Nomad
+		// bin-packs, and a redeploy can put every copy on the emptiest
+		// server (feature 031, research L8). A single copy has nothing to
+		// spread, so its job doesn't change.
+		tg.Spreads = []*api.Spread{{Attribute: "${node.unique.id}", Weight: new(int8(100))}}
+	}
 	if len(svc.Volumes) > 0 {
 		tg.Volumes = volumeRequests(a.ID, svc)
 		// A canary can't be placed on a single-writer volume the old copy
