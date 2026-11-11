@@ -93,9 +93,12 @@ type samplerState struct {
 	bootRef time.Time // the boot time last recorded as a host event (hostnode.go); only the tick touches it
 	osSeen  time.Time // the start of the newest apt run recorded as a host event (hostosstate.go); only the tick touches it
 
-	mu      sync.Mutex // guards sources, traefik, node, reboot, the OS state and the security mark
+	mu      sync.Mutex // guards sources, traefik, dir, node, reboot, the OS state and the security mark
 	sources SamplerSources
-	node    *HostNode // the newest node facts (feature 027); nil before the first reading
+	// dir is the last directory of the cluster's nodes (serverdir.go), so a read while Nomad is down
+	// still has the servers' names.
+	dir  serverDirectory
+	node *HostNode // the newest node facts (feature 027); nil before the first reading
 	// reboot is the newest reading of the host's reboot marker (hostosstate.go);
 	// rebootRead says there has been one.
 	reboot     hostos.Reboot
@@ -196,8 +199,11 @@ type samplerReads struct {
 	copiesErr error
 	usage     map[string]deploy.CopyUsage
 
+	// host is the server Caravana runs on; hostErr says why it wasn't read. others are the other ready
+	// servers' reads (feature 031): a node that failed has its own err and leaves the rest alone.
 	host    deploy.Host
 	hostErr error
+	others  []otherHost
 
 	// Feature 027: the traefik job's image, read after the host (the deploy
 	// package caches it for 10 minutes), and, when the host's stats couldn't be
@@ -207,6 +213,13 @@ type samplerReads struct {
 	fallback      deploy.NodeFacts
 	fallbackErr   error
 	fallbackTried bool
+}
+
+// otherHost is one more server's read.
+type otherHost struct {
+	node serverNode
+	host deploy.Host
+	err  error
 }
 
 // serviceRef names one stored service.
@@ -248,14 +261,7 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 	go func() { defer wg.Done(); s.readCopies(ctx, stored, &r) }()
 	go func() {
 		defer wg.Done()
-		r.host, r.hostErr = s.deployer.HostStats(ctx, st.dockerRoot)
-		switch {
-		case r.hostErr == nil:
-			r.traefikImage, r.imageErr = s.deployer.TraefikImage(ctx)
-		case !errors.Is(r.hostErr, deploy.ErrNodeReadDenied):
-			r.fallbackTried = true
-			r.fallback, r.fallbackErr = s.deployer.NodeFacts(ctx)
-		}
+		s.readHosts(ctx, &r)
 	}()
 	wg.Wait()
 	if ctx.Err() != nil {
@@ -313,12 +319,11 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 		}
 	}
 	if r.hostErr == nil {
-		minute.Hosts = append(minute.Hosts, hostSample(ts, &r))
-		for _, d := range r.host.Disks {
-			minute.Disks = append(minute.Disks, store.DiskSample{
-				Node: r.host.NodeID, TS: ts, Mount: d.Mount, Holds: d.Holds(),
-				UsedMB: int64(d.UsedMB), TotalMB: int64(d.TotalMB), FreeMB: int64(d.FreeMB),
-			})
+		addHostRows(&minute, ts, r.host, &r)
+	}
+	for _, o := range r.others {
+		if o.err == nil {
+			addHostRows(&minute, ts, o.host, &r)
 		}
 	}
 
@@ -344,6 +349,62 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 	st.mu.Unlock()
 	s.publish(Change{What: ChangeMetrics})
 	return nil
+}
+
+// readHosts reads the node of the server Caravana runs on, with what only it has (the Traefik image,
+// the fallback node facts), and every other ready server's node, each on its own: a node that fails
+// leaves the others' rows alone. With no node known (Nomad's list couldn't be read) the local read
+// asks for the first ready node, as a one-server host always did, and says why it failed.
+func (s *Service) readHosts(ctx context.Context, r *samplerReads) {
+	dir, err := s.directory(ctx)
+	if err != nil {
+		s.log.Warn("list the servers for the sampler", "error", err)
+	}
+	localID := ""
+	if n, ok := dir.local(); ok {
+		localID = n.ID
+	}
+	root := s.sampler.dockerRoot
+
+	var wg sync.WaitGroup
+	for _, n := range dir.nodes {
+		if n.Local || !n.Ready {
+			continue
+		}
+		r.others = append(r.others, otherHost{node: n})
+	}
+	for i := range r.others {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			o := &r.others[i]
+			o.host, o.err = s.deployer.HostStats(ctx, o.node.ID, root)
+			if o.err != nil && ctx.Err() == nil {
+				s.log.Warn("read a server's host numbers; its row is left out of this tick", "server", o.node.Name, "error", o.err)
+			}
+		}()
+	}
+
+	r.host, r.hostErr = s.deployer.HostStats(ctx, localID, root)
+	switch {
+	case r.hostErr == nil:
+		r.traefikImage, r.imageErr = s.deployer.TraefikImage(ctx)
+	case !errors.Is(r.hostErr, deploy.ErrNodeReadDenied):
+		r.fallbackTried = true
+		r.fallback, r.fallbackErr = s.deployer.NodeFactsOf(ctx, localID)
+	}
+	wg.Wait()
+}
+
+// addHostRows adds a node's host row and its filesystems' rows to a tick.
+func addHostRows(m *store.MetricsRows, ts time.Time, h deploy.Host, r *samplerReads) {
+	m.Hosts = append(m.Hosts, hostSample(ts, h, r))
+	for _, d := range h.Disks {
+		m.Disks = append(m.Disks, store.DiskSample{
+			Node: h.NodeID, TS: ts, Mount: d.Mount, Holds: d.Holds(),
+			UsedMB: int64(d.UsedMB), TotalMB: int64(d.TotalMB), FreeMB: int64(d.FreeMB),
+		})
+	}
 }
 
 // trafficLabel is the name Traefik gives a service Caravana made: the job's
@@ -558,8 +619,7 @@ func fillNomad(m *store.MetricsSample, key deploy.ServiceKey, r *samplerReads) {
 // every live copy on the node, the ones of jobs Caravana didn't make too, plus
 // what the node's own configuration holds back; NULL when the copies weren't
 // listed.
-func hostSample(ts time.Time, r *samplerReads) store.HostSample {
-	h := r.host
+func hostSample(ts time.Time, h deploy.Host, r *samplerReads) store.HostSample {
 	out := store.HostSample{
 		Node: h.NodeID, TS: ts,
 		MemoryUsedMB: new(int64(h.MemoryUsedMB)), MemoryTotalMB: new(int64(h.MemoryTotalMB)),

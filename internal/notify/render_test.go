@@ -443,3 +443,56 @@ func TestRenderProblemWorsened(t *testing.T) {
 		t.Errorf("webhook = %s, header %q", raw, req.Header.Get("Caravana-Event"))
 	}
 }
+
+func TestServerLine(t *testing.T) {
+	end := time.Date(2026, 11, 29, 14, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		ev   Event
+		want string
+	}{
+		{"not a server", Event{Type: EventProblemOpened}, ""},
+		{"a server that is down", Event{Server: "fsn-3"}, "Server: fsn-3"},
+		{"a certificate", Event{Server: "fsn-3", ExpiresAt: &end}, "Server: fsn-3, certificate ends 2026-11-29 14:00 UTC"},
+		{"a name with a line break stays one line", Event{Server: "a\nb"}, "Server: a b"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serverLine(tc.ev); got != tc.want {
+				t.Errorf("serverLine = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A problem about a server reaches every channel with its name, and the webhook's JSON has "server".
+func TestRenderServerProblem(t *testing.T) {
+	ev := Event{
+		Type: EventProblemOpened, Kind: "server_down", Title: "Server down: fsn-3", Server: "fsn-3",
+		Text: "fsn-3 is down. Its copies are being replaced on other servers; what has a volume there waits for it.",
+		URL:  "https://c.example.com/ops/servers/fsn-3", At: time.Date(2026, 11, 10, 3, 0, 0, 0, time.UTC),
+	}
+	now := time.Date(2026, 11, 10, 3, 0, 1, 0, time.UTC)
+	for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
+		req, err := Render(Channel{Kind: kind, Address: "https://hooks.example.com/x"}, ev, "ndl_1", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(raw), "fsn-3 is down.") || !strings.Contains(string(raw), "Server: fsn-3") {
+			t.Errorf("%s message = %s", kind, raw)
+		}
+	}
+	req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "s"}, ev, "ndl_1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["server"] != "fsn-3" || body["kind"] != "server_down" {
+		t.Errorf("webhook body = %s", raw)
+	}
+}

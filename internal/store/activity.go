@@ -23,7 +23,7 @@ const (
 	ActivityBackup     = "backups"        // Label is the engine; At is its end, or its start while it runs
 	ActivityRestore    = "restores"       // likewise
 	ActivitySchedule   = "schedule_runs"  // only runs that failed or were stopped at their limit; Label is the schedule's name
-	ActivityProblem    = "problem_events" // Label is the attention kind, Status the change, Detail the sentence as JSON parts
+	ActivityProblem    = "problem_events" // Label is the attention kind, Program the item's key (kind|app|service|subject), Status the change, Detail the sentence as JSON parts
 	ActivityHost       = "host_events"    // Label is the kind (boot, version, os_packages), Detail its JSON
 	ActivityUpdate     = "update_runs"    // a finished update of Caravana (feature 030): Status its state, Label the version, Program the version it left, Error the reason, Detail the token name
 )
@@ -34,7 +34,8 @@ const (
 var ServerProblemKinds = []string{
 	"disk_nearly_full", "os_reboot_required", "os_security_updates", // the host
 	"out_of_memory", "restarting", // the copies on it
-	"caravana_update_failed", // an update of Caravana that didn't go through (feature 030)
+	"caravana_update_failed",                     // an update of Caravana that didn't go through (feature 030)
+	"server_down", "server_certificate_expiring", // a server of the cluster (feature 031)
 }
 
 // OpenedProblemKinds are the needs-you kinds whose "opened" (and "worsened") entry the feed
@@ -46,6 +47,7 @@ var OpenedProblemKinds = []string{
 	"disk_nearly_full", "unhealthy", "restarting", "out_of_memory",
 	"domain_dns_elsewhere", "domain_cert_expiring",
 	"os_reboot_required", "os_security_updates", "no_backup_destination",
+	"server_down", "server_certificate_expiring",
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on
@@ -124,7 +126,7 @@ FROM (
   WHERE ?2 = 0 AND r.status IN ('failed', 'stopped_at_limit') AND (?1 = '' OR COALESCE(r.finished_at, r.started_at) < ?1)
   UNION ALL
   SELECT 'problem_events', CAST(id AS TEXT), '', at, app_id,
-         '', change, '', kind, '', NULL, NULL,
+         '', change, '', kind, key, NULL, NULL,
          '', COALESCE(NULLIF(sentence, ''), json_array(json_object('text', summary, 'mono', json('false'))))
   FROM problem_events WHERE (?2 = 0 OR kind IN (%s)) AND (change = 'resolved' OR kind IN (%s)) AND (?1 = '' OR at < ?1)
   UNION ALL

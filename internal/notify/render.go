@@ -170,6 +170,9 @@ func withDetail(ev Event) string {
 	if line := diskLine(ev); line != "" {
 		text += "\n" + line
 	}
+	if line := serverLine(ev); line != "" {
+		text += "\n" + line
+	}
 	detail := strings.Join(strings.Fields(ev.Detail), " ")
 	if detail == "" {
 		return text
@@ -210,6 +213,19 @@ func domainLine(ev Event) string {
 	return line
 }
 
+// serverLine is "Server: fsn-3" or "Server: fsn-3, certificate ends 2026-11-29 14:00 UTC" for an event
+// about a server, or "" for another.
+func serverLine(ev Event) string {
+	if ev.Server == "" {
+		return ""
+	}
+	line := "Server: " + oneLine(ev.Server)
+	if ev.ExpiresAt != nil {
+		line += ", certificate ends " + ev.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	return line
+}
+
 // diskLine is "Disk: / is 86% full, 11 GB left" for an event about a
 // filesystem (the space left when it was sent), or "" for another.
 func diskLine(ev Event) string {
@@ -234,6 +250,23 @@ func DiskTail(usedPercent float64, freeBytes int64) string {
 // full: 1.1 GB left." (the console sets the mount in code style).
 func DiskSentence(mount string, usedPercent float64, freeBytes int64) string {
 	return "The disk at " + mount + DiskTail(usedPercent, freeBytes)
+}
+
+// DiskSentenceOn is DiskSentence for a server that is one of several (feature 031): "The disk at /
+// on fsn-2 is 87% full: 1.1 GB left." An empty server is DiskSentence.
+func DiskSentenceOn(server, mount string, usedPercent float64, freeBytes int64) string {
+	if server == "" {
+		return DiskSentence(mount, usedPercent, freeBytes)
+	}
+	return "The disk at " + mount + " on " + server + DiskTail(usedPercent, freeBytes)
+}
+
+// DiskNowSentenceOn is DiskNowSentence for a server that is one of several.
+func DiskNowSentenceOn(server, mount string, usedPercent float64, freeBytes int64) string {
+	if server == "" {
+		return DiskNowSentence(mount, usedPercent, freeBytes)
+	}
+	return "The disk at " + mount + " on " + server + " is now" + strings.TrimPrefix(DiskTail(usedPercent, freeBytes), " is")
 }
 
 // DiskNowSentence is DiskSentence for a disk that got worse, the words of a

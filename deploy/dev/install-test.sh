@@ -114,6 +114,7 @@ jsonq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.ar
 check_mesh_host() {
   local route out
   vm ip -4 -o addr show dev caravana0 | grep -q ' 10.99.0.1/32 ' || die "caravana0 should have 10.99.0.1/32"
+  vm grep -q '^MACAddressPolicy=none$' /etc/systemd/network/10-caravana-veth.link || die "the veth link file isn't there (research L17)"
   vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "caravana-mesh should have 10.98.0.1/32"
   for route in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
     vm ip -4 route show "$route" | grep -q 'dev caravana-mesh' || die "no route $route through caravana-mesh"
@@ -183,14 +184,19 @@ cleanup() {
 # release VERSION: build a release into $WORK/VERSION.
 release() { "$ROOT/tools/release.sh" build "$1" "$WORK/$1" >/dev/null; }
 
-# broken VERSION: a release whose Caravana exits at once, checksums made to match.
+# broken VERSION DONOR: a release that doesn't come up: its installer and its agent work (feature 031
+# runs the release's own binary as the agent before Caravana starts, so a binary that can't run at all
+# would stop the install before anything was replaced), but its Caravana is the binary of DONOR, which
+# answers its health check with DONOR's version, never VERSION's. Checksums made to match.
 broken() {
-  local v="$1" arch dir
+  local v="$1" donor="$2" arch dir
   release "$v"
   for arch in amd64 arm64; do
     dir="$(mktemp -d)"
     tar -xzf "$WORK/$v/caravana_${v}_linux_${arch}.tar.gz" -C "$dir"
-    printf '#!/bin/sh\necho "this release is broken on purpose" >&2\nexit 1\n' >"$dir/caravana_${v}_linux_${arch}/caravana"
+    mkdir "$dir/donor"
+    tar -xzf "$WORK/$donor/caravana_${donor}_linux_${arch}.tar.gz" -C "$dir/donor"
+    cp "$dir/donor/caravana_${donor}_linux_${arch}/caravana" "$dir/caravana_${v}_linux_${arch}/caravana"
     COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -C "$dir" -czf "$WORK/$v/caravana_${v}_linux_${arch}.tar.gz" "caravana_${v}_linux_${arch}"
     rm -rf "$dir"
   done
@@ -455,11 +461,11 @@ main() {
   release "$old"
   release "$v1"
   release "$v2"
-  broken "$bad"
+  broken "$bad" "$old"
   say "building the releases for the update steps: $u1, $u2 and a broken $ubad"
   release "$u1"
   release "$u2"
-  broken "$ubad"
+  broken "$ubad" "$u1"
 
   say "a fresh Ubuntu 24.04 VM"
   limactl delete --force "$NAME" >/dev/null 2>&1 || true

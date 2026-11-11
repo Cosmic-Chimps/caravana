@@ -69,6 +69,7 @@
     <h2 class="cv-label" id="up-avail-title">Available</h2>
     {{if or .Avail.Meta .Avail.Fault}}<span class="cv-mnsec-meta">{{.Avail.Meta}}{{.Avail.MetaSep}}{{with .Avail.Fault}}<span class="text-fg-3">{{.}}</span>{{end}}</span>{{end}}
   </div>
+  {{with .ReadOn}}<p class="cv-upreadon">Read on <span class="cv-inline-mono text-fg-1">{{.}}</span>, where Caravana runs.</p>{{end}}
   {{with .Avail.Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
   {{if .Avail.Rows}}
   <div class="cv-panel cv-uprows" role="list" aria-label="Available updates">{{range .Avail.Rows}}{{template "up-row" .}}{{end}}</div>

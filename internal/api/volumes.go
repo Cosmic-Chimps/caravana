@@ -15,6 +15,8 @@ type volumeJSON struct {
 	Mounts  []volumeMountJSON `json:"mounts"`
 	// HostPath is left out when Nomad couldn't be read.
 	HostPath string `json:"hostPath,omitempty"`
+	// Server is the server the volume is on; left out when Nomad doesn't say (feature 031).
+	Server string `json:"server,omitempty"`
 	// Size and LastBackup are pointers: nil leaves them out, which says "never
 	// measured" and "no backup yet" better than a zero would.
 	Size       *volumeSizeJSON       `json:"size,omitempty"`
@@ -40,7 +42,7 @@ type volumeLastBackupJSON struct {
 }
 
 func toVolumeJSON(v service.VolumeView) volumeJSON {
-	out := volumeJSON{Name: v.Name, Mounted: v.Mounted, Mounts: []volumeMountJSON{}, HostPath: v.HostPath, BackedUp: v.BackedUp}
+	out := volumeJSON{Name: v.Name, Mounted: v.Mounted, Mounts: []volumeMountJSON{}, HostPath: v.HostPath, Server: v.Server, BackedUp: v.BackedUp}
 	for _, m := range v.Mounts {
 		out.Mounts = append(out.Mounts, volumeMountJSON{Service: m.Service, Path: m.Path, ReadOnly: m.ReadOnly})
 	}

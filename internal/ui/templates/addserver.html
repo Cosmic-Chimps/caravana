@@ -1,0 +1,108 @@
+{{/* Add a server (/ops/servers/new, the answer of POST /ops/servers and /ops/servers/joins/{id}, feature 031).
+     Before: the form and the Checks panel idle. After: the join command (shown once: this answer is the only
+     place the token is) in place of the form's button, the name and pool as facts, and the live checks. The join's
+     own page is the same without the command. The page is complete without script; #join-checks is drawn again
+     from /parts/ops/servers/joins/{id} on the servers notice and, while a check is open, every 5 seconds. */}}
+
+{{define "page-class"}} cv-page-adds{{end}}
+
+{{/* join-checks-region: the Checks panel. While a check is open the panel asks for itself every 5 s and
+     replaces the region's content (a request that fails is ignored and the next one is made); once all four
+     pass it stops by not having the attribute. Takes a joinChecks. */}}
+{{define "join-checks-region"}}
+<div class="cv-panel cv-jchecks"{{if .Open}} hx-get="{{.PartHref}}" hx-trigger="every 5s" hx-target="#join-checks" hx-swap="innerHTML"{{end}}>
+  {{with .Intro}}<p class="cv-jline cv-jintro cv-jtone-{{if .Mark}}work{{else}}later{{end}}">{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span>{{end}}<span>{{.Text}}{{with .Href}} <a href="{{.}}" class="cv-jlink">{{$.Intro.LinkText}}</a>{{end}}</span></p>{{end}}
+  {{range .Lines}}
+  <p class="cv-jline cv-jtone-{{.Tone}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-jtext"><span>{{.Text}}</span>{{with .Note}}<span class="cv-jnote">{{.}}</span>{{end}}</span></p>
+  {{end}}
+  {{with .Ready}}
+  <div class="cv-jready">
+    <p class="cv-jsentence">{{.Sentence}}</p>
+    <div><a href="{{.Href}}" class="cv-btn cv-btn-primary cv-btn-sm">Go to {{.Name}}</a></div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "content"}}
+<a href="/ops/servers" class="cv-srvback">← Servers</a>
+{{if .Missing}}
+<header class="cv-pagehead"><h1 class="cv-headline">Join not found</h1></header>
+<div class="cv-panel">
+  <div class="cv-empty">
+    <p class="cv-empty-title">This join doesn't exist. It was cancelled, or its command expired and was cleared.</p>
+    <a href="/ops/servers/new" class="cv-btn cv-btn-secondary cv-btn-sm">Make a new command</a>
+  </div>
+</div>
+{{else}}
+{{if and .Join .Join.Joining}}
+<header class="cv-pagehead"><h1 class="cv-headline">{{.Join.Name}} is joining</h1></header>
+{{else}}
+<header class="cv-pagehead">
+  <h1 class="cv-headline">Add a server</h1>
+  <p class="cv-lede cv-addslede">Any machine with Ubuntu 24.04 and 2 GB of memory or more. Caravana installs what it needs, and the server starts taking work once its checks pass.</p>
+</header>
+{{end}}
+<div class="cv-adds{{if .Unavailable}} cv-adds-one{{end}}">
+  <div class="cv-addsmain">
+    {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+    {{if .Join}}
+    {{with .Join}}
+    {{if .Command}}
+    <p class="cv-jrun">Run this on the new server as root:</p>
+    <div class="cv-jcmdwrap">
+      <code class="cv-cmd cv-jcmd" id="join-command">{{.Command}}</code>
+      <button type="button" class="cv-btn cv-btn-secondary cv-btn-sm cv-jcopy" data-copy="join-command" aria-label="Copy the join command" hidden>Copy</button>
+    </div>
+    <p class="cv-jhint">The token works once and for one hour.</p>
+    {{if .Insecure}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This console has no trusted certificate, so the new server can't check who it is talking to. Use this on a network you trust.</span></div>{{end}}
+    {{with .Note}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+    {{else if .Waiting}}
+    <p class="cv-jrun">The command was shown once. If you lost it, cancel this one and make a new command.</p>
+    {{end}}
+    <dl class="cv-jfacts">
+      <dt>name</dt>
+      <dd{{if .NoName}} class="cv-jwords"{{end}}>{{.Name}}</dd>
+      <dt>pool</dt>
+      <dd>{{.Pool}}</dd>
+    </dl>
+    {{if .Waiting}}<form method="post" action="{{.Cancel}}" class="cv-jcancel"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel this join</button></form>{{end}}
+    {{if .Joining}}
+    <p class="cv-jrun"><span class="cv-inline-mono text-fg-1">{{.Name}}</span> called in{{with .CalledIn.Text}} <time datetime="{{$.Join.CalledIn.ISO}}" title="{{$.Join.CalledIn.Exact}}">{{.}}</time>{{end}}. If it never gets ready, remove it and make a new command.</p>
+    <div class="cv-jcancel"><a href="{{.RemoveHref}}" class="cv-btn cv-btn-secondary cv-btn-sm">Remove this server</a></div>
+    {{end}}
+    {{end}}
+    {{else if .Unavailable}}
+    <div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .Unavailable.Reason}}</span></div>
+    {{with .Unavailable.Install}}<code class="cv-cmd" id="install-command">{{.}}</code>{{end}}
+    {{else}}
+    <form method="post" action="/ops/servers" class="cv-jform">
+      <div class="cv-fld">
+        <label class="cv-fld" for="name">
+          <span class="cv-label">Name</span>
+          <input class="cv-field cv-field-mono" id="name" type="text" name="name" value="{{.Name.Value}}" placeholder="fsn-2" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="name-hint{{if .Name.Error}} name-error{{end}}"{{if .Name.Error}} aria-invalid="true" autofocus{{end}}>
+        </label>
+        <span class="cv-hint" id="name-hint">Lowercase letters, digits and dashes. Leave it empty to use the machine's own name.</span>
+        {{template "field-error" .Name}}
+      </div>
+      <div class="cv-fld">
+        <label class="cv-fld" for="pool">
+          <span class="cv-label">Pool</span>
+          <input class="cv-field cv-field-mono" id="pool" type="text" name="pool" value="{{.Pool.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="pool-hint{{if .Pool.Error}} pool-error{{end}}"{{if .Pool.Error}} aria-invalid="true"{{if not .Name.Error}} autofocus{{end}}{{end}}>
+        </label>
+        <span class="cv-hint" id="pool-hint">Apps run on servers in <span class="cv-inline-mono text-fg-1">default</span>. A server in another pool takes no apps.</span>
+        {{template "field-error" .Pool}}
+      </div>
+      <div class="cv-actions"><button type="submit" class="cv-btn cv-btn-primary">Make the join command</button></div>
+    </form>
+    {{end}}
+  </div>
+  {{if not .Unavailable}}
+  <aside class="cv-addsside" aria-labelledby="join-checks-title">
+    <h2 class="cv-label" id="join-checks-title">Checks</h2>
+    <div id="join-checks"{{if .Checks.PartHref}} hx-get="{{.Checks.PartHref}}" hx-trigger="sse:servers, sse:sync" hx-swap="innerHTML"{{end}}>{{template "join-checks-region" .Checks}}</div>
+  </aside>
+  {{end}}
+</div>
+{{end}}
+{{end}}

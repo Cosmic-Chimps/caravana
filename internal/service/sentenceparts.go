@@ -136,13 +136,23 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 	case AttentionScheduleSkipping:
 		return parts(who, ": "+it.Detail)
 	case AttentionDiskNearlyFull:
+		if it.Server != "" { // set when the cluster has more than one server
+			return parts("The disk at ", mono(it.Mount), " on ", mono(it.Server), notify.DiskTail(it.UsedPercent, it.FreeBytes))
+		}
 		return parts("The disk at ", mono(it.Mount), notify.DiskTail(it.UsedPercent, it.FreeBytes))
 	case AttentionOSRebootRequired:
 		return rebootParts(it)
 	case AttentionOSSecurityUpdates:
+		if it.Server != "" {
+			return parts(mono(it.Server), ": "+securitySentence(it.Updates, it.Security))
+		}
 		return parts(securitySentence(it.Updates, it.Security))
 	case AttentionCaravanaUpdateFailed:
 		return updateFailedParts(it)
+	case AttentionServerDown:
+		return serverDownParts(it)
+	case AttentionServerCertExpiring:
+		return serverCertParts(it)
 	case AttentionDomainDNSElsewhere:
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")
@@ -174,6 +184,7 @@ var AttentionKinds = []AttentionKind{
 	AttentionDomainDNSElsewhere, AttentionDomainCertExpiring,
 	AttentionDiskNearlyFull, AttentionOSRebootRequired, AttentionOSSecurityUpdates,
 	AttentionCaravanaUpdateFailed,
+	AttentionServerDown, AttentionServerCertExpiring,
 }
 
 // slashed is "/web" for a service name, "" for none.

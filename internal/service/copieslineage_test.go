@@ -38,7 +38,7 @@ func TestHostCopiesListTheNewestOfEachLineage(t *testing.T) {
 		running,
 	)
 
-	got, err := e.svc.HostCopies(ctx)
+	got, err := e.svc.HostCopies(ctx, "")
 	if err != nil {
 		t.Fatalf("HostCopies: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestHostCopiesStartingWhileTheRolloutIsUndecided(t *testing.T) {
 	decided.JobVersion, decided.DeploymentStatus = 7, &api.AllocDeploymentStatus{Healthy: &yes}
 	e.nomad.SetCopies("blog", undecided, decided)
 
-	got, err := e.svc.HostCopies(ctx)
+	got, err := e.svc.HostCopies(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

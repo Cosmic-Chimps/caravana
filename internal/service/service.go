@@ -122,6 +122,10 @@ type Service struct {
 	pro                ProRunner // reads package names; nil means there is no pro command
 	updates            updatesState
 	updater            updaterState // update runs and the root updater's files (feature 030), see updaterun.go
+
+	// serverMu serializes the servers' calls that read the rows and then change them: a join, a sync,
+	// a removal and the choice of Nomad servers (feature 031), see servers.go.
+	serverMu sync.Mutex
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.

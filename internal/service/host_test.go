@@ -34,7 +34,7 @@ func (f *metricsFixture) host(rows store.MetricsRows) {
 
 func TestHostNeverSampled(t *testing.T) {
 	f := newMetricsFixture(t, time.Date(2026, 10, 25, 12, 0, 30, 0, time.UTC))
-	v, err := f.e.svc.Host(f.ctx)
+	v, err := f.e.svc.Host(f.ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestHostFromTheStore(t *testing.T) {
 	})
 	f.e.nomad.Down() // the Platform panel never waits on Nomad
 
-	v, err := f.e.svc.Host(f.ctx)
+	v, err := f.e.svc.Host(f.ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +121,11 @@ func TestHostStaleAndRoomCases(t *testing.T) {
 
 	t.Run("exactly 5 minutes old is fresh, one second more is stale", func(t *testing.T) {
 		f.e.svc.clock.(*fakeClock).Set(ts.Add(5 * time.Minute))
-		if v, _ := f.e.svc.Host(f.ctx); v.Stale {
+		if v, _ := f.e.svc.Host(f.ctx, ""); v.Stale {
 			t.Error("a sample 5 minutes old is stale")
 		}
 		f.e.svc.clock.(*fakeClock).Set(ts.Add(5*time.Minute + time.Second))
-		v, _ := f.e.svc.Host(f.ctx)
+		v, _ := f.e.svc.Host(f.ctx, "")
 		if !v.Stale || v.SampledAt == nil || *v.Memory.Used != 1946 {
 			t.Errorf("stale = %v, the last known numbers must stay: %+v", v.Stale, v.Memory)
 		}
@@ -133,7 +133,7 @@ func TestHostStaleAndRoomCases(t *testing.T) {
 
 	t.Run("nothing running: no yardstick, the free memory to reserve", func(t *testing.T) {
 		f.e.svc.clock.(*fakeClock).Set(ts.Add(time.Minute))
-		v, _ := f.e.svc.Host(f.ctx)
+		v, _ := f.e.svc.Host(f.ctx, "")
 		if !v.Room.Known || v.Room.HasYardstick || v.Room.FreeMemoryMB != 3096 {
 			t.Errorf("room = %+v", v.Room)
 		}
@@ -141,7 +141,7 @@ func TestHostStaleAndRoomCases(t *testing.T) {
 
 	t.Run("a service with no copies isn't running", func(t *testing.T) {
 		f.host(store.MetricsRows{Samples: []store.MetricsSample{reservation(web, ts, 0, 256, 100)}})
-		v, _ := f.e.svc.Host(f.ctx)
+		v, _ := f.e.svc.Host(f.ctx, "")
 		if v.Room.HasYardstick {
 			t.Errorf("room = %+v", v.Room)
 		}
@@ -152,7 +152,7 @@ func TestHostStaleAndRoomCases(t *testing.T) {
 		row := hostRow("n1", ts, 1946, 0, 4096)
 		row.MemoryReservedMB = nil // Nomad's allocation list failed that minute
 		g.host(store.MetricsRows{Hosts: []store.HostSample{row}})
-		v, err := g.e.svc.Host(g.ctx)
+		v, err := g.e.svc.Host(g.ctx, "")
 		if err != nil || v.Room.Known || v.Memory.Reserved != nil || *v.Memory.Used != 1946 {
 			t.Errorf("host = %+v, %v; want the room unknown and reserved nil", v, err)
 		}
@@ -165,7 +165,7 @@ func TestHostStaleAndRoomCases(t *testing.T) {
 			Hosts:   []store.HostSample{hostRow("n1", ts, 1946, 4200, 4096)}, // reserved above the total
 			Samples: []store.MetricsSample{reservation(s, ts, 1, 256, 100)},
 		})
-		v, _ := g.e.svc.Host(g.ctx)
+		v, _ := g.e.svc.Host(g.ctx, "")
 		if !v.Room.HasYardstick || v.Room.Count != 0 || v.Room.LimitedBy != metrics.ResourceMemory || v.Room.FreeMemoryMB != 0 {
 			t.Errorf("room = %+v, want 0 and no free memory", v.Room)
 		}
@@ -195,7 +195,7 @@ func TestHostHistory(t *testing.T) {
 		slot(at(12, 20), 500, 70), slot(at(12, 21), 700, 70), slot(at(12, 22), 600, 70),
 	}})
 
-	v, err := f.e.svc.Host(f.ctx)
+	v, err := f.e.svc.Host(f.ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestHostDiskStateFollowsTheOpenItem(t *testing.T) {
 				disks = append(disks, diskRow("n1", at, "/", "nomad,docker", used, 1000-used))
 			}
 			f.host(store.MetricsRows{Hosts: hosts, Disks: disks})
-			v, err := f.e.svc.Host(f.ctx)
+			v, err := f.e.svc.Host(f.ctx, "")
 			if err != nil || len(v.Disks) != 1 {
 				t.Fatalf("Host = %+v, %v", v.Disks, err)
 			}

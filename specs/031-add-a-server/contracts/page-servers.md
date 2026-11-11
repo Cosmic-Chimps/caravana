@@ -197,4 +197,130 @@ without script.
 
 ## Review
 
-(The designer's review, the critique's rulings and the last look are added here as they happen.)
+### Live review (designer, 2026-11-10, build 6c22fcb, staged: six servers, a joining one, a waiting join, an unmanaged node)
+
+Verified at 1440 and at 500 wide (no sideways overflow): the nav word; the list's grid, role marks,
+pills, meters with the hatched reserved part and "—" for no numbers; the waiting row with Cancel; the
+joining row with its open check; "Not set up for a cluster yet."; Add a server before and after (the
+command block, "The token works once and for one hour.", the facts, Cancel this join, the Checks panel
+in its three mark states); the down server's pill, banner and Remove server…; the per-server panels on
+the Overview; the facts of a managed server.
+
+Rulings:
+
+1. **The cluster sentence was mine and wrong for more than three servers** ("Three servers: two more
+   are starting…" with five). It reads, while promotion is under way: "Two more servers are starting to
+   run the scheduler. Once three do, the cluster survives the loss of one." ("One more server is…" for
+   one). The other four states stay.
+2. **A down server must not hold up a join.** The network check asks for the ready servers that are up
+   (fixed in the service; api.md §3). The staged joining row named a down server among those it can't
+   reach.
+3. **A joining server needs a way out.** `/ops/servers/joins/{id}` of a server that called in and isn't
+   ready shows, under the facts: "<name> called in <relative time>. If it never gets ready, remove it
+   and make a new command." and the quiet button **Remove this server** (the cancel post; the service
+   refuses when Nomad has a running node for it, and the page draws that refusal). While it waits for
+   the call, the contract's "The command was shown once…" line stays.
+4. **The room sentence is the cluster's**, so it doesn't belong on one server's page once there is more
+   than one server: it stays on the Overview and on Monitoring. And it must be true: the staged Overview
+   said "Nothing is running yet" beside five running copies. Find out whether that is the staging or the
+   sum, and fix the one that is wrong.
+5. **A down server's numbers are old.** Its page shows no meters panel: one line in its place, "<name>'s
+   numbers were last read at 17:54 UTC." (the `cv-srvnums-line` form). The list's greyed readouts stay.
+6. **"Updates and restarts are read on <first> only."** goes under the facts panel, in the same column,
+   not alone in the other column.
+7. **Overview: the server panels are a grid**, as the handoff's `NowScreen` has them: three columns
+   (`repeat(3, minmax(0,1fr))`, gap 13) at 1200 and wider, two from 800, one below. With one server the
+   panel is full width as today.
+8. **"This server needs a reboot"** and the security-updates item name the server once there is more
+   than one: "<first> needs a reboot: …". One source, `ProblemParts`.
+9. The list's head line counts every server Nomad or Caravana knows that isn't waiting or joining, and
+   sums the ready ones. An unmanaged node has no spec line, so its memory and vCPU aren't in the sums
+   either: the numbers under a name and the sum in the head must agree.
+
+### Critique rulings (designer, 2026-11-10, impeccable critique of build ba2852b: 29/40)
+
+The critique found no overflow at 1440, 900, 500 or a real 390, and contrast of 5.59:1 or better on
+every text in both themes. Its findings, ruled:
+
+**Yes, wrong for the data shown (P1)**
+
+1. **The Overview's stats line and the room sentence mix one server with the cluster.** With several
+   servers, `cpu` and `mem` in the stats line, and "memory in use is already at N%" in the room
+   sentence, are the cluster's: the sums of used over the sums of totals of the ready servers. With one
+   server nothing changes.
+2. **"The command works for 105 more minutes"** for a fresh join. Find the cause. If the staged console
+   runs the pages on a frozen clock and the service on the real one, fix the staging (one clock); if the
+   product can show more than 60, fix it and test it.
+3. **A down server's "last seen" is a clock time** ("last seen 18:12 UTC", the exact time in `title`),
+   never "just now" beside "down since 18:12 UTC".
+4. **"Recent on this server" is this server's.** Items about another server (its disk, it being down)
+   don't appear on this one's page.
+5. **One vCPU number per server.** hel-1's spec line and facts said 4 vCPU while its meter and the list
+   said 2. Find which source is wrong (the staging's node facts, or two reads that can differ) and make
+   the page say one.
+
+**Yes (P2)**
+
+6. "<name> called in 46 minutes ago." is one phrase in the sentence's own type; only the name is mono.
+7. **Remove this server** (a joining server) goes through the same confirmation page as **Remove
+   server…**. Both take a server out of the cluster; one confirmation.
+8. The confirmation says what removal means for data, without "sync": "Apps with a volume on <name>
+   can't start on another server: their data is on <name>'s disk, and removing it here deletes nothing
+   there." and "The other servers stop talking to it within a minute."
+9. The join page of a server that called in is titled **"<name> is joining"** (breadcrumb, `h1`), with
+   no lede. An open `network` check has a second line, 13px fg-3: "Check that UDP port 51820 is open
+   between the servers."
+10. The link in "Updates and restarts are read on <first> only." is underlined, as inline links are.
+11. Each Cancel in the list has `aria-label="Cancel the join of <name>"` (or "…of the server that hasn't
+    called in" for a join without a name).
+12. A server whose disk is filling says so on its own page: a banner in `ProblemParts`' words ("The disk
+    at / is 89% full: 2.0 GB left.").
+13. The Overview's panel of a down server has no meters: the one line of ruling 5.
+14. At 900 wide a server's name never breaks ("fsn-2" stays whole: the name doesn't wrap, the pool tag
+    wraps under it), and "All servers" stays on the section head's line.
+15. **Meters line up down the list.** The readout has a fixed width (the widest form, `16.6 / 18.6 GB`
+    with its warning mark), so every track in a column has the same length and 31% looks the same in
+    every row.
+17. The command block's first line keeps clear of Copy (right padding the width of the button).
+19. "Make the command to start." has no mark: it isn't a check.
+20. A server Nomad knows and Caravana doesn't manage has the idle pill **not set up**, not "ready".
+22. (in part) A down server's page doesn't show "Updates and restarts are read on <first> only."; the
+    confirmation's button **Remove <name>** has the console's danger style, as Delete app has.
+23. The Overview's server panels in a row have one height (`align-items: stretch`).
+
+**No**
+
+- 16 (the placeholder names an existing server): it is an example of the form, not a suggestion.
+- 18 (the token sentence): the contract's words stay.
+- 21 ("G" on the Overview's panels, "GB" on the server page): the panel is 027's, approved with "G".
+- 22 (28px buttons at 390; the nav group "Server" over the item "Servers"): the console's small button is
+  28px everywhere, and the group label is 027's.
+
+**The three questions:** an unmanaged server's pill is "not set up" (20); yes, one confirmation (7);
+the Overview's percentages are the cluster's (1).
+
+### Applied (build after 37d4e76)
+
+Every "Yes" above is in. The two causes: the "105 more minutes" was the staging (its pages stood on a
+frozen clock while the service ran on the real one; the product can't show more than 60, and a test says
+so); the 4 vCPU against 2 was both the staging and the product (the spec line read the node's
+attributes, the meters the sample: both read the sample now).
+
+**Departures**, accepted: to give the readout a fixed 112px and keep the tracks long enough (ruling 15),
+the list's column gap is 16px where the handoff has 24, and its rows stack under 1100px of room, not
+900. Measured: every `cpu`, `mem` and `disk` track is 44.7px at 1440 and 274px at 500.
+
+
+### Last look (designer, 2026-11-10, build a303695, staged as before)
+
+At 1440: the list's tracks are equal down each column and the head line's sums (7.6 GB, 8 vCPU) are the
+four ready servers' own; the cluster sentence counts what is still to come; the joining row no longer
+names the down server; the unmanaged row's pill is "not set up". The Overview says `cpu 9%` and `mem 51%`
+for the cluster, "Room for about 23 more apps like api", and "hel-1 needs a reboot". fsn-3's page has the
+banner, "fsn-3's numbers were last read at 19:21 UTC.", "last seen 19:21 UTC" and no read-on line; its
+confirmation has the two sentences about volumes and the other servers. fsn-2's page opens with its disk
+banner. hel-1 says 2 vCPU everywhere.
+
+## Approved
+
+Servers, Add a server and the server page for every server are approved (designer, 2026-11-10).

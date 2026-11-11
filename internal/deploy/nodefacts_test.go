@@ -24,7 +24,7 @@ func TestHostNodeFacts(t *testing.T) {
 		nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", events)
 		nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
 
-		h, err := d.HostStats(ctx, "/var/lib/docker")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestHostNodeFacts(t *testing.T) {
 		if got := deploytest.LabNodeAttributes()["unique.network.ip-address"]; got != "192.168.5.15" {
 			t.Fatalf("the fixture's attribute = %q", got)
 		}
-		h, err := d.HostStats(ctx, "")
+		h, err := d.HostStats(ctx, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +66,7 @@ func TestHostNodeFacts(t *testing.T) {
 		labNode(nomad, deploytest.LabHostStats())
 		nomad.SetNodeFacts(deploytest.X86NodeAttributes(), "default", nil)
 		nomad.SetNodeNetworks(deploytest.Caravana0Networks("10.99.0.1"))
-		h, err := d.HostStats(ctx, "")
+		h, err := d.HostStats(ctx, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,7 +80,7 @@ func TestHostNodeFacts(t *testing.T) {
 	t.Run("a node with no attributes shows only what is known", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
-		h, err := d.HostStats(ctx, "")
+		h, err := d.HostStats(ctx, "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,20 +97,20 @@ func TestHostNodeFacts(t *testing.T) {
 	t.Run("states: drain and ineligibility come from the list, not the cached record", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
-		h, _ := d.HostStats(ctx, "")
+		h, _ := d.HostStats(ctx, "", "")
 		if h.Node.State != "ready" {
 			t.Fatalf("state = %q, want ready", h.Node.State)
 		}
 		nomad.SetNodeScheduling(false, "ineligible")
-		if h, _ = d.HostStats(ctx, ""); h.Node.State != "ineligible" {
+		if h, _ = d.HostStats(ctx, "", ""); h.Node.State != "ineligible" {
 			t.Errorf("state = %q, want ineligible", h.Node.State)
 		}
 		nomad.SetNodeScheduling(true, "ineligible")
-		if h, _ = d.HostStats(ctx, ""); h.Node.State != "draining" {
+		if h, _ = d.HostStats(ctx, "", ""); h.Node.State != "draining" {
 			t.Errorf("state = %q, want draining", h.Node.State)
 		}
 		nomad.SetNodeScheduling(false, "eligible")
-		if h, _ = d.HostStats(ctx, ""); h.Node.State != "ready" {
+		if h, _ = d.HostStats(ctx, "", ""); h.Node.State != "ready" {
 			t.Errorf("state = %q, want ready again", h.Node.State)
 		}
 	})
@@ -137,7 +137,7 @@ func TestBootTime(t *testing.T) {
 	stats := deploytest.LabHostStats()
 	stats.Uptime = 86400
 	labNode(nomad, stats)
-	h, err := d.HostStats(context.Background(), "")
+	h, err := d.HostStats(context.Background(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestBootTime(t *testing.T) {
 	}
 	// No uptime from Nomad: no boot time, not the Unix epoch plus the clock.
 	labNode(nomad, deploytest.LabHostStats())
-	if h, _ = d.HostStats(context.Background(), ""); !h.BootTime.IsZero() {
+	if h, _ = d.HostStats(context.Background(), "", ""); !h.BootTime.IsZero() {
 		t.Errorf("Host.BootTime = %v without an uptime, want zero", h.BootTime)
 	}
 }
@@ -162,7 +162,7 @@ func TestNodeFactsOfADownNode(t *testing.T) {
 	nomad.SetHostStats(deploytest.LabHostStats())
 
 	// The stats of a down node can't be read: HostStats fails, NodeFacts doesn't.
-	if _, err := d.HostStats(ctx, ""); !errors.Is(err, ErrNomadUnavailable) {
+	if _, err := d.HostStats(ctx, "", ""); !errors.Is(err, ErrNomadUnavailable) {
 		t.Fatalf("HostStats of a down node: err = %v", err)
 	}
 	f, err := d.NodeFacts(ctx)
@@ -178,7 +178,7 @@ func TestNodeFactsOfADownNode(t *testing.T) {
 	nomad2.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
 	nomad2.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
 	nomad2.SetHostStats(deploytest.LabHostStats())
-	if h, err := d2.HostStats(ctx, ""); err != nil || !h.Node.StatusAt.IsZero() {
+	if h, err := d2.HostStats(ctx, "", ""); err != nil || !h.Node.StatusAt.IsZero() {
 		t.Fatalf("a ready node with no status time: %+v, %v", h.Node.StatusAt, err)
 	}
 	lost := time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC)

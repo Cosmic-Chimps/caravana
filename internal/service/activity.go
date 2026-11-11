@@ -61,6 +61,11 @@ type ActivityQuery struct {
 	Limit  int
 	Before time.Time
 	Server bool
+	// ForServer, with Server, keeps only what is about that server (feature 031): the server's own host events
+	// and update runs when Local is set (they are of the server Caravana runs on), and the problems whose item
+	// is about it (its disk, its certificate, it being down). Another server's problems are left out.
+	ForServer string
+	Local     bool
 }
 
 // ActivityEntry is one line of the feed.
@@ -91,9 +96,16 @@ func (s *Service) Activity(ctx context.Context, q ActivityQuery) ([]ActivityEntr
 	case limit > MaxActivityLimit:
 		limit = MaxActivityLimit
 	}
-	rows, err := s.store.ListActivity(ctx, limit, q.Before, q.Server)
+	fetch := limit
+	if q.ForServer != "" {
+		fetch = min(limit*4, MaxActivityLimit*4) // some rows will be another server's
+	}
+	rows, err := s.store.ListActivity(ctx, fetch, q.Before, q.Server)
 	if err != nil {
 		return nil, fmt.Errorf("read activity: %w", err)
+	}
+	if q.ForServer != "" {
+		rows = slices.DeleteFunc(rows, func(r store.ActivityRow) bool { return !rowIsOfServer(r, q.ForServer, q.Local) })
 	}
 	var entries []ActivityEntry
 	display := s.projectDisplay(ctx)
@@ -440,4 +452,37 @@ func plural(n int, name string) string {
 		return "1 " + name
 	}
 	return strconv.Itoa(n) + " " + name + "s"
+}
+
+// rowIsOfServer says a row of the server feed is about the server called name. local says it is the server
+// Caravana runs on, whose host events, update runs and unnamed items (its disk when the cluster has one server,
+// the OS kinds) are its own. A problem is about the server its key names: a remote disk's service place, a
+// server kind's subject.
+func rowIsOfServer(r store.ActivityRow, name string, local bool) bool {
+	switch r.Source {
+	case store.ActivityProblem:
+		if on := problemServerOf(r.Program); on != "" {
+			return on == name
+		}
+		return local
+	case store.ActivityHost, store.ActivityUpdate:
+		return local
+	}
+	return true
+}
+
+// problemServerOf is the server an item key names ("" for the server Caravana runs on, or no server): keys are
+// kind|app|service|subject, and a disk of another server carries its name where the service goes (notifier.go).
+func problemServerOf(key string) string {
+	p := strings.Split(key, "|")
+	if len(p) < 4 {
+		return ""
+	}
+	switch AttentionKind(p[0]) {
+	case AttentionDiskNearlyFull:
+		return p[2]
+	case AttentionServerDown, AttentionServerCertExpiring:
+		return p[3]
+	}
+	return ""
 }

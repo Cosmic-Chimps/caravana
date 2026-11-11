@@ -43,6 +43,7 @@ func TestThemeInEveryPage(t *testing.T) {
 		"/apps/duo/domains", "/apps/duo/backups", "/apps/duo/logs",
 		"/settings", "/settings/registries", "/settings/backup-storage", "/settings/notifications", "/settings/tokens", "/settings/appearance",
 		"/schedules", "/schedules/new", "/logs", "/monitoring",
+		"/ops/servers", "/ops/servers/new",
 		"/no/such/page",
 	}
 	cases := []struct {

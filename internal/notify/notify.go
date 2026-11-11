@@ -92,6 +92,10 @@ type Event struct {
 	UsedPercent float64  `json:"usedPercent,omitempty"`
 	FreeBytes   *int64   `json:"freeBytes,omitempty"`
 	Level       string   `json:"level,omitempty"`
+	// Server is the name of the server of a problem about a server (feature 031: server_down,
+	// server_certificate_expiring) when it opens; ExpiresAt is then, for the certificate, when it
+	// ends. Such an event has no app, project or environment.
+	Server string `json:"server,omitempty"`
 	// Release is the newer Caravana release of a caravana.release event.
 	Release *Release  `json:"release,omitempty"`
 	URL     string    `json:"url,omitempty"` // the console page about it, when its address is known; a caravana.release's is the release page

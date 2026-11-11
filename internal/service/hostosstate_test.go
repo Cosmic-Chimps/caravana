@@ -80,7 +80,7 @@ func TestSamplerRecordsPackageRuns(t *testing.T) {
 	notices, stop := l.svc.Subscribe("")
 	defer stop()
 
-	if v, err := l.svc.Host(context.Background()); err != nil || v.Reboot != nil {
+	if v, err := l.svc.Host(context.Background(), ""); err != nil || v.Reboot != nil {
 		t.Fatalf("Host before a tick: Reboot = %+v, %v; want nil", v.Reboot, err)
 	}
 	l.tick(t, 1)
@@ -109,7 +109,7 @@ func TestSamplerRecordsPackageRuns(t *testing.T) {
 	}
 
 	// The reboot state is kept for the host view.
-	v, err := l.svc.Host(context.Background())
+	v, err := l.svc.Host(context.Background(), "")
 	if err != nil || v.Reboot == nil {
 		t.Fatalf("Host after a tick: Reboot = %+v, %v", v.Reboot, err)
 	}
@@ -148,7 +148,7 @@ func TestSamplerReboot(t *testing.T) {
 	// No files: not required, and nothing recorded.
 	l.svc.SetHostRoot(fstest.MapFS{})
 	l.tick(t, 1)
-	v, _ := l.svc.Host(context.Background())
+	v, _ := l.svc.Host(context.Background(), "")
 	if v.Reboot == nil || v.Reboot.Required {
 		t.Fatalf("an empty host: Reboot = %+v", v.Reboot)
 	}
@@ -157,7 +157,7 @@ func TestSamplerReboot(t *testing.T) {
 	// The marker appears: required, and pages are told.
 	l.svc.SetHostRoot(hostFiles(true, since))
 	l.tick(t, 2)
-	if v, _ = l.svc.Host(context.Background()); !v.Reboot.Required || !v.Reboot.Since.Equal(since) {
+	if v, _ = l.svc.Host(context.Background(), ""); !v.Reboot.Required || !v.Reboot.Since.Equal(since) {
 		t.Errorf("after the marker: %+v", v.Reboot)
 	}
 	if !drained(notices) {
@@ -167,7 +167,7 @@ func TestSamplerReboot(t *testing.T) {
 	// A boot clears it: required goes back to false, and pages are told again.
 	l.svc.SetHostRoot(hostFiles(false, time.Time{}))
 	l.tick(t, 3)
-	if v, _ = l.svc.Host(context.Background()); v.Reboot.Required {
+	if v, _ = l.svc.Host(context.Background(), ""); v.Reboot.Required {
 		t.Errorf("after the boot: %+v", v.Reboot)
 	}
 	if !drained(notices) {

@@ -24,6 +24,7 @@ const (
 	ChangeDomains     ChangeKind = "domains"     // a domain's state from its checks; never a password or a hash
 	ChangeMetrics     ChangeKind = "metrics"     // the sampler wrote a tick; never a number
 	ChangeHost        ChangeKind = "host"        // a host event was recorded (a boot, a new Caravana version); never its detail
+	ChangeServers     ChangeKind = "servers"     // a server was added, joined, became ready, was removed or got a role; never a token, key or address
 	ChangeUpdates     ChangeKind = "updates"     // what is waiting changed: the OS's files, a release or package check, the check setting; never a name or a count
 )
 

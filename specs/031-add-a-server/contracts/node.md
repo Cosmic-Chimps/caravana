@@ -69,7 +69,7 @@ except validated keys and endpoints, passed to `wg` through the config text on a
 | `up` | From `state.json`, no network needed: make `caravana0` (dummy) and `caravana-mesh` (wireguard) if missing, set their addresses, `wg setconf`, bring them up, replace the routes. Idempotent. Without `state.json`: exit 0, nothing. |
 | `sync [--renew] [--checks]` | `--renew` renews the certificate now, whatever its age. `--checks` prints what the console reports, for the installer: one line `check <name> ok\|open <detail>` per check, then `state <joining\|ready>`. Without `node.env`: exit 0 ("not registered yet"). Gather the report, `POST /v1/node/sync`, validate, apply (§6). A console that can't be reached or answers 5xx: a line on stderr, exit 0, nothing changes. A 401: stderr says the server was removed from the cluster, exit 0, nothing changes. |
 | `show FIELD` | Prints one of `public-key`, `name`, `index`, `role`, `first` and a newline. For the installer. |
-| `leave` | Stops and disables Nomad, deletes `caravana-mesh` and `caravana0`, removes `/etc/caravana-node` and `/etc/nomad.d/tls`. Refuses on the first server. |
+| `leave` | Sends Nomad SIGTERM, on which it leaves the cluster (`leave_on_terminate = true` in `nomad.hcl`; a Nomad server goes out of raft, research L16), waits up to 30 s for it to exit, then stops and disables Nomad, deletes `caravana-mesh` and `caravana0`, removes `/etc/caravana-node` and `/etc/nomad.d/tls`. Refuses on the first server. |
 
 The valid name of a host name: lowercase, the first label only, every character outside `[a-z0-9-]`
 turned into `-`, dashes trimmed from the ends, at most 63; empty becomes `server-<index>`.
@@ -83,6 +83,7 @@ server's.
 # Written by `caravana node`: the next sync rewrites it. Change it through Caravana.
 name       = "fsn-2"                    # J (the first server keeps its host name)
 datacenter = "dc1"
+leave_on_terminate = true               # SIGTERM leaves the cluster; a stop sends SIGINT (L16)
 data_dir   = "/opt/nomad/data"
 bind_addr  = "127.0.0.1"
 
@@ -111,6 +112,8 @@ server {                                # S
   enabled          = true
   bootstrap_expect = 1                  # F
   encrypt          = "<gossip key>"
+  failover_heartbeat_ttl = "1m"         # S (research L14; Nomad's default is 5 minutes)
+  heartbeat_grace = "30s"               # S (research L18; Nomad's default is 10 seconds)
   server_join {                         # S and not F, and F once there are other servers
     retry_join = ["10.98.0.1:4648"]     # every other Nomad server, by index
   }
@@ -122,7 +125,7 @@ client {
   node_pool             = "default"
   network_interface     = "caravana0"
   bridge_network_subnet = "10.97.12.0/22"   # J
-  servers               = ["10.98.0.1:4647"] # every Nomad server but itself; omitted when empty
+  servers               = ["10.98.0.1:4647"] # J and not S: every Nomad server (research L15)
   cpu_total_compute     = 4000               # only when given
   meta {                                     # F
     caravana_ingress = "true"
@@ -206,8 +209,9 @@ interface that isn't `caravana0`, `caravana-mesh` or `nomad`.
 
 **`--first`**, in order (new steps in bold):
 
-1. Preflight, release files, packages (**plus `wireguard-tools`**), Nomad's binary, CNI, sysctl,
-   `caravana0` through systemd-networkd as today.
+1. Preflight, release files, packages (**plus `wireguard-tools`**), Nomad's binary, CNI, sysctl, **the
+   veth link file** (`/etc/systemd/network/10-caravana-veth.link`, `MACAddressPolicy=none`, research
+   L17; both roles), `caravana0` through systemd-networkd as today.
 2. **Install the agent** (`/usr/local/libexec/caravana-node`, from the release's `caravana`) **and the
    units** of §7. Remember whether `/opt/nomad/data/server/raft` existed.
 3. **`caravana-node node init-first --address ADDR`** (with `--cpu-total-compute` when `lscpu` has no
@@ -237,8 +241,10 @@ check as the console reports it passed (the sync answer's `checks`), ending "Thi
 NAME." or, on a timeout, the checks still open and exit 1. No Caravana user, service, env file, updater,
 CLI wrapper, Traefik or admin.
 
-**`--leave`** (a joined server): disable the timer and the mesh unit, `caravana-node node leave`, remove
-the units and the agent, keep Docker and the packages, and say to remove the server in the console.
+**`--leave`** (a joined server): disable the timer, `caravana-node node leave` (first, while Nomad still
+runs and reaches the others: stopping the mesh unit stops Nomad with it, by SIGINT, which leaves
+nothing; research L16), then disable the mesh unit, remove the units and the agent, keep Docker and the
+packages, and say to remove the server in the console.
 
 **`--uninstall`** (the first server) also disables `caravana-node.timer` and removes `node.env`: without
 Caravana there is nothing to sync with. The mesh, Nomad and the apps stay.

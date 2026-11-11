@@ -117,6 +117,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-ops-overview", c.consoleOpsOverview},
 		{"console-ops-server", c.consoleOpsServer},
 		{"console-ops-updates", c.consoleOpsUpdates},
+		{"console-servers", c.consoleServers},
 		{"console-appearance", c.appearance},
 		{"console-delete", c.deleteApp},
 	}
@@ -946,8 +947,13 @@ func (c *console) composeFileEdit(t *testing.T) {
 		t.Fatalf("GET /apps/%s/configure = %d, want 200 with the file's comment in the page: %s", id, resp.StatusCode, page)
 	}
 	kept := formValuesOf(t, page, "compose-form")
-	if kept.Get("compose") != v10 || kept.Get("revision") == "" || kept.Get("svc.web.domains") != id+".localhost" || kept.Get("svc.web.healthPath") != "/" {
+	if kept.Get("compose") != v10 || kept.Get("revision") == "" || kept.Get("svc.web.healthPath") != "/" {
 		t.Fatalf("Configure's Compose form = %v, want the file as typed, a revision, and the overlay", kept)
+	}
+	// The Compose form of an app that exists has no Domains input (021's ruling 12: each domain once):
+	// the form carries the domains as they are, and the page lists them in its Domains panel.
+	if _, has := kept["svc.web.domains"]; has || !strings.Contains(page, id+".localhost") {
+		t.Fatalf("Configure should list %s.localhost once, outside the Compose form's inputs: %v", id, kept)
 	}
 	if !strings.Contains(page, "This app is edited through its Compose file.") || strings.Contains(page, `class="cv-svcform"`) {
 		t.Errorf("Configure draws the per-field form of an app edited through its file")

@@ -1531,6 +1531,38 @@ failed requests, since the console restarts during the update; without script th
 `noscript` refresh, only then. The panel says the outcome for 24 hours (● updated, ◆ rolled back,
 refused or not finished, ■ failed), so the page never needs a banner of its own for the needs-you item.
 
+### Servers (feature 031)
+The **Servers list** (`/ops/servers`, the Operator sidebar's "Servers") is one panel with a row per server in the
+grid `200px 120px repeat(3, minmax(0, 1fr)) 100px` (gap 24, padding 16/18): the name (mono 500 15px, fg-1) over its
+spec line (mono 12px fg-3), the quiet small state pill, the **cpu, mem and disk meters** and the copies (mono 13px
+fg-3, right aligned). The whole row is the name's link (a stretched `::after`, so a waiting row's Cancel form sits
+above it); under 900px of room a row stacks. The head is the title, a mono 13px fg-3 line of sums ("3 servers · 6 GB ·
+6 vCPU", or "3 in default, 1 in build · …") and the page's one primary button, Add server; under it one line of 14px
+fg-2 with a 7px mark says what the cluster can survive (healthy "survives the loss of one server", rolling while the
+other two start to run the scheduler, idle at two servers, warning when a scheduler server is down) and says nothing
+for one server.
+
+**Role marks are facts, not statuses.** Under a server's name, `console` (Caravana runs here), `ingress` (public
+traffic enters here) and `scheduler` (runs Nomad's scheduler) are small mono words, 11px fg-3 in a 1px line-2 box
+with a 2px radius (`cv-slrole`). They carry no colour and no mark, since they say what a server is, never how it is,
+and so they never sort or count as a state. The state is the pill: `ready` healthy, `down` failed, `not taking work`
+idle, `disk filling` warning, `joining` rolling, `waiting` idle. A server with no numbers yet has a dash in each meter,
+never an empty meter or a zero; a server that is down keeps its last numbers grey (fg-3 readouts, no fill) and reads
+`0 copies`. The list's meter is the server page's at the list's size: a 36px label, the track with used solid and
+reserved hatched, and the readout at the right ("0.5 / 1.9 GB"), with the warning mark and words above 85 %.
+
+**Add a server** has two states in one layout (the command and the form at the left, a 400px **Checks** panel at the
+right, one column under 900px). Before, the form (Name and Pool, hints in fg-3) and the checks idle with "Make the
+command to start."; after, the command in a `cv-cmd` block (ink-0, 1px line-2, mono 13px/22px, broken after the pipe
+with each option on its own line indented two spaces, joined by backslashes so it still runs) with a Copy button the
+script reveals, the name and pool as facts and the checks live. **The token is shown once**, in the answer of the post
+(`no-store`): the join's own page says the command was shown once, and no other page, part or redirect has it. The
+Checks panel is four 14px lines with 8px marks: done is healthy and fg-1, the one being worked on rolling and fg-2,
+the ones after it idle and fg-3. It asks for itself every 5 s only while a check is open (the panel carries the
+`hx-trigger`, so a finished join stops asking), and without script the page reloads every 10 s with a `noscript` meta
+refresh of the join's address. When all four pass, a rule, a sentence and the primary small button "Go to <name>".
+Removing a server is a confirmation page in the Stop page's shape; a server that runs is never offered it.
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

@@ -49,12 +49,12 @@ func TestHostNodeFromTheSampler(t *testing.T) {
 	l := nodeLab(t)
 	setUptime(l, 8*24*time.Hour)
 
-	if v, err := l.svc.Host(ctx); err != nil || v.Node != nil {
+	if v, err := l.svc.Host(ctx, ""); err != nil || v.Node != nil {
 		t.Fatalf("Host before a tick: Node = %+v, %v; want nil", v.Node, err)
 	}
 
 	l.tick(t, 1)
-	v, err := l.svc.Host(ctx)
+	v, err := l.svc.Host(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestHostNodeFromTheSampler(t *testing.T) {
 
 	// The view hands out a copy: changing it changes nothing in the sampler.
 	n.Events[0].Message = "changed"
-	if again, _ := l.svc.Host(ctx); again.Node.Events[0].Message != "Node registered" {
+	if again, _ := l.svc.Host(ctx, ""); again.Node.Events[0].Message != "Node registered" {
 		t.Error("a caller changed the sampler's node")
 	}
 
@@ -88,7 +88,7 @@ func TestHostNodeFromTheSampler(t *testing.T) {
 	l.nomad.Down()
 	l.tick2(t, 2) // Nomad is down: the tick may fail to read everything but must not blank the node
 	l.nomad.Up()
-	if again, _ := l.svc.Host(ctx); again.Node == nil || again.Node.TraefikVersion != "v3.7.13" || again.Node.Kernel == "" {
+	if again, _ := l.svc.Host(ctx, ""); again.Node == nil || again.Node.TraefikVersion != "v3.7.13" || again.Node.Kernel == "" {
 		t.Errorf("node after a tick with Nomad down = %+v, want the last known facts", again.Node)
 	}
 }
@@ -174,14 +174,14 @@ func TestHostNodeDown(t *testing.T) {
 	l := nodeLab(t)
 	setUptime(l, time.Hour)
 	l.tick(t, 1)
-	before, _ := l.svc.Host(ctx)
+	before, _ := l.svc.Host(ctx, "")
 
 	// Nomad lists the node as down: its stats can't be read, its record can.
 	l.nomad.SetNode("node-1", "lab", "down", deploytest.LabNodeResources(), nil)
 	l.nomad.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
 	l.tick2(t, 2)
 
-	v, err := l.svc.Host(ctx)
+	v, err := l.svc.Host(ctx, "")
 	if err != nil || v.Node == nil {
 		t.Fatalf("Host = %+v, %v", v.Node, err)
 	}
@@ -202,7 +202,7 @@ func TestHostNodeTokenWithoutNodeRead(t *testing.T) {
 	setUptime(l, time.Hour)
 	l.nomad.FailNodeReads(403)
 	l.tick2(t, 1)
-	if v, _ := l.svc.Host(ctx); v.Node != nil {
+	if v, _ := l.svc.Host(ctx, ""); v.Node != nil {
 		t.Errorf("node = %+v with node:read denied, want nil", v.Node)
 	}
 	if got := l.svc.SamplerSources(); got.Nomad != SamplerDenied {

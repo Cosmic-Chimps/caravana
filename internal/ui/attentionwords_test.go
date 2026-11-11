@@ -37,7 +37,8 @@ func itemFor(kind service.AttentionKind, elsewhere bool) service.AttentionItem {
 		Domain: "bi.example.com", AddressSeen: "185.199.108.153", ExpiresAt: &exp, Mount: "/var/lib/docker", UsedPercent: 87, FreeBytes: 1 << 30,
 		InstalledKernel: "7.0.0-40-generic", RunningKernel: "7.0.0-38-generic", Packages: []string{"libc6", "linux-base"},
 		Updates: 14, Security: 9,
-		UpdateRunID: "3f6c0d2a9b7e41c58d0f2e6a1b9c7d40", UpdateVersion: "0.17.0", UpdateFrom: "0.16.0", UpdateState: store.UpdateRolledBack}
+		UpdateRunID: "3f6c0d2a9b7e41c58d0f2e6a1b9c7d40", UpdateVersion: "0.17.0", UpdateFrom: "0.16.0", UpdateState: store.UpdateRolledBack,
+		Server: "fsn-2"}
 	if elsewhere {
 		it.AppID, it.Project, it.Environment = "shop--staging--web", "shop", "staging"
 		it.AppName = "web"
@@ -54,7 +55,7 @@ func itemFor(kind service.AttentionKind, elsewhere bool) service.AttentionItem {
 	}
 	switch kind {
 	case service.AttentionNoBackupDestination, service.AttentionDiskNearlyFull, service.AttentionOSRebootRequired, service.AttentionOSSecurityUpdates,
-		service.AttentionCaravanaUpdateFailed:
+		service.AttentionCaravanaUpdateFailed, service.AttentionServerDown, service.AttentionServerCertExpiring:
 		it.AppID, it.Project, it.Environment, it.AppName, it.Service = "", "", "", "", ""
 	}
 	return it
@@ -106,7 +107,9 @@ func TestEveryKindSaysTheSameWordsEverywhere(t *testing.T) {
 func TestOSWordsDrawNamesInMono(t *testing.T) {
 	s := newConsoleEnv(t).Server
 	now := time.Now()
-	row := s.attentionRow(now, itemFor(service.AttentionOSRebootRequired, false), places{}, nil)
+	one := itemFor(service.AttentionOSRebootRequired, false)
+	one.Server = "" // with one server the items name none
+	row := s.attentionRow(now, one, places{}, nil)
 	if got := monoWords(row.Text); got != "This server needs a reboot: kernel [7.0.0-40] is installed, but [7.0.0-38] is still running." {
 		t.Errorf("kernels = %q", got)
 	}
@@ -115,10 +118,15 @@ func TestOSWordsDrawNamesInMono(t *testing.T) {
 			t.Errorf("the mono part %q can break", p.Text)
 		}
 	}
-	it := itemFor(service.AttentionOSRebootRequired, false)
+	it := one
 	it.InstalledKernel = ""
 	if got := monoWords(s.attentionRow(now, it, places{}, nil).Text); got != "This server needs a reboot: [libc6] and [linux-base] were updated and need a reboot." {
 		t.Errorf("packages = %q", got)
+	}
+	// With several servers the first words name the server, in mono.
+	many := itemFor(service.AttentionOSRebootRequired, false) // Server: fsn-2
+	if got := monoWords(s.attentionRow(now, many, places{}, nil).Text); got != "[fsn-2] needs a reboot: kernel [7.0.0-40] is installed, but [7.0.0-38] is still running." {
+		t.Errorf("with several servers = %q", got)
 	}
 }
 

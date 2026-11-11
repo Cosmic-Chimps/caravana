@@ -162,7 +162,7 @@ func updEnv(t *testing.T, o updOpts) (*consoleEnv, *fakeRelease) {
 		n.SetNodeFacts(attrs, "default", []*api.NodeEvent{{Subsystem: "Cluster", Message: "Node registered", Timestamp: time.Now().Add(-9 * 24 * time.Hour)}})
 	})
 	srvWait(t, "the sampler's first reading of the host's files", func() bool {
-		h, err := e.Svc.Host(context.Background())
+		h, err := e.Svc.Host(context.Background(), "")
 		return err == nil && h.Node != nil && h.Reboot != nil
 	})
 	return e, gh

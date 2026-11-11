@@ -35,7 +35,7 @@ A fresh install starts on the mesh address, so it never needs step 2.
 
 On the first of the two restarts one copy (a group without ports) failed its network hook (`network
 namespace already exists but was misconfigured`) and Nomad replaced it; the second restart failed none.
-It looks like a Nomad restart hazard, not something this change causes; noted, not chased.
+The cluster test met it again and L17 has the cause and the fix.
 
 ## L3. Nomad needs its interfaces before it starts
 
@@ -140,6 +140,90 @@ be placed (read in the code, not provoked). They must be created on one server.
 - Adding the `meta.caravana_ingress` constraint to the running Traefik job is an in-place update: the job
   went to version 1 and the allocation kept its ID and kept running (lab, observed). So the rerun on an
   existing host doesn't restart Traefik for it.
+
+## L14. When the lost server is Nomad's leader, nothing is called down for five minutes
+
+Cluster test, 2026-11-10 (lab, observed): VM 3 was the leader when it was stopped. VM 1 logged `cluster
+leadership acquired` at 19:27:36 and `node TTL expired` for VM 3's node at 19:32:37, five minutes and one
+second later. That is `failover_heartbeat_ttl`, the time a new leader gives every node to heartbeat
+before it calls one down, and its default is 5 minutes. Until then the lost server's copies stay
+registered, Traefik keeps sending them a share of the requests, and nothing is replaced. When the lost
+server isn't the leader the node is down in about half a minute (L10).
+
+The agent writes `failover_heartbeat_ttl = "1m"` in every Nomad server's config. A node heartbeats every
+10 to 20 seconds, so a minute leaves room for a cluster of this size (63 servers at most) to find the
+new leader; Nomad's five minutes are for clusters of thousands.
+
+## L15. A Nomad server's own client must not list the servers
+
+Cluster test, 2026-11-10 (lab, observed): with `client { servers = [...] }` on an agent that is both
+server and client, its client heartbeats to one of the listed servers instead of its own. When that
+server was lost the heartbeat hung until the connection's keepalive failed, the node's TTL expired, and
+the first server's node was marked down and its copies replaced, though the machine was fine. Only a
+joined server that is a client alone lists the servers.
+
+## L16. A Nomad server must leave raft before it stops, or two servers become none
+
+Cluster test, 2026-11-10 (lab, observed): after server 3 was removed the cluster had two Nomad servers.
+`--leave` on server 2 stopped its Nomad (SIGINT), which leaves nothing: raft still had two voters, one of
+them gone, and server 1 had no quorum. It logged `Election timeout reached, restarting election` and
+answered `No cluster leader` to everything, so nothing could be deployed, read or removed. Nomad leaves
+the cluster gracefully on SIGTERM when `leave_on_terminate = true` (a server announces it, and the leader
+takes it out of raft), exits 0, and has 5 seconds for it. The agent writes that setting on every server,
+`caravana node leave` sends SIGTERM and waits for Nomad to exit before it takes the network away, and a
+stop, a restart and a reboot keep sending SIGINT (the unit's `KillSignal`), so a Nomad server that only
+restarts keeps its place.
+
+The order in the installer matters as much as the signal. The first version of this fix still failed
+the same step: `--leave` disabled the mesh unit before it called the agent, Nomad's unit requires that
+unit, so systemd stopped Nomad with SIGINT (`serf: Shutdown without a Leave`) before the agent could
+send SIGTERM (lab, observed). The agent is called first now.
+
+A server that is lost, not retired, can still take the quorum with it when only two Nomad servers are
+left: that is what "can't lose another" on the Servers page says.
+
+## L17. A Nomad restart can replace a copy whose interface systemd renamed the MAC of
+
+Cluster test, 2026-11-10 (lab, observed): during the conversion of a host installed from `d13c37c`, the
+app's only copy failed Nomad's network check after the restart (`network namespace already exists but
+was misconfigured: Interface veth5995cbdd Mac doesn't match: 7a:69:e8:fb:a4:ce not found`), couldn't be
+set up again (`duplicate allocation is not allowed`) and was replaced: four calls failed over three
+seconds. The first lab session saw the same once (L2) and didn't chase it.
+
+The cause is systemd, not this feature. Ubuntu's `99-default.link` has `MACAddressPolicy=persistent` for
+every new interface, so udev gives a container's host-side veth a new MAC a moment after the CNI bridge
+plugin made it. `/sys/class/net/<veth>/addr_assign_type` was 3 (set from userspace) on every veth. When
+the plugin wrote the address down before udev changed it, Nomad's check at its next restart finds an
+address it doesn't know. It is a race per copy, so most copies survive and some don't; four of the five
+earlier runs of this step had no failed call.
+
+With `/etc/systemd/network/10-caravana-veth.link` (`[Match] Driver=veth`, `[Link]
+MACAddressPolicy=none`) and `udevadm control --reload`, a new veth had `addr_assign_type` 1 (the
+kernel's random address, untouched), `udevadm test-builtin net_setup_link` said the file is applied, and
+the copy survived three Nomad restarts with no failed check (lab, observed). The installer writes the
+file for both roles. It can't repair copies made before it: at the conversion's restart such a copy may
+be replaced once, a few seconds without an answer for an app with one copy. Before this feature the
+hazard was there for every Nomad restart the installer made (a new Nomad version); it just restarted
+Nomad rarely.
+
+## L18. A healthy server was called down because its heartbeat was on its way to the lost one
+
+Cluster test, 2026-11-10 (lab, observed): server 3 was stopped. Server 1's client had its heartbeat in
+flight to server 3 (`rpc=Node.UpdateStatus server=10.98.0.3:4647`): a node heartbeats to any Nomad server
+it knows, also when it runs one itself, and leaving the servers out of its config (L15) doesn't change
+which ones it learns. The call hung until the connection gave `EOF`, the client logged `missed heartbeat:
+heartbeat_ttl=12.36s since_last_heartbeat=24.38s`, and two seconds before that Nomad had logged `node TTL
+expired` for server 1: the time allowed is the heartbeat's time plus `heartbeat_grace`, 10 seconds by
+default, 22.4 here. Server 1's two copies were replaced on server 2 and stopped when it came back a
+moment later. The app kept answering (7 failed calls), but a service with a volume on server 1 would
+have been restarted for nothing.
+
+The agent writes `heartbeat_grace = "30s"` on every Nomad server, which allows about 42 seconds where 24
+were needed. The price is that a server that is really lost is called down later, about 45 seconds after
+it went instead of about 25, so a share of the requests to an app with a copy there time out for that
+long. A connection that takes longer than that to fail would still get a healthy server called down;
+Nomad's `disconnect` block per group (keep the original copy when its server comes back) is the fuller
+answer and belongs to the scheduler's settings ("Placement" in `docs/plan.md`).
 
 ## Decisions
 

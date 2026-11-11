@@ -93,6 +93,7 @@ type testEnv struct {
 	Auth     *service.Auth
 	Clock    *fakeClock
 	Token    string // an active API token of the admin
+	Dir      string // the store's data directory
 	log      *slog.Logger
 }
 
@@ -108,11 +109,12 @@ func newTestEnv(t *testing.T, nomadToken string) *testEnv {
 // starts, for the settings that must be made then (a watcher's gap).
 func newTestEnvWith(t *testing.T, nomadToken string, setup func(*service.Service)) *testEnv {
 	t.Helper()
-	st, err := store.Open(context.Background(), t.TempDir())
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	e := &testEnv{Store: st, Logs: newSyncBuffer(), Registry: registrytest.New(t), Nomad: deploytest.New(t)}
+	e := &testEnv{Store: st, Dir: dir, Logs: newSyncBuffer(), Registry: registrytest.New(t), Nomad: deploytest.New(t)}
 	e.Registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.Nomad.Succeed()
 

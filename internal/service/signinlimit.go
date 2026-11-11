@@ -134,3 +134,37 @@ func (a *Auth) clearFailures(ctx context.Context, at *attempt) error {
 	}
 	return nil
 }
+
+// The join limit (feature 031): failed tries of POST /v1/join are counted per address like failed
+// sign-ins, in the same table with a key of their own ("join:<address>"), so a join and a sign-in
+// from one address never share a count. The limit is 5 failures in 15 minutes, then 15 minutes of
+// refusals.
+
+// JoinAttempt is one reserved try of the join call.
+type JoinAttempt struct {
+	auth *Auth
+	at   *attempt
+}
+
+// BeginJoin reserves a try for address, or refuses with a *SigninLimitError when the address is
+// locked or its recorded failures plus the tries under way would pass the limit.
+func (a *Auth) BeginJoin(ctx context.Context, address string) (*JoinAttempt, error) {
+	at, err := a.beginAttempt(ctx, "join:"+address)
+	if err != nil {
+		return nil, err
+	}
+	return &JoinAttempt{auth: a, at: at}, nil
+}
+
+// Failed counts the try as a failure: the token wasn't valid. It returns a *SigninLimitError when
+// this was the fifth.
+func (j *JoinAttempt) Failed(ctx context.Context) error {
+	_, err := j.auth.recordFailure(ctx, j.at)
+	return err
+}
+
+// Succeeded forgets the address's failures.
+func (j *JoinAttempt) Succeeded(ctx context.Context) error { return j.auth.clearFailures(ctx, j.at) }
+
+// Release gives the try back without counting it (the request was refused for another reason).
+func (j *JoinAttempt) Release() { j.at.release() }

@@ -23,7 +23,7 @@ func TestHostStats(t *testing.T) {
 	t.Run("the lab's node: one filesystem holds both, no other mount is listed", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
-		h, err := d.HostStats(ctx, "/var/lib/docker")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker")
 		if err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
@@ -57,7 +57,7 @@ func TestHostStats(t *testing.T) {
 			&api.HostDiskStats{Device: "/dev/vdd", Mountpoint: "/var/lib/dock", Size: 1 << 30, Used: 1 << 20, Available: 1 << 30}, // not a prefix of a path
 			&api.HostDiskStats{Device: "/dev/vde", Mountpoint: "/var", Size: 5 << 30, Used: 1 << 30, Available: 4 << 30})          // shorter
 		labNode(nomad, stats)
-		h, err := d.HostStats(ctx, "/var/lib/docker/")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker/")
 		if err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
@@ -78,7 +78,7 @@ func TestHostStats(t *testing.T) {
 		stats := deploytest.LabHostStats()
 		stats.DiskStats = append(stats.DiskStats, &api.HostDiskStats{Device: "/dev/vdc", Mountpoint: "/var", Size: 5 << 30, Used: 1 << 30, Available: 4 << 30})
 		labNode(nomad, stats)
-		h, err := d.HostStats(ctx, "/var/lib/docker")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker")
 		if err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
@@ -97,7 +97,7 @@ func TestHostStats(t *testing.T) {
 		alloc.Used += 1 << 20 // written between two reads: still the same mount
 		stats.AllocDirStats = &alloc
 		labNode(nomad, stats)
-		h, err := d.HostStats(ctx, "/var/lib/docker")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker")
 		if err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
@@ -112,7 +112,7 @@ func TestHostStats(t *testing.T) {
 		stats := deploytest.LabHostStats()
 		stats.AllocDirStats = &api.HostDiskStats{Size: 123, Used: 5}
 		labNode(nomad, stats)
-		h, err := d.HostStats(ctx, "/var/lib/docker")
+		h, err := d.HostStats(ctx, "", "/var/lib/docker")
 		if err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
@@ -125,7 +125,7 @@ func TestHostStats(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
 		for _, root := range []string{"", "/", "/var/lib/docker", "/mnt/lima-cidata-other", "relative"} {
-			h, err := d.HostStats(ctx, root)
+			h, err := d.HostStats(ctx, "", root)
 			if err != nil {
 				t.Fatalf("HostStats(%q): %v", root, err)
 			}
@@ -140,7 +140,7 @@ func TestHostStats(t *testing.T) {
 	t.Run("no Docker root leaves Docker's filesystem out", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
-		h, err := d.HostStats(ctx, "")
+		h, err := d.HostStats(ctx, "", "")
 		if err != nil || len(h.Disks) != 1 || h.Disks[0].Holds() != "nomad" {
 			t.Errorf("disks = %+v, err = %v", h.Disks, err)
 		}
@@ -151,7 +151,7 @@ func TestHostStats(t *testing.T) {
 		nomad.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(),
 			&api.NodeReservedResources{Cpu: api.NodeReservedCpuResources{CpuShares: 200}, Memory: api.NodeReservedMemoryResources{MemoryMB: 256}})
 		nomad.SetHostStats(deploytest.LabHostStats())
-		h, err := d.HostStats(ctx, "")
+		h, err := d.HostStats(ctx, "", "")
 		if err != nil || h.ReservedCPUMHz != 200 || h.ReservedMemoryMB != 256 {
 			t.Errorf("host = %+v, err = %v", h, err)
 		}
@@ -161,7 +161,7 @@ func TestHostStats(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
 		nomad.FailNodeReads(403)
-		_, err := d.HostStats(ctx, "")
+		_, err := d.HostStats(ctx, "", "")
 		if !errors.Is(err, ErrNodeReadDenied) || !errors.Is(err, ErrNomadUnavailable) {
 			t.Fatalf("err = %v, want ErrNodeReadDenied and ErrNomadUnavailable", err)
 		}
@@ -174,13 +174,13 @@ func TestHostStats(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		labNode(nomad, deploytest.LabHostStats())
 		nomad.FailNodeReads(500)
-		_, err := d.HostStats(ctx, "")
+		_, err := d.HostStats(ctx, "", "")
 		if !errors.Is(err, ErrNomadUnavailable) || errors.Is(err, ErrNodeReadDenied) {
 			t.Errorf("err = %v", err)
 		}
 		nomad.FailNodeReads(0)
 		nomad.Down()
-		_, err = d.HostStats(ctx, "")
+		_, err = d.HostStats(ctx, "", "")
 		if !errors.Is(err, ErrNomadUnavailable) || errors.Is(err, ErrNodeReadDenied) {
 			t.Errorf("Nomad down: err = %v", err)
 		}
@@ -188,12 +188,12 @@ func TestHostStats(t *testing.T) {
 
 	t.Run("a node that isn't ready, or none, is an error", func(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
-		if _, err := d.HostStats(ctx, ""); !errors.Is(err, ErrNomadUnavailable) {
+		if _, err := d.HostStats(ctx, "", ""); !errors.Is(err, ErrNomadUnavailable) {
 			t.Errorf("no node: err = %v", err)
 		}
 		nomad.SetNode("node-1", "lab", "down", deploytest.LabNodeResources(), nil)
 		nomad.SetHostStats(deploytest.LabHostStats())
-		if _, err := d.HostStats(ctx, ""); !errors.Is(err, ErrNomadUnavailable) {
+		if _, err := d.HostStats(ctx, "", ""); !errors.Is(err, ErrNomadUnavailable) {
 			t.Errorf("down node: err = %v", err)
 		}
 	})
@@ -205,7 +205,7 @@ func TestHostStats(t *testing.T) {
 		d.cache.now = func() time.Time { return now }
 
 		for range 3 {
-			if _, err := d.HostStats(ctx, ""); err != nil {
+			if _, err := d.HostStats(ctx, "", ""); err != nil {
 				t.Fatalf("HostStats: %v", err)
 			}
 			now = now.Add(time.Minute)
@@ -216,7 +216,7 @@ func TestHostStats(t *testing.T) {
 		}
 
 		now = now.Add(8 * time.Minute) // 11 minutes since the read
-		if _, err := d.HostStats(ctx, ""); err != nil {
+		if _, err := d.HostStats(ctx, "", ""); err != nil {
 			t.Fatalf("HostStats: %v", err)
 		}
 		if _, info, _ = nomad.NodeRequests(); info != 2 {

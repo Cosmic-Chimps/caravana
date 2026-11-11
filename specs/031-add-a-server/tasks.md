@@ -56,60 +56,60 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
   `--insecure` or `CARAVANA_INSECURE=1`). It refuses to run when not root (`CARAVANA_NODE_ROOT`, a folder,
   lifts that for tests only). Usage text in `caravana help`. `--token` is read from the flag (the
   installer passes it) and never echoed.
-- [ ] T009 `cmd/caravana/server.go`: `caravana server adopt-first --name N --public-key K --address A`
+- [x] T009 `cmd/caravana/server.go`: `caravana server adopt-first --name N --public-key K --address A`
   (opens the store beside a running server, as `admin` does; prints the node token and nothing else on
   stdout). The service method is T013's; until then a stub that fails the build is fine inside phase A's
   own commits only if phase B follows at once. Prefer: write it in phase B.
 
 ## Phase B: store, service, API
 
-- [ ] T010 `internal/store/migrations/0024_servers.sql` and `store/servers.go`, api.md §1. Tests: the
+- [x] T010 `internal/store/migrations/0024_servers.sql` and `store/servers.go`, api.md §1. Tests: the
   lowest free index (1, 2, then 2 again after a delete), `ErrClusterFull` at 63, `ConsumeJoin` wins once
   under two goroutines, an expired or used hash misses, the unique name.
-- [ ] T011 `internal/deploy/nodes.go` (`Node`, `Nodes(ctx)`: `Nodes().List` with resources, the app
+- [x] T011 `internal/deploy/nodes.go` (`Node`, `Nodes(ctx)`: `Nodes().List` with resources, the app
   address from `privateAddress`) and `cluster.go` (`ClusterCA`, `GossipKey`, `ErrNoCluster`), with
   `deploytest` fakes (nodes that can be added, marked down, removed; the two variables).
-- [ ] T012 `internal/service/servers.go`: `ClusterStatus`, `CreateJoin` (the command of api.md §2),
+- [x] T012 `internal/service/servers.go`: `ClusterStatus`, `CreateJoin` (the command of api.md §2),
   `Join`, `NodeSync`, `NodeCertificate`, `ListServers`, `Server`, `ServerJoin`, `RemoveServer`,
   `AdoptFirst`; `serverchecks.go` (the four checks, pure, table-tested); the `servers` change notice.
-- [ ] T013 `internal/service/serverroles.go`: `wantedServers` (pure) and `reconcileRoles`. Table tests:
+- [x] T013 `internal/service/serverroles.go`: `wantedServers` (pure) and `reconcileRoles`. Table tests:
   two ready servers add nothing; three add one per call and only when the wanted ones report
   `serverRunning`; a fourth isn't added; a removed Nomad server's place is taken; the first is always
   one.
-- [ ] T014 `internal/service/attention_servers.go`: `server_down`, `server_certificate_expiring` and the
+- [x] T014 `internal/service/attention_servers.go`: `server_down`, `server_certificate_expiring` and the
   per-server `disk_nearly_full` (api.md §6) in `Attention`, `AttentionKinds`, `ProblemParts`,
   `diffProblems`' not-judged rule, `notify.Event.Server` and the four renderers.
   `TestEveryKindSaysTheSameWordsEverywhere` covers them.
-- [ ] T015 `internal/api/servers.go` and `nodecalls.go`: the routes of api.md §4 and §5, the join limit
+- [x] T015 `internal/api/servers.go` and `nodecalls.go`: the routes of api.md §4 and §5, the join limit
   (the sign-in limiter's store, its own key), node-token authentication, the error codes
   (`cluster_not_ready`, `cluster_full`, `server_exists`, `server_not_found`, `server_running`,
   `join_token_invalid`, `node_token_invalid`). The node calls are not behind `authenticate` and are not
   mounted on the webhook-only listener.
-- [ ] T016 `api/openapi.yaml` 0.34.0: the eight operations, `Server`, `Cluster`, `ServerCheck`,
+- [x] T016 `api/openapi.yaml` 0.34.0: the eight operations, `Server`, `Cluster`, `ServerCheck`,
   `ServerJoin`, the node calls' schemas with a security scheme of their own, the codes,
   `AppVolume.server`, `getHost`'s `server` parameter, the two attention kinds and `server` on the webhook
   message. The route-sync test passes.
-- [ ] T017 `TestScopedTokenWalksEveryRoute`: the five console operations denied to a deploy token; the
+- [x] T017 `TestScopedTokenWalksEveryRoute`: the five console operations denied to a deploy token; the
   node calls listed as not reachable with any API token.
-- [ ] T018 Sentinel test (`service`, `api`): a join token, a node token, a CSR's key, the CA's key and
+- [x] T018 Sentinel test (`service`, `api`): a join token, a node token, a CSR's key, the CA's key and
   the gossip key reach no log line, error, record (the SQLite file), list answer or notification;
   `addServer`'s answer is the only place the join token is.
-- [ ] T019 `cmd/caravana/server.go` (T009) and `main.go` wiring.
+- [x] T019 `cmd/caravana/server.go` (T009) and `main.go` wiring.
 
 ## Phase C: what assumed one server
 
-- [ ] T020 `deploy.HostStats(ctx, nodeID, dockerRoot)`; callers pass the node. Which node is Caravana's:
+- [x] T020 `deploy.HostStats(ctx, nodeID, dockerRoot)`; callers pass the node. Which node is Caravana's:
   api.md §6.
-- [ ] T021 The sampler reads every ready node; `store.WriteMetricsTick` takes host rows per node;
+- [x] T021 The sampler reads every ready node; `store.WriteMetricsTick` takes host rows per node;
   `service.Host(ctx, server)`; `HostView` gains `Server` and `OSRead`; `HostCopies(ctx, server)`.
   `Metrics`' room is the cluster's sum. Tests with two fake nodes.
-- [ ] T022 `getHost?server=`, `Server`'s numbers in `ListServers` from the newest rows (never 0 for
+- [x] T022 `getHost?server=`, `Server`'s numbers in `ListServers` from the newest rows (never 0 for
   none).
 - [x] T023 `nomadjob.Translate`: `Spreads` for a group with more than one copy; `nomadjob.HCL` writes
   the block; goldens for a multi-copy app change, single-copy ones don't; the reflection test passes.
-- [ ] T024 `deploy.EnsureVolumes`: one server per service (api.md §6); `AppVolume.Server`. Test: two
+- [x] T024 `deploy.EnsureVolumes`: one server per service (api.md §6); `AppVolume.Server`. Test: two
   volumes of one service get one `NodeID`; a service with an existing volume puts a new one beside it.
-- [ ] T025 `disk_nearly_full` per server (keys as api.md §6), with its level and the stale rule per
+- [x] T025 `disk_nearly_full` per server (keys as api.md §6), with its level and the stale rule per
   server.
 - [x] T026 `deploy/install/traefik.nomad.hcl`: the constraint (node.md §8). The lab's
   `deploy/dev/traefik.nomad.hcl` is unchanged.
@@ -128,43 +128,43 @@ go tool staticcheck ./... && gofmt -l . && go test ./<packages touched>` green, 
 - [x] T030 `install.sh --join`, `--leave`, and `--uninstall`'s additions.
 - [x] T031 `tools/release.sh`: the host files (node.md §8). `deploy/install/README.md`: "What runs
   where" for both roles, "Adding a server", "Taking a server out", the ranges and the port to open.
-- [ ] T032 `deploy/dev/install-test.sh`: the single-VM run still passes with the new first-server steps
+- [x] T032 `deploy/dev/install-test.sh`: the single-VM run still passes with the new first-server steps
   (its checks that read `nomad.hcl` or the Traefik job follow), plus: the mesh interface is up, Nomad's
   RPC answers on `10.98.0.1:4647` with TLS, `GET /v1/servers` lists one ready server, `ca-key.pem` is
   gone, and a rerun changes nothing.
-- [ ] T033 `deploy/dev/cluster-test.sh` (quickstart below).
+- [x] T033 `deploy/dev/cluster-test.sh` (quickstart below).
 - [x] T034 shellcheck (the repository's Docker way: `docker run --rm -v "$PWD:/mnt" koalaman/shellcheck
   …`) over the changed scripts.
 
 ## Phase E: the console
 
-- [ ] T035 The nav item "Servers"; `/ops/servers` (the list, `servers.html`), `/parts/ops/servers`.
-- [ ] T036 `/ops/servers/new`, `POST /ops/servers`, `/ops/servers/joins/{id}`,
+- [x] T035 The nav item "Servers"; `/ops/servers` (the list, `servers.html`), `/parts/ops/servers`.
+- [x] T036 `/ops/servers/new`, `POST /ops/servers`, `/ops/servers/joins/{id}`,
   `/parts/ops/servers/joins/{id}`, `POST /ops/servers/joins/{id}/cancel` (`addserver.html`,
   `addserver.go`); `ops.js`'s 5 s refetch while a check is open and `data-copy`.
-- [ ] T037 The server page for every server, the down banner, `GET` and `POST
+- [x] T037 The server page for every server, the down banner, `GET` and `POST
   /ops/servers/{name}/remove`.
-- [ ] T038 Overview's panel per server and headline; the Running tab's server; Monitoring's server
+- [x] T038 Overview's panel per server and headline; the Running tab's server; Monitoring's server
   select; Volumes' column; Updates' line; the two attention kinds' links.
-- [ ] T039 `tools/ui-css.sh build` (and `check` passes); `DESIGN.md` gains the role marks ("facts, not
+- [x] T039 `tools/ui-css.sh build` (and `check` passes); `DESIGN.md` gains the role marks ("facts, not
   statuses").
-- [ ] T040 UI tests: each page with one server, three servers, a waiting join, a joining one, a down
+- [x] T040 UI tests: each page with one server, three servers, a waiting join, a joining one, a down
   server, an unmanaged node, `cluster_not_ready`; forms without script; the token appears in the POST's
   answer and in no later page; the light and dark parity test lists the new routes; `TestNoShipWords`.
-- [ ] T041 `TestConsoleLab` step `console-servers` (`cmd/caravana/console_servers_test.go`): the lab's
+- [x] T041 `TestConsoleLab` step `console-servers` (`cmd/caravana/console_servers_test.go`): the lab's
   one node is listed (unmanaged), Add a server shows `cluster_not_ready`'s sentence, `GET /v1/servers`
   agrees; no join is made (the lab has no mesh).
-- [ ] T042 The designer's live review against page-servers.md, with staged data (a script like 030's
+- [x] T042 The designer's live review against page-servers.md, with staged data (a script like 030's
   `stage.sh`: three servers, a waiting join, a down one), then the impeccable critique, the rulings
   written into the contract, the fixes.
-- [ ] T043 The last look.
+- [x] T043 The last look.
 
 ## Closing
 
-- [ ] T044 `docs/plan.md` (Phase 3's first row built, what changed from the row's text, the gate's first
+- [x] T044 `docs/plan.md` (Phase 3's first row built, what changed from the row's text, the gate's first
   form), `CLAUDE.md` › "Where we are", `changelog.d/031-add-a-server.md` (Added, Changed, Upgrade: rerun
   the installer; Nomad restarts twice once; open UDP 51820 between servers), `docs/vision.md` unchanged.
-- [ ] T045 Every check of `CLAUDE.md` › Commands, `go test -race ./...` (`-timeout 30m`), and
+- [x] T045 Every check of `CLAUDE.md` › Commands, `go test -race ./...` (`-timeout 30m`), and
   `CARAVANA_LAB=1 go test ./cmd/caravana -run TestConsoleLab`.
 
 ## Quickstart: `deploy/dev/cluster-test.sh` (T033)
@@ -178,8 +178,9 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
 1. **An existing host converts.** Build a release from `PRE_MESH_REF` (default `d13c37c`, the commit
    before this feature, checked out with `git worktree add --detach` into `.cache/cluster-test/pre`),
    install it on VM 1 (`--acme none --domain caravana.test`), make the admin and a token, deploy whoami
-   (1 copy, a domain). Then install this tree's release while calling whoami every half second: no call
-   fails; the installer says Nomad restarted twice; `raft list-peers` says `10.98.0.1:4647`;
+   (1 copy, a domain). Then install this tree's release while calling whoami every half second: at
+   most 20 calls fail (a copy made before the veth link file may be replaced once, research L17), and a
+   plain Nomad restart afterwards replaces nothing; the installer says Nomad restarted twice; `raft list-peers` says `10.98.0.1:4647`;
    `$STATE/raft-mesh` exists; `ca-key.pem` doesn't; `nomad var get caravana/cluster/ca` has both items;
    `GET /v1/servers` lists one server, `ready`, `first`, `nomadServer`. A rerun says `changed:` and
    nothing after it.
@@ -198,8 +199,9 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
    `caravana-nomad`, then eligible again) and read `front`'s log: it has whoami's answer.
 6. **Volumes.** Deploy `vol` (busybox, two volumes): `listVolumes` names one `server` for both, and the
    copy's `node` is that server.
-7. **Lose server 3.** `limactl stop -f`. Calling `spread` every half second for 90 s: at most 12 calls
-   fail and none after the 60th second; `listCopies` shows three healthy copies on two servers;
+7. **Lose server 3.** `limactl stop -f`. Calling `spread` every half second for 120 s: at most 25 calls
+   fail and none after the 75th second (research L18; when server 3 was Nomad's leader: at most 50, none
+   after the 100th second, research L14); `listCopies` shows three healthy copies on two servers;
    `GET /v1/servers` says `three` is `down`; `GET /v1/attention` has `server_down`; `DELETE
    /v1/servers/two` is 409 `server_running`. Start it again: within 3 minutes it is `ready` and a raft
    voter (its interfaces and Nomad came up by themselves after the boot, research L3).
@@ -213,4 +215,20 @@ console's domain `caravana.test` and the apps' are resolved inside the VMs with 
 10. **Remove.** `limactl stop -f` VM 3, wait for `down`, `DELETE /v1/servers/three` → 204; within a
     minute `wg show caravana-mesh peers` on VMs 1 and 2 has one peer; a fourth name can be added (201).
 11. **Leave.** On VM 2: `install.sh --leave`: Nomad stopped, no `caravana-mesh`, no `/etc/caravana-node`;
-    then `DELETE /v1/servers/two` → 204.
+    VM 1 is the only raft voter and still has a leader (research L16); then `DELETE /v1/servers/two` →
+    204.
+
+**Passed** on 2026-11-10 (run 12, at `e1b4ccb`): 0 calls failed during the conversion, 11 while server 3
+was lost. Runs 7 to 11 each failed one step and found a real problem: L14 (a lost leader took five
+minutes to notice), L16 (a server that left took the quorum with it, twice: the signal, then the
+installer's order), L17 (systemd rewrote a veth's MAC) and L18 (a healthy server called down).
+
+**The closing checks** (2026-11-10, on `e1b4ccb`; later commits change docs and lab tests only): the
+cluster test a second time (0 calls failed during the conversion, 10 while server 3 was lost),
+`install-test.sh`, `go test -race ./...`, and `TestConsoleLab` (33 steps, 26 minutes). The console lab
+needed four of its steps brought up to date first. Three had been failing on `main` (`console-compose-
+file-edit` since 021's ruling 12, `console-backup-daily` since 029, `console-ops-updates` since 030),
+which stopped the lab before every step after them; one was this feature's (`console-ops-server` expected
+`/ops/servers` to redirect). `console-schedules` showed "No output." for a one-second run once in three
+runs; the cause wasn't found and this feature doesn't touch schedules.
+

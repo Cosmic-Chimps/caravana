@@ -279,3 +279,21 @@ func TestVersionCommand(t *testing.T) {
 		t.Errorf("version = %d %q, want 0 and %q", code, stdout.String(), version)
 	}
 }
+
+// A mistyped command must not start a second server: the configuration loader ignores positional
+// arguments, so run refuses a first argument that is neither a flag nor a command.
+func TestUnknownCommandIsAUsageError(t *testing.T) {
+	for _, args := range [][]string{{"servr", "adopt-first"}, {"nope"}, {"version", "extra"}} {
+		var stdout, stderr bytes.Buffer
+		code := run(context.Background(), args, func(string) string { return "" }, strings.NewReader(""), &stdout, &stderr)
+		if code != 2 {
+			t.Errorf("run(%q) = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "usage: caravana") || !strings.Contains(stderr.String(), "unknown command") {
+			t.Errorf("run(%q) stderr = %q, want the usage", args, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("run(%q) wrote to stdout: %q", args, stdout.String())
+		}
+	}
+}

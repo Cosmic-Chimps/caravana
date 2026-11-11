@@ -79,7 +79,7 @@ func writeAptHistory(t *testing.T, root string) (remove func()) {
 //  1. Two apps in two places (con0272a in Default › production, web in the project con0272's
 //     staging), deployed through the API, and apt's history and the reboot marker written into the
 //     host root the in-process Caravana reads (the lab's Caravana runs on the Mac, not on the VM).
-//  2. /ops/servers redirects (302) to the node's own page, /ops/servers/<name>; another name is a 404
+//  2. /ops/servers is the list of servers (since 031; it used to redirect) and links the node's own page, /ops/servers/<name>; another name is a 404
 //     page that names the real one.
 //  3. The head: the node's name, ready, "reboot needed" linking to Updates, the spec line (cores
 //     and kernel checked against Nomad's own record), and no action (no button, no form).
@@ -142,14 +142,12 @@ func (c *console) consoleOpsServer(t *testing.T) {
 	}
 	pagePath := "/ops/servers/" + node.Name
 
-	// 2. The redirect and the 404 page.
-	waitFor(t, "the sampler's first reading of the node", 2*time.Minute, func() bool {
-		resp, _ := c.get(t, "/ops/servers")
-		return resp.StatusCode == http.StatusFound
+	// 2. The list and the 404 page. Since 031 /ops/servers is the list of servers, with one server
+	// too (it used to redirect to the one server's page): the lab's node is in it, linked to its page.
+	waitFor(t, "the list of servers to link the lab's node", 2*time.Minute, func() bool {
+		resp, body := c.get(t, "/ops/servers")
+		return resp.StatusCode == http.StatusOK && strings.Contains(body, `href="`+pagePath+`"`)
 	})
-	if resp, _ := c.get(t, "/ops/servers"); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != pagePath {
-		t.Errorf("GET /ops/servers = %d to %q, want 302 to %s", resp.StatusCode, resp.Header.Get("Location"), pagePath)
-	}
 	if resp, body := c.get(t, "/ops/servers/nope"); resp.StatusCode != http.StatusNotFound ||
 		!strings.Contains(pageText(body), "No server called nope") ||
 		!strings.Contains(pageText(body), "This caravana has one: "+node.Name) {
@@ -181,7 +179,7 @@ func (c *console) consoleOpsServer(t *testing.T) {
 		return true
 	})
 	head := page[strings.Index(page, `id="srv-head"`):strings.Index(page, `id="srv-body"`)]
-	for _, want := range []string{`<a href="/ops" class="cv-srvback">← Overview</a>`, `<h1 class="cv-srvname">` + node.Name + `</h1>`,
+	for _, want := range []string{`<a href="/ops/servers" class="cv-srvback">← Servers</a>`, `<h1 class="cv-srvname">` + node.Name + `</h1>`,
 		`cv-mark-healthy" aria-hidden="true"></span>ready`} {
 		if !strings.Contains(head, want) {
 			t.Errorf("the head lacks %q:\n%s", want, pageText(head))

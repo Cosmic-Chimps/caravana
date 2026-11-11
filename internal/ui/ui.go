@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,7 +145,15 @@ func (s *server) routeTable() []route {
 		{"GET", "/ops", s.requireSession(s.showOps)},
 		{"GET", "/parts/ops/server", s.requirePart(s.partOpsServer)},
 		{"GET", "/ops/servers", s.requireSession(s.showOpsServers)},
+		{"GET", "/parts/ops/servers", s.requirePart(s.partOpsServersList)},
+		{"GET", "/ops/servers/new", s.requireSession(s.showAddServer)},
+		{"POST", "/ops/servers", s.protected(s.requireSession(s.createServerJoin))},
 		{"GET", "/ops/servers/{name}", s.requireSession(s.showOpsServer)},
+		// /ops/servers/joins/{id} and /ops/servers/{name}/remove: one pattern, see showServerSub.
+		{"GET", "/ops/servers/{kind}/{rest}", s.requireSession(s.showServerSub)},
+		{"POST", "/ops/servers/{name}/remove", s.protected(s.requireSession(s.removeServer))},
+		{"POST", "/ops/servers/joins/{id}/cancel", s.protected(s.requireSession(s.cancelServerJoin))},
+		{"GET", "/parts/ops/servers/joins/{id}", s.requirePart(s.partServerJoin)},
 		{"GET", "/parts/ops/servers/{name}", s.requirePart(s.partOpsServerBody)},
 		{"GET", "/ops/updates", s.requireSession(s.showOpsUpdates)},
 		{"GET", "/parts/ops/updates", s.requirePart(s.partOpsUpdates)},
@@ -330,7 +339,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -385,6 +394,19 @@ type pageData struct {
 	// itself (the Updates page while an update is under way). base.html draws it as a meta in a
 	// <noscript>, only when set.
 	Refresh int
+	// RefreshURL is the address the refresh loads; empty reloads the page's own address. A page that
+	// answered a post (Add a server's command) names the address of its read.
+	RefreshURL string
+}
+
+// RefreshContent is the value of the refresh meta: the seconds, and where to load next when the page
+// names an address of its own ("10; url=/ops/servers/joins/abc"). It is one string, so the template
+// escapes it whole and its "url=" is never parsed as an address.
+func (d pageData) RefreshContent() string {
+	if d.RefreshURL == "" {
+		return strconv.Itoa(d.Refresh)
+	}
+	return strconv.Itoa(d.Refresh) + "; url=" + d.RefreshURL
 }
 
 func (s *server) page(r *http.Request, title string) pageData {

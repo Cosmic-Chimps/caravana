@@ -372,6 +372,30 @@ func (s *Store) NewestHost(ctx context.Context) (HostSample, error) {
 	return h, nil
 }
 
+// NewestHosts returns, for each Nomad node that was ever sampled, its newest minute row, ordered by
+// node ID (feature 031: one row per server).
+func (s *Store) NewestHosts(ctx context.Context) ([]HostSample, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+hostColumns+`
+		FROM metrics_host h WHERE res = ?1 AND ts = (SELECT MAX(ts) FROM metrics_host WHERE res = ?1 AND node = h.node)
+		ORDER BY node`, MinuteRes)
+	if err != nil {
+		return nil, fmt.Errorf("newest host samples: %w", err)
+	}
+	defer rows.Close()
+	var out []HostSample
+	for rows.Next() {
+		h, err := scanHost(rows)
+		if err != nil {
+			return nil, fmt.Errorf("newest host samples: %w", err)
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("newest host samples: %w", err)
+	}
+	return out, nil
+}
+
 func scanHost(r interface{ Scan(...any) error }) (HostSample, error) {
 	var h HostSample
 	var ts int64

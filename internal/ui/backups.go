@@ -47,8 +47,11 @@ type backupsTab struct {
 	Rows []backupSvcRow
 	// Unmounted are volumes Nomad still has for the app that no service mounts.
 	Unmounted []unmountedVolume
-	Restores  []restoreRow
-	Notice    sentence
+	// MultiServer says the cluster has more than one server, so a volume says which one it is on
+	// (feature 031).
+	MultiServer bool
+	Restores    []restoreRow
+	Notice      sentence
 	// ConfirmErr is the backup whose restore confirmation was wrong; its row opens.
 	ConfirmErr string
 	// ShowAll is the service whose whole run list is shown ("Show older").
@@ -150,6 +153,8 @@ type stripCell struct {
 // unmountedVolume is a volume Nomad has for the app that no service mounts.
 type unmountedVolume struct {
 	Name, HostPath, Size string
+	// Where is "this host", or the name of the server when the cluster has several.
+	Where string
 }
 
 // restoreRow is one restore. Stopped is "stopped 4 s" for a volume restore
@@ -271,7 +276,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 
 	for _, v := range volumes {
 		if !v.Mounted {
-			u := unmountedVolume{Name: v.Name, HostPath: v.HostPath}
+			u := unmountedVolume{Name: v.Name, HostPath: v.HostPath, Where: whereIs(tab.MultiServer, v.Server)}
 			if v.Size != nil {
 				u.Size = humanBytes(v.Size.Bytes)
 			}
@@ -291,6 +296,15 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		tab.Restores = append(tab.Restores, row)
 	}
 	return tab
+}
+
+// whereIs says where a volume lives: "this host" with one server, else the server's name (or "this host" when
+// the volume's server isn't known).
+func whereIs(multi bool, server string) string {
+	if multi && server != "" {
+		return server
+	}
+	return "this host"
 }
 
 // serviceVolumeBytes is the measured size of the volumes a service mounts, and
@@ -376,7 +390,7 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			}
 			fact := v.Name
 			if v.HostPath != "" {
-				fact = v.HostPath + " on this host"
+				fact = v.HostPath + " on " + whereIs(tab.MultiServer, v.Server)
 			}
 			if v.Size != nil {
 				fact += " · " + humanBytes(v.Size.Bytes) + ", measured " + relative(now, v.Size.MeasuredAt)
@@ -584,6 +598,7 @@ func (s *server) backupsPage(w http.ResponseWriter, r *http.Request, status int,
 	if extra.ShowAll == "" {
 		extra.ShowAll = r.URL.Query().Get("all")
 	}
+	extra.MultiServer = s.multiServer(ctx)
 	tab := backupsTabOf(s.now(), sum, backups, restores, volumes, dest, extra)
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "backups"), Backups: &tab})
 }

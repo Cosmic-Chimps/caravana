@@ -44,6 +44,7 @@ const rootUsage = `usage: caravana [flags]                 run the control plane
 commands:
   admin     the owner's CLI on the host: the admin, API tokens (caravana admin --help)
   node      the root agent on every server: join, sync, up (caravana node --help)
+  server    register this machine as the cluster's first server (caravana server --help)
   mcp       a Model Context Protocol server for coding agents (caravana mcp --help)
   version   print this build's version
   help      print this text
@@ -69,7 +70,8 @@ func main() {
 // run starts the control plane and blocks until ctx is cancelled or the
 // server fails. It returns the process exit code. `caravana admin ...` is the
 // host CLI instead (admin.go), `caravana mcp` the agent's MCP server
-// (mcp.go) and `caravana node` the root agent of a server (node.go). Taking
+// (mcp.go), `caravana node` the root agent of a server (node.go) and `caravana server` the
+// installer's registration of the first server (server.go). Taking
 // its inputs as arguments lets tests run it in-process.
 func run(ctx context.Context, args []string, getenv func(string) string,
 	stdin io.Reader, stdout, stderr io.Writer) int {
@@ -82,6 +84,9 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	if len(args) > 0 && args[0] == "node" {
 		return runNode(ctx, args[1:], getenv, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "server" {
+		return runServerCommand(ctx, args[1:], getenv, stdout, stderr)
+	}
 	if len(args) == 1 && args[0] == "help" {
 		fmt.Fprint(stdout, rootUsage)
 		return 0
@@ -89,6 +94,13 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	if len(args) == 1 && args[0] == "version" {
 		fmt.Fprintln(stdout, version)
 		return 0
+	}
+	// The configuration loader ignores positional arguments, so a mistyped command ("caravana servr
+	// adopt-first") would start a whole second server. A first argument that isn't a flag and isn't
+	// one of the commands above is a usage error.
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		fmt.Fprintf(stderr, "caravana: unknown command %q\n\n%s", args[0], rootUsage)
+		return 2
 	}
 	log := slog.New(slog.NewJSONHandler(stderr, nil))
 

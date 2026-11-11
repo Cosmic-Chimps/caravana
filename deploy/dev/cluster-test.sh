@@ -84,6 +84,12 @@ cleanup() {
   git -C "$ROOT" worktree remove --force "$WORK/pre" >/dev/null 2>&1 || true
 }
 
+# start_vm N: create and start VM N on the user-v2 network.
+start_vm() {
+  limactl start --name "cv-cluster-$1" --tty=false --cpus 2 --memory 2 --containerd none \
+    --network lima:user-v2 template:ubuntu-24.04 >/dev/null 2>&1
+}
+
 # release VERSION: build this tree's release into $WORK/VERSION.
 release() { "$ROOT/tools/release.sh" build "$1" "$WORK/$1" >/dev/null; }
 
@@ -113,11 +119,12 @@ app_answers() { [ "$(app_code "$1")" = 200 ]; }
 write_watchers() {
   cat >"$WORK/watch.sh" <<'EOF'
 #!/bin/bash
-# watch.sh HOST FLAG: call https://HOST/ every half second until FLAG is gone; print how many calls failed.
+# watch.sh HOST FLAG: call https://HOST/ every half second until FLAG is gone; print the time and status
+# of each failed call, then, on the last line, how many failed.
 fails=0
 while [ -e "$2" ]; do
   code="$(curl -ksS --max-time 2 -o /dev/null -w '%{http_code}' --resolve "$1:443:127.0.0.1" "https://$1/" 2>/dev/null || true)"
-  [ "$code" = 200 ] || fails=$((fails + 1))
+  [ "$code" = 200 ] || { fails=$((fails + 1)) && echo "failed at $(date +%T) with ${code:-000}"; }
   sleep 0.5
 done
 echo "$fails"
@@ -155,6 +162,8 @@ copies_json() { api -fsS "https://$DOMAIN/v1/apps/$1/copies"; }
 healthy_copies() { [ "$(copies_json "$1" | jsonq 'len([c for c in d["copies"] if c["status"]=="healthy"])')" = "$2" ]; }
 # copy_node APP SERVICE: the node of the service's healthy copy.
 copy_node() { copies_json "$1" | jsonq "[c['node'] for c in d['copies'] if c['service']=='$2' and c['status']=='healthy'][0]" 2>/dev/null; }
+# nomad_has_leader N: the Nomad on VM N knows a leader.
+nomad_has_leader() { [ -n "$(vm "$1" curl -fsS http://127.0.0.1:4646/v1/status/leader 2>/dev/null | tr -d '"')" ]; }
 # voters: how many raft voters Nomad lists, asked on VM N.
 voters() { nomad_on "$1" operator raft list-peers | awk 'NR > 1 && $(NF - 1) == "true"' | wc -l | tr -d ' '; }
 voters_are() { [ "$(voters "$1")" = "$2" ]; }
@@ -205,14 +214,17 @@ main() {
   write_watchers
 
   say "three Ubuntu 24.04 VMs on one network"
+  # The first VM starts Lima's user-v2 network daemon, which stops when no VM is on the network:
+  # starting all three at once on a cold network races for its socket ("connect: no such file"),
+  # so VM 1 starts first and the other two follow in parallel.
   local pids=()
-  for n in 1 2 3; do
-    limactl delete --force "cv-cluster-$n" >/dev/null 2>&1 || true
-    limactl start --name "cv-cluster-$n" --tty=false --cpus 2 --memory 2 --containerd none \
-      --network lima:user-v2 template:ubuntu-24.04 >/dev/null 2>&1 &
+  for n in 1 2 3; do limactl delete --force "cv-cluster-$n" >/dev/null 2>&1 || true; done
+  start_vm 1 || die "VM 1 didn't start"
+  for n in 2 3; do
+    start_vm "$n" &
     pids+=($!)
   done
-  for n in 0 1 2; do wait "${pids[$n]}" || die "a VM didn't start"; done
+  for n in 0 1; do wait "${pids[$n]}" || die "a VM didn't start"; done
   for n in 1 2 3; do
     ADDR[n]="$(vm "$n" ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
     [ -n "${ADDR[$n]}" ] || die "can't find VM $n's address"
@@ -244,7 +256,24 @@ main() {
   wait "$watcher" || true
   [ "$INSTALL_CODE" = 0 ] || die "the conversion exited $INSTALL_CODE:\n$INSTALL_OUT"
   grep -q 'Nomad restarts twice, once only' <<<"$INSTALL_OUT" || die "the installer should say Nomad restarts twice, once:\n$INSTALL_OUT"
-  [ "$(cat "$WORK/conv-fails")" = 0 ] || die "conv.test failed $(cat "$WORK/conv-fails") times during the conversion"
+  # The old release made conv's copy without the installer's veth link file, so systemd may have
+  # rewritten its interface's MAC after the network plugin wrote it down. Nomad then replaces the copy
+  # at its first restart (research L17): a few seconds without an answer, never more than ten.
+  local conv_failed
+  conv_failed="$(tail -1 "$WORK/conv-fails")"
+  echo "    $conv_failed calls failed during the conversion"
+  [ "$conv_failed" -le 20 ] || die "conv.test failed $conv_failed times during the conversion (at most 20, ten seconds, may):\n$(cat "$WORK/conv-fails")"
+  # From here on a Nomad restart replaces nothing: the link file is there, and whatever copy runs now
+  # passed Nomad's check or was made after it.
+  vm 1 test -f /etc/systemd/network/10-caravana-veth.link || die "the installer didn't write the veth link file"
+  wait_for 120 "conv.test should answer after the conversion" app_answers conv.test
+  local conv_copy
+  conv_copy="$(vm 1 sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' conv)"
+  vm 1 sudo systemctl restart nomad
+  wait_for 120 "Nomad should have a leader after a plain restart" nomad_has_leader 1
+  sleep 10
+  [ "$(vm 1 sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' conv)" = "$conv_copy" ] ||
+    die "a plain Nomad restart replaced conv's copy $conv_copy:\n$(vm 1 sudo caravana-nomad job allocs conv)"
   vm 1 sudo caravana-nomad operator raft list-peers | grep -Eq '10\.98\.0\.1:4647 +leader' || die "raft should list 10.98.0.1:4647 after the conversion"
   vm 1 sudo test -f "$STATE/raft-mesh" || die "no raft-mesh marker after the conversion"
   vm 1 sudo test -f "$STATE/nomad.hcl.before-mesh" || die "the old nomad.hcl wasn't kept"
@@ -364,9 +393,18 @@ main() {
   [ "$(jsonq 'd[0]["server"]' <<<"$out")" = "$(copy_node vol main)" ] || die "vol's copy should run on its volumes' server:\n$out"
 
   # ---- 7. lose server 3 --------------------------------------------------------------------------
-  say "7. stop VM 3 for good while spread is called every half second for 90 seconds"
-  local stop_at
-  vm 1 bash "$WORK/calls.sh" spread.test 90 >"$WORK/spread-calls" </dev/null &
+  say "7. stop VM 3 for good while spread is called every half second for 120 seconds"
+  # When the lost server is Nomad's leader, the new leader waits failover_heartbeat_ttl (1 minute, set
+  # by the agent; Nomad's default is 5) before it calls the node down, so its copy stays registered
+  # for about a minute longer (research L14). The bounds follow which case this run is.
+  # A server that isn't the leader is called down after its heartbeat's time plus heartbeat_grace (30
+  # seconds, research L18): up to about 50 seconds in which a third of the calls time out.
+  local stop_at was_leader=0 max_failed=25 quiet_after=75
+  if [ "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" = "10.98.0.3:4647" ]; then
+    was_leader=1 max_failed=50 quiet_after=100
+    echo "    (server 3 is Nomad's leader in this run)"
+  fi
+  vm 1 bash "$WORK/calls.sh" spread.test 120 >"$WORK/spread-calls" </dev/null &
   watcher=$!
   sleep 3
   stop_at="$(vm 1 date +%s)"
@@ -374,9 +412,10 @@ main() {
   wait "$watcher" || true
   local failed late
   failed="$(awk '$2 != 200' "$WORK/spread-calls" | wc -l | tr -d ' ')"
-  late="$(awk -v s="$stop_at" '$2 != 200 && $1 > s + 60' "$WORK/spread-calls" | wc -l | tr -d ' ')"
-  [ "$failed" -le 12 ] || die "$failed calls failed after server 3 was lost (at most 12 may)"
-  [ "$late" = 0 ] || die "$late calls failed more than 60 seconds after server 3 was lost"
+  late="$(awk -v s="$stop_at" -v q="$quiet_after" '$2 != 200 && $1 > s + q' "$WORK/spread-calls" | wc -l | tr -d ' ')"
+  echo "    $failed calls failed (leader lost: $was_leader)"
+  [ "$failed" -le "$max_failed" ] || die "$failed calls failed after server 3 was lost (at most $max_failed may)"
+  [ "$late" = 0 ] || die "$late calls failed more than $quiet_after seconds after server 3 was lost"
   healthy_copies spread 3 || die "spread should have three healthy copies again:\n$(copies_json spread)"
   [ "$(copies_json spread | jsonq 'len(set(c["node"] for c in d["copies"] if c["status"]=="healthy"))')" = 2 ] ||
     die "spread's three copies should be on two servers:\n$(copies_json spread)"
@@ -403,7 +442,7 @@ main() {
   wait_for 60 "a leader that isn't server 1 should be elected" leader_is_not_server_1 2
   local id
   for id in $survivors; do
-    nomad_on 2 alloc status -short "$id" | grep -qE 'Client Status +=+ +running' || die "the copy $id of spread stopped running when server 1 was lost"
+    [ "$(nomad_on 2 alloc status -t '{{.ClientStatus}}' "$id")" = running ] || die "the copy $id of spread stopped running when server 1 was lost"
   done
   say "8. start VM 1 again: the console answers through Traefik, spread answers, three voters"
   limactl start cv-cluster-1 >/dev/null 2>&1
@@ -437,11 +476,16 @@ main() {
   [ "$REQ_CODE" = 204 ] || die "a waiting join is removed without conditions: got $REQ_CODE: $REQ_BODY"
 
   # ---- 11. leave ---------------------------------------------------------------------------------
-  say "11. VM 2 leaves; then the console removes it"
+  say "11. VM 2 leaves: it goes out of raft and VM 1 keeps a leader; then the console removes it"
   install_ok 2 "$NEW" --leave
   vm 2 systemctl is-active --quiet nomad && die "Nomad still runs on VM 2 after --leave"
   vm 2 ip link show caravana-mesh >/dev/null 2>&1 && die "caravana-mesh is still on VM 2 after --leave"
   vm 2 sudo test ! -e /etc/caravana-node || die "/etc/caravana-node is still on VM 2 after --leave"
+  # Two Nomad servers were left (server 3 is gone): VM 2 left raft before it stopped, so VM 1 is one
+  # voter of one and still has a leader. Stopping VM 2's Nomad without that left VM 1 with no quorum
+  # (research L16).
+  wait_for 60 "server 1 should be the only raft voter after server 2 left, with a leader" voters_are 1 1
+  [ -n "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" ] || die "Nomad has no leader after server 2 left"
   # Until Nomad notices the node is gone it says running, and the console refuses.
   wait_for 180 "two can be removed once Nomad says it is down" remove_two
 

@@ -68,6 +68,9 @@ type opsServerRegion struct {
 	NomadDown bool
 	Room      *monRoom
 	Node      opsNode
+	// Panels are the servers' panels, in index order, when the cluster has more than one server (feature
+	// 031); Node is then not drawn. The section's label reads "Servers" and links to the list.
+	Panels []opsNode
 }
 
 // opsServerPart is what /parts/ops/server answers: the region, and the headline and stats,
@@ -96,7 +99,9 @@ type opsNode struct {
 	// Copies is "18 copies" ("" when Nomad couldn't be read).
 	Copies string
 	// State is the pill drawn when the node isn't ready.
-	State  *statusView
+	State *statusView
+	// Line replaces the meters of a server that is down: when its numbers were last read.
+	Line   string
 	Spec   string
 	Meters []monMeter
 	Chips  []opsChip
@@ -236,7 +241,7 @@ func (s *server) partOpsActivity(w http.ResponseWriter, r *http.Request, session
 // nomadDown says Nomad can't be read right now, judged by the sampler's last
 // reading of it: the cheap answer a part uses when it doesn't read the copies.
 func (s *server) nomadDown(ctx context.Context) bool {
-	h, err := s.svc.Host(ctx)
+	h, err := s.svc.Host(ctx, "")
 	return err == nil && nomadUnread(h)
 }
 
@@ -262,7 +267,7 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 	if err != nil {
 		return opsData{}, attentionRegion{}, err
 	}
-	host, err := s.svc.Host(ctx)
+	host, err := s.svc.Host(ctx, "")
 	if err != nil {
 		return opsData{}, attentionRegion{}, err
 	}
@@ -284,6 +289,13 @@ func (s *server) loadOps(r *http.Request) (opsData, attentionRegion, error) {
 		Apps:   opsAppsOf(rows, sums, copies, copiesErr),
 		Server: opsServerRegion{NomadDown: down, Room: roomOf(host), Node: s.opsNode(host, rows, copies, down)},
 	}
+	// With several servers the headline counts them and the section has a panel for each.
+	if list, err := s.svc.ListServers(ctx); err == nil && joinedServers(list) > 1 {
+		d.Head.Stats[0] = plural(joinedServers(list), "server")
+		if !down {
+			d.Server.Panels = s.opsPanels(ctx, now, list, rows)
+		}
+	}
 	switch n := len(items); n {
 	case 0:
 		d.NeedsMeta = "nothing"
@@ -304,13 +316,30 @@ func opsStats(h service.HostView, apps int, copies map[string][]service.Copy, co
 	if h.SampledAt == nil {
 		return append(out, "waiting for the first reading")
 	}
-	if p, ok := usedPercent(h.CPU.Used, h.CPU.Total); ok {
+	cpuUsed, cpuTotal, memUsed, memTotal := clusterUse(h)
+	if p, ok := usedPercent(cpuUsed, cpuTotal); ok {
 		out = append(out, "cpu "+strconv.Itoa(p)+"%")
 	}
-	if p, ok := usedPercent(h.Memory.Used, h.Memory.Total); ok {
+	if p, ok := usedPercent(memUsed, memTotal); ok {
 		out = append(out, "mem "+strconv.Itoa(p)+"%")
 	}
 	return append(out, plural(open, "open item"))
+}
+
+// clusterUse is the use the stats line and the room sentence speak of: the sums over the ready servers
+// (service.HostRoom), which with one server are that server's own numbers. A host read with no room (a
+// hand-made one) gives its own CPU and memory.
+func clusterUse(h service.HostView) (cpuUsed, cpuTotal, memUsed, memTotal *int64) {
+	cpuUsed, cpuTotal, memUsed, memTotal = h.CPU.Used, h.CPU.Total, h.Memory.Used, h.Memory.Total
+	if r := h.Room; r.Known {
+		if r.CPUUsedMHz != nil && r.CPUTotalMHz != nil {
+			cpuUsed, cpuTotal = r.CPUUsedMHz, r.CPUTotalMHz
+		}
+		if r.MemoryUsedMB != nil && r.MemoryTotalMB != nil {
+			memUsed, memTotal = r.MemoryUsedMB, r.MemoryTotalMB
+		}
+	}
+	return
 }
 
 // usedPercent is used over total in whole percent; ok is false when either wasn't read.
@@ -558,6 +587,7 @@ func (s *server) opsNode(h service.HostView, rows []opsAppRow, copies map[string
 	case n == nil:
 		return opsNode{Mark: "idle", Message: "Waiting for the first reading of the server."}
 	}
+	n = withSampleCores(n, h)
 	node := opsNode{Name: n.Name, Href: "/ops/servers/" + url.PathEscape(n.Name), Pool: n.Pool, Mark: nodeMark(n.State)}
 	node.Copies = copyCount(runningCopies(copies))
 	if n.State != "ready" {
@@ -593,6 +623,19 @@ func (s *server) opsNode(h service.HostView, rows []opsAppRow, copies map[string
 	}
 	node.More = all - len(node.Chips)
 	return node
+}
+
+// withSampleCores is the node's facts with the cores the meters were counted with: a server's page says one
+// number of vCPU, and the sample's (Nomad's node resources, which the CPU meter divides by) is the one that
+// every meter, row and sum already uses, so the spec line and the cpu fact can't say another (feature 031).
+// A node with no sample keeps its own.
+func withSampleCores(n *service.HostNode, h service.HostView) *service.HostNode {
+	if n == nil || h.CPU.Cores == nil || *h.CPU.Cores <= 0 || int(*h.CPU.Cores) == n.Cores {
+		return n
+	}
+	c := *n
+	c.Cores = int(*h.CPU.Cores)
+	return &c
 }
 
 // nodeMark is the mark kind of a node's state: ready, draining (rolling),
@@ -687,4 +730,82 @@ func opsEventOf(e service.ActivityEntry) opsEvent {
 		ev.Href = "/apps/" + url.PathEscape(e.AppID)
 	}
 	return ev
+}
+
+// opsPanels builds the server panels of a cluster of several servers, in the order ListServers gives (the
+// index order). Each has its own numbers and the copies that run on it. A server that has not joined is
+// not drawn: the Servers list says what it is waiting for.
+func (s *server) opsPanels(ctx context.Context, now time.Time, list service.ServersView, rows []opsAppRow) []opsNode {
+	names := map[string]string{} // app ID to the name its chips carry
+	order := map[string]int{}
+	for i, row := range rows {
+		names[row.ID], order[row.ID] = row.Name, i
+	}
+	var out []opsNode
+	for _, sv := range list.Servers {
+		if sv.State == "waiting" || sv.State == "joining" {
+			continue
+		}
+		host, err := s.svc.Host(ctx, sv.Name)
+		if err != nil {
+			s.log.Warn("can't read a server for the Operator overview", "server", sv.Name, "error", err)
+			continue
+		}
+		copies, copiesErr := s.svc.HostCopies(ctx, sv.Name)
+		if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
+			s.log.Warn("can't read a server's copies for the Operator overview", "server", sv.Name, "error", copiesErr)
+		}
+		out = append(out, opsNodeOfServer(now, sv, host, copies, copiesErr, names, order))
+	}
+	return out
+}
+
+// opsNodeOfServer is the panel of one server of several: its state, name and pool, its spec line, its
+// meters and the copies that run on it as chips, grouped by app as the table lists the apps.
+func opsNodeOfServer(now time.Time, sv service.ServerView, h service.HostView, copies []service.HostCopy, copiesErr error, names map[string]string, order map[string]int) opsNode {
+	st := serverRowState(sv)
+	node := opsNode{Name: sv.Name, Href: "/ops/servers/" + url.PathEscape(sv.Name), Pool: sv.Pool, Mark: st.Kind}
+	if st.Word != "ready" {
+		node.State = &statusView{Kind: st.Kind, Word: st.Word}
+	}
+	if h.Node != nil {
+		node.Spec = nodeSpec(withSampleCores(h.Node, h))
+	} else {
+		node.Spec = strings.Join(serverSpecItems(sv, ""), " · ")
+	}
+	if sv.State == "down" {
+		// Its numbers are old: one line says when they were last read, never meters that look current.
+		node.Line = downNumbersLine(now, sv.Name, h)
+		return node // and a server that is down runs nothing
+	}
+	node.Meters = opsMeters(h)
+	if copiesErr != nil {
+		return node // a read that failed says nothing
+	}
+	slices.SortStableFunc(copies, func(a, b service.HostCopy) int {
+		return cmp.Or(order[a.AppID]-order[b.AppID], strings.Compare(a.Service, b.Service))
+	})
+	all := 0
+	for _, c := range copies {
+		all++
+		if len(node.Chips) >= opsChipLimit {
+			continue
+		}
+		name := cmp.Or(names[c.AppID], c.AppID)
+		chip := opsChip{ID: "ops-copy-" + c.ID, Name: name, Short: shortID(c.ID), Href: "/apps/" + url.PathEscape(c.AppID), Mark: rowMark(c)}
+		word := copyStatusView(c.Status).Word
+		switch {
+		case c.Stopping:
+			chip.State, chip.Role = "draining", "draining"
+		case c.Status == deploy.CopyStarting:
+			chip.State, chip.Role = "starting", word
+		default:
+			chip.Role = word
+		}
+		chip.Title = "copy " + c.ID + ", " + c.Service + ", " + chip.Role + ", v" + strconv.FormatUint(c.Version, 10)
+		node.Chips = append(node.Chips, chip)
+	}
+	node.More = all - len(node.Chips)
+	node.Copies = copyCount(all)
+	return node
 }

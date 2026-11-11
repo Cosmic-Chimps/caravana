@@ -7,6 +7,12 @@
 
 name       = "fsn-2"
 datacenter = "dc1"
+
+# SIGTERM makes Nomad leave the cluster before it exits; "caravana node leave" sends it. A stop, a
+# restart and a reboot send SIGINT (the unit's KillSignal), which leaves nothing: a Nomad server that
+# only restarts must keep its place in raft. Without a graceful leave, a server taken out of a cluster
+# with two Nomad servers left the other without a quorum (cluster test, research L16).
+leave_on_terminate = true
 data_dir   = "/opt/nomad/data"
 bind_addr  = "127.0.0.1"
 
@@ -34,6 +40,17 @@ tls {
 server {
   enabled          = true
   encrypt          = "dGVzdC1nb3NzaXAta2V5LTMyLWJ5dGVzLWxvbmchIQ=="
+
+  # After a new leader is elected, Nomad gives every node this long to heartbeat before it calls one
+  # down. Its default is 5 minutes: when the server that was lost was the leader, its copies stayed
+  # registered, and Traefik kept sending them requests, for five minutes (cluster test, research L14).
+  failover_heartbeat_ttl = "1m"
+
+  # How long past its heartbeat's time a node may be before Nomad calls it down. Nomad's default is
+  # 10 seconds. A node's heartbeat goes to any Nomad server; when that server is the one that was
+  # lost, the heartbeat hangs until the connection fails (24 seconds in the cluster test), and with
+  # the default a healthy server was called down and its copies were moved (research L18).
+  heartbeat_grace = "30s"
   server_join {
     retry_join = ["10.98.0.1:4648", "10.98.0.2:4648"]
   }
@@ -52,8 +69,6 @@ client {
   # Each server's containers have a subnet of their own, routed through the mesh, so a service
   # name resolves to a container on another server. The first server keeps Nomad's default.
   bridge_network_subnet = "10.97.12.0/22"
-
-  servers               = ["10.98.0.1:4647", "10.98.0.2:4647"]
 }
 
 acl {

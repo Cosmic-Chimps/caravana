@@ -749,10 +749,15 @@ func TestLeave(t *testing.T) {
 	a.joined(t)
 	a.runner.links["caravana-mesh"] = true
 	a.runner.links["caravana0"] = true
+	a.runner.nomadActive = true
 	if err := a.Leave(ctx()); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"systemctl disable --now nomad", "ip link delete caravana-mesh", "ip link delete caravana0"}
+	// Nomad is asked to leave the cluster (SIGTERM) and seen to exit before anything is taken away.
+	want := []string{
+		"systemctl is-active --quiet nomad", "systemctl kill --signal=SIGTERM nomad", "systemctl is-active --quiet nomad",
+		"systemctl disable --now nomad", "ip link delete caravana-mesh", "ip link delete caravana0",
+	}
 	if got := a.runner.commands(); !reflect.DeepEqual(got, want) {
 		t.Errorf("commands = %v", got)
 	}
@@ -762,6 +767,29 @@ func TestLeave(t *testing.T) {
 	// Leaving again finds nothing and still succeeds.
 	if err := a.Leave(ctx()); err != nil {
 		t.Errorf("second leave: %v", err)
+	}
+}
+
+// A Nomad that doesn't exit after SIGTERM is waited for, then stopped: the server leaves either way.
+func TestLeaveStopsANomadThatWontLeave(t *testing.T) {
+	c := newConsole(t)
+	a := newTestAgent(t, c)
+	a.joined(t)
+	a.runner.nomadActive = true
+	a.runner.nomadIgnoresTerm = true
+	var slept time.Duration
+	a.Sleep = func(d time.Duration) { slept += d }
+	if err := a.Leave(ctx()); err != nil {
+		t.Fatal(err)
+	}
+	if slept != leaveWait {
+		t.Errorf("waited %s for Nomad to leave, want %s", slept, leaveWait)
+	}
+	if a.runner.nomadActive {
+		t.Error("Nomad still runs after leave")
+	}
+	if !strings.Contains(a.stderr.String(), "didn't exit") {
+		t.Errorf("stderr should say Nomad didn't exit: %q", a.stderr.String())
 	}
 }
 

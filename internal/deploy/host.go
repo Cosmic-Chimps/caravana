@@ -106,10 +106,13 @@ type cachedNode struct {
 	node *api.Node
 }
 
-// HostStats reads the node Caravana's apps run on: Nodes().List (the first
-// node that is ready: Phase 2.6 has one), its resources (Info, kept for 10
-// minutes) and its stats. dockerRoot is Docker's data directory
-// (CARAVANA_DOCKER_ROOT); "" leaves Docker's filesystem out.
+// HostStats reads one node: Nodes().List, its resources (Info, kept for 10
+// minutes) and its stats. nodeID is the Nomad node to read; "" takes the first
+// node that is ready (the one node of a single-server host). A node that isn't
+// in Nomad's list, or isn't ready, is an error: a node that is down has no
+// stats to read. dockerRoot is Docker's data directory (CARAVANA_DOCKER_ROOT),
+// the Caravana host's setting, used for every server; "" leaves Docker's
+// filesystem out.
 //
 // The disks are the two filesystems that matter and no other. Nomad's data
 // is AllocDirStats, which carries no mount name: its mount is the DiskStats
@@ -119,7 +122,7 @@ type cachedNode struct {
 // (a cloud-init CD, /boot) is never listed.
 //
 // A 403 is ErrNodeReadDenied; any other failure is ErrNomadUnavailable.
-func (d *Deployer) HostStats(ctx context.Context, dockerRoot string) (Host, error) {
+func (d *Deployer) HostStats(ctx context.Context, nodeID, dockerRoot string) (Host, error) {
 	q := (&api.QueryOptions{}).WithContext(ctx)
 	nodes, _, err := d.nomad.Nodes().List(q)
 	if err != nil {
@@ -127,10 +130,16 @@ func (d *Deployer) HostStats(ctx context.Context, dockerRoot string) (Host, erro
 	}
 	var stub *api.NodeListStub
 	for _, n := range nodes {
+		if nodeID != "" && n.ID != nodeID {
+			continue
+		}
 		if n.Status == "ready" {
 			stub = n
 			break
 		}
+	}
+	if stub == nil && nodeID != "" {
+		return Host{}, fmt.Errorf("%w: Nomad has no node %s that is ready", ErrNomadUnavailable, nodeID)
 	}
 	if stub == nil {
 		return Host{}, fmt.Errorf("%w: Nomad has no node that is ready", ErrNomadUnavailable)

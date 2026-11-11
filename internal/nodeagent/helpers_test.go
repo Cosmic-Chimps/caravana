@@ -50,6 +50,9 @@ type fakeRunner struct {
 	hostname string
 	inFlight int
 	maxPings int
+	// nomadActive says the nomad unit runs; SIGTERM and a stop end it, unless nomadIgnoresTerm.
+	nomadActive      bool
+	nomadIgnoresTerm bool
 }
 
 func newRunner() *fakeRunner {
@@ -90,6 +93,17 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	}
 	defer f.mu.Unlock()
 	switch {
+	case name == "systemctl" && len(args) == 3 && args[0] == "is-active" && args[2] == "nomad":
+		if !f.nomadActive {
+			return nil, errors.New("inactive")
+		}
+		return nil, nil
+	case name == "systemctl" && len(args) == 3 && args[0] == "kill" && args[2] == "nomad":
+		if !f.nomadIgnoresTerm {
+			f.nomadActive = false
+		}
+	case name == "systemctl" && len(args) == 3 && args[0] == "disable" && args[2] == "nomad":
+		f.nomadActive = false
 	case name == "ip" && len(args) >= 3 && args[0] == "link" && args[1] == "show":
 		if !f.links[args[3]] {
 			return nil, errors.New("Device does not exist")

@@ -53,6 +53,11 @@ type HostRoom struct {
 	metrics.RoomResult
 	// LikeAppName is the yardstick app's name (LikeApp is its ID).
 	LikeAppName string
+	// MemoryUsedMB and MemoryTotalMB, CPUUsedMHz and CPUTotalMHz are what the room is counted over: the sums
+	// of the ready servers' newest samples (feature 031; with one server, that server's own, as Memory and
+	// CPU say). nil when no sample had them. A page that says "memory in use is already at 89%" beside the
+	// room, or the cluster's use in a stats line, reads these, never one server's.
+	MemoryUsedMB, MemoryTotalMB, CPUUsedMHz, CPUTotalMHz *int64
 }
 
 // HostHistory is the host's memory over seven days, an hour per point (the
@@ -64,6 +69,13 @@ type HostHistory struct {
 
 // HostView is what getHost answers.
 type HostView struct {
+	// Server is the name of the server the numbers are of: the one asked for, or the one Caravana runs on.
+	// "" when the cluster's servers are not known (Nomad could not be read and no tick has read it).
+	Server string
+	// OSRead says the view is of the server Caravana runs on, the only one whose operating system
+	// Caravana reads (feature 027: the OS block, boots and Caravana's versions). Node and Reboot are
+	// nil when it is false.
+	OSRead bool
 	// SampledAt is the newest sample's time; nil when the host was never read.
 	SampledAt *time.Time
 	// Stale says the newest sample is older than 5 minutes: the numbers are
@@ -88,22 +100,50 @@ type HostView struct {
 // hostHistoryHours is the history's span: seven days of hourly points.
 const hostHistoryHours = 7 * 24
 
-// Host reads the host's numbers from the store.
-func (s *Service) Host(ctx context.Context) (HostView, error) {
+// Host reads one server's numbers from the store. server is the server's name; "" is the server
+// Caravana runs on. A name no server has is ErrServerNotFound. A server that has no Nomad node yet (it
+// is joining) gives a view with no numbers.
+func (s *Service) Host(ctx context.Context, server string) (HostView, error) {
 	now := s.clock.Now().UTC()
 	baseline, err := s.metricsBaseline(ctx, now)
 	if err != nil {
 		return HostView{}, err
 	}
-	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Node: s.hostNode(), Reboot: s.hostReboot()}
+	dir, err := s.directory(ctx)
+	if err != nil {
+		return HostView{}, fmt.Errorf("read the host: %w", err)
+	}
+	node, target, err := s.hostTarget(ctx, dir, server)
+	if err != nil {
+		return HostView{}, err
+	}
+	view := HostView{Baseline: baseline, Sources: s.SamplerSources(), Server: node.Name}
+	// The OS block is the server Caravana runs on. With no nodes known the view is that server's, as
+	// it was before there were several.
+	view.OSRead = target == targetNewest || node.Local
+	if view.OSRead {
+		view.Node, view.Reboot = s.hostNode(), s.hostReboot()
+	}
 
-	hist, err := s.hostHistory(ctx, now)
+	if target == targetNoNode {
+		view.History, err = s.hostHistory(ctx, now, "")
+		if err != nil {
+			return HostView{}, err
+		}
+		return view, nil // joined, but Nomad has no node for it yet: nothing was sampled
+	}
+	hist, err := s.hostHistory(ctx, now, node.ID)
 	if err != nil {
 		return HostView{}, err
 	}
 	view.History = hist
 
-	h, err := s.store.NewestHost(ctx)
+	var h store.HostSample
+	if node.ID != "" {
+		h, err = s.store.NewestHostOf(ctx, node.ID)
+	} else {
+		h, err = s.store.NewestHost(ctx)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return view, nil // never sampled: no numbers, and the page says so
 	}
@@ -149,21 +189,63 @@ func (s *Service) Host(ctx context.Context) (HostView, error) {
 		})
 	}
 
-	view.Room, err = s.hostRoom(ctx, h)
+	view.Room, err = s.hostRoom(ctx, dir, h)
 	if err != nil {
 		return HostView{}, err
 	}
 	return view, nil
 }
 
-// hostRoom counts what fits by reservation: the totals of the newest host
-// sample less what is reserved, against the yardstick app of the apps running
-// as the same sample's neighbours say (the newest minute row of each stored
-// service, its reservations summed per app).
-func (s *Service) hostRoom(ctx context.Context, h store.HostSample) (HostRoom, error) {
-	if h.MemoryTotalMB == nil || h.MemoryReservedMB == nil || h.CPUTotalMHz == nil || h.CPUReservedMHz == nil {
+// hostTargetKind says how a read found its node.
+type hostTargetKind int
+
+const (
+	// targetNode: the directory has the node.
+	targetNode hostTargetKind = iota
+	// targetNewest: no server was asked for and the directory has none (Nomad couldn't be read and
+	// nothing was remembered; a test with no nodes): the read is of the newest sample, as it was
+	// before there were several servers.
+	targetNewest
+	// targetNoNode: the named server has a row and no Nomad node yet.
+	targetNoNode
+)
+
+// hostTarget finds the node a Host or HostCopies read is about. server "" is the server Caravana
+// runs on; a name no server has is ErrServerNotFound.
+func (s *Service) hostTarget(ctx context.Context, dir serverDirectory, server string) (serverNode, hostTargetKind, error) {
+	if server == "" {
+		if n, ok := dir.local(); ok {
+			return n, targetNode, nil
+		}
+		return serverNode{}, targetNewest, nil
+	}
+	if n, ok := dir.byName(server); ok {
+		return n, targetNode, nil
+	}
+	// A server that joined and has no node yet is a server with nothing to show.
+	if _, err := s.store.ServerByName(ctx, server); err == nil {
+		return serverNode{Name: server}, targetNoNode, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return serverNode{}, targetNode, fmt.Errorf("read the host: %w", err)
+	}
+	return serverNode{}, targetNode, &RefusalError{Field: "server", Err: ErrServerNotFound}
+}
+
+// hostRoom counts what fits by reservation, for the cluster: the totals of every ready server in the
+// pool "default" (the newest host sample of each) less what is reserved, against the yardstick app
+// of the apps running as the samples' neighbours say (the newest minute row of each stored service,
+// its reservations summed per app). A server with no complete sample adds nothing. With no nodes
+// known, or one, the room is h's alone, as it was with one server. viewed is the sample the page is
+// about; it sets the time the apps' rows are read at when the cluster has no newer sample.
+func (s *Service) hostRoom(ctx context.Context, dir serverDirectory, viewed store.HostSample) (HostRoom, error) {
+	free, err := s.clusterFree(ctx, dir, viewed)
+	if err != nil {
+		return HostRoom{}, err
+	}
+	if !free.known {
 		return HostRoom{}, nil
 	}
+	h := store.HostSample{TS: free.at}
 	recs, err := s.store.ListApps(ctx)
 	if err != nil {
 		return HostRoom{}, fmt.Errorf("read the host: %w", err)
@@ -216,8 +298,64 @@ func (s *Service) hostRoom(ctx context.Context, h store.HostSample) (HostRoom, e
 		}
 	}
 
-	res := metrics.Room(apps, *h.MemoryTotalMB-*h.MemoryReservedMB, *h.CPUTotalMHz-*h.CPUReservedMHz)
-	return HostRoom{Known: true, RoomResult: res, LikeAppName: names[res.LikeApp]}, nil
+	res := metrics.Room(apps, free.memoryMB, free.cpuMHz)
+	return HostRoom{Known: true, RoomResult: res, LikeAppName: names[res.LikeApp],
+		MemoryUsedMB: free.memUsed, MemoryTotalMB: free.memTotal, CPUUsedMHz: free.cpuUsed, CPUTotalMHz: free.cpuTotal}, nil
+}
+
+// clusterFreeRoom is what the cluster has left to reserve.
+type clusterFreeRoom struct {
+	known            bool
+	memoryMB, cpuMHz int64
+	at               time.Time // the newest sample that counted
+	// The sums of used and total over the servers that counted, for the cluster's percentages.
+	memUsed, memTotal, cpuUsed, cpuTotal *int64
+}
+
+// clusterFree sums, over the ready servers of the pool "default", the totals less the reservations of
+// each one's newest sample. Without a directory (or with one node) it is viewed's own, as before.
+func (s *Service) clusterFree(ctx context.Context, dir serverDirectory, viewed store.HostSample) (clusterFreeRoom, error) {
+	var rows []store.HostSample
+	if len(dir.nodes) <= 1 {
+		rows = []store.HostSample{viewed}
+	} else {
+		all, err := s.store.NewestHosts(ctx)
+		if err != nil {
+			return clusterFreeRoom{}, fmt.Errorf("read the host: %w", err)
+		}
+		for _, h := range all {
+			if n, ok := dir.byID(h.Node); ok && n.Ready && n.Pool == "default" {
+				rows = append(rows, h)
+			}
+		}
+	}
+	var out clusterFreeRoom
+	add := func(sum **int64, n int64) {
+		if *sum == nil {
+			*sum = new(int64)
+		}
+		**sum += n
+	}
+	for _, h := range rows {
+		if h.MemoryUsedMB != nil && h.MemoryTotalMB != nil {
+			add(&out.memUsed, *h.MemoryUsedMB)
+			add(&out.memTotal, *h.MemoryTotalMB)
+		}
+		if h.CPUUsedMHz != nil && h.CPUTotalMHz != nil {
+			add(&out.cpuUsed, *h.CPUUsedMHz)
+			add(&out.cpuTotal, *h.CPUTotalMHz)
+		}
+		if h.MemoryTotalMB == nil || h.MemoryReservedMB == nil || h.CPUTotalMHz == nil || h.CPUReservedMHz == nil {
+			continue
+		}
+		out.known = true
+		out.memoryMB += *h.MemoryTotalMB - *h.MemoryReservedMB
+		out.cpuMHz += *h.CPUTotalMHz - *h.CPUReservedMHz
+		if h.TS.After(out.at) {
+			out.at = h.TS
+		}
+	}
+	return out, nil
 }
 
 // hostSlot is one 10-minute value of the host's memory.
@@ -228,8 +366,9 @@ type hostSlot struct {
 
 // hostHistory makes the seven days of hourly memory: the stored 10-minute rows,
 // plus the slot still in progress (or one a restart left unfolded) folded from
-// its minute rows, each hour the median of its slots.
-func (s *Service) hostHistory(ctx context.Context, now time.Time) (HostHistory, error) {
+// its minute rows, each hour the median of its slots. nodeID is the node's; "" takes the node of the
+// newest row.
+func (s *Service) hostHistory(ctx context.Context, now time.Time, nodeID string) (HostHistory, error) {
 	const hour = time.Hour
 	from := now.Truncate(hour).Add(hour - hostHistoryHours*hour)
 	out := HostHistory{
@@ -253,10 +392,12 @@ func (s *Service) hostHistory(ctx context.Context, now time.Time) (HostHistory, 
 	if len(stored) == 0 && len(minutes) == 0 {
 		return out, nil
 	}
-	node := ""
-	if len(minutes) > 0 {
+	node := nodeID
+	switch {
+	case node != "":
+	case len(minutes) > 0:
 		node = minutes[len(minutes)-1].Node
-	} else {
+	default:
 		node = stored[len(stored)-1].Node
 	}
 
