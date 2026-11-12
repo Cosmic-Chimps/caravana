@@ -39,6 +39,10 @@ type AppRecord struct {
 	// StoppedAt is when the app was stopped (feature 020.5); nil when it is
 	// not stopped. It is kept beside the document, so it is not in Revision.
 	StoppedAt *time.Time
+	// Template says which template the app was installed from (feature 035);
+	// empty when it wasn't. Provenance only: nothing reads it to deploy, and it
+	// is beside the document, so it is not in Revision.
+	Template AppTemplate
 	// Revision names this exact stored app: the first 16 hex digits of the
 	// SHA-256 of its JSON document and, when it keeps a Compose file, of that
 	// file's JSON too. The same app and file always have the same revision, so
@@ -299,7 +303,7 @@ func hasSecretValue(a app.App) bool {
 	return false
 }
 
-const appColumns = "id, schema_version, document, compose, created_at, updated_at, project, environment, app_name, stopped_at"
+const appColumns = "id, schema_version, document, compose, created_at, updated_at, project, environment, app_name, stopped_at, template_name, template_version"
 
 // scanApp reads one row of appColumns and decodes the app document. It
 // returns sql.ErrNoRows unwrapped (for GetApp); other errors name the app.
@@ -310,8 +314,10 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 		kept                  sql.NullString
 		stopped               sql.NullString
 		place                 app.Place
+		tplName, tplVersion   string
 	)
-	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd, &place.Project, &place.Environment, &place.Name, &stopped); err != nil {
+	if err := row.Scan(&id, &version, &doc, &kept, &created, &upd, &place.Project, &place.Environment, &place.Name, &stopped,
+		&tplName, &tplVersion); err != nil {
 		return AppRecord{}, err
 	}
 	if version > appSchemaVersion {
@@ -319,7 +325,7 @@ func scanApp(row interface{ Scan(...any) error }) (AppRecord, error) {
 			id, version, appSchemaVersion, ErrSchemaTooNew)
 	}
 
-	rec := AppRecord{Place: place, Revision: revisionOf(doc, kept.String, kept.Valid)}
+	rec := AppRecord{Place: place, Template: AppTemplate{Name: tplName, Version: tplVersion}, Revision: revisionOf(doc, kept.String, kept.Valid)}
 	if err := json.Unmarshal([]byte(doc), &rec.App); err != nil {
 		return AppRecord{}, fmt.Errorf("decode app %q: %w", id, err)
 	}
