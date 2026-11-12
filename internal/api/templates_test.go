@@ -277,6 +277,48 @@ func TestTemplateInstall(t *testing.T) {
 	})
 }
 
+// T011a: install without backups, on an installation with no backup destination.
+func TestTemplateWithoutBackups(t *testing.T) {
+	e := newTestEnv(t, "")
+	e.Registry.AddIndex("louislam/uptime-kuma", "2.5.11", kumaDigest)
+	doc := loadContract(t)
+	const warning = "Backups are off for uptime-kuma: set a backup destination in Settings › Backup storage, then turn its backup on in the Backups tab."
+
+	status, _, raw := install(t, e, "uptime-kuma", `{"id": "status", "inputs": {"domain": "status.example.com"}, "withoutBackups": false}`)
+	wantError(t, "install with backups and no destination", status, raw, http.StatusBadRequest, codeInvalidField, "services.uptime-kuma.backup")
+
+	status, _, raw = call(t, http.MethodPost, e.URL+"/v1/templates/uptime-kuma/preview", "application/json",
+		`{"id": "status", "inputs": {"domain": "status.example.com"}, "withoutBackups": true}`)
+	if status != http.StatusOK {
+		t.Fatalf("preview = %d %s", status, raw)
+	}
+	checkSchema(t, doc, raw, "TemplatePreview")
+	prev := decodeAs[struct {
+		App      struct{ Services []struct{ Backup *struct{} } } `json:"app"`
+		Warnings []app.Warning                                    `json:"warnings"`
+	}](t, raw)
+	if prev.App.Services[0].Backup != nil || len(prev.Warnings) != 1 || prev.Warnings[0].Field != "services.uptime-kuma.backup" || prev.Warnings[0].Message != warning {
+		t.Errorf("preview = %s", raw)
+	}
+
+	status, header, raw := install(t, e, "uptime-kuma", `{"id": "status", "inputs": {"domain": "status.example.com"}, "withoutBackups": true}`)
+	if status != http.StatusAccepted {
+		t.Fatalf("install = %d %s", status, raw)
+	}
+	checkSchema(t, doc, raw, "Deployment")
+	d := decodeAs[deployment](t, raw)
+	if len(d.Warnings) != 1 || d.Warnings[0].Field != "services.uptime-kuma.backup" || d.Warnings[0].Message != warning || header.Get("Cache-Control") != "no-store" {
+		t.Errorf("deployment = %s", raw)
+	}
+	waitHealthy(t, e, "status", d.ID)
+	_, _, raw = call(t, http.MethodGet, e.URL+"/v1/apps/status", "", "")
+	if strings.Contains(string(raw), `"backup"`) || !strings.Contains(string(raw), `"template":{"name":"uptime-kuma"`) {
+		t.Errorf("app = %s", raw)
+	}
+	status, _, raw = install(t, e, "uptime-kuma", `{"id": "x", "inputs": {"domain": "x.example.com"}, "withoutBackups": "yes"}`)
+	wantError(t, "a non-boolean option", status, raw, http.StatusBadRequest, codeInvalidField, "withoutBackups")
+}
+
 func TestTemplatePreview(t *testing.T) {
 	e := newTestEnv(t, "")
 	doc := loadContract(t)

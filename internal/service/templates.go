@@ -9,11 +9,13 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/compose"
 	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/store"
 	"github.com/cosmic-chimps/caravana/internal/templates"
@@ -145,6 +147,47 @@ type TemplatePreview struct {
 	// Compose is the rendered Compose file. It holds no secret: a template
 	// can't put one there.
 	Compose string
+}
+
+// TemplateInstallOptions are the owner's choices for one install or preview.
+type TemplateInstallOptions struct {
+	// WithoutBackups removes every backup policy the template has, and the result
+	// carries one warning for each (field services.<service>.backup) saying how to
+	// turn it on. It is the owner's explicit choice, for an installation that has no
+	// backup destination yet; without it the deploy refuses a backup that has
+	// nowhere to go, as it does for any app.
+	WithoutBackups bool
+}
+
+// withoutBackups removes the backup policy of every service of req, in a copy
+// (the request's overlay map is made again; nothing is shared with the template),
+// and returns a warning for each, in the services' order by name.
+func withoutBackups(req compose.Request) (compose.Request, []app.Warning) {
+	var warnings []app.Warning
+	services := make(map[string]compose.Overlay, len(req.Services))
+	for _, name := range sortedKeys(req.Services) {
+		ov := req.Services[name]
+		if ov.Backup != nil {
+			ov.Backup = nil
+			warnings = append(warnings, app.Warning{Field: "services." + name + ".backup", Message: "Backups are off for " + name +
+				": set a backup destination in Settings › Backup storage, then turn its backup on in the Backups tab."})
+		}
+		services[name] = ov
+	}
+	if len(req.Services) > 0 {
+		req.Services = services
+	}
+	return req, warnings
+}
+
+// sortedKeys is the keys of m in order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // SetTemplatesURL sets the address the catalog check asks, in place of the
@@ -328,7 +371,7 @@ func (s *Service) offered(ctx context.Context, name string) (templates.Template,
 // generates nothing, saves nothing and asks nobody: no registry, no Nomad, no
 // secret store. A secret input may be empty; every other input is checked as in
 // an install. The errors are InstallTemplate's.
-func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, inputs map[string]string) (TemplatePreview, error) {
+func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, inputs map[string]string, opts TemplateInstallOptions) (TemplatePreview, error) {
 	t, err := s.offered(ctx, name)
 	if err != nil {
 		return TemplatePreview{}, err
@@ -344,11 +387,15 @@ func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, input
 	if err != nil {
 		return TemplatePreview{}, err
 	}
+	var extra []app.Warning
+	if opts.WithoutBackups {
+		req, extra = withoutBackups(req)
+	}
 	a, warnings, err := s.PreviewCompose(ctx, appID, req)
 	if err != nil {
 		return TemplatePreview{}, templateError(t, err)
 	}
-	return TemplatePreview{App: a, Warnings: warnings, Compose: req.Compose}, nil
+	return TemplatePreview{App: a, Warnings: append(warnings, extra...), Compose: req.Compose}, nil
 }
 
 // InstallTemplate installs a template as a new app: it checks the inputs,
@@ -360,8 +407,9 @@ func (s *Service) PreviewTemplate(ctx context.Context, name, appID string, input
 // An input that is wrong is an *app.FieldError on "inputs.<name>"; so is a
 // refusal at a domain host that came from an input, a *DomainTakenError
 // included. Any other refusal is a defect of the template and keeps its path in
-// the file. The result is the deploy's.
-func (s *Service) InstallTemplate(ctx context.Context, name, appID string, inputs map[string]string, trigger app.Trigger) (DeployResult, error) {
+// the file. With opts.WithoutBackups the template's backup policies are left out
+// and each is a warning. The result is the deploy's.
+func (s *Service) InstallTemplate(ctx context.Context, name, appID string, inputs map[string]string, opts TemplateInstallOptions, trigger app.Trigger) (DeployResult, error) {
 	t, err := s.offered(ctx, name)
 	if err != nil {
 		return DeployResult{}, err
@@ -387,7 +435,11 @@ func (s *Service) InstallTemplate(ctx context.Context, name, appID string, input
 		return DeployResult{}, err
 	}
 
-	res, err := s.DeployComposeIfResult(ctx, appID, req, Condition{IfNew: true}, trigger)
+	var extra []app.Warning
+	if opts.WithoutBackups {
+		req, extra = withoutBackups(req)
+	}
+	res, err := s.deployComposeWarned(ctx, appID, req, Condition{IfNew: true}, trigger, extra)
 	// A deploy that fails after the app was saved (the image can't be found, the
 	// secret store is down) leaves the app and a failed deployment: the app came
 	// from the template all the same.

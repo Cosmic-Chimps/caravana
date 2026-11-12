@@ -182,12 +182,12 @@ func TestTemplateAvailability(t *testing.T) {
 			t.Errorf("Template = %+v, %v", info, err)
 		}
 		for _, name := range []string{"newer", "broken"} {
-			_, err := l.svc.InstallTemplate(ctx, name, "x", map[string]string{"domain": "a.example.com", "api_key": "k"}, app.TriggerManual)
+			_, err := l.svc.InstallTemplate(ctx, name, "x", map[string]string{"domain": "a.example.com", "api_key": "k"}, TemplateInstallOptions{}, app.TriggerManual)
 			var unavailable *TemplateUnavailableError
 			if !errors.Is(err, ErrTemplateUnavailable) || !errors.As(err, &unavailable) || unavailable.Reason == "" {
 				t.Errorf("install of %s = %v, want ErrTemplateUnavailable with a reason", name, err)
 			}
-			if _, err := l.svc.PreviewTemplate(ctx, name, "x", map[string]string{"domain": "a.example.com"}); !errors.Is(err, ErrTemplateUnavailable) {
+			if _, err := l.svc.PreviewTemplate(ctx, name, "x", map[string]string{"domain": "a.example.com"}, TemplateInstallOptions{}); !errors.Is(err, ErrTemplateUnavailable) {
 				t.Errorf("preview of %s = %v", name, err)
 			}
 		}
@@ -199,7 +199,7 @@ func TestTemplateAvailability(t *testing.T) {
 		if _, err := l.svc.Template(ctx, "nope"); !errors.Is(err, ErrTemplateNotFound) {
 			t.Errorf("Template(nope) = %v", err)
 		}
-		if _, err := l.svc.InstallTemplate(ctx, "nope", "x", nil, app.TriggerManual); !errors.Is(err, ErrTemplateNotFound) {
+		if _, err := l.svc.InstallTemplate(ctx, "nope", "x", nil, TemplateInstallOptions{}, app.TriggerManual); !errors.Is(err, ErrTemplateNotFound) {
 			t.Errorf("InstallTemplate(nope) = %v", err)
 		}
 	})
@@ -212,7 +212,7 @@ func TestInstallUptimeKuma(t *testing.T) {
 	l := newTemplateLab(t)
 	setDestination(t, l.env) // a backup policy needs a place to send backups to
 
-	res, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", map[string]string{"domain": " Status.Example.com "}, app.TriggerManual)
+	res, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", map[string]string{"domain": " Status.Example.com "}, TemplateInstallOptions{}, app.TriggerManual)
 	if err != nil {
 		t.Fatalf("InstallTemplate: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestInstallUptimeKuma(t *testing.T) {
 
 	t.Run("the same name again changes nothing", func(t *testing.T) {
 		before, _ := l.svc.GetApp(ctx, "status")
-		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", map[string]string{"domain": "other.example.com"}, app.TriggerManual)
+		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", map[string]string{"domain": "other.example.com"}, TemplateInstallOptions{}, app.TriggerManual)
 		if !errors.Is(err, ErrAppExists) {
 			t.Fatalf("error = %v, want ErrAppExists", err)
 		}
@@ -258,7 +258,7 @@ func TestInstallUptimeKuma(t *testing.T) {
 	})
 
 	t.Run("a domain that is another app's is refused at the input", func(t *testing.T) {
-		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status2", map[string]string{"domain": "status.example.com"}, app.TriggerManual)
+		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status2", map[string]string{"domain": "status.example.com"}, TemplateInstallOptions{}, app.TriggerManual)
 		var taken *DomainTakenError
 		if !errors.Is(err, ErrDomainTaken) || !errors.As(err, &taken) || taken.Field != "inputs.domain" || taken.App != "status" {
 			t.Errorf("error = %v (%+v), want a DomainTakenError at inputs.domain", err, taken)
@@ -284,7 +284,7 @@ func TestInstallTemplateRefusals(t *testing.T) {
 		{"a bad app ID", "Not A Name", map[string]string{"domain": "a.example.com"}, "id"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", tt.id, tt.inputs, app.TriggerManual)
+			_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", tt.id, tt.inputs, TemplateInstallOptions{}, app.TriggerManual)
 			var fe *app.FieldError
 			if !errors.As(err, &fe) || fe.Field != tt.field {
 				t.Errorf("error = %v, want a field error at %s", err, tt.field)
@@ -292,7 +292,7 @@ func TestInstallTemplateRefusals(t *testing.T) {
 		})
 	}
 	t.Run("a project that doesn't exist", func(t *testing.T) {
-		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "nope--production--status", map[string]string{"domain": "a.example.com"}, app.TriggerManual)
+		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "nope--production--status", map[string]string{"domain": "a.example.com"}, TemplateInstallOptions{}, app.TriggerManual)
 		var place *PlaceError
 		if !errors.As(err, &place) {
 			t.Errorf("error = %v, want a PlaceError", err)
@@ -313,7 +313,7 @@ func TestInstallTemplateFailedDeployKeepsTemplate(t *testing.T) {
 	missing.Compose = strings.Replace(missing.Compose, "traefik/whoami:latest", "acme/missing:1.0", 1)
 	l.useCatalog(t, futureCatVer, missing)
 
-	_, err := l.svc.InstallTemplate(ctx, "demo", "demo", map[string]string{"domain": "a.example.com", "api_key": "k"}, app.TriggerManual)
+	_, err := l.svc.InstallTemplate(ctx, "demo", "demo", map[string]string{"domain": "a.example.com", "api_key": "k"}, TemplateInstallOptions{}, app.TriggerManual)
 	if err == nil {
 		t.Fatal("a missing image deployed")
 	}
@@ -376,14 +376,14 @@ func TestInstallTemplateKeepsSecretsOut(t *testing.T) {
 	l.svc.SetTemplateRandom(newSentinelReader(generated))
 
 	inputs := map[string]string{"domain": "demo.example.com", "api_key": typed}
-	preview, err := l.svc.PreviewTemplate(ctx, "demo", "demo", inputs)
+	preview, err := l.svc.PreviewTemplate(ctx, "demo", "demo", inputs, TemplateInstallOptions{})
 	if err != nil {
 		t.Fatalf("PreviewTemplate: %v", err)
 	}
 	if used := l.svc.templateRand.(*sentinelReader).used(); used != 0 {
 		t.Errorf("a preview read %d random bytes: it must generate nothing", used)
 	}
-	res, err := l.svc.InstallTemplate(ctx, "demo", "demo", inputs, app.TriggerManual)
+	res, err := l.svc.InstallTemplate(ctx, "demo", "demo", inputs, TemplateInstallOptions{}, app.TriggerManual)
 	if err != nil {
 		t.Fatalf("InstallTemplate: %v", err)
 	}
@@ -439,15 +439,15 @@ func TestInstallTemplateKeepsSecretsOut(t *testing.T) {
 
 	t.Run("a refused install holds no secret in its error", func(t *testing.T) {
 		bad := map[string]string{"domain": "not a domain", "api_key": typed}
-		_, err := l.svc.InstallTemplate(ctx, "demo", "demo2", bad, app.TriggerManual)
+		_, err := l.svc.InstallTemplate(ctx, "demo", "demo2", bad, TemplateInstallOptions{}, app.TriggerManual)
 		if err == nil || strings.Contains(err.Error(), typed) {
 			t.Errorf("error = %v", err)
 		}
-		_, err = l.svc.InstallTemplate(ctx, "demo", "demo2", map[string]string{"domain": "a.example.com", "api_key": "a\n" + typed}, app.TriggerManual)
+		_, err = l.svc.InstallTemplate(ctx, "demo", "demo2", map[string]string{"domain": "a.example.com", "api_key": "a\n" + typed}, TemplateInstallOptions{}, app.TriggerManual)
 		if err == nil || strings.Contains(err.Error(), typed) {
 			t.Errorf("error = %v", err)
 		}
-		if _, err := l.svc.PreviewTemplate(ctx, "demo", "demo2", bad); err == nil || strings.Contains(err.Error(), typed) {
+		if _, err := l.svc.PreviewTemplate(ctx, "demo", "demo2", bad, TemplateInstallOptions{}); err == nil || strings.Contains(err.Error(), typed) {
 			t.Errorf("preview error = %v", err)
 		}
 		if strings.Contains(l.logs.String(), typed) {
@@ -470,7 +470,7 @@ func TestPreviewTemplate(t *testing.T) {
 	l := newTemplateLab(t)
 	l.useCatalog(t, futureCatVer, whoamiTemplate())
 
-	p, err := l.svc.PreviewTemplate(ctx, "demo", "demo", map[string]string{"domain": "demo.example.com"}) // no secret input typed
+	p, err := l.svc.PreviewTemplate(ctx, "demo", "demo", map[string]string{"domain": "demo.example.com"}, TemplateInstallOptions{}) // no secret input typed
 	if err != nil {
 		t.Fatalf("PreviewTemplate: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestPreviewTemplate(t *testing.T) {
 		t.Error("a preview made an app")
 	}
 	var fe *app.FieldError
-	if _, err := l.svc.PreviewTemplate(ctx, "demo", "demo", map[string]string{"domain": "bad"}); !errors.As(err, &fe) || fe.Field != "inputs.domain" {
+	if _, err := l.svc.PreviewTemplate(ctx, "demo", "demo", map[string]string{"domain": "bad"}, TemplateInstallOptions{}); !errors.As(err, &fe) || fe.Field != "inputs.domain" {
 		t.Errorf("a bad domain: %v", err)
 	}
 }
@@ -821,7 +821,7 @@ func TestInstallFromFetchedCatalog(t *testing.T) {
 	if err := l.svc.fetchAndRecordTemplates(ctx); err != nil {
 		t.Fatal(err)
 	}
-	res, err := l.svc.InstallTemplate(ctx, "whoami", "who", map[string]string{"domain": "who.example.com"}, app.TriggerManual)
+	res, err := l.svc.InstallTemplate(ctx, "whoami", "who", map[string]string{"domain": "who.example.com"}, TemplateInstallOptions{}, app.TriggerManual)
 	if err != nil {
 		t.Fatalf("InstallTemplate: %v", err)
 	}
@@ -830,4 +830,93 @@ func TestInstallFromFetchedCatalog(t *testing.T) {
 	if rec.Template != (store.AppTemplate{Name: "whoami", Version: "1-1"}) {
 		t.Errorf("Template = %+v", rec.Template)
 	}
+}
+
+// T011a: an install without backups, chosen by the owner, on an installation that has no
+// backup destination yet.
+func TestInstallTemplateWithoutBackups(t *testing.T) {
+	ctx := context.Background()
+	l := newTemplateLab(t) // no backup destination
+	inputs := map[string]string{"domain": "status.example.com"}
+
+	t.Run("without the option the refusal stays", func(t *testing.T) {
+		_, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", inputs, TemplateInstallOptions{}, app.TriggerManual)
+		var fe *app.FieldError
+		if !errors.As(err, &fe) || fe.Field != "services.uptime-kuma.backup" {
+			t.Fatalf("error = %v, want the backup refusal", err)
+		}
+		if _, err := l.store.GetApp(ctx, "status"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("an app was made: %v", err)
+		}
+	})
+
+	want := app.Warning{Field: "services.uptime-kuma.backup", Message: "Backups are off for uptime-kuma: " +
+		"set a backup destination in Settings › Backup storage, then turn its backup on in the Backups tab."}
+
+	t.Run("a preview says what it would turn off", func(t *testing.T) {
+		p, err := l.svc.PreviewTemplate(ctx, "uptime-kuma", "status", inputs, TemplateInstallOptions{WithoutBackups: true})
+		if err != nil {
+			t.Fatalf("PreviewTemplate: %v", err)
+		}
+		if p.App.Services[0].Backup != nil {
+			t.Errorf("the preview has a backup: %+v", p.App.Services[0].Backup)
+		}
+		if len(p.Warnings) != 1 || p.Warnings[0] != want {
+			t.Errorf("warnings = %+v, want %+v", p.Warnings, want)
+		}
+	})
+
+	t.Run("the install has no backup, one warning per removed backup, and works", func(t *testing.T) {
+		res, err := l.svc.InstallTemplate(ctx, "uptime-kuma", "status", inputs, TemplateInstallOptions{WithoutBackups: true}, app.TriggerManual)
+		if err != nil {
+			t.Fatalf("InstallTemplate: %v", err)
+		}
+		installed(t, l, res)
+		if len(res.Warnings) != 1 || res.Warnings[0] != want {
+			t.Errorf("warnings = %+v, want %+v", res.Warnings, want)
+		}
+		rec, _ := l.svc.GetApp(ctx, "status")
+		if rec.App.Services[0].Backup != nil || rec.Template.Name != "uptime-kuma" {
+			t.Errorf("app = %+v, template %+v", rec.App.Services[0], rec.Template)
+		}
+		if rec.Compose == nil || rec.Compose.Services["uptime-kuma"].Backup != nil {
+			t.Errorf("the kept overlay has a backup: %+v", rec.Compose)
+		}
+		if got, _ := l.store.GetDeployment(ctx, res.Deployment.ID); len(got.Warnings) != 1 || got.Warnings[0] != want {
+			t.Errorf("the deployment's warnings = %+v", got.Warnings)
+		}
+	})
+
+	t.Run("a template with two backups warns twice, and one without any not at all", func(t *testing.T) {
+		two := whoamiTemplate()
+		two.Name = "two"
+		two.Inputs = two.Inputs[:1]
+		two.Generated = nil
+		two.Services = map[string]compose.Overlay{
+			"web": {Domains: []compose.Domain{{Host: "{{domain}}", Port: 80}}, Backup: &app.Backup{Engine: app.BackupVolume}},
+			"db":  {Backup: &app.Backup{Engine: app.BackupVolume}},
+		}
+		two.Compose = "services:\n  web:\n    image: traefik/whoami:latest\n    expose: [\"80\"]\n    volumes:\n      - wdata:/w\n  db:\n    image: traefik/whoami:latest\n    expose: [\"81\"]\n    volumes:\n      - ddata:/d\nvolumes:\n  wdata: {}\n  ddata: {}\n"
+		none := whoamiTemplate()
+		none.Name = "none"
+		l.useCatalog(t, futureCatVer, two, none)
+		p, err := l.svc.PreviewTemplate(ctx, "two", "two", map[string]string{"domain": "two.example.com"}, TemplateInstallOptions{WithoutBackups: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Warnings) != 2 || p.Warnings[0].Field != "services.db.backup" || p.Warnings[1].Field != "services.web.backup" {
+			t.Errorf("warnings = %+v", p.Warnings)
+		}
+		p, err = l.svc.PreviewTemplate(ctx, "none", "none", map[string]string{"domain": "n.example.com"}, TemplateInstallOptions{WithoutBackups: true})
+		if err != nil || len(p.Warnings) != 0 {
+			t.Errorf("a template with no backups: %+v, %v", p.Warnings, err)
+		}
+	})
+
+	t.Run("the template itself is left alone", func(t *testing.T) {
+		got, _ := newTemplateLab(t).svc.Template(ctx, "uptime-kuma")
+		if got.Services["uptime-kuma"].Backup == nil {
+			t.Error("the catalog's template lost its backup")
+		}
+	})
 }

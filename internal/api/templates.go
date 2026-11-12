@@ -163,6 +163,14 @@ func (s *server) getTemplateLogo(w http.ResponseWriter, r *http.Request) error {
 type templateInstallRequest struct {
 	ID     string            `json:"id"`
 	Inputs map[string]string `json:"inputs"`
+	// WithoutBackups leaves the template's backup policies out, each with a
+	// warning. The owner's explicit choice for an installation with no backup
+	// destination yet.
+	WithoutBackups bool `json:"withoutBackups"`
+}
+
+func (r templateInstallRequest) options() service.TemplateInstallOptions {
+	return service.TemplateInstallOptions{WithoutBackups: r.WithoutBackups}
 }
 
 func (s *server) readInstallRequest(r *http.Request) (templateInstallRequest, error) {
@@ -185,7 +193,7 @@ func (s *server) previewTemplate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	p, err := s.svc.PreviewTemplate(r.Context(), r.PathValue("name"), req.ID, req.Inputs)
+	p, err := s.svc.PreviewTemplate(r.Context(), r.PathValue("name"), req.ID, req.Inputs, req.options())
 	if err != nil {
 		return err
 	}
@@ -211,7 +219,7 @@ func (s *server) installTemplate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	res, err := s.svc.InstallTemplate(ctx, r.PathValue("name"), req.ID, req.Inputs, app.TriggerManual)
+	res, err := s.svc.InstallTemplate(ctx, r.PathValue("name"), req.ID, req.Inputs, req.options(), app.TriggerManual)
 	if err != nil {
 		return err
 	}

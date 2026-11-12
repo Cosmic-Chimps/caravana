@@ -2175,7 +2175,8 @@ paths:
       operationId: previewTemplate
       summary: Show the app a template makes with these inputs, without saving or deploying it.
       description: |
-        Takes the same body as `installTemplate` and answers as `previewCompose` does, with the
+        Takes the same body as `installTemplate` (`withoutBackups` included: the preview then
+        shows the app without them and a warning for each) and answers as `previewCompose` does, with the
         rendered Compose file added. Nothing is generated, saved or deployed, and no secret
         is made, so a `secret` input may be left out here. The inputs are checked as an install
         checks them. Never cached. Deploy tokens are refused.
@@ -2234,7 +2235,9 @@ paths:
         `domain_taken`: the host is another app's (`field` `inputs.<name>` when it came from an
         input). 409 `template_unavailable`: the template is marked broken or needs a newer
         Caravana. A service with a `backup` needs the backup destination to be set, as for any
-        deploy: until it is, that is 400 `invalid_field` with `field` `services.<service>.backup`.
+        deploy: until it is, that is 400 `invalid_field` with `field` `services.<service>.backup`,
+        unless the body says `withoutBackups: true`, which installs the template with its backups left
+        out (one warning each).
       tags: [templates]
       parameters:
         - $ref: "#/components/parameters/OriginCommit"
@@ -5938,6 +5941,15 @@ components:
           type: object
           description: The answers by input name. An empty answer takes the input's default.
           additionalProperties: {type: string}
+        withoutBackups:
+          type: boolean
+          default: false
+          description: |
+            Leave out every backup policy the template has. Each one left out is a warning on
+            `services.<service>.backup` in the deployment's `warnings` (and in the preview's),
+            saying to set a backup destination and then turn the backup on. It is the owner's
+            explicit choice, for an installation with no backup destination yet: without it, a
+            template with a backup is refused until one is set, as any deploy is.
 
     TemplatePreview:
       type: object
