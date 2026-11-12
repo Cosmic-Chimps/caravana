@@ -402,6 +402,11 @@ func TestInstallFromTemplatePage(t *testing.T) {
 		if strings.Contains(text(other), "bad value") || !strings.Contains(text(other), "<your domain>") {
 			t.Errorf("a bad answer in the address reached the notes:\n%s", text(other))
 		}
+		// A well-formed answer the app doesn't hold (a crafted link) isn't shown either.
+		_, crafted := e.get(t, "/apps/status/deployments?created=template&v_domain=attacker.example")
+		if strings.Contains(text(crafted), "attacker.example") || !strings.Contains(text(crafted), "<your domain>") {
+			t.Errorf("an answer the app doesn't hold reached the notes:\n%s", text(crafted))
+		}
 		if _, plain := e.get(t, "/apps/status/deployments"); strings.Contains(text(plain), "Installed from the") {
 			t.Error("the notice shows without ?created=template")
 		}

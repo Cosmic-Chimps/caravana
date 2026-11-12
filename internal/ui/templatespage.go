@@ -763,8 +763,37 @@ func (s *server) installedNoticeOf(r *http.Request, rec store.AppRecord) *instal
 	if err != nil {
 		checked = nil
 	}
+	// The address is anybody's to write: a crafted link must not make the console say "open
+	// https://<somewhere else>". An answer is shown only when the app itself has it, in its kept
+	// Compose file or as one of its domains; else the notes keep "<your …>".
+	held := appTexts(rec)
+	for name, v := range checked {
+		if !slices.ContainsFunc(held, func(s string) bool { return strings.Contains(s, v) }) {
+			delete(checked, name)
+		}
+	}
 	n.Notes = info.RenderNotes(checked)
 	return n
+}
+
+// appTexts is what an installed app holds that a template's plain answers end up in: the kept
+// Compose file (with its overlay's domains) and the domains of every service.
+func appTexts(rec store.AppRecord) []string {
+	var out []string
+	if rec.Compose != nil {
+		out = append(out, rec.Compose.Compose)
+		for _, ov := range rec.Compose.Services {
+			for _, d := range ov.Domains {
+				out = append(out, d.Host)
+			}
+		}
+	}
+	for _, svc := range rec.App.Services {
+		for _, d := range svc.Domains {
+			out = append(out, d.Host)
+		}
+	}
+	return out
 }
 
 // templateFactOf is Configure's "Template · <title> <version>" fact of an app that came from a template.
