@@ -113,11 +113,11 @@ jsonq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.ar
 # loopback address and the node token. The rpc-tls.py file is written by main.
 check_mesh_host() {
   local route out
-  vm ip -4 -o addr show dev caravana0 | grep -q ' 10.99.0.1/32 ' || die "caravana0 should have 10.99.0.1/32"
+  grep -q ' 10.99.0.1/32 ' < <(vm ip -4 -o addr show dev caravana0) || die "caravana0 should have 10.99.0.1/32"
   vm grep -q '^MACAddressPolicy=none$' /etc/systemd/network/10-caravana-veth.link || die "the veth link file isn't there (research L17)"
-  vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "caravana-mesh should have 10.98.0.1/32"
+  grep -q ' 10.98.0.1/32 ' < <(vm ip -4 -o addr show dev caravana-mesh) || die "caravana-mesh should have 10.98.0.1/32"
   for route in 10.97.0.0/16 10.98.0.0/24 10.99.0.0/24; do
-    vm ip -4 route show "$route" | grep -q 'dev caravana-mesh' || die "no route $route through caravana-mesh"
+    grep -q 'dev caravana-mesh' < <(vm ip -4 route show "$route") || die "no route $route through caravana-mesh"
   done
   [ "$(vm sudo wg show caravana-mesh listen-port)" = 51820 ] || die "the mesh should listen on 51820"
   [ "$(vm sudo stat -c '%a %U' /etc/nomad.d/nomad.hcl)" = "600 root" ] || die "nomad.hcl should be root 0600 (it holds the gossip key)"
@@ -127,21 +127,21 @@ check_mesh_host() {
   [ "$(vm sudo stat -c '%a' /etc/caravana-node)" = 700 ] || die "/etc/caravana-node should be 0700"
   out="$(vm sudo caravana-nomad operator raft list-peers)"
   grep -Eq '10\.98\.0\.1:4647 +leader' <<<"$out" || die "raft should list this server at 10.98.0.1:4647 as the leader:\n$out"
-  ! vm sudo ss -ltnH | awk '{print $4}' | grep -Eq '^(0\.0\.0\.0|\*|\[::\]):(4647|4648)$' || die "Nomad's RPC or serf listens on every address"
+  ! grep -Eq '^(0\.0\.0\.0|\*|\[::\]):(4647|4648)$' < <(vm sudo ss -ltnH | awk '{print $4}') || die "Nomad's RPC or serf listens on every address"
   out="$(vm sudo python3 "$WORK/rpc-tls.py")" || die "Nomad's RPC on 10.98.0.1:4647 doesn't answer a TLS handshake against the cluster's CA:\n$out"
   grep -q 'TLSv1.3 server.global.nomad' <<<"$out" || die "unexpected RPC handshake: $out"
   vm sudo test ! -e /etc/caravana-node/ca-key.pem || die "the CA's key is still on disk"
   vm sudo test -f /var/lib/caravana-host/raft-mesh || die "no raft-mesh marker"
   vm sudo test ! -e /var/lib/caravana-host/nomad.hcl.before-mesh || die "a fresh host has no config to keep"
-  vm sudo caravana-nomad var get -item key caravana/cluster/ca | head -1 | grep -q 'BEGIN' || die "the CA's key isn't in the Nomad Variable caravana/cluster/ca"
-  vm sudo caravana-nomad var get -item cert caravana/cluster/ca | head -1 | grep -q 'BEGIN CERTIFICATE' || die "the CA's certificate isn't in caravana/cluster/ca"
+  grep -q 'BEGIN' < <(vm sudo caravana-nomad var get -item key caravana/cluster/ca | head -1) || die "the CA's key isn't in the Nomad Variable caravana/cluster/ca"
+  grep -q 'BEGIN CERTIFICATE' < <(vm sudo caravana-nomad var get -item cert caravana/cluster/ca | head -1) || die "the CA's certificate isn't in caravana/cluster/ca"
   [ "$(vm sudo caravana-nomad var get -item key caravana/cluster/gossip | wc -c)" -ge 24 ] || die "the gossip key isn't in caravana/cluster/gossip"
   vm systemctl is-active --quiet caravana-mesh || die "caravana-mesh.service isn't active"
   vm systemctl is-enabled --quiet caravana-mesh || die "caravana-mesh.service isn't enabled"
   vm systemctl is-active --quiet caravana-node.timer || die "caravana-node.timer isn't active"
   vm systemctl is-enabled --quiet caravana-node.timer || die "caravana-node.timer isn't enabled"
-  vm sudo ufw status | grep -q '^51820/udp .*ALLOW' || die "ufw should allow 51820/udp"
-  vm sudo ufw status | grep -q 'on caravana-mesh .*ALLOW' || die "ufw should allow everything in on caravana-mesh"
+  grep -q '^51820/udp .*ALLOW' < <(vm sudo ufw status) || die "ufw should allow 51820/udp"
+  grep -q 'on caravana-mesh .*ALLOW' < <(vm sudo ufw status) || die "ufw should allow everything in on caravana-mesh"
   [ "$(vm sudo stat -c '%a %U' /etc/caravana-node/node.env)" = "600 root" ] || die "node.env should be root 0600"
   vm sudo grep -qx 'CARAVANA_URL=http://127.0.0.1:7070' /etc/caravana-node/node.env || die "node.env should name the console on loopback"
   vm sudo grep -Eqx 'CARAVANA_NODE_TOKEN=cvnd_[A-Za-z0-9_-]{43}' /etc/caravana-node/node.env || die "node.env should hold a node token"
@@ -211,7 +211,7 @@ install() {
 }
 
 # app_answers: whoami answers through Traefik.
-app_answers() { vm_curl -o /dev/null -w '%{http_code}' "https://$APP/" | grep -q '^200$'; }
+app_answers() { grep -q '^200$' < <(vm_curl -o /dev/null -w '%{http_code}' "https://$APP/"); }
 
 # watch_app FILE: count whoami's failed answers, one try every half second, until FILE is gone.
 watch_app() {
@@ -297,7 +297,7 @@ wait_run() {
 # wait_health VERSION SECONDS: wait until Caravana's health check answers VERSION.
 wait_health() {
   local end=$((SECONDS + $2))
-  until vm_curl "https://$DOMAIN/v1/health" 2>/dev/null | grep -q "\"version\":\"$1\""; do
+  until grep -q "\"version\":\"$1\"" < <(vm_curl "https://$DOMAIN/v1/health" 2>/dev/null); do
     [ "$SECONDS" -lt "$end" ] || die "Caravana should answer $1 within $2 s"
     sleep 3
   done
@@ -362,7 +362,7 @@ check_console_update() {
   [ "$(vm sudo stat -c '%U %a' /var/lib/caravana-update/logs)" = "root 700" ] || die "/var/lib/caravana-update/logs should be root 0700"
   vm systemctl is-active --quiet caravana-update.timer || die "caravana-update.timer isn't active"
   vm systemctl is-enabled --quiet caravana-update.timer || die "caravana-update.timer isn't enabled"
-  api -fsS "https://$DOMAIN/v1/updates" | grep -q '"installed":true' || die "GET /v1/updates should say the updater is installed"
+  grep -q '"installed":true' < <(api -fsS "https://$DOMAIN/v1/updates") || die "GET /v1/updates should say the updater is installed"
 
   say "update: a crafted request runs nothing"
   id="$(printf '%032x' "$(date +%s)")"
@@ -542,7 +542,7 @@ PY
   ! grep -q 'cvnd_' <<<"$out" || die "the installer printed a node token"
   grep -q "Create the admin: sudo caravana admin init --email $EMAIL" <<<"$out" ||
     die "without a terminal the installer should print the admin command:\n$out"
-  vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v1\"" || die "the console doesn't answer over HTTPS with $v1"
+  grep -q "\"version\":\"$v1\"" < <(vm_curl "https://$DOMAIN/v1/health") || die "the console doesn't answer over HTTPS with $v1"
 
   say "the admin, and signing in through Traefik"
   printf '%s\n' "$PASSWORD" | vm sudo caravana admin init --email "$EMAIL" >/dev/null
@@ -552,7 +552,7 @@ PY
     die "behind Traefik the session cookie should be __Host- and Secure:\n$out"
 
   say "services may burst into spare memory"
-  vm sudo caravana-nomad operator scheduler get-config | grep -Eq '^Memory Oversubscription +=+ +true' ||
+  grep -Eq '^Memory Oversubscription +=+ +true' < <(vm sudo caravana-nomad operator scheduler get-config) ||
     die "the installer didn't turn on memory oversubscription"
 
   say "the certificate settings, the edge address and Team only's file provider (feature 023)"
@@ -579,7 +579,7 @@ PY
   vm sudo bash -c "grep -v 'metrics.prometheus' /opt/caravana/$v1/traefik.nomad.hcl >/tmp/traefik-old.hcl &&
     caravana-nomad job run -detach -var console_domain=$DOMAIN -var acme=none -var acme_email=$EMAIL /tmp/traefik-old.hcl >/dev/null" ||
     die "couldn't put back a Traefik job without the metrics arguments"
-  ! vm sudo caravana-nomad job inspect traefik | grep -q -- 'metrics.prometheus' || die "the old Traefik job still has the metrics arguments"
+  ! grep -q -- 'metrics.prometheus' < <(vm sudo caravana-nomad job inspect traefik) || die "the old Traefik job still has the metrics arguments"
   out="$(install "$v1")"
   grep -q 'Traefik is restarted once for its request numbers (a few seconds without HTTP)' <<<"$out" ||
     die "the rerun over an older Traefik job should say it is restarted for its request numbers:\n$out"
@@ -612,7 +612,7 @@ PY
   wait
   fails="$(cat "$WORK/fails")"
   [ "$fails" = 0 ] || die "whoami failed $fails times during the upgrade"
-  vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v2\"" || die "$v2 isn't the one answering"
+  grep -q "\"version\":\"$v2\"" < <(vm_curl "https://$DOMAIN/v1/health") || die "$v2 isn't the one answering"
   api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the API token didn't survive the upgrade"
   check_updates_host reads
   check_servers_api
@@ -625,7 +625,7 @@ PY
   set -e
   [ "$code" = 1 ] || die "a failed upgrade should exit 1, got $code:\n$out"
   grep -q "$v2 runs again" <<<"$out" || die "the failed upgrade should say $v2 runs again:\n$out"
-  vm_curl "https://$DOMAIN/v1/health" | grep -q "\"version\":\"$v2\"" || die "$v2 isn't answering after the rollback"
+  grep -q "\"version\":\"$v2\"" < <(vm_curl "https://$DOMAIN/v1/health") || die "$v2 isn't answering after the rollback"
   api -fsS -o /dev/null "https://$DOMAIN/v1/tokens" || die "the data didn't come back with $v2"
 
   check_console_update "$u1" "$u2" "$ubad"
@@ -658,7 +658,7 @@ PY
   vm sudo test ! -e /etc/caravana-node/node.env || die "the uninstall left node.env"
   ! vm systemctl is-active --quiet caravana-node.timer || die "caravana-node.timer still runs"
   ! vm systemctl is-enabled --quiet caravana-node.timer || die "caravana-node.timer is still enabled"
-  vm ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.1/32 ' || die "the uninstall took the mesh away"
+  grep -q ' 10.98.0.1/32 ' < <(vm ip -4 -o addr show dev caravana-mesh) || die "the uninstall took the mesh away"
   vm systemctl is-active --quiet nomad || die "the uninstall stopped Nomad"
   vm sudo test -x /usr/local/libexec/caravana-node || die "the uninstall removed the agent, which Nomad's unit needs"
   app_answers || die "whoami stopped answering after the uninstall"

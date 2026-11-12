@@ -103,7 +103,7 @@ build() {
     for f in "${host_files[@]}"; do cp "$root/deploy/install/$f" "$dir/"; done
     # Owned by root in the tarball: GNU tar (CI, Linux) says so with --owner, macOS's bsdtar
     # with --uid, and without the Mac's extended attributes, which GNU tar warns about.
-    if tar --version 2>/dev/null | grep -q GNU; then
+    if grep -q GNU < <(tar --version 2>/dev/null); then
       tar --owner=0 --group=0 -C "$tmp" -czf "$out/$name.tar.gz" "$name"
     else
       COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --no-xattrs --no-mac-metadata -C "$tmp" -czf "$out/$name.tar.gz" "$name"
@@ -117,7 +117,7 @@ build() {
     mkdir -p "$dir"
     (cd "$root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" \
       go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$dir/caravana" ./cmd/caravana)
-    if tar --version 2>/dev/null | grep -q GNU; then
+    if grep -q GNU < <(tar --version 2>/dev/null); then
       tar --owner=0 --group=0 -C "$tmp" -czf "$out/$name.tar.gz" "$name"
     else
       COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --no-xattrs --no-mac-metadata -C "$tmp" -czf "$out/$name.tar.gz" "$name"
