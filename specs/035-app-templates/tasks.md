@@ -43,18 +43,23 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
 
 ## Part B — console, lab, catalog repository (one implementer, after A is reviewed)
 
-- [ ] **T011** New app's fourth tab, the grid, search and tags, the catalog footer with Check now and the
+- [x] **T011a** Install without backups, chosen explicitly: `TemplateInstallOptions{WithoutBackups}` in the
+  service, `"withoutBackups": true` in the body of `installTemplate` and `previewTemplate` (openapi), the backup
+  policies removed from the rendered overlay with one warning per service on `services.<svc>.backup`; without
+  it the refusal stays; tests in the service and the API · internal/service/templates.go, internal/api/templates.go,
+  api/openapi.yaml
+- [x] **T011** New app's fourth tab, the grid, search and tags, the catalog footer with Check now and the
   setting; the template page with inputs, Preview and Create; the logo route; the created notice; the
   Configure fact row; `tools/ui-css.sh build`; UI tests (no JS needed, secret inputs never echoed, sentinel
   absent from every page) · internal/ui/…
-- [ ] **T012** `TestConsoleLab` step `console-templates`: through the forms, Uptime Kuma with only a domain,
+- [x] **T012** `TestConsoleLab` step `console-templates`: through the forms, Uptime Kuma with only a domain,
   healthy, volume backup policy on, `template` on the record, cleanup · cmd/caravana/console_templates_test.go
-- [ ] **T013** Gate step `templates`: Hollo through the API with a domain, both services healthy, Back up now
+- [x] **T013** Gate step `templates`: Hollo through the API with a domain, both services healthy, Back up now
   of postgres succeeds (reuse the gate's backup destination set-up), cleanup ·
   cmd/caravana/gate_templates_test.go
-- [ ] **T014** Catalog repository: README, LICENSE, `catalog.json`, CI and release workflows,
+- [x] **T014** Catalog repository: README, LICENSE, `catalog.json`, CI and release workflows,
   `lab/install-all.sh` (shellcheck clean); `git init` and one commit, **no remote, no push** ·
   ../caravana-templates
-- [ ] **T015** `changelog.d/035-app-templates.md`, CLAUDE.md paragraph, `docs/plan.md` line, the full check
+- [x] **T015** `changelog.d/035-app-templates.md`, CLAUDE.md paragraph, `docs/plan.md` line, the full check
   list of CLAUDE.md (build, vet, staticcheck, test -race, gofmt, cross-compile, ui-css check, ui-vendor
   check, shellcheck, release.sh check)

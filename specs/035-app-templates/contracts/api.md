@@ -38,19 +38,28 @@ The manifest as in the catalog (inputs without any value but `default` and `exam
 
 ## `POST /v1/templates/{name}/preview` · `previewTemplate`
 
-Body `{"id": "<app id>", "inputs": {"domain": "…"}}`. Answer 200 as `previewCompose`: `{app, warnings}`
-(secret names only), plus `"compose"`: the rendered file. Generates nothing. Errors as install.
+Body `{"id": "<app id>", "inputs": {"domain": "…"}, "withoutBackups": false}`. Answer 200 as
+`previewCompose`: `{app, warnings}` (secret names only), plus `"compose"`: the rendered file. Generates
+nothing. A `secret` input may be left out. With `withoutBackups` the app has no backup policy and there is
+one warning per removed backup. Errors as install.
 
 ## `POST /v1/templates/{name}/install` · `installTemplate`
 
-Body `{"id": "<app id>", "inputs": {…}}` (`id` as `deployApp`'s path: bare name in Default › production,
-else `<project>--<environment>--<name>`; the place must exist, as for any first deploy). Optional
-`Caravana-Origin-*` headers as `deployCompose`.
+Body `{"id": "<app id>", "inputs": {…}, "withoutBackups": false}` (`id` as `deployApp`'s path: bare name in
+Default › production, else `<project>--<environment>--<name>`; the place must exist, as for any first
+deploy). Optional `Caravana-Origin-*` headers as `deployCompose`.
+
+`withoutBackups: true` (T011a) is the owner's explicit choice for an installation with no backup destination:
+the rendered overlay's backup policies are removed, and each removal adds one warning to the deploy result on
+`services.<service>.backup`: "Backups are off for <service>: set a backup destination in Settings › Backup
+storage, then turn its backup on in the Backups tab." Without it, and without a destination, a template with a
+backup is refused as any deploy is: 400 `invalid_field`, `field` `services.<service>.backup`.
 
 - 202 with the same body, `Location` and headers as `deployCompose` (deployment ID, version when known,
   warnings, `teamPasswords` for Team only domains: shown once, as there).
-- 422 `invalid_field` with `field` `inputs.<name>` for an input; `id` for a bad ID; a path in the file
-  for a template defect (R5).
+- 400 `invalid_field` (the API's one status for a field error; this contract first said 422, see research
+  "Deviations") with `field` `inputs.<name>` for an input; `id` for a bad ID; a path in the file for a template
+  defect (R5).
 - 404 `template_not_found`, `project_not_found`, `environment_not_found`.
 - 409 `app_exists` (the ID is taken), `template_unavailable` (broken or needs a newer Caravana),
   `domain_taken` (field `inputs.<name>` when the host came from that input).

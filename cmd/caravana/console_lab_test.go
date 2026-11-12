@@ -119,6 +119,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-ops-updates", c.consoleOpsUpdates},
 		{"console-servers", c.consoleServers},
 		{"console-appearance", c.appearance},
+		{"console-templates", c.consoleTemplates},
 		{"console-delete", c.deleteApp},
 	}
 	for _, s := range steps {

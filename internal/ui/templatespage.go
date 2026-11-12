@@ -596,8 +596,9 @@ func (s *server) createFromTemplate(w http.ResponseWriter, r *http.Request, sess
 		view := &templatePreviewView{}
 		for _, svc := range p.App.Services {
 			sv := templateServiceView{Name: svc.Name, Image: svc.Image}
-			for range svc.Domains {
+			for _, d := range svc.Domains {
 				sv.Domains = append(sv.Domains, "your domain")
+				sv.TeamOnly = sv.TeamOnly || d.TeamOnly
 			}
 			if svc.Backup != nil {
 				sv.Backup = svc.Backup.Engine

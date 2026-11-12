@@ -14,14 +14,14 @@
 {{define "content"}}
 <section class="cv-main cv-narrow">
   <p class="cv-backlink"><a href="{{.BackHref}}">← All templates</a></p>
-  <header class="cv-pagehead cv-tplhead">
+  <header class="cv-pagehead"><div class="cv-tplhead">
     {{if .Logo}}<img class="cv-tpltile cv-tpltile-lg cv-tpltile-img" src="{{.Logo}}" alt="" width="40" height="40">{{else}}<span class="cv-tpltile cv-tpltile-lg {{.HueClass}}" aria-hidden="true">{{.Letter}}</span>{{end}}
     <div class="cv-tplhead-text">
       <h1 class="cv-headline">{{.Title}} <span class="cv-inline-mono text-fg-3">{{.Version}}</span></h1>
       <p class="cv-lede">{{.Description}}</p>
       <p class="cv-note"><a href="{{.Upstream}}" rel="noopener noreferrer">Upstream</a>{{range .Tags}} <span class="cv-chip">{{.}}</span>{{end}}</p>
     </div>
-  </header>
+  </div></header>
 
   <div class="flex flex-col gap-6">
     <section aria-labelledby="tpl-makes" class="flex flex-col gap-2">

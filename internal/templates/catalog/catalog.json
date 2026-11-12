@@ -14,7 +14,6 @@
       "upstream": "https://www.adminer.org/",
       "appName": "adminer",
       "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. At its own login, give the address of a database this server can reach (a database inside another Caravana app is not reachable by name).",
-      "requires": "0.20.0",
       "inputs": [
         {
           "name": "domain",
@@ -52,7 +51,6 @@
       "upstream": "https://patch.codemagic.io/docs/",
       "appName": "codemagic-patch",
       "notes": "Before you install: Codemagic publishes no server image, so build one from the release tag into a private registry (Caravana's deploy/examples/codemagic-patch/RUNBOOK.md has a workflow for it) and add the registry's login in Settings, Registries. Make two R2 buckets (public one with the files domain {{files_domain}} as its custom domain, and a private one), an R2 API token for both, and a GitHub OAuth app whose homepage is https://{{domain}}. Then sign in at https://{{domain}} with the admin email. Both addresses are written into your apps' builds, so choose them once. Postgres is backed up every day at 03:00 UTC, keeping 14.",
-      "requires": "0.20.0",
       "lab": false,
       "inputs": [
         {
@@ -220,7 +218,6 @@
       "upstream": "https://github.com/fedify-dev/hollo",
       "appName": "hollo",
       "notes": "Open https://{{domain}}/setup first, to create your account (the first visit is the owner's). Your handle will be @you@{{domain}}; it can't change after you federate. Hollo may restart once or twice while Postgres starts: that is normal. Postgres is backed up every day at 03:00 UTC, keeping 14.",
-      "requires": "0.20.0",
       "inputs": [
         {
           "name": "domain",
@@ -291,7 +288,6 @@
       "upstream": "https://www.postgresql.org/",
       "appName": "postgres",
       "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. To log into the database from Adminer choose System PostgreSQL, Server postgres, Username app, Database app, and the password you typed. Other apps can't reach this database by name: services find each other only inside one app. To use it from your own services, add them to this app's Compose file (Configure, Compose). Backups run every day at 03:00 UTC.",
-      "requires": "0.20.0",
       "inputs": [
         {
           "name": "domain",
@@ -347,7 +343,6 @@
       "upstream": "https://github.com/Cosmic-Chimps/umbral",
       "appName": "umbral",
       "notes": "The domain is part of every callback address you register with a sign-in provider, so choose it once. On its first start Umbral writes a one-time claim code to its log (look for the box that says \"not configured yet\"): open the app's Logs, then https://{{domain}} and claim the instance. Everything it keeps is on one volume, which Caravana backs up every day at 03:00 UTC (the volume is the key ring: without it every secret is lost).",
-      "requires": "0.20.0",
       "inputs": [
         {
           "name": "domain",
@@ -387,7 +382,6 @@
       "upstream": "https://github.com/louislam/uptime-kuma",
       "appName": "uptime-kuma",
       "notes": "Open https://{{domain}} and create the admin account: the first visitor becomes the admin, so do it now. Everything it keeps is on one volume, which Caravana backs up every day at 03:00 UTC.",
-      "requires": "0.20.0",
       "inputs": [
         {
           "name": "domain",

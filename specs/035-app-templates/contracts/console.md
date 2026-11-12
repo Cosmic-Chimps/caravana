@@ -38,9 +38,15 @@ A fourth tab beside Image, Compose and From a GitHub repository, labelled **From
   Errors at their input in the existing field-error style; a template defect at the top. Secret inputs are
   never written back into the form (`value` empty) and get the line "Type it again: secrets aren't kept
   in the form."
+- **No backup destination (T011a).** When the template has a backup and no destination is set, the form starts
+  with a notice, "This template backs up <services>. No backup destination is set yet.", that links to Settings ›
+  Backup storage, and a checkbox "Install without backups for now" (`name=withoutBackups`). Once a destination is
+  set, or when the template has no backup, neither shows. Create and Preview post the checkbox; the install then
+  carries one warning per backup left out.
 - One submit button **Create** (and a quiet **Preview** button, `name=action value=preview`, which draws
   the page again with the rendered app's services and warnings, generating nothing).
-- Success: 303 to `/apps/<id>/deployments?created=template` where the existing created notice says
+- Success: 303 to `/apps/<id>/deployments?created=template&v_<input>=<answer>` (the plain answers only, never a
+  secret; the page re-checks each before it uses it) where the existing created notice says
   "Installed from the <title> template." and, when the template has notes, shows them rendered with the
   inputs (plain values only).
 
