@@ -164,6 +164,9 @@ components:
     rounded: "{rounded.sm}"
     padding: "0 12px"
     height: "42px"
+  logo-mark:
+    textColor: "{colors.readout-white}"
+    height: "32px"
   command-block:
     backgroundColor: "{colors.raised-control}"
     textColor: "{colors.readout-white}"
@@ -388,7 +391,7 @@ Sans is how caravana talks; mono is what Nomad reported.
   (`cv-inline-mono`). The log text alone is 12.5px mono, line height 1.6, to sit tighter than Data.
 - **Metric** (500, 24px mono, tabular figures): the app page's name (`cv-apptitle`, 24px, line 1.15).
   No metric tile is built.
-- **Wordmark** (600, 20px mono, -0.01em): the word "caravana", lowercase. There's no logo mark.
+- **Wordmark** (600, 20px mono, -0.01em): the word "caravana", lowercase. The logo mark that sits beside it on some pages is under "Logo" in Components.
 
 ### Named Rules
 **The Mono-Is-Real Rule.** If Nomad or the user's config produced it (`whoami`, `v24`, `node-1`,
@@ -434,8 +437,8 @@ in place never shifts its neighbors.
   Backups the app's backed-up services. Each tab is its own URL. Variables & secrets
   (`/apps/{id}/variables`) and Domains (`/apps/{id}/domains`) are Configure's own pages: they draw the
   app header with the Configure tab current, and no second back link.
-- **Login:** the only page without the shell. A centered 380px column on the bare ground: wordmark,
-  the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
+- **Login:** the only page without the shell. A centered 380px column on the bare ground: the mark, the
+  wordmark, the host in mono, "Sign in", two 42px fields, one primary button, and the reset command in its
   own block under it.
 - **Settings:** one page per entry under a sticky 232px nav of its own, inside the shell (see
   "Settings (feature 021)" under Components). Account is `/settings`; the others have their own addresses.
@@ -449,7 +452,7 @@ in place never shifts its neighbors.
 - **Spacing rhythm:** 2 / 4 / 8 / 10 / 16 / 20 / 26 / 32 / 40 / 60px. Panel padding is 14-16px,
   gaps inside a grid 8-16px.
 - **Narrow screens:**
-  - Under 900px the sidebar goes. The top bar shows the wordmark and a "Menu" disclosure (a
+  - Under 900px the sidebar goes. The top bar shows the mark and the wordmark (one link to Apps) and a "Menu" disclosure (a
     secondary small button) that opens a panel with the same brand, links and account row; the
     breadcrumbs hide and the gutters become 16px. Beside the 248px sidebar a 900px screen would
     leave only 600px for the page, so the switch is made before that.
@@ -601,6 +604,34 @@ The API tokens page's table (see Settings, feature 021): a grid row inside a Pan
 Data mono with "made …" under it, what the token can do, when it was last used and its expiry ("expires in
 80 days", "never expires", "expired …", "revoked …"), then the action. Times are relative, with the exact
 time in the `title`. Only an active row has "Revoke", which opens a confirmation under the row.
+
+### Logo
+The mark is four travellers on one path: a disc, a quarter-disc, a diamond and a square, stepping down
+and to the right. It has one ink and no color of its own: it is `currentColor`, set to Readout White
+(fg-1) in the console by `.cv-logo-mark`, and it is never a status color. The brand files are in
+`internal/ui/static/brand/` (`mark.svg`, `lockup.svg`, `favicon.svg`, `favicon.ico`, `apple-touch-icon.png`).
+- **Size:** at least 16px tall (the height of the pieces). Below 24px it uses the favicon's geometry, which is
+  hinted to whole pixels; from 24px up, the mark's own. Clear space on every side is 0.4 times the mark's
+  height (one piece): 13px around the 32px mark, 8px around the 20px one.
+- **Drawn inline, never as `<img>`:** an SVG inside an `<img>` doesn't inherit `color`, so the mark would
+  stop following the theme. `brandMark(height)` (`brand.go`) writes the `<svg>` with `fill="currentColor"`,
+  `aria-hidden="true"` and no `style` attribute (the CSP forbids one); the wordmark beside it is its
+  accessible name.
+- **Where it appears:**
+  - the sign-in page and plain message pages: 32px, above the wordmark, at the column's left edge, 14px apart;
+  - the narrow top bar (under 900px): 20px, 8px before the wordmark, both in one link to Apps;
+  - the tab icon (`static/brand/favicon.svg`, with `favicon.ico` and the apple-touch icon): the one brand
+    file with fixed colors, a light mark on a `#0d0e11` tile so it reads on any tab bar;
+  - the README: fixed-color lockups in `docs/brand/` (a dark-ink one and a light-ink one, picked by the
+    reader's theme).
+- **Where it doesn't:** the sidebar's brand tile, which shows the server's initial.
+
+**The Keep-the-Mark-Away-from-Status-Marks Rule.** The mark's pieces are the status shapes: a disc, a
+diamond, a square. It never appears at status-mark sizes (7 to 10px) or inside a list row, where one of its
+pieces could be read as healthy, a warning or a failure. Its minimum is 16px.
+
+Don't give it a status color, a gradient or a shadow; don't rotate or re-order the pieces or swap one for
+another shape; don't set the wordmark in another typeface (IBM Plex Mono 600).
 
 ### Navigation
 - **Sidebar:** only pages that exist are linked, in the handoff's order (feature 027.5): Home, Projects,
@@ -1617,7 +1648,9 @@ pulsing, no skeleton shimmer. A spinner only where a real wait is happening.
   heading, never a kicker.
 - **Don't** use emoji or unicode glyphs as icons. The only glyphs are → in diffs and · as a
   separator. Icons are Lucide line icons, and only in buttons, toolbars and the sidebar.
-- **Don't** draw a logo mark. The wordmark is the word "caravana" in Plex Mono 600.
+- **Don't** recolor the logo mark, give it a gradient or a shadow, rotate or re-order its pieces, swap a
+  piece for another shape, or set the wordmark in another typeface (it is "caravana" in Plex Mono 600). See
+  "Logo" in Components.
 - **Don't** run a command into a sentence, or let a long one break at a hyphen mid-line.
 - **Don't** show a status glyph from a font (● ◐ ◆ ■ ○). Draw the mark in CSS.
 - **Don't** make it look like Dokploy, a gradient "AI dashboard", or a Grafana wall of charts.

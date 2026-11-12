@@ -275,6 +275,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/notifications/{id}/secret", s.protected(s.requireSession(s.rotateNotification))},
 		{"POST", "/settings/notifications/{id}/remove", s.protected(s.requireSession(s.removeNotification))},
 		{"GET", "/account", s.showAccount},
+		{"GET", "/favicon.ico", s.serveFavicon},
 		{"GET", "/static/", http.StripPrefix("/static/", s.serveStatic()).ServeHTTP},
 	}
 }
@@ -369,7 +370,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}
@@ -517,6 +518,20 @@ func (s *server) serveStatic() http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// serveFavicon answers /favicon.ico, which browsers ask for at the root
+// whatever the page's <link rel="icon"> says (and without a ?v=), with the
+// embedded brand icon. It is public: a tab icon holds nothing private.
+func (s *server) serveFavicon(w http.ResponseWriter, r *http.Request) {
+	icon, err := fs.ReadFile(s.static, "brand/favicon.ico")
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(icon)
 }
 
 // protected refuses a state-changing request the browser says came from

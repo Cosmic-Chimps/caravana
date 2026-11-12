@@ -1,4 +1,9 @@
-# Caravana
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockup-dark.svg">
+    <img src="docs/brand/lockup-light.svg" alt="caravana" height="40">
+  </picture>
+</h1>
 
 A self-hosted PaaS on HashiCorp Nomad: bring an image or a Compose file and get an app with
 HTTPS, health-checked deploys you can roll back, secrets, volumes and database backups. It starts

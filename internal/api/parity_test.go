@@ -26,14 +26,15 @@ type parity struct {
 // serves them. A page that reads several things lists each operation.
 var consoleParity = map[string]parity{
 	// Pages with nothing of their own to read or change.
-	"GET /{$}":      {why: "a redirect to /apps"},
-	"GET /login":    {why: "the sign-in form; clients use API tokens"},
-	"POST /login":   {why: "starts a browser session; clients send an API token"},
-	"POST /logout":  {why: "ends a browser session; an API token has none"},
-	"GET /apps/new": {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
-	"GET /account":  {why: "a redirect to /settings"},
-	"GET /static/":  {why: "the console's own stylesheet, scripts and fonts"},
-	"GET /live":     {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs", "getMetrics"}}, // notices that these changed
+	"GET /{$}":         {why: "a redirect to /apps"},
+	"GET /login":       {why: "the sign-in form; clients use API tokens"},
+	"POST /login":      {why: "starts a browser session; clients send an API token"},
+	"POST /logout":     {why: "ends a browser session; an API token has none"},
+	"GET /favicon.ico": {why: "the browser tab's icon, asked for at the root"},
+	"GET /apps/new":    {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
+	"GET /account":     {why: "a redirect to /settings"},
+	"GET /static/":     {why: "the console's own stylesheet, scripts and fonts"},
+	"GET /live":        {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs", "getMetrics"}}, // notices that these changed
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.

@@ -191,7 +191,7 @@ type shellTestData struct {
 func TestShellAndParts(t *testing.T) {
 	e := newUIEnv(t, true, "")
 	s := newTestServer(t, e)
-	tmpl := template.Must(template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon}).ParseFS(templatesFS,
+	tmpl := template.Must(template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark}).ParseFS(templatesFS,
 		"templates/base.html", "templates/shell.html", "templates/parts.html"))
 	template.Must(tmpl.Parse(shellTestPage))
 	s.pages["shelltest"] = tmpl
@@ -224,7 +224,7 @@ func TestShellAndParts(t *testing.T) {
 	for _, want := range []string{
 		// the sidebar: the brand block (the host's initial, the host, the version), the Workspace group
 		// and Settings with the current one marked, the account row with its sign-out form
-		`class="cv-wordmark cv-top-brand">caravana</a>`, `<span class="cv-brand-mark" aria-hidden="true">C</span>`,
+		`class="cv-wordmark cv-top-brand"><svg class="cv-logo-mark"`, `</svg>caravana</a>`, `<span class="cv-brand-mark" aria-hidden="true">C</span>`,
 		`title="caravana.example.com">caravana.example.com</span>`, `title="Caravana's version">caravana v0.7.0</span>`,
 		`cv-nav-title">Workspace</span>`, `<a href="/apps" class="cv-nav-item">`, `<a href="/projects" class="cv-nav-item">`,
 		`<a href="/settings" class="cv-nav-item" aria-current="page">`,

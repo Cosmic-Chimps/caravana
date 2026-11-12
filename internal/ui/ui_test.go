@@ -1436,9 +1436,9 @@ func TestPagesAskNothingOfOtherHosts(t *testing.T) {
 			}
 		}
 		if strings.Contains(strings.ToLower(body), "<link") {
-			// The one stylesheet, from this server.
+			// The one stylesheet and the three brand icons, all from this server.
 			for _, link := range regexp.MustCompile(`(?i)<link[^>]*>`).FindAllString(body, -1) {
-				if !strings.Contains(link, `href="/static/app.css?v=`) {
+				if !strings.Contains(link, `href="/static/app.css?v=`) && !strings.Contains(link, `href="/static/brand/`) {
 					t.Errorf("page %q has an unexpected <link>: %s", name, link)
 				}
 			}

@@ -50,6 +50,8 @@
   .cv-brand-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
   .cv-brand-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px/1 var(--font-sans); color: var(--color-fg-1); }
   .cv-brand-version { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1 var(--font-mono); color: var(--color-fg-3); }
+  /* The logo mark (brand.go): one ink, fg-1, never a status color. */
+  .cv-logo-mark { display: block; flex: none; color: var(--color-fg-1); }
   a.cv-wordmark { text-decoration: none; }
   a.cv-wordmark:hover { color: var(--color-fg-1); }
   .cv-nav { flex: 1; display: flex; flex-direction: column; gap: 22px; padding: 16px 10px; overflow-y: auto; }
@@ -399,7 +401,7 @@
   .cv-side { display: none; }
   .cv-frame { margin-left: 0; }
   .cv-top { gap: 10px; padding: 0 16px; }
-  .cv-top-brand { display: inline-flex; align-items: center; min-height: 44px; }
+  .cv-top-brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
   .cv-menu { display: block; margin-right: auto; }
   .cv-menu summary { list-style: none; }
   .cv-menu summary::-webkit-details-marker { display: none; }

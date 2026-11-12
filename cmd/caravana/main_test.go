@@ -182,7 +182,7 @@ func TestRunWebhookListener(t *testing.T) {
 		t.Errorf("health on the webhook listener = %d, want 404", got)
 	}
 	// The webhook-only listener serves no pages and no styles (FR-026): JSON 404s.
-	for _, p := range []string{"/login", "/settings", "/static/app.css", "/"} {
+	for _, p := range []string{"/login", "/settings", "/static/app.css", "/favicon.ico", "/static/brand/favicon.svg", "/"} {
 		resp, err := http.Get("http://" + hookAddr + p)
 		if err != nil {
 			t.Fatalf("GET %s on the webhook listener: %v", p, err)
@@ -194,6 +194,9 @@ func TestRunWebhookListener(t *testing.T) {
 	}
 	if got := status("http://" + addr + "/login"); got != http.StatusOK {
 		t.Errorf("/login on the main listener = %d, want 200", got)
+	}
+	if got := status("http://" + addr + "/favicon.ico"); got != http.StatusOK {
+		t.Errorf("/favicon.ico on the main listener = %d, want 200", got)
 	}
 
 	cancel()
