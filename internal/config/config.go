@@ -83,6 +83,10 @@ type Config struct {
 	// 027), in place of GitHub's own. Empty keeps GitHub's. https, or http to a loopback host: for
 	// the lab and tests (feature 030).
 	ReleaseURL string
+	// TemplatesURL is the directory the template catalog check reads SHA256SUMS and catalog.json
+	// from (feature 035), in place of the catalog repository's latest release. Empty keeps that.
+	// https, or http to a loopback host: for the lab and tests.
+	TemplatesURL string
 	// UpdaterDir is the directory the root updater writes its marker, status and logs in (feature
 	// 030); Caravana only reads it. /var/lib/caravana-update unless said.
 	UpdaterDir string
@@ -140,6 +144,7 @@ var (
 	metricsURLSetting    = setting{"CARAVANA_TRAEFIK_METRICS_URL", "traefik-metrics-url"}
 	hostRootSetting      = setting{"CARAVANA_HOST_ROOT", "host-root"}
 	releaseURLSetting    = setting{"CARAVANA_RELEASE_URL", "release-url"}
+	templatesURLSetting  = setting{"CARAVANA_TEMPLATES_URL", "templates-url"}
 	updaterDirSetting    = setting{"CARAVANA_UPDATER_DIR", "updater-dir"}
 	// Nomad's own variable names, the ones `deploy/dev/lab.sh env` prints.
 	webhookListenSetting  = setting{"CARAVANA_WEBHOOK_LISTEN", "webhook-listen"}
@@ -192,6 +197,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	dockerRoot := fs.String(dockerRootSetting.flag, envOr(dockerRootSetting, "/var/lib/docker"), "the directory Docker keeps images and layers in (docker info's Docker Root Dir), an absolute path; Monitoring watches its disk")
 	metricsURL := fs.String(metricsURLSetting.flag, envOr(metricsURLSetting, "http://127.0.0.1:8081/metrics"), "where Traefik serves its Prometheus numbers, an http:// URL on this machine's loopback; an empty flag value (-traefik-metrics-url=) turns the request numbers off")
 	hostRoot := fs.String(hostRootSetting.flag, envOr(hostRootSetting, ""), "for development and tests: read the host's OS files (apt's history, the reboot marker) under this directory instead of /; the files are only read, never written; empty means /")
+	templatesURL := fs.String(templatesURLSetting.flag, envOr(templatesURLSetting, ""), "for development and tests: the directory the template catalog check reads SHA256SUMS and catalog.json from, https:// or http:// on this machine's loopback; empty means the catalog repository's latest release")
 	releaseURL := fs.String(releaseURLSetting.flag, envOr(releaseURLSetting, ""), "for development and tests: the address of the latest-release answer the release check asks, https:// or http:// on this machine's loopback; empty means GitHub's")
 	updaterDir := fs.String(updaterDirSetting.flag, envOr(updaterDirSetting, DefaultUpdaterDir), "the directory the server's updater keeps its marker, status and logs in, an absolute path; Caravana only reads it")
 	webhookListen := fs.String(webhookListenSetting.flag, envOr(webhookListenSetting, ""), "optional webhook-only listener, host:port; empty means off")
@@ -255,6 +261,10 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	c.ReleaseURL = strings.TrimSpace(*releaseURL)
 	if err := checkReleaseURL(c.ReleaseURL); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", releaseURLSetting, err)
+	}
+	c.TemplatesURL = strings.TrimSpace(*templatesURL)
+	if err := checkReleaseURL(c.TemplatesURL); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", templatesURLSetting, err)
 	}
 	if !path.IsAbs(*updaterDir) {
 		return Config{}, fmt.Errorf("%s: %q must be an absolute path, such as %s", updaterDirSetting, *updaterDir, DefaultUpdaterDir)

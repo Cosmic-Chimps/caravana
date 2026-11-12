@@ -141,6 +141,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	// Update from the console (feature 030): the request is a file in the data directory, the only
 	// place Caravana can write that the root updater reads; the updater's own directory is read-only here.
 	svc.SetReleaseURL(cfg.ReleaseURL)
+	svc.SetTemplatesURL(cfg.TemplatesURL) // the template catalog check (feature 035); empty keeps the catalog repository's release
 	svc.SetUpdaterDir(cfg.UpdaterDir)
 	svc.SetUpdateRequestPath(filepath.Join(cfg.DataDir, "update-request"))
 	// Package names come from the host's own pro command, on demand; pro keeps its
