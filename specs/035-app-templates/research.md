@@ -134,9 +134,9 @@ stable hash over six, as services have).
 
 ## R10 · The catalog repository
 
-**Decision**: `Cosmic-Chimps/caravana-templates`, prepared as a local repository beside this one
-(`../caravana-templates` of the main checkout) and **not pushed**: creating the GitHub repository and the
-first release is the maintainer's go-ahead. Layout: `catalog.json` (format and version), `templates/<name>/
+**Decision**: `Cosmic-Chimps/caravana-templates` (public; created by the maintainer on 2026-11-12), cloned
+beside this one (`../caravana-templates` of the main checkout). Its content is pushed after review; the first
+catalog release follows the first push. Layout: `catalog.json` (format and version), `templates/<name>/
 {template.json, compose.yaml, logo.svg?}`, `README.md` (the format, how to add one, the gate), `LICENSE`
 (AGPL-3.0, as Caravana, until the maintainer says otherwise), `.github/workflows/ci.yml`
 (`go run github.com/cosmic-chimps/caravana/cmd/caravana@<pinned ref> template check .`),
