@@ -779,8 +779,8 @@ One page per entry, as the handoff draws Settings, with what the console has tod
 and the content, in the shell's frame; the shell's own page padding is off for these pages (`cv-page-settings`).
 - **Nav:** `<nav aria-label="Settings">`, sticky under the top bar (`top: 52px`, the rest of the window
   tall, scrolling by itself), a Hairline at its right. The word "Settings" at 18px, then the groups: Account
-  alone, **Connections** (Registries, Backup storage, Certificates, Notifications), **Security** (API tokens)
-  and, last, **This browser** (Appearance: the theme, Match the system, Light or Dark, kept in a cookie of
+  alone, **Connections** (Registries, Backup storage, Certificates, Notifications), **Security** (Sign-in, then API
+  tokens) and, last, **This browser** (Appearance: the theme, Match the system, Light or Dark, kept in a cookie of
   this browser and not in the installation, which is why the group says so). A group
   with no entries isn't drawn, and no entry is drawn for a feature that doesn't exist yet. An entry is a link
   32px tall with a 15px icon, its label, and at the right a count or a mark. The current one has the Raised
@@ -854,6 +854,18 @@ and the content, in the shell's frame; the shell's own page padding is off for t
   Nothing here pushes the page wider: every track, fixed ones included, is `minmax(0, …)` (so the 220/260px columns and
   the table's 150px one shrink first), the hint column wraps (`overflow-wrap: anywhere`), and the section head's children
   have `min-width: 0` so Edit always stays inside.
+- **Sign-in** (feature 033, `/settings/sign-in`, icon `fingerprint`; `specs/033-passkeys/contracts/console.md`): no count or
+  mark in the nav. The head is "Sign-in" over "How you sign in to this caravana: passkeys and your password.". Three
+  blocks, each a Label over a panel of setting rows, no new pieces: **Passkeys** (a row per passkey: the name over its domain
+  in mono; "Added Oct 22 · Last used 3 hours ago" or "Never used", "· Synced"; a passkey made for another domain has a warning
+  notice, "Made for `old.example.com`: it doesn't work at this address."; Rename and Remove are `<details>`; the last passkey of
+  a domain while password sign-in is off has no Remove and says why), **Add a passkey** (one sentence about where passkeys work
+  when they can't here; "Confirm it's you first" with the password form and "Use a passkey" when the session hasn't confirmed in
+  10 minutes; else the Name field and the one primary button), and **Password sign-in** ("On" or "Off (passkeys only)", one
+  secondary button; "Turn password sign-in off" is disabled with its reason when no passkey exists for the console's domain). The
+  buttons that need script, and the block that holds them, are drawn `hidden` and shown by `passkeys.js` only where the browser
+  can use passkeys. On `/login` the passkey button is secondary under the password form, primary when the form is hidden because
+  password sign-in is off. Nothing the browser posts for a ceremony is drawn back.
 - **Shown once** (a new token, a new signing secret): a panel drawn first, in the response of the post that
   made it: the sentence, the value in a box that selects whole, and for a token its `curl` example. It is in
   no address and no later page; the Copy button stays hidden without script.

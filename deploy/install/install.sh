@@ -17,6 +17,7 @@
 #   --first                this is the first server, the one that runs Caravana (the default)
 #   --email ADDRESS        the admin's email (first server; required the first time)
 #   --domain NAME          the console's domain (first server); default <public-ip>.sslip.io
+#                          (passkeys belong to this domain: a new one needs new passkeys)
 #   --acme MODE            production (default), staging, or none (Traefik's own certificate)
 #   --acme-email ADDRESS   the Let's Encrypt account email; default --email
 #   --join TOKEN           join the cluster of the console at --url, with a token made there

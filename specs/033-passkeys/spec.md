@@ -2,7 +2,7 @@
 
 **Feature Branch**: `alta/ready-tabor-hzqw` (worktree; no feature branch of its own)
 **Created**: 2026-11-12
-**Status**: In progress
+**Status**: Implemented
 **Input**: CodeAlta task `2026-11-11-sign-in-with-a-passkey-instead-of-a-code-based-second-factor-4p36`. The console's
 only sign-in is an email and a password (006). A password can be phished, reused or guessed, and this console can
 deploy anything, read logs and open a terminal into any app. Decided with the maintainer on 2026-11-11: passkeys

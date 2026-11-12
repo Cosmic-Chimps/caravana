@@ -1,3 +1,10 @@
+{{/* The sign-in page. The passkey button (feature 033) is drawn hidden: static/js/passkeys.js shows
+     it when the browser supports passkeys and the server said this address can use them
+     (data-available). Without script only the password path exists, and when password sign-in is off
+     the page says so and how to get back in. The hidden form's fields are empty until the script
+     fills them. */}}
+{{define "head"}}<script src="{{asset "js/passkeys.js"}}" defer></script>{{end}}
+
 {{define "content"}}
 <main class="min-h-screen grid place-items-center px-6 py-12">
   <div class="w-full max-w-[380px] flex flex-col gap-7">
@@ -16,6 +23,30 @@
         <span>This caravana has no admin yet. On the host, run:</span>
       </div>
       <code class="cv-cmd">caravana admin init --email you@example.com</code>
+    </div>
+    {{else}}
+    {{if .PasswordOff}}
+    <div class="flex flex-col gap-3">
+      {{with .Notice}}
+      <div role="alert" class="cv-notice">
+        <span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>
+        <span>{{.Text}}</span>
+      </div>
+      {{end}}
+      <div role="status" class="cv-notice">
+        <span class="cv-mark cv-mark-idle" aria-hidden="true"></span>
+        <span>Password sign-in is off on this caravana. Lost your passkeys? On the host, run:</span>
+      </div>
+      <code class="cv-cmd">caravana admin reset-password</code>
+      {{if not .PasskeyAvailable}}
+      <div role="status" class="cv-notice">
+        <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+        <span>{{.PasskeyWhy}}</span>
+      </div>
+      {{end}}
+      <noscript>
+        <div role="alert" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Passkeys need JavaScript.</span></div>
+      </noscript>
     </div>
     {{else}}
     <form method="post" action="/login" class="flex flex-col gap-4">
@@ -39,6 +70,17 @@
     <div class="flex flex-col gap-2.5">
       <p class="text-sm leading-normal text-fg-3">Forgot your password? Reset it on the host:</p>
       <code class="cv-cmd">caravana admin reset-password</code>
+    </div>
+    {{end}}
+    {{/* The passkey block: shown by the script only, and only when data-available is true. */}}
+    <div class="flex flex-col gap-2.5" data-passkey-signin data-available="{{.PasskeyAvailable}}" data-options="/login/passkey/options" hidden>
+      <button type="button" class="cv-btn cv-btn-lg {{if .PasswordOff}}cv-btn-primary{{else}}cv-btn-secondary{{end}}" data-passkey-button>{{icon "fingerprint" 16}}Sign in with a passkey</button>
+      <p class="cv-data-muted" role="status" aria-live="polite" data-passkey-status></p>
+      <form method="post" action="/login/passkey" data-passkey-form>
+        <input type="hidden" name="next" value="{{.Next}}">
+        <input type="hidden" name="ceremony" value="">
+        <input type="hidden" name="credential" value="">
+      </form>
     </div>
     {{end}}
   </div>

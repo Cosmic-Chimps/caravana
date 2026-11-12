@@ -76,6 +76,12 @@ type uiEnv struct {
 // testPassword first. proxies are the trusted proxies ("" for none).
 func newUIEnv(t *testing.T, withAdmin bool, proxies string) *uiEnv {
 	t.Helper()
+	return newUIEnvAt(t, withAdmin, proxies, "")
+}
+
+// newUIEnvAt is newUIEnv with the console's own address (CARAVANA_PUBLIC_URL) set to publicURL.
+func newUIEnvAt(t *testing.T, withAdmin bool, proxies, publicURL string) *uiEnv {
+	t.Helper()
 	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -94,11 +100,12 @@ func newUIEnv(t *testing.T, withAdmin bool, proxies string) *uiEnv {
 	if err != nil {
 		t.Fatalf("parse proxies: %v", err)
 	}
-	h, err := New(Deps{Auth: e.Auth, Proxies: trusted, Log: log, Now: e.Clock.Now})
+	srv0, err := newServer(Deps{Auth: e.Auth, Proxies: trusted, Log: log, Now: e.Clock.Now})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	srv := httptest.NewServer(h)
+	srv0.publicURL = func() string { return publicURL }
+	srv := httptest.NewServer(srv0.routes())
 	t.Cleanup(srv.Close)
 	e.URL = srv.URL
 	return e
@@ -116,6 +123,9 @@ type request struct {
 	form    url.Values
 	headers map[string]string
 	cookies []*http.Cookie
+	// host, when set, is the Host header: a test reaches the server as localhost:<port>, or any
+	// name, though it connects to the test server's own address.
+	host string
 }
 
 // do sends r and returns the response, with its body read into body.
@@ -134,6 +144,9 @@ func (e *uiEnv) do(t *testing.T, r request) (resp *http.Response, body string) {
 	}
 	if r.form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if r.host != "" {
+		req.Host = r.host
 	}
 	for k, v := range r.headers {
 		req.Header.Set(k, v)

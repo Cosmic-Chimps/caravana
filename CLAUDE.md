@@ -1138,6 +1138,54 @@ Feature 032 (`specs/032-registry-paths`, registry entries per path, from CodeAlt
   copy to the host entry). It passed in the lab on 2026-11-11 (53 s; run alone with
   `-run 'TestLab/^private-registry$'`).
 
+Feature 033 (`specs/033-passkeys`, from a CodeAlta task) is implemented on the worktree branch `alta/ready-tabor-hzqw`:
+the admin may sign in with a WebAuthn passkey instead of the password, and may turn the password off. Library:
+`github.com/go-webauthn/webauthn` v0.18.2 (new module, justified in the commit; no metadata service is configured, so
+nothing is fetched). The contracts are `contracts/api.md` and `contracts/console.md`; `plan.md` R1–R13 are the decisions.
+- Store: migration 0026 (`passkeys`; `admin.password_signin`, `admin.webauthn_handle`; `sessions.verified_at`). Only public
+  material is stored (public key, counter, flags); the admin's 32-byte WebAuthn user handle is made at the first
+  registration and set only when NULL.
+- Ceremonies (`service/ceremonies.go`, `passkeys.go`): in memory in `Auth`, single use, 5 minutes, 8 per address and 512
+  in all, and `confirm` and `register` ceremonies are bound to the session that began them. User verification and a
+  resident key are required, attestation is `none`. A sign-in checks the user handle is the admin's and the credential's
+  `rp_id` is the page's domain; a sign count that doesn't rise (`CloneWarning`) is a failure. Every failure of a sign-in or
+  a confirmation is counted in the sign-in limit (`beginAttempt` first, so a locked address is refused before anything is
+  parsed); asking for options is not. Log events name our passkey ID only, never a credential ID, key, challenge or the
+  library's error text.
+- Relying party (`ui/passkeys.go`, `passkeyPlace`): the RP ID is the request's host without port, lower case; the origin
+  is the scheme (`proxies.HTTPS`) and `r.Host`. Passkeys are available only at a plain ASCII domain name (not an IP),
+  over https or at `localhost`/`*.localhost`, and, when `CARAVANA_PUBLIC_URL` is set, only at its host or a localhost
+  name. The console domain (what password sign-in is judged against) is the public URL's host, else the request's.
+- Password sign-in: `SignIn(ctx, email, password, consoleDomain, address)` and `VerifyPassword` refuse with
+  `ErrPasswordSignInOff`, without checking or counting, when it is off **and** a passkey exists for the console domain
+  (`""` means any passkey); with none the password still works (a domain change never locks the owner out).
+  `ResetPassword` turns it on. `RemovePasskey` refuses the last passkey of its own domain while it is off
+  (`ErrLastPasskey`, `*PasskeyDomainError`); `RemovePasskeyUnchecked` is the CLI's.
+- Confirm window: a session's `verified_at` (set at sign-in, by `VerifyPassword` and by a passkey confirm) must be within
+  10 minutes to add a passkey; a session from before the migration has none.
+- API 0.36.0: `listPasskeys`, `updatePasskey`, `deletePasskey`, `getSignIn`, `putSignIn` (`/v1/account/…`; codes
+  `passkey_not_found`, `last_passkey`, `no_passkey`; deploy tokens are denied by the default deny). The ceremonies are
+  console routes only; `api/parity_test.go` keeps them in the named set `consoleOnly` with their reasons.
+- Console: Settings › Sign-in (`/settings/sign-in`, the Security group's first entry, icon `fingerprint`), `/login/passkey`,
+  `/login/passkey/options`, `/settings/sign-in/verify[/options]`, `/settings/passkeys[/options|/{id}|/{id}/remove]` and
+  `POST /settings/sign-in` (`password=on|off`). The JSON routes answer `no-store` and `{"error":{"code","message"}}`; a signed-out
+  script gets 401 JSON, not a redirect. The finishes are form posts: 303 on success, the page with one sentence on failure,
+  and the credential, ceremony and library errors are never drawn, logged or put in a redirect.
+- Script: `static/js/passkeys.js` is ours (`ours` in `tools/ui-vendor.versions`), loaded by `/login` and Settings › Sign-in
+  only; no inline script and the CSP is unchanged. Its blocks (`data-passkey-signin|confirm|add`) start `hidden` and are shown
+  only when the browser supports passkeys and the server said `data-available="true"`.
+- CLI: `caravana admin passkeys list|remove --id`, `reset-password` says "Password sign-in is on again." when it was off, and
+  `status` has a `sign-in:` line.
+- Tests: `internal/webauthntest` is a software authenticator (ES256, `none` attestation) whose knobs make the failures
+  (counter, UV flag, user handle, RP ID and origin it signs for) and whose `PrivateKeySentinel()` leak tests search for.
+  `TestConsoleLab` has a step `console-passkeys` (`console_passkeys_test.go`, before `console-appearance`) at
+  `http://localhost:<port>`; it ends the lab console's session with `reset-password` and signs it in again on the way out, and
+  counts four failures (never five) so the lab's address is not locked for 15 minutes. It passed in the lab on
+  2026-11-12 (run with `-run 'TestConsoleLab/^console-(sign-in|passkeys|appearance)$'`), and a headless Chrome with its
+  virtual authenticator (CDP `WebAuthn`) added a passkey, signed in with it and with password sign-in off at
+  `http://localhost:7091`. A credential ID is not secret: it is in the options answers (`allowCredentials`,
+  `excludeCredentials`), never in a page or a log line.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

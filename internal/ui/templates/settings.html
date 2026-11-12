@@ -6,6 +6,8 @@
      secret: a registry's password, a channel's URL or token and the backup destination's secret
      key are write-only. The page's own layout and widths are in contracts/page3-settings.md. */}}
 {{define "page-class"}} cv-page-settings{{end}}
+{{/* Only the Sign-in page loads a script of its own (feature 033): static/js/passkeys.js. */}}
+{{define "head"}}{{if eq .Entry "sign-in"}}<script src="{{asset "js/passkeys.js"}}" defer></script>{{end}}{{end}}
 
 {{define "content"}}
 <div class="cv-settings">
@@ -26,6 +28,7 @@
     {{else if eq .Entry "backup-storage"}}{{template "settings-backup-storage" .}}
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
     {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
+    {{else if eq .Entry "sign-in"}}{{template "settings-sign-in" .}}
     {{else if eq .Entry "tokens"}}{{template "settings-tokens" .}}
     {{else if eq .Entry "appearance"}}{{template "settings-appearance" .}}
     {{end}}
@@ -43,6 +46,169 @@
   <div class="cv-setrow-ctl">{{end}}
 {{define "srow-close"}}</div>
 </div>{{end}}
+
+{{/* ------------------------------------------------------------- Sign-in
+     Passkeys and the password (feature 033, contracts/console.md). Nothing here is a secret: a
+     passkey is its own ID, name and domain. The ceremony and credential fields of the script's
+     forms are empty in every response. The script's blocks (data-passkey-*) are drawn hidden and
+     revealed only when the browser supports passkeys. */}}
+{{define "settings-sign-in"}}
+{{with .SignIn}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Sign-in</h1>
+    <p class="cv-lede">How you sign in to this caravana: passkeys and your password.</p>
+  </div>
+</header>
+{{with .Notice}}
+<div {{if or (eq .Kind "healthy") (eq .Kind "idle")}}role="status"{{else}}role="alert"{{end}} class="cv-notice">
+  <span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>
+  <span>{{.Text}}</span>
+</div>
+{{end}}
+
+<h2 class="cv-label cv-addhead">Passkeys</h2>
+{{if .Rows}}
+<div class="cv-panel">
+  {{range .Rows}}
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">{{.Name}}</span>
+      <p class="cv-setrow-hint"><span class="cv-inline-mono">{{.Domain}}</span></p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <p class="cv-data-muted"><span title="{{.Added.Exact}}">Added {{.Added.Text}}</span> · {{if .LastUsed.Exact}}<span title="{{.LastUsed.Exact}}">Last used {{.LastUsed.Text}}</span>{{else}}Never used{{end}}{{if .Synced}} · Synced{{end}}</p>
+      {{if .Elsewhere}}
+      <div role="status" class="cv-notice">
+        <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
+        <span>Made for <span class="cv-inline-mono">{{.Domain}}</span>: it doesn't work at this address.</span>
+      </div>
+      {{end}}
+      {{if .Last}}
+      <p class="cv-data-muted">Your only passkey for <span class="cv-inline-mono">{{.Domain}}</span>, and password sign-in is off: turn it on first, or add another passkey.</p>
+      {{end}}
+      <div class="flex flex-wrap items-start gap-2">
+        <details class="cv-confirm cv-confirm-row">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Rename passkey {{.Name}}">Rename</summary>
+          <form method="post" action="/settings/passkeys/{{.ID}}" class="cv-confirm-body">
+            <label class="cv-fld">
+              <span class="cv-label">Name</span>
+              <input class="cv-field" type="text" name="name" value="{{.Name}}" maxlength="64" autocomplete="off" required>
+            </label>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save name</button></div>
+          </form>
+        </details>
+        {{if not .Last}}
+        <details class="cv-confirm cv-confirm-row">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove passkey {{.Name}}">Remove</summary>
+          <form method="post" action="/settings/passkeys/{{.ID}}/remove" class="cv-confirm-body">
+            <p>This passkey can't sign in again. The passkey stays on the device until you delete it there.</p>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove passkey</button></div>
+          </form>
+        </details>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">No passkeys yet.</p>
+  <p class="cv-empty-text">A passkey signs you in with your fingerprint, face or device PIN, and only at this domain.</p>
+</div></div>
+{{end}}
+
+<h2 class="cv-label cv-addhead" id="add">Add a passkey</h2>
+<div class="cv-panel">
+  {{if not .Place.Available}}
+  <div class="cv-setrow">
+    <div class="cv-setrow-text"><span class="cv-setrow-label">Not at this address</span></div>
+    <div class="cv-setrow-ctl">
+      <div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.Place.Why}}</span></div>
+    </div>
+  </div>
+  {{else if not .Confirmed}}
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Confirm it's you first</span>
+      <p class="cv-setrow-hint">Adding a passkey needs you to have signed in, or confirmed, in the last 10 minutes.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      {{if .PasswordWorks}}
+      <form method="post" action="/settings/sign-in/verify" class="flex flex-col gap-3">
+        <label class="cv-fld">
+          <span class="cv-label">Password</span>
+          <input class="cv-field cv-field-mono" type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Confirm with password</button></div>
+      </form>
+      {{end}}
+      {{if .HerePasskey}}
+      <div class="flex flex-col gap-2.5" data-passkey-confirm data-available="true" data-options="/settings/sign-in/verify/options" hidden>
+        <div><button type="button" class="cv-btn cv-btn-secondary cv-btn-sm" data-passkey-button>{{icon "fingerprint" 14}}Use a passkey</button></div>
+        <p class="cv-data-muted" role="status" aria-live="polite" data-passkey-status></p>
+        <form method="post" action="/settings/sign-in/verify" data-passkey-form>
+          <input type="hidden" name="ceremony" value="">
+          <input type="hidden" name="credential" value="">
+        </form>
+      </div>
+      {{end}}
+      {{if and (not .PasswordWorks) (not .HerePasskey)}}
+      <p class="cv-data-muted">Password sign-in is off, and there is no passkey for this address to confirm with.</p>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <form method="post" action="/settings/passkeys" class="cv-setrow" data-passkey-add data-available="true" data-options="/settings/passkeys/options" data-passkey-form hidden>
+    <div class="cv-setrow-text">
+      <label class="cv-setrow-label" for="passkey-name">Name</label>
+      <p class="cv-setrow-hint" id="passkey-name-hint">So you can tell it from the others, like MacBook.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <input class="cv-field" type="text" id="passkey-name" name="name" value="{{.Name}}" placeholder="MacBook" maxlength="64" autocomplete="off" required{{if .NameErr}} autofocus aria-invalid="true" aria-describedby="passkey-name-error"{{else}} aria-describedby="passkey-name-hint"{{end}}>
+      {{with .NameErr}}<span id="passkey-name-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></span>{{end}}
+      <input type="hidden" name="ceremony" value="">
+      <input type="hidden" name="credential" value="">
+      <div><button type="button" class="cv-btn cv-btn-primary cv-btn-sm" data-passkey-button>{{icon "fingerprint" 14}}Add passkey</button></div>
+      <p class="cv-data-muted" role="status" aria-live="polite" data-passkey-status></p>
+    </div>
+  </form>
+  {{end}}
+  {{if .Place.Available}}
+  <noscript><div class="cv-setrow"><div class="cv-setrow-text"><span class="cv-setrow-label">JavaScript</span></div><div class="cv-setrow-ctl"><p class="cv-data-muted">Adding a passkey needs JavaScript.</p></div></div></noscript>
+  <div class="cv-setrow" data-passkey-unsupported hidden>
+    <div class="cv-setrow-text"><span class="cv-setrow-label">This browser</span></div>
+    <div class="cv-setrow-ctl"><p class="cv-data-muted">This browser can't use passkeys here.</p></div>
+  </div>
+  {{end}}
+</div>
+
+<h2 class="cv-label cv-addhead">Password sign-in</h2>
+<form method="post" action="/settings/sign-in" class="cv-panel">
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label">Password</span>
+      <p class="cv-setrow-hint">{{if .PasswordOn}}On{{else}}Off (passkeys only){{end}}</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      {{if .PasswordOn}}
+        {{if .CanTurnOff}}
+        <div><button type="submit" name="password" value="off" class="cv-btn cv-btn-secondary cv-btn-sm">Turn password sign-in off</button></div>
+        {{else}}
+        <div><button type="submit" name="password" value="off" class="cv-btn cv-btn-secondary cv-btn-sm" disabled aria-describedby="password-off-why">Turn password sign-in off</button></div>
+        <p class="cv-data-muted" id="password-off-why">Add a passkey for <span class="cv-inline-mono">{{.Place.Console}}</span> first.</p>
+        {{end}}
+      {{else}}
+      <div><button type="submit" name="password" value="on" class="cv-btn cv-btn-secondary cv-btn-sm">Turn password sign-in back on</button></div>
+      {{end}}
+      <p class="cv-data-muted">Lost every passkey? On the host, <span class="cv-inline-mono">sudo caravana admin reset-password</span> turns password sign-in back on.</p>
+    </div>
+  </div>
+</form>
+<p class="cv-foot">A passkey belongs to the domain it was made at, <span class="cv-inline-mono">{{.Place.Console}}</span>. If the console's domain changes, passkeys made here stop working there; password sign-in keeps working at the new domain until you add a passkey there.</p>
+{{end}}
+{{end}}
 
 {{/* ------------------------------------------------------------- Appearance
      The theme this browser uses (feature 028), kept in a cookie, not on the installation.

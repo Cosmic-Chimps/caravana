@@ -103,7 +103,7 @@ func TestBaseDocumentSetsUpHtmx(t *testing.T) {
 	for _, m := range srcs {
 		got = append(got, m[1])
 	}
-	want := []string{"/static/js/htmx.min.js", "/static/js/sse.min.js", "/static/js/console.js", "/static/js/localtime.js"}
+	want := []string{"/static/js/htmx.min.js", "/static/js/sse.min.js", "/static/js/console.js", "/static/js/localtime.js", "/static/js/passkeys.js"} // the sign-in page loads the passkey script (feature 033)
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("scripts = %v, want %v", got, want)
 	}

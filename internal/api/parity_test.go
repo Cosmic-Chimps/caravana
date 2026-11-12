@@ -21,6 +21,24 @@ type parity struct {
 	why string
 }
 
+// consoleOnly are the console's routes that change something and have no API operation, each with
+// the reason. They are the sign-in and sign-out of a browser, its own theme cookie, and the
+// passkey ceremonies (feature 033): a WebAuthn ceremony is between a browser, the owner's
+// authenticator and the console's own origin, and an API client authenticates with a token and has
+// none of them (specs/033-passkeys/plan.md, Complexity Tracking). Everything else about passkeys
+// (list, rename, remove, the password setting) is an API operation, in consoleParity.
+var consoleOnly = map[string]string{
+	"POST /login":                           "starts a browser session; clients send an API token",
+	"POST /logout":                          "ends a browser session; an API token has none",
+	"POST /settings/appearance":             "sets the browser's own theme cookie; an API client has no theme",
+	"POST /login/passkey/options":           "starts a WebAuthn sign-in ceremony for the browser's script; an API client has no authenticator",
+	"POST /login/passkey":                   "finishes a WebAuthn sign-in and starts a browser session; clients send an API token",
+	"POST /settings/sign-in/verify/options": "starts a WebAuthn confirmation ceremony for the browser's script",
+	"POST /settings/sign-in/verify":         "confirms a browser session with the password or a passkey; an API token needs no confirming",
+	"POST /settings/passkeys/options":       "starts the WebAuthn ceremony that adds a passkey: the credential is bound to the console's origin and the owner's device",
+	"POST /settings/passkeys":               "finishes the WebAuthn ceremony that adds a passkey, for the same reason",
+}
+
 // consoleParity is SC-006: everything the console reads or changes can also be
 // done with an API token through /v1. Keys are "METHOD path" as internal/ui
 // serves them. A page that reads several things lists each operation.
@@ -28,8 +46,6 @@ var consoleParity = map[string]parity{
 	// Pages with nothing of their own to read or change.
 	"GET /{$}":         {why: "a redirect to /apps"},
 	"GET /login":       {why: "the sign-in form; clients use API tokens"},
-	"POST /login":      {why: "starts a browser session; clients send an API token"},
-	"POST /logout":     {why: "ends a browser session; an API token has none"},
 	"GET /favicon.ico": {why: "the browser tab's icon, asked for at the root"},
 	"GET /apps/new":    {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
 	"GET /account":     {why: "a redirect to /settings"},
@@ -49,8 +65,13 @@ var consoleParity = map[string]parity{
 	"GET /settings/tokens":        {ops: append([]string{"listProjects"}, settingsReads...)},
 	// Appearance (feature 028): the theme is a preference of the browser, kept in its own cookie, like
 	// the Developer/Operator view; the API has no look and nothing to read or change for it.
-	"GET /settings/appearance":  {ops: settingsReads},
-	"POST /settings/appearance": {why: "sets the browser's own theme cookie; an API client has no theme"},
+	"GET /settings/appearance": {ops: settingsReads},
+	// Sign-in (feature 033): the page lists the passkeys (listPasskeys) and the setting (getSignIn); Rename, Remove and
+	// the password setting are the same service calls as the API's. The ceremonies are in consoleOnly.
+	"GET /settings/sign-in":               {ops: append([]string{"listPasskeys", "getSignIn"}, settingsReads...)},
+	"POST /settings/sign-in":              {ops: []string{"putSignIn"}},
+	"POST /settings/passkeys/{id}":        {ops: []string{"updatePasskey"}},
+	"POST /settings/passkeys/{id}/remove": {ops: []string{"deletePasskey"}},
 	// The rail's Platform panel (feature 025) is getHost; the needs-you list's disk row is listAttention.
 	// The "Deploying now" card reads each rolling app's copies (listCopies) and the deployment it
 	// redeploys from and its progress (getDeployment).
@@ -282,6 +303,12 @@ func TestConsoleParity(t *testing.T) {
 		key := rt.Method + " " + rt.Path
 		served[key] = true
 		p, ok := consoleParity[key]
+		if why, only := consoleOnly[key]; only {
+			if ok {
+				t.Errorf("%s is in both consoleParity and consoleOnly", key)
+			}
+			p, ok = parity{why: why}, true
+		}
 		if !ok {
 			t.Errorf("the console serves %s, which has no entry in consoleParity: name the API operation that does the same, or say why it needs none", key)
 			continue
@@ -289,10 +316,10 @@ func TestConsoleParity(t *testing.T) {
 		if len(p.ops) == 0 && strings.TrimSpace(p.why) == "" {
 			t.Errorf("%s names no API operation and gives no reason", key)
 		}
-		// Sign-in, sign-out and the browser's theme (feature 028) change only the browser's
-		// cookies, which an API client has none of.
+		// The routes in consoleOnly have no operation, and say why. Any other route that changes data
+		// names one.
 		changes := rt.Method != "GET"
-		if changes && len(p.ops) == 0 && key != "POST /login" && key != "POST /logout" && key != "POST /settings/appearance" {
+		if _, only := consoleOnly[key]; changes && len(p.ops) == 0 && !only {
 			t.Errorf("%s changes data but names no API operation", key)
 		}
 		// A page that changes data may also read (the edit form reads the
@@ -315,6 +342,11 @@ func TestConsoleParity(t *testing.T) {
 
 	var stale []string
 	for key := range consoleParity {
+		if !served[key] {
+			stale = append(stale, key)
+		}
+	}
+	for key := range consoleOnly {
 		if !served[key] {
 			stale = append(stale, key)
 		}

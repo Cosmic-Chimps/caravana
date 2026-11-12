@@ -103,7 +103,12 @@ func New(d Deps) (http.Handler, error) {
 func newServer(d Deps) (*server, error) {
 	s := &server{auth: d.Auth, svc: d.Service, host: d.Host, version: d.Version, proxies: d.Proxies, log: d.Log, now: d.Now,
 		csrf: http.NewCrossOriginProtection(), tabs: builtTabs, deployPage: deployPageSize, newApp: true}
-	s.publicURL = func() string { return d.Service.PublicURL() }
+	s.publicURL = func() string {
+		if d.Service == nil { // some tests serve the account pages without the deploy service
+			return ""
+		}
+		return d.Service.PublicURL()
+	}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -139,6 +144,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/login", s.showLogin},
 		{"POST", "/login", s.protected(s.signIn)},
 		{"POST", "/logout", s.protected(s.signOut)},
+		{"POST", "/login/passkey/options", s.protected(s.loginPasskeyOptions)},
+		{"POST", "/login/passkey", s.protected(s.passkeySignIn)},
 		{"GET", "/logs", s.requireSession(s.showLogsPage)},
 		{"GET", "/parts/logs", s.requirePart(s.partLogs)},
 		{"GET", "/logs/download", s.requireSession(s.downloadLogsFile)},
@@ -260,6 +267,14 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
 		{"GET", "/settings/tokens", s.requireSession(s.showTokens)},
 		{"GET", "/settings/appearance", s.requireSession(s.showAppearance)},
+		{"GET", "/settings/sign-in", s.requireSession(s.showSignIn)},
+		{"POST", "/settings/sign-in", s.protected(s.requireSession(s.setPasswordSignIn))},
+		{"POST", "/settings/sign-in/verify/options", s.protected(s.requireSessionJSON(s.verifyPasskeyOptions))},
+		{"POST", "/settings/sign-in/verify", s.protected(s.requireSession(s.verifyYou))},
+		{"POST", "/settings/passkeys/options", s.protected(s.requireSessionJSON(s.addPasskeyOptions))},
+		{"POST", "/settings/passkeys", s.protected(s.requireSession(s.addPasskey))},
+		{"POST", "/settings/passkeys/{id}", s.protected(s.requireSession(s.renamePasskey))},
+		{"POST", "/settings/passkeys/{id}/remove", s.protected(s.requireSession(s.removePasskey))},
 		{"POST", "/settings/password", s.protected(s.requireSession(s.changePassword))},
 		{"POST", "/settings/appearance", s.protected(s.requireSession(s.saveAppearance))},
 		{"POST", "/settings/tokens", s.protected(s.requireSession(s.createToken))},

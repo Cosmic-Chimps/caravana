@@ -29,6 +29,13 @@ type loginData struct {
 	Next    string // where to go after signing in, already checked
 	NoAdmin bool   // no admin yet: show the host command instead of the form
 	Notice  *notice
+	// PasswordOff says password sign-in is off at this address: the form isn't drawn, and the
+	// page says how to get back in (feature 033).
+	PasswordOff bool
+	// PasskeyAvailable is whether this address can use passkeys; PasskeyWhy says where they work
+	// when not. The script reveals the passkey button only when it is true.
+	PasskeyAvailable bool
+	PasskeyWhy       string
 }
 
 func (s *server) loginPage(r *http.Request) loginData {
@@ -61,6 +68,15 @@ func (s *server) renderLogin(w http.ResponseWriter, r *http.Request, data loginD
 	} else if err != nil {
 		s.serverError(w, r, "read admin", err)
 		return
+	} else {
+		place := s.passkeyPlace(r)
+		data.PasskeyAvailable, data.PasskeyWhy = place.Available, place.Why
+		allowed, err := s.auth.PasswordSignInAllowed(r.Context(), place.Console)
+		if err != nil {
+			s.serverError(w, r, "read sign-in settings", err)
+			return
+		}
+		data.PasswordOff = !allowed
 	}
 	s.render(w, http.StatusOK, "login", data)
 }
@@ -75,7 +91,7 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 	email, password := r.PostFormValue("email"), r.PostFormValue("password")
 	next := safeNext(r.PostFormValue("next"))
 
-	session, err := s.auth.SignIn(r.Context(), email, password, requestHostname(r), s.proxies.ClientAddress(r))
+	session, err := s.auth.SignIn(r.Context(), email, password, s.consoleDomain(r), s.proxies.ClientAddress(r))
 	if err == nil {
 		httpx.SetSessionCookie(w, session.Value, session.ExpiresAt, s.proxies.HTTPS(r))
 		if next == "" {
@@ -106,8 +122,8 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 }
 
 // requestHostname is the host the browser addressed: lowercase, without the
-// port or a trailing dot. It stands in for the console's domain until the
-// passkey pages decide it from CARAVANA_PUBLIC_URL (feature 033).
+// port or a trailing dot. passkeyPlace builds the relying party and the console's
+// domain from it (feature 033).
 func requestHostname(r *http.Request) string {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {

@@ -97,6 +97,9 @@ type settingsData struct {
 	Notifications   notificationsData
 	Certificates    certificatesData
 	Appearance      appearanceForm
+	SignIn          signInView
+	// Status, when not 0, is the HTTP status of the response (a refused form draws its page at 4xx).
+	Status int
 }
 
 // appearanceForm is the Appearance page: the theme this browser keeps. Choice is
@@ -343,6 +346,9 @@ func (s *server) renderSettings(w http.ResponseWriter, r *http.Request, entry st
 				data.Scope.Projects = append(data.Scope.Projects, scopeProject{ID: pr.ID, Label: pr.DisplayName, Selected: pr.ID == data.Scope.Project})
 			}
 		}
+	}
+	if data.Status != 0 {
+		status = data.Status
 	}
 	s.render(w, status, "settings", data)
 }

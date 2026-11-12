@@ -39,22 +39,22 @@ lab step, docs).
 
 ## Part B — the console, the lab and the docs
 
-- [ ] **T008** Relying party from the request (R2/R3) in `internal/ui`: `passkeyPlace(r)` → `(rp, available, why)`
+- [x] **T008** Relying party from the request (R2/R3) in `internal/ui`: `passkeyPlace(r)` → `(rp, available, why)`
   and the console domain; tests for https host, localhost, `*.localhost`, 127.0.0.1, `::1`, public URL set and
   different host, port kept in the origin · internal/ui/passkeys.go, internal/ui/passkeys_test.go
-- [ ] **T009** `/login`: the passkey block, `POST /login/passkey/options`, `POST /login/passkey`, password-off page and
+- [x] **T009** `/login`: the passkey block, `POST /login/passkey/options`, `POST /login/passkey`, password-off page and
   refusal · internal/ui/login.go, internal/ui/templates/login.html, internal/ui/passkeys.go, tests
-- [ ] **T010** Settings › Sign-in page and its routes (contracts/console.md), the nav entry and `fingerprint` icon;
+- [x] **T010** Settings › Sign-in page and its routes (contracts/console.md), the nav entry and `fingerprint` icon;
   parity table entries and the console-only set · internal/ui/passkeys.go, internal/ui/settings.go,
   internal/ui/settingsnav.go, internal/ui/icons.go, internal/ui/templates/settings.html, internal/ui/ui.go,
   internal/api/parity_test.go, tests
-- [ ] **T011** `static/js/passkeys.js` and its `ours` line; `tools/ui-css.sh build` · internal/ui/static/js/passkeys.js,
+- [x] **T011** `static/js/passkeys.js` and its `ours` line; `tools/ui-css.sh build` · internal/ui/static/js/passkeys.js,
   tools/ui-vendor.versions, internal/ui/static/app.css
-- [ ] **T012** Lab step `console-passkeys` (before `console-appearance`): at `http://localhost:<port>` with the software
+- [x] **T012** Lab step `console-passkeys` (before `console-appearance`): at `http://localhost:<port>` with the software
   authenticator, through the console's own routes: confirm window, add, sign out, sign in with it; rename; password off
   refuses the form; `runAdmin reset-password` turns it on; another domain's passkey, a replay and a backwards counter
   refused and counted (limit reached, then cleared by waiting is not needed: use a second address only if the lab can,
   else check the tries-left sentence); remove; the sentinel in no page, log or the SQLite file; leaves password sign-in
   on and no passkeys · cmd/caravana/console_passkeys_test.go, cmd/caravana/console_lab_test.go
-- [ ] **T013** Docs: changelog note, CLAUDE.md paragraph, the installer's `--domain` help says passkeys belong to the
+- [x] **T013** Docs: changelog note, CLAUDE.md paragraph, the installer's `--domain` help says passkeys belong to the
   domain · changelog.d/passkeys.md, CLAUDE.md, deploy/install/install.sh
