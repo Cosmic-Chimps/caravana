@@ -295,7 +295,7 @@ func TestTemplateWithoutBackups(t *testing.T) {
 	checkSchema(t, doc, raw, "TemplatePreview")
 	prev := decodeAs[struct {
 		App      struct{ Services []struct{ Backup *struct{} } } `json:"app"`
-		Warnings []app.Warning                                    `json:"warnings"`
+		Warnings []app.Warning                                   `json:"warnings"`
 	}](t, raw)
 	if prev.App.Services[0].Backup != nil || len(prev.Warnings) != 1 || prev.Warnings[0].Field != "services.uptime-kuma.backup" || prev.Warnings[0].Message != warning {
 		t.Errorf("preview = %s", raw)
