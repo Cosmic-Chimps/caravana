@@ -31,7 +31,7 @@ var consoleParity = map[string]parity{
 	"POST /login":      {why: "starts a browser session; clients send an API token"},
 	"POST /logout":     {why: "ends a browser session; an API token has none"},
 	"GET /favicon.ico": {why: "the browser tab's icon, asked for at the root"},
-	"GET /apps/new":    {ops: []string{"listProjects"}}, // a blank form, with the places the app can go in
+	"GET /apps/new":    {ops: []string{"listProjects", "listTemplates"}}, // a blank form, with the places the app can go in; the template tab lists the catalog (feature 035)
 	"GET /account":     {why: "a redirect to /settings"},
 	"GET /static/":     {why: "the console's own stylesheet, scripts and fonts"},
 	"GET /live":        {ops: []string{"listApps", "listRecentDeployments", "listAttention", "listSchedules", "listDomains", "listLogs", "getMetrics"}}, // notices that these changed
@@ -60,9 +60,10 @@ var consoleParity = map[string]parity{
 	// It also lists the app's recent actions (feature 020.5).
 	"GET /apps/{id}": {ops: []string{"getApp", "listCopies", "getProject", "getEnvironmentApp", "listAppActions"}},
 
-	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments"}},
+	// The created notice of an app installed from a template reads the template's notes (getTemplate).
+	"GET /apps/{id}/deployments": {ops: []string{"getApp", "listDeployments", "getTemplate"}},
 	// A failed deploy on an image also reads the registries, to say whether to add or fix credentials.
-	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries"}},
+	"GET /apps/{id}/configure": {ops: []string{"getApp", "getWebhook", "getCompose", "listSchedules", "listRegistries", "getTemplate"}},
 	// The Logs tab (feature 024) is the Logs page filtered to the app: listLogs with ?app= (and the lines around one,
 	// getLogsAround), the app's services for the rail (listApps), and the app for its header (getApp).
 	"GET /apps/{id}/logs": {ops: []string{"getApp", "listLogs", "getLogsAround", "listApps"}},
@@ -108,6 +109,14 @@ var consoleParity = map[string]parity{
 	// Deploy tokens (feature 020): a token scoped to this app's name in its project; the GitHub tab creates the app without deploying, then the token.
 	"POST /apps/{id}/deploy-token": {ops: []string{"createToken"}},
 	"POST /apps/new/github":        {ops: []string{"createApp", "createEnvironmentApp", "createToken"}},
+	// New app › From a template (feature 035): the page reads the template and whether a backup destination is
+	// set; Create is installTemplate, Preview (action=preview) previewTemplate. The footer's Check now and its
+	// setting, and the logo, are the API's own operations.
+	"GET /apps/new/template/{name}":  {ops: []string{"getTemplate", "getBackupDestination", "listProjects"}},
+	"POST /apps/new/template/{name}": {ops: []string{"installTemplate", "previewTemplate"}},
+	"POST /templates/check":          {ops: []string{"checkTemplates"}},
+	"POST /templates/settings":       {ops: []string{"putTemplateSettings"}},
+	"GET /templates/{name}/logo.svg": {ops: []string{"getTemplateLogo"}},
 	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
 	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a

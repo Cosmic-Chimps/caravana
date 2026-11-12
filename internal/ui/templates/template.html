@@ -1,0 +1,92 @@
+{{/* The page of one app template (feature 035): what it is, what it makes, the notes, and the form that
+     installs it. A plain form: Create posts it, and Preview (action=preview) draws this page again with the
+     app the answers make. A secret input is never written back. Takes a templatePage. */}}
+
+{{define "tpl-service"}}
+<li class="cv-tplsvc">
+  <span class="cv-inline-mono text-fg-1">{{.Name}}</span>
+  {{with .Image}}<span class="cv-inline-mono text-fg-3">{{.}}</span>{{end}}
+  {{range .Domains}}<span class="text-fg-2">reached at {{.}}{{if $.TeamOnly}}, with a password{{end}}</span>{{end}}
+  {{with .Backup}}<span class="cv-chip">backed up ({{.}})</span>{{end}}
+</li>
+{{end}}
+
+{{define "content"}}
+<section class="cv-main cv-narrow">
+  <p class="cv-backlink"><a href="{{.BackHref}}">← All templates</a></p>
+  <header class="cv-pagehead cv-tplhead">
+    {{if .Logo}}<img class="cv-tpltile cv-tpltile-lg cv-tpltile-img" src="{{.Logo}}" alt="" width="40" height="40">{{else}}<span class="cv-tpltile cv-tpltile-lg {{.HueClass}}" aria-hidden="true">{{.Letter}}</span>{{end}}
+    <div class="cv-tplhead-text">
+      <h1 class="cv-headline">{{.Title}} <span class="cv-inline-mono text-fg-3">{{.Version}}</span></h1>
+      <p class="cv-lede">{{.Description}}</p>
+      <p class="cv-note"><a href="{{.Upstream}}" rel="noopener noreferrer">Upstream</a>{{range .Tags}} <span class="cv-chip">{{.}}</span>{{end}}</p>
+    </div>
+  </header>
+
+  <div class="flex flex-col gap-6">
+    <section aria-labelledby="tpl-makes" class="flex flex-col gap-2">
+      <h2 id="tpl-makes" class="cv-label">What it makes</h2>
+      <div class="cv-panel p-4 flex flex-col gap-3">
+        <ul class="cv-tplsvcs">{{range .Services}}{{template "tpl-service" .}}{{end}}</ul>
+        {{if .Generated}}<p class="text-sm text-fg-3">caravana makes {{.Generated}} password{{if ne .Generated 1}}s{{end}} for it, kept in the secrets {{range $i, $n := .GeneratedNames}}{{if $i}}, {{end}}<span class="cv-inline-mono text-fg-1">{{$n}}</span>{{end}}. They go to the app's secret store and are never shown.</p>{{end}}
+      </div>
+    </section>
+
+    {{with .Notes}}
+    <section aria-labelledby="tpl-notes" class="flex flex-col gap-2">
+      <h2 id="tpl-notes" class="cv-label">Notes</h2>
+      <div class="cv-panel p-4"><p class="cv-tplnotes">{{.}}</p></div>
+    </section>
+    {{end}}
+
+    {{with .Preview}}
+    <section aria-labelledby="tpl-preview" class="flex flex-col gap-2">
+      <h2 id="tpl-preview" class="cv-label">Preview</h2>
+      <div class="cv-panel p-4 flex flex-col gap-3">
+        <p class="text-base text-fg-1">With these answers it makes:</p>
+        <ul class="cv-tplsvcs">{{range .Services}}{{template "tpl-service" .}}{{end}}</ul>
+        {{range .Warnings}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></div>{{end}}
+        <p class="text-sm text-fg-3">Nothing was made: no app, no password, no deploy.</p>
+      </div>
+    </section>
+    {{end}}
+
+    <form method="post" action="{{.Form.Action}}" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
+      {{with .Form.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+      {{with .Form.SavedID}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span><span class="cv-inline-mono text-fg-1">{{.}}</span> was saved, but its first deploy didn't start. Change what is wrong on its <a href="/apps/{{.}}/deployments">Deployments tab</a> and deploy again.</span></div>{{end}}
+
+      {{if .NoDestination}}
+      <div role="status" class="cv-notice" id="tpl-nodest"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>This template backs up {{range $i, $n := .BackupServices}}{{if $i}}, {{end}}<span class="cv-inline-mono text-fg-1">{{$n}}</span>{{end}}. No backup destination is set yet. <a href="/settings/backup-storage">Set one in Settings › Backup storage</a>, or install without backups for now and turn them on later.</span></div>
+      <label class="cv-check" for="withoutBackups">
+        <input type="checkbox" id="withoutBackups" name="withoutBackups" value="1"{{if .Form.WithoutBackups}} checked{{end}}>
+        <span>Install without backups for now</span>
+      </label>
+      {{end}}
+
+      <label class="cv-fld" for="name">
+        <span class="cv-label">Name</span>
+        <input class="cv-field cv-field-mono" id="name" type="text" name="name" value="{{.Form.Name.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="31" required{{if .Form.Name.Error}} aria-invalid="true" aria-describedby="name-error"{{end}}{{if eq .Form.Focus "name"}} autofocus{{end}}>
+        <span class="cv-data-muted cv-hint">Lowercase letters, digits and dashes. It names the app and its job.</span>
+        {{template "field-error" .Form.Name}}
+      </label>
+
+      {{template "place-select" .Form.Place}}
+
+      {{range .Form.Inputs}}
+      <label class="cv-fld" for="{{.Field.ID}}">
+        <span class="cv-label">{{.Label}}</span>
+        <input class="cv-field{{if not .Secret}} cv-field-mono{{end}}" id="{{.Field.ID}}" type="{{.Type}}" name="{{.Field.ID}}" value="{{if not .Secret}}{{.Field.Value}}{{end}}"{{with .Mode}} inputmode="{{.}}"{{end}}{{if .Example}} placeholder="e.g. {{.Example}}"{{end}} autocomplete="{{if .Secret}}new-password{{else}}off{{end}}" autocapitalize="off" spellcheck="false"{{if .Required}} required{{end}}{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if eq $.Form.Focus .Field.ID}} autofocus{{end}}>
+        {{with .Help}}<span class="cv-data-muted cv-hint">{{.}}</span>{{end}}
+        {{if and .Secret $.Form.Posted}}<span class="cv-data-muted cv-hint">Type it again: secrets aren't kept in the form.</span>{{end}}
+        {{template "field-error" .Field}}
+      </label>
+      {{end}}
+
+      <div class="cv-actions">
+        <button type="submit" class="cv-btn cv-btn-primary">Create</button>
+        <button type="submit" name="action" value="preview" class="cv-btn cv-btn-secondary">Preview</button>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}

@@ -108,8 +108,11 @@ func (d deleteView) Open() bool { return len(d.Error) > 0 || len(d.Notice) > 0 }
 // grid of Copies & size and Deploy, then per app the Domains and Secrets
 // panels, then the panels the console needs besides.
 type configureTab struct {
-	ID      string
-	Compose bool // the app was made from a Compose file: a note says a file replaces edits
+	ID string
+	// TemplateFact is "Template · Hollo 0.9.25-1" for an app installed from a template
+	// (feature 035); empty otherwise.
+	TemplateFact sentence
+	Compose      bool // the app was made from a Compose file: a note says a file replaces edits
 	// ComposeForm is the Compose form drawn first when the app keeps its file
 	// (feature 015); the definition is then read-only (Edit.ReadOnly).
 	ComposeForm *composeView

@@ -91,6 +91,9 @@ type appPage struct {
 	// Created is the notice after New app's "Create without deploying" (feature
 	// 020): the app exists and nothing is deployed yet. Empty otherwise.
 	Created sentence
+	// Installed is the notice after New app › From a template (feature 035): where the
+	// app came from, and the template's notes. nil otherwise.
+	Installed *installedNotice
 	// Notice is what an action that just succeeded says (?did=), Refusal why one
 	// was refused (feature 020.5). Both show above the header.
 	Notice  sentence
@@ -907,7 +910,7 @@ func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status 
 	}
 	head.LiveURL = "/live/apps/" + id
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "deployments"),
-		Deployments: &deploymentsTab{Form: form, History: history}})
+		Deployments: &deploymentsTab{Form: form, History: history}, Installed: s.installedNoticeOf(r, sum.AppRecord)})
 }
 
 // showDeployments answers GET /apps/{id}/deployments.
@@ -1140,12 +1143,13 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		form = *extra.Form
 	}
 	tab := &configureTab{
-		ID:      id,
-		Compose: sum.App.Source.Kind == app.SourceCompose,
-		Notice:  extra.Notice,
-		Copied:  copiedNotice(r, sum),
-		Stopped: sum.StoppedAt != nil,
-		Edit:    editViewOf(sum.App, form, extra.Stale),
+		ID:           id,
+		TemplateFact: s.templateFactOf(r, sum.AppRecord),
+		Compose:      sum.App.Source.Kind == app.SourceCompose,
+		Notice:       extra.Notice,
+		Copied:       copiedNotice(r, sum),
+		Stopped:      sum.StoppedAt != nil,
+		Edit:         editViewOf(sum.App, form, extra.Stale),
 		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
 		Secrets:   secretsPanelOf(sum.App),

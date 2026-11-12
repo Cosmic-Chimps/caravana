@@ -96,11 +96,16 @@ type newAppPage struct {
 	Form    newAppForm
 	Compose *composeView  // set on the Compose file tab
 	Result  *githubResult // set on the answer to a created GitHub app: the token and the workflow
+	// Templates is the "From a template" tab (feature 035).
+	Templates *templateGrid
 }
 
 // query is what the tabs add to their links so the chosen environment stays
 // chosen: "" for Default's production.
 func (p newAppPage) query() string {
+	if p.Templates != nil {
+		return placeValues(p.Templates.Place).Encode()
+	}
 	if p.Compose != nil {
 		return p.Compose.Place.Query()
 	}
@@ -130,6 +135,14 @@ func (p newAppPage) GitHubHref() string {
 	return "/apps/new?from=github"
 }
 
+// TemplatesHref is the address of the "From a template" tab.
+func (p newAppPage) TemplatesHref() string {
+	if q := p.query(); q != "" {
+		return "/apps/new?from=template&" + q
+	}
+	return "/apps/new?from=template"
+}
+
 // showNewApp answers GET /apps/new.
 func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session string) {
 	asked := placeAsked(r.URL.Query())
@@ -137,6 +150,10 @@ func (s *server) showNewApp(w http.ResponseWriter, r *http.Request, session stri
 		v := newComposeView("")
 		v.Place.Value = asked
 		s.drawCompose(w, r, http.StatusOK, v)
+		return
+	}
+	if r.URL.Query().Get("from") == "template" {
+		s.showTemplateGrid(w, r)
 		return
 	}
 	form := newForm()

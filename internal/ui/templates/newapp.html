@@ -95,21 +95,79 @@
 </section>
 {{end}}
 
+{{/* The "From a template" tab (feature 035): a search, the tags, one card per template and the catalog's
+     footer. Everything is a link or a plain form, so it works without script. Takes a templateGrid. */}}
+{{define "template-grid"}}
+<div class="flex flex-col gap-5">
+  {{with .Notice}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  {{with .Refusal}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  <form method="get" action="/apps/new" class="cv-tplsearch" role="search">
+    <input type="hidden" name="from" value="template">
+    {{range .HiddenPlace}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+    {{with .Tag}}<input type="hidden" name="tag" value="{{.}}">{{end}}
+    <label class="cv-fld cv-tplsearch-q" for="q">
+      <span class="sr-only">Search templates</span>
+      <input class="cv-field" id="q" type="search" name="q" value="{{.Q}}" placeholder="Search templates" autocomplete="off" spellcheck="false">
+    </label>
+    <button type="submit" class="cv-btn cv-btn-secondary">Search</button>
+  </form>
+  {{if .Tags}}
+  <nav aria-label="Tags" class="cv-tpltags">
+    <a href="{{.AllHref}}" class="cv-tpltag"{{if not .Tag}} aria-current="true"{{end}}>All</a>
+    {{range .Tags}}<a href="{{.Href}}" class="cv-tpltag"{{if .Current}} aria-current="true"{{end}}>{{.Name}}</a>{{end}}
+  </nav>
+  {{end}}
+  {{if .Cards}}
+  <ul class="cv-tplgrid" aria-label="Templates">
+    {{range .Cards}}
+    <li class="cv-panel cv-tplcard">
+      <a href="{{.Href}}" class="cv-tplcard-link">
+        {{if .Logo}}<img class="cv-tpltile cv-tpltile-img" src="{{.Logo}}" alt="" width="40" height="40">{{else}}<span class="cv-tpltile {{.HueClass}}" aria-hidden="true">{{.Letter}}</span>{{end}}
+        <span class="cv-tplcard-body">
+          <span class="cv-tplcard-head"><span class="cv-tplcard-title">{{.Title}}</span> <span class="cv-inline-mono text-fg-3">{{.Version}}</span></span>
+          <span class="cv-tplcard-text">{{.Description}}</span>
+        </span>
+      </a>
+      {{if .Tags}}<span class="cv-tplcard-tags">{{range .Tags}}<span class="cv-chip">{{.}}</span> {{end}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="cv-empty">
+    <p class="cv-empty-title">No template matches.</p>
+    <p class="cv-empty-text"><a href="{{.ClearHref}}">Show every template</a></p>
+  </div>
+  {{end}}
+  <footer class="cv-tplfoot">
+    <p class="cv-note">{{template "sentence" .Version}}{{with .Error}} {{template "sentence" .}}{{end}}</p>
+    <div class="cv-tplfoot-forms">
+      {{if .Checking}}<form method="post" action="/templates/check">{{range .HiddenPlace}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}<button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Check now</button></form>{{end}}
+      <form method="post" action="/templates/settings">{{range .HiddenPlace}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+        {{if .Checking}}<input type="hidden" name="checking" value="off"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Stop checking for new templates</button>
+        {{else}}<input type="hidden" name="checking" value="on"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Check for new templates daily</button>{{end}}
+      </form>
+    </div>
+  </footer>
+</div>
+{{end}}
+
 {{define "content"}}
 {{if .Result}}{{template "github-result" .Result}}{{else}}
-<section class="cv-main{{if not .Compose}} cv-narrow{{end}}">
+<section class="cv-main{{if not .Compose}}{{if not .Templates}} cv-narrow{{end}}{{end}}">
   <header class="cv-pagehead">
     <h1 class="cv-headline">New app</h1>
-    {{if .Compose}}<p class="cv-lede">Deploy a Compose file. caravana shows what it becomes before anything is saved.</p>
+    {{if .Templates}}<p class="cv-lede">Install a known app from a few answers. caravana makes the passwords it needs and deploys it like any other app.</p>
+    {{else if .Compose}}<p class="cv-lede">Deploy a Compose file. caravana shows what it becomes before anything is saved.</p>
     {{else if .Form.GitHub}}<p class="cv-lede">Deploy from a GitHub repository. Your workflow builds the image and pushes it to ghcr.io. caravana creates the app and a token that can deploy only that app, and shows you the workflow to commit.</p>
     {{else}}<p class="cv-lede">Deploy an image from Docker Hub or GHCR. caravana pins it to a digest and starts it. Or create the app now and deploy it later, from a webhook or the API.</p>{{end}}
   </header>
   <nav aria-label="What to deploy" class="cv-tabs">
-    <a href="{{.ImageHref}}" class="cv-tab"{{if and (not .Compose) (not .Form.GitHub)}} aria-current="page"{{end}}>Image</a>
+    <a href="{{.ImageHref}}" class="cv-tab"{{if and (not .Compose) (not .Form.GitHub) (not .Templates)}} aria-current="page"{{end}}>Image</a>
     <a href="{{.ComposeHref}}" class="cv-tab"{{if .Compose}} aria-current="page"{{end}}>Compose file</a>
     <a href="{{.GitHubHref}}" class="cv-tab"{{if .Form.GitHub}} aria-current="page"{{end}}>From a GitHub repository</a>
+    <a href="{{.TemplatesHref}}" class="cv-tab"{{if .Templates}} aria-current="page"{{end}}>From a template</a>
   </nav>
-  {{if .Compose}}{{template "compose-form" .Compose}}{{else}}{{template "newapp-form" .Form}}{{end}}
+  {{if .Templates}}{{template "template-grid" .Templates}}{{else if .Compose}}{{template "compose-form" .Compose}}{{else}}{{template "newapp-form" .Form}}{{end}}
 </section>
 {{end}}
 {{end}}

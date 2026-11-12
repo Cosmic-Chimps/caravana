@@ -377,6 +377,34 @@
   .cv-project-count { white-space: nowrap; }
   /* A small pill for a name (an environment): not a status, so no mark and no hue. */
   .cv-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid var(--color-line-2); border-radius: 2px; background: var(--color-ink-2); font: 400 12px/1 var(--font-mono); color: var(--color-fg-2); }
+  /* App templates (feature 035). The grid of cards, the tag links, the monogram tile (the console's one identity
+     hue, six of them, as a service has) and the page of one template. Tokens only. */
+  .cv-tplsearch { display: flex; gap: 10px; align-items: end; }
+  .cv-tplsearch-q { flex: 1; min-width: 0; }
+  .cv-tpltags { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .cv-tpltag { font: 500 13px/1 var(--font-sans); color: var(--color-fg-3); text-decoration: none; padding: 6px 0; border-bottom: 2px solid transparent; }
+  .cv-tpltag:hover { color: var(--color-fg-2); }
+  .cv-tpltag[aria-current="true"] { color: var(--color-fg-1); border-bottom-color: var(--color-fg-1); }
+  .cv-tplgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; list-style: none; margin: 0; padding: 0; }
+  .cv-tplcard { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+  .cv-tplcard:hover { border-color: var(--color-line-2); }
+  .cv-tplcard-link { display: flex; gap: 14px; align-items: flex-start; color: inherit; text-decoration: none; }
+  .cv-tplcard-link:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; }
+  .cv-tplcard-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cv-tplcard-title { font: 500 15px/1.2 var(--font-sans); color: var(--color-fg-1); }
+  .cv-tplcard-text { font-size: 13px; line-height: 1.4; color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-tplcard-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cv-tpltile { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--cv-hue, var(--color-line-2)); border-radius: 2px; background: var(--color-ink-2); font: 500 18px/1 var(--font-mono); color: var(--cv-hue, var(--color-fg-2)); }
+  .cv-tpltile-img { border-color: var(--color-line-2); object-fit: contain; }
+  .cv-tpltile-lg { width: 48px; height: 48px; font-size: 22px; }
+  .cv-tplfoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding-top: 14px; border-top: 1px solid var(--color-line-1); }
+  .cv-tplfoot-forms { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cv-tplhead { display: flex; gap: 16px; align-items: flex-start; }
+  .cv-tplhead-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .cv-tplsvcs { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0; }
+  .cv-tplsvc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; }
+  .cv-tplnotes { font-size: 14px; line-height: 1.5; color: var(--color-fg-2); white-space: pre-line; text-wrap: pretty; }
+  .cv-tplfact { margin-bottom: 4px; }
   .cv-promote-row { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; }
   /* An app's other environments, under the summary. */
   .cv-envs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
