@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
+	"github.com/cosmic-chimps/caravana/internal/webauthntest"
 )
 
 const cliPassword = "correct horse battery"
@@ -68,8 +71,8 @@ func TestAdminInitStatusReset(t *testing.T) {
 
 	code, stdout, stderr = admin(t, dir, "", "status")
 	record(stdout, stderr)
-	if code != 0 || strings.TrimSpace(stdout) != "admin: you@example.com" {
-		t.Errorf("status = %d, %q; want 0 and the email", code, stdout)
+	if code != 0 || stdout != "admin: you@example.com\nsign-in: password on, 0 passkeys\n" {
+		t.Errorf("status = %d, %q; want 0, the email and the sign-in line", code, stdout)
 	}
 
 	before := adminHash(t, dir)
@@ -137,6 +140,10 @@ func TestAdminUsage(t *testing.T) {
 		"revoke-token no name":  {"revoke-token"},
 		"bad --expires-in":      {"create-token", "--name", "ci", "--expires-in", "soon"},
 		"negative --expires-in": {"create-token", "--name", "ci", "--expires-in", "-1h"},
+		"passkeys alone":        {"passkeys"},
+		"unknown passkeys word": {"passkeys", "frobnicate"},
+		"remove without --id":   {"passkeys", "remove"},
+		"list with a stray arg": {"passkeys", "list", "extra"},
 	} {
 		code, _, stderr := admin(t, dir, cliPassword+"\n", args...)
 		if len(args) == 0 {
@@ -290,4 +297,173 @@ func TestGateAPIStep(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("g.api GET /v1/tokens = %d, want 200", resp.StatusCode)
 	}
+}
+
+// addCLIPasskey adds a passkey to the store in dir, as the console would, and returns the
+// software authenticator that made it. Nothing else may hold the store.
+func addCLIPasskey(t *testing.T, dir, domain, name string) *webauthntest.Authenticator {
+	t.Helper()
+	return addCLIPasskeyWith(t, dir, cliPassword, domain, name)
+}
+
+// setPasswordSignIn turns password sign-in on or off in the store in dir.
+func setPasswordSignIn(t *testing.T, dir string, on bool, domain string) {
+	t.Helper()
+	st, err := store.Open(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	auth := service.NewAuth(st, slog.New(slog.DiscardHandler), service.AuthOptions{})
+	if _, err := auth.SetPasswordSignIn(context.Background(), on, domain); err != nil {
+		t.Fatalf("SetPasswordSignIn(%v): %v", on, err)
+	}
+}
+
+func TestAdminPasskeys(t *testing.T) {
+	dir := t.TempDir()
+	var allOutput strings.Builder
+	record := func(stdout, stderr string) { allOutput.WriteString(stdout + stderr) }
+	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
+		t.Fatalf("init = %d %s", code, stderr)
+	}
+
+	code, stdout, stderr := admin(t, dir, "", "passkeys", "list")
+	record(stdout, stderr)
+	if code != 0 || strings.TrimSpace(stdout) != "No passkeys." {
+		t.Errorf("list with none = %d, %q", code, stdout)
+	}
+
+	macbook := addCLIPasskey(t, dir, "console.example.com", "MacBook")
+	addCLIPasskey(t, dir, "old.example.com", "Old domain")
+
+	code, stdout, stderr = admin(t, dir, "", "passkeys", "list")
+	record(stdout, stderr)
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if code != 0 || len(lines) != 3 {
+		t.Fatalf("list = %d, %q; want a header and two rows", code, stdout)
+	}
+	header := strings.Fields(lines[0])
+	if strings.Join(header, " ") != "ID NAME DOMAIN ADDED LAST USED" {
+		t.Errorf("header = %q", lines[0])
+	}
+	first, second := strings.Fields(lines[1]), strings.Fields(lines[2])
+	if len(first) != 5 || len(first[0]) != 26 || first[1] != "MacBook" || first[2] != "console.example.com" || first[4] != "never" {
+		t.Errorf("first row = %q", lines[1])
+	}
+	if len(second) != 6 || second[1] != "Old" || second[3] != "old.example.com" { // the name has a space
+		t.Errorf("second row = %q", lines[2])
+	}
+
+	code, stdout, stderr = admin(t, dir, "", "status")
+	record(stdout, stderr)
+	if code != 0 || !strings.Contains(stdout, "sign-in: password on, 2 passkeys\n") {
+		t.Errorf("status = %d, %q; want the sign-in line with 2 passkeys", code, stdout)
+	}
+
+	// Remove one by its ID.
+	code, stdout, stderr = admin(t, dir, "", "passkeys", "remove", "--id", first[0])
+	record(stdout, stderr)
+	if code != 0 || !strings.Contains(stdout, "Passkey "+first[0]+" (MacBook) removed.") || strings.Contains(stdout, "still off") {
+		t.Errorf("remove = %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	_, stdout, _ = admin(t, dir, "", "passkeys", "list")
+	if strings.Contains(stdout, "MacBook") || !strings.Contains(stdout, "Old domain") {
+		t.Errorf("list after remove = %q", stdout)
+	}
+
+	// An unknown ID.
+	code, stdout, stderr = admin(t, dir, "", "passkeys", "remove", "--id", "nope")
+	record(stdout, stderr)
+	if code != 1 || !strings.Contains(stderr, `no passkey has the ID "nope"`) {
+		t.Errorf("remove unknown = %d, stderr %q; want 1 saying so", code, stderr)
+	}
+
+	// Nothing the authenticator keeps private, and not even a credential ID, is printed.
+	leaks := append(macbook.PrivateKeySentinel(), base64.RawURLEncoding.EncodeToString(macbook.CredentialID()), hex.EncodeToString(macbook.CredentialID()))
+	for _, leak := range leaks {
+		if strings.Contains(allOutput.String(), leak) {
+			t.Errorf("the output holds %q", leak)
+		}
+	}
+}
+
+func TestAdminPasskeysWhilePasswordSignInIsOff(t *testing.T) {
+	dir := t.TempDir()
+	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
+		t.Fatalf("init = %d %s", code, stderr)
+	}
+	addCLIPasskey(t, dir, "console.example.com", "MacBook")
+	setPasswordSignIn(t, dir, false, "console.example.com")
+
+	code, stdout, _ := admin(t, dir, "", "status")
+	if code != 0 || !strings.Contains(stdout, "sign-in: password off (passkeys only), 1 passkey\n") {
+		t.Errorf("status = %d, %q; want password off with 1 passkey", code, stdout)
+	}
+
+	// The host's removal has no last-passkey rule, and reminds the owner of the way back.
+	_, list, _ := admin(t, dir, "", "passkeys", "list")
+	id := strings.Fields(strings.Split(strings.TrimSpace(list), "\n")[1])[0]
+	code, stdout, stderr := admin(t, dir, "", "passkeys", "remove", "--id", id)
+	if code != 0 || !strings.Contains(stdout, "Password sign-in is still off") || !strings.Contains(stdout, "reset-password") {
+		t.Errorf("remove the last passkey = %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	_, stdout, _ = admin(t, dir, "", "status")
+	if !strings.Contains(stdout, "sign-in: password off (passkeys only), 0 passkeys\n") {
+		t.Errorf("status after = %q", stdout)
+	}
+}
+
+func TestAdminResetTurnsPasswordSignInOn(t *testing.T) {
+	dir := t.TempDir()
+	if code, _, stderr := admin(t, dir, cliPassword+"\n", "init", "--email", "you@example.com"); code != 0 {
+		t.Fatalf("init = %d %s", code, stderr)
+	}
+
+	// With it on already, the reset says nothing about it.
+	code, stdout, _ := admin(t, dir, "a brand new password\n", "reset-password")
+	if code != 0 || strings.Contains(stdout, "Password sign-in is on again") {
+		t.Errorf("reset with password sign-in on = %d, %q", code, stdout)
+	}
+
+	addCLIPasskeyWith(t, dir, "a brand new password", "console.example.com", "MacBook")
+	setPasswordSignIn(t, dir, false, "console.example.com")
+	code, stdout, stderr := admin(t, dir, "another new password\n", "reset-password")
+	if code != 0 || !strings.Contains(stdout, "Password sign-in is on again.") {
+		t.Fatalf("reset with it off = %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	_, stdout, _ = admin(t, dir, "", "status")
+	if !strings.Contains(stdout, "sign-in: password on, 1 passkey\n") {
+		t.Errorf("status after the reset = %q; want password on and the passkey kept", stdout)
+	}
+}
+
+// addCLIPasskeyWith is addCLIPasskey for an admin whose password is not cliPassword.
+func addCLIPasskeyWith(t *testing.T, dir, password, domain, name string) *webauthntest.Authenticator {
+	t.Helper()
+	ctx := context.Background()
+	st, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	auth := service.NewAuth(st, slog.New(slog.DiscardHandler), service.AuthOptions{})
+	session, err := auth.SignIn(ctx, "you@example.com", password, "", "198.51.100.1")
+	if err != nil {
+		t.Fatalf("SignIn: %v", err)
+	}
+	rp := service.RelyingParty{ID: domain, Origin: "https://" + domain}
+	opts, err := auth.BeginPasskeyRegistration(ctx, session.Value, rp, "198.51.100.1")
+	if err != nil {
+		t.Fatalf("BeginPasskeyRegistration: %v", err)
+	}
+	a := webauthntest.New(domain)
+	posted, err := a.Create(opts.Options, rp.Origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.FinishPasskeyRegistration(ctx, session.Value, rp, name, opts.Ceremony, posted); err != nil {
+		t.Fatalf("FinishPasskeyRegistration: %v", err)
+	}
+	return a
 }

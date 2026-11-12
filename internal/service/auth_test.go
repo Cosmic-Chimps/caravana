@@ -358,10 +358,10 @@ func TestChangePassword(t *testing.T) {
 	signedIn := func(t *testing.T, e *authEnv) (keep, other Session, token CreatedAPIToken) {
 		t.Helper()
 		var err error
-		if keep, err = e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9"); err != nil {
+		if keep, err = e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); err != nil {
 			t.Fatal(err)
 		}
-		if other, err = e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9"); err != nil {
+		if other, err = e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); err != nil {
 			t.Fatal(err)
 		}
 		if token, err = e.auth.CreateAPIToken(ctx, "ci", nil); err != nil {
@@ -424,7 +424,7 @@ func TestChangePassword(t *testing.T) {
 		if _, err := e.auth.CheckAPIToken(ctx, token.Token); err != nil {
 			t.Errorf("the API token stopped working: %v", err)
 		}
-		if _, err := e.auth.SignIn(ctx, testEmail, newPassword, "203.0.113.9"); err != nil {
+		if _, err := e.auth.SignIn(ctx, testEmail, newPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("signing in with the new password: %v", err)
 		}
 	})

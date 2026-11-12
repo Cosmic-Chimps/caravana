@@ -15,13 +15,16 @@ type SessionRecord struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
+	// VerifiedAt is when the session last proved it is the owner (feature 033):
+	// at sign-in, and by Confirm it's you. Nil for a session from before.
+	VerifiedAt *time.Time
 }
 
 // CreateSession stores a new session.
 func (s *Store) CreateSession(ctx context.Context, r SessionRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO sessions (id_hash, created_at, last_seen_at, expires_at) VALUES (?, ?, ?, ?)",
-		r.IDHash, formatTime(r.CreatedAt), formatTime(r.LastSeenAt), formatTime(r.ExpiresAt))
+		"INSERT INTO sessions (id_hash, created_at, last_seen_at, expires_at, verified_at) VALUES (?, ?, ?, ?, ?)",
+		r.IDHash, formatTime(r.CreatedAt), formatTime(r.LastSeenAt), formatTime(r.ExpiresAt), nullTime(r.VerifiedAt))
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
@@ -32,9 +35,10 @@ func (s *Store) CreateSession(ctx context.Context, r SessionRecord) error {
 func (s *Store) GetSession(ctx context.Context, idHash string) (SessionRecord, error) {
 	r := SessionRecord{IDHash: idHash}
 	var created, seen, expires string
+	var verified sql.NullString
 	err := s.db.QueryRowContext(ctx,
-		"SELECT created_at, last_seen_at, expires_at FROM sessions WHERE id_hash = ?", idHash,
-	).Scan(&created, &seen, &expires)
+		"SELECT created_at, last_seen_at, expires_at, verified_at FROM sessions WHERE id_hash = ?", idHash,
+	).Scan(&created, &seen, &expires, &verified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SessionRecord{}, fmt.Errorf("session: %w", ErrNotFound)
 	}
@@ -50,7 +54,26 @@ func (s *Store) GetSession(ctx context.Context, idHash string) (SessionRecord, e
 	if r.ExpiresAt, err = parseTime(expires); err != nil {
 		return SessionRecord{}, fmt.Errorf("session: %w", err)
 	}
+	if r.VerifiedAt, err = parseNullTime(verified); err != nil {
+		return SessionRecord{}, fmt.Errorf("session: %w", err)
+	}
 	return r, nil
+}
+
+// SetSessionVerified records that the session proved it is the owner at the
+// given time. An unknown session is ErrNotFound.
+func (s *Store) SetSessionVerified(ctx context.Context, idHash string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx,
+		"UPDATE sessions SET verified_at = ? WHERE id_hash = ?", formatTime(at), idHash)
+	if err != nil {
+		return fmt.Errorf("verify session: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("verify session: %w", err)
+	} else if n == 0 {
+		return fmt.Errorf("verify session: session: %w", ErrNotFound)
+	}
+	return nil
 }
 
 // TouchSession records that the session was used at the given time.

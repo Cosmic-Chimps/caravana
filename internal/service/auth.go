@@ -33,6 +33,10 @@ var (
 	// never says which of these it was.
 	ErrNotAuthenticated = errors.New("missing or invalid API token or session")
 	ErrTokenNameTaken   = errors.New("an active token already has this name")
+
+	// ErrPasswordSignInOff is SignIn refusing because password sign-in is turned
+	// off and a passkey exists for the console's domain (feature 033).
+	ErrPasswordSignInOff = errors.New("password sign-in is off: sign in with a passkey")
 )
 
 // SigninLimitError says how long to wait. It wraps ErrSigninLimited.
@@ -83,6 +87,12 @@ type Auth struct {
 	dummy     string
 
 	limit limiter // the sign-in limit's bookkeeping, signinlimit.go
+
+	ceremonies ceremonies // pending passkey ceremonies, ceremonies.go
+	// passkeyMu serializes the changes that check the passkeys before they change
+	// them (removing one, turning password sign-in off), so two at once can't
+	// each see a passkey the other is about to take.
+	passkeyMu sync.Mutex
 
 	// onHash, when set (tests only), is called every time a password is
 	// hashed or checked, so tests can count the slow work.
@@ -169,8 +179,8 @@ func (a *Auth) AdminEmail(ctx context.Context) (string, error) {
 }
 
 // ResetPassword sets a new password without asking for the old one (it is
-// for the owner at the host's shell). It ends every session; API tokens keep
-// working.
+// for the owner at the host's shell). It ends every session and turns password
+// sign-in on if it was off; API tokens and passkeys are kept.
 func (a *Auth) ResetPassword(ctx context.Context, password string) error {
 	if err := checkPasswordRule("password", password); err != nil {
 		return err
@@ -185,6 +195,11 @@ func (a *Auth) ResetPassword(ctx context.Context, password string) error {
 		return fmt.Errorf("reset password: %w", err)
 	}
 	a.event("password_reset")
+	// The owner at the host's shell is the way back in when every passkey is
+	// lost, so a reset turns password sign-in on again (passkeys are kept).
+	if err := a.passwordSignInOn(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 

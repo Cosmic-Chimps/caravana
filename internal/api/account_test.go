@@ -23,10 +23,10 @@ func TestChangePasswordEndpoint(t *testing.T) {
 		if status != http.StatusNoContent || len(raw) != 0 {
 			t.Fatalf("PUT = %d %s, want 204 with no body", status, raw)
 		}
-		if _, err := e.Auth.SignIn(ctx, testAdminEmail, newAdminPassword, "203.0.113.9"); err != nil {
+		if _, err := e.Auth.SignIn(ctx, testAdminEmail, newAdminPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("the new password does not sign in: %v", err)
 		}
-		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "203.0.113.9"); err == nil {
+		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "", "203.0.113.9"); err == nil {
 			t.Error("the old password still signs in")
 		}
 		// The API token that made the call keeps working.
@@ -58,7 +58,7 @@ func TestChangePasswordEndpoint(t *testing.T) {
 			}
 		}
 		// Nothing changed.
-		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "203.0.113.9"); err != nil {
+		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("the password changed on refused requests: %v", err)
 		}
 	})
@@ -121,7 +121,7 @@ func TestChangePasswordEndpoint(t *testing.T) {
 		if status != http.StatusForbidden {
 			t.Fatalf("cross-site PUT = %d %s, want 403", status, raw)
 		}
-		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "203.0.113.9"); err != nil {
+		if _, err := e.Auth.SignIn(ctx, testAdminEmail, testAdminPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("the password changed on a cross-site request: %v", err)
 		}
 	})

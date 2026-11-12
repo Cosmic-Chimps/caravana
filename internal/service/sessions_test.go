@@ -16,7 +16,7 @@ func TestSignIn(t *testing.T) {
 
 	t.Run("success returns a 43-character value whose SHA-256 is the stored key", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		s, err := e.auth.SignIn(ctx, "  You@Example.com ", testPassword, "203.0.113.9")
+		s, err := e.auth.SignIn(ctx, "  You@Example.com ", testPassword, "", "203.0.113.9")
 		if err != nil {
 			t.Fatalf("SignIn: %v", err)
 		}
@@ -41,8 +41,8 @@ func TestSignIn(t *testing.T) {
 
 	t.Run("every sign-in gets a new value", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		a, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
-		b, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+		a, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
+		b, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		if a.Value == b.Value {
 			t.Error("two sign-ins share a session value")
 		}
@@ -51,10 +51,10 @@ func TestSignIn(t *testing.T) {
 	t.Run("a wrong email and a wrong password get the same error and cost one password check each", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
 
-		_, errEmail := e.auth.SignIn(ctx, "nobody@example.com", testPassword, "203.0.113.9")
+		_, errEmail := e.auth.SignIn(ctx, "nobody@example.com", testPassword, "", "203.0.113.9")
 		emailChecks := e.hashes
 		e.hashes = 0
-		_, errPassword := e.auth.SignIn(ctx, testEmail, "not the password", "203.0.113.9")
+		_, errPassword := e.auth.SignIn(ctx, testEmail, "not the password", "", "203.0.113.9")
 		passwordChecks := e.hashes
 
 		for name, err := range map[string]error{"wrong email": errEmail, "wrong password": errPassword} {
@@ -72,23 +72,23 @@ func TestSignIn(t *testing.T) {
 
 	t.Run("a malformed email is just wrong credentials", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		if _, err := e.auth.SignIn(ctx, "not-an-email", testPassword, "203.0.113.9"); !errors.Is(err, ErrBadCredentials) {
+		if _, err := e.auth.SignIn(ctx, "not-an-email", testPassword, "", "203.0.113.9"); !errors.Is(err, ErrBadCredentials) {
 			t.Errorf("SignIn(malformed email) = %v, want ErrBadCredentials", err)
 		}
 	})
 
 	t.Run("without an admin", func(t *testing.T) {
 		e := newAuthEnv(t)
-		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9"); !errors.Is(err, ErrNoAdmin) {
+		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); !errors.Is(err, ErrNoAdmin) {
 			t.Errorf("SignIn without admin = %v, want ErrNoAdmin", err)
 		}
 	})
 
 	t.Run("expired rows are deleted on the next sign-in", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		old, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+		old, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		e.clock.Advance(8 * 24 * time.Hour)
-		fresh, err := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+		fresh, err := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,8 +102,8 @@ func TestSignIn(t *testing.T) {
 
 	t.Run("events are logged with the address and no secret", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		e.auth.SignIn(ctx, testEmail, "wrong password here", "203.0.113.9")
-		s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "198.51.100.7")
+		e.auth.SignIn(ctx, testEmail, "wrong password here", "", "203.0.113.9")
+		s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "198.51.100.7")
 		e.auth.SignOut(ctx, s.Value)
 
 		out := e.logs.String()
@@ -129,7 +129,7 @@ func TestCheckSession(t *testing.T) {
 	signedIn := func(t *testing.T) (*authEnv, Session) {
 		t.Helper()
 		e := newAuthEnvWithAdmin(t)
-		s, err := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+		s, err := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -213,7 +213,7 @@ func TestCheckSession(t *testing.T) {
 func TestCheckSessionQuiet(t *testing.T) {
 	ctx := context.Background()
 	e := newAuthEnvWithAdmin(t)
-	s, err := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+	s, err := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestCheckSessionQuiet(t *testing.T) {
 
 	t.Run("a normal check still renews, a quiet one before it doesn't undo it", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+		s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 		e.clock.Advance(2 * time.Minute)
 		_ = e.auth.CheckSession(ctx, s.Value)
 		want := e.clock.Now()
@@ -275,8 +275,8 @@ func TestCheckSessionQuiet(t *testing.T) {
 func TestSignOut(t *testing.T) {
 	ctx := context.Background()
 	e := newAuthEnvWithAdmin(t)
-	s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
-	other, _ := e.auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9")
+	s, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
+	other, _ := e.auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9")
 
 	if err := e.auth.SignOut(ctx, s.Value); err != nil {
 		t.Fatalf("SignOut: %v", err)

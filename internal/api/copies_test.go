@@ -548,7 +548,7 @@ func TestGetLogsFollowEndsWhenCredentialsEnd(t *testing.T) {
 	})
 
 	t.Run("a session that ends", func(t *testing.T) {
-		sess, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "203.0.113.9")
+		sess, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "", "203.0.113.9")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -574,7 +574,7 @@ func TestGetLogsFollowEndsWhenCredentialsEnd(t *testing.T) {
 func TestGetLogsWithASessionDoesNotRenewIt(t *testing.T) {
 	e := logsEnv(t)
 	url := logServer(t, e, 20*time.Millisecond, time.Hour)
-	sess, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "203.0.113.9")
+	sess, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "", "203.0.113.9")
 	if err != nil {
 		t.Fatal(err)
 	}

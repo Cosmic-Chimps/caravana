@@ -14,6 +14,11 @@ type AdminRecord struct {
 	PasswordHash      string // pbkdf2-sha256$<iterations>$<salt>$<key>
 	CreatedAt         time.Time
 	PasswordChangedAt time.Time
+	// PasswordSignIn is false when only passkeys may sign in (feature 033).
+	PasswordSignIn bool
+	// WebAuthnHandle is the admin's WebAuthn user ID: 32 random bytes made at the
+	// first passkey registration, nil before that.
+	WebAuthnHandle []byte
 }
 
 // CreateAdmin stores the admin. There is only ever one: a second call is
@@ -43,8 +48,8 @@ func (s *Store) GetAdmin(ctx context.Context) (AdminRecord, error) {
 		created, changed string
 	)
 	err := s.db.QueryRowContext(ctx,
-		"SELECT email, password_hash, created_at, password_changed_at FROM admin WHERE id = 1",
-	).Scan(&a.Email, &a.PasswordHash, &created, &changed)
+		"SELECT email, password_hash, created_at, password_changed_at, password_signin, webauthn_handle FROM admin WHERE id = 1",
+	).Scan(&a.Email, &a.PasswordHash, &created, &changed, &a.PasswordSignIn, &a.WebAuthnHandle)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AdminRecord{}, fmt.Errorf("admin: %w", ErrNotFound)
 	}
@@ -89,4 +94,36 @@ func (s *Store) SetPassword(ctx context.Context, hash string, at time.Time, keep
 		return fmt.Errorf("set admin password: %w", err)
 	}
 	return nil
+}
+
+// SetPasswordSignIn turns password sign-in on or off. Without an admin it is
+// ErrNotFound.
+func (s *Store) SetPasswordSignIn(ctx context.Context, on bool) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE admin SET password_signin = ? WHERE id = 1", on)
+	if err != nil {
+		return fmt.Errorf("set password sign-in: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("set password sign-in: %w", err)
+	} else if n == 0 {
+		return fmt.Errorf("set password sign-in: admin: %w", ErrNotFound)
+	}
+	return nil
+}
+
+// SetWebAuthnHandle stores the admin's WebAuthn user handle, but only when none
+// is stored yet, in one statement: two first registrations at once agree on the
+// one that won. It returns the stored handle (the one given, or the earlier one).
+// Without an admin it is ErrNotFound.
+func (s *Store) SetWebAuthnHandle(ctx context.Context, handle []byte) ([]byte, error) {
+	var stored []byte
+	err := s.db.QueryRowContext(ctx,
+		"UPDATE admin SET webauthn_handle = COALESCE(webauthn_handle, ?) WHERE id = 1 RETURNING webauthn_handle",
+		handle).Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("set webauthn handle: admin: %w", ErrNotFound)
+	} else if err != nil {
+		return nil, fmt.Errorf("set webauthn handle: %w", err)
+	}
+	return stored, nil
 }

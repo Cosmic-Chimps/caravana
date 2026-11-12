@@ -103,7 +103,7 @@ func newLiveEnv(t *testing.T, settings liveSettings, start func(context.Context,
 // session signs in directly and returns the session.
 func (e *liveEnv) session(t *testing.T) service.Session {
 	t.Helper()
-	sess, err := e.Auth.SignIn(context.Background(), testEmail, testPassword, "127.0.0.1")
+	sess, err := e.Auth.SignIn(context.Background(), testEmail, testPassword, "", "127.0.0.1")
 	if err != nil {
 		t.Fatalf("sign in: %v", err)
 	}

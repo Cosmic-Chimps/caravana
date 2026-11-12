@@ -8,18 +8,18 @@ lab step, docs).
 
 ## Part A — the server side
 
-- [ ] **T001** `go get github.com/go-webauthn/webauthn@v0.18.2`, `go mod tidy` · go.mod, go.sum
-- [ ] **T002** Migration and store: `passkeys` table, admin `password_signin` and `webauthn_handle`, session
+- [x] **T001** `go get github.com/go-webauthn/webauthn@v0.18.2`, `go mod tidy` · go.mod, go.sum
+- [x] **T002** Migration and store: `passkeys` table, admin `password_signin` and `webauthn_handle`, session
   `verified_at`; store methods of data-model.md; table tests (insert, unique credential ID, list order, rename, delete,
   use update, count by RP, handle set once, verified_at round trip) · internal/store/migrations/0026_passkeys.sql,
   internal/store/passkeys.go, internal/store/passkeys_test.go, internal/store/sessions.go, internal/store/admin*.go
-- [ ] **T003** Software authenticator: `webauthntest.New(rpID)` with an ES256 key; `Create(optionsJSON, origin)` and
+- [x] **T003** Software authenticator: `webauthntest.New(rpID)` with an ES256 key; `Create(optionsJSON, origin)` and
   `Get(optionsJSON, origin)` returning the browser's JSON (base64url fields), with knobs for the counter, the UV flag,
   the origin and the RP ID it signs for; `PrivateKeySentinel()` (its key bytes as hex and base64) for leak tests;
   a test that go-webauthn accepts what it makes · internal/webauthntest/authenticator.go, authenticator_test.go
-- [ ] **T004** Ceremonies in memory (R7): kinds, single use, 5-minute expiry, session binding, 8 per address, 512 in
+- [x] **T004** Ceremonies in memory (R7): kinds, single use, 5-minute expiry, session binding, 8 per address, 512 in
   all; tests with a fake clock · internal/service/ceremonies.go, internal/service/ceremonies_test.go
-- [ ] **T005** `Auth` passkeys (R1–R13): `BeginPasskeySignIn`, `FinishPasskeySignIn`, `BeginPasskeyConfirm`,
+- [x] **T005** `Auth` passkeys (R1–R13): `BeginPasskeySignIn`, `FinishPasskeySignIn`, `BeginPasskeyConfirm`,
   `FinishPasskeyConfirm`, `VerifyPassword`, `SessionConfirmed`, `BeginPasskeyRegistration`,
   `FinishPasskeyRegistration`, `ListPasskeys`, `RenamePasskey`, `RemovePasskey`, `SignInSettings`,
   `SetPasswordSignIn`, `PasswordSignInAllowed`; `SignIn` takes the console domain and refuses with
@@ -30,10 +30,10 @@ lab step, docs).
   try limited before verification; password off refuses `SignIn` without a password check; fallback when no passkey for
   the domain; last passkey refused; reset turns password on; logs carry no sentinel · internal/service/passkeys.go,
   internal/service/passkeys_test.go, internal/service/auth.go, internal/service/sessions.go (+ callers of `SignIn`)
-- [ ] **T006** API 0.36.0: the five operations and their codes; openapi; scope walk lists them as denied; contract
+- [x] **T006** API 0.36.0: the five operations and their codes; openapi; scope walk lists them as denied; contract
   tests; `consoleParity` doesn't change yet (no console routes) · internal/api/passkeys.go, internal/api/passkeys_test.go,
   internal/api/errors.go (or where codes live), internal/api/routes, api/openapi.yaml
-- [ ] **T007** CLI: `admin passkeys list` (ID, name, domain, added, last used), `admin passkeys remove --id`,
+- [x] **T007** CLI: `admin passkeys list` (ID, name, domain, added, last used), `admin passkeys remove --id`,
   `reset-password` prints that password sign-in is on again when it was off, `status` prints the sign-in line; tests ·
   cmd/caravana/admin.go, cmd/caravana/admin_test.go
 

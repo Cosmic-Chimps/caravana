@@ -59,7 +59,9 @@ No new runtime dependency, no Nomad change, no policy change.
   (`ErrLastPasskey`). The CLI's `admin passkeys remove` skips the rule (root is the owner) and prints a reminder.
 - **R6 Confirm window ("sudo")**: `sessions.verified_at`. Creating a session sets it; `VerifyPassword` and a passkey
   confirm set it; adding a passkey needs it within 10 minutes (`confirmWindow`). Old sessions have NULL: not confirmed.
-  A wrong password there counts against the per-address limit; while password sign-in is off, only a passkey confirms.
+  A wrong password there counts against the per-address limit. The password confirms whenever it may sign in (R4's
+  rule): while password sign-in is off and a passkey exists for the console domain, only a passkey confirms, but
+  after a domain change the password confirms at the new domain so a passkey can be added there.
 - **R7 Ceremonies** live in memory in `Auth` (a mutex and a map): a random 128-bit ID (base64url), the kind
   (`signin`, `confirm`, `register`), the `webauthn.SessionData`, the RP ID and origin, the address that asked, the
   session hash for `confirm` and `register`, and an expiry of 5 minutes. A finish takes the ceremony out of the map

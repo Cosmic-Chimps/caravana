@@ -20,6 +20,10 @@ func (s *Service) consoleHost() string {
 	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 }
 
+// ConsoleHost is the host of CARAVANA_PUBLIC_URL, lowercase, or "" when it isn't set. Passkeys
+// belong to it (feature 033): turning password sign-in off needs one made there.
+func (s *Service) ConsoleHost() string { return s.consoleHost() }
+
 // checkConsoleDomain refuses an app that routes the console's own host: Traefik
 // would then have two routers for one Host rule, the installer's static route
 // to the console and the app's, and the console stopped answering while the app

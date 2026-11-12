@@ -188,7 +188,7 @@ func TestValidTokenWorksOnEveryRoute(t *testing.T) {
 // sessionCookie signs the test admin in and returns a cookie for a request.
 func sessionCookie(t *testing.T, e *testEnv) *http.Cookie {
 	t.Helper()
-	s, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "203.0.113.9")
+	s, err := e.Auth.SignIn(context.Background(), testAdminEmail, testAdminPassword, "", "203.0.113.9")
 	if err != nil {
 		t.Fatalf("sign in: %v", err)
 	}

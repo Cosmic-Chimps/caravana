@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.35.0
+  version: 0.36.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -4216,6 +4216,186 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /v1/account/passkeys:
+    get:
+      operationId: listPasskeys
+      summary: List the admin's passkeys.
+      description: |
+        The passkeys the admin may sign in with (feature 033), oldest first. A passkey belongs to
+        the domain it was made at (`domain`) and works only there. Nothing the authenticator
+        keeps private, and not even the credential ID, is in an answer.
+
+        Adding a passkey, and signing in with one, are web console routes only: a passkey is
+        bound to the console's own origin and to a person's device unlock, and an API client has
+        neither. Every other passkey operation is here.
+      tags: [account]
+      responses:
+        "200":
+          description: The passkeys.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [passkeys]
+                properties:
+                  passkeys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Passkey"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/account/passkeys/{passkeyId}:
+    parameters:
+      - $ref: "#/components/parameters/PasskeyID"
+    patch:
+      operationId: updatePasskey
+      summary: Rename a passkey.
+      tags: [account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: |
+                    1 to 64 characters after trimming, with no control characters. Anything else
+                    gets 422 `invalid_field` with `field` `name`.
+      responses:
+        "200":
+          description: Renamed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PasskeyNotFound"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`: `field` is `name`. Nothing was changed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: deletePasskey
+      summary: Remove a passkey.
+      description: |
+        While password sign-in is off, the last passkey made at a domain can't be removed:
+        that would leave no way in at that domain (409 `last_passkey`). Turn password sign-in
+        on first, or add another passkey. On the host, `caravana admin passkeys remove` has no
+        such rule.
+      tags: [account]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/PasskeyNotFound"
+        "409":
+          description: |
+            `last_passkey`: password sign-in is off and this is the last passkey made at its
+            domain. Nothing was removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/account/sign-in:
+    get:
+      operationId: getSignIn
+      summary: How the admin may sign in.
+      tags: [account]
+      responses:
+        "200":
+          description: The setting and the number of passkeys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignIn"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putSignIn
+      summary: Turn password sign-in on or off.
+      description: |
+        Off means only passkeys sign in. Turning it off needs a passkey made at the console's
+        domain: the host of `CARAVANA_PUBLIC_URL` when that is set, otherwise any passkey (409
+        `no_passkey` without one). The password still works at a domain that has no passkey, so a
+        change of domain never locks the owner out. `caravana admin reset-password` on the host
+        turns it back on.
+      tags: [account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [passwordSignIn]
+              properties:
+                passwordSignIn:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignIn"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          description: |
+            `no_passkey`: there is no passkey for the console's domain, so password sign-in
+            can't be turned off yet. Nothing was changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`: `field` is `passwordSignIn` (missing)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/tokens:
     post:
       operationId: createToken
@@ -4487,6 +4667,14 @@ components:
       in: path
       required: true
       description: The token's ID, as `listTokens` returns it. Not the token itself.
+      schema:
+        type: string
+        pattern: "^[a-z2-7]{26}$"
+    PasskeyID:
+      name: passkeyId
+      in: path
+      required: true
+      description: The passkey's ID, as `listPasskeys` returns it. Not the authenticator's credential ID.
       schema:
         type: string
         pattern: "^[a-z2-7]{26}$"
@@ -8253,7 +8441,8 @@ components:
                 `environment_exists`, `not_empty`, `protected`, `app_not_in_environment`,
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
                 `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
-                `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`.
+                `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
+                `passkey_not_found`, `last_passkey`, `no_passkey`.
               examples: [invalid_field]
             message:
               type: string
@@ -8265,6 +8454,52 @@ components:
                 `services[0].domains[1].port`. Absent when no single field is at fault.
               examples: ["services[0].domains[1].port"]
 
+
+    Passkey:
+      type: object
+      additionalProperties: false
+      required: [id, name, domain, createdAt, lastUsedAt, transports, backedUp]
+      properties:
+        id:
+          type: string
+          description: Ours, not the authenticator's credential ID.
+          examples: ["p4nzr2t6v3x7z5bqd7f4h6j3kq"]
+        name:
+          type: string
+          maxLength: 64
+          examples: [MacBook]
+        domain:
+          type: string
+          description: |
+            The domain the passkey was made at (its relying party ID). It works only there. When
+            it differs from the console's domain it doesn't work at this address.
+          examples: [console.example.com]
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+          description: "`null` until the passkey is first used to sign in or confirm."
+        transports:
+          type: array
+          items: {type: string}
+          description: How the authenticator said it can be reached, for example `internal`, `hybrid`.
+        backedUp:
+          type: boolean
+          description: The authenticator says the passkey is synced between devices.
+
+    SignIn:
+      type: object
+      additionalProperties: false
+      required: [passwordSignIn, passkeys]
+      properties:
+        passwordSignIn:
+          type: boolean
+          description: "`false` means only passkeys sign in (at a domain that has one)."
+        passkeys:
+          type: integer
+          description: How many passkeys exist, whatever domain they were made at.
 
     ChangePasswordRequest:
       type: object
@@ -8478,6 +8713,12 @@ components:
         `invalid_field`: `field` is `host` (not a registry host), `path` (not an image path),
         `username` (empty) or `password` (missing when creating, or present but empty). Nothing
         was saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PasskeyNotFound:
+      description: There is no passkey with this ID (`passkey_not_found`).
       content:
         application/json:
           schema:

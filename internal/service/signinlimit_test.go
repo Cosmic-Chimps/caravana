@@ -16,7 +16,7 @@ const addrA, addrB = "203.0.113.9", "198.51.100.7"
 
 // fail makes one wrong sign-in from address and returns its error.
 func (e *authEnv) fail(address string) error {
-	_, err := e.auth.SignIn(context.Background(), testEmail, "not the password", address)
+	_, err := e.auth.SignIn(context.Background(), testEmail, "not the password", "", address)
 	return err
 }
 
@@ -59,7 +59,7 @@ func TestSigninLimit(t *testing.T) {
 		e.hashes = 0
 
 		e.clock.Advance(3 * time.Minute)
-		_, err := e.auth.SignIn(ctx, testEmail, testPassword, addrA)
+		_, err := e.auth.SignIn(ctx, testEmail, testPassword, "", addrA)
 		var limited *SigninLimitError
 		if !errors.As(err, &limited) || limited.RetryAfter != 12*time.Minute {
 			t.Fatalf("right password while locked = %v, want a limit error with 12 minutes", err)
@@ -72,7 +72,7 @@ func TestSigninLimit(t *testing.T) {
 		}
 		// Trying while locked doesn't extend the lock.
 		e.clock.Advance(12 * time.Minute)
-		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, addrA); err != nil {
+		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "", addrA); err != nil {
 			t.Errorf("sign-in when the wait ended = %v, want success", err)
 		}
 	})
@@ -115,7 +115,7 @@ func TestSigninLimit(t *testing.T) {
 		if _, err := e.store.GetSigninLimit(ctx, addrA); err != nil {
 			t.Fatalf("no row after failures: %v", err)
 		}
-		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, addrA); err != nil {
+		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "", addrA); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := e.store.GetSigninLimit(ctx, addrA); !errors.Is(err, store.ErrNotFound) {
@@ -132,7 +132,7 @@ func TestSigninLimit(t *testing.T) {
 			e.fail(addrA)
 		}
 		again := NewAuth(e.store, slog.New(slog.DiscardHandler), AuthOptions{Now: e.clock.Now, PasswordIterations: 1000})
-		if _, err := again.SignIn(ctx, testEmail, testPassword, addrA); !errors.Is(err, ErrSigninLimited) {
+		if _, err := again.SignIn(ctx, testEmail, testPassword, "", addrA); !errors.Is(err, ErrSigninLimited) {
 			t.Errorf("sign-in through a new Auth on the same store = %v, want ErrSigninLimited", err)
 		}
 	})
@@ -142,7 +142,7 @@ func TestSigninLimit(t *testing.T) {
 		for range 5 {
 			e.fail(addrA)
 		}
-		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, addrB); err != nil {
+		if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "", addrB); err != nil {
 			t.Errorf("sign-in from another address = %v, want success", err)
 		}
 		if got := triesLeft(t, e.fail(addrB)); got != 4 {
@@ -152,7 +152,7 @@ func TestSigninLimit(t *testing.T) {
 
 	t.Run("a wrong email counts like a wrong password", func(t *testing.T) {
 		e := newAuthEnvWithAdmin(t)
-		_, err := e.auth.SignIn(ctx, "nobody@example.com", testPassword, addrA)
+		_, err := e.auth.SignIn(ctx, "nobody@example.com", testPassword, "", addrA)
 		if got := triesLeft(t, err); got != 4 {
 			t.Errorf("tries left after a wrong email = %d, want 4", got)
 		}
@@ -178,7 +178,7 @@ func TestSigninLimit(t *testing.T) {
 	t.Run("without an admin nothing is counted", func(t *testing.T) {
 		e := newAuthEnv(t)
 		for range 7 {
-			if _, err := e.auth.SignIn(ctx, testEmail, testPassword, addrA); !errors.Is(err, ErrNoAdmin) {
+			if _, err := e.auth.SignIn(ctx, testEmail, testPassword, "", addrA); !errors.Is(err, ErrNoAdmin) {
 				t.Fatalf("SignIn without admin = %v, want ErrNoAdmin", err)
 			}
 		}
@@ -230,7 +230,7 @@ func TestSigninLimitHoldsUnderParallelGuesses(t *testing.T) {
 	if e.hashes > 5 {
 		t.Errorf("%d passwords were checked from one address in one burst, want at most 5", e.hashes)
 	}
-	if _, err := e.auth.SignIn(context.Background(), testEmail, testPassword, addrA); !errors.Is(err, ErrSigninLimited) {
+	if _, err := e.auth.SignIn(context.Background(), testEmail, testPassword, "", addrA); !errors.Is(err, ErrSigninLimited) {
 		t.Errorf("the address is not locked after the burst: %v", err)
 	}
 }

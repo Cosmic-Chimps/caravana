@@ -154,6 +154,11 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
 		{http.MethodPut, "/v1/account/password", s.changePassword, false, false},
+		{http.MethodGet, "/v1/account/passkeys", s.listPasskeys, false, false},
+		{http.MethodPatch, "/v1/account/passkeys/{passkeyId}", s.updatePasskey, false, false},
+		{http.MethodDelete, "/v1/account/passkeys/{passkeyId}", s.deletePasskey, false, false},
+		{http.MethodGet, "/v1/account/sign-in", s.getSignIn, false, false},
+		{http.MethodPut, "/v1/account/sign-in", s.putSignIn, false, false},
 		{http.MethodPost, "/v1/tokens", s.createToken, false, false},
 		{http.MethodGet, "/v1/tokens", s.listTokens, false, false},
 		{http.MethodDelete, "/v1/tokens/{tokenId}", s.revokeToken, false, false},
@@ -320,6 +325,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := serversError(err); e != nil {
+		return e
+	}
+	if e := passkeysError(err); e != nil {
 		return e
 	}
 	switch {

@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/cosmic-chimps/caravana/internal/httpx"
 	"github.com/cosmic-chimps/caravana/internal/service"
@@ -73,7 +75,7 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 	email, password := r.PostFormValue("email"), r.PostFormValue("password")
 	next := safeNext(r.PostFormValue("next"))
 
-	session, err := s.auth.SignIn(r.Context(), email, password, s.proxies.ClientAddress(r))
+	session, err := s.auth.SignIn(r.Context(), email, password, requestHostname(r), s.proxies.ClientAddress(r))
 	if err == nil {
 		httpx.SetSessionCookie(w, session.Value, session.ExpiresAt, s.proxies.HTTPS(r))
 		if next == "" {
@@ -90,6 +92,8 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, service.ErrNoAdmin):
 		// renderLogin shows the host command.
+	case errors.Is(err, service.ErrPasswordSignInOff):
+		data.Notice = &notice{Kind: "warning", Text: "Password sign-in is off. Sign in with a passkey."}
 	case errors.As(err, &limited):
 		data.Notice = &notice{Kind: "failed", Text: limitedSentence(limited.RetryAfter.Minutes())}
 	case errors.As(err, &failure):
@@ -99,6 +103,17 @@ func (s *server) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderLogin(w, r, data)
+}
+
+// requestHostname is the host the browser addressed: lowercase, without the
+// port or a trailing dot. It stands in for the console's domain until the
+// passkey pages decide it from CARAVANA_PUBLIC_URL (feature 033).
+func requestHostname(r *http.Request) string {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
 }
 
 // failureSentence is the answer to a wrong email or password. triesLeft is how

@@ -36,19 +36,31 @@ func newSessionValue() (string, error) {
 
 // SignIn checks the email and password and starts a session. address is the
 // client address (httpx.Proxies.ClientAddress): the sign-in limit counts per
-// address.
+// address. consoleDomain is the domain the console is served at; when password
+// sign-in is off and a passkey exists for that domain ("" means any passkey),
+// SignIn answers ErrPasswordSignInOff without checking the password and without
+// counting a failure.
 //
 // A wrong email and a wrong password get the same error, and cost the same:
 // one password check each, the unknown email against a stand-in hash. A
 // failure is a *SigninFailure saying how many tries are left; from a locked
 // address the password isn't checked at all and the error is a
 // *SigninLimitError. Without an admin it is ErrNoAdmin.
-func (a *Auth) SignIn(ctx context.Context, email, password, address string) (Session, error) {
+func (a *Auth) SignIn(ctx context.Context, email, password, consoleDomain, address string) (Session, error) {
 	admin, err := a.store.GetAdmin(ctx)
 	if errors.Is(err, store.ErrNotFound) {
 		return Session{}, ErrNoAdmin
 	} else if err != nil {
 		return Session{}, fmt.Errorf("sign in: %w", err)
+	}
+
+	// Password sign-in turned off: nothing to guess, so nothing is counted.
+	if !admin.PasswordSignIn {
+		if n, err := a.store.CountPasskeys(ctx, consoleDomain); err != nil {
+			return Session{}, fmt.Errorf("sign in: %w", err)
+		} else if n > 0 {
+			return Session{}, ErrPasswordSignInOff
+		}
 	}
 
 	// A locked address is refused before any password work: the slow hash must
@@ -87,6 +99,17 @@ func (a *Auth) SignIn(ctx context.Context, email, password, address string) (Ses
 	if err := a.clearFailures(ctx, at); err != nil {
 		return Session{}, err
 	}
+	s, err := a.startSession(ctx)
+	if err != nil {
+		return Session{}, err
+	}
+	a.event("signin", "address", address)
+	return s, nil
+}
+
+// startSession makes a signed-in session, confirmed now (signing in is
+// proof of who is at the keyboard), and clears out expired ones.
+func (a *Auth) startSession(ctx context.Context) (Session, error) {
 	value, err := newSessionValue()
 	if err != nil {
 		return Session{}, err
@@ -98,11 +121,10 @@ func (a *Auth) SignIn(ctx context.Context, email, password, address string) (Ses
 	}
 	s := Session{Value: value, ExpiresAt: now.Add(sessionAbsolute)}
 	if err := a.store.CreateSession(ctx, store.SessionRecord{
-		IDHash: hashToken(value), CreatedAt: now, LastSeenAt: now, ExpiresAt: s.ExpiresAt,
+		IDHash: hashToken(value), CreatedAt: now, LastSeenAt: now, ExpiresAt: s.ExpiresAt, VerifiedAt: &now,
 	}); err != nil {
-		return Session{}, fmt.Errorf("sign in: %w", err)
+		return Session{}, fmt.Errorf("start session: %w", err)
 	}
-	a.event("signin", "address", address)
 	return s, nil
 }
 

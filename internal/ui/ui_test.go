@@ -275,6 +275,60 @@ func TestSignIn(t *testing.T) {
 	})
 }
 
+// TestSignInWithPasswordSignInOff: while password sign-in is off and a passkey exists for the host
+// the page is served at, the password form is refused with a sentence, no cookie and no failure
+// counted (the passkey pages that replace the host stand-in are feature 033's console part).
+func TestSignInWithPasswordSignInOff(t *testing.T) {
+	e := newUIEnv(t, true, "")
+	host := strings.TrimPrefix(e.URL, "http://")
+	host = host[:strings.LastIndex(host, ":")] // the page is addressed as 127.0.0.1:<port>
+	if err := e.Store.InsertPasskey(context.Background(), store.PasskeyRecord{
+		ID: "p1", UserHandle: []byte("handle"), CredentialID: []byte("cred"), RPID: host, PublicKey: []byte("key"),
+		AttestationType: "none", AttestationFormat: "none", Name: "MacBook", CreatedAt: e.Clock.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Auth.SetPasswordSignIn(context.Background(), false, host); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 7 { // more than the limit: none of them is a failed try
+		resp, body := e.do(t, request{method: http.MethodPost, path: "/login",
+			form: url.Values{"email": {testEmail}, "password": {testPassword}}})
+		if resp.StatusCode != http.StatusOK || len(resp.Cookies()) != 0 {
+			t.Fatalf("POST /login = %d with %d cookies, want 200 and none", resp.StatusCode, len(resp.Cookies()))
+		}
+		if !strings.Contains(body, "Password sign-in is off. Sign in with a passkey.") {
+			t.Fatalf("the page lacks the sentence:\n%s", body)
+		}
+	}
+	// Turned back on, the same post signs in: nothing was counted against the address.
+	if _, err := e.Auth.SetPasswordSignIn(context.Background(), true, host); err != nil {
+		t.Fatal(err)
+	}
+	resp, _ := e.do(t, request{method: http.MethodPost, path: "/login",
+		form: url.Values{"email": {testEmail}, "password": {testPassword}}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("POST /login with password sign-in on again = %d, want 303", resp.StatusCode)
+	}
+}
+
+func TestRequestHostname(t *testing.T) {
+	for host, want := range map[string]string{
+		"console.example.com":      "console.example.com",
+		"Console.Example.com:8443": "console.example.com",
+		"console.example.com.":     "console.example.com",
+		"localhost:7070":           "localhost",
+		"127.0.0.1:7070":           "127.0.0.1",
+		"[::1]:7070":               "::1",
+		"[::1]":                    "::1",
+	} {
+		if got := requestHostname(&http.Request{Host: host}); got != want {
+			t.Errorf("requestHostname(%q) = %q, want %q", host, got, want)
+		}
+	}
+}
+
 func TestSignInFailure(t *testing.T) {
 	bodies := map[string]string{}
 	for name, form := range map[string]url.Values{
@@ -774,7 +828,7 @@ func TestChangePasswordPage(t *testing.T) {
 		if resp, _ := e.do(t, request{path: "/settings", cookies: []*http.Cookie{other}}); resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("another browser's session survived: %d", resp.StatusCode)
 		}
-		if _, err := e.Auth.SignIn(ctx, testEmail, newPassword, "203.0.113.9"); err != nil {
+		if _, err := e.Auth.SignIn(ctx, testEmail, newPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("the new password does not sign in: %v", err)
 		}
 	})
@@ -801,7 +855,7 @@ func TestChangePasswordPage(t *testing.T) {
 			}
 		}
 		// Nothing changed.
-		if _, err := e.Auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9"); err != nil {
+		if _, err := e.Auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); err != nil {
 			t.Errorf("the password changed on refused posts: %v", err)
 		}
 	})
@@ -1330,7 +1384,7 @@ func TestAccountPostsAreProtected(t *testing.T) {
 	if len(infos) != 1 {
 		t.Errorf("a cross-site post created a token: %+v", infos)
 	}
-	if _, err := e.Auth.SignIn(ctx, testEmail, testPassword, "203.0.113.9"); err != nil {
+	if _, err := e.Auth.SignIn(ctx, testEmail, testPassword, "", "203.0.113.9"); err != nil {
 		t.Errorf("a cross-site post changed the password: %v", err)
 	}
 
