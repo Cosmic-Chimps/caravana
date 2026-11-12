@@ -207,4 +207,27 @@ func (h *handler) addReadTools(srv *mcp.Server) {
 			}
 			return h.answer(ctx, call{op: opGetCompose, params: []string{"id", in.App}})
 		})
+
+	addTool(h, srv, read("list_templates",
+		"Lists the app templates Caravana can install (a status page, a fediverse server, a database with its "+
+			"admin page...), with the catalog's version and whether each is available. `q` searches title, "+
+			"description and tags; `tag` keeps one tag. There is no tool to install one: that takes secret "+
+			"inputs, so the owner does it in the console or with the API. API operation listTemplates."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in templatesInput) (string, error) {
+			q := url.Values{}
+			if in.Q != "" {
+				q.Set("q", in.Q)
+			}
+			if in.Tag != "" {
+				q.Set("tag", in.Tag)
+			}
+			return h.answer(ctx, call{op: opListTemplates, query: q})
+		})
+
+	addTool(h, srv, read("get_template",
+		"Returns one app template: what it asks for (inputs, and the secrets Caravana generates, by name and "+
+			"size only), its services with the Compose file and placeholders, and its notes. API operation getTemplate."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in templateInput) (string, error) {
+			return h.answer(ctx, call{op: opGetTemplate, params: []string{"name", in.Name}})
+		})
 }

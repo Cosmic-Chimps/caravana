@@ -143,3 +143,47 @@ catalog release follows the first push. Layout: `catalog.json` (format and versi
 `.github/workflows/release.yml` (bundle on a tag, upload `catalog.json` and `SHA256SUMS`), and
 `lab/install-all.sh` (installs each template with `lab` not `false` into a Caravana through the API with its
 example inputs, waits for healthy, deletes it).
+
+## Deviations (Part A, what the code and the upstream apps showed)
+
+Each says what the contract or this file said, what was built, and why.
+
+- **Input errors are 400, not 422** (contracts/api.md). Every other operation answers an
+  `app.FieldError` as 400 `invalid_field` (`deployCompose` and `previewCompose` included), and the
+  contract's own `invalid_field` description in `components/responses/BadRequest` says 400. The template
+  routes answer the same, `field` `inputs.<name>`, `id` or a path in the file. openapi 0.36.0 says so.
+- **A template with a backup needs the backup destination first.** Installing goes through the normal deploy,
+  and a service with a `backup` is refused without a destination: 400 `invalid_field` on
+  `services.<service>.backup`. Uptime Kuma, Hollo, Postgres, Umbral and Codemagic Patch all have a backup, so
+  a first try on an installation with no destination fails until Settings › Backup storage is set. Not changed
+  here (it is the deploy rule of constitution IV); the console page should say it before Create.
+- **`postgres` takes its password as a `secret` input**, not as a generated secret (R9 table). A generated
+  password is never shown, so the owner could neither log into Adminer nor connect their own services to the
+  database. Hollo and Codemagic Patch keep generated database passwords: nothing outside the app needs them.
+- **`adminer:5.5.1`, not `adminer:5`** (R9 table): an exact version like the other templates; the tag exists
+  on Docker Hub and the image was run (port 8080, `/` answers 200).
+- **Uptime Kuma sets `UPTIME_KUMA_DB_TYPE=sqlite`** (not in R9). Without it the 2.x image opens a database
+  question in the browser on first visit; the template is meant to be one step. Its health path is
+  `/robots.txt`: `/` redirects (302) and Nomad's HTTP check treats a redirect as a failure.
+- **`ParseCatalog` doesn't check that an overlay's service is in the Compose file.** `Check` does it
+  (`compose.Translate` names the service), and a fetched catalog is run through `CheckCatalog` before it is
+  kept, so a defect never reaches the owner. Keeping `ParseCatalog` free of the Compose loader keeps it cheap
+  for the page that reads the catalog on every request.
+- **`template_catalog` times are text, empty for never** (plan: NULL). That is how every other table here
+  keeps times (`release_check`), and it reads with the same helpers. The bundle stays a nullable BLOB.
+  `bundle_sum` is the kept bundle's sum, or the newest sum seen while no bundle is kept (so an older catalog
+  isn't downloaded every day); with a bundle kept it is always that bundle's, which is what the stored copy is
+  verified against when it is read.
+- **`omitempty` became `omitzero` on `app.Backup.Keep`, `compose.Domain.Port` and `compose.Health.Port`,
+  `Interval`, `Timeout`.** The API's JSON encoder writes a zero number under `omitempty`, so `getApp` answered
+  `"keep": 0` for a backup with no `keep`, and `getTemplate` answered `"port": 0`, which break the schemas'
+  `minimum: 1` (found by the contract test of `installTemplate`). The stored documents are written the same way
+  as before, so no revision moves.
+- **The migration test's "no gaps" rule is "unique and increasing"**: 0026 and 0027 belong to unmerged
+  branches, so this branch has 0025 then 0028.
+- **No logos yet.** The templates ship without `logo.svg`; the console draws its monogram tile. A logo for a
+  project we don't own is its owner's trademark; an original mark per template is a design task.
+- **Health paths** were verified by running the images (R9 and the report). Codemagic Patch's `/health/ready`
+  comes from the maintainer's running install (`deploy/examples/codemagic-patch`); its image is private and
+  was not run.
+

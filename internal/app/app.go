@@ -198,7 +198,7 @@ type Backup struct {
 	Schedule string `json:"schedule,omitempty"`
 	// Keep is how many backups stay in the destination, 1 to 100. Zero means
 	// DefaultBackupKeep.
-	Keep int `json:"keep,omitempty"`
+	Keep int `json:"keep,omitzero"`
 }
 
 // Defaults of a backup policy.

@@ -70,6 +70,8 @@ caravana mcp [--allow-actions]
 | `preview_promotion` | `app`, `to` | `previewPromotion` (a POST that changes nothing) |
 | `export_jobspec` | `app`, `deployment?` | `exportApp` / `exportDeployment` (HCL text) |
 | `get_compose_file` | `app`, `deployment?` | `getCompose` / `getDeploymentCompose` |
+| `list_templates` | `q?`, `tag?` | `listTemplates` (feature 035) |
+| `get_template` | `name` | `getTemplate` (feature 035) |
 
 ## Action tools (`--allow-actions` only)
 

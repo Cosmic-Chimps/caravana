@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
+	"unicode"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -19,6 +21,7 @@ const (
 	svcPattern   = `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`
 	refPattern   = `^[A-Za-z0-9-]{1,64}$`
 	imagePattern = `^[^\s]+$`
+	tagPattern   = `^[a-z0-9][a-z0-9 -]{0,23}$`
 )
 
 var (
@@ -27,6 +30,7 @@ var (
 	svcRE   = regexp.MustCompile(svcPattern)
 	refRE   = regexp.MustCompile(refPattern)
 	imageRE = regexp.MustCompile(imagePattern)
+	tagRE   = regexp.MustCompile(tagPattern)
 )
 
 // Limits and defaults of the numeric inputs.
@@ -37,6 +41,8 @@ const (
 	minWaitSecs       = 10
 	maxWaitSecs       = 600
 	maxImageLength    = 512
+	maxQueryLength    = 100
+	maxTagLength      = 24
 	maxNameLength     = 63
 	maxAppIDLength    = 127
 	maxServiceLength  = 63
@@ -80,6 +86,15 @@ type logsInput struct {
 	Copy   string `json:"copy,omitempty" jsonschema:"one copy's ID, from list_copies; default every listed copy"`
 	Stream string `json:"stream,omitempty" jsonschema:"stdout, stderr or both (default both)"`
 	Lines  int    `json:"lines,omitempty" jsonschema:"how many recent lines (1 to 500, default 200)"`
+}
+
+type templatesInput struct {
+	Q   string `json:"q,omitempty" jsonschema:"keep the templates whose title, description or a tag contains this (any case)"`
+	Tag string `json:"tag,omitempty" jsonschema:"keep the templates with exactly this tag, like monitoring"`
+}
+
+type templateInput struct {
+	Name string `json:"name" jsonschema:"the template's name, from list_templates, like uptime-kuma"`
 }
 
 type promotionInput struct {
@@ -142,6 +157,18 @@ func checkService(field, s string) error {
 	}
 	return nil
 }
+
+func (in templatesInput) validate() error {
+	if len(in.Q) > maxQueryLength || strings.ContainsFunc(in.Q, unicode.IsControl) {
+		return invalidInput("q must be plain text of at most %d characters", maxQueryLength)
+	}
+	if in.Tag != "" && !tagRE.MatchString(in.Tag) {
+		return invalidInput("tag must be lowercase letters, digits, spaces and hyphens, at most %d characters", maxTagLength)
+	}
+	return nil
+}
+
+func (in templateInput) validate() error { return checkName("name", in.Name) }
 
 func (in projectInput) validate() error { return checkName("project", in.Project) }
 func (in appInput) validate() error     { return checkApp(in.App) }
@@ -214,8 +241,13 @@ func firstError(errs ...error) error {
 // what a model is told (and the SDK enforces) beyond the Go type. Kept in one
 // table so the schema and the checks above say the same thing.
 var propertyRules = map[string]func(*jsonschema.Schema){
-	"app":        patternRule(appIDPattern, maxAppIDLength),
-	"project":    patternRule(namePattern, maxNameLength),
+	"app":     patternRule(appIDPattern, maxAppIDLength),
+	"project": patternRule(namePattern, maxNameLength),
+	"name":    patternRule(namePattern, maxNameLength),
+	"tag":     patternRule(tagPattern, maxTagLength),
+	"q": func(s *jsonschema.Schema) {
+		s.MaxLength = ptr(maxQueryLength)
+	},
 	"to":         patternRule(namePattern, maxNameLength),
 	"service":    patternRule(svcPattern, maxServiceLength),
 	"deployment": patternRule(refPattern, maxRefLength),

@@ -337,3 +337,10 @@ func CheckLogo(svg string) error {
 	}
 	return checkSVGRoot(svg)
 }
+
+// How a logo is served (research R8): as an image only, from its own route,
+// with a policy that runs nothing. The console and the API both send these.
+const (
+	LogoContentType = "image/svg+xml"
+	LogoCSP         = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+)

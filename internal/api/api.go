@@ -71,6 +71,13 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/updates/check", s.checkUpdates, false, false},
 		{http.MethodPost, "/v1/updates/runs", s.requestUpdate, false, false},
 		{http.MethodGet, "/v1/updates/runs", s.listUpdateRuns, false, false},
+		{http.MethodGet, "/v1/templates", s.listTemplates, false, false},
+		{http.MethodPost, "/v1/templates/check", s.checkTemplates, false, false},
+		{http.MethodPut, "/v1/templates/settings", s.putTemplateSettings, false, false},
+		{http.MethodGet, "/v1/templates/{name}", s.getTemplate, false, false},
+		{http.MethodGet, "/v1/templates/{name}/logo", s.getTemplateLogo, false, false},
+		{http.MethodPost, "/v1/templates/{name}/preview", s.previewTemplate, false, false},
+		{http.MethodPost, "/v1/templates/{name}/install", s.installTemplate, false, false},
 		{http.MethodGet, "/v1/servers", s.listServers, false, false},
 		{http.MethodPost, "/v1/servers", s.addServer, false, false},
 		{http.MethodGet, "/v1/servers/joins/{id}", s.getServerJoin, false, false},
@@ -317,6 +324,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := updatesError(err); e != nil {
+		return e
+	}
+	if e := templatesError(err); e != nil {
 		return e
 	}
 	if e := serversError(err); e != nil {

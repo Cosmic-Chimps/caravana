@@ -7,27 +7,27 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
 
 ## Part A — server side (one implementer)
 
-- [ ] **T001** Package `internal/templates`: types, `ParseCatalog` with every rule of the format contract
+- [x] **T001** Package `internal/templates`: types, `ParseCatalog` with every rule of the format contract
   (errors name template and field), placeholders, plain vs secret-valued names, logo checks, `Newer`;
   table tests including each refusal · internal/templates/catalog.go, catalog_test.go
-- [ ] **T002** `CheckInputs`, `Generate` (rejection sampling, test with a fixed reader and a bias check on a
+- [x] **T002** `CheckInputs`, `Generate` (rejection sampling, test with a fixed reader and a bias check on a
   small alphabet), `Render` (text for Compose, JSON leaves for the overlay), `RenderNotes`, `DomainInputs`,
   `ExampleInputs`; tests for each type, the Compose-safe set and an injection attempt
   (`a\nservices:`, `x # y`, `${HOME}`, `{{other}}`) · internal/templates/render.go, render_test.go
-- [ ] **T003** `ReadSource`, `Sums`, `Check` (compose.Translate with any warning an error, nomadjob.Check with
+- [x] **T003** `ReadSource`, `Sums`, `Check` (compose.Translate with any warning an error, nomadjob.Check with
   default settings, registry.Parse, nomadjob.Translate), `Embedded` · internal/templates/source.go, check.go,
   embed.go, tests
-- [ ] **T004** The six templates of research R9 in the local catalog repository's source layout, written from
+- [x] **T004** The six templates of research R9 in the local catalog repository's source layout, written from
   each upstream's docs (verify health paths and env names against upstream; Hollo's README/env page,
   Uptime Kuma's wiki, Umbral's own repo at ~/Documents/code4fun/Umbral); bundle them into
   `internal/templates/catalog/` with `caravana template bundle`; a test runs `Check` on every embedded
   template and verifies `SHA256SUMS` · /Users/jjchiw/Documents/cosmic-chimps/a__cc/caravana-templates/,
   internal/templates/catalog/
-- [ ] **T005** `cmd/caravana template check <dir>` / `bundle <dir> <outdir>` with tests on a temp source dir ·
+- [x] **T005** `cmd/caravana template check <dir>` / `bundle <dir> <outdir>` with tests on a temp source dir ·
   cmd/caravana/template.go, template_test.go
-- [ ] **T006** Migration 0028 and the store methods of the plan, tests (old app rows read with no template) ·
+- [x] **T006** Migration 0028 and the store methods of the plan, tests (old app rows read with no template) ·
   internal/store/migrations/0028_templates.sql, internal/store/templates.go, apps.go
-- [ ] **T007** Service: catalog in use (stored newer valid bundle, else embedded), `ListTemplates(q, tag)`,
+- [x] **T007** Service: catalog in use (stored newer valid bundle, else embedded), `ListTemplates(q, tag)`,
   `Template(name)`, `PreviewTemplate`, `InstallTemplate(ctx, name, id, inputs, trigger)` (R4, R5),
   the daily check and `CheckTemplates`/`SetTemplateChecking` (R6, reusing the release check's `get`,
   timeouts and too-soon/disabled errors), `SetTemplatesURL`; tests with an httptest server (good, bad sum,
@@ -35,11 +35,11 @@ Tests are required (constitution VIII): each layer's tests are in the task that 
   template with generated secrets fed by a reader yielding `s3cret-sentinel-035…`, installed through the
   fake deployer; the sentinel is in the secret store and in no store row, kept file, deployment record,
   log line or the SQLite file · internal/service/templates.go, templates_test.go, service.go (Start, setter)
-- [ ] **T008** Config `CARAVANA_TEMPLATES_URL` / `-templates-url` wired in main · internal/config, cmd/caravana/main.go
-- [ ] **T009** API routes of contracts/api.md, error mapping, `AppRecord.template`/`AppSummary.template`,
+- [x] **T008** Config `CARAVANA_TEMPLATES_URL` / `-templates-url` wired in main · internal/config, cmd/caravana/main.go
+- [x] **T009** API routes of contracts/api.md, error mapping, `AppRecord.template`/`AppSummary.template`,
   openapi 0.36.0 (the route-sync test passes), scope walk table (all denied), sentinel test on install and
   preview answers · internal/api/templates.go, router, api/openapi.yaml, tests
-- [ ] **T010** MCP `list_templates`, `get_template` + contract test · internal/mcpserver
+- [x] **T010** MCP `list_templates`, `get_template` + contract test · internal/mcpserver
 
 ## Part B — console, lab, catalog repository (one implementer, after A is reviewed)
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.35.0
+  version: 0.36.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -1997,6 +1997,303 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/Internal"
+
+  /v1/templates:
+    get:
+      operationId: listTemplates
+      summary: List the app templates and the state of the catalog.
+      description: |
+        A template installs a known app (a status page, a fediverse server, a database with its
+        admin page) from a few answers: `installTemplate` renders the template's Compose file
+        and overlay and deploys them as a new app. The catalog is the one built into this
+        Caravana, replaced by a newer verified one fetched once a day from the catalog
+        repository (`catalog.source`); `putTemplateSettings` turns that check off, and then no
+        request is made. `q` keeps the templates whose title, description or a tag contains it
+        (any case); `tag` keeps those with exactly that tag. A template marked broken, or one
+        that needs a newer Caravana, is listed with `available` false and the reason in
+        `unavailable`. Deploy tokens are refused.
+      tags: [templates]
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string}
+        - name: tag
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: The catalog and its templates, by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/check:
+    post:
+      operationId: checkTemplates
+      summary: Check now for a newer template catalog.
+      description: |
+        Starts a check of the catalog repository's latest release and answers 202 at once; the
+        result arrives with `listTemplates` (`catalog.checkedAt`, `catalog.error`). It asks for
+        `SHA256SUMS` first and for `catalog.json` only when its sum changed, and keeps the new
+        catalog only when its checksum matches, every template passes Caravana's checks and its
+        version is newer than the one in use. The request carries Caravana's User-Agent and
+        nothing about the server. It may run once in 10 minutes, counted from the last check
+        (the daily one counts), and one runs at a time: a second request, or one while it runs,
+        is 429 `check_too_soon` with `Retry-After`. While the owner has checking off it is 409
+        `check_disabled`, and no request is made. Deploy tokens are refused.
+      tags: [templates]
+      responses:
+        "202":
+          description: The check started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateCheckStarted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "409":
+          description: "`check_disabled`: the owner turned checking off. Nothing started."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "`check_too_soon`: a check ran less than 10 minutes ago, or is running; `message` says when it may run again."
+          headers:
+            Retry-After:
+              description: Seconds until a check may start.
+              schema: {type: integer}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/settings:
+    put:
+      operationId: putTemplateSettings
+      summary: Turn the daily check for a newer catalog on or off.
+      description: |
+        `checking: false` makes Caravana send no request about templates, ever; the built-in
+        catalog (or the newer one already kept) stays offered. On by default. Deploy tokens
+        are refused.
+      tags: [templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateSettingsRequest"
+      responses:
+        "200":
+          description: The catalog's state with the new setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateCatalog"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/{name}:
+    parameters:
+      - $ref: "#/components/parameters/TemplateName"
+    get:
+      operationId: getTemplate
+      summary: Read one template.
+      description: |
+        The manifest as the catalog has it: inputs (their `default` and `example` are the only
+        values), generated secrets (name, length and alphabet; never a value), the overlay with
+        its `{{placeholders}}` and the Compose text with its placeholders. Deploy tokens are
+        refused.
+      tags: [templates]
+      responses:
+        "200":
+          description: The template.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/TemplateNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/{name}/logo:
+    parameters:
+      - $ref: "#/components/parameters/TemplateName"
+    get:
+      operationId: getTemplateLogo
+      summary: The template's logo, an SVG.
+      description: |
+        Served as an image only, with `X-Content-Type-Options: nosniff` and
+        `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`, so
+        nothing in it runs. A template without a logo is 404 `template_not_found`. Deploy
+        tokens are refused.
+      tags: [templates]
+      responses:
+        "200":
+          description: The SVG.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/TemplateNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/{name}/preview:
+    parameters:
+      - $ref: "#/components/parameters/TemplateName"
+    post:
+      operationId: previewTemplate
+      summary: Show the app a template makes with these inputs, without saving or deploying it.
+      description: |
+        Takes the same body as `installTemplate` and answers as `previewCompose` does, with the
+        rendered Compose file added. Nothing is generated, saved or deployed, and no secret
+        is made, so a `secret` input may be left out here. The inputs are checked as an install
+        checks them. Never cached. Deploy tokens are refused.
+      tags: [templates]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateInstallRequest"
+      responses:
+        "200":
+          description: The app, its warnings and the rendered file.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplatePreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/TemplateNotFound"
+        "409":
+          $ref: "#/components/responses/TemplateConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/templates/{name}/install:
+    parameters:
+      - $ref: "#/components/parameters/TemplateName"
+    post:
+      operationId: installTemplate
+      summary: Install a template as a new app.
+      description: |
+        Checks the inputs, makes the template's generated secrets (from the operating system's
+        random source), renders the Compose file and overlay and deploys them exactly as
+        `deployCompose` deploys with `If-None-Match: *`: a new app only, saved under `id` and
+        rolled out, with the rendered file kept with it. The app's record then names the
+        template (`AppRecord.template`). Generated secrets and `secret` inputs go to the secret
+        store only: they are never kept, shown or returned. The same optional `Caravana-Origin-*`
+        headers as `deployCompose` are read. Never cached. Deploy tokens are refused.
+
+        An input that is wrong is 400 `invalid_field` with `field` `inputs.<name>`, as is a
+        refusal at a domain host that came from an input; `id` is checked as for any new app
+        (and its project and environment must exist: 404 `project_not_found`,
+        `environment_not_found`). A refusal anywhere else is a defect of the template, with
+        its path in the file in `field`. 409 `app_exists`: the ID is taken. 409
+        `domain_taken`: the host is another app's (`field` `inputs.<name>` when it came from an
+        input). 409 `template_unavailable`: the template is marked broken or needs a newer
+        Caravana. A service with a `backup` needs the backup destination to be set, as for any
+        deploy: until it is, that is 400 `invalid_field` with `field` `services.<service>.backup`.
+      tags: [templates]
+      parameters:
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemplateInstallRequest"
+      responses:
+        "202":
+          description: Nomad accepted the job; follow it like any deployment.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: "`template_not_found`, `project_not_found` or `environment_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`app_exists`, `domain_taken` or `template_unavailable`; `message` says why. Nothing was saved."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: An image can't be found or the registry refuses the stored credentials (`image_not_found`, `registry_auth_failed`), as for any deploy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: The registry, Nomad or the secret store can't be reached, as for any deploy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/logs:
     get:
@@ -4304,6 +4601,12 @@ paths:
 
 components:
   parameters:
+    TemplateName:
+      name: name
+      in: path
+      required: true
+      description: The template's name, as the catalog lists it (`uptime-kuma`).
+      schema: {type: string}
     MetricsRange:
       name: range
       in: query
@@ -5455,6 +5758,217 @@ components:
           items:
             $ref: "#/components/schemas/Restore"
 
+    TemplateRef:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      description: |
+        The template an app was installed from, and its version then. Provenance only: nothing
+        reads it to deploy, and the app is a normal app afterwards.
+      properties:
+        name: {type: string}
+        version: {type: string}
+
+    TemplateCatalog:
+      type: object
+      additionalProperties: false
+      required: [version, source, embeddedVersion, checking, checkedAt, checkedOkAt, fetchedAt, error]
+      properties:
+        version:
+          type: string
+          description: The catalog in use, `YYYY.MM.DD` with an optional `.N`.
+          examples: ["2026.11.12"]
+        source:
+          type: string
+          enum: [embedded, fetched]
+          description: Built into this Caravana, or fetched from the catalog repository and kept.
+        embeddedVersion:
+          type: string
+          description: The version built into this Caravana.
+        checking:
+          type: boolean
+          description: The owner's setting. `false` means Caravana makes no request about templates.
+        checkedAt:
+          type: [string, "null"]
+          format: date-time
+          description: The last check, good or not; null before the first.
+        checkedOkAt:
+          type: [string, "null"]
+          format: date-time
+          description: The last check that was answered well; stays when a later one fails.
+        fetchedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the fetched catalog was kept; null while the built-in one is in use.
+        error:
+          type: string
+          description: Why the last check failed, in Caravana's words; empty when it worked.
+
+    TemplateSummary:
+      type: object
+      additionalProperties: false
+      required: [name, title, version, description, tags, upstream, hasLogo, available, unavailable]
+      properties:
+        name: {type: string}
+        title: {type: string}
+        version: {type: string, examples: ["2.5.11-1"]}
+        description: {type: string}
+        tags:
+          type: array
+          items: {type: string}
+        upstream:
+          type: string
+          description: The project's home, an https address.
+        hasLogo:
+          type: boolean
+          description: "`getTemplateLogo` has an image to answer."
+        available:
+          type: boolean
+          description: False for a template marked broken or one that needs a newer Caravana.
+        unavailable:
+          type: string
+          description: Why `available` is false; empty otherwise.
+
+    TemplateList:
+      type: object
+      additionalProperties: false
+      required: [catalog, templates]
+      properties:
+        catalog:
+          $ref: "#/components/schemas/TemplateCatalog"
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateSummary"
+
+    TemplateInput:
+      type: object
+      additionalProperties: false
+      required: [name, label, type]
+      description: One question the owner answers. Values are checked by `type` and then for use in a Compose file.
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,31}$"
+          description: The name of the `{{placeholder}}` and the key in `inputs`.
+        label: {type: string}
+        type:
+          type: string
+          enum: [domain, email, text, secret]
+          description: |
+            `domain`: a host name (lowercased). `email`. `text`: matches `pattern` entirely.
+            `secret`: 1 to 4096 bytes on one line, only ever sent to the secret store. Every
+            other type may only hold letters, digits and `. _ @ + : / = -`.
+        help: {type: string}
+        default:
+          type: string
+          description: Used when the answer is empty. Never on a `secret`.
+        pattern:
+          type: string
+          description: A Go regular expression, for `text` only.
+        example: {type: string}
+
+    TemplateGenerated:
+      type: object
+      additionalProperties: false
+      required: [name, length, alphabet]
+      description: A secret Caravana makes at install and sends only to the secret store. Its value is never shown.
+      properties:
+        name: {type: string}
+        length: {type: integer, minimum: 16, maximum: 128}
+        alphabet: {type: string, enum: [hex, alnum, base64url]}
+
+    Template:
+      type: object
+      additionalProperties: false
+      required: [name, title, version, description, tags, upstream, appName, lab, inputs, generated, services, compose, hasLogo, available, unavailable]
+      properties:
+        name: {type: string}
+        title: {type: string}
+        version: {type: string}
+        description: {type: string}
+        tags:
+          type: array
+          items: {type: string}
+        upstream: {type: string}
+        appName:
+          type: string
+          description: The default app name.
+        notes:
+          type: string
+          description: Plain text for after the install; may hold `{{placeholders}}` of plain inputs.
+        requires:
+          type: string
+          description: The oldest Caravana release that can install it.
+        broken:
+          type: string
+          description: When present, why the template isn't offered.
+        lab:
+          type: boolean
+          description: Whether the catalog's lab job installs it.
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateInput"
+        generated:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateGenerated"
+        services:
+          type: object
+          description: The overlay per service of the Compose file, with its `{{placeholders}}` unrendered.
+          additionalProperties:
+            $ref: "#/components/schemas/ComposeOverlay"
+        compose:
+          type: string
+          description: The Compose file with its `{{placeholders}}`.
+        hasLogo: {type: boolean}
+        available: {type: boolean}
+        unavailable: {type: string}
+
+    TemplateInstallRequest:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          description: The new app's ID, as `deployApp`'s path has it (`AppID`).
+        inputs:
+          type: object
+          description: The answers by input name. An empty answer takes the input's default.
+          additionalProperties: {type: string}
+
+    TemplatePreview:
+      type: object
+      additionalProperties: false
+      required: [app, warnings, compose]
+      properties:
+        app:
+          $ref: "#/components/schemas/App"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+        compose:
+          type: string
+          description: "The rendered Compose file. It holds no secret: a template can't put one there."
+
+    TemplateSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [checking]
+      properties:
+        checking: {type: boolean}
+
+    TemplateCheckStarted:
+      type: object
+      additionalProperties: false
+      required: [catalog]
+      properties:
+        catalog:
+          $ref: "#/components/schemas/TemplateCatalog"
+
     ComposePreview:
       type: object
       additionalProperties: false
@@ -5936,6 +6450,8 @@ components:
           $ref: "#/components/schemas/AppDefined"
         stoppedAt:
           $ref: "#/components/schemas/AppStoppedAt"
+        template:
+          $ref: "#/components/schemas/TemplateRef"
 
     AppStoppedAt:
       type: string
@@ -5970,6 +6486,8 @@ components:
           $ref: "#/components/schemas/AppDefined"
         stoppedAt:
           $ref: "#/components/schemas/AppStoppedAt"
+        template:
+          $ref: "#/components/schemas/TemplateRef"
         status:
           $ref: "#/components/schemas/AppStatus"
         lastDeployment:
@@ -8367,6 +8885,18 @@ components:
             $ref: "#/components/schemas/TokenInfo"
 
   responses:
+    TemplateNotFound:
+      description: "`template_not_found`: the catalog in use has no template with that name (or no logo for it)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TemplateConflict:
+      description: "`template_unavailable`: the template is marked broken or needs a newer Caravana; `message` says which."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Jobspec:
       description: |
         The jobspec, as a download named `<app>.nomad.hcl`. Errors are JSON, as everywhere.
@@ -8807,6 +9337,8 @@ tags:
     description: "Monitoring and capacity: the numbers of an environment's or an app's services, and the host's memory, CPU and disks."
   - name: logs
     description: "The output of an environment's copies, read from Nomad's files: search, lines around one line, download."
+  - name: templates
+    description: Known apps that install from a few answers, and the catalog they come from.
   - name: servers
     description: The servers of the cluster, how one joins, and the calls their agents make.
   - name: tokens

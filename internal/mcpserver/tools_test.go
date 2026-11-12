@@ -99,6 +99,14 @@ var readCases = []toolCase{
 	{tool: "wait_for_deployment", args: map[string]any{"app": "web", "deployment": "d-1"},
 		routes: map[string]string{"GET /v1/apps/web/deployments/d-1": `{"id":"d-1","status":"healthy"}`},
 		want:   []wantRequest{{method: "GET", path: "/v1/apps/web/deployments/d-1"}}},
+	{tool: "list_templates", routes: map[string]string{"GET /v1/templates": `{"catalog":{},"templates":[]}`},
+		want: []wantRequest{{method: "GET", path: "/v1/templates"}}, answer: `{"catalog":{},"templates":[]}`},
+	{tool: "list_templates", args: map[string]any{"q": "status page", "tag": "monitoring"},
+		routes: map[string]string{"GET /v1/templates": `{"catalog":{},"templates":[]}`},
+		want:   []wantRequest{{method: "GET", path: "/v1/templates", query: "q=status+page&tag=monitoring"}}, answer: `{"catalog":{},"templates":[]}`},
+	{tool: "get_template", args: map[string]any{"name": "uptime-kuma"},
+		routes: map[string]string{"GET /v1/templates/uptime-kuma": `{"name":"uptime-kuma"}`},
+		want:   []wantRequest{{method: "GET", path: "/v1/templates/uptime-kuma"}}, answer: `{"name":"uptime-kuma"}`},
 }
 
 var actionCases = []toolCase{
@@ -284,8 +292,8 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 var readToolNames = []string{
 	"export_jobspec", "get_app", "get_compose_file", "get_deployment", "get_logs", "get_needs_you",
-	"get_project", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
-	"list_deployments", "list_projects", "list_recent_deployments", "list_volumes",
+	"get_project", "get_template", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
+	"list_deployments", "list_projects", "list_recent_deployments", "list_templates", "list_volumes",
 	"preview_promotion", "wait_for_deployment",
 }
 
@@ -404,6 +412,14 @@ func TestInvalidInputIsRefusedBeforeTheAPI(t *testing.T) {
 		{"image with a space", "deploy_image", map[string]any{"app": "web", "image": "nginx 1"}},
 		{"image empty", "deploy_image", map[string]any{"app": "web", "image": ""}},
 		{"service uppercase", "back_up_now", map[string]any{"app": "web", "service": "DB"}},
+		{"template with a slash", "get_template", map[string]any{"name": "a/b"}},
+		{"template uppercase", "get_template", map[string]any{"name": "Hollo"}},
+		{"template missing", "get_template", map[string]any{}},
+		{"template with a query", "get_template", map[string]any{"name": "hollo?x=1"}},
+		{"q too long", "list_templates", map[string]any{"q": strings.Repeat("q", 101)}},
+		{"tag uppercase", "list_templates", map[string]any{"tag": "Monitoring"}},
+		{"tag with an ampersand", "list_templates", map[string]any{"tag": "a&b=c"}},
+		{"an install is not a tool", "install_template", map[string]any{"name": "hollo"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -436,6 +452,9 @@ func TestHandlerChecksAreTheSecondDefence(t *testing.T) {
 		deployImageInput{App: "a", Image: "a b"},
 		deployImageInput{App: "a", Image: "x", Service: "A"},
 		backupInput{App: "a", Service: "a/b"},
+		templateInput{Name: "a/b"},
+		templatesInput{Tag: "A"},
+		templatesInput{Q: "a\nb"},
 	}
 	for i, v := range bad {
 		if err := v.validate(); err == nil {
@@ -447,6 +466,8 @@ func TestHandlerChecksAreTheSecondDefence(t *testing.T) {
 		logsInput{App: "a", Lines: 500, Stream: "both", Copy: "abc-123"},
 		waitInput{App: "a", Deployment: "d"},
 		deployImageInput{App: "a", Image: "ghcr.io/o/r:tag", Service: "web"},
+		templateInput{Name: "uptime-kuma"},
+		templatesInput{Q: "status page", Tag: "status page"},
 	}
 	for i, v := range good {
 		if err := v.validate(); err != nil {
