@@ -9,8 +9,8 @@ import (
 
 func TestBrandMark(t *testing.T) {
 	const (
-		bigBox   = `viewBox="4.375 2.25 23.25 27.5"`
-		smallBox = `viewBox="2 1.5 11 13"`
+		bigBox   = `viewBox="4.261 2.255 23.479 27.489"`
+		smallBox = `viewBox="2 1 11 13"`
 	)
 	for _, tc := range []struct {
 		name       string
@@ -20,14 +20,14 @@ func TestBrandMark(t *testing.T) {
 		wantHeight string
 		wantShape  string
 	}{
-		{"console size uses the brand geometry", 32, bigBox, `width="27.05"`, `height="32"`, `<circle cx="9.875" cy="7.5" r="5.25"/>`},
-		{"24 is the first brand-geometry size", 24, bigBox, `width="20.29"`, `height="24"`, `<circle cx="9.875" cy="7.5" r="5.25"/>`},
-		{"top bar size uses the hinted geometry", 20, smallBox, `width="16.92"`, `height="20"`, `<circle cx="5" cy="4" r="2.5"/>`},
-		{"23 is the last hinted size", 23, smallBox, `width="19.46"`, `height="23"`, `<circle cx="5" cy="4" r="2.5"/>`},
-		{"16 is the minimum", 16, smallBox, `width="13.54"`, `height="16"`, `<rect x="8" y="9.5" width="5" height="5"/>`},
-		{"below the minimum is raised to 16", 8, smallBox, `width="13.54"`, `height="16"`, `<rect x="8" y="9.5" width="5" height="5"/>`},
-		{"zero is raised to 16", 0, smallBox, `width="13.54"`, `height="16"`, `<path d="M8 6.5V1.5A5 5 0 0 1 13 6.5Z"/>`},
-		{"a whole width has no decimals", 55, bigBox, `width="46.5"`, `height="55"`, `<rect x="17.125" y="19.25" width="10.5" height="10.5"/>`},
+		{"console size uses the brand geometry", 32, bigBox, `width="27.33"`, `height="32"`, `<circle cx="9.511" cy="7.505" r="5.25"/>`},
+		{"24 is the first brand-geometry size, and a trailing zero is trimmed", 24, bigBox, `width="20.5"`, `height="24"`, `<circle cx="9.511" cy="7.505" r="5.25"/>`},
+		{"top bar size uses the hinted geometry", 20, smallBox, `width="16.92"`, `height="20"`, `<circle cx="4.5" cy="3.5" r="2.5"/>`},
+		{"23 is the last hinted size", 23, smallBox, `width="19.46"`, `height="23"`, `<circle cx="4.5" cy="3.5" r="2.5"/>`},
+		{"16 is the minimum", 16, smallBox, `width="13.54"`, `height="16"`, `<rect x="8" y="9" width="5" height="5"/>`},
+		{"below the minimum is raised to 16", 8, smallBox, `width="13.54"`, `height="16"`, `<rect x="8" y="9" width="5" height="5"/>`},
+		{"zero is raised to 16", 0, smallBox, `width="13.54"`, `height="16"`, `<path d="M8 6V1A5 5 0 0 1 13 6Z"/>`},
+		{"a large mark", 55, bigBox, `width="46.98"`, `height="55"`, `<rect x="17.24" y="19.244" width="10.5" height="10.5"/>`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := string(brandMark(tc.height))
@@ -156,6 +156,29 @@ func TestBrandFiles(t *testing.T) {
 		svg := string(mustRead(t, "brand/"+name+".svg"))
 		if strings.Contains(svg, "<metadata") || strings.Contains(svg, "c2pa") {
 			t.Errorf("brand/%s.svg still has its metadata", name)
+		}
+	}
+}
+
+// TestBrandMarkMatchesTheFiles keeps the inline mark in step with the brand
+// files: every shape of mark.svg is in markShapes, and every shape of the
+// favicon (its tile left out) is in smallShapes, so a new logo can't be
+// copied in without the inline mark following it.
+func TestBrandMarkMatchesTheFiles(t *testing.T) {
+	shape := regexp.MustCompile(`<(?:circle|path|rect) [^>]*/>`)
+	for file, inline := range map[string]string{"brand/mark.svg": markShapes, "brand/favicon.svg": smallShapes} {
+		found := 0
+		for _, s := range shape.FindAllString(string(mustRead(t, file)), -1) {
+			if strings.Contains(s, "fill=") { // the favicon's tile
+				continue
+			}
+			found++
+			if !strings.Contains(inline, s) {
+				t.Errorf("%s has %s, which the inline mark lacks", file, s)
+			}
+		}
+		if found != 4 {
+			t.Errorf("%s: %d shapes, want the four pieces", file, found)
 		}
 	}
 }

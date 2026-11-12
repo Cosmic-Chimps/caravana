@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="currentColor" role="img" aria-label="caravana">
-  <circle cx="9.875" cy="7.5" r="5.25"/>
-  <path d="M17.125 12.75V2.25A10.5 10.5 0 0 1 27.625 12.75Z"/>
-  <path d="M9.875 14.25L15.375 19.75L9.875 25.25L4.375 19.75Z"/>
-  <rect x="17.125" y="19.25" width="10.5" height="10.5"/>
+  <circle cx="9.511" cy="7.505" r="5.25"/>
+  <path d="M17.24 12.755V2.255A10.5 10.5 0 0 1 27.74 12.755Z"/>
+  <path d="M9.511 13.994L14.761 19.244L9.511 24.494L4.261 19.244Z"/>
+  <rect x="17.24" y="19.244" width="10.5" height="10.5"/>
 </svg>
