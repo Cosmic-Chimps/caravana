@@ -138,6 +138,9 @@ func startLab(t *testing.T) labEnv {
 		// monitoring steps see rows in seconds (feature 025).
 		svc.SetMetricsSampleGap(10 * time.Second)
 		svc.SetScheduleScanGap(5 * time.Second)
+		// The backup and restore clock looks every 10 s instead of 30, so a scheduled
+		// restore starts within seconds of its slot (feature 036).
+		svc.SetBackupScanGap(10 * time.Second)
 		svc.SetScheduleWatchGap(2 * time.Second)
 		svc.SetScheduleLimitForTests(labRunLimit)
 		// The domain checks: fake DNS, the real handshake with Traefik, and the watcher's gaps

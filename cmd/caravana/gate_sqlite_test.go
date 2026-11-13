@@ -249,6 +249,54 @@ func (g *gate) sqliteBackupRestoreStep(t *testing.T) {
 		t.Errorf("the bucket lists %q (%v), want two backups and not %s.sqlite.gz", listed, err, ts)
 	}
 
+	// A pinned backup outlives retention (feature 036): pinned as golden, then
+	// five more backups with keep 2. Its record and its object stay, and two
+	// unpinned ones are kept beside it.
+	golden := backUp()
+	g.pinBackup(t, appID, golden.ID, "golden")
+	goldenTS := strings.TrimPrefix(golden.ID, "db-")
+	// A change after the pin, which the scheduled restore must undo.
+	query("CREATE TABLE IF NOT EXISTS later(v); SELECT 'made'")
+	for range 5 {
+		backUp()
+	}
+	var pinned struct {
+		Backups []struct {
+			ID  string `json:"id"`
+			Pin string `json:"pin"`
+		} `json:"backups"`
+	}
+	g.getJSON(t, "/v1/apps/"+appID+"/backups", &pinned)
+	unpinned, kept := 0, false
+	for _, b := range pinned.Backups {
+		if b.ID == golden.ID {
+			kept = b.Pin == "golden"
+		} else {
+			unpinned++
+		}
+	}
+	if !kept || unpinned != 2 {
+		t.Errorf("after five more backups the list has the golden one %v and %d others, want it pinned and 2 others: %+v", kept, unpinned, pinned.Backups)
+	}
+	if listed, err := g.bucketExec("ls", "/data/backups/gate/"+appID+"/db/"); err != nil || !strings.Contains(listed, goldenTS+".sqlite.gz") ||
+		strings.Count(listed, ".sqlite.gz") != 3 {
+		t.Errorf("the bucket lists %q (%v), want the pinned %s.sqlite.gz and two others", listed, err, goldenTS)
+	}
+
+	// A restore schedule whose slot is two minutes ahead restores the golden
+	// backup: the table made after the pin is gone. The redeploy keeps the volume.
+	d, slot := g.deployRestoreSchedule(t, appID, sqliteGateApp, "golden")
+	if got := query("SELECT count(*) FROM sqlite_master WHERE name = 'later'"); got != "1" {
+		t.Fatalf("the later table = %q after deploying the schedule, want 1: the restore waits for its slot", got)
+	}
+	g.waitScheduledRestore(t, appID, golden.ID, "golden", slot)
+	if got := query("SELECT count(*) FROM sqlite_master WHERE name = 'later'"); got != "0" {
+		t.Errorf("the later table = %q after the scheduled restore, want 0: the golden backup's database is back", got)
+	}
+	if got := query("PRAGMA quick_check"); got != "ok" {
+		t.Errorf("quick_check after the scheduled restore = %q", got)
+	}
+
 	// The bucket's secret key is in no answer and not in the job.
 	secret := "gate-" + g.run
 	resp = g.api(t, http.MethodGet, "/v1/apps/"+appID+"/backups", "", "")

@@ -743,12 +743,15 @@ type gateVolumeRun struct {
 
 // gateVolumeRestore is the part of a Restore (schema Restore) the volume step reads.
 type gateVolumeRestore struct {
-	ID             string   `json:"id"`
-	BackupID       string   `json:"backupId"`
-	Engine         string   `json:"engine"`
-	Status         string   `json:"status"`
-	Message        string   `json:"message"`
-	StoppedSeconds *float64 `json:"stoppedSeconds"`
+	ID             string    `json:"id"`
+	BackupID       string    `json:"backupId"`
+	Engine         string    `json:"engine"`
+	Status         string    `json:"status"`
+	Message        string    `json:"message"`
+	StoppedSeconds *float64  `json:"stoppedSeconds"`
+	Trigger        string    `json:"trigger"`
+	Pin            string    `json:"pin"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // volumeBackupRestoreStep: a volume backup and its restore (feature 016), with
@@ -1005,6 +1008,29 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 		}
 		return true
 	})
+
+	// A scheduled restore (feature 036): the backup is pinned as golden, the data
+	// changes, and a restore schedule whose slot is two minutes ahead brings the
+	// golden data back without anyone asking.
+	g.pinBackup(t, appID, run.ID, "golden")
+	if out, err := g.exec(t, appID, "web", d.ID, "sh", "-c", "printf C > /data/v && printf y > /data/later"); err != nil {
+		t.Fatalf("change the volume's files after the pin: %v (%q)", err, out)
+	}
+	if got := readFile(); got != "C" {
+		t.Fatalf("/data/v = %q after the change, want C", got)
+	}
+	var slot time.Time
+	d, slot = g.deployRestoreSchedule(t, appID, volumeApp, "golden")
+	if got := readFile(); got != "C" {
+		t.Fatalf("/data/v = %q after deploying the schedule, want C still: the restore waits for its slot", got)
+	}
+	g.waitScheduledRestore(t, appID, run.ID, "golden", slot)
+	if got := readFile(); got != "A" {
+		t.Errorf("/data/v = %q after the scheduled restore, want A: the golden backup's data", got)
+	}
+	if out := read("sh", "-c", "[ -e /data/later ] && echo present || echo gone"); out != "gone" {
+		t.Errorf("/data/later after the scheduled restore: %q, want it deleted", out)
+	}
 
 	resp = g.api(t, http.MethodDelete, "/v1/apps/"+appID, "", "")
 	resp.Body.Close()

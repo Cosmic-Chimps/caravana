@@ -58,10 +58,10 @@ the files of that part; every commit builds and passes `go test ./...`.
 
 ## Part D — lab and Aspire
 
-- [ ] **T014** Lab: `startLab`'s `serviceHook` calls `SetBackupScanGap(10 * time.Second)`; `sqlite-backup-restore` gains keep-2 + pin + five backups + scheduled restore;
+- [x] **T014** Lab: `startLab`'s `serviceHook` calls `SetBackupScanGap(10 * time.Second)`; `sqlite-backup-restore` gains keep-2 + pin + five backups + scheduled restore;
   `volume-backup-restore` gains pin + scheduled restore; both clear the schedule · cmd/caravana/gate_test.go,
   gate_sqlite_test.go, lab_test.go
-- [ ] **T015** Aspire (`../aspire-hosting-caravana`, branch `scheduled-restore`, not pushed):
+- [x] **T015** (34602c3) Aspire (`../aspire-hosting-caravana`, branch `scheduled-restore`, not pushed):
   `WithCaravanaScheduledRestore`, overlay model, tests, README, CHANGELOG
-- [ ] **T016** Run in the lab: `-run 'TestLab/^(volume|sqlite)-backup-restore$'`, then the checks of CLAUDE.md's
+- [ ] **T016** (2026-11-13: `volume-backup-restore` passed, 359 s, with the scheduled restore; `sqlite-backup-restore` not run yet: Go's HTTPS from the Mac hung, so the deploy couldn't resolve its image) Run in the lab: `-run 'TestLab/^(volume|sqlite)-backup-restore$'`, then the checks of CLAUDE.md's
   Commands (build, vet, staticcheck, gofmt, race, cross-compile, ui-css check, release check)
