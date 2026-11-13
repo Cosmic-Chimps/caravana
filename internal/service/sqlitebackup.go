@@ -51,6 +51,7 @@ type sqliteRun struct {
 	svc     app.Service
 	copyID  string
 	req     volumeRequest
+	pinned  []string // a backup's pinned timestamps, which its retention keeps (feature 036)
 	dest    deploy.BackupDestination
 	started time.Time
 	release func() // the app's deploy lock and claim; the owner of the run calls it
@@ -109,8 +110,14 @@ func (s *Service) prepareSQLiteRun(ctx context.Context, appID, service, action, 
 	if err != nil {
 		return sqliteRun{}, err
 	}
+	var pinned []string
+	if action == deploy.VolumeBackup {
+		if pinned, err = s.pinStamps(ctx, appID, service); err != nil {
+			return sqliteRun{}, err
+		}
+	}
 	handedOver = true
-	return sqliteRun{app: a, svc: svc, copyID: copyID, req: req, dest: dest, started: s.clock.Now().UTC(), release: release}, nil
+	return sqliteRun{app: a, svc: svc, copyID: copyID, req: req, pinned: pinned, dest: dest, started: s.clock.Now().UTC(), release: release}, nil
 }
 
 // startSQLiteBackup starts a backup of one service's SQLite database now and
@@ -158,7 +165,7 @@ func (s *Service) driveSQLiteBackup(run sqliteRun, rec store.BackupRecord) {
 		}
 		return
 	}
-	out, err := s.deployer.SQLiteUpload(ctx, run.copyID, run.req.ID, run.app.ID, run.svc, run.dest, run.req.TS, run.svc.Backup.KeepOrDefault(), nil)
+	out, err := s.deployer.SQLiteUpload(ctx, run.copyID, run.req.ID, run.app.ID, run.svc, run.dest, run.req.TS, run.svc.Backup.KeepOrDefault(), run.pinned)
 	if err != nil {
 		if base.Err() == nil {
 			s.settleSQLiteBackup(rec, nomadjob.SQLiteOutput{}, s.sqliteFailure(ctx, run, err))
@@ -214,16 +221,16 @@ func (s *Service) settleSQLiteBackup(rec store.BackupRecord, out nomadjob.SQLite
 }
 
 // startSQLiteRestore starts the restore of the sqlite backup b into the
-// running service and returns the restore's record, running. The errors are
-// prepareSQLiteRun's.
-func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.BackupRecord) (store.RestoreRecord, error) {
+// running service and returns the restore's record, running. trigger and label
+// are recorded on it, as for restoreBackup. The errors are prepareSQLiteRun's.
+func (s *Service) startSQLiteRestore(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
 	ctx = context.WithoutCancel(ctx)
 	run, err := s.prepareSQLiteRun(ctx, appID, b.Service, deploy.VolumeRestoreSQLite, b.Object)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
 	rec := store.RestoreRecord{ID: restoreRecordID(appID, run.req.ID), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Engine: app.BackupSQLite, Status: store.BackupRunning, CreatedAt: run.started}
+		Engine: app.BackupSQLite, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label}
 	if err := s.store.SaveRestore(ctx, rec); err != nil {
 		run.release()
 		return store.RestoreRecord{}, err

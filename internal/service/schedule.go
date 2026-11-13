@@ -75,14 +75,18 @@ func dueSlot(spec string, base, now time.Time) (slot time.Time, due, skipped boo
 	return time.Time{}, false, false
 }
 
-// scheduleVolumeBackups runs due volume backups, every gap, until ctx ends. Like
-// watchBackups, it does a pass first, so a Caravana that starts at 03:05 doesn't
-// wait gap to notice 03:00 went by.
+// scheduleVolumeBackups runs due volume backups and due restores (feature 036),
+// every gap, until ctx ends. Like watchBackups, it does a pass first, so a
+// Caravana that starts at 03:05 doesn't wait gap to notice 03:00 went by.
 func (s *Service) scheduleVolumeBackups(ctx context.Context, gap time.Duration) {
 	t := time.NewTicker(gap)
 	defer t.Stop()
 	noted := map[string]string{}
 	for {
+		// Restores first: a backup that comes due in the same pass is only put
+		// off (it is tried again until its slot is an hour old), while a restore
+		// that found the service busy is skipped for good.
+		s.runDueRestores(ctx, noted)
 		s.runDueVolumeBackups(ctx, noted)
 		select {
 		case <-ctx.Done():

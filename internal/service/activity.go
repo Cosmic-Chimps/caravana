@@ -286,6 +286,8 @@ func runWords(status string, name []TextPart, link, service string) (string, []T
 		return ActivityHealthy, parts(name, link, subject, " finished.")
 	case store.BackupFailed:
 		return ActivityFailed, parts(name, link, subject, " failed.")
+	case store.RestoreSkipped:
+		return ActivityIdle, parts(name, link, subject, " was skipped: a backup or restore was running.")
 	}
 	return ActivityIdle, parts(name, link, subject, " is running.")
 }

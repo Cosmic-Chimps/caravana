@@ -172,8 +172,13 @@ func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string
 			creds[svc.Name] = deploy.BackupCredentials{User: user, Password: value("POSTGRES_PASSWORD", ""), Database: value("POSTGRES_DB", user)}
 		}
 		var private map[string]bool
+		var pins map[string][]string
 		if private, err = s.privateRegistries(ctx); err == nil {
-			err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private, nil)
+			// The pinned backups' timestamps go into each Postgres job's variable
+			// for its retention (feature 036).
+			if pins, err = s.pinStampsByService(ctx, a.ID); err == nil {
+				err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private, pins)
+			}
 		}
 	}
 	if err != nil {
@@ -309,7 +314,7 @@ func (s *Service) backupBusy(ctx context.Context, appID string, svc app.Service)
 
 // Restore loads a backup into the running service. Only a succeeded backup
 // still in the destination can be restored, one backup or restore per service
-// at a time.
+// at a time. It is the owner's restore: the record says so.
 //
 // A Postgres restore is a Nomad job that loads the dump into the running
 // database. A volume restore restarts the service's own copy and stops the
@@ -323,6 +328,17 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	if b.Status != store.BackupSucceeded || b.Expired {
 		return store.RestoreRecord{}, fmt.Errorf("backup %s can't be restored: it %s: %w", backupID, map[bool]string{true: "was deleted by retention", false: "didn't succeed"}[b.Expired], store.ErrNotFound)
 	}
+	return s.restoreBackup(ctx, appID, b, store.RestoreTriggerOwner, "")
+}
+
+// restoreBackup starts the restore of b, a succeeded backup that is still in
+// the destination, into its running service, and records it with trigger (the
+// owner's, or the service's restore schedule's, for which label is the one it
+// asked for; "" otherwise). It is what Restore and the restore clock share, so
+// a scheduled restore does exactly what the owner's does. The errors include
+// ErrAppStopped, ErrNoBackupDestination, ErrBackupRunning, ErrNoRunningCopy and
+// Nomad's.
+func (s *Service) restoreBackup(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
 	_, svc, err := s.backedUpService(ctx, appID, b.Service)
 	if err != nil {
 		return store.RestoreRecord{}, err
@@ -337,7 +353,7 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	}
 	if b.Engine != svc.Backup.Engine {
 		return store.RestoreRecord{}, fmt.Errorf("backup %s was made by the %s engine, and the service now backs up with %s: %w",
-			backupID, b.Engine, svc.Backup.Engine, store.ErrNotFound)
+			b.ID, b.Engine, svc.Backup.Engine, store.ErrNotFound)
 	}
 	if busy, err := s.backupBusy(ctx, appID, svc); err != nil {
 		return store.RestoreRecord{}, err
@@ -345,10 +361,10 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 		return store.RestoreRecord{}, ErrBackupRunning
 	}
 	if hasVolumeBackup(svc) {
-		return s.startVolumeRestore(ctx, appID, b)
+		return s.startVolumeRestore(ctx, appID, b, trigger, label)
 	}
 	if hasSQLiteBackup(svc) {
-		return s.startSQLiteRestore(ctx, appID, b)
+		return s.startSQLiteRestore(ctx, appID, b, trigger, label)
 	}
 	image, err := s.runningImage(ctx, appID, b.Service)
 	if err != nil {
@@ -361,8 +377,8 @@ func (s *Service) Restore(ctx context.Context, appID, backupID string) (store.Re
 	if err := s.deployer.Restore(ctx, appID, svc, image, b.Object, private); err != nil {
 		return store.RestoreRecord{}, err
 	}
-	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: backupID,
-		Status: store.BackupRunning, CreatedAt: time.Now().UTC()}
+	r := store.RestoreRecord{ID: strings.ToLower(rand.Text()), AppID: appID, Service: b.Service, BackupID: b.ID,
+		Status: store.BackupRunning, CreatedAt: time.Now().UTC(), Trigger: trigger, Pin: label}
 	if err := s.store.SaveRestore(ctx, r); err != nil {
 		return store.RestoreRecord{}, err
 	}

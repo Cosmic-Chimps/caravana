@@ -412,6 +412,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	// The backup jobs follow the app's definition, with the image and the
 	// secrets of this deploy. The app runs either way; a failure is a warning.
 	warnings = append(warnings, s.syncBackups(ctx, a, digests, sets)...)
+	warnings = append(warnings, s.restoreLabelWarnings(ctx, a)...)
 	if warnings == nil {
 		warnings = []app.Warning{}
 	}

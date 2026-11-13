@@ -193,7 +193,15 @@ func (s *Service) prepareVolumeRun(ctx context.Context, appID, service, action, 
 	if err != nil {
 		return volumeRun{}, err
 	}
-	if err := s.deployer.WriteVolumeVariable(ctx, a, svc, &dest, svc.Backup.KeepOrDefault(), req.forNomad()); err != nil {
+	nomadReq := req.forNomad()
+	// A backup's retention is told which backups are pinned. A pin that can't
+	// be read is no reason to risk deleting one: the run is refused.
+	if action == deploy.VolumeBackup {
+		if nomadReq.Pinned, err = s.pinStamps(ctx, appID, service); err != nil {
+			return volumeRun{}, err
+		}
+	}
+	if err := s.deployer.WriteVolumeVariable(ctx, a, svc, &dest, svc.Backup.KeepOrDefault(), nomadReq); err != nil {
 		s.clearVolumeRequest(appID, service) // a write that failed may still have gone through
 		return volumeRun{}, err
 	}
@@ -267,14 +275,14 @@ func (s *Service) startVolumeBackup(ctx context.Context, appID, service, trigger
 //
 // The restore's record ID is the request's ID with the app's: request IDs
 // are only unique within an app, restore IDs across all of them.
-func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.BackupRecord) (store.RestoreRecord, error) {
+func (s *Service) startVolumeRestore(ctx context.Context, appID string, b store.BackupRecord, trigger, label string) (store.RestoreRecord, error) {
 	ctx = context.WithoutCancel(ctx) // as for a backup: the client going away doesn't stop it
 	run, err := s.prepareVolumeRun(ctx, appID, b.Service, deploy.VolumeRestore, b.Object)
 	if err != nil {
 		return store.RestoreRecord{}, err
 	}
 	rec := store.RestoreRecord{ID: restoreRecordID(appID, run.req.ID), AppID: appID, Service: b.Service, BackupID: b.ID,
-		Engine: app.BackupVolume, Status: store.BackupRunning, CreatedAt: run.started}
+		Engine: app.BackupVolume, Status: store.BackupRunning, CreatedAt: run.started, Trigger: trigger, Pin: label}
 
 	if err := s.store.SaveRestore(ctx, rec); err != nil {
 		s.clearVolumeRequest(appID, b.Service)
