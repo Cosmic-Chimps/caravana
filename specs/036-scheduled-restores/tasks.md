@@ -63,5 +63,5 @@ the files of that part; every commit builds and passes `go test ./...`.
   gate_sqlite_test.go, lab_test.go
 - [x] **T015** (34602c3) Aspire (`../aspire-hosting-caravana`, branch `scheduled-restore`, not pushed):
   `WithCaravanaScheduledRestore`, overlay model, tests, README, CHANGELOG
-- [ ] **T016** (2026-11-13: `volume-backup-restore` passed, 359 s, with the scheduled restore; `sqlite-backup-restore` not run yet: Go's HTTPS from the Mac hung, so the deploy couldn't resolve its image) Run in the lab: `-run 'TestLab/^(volume|sqlite)-backup-restore$'`, then the checks of CLAUDE.md's
+- [x] **T016** (2026-11-13: `volume-backup-restore` passed in 359 s and `sqlite-backup-restore` in 250 s, each with its scheduled restore; two earlier sqlite runs lost an exec's output after the restore, which `main` can do too: CodeAlta task `phpv`) Run in the lab: `-run 'TestLab/^(volume|sqlite)-backup-restore$'`, then the checks of CLAUDE.md's
   Commands (build, vet, staticcheck, gofmt, race, cross-compile, ui-css check, release check)

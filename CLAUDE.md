@@ -1287,6 +1287,13 @@ schedule (the public Umbral demo that starts each day from the same state). The 
   (`POST /apps/{id}/backups/restore-schedule`, which calls the new `Service.SetRestoreSchedule`, since
   `SetBackupPolicy` refuses a service that has a policy), restores that say "by you" or "on schedule from golden",
   and the two fields of the Compose form (kept through the draft). Forms work without JavaScript.
+- Lab: the gate's `volume-backup-restore` and `sqlite-backup-restore` steps pin a backup as `golden`, change the
+  data, deploy a restore schedule two minutes ahead (`gate_restore_schedule_test.go`) and wait for the clock's
+  restore; the sqlite step also shows the pinned backup outliving five more backups with `keep: 2` (record and
+  object). `startLab` sets `SetBackupScanGap(10 s)`. Both passed on 2026-11-13 (359 s and 250 s). A sqlite backup
+  right after a restore can lose its exec output (Nomad reports the exit first; `main` does it too, CodeAlta task
+  `phpv`), so that step may need a second run. The Aspire side is `WithCaravanaScheduledRestore` on branch
+  `scheduled-restore` of `../aspire-hosting-caravana` (not pushed).
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
