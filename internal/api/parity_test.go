@@ -152,6 +152,11 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/domains":       {ops: []string{"getApp", "listDomains", "checkDomain", "deployApp"}},
 	// "Back up daily" sets a service's backup policy: a deploy of the app with backup {engine, schedule, keep}.
 	"POST /apps/{id}/backups/policy": {ops: []string{"getApp", "deployApp"}},
+	// Pin and unpin a backup, and a service's restore schedule (feature 036): the schedule is a deploy
+	// of the app with backup.restore.
+	"POST /apps/{id}/backups/{backupId}/pin":   {ops: []string{"pinBackup"}},
+	"POST /apps/{id}/backups/{backupId}/unpin": {ops: []string{"unpinBackup"}},
+	"POST /apps/{id}/backups/restore-schedule": {ops: []string{"getApp", "deployApp"}},
 	// Backups (feature 010).
 	"GET /apps/{id}/backups":                     {ops: []string{"getApp", "listBackups", "listVolumes", "getBackupDestination"}},
 	"POST /apps/{id}/backups":                    {ops: []string{"createBackup"}},

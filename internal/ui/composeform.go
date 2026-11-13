@@ -53,6 +53,9 @@ type draftService struct {
 
 	Domains, HealthPath, HealthInterval, HealthTimeout, HealthPort formField
 	BackupEngine, BackupFile, BackupSchedule, BackupKeep           formField
+	// BackupRestoreSchedule and BackupRestoreFrom are the policy's restore schedule (feature 036):
+	// both or neither.
+	BackupRestoreSchedule, BackupRestoreFrom formField
 
 	// Secrets are the names the service has: the ones the form was drawn
 	// with and the ones just typed. Their inputs are password inputs, always
@@ -109,6 +112,7 @@ func (s *draftService) inputs() []struct {
 		{"domains", &s.Domains}, {"healthPath", &s.HealthPath}, {"healthInterval", &s.HealthInterval},
 		{"healthTimeout", &s.HealthTimeout}, {"healthPort", &s.HealthPort},
 		{"backupEngine", &s.BackupEngine}, {"backupFile", &s.BackupFile}, {"backupSchedule", &s.BackupSchedule}, {"backupKeep", &s.BackupKeep},
+		{"backupRestoreSchedule", &s.BackupRestoreSchedule}, {"backupRestoreFrom", &s.BackupRestoreFrom},
 	}
 }
 
@@ -232,6 +236,7 @@ func (s *draftService) read(post url.Values, values map[string]string) bool {
 	s.HealthInterval.Value, s.HealthTimeout.Value, s.HealthPort.Value = text("healthInterval"), text("healthTimeout"), text("healthPort")
 	s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupKeep.Value = text("backupEngine"), text("backupSchedule"), text("backupKeep")
 	s.BackupFile.Value = text("backupFile")
+	s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = text("backupRestoreSchedule"), text("backupRestoreFrom")
 
 	// The names of the secrets drawn, then the ones typed in the blank rows.
 	prefix := inputName(s.Name, "secret.")
@@ -319,7 +324,23 @@ func (s *draftService) build() bool {
 		s.overlay.Health = &h
 	}
 
+	// The restore schedule: a schedule and a label together, or neither (feature 036).
+	var restore *app.RestoreSchedule
+	switch spec, from := s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value; {
+	case spec == "" && from == "":
+	case spec == "":
+		refuse(&s.BackupRestoreSchedule, "Give both a schedule and a label, or neither.")
+	case from == "":
+		refuse(&s.BackupRestoreFrom, "Give both a schedule and a label, or neither.")
+	case !app.ValidLabel(from):
+		refuse(&s.BackupRestoreFrom, "A label is 1 to 32 lowercase letters, digits or hyphens, starting and ending with a letter or digit.")
+	default:
+		restore = &app.RestoreSchedule{Schedule: spec, From: from}
+	}
+
 	switch engine := s.BackupEngine.Value; {
+	case engine == "" && restore != nil:
+		refuse(&s.BackupEngine, "Choose an engine to restore on a schedule.")
 	case engine == "" && (s.BackupSchedule.Value != "" || s.BackupKeep.Value != "" || s.BackupFile.Value != ""):
 		refuse(&s.BackupEngine, "Choose an engine to set a schedule, a file or how many to keep.")
 	case engine != app.BackupSQLite && s.BackupFile.Value != "":
@@ -327,7 +348,7 @@ func (s *draftService) build() bool {
 	case engine == app.BackupPostgres || engine == app.BackupVolume || engine == app.BackupSQLite:
 		// The file's rules are the model's (app.Validate); its errors come back
 		// on this input (fieldFor).
-		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value}
+		b := app.Backup{Engine: engine, File: s.BackupFile.Value, Schedule: s.BackupSchedule.Value, Restore: restore}
 		if s.BackupKeep.Value != "" {
 			if n, err := strconv.Atoi(s.BackupKeep.Value); err != nil || n < 1 || n > 100 {
 				refuse(&s.BackupKeep, "Enter a whole number from 1 to 100.")
@@ -414,6 +435,9 @@ func draftFrom(a app.App) composeDraft {
 		if b := svc.Backup; b != nil {
 			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
 			s.BackupKeep.Value = numberText(b.Keep)
+			if r := b.Restore; r != nil {
+				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
+			}
 		}
 		for _, sec := range svc.Secrets {
 			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true,
@@ -457,6 +481,9 @@ func draftOf(req compose.Request) composeDraft {
 		if b := ov.Backup; b != nil {
 			s.BackupEngine.Value, s.BackupSchedule.Value, s.BackupFile.Value = b.Engine, b.Schedule, b.File
 			s.BackupKeep.Value = numberText(b.Keep)
+			if r := b.Restore; r != nil {
+				s.BackupRestoreSchedule.Value, s.BackupRestoreFrom.Value = r.Schedule, r.From
+			}
 		}
 		for _, sec := range ov.Secrets {
 			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true,

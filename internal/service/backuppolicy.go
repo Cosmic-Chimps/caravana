@@ -46,6 +46,39 @@ func (s *Service) SetBackupPolicy(ctx context.Context, appID, service string, po
 	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
 }
 
+// SetRestoreSchedule sets, or with restore nil removes, the restore schedule of
+// a service that already has a backup policy, and deploys, as SetBackupPolicy
+// does for the policy itself (feature 036): the same condition, trigger and
+// kept Compose file. The rest of the policy is as it was. A service with no
+// policy, or an unknown one, is an *app.FieldError on "service"; a schedule or
+// label the model refuses is its *app.FieldError, as a deploy says it.
+func (s *Service) SetRestoreSchedule(ctx context.Context, appID, service string, restore *app.RestoreSchedule, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	rec, err := s.store.GetApp(ctx, appID)
+	if err != nil {
+		return store.DeploymentRecord{}, err
+	}
+	a := rec.App
+	i := slices.IndexFunc(a.Services, func(svc app.Service) bool { return svc.Name == service })
+	if i < 0 {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "app %q has no service %q", appID, service)
+	}
+	if a.Services[i].Backup == nil {
+		return store.DeploymentRecord{}, app.NewFieldError("service", "service %q has no backup policy", service)
+	}
+	policy := *a.Services[i].Backup
+	policy.Restore = restore
+	services := slices.Clone(a.Services)
+	services[i].Backup = &policy
+	a.Services = services
+
+	var m made
+	if rec.Compose != nil {
+		file := withBackup(*rec.Compose, service, policy)
+		m.file = &file
+	}
+	return recordOnly(s.saveAndDeploy(ctx, a, cond, trigger, m, nil))
+}
+
 // withBackup returns a copy of file whose overlay for service sets policy as
 // the backup. The rest of the overlay stays. file is not changed.
 func withBackup(file compose.Request, service string, policy app.Backup) compose.Request {

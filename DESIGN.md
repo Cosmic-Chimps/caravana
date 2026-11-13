@@ -772,7 +772,12 @@ drawn, not its length either: ten dots and a lock icon.
   buttons. Restores come after. "Back up daily" is a confirmation that says what it will do; a failed run's row
   leads with a plain cause (from a fixed table) before the mono detail; the strip's bar is restorable when
   the day has any healthy run, with a failed cap when its newest run failed. A summary row is read to a
-  screen reader as "<service>, last backup failed" before its visible text.
+  screen reader as "<service>, last backup failed" before its visible text. Feature 036 adds, with no new
+  class: "Pin…" and "Unpin" on a run (a pinned run says `pinned <label>` in its meta line and is always
+  listed, past "Show older"; "Keep" reads "7 backups, plus 1 pinned"), under the strip a line "Restores
+  <label> every day at 04:00 UTC · last: …" with a `cv-note` while no backup carries the label, and
+  "Restore on a schedule…", a confirmation form like "Back up daily" with "Stop restoring" beside Save. A
+  restore says who started it ("by you", "on schedule from <label>") and a skipped one has the idle mark.
 - **Variables:** "Keep as a secret" is ticked when the form is drawn, because most values are secrets; the
   form sends a hidden `secretChoice` so an unticked box (which sends nothing) differs from a post that
   isn't this form, which is read as a secret.

@@ -235,6 +235,10 @@
       </div>
       {{with .Failure}}<p class="cv-bfail">{{template "sentence" .}}</p>{{end}}
       {{range .VolumeFacts}}<p class="cv-bpath">{{.}}</p>{{end}}
+      {{if .RestoreOn}}
+      <p class="cv-bfail">{{template "sentence" .RestoreLine}}{{with .SchedLast}} · {{.}}{{end}}</p>
+      {{if .NotPinned}}<p class="cv-note">No backup of <span class="cv-inline-mono">{{.Name}}</span> is pinned as <span class="cv-inline-mono">{{.RestoreLabel}}</span> yet: each restore is refused until one is.</p>{{end}}
+      {{end}}
       {{if .Runs}}
       <div class="cv-runs" role="table" aria-label="Runs of {{.Name}}">
         {{range .Runs}}
@@ -242,14 +246,32 @@
           <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}succeeded{{else if eq .Status "failed"}}failed{{else}}running{{end}}</span></span>
           <span role="cell" class="cv-brun-when">{{template "clock" .Clock}}</span>
           <span role="cell" class="cv-brun-fact">{{.Size}}</span>
-          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if .ByYou}}{{if or .Took .Stopped}} · {{end}}by you{{end}}</span>
+          <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}{{if .ByYou}}{{if or .Took .Stopped}} · {{end}}by you{{end}}{{with .Pin}} · pinned <span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}</span>
           <span role="cell" class="cv-brun-act">
+            <span class="cv-btnrow">
+            {{if .CanPin}}
+            <details class="cv-confirm">
+              <summary class="cv-btn cv-btn-secondary cv-btn-sm">Pin…</summary>
+              <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/pin" class="cv-confirm-body">
+                <p>A pinned backup is never deleted by retention and isn't counted in the backups kept. Pinning a label another backup has moves it here.</p>
+                <label class="cv-fld" for="pin-label-{{.ID}}">
+                  <span class="cv-label">Label</span>
+                  <input class="cv-field cv-field-mono" id="pin-label-{{.ID}}" type="text" name="label" value="golden" pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+                </label>
+                <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Pin</button></div>
+              </form>
+            </details>
+            {{end}}
+            {{if .Pin}}
+            <form method="post" action="/apps/{{$.ID}}/backups/{{.ID}}/unpin"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Unpin</button></form>
+            {{end}}
             {{if .CanRestore}}
             <details class="cv-confirm"{{if eq $.ConfirmErr .ID}} open{{end}}>
               <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore…</summary>
               {{template "restore-confirm" (restoreAsk $ . "")}}
             </details>
             {{end}}
+            </span>
           </span>
           {{if or .Cause .Message}}<p class="cv-brun-msg">{{with .Cause}}<span class="cv-brun-cause">{{.}}</span>{{end}}{{with .Message}}<span class="cv-brun-detail">{{.}}</span>{{end}}</p>{{end}}
         </div>
@@ -284,6 +306,29 @@
         </form>
         {{end}}
         {{end}}
+        {{if .CanSchedule}}
+        <details class="cv-confirm">
+          <summary class="cv-btn cv-btn-secondary cv-btn-sm">Restore on a schedule…</summary>
+          <form method="post" action="/apps/{{$.ID}}/backups/restore-schedule" class="cv-confirm-body">
+            <input type="hidden" name="revision" value="{{$.Revision}}">
+            <input type="hidden" name="service" value="{{.Name}}">
+            <p>At each time, the backup pinned under this label replaces what the service holds now. This deploys the app.</p>
+            <label class="cv-fld" for="rs-schedule-{{.Name}}">
+              <span class="cv-label">Schedule</span>
+              <input class="cv-field cv-field-mono" id="rs-schedule-{{.Name}}" type="text" name="schedule" value="{{.ScheduleInput}}" autocomplete="off" autocapitalize="off" spellcheck="false">
+              <span class="cv-data-muted cv-hint">Five fields, in UTC: minute, hour, day, month, weekday.</span>
+            </label>
+            <label class="cv-fld" for="rs-from-{{.Name}}">
+              <span class="cv-label">Restore the backup pinned as</span>
+              <input class="cv-field cv-field-mono" id="rs-from-{{.Name}}" type="text" name="from" value="{{.LabelInput}}" pattern="[a-z0-9]([a-z0-9\-]{0,30}[a-z0-9])?" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </label>
+            <div class="cv-btnrow">
+              <button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save and deploy</button>
+              {{if .RestoreOn}}<button type="submit" name="stop" value="1" class="cv-btn cv-btn-secondary cv-btn-sm">Stop restoring</button>{{end}}
+            </div>
+          </form>
+        </details>
+        {{end}}
       </div>
     </div>
   </details>
@@ -312,11 +357,11 @@
   <div class="cv-panel cv-runs" role="table" aria-label="Restores">
     {{range .}}
     <div class="cv-brun cv-brun-restore" role="row">
-      <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span></span>
+      <span role="cell"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="sr-only">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span></span>
       <span role="cell" class="cv-brun-when">{{template "clock" .CreatedClock}}</span>
-      <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span> from {{.BackupID}}</span>
+      <span role="cell" class="cv-brun-fact"><span class="text-fg-1">{{.Service}}</span>{{with .BackupID}} from {{.}}{{end}} · {{if .Scheduled}}on schedule from <span class="cv-inline-mono text-fg-1">{{.Pin}}</span>{{else}}by you{{end}}</span>
       <span role="cell" class="cv-brun-fact">{{with .Took}}took {{.}}{{end}}{{with .Stopped}} · {{.}}{{end}}</span>
-      <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else}}restoring{{end}}</span>
+      <span role="cell" class="cv-brun-act cv-brun-status">{{if eq .Status "succeeded"}}restored{{else if eq .Status "failed"}}failed{{else if eq .Status "skipped"}}skipped{{else}}restoring{{end}}</span>
       {{with .Message}}<p class="cv-brun-msg">{{.}}</p>{{end}}
     </div>
     {{end}}

@@ -118,6 +118,23 @@ type backupSvcRow struct {
 	// nil when there is none or a restore isn't possible.
 	RestoreLast *backupRun
 	CanBackUp   bool
+
+	// Pinned is how many of the service's listed backups are pinned (feature 036); Keep says so.
+	Pinned int
+	// RestoreOn says the policy has a restore schedule; RestoreLine is "Restores golden every day at
+	// 04:00 UTC", SchedLast how the newest scheduled restore went ("last: failed — …"), empty when
+	// there is none in the recent restores, and NotPinned that no listed backup carries the label.
+	RestoreOn    bool
+	RestoreLine  sentence
+	SchedLast    string
+	NotPinned    bool
+	RestoreLabel string
+	// CanSchedule says the "Restore on a schedule…" form can be offered: the app is deployed
+	// as defined and not stopped. Its inputs are the current schedule and label, or the defaults.
+	CanSchedule     bool
+	ScheduleInput   string
+	LabelInput      string
+	DefaultSchedule string
 }
 
 // backupRun is one backup run of a service, as the row lists it.
@@ -136,6 +153,10 @@ type backupRun struct {
 	File string
 	// ByYou says the owner started the run (Back up now), not its schedule.
 	ByYou bool
+	// Pin is the label the run is pinned under (feature 036), "" when it isn't. CanPin says Pin… is
+	// offered: a succeeded run that isn't pinned.
+	Pin    string
+	CanPin bool
 }
 
 // stripCell is one day of the restore-points strip. Kind is healthy (a day with
@@ -164,6 +185,10 @@ type restoreRow struct {
 	Created                                        when
 	CreatedClock                                   clockTime
 	Stopped                                        string
+	// Scheduled says the service's restore schedule started it, from the backup pinned under Pin
+	// (feature 036); else the owner did.
+	Scheduled bool
+	Pin       string
 }
 
 // restoreAskView is what the restore confirmation draws: the run it restores,
@@ -266,7 +291,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 				runs = append(runs, b)
 			}
 		}
-		row := backupRowOf(now, a.ID, svc, runs, volumes, tab)
+		row := backupRowOf(now, a.ID, svc, runs, restores, volumes, tab)
 		if row.Mark == "failed" {
 			tab.Failing++
 		}
@@ -287,6 +312,7 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 		row := restoreRow{Service: x.Service, BackupID: x.BackupID, Status: x.Status, Message: x.Message, Created: whenOf(now, &x.CreatedAt, ""),
 			CreatedClock: clockOf(now, x.CreatedAt)}
 		row.Mark = runMark(x.Status)
+		row.Scheduled, row.Pin = x.Trigger == store.RestoreTriggerSchedule, x.Pin
 		if x.FinishedAt != nil {
 			row.Took = durationText(x.FinishedAt.Sub(x.CreatedAt))
 		}
@@ -329,6 +355,8 @@ func runMark(status string) string {
 		return "healthy"
 	case store.BackupFailed:
 		return "failed"
+	case store.RestoreSkipped:
+		return "idle" // it did nothing: the idle ring, not a failure
 	}
 	return "rolling"
 }
@@ -377,7 +405,8 @@ func causeOf(message string) string {
 }
 
 // backupRowOf builds one backed-up service's row. runs are its backups, newest first.
-func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.BackupRecord, volumes []service.VolumeView, tab backupsTab) backupSvcRow {
+func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.BackupRecord, restores []store.RestoreRecord,
+	volumes []service.VolumeView, tab backupsTab) backupSvcRow {
 	b := svc.Backup
 	row := backupSvcRow{Name: svc.Name, Volume: b.Engine == app.BackupVolume, SQLite: b.Engine == app.BackupSQLite, Mark: "idle", LastNever: true,
 		Schedule: upperFirst(scheduleText(b.ScheduleOrDefault())), Keep: plural(b.KeepOrDefault(), "backup"),
@@ -419,7 +448,11 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			When: whenOf(now, &r.StartedAt, ""), Clock: clockOf(now, r.StartedAt), Volume: r.Engine == app.BackupVolume,
 			SQLite: r.Engine == app.BackupSQLite, File: b.File,
 			CanRestore: r.Status == store.BackupSucceeded && tab.Destination && !tab.Stopped,
-			ByYou:      r.Trigger == store.BackupTriggerOwner}
+			ByYou:      r.Trigger == store.BackupTriggerOwner,
+			Pin:        r.Pin, CanPin: r.Status == store.BackupSucceeded && r.Pin == ""}
+		if r.Pin != "" {
+			row.Pinned++
+		}
 		if r.Status == store.BackupSucceeded {
 			run.Size = humanBytes(r.Bytes)
 		}
@@ -445,7 +478,8 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 			last := run
 			row.RestoreLast = &last
 		}
-		if i < backupRunsShown || svc.Name == tab.ShowAll {
+		// A pinned run is always listed: it is the one a restore schedule may need.
+		if i < backupRunsShown || svc.Name == tab.ShowAll || r.Pin != "" {
 			row.Runs = append(row.Runs, run)
 		}
 	}
@@ -453,9 +487,46 @@ func backupRowOf(now time.Time, appID string, svc app.Service, runs []store.Back
 		row.OlderHref = "/apps/" + appID + "/backups?all=" + svc.Name + "#svc-" + svc.Name
 	}
 	row.State = stateText(svc.Name, row.Mark)
+	if row.Pinned > 0 {
+		row.Keep += ", plus " + strconv.Itoa(row.Pinned) + " pinned"
+	}
+	restoreScheduleOf(&row, now, svc, runs, restores, tab)
 	row.Strip = restoreStrip(now, runs)
 	row.StripLabel = stripLabel(now, runs)
 	return row
+}
+
+// restoreScheduleOf fills the row's restore schedule (feature 036): the line that says it, how the
+// newest scheduled restore went, a note when no listed backup carries the label, and what the
+// "Restore on a schedule…" form starts with. runs are the service's listed backups, restores the
+// app's recent ones, newest first.
+func restoreScheduleOf(row *backupSvcRow, now time.Time, svc app.Service, runs []store.BackupRecord, restores []store.RestoreRecord, tab backupsTab) {
+	row.CanSchedule = tab.Defined && !tab.Stopped
+	row.ScheduleInput, row.LabelInput, row.DefaultSchedule = "0 4 * * *", "golden", "0 4 * * *"
+	r := svc.Backup.Restore
+	if r == nil {
+		return
+	}
+	row.RestoreOn, row.RestoreLabel = true, r.From
+	row.ScheduleInput, row.LabelInput = r.Schedule, r.From
+	row.RestoreLine = sentence{plain("Restores "), mono(r.From), plain(" " + scheduleText(r.Schedule))}
+	row.NotPinned = !slices.ContainsFunc(runs, func(b store.BackupRecord) bool { return b.Pin == r.From })
+	for _, x := range restores {
+		if x.Service != svc.Name || x.Trigger != store.RestoreTriggerSchedule {
+			continue
+		}
+		switch {
+		case x.Status == store.BackupSucceeded:
+			row.SchedLast = "last: " + relative(now, x.CreatedAt) + ", succeeded"
+		case x.Status == store.BackupRunning:
+			row.SchedLast = "last: running now"
+		case x.Message != "":
+			row.SchedLast = "last: " + x.Status + " — " + x.Message
+		default:
+			row.SchedLast = "last: " + x.Status
+		}
+		break
+	}
 }
 
 // stripDay is the UTC day of t, as its midnight.
@@ -755,13 +826,7 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request, session s
 	if !s.readForm(w, r) {
 		return
 	}
-	// A backup's ID is "<service>-<unix seconds>", and a service's name may
-	// hold "-" too ("uptime-kuma-1792033207"), so the service ends at the last one.
-	service := backupID
-	if i := strings.LastIndex(backupID, "-"); i >= 0 {
-		service = backupID[:i]
-	}
-	if r.PostForm.Get("confirm") != service {
+	if r.PostForm.Get("confirm") != serviceOfBackup(backupID) {
 		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{ConfirmErr: backupID})
 		return
 	}
@@ -773,6 +838,121 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request, session s
 	s.refuseBackup(w, r, id, err, backupsTab{})
 }
 
+// serviceOfBackup is the service a backup ID belongs to: the ID is "<service>-<unix seconds>", and a
+// service's name may hold "-" too, so the service ends at the last one.
+func serviceOfBackup(backupID string) string {
+	if i := strings.LastIndex(backupID, "-"); i >= 0 {
+		return backupID[:i]
+	}
+	return backupID
+}
+
+// pinBackup answers POST /apps/{id}/backups/{backupId}/pin (feature 036): the run gets the label of
+// the form. The label moves from the backup that had it, as the sentence under Pin… says.
+func (s *server) pinBackup(w http.ResponseWriter, r *http.Request, session string) {
+	id, backupID := r.PathValue("id"), r.PathValue("backupId")
+	if !s.readForm(w, r) {
+		return
+	}
+	if _, err := s.svc.PinBackup(r.Context(), id, backupID, strings.TrimSpace(r.PostForm.Get("label"))); err != nil {
+		s.refuseBackup(w, r, id, err, backupsTab{})
+		return
+	}
+	http.Redirect(w, r, "/apps/"+id+"/backups#svc-"+serviceOfBackup(backupID), http.StatusSeeOther)
+}
+
+// unpinBackup answers POST /apps/{id}/backups/{backupId}/unpin.
+func (s *server) unpinBackup(w http.ResponseWriter, r *http.Request, session string) {
+	id, backupID := r.PathValue("id"), r.PathValue("backupId")
+	if !s.readForm(w, r) {
+		return
+	}
+	if _, err := s.svc.UnpinBackup(r.Context(), id, backupID); err != nil {
+		s.refuseBackup(w, r, id, err, backupsTab{})
+		return
+	}
+	http.Redirect(w, r, "/apps/"+id+"/backups#svc-"+serviceOfBackup(backupID), http.StatusSeeOther)
+}
+
+// labelSentence is what a label that isn't one is told.
+const labelSentence = "A label is 1 to 32 lowercase letters, digits or hyphens, starting and ending with a letter or digit."
+
+// setRestoreSchedule answers POST /apps/{id}/backups/restore-schedule (feature 036): a service's
+// restore schedule is set, or with an empty schedule removed, as a deploy of the stored app on the
+// revision the page was drawn from. The schedule and the label are given together or not at all.
+func (s *server) setRestoreSchedule(w http.ResponseWriter, r *http.Request, session string) {
+	ctx := r.Context()
+	id := r.PathValue("id")
+	if !s.readForm(w, r) {
+		return
+	}
+	revision, ok := s.formRevision(w, r, "set the restore schedule")
+	if !ok {
+		return
+	}
+	rec, err := s.svc.GetApp(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.appNotFound(w, r, id)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r, "read app", err)
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("service"))
+	i, found := serviceNamed(rec.App, name)
+	if !found || rec.App.Services[i].Backup == nil {
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("This app has no backed-up service "), mono(name), plain(".")}})
+		return
+	}
+
+	var restore *app.RestoreSchedule
+	spec, from := strings.TrimSpace(r.PostForm.Get("schedule")), strings.TrimSpace(r.PostForm.Get("from"))
+	switch {
+	case r.PostForm.Get("stop") != "" || spec == "" && from == "":
+		// Stop restoring: "Stop restoring" or an emptied form.
+	case spec == "" || from == "":
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("Give both a schedule and a label, or neither.")}})
+		return
+	case !app.ValidLabel(from):
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain(labelSentence)}})
+		return
+	default:
+		restore = &app.RestoreSchedule{Schedule: spec, From: from}
+	}
+
+	deployment, err := s.svc.SetRestoreSchedule(ctx, id, name, restore, service.Condition{IfRevision: revision}, app.TriggerConsole)
+	if err == nil {
+		http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+deployment.Deployment.ID, http.StatusSeeOther)
+		return
+	}
+	edited := rec.App
+	edited.Services = slices.Clone(edited.Services)
+	policy := *edited.Services[i].Backup
+	policy.Restore = restore
+	edited.Services[i].Backup = &policy
+	var fieldErr *app.FieldError
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+	case errors.Is(err, service.ErrAppChanged):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(changedSincePage)}})
+	case errors.Is(err, service.ErrAppStopped):
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(appStoppedText)}})
+	case errors.As(err, &fieldErr) && fieldErr.Field == "service":
+		s.backupsPage(w, r, http.StatusConflict, id, backupsTab{Notice: sentence{plain(fieldErr.Message + ". Reload the page.")}})
+	case errors.As(err, &fieldErr) && strings.HasSuffix(fieldErr.Field, ".backup.restore.schedule"):
+		s.backupsPage(w, r, http.StatusUnprocessableEntity, id, backupsTab{Notice: sentence{plain("The schedule " + fieldErr.Message)}})
+	default:
+		status, notice, ok := refusalOf(edited, err)
+		if !ok {
+			s.serverError(w, r, "set a restore schedule", err)
+			return
+		}
+		s.backupsPage(w, r, status, id, backupsTab{Notice: notice})
+	}
+}
+
 // refuseBackup draws the tab again with what went wrong.
 func (s *server) refuseBackup(w http.ResponseWriter, r *http.Request, id string, err error, tab backupsTab) {
 	status := http.StatusConflict
@@ -781,6 +961,8 @@ func (s *server) refuseBackup(w http.ResponseWriter, r *http.Request, id string,
 		tab.Notice = sentence{plain(appStoppedText)}
 	case errors.Is(err, service.ErrBackupRunning):
 		tab.Notice = sentence{plain("A backup or restore of this service is running. Try again when it ends.")}
+	case errors.Is(err, service.ErrAppBusy):
+		tab.Notice = sentence{plain("The app is busy: a deploy or a backup run has it. Try again when it ends.")}
 	case errors.Is(err, service.ErrNoRunningCopy):
 		tab.Notice = sentence{plain("The service has no running copy. Start it with a deploy first.")}
 	case errors.Is(err, service.ErrNoBackupDestination):

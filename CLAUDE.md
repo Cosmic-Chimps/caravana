@@ -1243,6 +1243,51 @@ a manifest plus a Compose file with `{{placeholders}}`; installing it is a norma
 - Not in 035: templates from other catalogs or with signatures, a template editor, logos (the console draws a
   monogram tile), the Continuwuity template (waits for tasks 07 and 09), installing from MCP.
 
+Feature 036 (`specs/036-scheduled-restores`, from CodeAlta task `sgnc`) is implemented on the worktree branch
+`alta/simple-ithaca-nr74`: a backup can be pinned under a label, and a service can restore the pinned backup on a
+schedule (the public Umbral demo that starts each day from the same state). The contracts are `contracts/api.md` and
+`contracts/console.md`; `plan.md` D1–D10 are the decisions.
+- Pins are labels on backup rows (`backups.pin`, `pinned_at`, migration 0029, a unique partial index per
+  `(app, service, label)`): `store.PinBackup` moves a label and returns the previous holder, `UnpinBackup`,
+  `PinnedBackup`, `PinnedBackups`. The code says pin and label, never `pinned` alone (`service/deploy.go` has a type
+  `pinned` for image digests). `restores` was rebuilt in the same migration with the status `skipped`, a `trigger`
+  (`owner`, `schedule`; old rows read `owner`) and the `pin` a scheduled run asked for; `LatestBackupRuns` ignores
+  skipped restores, so a skipped slot never hides a failure.
+- Retention of every engine is told the pinned timestamps, as unix seconds separated by spaces, and removes them
+  from the candidates before counting `keep`. Postgres: item `BACKUP_PINNED` of the backup job's variable
+  (`SyncBackups` writes it, `Deployer.SetBackupPins` rewrites only that item); volume: item `PINNED` of each backup
+  request (`volumeRequestKeys`); sqlite: the sixth argument of `SQLiteUploadScript`. A list that isn't digits and
+  spaces deletes nothing and says so. Each script is tested under a real `sh` with a fake `rclone` (the Postgres
+  upload script got its first test, with a fake GNU `stat`). The script text is part of every translated job, so
+  the volume, sqlite and backup goldens changed, and an app gets the pin-aware retention at its next deploy.
+- `service.PinBackup` / `UnpinBackup` (`backuppins.go`) take the app's deploy lock with `TryLock` (`ErrAppBusy`, 409
+  `app_busy`) and refuse while a backup or restore of the service runs (`ErrBackupRunning`), so no retention runs
+  with a pin list older than the store's; the store is written first, then the Postgres job's variable, and put
+  back when Nomad refuses (502). Volume and sqlite runs read the pins in their `prepare*` step, under the claim,
+  and refuse the run when they can't be read.
+- The policy field is `app.Backup.Restore{Schedule, From}` (`omitempty`, so no existing `revision` moved), validated
+  for every engine (`<field>.restore.schedule` is five-field cron that `cronexpr` parses, `.from` is
+  `app.ValidLabel`); a Compose overlay reuses `*app.Backup`, so its errors read `services.<svc>.backup.restore.*`.
+- The restore clock (`service/restoreclock.go`) runs inside the volume-backup scheduler's pass, before the backups
+  (`SetBackupScanGap` shortens the 30 s gap for the lab). Each due slot restores the pinned backup through
+  `restoreBackup`, the body `Restore` shares, recorded with trigger `schedule` and the label; a refusal (no pin,
+  expired pin, engine changed, no copy, no destination, Nomad's error) is a failed record, a busy service is a
+  `skipped` one that isn't tried again, and a stopped app leaves nothing and waits. The slots count from the later
+  of the newest scheduled restore (any outcome) and the app's last save, so saving a new schedule never runs a slot
+  that already passed (`store.SetClock` lets tests save an app at a fake time); a slot missed while Caravana was
+  down runs once if it is under an hour late (`dueSlot`). `pg_restore` runs with `--single-transaction`, so a
+  restore that fails partway leaves the database as it was. A deploy whose `from` has no pinned backup warns on
+  `services[i].backup.restore.from`; `restore_failed` is unchanged and its detail is the record's message.
+- API 0.39.0: `pinBackup` (PUT) and `unpinBackup` (DELETE) on `/v1/apps/{id}/backups/{backupId}/pin`, `Backup.pin` /
+  `pinnedAt`, `Restore.trigger` (required) / `pin` and the status `skipped`, `BackupPolicy.restore`; deploy tokens
+  are denied by the default deny. No new table or module.
+- Console (`internal/ui/backups.go`, `templates/app.html`): "Pin…" and "Unpin" on a run (`pinned golden` in its meta
+  line; a pinned run is always listed), "7 backups, plus 1 pinned", the line "Restores golden every day at 04:00
+  UTC · last: …" with a note while no backup carries the label, "Restore on a schedule…" with "Stop restoring"
+  (`POST /apps/{id}/backups/restore-schedule`, which calls the new `Service.SetRestoreSchedule`, since
+  `SetBackupPolicy` refuses a service that has a policy), restores that say "by you" or "on schedule from golden",
+  and the two fields of the Compose form (kept through the draft). Forms work without JavaScript.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

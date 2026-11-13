@@ -112,6 +112,10 @@ var composeSpecs = map[string]inputSpec{
 	"healthPort":     {Name: "healthPort", Numeric: true, Label: "Check port", Hint: "The container port to check."},
 	"backupSchedule": {Name: "backupSchedule", Label: "Backup schedule (UTC)", Placeholder: "0 3 * * *", Hint: "A cron expression with five fields."},
 	"backupKeep":     {Name: "backupKeep", Numeric: true, Label: "Backups to keep", Placeholder: "7"},
+	"backupRestoreSchedule": {Name: "backupRestoreSchedule", Label: "Restore on a schedule (UTC)", Placeholder: "0 4 * * *",
+		Hint: "A cron expression with five fields. Leave it and the label empty for none."},
+	"backupRestoreFrom": {Name: "backupRestoreFrom", Label: "from the backup pinned as", Placeholder: "golden",
+		Hint: "Pin a backup under this label on the Backups tab."},
 	"backupFile": {Name: "backupFile", Label: "Database file", Placeholder: "/data/app.db",
 		Hint: "SQLite file only: the database's path inside the service, on one of its volumes."},
 }
@@ -146,6 +150,8 @@ func (s composeServiceView) BackupInputs() []editInput {
 		{inputSpec: composeSpecs["backupFile"], Field: &s.BackupFile},
 		{inputSpec: composeSpecs["backupSchedule"], Field: &s.BackupSchedule},
 		{inputSpec: composeSpecs["backupKeep"], Field: &s.BackupKeep},
+		{inputSpec: composeSpecs["backupRestoreSchedule"], Field: &s.BackupRestoreSchedule},
+		{inputSpec: composeSpecs["backupRestoreFrom"], Field: &s.BackupRestoreFrom},
 	}
 }
 
@@ -180,7 +186,7 @@ func serviceViews(d composeDraft, a *app.App) []composeServiceView {
 // hasBackupInput says the service has something in its backup inputs, or an
 // error on them, so they must be drawn whatever the image is.
 func (s draftService) hasBackupInput() bool {
-	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep} {
+	for _, f := range []formField{s.BackupEngine, s.BackupFile, s.BackupSchedule, s.BackupKeep, s.BackupRestoreSchedule, s.BackupRestoreFrom} {
 		if f.Value != "" || len(f.Error) > 0 {
 			return true
 		}
@@ -325,6 +331,10 @@ func (d *composeDraft) fieldFor(path string) (field *formField, subject string) 
 		return &s.BackupSchedule, "The schedule"
 	case tail == "backup.keep":
 		return &s.BackupKeep, "The number to keep"
+	case tail == "backup.restore.schedule":
+		return &s.BackupRestoreSchedule, "The restore schedule"
+	case tail == "backup.restore.from":
+		return &s.BackupRestoreFrom, "The label"
 	case tail == "backup.file":
 		return &s.BackupFile, "The database file"
 	case hasPathPrefix(tail, "backup"):

@@ -43,17 +43,17 @@ the files of that part; every commit builds and passes `go test ./...`.
 
 ## Part C — front doors
 
-- [ ] **T010** API: `pinBackup`, `unpinBackup` (routes, error mapping incl. `app_busy`, field `label`),
+- [x] **T010** API: `pinBackup`, `unpinBackup` (routes, error mapping incl. `app_busy`, field `label`),
   `Backup.pin/pinnedAt`, `Restore.trigger/pin/skipped`, `BackupPolicy.restore`; `api/openapi.yaml` 0.39.0 with
   descriptions per contracts/api.md; scope walk lists the two routes denied; contract tests · internal/api/backups.go,
   api.go, scope tests, api/openapi.yaml, tests
-- [ ] **T011** Compose overlay path for `restore` (errors at `services.<svc>.backup.restore.*`), MCP's backup
+- [x] **T011** Compose overlay path for `restore` (errors at `services.<svc>.backup.restore.*`), MCP's backup
   types if it decodes them (it passes the body through) · internal/compose, tests
-- [ ] **T012** Console per contracts/console.md: run row Pin…/Unpin, pinned runs always listed, Keep text, the
+- [x] **T012** Console per contracts/console.md: run row Pin…/Unpin, pinned runs always listed, Keep text, the
   Restore schedule line and form, recent restores' who-words, the Compose form's two fields (draft round trip),
   `parity_test.go` entries, `tools/ui-css.sh build` if classes change · internal/ui/backups.go, composeform.go,
   templates/app.html, templates/compose.html, internal/api/parity_test.go, tests
-- [ ] **T013** Docs: `changelog.d/scheduled-restores.md` (Added; Upgrade: nothing to rerun), CLAUDE.md feature
+- [x] **T013** Docs: `changelog.d/scheduled-restores.md` (Added; Upgrade: nothing to rerun), CLAUDE.md feature
   paragraph, `docs/` mention where backups are described
 
 ## Part D — lab and Aspire

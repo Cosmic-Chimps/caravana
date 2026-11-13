@@ -144,3 +144,105 @@ func TestSecretEditsOnARevision(t *testing.T) {
 		t.Errorf("after the edit on the right revision: %v", live)
 	}
 }
+
+// SetRestoreSchedule (feature 036) changes only the restore schedule of a service that has a
+// backup policy, on the revision the caller read, and removes it with nil.
+func TestSetRestoreSchedule(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	setDestination(t, e)
+	deployHealthy(t, e, kuma(false))
+	rec, _ := e.svc.GetApp(ctx, "whoami")
+	schedule := &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}
+
+	got, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", schedule, Condition{IfRevision: rec.Revision}, app.TriggerConsole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Deployment.Trigger != app.TriggerConsole {
+		t.Errorf("trigger = %s, want console", got.Deployment.Trigger)
+	}
+	waitFinal(t, e.store, got.Deployment.ID)
+	stored, _ := e.svc.GetApp(ctx, "whoami")
+	want := kuma(false)
+	want.Services[0].Backup.Restore = schedule
+	if !reflect.DeepEqual(stored.App, want.WithoutSecretValues()) {
+		t.Errorf("stored app\n got: %+v\nwant: %+v", stored.App, want)
+	}
+	warned := false
+	for _, w := range got.Warnings {
+		warned = warned || w.Field == "services[0].backup.restore.from"
+	}
+	if !warned {
+		t.Errorf("warnings = %+v, want the one for a label nothing is pinned under", got.Warnings)
+	}
+
+	t.Run("nil removes it", func(t *testing.T) {
+		got, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", nil, Condition{}, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFinal(t, e.store, got.Deployment.ID)
+		stored, _ := e.svc.GetApp(ctx, "whoami")
+		if stored.App.Services[0].Backup == nil || stored.App.Services[0].Backup.Restore != nil || stored.App.Services[0].Backup.Engine != app.BackupVolume {
+			t.Errorf("backup = %+v, want the policy without a restore schedule", stored.App.Services[0].Backup)
+		}
+	})
+
+	t.Run("refusals", func(t *testing.T) {
+		n := len(mustDeployments(t, e))
+		var fe *app.FieldError
+		if _, err := e.svc.SetRestoreSchedule(ctx, "whoami", "nope", schedule, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+			t.Errorf("an unknown service: %v", err)
+		}
+		if _, err := e.svc.SetRestoreSchedule(ctx, "ghost", "web", schedule, Condition{}, app.TriggerConsole); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("an unknown app: %v", err)
+		}
+		bad := &app.RestoreSchedule{Schedule: "nightly", From: "golden"}
+		if _, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", bad, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "services[0].backup.restore.schedule" {
+			t.Errorf("a bad schedule: %v", err)
+		}
+		if _, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", schedule, Condition{IfRevision: "0000000000000000"}, app.TriggerConsole); !errors.Is(err, ErrAppChanged) {
+			t.Errorf("a stale revision: %v", err)
+		}
+		if len(mustDeployments(t, e)) != n {
+			t.Error("a refused change deployed")
+		}
+	})
+
+	t.Run("a service with no policy", func(t *testing.T) {
+		e := newEnv(t)
+		a := db()
+		a.Services[0].Backup = nil
+		deployHealthy(t, e, a)
+		var fe *app.FieldError
+		if _, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", schedule, Condition{}, app.TriggerConsole); !errors.As(err, &fe) || fe.Field != "service" {
+			t.Errorf("no policy: %v, want a field error on service", err)
+		}
+	})
+}
+
+// A kept Compose file keeps its text, and its overlay's backup follows the schedule.
+func TestSetRestoreScheduleKeepsFile(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	setDestination(t, e)
+	const file = "# kuma\nservices:\n  web:\n    image: traefik/whoami:latest\n    volumes: [\"data:/data\"]\nvolumes:\n  data: {}\n"
+	req := compose.Request{Compose: file, Services: map[string]compose.Overlay{
+		"web": {Backup: &app.Backup{Engine: app.BackupVolume, Keep: 3}},
+	}}
+	composeHealthy(t, e, req)
+	got, err := e.svc.SetRestoreSchedule(ctx, "whoami", "web", &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}, Condition{}, app.TriggerConsole)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFinal(t, e.store, got.Deployment.ID)
+	stored, _ := e.svc.GetApp(ctx, "whoami")
+	if stored.Compose == nil || stored.Compose.Compose != file {
+		t.Fatalf("kept file = %+v, want the same text", stored.Compose)
+	}
+	web := stored.Compose.Services["web"]
+	if web.Backup == nil || web.Backup.Restore == nil || web.Backup.Restore.From != "golden" || web.Backup.Keep != 3 {
+		t.Errorf("overlay = %+v, want the schedule set and the rest kept", web)
+	}
+}
