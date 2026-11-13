@@ -541,7 +541,7 @@ install_agent() {
 # cpu_flags: the agent's --cpu-total-compute, for VMs that report no clock speed (ARM ones often
 # don't: Nomad then sees 0 MHz and places nothing).
 cpu_flags() {
-  if ! lscpu | grep -qi 'mhz'; then
+  if ! grep -qi 'mhz' < <(lscpu); then
     echo "--cpu-total-compute $(($(nproc) * 2000))"
   fi
 }
@@ -594,7 +594,7 @@ keep_old_nomad_config() {
   [ -f "$conf" ] || return 0
   [ ! -f "$STATE/nomad.hcl.before-mesh" ] || return 0
   # shellcheck disable=SC2016 # the backticks are in the file's header
-  head -1 "$conf" | grep -q '^# Written by `caravana node`' && return 0
+  grep -q '^# Written by `caravana node`' < <(head -1 "$conf") && return 0
   install -m 0600 "$conf" "$STATE/nomad.hcl.before-mesh"
   step "the config this host's Nomad had is kept as $STATE/nomad.hcl.before-mesh"
 }
@@ -688,7 +688,7 @@ EOF
   step "Nomad scheduler: services may burst into spare memory"
   # A service reserves its memory and may use up to its ceiling (memory_max) while the node has
   # memory spare. Nomad ignores ceilings unless the cluster allows memory oversubscription.
-  if ! nomad_cli operator scheduler get-config | grep -Eq '^Memory Oversubscription +=+ +true'; then
+  if ! grep -Eq '^Memory Oversubscription +=+ +true' < <(nomad_cli operator scheduler get-config); then
     nomad_cli operator scheduler set-config -memory-oversubscription=true >/dev/null
     changed+=(scheduler)
   fi

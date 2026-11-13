@@ -245,7 +245,7 @@ main() {
     "ports":[{"name":"http","containerPort":80}],"domains":[{"host":"conv.test","port":"http"}],
     "health":{"path":"/","interval":"5s","timeout":"2s"}}]}'
   wait_for 240 "conv.test should answer" app_answers conv.test
-  vm 1 sudo caravana-nomad operator raft list-peers | grep -q '127.0.0.1:4647' || die "the old host should list its raft peer at 127.0.0.1:4647"
+  grep -q '127.0.0.1:4647' < <(vm 1 sudo caravana-nomad operator raft list-peers) || die "the old host should list its raft peer at 127.0.0.1:4647"
 
   say "1. install this tree's release over it, with whoami called every half second"
   vm 1 touch /tmp/watching
@@ -274,12 +274,12 @@ main() {
   sleep 10
   [ "$(vm 1 sudo caravana-nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' conv)" = "$conv_copy" ] ||
     die "a plain Nomad restart replaced conv's copy $conv_copy:\n$(vm 1 sudo caravana-nomad job allocs conv)"
-  vm 1 sudo caravana-nomad operator raft list-peers | grep -Eq '10\.98\.0\.1:4647 +leader' || die "raft should list 10.98.0.1:4647 after the conversion"
+  grep -Eq '10\.98\.0\.1:4647 +leader' < <(vm 1 sudo caravana-nomad operator raft list-peers) || die "raft should list 10.98.0.1:4647 after the conversion"
   vm 1 sudo test -f "$STATE/raft-mesh" || die "no raft-mesh marker after the conversion"
   vm 1 sudo test -f "$STATE/nomad.hcl.before-mesh" || die "the old nomad.hcl wasn't kept"
   vm 1 sudo test ! -e /etc/caravana-node/ca-key.pem || die "the CA's key is still on disk"
-  vm 1 sudo caravana-nomad var get -item cert caravana/cluster/ca | grep -q 'BEGIN CERTIFICATE' || die "the CA's certificate isn't in the Nomad Variable"
-  vm 1 sudo caravana-nomad var get -item key caravana/cluster/ca | grep -q 'BEGIN' || die "the CA's key isn't in the Nomad Variable"
+  grep -q 'BEGIN CERTIFICATE' < <(vm 1 sudo caravana-nomad var get -item cert caravana/cluster/ca) || die "the CA's certificate isn't in the Nomad Variable"
+  grep -q 'BEGIN' < <(vm 1 sudo caravana-nomad var get -item key caravana/cluster/ca) || die "the CA's key isn't in the Nomad Variable"
   app_answers conv.test || die "conv.test stopped answering after the conversion"
   wait_for 120 "GET /v1/servers should list the first server as ready" srv_is "$(vm 1 hostname)" state ready
   local out
@@ -429,7 +429,7 @@ main() {
   wait_for 180 "three should be ready again" srv_is three state ready
   wait_for 60 "raft should have three voters again" voters_are 1 3
   vm 3 systemctl is-active --quiet nomad || die "Nomad isn't running on VM 3 after its reboot"
-  vm 3 ip -4 -o addr show dev caravana-mesh | grep -q ' 10.98.0.3/32 ' || die "caravana-mesh isn't back on VM 3"
+  grep -q ' 10.98.0.3/32 ' < <(vm 3 ip -4 -o addr show dev caravana-mesh) || die "caravana-mesh isn't back on VM 3"
 
   # ---- 8. lose server 1 --------------------------------------------------------------------------
   say "8. stop VM 1 (the leader, Caravana and Traefik); VM 2 elects another leader"
@@ -506,10 +506,10 @@ front_left() {
 front_got_answer() {
   local id
   id="$(copies_json pair | jsonq "[c['id'] for c in d['copies'] if c['service']=='front' and c['status']=='healthy'][0]" 2>/dev/null)" || return 1
-  api -fsS "https://$DOMAIN/v1/apps/pair/logs?copy=$id&lines=50" | grep -q 'Hostname:'
+  grep -q 'Hostname:' < <(api -fsS "https://$DOMAIN/v1/apps/pair/logs?copy=$id&lines=50")
 }
 # console_health: the console answers its health check through Traefik.
-console_health() { vm 1 curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/v1/health" 2>/dev/null | grep -q '"status":"ok"'; }
+console_health() { grep -q '"status":"ok"' < <(vm 1 curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/v1/health" 2>/dev/null); }
 # certificate_changed NAME OLD: the server's certificate end isn't OLD any more.
 certificate_changed() { [ "$(srv "$1" certificateExpiresAt 2>/dev/null)" != "$2" ]; }
 # one_peer_each: VMs 1 and 2 each have one WireGuard peer.

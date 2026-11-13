@@ -16,7 +16,7 @@ DATA="$DIR/.data"
 
 vm_nomad() { limactl shell --workdir / "$NAME" sudo lab-nomad "$@"; }
 
-exists() { limactl list --quiet 2>/dev/null | grep -qx "$NAME"; }
+exists() { grep -qx "$NAME" < <(limactl list --quiet 2>/dev/null); }
 
 write_env() {
   mkdir -p "$DATA"

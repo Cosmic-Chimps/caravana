@@ -141,7 +141,7 @@ Intro line.
 ### Added") pass "the new section sits right after the intro, dated today (UTC)" ;;
 *) fail "the new section sits right after the intro, dated today (UTC)" "top: $head_lines" ;;
 esac
-if grep '^## ' "$CHANGELOG" | awk '{ print $2 }' | tr '\n' ' ' | grep -q '^0.3.0 0.2.0 0.1.0 $'; then
+if grep -q '^0.3.0 0.2.0 0.1.0 $' < <(grep '^## ' "$CHANGELOG" | awk '{ print $2 }' | tr '\n' ' '); then
   pass "the new section is above the released ones"
 else
   fail "the new section is above the released ones" "$(grep '^## ' "$CHANGELOG")"
@@ -151,7 +151,7 @@ if grep -q -B1 '^## 0.2.0' "$CHANGELOG" && [ "$(grep -B1 '^## 0.2.0' "$CHANGELOG
 else
   fail "a blank line separates the new section from the next one" "$(cat "$CHANGELOG")"
 fi
-if sed -n '/^## 0.2.0/,$p' "$CHANGELOG" | grep -q 'First thing.' && grep -q '^- Old fix.$' "$CHANGELOG"; then
+if grep -q 'First thing.' < <(sed -n '/^## 0.2.0/,$p' "$CHANGELOG") && grep -q '^- Old fix.$' "$CHANGELOG"; then
   pass "released sections are untouched"
 else
   fail "released sections are untouched" "released text is missing"
@@ -440,7 +440,7 @@ if [ "$(git -C "$work/t" ls-files changelog.d)" = "changelog.d/README.md" ]; the
 else
   fail "tag push: main's commit deletes the released notes" "tracked: $(git -C "$work/t" ls-files changelog.d)"
 fi
-if git -C "$work/t" show HEAD:CHANGELOG.md | grep -q '^## 0.3.0 - '; then pass "tag push: main's changelog has the section"; else fail "tag push: main's changelog has the section" "no section on main"; fi
+if grep -q '^## 0.3.0 - ' < <(git -C "$work/t" show HEAD:CHANGELOG.md); then pass "tag push: main's changelog has the section"; else fail "tag push: main's changelog has the section" "no section on main"; fi
 if [ "$(git -C "$work/t" rev-parse v0.3.0)" = "$(git -C "$work/t" rev-parse HEAD~1)" ]; then pass "tag push: the tag never moves"; else fail "tag push: the tag never moves" "tag moved"; fi
 printf '### Fixed\n- A later fix.\n' >"$CHANGELOG_DIR/later.md"
 run unreleased
