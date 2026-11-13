@@ -18,7 +18,10 @@ import (
 // 2026-10-15 03:00 UTC.
 
 // setRestoreSchedule gives the stored app's service a restore schedule. It does
-// not deploy, so a test that deploys again (released) loses it.
+// not deploy, so a test that deploys again (released) loses it. The app is
+// saved two days before the fake clock's start: the clock counts slots from the
+// later of the save and the newest scheduled restore, and the tests' seeds are
+// what they mean to count from.
 func (l *volumeLab) setRestoreSchedule(spec, from string) {
 	l.t.Helper()
 	rec, err := l.store.GetApp(context.Background(), "whoami")
@@ -26,6 +29,9 @@ func (l *volumeLab) setRestoreSchedule(spec, from string) {
 		l.t.Fatal(err)
 	}
 	rec.App.Services[0].Backup.Restore = &app.RestoreSchedule{Schedule: spec, From: from}
+	saved := l.t0.Add(-48 * time.Hour)
+	l.store.SetClock(func() time.Time { return saved })
+	defer l.store.SetClock(time.Now)
 	if _, err := l.store.SaveApp(context.Background(), rec.App, nil); err != nil {
 		l.t.Fatal(err)
 	}
@@ -388,7 +394,11 @@ func TestScheduledSQLiteRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec.App.Services[0].Backup.Restore = &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}
-	if _, err := l.store.SaveApp(ctx, rec.App, nil); err != nil {
+	saved := l.t0.Add(-48 * time.Hour) // see setRestoreSchedule
+	l.store.SetClock(func() time.Time { return saved })
+	_, err = l.store.SaveApp(ctx, rec.App, nil)
+	l.store.SetClock(time.Now)
+	if err != nil {
 		t.Fatal(err)
 	}
 	l.seedScheduled(time.Date(2026, 10, 14, 4, 0, 5, 0, time.UTC))
@@ -460,5 +470,37 @@ func TestRestoreLabelWarning(t *testing.T) {
 	}
 	if !warned {
 		t.Errorf("warnings = %+v, want one for the pinned backup retention deleted", res.Warnings)
+	}
+}
+
+// A schedule saved after a slot of the last hour doesn't run that slot: a
+// restore replaces data, so an edit that makes a recent slot match must wait
+// for the next one, even when earlier scheduled restores ran.
+func TestRestoreScheduleEditedAfterASlotWaits(t *testing.T) {
+	ctx := context.Background()
+	l := newVolumeLab(t)
+	l.pinGolden()
+	l.seedScheduled(time.Date(2026, 10, 14, 5, 0, 5, 0, time.UTC)) // yesterday's run of the old schedule
+	rec, err := l.store.GetApp(ctx, "whoami")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec.App.Services[0].Backup.Restore = &app.RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}
+	edited := time.Date(2026, 10, 15, 4, 10, 0, 0, time.UTC)
+	l.store.SetClock(func() time.Time { return edited })
+	_, err = l.store.SaveApp(ctx, rec.App, nil)
+	l.store.SetClock(time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.clock.Set(time.Date(2026, 10, 15, 4, 20, 0, 0, time.UTC))
+
+	l.svc.runDueRestores(ctx, map[string]string{})
+	time.Sleep(30 * time.Millisecond)
+	if n := len(l.restores()); n != 1 { // the seed only
+		t.Fatalf("restores = %d, want only the seed: the 04:00 slot came before the schedule was saved", n)
+	}
+	if rs := l.nomad.Restarts(); len(rs) != 0 {
+		t.Errorf("restarts = %+v, want none", rs)
 	}
 }

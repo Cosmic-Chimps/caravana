@@ -73,15 +73,18 @@ func (s *Service) runDueRestores(ctx context.Context, noted map[string]string) {
 			key := "restore:" + rec.App.ID + "/" + svc.Name
 			restore := svc.Backup.Restore
 			// The slots up to the newest scheduled restore, of any outcome, are
-			// done; a service never restored on a schedule counts from when the
-			// app was last saved, so it never claims a slot from before it asked.
-			base, found, err := s.store.LastScheduledRestore(ctx, rec.App.ID, svc.Name)
+			// done, and so are those before the app was last saved: a schedule
+			// counts from when it was asked for. Unlike a backup's, a restore's
+			// base is the later of the two, so an edit that makes a slot of the
+			// last hour match never replaces the service's data at once.
+			base := rec.UpdatedAt
+			last, found, err := s.store.LastScheduledRestore(ctx, rec.App.ID, svc.Name)
 			if err != nil {
 				s.log.Warn("schedule restores: read restores", "app", rec.App.ID, "service", svc.Name, "error", err)
 				continue
 			}
-			if !found {
-				base = rec.UpdatedAt
+			if found && last.After(base) {
+				base = last
 			}
 			slot, due, skipped := dueSlot(restore.Schedule, base, now)
 			switch {

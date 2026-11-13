@@ -33,7 +33,7 @@ func TestUpgradeTo0029(t *testing.T) {
 	if _, err := migrate(ctx, db, testMigrations(t)); err != nil {
 		t.Fatal(err)
 	}
-	s := &Store{db: db, now: time.Now}
+	s := &Store{db: db, nowFn: time.Now}
 
 	restores, err := s.ListRestores(ctx, "notes", 0)
 	if err != nil || len(restores) != 1 {

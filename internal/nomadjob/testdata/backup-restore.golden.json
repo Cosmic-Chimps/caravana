@@ -99,7 +99,7 @@
           "Lifecycle": null,
           "Config": {
             "args": [
-              "pg_restore --clean --if-exists --no-owner -d \"$PGDATABASE\" /alloc/data/backup.dump"
+              "pg_restore --clean --if-exists --no-owner --single-transaction -d \"$PGDATABASE\" /alloc/data/backup.dump"
             ],
             "entrypoint": [
               "/bin/sh",

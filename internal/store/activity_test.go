@@ -28,7 +28,7 @@ func activityFixture(t *testing.T) (*Store, string) {
 	ctx := context.Background()
 	s := openTestStore(t)
 	clock := at(0)
-	s.now = func() time.Time { return clock }
+	s.nowFn = func() time.Time { return clock }
 
 	a := apptest.Whoami().App
 	if _, err := s.SaveApp(ctx, a, nil); err != nil {

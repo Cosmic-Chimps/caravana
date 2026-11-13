@@ -24,7 +24,7 @@ func openTestStore(t *testing.T) *Store {
 	t.Cleanup(func() { s.Close() })
 
 	clock := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-	s.now = func() time.Time {
+	s.nowFn = func() time.Time {
 		clock = clock.Add(time.Second)
 		return clock
 	}

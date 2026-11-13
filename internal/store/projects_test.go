@@ -550,7 +550,7 @@ func TestUpgradeTo0011(t *testing.T) {
 	if n, err := migrate(ctx, db, testMigrations(t)); err != nil || n != len(embeddedVersions(t))-10 {
 		t.Fatalf("migrate on = %d, %v", n, err)
 	}
-	s := &Store{db: db, now: time.Now}
+	s := &Store{db: db, nowFn: time.Now}
 
 	for _, id := range ids {
 		rec, err := s.GetApp(ctx, id)

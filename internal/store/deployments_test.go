@@ -71,7 +71,7 @@ func TestDeployments(t *testing.T) {
 	t.Run("list order with identical timestamps", func(t *testing.T) {
 		s := storeWithApp(t)
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-		s.now = func() time.Time { return fixed }
+		s.nowFn = func() time.Time { return fixed }
 		for _, id := range []string{"a", "c", "b"} {
 			if _, err := s.CreateDeployment(ctx, "whoami", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)
@@ -370,7 +370,7 @@ func TestLatestDeployments(t *testing.T) {
 	t.Run("ties are broken by ID", func(t *testing.T) {
 		s := storeWithApps(t)
 		fixed := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
-		s.now = func() time.Time { return fixed }
+		s.nowFn = func() time.Time { return fixed }
 		for _, id := range []string{"c", "a", "b"} {
 			if _, err := s.CreateDeployment(ctx, "blog", newDeployment(id), nil, nil, ""); err != nil {
 				t.Fatalf("create %s: %v", id, err)

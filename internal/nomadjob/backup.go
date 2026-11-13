@@ -153,11 +153,14 @@ func RestoreJob(appID string, svc app.Service, image, object string, s Settings,
 			Templates: []*api.Template{variableTemplate(id)},
 			Resources: smallResources(),
 		},
+		// One transaction: a restore that fails partway (a scheduled one
+		// included, feature 036) leaves the database as it was, not half
+		// cleaned.
 		&api.Task{
 			Name:   "restore",
 			Driver: "docker",
 			Config: withPullAuth(map[string]any{"image": image, "entrypoint": []string{"/bin/sh", "-c"},
-				"args": []string{`pg_restore --clean --if-exists --no-owner -d "$PGDATABASE" ` + dumpPath}}, image, private),
+				"args": []string{`pg_restore --clean --if-exists --no-owner --single-transaction -d "$PGDATABASE" ` + dumpPath}}, image, private),
 			Templates: []*api.Template{variableTemplate(id), databaseTemplate(appID, svc.Name)},
 			Resources: smallResources(),
 		},

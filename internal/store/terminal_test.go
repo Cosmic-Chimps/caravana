@@ -35,7 +35,7 @@ func TestUpgradeTo0014(t *testing.T) {
 	if n, err := migrate(ctx, db, testMigrations(t)); err != nil || n != len(embeddedVersions(t))-13 {
 		t.Fatalf("migrate on = %d, %v", n, err)
 	}
-	s := &Store{db: db, now: time.Now}
+	s := &Store{db: db, nowFn: time.Now}
 
 	got, err := s.ListActions(ctx, "whoami", 10)
 	if err != nil || len(got) != 2 {

@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,8 +43,30 @@ const (
 type Store struct {
 	db      *sql.DB
 	lock    *os.File
-	now     func() time.Time // tests replace it with a fake clock
-	applied int              // migrations applied by Open
+	applied int // migrations applied by Open
+
+	// nowFn is the store's clock. Tests of this package replace it before the
+	// store is shared; tests of other packages use SetClock, which a mutex
+	// makes safe beside the goroutines already using the store.
+	nowMu sync.Mutex
+	nowFn func() time.Time
+}
+
+// now is the time the store writes as "now" (created_at, updated_at, ...).
+func (s *Store) now() time.Time {
+	s.nowMu.Lock()
+	f := s.nowFn
+	s.nowMu.Unlock()
+	return f()
+}
+
+// SetClock makes the store read the time from now instead of the system's. It
+// is for tests of other packages that run on a fake clock; production never
+// calls it.
+func (s *Store) SetClock(now func() time.Time) {
+	s.nowMu.Lock()
+	defer s.nowMu.Unlock()
+	s.nowFn = now
 }
 
 // Open locks dataDir, opens (or creates) the store in it and applies any
@@ -67,7 +90,7 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("lock data directory %q: %w", dataDir, err)
 	}
 
-	s := &Store{lock: lock, now: time.Now}
+	s := &Store{lock: lock, nowFn: time.Now}
 	s.db, err = openDB(filepath.Join(dataDir, dbFile))
 	if err == nil {
 		err = s.db.PingContext(ctx)
@@ -98,7 +121,7 @@ func OpenShared(ctx context.Context, dataDir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{db: db, now: time.Now}
+	s := &Store{db: db, nowFn: time.Now}
 	if err := s.checkSchema(ctx); err != nil {
 		s.Close()
 		return nil, err
