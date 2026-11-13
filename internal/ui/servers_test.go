@@ -1356,6 +1356,24 @@ func TestDownServerPageHasOneLineForItsNumbers(t *testing.T) {
 	}
 }
 
+// The date is left out when the time falls on today's UTC date, whatever zone the clock is in: at 00:16 in
+// Berlin it is still 23:16 UTC of the day before (the Overview's clock was local, so it said "Nov 12, 23:16").
+func TestDownServerTimesCompareUTCDates(t *testing.T) {
+	berlin := time.FixedZone("CET", 60*60)
+	now := time.Date(2026, 11, 13, 0, 16, 30, 0, berlin) // 2026-11-12 23:16:30 UTC
+	read := time.Date(2026, 11, 12, 23, 16, 0, 0, time.UTC)
+	if got, want := downNumbersLine(now, "fsn-1", service.HostView{SampledAt: &read}), "fsn-1's numbers were last read at 23:16 UTC."; got != want {
+		t.Errorf("same UTC day: %q, want %q", got, want)
+	}
+	if got := downBanner(now, service.ServerView{Name: "fsn-1", SeenAt: read}).Line.String(); !strings.Contains(got, "since 23:16 UTC.") {
+		t.Errorf("same UTC day banner: %q", got)
+	}
+	yesterday := read.Add(-24 * time.Hour)
+	if got, want := downNumbersLine(now, "fsn-1", service.HostView{SampledAt: &yesterday}), "fsn-1's numbers were last read at Nov 11, 23:16 UTC."; got != want {
+		t.Errorf("the day before: %q, want %q", got, want)
+	}
+}
+
 // Ruling 6: where updates are read goes under the facts panel, inside its section.
 func TestReadOnLineIsUnderTheFacts(t *testing.T) {
 	e := threeServers(t)
