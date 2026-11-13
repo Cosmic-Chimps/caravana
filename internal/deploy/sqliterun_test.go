@@ -92,7 +92,7 @@ func TestSQLiteSteps(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
 			return deploytest.ExecReply{Stdout: "caravana-backup key=backups/caravana/whoami/web/1791.sqlite.gz bytes=900\ncaravana-expired 1700.sqlite.gz\ncaravana-warning slow\n"}
 		})
-		out, err := d.SQLiteUpload(ctx, id, "web-1791", "whoami", svc, sqliteDest(), "1791", 4)
+		out, err := d.SQLiteUpload(ctx, id, "web-1791", "whoami", svc, sqliteDest(), "1791", 4, []string{"1700", "1750"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,6 +106,10 @@ func TestSQLiteSteps(t *testing.T) {
 		wantArgs := []string{"/alloc/data/caravana/sqlite/web-1791.db", "backups/caravana/whoami/web", "1791", "4"}
 		if script := got.Command[2]; script != nomadjob.SQLiteUploadScript || !slices.Equal(got.Command[4:8], wantArgs) {
 			t.Errorf("command = %q, want the upload script and %q", got.Command[:8], wantArgs)
+		}
+		// The last argument is the pin list, after the seconds the run may take.
+		if n := len(got.Command); n != 10 || got.Command[9] != "1700 1750" {
+			t.Errorf("command = %q, want the pinned timestamps as the sixth argument", got.Command)
 		}
 		wantStdin := "RCLONE_CONFIG_DEST_ACCESS_KEY_ID=AK\n" +
 			"RCLONE_CONFIG_DEST_ENDPOINT=http://10.0.0.5:9000\n" +
@@ -135,7 +139,7 @@ func TestSQLiteSteps(t *testing.T) {
 		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
 			return deploytest.ExecReply{Stdout: "caravana-backup key=b/x.sqlite.gz bytes=1\n"}
 		})
-		if _, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 0); err != nil {
+		if _, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 0, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := onlyExec(t, nomad).Command[7]; got != "" {
@@ -221,7 +225,7 @@ func TestSQLiteStepErrors(t *testing.T) {
 			"copy: " + strings.Repeat("x", 294) + "…"},
 		{"upload: the secret key in the reason is removed", failing("upload: the key "+sqliteSentinel+" was refused\n", 1),
 			func(d *Deployer, id string) error {
-				_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4)
+				_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4, nil)
 				return err
 			},
 			"upload: the key *** was refused"},
@@ -239,7 +243,7 @@ func TestSQLiteStepErrors(t *testing.T) {
 			"copy: the size of the copy is unreadable"},
 		{"a successful upload with no object", func(deploytest.ExecRequest) deploytest.ExecReply { return deploytest.ExecReply{} },
 			func(d *Deployer, id string) error {
-				_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4)
+				_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4, nil)
 				return err
 			},
 			"upload: the object of the backup is unreadable"},
@@ -288,7 +292,7 @@ func TestSQLiteStepErrors(t *testing.T) {
 		if _, err := d.SQLiteCopy(ctx, "nope", svc, "web-1"); !errors.Is(err, ErrCopyNotFound) {
 			t.Errorf("err = %v, want ErrCopyNotFound", err)
 		}
-		if _, err := d.SQLiteUpload(ctx, "nope", "web-1", "whoami", svc, sqliteDest(), "1", 4); !errors.Is(err, ErrCopyNotFound) {
+		if _, err := d.SQLiteUpload(ctx, "nope", "web-1", "whoami", svc, sqliteDest(), "1", 4, nil); !errors.Is(err, ErrCopyNotFound) {
 			t.Errorf("err = %v, want ErrCopyNotFound", err)
 		}
 		if err := d.SQLiteStage(ctx, "nope", svc, "web-1"); !errors.Is(err, ErrCopyNotFound) {
@@ -300,7 +304,7 @@ func TestSQLiteStepErrors(t *testing.T) {
 		d, _, nomad := newTestDeployer(t)
 		id := execCopy(nomad, "running")
 		nomad.FailExec(403)
-		_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4)
+		_, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1", 4, nil)
 		if !errors.Is(err, ErrNomadUnavailable) || !strings.Contains(err.Error(), "alloc-exec") {
 			t.Errorf("err = %v, want a refusal naming alloc-exec", err)
 		}

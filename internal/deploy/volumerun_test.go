@@ -75,6 +75,12 @@ func TestWriteVolumeVariable(t *testing.T) {
 			want: map[string]string{"REQUEST": "web-17", "ACTION": "backup", "TS": "17", "NOT_AFTER": itoa(notAfter.Unix()), "LIMIT": "600", "KEEP": "4"},
 		},
 		{
+			name: "a backup request with pinned backups",
+			keep: 4,
+			req:  &VolumeRequest{ID: "web-17", Action: VolumeBackup, TS: "17", NotAfter: notAfter, Pinned: []string{"1700", "1750"}},
+			want: map[string]string{"REQUEST": "web-17", "ACTION": "backup", "TS": "17", "NOT_AFTER": itoa(notAfter.Unix()), "LIMIT": "1800", "KEEP": "4", "PINNED": "1700 1750"},
+		},
+		{
 			name: "a restore request",
 			req:  &VolumeRequest{ID: "web-18", Action: VolumeRestore, Object: "backups/whoami/web/17/", NotAfter: notAfter},
 			want: map[string]string{"REQUEST": "web-18", "ACTION": "restore", "OBJECT": "backups/whoami/web/17/", "NOT_AFTER": itoa(notAfter.Unix()), "LIMIT": "1800"},
@@ -128,7 +134,7 @@ func TestClearVolumeRequest(t *testing.T) {
 	ctx := context.Background()
 	d, _, nomad := newTestDeployer(t)
 	a := volumeApp(app.BackupVolume)
-	req := &VolumeRequest{ID: "web-17", Action: VolumeRestore, Object: "x/", TS: "17", NotAfter: time.Now().Add(time.Hour), Limit: time.Minute}
+	req := &VolumeRequest{ID: "web-17", Action: VolumeBackup, TS: "17", NotAfter: time.Now().Add(time.Hour), Limit: time.Minute, Pinned: []string{"1700"}}
 	if err := d.WriteVolumeVariable(ctx, a, a.Services[0], &testDest, 4, req); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +142,7 @@ func TestClearVolumeRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := nomad.Variable(volumeVar)
-	if got["REQUEST"] != "" || got["ACTION"] != "" || got["OBJECT"] != "" || got["TS"] != "" || got["NOT_AFTER"] != "" {
+	if got["REQUEST"] != "" || got["ACTION"] != "" || got["OBJECT"] != "" || got["TS"] != "" || got["NOT_AFTER"] != "" || got["PINNED"] != "" {
 		t.Errorf("request left: %v", got)
 	}
 	if got["KEEP"] != "4" || got["LIMIT"] != "60" || got["BACKUP_PATH"] == "" || got["RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY"] != "SK" {
@@ -536,7 +542,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
 	a := backedUp()
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") == nil {
@@ -545,7 +551,7 @@ func TestSyncBackupsLeavesVolumeBackupsAlone(t *testing.T) {
 
 	a.Services[0].Backup = &app.Backup{Engine: app.BackupVolume}
 	a.Services[0].Volumes = []app.Volume{{Name: "data", Path: "/data"}}
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || nomad.Variable("nomad/jobs/shop_db_backup") != nil {

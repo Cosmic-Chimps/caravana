@@ -199,7 +199,23 @@ type Backup struct {
 	// Keep is how many backups stay in the destination, 1 to 100. Zero means
 	// DefaultBackupKeep.
 	Keep int `json:"keep,omitzero"`
+	// Restore, when set, restores the backup pinned under Restore.From on
+	// Restore.Schedule (feature 036). It works for every engine.
+	Restore *RestoreSchedule `json:"restore,omitempty"`
 }
+
+// RestoreSchedule says when Caravana restores a pinned backup into the
+// service, and which one: the backup the owner pinned under From.
+type RestoreSchedule struct {
+	// Schedule is a five-field cron expression, in UTC. Required.
+	Schedule string `json:"schedule"`
+	// From is the label of the pinned backup to restore (ValidLabel). Required.
+	From string `json:"from"`
+}
+
+// ValidLabel reports whether s can label a pinned backup: 1 to 32 lowercase
+// letters, digits and hyphens, starting and ending with a letter or digit.
+func ValidLabel(s string) bool { return pinLabelRE.MatchString(s) }
 
 // Defaults of a backup policy.
 const (

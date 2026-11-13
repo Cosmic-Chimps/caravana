@@ -29,7 +29,7 @@ func TestSQLiteRunRecords(t *testing.T) {
 
 	stopped := 2 * time.Second
 	r := RestoreRecord{ID: "notes-db-2", AppID: "notes", Service: "db", BackupID: "db-1", Engine: "sqlite",
-		Status: BackupSucceeded, CreatedAt: t0, FinishedAt: &done, Stopped: &stopped}
+		Status: BackupSucceeded, CreatedAt: t0, FinishedAt: &done, Stopped: &stopped, Trigger: RestoreTriggerOwner}
 	if err := s.SaveRestore(ctx, r); err != nil {
 		t.Fatal(err)
 	}

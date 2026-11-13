@@ -173,7 +173,7 @@ func (s *Service) syncBackups(ctx context.Context, a app.App, digests map[string
 		}
 		var private map[string]bool
 		if private, err = s.privateRegistries(ctx); err == nil {
-			err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private)
+			err = s.deployer.SyncBackups(ctx, a, digests, creds, dest, private, nil)
 		}
 	}
 	if err != nil {

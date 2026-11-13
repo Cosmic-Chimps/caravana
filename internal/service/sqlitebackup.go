@@ -158,7 +158,7 @@ func (s *Service) driveSQLiteBackup(run sqliteRun, rec store.BackupRecord) {
 		}
 		return
 	}
-	out, err := s.deployer.SQLiteUpload(ctx, run.copyID, run.req.ID, run.app.ID, run.svc, run.dest, run.req.TS, run.svc.Backup.KeepOrDefault())
+	out, err := s.deployer.SQLiteUpload(ctx, run.copyID, run.req.ID, run.app.ID, run.svc, run.dest, run.req.TS, run.svc.Backup.KeepOrDefault(), nil)
 	if err != nil {
 		if base.Err() == nil {
 			s.settleSQLiteBackup(rec, nomadjob.SQLiteOutput{}, s.sqliteFailure(ctx, run, err))

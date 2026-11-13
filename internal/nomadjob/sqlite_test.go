@@ -698,7 +698,7 @@ func TestSQLiteUploadScript(t *testing.T) {
 		r.plainDatabase(copyPath, 20)
 		want := r.read(copyPath)
 		env = append(slices.Clone(env), "FAKE_SECRET="+sentinelKey)
-		return r.exec(SQLiteUploadScript, stdin, env, copyPath, "b/fhodor/web", ts, keep, "600"), want
+		return r.exec(SQLiteUploadScript, stdin, env, copyPath, "b/fhodor/web", ts, keep, "600", ""), want
 	}
 
 	t.Run("gzips the copy into the destination and removes it", func(t *testing.T) {
@@ -814,11 +814,11 @@ func TestSQLiteUploadScript(t *testing.T) {
 
 	t.Run("no backup path, no copy", func(t *testing.T) {
 		r := newSQLiteRun(t)
-		res := r.exec(SQLiteUploadScript, destination(), nil, filepath.Join(r.work, "web-1.db"), "", "1791", "3", "600")
+		res := r.exec(SQLiteUploadScript, destination(), nil, filepath.Join(r.work, "web-1.db"), "", "1791", "3", "600", "")
 		if res.code != 1 || res.lastLine() != "upload: the request has no backup destination" {
 			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
 		}
-		res = r.exec(SQLiteUploadScript, destination(), nil, filepath.Join(r.work, "missing.db"), "b/x", "1791", "3", "600")
+		res = r.exec(SQLiteUploadScript, destination(), nil, filepath.Join(r.work, "missing.db"), "b/x", "1791", "3", "600", "")
 		if res.code != 1 || !strings.HasPrefix(res.lastLine(), "upload: there is no copy to upload at ") {
 			t.Errorf("exit %d, last line %q", res.code, res.lastLine())
 		}
@@ -831,6 +831,7 @@ func TestSQLiteUploadRetention(t *testing.T) {
 		existing    []string // timestamps already in the bucket
 		keep        string
 		ts          string
+		pinned      string // the script's <pinned> argument: timestamps retention must keep
 		env         []string
 		wantLeft    []string
 		wantExpired []string
@@ -848,6 +849,24 @@ func TestSQLiteUploadRetention(t *testing.T) {
 			ts: "1791", wantLeft: []string{"1700", "1701", "1791"}},
 		{name: "the new backup is never the one deleted", existing: []string{"1800", "1801"}, keep: "1", ts: "1791",
 			wantLeft: []string{"1791", "1801"}, wantExpired: []string{"1800"}},
+		{name: "a pinned backup is kept and doesn't count against KEEP", existing: []string{"1700", "1701", "1702", "1703"}, keep: "2", ts: "1791",
+			pinned: "1700", wantLeft: []string{"1700", "1703", "1791"}, wantExpired: []string{"1701", "1702"}},
+		{name: "several pinned backups, KEEP counts only the others", existing: []string{"1700", "1701", "1702", "1703", "1704"}, keep: "1", ts: "1791",
+			pinned: "1700 1702", wantLeft: []string{"1700", "1702", "1791"}, wantExpired: []string{"1701", "1703", "1704"}},
+		{name: "a pin that is no longer in the destination is ignored", existing: []string{"1700", "1701", "1702"}, keep: "2", ts: "1791",
+			pinned: "1600", wantLeft: []string{"1702", "1791"}, wantExpired: []string{"1700", "1701"}},
+		{name: "with everything pinned nothing goes", existing: []string{"1700", "1701"}, keep: "1", ts: "1791",
+			pinned: "1700 1701", wantLeft: []string{"1700", "1701", "1791"}},
+		{name: "the new backup is never deleted, pins or not", existing: []string{"1800", "1801"}, keep: "1", ts: "1791",
+			pinned: "1801", wantLeft: []string{"1791", "1800", "1801"}},
+		{name: "a pin list that is not digits deletes nothing and says so", existing: []string{"1700", "1701", "1702"}, keep: "1", ts: "1791",
+			pinned:      "1700 $(touch x)",
+			wantLeft:    []string{"1700", "1701", "1702", "1791"},
+			wantWarning: "the backup is kept, but old backups were not removed: the list of pinned backups is not valid"},
+		{name: "a pin list with a path in it deletes nothing and says so", existing: []string{"1700", "1701"}, keep: "1", ts: "1791",
+			pinned:      "../1700",
+			wantLeft:    []string{"1700", "1701", "1791"},
+			wantWarning: "the backup is kept, but old backups were not removed: the list of pinned backups is not valid"},
 		{name: "listing fails: the backup stays and says so", existing: []string{"1700"}, keep: "1", ts: "1791",
 			env:         []string{"FAKE_FAIL_CMD=lsf"},
 			wantLeft:    []string{"1700", "1791"},
@@ -872,7 +891,7 @@ func TestSQLiteUploadRetention(t *testing.T) {
 			copyPath := filepath.Join(r.work, "web-1.db")
 			r.plainDatabase(copyPath, 2)
 			env := append(slices.Clone(tt.env), "FAKE_SECRET="+sentinelKey)
-			res := r.exec(SQLiteUploadScript, destination(), env, copyPath, "b/fhodor/web", tt.ts, tt.keep, "600")
+			res := r.exec(SQLiteUploadScript, destination(), env, copyPath, "b/fhodor/web", tt.ts, tt.keep, "600", tt.pinned)
 			if res.code != 0 {
 				t.Fatalf("exit %d: %s", res.code, res.stderr)
 			}

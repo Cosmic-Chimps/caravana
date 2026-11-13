@@ -99,9 +99,12 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 // variable. creds are by service name. private is the set of registry hosts
 // Caravana holds credentials for (as for nomadjob.Translate): a service whose
 // image is on one of them has its pull credentials added to its job's variable,
-// for the dump task's docker auth block.
+// for the dump task's docker auth block. pins lists, by service name, the
+// timestamps of the pinned backups (each "<unix seconds>"), which the upload
+// task's retention keeps: it is the item BACKUP_PINNED, left out when the
+// service has none.
 func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[string]string,
-	creds map[string]BackupCredentials, dest BackupDestination, private map[string]bool) error {
+	creds map[string]BackupCredentials, dest BackupDestination, private map[string]bool, pins map[string][]string) error {
 	want := map[string]bool{}
 	for _, svc := range a.Services {
 		// Only Postgres backups are Nomad jobs. A volume backup runs inside
@@ -115,6 +118,9 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 		c := creds[svc.Name]
 		items := destinationItems(a.ID, svc.Name, dest)
 		items["PGUSER"], items["PGPASSWORD"], items["PGDATABASE"] = c.User, c.Password, c.Database
+		if len(pins[svc.Name]) > 0 {
+			items[backupPinnedItem] = pinList(pins[svc.Name])
+		}
 		items, err := d.withPullCredentials(ctx, items, digests[svc.Name], private)
 		if err != nil {
 			return err
@@ -149,6 +155,28 @@ func (d *Deployer) SyncBackups(ctx context.Context, a app.App, digests map[strin
 		}
 	}
 	return nil
+}
+
+// backupPinnedItem is the item of a Postgres backup job's variable that lists
+// its pinned backups' timestamps.
+const backupPinnedItem = "BACKUP_PINNED"
+
+// SetBackupPins rewrites the pin list of service's Postgres backup job, keeping
+// every other item of its variable: stamps are the timestamps of the pinned
+// backups, none removes the item. A service with no backup variable has no job
+// yet (its first deploy writes the list), so there is nothing to do.
+func (d *Deployer) SetBackupPins(ctx context.Context, appID, service string, stamps []string) error {
+	path := nomadjob.BackupVariablePath(nomadjob.BackupJobID(appID, service))
+	items, found, err := d.readVariableIfAny(ctx, path)
+	if err != nil || !found {
+		return err
+	}
+	if len(stamps) > 0 {
+		items[backupPinnedItem] = pinList(stamps)
+	} else {
+		delete(items, backupPinnedItem)
+	}
+	return d.writeVariable(ctx, path, items)
 }
 
 // SetBackupDestination points every backup at dest, from its next run: it

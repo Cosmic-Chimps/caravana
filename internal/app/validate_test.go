@@ -244,6 +244,60 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Backup = &Backup{Engine: BackupVolume}
 		}, "services[1].volumes[0].name"},
 
+		// Restore schedules (feature 036) are checked for every engine.
+		{"valid volume backup with a restore schedule", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}
+		}, ""},
+		{"valid sqlite backup with a restore schedule", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Restore: &RestoreSchedule{Schedule: "*/30 * * * *", From: "demo-1"}}
+		}, ""},
+		{"valid postgres backup with a restore schedule", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "g"}}
+		}, ""},
+		{"restore label of the longest length", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: strings.Repeat("a", 32)}}
+		}, ""},
+		{"restore without a schedule", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{From: "golden"}}
+		}, "services[1].backup.restore.schedule"},
+		{"restore without a label", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *"}}
+		}, "services[1].backup.restore.from"},
+		{"restore schedule with six fields", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 0 4 * * *", From: "golden"}}
+		}, "services[1].backup.restore.schedule"},
+		{"restore schedule out of range", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Restore: &RestoreSchedule{Schedule: "99 * * * *", From: "golden"}}
+		}, "services[1].backup.restore.schedule"},
+		{"restore schedule not cron on postgres", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Restore: &RestoreSchedule{Schedule: "nightly", From: "golden"}}
+		}, "services[0].backup.restore.schedule"},
+		{"restore label in upper case", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "Golden"}}
+		}, "services[1].backup.restore.from"},
+		{"restore label with a space", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "my golden"}}
+		}, "services[1].backup.restore.from"},
+		{"restore label starting with a hyphen", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "-golden"}}
+		}, "services[1].backup.restore.from"},
+		{"restore label too long", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: strings.Repeat("a", 33)}}
+		}, "services[1].backup.restore.from"},
+
 		// SQLite backups: the file lies inside a writable volume of the service.
 		{"valid sqlite backup", func(a *App, d *Deployment) {
 			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}

@@ -229,7 +229,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, privHosts); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, privHosts, nil); err != nil {
 		t.Fatalf("SyncBackups() = %v", err)
 	}
 	v := nomad.Variable("nomad/jobs/shop_db_backup")
@@ -295,7 +295,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 		if err := d.SaveRegistrySecret(ctx, privHost, "deploy", registrySecret); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.SyncBackups(ctx, a, digests, creds, testDest, privHosts); err != nil {
+		if err := d.SyncBackups(ctx, a, digests, creds, testDest, privHosts, nil); err != nil {
 			t.Fatal(err)
 		}
 		moved := testDest
@@ -309,7 +309,7 @@ func TestPrivateBackupAndRestore(t *testing.T) {
 	})
 
 	t.Run("a service that stopped being private loses them", func(t *testing.T) {
-		if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
+		if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		v := nomad.Variable("nomad/jobs/shop_db_backup")
@@ -327,7 +327,7 @@ func TestPublicBackupHasNoPullCredentials(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	digests := map[string]string{"db": "postgres@" + whoamiDigest}
-	if err := d.SyncBackups(ctx, a, digests, map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, privHosts); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, privHosts, nil); err != nil {
 		t.Fatal(err)
 	}
 	v := nomad.Variable("nomad/jobs/shop_db_backup")
@@ -499,7 +499,7 @@ func TestSyncRegistryCopiesPerPathBackup(t *testing.T) {
 		}
 	}
 	both := map[string]bool{privHost: true, privHost + "/teama": true}
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, both); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, both, nil); err != nil {
 		t.Fatal(err)
 	}
 	v := nomad.Variable("nomad/jobs/shop_db_backup")

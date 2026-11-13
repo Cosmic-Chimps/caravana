@@ -277,10 +277,11 @@ echo "` + sqliteCopyMarker + ` bytes=$(size_of "$out")"
 
 // SQLiteUploadScript is run in caravana-upload as
 //
-//	sh -c <script> sh <copy> <backup path> <ts> <keep> <seconds>
+//	sh -c <script> sh <copy> <backup path> <ts> <keep> <seconds> <pinned>
 //
-// with the destination's credentials on its standard input. It gzips the copy
-// into "<backup path>/<ts>.sqlite.gz" in the destination (a pipe: no .gz on
+// with the destination's credentials on its standard input. <pinned> lists the
+// timestamps of the pinned backups, separated by spaces, empty for none. It
+// gzips the copy into "<backup path>/<ts>.sqlite.gz" in the destination (a pipe: no .gz on
 // disk), with both exit codes checked (a pipeline's status is its last
 // command's, and an archive cut short would otherwise upload as good), prints
 // "caravana-backup key=<object> bytes=<n>", then deletes the oldest backups
@@ -292,11 +293,16 @@ echo "` + sqliteCopyMarker + ` bytes=$(size_of "$out")"
 // count, so nothing else under the path is touched, and this run's backup is
 // never deleted. No <keep>, or a bad one, deletes nothing. The copy is always
 // removed.
+//
+// A pinned backup is never deleted and doesn't count against <keep>: <keep> is
+// how many unpinned backups stay. A <pinned> with anything but digits and
+// spaces can't be trusted: nothing is deleted and a warning says so.
 const SQLiteUploadScript = `copy=$1
 path=$2
 ts=$3
 keep=$4
 LIMIT=$5
+pinned=$6
 ` + sqliteCommon + sqliteDestination + `
 set_deadline
 tmp="$copy.work"
@@ -345,9 +351,13 @@ if [ -z "$bytes" ]; then
 fi
 echo "` + BackupDoneMarker + ` key=$object bytes=$bytes"
 
-# retain deletes the oldest backups beyond KEEP, as the volume engine does.
+# retain deletes the oldest unpinned backups beyond KEEP, as the volume engine does.
 retain() {
   case "$keep" in ''|*[!0-9]*|0) return 0 ;; esac
+  if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
+    echo "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
+    return 0
+  fi
   listing=$(timeout "$(left)" rclone lsf --files-only "dest:$path/" 2> "$tmp/rclone.err")
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -355,9 +365,17 @@ retain() {
     return 0
   fi
   stamps=$(printf '%s\n' "$listing" | grep -E '^[0-9]+\.sqlite\.gz$' | sed 's/\.sqlite\.gz$//' | sort -n)
-  excess=$(($(printf '%s\n' "$stamps" | grep -c .) - keep))
+  candidates=
+  for n in $stamps; do
+    is_pinned=
+    for p in $pinned; do
+      [ "$n" != "$p" ] || is_pinned=1
+    done
+    [ -n "$is_pinned" ] || candidates="$candidates $n"
+  done
+  excess=$(($(echo $candidates | wc -w) - keep))
   [ "$excess" -gt 0 ] || return 0
-  for n in $(printf '%s\n' "$stamps" | head -n "$excess"); do
+  for n in $(echo $candidates | tr ' ' '\n' | head -n "$excess"); do
     [ "$n" != "$ts" ] || continue
     timeout "$(left)" rclone deletefile "dest:$path/$n.sqlite.gz" > /dev/null 2> "$tmp/rclone.err"
     status=$?

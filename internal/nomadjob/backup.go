@@ -52,15 +52,37 @@ const dumpPath = "/alloc/data/backup.dump"
 // (<job>/periodic-<unix seconds>), which a "back up now" shares with the
 // schedule. It uses $VAR and $(...) only: Nomad interpolates ${...} in task
 // config before the shell sees it.
+//
+// BACKUP_PINNED, an item of the job's variable, lists the timestamps of the
+// pinned dumps (digits separated by spaces, or unset for none). A pinned dump
+// is never deleted and doesn't count against BACKUP_KEEP: BACKUP_KEEP is how
+// many unpinned dumps stay. A list with anything else in it can't be trusted,
+// so nothing is deleted and the run fails saying so (the dump is already
+// uploaded; a retention failure fails this engine's run today as well). This
+// run's own dump is never deleted.
 const uploadScript = `set -eu
 ts=$(echo "$NOMAD_JOB_ID" | sed 's/.*periodic-//')
 key="$BACKUP_PATH/$ts.dump"
 rclone copyto ` + dumpPath + ` "dest:$key"
 echo "` + BackupDoneMarker + ` key=$key bytes=$(stat -c %s ` + dumpPath + `)"
+pinned=$(printenv BACKUP_PINNED || true)
+if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
+  echo "old backups were not removed: the list of pinned backups is not valid" >&2
+  exit 1
+fi
 files=$(rclone lsf --files-only "dest:$BACKUP_PATH/" | grep '\.dump$' | sort)
-n=$(echo "$files" | grep -c . || true)
+candidates=
+for f in $files; do
+  is_pinned=
+  for p in $pinned; do
+    [ "$f" != "$p.dump" ] || is_pinned=1
+  done
+  [ -n "$is_pinned" ] || candidates="$candidates $f"
+done
+n=$(echo $candidates | wc -w)
 if [ "$n" -gt "$BACKUP_KEEP" ]; then
-  echo "$files" | head -n $((n - BACKUP_KEEP)) | while read -r f; do
+  echo $candidates | tr ' ' '\n' | head -n $((n - BACKUP_KEEP)) | while read -r f; do
+    [ "$f" != "$ts.dump" ] || continue
     rclone deletefile "dest:$BACKUP_PATH/$f"
     echo "` + BackupExpiredMarker + ` $f"
   done

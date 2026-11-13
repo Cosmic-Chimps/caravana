@@ -54,7 +54,7 @@ func TestVolumeRunRecords(t *testing.T) {
 	t.Run("a volume restore keeps its engine and stop time", func(t *testing.T) {
 		stopped := 3 * time.Second
 		r := RestoreRecord{ID: "r1", AppID: "kuma", Service: "web", BackupID: "web-1", Engine: "volume",
-			Status: BackupRunning, CreatedAt: t0}
+			Status: BackupRunning, CreatedAt: t0, Trigger: RestoreTriggerOwner}
 		if err := s.SaveRestore(ctx, r); err != nil {
 			t.Fatal(err)
 		}

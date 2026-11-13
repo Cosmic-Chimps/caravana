@@ -65,11 +65,16 @@ type VolumeRequest struct {
 	NotAfter time.Time
 	// Limit is how long the run may take. Zero means DefaultVolumeLimit.
 	Limit time.Duration
+	// Pinned lists the timestamps (unix seconds, as digits) of the service's
+	// pinned backups, for a backup run: its retention keeps them and doesn't
+	// count them against KEEP. Written with each backup request, because a
+	// pin can change between two runs.
+	Pinned []string
 }
 
 // The variable's keys that make up a request. The rest are the destination,
 // KEEP and LIMIT, which outlast any one request.
-var volumeRequestKeys = []string{"REQUEST", "ACTION", "TS", "OBJECT", "FILE", "NOT_AFTER"}
+var volumeRequestKeys = []string{"REQUEST", "ACTION", "TS", "OBJECT", "FILE", "NOT_AFTER", "PINNED"}
 
 // isDestinationKey reports whether k is one of the variable's keys that hold
 // the destination: what destinationItems makes, and KEEP.
@@ -101,12 +106,20 @@ func volumeItems(a app.App, svc app.Service, dest *BackupDestination, keep int, 
 		if req.File != "" {
 			items["FILE"] = req.File
 		}
+		if len(req.Pinned) > 0 {
+			items["PINNED"] = pinList(req.Pinned)
+		}
 		if req.Limit > 0 {
 			items["LIMIT"] = strconv.Itoa(int(req.Limit / time.Second))
 		}
 	}
 	return items
 }
+
+// pinList is the timestamps of pinned backups as the engines' retention reads
+// them: separated by single spaces. The scripts check that it holds only digits
+// and spaces and delete nothing when it doesn't.
+func pinList(stamps []string) string { return strings.Join(stamps, " ") }
 
 // WriteVolumeVariable writes svc's caravana-volumes variable whole: the
 // destination (when dest is not nil), KEEP (when keep is positive), the time

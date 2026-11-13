@@ -465,6 +465,9 @@ func TestMain(m *testing.M) {
 	if fakeToolsPath != "" {
 		os.RemoveAll(fakeToolsPath)
 	}
+	if postgresToolsPath != "" {
+		os.RemoveAll(postgresToolsPath)
+	}
 	os.Exit(code)
 }
 

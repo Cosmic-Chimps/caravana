@@ -20,6 +20,10 @@ var (
 	// and each part of a hostname.
 	labelRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+	// pinLabelRE is the shape of a pinned backup's label (ValidLabel): shorter
+	// than a DNS label, because it also travels in a URL and a message.
+	pinLabelRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
+
 	// portNameRE avoids "-", because Nomad exposes ports as env vars named
 	// NOMAD_PORT_<label>.
 	portNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
@@ -121,6 +125,9 @@ func validateBackup(field string, svc Service) error {
 			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", b.Schedule, DefaultBackupSchedule)
 		}
 	}
+	if err := validateRestoreSchedule(field, b.Restore); err != nil {
+		return err
+	}
 	switch b.Engine {
 	case BackupVolume:
 		return validateVolumeBackup(field, svc)
@@ -134,6 +141,32 @@ func validateBackup(field string, svc Service) error {
 		slices.ContainsFunc(svc.Secrets, func(s Secret) bool { return s.Name == "POSTGRES_PASSWORD" })
 	if !has {
 		return NewFieldError(field, "the backup logs in with POSTGRES_PASSWORD; set it in the service's environment or secrets")
+	}
+	return nil
+}
+
+// validateRestoreSchedule checks a backup's restore schedule: both parts are
+// required. The schedule must be one Caravana's own clock can run, as a volume
+// backup's is, for every engine.
+func validateRestoreSchedule(field string, r *RestoreSchedule) error {
+	if r == nil {
+		return nil
+	}
+	field += ".restore"
+	if strings.TrimSpace(r.Schedule) == "" {
+		return NewFieldError(field+".schedule", "is required: a five-field cron expression in UTC, e.g. %q", "0 4 * * *")
+	}
+	if len(strings.Fields(r.Schedule)) != 5 || strings.ContainsFunc(r.Schedule, unicode.IsControl) {
+		return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", r.Schedule, "0 4 * * *")
+	}
+	if _, err := cronexpr.Parse(r.Schedule); err != nil {
+		return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", r.Schedule, err)
+	}
+	if r.From == "" {
+		return NewFieldError(field+".from", "is required: the label of the pinned backup to restore, e.g. %q", "golden")
+	}
+	if !ValidLabel(r.From) {
+		return NewFieldError(field+".from", "%q must be 1 to 32 lowercase letters, digits or hyphens, starting and ending with a letter or digit", r.From)
 	}
 	return nil
 }

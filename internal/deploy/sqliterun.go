@@ -69,15 +69,16 @@ func (d *Deployer) SQLiteCopy(ctx context.Context, copyID string, svc app.Servic
 // task, then deletes the oldest backups beyond keep. The output has the
 // object, its size, the timestamps retention deleted and, when retention
 // failed after a good upload, the warning. The copy is removed whatever the
-// outcome.
+// outcome. pinned lists the timestamps of the service's pinned backups, which
+// retention keeps and doesn't count against keep.
 func (d *Deployer) SQLiteUpload(ctx context.Context, copyID, request, appID string, svc app.Service,
-	dest BackupDestination, ts string, keep int) (nomadjob.SQLiteOutput, error) {
+	dest BackupDestination, ts string, keep int, pinned []string) (nomadjob.SQLiteOutput, error) {
 	stdin, err := destinationLines(dest)
 	if err != nil {
 		return nomadjob.SQLiteOutput{}, err
 	}
 	cmd := nomadjob.SQLiteCommand(nomadjob.SQLiteUploadScript,
-		nomadjob.SQLiteCopyPath(request), destinationItems(appID, svc.Name, dest)["BACKUP_PATH"], ts, keepArg(keep), seconds(ctx))
+		nomadjob.SQLiteCopyPath(request), destinationItems(appID, svc.Name, dest)["BACKUP_PATH"], ts, keepArg(keep), seconds(ctx), pinList(pinned))
 	out, err := d.runSQLite(ctx, copyID, app.UploadTaskName, "upload", cmd, &dest, strings.NewReader(stdin))
 	if err != nil {
 		return out, err

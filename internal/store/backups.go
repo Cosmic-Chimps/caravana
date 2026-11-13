@@ -16,6 +16,17 @@ const (
 	BackupFailed    = "failed"
 )
 
+// RestoreSkipped is a restore status only a scheduled run gets: its slot came
+// while a backup or restore of the service was running, so it did nothing. It
+// is final, like failed, but never counts as a failure.
+const RestoreSkipped = "skipped"
+
+// Who started a restore: the owner (Restore) or the service's restore schedule.
+const (
+	RestoreTriggerOwner    = "owner"
+	RestoreTriggerSchedule = "schedule"
+)
+
 // BackupDestination is the installation's backup destination without its
 // secret key, which lives in Nomad Variables.
 type BackupDestination struct {
@@ -100,11 +111,17 @@ type BackupRecord struct {
 	// when saved. Once a run is recorded as the owner's it stays so: the
 	// watcher, which can't tell a forced run from a timed one, writes timer.
 	Trigger string
+	// Pin is the label the backup is pinned under, "" when it isn't. Retention
+	// never deletes a pinned backup. SaveBackup never writes it: PinBackup and
+	// UnpinBackup do.
+	Pin string
+	// PinnedAt is when the label was put on the backup; nil when not pinned.
+	PinnedAt *time.Time
 }
 
 // backupColumns is the column order scanBackups reads.
 const backupColumns = `app_id, id, service, job_id, status, object, bytes, message, expired, started_at, finished_at,
-	engine, stopped_ms, volumes, trigger`
+	engine, stopped_ms, volumes, trigger, pin, pinned_at`
 
 // SaveBackup creates or updates a backup record. A final record never goes
 // back to running: a later write of running is ignored.
@@ -187,14 +204,18 @@ func scanBackups(rows *sql.Rows) ([]BackupRecord, error) {
 		var b BackupRecord
 		var expired int
 		var started string
-		var finished, volumes sql.NullString
+		var finished, volumes, pin, pinnedAt sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&b.AppID, &b.ID, &b.Service, &b.JobID, &b.Status, &b.Object, &b.Bytes, &b.Message,
-			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger); err != nil {
+			&expired, &started, &finished, &b.Engine, &stopped, &volumes, &b.Trigger, &pin, &pinnedAt); err != nil {
 			return nil, err
 		}
 		var err error
 		b.Expired = expired == 1
+		b.Pin = pin.String
+		if b.PinnedAt, err = parseOptionalTime(pinnedAt); err != nil {
+			return nil, err
+		}
 		if b.StartedAt, err = parseTime(started); err != nil {
 			return nil, err
 		}
@@ -238,24 +259,38 @@ type RestoreRecord struct {
 	// Stopped is how long the service was stopped, for a volume restore once
 	// measured; nil otherwise.
 	Stopped *time.Duration
+	// Trigger is RestoreTriggerOwner or RestoreTriggerSchedule. Empty means
+	// owner when saved: every restore recorded before feature 036 was the owner's.
+	Trigger string
+	// Pin is the label a scheduled run asked for ("" for the owner's). It is
+	// kept when the run was refused, so the record says which label was missing.
+	Pin string
 }
 
 // restoreColumns is the column order scanRestores reads.
-const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms"
+const restoreColumns = "id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms, trigger, pin"
 
 // SaveRestore creates or updates a restore record.
 func (s *Store) SaveRestore(ctx context.Context, r RestoreRecord) error {
 	if r.Engine == "" {
 		r.Engine = enginePostgres
 	}
+	if r.Trigger == "" {
+		r.Trigger = RestoreTriggerOwner
+	}
+	var pin any // NULL, not "", for the owner's restores
+	if r.Pin != "" {
+		pin = r.Pin
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO restores (id, app_id, service, backup_id, status, message, created_at, finished_at, engine, stopped_ms,
+			trigger, pin)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET status = excluded.status, message = excluded.message,
 			finished_at = excluded.finished_at, stopped_ms = excluded.stopped_ms
 		WHERE restores.status = 'running'`,
 		r.ID, r.AppID, r.Service, r.BackupID, r.Status, r.Message, formatTime(r.CreatedAt), optionalTime(r.FinishedAt),
-		r.Engine, optionalMillis(r.Stopped))
+		r.Engine, optionalMillis(r.Stopped), r.Trigger, pin)
 	if err != nil {
 		return fmt.Errorf("save restore %s of %q: %w", r.ID, r.AppID, err)
 	}
@@ -290,12 +325,13 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 	for rows.Next() {
 		var r RestoreRecord
 		var created string
-		var finished sql.NullString
+		var finished, pin sql.NullString
 		var stopped sql.NullInt64
 		if err := rows.Scan(&r.ID, &r.AppID, &r.Service, &r.BackupID, &r.Status, &r.Message, &created, &finished,
-			&r.Engine, &stopped); err != nil {
+			&r.Engine, &stopped, &r.Trigger, &pin); err != nil {
 			return nil, err
 		}
+		r.Pin = pin.String
 		var err error
 		if r.CreatedAt, err = parseTime(created); err != nil {
 			return nil, err
@@ -312,7 +348,8 @@ func scanRestores(rows *sql.Rows) ([]RestoreRecord, error) {
 // LatestBackupRuns returns, for every service of every app, its newest
 // backup and its newest restore (by start time, ties by ID), for the
 // needs-you list. Expired backups count: the question is whether the last
-// run worked, not whether its file is still kept.
+// run worked, not whether its file is still kept. A skipped restore doesn't
+// count: it did nothing, so it must never hide the failure before it.
 func (s *Store) LatestBackupRuns(ctx context.Context) ([]BackupRecord, []RestoreRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+backupColumns+` FROM (
@@ -331,7 +368,7 @@ func (s *Store) LatestBackupRuns(ctx context.Context) ([]BackupRecord, []Restore
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT `+restoreColumns+` FROM (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY app_id, service ORDER BY created_at DESC, id DESC) AS n
-			FROM restores)
+			FROM restores WHERE status != 'skipped')
 		WHERE n = 1 ORDER BY app_id, service`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("latest restores: %w", err)
@@ -416,4 +453,108 @@ func parseOptionalTime(s sql.NullString) (*time.Time, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// PinBackup puts the label on a backup. A label is unique per service, so a
+// backup that held it loses it (prev is that backup's ID, "" for none, so a
+// caller can put it back); a backup that had another label gets this one
+// instead. It changes nothing but the pin columns, in one transaction.
+func (s *Store) PinBackup(ctx context.Context, appID, backupID, label string, at time.Time) (prev string, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	defer tx.Rollback()
+
+	var service string
+	if err := tx.QueryRowContext(ctx, "SELECT service FROM backups WHERE app_id = ? AND id = ?", appID, backupID).Scan(&service); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("backup %s of %q: %w", backupID, appID, ErrNotFound)
+		}
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	err = tx.QueryRowContext(ctx, "SELECT id FROM backups WHERE app_id = ? AND service = ? AND pin = ?", appID, service, label).Scan(&prev)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	if prev == backupID {
+		prev = "" // already the holder: nothing to put back
+	}
+	// The label leaves its old holder first: the unique index allows one.
+	if _, err := tx.ExecContext(ctx, "UPDATE backups SET pin = NULL, pinned_at = NULL WHERE app_id = ? AND service = ? AND pin = ?",
+		appID, service, label); err != nil {
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE backups SET pin = ?, pinned_at = ? WHERE app_id = ? AND id = ?",
+		label, formatTime(at), appID, backupID); err != nil {
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("pin backup %s of %q: %w", backupID, appID, err)
+	}
+	return prev, nil
+}
+
+// UnpinBackup takes the label off a backup. A backup with no label, or one
+// that doesn't exist, is not an error: the result is the same.
+func (s *Store) UnpinBackup(ctx context.Context, appID, backupID string) error {
+	if _, err := s.db.ExecContext(ctx, "UPDATE backups SET pin = NULL, pinned_at = NULL WHERE app_id = ? AND id = ?", appID, backupID); err != nil {
+		return fmt.Errorf("unpin backup %s of %q: %w", backupID, appID, err)
+	}
+	return nil
+}
+
+// PinnedBackup returns the backup of a service that is pinned under the label,
+// or ErrNotFound. An expired one is returned too: the caller says why it can't
+// be restored.
+func (s *Store) PinnedBackup(ctx context.Context, appID, service, label string) (BackupRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+backupColumns+`
+		FROM backups WHERE app_id = ? AND service = ? AND pin = ?`, appID, service, label)
+	if err != nil {
+		return BackupRecord{}, fmt.Errorf("pinned backup of %q/%s: %w", appID, service, err)
+	}
+	defer rows.Close()
+	list, err := scanBackups(rows)
+	if err != nil {
+		return BackupRecord{}, fmt.Errorf("pinned backup of %q/%s: %w", appID, service, err)
+	}
+	if len(list) == 0 {
+		return BackupRecord{}, fmt.Errorf("backup of %q/%s pinned as %q: %w", appID, service, label, ErrNotFound)
+	}
+	return list[0], nil
+}
+
+// PinnedBackups returns the pinned backups of an app that retention may not
+// delete (not expired), for the pin lists the engines' retention reads.
+func (s *Store) PinnedBackups(ctx context.Context, appID string) ([]BackupRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+backupColumns+`
+		FROM backups WHERE app_id = ? AND pin IS NOT NULL AND expired = 0 ORDER BY service, id`, appID)
+	if err != nil {
+		return nil, fmt.Errorf("pinned backups of %q: %w", appID, err)
+	}
+	defer rows.Close()
+	out, err := scanBackups(rows)
+	if err != nil {
+		return nil, fmt.Errorf("pinned backups of %q: %w", appID, err)
+	}
+	return out, nil
+}
+
+// LastScheduledRestore returns when the service's newest scheduled restore was
+// made, whatever its outcome (a refused or skipped slot counts: the clock must
+// not run the same slot again). ok is false when it never had one.
+func (s *Store) LastScheduledRestore(ctx context.Context, appID, service string) (at time.Time, ok bool, err error) {
+	var created sql.NullString
+	err = s.db.QueryRowContext(ctx, "SELECT MAX(created_at) FROM restores WHERE app_id = ? AND service = ? AND trigger = 'schedule'",
+		appID, service).Scan(&created)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("last scheduled restore of %q/%s: %w", appID, service, err)
+	}
+	if !created.Valid {
+		return time.Time{}, false, nil
+	}
+	if at, err = parseTime(created.String); err != nil {
+		return time.Time{}, false, err
+	}
+	return at, true, nil
 }

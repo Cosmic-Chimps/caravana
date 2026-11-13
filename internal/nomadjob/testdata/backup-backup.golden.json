@@ -119,7 +119,7 @@
           "Lifecycle": null,
           "Config": {
             "args": [
-              "set -eu\nts=$(echo \"$NOMAD_JOB_ID\" | sed 's/.*periodic-//')\nkey=\"$BACKUP_PATH/$ts.dump\"\nrclone copyto /alloc/data/backup.dump \"dest:$key\"\necho \"caravana-backup key=$key bytes=$(stat -c %s /alloc/data/backup.dump)\"\nfiles=$(rclone lsf --files-only \"dest:$BACKUP_PATH/\" | grep '\\.dump$' | sort)\nn=$(echo \"$files\" | grep -c . || true)\nif [ \"$n\" -gt \"$BACKUP_KEEP\" ]; then\n  echo \"$files\" | head -n $((n - BACKUP_KEEP)) | while read -r f; do\n    rclone deletefile \"dest:$BACKUP_PATH/$f\"\n    echo \"caravana-expired $f\"\n  done\nfi\n"
+              "set -eu\nts=$(echo \"$NOMAD_JOB_ID\" | sed 's/.*periodic-//')\nkey=\"$BACKUP_PATH/$ts.dump\"\nrclone copyto /alloc/data/backup.dump \"dest:$key\"\necho \"caravana-backup key=$key bytes=$(stat -c %s /alloc/data/backup.dump)\"\npinned=$(printenv BACKUP_PINNED || true)\nif printf '%s' \"$pinned\" | grep -q '[^0-9 ]'; then\n  echo \"old backups were not removed: the list of pinned backups is not valid\" \u003e\u00262\n  exit 1\nfi\nfiles=$(rclone lsf --files-only \"dest:$BACKUP_PATH/\" | grep '\\.dump$' | sort)\ncandidates=\nfor f in $files; do\n  is_pinned=\n  for p in $pinned; do\n    [ \"$f\" != \"$p.dump\" ] || is_pinned=1\n  done\n  [ -n \"$is_pinned\" ] || candidates=\"$candidates $f\"\ndone\nn=$(echo $candidates | wc -w)\nif [ \"$n\" -gt \"$BACKUP_KEEP\" ]; then\n  echo $candidates | tr ' ' '\\n' | head -n $((n - BACKUP_KEEP)) | while read -r f; do\n    [ \"$f\" != \"$ts.dump\" ] || continue\n    rclone deletefile \"dest:$BACKUP_PATH/$f\"\n    echo \"caravana-expired $f\"\n  done\nfi\n"
             ],
             "entrypoint": [
               "/bin/sh",

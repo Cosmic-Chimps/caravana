@@ -245,6 +245,7 @@ func TestVolumeScriptRetention(t *testing.T) {
 		existing    []string // timestamps already in the bucket
 		keep        string
 		ts          string
+		pinned      string // the request's PINNED: timestamps retention must keep
 		env         []string
 		wantLeft    []string // timestamps in the bucket afterwards
 		wantExpired []string
@@ -260,6 +261,24 @@ func TestVolumeScriptRetention(t *testing.T) {
 			wantLeft: []string{"1700", "1701", "1702", "1791"}},
 		{name: "the new backup is never the one deleted", existing: []string{"1800", "1801"}, keep: "1", ts: "1791",
 			wantLeft: []string{"1791", "1801"}, wantExpired: []string{"1800"}},
+		{name: "a pinned backup is kept and doesn't count against KEEP", existing: []string{"1700", "1701", "1702", "1703"}, keep: "2", ts: "1791",
+			pinned: "1700", wantLeft: []string{"1700", "1703", "1791"}, wantExpired: []string{"1701", "1702"}},
+		{name: "several pinned backups, KEEP counts only the others", existing: []string{"1700", "1701", "1702", "1703", "1704"}, keep: "1", ts: "1791",
+			pinned: "1700 1702", wantLeft: []string{"1700", "1702", "1791"}, wantExpired: []string{"1701", "1703", "1704"}},
+		{name: "a pin that is no longer in the destination is ignored", existing: []string{"1700", "1701", "1702"}, keep: "2", ts: "1791",
+			pinned: "1600", wantLeft: []string{"1702", "1791"}, wantExpired: []string{"1700", "1701"}},
+		{name: "with everything pinned nothing goes", existing: []string{"1700", "1701"}, keep: "1", ts: "1791",
+			pinned: "1700 1701", wantLeft: []string{"1700", "1701", "1791"}},
+		{name: "the new backup is never deleted, pins or not", existing: []string{"1800", "1801"}, keep: "1", ts: "1791",
+			pinned: "1801", wantLeft: []string{"1791", "1800", "1801"}},
+		{name: "a pin list that is not digits deletes nothing and says so", existing: []string{"1700", "1701", "1702"}, keep: "1", ts: "1791",
+			pinned:   "1700 $(touch x)",
+			wantLeft: []string{"1700", "1701", "1702", "1791"},
+			wantMsg:  "the backup is kept, but old backups were not removed: the list of pinned backups is not valid"},
+		{name: "a pin list with a path in it deletes nothing", existing: []string{"1700", "1701"}, keep: "1", ts: "1791",
+			pinned:   "../1700",
+			wantLeft: []string{"1700", "1701", "1791"},
+			wantMsg:  "the backup is kept, but old backups were not removed: the list of pinned backups is not valid"},
 		{name: "listing fails: the backup stays and says so", existing: []string{"1700"}, keep: "1", ts: "1791",
 			env:      []string{"FAKE_FAIL_CMD=lsf"},
 			wantLeft: []string{"1700", "1791"},
@@ -275,7 +294,7 @@ func TestVolumeScriptRetention(t *testing.T) {
 			r.put("b/kuma/web/notes/readme", "keep me")
 			r.put("b/kuma/web/1500.dump", "a postgres dump")
 			env := append(slices.Clone(tt.env), r.withDestination()...)
-			r.run(backupRequest("KEEP", tt.keep, "TS", tt.ts), env...)
+			r.run(backupRequest("KEEP", tt.keep, "TS", tt.ts, "PINNED", tt.pinned), env...)
 
 			res := r.result("web-1")
 			if !res.Succeeded || res.Message != tt.wantMsg {

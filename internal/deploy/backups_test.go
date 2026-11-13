@@ -30,7 +30,7 @@ func TestSyncBackups(t *testing.T) {
 	digests := map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]}
 	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
 
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
 		t.Fatalf("SyncBackups: %v", err)
 	}
 	job := nomad.Job("shop_db_backup")
@@ -58,11 +58,72 @@ func TestSyncBackups(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.Services[0].Backup = nil
-	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil); err != nil {
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if nomad.Job("shop_db_backup") != nil || len(nomad.Runs("shop_db_backup")) != 0 || nomad.Variable("nomad/jobs/shop_db_backup") != nil {
 		t.Error("the backup job, its runs or its variable is still there")
+	}
+}
+
+// The pin list reaches the Postgres backup job's variable with a deploy, and a
+// pin or unpin rewrites only that item.
+func TestBackupPins(t *testing.T) {
+	ctx := context.Background()
+	d, _, nomad := newTestDeployer(t)
+	a := backedUp()
+	digests := map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]}
+	creds := map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}
+	const path = "nomad/jobs/shop_db_backup"
+
+	// Without a variable there is no job: a pin has nothing to write, and that
+	// is not an error.
+	if err := d.SetBackupPins(ctx, "shop", "db", []string{"1700"}); err != nil {
+		t.Fatalf("SetBackupPins before the first deploy = %v, want nil", err)
+	}
+	if nomad.Variable(path) != nil {
+		t.Fatal("SetBackupPins made a variable for a job that isn't there")
+	}
+
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := nomad.Variable(path)["BACKUP_PINNED"]; has {
+		t.Errorf("a service with no pins has BACKUP_PINNED: %v", nomad.Variable(path))
+	}
+
+	// A deploy writes the pins of the service.
+	if err := d.SyncBackups(ctx, a, digests, creds, testDest, nil, map[string][]string{"db": {"1700", "1750"}, "other": {"1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if v := nomad.Variable(path); v["BACKUP_PINNED"] != "1700 1750" || v["PGPASSWORD"] != "pw" {
+		t.Errorf("variable = %v, want BACKUP_PINNED 1700 1750 and the credentials", v)
+	}
+
+	// A pin change rewrites that item and keeps the rest.
+	if err := d.SetBackupPins(ctx, "shop", "db", []string{"1800"}); err != nil {
+		t.Fatal(err)
+	}
+	if v := nomad.Variable(path); v["BACKUP_PINNED"] != "1800" || v["PGPASSWORD"] != "pw" || v["BACKUP_PATH"] != "backups/caravana/shop/db" {
+		t.Errorf("variable after a pin = %v", v)
+	}
+	// The destination moving keeps the pins.
+	moved := testDest
+	moved.Bucket = "other"
+	if err := d.SetBackupDestination(ctx, moved); err != nil {
+		t.Fatal(err)
+	}
+	if v := nomad.Variable(path); v["BACKUP_PINNED"] != "1800" || v["BACKUP_PATH"] != "other/caravana/shop/db" {
+		t.Errorf("variable after a new destination = %v, want the pin kept", v)
+	}
+	// No pins removes the item.
+	if err := d.SetBackupPins(ctx, "shop", "db", nil); err != nil {
+		t.Fatal(err)
+	}
+	if v := nomad.Variable(path); v["PGPASSWORD"] != "pw" {
+		t.Errorf("variable = %v, want the credentials kept", v)
+	} else if _, has := v["BACKUP_PINNED"]; has {
+		t.Errorf("variable = %v, want BACKUP_PINNED removed", v)
 	}
 }
 
@@ -71,7 +132,7 @@ func TestBackupRuns(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	ok, err := d.ForceBackup(ctx, "shop", "db")
@@ -113,7 +174,7 @@ func TestRestoreJob(t *testing.T) {
 	d, _, nomad := newTestDeployer(t)
 	a := backedUp()
 	if err := d.SyncBackups(ctx, a, map[string]string{"db": "postgres@sha256:" + whoamiDigest[7:]},
-		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil); err != nil {
+		map[string]BackupCredentials{"db": {User: "postgres", Password: "pw", Database: "postgres"}}, testDest, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.Restore(ctx, "shop", a.Services[0], "postgres@sha256:"+whoamiDigest[7:], "backups/caravana/shop/db/1.dump", nil); err != nil {

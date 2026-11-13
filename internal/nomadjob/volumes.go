@@ -190,8 +190,8 @@ func volumeTemplate(appID, service, destPath string, destination bool) *api.Temp
 // ROOT, DATA, REQUEST_FILE and DEST_FILE can be set in the environment, for
 // tests; the defaults are the task's real paths.
 //
-// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS, BACKUP_PATH
-// and FILE) is sourced from REQUEST_FILE, and the destination's
+// The request (REQUEST, ACTION, OBJECT, NOT_AFTER, LIMIT, KEEP, TS, BACKUP_PATH,
+// FILE and PINNED) is sourced from REQUEST_FILE, and the destination's
 // RCLONE_CONFIG_DEST_* from DEST_FILE, in a subshell, so a damaged file ends
 // that subshell and nothing more. They are two files because only one of them
 // may be readable through Nomad's file system API (see volumeDestinationDest).
@@ -323,8 +323,17 @@ discard_backup() {
 # what was deleted before the failure is still listed. Only directories named
 # with digits count, so nothing else under BACKUP_PATH is touched, and the new
 # backup is never deleted. No KEEP, or a bad one, deletes nothing.
+#
+# PINNED lists the timestamps of the pinned backups, which are never deleted
+# and don't count against KEEP: KEEP is how many unpinned backups stay. A
+# PINNED that holds anything but digits and spaces can't be trusted, so
+# nothing is deleted and the message says so.
 apply_retention() {
   case "$KEEP" in ''|*[!0-9]*|0) return 0 ;; esac
+  if printf '%s' "$PINNED" | grep -q '[^0-9 ]'; then
+    MESSAGE="the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
+    return 0
+  fi
   dirs=$(timeout "$(seconds_left)" rclone lsf --dirs-only "dest:$BACKUP_PATH/" 2> "$WORK/rclone.err")
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -333,11 +342,19 @@ apply_retention() {
     return 0
   fi
   old=$(echo "$dirs" | grep -E '^[0-9]+/$' | sort -n)
-  excess=$(($(echo "$old" | grep -c .) - KEEP))
+  candidates=
+  for d in $old; do
+    d=$(basename "$d")
+    is_pinned=
+    for p in $PINNED; do
+      [ "$d" != "$p" ] || is_pinned=1
+    done
+    [ -n "$is_pinned" ] || candidates="$candidates $d"
+  done
+  excess=$(($(echo $candidates | wc -w) - KEEP))
   [ "$excess" -gt 0 ] || return 0
   expired=
-  for d in $(echo "$old" | head -n "$excess"); do
-    d=$(basename "$d")
+  for d in $(echo $candidates | tr ' ' '\n' | head -n "$excess"); do
     [ "$d" != "$TS" ] || continue
     timeout "$(seconds_left)" rclone purge "dest:$BACKUP_PATH/$d" > /dev/null 2> "$WORK/rclone.err"
     status=$?
@@ -612,7 +629,7 @@ put_back_sqlite() {
 
 handle_request() {
   [ -f "$REQUEST_FILE" ] || return 0
-  REQUEST= ACTION= OBJECT= NOT_AFTER= LIMIT= KEEP= TS= BACKUP_PATH= FILE=
+  REQUEST= ACTION= OBJECT= NOT_AFTER= LIMIT= KEEP= TS= BACKUP_PATH= FILE= PINNED=
   set -a
   . "$REQUEST_FILE"
   [ ! -f "$DEST_FILE" ] || . "$DEST_FILE"
