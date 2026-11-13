@@ -442,15 +442,15 @@ func (s *server) anyServer(ctx context.Context) bool {
 	return err == nil && len(v.Servers) > 0
 }
 
-// downNumbersLine is "fsn-1's numbers were last read at 17:54 UTC." (with the date when it isn't today), or
-// that none were read.
+// downNumbersLine is "fsn-1's numbers were last read at 17:54 UTC." (with the date when it isn't today's UTC
+// date), or that none were read.
 func downNumbersLine(now time.Time, name string, h service.HostView) string {
 	if h.SampledAt == nil {
 		return "No numbers were ever read from " + name + "."
 	}
 	at := h.SampledAt.UTC()
 	stamp := at.Format("15:04") + " UTC"
-	if at.Format("2006-01-02") != now.Format("2006-01-02") {
+	if at.Format("2006-01-02") != now.UTC().Format("2006-01-02") {
 		stamp = shortDate(now, at) + ", " + stamp
 	}
 	return name + "'s numbers were last read at " + stamp + "."
@@ -494,7 +494,7 @@ func downBanner(now time.Time, v service.ServerView) srvBanner {
 	if !v.SeenAt.IsZero() {
 		at := v.SeenAt.UTC()
 		stamp := at.Format("15:04") + " UTC"
-		if at.Format("2006-01-02") != now.Format("2006-01-02") {
+		if at.Format("2006-01-02") != now.UTC().Format("2006-01-02") {
 			stamp = shortDate(now, at) + ", " + stamp
 		}
 		line = append(line, plain(" since "+stamp))
