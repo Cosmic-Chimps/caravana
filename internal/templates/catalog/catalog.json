@@ -1,0 +1,413 @@
+{
+  "format": 1,
+  "version": "2026.11.12",
+  "templates": [
+    {
+      "name": "adminer",
+      "title": "Adminer",
+      "version": "5.5.1-1",
+      "description": "A web page to browse and edit a database, behind a user name and password.",
+      "tags": [
+        "database",
+        "admin"
+      ],
+      "upstream": "https://www.adminer.org/",
+      "appName": "adminer",
+      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. At its own login, give the address of a database this server can reach (a database inside another Caravana app is not reachable by name).",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server.",
+          "example": "adminer.example.com"
+        }
+      ],
+      "services": {
+        "adminer": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 8080,
+              "teamOnly": true
+            }
+          ],
+          "health": {
+            "path": "/"
+          }
+        }
+      },
+      "compose": "# Adminer (https://www.adminer.org): a web page to look into a database (PostgreSQL, MySQL,\n# SQLite and others) that is reachable by address. It is behind Team only.\nservices:\n  adminer:\n    image: adminer:5.5.1\n    expose: [\"8080\"]\n    mem_limit: 256m\n"
+    },
+    {
+      "name": "codemagic-patch",
+      "title": "Codemagic Patch",
+      "version": "0.9.0-1",
+      "description": "Over-the-air updates for React Native and Capacitor apps, on your own server and R2 buckets.",
+      "tags": [
+        "mobile",
+        "updates"
+      ],
+      "upstream": "https://patch.codemagic.io/docs/",
+      "appName": "codemagic-patch",
+      "notes": "Before you install: Codemagic publishes no server image, so build one from the release tag into a private registry (Caravana's deploy/examples/codemagic-patch/RUNBOOK.md has a workflow for it) and add the registry's login in Settings, Registries. Make two R2 buckets (public one with the files domain {{files_domain}} as its custom domain, and a private one), an R2 API token for both, and a GitHub OAuth app whose homepage is https://{{domain}}. Then sign in at https://{{domain}} with the admin email. Both addresses are written into your apps' builds, so choose them once. Postgres is backed up every day at 03:00 UTC, keeping 14.",
+      "lab": false,
+      "inputs": [
+        {
+          "name": "image",
+          "label": "Server image",
+          "type": "text",
+          "help": "The image you built, with its version tag (not latest).",
+          "pattern": "[a-z0-9][a-z0-9._/:-]{2,200}:[A-Za-z0-9._-]{1,128}",
+          "example": "ghcr.io/example/codemagic-patch-server:0.9.0"
+        },
+        {
+          "name": "domain",
+          "label": "Server domain",
+          "type": "domain",
+          "help": "The API and dashboard. Its DNS must point at this server.",
+          "example": "patch.example.com"
+        },
+        {
+          "name": "files_domain",
+          "label": "Downloads domain",
+          "type": "domain",
+          "help": "The custom domain of the public R2 bucket, where apps download updates.",
+          "example": "patch-files.example.com"
+        },
+        {
+          "name": "bucket",
+          "label": "Public bucket",
+          "type": "text",
+          "help": "The R2 bucket behind the downloads domain.",
+          "default": "patch-public",
+          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
+        },
+        {
+          "name": "internal_bucket",
+          "label": "Private bucket",
+          "type": "text",
+          "help": "The R2 bucket for the server's own files. It must never be public.",
+          "default": "patch-internal",
+          "pattern": "[a-z0-9][a-z0-9-]{2,62}"
+        },
+        {
+          "name": "r2_account_id",
+          "label": "R2 account ID",
+          "type": "text",
+          "help": "The 32 characters in your R2 S3 address: https://\u003cID\u003e.r2.cloudflarestorage.com",
+          "pattern": "[a-f0-9]{32}",
+          "example": "0123456789abcdef0123456789abcdef"
+        },
+        {
+          "name": "oauth_client_id",
+          "label": "GitHub OAuth client ID",
+          "type": "text",
+          "help": "From the GitHub OAuth app the dashboard signs in with.",
+          "pattern": "[A-Za-z0-9._-]{8,64}",
+          "example": "Iv1.0123456789abcdef"
+        },
+        {
+          "name": "admin_email",
+          "label": "Admin email",
+          "type": "email",
+          "help": "The first admin of the dashboard.",
+          "example": "you@example.com"
+        },
+        {
+          "name": "oauth_client_secret",
+          "label": "GitHub OAuth client secret",
+          "type": "secret",
+          "help": "From the same OAuth app.",
+          "example": "example-oauth-client-secret"
+        },
+        {
+          "name": "s3_access_key_id",
+          "label": "R2 access key ID",
+          "type": "secret",
+          "help": "From the R2 API token (Object Read \u0026 Write on both buckets).",
+          "example": "example-access-key-id"
+        },
+        {
+          "name": "s3_secret_access_key",
+          "label": "R2 secret access key",
+          "type": "secret",
+          "help": "From the same R2 API token.",
+          "example": "example-secret-access-key"
+        }
+      ],
+      "generated": [
+        {
+          "name": "db_password",
+          "length": 32,
+          "alphabet": "alnum"
+        },
+        {
+          "name": "worker_shared_secret",
+          "length": 64,
+          "alphabet": "hex"
+        },
+        {
+          "name": "oauth_cli_auth_secret",
+          "length": 64,
+          "alphabet": "hex"
+        }
+      ],
+      "services": {
+        "postgres": {
+          "secrets": [
+            {
+              "name": "POSTGRES_PASSWORD",
+              "value": "{{db_password}}"
+            }
+          ],
+          "backup": {
+            "engine": "postgres",
+            "keep": 14
+          }
+        },
+        "server": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 3000
+            }
+          ],
+          "health": {
+            "path": "/health/ready"
+          },
+          "secrets": [
+            {
+              "name": "DATABASE_URL",
+              "value": "postgres://patch:{{db_password}}@postgres:5432/patch"
+            },
+            {
+              "name": "WORKER_SHARED_SECRET",
+              "value": "{{worker_shared_secret}}"
+            },
+            {
+              "name": "OAUTH_CLI_AUTH_SECRET",
+              "value": "{{oauth_cli_auth_secret}}"
+            },
+            {
+              "name": "GITHUB_OAUTH_CLIENT_SECRET",
+              "value": "{{oauth_client_secret}}"
+            },
+            {
+              "name": "S3_ACCESS_KEY_ID",
+              "value": "{{s3_access_key_id}}"
+            },
+            {
+              "name": "S3_SECRET_ACCESS_KEY",
+              "value": "{{s3_secret_access_key}}"
+            }
+          ]
+        }
+      },
+      "compose": "# Codemagic Patch (https://patch.codemagic.io/docs/): over-the-air updates for React Native and\n# Capacitor apps. It is the upstream self-host stack without Caddy and Silo: Traefik serves the\n# API and dashboard, and apps download updates from two Cloudflare R2 buckets (one public, behind\n# its own domain, and one private for the server's own files). Two services: the Patch server, and\n# Postgres on a volume. Upstream publishes no server image: build yours and give its address (the\n# notes say how). No secret is in this file.\nservices:\n  server:\n    image: \"{{image}}\"\n    expose: [\"3000\"]\n    mem_reservation: 512m\n    mem_limit: 1024m\n    environment:\n      MODE: all # API and release worker in one process\n      HOST: 0.0.0.0\n      PORT: \"3000\"\n      RUN_MIGRATIONS: \"true\"\n      LOGGER: \"true\"\n      SERVER_URL: \"https://{{domain}}\"\n      PUBLIC_BASE_URL: \"https://{{files_domain}}\"\n      STORAGE_ADAPTER: s3\n      S3_BUCKET: \"{{bucket}}\"\n      S3_INTERNAL_BUCKET: \"{{internal_bucket}}\"\n      S3_REGION: auto\n      S3_ENDPOINT: \"https://{{r2_account_id}}.r2.cloudflarestorage.com\"\n      S3_FORCE_PATH_STYLE: \"true\"\n      DELIVERY_ADAPTER: base-url\n      GITHUB_OAUTH_CLIENT_ID: \"{{oauth_client_id}}\"\n      INITIAL_ADMIN_EMAILS: \"{{admin_email}}\"\n      REGISTRATION_MODE: invite_only\n      SERVER_TELEMETRY: \"false\"\n      SERVER_UPDATE_CHECK: \"true\"\n\n  postgres:\n    image: postgres:16\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: patch\n      POSTGRES_DB: patch\n    volumes:\n      - db:/var/lib/postgresql/data\n\nvolumes:\n  db: {}\n"
+    },
+    {
+      "name": "hollo",
+      "title": "Hollo",
+      "version": "0.9.25-1",
+      "description": "A single-user fediverse server: your own account on Mastodon's network.",
+      "tags": [
+        "fediverse",
+        "social"
+      ],
+      "upstream": "https://github.com/fedify-dev/hollo",
+      "appName": "hollo",
+      "notes": "Open https://{{domain}}/setup first, to create your account (the first visit is the owner's). Your handle will be @you@{{domain}}; it can't change after you federate. Hollo may restart once or twice while Postgres starts: that is normal. Postgres is backed up every day at 03:00 UTC, keeping 14.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server. It becomes part of your handle.",
+          "example": "social.example.com"
+        }
+      ],
+      "generated": [
+        {
+          "name": "db_password",
+          "length": 32,
+          "alphabet": "alnum"
+        },
+        {
+          "name": "secret_key",
+          "length": 64,
+          "alphabet": "hex"
+        }
+      ],
+      "services": {
+        "hollo": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 3000
+            }
+          ],
+          "health": {
+            "path": "/nodeinfo/2.1"
+          },
+          "secrets": [
+            {
+              "name": "SECRET_KEY",
+              "value": "{{secret_key}}"
+            },
+            {
+              "name": "DATABASE_URL",
+              "value": "postgres://hollo:{{db_password}}@postgres:5432/hollo"
+            }
+          ]
+        },
+        "postgres": {
+          "secrets": [
+            {
+              "name": "POSTGRES_PASSWORD",
+              "value": "{{db_password}}"
+            }
+          ],
+          "backup": {
+            "engine": "postgres",
+            "keep": 14
+          }
+        }
+      },
+      "compose": "# Hollo (https://docs.hollo.social): a single-user fediverse server. Two services: Hollo, with its\n# media on a volume (DRIVE_DISK=fs), and Postgres on a volume. The database password is shared by\n# both through the services' secrets (see template.json); no secret is in this file.\nservices:\n  hollo:\n    image: ghcr.io/fedify-dev/hollo:0.9.25\n    expose: [\"3000\"]\n    mem_limit: 768m\n    environment:\n      BEHIND_PROXY: \"true\" # Traefik terminates HTTPS in front of it\n      LOG_LEVEL: info\n      DRIVE_DISK: fs\n      FS_STORAGE_PATH: /var/lib/hollo\n      STORAGE_URL_BASE: \"https://{{domain}}/assets\"\n    volumes:\n      - media:/var/lib/hollo\n\n  postgres:\n    image: postgres:17\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: hollo\n      POSTGRES_DB: hollo\n    volumes:\n      - db:/var/lib/postgresql/data\n\nvolumes:\n  media: {}\n  db: {}\n"
+    },
+    {
+      "name": "postgres",
+      "title": "PostgreSQL",
+      "version": "17-1",
+      "description": "A PostgreSQL 17 database on a volume, backed up daily, with Adminer to look into it.",
+      "tags": [
+        "database",
+        "backups"
+      ],
+      "upstream": "https://www.postgresql.org/",
+      "appName": "postgres",
+      "notes": "Adminer is at https://{{domain}}, behind Team only: its user name is team, and its password is shown once after Create. To log into the database from Adminer choose System PostgreSQL, Server postgres, Username app, Database app, and the password you typed. Other apps can't reach this database by name: services find each other only inside one app. To use it from your own services, add them to this app's Compose file (Configure, Compose). Backups run every day at 03:00 UTC.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Adminer domain",
+          "type": "domain",
+          "help": "Where Adminer is served. Its DNS must point at this server.",
+          "example": "db.example.com"
+        },
+        {
+          "name": "db_password",
+          "label": "Database password",
+          "type": "secret",
+          "help": "The password of the app user. Keep a note of it: Caravana never shows it again.",
+          "example": "example-password-123"
+        }
+      ],
+      "services": {
+        "adminer": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 8080,
+              "teamOnly": true
+            }
+          ],
+          "health": {
+            "path": "/"
+          }
+        },
+        "postgres": {
+          "secrets": [
+            {
+              "name": "POSTGRES_PASSWORD",
+              "value": "{{db_password}}"
+            }
+          ],
+          "backup": {
+            "engine": "postgres"
+          }
+        }
+      },
+      "compose": "# A PostgreSQL database with Adminer, a web page to look into it. Postgres has no domain: other\n# services of this app reach it as \"postgres:5432\". Adminer is the only public address, and it\n# is behind Team only (a user name and password Caravana makes). The password of the database is\n# typed at install, so its owner knows it; it isn't in this file.\nservices:\n  postgres:\n    image: postgres:17\n    expose: [\"5432\"]\n    mem_limit: 512m\n    environment:\n      POSTGRES_USER: app\n      POSTGRES_DB: app\n    volumes:\n      - data:/var/lib/postgresql/data\n\n  adminer:\n    image: adminer:5.5.1\n    expose: [\"8080\"]\n    mem_limit: 256m\n    environment:\n      ADMINER_DEFAULT_SERVER: postgres\n\nvolumes:\n  data: {}\n"
+    },
+    {
+      "name": "umbral",
+      "title": "Umbral",
+      "version": "0.10.0-1",
+      "description": "An OpenID Connect provider that signs people in with social accounts or passkeys, no passwords.",
+      "tags": [
+        "auth",
+        "identity"
+      ],
+      "upstream": "https://github.com/Cosmic-Chimps/umbral",
+      "appName": "umbral",
+      "notes": "The domain is part of every callback address you register with a sign-in provider, so choose it once. On its first start Umbral writes a one-time claim code to its log (look for the box that says \"not configured yet\"): open the app's Logs, then https://{{domain}} and claim the instance. Everything it keeps is on one volume, which Caravana backs up every day at 03:00 UTC (the volume is the key ring: without it every secret is lost).",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server. It must be the exact address people use.",
+          "example": "auth.example.com"
+        }
+      ],
+      "services": {
+        "umbral": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 8080
+            }
+          ],
+          "health": {
+            "path": "/healthz"
+          },
+          "backup": {
+            "engine": "volume"
+          }
+        }
+      },
+      "compose": "# Umbral (https://github.com/Cosmic-Chimps/umbral): a self-hosted OpenID Connect provider that\n# signs people in without passwords. One container with an embedded SQLite database. Everything it\n# keeps (the database, signing keys, the Data Protection key ring) is in /data, on the volume.\n# 10.99.0.1 is Traefik's address on a Caravana host: Umbral believes X-Forwarded-* from it only.\nservices:\n  umbral:\n    image: ghcr.io/cosmic-chimps/umbral:0.10.0\n    expose: [\"8080\"]\n    environment:\n      UMBRAL__PUBLIC_ORIGIN: \"https://{{domain}}\"\n      UMBRAL__TRUSTED_PROXIES: 10.99.0.1\n    volumes:\n      - umbral-data:/data\n\nvolumes:\n  umbral-data: {}\n"
+    },
+    {
+      "name": "uptime-kuma",
+      "title": "Uptime Kuma",
+      "version": "2.5.11-1",
+      "description": "A status monitor: watch your sites and services, and publish a status page.",
+      "tags": [
+        "monitoring",
+        "status page"
+      ],
+      "upstream": "https://github.com/louislam/uptime-kuma",
+      "appName": "uptime-kuma",
+      "notes": "Open https://{{domain}} and create the admin account: the first visitor becomes the admin, so do it now. Everything it keeps is on one volume, which Caravana backs up every day at 03:00 UTC.",
+      "inputs": [
+        {
+          "name": "domain",
+          "label": "Domain",
+          "type": "domain",
+          "help": "Its DNS must point at this server.",
+          "example": "status.example.com"
+        }
+      ],
+      "services": {
+        "uptime-kuma": {
+          "domains": [
+            {
+              "host": "{{domain}}",
+              "port": 3001
+            }
+          ],
+          "health": {
+            "path": "/robots.txt"
+          },
+          "backup": {
+            "engine": "volume"
+          }
+        }
+      },
+      "compose": "# Uptime Kuma (https://github.com/louislam/uptime-kuma): a self-hosted status monitor and status\n# page. One service; everything it keeps (its SQLite database, settings, monitor history) is in\n# /app/data, on the volume. UPTIME_KUMA_DB_TYPE=sqlite skips the first-run database question.\nservices:\n  uptime-kuma:\n    image: louislam/uptime-kuma:2.5.11\n    expose: [\"3001\"]\n    mem_limit: 768m\n    environment:\n      UPTIME_KUMA_DB_TYPE: sqlite\n    volumes:\n      - data:/app/data\n\nvolumes:\n  data: {}\n"
+    }
+  ]
+}

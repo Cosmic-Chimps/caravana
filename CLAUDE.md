@@ -1186,6 +1186,63 @@ nothing is fetched). The contracts are `contracts/api.md` and `contracts/console
   `http://localhost:7091`. A credential ID is not secret: it is in the options answers (`allowCredentials`,
   `excludeCredentials`), never in a page or a log line.
 
+Feature 035 (`specs/035-app-templates`, from a CodeAlta task) is implemented on the worktree branch
+`alta/fresh-kestrel-ng5c`: New app › From a template installs a known app from a few answers. A template is
+a manifest plus a Compose file with `{{placeholders}}`; installing it is a normal Compose deploy of a new app.
+- `internal/templates` is pure (no network, no disk but an `fs.FS`, randomness only from an `io.Reader`): the
+  format (`ParseCatalog` names template and field for every rule of `contracts/template-format.md`), the inputs
+  (`domain`, `email`, `text` with a pattern, `secret`; every plain value must fit the Compose-safe set
+  `^[A-Za-z0-9._@+:/=-]{1,253}$`), generated secrets (`Generate`, `crypto/rand` in production, rejection
+  sampling), `Render` (plain values in the Compose text, any value in the overlay's string leaves, a secret-valued
+  name only in a service's `secrets[].value`, so no secret is ever in the file Caravana keeps and shows),
+  `Check` (the rendered file through `compose.Translate`, **any warning is an error**, then `nomadjob.Check` and
+  `Translate`; no floating tag, no `POSTGRES_PASSWORD` in plain env), `ReadSource`/`Sums` for the catalog
+  repository's layout, and the embedded catalog (`internal/templates/catalog/`, made by `caravana template
+  bundle`; a test checks its sum and runs `Check` on every template).
+- The catalog is its own repository, `Cosmic-Chimps/caravana-templates` (cloned beside this one): sources in
+  `templates/<name>/`, CI running `caravana template check .`, a release workflow that uploads `catalog.json`
+  and `SHA256SUMS`, and `lab/install-all.sh`. Six templates: `uptime-kuma`, `hollo`, `postgres` (its password is a
+  secret input: a generated one is never shown, so nobody could log into Adminer), `adminer`, `umbral`,
+  `codemagic-patch` (`lab: false`: it needs a private image). Health paths were found by running the images
+  (Uptime Kuma's `/` redirects, so `/robots.txt`; Hollo `/nodeinfo/2.1`). No template sets `requires`.
+- `Service.InstallTemplate` checks the place and the inputs, makes the generated secrets, renders and calls
+  `DeployComposeIfResult` with `Condition{IfNew: true}`, then records the template and its version beside the
+  app (`apps.template_name/_version`, migration 0028, not in the revision), also when the deploy fails after the
+  app was saved. A refusal at a domain host that came from an input is renamed to `inputs.<name>`.
+  `TemplateInstallOptions{WithoutBackups}` leaves the template's backup policies out and adds one warning per
+  service on `services.<svc>.backup`: the owner's explicit choice on an installation with no backup
+  destination, since a backup without one is refused as for any deploy.
+- The catalog in use is the stored verified bundle when newer than the built-in one, else the built-in one.
+  A check (daily with jitter, first a minute after start, and Check now, not within 10 minutes of the last)
+  reuses the release check's `get`, `checkFailure` and too-soon/disabled refusals: `SHA256SUMS` first,
+  `catalog.json` only when its sum changed, verified, parsed and run through `CheckCatalog`. The request has
+  the User-Agent only. Off (`template_catalog.checking`) means no request. `CARAVANA_TEMPLATES_URL` is for tests
+  and the lab.
+- API 0.37.0 (033 took 0.36.0): `listTemplates`, `getTemplate`, `getTemplateLogo`, `previewTemplate`,
+  `installTemplate`, `checkTemplates`, `putTemplateSettings`, `AppRecord.template`/`AppSummary.template`, codes
+  `template_not_found` and `template_unavailable`; a field error is 400 as everywhere. Deploy tokens are
+  denied by the default deny. MCP: `list_templates` and `get_template` (no install tool: it would carry secret
+  answers through an agent). The API's JSON encoder writes a zero number under `omitempty`, so
+  `app.Backup.Keep` and compose's `Port`, `Interval` and `Timeout` are `omitzero`.
+- Console (`internal/ui/templatespage.go`, `templates/template.html`, the grid in `newapp.html`): the fourth
+  tab (links and a GET form, no script), tags, the footer with Check now and the switch, the logo route (served
+  as an image with a CSP that runs nothing), the page of one template (what it makes, the passwords, the
+  notes, the inputs, Preview, Create; when there is a backup and no destination a notice and the checkbox "Install
+  without backups for now"), the installed notice and notes on the Deployments tab (the plain answers travel in
+  `?v_<input>=`, and each is checked again before use; never a secret), and Configure's "Template · title
+  version". A typed secret input is read from the post, handed to the service and dropped; the form is drawn
+  without it. Sentinel tests in `service`, `api` and `ui` search every answer, page, address, kept file, Nomad
+  job, log and the SQLite file for a generated secret and a typed one.
+- Lab: `TestConsoleLab` has a step `console-templates` (Uptime Kuma with only a domain, healthy, volume
+  backup policy on, `template` on the record, answers through Traefik, the same domain refused at its input) and
+  the gate a step `templates` (Hollo through the API: both services healthy, one password in two services'
+  Nomad Variables and in no answer, Back up now of Postgres succeeds). Both passed in the lab on 2026-11-12
+  (74 s each, run alone). A stale Nomad Variable `caravana/registries/ghcr~io` left by an earlier review made
+  every `ghcr.io` pull in the lab 403 (the pull reads the Variable whether or not SQLite has the entry); it was
+  deleted. The lab VM has 2 GiB.
+- Not in 035: templates from other catalogs or with signatures, a template editor, logos (the console draws a
+  monogram tile), the Continuwuity template (waits for tasks 07 and 09), installing from MCP.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

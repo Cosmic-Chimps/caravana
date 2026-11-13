@@ -32,10 +32,17 @@ func (s *Service) DeployComposeIf(ctx context.Context, appID string, req compose
 // password of each domain the deploy turned Team only, the one time it is
 // shown (the API's deployCompose).
 func (s *Service) DeployComposeIfResult(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger) (DeployResult, error) {
+	return s.deployComposeWarned(ctx, appID, req, cond, trigger, nil)
+}
+
+// deployComposeWarned is DeployComposeIfResult with warnings of the caller's own
+// added to the file's: what a template install tells about a choice the owner made.
+func (s *Service) deployComposeWarned(ctx context.Context, appID string, req compose.Request, cond Condition, trigger app.Trigger, extra []app.Warning) (DeployResult, error) {
 	a, warnings, err := compose.Translate(appID, req)
 	if err != nil {
 		return DeployResult{}, err
 	}
+	warnings = append(warnings, extra...)
 	file := req.WithoutSecretValues()
 	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
 	return res, inFile(err, a)

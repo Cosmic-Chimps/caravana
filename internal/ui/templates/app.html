@@ -59,6 +59,8 @@
 <section class="cv-main">{{template "app-header" .}}</section>
 {{else}}
 {{with .Created}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Installed}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .Title}}</span></div>
+{{with .Notes}}<div class="cv-main"><div class="cv-panel p-4"><p class="cv-tplnotes">{{.}}</p></div></div>{{end}}{{end}}
 {{with .Notice}}<div role="status" class="cv-main cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Refusal}}<div role="alert" class="cv-main cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 <section class="cv-main" aria-label="App" hx-get="{{.HeaderHref}}" hx-trigger="sse:app, sse:deleted, sse:sync" hx-swap="innerHTML">{{template "app-header" .}}</section>
@@ -628,6 +630,7 @@
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>
 {{else}}{{if .Stopped}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}{{end}}
 {{with .Copied}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .TemplateFact}}<p class="cv-note cv-tplfact">{{template "sentence" .}}</p>{{end}}
 {{with .ComposeForm}}
 <section aria-labelledby="compose-edit-title" class="flex flex-col gap-2">
   <h2 id="compose-edit-title" class="cv-label">Edit</h2>

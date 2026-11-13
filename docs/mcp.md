@@ -73,7 +73,9 @@ still deploy that app). It can see:
   for one to end;
 - the copies, with their CPU and memory, and an app's recent output as it came;
 - volumes, backups and recent actions;
-- the needs-you list, a promotion preview, the exported jobspec and the kept Compose file.
+- the needs-you list, a promotion preview, the exported jobspec and the kept Compose file;
+- the app templates Caravana can install, and what one asks for (never a way to install one: that
+  takes secret answers, so you do it in the console or with the API).
 
 To let it act, add `--allow-actions` after `caravana mcp`. It can then:
 - redeploy, or deploy a new image to one service (the rest of the app is kept);

@@ -190,6 +190,11 @@ func (s *server) routeTable() []route {
 		{"POST", "/projects/{project}/environments/{environment}/delete", s.protected(s.requireSession(s.deleteEnvironment))},
 		{"POST", "/apps", s.protected(s.requireSession(s.createApp))},
 		{"POST", "/apps/new/github", s.protected(s.requireSession(s.createFromGitHub))},
+		{"GET", "/apps/new/template/{name}", s.requireSession(s.showTemplate)},
+		{"POST", "/apps/new/template/{name}", s.protected(s.requireSession(s.createFromTemplate))},
+		{"POST", "/templates/check", s.protected(s.requireSession(s.checkTemplates))},
+		{"POST", "/templates/settings", s.protected(s.requireSession(s.saveTemplateSettings))},
+		{"GET", "/templates/{name}/logo.svg", s.requireSession(s.showTemplateLogo)},
 		{"POST", "/apps/new/compose/preview", s.protected(s.requireSession(s.previewNewCompose))},
 		{"POST", "/apps/new/compose", s.protected(s.requireSession(s.createNewCompose))},
 		{"GET", "/apps/{id}", s.requireSession(s.showApp)},
@@ -355,7 +360,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

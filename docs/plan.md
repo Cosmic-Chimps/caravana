@@ -268,7 +268,7 @@ rolls back.
 
 ## Phase 4: Platform
 
-More build sources (buildpacks, monorepos), app templates, teams and roles, managed Cloud tier
+More build sources (buildpacks, monorepos), more app templates (the first catalog is feature 035, in 2.6), teams and roles, managed Cloud tier
 (needs legal review of Nomad's BSL first). Git sources with a Dockerfile moved to Phase 2.5 (020).
 Drawn as:
 
@@ -544,7 +544,7 @@ names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
 | 3 | Scheduled tasks | A cron plus a command run in the service's container, with a run history | Nomad periodic batch jobs, which backups already are. The design feedback's "workload kinds: web, worker, scheduled" (7.1) and a Runs tab | `SchedulesScreen` | 2.6 (022) |
 | 4 | Domain extras | Path, strip path, redirects, basic auth, custom middlewares, "Validate DNS", DNS providers that create records | Basic auth and a www or apex redirect are Traefik tags. A DNS check (the A record points at this host) and the certificate state are reads. Path and header routing stays in "Routing by path and header" above | `DomainsScreen` | 2.6 (023) |
 | 5 | Monitoring with history | CPU, memory, disk, block and network I/O per app and per server, with a time range | Caravana reads CPU and memory only while the Running tab is open. A small ring buffer in SQLite from Nomad's node and allocation stats, host disk and memory on the Apps page ("room for about 4 more apps"), and "disk nearly full" on the needs-you list | `MonitoringScreen`, `CapacityScreen` | 2.6 (025) |
-| 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.6 (New app, no screen) |
+| 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.6 (New app, no screen). **Built: feature 035** (`specs/035-app-templates`, 2026-11-12): New app › From a template, a catalog in its own repository (`Cosmic-Chimps/caravana-templates`) embedded in each release and refreshed once a day, six templates (Uptime Kuma, Hollo, PostgreSQL with Adminer, Adminer, Umbral, Codemagic Patch), API 0.36.0, MCP read tools. |
 | 7 | More notification kinds | Email, Telegram, Teams, Gotify, Resend, Lark | Telegram is one HTTPS call with a bot token; email needs SMTP settings. Both are 018 channels | `SettingsScreen` | 2.6 (Notifications) |
 | 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | Run a command: done in 2.6 (020.5). The terminal into a copy: done in 2.6 (020.6). A shell into a server: 3 |
 | 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines for MySQL, MariaDB, Mongo and Redis ("Backups for more than Postgres" above; sqlite is done in 029), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 3 (TCP ports) |

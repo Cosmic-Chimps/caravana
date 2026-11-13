@@ -158,7 +158,10 @@ func testMigrations(t *testing.T) fs.FS {
 }
 
 // embeddedVersions returns the versions of the migrations compiled into the
-// binary, in order: 1, 2, … with no gaps.
+// binary, in order. Versions only have to be unique and increasing: feature
+// branches number their migrations side by side, so a branch may be missing the
+// number another unmerged branch took (0026 and 0027 while 035 has 0028); the
+// runner applies every version it hasn't seen.
 func embeddedVersions(t *testing.T) []int {
 	t.Helper()
 	known, err := readMigrations(testMigrations(t))
@@ -166,9 +169,9 @@ func embeddedVersions(t *testing.T) []int {
 		t.Fatalf("read migrations: %v", err)
 	}
 	var out []int
-	for i, m := range known {
-		if m.version != i+1 {
-			t.Fatalf("migration %s has version %d, want %d (no gaps)", m.file, m.version, i+1)
+	for _, m := range known {
+		if len(out) > 0 && m.version <= out[len(out)-1] {
+			t.Fatalf("migration %s has version %d, after %d (versions must be unique and increasing)", m.file, m.version, out[len(out)-1])
 		}
 		out = append(out, m.version)
 	}
@@ -232,7 +235,8 @@ func TestOpenShared(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		last := embeddedVersions(t)[len(embeddedVersions(t))-1]
+		all := embeddedVersions(t)
+		last, previous := all[len(all)-1], all[len(all)-2] // not last-1: there may be a gap
 		if _, err := s.db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version = ?", last); err != nil {
 			t.Fatal(err)
 		}
@@ -242,9 +246,9 @@ func TestOpenShared(t *testing.T) {
 		if !errors.Is(err, ErrSchemaMismatch) {
 			t.Fatalf("OpenShared = %v, want ErrSchemaMismatch", err)
 		}
-		want := fmt.Sprintf("migration %d", last-1)
+		want := fmt.Sprintf("migration %d", previous)
 		if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), fmt.Sprintf("%d", last)) {
-			t.Errorf("error %q should name both versions (%d and %d)", err, last-1, last)
+			t.Errorf("error %q should name both versions (%d and %d)", err, previous, last)
 		}
 	})
 

@@ -33,6 +33,9 @@ type appRecordJSON struct {
 	// StoppedAt is when the app was stopped (feature 020.5); absent while it
 	// isn't. A stopped app refuses every deploy.
 	StoppedAt *time.Time `json:"stoppedAt,omitempty"`
+	// Template is the template the app was installed from (feature 035); absent
+	// when it wasn't.
+	Template *templateRefJSON `json:"template,omitempty"`
 }
 
 // getApp answers GET /v1/apps/{id}: the app as it was last sent, with its
@@ -50,7 +53,7 @@ func toAppRecordJSON(rec store.AppRecord) appRecordJSON {
 	return appRecordJSON{App: rec.App, CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt, Revision: rec.Revision,
 		ComposeKept: rec.Compose != nil, Defined: rec.App.Defined(),
 		Project: rec.Place.Project, Environment: rec.Place.Environment, AppName: rec.Place.Name,
-		StoppedAt: rec.StoppedAt}
+		StoppedAt: rec.StoppedAt, Template: templateRefOf(rec.Template)}
 }
 
 // writeAppRecord answers 200 with a stored app and its revision as the ETag.
@@ -109,17 +112,18 @@ func toAppStatusJSON(st service.AppStatus) appStatusJSON {
 
 // appSummaryJSON is an app with its status (schema AppSummary).
 type appSummaryJSON struct {
-	App            app.App         `json:"app"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-	ComposeKept    bool            `json:"composeKept"`
-	Defined        bool            `json:"defined"`
-	Project        string          `json:"project"`
-	Environment    string          `json:"environment"`
-	AppName        string          `json:"appName"`
-	StoppedAt      *time.Time      `json:"stoppedAt,omitempty"`
-	Status         appStatusJSON   `json:"status"`
-	LastDeployment *deploymentJSON `json:"lastDeployment,omitempty"`
+	App            app.App          `json:"app"`
+	CreatedAt      time.Time        `json:"createdAt"`
+	UpdatedAt      time.Time        `json:"updatedAt"`
+	ComposeKept    bool             `json:"composeKept"`
+	Defined        bool             `json:"defined"`
+	Project        string           `json:"project"`
+	Environment    string           `json:"environment"`
+	AppName        string           `json:"appName"`
+	StoppedAt      *time.Time       `json:"stoppedAt,omitempty"`
+	Template       *templateRefJSON `json:"template,omitempty"`
+	Status         appStatusJSON    `json:"status"`
+	LastDeployment *deploymentJSON  `json:"lastDeployment,omitempty"`
 }
 
 func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
@@ -133,6 +137,7 @@ func toAppSummaryJSON(sum service.AppSummary) appSummaryJSON {
 		Environment: sum.Place.Environment,
 		AppName:     sum.Place.Name,
 		StoppedAt:   sum.StoppedAt,
+		Template:    templateRefOf(sum.Template),
 		Status:      toAppStatusJSON(sum.Status),
 	}
 	if sum.LastDeployment != nil {

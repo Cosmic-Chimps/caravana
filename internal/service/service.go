@@ -6,8 +6,10 @@ package service
 
 import (
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -121,7 +123,12 @@ type Service struct {
 	releaseClient      *http.Client
 	pro                ProRunner // reads package names; nil means there is no pro command
 	updates            updatesState
-	updater            updaterState // update runs and the root updater's files (feature 030), see updaterun.go
+	// Templates (feature 035), see templates.go.
+	templatesURL string        // where the catalog check reads SHA256SUMS and catalog.json; tests give a fake server
+	templatesGap time.Duration // between two catalog checks
+	templateRand io.Reader     // where generated secrets come from; crypto/rand, a test gives a sentinel
+	templates    templatesState
+	updater      updaterState // update runs and the root updater's files (feature 030), see updaterun.go
 
 	// serverMu serializes the servers' calls that read the rows and then change them: a join, a sync,
 	// a removal and the choice of Nomad servers (feature 031), see servers.go.
@@ -204,6 +211,10 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		releaseRawURL:      defaultReleaseRawURL,
 		releaseGap:         defaultReleaseGap,
 		releaseClient:      newReleaseClient(),
+
+		templatesURL: DefaultTemplatesURL,
+		templatesGap: defaultReleaseGap,
+		templateRand: crand.Reader,
 
 		updater: updaterState{gap: defaultUpdateWatchGap},
 	}
@@ -381,6 +392,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runReleaseCheck(ctx, releaseGap)
+	}()
+	// The template catalog check asks the catalog repository about once a day (and
+	// never, with the owner's setting off); it starts no watchers.
+	templateGap := s.templatesGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runTemplateCheck(ctx, templateGap)
 	}()
 	// The updater's run is followed across Caravana's own restart: the first pass picks up a run the
 	// last process left, and it starts no watchers either.

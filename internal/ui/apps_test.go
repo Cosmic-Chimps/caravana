@@ -37,6 +37,7 @@ type consoleEnv struct {
 	Reg    *registrytest.Server
 	Server *server
 	Cookie *http.Cookie
+	Dir    string // the store's data directory
 }
 
 // newConsoleEnv serves the pages with a signed-in admin.
@@ -50,7 +51,8 @@ func newConsoleEnv(t *testing.T) *consoleEnv {
 func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.Nomad)) *consoleEnv {
 	t.Helper()
 	ctx := context.Background()
-	st, err := store.Open(ctx, t.TempDir())
+	dir := t.TempDir()
+	st, err := store.Open(ctx, dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -99,7 +101,7 @@ func newConsoleEnvWith(t *testing.T, setup func(*service.Service, *deploytest.No
 	t.Cleanup(srv.Close)
 	uie.URL = srv.URL
 
-	return &consoleEnv{uiEnv: uie, Svc: svc, Nomad: nomad, Reg: reg, Server: s, Cookie: uie.signIn(t, nil)}
+	return &consoleEnv{uiEnv: uie, Svc: svc, Nomad: nomad, Reg: reg, Server: s, Cookie: uie.signIn(t, nil), Dir: dir}
 }
 
 // get fetches a page as the signed-in admin.

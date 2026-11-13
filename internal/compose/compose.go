@@ -83,7 +83,7 @@ type Overlay struct {
 type Domain struct {
 	Host string `json:"host"`
 	// Port is the container port. Zero is allowed when the service has one.
-	Port int `json:"port,omitempty"`
+	Port int `json:"port,omitzero"`
 	// Path, when set, limits the domain to URLs under that prefix ("/api").
 	Path string `json:"path,omitempty"`
 	// WWWRedirect makes Host the target of its pair (www.<h> or <h>), which
@@ -98,9 +98,9 @@ type Health struct {
 	Path string `json:"path,omitempty"`
 	// Port is the container port to check. Zero means the domains' port, or
 	// the service's only port.
-	Port     int           `json:"port,omitempty"`
-	Interval time.Duration `json:"interval,omitempty"`
-	Timeout  time.Duration `json:"timeout,omitempty"`
+	Port     int           `json:"port,omitzero"`
+	Interval time.Duration `json:"interval,omitzero"`
+	Timeout  time.Duration `json:"timeout,omitzero"`
 }
 
 // quiet sends compose-go's log lines (it logs warnings with logrus) nowhere,
