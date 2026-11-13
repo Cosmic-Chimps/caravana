@@ -1,9 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="caravana">
   <rect width="16" height="16" rx="3.5" fill="#0d0e11"/>
+  <!-- 16-px grid: pieces 5, gaps 1 (5/φ³ ≈ 1.18), square 5·φ ≈ 8 below the top -->
   <g fill="#eef0f3">
-    <circle cx="5" cy="4" r="2.5"/>
-    <path d="M8 6.5V1.5A5 5 0 0 1 13 6.5Z"/>
-    <path d="M4.75 7.5L7.5 10.25L4.75 13L2 10.25Z"/>
-    <rect x="8" y="9.5" width="5" height="5"/>
+    <circle cx="4.5" cy="3.5" r="2.5"/>
+    <path d="M8 6V1A5 5 0 0 1 13 6Z"/>
+    <path d="M4.5 6.5L7 9L4.5 11.5L2 9Z"/>
+    <rect x="8" y="9" width="5" height="5"/>
   </g>
 </svg>

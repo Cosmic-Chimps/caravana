@@ -610,9 +610,12 @@ The mark is four travellers on one path: a disc, a quarter-disc, a diamond and a
 and to the right. It has one ink and no color of its own: it is `currentColor`, set to Readout White
 (fg-1) in the console by `.cv-logo-mark`, and it is never a status color. The brand files are in
 `internal/ui/static/brand/` (`mark.svg`, `lockup.svg`, `favicon.svg`, `favicon.ico`, `apple-touch-icon.png`).
+- **Construction:** the golden ratio φ. A piece is S across, the gaps are S/φ³, and the mark is S·φ² tall.
+  `TestBrandMarkMatchesTheFiles` keeps the inline shapes in step with the files.
 - **Size:** at least 16px tall (the height of the pieces). Below 24px it uses the favicon's geometry, which is
-  hinted to whole pixels; from 24px up, the mark's own. Clear space on every side is 0.4 times the mark's
-  height (one piece): 13px around the 32px mark, 8px around the 20px one.
+  hinted to whole pixels; from 24px up, the mark's own. Clear space on every side is one piece, 1/φ² (about
+  0.38) times the mark's height: 12px around the 32px mark (the sign-in column's 14px gap), 8px around the
+  20px one.
 - **Drawn inline, never as `<img>`:** an SVG inside an `<img>` doesn't inherit `color`, so the mark would
   stop following the theme. `brandMark(height)` (`brand.go`) writes the `<svg>` with `fill="currentColor"`,
   `aria-hidden="true"` and no `style` attribute (the CSP forbids one); the wordmark beside it is its
