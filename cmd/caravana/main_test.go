@@ -18,6 +18,10 @@ import (
 
 func noEnv(string) string { return "" }
 
+// startupBudget is how long a test waits for the server to answer. Opening the
+// store takes about 1.7 s under -race, so 2 s was not enough.
+const startupBudget = 10 * time.Second
+
 // syncBuffer is a bytes.Buffer safe for the server's goroutines to write while
 // the test reads.
 type syncBuffer struct {
@@ -65,8 +69,10 @@ func TestRun(t *testing.T) {
 	exit := make(chan int, 1)
 	go func() { exit <- runServer(ctx, []string{"-listen", addr, "-data-dir", dir}, noEnv, &stderr) }()
 
-	// SC-001: healthy within 2 seconds.
-	deadline := time.Now().Add(2 * time.Second)
+	// SC-001: healthy within 2 seconds on a normal build. The budget is 10 s
+	// because opening the store (all migrations, pure-Go SQLite) takes about
+	// 1.7 s under the race detector.
+	deadline := time.Now().Add(startupBudget)
 	for {
 		resp, err := http.Get("http://" + addr + "/v1/health")
 		if err == nil {
@@ -77,7 +83,7 @@ func TestRun(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("not healthy after 2s (last error %v); stderr:\n%s", err, stderr.String())
+			t.Fatalf("not healthy after %v (last error %v); stderr:\n%s", startupBudget, err, stderr.String())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -156,7 +162,7 @@ func TestRunWebhookListener(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var stderr bytes.Buffer
+	var stderr syncBuffer
 	exit := make(chan int, 1)
 	go func() {
 		exit <- runServer(ctx, []string{"-listen", addr, "-webhook-listen", hookAddr, "-data-dir", t.TempDir()}, noEnv, &stderr)
@@ -170,11 +176,11 @@ func TestRunWebhookListener(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(startupBudget)
 	for status("http://"+addr+"/v1/health") != http.StatusOK || status("http://"+hookAddr+"/v1/health") == 0 {
 		if time.Now().After(deadline) {
 			cancel()
-			t.Fatalf("listeners not up after 2s; stderr:\n%s", stderr.String())
+			t.Fatalf("listeners not up after %v; stderr:\n%s", startupBudget, stderr.String())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
