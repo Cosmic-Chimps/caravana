@@ -46,6 +46,10 @@ type backupJSON struct {
 	// Volumes is one entry per archive, omitted
 	// when empty so that a Postgres backup does not carry the field.
 	Volumes []backupVolumeJSON `json:"volumes,omitempty"`
+	// Pin is the label the backup is pinned under, left out when it isn't
+	// (feature 036).
+	Pin      string     `json:"pin,omitempty"`
+	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
 }
 
 // backupVolumeJSON is one volume's archive in a volume backup (schema
@@ -61,7 +65,8 @@ type backupVolumeJSON struct {
 
 func toBackupJSON(b store.BackupRecord) backupJSON {
 	out := backupJSON{ID: b.ID, Service: b.Service, Engine: engineOrPostgres(b.Engine), Status: b.Status, Trigger: triggerOrTimer(b.Trigger),
-		Bytes: b.Bytes, Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped)}
+		Bytes: b.Bytes, Message: b.Message, StartedAt: b.StartedAt, FinishedAt: b.FinishedAt, StoppedSeconds: seconds(b.Stopped),
+		Pin: b.Pin, PinnedAt: b.PinnedAt}
 	for _, v := range b.Volumes {
 		out.Volumes = append(out.Volumes, backupVolumeJSON{Name: v.Name, Bytes: v.Bytes, SizeBytes: v.SizeKB * 1024})
 	}
@@ -106,11 +111,25 @@ type restoreJSON struct {
 	CreatedAt      time.Time  `json:"createdAt"`
 	FinishedAt     *time.Time `json:"finishedAt,omitempty"`
 	StoppedSeconds *float64   `json:"stoppedSeconds,omitempty"`
+	// Trigger is who started it: owner or schedule. Pin is, for a scheduled
+	// restore, the label it restored from (feature 036).
+	Trigger string `json:"trigger"`
+	Pin     string `json:"pin,omitempty"`
 }
 
 func toRestoreJSON(r store.RestoreRecord) restoreJSON {
 	return restoreJSON{ID: r.ID, Service: r.Service, BackupID: r.BackupID, Engine: engineOrPostgres(r.Engine), Status: r.Status,
-		Message: r.Message, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, StoppedSeconds: seconds(r.Stopped)}
+		Message: r.Message, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, StoppedSeconds: seconds(r.Stopped),
+		Trigger: restoreTriggerOrOwner(r.Trigger), Pin: r.Pin}
+}
+
+// restoreTriggerOrOwner is the trigger of a restore record: the store defaults
+// it when it saves, but a record built by hand may not have one.
+func restoreTriggerOrOwner(trigger string) string {
+	if trigger == "" {
+		return store.RestoreTriggerOwner
+	}
+	return trigger
 }
 
 // getBackupDestination answers GET /v1/backups/destination.
@@ -190,6 +209,32 @@ func (s *server) restoreBackup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeJSON(w, http.StatusAccepted, toRestoreJSON(x))
+	return nil
+}
+
+// pinBackup answers PUT /v1/apps/{id}/backups/{backupId}/pin.
+func (s *server) pinBackup(w http.ResponseWriter, r *http.Request) error {
+	var in struct {
+		Label string `json:"label"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		return err
+	}
+	b, err := s.svc.PinBackup(r.Context(), r.PathValue("id"), r.PathValue("backupId"), in.Label)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, toBackupJSON(b))
+	return nil
+}
+
+// unpinBackup answers DELETE /v1/apps/{id}/backups/{backupId}/pin.
+func (s *server) unpinBackup(w http.ResponseWriter, r *http.Request) error {
+	b, err := s.svc.UnpinBackup(r.Context(), r.PathValue("id"), r.PathValue("backupId"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, toBackupJSON(b))
 	return nil
 }
 

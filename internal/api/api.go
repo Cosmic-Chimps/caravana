@@ -151,6 +151,8 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/apps/{id}/backups", s.listBackups, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups", s.createBackup, false, false},
 		{http.MethodPost, "/v1/apps/{id}/backups/{backupId}/restore", s.restoreBackup, false, false},
+		{http.MethodPut, "/v1/apps/{id}/backups/{backupId}/pin", s.pinBackup, false, false},
+		{http.MethodDelete, "/v1/apps/{id}/backups/{backupId}/pin", s.unpinBackup, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments", s.listDeployments, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}", s.getDeployment, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/compose", s.getDeploymentCompose, false, false},

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.37.0
+  version: 0.39.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -3737,6 +3737,10 @@ paths:
     get:
       operationId: listBackups
       summary: List an app's backups still in the destination, and its recent restores.
+      description: |
+        Pinned backups (`pinBackup`) are listed like any other, with their `pin`. The restores
+        include the ones made on a service's restore schedule (`trigger: schedule`), also the
+        ones refused or skipped.
       tags: [backups]
       responses:
         "200":
@@ -3811,12 +3815,15 @@ paths:
       summary: Load a backup into its running database, or back into its volumes.
       description: |
         For a database, replaces what the service's database holds with the backup
-        (`pg_restore --clean`). Clients connected meanwhile may see errors. For a `volume`
+        (`pg_restore --clean`, in one transaction, so a restore that fails partway leaves the
+        database as it was). Clients connected meanwhile may see errors. For a `volume`
         backup, stops the service, replaces its volumes with the backup's files and starts it
         again; 409 `no_running_copy` when there is no copy to stop. For a `sqlite` backup,
         downloads and checks the backup while the service runs, then stops it only to put
         the file in place, and starts it again; a backup that can't be downloaded or fails its
         check stops nothing. It runs in the background: list the backups to follow the restore. One restore per service at a time.
+        A restore started here is recorded with `trigger: owner`; the service's `backup.restore`
+        schedule starts the same restore with `trigger: schedule`.
       tags: [backups]
       responses:
         "202":
@@ -3825,6 +3832,95 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Restore"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BackupConflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/apps/{id}/backups/{backupId}/pin:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: backupId
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      operationId: pinBackup
+      summary: Pin a backup under a label, so retention never deletes it.
+      description: |
+        Retention of every engine skips a pinned backup (its record and its object in the
+        destination) and counts only the unpinned ones against `keep`. A label is unique per
+        service: pinning it on a backup takes it from the one that had it, and a backup that
+        had another label gets this one instead. A service's `backup.restore` names a label to
+        restore on a schedule.
+
+        Only a succeeded backup still in the destination can be pinned (else 404 `not_found`,
+        and the message says which). 409 `backup_running` while a backup or restore of the
+        service runs, and 409 `app_busy` while a deploy or a volume run holds the app: so that
+        no retention runs with a pin list older than the stored one. For a `postgres`
+        service the list is also written to its backup job's variable; when Nomad refuses it,
+        502 and nothing changed.
+      tags: [backups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [label]
+              properties:
+                label:
+                  type: string
+                  pattern: "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"
+                  examples: [golden]
+      responses:
+        "200":
+          description: The backup, with its `pin` and `pinnedAt`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Backup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BackupConflict"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: unpinBackup
+      summary: Take the label off a pinned backup.
+      description: |
+        The backup is an ordinary backup again, and the next backup's retention may delete it.
+        Unpinning a backup that has no label is a 200 too. A service whose
+        `backup.restore` names the label has each later slot refused until another backup is
+        pinned under it. Refused as `pinBackup` is: 409 `backup_running`, 409 `app_busy`, 502.
+      tags: [backups]
+      responses:
+        "200":
+          description: The backup, without `pin`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Backup"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -5407,7 +5503,34 @@ components:
           type: integer
           minimum: 1
           maximum: 100
-          description: How many backups stay. Leave it out for 7.
+          description: |
+            How many unpinned backups stay (1 to 100). Leave it out for 7. Pinned backups
+            (`pinBackup`) are kept besides.
+        restore:
+          type: object
+          additionalProperties: false
+          required: [schedule, from]
+          description: |
+            Restores the backup pinned under `from` on `schedule`, inside Caravana (no token).
+            Each slot is the same restore as `restoreBackup` and is recorded with
+            `trigger: schedule`; a slot while a backup or restore runs is recorded `skipped`; a
+            slot with no backup pinned under `from` is a failed restore, on the needs-you list
+            as `restore_failed`. A deploy whose `from` isn't pinned yet warns on
+            `services[i].backup.restore.from`. A slot missed while Caravana was down runs once
+            if it is under an hour old, and the slots count from the later of the newest
+            scheduled restore and the app's last save, so saving a new schedule never runs a
+            slot that already passed. A stopped app's restores wait. Works for every engine.
+            A bad `schedule` or `from` is 400 `invalid_field` on
+            `services[i].backup.restore.schedule` or `.from`.
+          properties:
+            schedule:
+              type: string
+              examples: ["0 4 * * *"]
+              description: Five-field cron, in UTC.
+            from:
+              type: string
+              pattern: "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"
+              examples: [golden]
 
     BackupDestination:
       type: object
@@ -5830,6 +5953,12 @@ components:
           description: "`volume` backups only: one archive per volume."
           items:
             $ref: "#/components/schemas/BackupVolume"
+        pin:
+          type: string
+          description: |
+            The label the backup is pinned under (`pinBackup`). Retention never deletes a pinned
+            backup and counts only unpinned ones against `keep`. Absent when not pinned.
+        pinnedAt: {type: string, format: date-time}
 
     BackupVolume:
       type: object
@@ -5917,17 +6046,33 @@ components:
     Restore:
       type: object
       additionalProperties: false
-      required: [id, service, backupId, engine, status, createdAt]
+      required: [id, service, backupId, engine, status, trigger, createdAt]
       properties:
         id: {type: string}
         service: {type: string}
-        backupId: {type: string}
+        backupId:
+          type: string
+          description: |
+            Empty for a scheduled restore refused before it found a backup (no backup was
+            pinned under the label); `message` says why.
         engine:
           type: string
           enum: [postgres, volume, sqlite]
         status:
           type: string
-          enum: [running, succeeded, failed]
+          enum: [running, succeeded, failed, skipped]
+          description: |
+            `skipped`: a scheduled restore whose slot came while a backup or restore of the
+            service was running. It did nothing, is final and is never on the needs-you list.
+        trigger:
+          type: string
+          enum: [owner, schedule]
+          description: |
+            Who started it: `owner` (`restoreBackup`, the console's Restore; every restore
+            recorded before API 0.39.0) or `schedule` (the service's `backup.restore`).
+        pin:
+          type: string
+          description: "For a restore with `trigger: schedule`, the label it restored from."
         message: {type: string}
         createdAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time}
@@ -9312,7 +9457,8 @@ components:
         ends. `no_backup_destination`: no backup destination is set. `no_running_copy`: a
         backup or restore of a service with a `volume` or `sqlite` backup, and the service has
         no running copy (it was never deployed, is still starting, or has stopped).
-        `app_stopped`: the app is stopped (`stopApp`); start it first.
+        `app_stopped`: the app is stopped (`stopApp`); start it first. `app_busy` (`pinBackup`,
+        `unpinBackup`): a deploy or a volume run holds the app; try again when it ends.
       content:
         application/json:
           schema:
