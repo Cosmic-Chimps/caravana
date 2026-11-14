@@ -159,6 +159,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"templates", false, g.templatesStep},
+		{"workload-identity", false, g.workloadIdentityStep},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {

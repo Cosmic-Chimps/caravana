@@ -73,6 +73,8 @@ recommended audience, set the Bella environment's Nomad issuer to the console's 
 
 - The console's domain changes: the issuer changes, every identity already issued stops matching Bella's
   setting until it is renewed, and the Bella environment's issuer must be changed too (the doc says so).
+- The public URL stops being https after a host had an issuer: the Nomad servers keep the old issuer (an answer
+  without one never clears it), and the discovery routes answer 404.
 - A host with no `CARAVANA_PUBLIC_URL`, or an http one (dev, lab): no issuer; identities are still minted, with
   no `iss`, which Bella refuses; the discovery routes answer 404.
 - Nomad unreachable from Caravana: the discovery routes answer 502 `nomad_unavailable`, never an empty document.

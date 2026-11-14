@@ -75,7 +75,11 @@ with no path, query or user; else "" (no issuer).
 `issuer` (what the agent last rendered). The agent's `Validate` accepts "" or an https URL with a host name
 (`is_hostname` rules), an optional port and nothing after it; anything else refuses the whole answer as today.
 `State.Issuer` stores it; `nomadData.Issuer` renders `oidc_issuer = "<url>"` inside `server { }` only. An old
-agent ignores the new JSON member (the answer is decoded without `DisallowUnknownFields`; keep it so).
+agent ignores the new JSON member (the answer is decoded without `DisallowUnknownFields`; keep it so). An answer
+**without** an issuer keeps the one the server has (review): a console older than the issuer, after a rolled-back
+update, sends none, and dropping it would restart every Nomad server at once. The issuer and the console share one
+rule, `mesh.CleanIssuer`, so the console never sends what the agent refuses. `init-first --issuer` renders it on a
+fresh first server from the start (the installer passes `https://<domain>`), so a new host needs no extra restart.
 
 **D9 One at a time.** A pure function decides what issuer each answer carries:
 `issuerFor(name, role, reported, current, inFlight map[string]time.Time, now) (send string, start bool)`.

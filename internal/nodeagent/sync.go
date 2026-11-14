@@ -135,8 +135,10 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 	// 1b. The issuer (spec 038). A Nomad server renders it and restarts Nomad to take it; a client
 	// only keeps it, since oidc_issuer is a server setting. The state is saved last: when the restart
 	// fails, the report keeps showing the old issuer, the console keeps answering the new one, and the
-	// next sync restarts again.
-	if ans.Issuer != st.Issuer {
+	// next sync restarts again. An answer without one keeps the issuer this server has: a console older
+	// than the issuer (a rolled-back update) sends none, and dropping it would restart every Nomad
+	// server at once rather than one at a time. Issued tokens stay valid with the issuer kept.
+	if ans.Issuer != "" && ans.Issuer != st.Issuer {
 		next := st
 		next.Issuer = ans.Issuer
 		if _, err := a.renderNomadChanged(next); err != nil {

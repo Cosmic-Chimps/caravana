@@ -204,7 +204,7 @@ func TestSyncIssuerOnANomadServerRendersAndRestartsOnce(t *testing.T) {
 	}
 }
 
-func TestSyncIssuerChangeAndRemovalOnANomadServer(t *testing.T) {
+func TestSyncIssuerChangeAndAnswerWithoutOneOnANomadServer(t *testing.T) {
 	c := newConsole(t)
 	a := serverAgent(t, c)
 	c.on("/v1/node/sync", answerWithIssuer(a, "server", testIssuer))
@@ -222,13 +222,18 @@ func TestSyncIssuerChangeAndRemovalOnANomadServer(t *testing.T) {
 	if restarts(a) != 1 {
 		t.Errorf("restarts after a change = %d", restarts(a))
 	}
+	// An answer without an issuer (a console older than it, after a rolled-back update) keeps it and
+	// restarts nothing.
 	a.runner.reset()
 	c.on("/v1/node/sync", answerWithIssuer(a, "server", ""))
 	if err := a.Sync(ctx(), SyncOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(a.read(t, "etc/nomad.d/nomad.hcl"), "oidc_issuer") || restarts(a) != 1 {
-		t.Errorf("an emptied issuer: restarts %d\n%s", restarts(a), a.read(t, "etc/nomad.d/nomad.hcl"))
+	if !strings.Contains(a.read(t, "etc/nomad.d/nomad.hcl"), `oidc_issuer = "https://other.example.org"`) || restarts(a) != 0 {
+		t.Errorf("an answer without an issuer: restarts %d\n%s", restarts(a), a.read(t, "etc/nomad.d/nomad.hcl"))
+	}
+	if st, _ := a.LoadState(); st.Issuer != "https://other.example.org" {
+		t.Errorf("state issuer = %q, want the one it had", st.Issuer)
 	}
 }
 
