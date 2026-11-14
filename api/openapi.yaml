@@ -8388,6 +8388,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodePeer"
+        issuer:
+          type: string
+          description: |
+            The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
+            URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
+            console has no https public URL. Nomad servers receive a new value one at a time.
     NodeReport:
       type: object
       additionalProperties: false
@@ -8407,6 +8413,9 @@ components:
         nomadLeader: {type: boolean, description: "Whether its Nomad knows a leader."}
         serverRunning: {type: boolean, description: "For a Nomad server, whether it is among Nomad's raft peers."}
         certificateNotAfter: {type: string, format: date-time}
+        issuer:
+          type: string
+          description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -8445,6 +8454,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ServerCheck"
+        issuer:
+          type: string
+          description: |
+            The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
+            URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
+            console has no https public URL. Nomad servers receive a new value one at a time.
     AttentionItem:
       type: object
       additionalProperties: false

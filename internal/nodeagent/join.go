@@ -93,7 +93,7 @@ func (a *Agent) Join(ctx context.Context, o JoinOptions) error {
 
 	st := State{
 		Version: stateVersion, Index: ans.Index, Name: ans.Name, Pool: ans.Pool, Role: ans.Role,
-		Servers: ans.Servers, Peers: ans.Peers, CPUTotalCompute: o.CPUTotalCompute,
+		Servers: ans.Servers, Peers: ans.Peers, CPUTotalCompute: o.CPUTotalCompute, Issuer: ans.Issuer,
 	}
 	if err := st.Validate(); err != nil {
 		return err

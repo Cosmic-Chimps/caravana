@@ -33,6 +33,9 @@ type State struct {
 	Servers         []int       `json:"servers"` // indexes of the Nomad servers
 	CPUTotalCompute int         `json:"cpuTotalCompute"`
 	Peers           []mesh.Peer `json:"peers"`
+	// Issuer is the OIDC issuer last rendered into nomad.hcl, on a Nomad server (spec 038). A
+	// state.json written before it loads with none.
+	Issuer string `json:"issuer,omitempty"`
 }
 
 // Validate says a state read from disk is one this agent can act on.
@@ -48,6 +51,9 @@ func (s State) Validate() error {
 		return errors.New("state.json: pool isn't a valid name")
 	case s.Role != RoleClient && s.Role != RoleServer:
 		return errors.New("state.json: role must be client or server")
+	}
+	if _, ok := mesh.CleanIssuer(s.Issuer); !ok {
+		return errors.New("state.json: issuer isn't empty or an https:// address")
 	}
 	return nil
 }

@@ -52,6 +52,10 @@ type Answer struct {
 	Renew       bool        `json:"renew"`
 	State       string      `json:"state"`
 	Checks      []Check     `json:"checks"`
+	// Issuer is the cluster's OIDC issuer a Nomad server renders as oidc_issuer (spec 038): "" or
+	// https:// and a host name. A console that predates it sends none. The answer is decoded without
+	// DisallowUnknownFields, so an agent older than this member ignores it.
+	Issuer string `json:"issuer"`
 }
 
 // Expect is what an answer is checked against.
@@ -218,6 +222,11 @@ func validateCommon(ans *Answer, ex Expect, own int) error {
 			return refuse("servers", "names a server that is neither this one nor a peer")
 		}
 	}
+	issuer, ok := mesh.CleanIssuer(ans.Issuer)
+	if !ok {
+		return refuse("issuer", "must be empty, or https:// and a host name with an optional port")
+	}
+	ans.Issuer = issuer
 	if ans.Role == RoleServer {
 		raw, err := base64.StdEncoding.DecodeString(ans.GossipKey)
 		if err != nil || (len(raw) != 16 && len(raw) != 24 && len(raw) != 32) {

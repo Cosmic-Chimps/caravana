@@ -645,6 +645,10 @@ init_first_server() {
   local flags=()
   # shellcheck disable=SC2207 # two words, no spaces inside them
   flags=($(cpu_flags))
+  # The cluster's issuer for workload identity tokens (spec 038) is the console's address, the same
+  # one CARAVANA_PUBLIC_URL gets. It is used only when this run makes the server: on an existing host
+  # the console's sync hands it to each Nomad server, one at a time.
+  flags+=(--issuer "https://$domain")
   "$AGENT" node init-first --address "$address" "${flags[@]}" ||
     fail "the server agent couldn't set this server up (see above)"
   systemctl start caravana-mesh.service

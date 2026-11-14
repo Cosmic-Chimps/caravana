@@ -11,6 +11,8 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files")
 
+const testIssuer = "https://console.example.com"
+
 const testGossip = "dGVzdC1nb3NzaXAta2V5LTMyLWJ5dGVzLWxvbmchIQ=="
 
 func renderCases() map[string]struct {
@@ -25,6 +27,8 @@ func renderCases() map[string]struct {
 		"first-with-servers": {State{Version: 1, Index: 1, Name: "hel-1", Pool: "default", First: true, Role: RoleServer, Servers: []int{3, 1, 2}}, testGossip},
 		"client":             {State{Version: 1, Index: 3, Name: "fsn-2", Pool: "default", Role: RoleClient, Servers: []int{1}}, testGossip},
 		"server":             {State{Version: 1, Index: 3, Name: "fsn-2", Pool: "default", Role: RoleServer, Servers: []int{1, 2, 3}}, testGossip},
+		"first-issuer":       {State{Version: 1, Index: 1, Name: "hel-1", Pool: "default", First: true, Role: RoleServer, Servers: []int{1}, Issuer: testIssuer}, testGossip},
+		"server-issuer":      {State{Version: 1, Index: 3, Name: "fsn-2", Pool: "default", Role: RoleServer, Servers: []int{1, 2, 3}, Issuer: testIssuer}, testGossip},
 		"client-cpu":         {State{Version: 1, Index: 2, Name: "fsn-1", Pool: "builders", Role: RoleClient, Servers: []int{1}, CPUTotalCompute: 4000}, testGossip},
 	}
 }

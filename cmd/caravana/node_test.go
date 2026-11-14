@@ -135,6 +135,9 @@ func TestNodeJoinFlagChecks(t *testing.T) {
 		"negative cpu":    {"join", "--url", good, "--token", nodeTestJoinToken, "--cpu-total-compute", "-1"},
 		"init-first none": {"init-first"},
 		"init-first name": {"init-first", "--address", "caravana.example.com"},
+		"issuer http":     {"init-first", "--address", "203.0.113.4", "--issuer", "http://caravana.example.com"},
+		"issuer path":     {"init-first", "--address", "203.0.113.4", "--issuer", "https://caravana.example.com/x"},
+		"issuer ip":       {"init-first", "--address", "203.0.113.4", "--issuer", "https://203.0.113.4"},
 	}
 	for name, args := range tests {
 		root := t.TempDir()

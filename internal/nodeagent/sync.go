@@ -132,6 +132,28 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 	}
 	st = next
 
+	// 1b. The issuer (spec 038). A Nomad server renders it and restarts Nomad to take it; a client
+	// only keeps it, since oidc_issuer is a server setting. The state is saved last: when the restart
+	// fails, the report keeps showing the old issuer, the console keeps answering the new one, and the
+	// next sync restarts again.
+	if ans.Issuer != st.Issuer {
+		next := st
+		next.Issuer = ans.Issuer
+		if _, err := a.renderNomadChanged(next); err != nil {
+			return err
+		}
+		if st.Role == RoleServer {
+			if _, err := a.run(ctx, "systemctl", "restart", "nomad"); err != nil {
+				return fmt.Errorf("restart nomad for the new issuer: %w", err)
+			}
+			a.out("Nomad restarted to take the cluster's issuer.")
+		}
+		if err := a.SaveState(next); err != nil {
+			return err
+		}
+		st = next
+	}
+
 	// 2. The role: a client that is to be a Nomad server.
 	if st.Role == RoleClient && ans.Role == RoleServer {
 		return a.promote(ctx, env, st, ans.GossipKey, caPEM)

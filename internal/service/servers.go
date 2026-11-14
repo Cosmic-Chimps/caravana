@@ -101,19 +101,22 @@ type NodeReach struct {
 
 // NodeReport is what a sync tells Caravana about a server (api.md §4).
 type NodeReport struct {
-	Agent               string      `json:"agent"`
-	Nomad               string      `json:"nomad"`
-	Docker              string      `json:"docker"`
-	DockerRunning       bool        `json:"dockerRunning"`
-	DiskFreeMB          int64       `json:"diskFreeMb"`
-	DiskTotalMB         int64       `json:"diskTotalMb"`
-	MemoryMB            int64       `json:"memoryMb"`
-	Kernel              string      `json:"kernel"`
-	Role                string      `json:"role"`
-	NomadLeader         bool        `json:"nomadLeader"`
-	ServerRunning       bool        `json:"serverRunning"`
-	CertificateNotAfter string      `json:"certificateNotAfter,omitempty"`
-	Reach               []NodeReach `json:"reach"`
+	Agent               string `json:"agent"`
+	Nomad               string `json:"nomad"`
+	Docker              string `json:"docker"`
+	DockerRunning       bool   `json:"dockerRunning"`
+	DiskFreeMB          int64  `json:"diskFreeMb"`
+	DiskTotalMB         int64  `json:"diskTotalMb"`
+	MemoryMB            int64  `json:"memoryMb"`
+	Kernel              string `json:"kernel"`
+	Role                string `json:"role"`
+	NomadLeader         bool   `json:"nomadLeader"`
+	ServerRunning       bool   `json:"serverRunning"`
+	CertificateNotAfter string `json:"certificateNotAfter,omitempty"`
+	// Issuer is the OIDC issuer the agent last rendered into nomad.hcl (spec 038); "" for an agent
+	// that doesn't know it.
+	Issuer string      `json:"issuer,omitempty"`
+	Reach  []NodeReach `json:"reach"`
 }
 
 // JoinRequest is the body of POST /v1/join.
@@ -150,6 +153,8 @@ type NodeAnswer struct {
 	Renew       bool
 	State       string
 	Checks      []ServerCheck
+	// Issuer is the cluster's issuer for this server to render (spec 038); empty for none.
+	Issuer string
 }
 
 // ServerJoin is a join command that was just made (addServer's answer). Token is the only place the
@@ -469,6 +474,7 @@ func (s *Service) Join(ctx context.Context, req JoinRequest, remoteAddr string) 
 		Name: joined.Name, Index: joined.Index, Pool: joined.Pool, Role: "client",
 		Servers: nomadServerIndexes(rows), Peers: peersOf(rows, joined.Index),
 		CA: string(caCert), Certificate: string(cert), NodeToken: nodeToken,
+		Issuer: s.ClusterIssuer(), // a new server is a client: it only stores it
 	}, nil
 }
 
@@ -621,7 +627,7 @@ func (s *Service) authNode(ctx context.Context, token string) (store.Server, err
 // validateReport checks the sizes of a sync's report.
 func validateReport(r NodeReport) error {
 	for _, c := range []struct{ field, value string }{
-		{"agent", r.Agent}, {"nomad", r.Nomad}, {"docker", r.Docker}, {"kernel", r.Kernel},
+		{"issuer", r.Issuer}, {"agent", r.Agent}, {"nomad", r.Nomad}, {"docker", r.Docker}, {"kernel", r.Kernel},
 		{"role", r.Role}, {"certificateNotAfter", r.CertificateNotAfter}} {
 		if err := checkText(c.field, c.value); err != nil {
 			return err
@@ -655,6 +661,9 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 	}
 	if err := validateReport(report); err != nil {
 		return NodeAnswer{}, err
+	}
+	if clusterIssuerOf(report.Issuer) != report.Issuer {
+		report.Issuer = "" // not an issuer this console would hand out: the agent has none
 	}
 	s.serverMu.Lock()
 	defer s.serverMu.Unlock()
@@ -717,6 +726,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 		}
 		ans.GossipKey = key
 	}
+	ans.Issuer = s.noteIssuer(cur.Name, ans.Role == "server", report.Issuer, now)
 	return ans, nil
 }
 

@@ -77,9 +77,8 @@
 {{end}}
 {{end}}
 
-{{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
-     (feature 019.5). Takes a defineView. The service is named like the app, so there is no name
-     field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
+{{/* identities: a service's workload identities, read-only (spec 038). Takes []identityView; never
+     the token, only the file a copy reads it from. */}}
 {{define "identities"}}
 <h3 class="cv-label">Identities</h3>
 <dl class="cv-also">
@@ -97,6 +96,9 @@
 <p class="cv-note">Set through the API, the Compose overlay or Aspire.</p>
 {{end}}
 
+{{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
+     (feature 019.5). Takes a defineView. The service is named like the app, so there is no name
+     field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
 {{define "define-form"}}
 <form method="post" action="{{.Action}}" class="cv-panel cv-newapp p-5 flex flex-col gap-5">
   <input type="hidden" name="revision" value="{{.Revision}}">
