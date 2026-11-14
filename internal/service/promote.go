@@ -404,6 +404,9 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 	var missing []MissingSecret
 	for _, svc := range a.Services {
 		for _, sec := range svc.Secrets {
+			if sec.From != nil {
+				continue // a reference is read at the deploy: nothing to type
+			}
 			missing = append(missing, MissingSecret{Service: svc.Name, Name: sec.Name})
 		}
 	}

@@ -143,6 +143,10 @@ func TestRefused(t *testing.T) {
 			map[string]Overlay{"web": {Domains: []Domain{{Host: "a.example.com"}}}}, "services.web.domains[0]", "no ports"},
 		{"overlay secret with a bad name", "services:\n  web:\n    image: x\n",
 			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "1A"}}}}, "services.web.secrets[0].name", ""},
+		{"overlay secret with a value and a reference", "services:\n  web:\n    image: x\n",
+			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", Value: new("x"), From: &app.SecretRef{Provider: "bella", Path: "A"}}}}}, "services.web.secrets[0].from", "not both"},
+		{"overlay secret with a bad provider", "services:\n  web:\n    image: x\n",
+			map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", From: &app.SecretRef{Provider: "Bella", Path: "A"}}}}}, "services.web.secrets[0].from.provider", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -384,6 +388,22 @@ func TestMemory(t *testing.T) {
 	}
 }
 
+// A secret reference in the overlay (feature 037) reaches the app as written.
+func TestOverlaySecretReference(t *testing.T) {
+	ref := &app.SecretRef{Provider: "bella-prod", Path: "DATABASE_URL"}
+	a, _, err := Translate("blog", Request{
+		Compose:  "services:\n  web:\n    image: nginx:1.27\n",
+		Services: map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "DB", From: ref}}}},
+	})
+	if err != nil {
+		t.Fatalf("Translate = %v", err)
+	}
+	got := a.Services[0].Secrets
+	if len(got) != 1 || got[0].From == nil || *got[0].From != *ref || got[0].Value != nil {
+		t.Errorf("secrets = %+v, want the reference", got)
+	}
+}
+
 // TestWithoutSecretValues checks that values go, names and everything else
 // stay, and that the caller's request is never changed.
 func TestWithoutSecretValues(t *testing.T) {
@@ -406,6 +426,18 @@ func TestWithoutSecretValues(t *testing.T) {
 			},
 		}
 	}
+
+	t.Run("references kept", func(t *testing.T) {
+		ref := &app.SecretRef{Provider: "bella-prod", Path: "DB"}
+		r := Request{Services: map[string]Overlay{"web": {Secrets: []app.Secret{{Name: "A", From: ref}, {Name: "B", Value: value("x")}}}}}
+		got := r.WithoutSecretValues().Services["web"].Secrets
+		if got[0].From == nil || *got[0].From != *ref {
+			t.Errorf("reference = %+v, want %+v", got[0].From, ref)
+		}
+		if got[1].Value != nil {
+			t.Error("typed value kept")
+		}
+	})
 
 	t.Run("values removed, the rest kept", func(t *testing.T) {
 		got := full().WithoutSecretValues()

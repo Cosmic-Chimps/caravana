@@ -34,6 +34,7 @@ type env struct {
 	registry *registrytest.Server
 	nomad    *deploytest.Nomad
 	secrets  *secretstest.Store
+	sources  *fakeSources
 }
 
 // newEnv opens a store in a temp dir and starts a service on it. The fake
@@ -49,6 +50,8 @@ func newEnv(t *testing.T) *env {
 	e.registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.nomad.Succeed()
 	e.svc = startService(t, st, e.registry, e.nomad, e.secrets)
+	e.sources = newFakeSources()
+	e.svc.SetSecretSources(e.sources.factory)
 	return e
 }
 

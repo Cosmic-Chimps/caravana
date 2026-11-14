@@ -27,7 +27,25 @@ func (s *Service) SetSecretIf(ctx context.Context, appID, service, name, value s
 		if i < 0 {
 			return append(list, app.Secret{Name: name, Value: &value}), nil
 		}
-		list[i].Value = &value
+		list[i].Value, list[i].From = &value, nil // a typed value replaces a reference
+		return list, nil
+	})
+}
+
+// SetSecretRefIf is SetSecretIf for a reference: the secret name of service
+// reads its value from ref's provider at each deploy (feature 037), with no
+// typed value. A secret that was a typed value becomes the reference. The
+// provider is checked before anything is saved (an *app.FieldError on
+// services[i].secrets[j].from.provider), and a path the provider doesn't
+// have fails the deploy as for any reference.
+func (s *Service) SetSecretRefIf(ctx context.Context, appID, service, name string, ref app.SecretRef, cond Condition, trigger app.Trigger) (store.DeploymentRecord, error) {
+	return s.editSecrets(ctx, appID, service, cond, trigger, func(list []app.Secret) ([]app.Secret, error) {
+		r := ref
+		i := slices.IndexFunc(list, func(sec app.Secret) bool { return sec.Name == name })
+		if i < 0 {
+			return append(list, app.Secret{Name: name, From: &r}), nil
+		}
+		list[i].Value, list[i].From = nil, &r
 		return list, nil
 	})
 }
@@ -84,7 +102,7 @@ func (s *Service) editSecrets(ctx context.Context, appID, service string, cond C
 }
 
 // withSecretNames returns a copy of file whose overlay for service lists the
-// secrets in list, by name only. A service left with an empty overlay has no
+// secrets in list, by name and reference, never a value. A service left with an empty overlay has no
 // entry at all, as if the overlay had never mentioned it. file is not changed.
 func withSecretNames(file compose.Request, service string, list []app.Secret) compose.Request {
 	file = file.WithoutSecretValues() // its own Services map and Secrets slices
@@ -94,7 +112,7 @@ func withSecretNames(file compose.Request, service string, list []app.Secret) co
 	overlay := services[service]
 	overlay.Secrets = nil
 	for _, sec := range list {
-		overlay.Secrets = append(overlay.Secrets, app.Secret{Name: sec.Name})
+		overlay.Secrets = append(overlay.Secrets, sec.WithoutValue())
 	}
 	if len(overlay.Domains) == 0 && overlay.Health == nil && len(overlay.Secrets) == 0 && overlay.Backup == nil {
 		delete(services, service)

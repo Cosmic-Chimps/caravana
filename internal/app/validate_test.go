@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -156,6 +157,38 @@ func TestValidate(t *testing.T) {
 		}, "services[0].secrets[0].name"},
 		{"secret value with NUL", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("a\x00b")}} }, "services[0].secrets[0].value"},
 		{"secret value not UTF-8", func(a *App, d *Deployment) { a.Services[0].Secrets = []Secret{{Name: "A", Value: new("\xff")}} }, "services[0].secrets[0].value"},
+
+		// Secret references (feature 037).
+		{"valid reference", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella-prod", Path: "DATABASE_URL"}}}
+		}, ""},
+		{"reference with a value", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", Value: new("x"), From: &SecretRef{Provider: "bella", Path: "A"}}}
+		}, "services[0].secrets[0].from"},
+		{"reference provider uppercase", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "Bella", Path: "A"}}}
+		}, "services[0].secrets[0].from.provider"},
+		{"reference provider empty", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Path: "A"}}}
+		}, "services[0].secrets[0].from.provider"},
+		{"reference provider with --", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "a--b", Path: "A"}}}
+		}, "services[0].secrets[0].from.provider"},
+		{"reference path empty", func(a *App, d *Deployment) {
+			a.Services[1].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella"}}}
+		}, "services[1].secrets[0].from.path"},
+		{"reference path too long", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: strings.Repeat("a", 513)}}}
+		}, "services[0].secrets[0].from.path"},
+		{"reference path at the limit", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: strings.Repeat("a", 512)}}}
+		}, ""},
+		{"reference path with a control character", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: "a\nb"}}}
+		}, "services[0].secrets[0].from.path"},
+		{"reference path not UTF-8", func(a *App, d *Deployment) {
+			a.Services[0].Secrets = []Secret{{Name: "A", From: &SecretRef{Provider: "bella", Path: "\xff"}}}
+		}, "services[0].secrets[0].from.path"},
 
 		// Source kinds and volumes.
 		{"valid compose source", func(a *App, d *Deployment) { a.Source.Kind = SourceCompose }, ""},
@@ -561,6 +594,38 @@ func TestWithoutSecretValues(t *testing.T) {
 	}
 	if v := a.Services[0].Secrets[0].Value; v == nil || *v != "one" {
 		t.Error("WithoutSecretValues changed the original app")
+	}
+}
+
+func TestWithoutSecretValuesKeepsReferences(t *testing.T) {
+	a := validApp()
+	ref := &SecretRef{Provider: "bella-prod", Path: "DB"}
+	a.Services[0].Secrets = []Secret{{Name: "A", Value: new("one")}, {Name: "B", From: ref}}
+	got := a.WithoutSecretValues().Services[0].Secrets
+	if got[0].Value != nil || got[0].From != nil {
+		t.Errorf("typed secret = %+v, want the name only", got[0])
+	}
+	if got[1].From == nil || *got[1].From != *ref {
+		t.Errorf("reference = %+v, want %+v kept", got[1].From, ref)
+	}
+}
+
+// An app that uses no reference marshals exactly as before 037, so no stored
+// app's revision moves.
+func TestSecretWithoutReferenceJSONUnchanged(t *testing.T) {
+	b, err := json.Marshal([]Secret{{Name: "A"}, {Name: "B", Value: new("v")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `[{"name":"A"},{"name":"B","value":"v"}]`; got != want {
+		t.Errorf("json = %s, want %s", got, want)
+	}
+	b, err = json.Marshal(Secret{Name: "C", From: &SecretRef{Provider: "bella", Path: "C"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `{"name":"C","from":{"provider":"bella","path":"C"}}`; got != want {
+		t.Errorf("json = %s, want %s", got, want)
 	}
 }
 

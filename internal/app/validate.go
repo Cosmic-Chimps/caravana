@@ -408,6 +408,11 @@ func validateSecrets(field string, secrets []Secret, envNames map[string]bool) e
 			return NewFieldError(f+".name", "%q is also a plain env var of this service", s.Name)
 		}
 		seen[s.Name] = true
+		if s.From != nil {
+			if err := validateSecretRef(f+".from", s); err != nil {
+				return err
+			}
+		}
 		if s.Value == nil {
 			continue
 		}
@@ -416,6 +421,36 @@ func validateSecrets(field string, secrets []Secret, envNames map[string]bool) e
 		}
 		if strings.ContainsRune(*s.Value, 0) {
 			return NewFieldError(f+".value", "must not contain a NUL byte")
+		}
+	}
+	return nil
+}
+
+// maxSecretPath is the longest reference path, in bytes.
+const maxSecretPath = 512
+
+// validateSecretRef checks a secret's reference: it excludes a value, names a
+// provider by a lowercase label and has a plain path. Whether the provider
+// exists is the service's business.
+func validateSecretRef(field string, s Secret) error {
+	if s.Value != nil {
+		return NewFieldError(field, "a secret has a value or a reference, not both")
+	}
+	if err := ValidName(field+".provider", s.From.Provider); err != nil {
+		return err
+	}
+	p := s.From.Path
+	switch {
+	case p == "":
+		return NewFieldError(field+".path", "is required")
+	case len(p) > maxSecretPath:
+		return NewFieldError(field+".path", "must be at most %d bytes", maxSecretPath)
+	case !utf8.ValidString(p):
+		return NewFieldError(field+".path", "must be UTF-8 text")
+	}
+	for _, r := range p {
+		if unicode.IsControl(r) {
+			return NewFieldError(field+".path", "must not contain control characters")
 		}
 	}
 	return nil

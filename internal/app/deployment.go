@@ -33,4 +33,8 @@ type Deployment struct {
 	// "" for a session, the webhook and a deploy that wasn't asked for. Like
 	// Origin it is recorded with the deployment only.
 	TokenName string `json:"tokenName,omitempty"`
+	// Refresh is true for a deployment made by Refresh secrets (feature 037):
+	// the live version rolled out again because a value changed in a secret
+	// provider. Recorded with the deployment only.
+	Refresh bool `json:"refresh,omitempty"`
 }

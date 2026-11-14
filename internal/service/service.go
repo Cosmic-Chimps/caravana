@@ -130,6 +130,9 @@ type Service struct {
 	templates    templatesState
 	updater      updaterState // update runs and the root updater's files (feature 030), see updaterun.go
 
+	// secretSources builds a provider's Source (feature 037), see secretproviders.go.
+	secretSources atomic.Pointer[SourceFactory]
+
 	// serverMu serializes the servers' calls that read the rows and then change them: a join, a sync,
 	// a removal and the choice of Nomad servers (feature 031), see servers.go.
 	serverMu sync.Mutex

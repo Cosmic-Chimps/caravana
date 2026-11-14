@@ -54,8 +54,10 @@ const MaxSize = 60 * 1024
 // Build applies a's definition to the current values and returns the full
 // sets a deploy must make live: a secret with a value takes it, a secret
 // without one keeps its current value, and every secret a doesn't name is
-// gone. Errors are *app.FieldError.
-func Build(a app.App, current Sets) (Sets, error) {
+// gone. A secret with a reference (From) takes the value the provider gave,
+// in resolved (feature 037; nil when the app has none). Errors are
+// *app.FieldError.
+func Build(a app.App, current, resolved Sets) (Sets, error) {
 	out := Sets{}
 	size := 0
 	for i, svc := range a.Services {
@@ -66,6 +68,14 @@ func Build(a app.App, current Sets) (Sets, error) {
 		for j, s := range svc.Secrets {
 			var v string
 			switch {
+			case s.From != nil:
+				ref, ok := resolved[svc.Name][s.Name]
+				if !ok {
+					// Defensive: the deploy reads every reference before it builds.
+					return nil, app.NewFieldError(fmt.Sprintf("services[%d].secrets[%d].from.path", i, j),
+						"secret %q was not read from %q", s.Name, s.From.Provider)
+				}
+				v = ref
 			case s.Value != nil:
 				v = *s.Value
 			default:

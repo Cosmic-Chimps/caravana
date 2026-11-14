@@ -117,6 +117,7 @@ func (s *Service) DeployIfResult(ctx context.Context, a app.App, cond Condition,
 type pinned struct {
 	digests map[string]string
 	source  string // the past deployment's ID
+	refresh bool   // a Refresh secrets (feature 037): the record says so
 }
 
 // saveAndDeploy is Deploy with a condition on the stored app, m saying what
@@ -312,6 +313,7 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	source := ""
 	if pin != nil {
 		source = pin.source
+		dep.Refresh = pin.refresh
 	}
 	rec, err := s.store.CreateDeployment(ctx, a.ID, dep, &a, m.file, source)
 	if err != nil {
@@ -367,7 +369,14 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 	// The secrets go live before Nomad gets the job, and only for the newest
 	// deploy (the check above): the new copies read them when they start.
 	// Running copies keep the env they started with.
-	sets, err := s.buildSecrets(ctx, a)
+	// A reference is read from its provider first: a provider that is down or
+	// refuses fails this deploy before anything is replaced, so the values the
+	// running copies have, and a restarted copy would start with, stay.
+	resolved, err := s.resolveReferences(ctx, a)
+	if err != nil {
+		return asResult(s.fail(rec, err))
+	}
+	sets, err := s.buildSecrets(ctx, a, resolved)
 	if err != nil {
 		return asResult(s.fail(rec, err))
 	}

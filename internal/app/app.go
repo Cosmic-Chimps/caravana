@@ -141,6 +141,28 @@ type Secret struct {
 	// Value is the new value: UTF-8 text without a NUL byte. nil keeps the
 	// value the secret has now. It is never stored and never returned.
 	Value *string `json:"value,omitempty"`
+	// From says where an outside secret provider keeps the value (feature
+	// 037): a deploy reads it there and writes it into the service's Nomad
+	// Variable like a typed one. A secret has a Value or a From, not both. The
+	// reference is not secret, so it is stored, recorded and shown as written.
+	From *SecretRef `json:"from,omitempty"`
+}
+
+// SecretRef points at one secret of an outside provider.
+type SecretRef struct {
+	// Provider is the name of a secret provider set up in Settings: a
+	// lowercase DNS label (ValidName).
+	Provider string `json:"provider"`
+	// Path names the secret inside the provider: 1 to 512 bytes of UTF-8
+	// text without control characters. For Bella Baxter it is the secret's
+	// key.
+	Path string `json:"path"`
+}
+
+// WithoutValue returns s as Caravana stores and shows it: the name and the
+// reference, never the value.
+func (s Secret) WithoutValue() Secret {
+	return Secret{Name: s.Name, From: s.From}
 }
 
 // Volume is a named directory of the app on one node, mounted into one
@@ -262,15 +284,15 @@ func (s Service) SQLiteFile() (volume Volume, inVolume string, ok bool) {
 	return v, s.Backup.File[len(v.Path)+1:], true
 }
 
-// WithoutSecretValues returns a copy of a whose secrets have names only, the
-// form Caravana stores and shows. Deployed again, it keeps every value.
+// WithoutSecretValues returns a copy of a whose secrets have names (and
+// references, which are not secret) only, the form Caravana stores and shows. Deployed again, it keeps every value.
 func (a App) WithoutSecretValues() App {
 	services := make([]Service, len(a.Services))
 	for i, svc := range a.Services {
 		if len(svc.Secrets) > 0 {
 			names := make([]Secret, len(svc.Secrets))
 			for j, s := range svc.Secrets {
-				names[j] = Secret{Name: s.Name}
+				names[j] = s.WithoutValue()
 			}
 			svc.Secrets = names
 		}

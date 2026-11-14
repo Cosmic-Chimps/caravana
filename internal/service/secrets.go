@@ -15,24 +15,30 @@ import (
 // or put the previous ones back (failed, reverted).
 
 // buildSecrets returns the sets a deploy of a must make live: a's secrets
-// applied to the values in the store now. A keep with no value is an
-// *app.FieldError; an unreachable store matches secrets.ErrUnavailable.
-func (s *Service) buildSecrets(ctx context.Context, a app.App) (secrets.Sets, error) {
+// applied to the values in the store now, with the values of its references
+// as resolveReferences read them (nil when it has none). A keep with no value
+// is an *app.FieldError; an unreachable store matches secrets.ErrUnavailable.
+func (s *Service) buildSecrets(ctx context.Context, a app.App, resolved secrets.Sets) (secrets.Sets, error) {
 	current, err := s.secrets.Read(ctx, a.ID)
 	if err != nil {
 		return nil, err
 	}
-	return secrets.Build(a, current)
+	return secrets.Build(a, current, resolved)
 }
 
-// checkSecrets builds a's sets once before anything is saved, so a keep
-// without a value, an oversized set or an unreachable store saves nothing.
-// deploy builds them again under the app's lock, because the values may
+// checkSecrets checks a's secrets once before anything is saved, so a keep
+// without a value, a reference to a provider that doesn't exist or isn't
+// allowed for the app's place, an oversized set or an unreachable store saves
+// nothing. It reads nothing from a provider: deploy resolves the references
+// under the app's lock, and builds the sets again, because the values may
 // change in between.
 func (s *Service) checkSecrets(ctx context.Context, a app.App) error {
+	if err := s.checkReferences(ctx, a); err != nil {
+		return err
+	}
 	for _, svc := range a.Services {
 		if len(svc.Secrets) > 0 {
-			_, err := s.buildSecrets(ctx, a)
+			_, err := s.buildSecrets(ctx, a, placeholderSets(a))
 			return err
 		}
 	}
