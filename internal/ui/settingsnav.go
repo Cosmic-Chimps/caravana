@@ -19,14 +19,15 @@ import (
 
 // The Settings entries, by the ID the pages pass to renderSettings.
 const (
-	entryAccount       = "account"
-	entryRegistries    = "registries"
-	entryBackupStorage = "backup-storage"
-	entryNotifications = "notifications"
-	entryCertificates  = "certificates"
-	entryTokens        = "tokens"
-	entrySignIn        = "sign-in"
-	entryAppearance    = "appearance"
+	entryAccount         = "account"
+	entryRegistries      = "registries"
+	entrySecretProviders = "secret-providers"
+	entryBackupStorage   = "backup-storage"
+	entryNotifications   = "notifications"
+	entryCertificates    = "certificates"
+	entryTokens          = "tokens"
+	entrySignIn          = "sign-in"
+	entryAppearance      = "appearance"
 )
 
 // settingsEntry is one entry of the nav. Account's page is /settings itself.
@@ -41,6 +42,7 @@ var settingsGroups = []struct {
 	{"", []settingsEntry{{entryAccount, "Account", "/settings", "user"}}},
 	{"Connections", []settingsEntry{
 		{entryRegistries, "Registries", "/settings/registries", "package"},
+		{entrySecretProviders, "Secret providers", "/settings/secret-providers", "key"},
 		{entryBackupStorage, "Backup storage", "/settings/backup-storage", "hard-drive"},
 		{entryCertificates, "Certificates", "/settings/certificates", "lock"},
 		{entryNotifications, "Notifications", "/settings/notifications", "bell"},
@@ -95,6 +97,26 @@ func registriesState(regs []store.Registry) entryState {
 		default:
 			st.Rows[i] = "failed"
 			st.Mark, st.Why = "failed", "a registry refused its credentials"
+		}
+	}
+	return st
+}
+
+// secretProvidersState: a provider's mark is ■ when its last test could not read
+// it, ● when it could and ○ when it was never tested or changed since (the
+// service forgets the last test when a save changes it); the nav shows ■ when
+// any can't be read, else the number of providers.
+func secretProvidersState(list []service.SecretProviderInfo) entryState {
+	st := entryState{Count: len(list), Rows: make([]string, len(list))}
+	for i, p := range list {
+		switch {
+		case p.LastTest == nil:
+			st.Rows[i] = "idle"
+		case p.LastTest.OK:
+			st.Rows[i] = "healthy"
+		default:
+			st.Rows[i] = "failed"
+			st.Mark, st.Why = "failed", "a secret provider can't be read"
 		}
 	}
 	return st
@@ -261,12 +283,14 @@ func tokensState(now time.Time, tokens []service.APITokenInfo) entryState {
 // per render.
 type settingsFacts struct {
 	Registries []store.Registry
-	Channels   []service.NotificationChannel
-	Deliveries map[string][]store.Delivery // by channel ID, newest first
-	Tokens     []service.APITokenInfo
-	Certs      []service.CertificateView // problems first
-	Dest       *store.BackupDestination
-	LastBackup *store.BackupRecord
+	// SecretProviders are the secret providers with the apps that use them.
+	SecretProviders []service.SecretProviderInfo
+	Channels        []service.NotificationChannel
+	Deliveries      map[string][]store.Delivery // by channel ID, newest first
+	Tokens          []service.APITokenInfo
+	Certs           []service.CertificateView // problems first
+	Dest            *store.BackupDestination
+	LastBackup      *store.BackupRecord
 	// FailingBackup is the newest of the services' newest runs that failed; see backupFacts.Failing.
 	FailingBackup *store.BackupRecord
 	Apps          []store.AppRecord
@@ -294,11 +318,12 @@ func (f settingsFacts) states(now time.Time) map[string]entryState {
 		chs[i] = channelFacts{Paused: c.Paused, Last: lastOf(now, f.Deliveries[c.ID])}
 	}
 	return map[string]entryState{
-		entryRegistries:    registriesState(f.Registries),
-		entryBackupStorage: backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
-		entryNotifications: notificationsState(chs),
-		entryCertificates:  certificatesState(f.Certs),
-		entryTokens:        tokensState(now, f.Tokens),
+		entryRegistries:      registriesState(f.Registries),
+		entrySecretProviders: secretProvidersState(f.SecretProviders),
+		entryBackupStorage:   backupStorageState(backupFacts{Destination: f.Dest != nil, Last: f.LastBackup, Failing: f.FailingBackup, Policies: policyServices(f.Apps)}),
+		entryNotifications:   notificationsState(chs),
+		entryCertificates:    certificatesState(f.Certs),
+		entryTokens:          tokensState(now, f.Tokens),
 	}
 }
 

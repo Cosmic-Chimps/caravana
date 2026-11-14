@@ -21,6 +21,7 @@ import (
 var settingsPages = []struct{ path, entry string }{
 	{"/settings", "Account"},
 	{"/settings/registries", "Registries"},
+	{"/settings/secret-providers", "Secret providers"},
 	{"/settings/backup-storage", "Backup storage"},
 	{"/settings/certificates", "Certificates"},
 	{"/settings/notifications", "Notifications"},
@@ -68,7 +69,7 @@ func TestSettingsNavOnEveryPage(t *testing.T) {
 		}
 		want := map[string][]string{
 			"":             {"Account=/settings"},
-			"Connections":  {"Registries=/settings/registries", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "Notifications=/settings/notifications"},
+			"Connections":  {"Registries=/settings/registries", "Secret providers=/settings/secret-providers", "Backup storage=/settings/backup-storage", "Certificates=/settings/certificates", "Notifications=/settings/notifications"},
 			"Security":     {"Sign-in=/settings/sign-in", "API tokens=/settings/tokens"},
 			"This browser": {"Appearance=/settings/appearance"},
 		}
@@ -926,7 +927,7 @@ func TestSettingsAfterTheCritique(t *testing.T) {
 		}
 		// One HTML list for both orders: the wide nav keeps the contract's order, in its groups.
 		got := settingsNavOf(t, e.mustGet(t, "/settings/tokens"))
-		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Backup storage=/settings/backup-storage Certificates=/settings/certificates Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
+		if strings.Join(got["Connections"], " ") != "Registries=/settings/registries Secret providers=/settings/secret-providers Backup storage=/settings/backup-storage Certificates=/settings/certificates Notifications=/settings/notifications" || strings.Join(got["Security"], " ") != "Sign-in=/settings/sign-in API tokens=/settings/tokens*" {
 			t.Errorf("the nav's order changed: %v", got)
 		}
 	})

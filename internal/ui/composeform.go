@@ -74,6 +74,10 @@ type draftSecret struct {
 	Name   string
 	Exists bool
 	Field  formField
+	// From is where the secret reads its value (feature 037). A reference is
+	// listed read-only, has no input, and is kept through the draft and the
+	// deploy: references are added on the Variables page.
+	From *app.SecretRef
 }
 
 // HasSecrets says the service already has a secret, so the form draws its one
@@ -386,7 +390,7 @@ func (d composeDraft) request() compose.Request {
 			ov.Domains = d.keptDomains[s.Name]
 		}
 		for _, sec := range s.Secrets {
-			secret := app.Secret{Name: sec.Name}
+			secret := app.Secret{Name: sec.Name, From: sec.From}
 			if v, ok := d.values[s.Name][sec.Name]; ok {
 				secret.Value = &v
 			}
@@ -440,7 +444,7 @@ func draftFrom(a app.App) composeDraft {
 			}
 		}
 		for _, sec := range svc.Secrets {
-			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true,
+			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From,
 				Field: formField{ID: inputID(svc.Name, "secret-"+sec.Name)}})
 		}
 		s.build()
@@ -486,7 +490,7 @@ func draftOf(req compose.Request) composeDraft {
 			}
 		}
 		for _, sec := range ov.Secrets {
-			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true,
+			s.Secrets = append(s.Secrets, draftSecret{Name: sec.Name, Exists: true, From: sec.From,
 				Field: formField{ID: inputID(name, "secret-"+sec.Name)}})
 		}
 		s.build()
@@ -513,6 +517,8 @@ func (d *composeDraft) keepStored(stored app.App) {
 				i = len(s.Secrets) - 1
 			}
 			s.Secrets[i].Exists = true
+			// A reference has no input to post, so the stored one is what the deploy keeps.
+			s.Secrets[i].From = sec.From
 		}
 		slices.SortFunc(s.Secrets, func(a, b draftSecret) int { return strings.Compare(a.Name, b.Name) })
 	}

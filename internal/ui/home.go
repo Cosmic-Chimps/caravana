@@ -95,6 +95,12 @@ func changeLine(rec store.DeploymentRecord, again string) sentence {
 	switch {
 	case rec.SourceApp != "":
 		return capitalized(deployWho(rec, true))
+	case rec.Deployment.Refresh:
+		// "Refreshed secrets (v2's version)", as a redeploy names the version it repeats.
+		if again == "" {
+			return plainS("Refreshed secrets")
+		}
+		return sentence{plain("Refreshed secrets ("), mono(again), plain("'s version)")}
 	case rec.Source != "":
 		if again == "" {
 			return plainS("A past version deployed again")

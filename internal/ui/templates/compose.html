@@ -110,12 +110,20 @@
         {{if .HasSecrets}}<p class="cv-data-muted cv-hint">Leave a value empty to keep it.</p>{{end}}
         <div class="cv-secret-rows">
           {{range .Secrets}}
+          {{if .From}}
+          <div class="cv-secret-row">
+            <span class="cv-secret-name cv-data text-fg-1">{{.Name}}</span>
+            <span class="cv-data-muted">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>
+            <span class="cv-data-muted cv-hint cv-secret-aside">Kept as it is. Change it on the Variables page.</span>
+          </div>
+          {{else}}
           <div class="cv-secret-row">
             <label class="cv-secret-name cv-data text-fg-1" for="{{.Field.ID}}">{{.Name}}</label>
             <input class="cv-field cv-field-mono" id="{{.Field.ID}}" type="password" name="svc.{{$svc.Name}}.secret.{{.Name}}" autocomplete="new-password"{{if .Field.Error}} aria-invalid="true" aria-describedby="{{.Field.ID}}-error"{{end}}{{if .Field.Alert}} autofocus{{end}}>
             {{if not .Exists}}<span class="cv-data-muted cv-hint cv-secret-aside">Type its value.</span>{{end}}
             {{template "field-error" .Field}}
           </div>
+          {{end}}
           {{end}}
         </div>
         <p class="cv-data-muted cv-hint">Add a secret: its name, then its value. It reaches the service as an environment variable. Values are not kept on this page.</p>

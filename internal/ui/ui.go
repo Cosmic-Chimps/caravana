@@ -230,6 +230,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/backups/{backupId}/unpin", s.protected(s.requireSession(s.unpinBackup))},
 		{"POST", "/apps/{id}/backups/restore-schedule", s.protected(s.requireSession(s.setRestoreSchedule))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
+		{"POST", "/apps/{id}/secrets/refresh", s.protected(s.requireSession(s.refreshSecrets))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/apps/{id}/stop", s.requireSession(s.showStop)},
 		{"POST", "/apps/{id}/stop", s.protected(s.requireSession(s.stopApp))},
@@ -270,6 +271,7 @@ func (s *server) routeTable() []route {
 		{"GET", "/settings", s.requireSession(s.showSettings)},
 		{"GET", "/settings/account", s.showSettingsAccount},
 		{"GET", "/settings/registries", s.requireSession(s.showRegistries)},
+		{"GET", "/settings/secret-providers", s.requireSession(s.showSecretProviders)},
 		{"GET", "/settings/backup-storage", s.requireSession(s.showBackupStorage)},
 		{"GET", "/settings/notifications", s.requireSession(s.showNotifications)},
 		{"GET", "/settings/certificates", s.requireSession(s.showCertificates)},
@@ -292,6 +294,9 @@ func (s *server) routeTable() []route {
 		{"POST", "/settings/registries", s.protected(s.requireSession(s.saveRegistry))},
 		{"POST", "/settings/registries/test", s.protected(s.requireSession(s.testRegistry))},
 		{"POST", "/settings/registries/remove", s.protected(s.requireSession(s.removeRegistry))},
+		{"POST", "/settings/secret-providers", s.protected(s.requireSession(s.saveSecretProvider))},
+		{"POST", "/settings/secret-providers/test", s.protected(s.requireSession(s.testSecretProvider))},
+		{"POST", "/settings/secret-providers/remove", s.protected(s.requireSession(s.removeSecretProvider))},
 		{"POST", "/settings/notifications", s.protected(s.requireSession(s.addNotification))},
 		{"POST", "/settings/notifications/{id}", s.protected(s.requireSession(s.updateNotification))},
 		{"POST", "/settings/notifications/{id}/test", s.protected(s.requireSession(s.testNotification))},
@@ -393,7 +398,7 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 			files = append(files, "templates/apps.html")
 		}
 		files = append(files, "templates/"+name+".html")
-		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
+		t, err := template.New("base.html").Funcs(template.FuncMap{"asset": s.asset, "icon": icon, "brandMark": brandMark, "destField": destField, "regField": regField, "providerForms": providerForms, "notifyForm": notifyFormFor, "srow": srowFor, "restoreAsk": restoreAskFor, "inc": func(i int) int { return i + 1 }}).ParseFS(templatesFS, files...)
 		if err != nil {
 			return nil, fmt.Errorf("parse template %s: %w", name, err)
 		}

@@ -18,6 +18,11 @@ import (
 type sourceLink struct {
 	ID    string
 	Short string
+	// Refresh says the deployment is a Refresh secrets (feature 037) of the
+	// source, the version that was live; Version is that version's label
+	// ("v2"), "" when it can't be read.
+	Refresh bool
+	Version string
 }
 
 // promotedLink says a deployment was a promotion, and points at the deployment
@@ -35,6 +40,9 @@ type redeployView struct {
 	Action  string
 	Removed []string
 	Error   sentence
+	// ReadsNow says the version has secret references: a redeploy reads them
+	// from their providers now, not as they were (feature 037).
+	ReadsNow bool
 }
 
 // addVersionActions adds what a past deployment offers: where it came from,
@@ -49,7 +57,7 @@ func addVersionActions(e *historyEntry, rec store.DeploymentRecord, current app.
 		e.Promoted = &promotedLink{Environment: rec.SourceEnvironment, Short: shortID(rec.Source),
 			Href: "/apps/" + url.PathEscape(rec.SourceApp) + "/deployments#deployment-" + url.PathEscape(rec.Source)}
 	case rec.Source != "":
-		e.Source = &sourceLink{ID: rec.Source, Short: shortID(rec.Source)}
+		e.Source = &sourceLink{ID: rec.Source, Short: shortID(rec.Source), Refresh: rec.Deployment.Refresh}
 	}
 	base := "/apps/" + rec.AppID + "/deployments/" + rec.Deployment.ID
 	if rec.Compose != nil {
@@ -62,7 +70,7 @@ func addVersionActions(e *historyEntry, rec store.DeploymentRecord, current app.
 	if rec.Status != store.StatusHealthy {
 		return
 	}
-	e.Redeploy = &redeployView{Action: base + "/redeploy"}
+	e.Redeploy = &redeployView{Action: base + "/redeploy", ReadsNow: service.HasSecretReferences(*rec.Definition)}
 	for _, w := range service.RemovedSecrets(current, *rec.Definition) {
 		e.Redeploy.Removed = append(e.Redeploy.Removed, w.Message)
 	}

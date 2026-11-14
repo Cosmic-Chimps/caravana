@@ -624,7 +624,7 @@
   {{if .Error}}<p class="cv-data-muted cv-detail">{{with .ErrorLead}}<span class="cv-detail-lead">{{.}}</span>{{end}}{{.Error}}</p>{{end}}
   {{with .Action}}<p class="cv-deploy-action"><a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Label}}</a></p>{{end}}
   {{with .Promoted}}<p class="cv-data-muted"><a href="{{.Href}}">Promoted from <span class="cv-inline-mono">{{.Environment}}</span> · deployment <span class="cv-inline-mono">{{.Short}}</span></a></p>{{end}}
-  {{with .Source}}<p class="cv-data-muted">Redeploy of <a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
+  {{with .Source}}<p class="cv-data-muted">{{if .Refresh}}Refreshed secrets{{with .Version}} (<span class="cv-inline-mono">{{.}}</span>'s version){{end}} · deployment {{else}}Redeploy of {{end}}<a href="#deployment-{{.ID}}" class="cv-inline-mono" title="{{.ID}}">{{.Short}}</a></p>{{end}}
   {{if or .Redeploy .ExportHref .ComposeHref}}
   <div class="cv-actions">
     {{with .Redeploy}}
@@ -637,6 +637,7 @@
         <p>Secrets keep their current values. These ones aren't in this version, so their values are deleted:</p>
         <ul class="cv-deploy-warnings">{{range .}}<li><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>{{.}}</span></li>{{end}}</ul>
         {{end}}
+        {{if .ReadsNow}}<p>Reads secrets from providers again now, not as they were.</p>{{end}}
         <p class="text-sm text-fg-3">A later redeploy, or a webhook, looks the image tags up again.</p>
         <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Redeploy</button></div>
       </form>
@@ -932,6 +933,7 @@
 {{define "variables"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{with .Add.Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+{{with .Info}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{if and .Stopped .Defined}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>The app is stopped: start it first.</span></div>{{end}}
 {{if not .Defined}}
 <section aria-labelledby="vars-title" class="cv-pgsec">
@@ -964,7 +966,7 @@
   {{range .Rows}}
   <div class="cv-vrow cv-confirm-row" role="row">
     <div role="cell" class="cv-vname">{{if .Secret}}{{icon "lock" 13}}<span class="sr-only">secret </span>{{else}}<span class="cv-vblank" aria-hidden="true"></span>{{end}}<span class="cv-vname-text">{{.Name}}</span></div>
-    <div role="cell" class="cv-vvalue">{{if .Secret}}<span class="cv-dots" aria-hidden="true">••••••••••</span><span class="sr-only">hidden</span>{{else}}<span title="{{.Value}}">{{.Value}}</span>{{end}}</div>
+    <div role="cell" class="cv-vvalue">{{if and .Secret .From}}<span class="cv-vfrom">from <span class="cv-inline-mono">{{.From.Provider}}</span> · <span class="cv-inline-mono">{{.From.Path}}</span></span>{{else if .Secret}}<span class="cv-dots" aria-hidden="true">••••••••••</span><span class="sr-only">hidden</span>{{else}}<span title="{{.Value}}">{{.Value}}</span>{{end}}</div>
     {{if $.Many}}<div role="cell" class="cv-vused">{{.Service}}</div>{{end}}
     <div role="cell" class="cv-vact">
       {{if and .Secret $.CanRemove}}
@@ -990,6 +992,8 @@
 </div>
 <p class="cv-foot">Secret values live in Nomad Variables, readable only by this service's copies. Caravana never shows a secret again.</p>
 
+{{template "secret-sources" .}}
+
 <section id="add" class="cv-panel cv-gpanel" aria-labelledby="add-title">
   <h2 id="add-title" class="cv-label">Add or change</h2>
   <form method="post" action="/apps/{{.ID}}/variables" class="cv-formcol cv-formcol-narrow" autocomplete="off">
@@ -1006,11 +1010,32 @@
         <input class="cv-field cv-field-mono" id="var-name" type="text" name="name" value="{{.Add.Name.Value}}" required autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Name.Error}} aria-invalid="true" aria-describedby="var-name-error"{{end}}{{if .Add.Name.Alert}} autofocus{{end}}>
         {{template "field-error" .Add.Name}}
       </label>
+      {{if .Providers}}
+      <fieldset class="cv-fieldset cv-formcol" aria-label="Where the secret's value comes from">
+        <label class="cv-check"><input type="radio" name="source" value="value"{{if ne .Add.Source "provider"}} checked{{end}}><span>A value</span></label>
+        <label class="cv-check"><input type="radio" name="source" value="provider"{{if eq .Add.Source "provider"}} checked{{end}}><span>From a provider</span></label>
+      </fieldset>
+      {{end}}
       <label class="cv-fld" for="var-value">
         <span class="cv-label">Value</span>
         <textarea class="cv-field cv-field-area cv-field-mono" id="var-value" name="value" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Add.Value.Error}} aria-invalid="true" aria-describedby="var-value-error"{{end}}>{{.Add.Value.Value}}</textarea>
         {{template "field-error" .Add.Value}}
       </label>
+      {{if .Providers}}
+      <label class="cv-fld" for="var-provider">
+        <span class="cv-label">Provider</span>
+        <select class="cv-field cv-select" id="var-provider" name="provider"{{if .Add.Provider.Error}} aria-invalid="true" aria-describedby="var-provider-error"{{end}}>{{range .Providers}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+        {{template "field-error" .Add.Provider}}
+      </label>
+      <label class="cv-fld" for="var-path">
+        <span class="cv-label">Path</span>
+        <input class="cv-field cv-field-mono" id="var-path" type="text" name="path" value="{{.Add.Path.Value}}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="var-path-hint{{if .Add.Path.Error}} var-path-error{{end}}"{{if .Add.Path.Error}} aria-invalid="true"{{end}}>
+        <span class="cv-hint" id="var-path-hint">The secret's key in the provider. Used only when "From a provider" is chosen; the value above is then ignored.</span>
+        {{template "field-error" .Add.Path}}
+      </label>
+      {{else}}
+      <p class="cv-note">To read a secret from a provider such as Bella Baxter, <a href="/settings/secret-providers">connect one in Settings</a>.</p>
+      {{end}}
       {{if .Kept}}
       <input type="hidden" name="secret" value="1">
       <p class="cv-note">The value is set as a secret and never shown again.</p>
@@ -1051,6 +1076,46 @@
 </div>
 {{end}}
 {{end}}
+{{end}}
+
+{{/* secret-sources: the "Where secrets come from" panel of the Variables page (feature 037): Caravana's
+     own storage, then each provider the app references or may use, "Connect a source", and Refresh
+     secrets when the app has a reference. Takes a variablesTab. A name, a kind and counts: never a value. */}}
+{{define "secret-sources"}}
+<section class="cv-panel cv-gpanel" aria-labelledby="sources-title">
+  <h2 id="sources-title" class="cv-label">Where secrets come from</h2>
+  <div class="cv-conns">
+    <div class="cv-conn"><div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-healthy" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title">Caravana</span>
+        <span class="cv-conn-kind">Built in · stored in Nomad Variables</span>
+      </div>
+      <div class="cv-conn-state"><span class="cv-conn-st">{{.BuiltinText}}</span></div>
+      <span class="cv-conn-used"></span>
+      <div class="cv-conn-acts"></div>
+    </div></div>
+    {{range .Sources}}
+    <div class="cv-conn"><div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>
+        <span class="cv-conn-kind">{{.Kind}}</span>
+      </div>
+      <div class="cv-conn-state"><span class="cv-conn-st{{if .StateFailed}} cv-conn-st-failed{{end}}">{{.State}}</span></div>
+      <span class="cv-conn-used">{{.Refs}}</span>
+      <div class="cv-conn-acts"></div>
+    </div></div>
+    {{end}}
+  </div>
+  <p class="cv-note"><a href="/settings/secret-providers">Connect a source</a> · To use a value from a source, pick it when you add a secret. Caravana shows the path, never the value.</p>
+  {{if and .HasRefs (not .Stopped)}}
+  <form method="post" action="/apps/{{.ID}}/secrets/refresh" class="cv-formcol">
+    <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">{{icon "rotate-ccw" 14}}Refresh secrets</button></div>
+    <p class="cv-hint">Reads every reference again and rolls the app out if a value changed.</p>
+  </form>
+  {{end}}
+</section>
 {{end}}
 
 {{/* The Domains page (features 021 and 023): every address the app answers on, drawn as /domains

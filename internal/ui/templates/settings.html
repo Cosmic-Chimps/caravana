@@ -25,6 +25,7 @@
   <div class="cv-settings-main">
     {{if eq .Entry "account"}}{{template "settings-account" .}}
     {{else if eq .Entry "registries"}}{{template "settings-registries" .}}
+    {{else if eq .Entry "secret-providers"}}{{template "settings-secret-providers" .}}
     {{else if eq .Entry "backup-storage"}}{{template "settings-backup-storage" .}}
     {{else if eq .Entry "notifications"}}{{template "settings-notifications" .}}
     {{else if eq .Entry "certificates"}}{{template "settings-certificates" .}}
@@ -374,6 +375,102 @@
   {{template "srow-close"}}
 </form>
 {{end}}
+{{end}}
+
+{{/* ------------------------------------------------------- Secret providers
+     Where an app's secrets may be read from (feature 037, contracts/console.md). The API key and
+     the private key are write-only: no field of the page data holds them, an empty field keeps
+     the stored one, and a refused save never puts them back. Test is a post; Edit and Remove
+     open a <details>. */}}
+{{define "settings-secret-providers"}}
+{{with .Providers}}
+<header class="cv-sthead">
+  <div class="cv-sthead-text">
+    <h1 class="cv-headline">Secret providers</h1>
+    <p class="cv-lede">Places Caravana reads an app's secrets from, so you don't type them here.</p>
+  </div>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add provider</a>
+</header>
+<p class="cv-hint">Caravana reads these values at each deploy and copies them into Nomad Variables, so it holds this API key and, with zero-knowledge encryption, its private key. Make a key for Caravana alone, in the Bella environment the apps use.</p>
+{{with .Notice}}
+{{if .Bad}}<div role="alert" class="cv-notice"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>
+{{else}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+{{end}}
+{{with .Alert}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.Text}}</span></div>{{end}}
+
+{{if .Rows}}
+<div class="cv-panel cv-conns">
+  {{range $i, $row := .Rows}}
+  <div class="cv-conn">
+    <div class="cv-conn-row">
+      <span class="cv-conn-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
+      <div class="cv-conn-name">
+        <span class="cv-conn-title" title="{{.Name}}">{{.Name}}</span>
+        <span class="cv-conn-kind">{{.Kind}}</span>
+        <span class="cv-conn-kind">{{.Allowed}}</span>
+      </div>
+      <div class="cv-conn-state">
+        <span class="cv-conn-st{{if .StateFailed}} cv-conn-st-failed{{end}}">{{.State}}</span>
+        <span class="cv-conn-ev"{{with .Test}} title="{{.Exact}}"{{end}}>{{.Event}}</span>
+      </div>
+      <span class="cv-conn-used">{{.UsedBy}}</span>
+      <div class="cv-conn-acts">
+        <form method="post" action="/settings/secret-providers/test">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <button type="submit" class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Test {{.Name}}">Test</button>
+        </form>
+        <details class="cv-confirm cv-confirm-row" id="provider-edit-{{$i}}" name="conn-{{$i}}"{{if .Open}} open{{end}}>
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Edit {{.Name}}">Edit</summary>
+          <form method="post" action="/settings/secret-providers" class="cv-confirm-body" autocomplete="off">
+            <input type="hidden" name="edit" value="1">
+            {{template "provider-fields" (providerForms .Edit (printf "provider-edit-%d" $i))}}
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-primary">Save</button></div>
+          </form>
+        </details>
+        <details class="cv-confirm cv-confirm-row" name="conn-{{$i}}">
+          <summary class="cv-btn cv-btn-sm cv-btn-secondary" aria-label="Remove {{.Name}}">Remove</summary>
+          <form method="post" action="/settings/secret-providers/remove" class="cv-confirm-body">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <p>Apps already running keep their secrets. A provider that apps still read from can't be removed: take those references out first.</p>
+            <div><button type="submit" class="cv-btn cv-btn-sm cv-btn-danger">Remove</button></div>
+          </form>
+        </details>
+      </div>
+    </div>
+    {{if .StateFailed}}<p class="cv-conn-note">Deploys of apps that read from this provider fail until Caravana can read it again.{{with .Detail}}<span class="cv-conn-detail">{{.}}</span>{{end}}</p>{{end}}
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="cv-panel"><div class="cv-empty">
+  <p class="cv-empty-title">No secret providers. Connect Bella Baxter to use its secrets in apps without typing them here.</p>
+  <a href="#add" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}Add provider</a>
+</div></div>
+{{end}}
+
+<form method="post" action="/settings/secret-providers" id="add" class="cv-panel" autocomplete="off">
+  <h2 class="cv-label cv-addhead">Connect Bella Baxter</h2>
+  {{template "provider-fields" (providerForms .Add "provider-add")}}
+  <div class="cv-btnrow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save</button></div>
+</form>
+{{end}}
+{{end}}
+
+{{/* provider-fields: the inputs of a provider form, as setting rows. Takes a providerFormView. */}}
+{{define "provider-fields"}}
+{{range .Fields}}
+{{template "srow-open" (srow .Label .Hint .ID)}}
+{{template "provider-input" .}}
+{{template "srow-close"}}
+{{end}}
+{{end}}
+
+{{/* provider-input: one input of a provider form. Takes a providerFieldView. A key input never has
+     a value; a refusal replaces nothing but adds its sentence under the input. */}}
+{{define "provider-input"}}
+{{if eq .Kind "textarea"}}<textarea class="cv-field cv-field-area cv-field-mono" id="{{.ID}}" name="{{.Name}}" rows="4"{{with .Placeholder}} placeholder="{{.}}"{{end}} autocapitalize="off" spellcheck="false" autocomplete="off"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}></textarea>
+{{else}}<input class="cv-field cv-field-mono" type="{{.Kind}}" id="{{.ID}}" name="{{.Name}}"{{if ne .Kind "password"}} value="{{.Value}}"{{end}}{{with .Placeholder}} placeholder="{{.}}"{{end}}{{if .ReadOnly}} readonly{{end}} autocapitalize="off" spellcheck="false" autocomplete="{{if eq .Kind "password"}}new-password{{else}}off{{end}}"{{if .Err}} autofocus aria-invalid="true" aria-describedby="{{.ID}}-error"{{end}}>{{end}}
+{{with .Err}}<span id="{{$.ID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{.}}</span></span>{{end}}
 {{end}}
 
 {{/* ---------------------------------------------------------- Backup storage

@@ -781,6 +781,10 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 	for i, rec := range recs {
 		e := s.historyEntry(ctx, now, rec, facts[i])
 		addVersionActions(&e, rec, current.App)
+		if e.Source != nil && e.Source.Refresh {
+			// "Refreshed secrets (v2's version)": the version that was live is the source's.
+			e.Source.Version = s.sourceVersion(ctx, recs, appID, rec.Source)
+		}
 		region.Entries = append(region.Entries, e)
 	}
 	if more {
@@ -1035,7 +1039,10 @@ func refuseDeploy(form *deployForm, err error) (status int, notice sentence, ok 
 		return true
 	}
 
+	var refErr *service.ReferenceError
 	switch {
+	case errors.As(err, &refErr):
+		return referenceRefusal(refErr)
 	case errors.Is(err, service.ErrAppStopped):
 		return http.StatusConflict, sentence{plain(appStoppedText)}, true
 	case errors.Is(err, service.ErrAppNotDefined):
@@ -1287,4 +1294,31 @@ func (s *server) deleteApp(w http.ResponseWriter, r *http.Request, session strin
 	default:
 		s.serverError(w, r, "delete app", err)
 	}
+}
+
+// referenceRefusal is what a secret reference that couldn't be read looks like
+// on any page that deploys (feature 037): a path the provider doesn't have or a
+// provider that refused Caravana is the definition's fault (422); a provider
+// that is down is not (502). The sentence names the provider and the path in
+// Caravana's words, never a value, and says what was kept.
+func referenceRefusal(e *service.ReferenceError) (status int, notice sentence, ok bool) {
+	status = http.StatusUnprocessableEntity
+	if errors.Is(e.Err, secrets.ErrSourceUnavailable) {
+		status = http.StatusBadGateway
+	}
+	notice = sentence{plain(e.Error() + " ("), mono(e.Field), plain("). Nothing was deployed. The running copies keep their secrets.")}
+	return status, notice, true
+}
+
+// sourceVersion is the version label of the deployment sourceID, found in the
+// page's records or read from the service; "" when it can't be said.
+func (s *server) sourceVersion(ctx context.Context, recs []store.DeploymentRecord, appID, sourceID string) string {
+	if i := slices.IndexFunc(recs, func(r store.DeploymentRecord) bool { return r.Deployment.ID == sourceID }); i >= 0 {
+		return versionLabel(recs[i].JobVersion)
+	}
+	src, err := s.svc.GetDeployment(ctx, appID, sourceID)
+	if err != nil {
+		return ""
+	}
+	return versionLabel(src.JobVersion)
 }

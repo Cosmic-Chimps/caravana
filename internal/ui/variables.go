@@ -44,6 +44,34 @@ type variablesTab struct {
 	Add     addVariableForm
 	Editors []envEditor
 	Notice  sentence
+	// Info is a sentence that isn't a refusal: "Secrets unchanged".
+	Info sentence
+	// Providers are the secret providers this app's place may use, for the Add
+	// form's "From a provider" choice (feature 037); none means the choice is
+	// absent and the page links to Settings.
+	Providers []providerChoice
+	// Sources are the rows of "Where secrets come from": Caravana's own, then
+	// each provider the app references or may use.
+	Sources []sourceRow
+	// Builtin is how many of the app's secrets are typed values, kept in Nomad Variables.
+	Builtin int
+	// BuiltinText is Builtin as the panel says it: "3 values".
+	BuiltinText string
+	// HasRefs says the app has a secret reference: Refresh secrets is offered.
+	HasRefs bool
+}
+
+// providerChoice is a provider in the Add form's select.
+type providerChoice struct {
+	Name, Label string
+	Selected    bool
+}
+
+// sourceRow is a provider's row in "Where secrets come from": its mark from the
+// last test, name, kind and how many references of this app point at it.
+type sourceRow struct {
+	Name, Mark, Kind, State, Refs string
+	StateFailed                   bool
 }
 
 // variableRow is one variable or secret of one service. A secret's value is not
@@ -51,6 +79,9 @@ type variablesTab struct {
 type variableRow struct {
 	Service, Name, Value string
 	Secret               bool
+	// From is where a secret reads its value at each deploy; nil for a typed
+	// secret and for a variable. It is a name and a path, never a value.
+	From *app.SecretRef
 }
 
 // addVariableForm is the "Add or change" form with what was typed, never a secret's value.
@@ -60,6 +91,12 @@ type addVariableForm struct {
 	Name, Value formField
 	Secret      bool
 	Notice      sentence
+	// Source is "value" (the typed value) or "provider" (a reference, feature
+	// 037); Provider and Path are the reference as typed. A secret's value is
+	// never put back, a path is not secret.
+	Source   string
+	Provider formField
+	Path     formField
 }
 
 // envEditor is one service's ".env" textarea. Field is what was typed, or what
@@ -88,7 +125,7 @@ func variableRowsOf(a app.App) []variableRow {
 	var secretRows, varRows []variableRow
 	for _, svc := range a.Services {
 		for _, sec := range svc.Secrets {
-			secretRows = append(secretRows, variableRow{Service: svc.Name, Name: sec.Name, Secret: true})
+			secretRows = append(secretRows, variableRow{Service: svc.Name, Name: sec.Name, Secret: true, From: sec.From})
 		}
 		for _, v := range svc.Env {
 			varRows = append(varRows, variableRow{Service: svc.Name, Name: v.Name, Value: v.Value})
@@ -108,18 +145,29 @@ type variablesExtras struct {
 	Add    *addVariableForm
 	Env    map[string]formField // by service
 	Notice sentence
+	Info   sentence
+	// Providers are every secret provider, with the apps that use them: the
+	// page keeps those the app's place may use and those it references.
+	Providers []service.SecretProviderInfo
 }
 
 // variablesTabOf builds the page's body from the app's summary. It is pure.
 func variablesTabOf(sum service.AppSummary, extra variablesExtras) *variablesTab {
 	a := sum.App
 	tab := &variablesTab{ID: a.ID, Revision: sum.Revision, Defined: a.Defined(), Kept: sum.Compose != nil,
-		Stopped: sum.StoppedAt != nil, Many: len(a.Services) > 1, Rows: variableRowsOf(a), Notice: extra.Notice}
-	tab.Add = addVariableForm{Name: formField{ID: "var-name"}, Value: formField{ID: "var-value"}, Secret: true}
+		Stopped: sum.StoppedAt != nil, Many: len(a.Services) > 1, Rows: variableRowsOf(a), Notice: extra.Notice, Info: extra.Info,
+		HasRefs: service.HasSecretReferences(a)}
+	tab.Add = addVariableForm{Name: formField{ID: "var-name"}, Value: formField{ID: "var-value"}, Secret: true, Source: "value"}
 	if extra.Add != nil {
 		tab.Add = *extra.Add
 		tab.Add.Name.ID, tab.Add.Value.ID = "var-name", "var-value"
+		if tab.Add.Source == "" {
+			tab.Add.Source = "value"
+		}
 	}
+	tab.Add.Provider.ID, tab.Add.Path.ID = "var-provider", "var-path"
+	tab.Providers, tab.Sources, tab.Builtin = secretSourcesOf(a, extra.Providers, tab.Add.Provider.Value)
+	tab.BuiltinText = plural(tab.Builtin, "value")
 	for _, svc := range a.Services {
 		tab.Add.Services = append(tab.Add.Services, svc.Name)
 		ed := envEditor{Service: svc.Name, Field: formField{ID: "env-" + svc.Name, Value: envText(svc.Env)}}
@@ -133,6 +181,54 @@ func variablesTabOf(sum service.AppSummary, extra variablesExtras) *variablesTab
 		tab.Add.Service = tab.Add.Services[0]
 	}
 	return tab
+}
+
+// secretSourcesOf works out what the Variables page says about providers: the
+// select's choices (providers that may be used in the app's place), the rows of
+// "Where secrets come from" (those, and any the app still references) and how
+// many typed secrets the app keeps in Nomad Variables.
+func secretSourcesOf(a app.App, providers []service.SecretProviderInfo, selected string) (choices []providerChoice, rows []sourceRow, builtin int) {
+	refs := map[string]int{}
+	for _, svc := range a.Services {
+		for _, sec := range svc.Secrets {
+			if sec.From != nil {
+				refs[sec.From.Provider]++
+			} else {
+				builtin++
+			}
+		}
+	}
+	place := placeOfID(a.ID)
+	for _, p := range providers {
+		allowed := service.ProviderAllows(p.SecretProvider, place)
+		if !allowed && refs[p.Name] == 0 {
+			continue
+		}
+		kind := "Bella Baxter · " + p.Project + "/" + p.Environment
+		if allowed {
+			choices = append(choices, providerChoice{Name: p.Name, Label: p.Name + " · " + p.Project + "/" + p.Environment, Selected: p.Name == selected})
+		}
+		row := sourceRow{Name: p.Name, Mark: "idle", Kind: kind, State: "not tested yet", Refs: "not referenced"}
+		switch t := p.LastTest; {
+		case t != nil && t.OK:
+			row.Mark, row.State = "healthy", t.Message
+		case t != nil:
+			row.Mark, row.State, row.StateFailed = "failed", "can't be read", true
+		}
+		if n := refs[p.Name]; n > 0 {
+			row.Refs = plural(n, "reference")
+		}
+		rows = append(rows, row)
+	}
+	return choices, rows, builtin
+}
+
+// placeOfID is where an app ID puts it; an ID from before projects is in Default's production.
+func placeOfID(id string) app.Place {
+	if p, err := app.PlaceOf(id); err == nil {
+		return p
+	}
+	return app.Place{Project: app.DefaultProject, Environment: app.DefaultEnvironment, Name: id}
 }
 
 // variablesPage draws the Variables & secrets page with the given status. An
@@ -154,14 +250,25 @@ func (s *server) variablesPage(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
+	if extra.Providers, err = s.svc.SecretProviders(ctx); err != nil {
+		s.serverError(w, r, "list secret providers", err)
+		return
+	}
 	// The Configure tab stays current: this is one of its pages.
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(ctx, sum, "configure"), VariablesTab: variablesTabOf(sum, extra)})
 }
 
 // showVariables answers GET /apps/{id}/variables.
 func (s *server) showVariables(w http.ResponseWriter, r *http.Request, session string) {
-	s.variablesPage(w, r, http.StatusOK, r.PathValue("id"), variablesExtras{})
+	extra := variablesExtras{}
+	if r.URL.Query().Get("refresh") == "unchanged" {
+		extra.Info = secretsUnchanged
+	}
+	s.variablesPage(w, r, http.StatusOK, r.PathValue("id"), extra)
 }
+
+// secretsUnchanged is the answer to Refresh secrets when every value is as it was.
+var secretsUnchanged = sentence{plain("Secrets unchanged: nothing to roll out.")}
 
 // serviceNamed finds a service of the app by name.
 func serviceNamed(a app.App, name string) (int, bool) {
@@ -212,6 +319,14 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 	form.Name.Value = strings.TrimSpace(r.PostForm.Get("name"))
 	// A textarea sends its line breaks as CRLF; values (keys, certificates) expect LF.
 	value := strings.ReplaceAll(r.PostForm.Get("value"), "\r\n", "\n")
+	// "From a provider" (feature 037): the secret is a reference, so a typed value is never read.
+	fromProvider := r.PostForm.Get("source") == "provider"
+	form.Source = "value"
+	if fromProvider {
+		form.Source, form.Secret, value = "provider", true, ""
+		form.Provider.Value = strings.TrimSpace(r.PostForm.Get("provider"))
+		form.Path.Value = strings.TrimSpace(r.PostForm.Get("path"))
+	}
 	if !form.Secret {
 		form.Value.Value = value // a variable's value is shown in the table anyway
 	}
@@ -241,6 +356,18 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 		refuse(http.StatusUnprocessableEntity, &form)
 		return
 	}
+	if fromProvider {
+		switch {
+		case form.Provider.Value == "":
+			form.Provider.Error = sentence{plain("Choose a provider.")}
+		case form.Path.Value == "":
+			form.Path.Error = sentence{plain("Enter the secret's path in the provider.")}
+		}
+		if form.Provider.Error != nil || form.Path.Error != nil {
+			refuse(http.StatusUnprocessableEntity, &form)
+			return
+		}
+	}
 	isSecret := slices.ContainsFunc(svc.Secrets, func(sec app.Secret) bool { return sec.Name == form.Name.Value })
 	isVariable := slices.ContainsFunc(svc.Env, func(v app.EnvVar) bool { return v.Name == form.Name.Value })
 	switch {
@@ -261,7 +388,11 @@ func (s *server) setVariable(w http.ResponseWriter, r *http.Request, session str
 	cond := service.Condition{IfRevision: revision}
 	var deployment store.DeploymentRecord
 	var edited app.App
-	if form.Secret {
+	if fromProvider {
+		ref := app.SecretRef{Provider: form.Provider.Value, Path: form.Path.Value}
+		deployment, err = s.svc.SetSecretRefIf(ctx, id, svc.Name, form.Name.Value, ref, cond, app.TriggerConsole)
+		edited = rec.App
+	} else if form.Secret {
 		deployment, err = s.svc.SetSecretIf(ctx, id, svc.Name, form.Name.Value, value, cond, app.TriggerConsole)
 		edited = rec.App
 	} else {
@@ -301,6 +432,7 @@ var secretValueField = regexp.MustCompile(`^services\[\d+\]\.secrets(\[\d+\]\.va
 // the input it is about.
 func (s *server) refuseVariable(w http.ResponseWriter, r *http.Request, id string, edited app.App, form *addVariableForm, err error) {
 	var fieldErr *app.FieldError
+	var refErr *service.ReferenceError
 	status := http.StatusUnprocessableEntity
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -308,6 +440,18 @@ func (s *server) refuseVariable(w http.ResponseWriter, r *http.Request, id strin
 		return
 	case errors.Is(err, service.ErrAppChanged):
 		status, form.Notice = http.StatusConflict, sentence{plain(changedSincePage)}
+	case errors.As(err, &fieldErr) && strings.HasSuffix(fieldErr.Field, ".from.provider"):
+		form.Provider.Error = sentence{plain(fieldErr.Message)}
+	case errors.As(err, &fieldErr) && strings.HasSuffix(fieldErr.Field, ".from.path"):
+		form.Path.Error = sentence{plain(fieldErr.Message)}
+	case errors.As(err, &refErr) && errors.Is(refErr.Err, service.ErrSecretNotFound) && form.Source == "provider" &&
+		refErr.Provider == form.Provider.Value && refErr.Path == form.Path.Value:
+		// The path just typed isn't in the provider: say so at the Path input.
+		form.Path.Error = sentence{plain("Provider "), mono(refErr.Provider), plain(" has no secret "), mono(refErr.Path), plain(".")}
+		var deployErr *service.DeployError
+		if errors.As(err, &deployErr) { // the definition was saved, and the attempt is in the history
+			form.Notice = sentence{plain(savedNote)}
+		}
 	case errors.As(err, &fieldErr) && (fieldErr.Field == "name" || strings.HasSuffix(fieldErr.Field, ".name")):
 		form.Name.Error = sentence{plain(fieldErr.Message)}
 	case errors.As(err, &fieldErr) && secretValueField.MatchString(fieldErr.Field):
@@ -449,6 +593,43 @@ func (s *server) removeSecret(w http.ResponseWriter, r *http.Request, session st
 		var ok bool
 		if status, notice, ok = refuseDeploy(&deployForm{}, err); !ok {
 			s.serverError(w, r, "remove a secret", err)
+			return
+		}
+	}
+	s.variablesPage(w, r, status, id, variablesExtras{Notice: notice})
+}
+
+// refreshSecrets answers POST /apps/{id}/secrets/refresh (feature 037): every
+// reference of the running version is read again. A value that changed rolls the
+// app out again (303 to the Deployments tab); nothing changed draws the page
+// with a notice (303 to ?refresh=unchanged, so a reload doesn't post again); a
+// refusal draws the page again with the reason and its status. No revision is
+// needed: it deploys what already runs.
+func (s *server) refreshSecrets(w http.ResponseWriter, r *http.Request, session string) {
+	id := r.PathValue("id")
+	res, err := s.svc.RefreshSecrets(r.Context(), id, app.TriggerConsole)
+	if err == nil {
+		if res.Changed && res.Deployment != nil {
+			http.Redirect(w, r, "/apps/"+id+"/deployments#deployment-"+res.Deployment.Deployment.ID, http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/apps/"+id+"/variables?refresh=unchanged", http.StatusSeeOther)
+		return
+	}
+	status := http.StatusConflict
+	var notice sentence
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.appNotFound(w, r, id)
+		return
+	case errors.Is(err, service.ErrNoSecretReferences):
+		notice = sentence{plain("This app has no secrets from a provider, so there is nothing to refresh.")}
+	case errors.Is(err, service.ErrNoLiveDeployment), errors.Is(err, service.ErrDefinitionNotRecorded):
+		notice = sentence{plain("This app has no running version to refresh yet. Deploy it first.")}
+	default:
+		var ok bool
+		if status, notice, ok = refusalOf(app.App{}, err); !ok {
+			s.serverError(w, r, "refresh secrets", err)
 			return
 		}
 	}
