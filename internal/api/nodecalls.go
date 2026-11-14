@@ -124,7 +124,8 @@ func (s *server) joinServer(w http.ResponseWriter, r *http.Request) error {
 		Certificate string     `json:"certificate"`
 		NodeToken   string     `json:"nodeToken"`
 		Peers       []peerJSON `json:"peers"`
-	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), ans.CA, ans.Certificate, ans.NodeToken, toPeersJSON(ans.Peers)})
+		Issuer      string     `json:"issuer,omitempty"`
+	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), ans.CA, ans.Certificate, ans.NodeToken, toPeersJSON(ans.Peers), ans.Issuer})
 	return nil
 }
 
@@ -164,8 +165,9 @@ func (s *server) syncNode(w http.ResponseWriter, r *http.Request) error {
 		Renew     bool       `json:"renew"`
 		State     string     `json:"state"`
 		Checks    []checkOut `json:"checks"`
+		Issuer    string     `json:"issuer,omitempty"`
 	}{ans.Name, ans.Index, ans.Pool, ans.Role, serversOrEmpty(ans.Servers), toPeersJSON(ans.Peers), ans.GossipKey, ans.Renew, ans.State,
-		toServerChecksJSON(ans.Checks)}
+		toServerChecksJSON(ans.Checks), ans.Issuer}
 	writeJSON(w, http.StatusOK, out)
 	return nil
 }

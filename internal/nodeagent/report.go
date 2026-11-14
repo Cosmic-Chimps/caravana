@@ -27,19 +27,22 @@ type Reach struct {
 
 // Report is what a sync tells the console about this server (api.md §4, POST /v1/node/sync).
 type Report struct {
-	Agent               string  `json:"agent"`
-	Nomad               string  `json:"nomad"`
-	Docker              string  `json:"docker"`
-	DockerRunning       bool    `json:"dockerRunning"`
-	DiskFreeMB          int64   `json:"diskFreeMb"`
-	DiskTotalMB         int64   `json:"diskTotalMb"`
-	MemoryMB            int64   `json:"memoryMb"`
-	Kernel              string  `json:"kernel"`
-	Role                string  `json:"role"`
-	NomadLeader         bool    `json:"nomadLeader"`
-	ServerRunning       bool    `json:"serverRunning"`
-	CertificateNotAfter string  `json:"certificateNotAfter,omitempty"`
-	Reach               []Reach `json:"reach"`
+	Agent               string `json:"agent"`
+	Nomad               string `json:"nomad"`
+	Docker              string `json:"docker"`
+	DockerRunning       bool   `json:"dockerRunning"`
+	DiskFreeMB          int64  `json:"diskFreeMb"`
+	DiskTotalMB         int64  `json:"diskTotalMb"`
+	MemoryMB            int64  `json:"memoryMb"`
+	Kernel              string `json:"kernel"`
+	Role                string `json:"role"`
+	NomadLeader         bool   `json:"nomadLeader"`
+	ServerRunning       bool   `json:"serverRunning"`
+	CertificateNotAfter string `json:"certificateNotAfter,omitempty"`
+	// Issuer is what this agent last rendered as oidc_issuer; empty (and left out) for none, so a
+	// console that predates the field still accepts the report.
+	Issuer string  `json:"issuer,omitempty"`
+	Reach  []Reach `json:"reach"`
 }
 
 // Facts are what a join tells the console about a new server (api.md §4, POST /v1/join).
@@ -87,7 +90,7 @@ func (a *Agent) Report(ctx context.Context, st State) Report {
 	r := Report{
 		Agent: f.Agent, Nomad: f.Nomad, Docker: f.Docker, DockerRunning: dockerRunning,
 		DiskFreeMB: f.DiskFreeMB, DiskTotalMB: f.DiskTotalMB, MemoryMB: f.MemoryMB, Kernel: f.Kernel,
-		Role: st.Role, Reach: []Reach{},
+		Role: st.Role, Issuer: st.Issuer, Reach: []Reach{},
 	}
 	if b, ok, err := readIfExists(a.path(agentCert)); err == nil && ok {
 		if end, err := clusterca.NotAfter(b); err == nil {

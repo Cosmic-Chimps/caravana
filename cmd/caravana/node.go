@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 
+	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/nodeagent"
 )
 
@@ -18,7 +19,7 @@ The agent that runs as root on every Caravana server (feature 031). The installe
 you rarely need to.
 
 commands:
-  init-first --address ADDR [--cpu-total-compute N]
+  init-first --address ADDR [--cpu-total-compute N] [--issuer URL]
                     set up the first server: keys, the cluster's CA, Nomad's config, the network
   join --url URL --token TOKEN [--address ADDR] [--insecure] [--cpu-total-compute N]
                     join this server to a cluster with a token made in the console
@@ -57,11 +58,13 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 		insecure, renew     *bool
 		checks              *bool
 		cpu                 *int
+		issuer              *string
 	)
 	switch command {
 	case "init-first":
 		address = fs.String("address", "", "the address other servers reach this one at")
 		cpu = fs.Int("cpu-total-compute", 0, "Nomad's cpu_total_compute, for hosts that report no clock speed")
+		issuer = fs.String("issuer", "", "the OIDC issuer of workload identity tokens: the console's https:// address")
 	case "join":
 		url = fs.String("url", "", "the console's address")
 		token = fs.String("token", "", "the join token")
@@ -131,7 +134,11 @@ func runNode(ctx context.Context, args []string, getenv func(string) string,
 			fmt.Fprintln(stderr, "caravana node init-first: --address is required, an IPv4 or IPv6 address")
 			return exitUsage
 		}
-		err = agent.InitFirst(ctx, nodeagent.InitFirstOptions{Address: *address, CPUTotalCompute: *cpu})
+		if _, ok := mesh.CleanIssuer(*issuer); !ok {
+			fmt.Fprintln(stderr, "caravana node init-first: --issuer must be https:// and a host name with an optional port")
+			return exitUsage
+		}
+		err = agent.InitFirst(ctx, nodeagent.InitFirstOptions{Address: *address, CPUTotalCompute: *cpu, Issuer: *issuer})
 	case "join":
 		if !joined { // a server that joined already needs no options: join renders and runs up
 			if *url == "" || *token == "" {

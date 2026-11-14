@@ -42,6 +42,11 @@ type composeDraft struct {
 	// these and the typed text is never read. Nil for a new app, whose domains
 	// come from the textarea.
 	keptDomains map[string][]compose.Domain
+
+	// keptIdentities is, for an app that exists, each service's workload
+	// identities as the app has them (spec 038). The form has no input for
+	// them, so request sends these. Nil for a new app, which has none.
+	keptIdentities map[string][]app.Identity
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -396,7 +401,10 @@ func (d composeDraft) request() compose.Request {
 			}
 			ov.Secrets = append(ov.Secrets, secret)
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil {
+		if d.keptIdentities != nil {
+			ov.Identities = d.keptIdentities[s.Name]
+		}
+		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 {
 			continue
 		}
 		if req.Services == nil {
@@ -566,4 +574,29 @@ func (d *composeDraft) keepDomains(rec store.AppRecord) {
 	for i := range d.Services {
 		d.Services[i].Domains = formField{ID: d.Services[i].Domains.ID}
 	}
+}
+
+// keepIdentities makes the draft carry the workload identities the stored app
+// has (spec 038): the form doesn't edit them, so a preview or a deploy from it
+// must not drop one (constitution IV). An app that keeps its file has them in
+// the file's overlay, exactly as written; any other app has them on its
+// services. A service the draft lacks gets its inputs, so its identities
+// travel; one the new file doesn't have is dropped with them, as its other
+// settings are.
+func (d *composeDraft) keepIdentities(rec store.AppRecord) {
+	d.keptIdentities = map[string][]app.Identity{}
+	for _, svc := range rec.App.Services {
+		identities := svc.Identities
+		if rec.Compose != nil {
+			identities = rec.Compose.Services[svc.Name].Identities
+		}
+		if len(identities) == 0 {
+			continue
+		}
+		d.keptIdentities[svc.Name] = slices.Clone(identities)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
 }

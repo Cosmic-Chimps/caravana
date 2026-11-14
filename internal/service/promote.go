@@ -268,7 +268,8 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, entrypoint, command, arguments, ports,
-// health check, volume mounts and stop timeout, and the target's everything else. A service
+// health check, volume mounts and stop timeout, and the target's everything else (identities
+// included: an audience belongs to an environment, like a secret). A service
 // only the source has is added whole, without domains. A service only the
 // target has is a *RefusalError. It is pure.
 func promoted(target, source app.App) (result app.App, changes []ServiceChange, added []string, err error) {

@@ -3,7 +3,8 @@
 # Ubuntu 24.04, nothing else. It installs, reruns, upgrades with an app answering throughout,
 # rolls back a release that doesn't come up, updates from the API through the root updater (a
 # crafted request runs nothing, a release is installed, a broken one is rolled back), refuses an
-# older one, and uninstalls with the app still answering. Feature 031's first-server steps are in it:
+# older one, and uninstalls with the app still answering. Feature 038's issuer is checked on the first
+# server, also as a host from before it takes it. Feature 031's first-server steps are in it:
 # the private network (caravana0, the WireGuard mesh), Nomad's RPC on the mesh address with TLS, the
 # cluster's CA and gossip key in Nomad Variables with no key left on disk, the server registered with
 # Caravana, the refusals of both roles, and what --uninstall leaves. Then it deletes the VM. About 20
@@ -159,6 +160,85 @@ check_servers_api() {
   [ "$(jsonq 'd["servers"][0]["privateAddress"]' <<<"$out")" = 10.98.0.1 ] || die "the first server's private address should be 10.98.0.1:\n$out"
   [ "$(jsonq 'd["cluster"]["survivesLoss"]' <<<"$out")" = False ] || die "one server can't survive a loss:\n$out"
   ! grep -q 'cvnd_' <<<"$out" || die "the servers list holds a node token"
+}
+
+# identity_claims EXPR: EXPR over the claims of the workload identity token of idapp's copy, read
+# inside its container. The token never leaves this function's pipe and is never printed.
+identity_claims() {
+  # shellcheck disable=SC2016 # $(...) runs inside the VM
+  vm sudo sh -c 'docker exec "$(docker ps -q --filter name=worker- | head -1)" cat /secrets/nomad_bella.jwt' |
+    python3 -c 'import base64,json,sys
+p = sys.stdin.read().strip().split(".")[1]
+d = json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))
+print(eval(sys.argv[1]))' "$1"
+}
+
+# idapp_secret: the secret idapp's copy has in its environment (rendered from its Nomad Variable
+# with the task's default identity).
+# shellcheck disable=SC2016 # $(...) runs inside the VM
+idapp_secret() { vm sudo sh -c 'docker exec "$(docker ps -q --filter name=worker- | head -1)" printenv GREETING' 2>/dev/null; }
+
+# check_issuer_host: feature 038. The first server's Nomad has the console's address as its issuer,
+# Caravana serves the discovery documents on the console domain, and an identity token, read inside
+# its container, carries that issuer and its audience. Then the issuer is taken away as on a host
+# from before the feature: the agent's next sync puts it back with one Nomad restart, whoami answers
+# throughout, and a copy restarted afterwards still renders its secret with its default identity.
+check_issuer_host() {
+  local out end flag="$WORK/watching-issuer" fails
+  vm sudo grep -qx "  oidc_issuer = \"https://$DOMAIN\"" /etc/nomad.d/nomad.hcl ||
+    die "nomad.hcl should set oidc_issuer to https://$DOMAIN"
+  out="$(vm_curl "https://$DOMAIN/.well-known/openid-configuration")"
+  [ "$(jsonq 'd["issuer"]' <<<"$out")" = "https://$DOMAIN" ] || die "the discovery document should name https://$DOMAIN:\n$out"
+  [ "$(jsonq 'd["jwks_uri"]' <<<"$out")" = "https://$DOMAIN/.well-known/jwks.json" ] ||
+    die "the discovery document's keys should be on the console domain:\n$out"
+  out="$(vm_curl "https://$DOMAIN/.well-known/jwks.json")"
+  [ "$(jsonq 'len(d["keys"])' <<<"$out")" -ge 1 ] || die "the console domain should serve Nomad's keys:\n$out"
+
+  api -fsS -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/idapp/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "worker", "image": "busybox:1.37", "command": "sh", "args": ["-c", "exec sleep 1d"],
+      "secrets": [{"name": "GREETING", "value": "hello-038"}],
+      "resources": {"memoryMB": 16, "memoryMaxMB": 32},
+      "identities": [{"name": "bella", "audience": ["bella-spiffe/install-test"], "ttlSeconds": 600}]}]}' ||
+    die "deploying idapp failed"
+  end=$((SECONDS + 180))
+  until [ "$(idapp_secret)" = hello-038 ]; do
+    [ "$SECONDS" -lt "$end" ] || die "idapp's copy didn't run with its secret within 3 minutes"
+    sleep 3
+  done
+  [ "$(identity_claims 'd["iss"]')" = "https://$DOMAIN" ] || die "idapp's token should carry the issuer https://$DOMAIN"
+  [ "$(identity_claims 'd["aud"]')" = bella-spiffe/install-test ] || die "idapp's token should be for bella-spiffe/install-test"
+  [ "$(identity_claims 'd["exp"] - d["iat"]')" = 600 ] || die "idapp's token should last 600 s"
+
+  say "a host from before feature 038 takes the issuer from the agent's next sync, with whoami answering"
+  touch "$flag"
+  watch_app "$flag" >"$WORK/fails-issuer" &
+  vm sudo python3 -c 'import json; p="/etc/caravana-node/state.json"; s=json.load(open(p)); s.pop("issuer", None); json.dump(s, open(p, "w"))'
+  vm sudo sed -i '/oidc_issuer = /d' /etc/nomad.d/nomad.hcl
+  vm sudo systemctl restart nomad
+  end=$((SECONDS + 180))
+  until vm sudo grep -q 'oidc_issuer = ' /etc/nomad.d/nomad.hcl &&
+    [ "$(vm_curl "https://$DOMAIN/.well-known/openid-configuration" | jsonq 'd.get("issuer")' 2>/dev/null)" = "https://$DOMAIN" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "the agent didn't put the issuer back within 3 minutes"
+    sleep 5
+  done
+  rm -f "$flag"
+  wait
+  fails="$(cat "$WORK/fails-issuer")"
+  [ "$fails" = 0 ] || die "whoami failed $fails times while Nomad took the issuer"
+  [ "$(vm sudo cat /etc/caravana-node/state.json | jsonq 'd.get("issuer")')" = "https://$DOMAIN" ] ||
+    die "the agent's state should keep the issuer"
+  # The copy's default identity, issued before, still reads its variable after a restart of the copy.
+  # shellcheck disable=SC2016 # $(...) runs inside the VM
+  vm sudo sh -c 'caravana-nomad alloc restart "$(caravana-nomad job allocs -t "{{range .}}{{if eq .ClientStatus \"running\"}}{{.ID}}{{end}}{{end}}" idapp)"' >/dev/null ||
+    die "couldn't restart idapp's copy"
+  end=$((SECONDS + 120))
+  until [ "$(idapp_secret)" = hello-038 ]; do
+    [ "$SECONDS" -lt "$end" ] || die "idapp's copy lost its secret after the issuer changed (research R2)"
+    sleep 3
+  done
+  [ "$(identity_claims 'd["iss"]')" = "https://$DOMAIN" ] || die "idapp's token after the restart should carry https://$DOMAIN"
+  api -fsS -o /dev/null -X DELETE "https://$DOMAIN/v1/apps/idapp" || die "deleting idapp failed"
 }
 
 # refuses LABEL EXPECTED ARGS...: the installer exits 2 and says EXPECTED.
@@ -602,6 +682,9 @@ PY
     [ "$SECONDS" -lt "$end" ] || die "whoami didn't answer within 3 minutes"
     sleep 3
   done
+
+  say "the cluster's issuer, its discovery documents and an identity token (feature 038)"
+  check_issuer_host
 
   say "upgrade to $v2 with whoami answering throughout"
   local flag="$WORK/watching" fails

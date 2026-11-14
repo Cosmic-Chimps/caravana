@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.40.0
+  version: 0.41.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
-    Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
+    Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
+    (`getOpenIDConfiguration`, `getJWKS`), whose paths under `/.well-known` OIDC fixes. Request bodies are `application/json`, with or without
     parameters such as `charset=UTF-8`. Unknown body fields are rejected.
 
     Every error is `{"error": {"code", "message", "field"}}` with the matching 4xx or 5xx
@@ -87,6 +88,82 @@ paths:
                 $ref: "#/components/schemas/Health"
         "503":
           $ref: "#/components/responses/Unavailable"
+
+  /.well-known/openid-configuration:
+    get:
+      operationId: getOpenIDConfiguration
+      summary: The cluster's OpenID configuration, for verifying workload identity tokens.
+      description: |
+        Nomad's own `/.well-known/openid-configuration`, passed on as Nomad sent it. Its `issuer` is
+        the console's public URL, which Caravana hands every Nomad server as `oidc_issuer`, so a
+        verifier such as Bella can fetch it over https from the console's domain without anything
+        else being exposed. It needs no credentials, lives outside `/v1` because OIDC fixes the
+        path, and is served on the main listener only, not on the webhook-only one.
+
+        Answers `404 issuer_not_set` when the console has no public `https://` address (a dev
+        build, the lab). Caravana reads Nomad on loopback with a 5 second limit and passes on at
+        most 64 KiB of valid JSON; anything else is `502 nomad_unavailable`, never with Nomad's
+        own text. `Cache-Control: public, max-age=60`.
+      tags: [discovery]
+      security: []
+      responses:
+        "200":
+          description: Nomad's OpenID configuration.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: "public, max-age=60"}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: "`issuer_not_set`: the console's public URL isn't https."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "`nomad_unavailable`: Nomad's document couldn't be read, or isn't usable."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /.well-known/jwks.json:
+    get:
+      operationId: getJWKS
+      summary: The keys that verify the cluster's workload identity tokens.
+      description: |
+        Nomad's own `/.well-known/jwks.json`, passed on as Nomad sent it, with the same rules as
+        `getOpenIDConfiguration`: no credentials, the main listener only, `404 issuer_not_set`
+        without an https public URL, `502 nomad_unavailable` when Nomad's answer can't be read or
+        isn't usable, `Cache-Control: public, max-age=60`.
+      tags: [discovery]
+      security: []
+      responses:
+        "200":
+          description: Nomad's JSON Web Key Set.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: "public, max-age=60"}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: "`issuer_not_set`: the console's public URL isn't https."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "`nomad_unavailable`: Nomad's document couldn't be read, or isn't usable."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /v1/apps:
     get:
@@ -5459,6 +5536,17 @@ components:
             $ref: "#/components/schemas/Volume"
         backup:
           $ref: "#/components/schemas/BackupPolicy"
+        identities:
+          type: array
+          maxItems: 4
+          description: |
+            Nomad workload identities the service asks for. Every copy finds each identity's
+            signed token in `/secrets/nomad_<name>.jwt`, which Nomad rewrites before it
+            expires. The token names the app's job, the service's group and task, and the
+            namespace. Caravana never reads, stores or shows it. A promotion keeps the
+            target's identities.
+          items:
+            $ref: "#/components/schemas/Identity"
         ports:
           type: array
           items:
@@ -5653,6 +5741,39 @@ components:
             $ref: "#/components/schemas/Secret"
         backup:
           $ref: "#/components/schemas/BackupPolicy"
+        identities:
+          type: array
+          maxItems: 4
+          description: The service's workload identities, with the meaning `Service.identities` has.
+          items:
+            $ref: "#/components/schemas/Identity"
+
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [name, audience]
+      description: |
+        A Nomad workload identity of a service: a signed JWT, written to
+        `/secrets/nomad_<name>.jwt` in every copy and renewed by Nomad before it expires. It is
+        always a file; there is no environment variable.
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,29}$"
+          description: |
+            Unique in the service. Not `default` (Nomad's own identity), and not starting with
+            `vault_` or `consul_`.
+        audience:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items: {type: string, minLength: 1, maxLength: 255, pattern: "^[!-~]+$"}
+          description: The token's `aud` claim. Printable ASCII, no spaces.
+        ttlSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: The token's lifetime in seconds. Leave it out for 3600 (one hour).
 
     BackupPolicy:
       type: object
@@ -8681,6 +8802,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodePeer"
+        issuer:
+          type: string
+          description: |
+            The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
+            URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
+            console has no https public URL. Nomad servers receive a new value one at a time.
     NodeReport:
       type: object
       additionalProperties: false
@@ -8700,6 +8827,9 @@ components:
         nomadLeader: {type: boolean, description: "Whether its Nomad knows a leader."}
         serverRunning: {type: boolean, description: "For a Nomad server, whether it is among Nomad's raft peers."}
         certificateNotAfter: {type: string, format: date-time}
+        issuer:
+          type: string
+          description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -8738,6 +8868,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ServerCheck"
+        issuer:
+          type: string
+          description: |
+            The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
+            URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
+            console has no https public URL. Nomad servers receive a new value one at a time.
     AttentionItem:
       type: object
       additionalProperties: false
@@ -10095,6 +10231,8 @@ components:
 tags:
   - name: system
     description: Server health.
+  - name: discovery
+    description: The cluster's OpenID configuration and keys, public and outside `/v1`.
   - name: apps
     description: Stored app definitions.
   - name: projects

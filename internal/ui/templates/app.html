@@ -77,6 +77,25 @@
 {{end}}
 {{end}}
 
+{{/* identities: a service's workload identities, read-only (spec 038). Takes []identityView; never
+     the token, only the file a copy reads it from. */}}
+{{define "identities"}}
+<h3 class="cv-label">Identities</h3>
+<dl class="cv-also">
+  {{range .}}
+  <div class="cv-also-row">
+    <dt class="cv-label">Identity</dt>
+    <dd>
+      <span class="cv-also-val">{{.Name}}</span>
+      <span class="cv-note">Audience {{range .Audience}}<span class="cv-also-val">{{.}}</span> {{end}}</span>
+      <span class="cv-note">Lasts {{.TTL}}. Read from <span class="cv-also-val">{{.File}}</span>.{{if .Bella}} For Bella Baxter.{{end}}</span>
+    </dd>
+  </div>
+  {{end}}
+</dl>
+<p class="cv-note">Set through the API, the Compose overlay or Aspire.</p>
+{{end}}
+
 {{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
      (feature 019.5). Takes a defineView. The service is named like the app, so there is no name
      field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
@@ -712,6 +731,7 @@
       </div>
       {{end}}
     </dl>
+    {{if .Identities}}{{template "identities" .Identities}}{{end}}
   </div>
   {{end}}
 </section>
@@ -792,6 +812,11 @@
               {{end}}
             </dl>
             <p class="cv-note">Edited through the API or a Compose file.</p>
+          </div>
+          {{end}}
+          {{with .Identities}}
+          <div class="cv-panel cv-gpanel cv-gpanel-tight">
+            {{template "identities" .}}
           </div>
           {{end}}
         </div>

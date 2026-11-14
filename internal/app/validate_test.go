@@ -128,6 +128,74 @@ func TestValidate(t *testing.T) {
 			}
 		}, "services[1].entrypoint"},
 
+		// Identities.
+		{"valid identities", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{
+				{Name: "bella", Audience: []string{"bella-spiffe/env-1"}},
+				{Name: "api_2", Audience: []string{"a", "b"}, TTLSeconds: 60},
+				{Name: "long", Audience: []string{strings.Repeat("a", 255)}, TTLSeconds: 86400},
+			}
+		}, ""},
+		{"identity name empty", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name uppercase", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "Bella", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name starts with a digit", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "1a", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name with a dash", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a-b", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name too long", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a" + strings.Repeat("b", 30), Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity named default", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "default", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name with vault prefix", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "vault_x", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name with consul prefix", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "consul_x", Audience: []string{"x"}}}
+		}, "services[1].identities[0].name"},
+		{"identity name duplicate", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"x"}}, {Name: "a", Audience: []string{"y"}}}
+		}, "services[1].identities[1].name"},
+		{"identity without audience", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a"}}
+		}, "services[1].identities[0].audience"},
+		{"identity with too many audiences", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"1", "2", "3", "4", "5"}}}
+		}, "services[1].identities[0].audience"},
+		{"identity audience empty", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{""}}}
+		}, "services[1].identities[0].audience"},
+		{"identity audience with a space", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"a b"}}}
+		}, "services[1].identities[0].audience"},
+		{"identity audience not ASCII", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"café"}}}
+		}, "services[1].identities[0].audience"},
+		{"identity audience too long", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{strings.Repeat("a", 256)}}}
+		}, "services[1].identities[0].audience"},
+		{"identity ttl too short", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"x"}, TTLSeconds: 59}}
+		}, "services[1].identities[0].ttlSeconds"},
+		{"identity ttl negative", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"x"}, TTLSeconds: -1}}
+		}, "services[1].identities[0].ttlSeconds"},
+		{"identity ttl too long", func(a *App, d *Deployment) {
+			a.Services[1].Identities = []Identity{{Name: "a", Audience: []string{"x"}, TTLSeconds: 86401}}
+		}, "services[1].identities[0].ttlSeconds"},
+		{"too many identities", func(a *App, d *Deployment) {
+			for _, n := range []string{"a", "b", "c", "d", "e"} {
+				a.Services[1].Identities = append(a.Services[1].Identities, Identity{Name: n, Audience: []string{"x"}})
+			}
+		}, "services[1].identities"},
+
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},
 		{"env name with =", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "A=B"}} }, "services[0].env[0].name"},
@@ -678,5 +746,14 @@ func TestSQLiteFile(t *testing.T) {
 				t.Errorf("SQLiteFile() = (%q, %q, %v), want (%q, %q, %v)", vol.Name, inside, ok, tc.wantVolume, tc.wantInside, tc.wantOK)
 			}
 		})
+	}
+}
+
+func TestIdentityTTLOrDefault(t *testing.T) {
+	if got := (Identity{}).TTLOrDefault(); got != 3600 {
+		t.Errorf("default TTL = %d, want 3600", got)
+	}
+	if got := (Identity{TTLSeconds: 120}).TTLOrDefault(); got != 120 {
+		t.Errorf("TTL = %d, want 120", got)
 	}
 }

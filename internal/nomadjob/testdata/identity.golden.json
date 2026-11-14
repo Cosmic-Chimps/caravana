@@ -1,0 +1,276 @@
+{
+  "Job": {
+    "Region": null,
+    "Namespace": null,
+    "ID": "shop",
+    "Name": "shop",
+    "Type": "service",
+    "Priority": null,
+    "AllAtOnce": null,
+    "Datacenters": [
+      "*"
+    ],
+    "NodePool": null,
+    "Constraints": null,
+    "Affinities": null,
+    "TaskGroups": [
+      {
+        "Name": "api",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "api",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "image": "ghcr.io/acme/api@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": null,
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": [
+              {
+                "Name": "bella",
+                "Audience": [
+                  "bella-spiffe/env-1"
+                ],
+                "ChangeMode": "",
+                "ChangeSignal": "",
+                "Env": false,
+                "File": true,
+                "Filepath": "",
+                "ServiceName": "",
+                "TTL": 3600000000000,
+                "ExtraClaims": null
+              },
+              {
+                "Name": "billing",
+                "Audience": [
+                  "billing",
+                  "audit"
+                ],
+                "ChangeMode": "",
+                "ChangeSignal": "",
+                "Env": false,
+                "File": true,
+                "Filepath": "",
+                "ServiceName": "",
+                "TTL": 120000000000,
+                "ExtraClaims": null
+              }
+            ],
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": null,
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": null,
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      },
+      {
+        "Name": "worker",
+        "Count": 1,
+        "Constraints": null,
+        "Affinities": null,
+        "Tasks": [
+          {
+            "Name": "worker",
+            "Driver": "docker",
+            "User": "",
+            "Lifecycle": null,
+            "Config": {
+              "image": "ghcr.io/acme/worker@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "Constraints": null,
+            "Affinities": null,
+            "Env": null,
+            "Services": null,
+            "Resources": {
+              "CPU": 100,
+              "Cores": null,
+              "MemoryMB": 64,
+              "MemoryMaxMB": 256,
+              "DiskMB": null,
+              "Networks": null,
+              "Devices": null,
+              "NUMA": null,
+              "SecretsMB": null,
+              "IOPS": null
+            },
+            "RestartPolicy": null,
+            "Meta": null,
+            "KillTimeout": null,
+            "LogConfig": null,
+            "Artifacts": null,
+            "Vault": null,
+            "Consul": null,
+            "Templates": null,
+            "DispatchPayload": null,
+            "VolumeMounts": null,
+            "Leader": false,
+            "ShutdownDelay": 0,
+            "KillSignal": "",
+            "Kind": "",
+            "ScalingPolicies": null,
+            "Secrets": null,
+            "Identity": null,
+            "Identities": null,
+            "Actions": null,
+            "Schedule": null
+          }
+        ],
+        "Spreads": null,
+        "Volumes": null,
+        "RestartPolicy": null,
+        "Disconnect": null,
+        "ReschedulePolicy": null,
+        "EphemeralDisk": null,
+        "Update": {
+          "Stagger": null,
+          "MaxParallel": null,
+          "HealthCheck": null,
+          "MinHealthyTime": null,
+          "HealthyDeadline": null,
+          "ProgressDeadline": null,
+          "Canary": 1,
+          "AutoRevert": null,
+          "AutoPromote": null
+        },
+        "Migrate": null,
+        "Networks": [
+          {
+            "Mode": "bridge",
+            "Device": "",
+            "CIDR": "",
+            "IP": "",
+            "DNS": null,
+            "ReservedPorts": null,
+            "DynamicPorts": null,
+            "Hostname": "",
+            "MBits": null,
+            "CNI": null
+          }
+        ],
+        "Meta": null,
+        "Services": null,
+        "ShutdownDelay": 5000000000,
+        "MaxRunDuration": null,
+        "StopAfterClientDisconnect": null,
+        "MaxClientDisconnect": null,
+        "Scaling": null,
+        "Consul": null,
+        "PreventRescheduleOnLost": null
+      }
+    ],
+    "Update": {
+      "Stagger": null,
+      "MaxParallel": 1,
+      "HealthCheck": "checks",
+      "MinHealthyTime": 10000000000,
+      "HealthyDeadline": 180000000000,
+      "ProgressDeadline": 600000000000,
+      "Canary": null,
+      "AutoRevert": true,
+      "AutoPromote": true
+    },
+    "Multiregion": null,
+    "Spreads": null,
+    "Periodic": null,
+    "ParameterizedJob": null,
+    "Reschedule": null,
+    "Migrate": null,
+    "Meta": {
+      "caravana.app": "shop",
+      "caravana.deployment": "d1"
+    },
+    "UI": null,
+    "Stop": null,
+    "ParentID": null,
+    "Dispatched": false,
+    "DispatchIdempotencyToken": null,
+    "Payload": null,
+    "ConsulNamespace": null,
+    "VaultNamespace": null,
+    "NomadTokenID": null,
+    "Status": null,
+    "StatusDescription": null,
+    "Stable": null,
+    "Version": null,
+    "SubmitTime": null,
+    "CreateIndex": null,
+    "ModifyIndex": null,
+    "JobModifyIndex": null,
+    "VersionTag": null
+  }
+}

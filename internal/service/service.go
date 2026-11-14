@@ -136,6 +136,9 @@ type Service struct {
 	// serverMu serializes the servers' calls that read the rows and then change them: a join, a sync,
 	// a removal and the choice of Nomad servers (feature 031), see servers.go.
 	serverMu sync.Mutex
+	// issuerInFlight holds the Nomad servers handed a new issuer and when, so they take it one at a
+	// time (issuerFor). In memory: a restart forgets it. Guarded by serverMu.
+	issuerInFlight map[string]time.Time
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.

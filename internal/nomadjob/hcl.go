@@ -148,6 +148,18 @@ func (w *hclWriter) task(t *api.Task) {
 				w.optInt("memory_max", r.MemoryMaxMB)
 			})
 		}
+		for _, id := range t.Identities {
+			w.block("identity", nil, func() {
+				w.optString("name", &id.Name)
+				if len(id.Audience) > 0 {
+					w.attr("aud", quoteList(id.Audience))
+				}
+				w.optDuration("ttl", &id.TTL)
+				if id.File {
+					w.attr("file", "true")
+				}
+			})
+		}
 		for _, m := range t.VolumeMounts {
 			w.block("volume_mount", nil, func() {
 				w.optString("volume", m.Volume)

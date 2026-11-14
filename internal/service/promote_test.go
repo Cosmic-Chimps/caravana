@@ -781,3 +781,87 @@ func withStagingEnv(a app.App, v string) app.App {
 	a.Services[0].Env = []app.EnvVar{{Name: "MODE", Value: v}}
 	return a
 }
+
+// Spec 038: an identity's audience belongs to an environment, like a secret, so
+// a promotion keeps the target's identities and never takes the source's; a
+// service new to the target comes with its own.
+func TestPromotedKeepsTheTargetsIdentities(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Identities = []app.Identity{{Name: "bella", Audience: []string{"bella-spiffe/staging"}}}
+	target.Services[0].Identities = []app.Identity{{Name: "bella", Audience: []string{"bella-spiffe/production"}, TTLSeconds: 600}}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := target.Services[0].Identities; !reflect.DeepEqual(got.Services[0].Identities, want) {
+		t.Errorf("identities = %+v, want production's %+v", got.Services[0].Identities, want)
+	}
+	if len(changes) != 1 || slices.Contains(changes[0].Changed, "identities") {
+		t.Errorf("changes = %+v, a promotion doesn't change identities", changes)
+	}
+
+	// A target with none stays without, whatever the source has.
+	target.Services[0].Identities = nil
+	got, _, _, err = promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Services[0].Identities) != 0 {
+		t.Errorf("identities = %+v, want none: production didn't ask for any", got.Services[0].Identities)
+	}
+
+	// A service only the source has is added whole, identities included.
+	source.Services = append(source.Services, app.Service{Name: "api", Image: "traefik/whoami:latest",
+		Identities: []app.Identity{{Name: "billing", Audience: []string{"billing"}}}})
+	got, _, added, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(added, []string{"api"}) || !reflect.DeepEqual(got.Services[1].Identities, source.Services[1].Identities) {
+		t.Errorf("added = %v, api identities = %+v, want the source's", added, got.Services[1].Identities)
+	}
+}
+
+// Spec 038: a copy has the source's identities, from the app and from the kept
+// Compose file's overlay.
+func TestCopyAppCopiesIdentities(t *testing.T) {
+	ctx := context.Background()
+	ids := []app.Identity{{Name: "bella", Audience: []string{"bella-spiffe/env-1"}, TTLSeconds: 600}}
+
+	t.Run("an app", func(t *testing.T) {
+		e := shopEnv(t)
+		setDestination(t, e)
+		prod := production()
+		prod.Services[0].Identities = ids
+		deployHealthy(t, e, prod)
+		rec, _, err := e.svc.CopyApp(ctx, productionID, "staging")
+		if err != nil {
+			t.Fatalf("CopyApp() = %v", err)
+		}
+		if !reflect.DeepEqual(rec.App.Services[0].Identities, ids) {
+			t.Errorf("copy identities = %+v, want %+v", rec.App.Services[0].Identities, ids)
+		}
+	})
+
+	t.Run("a kept Compose file", func(t *testing.T) {
+		e := shopEnv(t)
+		file := "services:\n  web:\n    image: traefik/whoami:latest\n    ports: [\"8080:80\"]\n"
+		req := compose.Request{Compose: file, Services: map[string]compose.Overlay{"web": {Identities: ids}}}
+		rec, err := e.svc.DeployCompose(ctx, productionID, req, app.TriggerManual)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitFinal(t, e.store, rec.Deployment.ID)
+		cp, _, err := e.svc.CopyApp(ctx, productionID, "staging")
+		if err != nil {
+			t.Fatalf("CopyApp() = %v", err)
+		}
+		if got := cp.Compose.Services["web"].Identities; !reflect.DeepEqual(got, ids) {
+			t.Errorf("copy's overlay identities = %+v, want %+v", got, ids)
+		}
+		if got := cp.App.Services[0].Identities; !reflect.DeepEqual(got, ids) {
+			t.Errorf("copy's app identities = %+v, want %+v", got, ids)
+		}
+	})
+}

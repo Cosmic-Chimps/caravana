@@ -209,7 +209,7 @@ func applyOverlay(field string, svc *app.Service, sc types.ServiceConfig, ov Ove
 		warn(".healthcheck", "isn't run: Nomad's checks are HTTP or TCP and need a port; Nomad restarts the service when it exits")
 	}
 
-	svc.Secrets, svc.Backup = ov.Secrets, ov.Backup
+	svc.Secrets, svc.Backup, svc.Identities = ov.Secrets, ov.Backup, ov.Identities
 	return nil
 }
 

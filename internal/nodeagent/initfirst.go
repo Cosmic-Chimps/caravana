@@ -22,6 +22,10 @@ type InitFirstOptions struct {
 	// side (the installer passes it on to `caravana server adopt-first`); no file here holds it.
 	Address         string
 	CPUTotalCompute int
+	// Issuer is the OIDC issuer the first server renders from the start (spec 038): "" or https://
+	// and a host name. It is used only when this run makes the server; the console's sync keeps it
+	// right after that.
+	Issuer string
 }
 
 // InitFirst makes server 1 offline: mesh.key, state.json, the cluster's CA, this server's server
@@ -31,6 +35,10 @@ type InitFirstOptions struct {
 func (a *Agent) InitFirst(ctx context.Context, o InitFirstOptions) error {
 	if _, err := netip.ParseAddr(o.Address); err != nil {
 		return errors.New("--address must be an IPv4 or IPv6 address")
+	}
+	issuer, ok := mesh.CleanIssuer(o.Issuer)
+	if !ok {
+		return errors.New("--issuer must be empty, or https:// and a host name with an optional port")
 	}
 	if err := a.ensureAgentDir(); err != nil {
 		return err
@@ -48,7 +56,7 @@ func (a *Agent) InitFirst(ctx context.Context, o InitFirstOptions) error {
 		}
 		st = State{
 			Version: stateVersion, Index: 1, Name: NameOfHost(host, 1), Pool: "default", First: true,
-			Role: RoleServer, Servers: []int{1}, CPUTotalCompute: o.CPUTotalCompute,
+			Role: RoleServer, Servers: []int{1}, CPUTotalCompute: o.CPUTotalCompute, Issuer: issuer,
 		}
 		if err := a.SaveState(st); err != nil {
 			return err

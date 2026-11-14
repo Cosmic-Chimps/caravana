@@ -69,6 +69,11 @@ server {
   bootstrap_expect = 1
 {{- end}}
   encrypt          = {{q .GossipKey}}
+{{- if .Issuer}}
+
+  # The cluster's issuer: Caravana serves its discovery at this address (spec 038).
+  oidc_issuer = {{q .Issuer}}
+{{- end}}
 
   # After a new leader is elected, Nomad gives every node this long to heartbeat before it calls one
   # down. Its default is 5 minutes: when the server that was lost was the leader, its copies stayed
@@ -157,6 +162,7 @@ type nomadData struct {
 	RetryJoin     string // HCL list of the other Nomad servers' serf addresses, or ""
 	ClientServers string // HCL list of the other Nomad servers' RPC addresses, or ""
 	CPU           int
+	Issuer        string // the OIDC issuer; a Nomad server only (oidc_issuer is a server setting)
 }
 
 // RenderNomad is the text of /etc/nomad.d/nomad.hcl for this state. gossipKey is written only on a
@@ -186,6 +192,7 @@ func renderNomad(s State, gossipKey string) (string, error) {
 	}
 	if d.Server {
 		d.GossipKey = gossipKey
+		d.Issuer = s.Issuer
 	}
 	if !s.First {
 		d.Subnet = addrs.Containers.String()

@@ -112,6 +112,9 @@ type Nomad struct {
 	vars       map[string]map[string]string // variable items, by path
 	varsStatus int                          // non-zero: every variables request answers it
 
+	discovery      map[string]discoveryAnswer // Nomad's /.well-known answers, by path (discovery.go)
+	discoveryAsked map[string]int
+
 	stats         map[string]api.AllocResourceUsage // by copy ID
 	statsDelay    time.Duration
 	statsRequests int
@@ -344,6 +347,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isVars && varsStatus != 0:
 		http.Error(w, "Permission denied", varsStatus)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/.well-known/"):
+		n.serveDiscovery(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/volume/host/") || r.URL.Path == "/v1/volumes":
 		n.hostVolume(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/var/"):

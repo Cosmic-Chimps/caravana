@@ -82,6 +82,10 @@ type Service struct {
 	// installation's backup destination: a Postgres database, or the files of
 	// its volumes. nil means no backups.
 	Backup *Backup `json:"backup,omitempty"`
+	// Identities are Nomad workload identities the service asks for: a signed
+	// JWT per identity, written to /secrets/nomad_<name>.jwt in every copy and
+	// renewed by Nomad (spec 038). None by default.
+	Identities []Identity `json:"identities,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's

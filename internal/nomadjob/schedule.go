@@ -88,6 +88,7 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 			MemoryMB:    new(memoryMB),
 			MemoryMaxMB: new(max(memoryMB, ceiling)),
 		},
+		Identities:  workloadIdentities(svc),
 		Templates:   []*api.Template{variableTemplate(id)},
 		KillTimeout: new(scheduleKillTimeout),
 		LogConfig:   &api.LogConfig{MaxFiles: new(scheduleLogFiles), MaxFileSizeMB: new(scheduleLogFileMB)},
