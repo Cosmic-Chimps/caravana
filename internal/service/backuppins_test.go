@@ -296,8 +296,9 @@ func TestSQLiteUploadCarriesPins(t *testing.T) {
 			uploads = append(uploads, e.Command[4:])
 		}
 	}
-	if len(uploads) != 1 || len(uploads[0]) != 6 || uploads[0][5] != "1791990000" {
-		t.Errorf("upload arguments = %q, want the pinned timestamp last", uploads)
+	// The pinned timestamps are the sixth argument, before the result file.
+	if len(uploads) != 1 || len(uploads[0]) != 7 || uploads[0][5] != "1791990000" {
+		t.Errorf("upload arguments = %q, want the pinned timestamp sixth", uploads)
 	}
 	if slices.Contains(uploads[0], "golden") {
 		t.Error("the label went into the command; only timestamps should")

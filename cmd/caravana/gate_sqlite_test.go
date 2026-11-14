@@ -163,7 +163,7 @@ func (g *gate) sqliteBackupRestoreStep(t *testing.T) {
 		t.Errorf("the backup = %+v, want sqlite, a size, and no stop time or volumes", run)
 	}
 	ts := strings.TrimPrefix(run.ID, "db-")
-	if listed, err := g.bucketExec("ls", "/data/backups/gate/"+appID+"/db/"); err != nil || !strings.Contains(listed, ts+".sqlite.gz") {
+	if listed, err := g.bucketList("/data/backups/gate/" + appID + "/db/"); err != nil || !strings.Contains(listed, ts+".sqlite.gz") {
 		t.Errorf("the bucket's backups/gate/%s/db/ lists %q (%v), want %s.sqlite.gz", appID, listed, err, ts)
 	}
 	// The service never stopped: same copy, no restart, same job, and it kept writing.
@@ -244,7 +244,7 @@ func (g *gate) sqliteBackupRestoreStep(t *testing.T) {
 			t.Errorf("the first backup %s is still listed after two more with keep 2", run.ID)
 		}
 	}
-	if listed, err := g.bucketExec("ls", "/data/backups/gate/"+appID+"/db/"); err != nil || strings.Contains(listed, ts+".sqlite.gz") ||
+	if listed, err := g.bucketList("/data/backups/gate/" + appID + "/db/"); err != nil || strings.Contains(listed, ts+".sqlite.gz") ||
 		strings.Count(listed, ".sqlite.gz") != 2 {
 		t.Errorf("the bucket lists %q (%v), want two backups and not %s.sqlite.gz", listed, err, ts)
 	}
@@ -278,7 +278,7 @@ func (g *gate) sqliteBackupRestoreStep(t *testing.T) {
 	if !kept || unpinned != 2 {
 		t.Errorf("after five more backups the list has the golden one %v and %d others, want it pinned and 2 others: %+v", kept, unpinned, pinned.Backups)
 	}
-	if listed, err := g.bucketExec("ls", "/data/backups/gate/"+appID+"/db/"); err != nil || !strings.Contains(listed, goldenTS+".sqlite.gz") ||
+	if listed, err := g.bucketList("/data/backups/gate/" + appID + "/db/"); err != nil || !strings.Contains(listed, goldenTS+".sqlite.gz") ||
 		strings.Count(listed, ".sqlite.gz") != 3 {
 		t.Errorf("the bucket lists %q (%v), want the pinned %s.sqlite.gz and two others", listed, err, goldenTS)
 	}

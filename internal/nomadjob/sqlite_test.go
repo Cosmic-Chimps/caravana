@@ -186,6 +186,8 @@ func TestSQLitePaths(t *testing.T) {
 		"stage":   {SQLiteStagePath("data", "web-3"), "/caravana-volumes/data/.caravana-restore/web-3.db"},
 		"request": {SQLiteRestoreFile("data", "db/app.sqlite3"), "data/db/app.sqlite3"},
 		"object":  {SQLiteObject("b/fhodor/web", "1791"), "b/fhodor/web/1791.sqlite.gz"},
+		"result":  {SQLiteResultPath("web-3", "copy"), "/alloc/data/caravana/sqlite/web-3.copy.result"},
+		"fs":      {SQLiteResultFile("web-3", "upload"), "alloc/data/caravana/sqlite/web-3.upload.result"},
 	}
 	for name, tt := range tests {
 		if tt.got != tt.want {
@@ -591,7 +593,7 @@ func destination(extra ...string) string {
 
 func TestSQLiteCopyScript(t *testing.T) {
 	run := func(r *sqliteRun, env []string, db, out string) execResult {
-		return r.exec(SQLiteCopyScript, "", env, db, "/data/app.db", out, "600")
+		return r.exec(SQLiteCopyScript, "", env, db, "/data/app.db", out, "600", filepath.Join(r.work, "web-1.copy.result"))
 	}
 
 	t.Run("a copy of a live WAL database, consistent and checked", func(t *testing.T) {
@@ -615,8 +617,13 @@ func TestSQLiteCopyScript(t *testing.T) {
 		if got := r.rows(out); got != "50" {
 			t.Errorf("the copy has %s rows, want 50", got)
 		}
-		if got := r.workFiles(); !slices.Equal(got, []string{"web-1.db"}) {
-			t.Errorf("work dir = %v, want only the copy (the earlier leftover is gone, no scratch file stays)", got)
+		if got := r.workFiles(); !slices.Equal(got, []string{"web-1.copy.result", "web-1.db"}) {
+			t.Errorf("work dir = %v, want only the copy and its result (the earlier leftover is gone, no scratch file stays)", got)
+		}
+		// The result file says what stdout says: Caravana reads it when the
+		// exec answer came back without the output.
+		if got := r.read(filepath.Join(r.work, "web-1.copy.result")); got != res.stdout {
+			t.Errorf("result file = %q, want stdout %q", got, res.stdout)
 		}
 		// Both sqlite3 calls ran under timeout, with at most the run's limit.
 		secs := r.timeouts("sqlite3")
@@ -698,7 +705,7 @@ func TestSQLiteUploadScript(t *testing.T) {
 		r.plainDatabase(copyPath, 20)
 		want := r.read(copyPath)
 		env = append(slices.Clone(env), "FAKE_SECRET="+sentinelKey)
-		return r.exec(SQLiteUploadScript, stdin, env, copyPath, "b/fhodor/web", ts, keep, "600", ""), want
+		return r.exec(SQLiteUploadScript, stdin, env, copyPath, "b/fhodor/web", ts, keep, "600", "", filepath.Join(r.work, "web-1.upload.result")), want
 	}
 
 	t.Run("gzips the copy into the destination and removes it", func(t *testing.T) {
@@ -720,8 +727,11 @@ func TestSQLiteUploadScript(t *testing.T) {
 		if out.Object != "b/fhodor/web/1791.sqlite.gz" || out.Bytes != int64(len(gz)) || len(out.Expired) != 0 || out.Warning != "" {
 			t.Errorf("output = %+v, want the object, its compressed size %d and nothing else", out, len(gz))
 		}
-		if got := r.workFiles(); len(got) != 0 {
-			t.Errorf("work dir = %v, want the copy and the scratch files removed", got)
+		if got := r.workFiles(); !slices.Equal(got, []string{"web-1.upload.result"}) {
+			t.Errorf("work dir = %v, want the copy and the scratch files removed and the result kept", got)
+		}
+		if got := r.read(filepath.Join(r.work, "web-1.upload.result")); got != res.stdout {
+			t.Errorf("result file = %q, want stdout %q", got, res.stdout)
 		}
 		for _, prog := range []string{"gzip", "rclone"} {
 			if len(r.timeouts(prog)) == 0 {
@@ -799,6 +809,9 @@ func TestSQLiteUploadScript(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newSQLiteRun(t)
 			r.write(filepath.Join(r.bucket, "b/fhodor/web/1700.sqlite.gz"), "an older backup")
+			// A result of an earlier attempt is removed first: a failed upload
+			// leaves none for Caravana to read.
+			r.write(filepath.Join(r.work, "web-1.upload.result"), "caravana-backup key=b/fhodor/web/1.sqlite.gz bytes=1\n")
 			res, _ := upload(r, destination(), tt.env, tt.ts, "3")
 			if res.code != 1 || res.lastLine() != tt.wantMsg {
 				t.Fatalf("exit %d, last line %q, want 1 and %q", res.code, res.lastLine(), tt.wantMsg)
@@ -891,9 +904,13 @@ func TestSQLiteUploadRetention(t *testing.T) {
 			copyPath := filepath.Join(r.work, "web-1.db")
 			r.plainDatabase(copyPath, 2)
 			env := append(slices.Clone(tt.env), "FAKE_SECRET="+sentinelKey)
-			res := r.exec(SQLiteUploadScript, destination(), env, copyPath, "b/fhodor/web", tt.ts, tt.keep, "600", tt.pinned)
+			result := filepath.Join(r.dir, "upload.result")
+			res := r.exec(SQLiteUploadScript, destination(), env, copyPath, "b/fhodor/web", tt.ts, tt.keep, "600", tt.pinned, result)
 			if res.code != 0 {
 				t.Fatalf("exit %d: %s", res.code, res.stderr)
+			}
+			if got := r.read(result); got != res.stdout {
+				t.Errorf("result file = %q, want stdout %q", got, res.stdout)
 			}
 			out := ParseSQLiteOutput(res.stdout)
 			if !slices.Equal(out.Expired, tt.wantExpired) || out.Warning != tt.wantWarning {
@@ -925,7 +942,7 @@ func TestSQLiteDownloadScript(t *testing.T) {
 	download := func(r *sqliteRun, stdin string, env []string, object string) (execResult, string) {
 		out := filepath.Join(r.work, "web-2.db")
 		env = append(slices.Clone(env), "FAKE_SECRET="+sentinelKey)
-		return r.exec(SQLiteDownloadScript, stdin, env, object, out, "600"), out
+		return r.exec(SQLiteDownloadScript, stdin, env, object, out, "600", filepath.Join(r.dir, "web-2.download.result")), out
 	}
 	// gzipped puts a gzipped copy of the file at path in the bucket.
 	gzipped := func(r *sqliteRun, src, object string) {
@@ -955,6 +972,9 @@ func TestSQLiteDownloadScript(t *testing.T) {
 		}
 		if r.read(out) != r.read(src) {
 			t.Error("the downloaded file isn't the backup's database")
+		}
+		if got := r.read(filepath.Join(r.dir, "web-2.download.result")); got != res.stdout {
+			t.Errorf("result file = %q, want stdout %q", got, res.stdout)
 		}
 		if got := ParseSQLiteOutput(res.stdout); got.Bytes != int64(len(r.read(src))) {
 			t.Errorf("output = %q, want the file's size %d", res.stdout, len(r.read(src)))

@@ -58,13 +58,12 @@ func TestSQLiteSteps(t *testing.T) {
 		}
 		got := onlyExec(t, nomad)
 		want := nomadjob.SQLiteCommand(nomadjob.SQLiteCopyScript,
-			"/caravana-volumes/data/db/app.db", "/data/db/app.db", "/alloc/data/caravana/sqlite/web-1791.db", got.Command[len(got.Command)-1])
+			"/caravana-volumes/data/db/app.db", "/data/db/app.db", "/alloc/data/caravana/sqlite/web-1791.db", "1800",
+			"/alloc/data/caravana/sqlite/web-1791.copy.result")
+		// The seconds are the run's: no deadline, so the default. The last
+		// argument is the result file.
 		if got.Task != "caravana-sqlite" || !slices.Equal(got.Command, want) || got.Stdin != "" || got.TTY {
 			t.Errorf("exec = task %q, command %q, stdin %q; want caravana-sqlite and %q", got.Task, got.Command, got.Stdin, want)
-		}
-		// The last argument is the run's seconds: no deadline, so the default.
-		if last := got.Command[len(got.Command)-1]; last != "1800" {
-			t.Errorf("seconds = %q, want 1800", last)
 		}
 	})
 
@@ -81,8 +80,8 @@ func TestSQLiteSteps(t *testing.T) {
 		}
 		cmd := onlyExec(t, nomad).Command
 		var secs int
-		if _, err := fmt.Sscan(cmd[len(cmd)-1], &secs); err != nil || secs < 85 || secs > 90 {
-			t.Errorf("seconds = %q, want about 90", cmd[len(cmd)-1])
+		if _, err := fmt.Sscan(cmd[7], &secs); err != nil || secs < 85 || secs > 90 {
+			t.Errorf("seconds = %q, want about 90", cmd[7])
 		}
 	})
 
@@ -107,9 +106,11 @@ func TestSQLiteSteps(t *testing.T) {
 		if script := got.Command[2]; script != nomadjob.SQLiteUploadScript || !slices.Equal(got.Command[4:8], wantArgs) {
 			t.Errorf("command = %q, want the upload script and %q", got.Command[:8], wantArgs)
 		}
-		// The last argument is the pin list, after the seconds the run may take.
-		if n := len(got.Command); n != 10 || got.Command[9] != "1700 1750" {
-			t.Errorf("command = %q, want the pinned timestamps as the sixth argument", got.Command)
+		// The pin list comes after the seconds the run may take, then the result
+		// file.
+		if n := len(got.Command); n != 11 || got.Command[9] != "1700 1750" ||
+			got.Command[10] != "/alloc/data/caravana/sqlite/web-1791.upload.result" {
+			t.Errorf("command = %q, want the pinned timestamps as the sixth argument and the result file last", got.Command)
 		}
 		wantStdin := "RCLONE_CONFIG_DEST_ACCESS_KEY_ID=AK\n" +
 			"RCLONE_CONFIG_DEST_ENDPOINT=http://10.0.0.5:9000\n" +
@@ -159,8 +160,9 @@ func TestSQLiteSteps(t *testing.T) {
 		}
 		got := onlyExec(t, nomad)
 		if got.Task != "caravana-upload" || got.Command[2] != nomadjob.SQLiteDownloadScript ||
-			!slices.Equal(got.Command[4:6], []string{"backups/caravana/whoami/web/1791.sqlite.gz", "/alloc/data/caravana/sqlite/web-2.db"}) {
-			t.Errorf("exec = task %q, command %q", got.Task, got.Command[:6])
+			!slices.Equal(got.Command[4:6], []string{"backups/caravana/whoami/web/1791.sqlite.gz", "/alloc/data/caravana/sqlite/web-2.db"}) ||
+			got.Command[len(got.Command)-1] != "/alloc/data/caravana/sqlite/web-2.download.result" {
+			t.Errorf("exec = task %q, command %q", got.Task, got.Command)
 		}
 		if !strings.Contains(got.Stdin, "RCLONE_CONFIG_DEST_SECRET_ACCESS_KEY="+sqliteSentinel+"\n") {
 			t.Errorf("stdin lacks the credentials: %q", got.Stdin)
@@ -333,6 +335,126 @@ func TestSQLiteStepErrors(t *testing.T) {
 		}
 		if len(nomad.Execs()) != 0 {
 			t.Error("a command ran")
+		}
+	})
+}
+
+// TestSQLiteStepsReadTheResultFile: Nomad's exec stream can report a script's
+// exit before its output arrives (lab, 2026-11-13). A step that exited 0 then
+// reads the markers from the result file the script wrote, and an answer with
+// no exit status is a failed call, never a success.
+func TestSQLiteStepsReadTheResultFile(t *testing.T) {
+	ctx := context.Background()
+	svc := sqliteSvc()
+	exitedFirst := func(stdout string) func(deploytest.ExecRequest) deploytest.ExecReply {
+		return func(deploytest.ExecRequest) deploytest.ExecReply {
+			return deploytest.ExecReply{Stdout: stdout, ExitFirst: true}
+		}
+	}
+
+	t.Run("copy: the exit came before the output", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(exitedFirst("caravana-sqlite-copy bytes=8192\n"))
+		nomad.WriteAllocFile(id, nomadjob.SQLiteResultFile("web-1", "copy"), "caravana-sqlite-copy bytes=8192\n")
+		out, err := d.SQLiteCopy(ctx, id, svc, "web-1")
+		if err != nil || out.Bytes != 8192 {
+			t.Fatalf("SQLiteCopy = %+v, %v; want 8192 bytes from the result file", out, err)
+		}
+	})
+
+	t.Run("upload: exit 0 and no output", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.WriteAllocFile(id, "alloc/data/caravana/sqlite/web-1.upload.result",
+			"caravana-backup key=b/x/1791.sqlite.gz bytes=900\ncaravana-expired 1700.sqlite.gz\ncaravana-warning slow\n")
+		out, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1791", 4, nil)
+		if err != nil || out.Object != "b/x/1791.sqlite.gz" || out.Bytes != 900 ||
+			!slices.Equal(out.Expired, []string{"1700"}) || out.Warning != "slow" {
+			t.Fatalf("SQLiteUpload = %+v, %v; want everything the result file says", out, err)
+		}
+	})
+
+	t.Run("upload: the file wins over output cut short", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
+			return deploytest.ExecReply{Stdout: "caravana-backup key=b/x/1791.sqlite.gz bytes=900\n"}
+		})
+		nomad.WriteAllocFile(id, nomadjob.SQLiteResultFile("web-1", "upload"),
+			"caravana-backup key=b/x/1791.sqlite.gz bytes=900\ncaravana-expired 1700.sqlite.gz\n")
+		out, err := d.SQLiteUpload(ctx, id, "web-1", "whoami", svc, sqliteDest(), "1791", 4, nil)
+		if err != nil || !slices.Equal(out.Expired, []string{"1700"}) {
+			t.Fatalf("SQLiteUpload = %+v, %v; want the expired backup the output lost", out, err)
+		}
+	})
+
+	t.Run("download: exit 0 and no output", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.WriteAllocFile(id, nomadjob.SQLiteResultFile("web-2", "download"), "caravana-sqlite-download bytes=12288\n")
+		out, err := d.SQLiteDownload(ctx, id, "web-2", "b/x/1791.sqlite.gz", sqliteDest())
+		if err != nil || out.Bytes != 12288 {
+			t.Fatalf("SQLiteDownload = %+v, %v; want 12288 bytes from the result file", out, err)
+		}
+	})
+
+	t.Run("output and a file that says nothing: stdout counts", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
+			return deploytest.ExecReply{Stdout: "caravana-sqlite-copy bytes=7\n"}
+		})
+		nomad.WriteAllocFile(id, nomadjob.SQLiteResultFile("web-1", "copy"), "")
+		if out, err := d.SQLiteCopy(ctx, id, svc, "web-1"); err != nil || out.Bytes != 7 {
+			t.Fatalf("SQLiteCopy = %+v, %v; want 7 bytes from stdout", out, err)
+		}
+	})
+
+	t.Run("a file Nomad won't let Caravana read, with output: stdout counts", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
+			return deploytest.ExecReply{Stdout: "caravana-sqlite-copy bytes=7\n"}
+		})
+		nomad.FailFS(403)
+		if out, err := d.SQLiteCopy(ctx, id, svc, "web-1"); err != nil || out.Bytes != 7 {
+			t.Fatalf("SQLiteCopy = %+v, %v; want 7 bytes from stdout", out, err)
+		}
+	})
+
+	t.Run("no output and a file Nomad won't let Caravana read: the refusal", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.FailFS(403)
+		_, err := d.SQLiteCopy(ctx, id, svc, "web-1")
+		if !errors.Is(err, ErrNomadUnavailable) || !strings.Contains(err.Error(), "read-fs") {
+			t.Fatalf("err = %v, want a refusal naming read-fs", err)
+		}
+	})
+
+	t.Run("no output and no file: unreadable", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(exitedFirst("caravana-sqlite-copy bytes=8192\n"))
+		_, err := d.SQLiteCopy(ctx, id, svc, "web-1")
+		var se *SQLiteError
+		if !errors.As(err, &se) || err.Error() != "copy: the size of the copy is unreadable" {
+			t.Fatalf("err = %v, want the size unreadable", err)
+		}
+	})
+
+	t.Run("a stream with no exit status is a failed call", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		id := execCopy(nomad, "running")
+		nomad.OnExec(func(deploytest.ExecRequest) deploytest.ExecReply {
+			return deploytest.ExecReply{Stdout: "caravana-sqlite-copy bytes=8192\n", NoExit: true}
+		})
+		// Even a result file doesn't make it a success: the script may not
+		// have ended.
+		nomad.WriteAllocFile(id, nomadjob.SQLiteResultFile("web-1", "copy"), "caravana-sqlite-copy bytes=8192\n")
+		if out, err := d.SQLiteCopy(ctx, id, svc, "web-1"); !errors.Is(err, ErrExecFailed) {
+			t.Fatalf("SQLiteCopy = %+v, %v; want ErrExecFailed", out, err)
 		}
 	})
 }

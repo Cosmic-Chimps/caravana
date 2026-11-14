@@ -38,6 +38,13 @@ type ExecReply struct {
 	// Fail closes the websocket with this text before any exit code, as Nomad
 	// does when the program can't be started.
 	Fail string
+	// ExitFirst sends the exit code before the output, as Nomad's exec stream
+	// sometimes does (lab, 2026-11-13): the client returns on the exit and the
+	// output never reaches it.
+	ExitFirst bool
+	// NoExit ends the stream with a normal close after the output and no exit
+	// code at all.
+	NoExit bool
 	// Shell runs the fake interactive shell instead of the scripted output
 	// (see runShell). A terminal request (TTY) with no OnExec hook set gets it
 	// too, so a test of the terminal needs no script.
@@ -187,6 +194,10 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 	send := func(frame api.ExecStreamingOutput) bool { return conn.WriteJSON(frame) == nil }
+	exit := api.ExecStreamingOutput{Exited: true, Result: &api.ExecStreamingExitResult{ExitCode: reply.ExitCode}}
+	if reply.ExitFirst && !send(exit) {
+		return
+	}
 	for _, c := range []struct {
 		text string
 		out  func([]byte) api.ExecStreamingOutput
@@ -206,11 +217,17 @@ func (n *Nomad) serveExec(w http.ResponseWriter, r *http.Request, id string) {
 			}
 		}
 	}
-	if reply.Hold {
+	switch {
+	case reply.Hold:
 		<-gone
 		return
+	case reply.NoExit:
+		_ = conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		return
+	case !reply.ExitFirst:
+		send(exit)
 	}
-	send(api.ExecStreamingOutput{Exited: true, Result: &api.ExecStreamingExitResult{ExitCode: reply.ExitCode}})
 	// Give the client the frame before the connection closes.
 	select {
 	case <-gone:

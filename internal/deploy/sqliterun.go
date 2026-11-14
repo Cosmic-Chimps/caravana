@@ -53,8 +53,13 @@ func (d *Deployer) SQLiteCopy(ctx context.Context, copyID string, svc app.Servic
 		return nomadjob.SQLiteOutput{}, fmt.Errorf("service %s has no sqlite database file to back up", svc.Name)
 	}
 	cmd := nomadjob.SQLiteCommand(nomadjob.SQLiteCopyScript,
-		nomadjob.SQLiteDatabasePath(vol.Name, inVolume), svc.Backup.File, nomadjob.SQLiteCopyPath(request), seconds(ctx))
+		nomadjob.SQLiteDatabasePath(vol.Name, inVolume), svc.Backup.File, nomadjob.SQLiteCopyPath(request), seconds(ctx),
+		nomadjob.SQLiteResultPath(request, "copy"))
 	out, err := d.runSQLite(ctx, copyID, app.SQLiteTaskName, "copy", cmd, nil, nil)
+	if err != nil {
+		return out, err
+	}
+	out, err = d.sqliteResult(ctx, copyID, nomadjob.SQLiteResultFile(request, "copy"), out, hasBytes)
 	if err != nil {
 		return out, err
 	}
@@ -78,8 +83,13 @@ func (d *Deployer) SQLiteUpload(ctx context.Context, copyID, request, appID stri
 		return nomadjob.SQLiteOutput{}, err
 	}
 	cmd := nomadjob.SQLiteCommand(nomadjob.SQLiteUploadScript,
-		nomadjob.SQLiteCopyPath(request), destinationItems(appID, svc.Name, dest)["BACKUP_PATH"], ts, keepArg(keep), seconds(ctx), pinList(pinned))
+		nomadjob.SQLiteCopyPath(request), destinationItems(appID, svc.Name, dest)["BACKUP_PATH"], ts, keepArg(keep), seconds(ctx), pinList(pinned),
+		nomadjob.SQLiteResultPath(request, "upload"))
 	out, err := d.runSQLite(ctx, copyID, app.UploadTaskName, "upload", cmd, &dest, strings.NewReader(stdin))
+	if err != nil {
+		return out, err
+	}
+	out, err = d.sqliteResult(ctx, copyID, nomadjob.SQLiteResultFile(request, "upload"), out, hasObject)
 	if err != nil {
 		return out, err
 	}
@@ -98,8 +108,13 @@ func (d *Deployer) SQLiteDownload(ctx context.Context, copyID, request, object s
 	if err != nil {
 		return nomadjob.SQLiteOutput{}, err
 	}
-	cmd := nomadjob.SQLiteCommand(nomadjob.SQLiteDownloadScript, object, nomadjob.SQLiteCopyPath(request), seconds(ctx))
+	cmd := nomadjob.SQLiteCommand(nomadjob.SQLiteDownloadScript, object, nomadjob.SQLiteCopyPath(request), seconds(ctx),
+		nomadjob.SQLiteResultPath(request, "download"))
 	out, err := d.runSQLite(ctx, copyID, app.UploadTaskName, "download", cmd, &dest, strings.NewReader(stdin))
+	if err != nil {
+		return out, err
+	}
+	out, err = d.sqliteResult(ctx, copyID, nomadjob.SQLiteResultFile(request, "download"), out, hasBytes)
 	if err != nil {
 		return out, err
 	}
@@ -125,9 +140,11 @@ func (d *Deployer) SQLiteStage(ctx context.Context, copyID string, svc app.Servi
 }
 
 // runSQLite runs one script in task of the copy. A script that exits 0 gives
-// its parsed markers. One that exits otherwise is a *SQLiteError with its
-// reason; one that ran out of the context's time says so. dest, when not nil,
-// is the destination to keep out of the error text.
+// the markers of its standard output, which may be missing (sqliteResult). One
+// that exits otherwise is a *SQLiteError with its reason; one that ran out of
+// the context's time says so, and an answer with no exit status is a failed
+// call, never a success. dest, when not nil, is the destination to keep out of
+// the error text.
 func (d *Deployer) runSQLite(ctx context.Context, copyID, task, step string, cmd []string, dest *BackupDestination, stdin io.Reader) (nomadjob.SQLiteOutput, error) {
 	res, err := d.Exec(ctx, copyID, task, cmd, stdin, sqliteOutputLimit)
 	if err != nil {
@@ -136,11 +153,39 @@ func (d *Deployer) runSQLite(ctx context.Context, copyID, task, step string, cmd
 	if res.TimedOut {
 		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: step + ": timed out"}
 	}
-	if res.ExitCode != nil && *res.ExitCode != 0 {
+	if res.ExitCode == nil {
+		return nomadjob.SQLiteOutput{}, fmt.Errorf("%w: %s: Nomad gave no exit status", ErrExecFailed, step)
+	}
+	if *res.ExitCode != 0 {
 		return nomadjob.SQLiteOutput{}, &SQLiteError{Message: sqliteReason(step, res, *res.ExitCode, dest)}
 	}
 	return nomadjob.ParseSQLiteOutput(string(res.Stdout)), nil
 }
+
+// sqliteResult is the output of a step whose script exited 0. Nomad's exec
+// stream can report the exit before the output has arrived (lab, 2026-11-13:
+// a good copy recorded as a failed backup), so the markers are read from the
+// script's result file (nomadjob.SQLiteResultFile), which the script wrote
+// before it exited. has says whether an output holds what the step reports:
+// the file's output when it does, else stdout's when it does. When neither
+// does, a failed read of the file is the error; otherwise stdout's output is
+// returned and the caller says what is missing.
+func (d *Deployer) sqliteResult(ctx context.Context, copyID, file string, stdout nomadjob.SQLiteOutput,
+	has func(nomadjob.SQLiteOutput) bool) (nomadjob.SQLiteOutput, error) {
+	text, found, err := d.readCopyFile(ctx, copyID, file)
+	if err == nil && found {
+		if out := nomadjob.ParseSQLiteOutput(text); has(out) {
+			return out, nil
+		}
+	}
+	if err != nil && !has(stdout) {
+		return stdout, err
+	}
+	return stdout, nil
+}
+
+func hasBytes(out nomadjob.SQLiteOutput) bool  { return out.Bytes > 0 }
+func hasObject(out nomadjob.SQLiteOutput) bool { return out.Object != "" }
 
 // sqliteSteps are the steps the scripts name at the start of a failure's line.
 var sqliteSteps = []string{"copy", "check", "upload", "download", "stage"}

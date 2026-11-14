@@ -55,6 +55,21 @@ func SQLiteStagePath(volume, request string) string {
 // the file relative to the root of the volumes, "<volume>/<path in volume>".
 func SQLiteRestoreFile(volume, inVolume string) string { return volume + "/" + inVolume }
 
+// SQLiteResultPath is where the copy, upload or download script (step) of the
+// run named request also writes the markers it prints. Nomad's exec stream can
+// report a command's exit before its output has arrived (lab, 2026-11-13), and
+// this file is how Caravana reads the markers then. Each run's copy or download
+// empties SQLiteWorkDir first, so a run leaves its files until the next one.
+func SQLiteResultPath(request, step string) string {
+	return SQLiteWorkDir + "/" + request + "." + step + ".result"
+}
+
+// SQLiteResultFile is SQLiteResultPath as Caravana reads it through the
+// allocation's file system, whose paths start at the allocation directory.
+func SQLiteResultFile(request, step string) string {
+	return strings.TrimPrefix(SQLiteResultPath(request, step), "/")
+}
+
 // SQLiteObject is the backup's object in the destination: backupPath is the
 // service's BACKUP_PATH and ts the run's unix seconds.
 func SQLiteObject(backupPath, ts string) string { return backupPath + "/" + ts + ".sqlite.gz" }
@@ -157,7 +172,9 @@ func uploadTask(s Settings) *api.Task {
 // Each one that fails exits 1 with its reason, prefixed with the step (copy,
 // check, upload, download, stage), as the last line of stderr; Caravana
 // records "<step>: <reason>". Each one that succeeds prints the markers
-// ParseSQLiteOutput reads.
+// ParseSQLiteOutput reads, and the copy, upload and download scripts also
+// write them to their last argument, RESULT (SQLiteResultPath), the file
+// Caravana reads when the exec answer came back without them.
 //
 // Every call to sqlite3, gzip and rclone runs under BusyBox timeout with what
 // is left of the run's limit (the last argument), so one stuck call can't
@@ -208,6 +225,12 @@ work_dir_of() {
 size_of() {
   wc -c < "$1" | tr -d ' '
 }
+
+# say <line> prints a marker line and adds it to RESULT, when there is one.
+say() {
+  echo "$1"
+  [ -z "$RESULT" ] || echo "$1" >> "$RESULT"
+}
 `
 
 // sqliteDestination reads the destination's credentials from the standard
@@ -233,7 +256,7 @@ read_destination() {
 
 // SQLiteCopyScript is run in caravana-sqlite as
 //
-//	sh -c <script> sh <db> <db as the service sees it> <out> <seconds>
+//	sh -c <script> sh <db> <db as the service sees it> <out> <seconds> <result>
 //
 // It copies the live database to <out> with VACUUM INTO, which reads the
 // database in one transaction (consistent, and in WAL mode it never blocks the
@@ -247,6 +270,7 @@ const SQLiteCopyScript = `db=$1
 shown=$2
 out=$3
 LIMIT=$4
+RESULT=$5
 ` + sqliteCommon + `
 set_deadline
 case "$out" in ''|*\'*) fail "copy: the copy's path is not usable" ;; esac
@@ -272,12 +296,12 @@ if [ "$check" != ok ]; then
   rm -f "$out"
   fail "check: the copy is damaged: $(printf '%s\n' "$check" | head -n 1)"
 fi
-echo "` + sqliteCopyMarker + ` bytes=$(size_of "$out")"
+say "` + sqliteCopyMarker + ` bytes=$(size_of "$out")"
 `
 
 // SQLiteUploadScript is run in caravana-upload as
 //
-//	sh -c <script> sh <copy> <backup path> <ts> <keep> <seconds> <pinned>
+//	sh -c <script> sh <copy> <backup path> <ts> <keep> <seconds> <pinned> <result>
 //
 // with the destination's credentials on its standard input. <pinned> lists the
 // timestamps of the pinned backups, separated by spaces, empty for none. It
@@ -303,10 +327,12 @@ ts=$3
 keep=$4
 LIMIT=$5
 pinned=$6
+RESULT=$7
 ` + sqliteCommon + sqliteDestination + `
 set_deadline
 tmp="$copy.work"
 trap 'rm -rf "$copy" "$tmp"' EXIT
+[ -z "$RESULT" ] || rm -f "$RESULT"
 read_destination
 case "$ts" in ''|*[!0-9]*) fail "upload: the request has no timestamp" ;; esac
 [ -n "$path" ] || fail "upload: the request has no backup destination"
@@ -349,19 +375,19 @@ if [ -z "$bytes" ]; then
   discard
   fail "upload: the size of the backup is unreadable"
 fi
-echo "` + BackupDoneMarker + ` key=$object bytes=$bytes"
+say "` + BackupDoneMarker + ` key=$object bytes=$bytes"
 
 # retain deletes the oldest unpinned backups beyond KEEP, as the volume engine does.
 retain() {
   case "$keep" in ''|*[!0-9]*|0) return 0 ;; esac
   if printf '%s' "$pinned" | grep -q '[^0-9 ]'; then
-    echo "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
+    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: the list of pinned backups is not valid"
     return 0
   fi
   listing=$(timeout "$(left)" rclone lsf --files-only "dest:$path/" 2> "$tmp/rclone.err")
   status=$?
   if [ "$status" -ne 0 ]; then
-    echo "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why listing "$tmp/rclone.err" "$status")"
+    say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why listing "$tmp/rclone.err" "$status")"
     return 0
   fi
   stamps=$(printf '%s\n' "$listing" | grep -E '^[0-9]+\.sqlite\.gz$' | sed 's/\.sqlite\.gz$//' | sort -n)
@@ -380,10 +406,10 @@ retain() {
     timeout "$(left)" rclone deletefile "dest:$path/$n.sqlite.gz" > /dev/null 2> "$tmp/rclone.err"
     status=$?
     if [ "$status" -ne 0 ]; then
-      echo "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why "removing the backup $n" "$tmp/rclone.err" "$status")"
+      say "` + sqliteWarningMarker + ` the backup is kept, but old backups were not removed: $(why "removing the backup $n" "$tmp/rclone.err" "$status")"
       return 0
     fi
-    echo "` + BackupExpiredMarker + ` $n.sqlite.gz"
+    say "` + BackupExpiredMarker + ` $n.sqlite.gz"
   done
 }
 retain
@@ -392,7 +418,7 @@ exit 0
 
 // SQLiteDownloadScript is run in caravana-upload as
 //
-//	sh -c <script> sh <object> <out> <seconds>
+//	sh -c <script> sh <object> <out> <seconds> <result>
 //
 // with the destination's credentials on its standard input. It streams the
 // backup, gunzipped, into <out> (no .gz on disk), with both exit codes
@@ -402,6 +428,7 @@ exit 0
 const SQLiteDownloadScript = `object=$1
 out=$2
 LIMIT=$3
+RESULT=$4
 ` + sqliteCommon + sqliteDestination + `
 set_deadline
 read_destination
@@ -431,7 +458,7 @@ if [ "$(head -c 15 "$out")" != "SQLite format 3" ]; then
   rm -f "$out"
   fail "download: the backup is not a SQLite database"
 fi
-echo "` + sqliteDownloadMarker + ` bytes=$(size_of "$out")"
+say "` + sqliteDownloadMarker + ` bytes=$(size_of "$out")"
 `
 
 // SQLiteStageScript is run in caravana-sqlite as

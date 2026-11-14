@@ -567,6 +567,19 @@ func (g *gate) bucketExec(cmd ...string) (string, error) {
 	return g.jobExec("gate-s3", "s3", cmd...)
 }
 
+// bucketList lists a directory of the bucket. Nomad's exec stream can report
+// the exit before the output has arrived, so an empty answer is asked again
+// for a few seconds: every directory listed here holds a backup.
+func (g *gate) bucketList(dir string) (string, error) {
+	var listed string
+	var err error
+	waitUntil(15*time.Second, func() bool {
+		listed, err = g.bucketExec("ls", dir)
+		return err == nil && listed != ""
+	})
+	return listed, err
+}
+
 // jobExec runs a command inside the task of a job the gate itself started (not
 // an app), in a copy Nomad still wants running, and answers its trimmed
 // output. An exit code other than 0 is an error holding the code and stderr.
@@ -909,7 +922,7 @@ func (g *gate) volumeBackupRestoreStep(t *testing.T) {
 	// The record doesn't name the object, but the run's ID ends in the
 	// timestamp its directory in the bucket is named by: <prefix>/vol/web/<ts>/.
 	ts := strings.TrimPrefix(run.ID, "web-")
-	if listed, err := g.bucketExec("ls", "/data/backups/gate/vol/web/"+ts+"/"); err != nil || !strings.Contains(listed, "data.tar.gz") {
+	if listed, err := g.bucketList("/data/backups/gate/vol/web/" + ts + "/"); err != nil || !strings.Contains(listed, "data.tar.gz") {
 		t.Errorf("the bucket's backups/gate/vol/web/%s/ lists %q (%v), want data.tar.gz", ts, listed, err)
 	}
 
