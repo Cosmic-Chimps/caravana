@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"time"
 
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 )
 
@@ -62,4 +65,26 @@ func (s *Service) noteIssuer(name string, server bool, reported string, now time
 		s.issuerInFlight[name] = now
 	}
 	return send
+}
+
+// ErrIssuerNotSet is returned by ClusterDiscovery when the console has no https public URL: this
+// installation has no issuer, so it publishes no discovery documents.
+var ErrIssuerNotSet = errors.New("this installation has no issuer: its public URL isn't https")
+
+// Discovery documents of the cluster's issuer (spec 038).
+const (
+	// DiscoveryConfig is /.well-known/openid-configuration.
+	DiscoveryConfig = deploy.DiscoveryConfigPath
+	// DiscoveryJWKS is /.well-known/jwks.json.
+	DiscoveryJWKS = deploy.DiscoveryJWKSPath
+)
+
+// ClusterDiscovery returns one of Nomad's discovery documents (DiscoveryConfig or DiscoveryJWKS) as
+// Nomad sent it. It reads nothing and answers ErrIssuerNotSet when there is no issuer. A failed read
+// is an error that never holds Nomad's answer.
+func (s *Service) ClusterDiscovery(ctx context.Context, document string) ([]byte, error) {
+	if s.ClusterIssuer() == "" {
+		return nil, ErrIssuerNotSet
+	}
+	return s.deployer.NomadDiscovery(ctx, document)
 }

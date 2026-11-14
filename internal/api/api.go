@@ -59,6 +59,9 @@ type server struct {
 func (s *server) routes() []route {
 	return []route{
 		{http.MethodGet, "/v1/health", s.health, true, false},
+		// The cluster's discovery documents (spec 038): public, outside /v1, main listener only.
+		{http.MethodGet, "/.well-known/openid-configuration", s.getOpenIDConfiguration, true, false},
+		{http.MethodGet, "/.well-known/jwks.json", s.getJWKS, true, false},
 		{http.MethodGet, "/v1/apps", s.listApps, false, false},
 		{http.MethodPost, "/v1/apps", s.createApp, false, false},
 		{http.MethodGet, "/v1/deployments", s.listRecentDeployments, false, false},

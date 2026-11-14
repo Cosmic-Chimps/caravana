@@ -221,12 +221,12 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	return 0
 }
 
-// root sends /v1 to the API and everything else to the pages. It decides on
-// the cleaned path, not by a ServeMux: a mux would redirect "//v1/health" to
-// "/v1/health", and the API never redirects (it answers those with a JSON 404).
+// root sends /v1 and /.well-known (the cluster's discovery documents) to the API and everything else
+// to the pages. It decides on the cleaned path, not by a ServeMux: a mux would redirect "//v1/health"
+// to "/v1/health", and the API never redirects (it answers those with a JSON 404).
 func root(apiHandler, pages http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p := path.Clean(r.URL.Path); p == "/v1" || strings.HasPrefix(p, "/v1/") {
+		if p := path.Clean(r.URL.Path); p == "/v1" || strings.HasPrefix(p, "/v1/") || strings.HasPrefix(p, "/.well-known/") {
 			apiHandler.ServeHTTP(w, r)
 			return
 		}
