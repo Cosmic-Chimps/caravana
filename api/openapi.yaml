@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.39.0
+  version: 0.40.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -30,10 +30,17 @@ info:
 
     A token made with a `scope` (`createToken`) is a deploy token: it can only deploy one app
     name of one project, in any environment. With it, only `getApp`, `getCompose`,
-    `listDeployments`, `getDeployment`, `deployApp`, `deployCompose`, `previewPromotion` and
-    `promoteApp` (for that app's ID), `createApp` (for an ID in scope), and
+    `listDeployments`, `getDeployment`, `deployApp`, `deployCompose`, `previewPromotion`,
+    `promoteApp` and `refreshSecrets` (for that app's ID), `createApp` (for an ID in scope), and
     `createEnvironmentApp` and `getEnvironmentApp` (for that project and app name) answer.
     Every other request, and those about another app, is 403 `token_scope`, before any work.
+
+    A secret may be a reference, `from: {provider, path}`, instead of a value: a deploy reads it
+    from the secret provider (`putSecretProvider`) and keeps it in the cluster's secret store
+    like a typed one. The reference is not secret and is shown as written; the value is never
+    shown. A provider that refuses Caravana or can't be reached fails that deploy (`422
+    secret_provider_refused`, `502 secret_provider_unavailable`) and leaves the values the
+    running copies have; `refreshSecrets` rolls the live version out again when a value changed.
 
     A domain may be Team only (`teamOnly`): HTTP basic auth, user `team`, with a password
     Caravana makes. The password is shown in two answers only, each once and sent with
@@ -1576,6 +1583,64 @@ paths:
         "502":
           $ref: "#/components/responses/NomadUnavailable"
 
+  /v1/apps/{id}/secrets/refresh:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    post:
+      operationId: refreshSecrets
+      summary: Read the live version's secret references again and roll it out if a value changed.
+      description: |
+        Reads every `from` reference of the app's running version from its provider (one read
+        per provider) and compares each value with the one the app has. When one differs it
+        deploys the running version again: the same images, pinned by the same digests (no tag
+        is resolved), with the values read now. It is a normal health-checked deployment of a
+        new Nomad job version; its record has `secretsRefreshed: true` and `source` is the
+        deployment that was live. When nothing differs it answers 200 `{"changed": false}` and
+        deploys nothing. A definition saved after the live version that never got healthy is
+        replaced by what runs, as for `redeployDeployment`.
+
+        409 `app_not_defined`, `app_stopped`, `no_live_deployment` (no healthy version),
+        `definition_not_recorded`, or `no_secret_references` (the live version has no
+        reference). A provider that refuses or is down fails the call with the codes of any
+        deploy, and deploys nothing. A deploy token for the app may call it.
+      tags: [deployments]
+      parameters:
+        - $ref: "#/components/parameters/OriginCommit"
+        - $ref: "#/components/parameters/OriginRef"
+        - $ref: "#/components/parameters/OriginActor"
+        - $ref: "#/components/parameters/OriginRun"
+        - $ref: "#/components/parameters/OriginRepository"
+      responses:
+        "200":
+          description: Nothing changed; nothing was deployed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretsUnchanged"
+        "202":
+          description: A value changed; Nomad accepted the job and the rollout continues in the background.
+          headers:
+            Location:
+              $ref: "#/components/headers/DeploymentLocation"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretsRefreshed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RefreshConflict"
+        "422":
+          $ref: "#/components/responses/ImageNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
   /v1/apps/{id}/actions:
     parameters:
       - $ref: "#/components/parameters/AppID"
@@ -2885,6 +2950,130 @@ paths:
           $ref: "#/components/responses/RegistryNotFound"
         "500":
           $ref: "#/components/responses/Internal"
+
+  /v1/secret-providers:
+    get:
+      operationId: listSecretProviders
+      summary: List the secret providers, never their credentials.
+      description: By name. `usedBy` lists the apps that reference each one.
+      tags: [secret-providers]
+      responses:
+        "200":
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretProviderList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/secret-providers/{name}:
+    parameters:
+      - $ref: "#/components/parameters/SecretProviderName"
+    put:
+      operationId: putSecretProvider
+      summary: Add a secret provider, or replace the one with this name.
+      description: |
+        A provider is an outside place an app's secrets may point at. Bella Baxter is the one
+        kind: its address, the project and environment Caravana reads, an environment API key
+        and the private key Bella showed when it made that key (Caravana always presents it, so
+        every read is end-to-end encrypted). Both credentials are required when creating and
+        optional when updating: leave one out to keep the one stored before. They are kept
+        only in the cluster's secret store and never returned. A save that changes the
+        settings or a credential forgets the last test.
+
+        `allowed` limits the provider to places: each entry is a project or `project/environment`
+        that exists. Empty means every place. A reference from an app elsewhere is refused.
+
+        Nothing is deployed or restarted. 201 when the provider is new, 200 when replaced.
+      tags: [secret-providers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecretProviderRequest"
+      responses:
+        "200":
+          description: Replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretProvider"
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretProvider"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+    delete:
+      operationId: deleteSecretProvider
+      summary: Remove a secret provider and its credentials.
+      description: |
+        A provider some app still references can't be removed: 409 `secret_provider_in_use`, and
+        the message names the apps. Apps already running are not touched either way.
+      tags: [secret-providers]
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/SecretProviderNotFound"
+        "409":
+          $ref: "#/components/responses/SecretProviderInUse"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /v1/secret-providers/{name}/test:
+    parameters:
+      - $ref: "#/components/parameters/SecretProviderName"
+    post:
+      operationId: testSecretProvider
+      summary: Read the provider once and say how many secrets Caravana can read.
+      description: |
+        Makes one read of the provider's environment and records the outcome with its time. A
+        provider that refuses Caravana or can't be reached is an answer, not an error: the
+        response is 200 and `lastTest.ok` is false, with the reason in `lastTest.message`, in
+        Caravana's words (never the provider's own text).
+      tags: [secret-providers]
+      responses:
+        "200":
+          description: The provider, with `lastTest` updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretProvider"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/SecretProviderNotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /v1/notifications/channels:
     get:
@@ -5028,6 +5217,16 @@ components:
       schema:
         type: string
         enum: ["*"]
+    SecretProviderName:
+      name: name
+      in: path
+      required: true
+      description: The provider's name, a lowercase DNS label.
+      schema:
+        type: string
+      examples:
+        bella:
+          value: bella-prod
     RegistryHost:
       name: host
       in: path
@@ -6340,7 +6539,145 @@ components:
           writeOnly: true
           description: |
             UTF-8 text without NUL. Leave it out to keep the value the secret has now. Never
-            returned.
+            returned. A secret has a `value` or a `from`, not both (400 `invalid_field` on
+            `services[i].secrets[j].from`).
+        from:
+          $ref: "#/components/schemas/SecretRef"
+
+    SecretRef:
+      type: object
+      additionalProperties: false
+      required: [provider, path]
+      description: |
+        Where an outside provider keeps a secret's value. Each deploy reads it from there. It
+        is not secret: it is stored, recorded with each deployment and returned as written.
+        An unknown provider, or one not allowed for the app's project and environment, is 400
+        `invalid_field` on `services[i].secrets[j].from.provider`, before anything is saved.
+      properties:
+        provider:
+          type: string
+          description: "The name of a provider (`putSecretProvider`), a lowercase DNS label."
+          examples: [bella-prod]
+        path:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: The secret's name in the provider. For Bella Baxter, its key.
+          examples: [DATABASE_URL]
+
+    SecretProviderRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, bella]
+      properties:
+        kind:
+          type: string
+          enum: [bella]
+        bella:
+          $ref: "#/components/schemas/BellaSettings"
+        allowed:
+          type: array
+          description: Projects (`shop`) or project/environments (`shop/production`) that may use the provider. Empty or absent means every place.
+          items: {type: string}
+        apiKey:
+          type: string
+          writeOnly: true
+          description: |
+            The environment API key, `bax-` and hex. Required the first time; leave it out to
+            keep the one stored. Never returned.
+        privateKey:
+          type: string
+          writeOnly: true
+          description: |
+            The PKCS#8 P-256 private key Bella showed when it made the API key, as PEM or base64.
+            Required the first time; leave it out to keep the one stored. Never returned.
+
+    BellaSettings:
+      type: object
+      additionalProperties: false
+      required: [url, project, environment]
+      properties:
+        url:
+          type: string
+          description: Bella's address. `https://`, or `http://` for a loopback host only.
+          examples: ["https://api.bella-baxter.io"]
+        project:
+          type: string
+          description: Bella's project slug.
+        environment:
+          type: string
+          description: Bella's environment slug. Caravana reads this one environment.
+
+    SecretProvider:
+      type: object
+      additionalProperties: false
+      required: [name, kind, bella, allowed, usedBy, createdAt, updatedAt]
+      description: A secret provider, without any credential.
+      properties:
+        name: {type: string}
+        kind:
+          type: string
+          enum: [bella]
+        bella:
+          $ref: "#/components/schemas/BellaSettings"
+        allowed:
+          type: array
+          items: {type: string}
+        usedBy:
+          type: array
+          description: The IDs of the apps that reference the provider now.
+          items: {type: string}
+        lastTest:
+          type: object
+          additionalProperties: false
+          required: [at, ok, message, count]
+          description: The last `testSecretProvider`. Absent until the first test, and after a save that changes the settings or a credential.
+          properties:
+            at: {type: string, format: date-time}
+            ok:
+              type: boolean
+              description: True when Caravana could read the provider.
+            message:
+              type: string
+              description: |
+                "12 secrets readable", or why not, in Caravana's words: the key was refused, no
+                private key is registered for it, it isn't for this project and environment,
+                Bella can't be reached or its answer couldn't be decrypted.
+            count:
+              type: integer
+              description: How many secrets a successful test could read; 0 otherwise.
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    SecretProviderList:
+      type: object
+      additionalProperties: false
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecretProvider"
+
+    SecretsUnchanged:
+      type: object
+      additionalProperties: false
+      required: [changed]
+      properties:
+        changed:
+          type: boolean
+          enum: [false]
+
+    SecretsRefreshed:
+      type: object
+      additionalProperties: false
+      required: [changed, deployment]
+      properties:
+        changed:
+          type: boolean
+          enum: [true]
+        deployment:
+          $ref: "#/components/schemas/Deployment"
 
     Duration:
       type: string
@@ -8828,6 +9165,12 @@ components:
             made (`deployApp`, `deployCompose`, `promoteApp`, `redeployDeployment`). Absent for
             a deploy made from the console, by the webhook, and for deployments recorded before
             version 0.23.0.
+        secretsRefreshed:
+          type: boolean
+          description: |
+            Present and true only for a deployment made by `refreshSecrets`: the live version
+            rolled out again because a value changed in a secret provider. `source` is the
+            deployment that was live.
         registeredAt:
           type: [string, "null"]
           format: date-time
@@ -9389,6 +9732,31 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SecretProviderNotFound:
+      description: There is no secret provider with this name (`secret_provider_not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SecretProviderInUse:
+      description: |
+        `secret_provider_in_use`: apps still reference the provider; the message names them.
+        Nothing was removed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RefreshConflict:
+      description: |
+        `app_not_defined`: the app has no definition yet. `app_stopped`: the app is stopped.
+        `no_live_deployment`: no healthy version runs. `definition_not_recorded`: the live
+        deployment was recorded before Caravana saved definitions. `no_secret_references`: the
+        live version has no `from` reference, so there is nothing to refresh. Nothing was
+        deployed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     RegistryNotFound:
       description: Caravana has no credentials for this registry host and path (`not_found`).
       content:
@@ -9535,6 +9903,13 @@ components:
         fix them with `putRegistry` and check them with `testRegistry`). `field` is the
         service's `image`. Nothing was registered; the deployment record (see `Location`) is
         `failed`.
+
+        On a deploy of an app with secret references, also `secret_not_found` (`field`
+        `services[i].secrets[j].from.path`: the provider doesn't have the path) and
+        `secret_provider_refused` (`field` `services[i].secrets[j].from`: the provider
+        refused Caravana's key, device key or environment, or its answer couldn't be
+        decrypted). The message names the provider and the path, never a value or the
+        provider's own text. The values the running copies have are untouched.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -9546,8 +9921,12 @@ components:
       description: |
         The registry or Nomad couldn't be used: `registry_unavailable` (unreachable, erroring
         or rate-limiting; `field` is the service's `image`), `nomad_unavailable` (unreachable
-        or the token was refused) or `nomad_rejected` (the message is what Nomad said). The
-        deployment record (see `Location`) is `failed`.
+        or the token was refused) or `nomad_rejected` (the message is what Nomad said). A
+        secret provider that can't be reached or answered with a server error is
+        `secret_provider_unavailable` (`field` `services[i].secrets[j].from`; only that deploy
+        fails, running copies keep their values), and the secret store that holds provider
+        credentials, `secret_store_unavailable`. The deployment record (see `Location`) is
+        `failed`.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"
@@ -9726,6 +10105,8 @@ tags:
     description: Webhook tokens, and the webhook that redeploys an app.
   - name: registries
     description: Credentials for private container registries.
+  - name: secret-providers
+    description: Outside places an app's secrets may be read from (Bella Baxter), and Refresh secrets.
   - name: notifications
     description: Channels that tell the owner what needs them and how deploys end, and their deliveries.
   - name: schedules

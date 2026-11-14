@@ -35,6 +35,7 @@ var scopeRules = map[string]scopeFinder{
 	"POST /v1/apps/{id}/compose":                   pathID,
 	"POST /v1/apps/{id}/promote/preview":           pathID,
 	"POST /v1/apps/{id}/promote":                   pathID,
+	"POST /v1/apps/{id}/secrets/refresh":           pathID,
 	// createApp: the app named by the body's id.
 	"POST /v1/apps": bodyID,
 	// The place calls: the project in the path, the app by name.

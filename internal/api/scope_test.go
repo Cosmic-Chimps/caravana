@@ -23,6 +23,7 @@ var allowedForDeployTokens = []string{
 	"POST /v1/apps/{id}/compose",                                        // deployCompose
 	"POST /v1/apps/{id}/promote/preview",                                // previewPromotion
 	"POST /v1/apps/{id}/promote",                                        // promoteApp
+	"POST /v1/apps/{id}/secrets/refresh",                                // refreshSecrets (feature 037)
 	"POST /v1/apps",                                                     // createApp
 	"POST /v1/projects/{project}/environments/{environment}/apps",       // createEnvironmentApp
 	"GET /v1/projects/{project}/environments/{environment}/apps/{name}", // getEnvironmentApp

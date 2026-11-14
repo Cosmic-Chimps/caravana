@@ -133,6 +133,9 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	svc.SetVolumeBackupTimeout(cfg.VolumeBackupTimeout)
 	svc.SetPublicURL(cfg.PublicURL)
 	svc.SetVersion(version)
+	// Secret providers (feature 037): Bella Baxter, through Bella's own SDK. Without this no provider
+	// can be saved, tested or read.
+	svc.SetSecretSources(service.BellaSource)
 	svc.SetNotifyResolveAfter(cfg.NotifyResolveAfter)
 	svc.SetEdgeAddress(cfg.EdgeAddress)
 	svc.SetTraefikMetricsURL(cfg.TraefikMetricsURL)

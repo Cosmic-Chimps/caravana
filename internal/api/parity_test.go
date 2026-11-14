@@ -14,7 +14,7 @@ import (
 // no operation and no reason is a mistake, not a decision).
 // settingsReads are what every Settings page reads for its nav.
 var settingsReads = []string{"listTokens", "listRegistries", "listNotificationChannels", "listNotificationDeliveries",
-	"getBackupDestination", "listApps", "listBackups", "listCertificates"}
+	"getBackupDestination", "listApps", "listBackups", "listCertificates", "listSecretProviders"}
 
 type parity struct {
 	ops []string
@@ -54,11 +54,13 @@ var consoleParity = map[string]parity{
 	// Settings (feature 021 page 3): one page per entry. Each draws the nav's counts and marks, which read
 	// every list (tokens, registries, channels and their deliveries, the destination, the apps and a
 	// backup's outcome); the entry then shows its own rows. Account is the email and the password form.
-	"GET /settings":                {ops: settingsReads},
-	"GET /settings/account":        {why: "a redirect to /settings"},
-	"GET /settings/registries":     {ops: settingsReads},
-	"GET /settings/backup-storage": {ops: settingsReads},
-	"GET /settings/notifications":  {ops: settingsReads},
+	"GET /settings":            {ops: settingsReads},
+	"GET /settings/account":    {why: "a redirect to /settings"},
+	"GET /settings/registries": {ops: settingsReads},
+	// Secret providers (feature 037).
+	"GET /settings/secret-providers": {ops: settingsReads},
+	"GET /settings/backup-storage":   {ops: settingsReads},
+	"GET /settings/notifications":    {ops: settingsReads},
 	// Certificates (feature 023): the table is listCertificates; the issuer, the contact email and Warn when are getCertificateSettings.
 	"GET /settings/certificates":  {ops: append([]string{"getCertificateSettings"}, settingsReads...)},
 	"POST /settings/certificates": {ops: []string{"putCertificateSettings"}},
@@ -139,13 +141,14 @@ var consoleParity = map[string]parity{
 	"POST /templates/settings":       {ops: []string{"putTemplateSettings"}},
 	"GET /templates/{name}/logo.svg": {ops: []string{"getTemplateLogo"}},
 	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
-	"POST /apps/{id}/secrets/remove": {ops: []string{"deployApp"}},
+	"POST /apps/{id}/secrets/remove":  {ops: []string{"deployApp"}},
+	"POST /apps/{id}/secrets/refresh": {ops: []string{"refreshSecrets"}}, // feature 037
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
 	// the page draws the app's domains with their state (listDomains ?app=, feature 023), and its Add panel's
 	// Check now is checkDomain.
-	"GET /apps/{id}/variables":      {ops: []string{"getApp"}},
+	"GET /apps/{id}/variables":      {ops: []string{"getApp", "listSecretProviders"}}, // the providers the Add form offers (feature 037)
 	"POST /apps/{id}/variables":     {ops: []string{"getApp", "deployApp"}},
 	"POST /apps/{id}/variables/env": {ops: []string{"getApp", "deployApp"}},
 	"GET /apps/{id}/domains":        {ops: []string{"getApp", "listDomains", "listApps"}},
@@ -163,9 +166,12 @@ var consoleParity = map[string]parity{
 	"POST /apps/{id}/backups/{backupId}/restore": {ops: []string{"restoreBackup"}},
 	"POST /settings/backups":                     {ops: []string{"setBackupDestination"}},
 	// Registry credentials (feature 017): the add and edit forms are one PUT, an empty password leaves it out.
-	"POST /settings/registries":        {ops: []string{"putRegistry"}},
-	"POST /settings/registries/test":   {ops: []string{"testRegistry"}},
-	"POST /settings/registries/remove": {ops: []string{"deleteRegistry"}},
+	"POST /settings/registries":              {ops: []string{"putRegistry"}},
+	"POST /settings/registries/test":         {ops: []string{"testRegistry"}},
+	"POST /settings/registries/remove":       {ops: []string{"deleteRegistry"}},
+	"POST /settings/secret-providers":        {ops: []string{"putSecretProvider"}},
+	"POST /settings/secret-providers/test":   {ops: []string{"testSecretProvider"}},
+	"POST /settings/secret-providers/remove": {ops: []string{"deleteSecretProvider"}},
 	// Notification channels (feature 018): the add form is a create; a row's edit form is a patch, and so are
 	// Pause and Resume (a patch of "paused"); a new signing secret and the test are their own operations.
 	"POST /settings/notifications":             {ops: []string{"createNotificationChannel"}},

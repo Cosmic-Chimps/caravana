@@ -103,6 +103,7 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/stop", s.stopApp, false, false},
 		{http.MethodPost, "/v1/apps/{id}/start", s.startApp, false, false},
 		{http.MethodPost, "/v1/apps/{id}/restart", s.restartApp, false, false},
+		{http.MethodPost, "/v1/apps/{id}/secrets/refresh", s.refreshSecrets, false, false},
 		{http.MethodGet, "/v1/apps/{id}/actions", s.listAppActions, false, false},
 		{http.MethodGet, "/v1/apps/{id}/logs", s.getLogs, false, true},
 		{http.MethodGet, "/v1/apps/{id}/metrics", s.getAppMetrics, false, false},
@@ -122,6 +123,10 @@ func (s *server) routes() []route {
 		{http.MethodPut, "/v1/registries/{host}", s.putRegistry, false, false},
 		{http.MethodDelete, "/v1/registries/{host}", s.deleteRegistry, false, false},
 		{http.MethodPost, "/v1/registries/{host}/test", s.testRegistry, false, false},
+		{http.MethodGet, "/v1/secret-providers", s.listSecretProviders, false, false},
+		{http.MethodPut, "/v1/secret-providers/{name}", s.putSecretProvider, false, false},
+		{http.MethodDelete, "/v1/secret-providers/{name}", s.deleteSecretProvider, false, false},
+		{http.MethodPost, "/v1/secret-providers/{name}/test", s.testSecretProvider, false, false},
 		{http.MethodGet, "/v1/notifications/channels", s.listNotificationChannels, false, false},
 		{http.MethodPost, "/v1/notifications/channels", s.createNotificationChannel, false, false},
 		{http.MethodPatch, "/v1/notifications/channels/{id}", s.updateNotificationChannel, false, false},
@@ -340,6 +345,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := passkeysError(err); e != nil {
+		return e
+	}
+	if e := secretProvidersError(err); e != nil {
 		return e
 	}
 	switch {
