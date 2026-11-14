@@ -32,6 +32,7 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/edge"
 	"github.com/cosmic-chimps/caravana/internal/edge/edgetest"
+	"github.com/cosmic-chimps/caravana/internal/secrets/bella/bellatest"
 	"github.com/cosmic-chimps/caravana/internal/service"
 )
 
@@ -93,6 +94,9 @@ func startLab(t *testing.T) labEnv {
 	hostRoot := labHostRoot(t)
 	// The release check asks this stand-in for the releases API (feature 027 page 3), and pro is a recorded answer.
 	release := newLabRelease(t)
+	// A fake Bella Baxter on loopback, which the in-process Caravana reaches like a real one (feature 037).
+	bella := bellatest.New()
+	t.Cleanup(bella.Close)
 	getenv := func(key string) string {
 		if key == "NOMAD_TOKEN" {
 			return scoped
@@ -217,6 +221,7 @@ func startLab(t *testing.T) labEnv {
 			DataDir:   dataDir,
 			HostRoot:  hostRoot,
 			Release:   release,
+			Bella:     bella,
 			SetTraefikMetricsURL: func(u string) {
 				currentMu.Lock()
 				defer currentMu.Unlock()

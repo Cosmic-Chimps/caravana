@@ -158,3 +158,20 @@ answer, page, deployment record, SQLite file, server log, export and Nomad job.
 **D14 Lab.** `startLab` runs a `bellatest` server on loopback for the steps. Gate step `secret-references`
 (`gate_secret_refs_test.go`) and console step `console-secret-providers` (`console_secret_providers_test.go`),
 per tasks.md Part C.
+
+## Deviations (implementation, 2026-11-13)
+
+- **D5:** `Refresh` is on `app.Deployment` (beside `Origin` and `TokenName`, which `CreateDeployment` already
+  records from it), read as `rec.Deployment.Refresh`, not a new field of `DeploymentRecord`.
+- **D6:** no `Deployer` interface or `deploytest` fake was added: the service holds the concrete
+  `*deploy.Deployer` and its tests use the fake Nomad, which already serves Variables.
+- **D7:** `service.BellaSource` is the factory `cmd/caravana` passes to `SetSecretSources`; it maps the
+  adapter's `*bella.ConfigError` to field errors (`bella.url`, `bella.project`, `bella.environment`, `apiKey`,
+  `privateKey`). The SDK is still imported only by `internal/secrets/bella` (plus `kiota-abstractions-go` for
+  classifying its errors).
+- **D8:** credentials missing from Nomad, or saved settings that no longer build a source, fail a deploy as a
+  refused `*ReferenceError` (422 `secret_provider_refused`), not as a field error.
+- **D11:** the openapi has a named `SecretProviderList`, and the new deploy-path codes are documented in the
+  shared 422 and 502 responses, so every deploy operation inherits them.
+- **D14:** the gate step is `secret-references`; the fake Bella is `gateTarget.Bella`, started by `startLab`,
+  so the step is skipped on a real host.

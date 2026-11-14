@@ -30,6 +30,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
+	"github.com/cosmic-chimps/caravana/internal/secrets/bella/bellatest"
 )
 
 // gateTarget is where the gate runs.
@@ -72,6 +73,9 @@ type gateTarget struct {
 	// Release is the stand-in for the releases API the lab's Caravana asks for new releases
 	// (feature 027 page 3); nil on a real host.
 	Release *labRelease
+	// Bella is the fake Bella Baxter on the in-process Caravana's loopback (feature 037); nil on a
+	// real host, where the secret-references step is skipped.
+	Bella *bellatest.Server
 }
 
 // publicTarget is what only a real host has.
@@ -159,6 +163,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"deploy-from-ci", false, g.deployFromCIStep},
 		{"private-registry", false, g.privateRegistryStep},
 		{"templates", false, g.templatesStep},
+		{"secret-references", false, g.secretRefsStep},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {

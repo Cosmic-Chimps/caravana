@@ -1295,6 +1295,45 @@ schedule (the public Umbral demo that starts each day from the same state). The 
   `phpv`), so that step may need a second run. The Aspire side is `WithCaravanaScheduledRestore` on branch
   `scheduled-restore` of `../aspire-hosting-caravana` (not pushed).
 
+Feature 037 (`specs/037-secret-providers`, from CodeAlta task `ptfn`, the 2026-11-11 secrets talk) is implemented
+on the worktree branch `alta/lucid-reprise-qgp5`: a secret may be a reference to a secret provider, Bella Baxter
+first. `plan.md` D1–D14 are the decisions, with a Deviations section.
+- `app.Secret.From *SecretRef{Provider, Path}` (`from`, omitempty, so no revision moved); a value and a `from`
+  together are a field error on `…secrets[j].from`. `WithoutSecretValues` (app and compose) and `withSecretNames`
+  keep `from`. A Compose overlay takes it too.
+- `internal/secrets/source.go` is the outside-provider seam: `Source` (`Read(ctx, paths)`, `Probe`),
+  `ErrSourceUnavailable`, `ErrSourceRefused`, `SourceError` (a sentence in Caravana's words, never a library's
+  text); `Build(a, current, resolved)`. `secretstest.Source` is the fake. The existing `Provider` is still the
+  Nomad-Variables store.
+- `internal/secrets/bella` is the one importer of Bella's Go SDK, `github.com/cosmic-chimps/bella-baxter-go`
+  `v0.1.1-preview.146` (new module, "Bella's own SDK; we use what we build"; it brings the Kiota packages and the
+  OpenTelemetry API). It always presents the private key (the SDK falls back to `BELLA_BAXTER_PRIVATE_KEY`
+  otherwise), reads one environment with one bulk call, and classifies errors by type and status only (Kiota's
+  404/502 come as `*models.ProblemDetails`, which embeds `ApiError` by value: match `abstractions.ApiErrorable`).
+  `Auth` is pluggable (`APIKey` today). `bellatest` is a fake Bella speaking the SDK's HMAC and E2EE envelope.
+- Providers: migration `0030_secret_providers.sql` (`secret_providers`: name, kind `bella`, settings JSON, allowed
+  places, last test; `deployments.refresh`). Credentials in the Nomad Variable `caravana/secret-providers/<name>`
+  (`api_key`, `private_key`). `service/secretproviders.go` (save, list with `usedBy`, delete refused while used,
+  test), `SetSecretSources(service.BellaSource)` in `cmd/caravana`.
+- Resolution (`service/secretrefs.go`): `checkSecrets` checks each reference's provider exists and allows the app's
+  place before anything is saved (400 on `…from.provider`); `deployWarned` reads each provider once under the app's
+  lock, before the sets are replaced: a missing path is 422 `secret_not_found` (`…from.path`), a refusal 422
+  `secret_provider_refused`, the provider down 502 `secret_provider_unavailable` (`…from`), via
+  `*service.ReferenceError`. Running copies and restarts never call Bella. Rollback reads today's values.
+- Refresh secrets (`service/secretrefresh.go`): re-reads the live version's references; changed → a redeploy of the
+  live version with its digests pinned, recorded `Refresh` with `source`; unchanged → nothing.
+  `ErrNoSecretReferences` (409 `no_secret_references`).
+- API 0.40.0: `from`, `listSecretProviders`, `putSecretProvider`, `deleteSecretProvider`, `testSecretProvider`,
+  `refreshSecrets` (deploy tokens may call it; every provider route is denied to them), `secretsRefreshed`.
+  Console: Settings › Secret providers (`/settings/secret-providers`, keys write-only), the Variables page's
+  "From a provider", reference rows, the "Where secrets come from" panel and Refresh secrets, "Refreshed secrets"
+  in the history, the rollback note, read-only references in the Compose form. `docs/secret-providers.md`.
+- Lab: `startLab` runs a `bellatest` server on loopback (`gateTarget.Bella`, nil on a real host, where the steps
+  skip). The gate step `secret-references` and the console step `console-secret-providers` passed on 2026-11-13
+  (50 s and 53 s, run alone). A check against a real Bella environment is the maintainer's.
+- Not in 037: Bella's change webhook (it will call Refresh), workload-identity auth (task 06), other providers, an
+  MCP refresh tool, emitting references from the Aspire publisher.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
