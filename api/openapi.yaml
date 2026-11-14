@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.39.0
+  version: 0.41.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`. Request bodies are `application/json`, with or without
@@ -5260,6 +5260,17 @@ components:
             $ref: "#/components/schemas/Volume"
         backup:
           $ref: "#/components/schemas/BackupPolicy"
+        identities:
+          type: array
+          maxItems: 4
+          description: |
+            Nomad workload identities the service asks for. Every copy finds each identity's
+            signed token in `/secrets/nomad_<name>.jwt`, which Nomad rewrites before it
+            expires. The token names the app's job, the service's group and task, and the
+            namespace. Caravana never reads, stores or shows it. A promotion keeps the
+            target's identities.
+          items:
+            $ref: "#/components/schemas/Identity"
         ports:
           type: array
           items:
@@ -5454,6 +5465,39 @@ components:
             $ref: "#/components/schemas/Secret"
         backup:
           $ref: "#/components/schemas/BackupPolicy"
+        identities:
+          type: array
+          maxItems: 4
+          description: The service's workload identities, with the meaning `Service.identities` has.
+          items:
+            $ref: "#/components/schemas/Identity"
+
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [name, audience]
+      description: |
+        A Nomad workload identity of a service: a signed JWT, written to
+        `/secrets/nomad_<name>.jwt` in every copy and renewed by Nomad before it expires. It is
+        always a file; there is no environment variable.
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,29}$"
+          description: |
+            Unique in the service. Not `default` (Nomad's own identity), and not starting with
+            `vault_` or `consul_`.
+        audience:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items: {type: string, minLength: 1, maxLength: 255, pattern: "^[!-~]+$"}
+          description: The token's `aud` claim. Printable ASCII, no spaces.
+        ttlSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: The token's lifetime in seconds. Leave it out for 3600 (one hour).
 
     BackupPolicy:
       type: object

@@ -74,6 +74,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, sqliteBackupCases()...)
 	cases = append(cases, entrypointCases()...)
 	cases = append(cases, stopTimeoutCases()...)
+	cases = append(cases, identityCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
 }
@@ -157,6 +158,31 @@ func entrypointCases() []goldenCase {
 		"tool":  "ghcr.io/acme/tool@sha256:" + strings.Repeat("b", 64),
 	}}
 	return []goldenCase{{name: "entrypoint", app: cache, deployment: dep, settings: labSettings()}}
+}
+
+// identityCases is a service with two workload identities, one with a TTL and
+// one on the default (spec 038), beside a service with none.
+func identityCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:  "api",
+				Image: "ghcr.io/acme/api:main",
+				Identities: []app.Identity{
+					{Name: "bella", Audience: []string{"bella-spiffe/env-1"}},
+					{Name: "billing", Audience: []string{"billing", "audit"}, TTLSeconds: 120},
+				},
+			},
+			{Name: "worker", Image: "ghcr.io/acme/worker:main"},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"api":    "ghcr.io/acme/api@sha256:" + strings.Repeat("d", 64),
+		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
+	}}
+	return []goldenCase{{name: "identity", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // stopTimeoutCases is a service that sets its stop timeout, on a service

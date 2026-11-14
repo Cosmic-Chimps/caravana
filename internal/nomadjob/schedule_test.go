@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/nomad/api"
 
@@ -243,5 +244,30 @@ func TestScheduleRunJobHoldsNoSecret(t *testing.T) {
 	}
 	if bytes.Contains(b, []byte("s3cr3t-marker")) {
 		t.Error("the job holds a secret value")
+	}
+}
+
+// TestScheduleRunJobIdentities: a run's task gets the same identity blocks as
+// the service's copies (spec 038), and a service without any gets none.
+func TestScheduleRunJobIdentities(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	if got := j.TaskGroups[0].Tasks[0].Identities; got != nil {
+		t.Errorf("a service without identities: run task has %d, want none", len(got))
+	}
+
+	svc.Identities = []app.Identity{
+		{Name: "bella", Audience: []string{"bella-spiffe/env-1"}},
+		{Name: "billing", Audience: []string{"billing"}, TTLSeconds: 120},
+	}
+	j = ScheduleRunJob(one, "r2", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	got := j.TaskGroups[0].Tasks[0].Identities
+	want := workloadIdentities(svc)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("run identities = %+v, want the service's %+v", got, want)
+	}
+	if len(got) != 2 || got[0].Name != "bella" || got[0].TTL != time.Hour || got[1].TTL != 2*time.Minute || !got[1].File {
+		t.Errorf("run identities = %+v", got)
 	}
 }

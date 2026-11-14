@@ -403,6 +403,7 @@ func keptComposeView(rec store.AppRecord) composeView {
 	v.Draft.Revision = rec.Revision
 	v.Draft.keepStored(rec.App)
 	v.Draft.keepDomains(rec)
+	v.Draft.keepIdentities(rec)
 	v.Draft.ensureServices(rec.App)
 	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
@@ -419,6 +420,7 @@ func notKeptComposeView(rec store.AppRecord) composeView {
 	v.Draft = draftFrom(rec.App)
 	v.Draft.File = formField{ID: "compose"}
 	v.Draft.keepDomains(rec)
+	v.Draft.keepIdentities(rec)
 	v.Draft.Revision = rec.Revision
 	v.Services = serviceViews(v.Draft, &rec.App)
 	return v
@@ -557,6 +559,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		}
 		draft.keepStored(stored.App)
 		draft.keepDomains(*stored)
+		draft.keepIdentities(*stored)
 		// A form drawn before ruling 12 may still post a domains text that didn't
 		// parse; keepDomains dropped it with its error, so judge what is left.
 		ok = !draft.hasError()
@@ -661,6 +664,7 @@ func (s *server) composeStep(w http.ResponseWriter, r *http.Request, appID strin
 		draft.Revision = fresh.Revision
 		draft.keepStored(fresh.App)
 		draft.keepDomains(fresh)
+		draft.keepIdentities(fresh)
 		v.Changes = composeChanges(fresh.App, prev)
 	}
 	v.SecretsNote = slices.ContainsFunc(draft.Services, func(s draftService) bool { return len(s.Secrets) > 0 })

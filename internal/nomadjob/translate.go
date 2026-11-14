@@ -548,11 +548,12 @@ func task(appID string, svc app.Service, image string, s Settings, private map[s
 	}
 
 	t := &api.Task{
-		Name:      svc.Name,
-		Driver:    "docker",
-		Config:    config,
-		Env:       env,
-		Resources: taskResources(svc.Resources, s),
+		Name:       svc.Name,
+		Driver:     "docker",
+		Config:     config,
+		Env:        env,
+		Resources:  taskResources(svc.Resources, s),
+		Identities: workloadIdentities(svc),
 	}
 	// How long Nomad waits after the stop signal before it kills the
 	// container. Unset keeps Nomad's own 5 s.

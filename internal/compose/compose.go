@@ -76,6 +76,9 @@ type Overlay struct {
 	// Backup makes the service a database Caravana backs up, as in
 	// app.Service.
 	Backup *app.Backup `json:"backup,omitempty"`
+	// Identities are the Nomad workload identities the service asks for, as
+	// in app.Service (spec 038).
+	Identities []app.Identity `json:"identities,omitempty"`
 }
 
 // Domain routes Host to one container port of the service, with the options
