@@ -41,6 +41,8 @@ type defPanel struct {
 	Title    string
 	Rows     []defRow
 	Defaults []string
+	// Identities are the service's workload identities, read-only (spec 038).
+	Identities []identityView
 }
 
 // defPanelOf makes a panel from its facts, folding those with no value into
@@ -304,6 +306,9 @@ type editServiceView struct {
 	editService
 	Also   []defRow
 	Prereq *registryPrereq
+	// Identities are the service's workload identities, which the form can't
+	// change and a save keeps (spec 038).
+	Identities []identityView
 }
 
 // registryPrereq is the grid's "Needs a container registry" notice (the
@@ -334,6 +339,7 @@ func editViewOf(stored app.App, form editForm, stale *staleView) editView {
 		for _, svc := range stored.Services {
 			if svc.Name == s.Name {
 				sv.Also = alsoSet(svc, s)
+				sv.Identities = identitiesOf(svc)
 			}
 		}
 		v.Services = append(v.Services, sv)
@@ -542,7 +548,9 @@ func servicePanels(a app.App) []defPanel {
 		if text := stopTimeoutText(svc); text != "" {
 			rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})
 		}
-		out = append(out, defPanelOf(svc.Name, rows))
+		panel := defPanelOf(svc.Name, rows)
+		panel.Identities = identitiesOf(svc)
+		out = append(out, panel)
 	}
 	return out
 }
