@@ -32,7 +32,7 @@
   restart once, one at a time, after the update), CLAUDE.md feature paragraph.
 - [x] **T011** Gate step `workload-identity` (plan §Tests) and `exportMatchesLive` for it; run in the lab;
   research R3, R4 into research.md.
-- [ ] **T012** `install-test.sh` checks (D11); run it; research R1, R2 into research.md.
+- [x] **T012** (2026-11-14: INSTALL TEST PASSED) `install-test.sh` checks (D11); run it; research R1, R2 into research.md.
 - [x] **T013** Aspire (`../aspire-hosting-caravana`, branch `workload-identity`, not pushed):
   `WithCaravanaIdentity(name, audience, ttl)` and `WithCaravanaBellaIdentity(audience)` writing the overlay's
   `identities`; its tests.

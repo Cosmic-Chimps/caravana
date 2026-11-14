@@ -22,3 +22,20 @@ The lab's Nomad has no `oidc_issuer`, and `/.well-known/openid-configuration` an
   `sub` = `global:default:<job>:<group>:<task>:<name>`. `exp − iat` = the TTL.
 - **No `iss` claim.** Bella's attestor refuses a token without the issuer it expects, which is why Part B sets
   `oidc_issuer`.
+
+## R2 · Taking the issuer on a running host (install-test, 2026-11-14)
+
+`deploy/dev/install-test.sh` passed with `check_issuer_host` on a fresh Ubuntu 24.04 VM (Nomad 2.0.7):
+- A fresh first server renders `oidc_issuer = "https://caravana.test"` from `init-first --issuer`; the console domain
+  serves Nomad's discovery document (its `issuer` is that address, its `jwks_uri` on the console domain) and keys,
+  through Traefik and Caravana.
+- A service's token, read inside its container, carries `iss` = the console's address, its audience and a 600 s life.
+- With the issuer taken out of `state.json` and `nomad.hcl` (a host from before the feature) and Nomad restarted,
+  the agent's next sync put it back with one Nomad restart, and whoami answered every call meanwhile (0 failures).
+- A copy started before the change, restarted after it, still rendered its secret: the default identity used for
+  Nomad Variables keeps working when the issuer changes, and the named identity's new token has the new `iss`.
+
+## R1 · Reload or restart
+
+Not measured: the agent restarts Nomad on a Nomad server whose issuer changes (one at a time), which R2 shows is
+harmless to running copies. Whether a SIGHUP reload would be enough is left open; a restart is what ships.

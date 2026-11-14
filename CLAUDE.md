@@ -1323,7 +1323,8 @@ credential stored in Caravana. Operator doc: `docs/workload-identity.md`. No mig
   `nomad_unavailable` with a fixed message. API 0.41.0 (0.40.0 is 037's).
 - Tests: the gate step `workload-identity` (`gate_identity_test.go`: signature against Nomad's JWKS, claims, a
   renewal, the token in no answer, log or data file, export with no diff; passed in the lab on 2026-11-14, 33 s) and
-  `install-test.sh`'s `check_issuer_host`. Aspire: `WithCaravanaIdentity` / `WithCaravanaBellaIdentity` on branch
+  `install-test.sh`'s `check_issuer_host` (passed 2026-11-14: a host from before the feature took the issuer with one
+  Nomad restart, whoami 0 failures, and a copy's default identity still read its secret). Aspire: `WithCaravanaIdentity` / `WithCaravanaBellaIdentity` on branch
   `workload-identity` of `../aspire-hosting-caravana` (not pushed). The end-to-end `bella spiffe agent` against a
   real Bella needs an https issuer Bella can reach, so it is the maintainer's check on a real host.
 
