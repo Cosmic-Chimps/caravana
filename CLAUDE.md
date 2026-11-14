@@ -1295,6 +1295,38 @@ schedule (the public Umbral demo that starts each day from the same state). The 
   `phpv`), so that step may need a second run. The Aspire side is `WithCaravanaScheduledRestore` on branch
   `scheduled-restore` of `../aspire-hosting-caravana` (not pushed).
 
+Feature 038 (`specs/038-workload-identity`, from CodeAlta task `j37f`) is implemented on the worktree branch
+`alta/hushed-apricot-zvbx` (stacked on 036): a service may ask for Nomad workload identities, and the cluster
+publishes its issuer, so an app proves who it is (to Bella Baxter's Nomad attestor, Bella's spec 081) with no
+credential stored in Caravana. Operator doc: `docs/workload-identity.md`. No migration, no module, no policy change.
+- Model: `app.Service.Identities []app.Identity{Name, Audience, TTLSeconds}` (`identities`, omitempty, so no
+  revision moved; at most 4; name `^[a-z][a-z0-9_]{0,29}$`, not `default`, `vault_*` or `consul_*`; audience 1–4
+  printable values; TTL 60–86400, 0 = 3600). `nomadjob.workloadIdentities` gives the service's task (and a schedule
+  run's) one `identity` block each with `file = true` (golden `identity`, written by the HCL export). `env` isn't
+  offered: Nomad doesn't refresh the variable on renewal. The Compose overlay takes `identities` and the console's
+  Compose form carries them (`keepIdentities`, like `keepDomains`); a promotion keeps the target's (an audience
+  belongs to an environment); Configure shows them read-only.
+- Lab, observed (research R3, R4): the token is `/secrets/nomad_<name>.jwt` (`NOMAD_SECRETS_DIR=/secrets`), RS256,
+  `aud` a string, `exp − iat` the TTL, `nomad_job_id` the app ID, `nomad_task` the service; Nomad rewrites it at
+  about half the TTL; without an issuer it has no `iss` (Bella refuses it), and Nomad's openid-configuration is 404.
+  The file can be empty for a moment right after the copy starts.
+- Issuer: `Service.ClusterIssuer()` is the public URL when it is `https://host[:port]` (`mesh.CleanIssuer`, the one
+  rule the console and the agent share). The node sync answer carries `issuer`, chosen by the pure `issuerFor` so
+  Nomad servers take a new one one at a time (in-memory `issuerInFlight`, 2 minutes); the agent stores it
+  (`State.Issuer`, reported back as `Report.Issuer`), renders `oidc_issuer` in `server {}` only and restarts Nomad
+  on a server (a client restarts nothing). An answer **without** an issuer keeps the one a server has, so a
+  rolled-back update never restarts every server at once. `node init-first --issuer` (the installer passes
+  `https://<domain>`) renders it on a fresh host from the start.
+- Discovery: `GET /.well-known/openid-configuration` and `/.well-known/jwks.json` on the main listener (`root` sends
+  `/.well-known/` to the API), no credentials, passing Nomad's documents through (`deploy.NomadDiscovery`, 5 s, 64
+  KiB, JSON only, `Cache-Control: public, max-age=60`); 404 `issuer_not_set` without an issuer, 502
+  `nomad_unavailable` with a fixed message. API 0.41.0 (0.40.0 is 037's).
+- Tests: the gate step `workload-identity` (`gate_identity_test.go`: signature against Nomad's JWKS, claims, a
+  renewal, the token in no answer, log or data file, export with no diff; passed in the lab on 2026-11-14, 33 s) and
+  `install-test.sh`'s `check_issuer_host`. Aspire: `WithCaravanaIdentity` / `WithCaravanaBellaIdentity` on branch
+  `workload-identity` of `../aspire-hosting-caravana` (not pushed). The end-to-end `bella spiffe agent` against a
+  real Bella needs an https issuer Bella can reach, so it is the maintainer's check on a real host.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
