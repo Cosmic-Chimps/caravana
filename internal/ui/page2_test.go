@@ -1324,7 +1324,7 @@ func TestBackUpDailyConfirmation(t *testing.T) {
 			}
 			e.seed(t, a)
 			body := e.pageOf(t, "/apps/"+a.ID+"/backups")
-			if !strings.Contains(text(body), tc.want) || !strings.Contains(text(body), "Back up daily and deploy") || !strings.Contains(body, `cv-btn cv-btn-primary cv-btn-sm">Back up daily</summary>`) {
+			if !strings.Contains(text(body), tc.want) || !strings.Contains(text(body), "Back up and deploy") || !strings.Contains(body, `cv-btn cv-btn-primary cv-btn-sm">Back up daily</summary>`) {
 				t.Errorf("the confirmation:\n%s", text(body))
 			}
 			f := formWith(t, body, "/apps/"+a.ID+"/backups/policy")
