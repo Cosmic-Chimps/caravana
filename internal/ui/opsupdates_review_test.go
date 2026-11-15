@@ -94,7 +94,7 @@ var byUnattended = regexp.MustCompile(`Installed by Ubuntu&#39;s automatic updat
 func TestOpsUpdatesSaysWhoInstalledIt(t *testing.T) {
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", edit: automaticUpdatesOff(t)})
 	_, body := e.get(t, "/ops/updates")
-	if row := regionBetween(t, body, `data-up="reboot"`, `data-up="ubuntu"`); !byUnattended.MatchString(row) || strings.Contains(row, "Installed on") {
+	if row := regionBetween(t, body, `data-up="reboot"`, `data-up="os"`); !byUnattended.MatchString(row) || strings.Contains(row, "Installed on") {
 		t.Errorf("the reboot row:\n%s", text(row))
 	}
 

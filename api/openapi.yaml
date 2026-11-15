@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.41.0
+  version: 0.41.1
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -508,8 +508,8 @@ paths:
       summary: Make the command that adds a server to the cluster.
       description: |
         Makes a join command and a waiting server for it, answered 201. Run the command as root
-        on a fresh Ubuntu 24.04 machine: it installs the server's side of Caravana, joins the
-        private network and Nomad, and reports back until the server's four checks pass (`connected`,
+        on a fresh machine with a supported OS (Ubuntu 24.04 or 26.04 LTS, Debian 12 or 13): it
+        installs the server's side of Caravana, joins the private network and Nomad, and reports back until the server's four checks pass (`connected`,
         `docker`, `network`, `ready`); follow them with `getServerJoin`. The command works for an
         hour and once. `token` (`cvjn_…`) is in this answer and nowhere else: Caravana keeps only its
         hash, and the answer is `Cache-Control: no-store`. `name` may be empty (the machine's host
@@ -1909,8 +1909,10 @@ paths:
         the daily check has seen a newer release, that release (`latest`, its `notes`, the
         Nomad and Traefik versions it changes in `pins`, and the `install` command). `os` is
         what the server's own files say, with no elevated privilege: how many updates are
-        waiting and how many of them are security updates (`updates`, as fresh as Ubuntu's last
-        `apt update`, with `stale` set once that is over 48 hours ago), whether a reboot is
+        waiting and how many of them are security updates (`updates`: from Ubuntu's
+        `updates-available` file, or, on a host without it (Debian), from `apt list --upgradable`,
+        which Caravana runs and never applies; as fresh as the host's last `apt update`, with
+        `stale` set once that is over 48 hours ago), whether a reboot is
         needed and which kernel runs against which is installed (`reboot`), and whether the host
         installs updates and reboots by itself (`unattended`; a `null` field couldn't be read). A
         host that isn't Debian or Ubuntu has `readable: false` and nothing else. `history` is
@@ -8334,13 +8336,13 @@ components:
           properties:
             known:
               type: boolean
-              description: False when the host has no list of waiting updates (Debian has none) or it said nothing; the numbers are then 0.
+              description: False when the counts could not be read (no `updates-available` file and `apt list --upgradable` failed or isn't there, or the file said nothing); the numbers are then 0.
             total: {type: integer, description: How many updates can be applied.}
-            security: {type: integer, description: "How many of them are standard security updates (0 when Ubuntu's list has no such line)."}
+            security: {type: integer, description: "How many of them are standard security updates (0 when there is no such line)."}
             checkedAt:
               type: [string, "null"]
               format: date-time
-              description: When the host last refreshed its list of updates (its last `apt update`).
+              description: When the host last refreshed its list of updates. With Ubuntu's file, the file's time; otherwise the host's last successful `apt update` (apt's `update-success-stamp`).
             stale:
               type: boolean
               description: The list is more than 48 hours old. It is still shown, and no needs-you item is made from it.

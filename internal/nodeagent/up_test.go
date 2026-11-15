@@ -99,7 +99,7 @@ func TestUpCommands(t *testing.T) {
 			if got := mesh.Config(priv, tt.state.Peers); wgs[0].conf != got {
 				t.Errorf("the config text differs from mesh.Config:\n%s", wgs[0].conf)
 			}
-			if strings.Contains(wgs[0].args[2], priv) || !strings.HasPrefix(wgs[0].args[2], a.file("etc/caravana-node")+"/wg-") {
+			if strings.Contains(wgs[0].args[2], priv) || !strings.HasPrefix(wgs[0].args[2], a.file("etc/wireguard")+"/caravana-") {
 				t.Errorf("the config path is %s", wgs[0].args[2])
 			}
 			if a.exists(strings.TrimPrefix(wgs[0].args[2], a.root)) {

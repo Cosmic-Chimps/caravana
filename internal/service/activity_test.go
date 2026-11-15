@@ -23,6 +23,7 @@ func activityLab(t *testing.T) (*samplerLab, time.Time) {
 	t.Helper()
 	ctx := context.Background()
 	l := newSamplerLab(t, discardLogger())
+	l.svc.SetHostRoot(ubuntuHost()) // the OS rows name the distribution the tick reads
 	base := time.Now().UTC().Add(-time.Hour)
 	ago := func(min int) time.Time { return base.Add(-time.Duration(min) * time.Minute) }
 

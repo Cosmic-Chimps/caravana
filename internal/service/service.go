@@ -122,6 +122,7 @@ type Service struct {
 	releaseGap         time.Duration // between two release checks
 	releaseClient      *http.Client
 	pro                ProRunner // reads package names; nil means there is no pro command
+	apt                AptRunner // lists waiting updates on a host without Ubuntu's file; nil means it isn't asked
 	updates            updatesState
 	// Templates (feature 035), see templates.go.
 	templatesURL string        // where the catalog check reads SHA256SUMS and catalog.json; tests give a fake server

@@ -174,15 +174,30 @@ type Distro struct {
 	Version string // "24.04"
 }
 
-// Updates is what Ubuntu's motd file says about waiting updates.
+// Name is the distribution as the page says it: "Ubuntu", "Debian", any other
+// ID with its first letter upper-cased, and "the OS" when the ID is empty.
+func (d Distro) Name() string {
+	switch d.ID {
+	case "":
+		return "the OS"
+	case "ubuntu":
+		return "Ubuntu"
+	case "debian":
+		return "Debian"
+	}
+	return strings.ToUpper(d.ID[:1]) + d.ID[1:]
+}
+
+// Updates is what the host says about waiting updates: Ubuntu's motd file, or
+// on a host without it (Debian) the answer of `apt list --upgradable`.
 type Updates struct {
-	// Known is false when the file is missing or says neither number.
+	// Known is false when the counts could not be read.
 	Known bool
 	// Total is how many updates can be applied, Security how many of those are
-	// standard security updates (0 when the file has no such line).
+	// standard security updates (0 when there is no such line).
 	Total, Security int
-	// CheckedAt is the file's modification time: when the host last refreshed
-	// its list of updates.
+	// CheckedAt is when the host last refreshed its list of updates: the motd
+	// file's modification time, or the time of its last successful `apt update`.
 	CheckedAt time.Time
 }
 

@@ -114,3 +114,13 @@ func TestKernelNewer(t *testing.T) {
 		}
 	}
 }
+
+func TestDistroName(t *testing.T) {
+	for id, want := range map[string]string{
+		"ubuntu": "Ubuntu", "debian": "Debian", "linuxmint": "Linuxmint", "x": "X", "": "the OS",
+	} {
+		if got := (Distro{ID: id}).Name(); got != want {
+			t.Errorf("Name(%q) = %q, want %q", id, got, want)
+		}
+	}
+}

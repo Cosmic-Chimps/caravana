@@ -18,7 +18,6 @@ import (
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
-	"github.com/cosmic-chimps/caravana/internal/hostos"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -52,7 +51,7 @@ func clusterEnv(t *testing.T, sampled bool) *consoleEnv {
 		n.SetNodeFacts(deploytest.LabNodeAttributes(), "default", nil)
 		if sampled {
 			svc.SetMetricsSampleGap(500 * time.Millisecond)
-			svc.SetHostRoot(hostos.Dir("../hostos/testdata/host"))
+			svc.SetHostRoot(ubuntuOverHostFixture())
 			svc.SetDockerRoot("/var/lib/docker")
 			n.SetHostStats(deploytest.LabHostStats())
 			n.SetNodeFacts(deploytest.X86NodeAttributes(), "default", nil)
@@ -496,7 +495,7 @@ func TestAddServerBeforeTheCommand(t *testing.T) {
 	words := text(body)
 	for _, want := range []string{
 		"← Servers", "Add a server",
-		"Any machine with Ubuntu 24.04 and 2 GB of memory or more. Caravana installs what it needs, and the server starts taking work once its checks pass.",
+		"Any machine with Ubuntu 24.04 or 26.04 LTS, or Debian 12 or 13, and 2 GB of memory or more. Caravana installs what it needs, and the server starts taking work once its checks pass.",
 		"Lowercase letters, digits and dashes. Leave it empty to use the machine's own name.",
 		"Apps run on servers in default. A server in another pool takes no apps.",
 		"Make the join command", "Checks", "Make the command to start.",

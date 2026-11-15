@@ -165,7 +165,7 @@ func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow, displa
 	case store.ActivityHost:
 		e.Kind = ActivityServer
 		e.AppID, e.AppName = "", ""
-		e.Status, e.Parts = hostEventWords(r)
+		e.Status, e.Parts = hostEventWords(r, s.osName())
 	case store.ActivityUpdate:
 		e.Kind = ActivityServer
 		e.AppID, e.AppName = "", ""
@@ -328,7 +328,7 @@ func problemWords(r store.ActivityRow) (string, []TextPart) {
 // the OS's package manager. A version event is only in the feed when the version changed ("from" is
 // set): the first one ever recorded is the baseline the next change is measured from, and a start
 // on the same version is never recorded.
-func hostEventWords(r store.ActivityRow) (string, []TextPart) {
+func hostEventWords(r store.ActivityRow, osName string) (string, []TextPart) {
 	switch r.Label {
 	case store.HostEventBoot:
 		// The event's own time is the boot time: "The server started (up since 03:12 UTC)." (the page-2
@@ -347,7 +347,7 @@ func hostEventWords(r store.ActivityRow) (string, []TextPart) {
 	case store.HostEventOSPackages:
 		var d osPackagesDetail
 		_ = json.Unmarshal([]byte(r.Detail), &d)
-		return osPackagesWords(d)
+		return osPackagesWords(d, osName)
 	}
 	return ActivityIdle, parts("The server changed.")
 }
@@ -430,13 +430,13 @@ func sentenceCase(s string) string {
 }
 
 // osPackagesWords says a run of the OS's package manager: "OS packages updated by Ubuntu's
-// automatic updates: 14 packages." or "...by hand: 3 packages.", with ", a reboot is needed."
+// automatic updates: 14 packages." (osName is the distribution's name) or "...by hand: 3 packages.", with ", a reboot is needed."
 // when the run installed what the reboot marker names. A run that recorded no count (an event
 // written without one) says only that packages were updated.
-func osPackagesWords(d osPackagesDetail) (string, []TextPart) {
+func osPackagesWords(d osPackagesDetail, osName string) (string, []TextPart) {
 	by := "by hand"
 	if d.By == "unattended" {
-		by = "by Ubuntu's automatic updates"
+		by = "by " + osName + "'s automatic updates"
 	}
 	out := "OS packages updated " + by
 	if d.Packages > 0 {

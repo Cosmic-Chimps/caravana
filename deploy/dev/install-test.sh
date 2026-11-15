@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests the installer (deploy/install/install.sh) end to end on a throwaway Lima VM: a fresh
-# Ubuntu 24.04, nothing else. It installs, reruns, upgrades with an app answering throughout,
+# image of one supported system, nothing else. It installs, reruns, upgrades with an app answering throughout,
 # rolls back a release that doesn't come up, updates from the API through the root updater (a
 # crafted request runs nothing, a release is installed, a broken one is rolled back), refuses an
 # older one, and uninstalls with the app still answering. Feature 038's issuer is checked on the first
@@ -10,12 +10,25 @@
 # Caravana, the refusals of both roles, and what --uninstall leaves. Then it deletes the VM. About 20
 # minutes. Adding a server and converting an older host need more machines: deploy/dev/cluster-test.sh.
 #
-#   deploy/dev/install-test.sh          run it (KEEP=1 keeps the VM for a look afterwards)
+#   deploy/dev/install-test.sh          run it on Ubuntu 24.04 (KEEP=1 keeps the VM for a look afterwards)
+#   IMAGE=debian-12 deploy/dev/install-test.sh    on another supported image: Lima's ubuntu-24.04 (the
+#                                       default), ubuntu-26.04, debian-12 or debian-13
+#   deploy/dev/install-test-all.sh      all four, one after the other (before a release)
+#
+# The Updates page's reads (feature 027) are checked as the image has them: Ubuntu's updates-available
+# file or, without it, `apt list --upgradable` run inside Caravana's sandbox; the reboot marker written
+# as root; pro's package names on Ubuntu only.
 #
 # Let's Encrypt and the public ports need a real VM: deploy/vm/host.sh prove covers those.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+IMAGE="${IMAGE:-ubuntu-24.04}"
+case "$IMAGE" in ubuntu-24.04 | ubuntu-26.04 | debian-12 | debian-13) ;; *)
+  echo "IMAGE=$IMAGE isn't a supported image: ubuntu-24.04, ubuntu-26.04, debian-12 or debian-13" >&2
+  exit 2
+  ;;
+esac
 NAME=caravana-install-test
 DOMAIN=caravana.test
 APP=whoami.test
@@ -74,21 +87,31 @@ check_monitoring_host() {
 
 # check_updates_host MODE: what feature 027's Updates page needs from the host, through the API: the unit's
 # sandbox (ProtectSystem=strict, ProtectHome, PrivateTmp) lets Caravana read the host's files, so
-# GET /v1/updates says os.readable with Ubuntu, and GET /v1/host has the node's kernel (the sampler's
-# first tick comes within a minute). With MODE "packages" it also asks for the package names, which
-# runs `pro security-status` inside that sandbox: the check is accepted (202) and ends with no error. A
-# VM without a pro command (409) skips that part with a note.
+# GET /v1/updates says os.readable with this image's distribution and, within the sampler's first ticks,
+# knows the waiting updates (Ubuntu's updates-available file, or on an image without it `apt list
+# --upgradable` run inside that sandbox), and GET /v1/host has the node's kernel. With MODE "packages" it
+# also checks the reboot state (check_reboot_marker) and asks for the package names, which runs `pro
+# security-status` inside that sandbox: the check is accepted (202) and ends with no error. A VM without
+# a pro command (409: every Debian) skips that part with a note.
 check_updates_host() {
   local mode="$1" up host code end
   up="$(api -fsS "https://$DOMAIN/v1/updates")" || die "GET /v1/updates failed"
-  grep -q '"os":{"readable":true,"distro":{"id":"ubuntu",' <<<"$up" ||
-    die "GET /v1/updates should say os.readable with Ubuntu (does the unit's sandbox stop the reads?):\n$up"
+  grep -q "\"os\":{\"readable\":true,\"distro\":{\"id\":\"$OS_ID\"," <<<"$up" ||
+    die "GET /v1/updates should say os.readable with $OS_ID (does the unit's sandbox stop the reads?):\n$up"
+  end=$((SECONDS + 150))
+  until up="$(api -fsS "https://$DOMAIN/v1/updates")" && [ "$(jsonq 'd["os"]["updates"]["known"]' <<<"$up")" = True ]; do
+    [ "$SECONDS" -lt "$end" ] ||
+      die "GET /v1/updates should know the waiting updates within 150 s (apt list --upgradable inside the unit's sandbox?):\n$up"
+    sleep 3
+  done
+  echo "    (waiting updates: $(jsonq 'str(d["os"]["updates"]["total"]) + " total, " + str(d["os"]["updates"]["security"]) + " security, checked " + str(d["os"]["updates"]["checkedAt"])' <<<"$up"))"
   end=$((SECONDS + 150))
   until host="$(api -fsS "https://$DOMAIN/v1/host")" && grep -q '"kernel":"[^"][^"]*"' <<<"$host"; do
     [ "$SECONDS" -lt "$end" ] || die "GET /v1/host has no node.kernel after 150 s:\n$host"
     sleep 3
   done
   [ "$mode" = packages ] || return 0
+  check_reboot_marker
   code="$(api -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/updates/check" -d '{"what":"packages"}')"
   if [ "$code" = 409 ]; then
     echo "    (this VM has no pro command: Check package names is skipped)"
@@ -106,6 +129,34 @@ check_updates_host() {
 
 # jsonq PYTHON_EXPRESSION: the value of an expression over the JSON on standard input (d is the document).
 jsonq() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+
+# wait_reboot WANT SECONDS: wait until GET /v1/updates says os.reboot.required is WANT (True or False), and
+# leave the answer in REBOOT_UP.
+REBOOT_UP=""
+wait_reboot() {
+  local end=$((SECONDS + $2))
+  until REBOOT_UP="$(api -fsS "https://$DOMAIN/v1/updates")" && [ "$(jsonq 'd["os"]["reboot"]["required"]' <<<"$REBOOT_UP")" = "$1" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "GET /v1/updates should say reboot.required $1 within $2 s:\n$REBOOT_UP"
+    sleep 3
+  done
+}
+
+# check_reboot_marker: the reboot state reaches the page on every supported image. The marker is what
+# the host's own tools write as root (Ubuntu's notify-reboot-required, unattended-upgrades' kernel hook,
+# needrestart): written here the same way, it is seen within the sampler's next ticks with its package,
+# and so is its removal. An image whose packages already asked for a reboot keeps its marker.
+check_reboot_marker() {
+  if vm test -e /run/reboot-required; then
+    echo "    (this VM already asks for a reboot: its marker is left as it is)"
+    wait_reboot True 150
+    return 0
+  fi
+  vm sudo sh -c 'echo linux-image-install-test >/run/reboot-required.pkgs && echo "*** System restart required ***" >/run/reboot-required'
+  wait_reboot True 150
+  grep -q '"linux-image-install-test"' <<<"$REBOOT_UP" || die "the reboot should name linux-image-install-test:\n$REBOOT_UP"
+  vm sudo rm -f /run/reboot-required /run/reboot-required.pkgs
+  wait_reboot False 150
+}
 
 # check_mesh_host: what feature 031 makes of the first server (contracts/node.md): the two private
 # interfaces with their addresses and routes, Nomad's config written by the agent (root only) and
@@ -526,7 +577,7 @@ check_console_update() {
   vm sudo pkill -f '[s]erve\.py' || true
 }
 
-V1="" ADDR=""
+V1="" ADDR="" OS_ID=""
 main() {
   command -v limactl >/dev/null || die "Lima isn't installed"
   trap cleanup EXIT
@@ -547,9 +598,13 @@ main() {
   release "$u2"
   broken "$ubad" "$u1"
 
-  say "a fresh Ubuntu 24.04 VM"
+  say "a fresh $IMAGE VM"
   limactl delete --force "$NAME" >/dev/null 2>&1 || true
-  limactl start --name "$NAME" --tty=false --cpus 2 --memory 2 --containerd none template:ubuntu-24.04 >/dev/null
+  limactl start --name "$NAME" --tty=false --cpus 2 --memory 2 --containerd none "template:$IMAGE" >/dev/null
+  # What the VM says it is (ID of /etc/os-release): the Updates page must name the same.
+  # shellcheck disable=SC2016 # $ID expands inside the VM
+  OS_ID="$(vm sh -c '. /etc/os-release && echo "$ID"')"
+  [ -n "$OS_ID" ] || die "can't read the VM's /etc/os-release"
   # The address other servers would reach this one at (--address), so the run needs no lookup of a public IP.
   ADDR="$(vm ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
   [ -n "$ADDR" ] || die "can't find the VM's address"
@@ -609,6 +664,14 @@ PY
   refuses "--first options with --join" "are for the first server" --join "$good_token" --url https://caravana.test --email "$EMAIL"
   refuses "--leave with --uninstall" "not both" --leave --uninstall
   refuses "a stray join token" "looks like a join token" "$good_token"
+  say "the installer refuses a system it isn't tested on, naming the supported ones, and changes nothing"
+  # /etc/os-release says Rocky 9 for one call (the real file is kept in /tmp and put back; cp writes
+  # through the symlink most images have).
+  vm sudo sh -c 'cp /etc/os-release /tmp/os-release.real && printf "NAME=\"Rocky Linux\"\nID=\"rocky\"\nVERSION_ID=\"9.4\"\n" >/etc/os-release'
+  refuses "Rocky 9" "this is rocky 9.4; Caravana installs on Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, Debian 12 and Debian 13 (amd64 or arm64)" --email "$EMAIL"
+  vm sudo sh -c 'cp /tmp/os-release.real /etc/os-release && rm -f /tmp/os-release.real'
+  # shellcheck disable=SC2016 # $ID expands inside the VM
+  [ "$(vm sh -c '. /etc/os-release && echo "$ID"')" = "$OS_ID" ] || die "/etc/os-release wasn't put back"
   out="$(vm sudo bash "$WORK/$v1/install.sh" --from "$WORK/$v1" --leave)" || die "--leave on a host that never installed anything should exit 0"
   grep -q "nothing to leave" <<<"$out" || die "--leave on a fresh host should say there is nothing to leave:\n$out"
   ! grep -q "$good_token" <<<"$(vm sudo bash "$WORK/$v1/install.sh" --from "$WORK/$v1" --join "$good_token" --url https://caravana.test --email "$EMAIL" 2>&1 || true)" ||
@@ -669,7 +732,7 @@ PY
   TOKEN="$(vm sudo caravana admin create-token --name install-test </dev/null)"
   check_servers_api
 
-  say "Updates reads the host's files, and pro runs, inside the unit's sandbox (feature 027)"
+  say "Updates reads the host's files (and apt or pro run) inside the unit's sandbox (feature 027)"
   check_updates_host packages
   api -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/whoami/deployments" -d '{
     "source": {"kind": "image"},
@@ -748,7 +811,7 @@ PY
   [ "$(vm_curl -o /dev/null -w '%{http_code}' "https://$DOMAIN/v1/health")" = 502 ] ||
     die "the console domain should answer 502 with Caravana gone"
 
-  echo "INSTALL TEST PASSED"
+  echo "INSTALL TEST PASSED ($IMAGE)"
 }
 
 main "$@"

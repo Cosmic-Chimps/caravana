@@ -109,6 +109,9 @@ type samplerState struct {
 	os       hostos.State
 	osRead   bool
 	osReadAt time.Time
+	// apt is the newest answer of `apt list --upgradable` (hostosstate.go), for a host
+	// without Ubuntu's updates-available file.
+	apt aptCache
 	// rebootRun is the newest apt run that made the pending reboot necessary (hostosstate.go): the
 	// Updates page says who installed it. Zero (Found false) when there is no reboot or no run names it.
 	rebootRun rebootRun

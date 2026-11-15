@@ -30,7 +30,7 @@ import (
 // page3-updates.md). Package names and the release check start in the background and the live
 // "updates" notice redraws the page when they finish; without script a reload does.
 
-// upNamesShown is how many package names the Ubuntu updates row lists before "and N more".
+// upNamesShown is how many package names the OS updates row lists before "and N more".
 const upNamesShown = 12
 
 // upRebootNamesShown is how many packages the Reboot row names before "and N more".
@@ -165,8 +165,8 @@ type upAvailable struct {
 	OSMessage string
 }
 
-// upRow is one row of Available. Kind is "release", "ubuntu" or "reboot". Dim sets the row's text in
-// fg-3 (a list Ubuntu hasn't refreshed in two days).
+// upRow is one row of Available. Kind is "release", "os" or "reboot". Dim sets the row's text in
+// fg-3 (a list the OS hasn't refreshed in two days).
 type upRow struct {
 	Kind     string
 	Mark     string
@@ -180,10 +180,10 @@ type upRow struct {
 	Notes []upNote
 	// Link is the release's page, after its notes.
 	Link *upLink
-	// Hint is what the Ubuntu updates row says where Check package names would be, on a host that
+	// Hint is what the OS updates row says where Check package names would be, on a host that
 	// can't give names.
 	Hint sentence
-	// Names is the Ubuntu updates row's package names.
+	// Names is the OS updates row's package names.
 	Names *upNames
 	// Update is the caravana row's action (feature 030), after the notes and the release link.
 	Update *upUpdate
@@ -577,9 +577,9 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 	o := v.OS
 	var notice sentence
 	if o.Readable && o.Updates.Known && o.Updates.Total > 0 {
-		rows = append(rows, ubuntuRow(now, v))
+		rows = append(rows, osRow(now, v))
 	} else if o.Readable && o.Updates.Known && o.Updates.Stale {
-		notice = staleWords(now, o.Updates.CheckedAt)
+		notice = staleWords(now, o.Distro.Name(), o.Updates.CheckedAt)
 	}
 	if o.Reboot.Required {
 		rows = append(rows, rebootRow(now, o))
@@ -593,10 +593,10 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 	switch {
 	case len(rows) > 0:
 		a.Meta = plural(len(rows), "update")
-		// With something else listed, Ubuntu's own part is said too: a clean list is a fact the owner
+		// With something else listed, the OS's own part is said too: a clean list is a fact the owner
 		// would otherwise have to guess at.
 		if o.Readable && o.Updates.Known && o.Updates.Total == 0 && !o.Updates.Stale {
-			a.Meta += " · Ubuntu has nothing waiting"
+			a.Meta += " · " + o.Distro.Name() + " has nothing waiting"
 			if !o.Updates.CheckedAt.IsZero() {
 				a.Meta += " (checked " + agoFull(now, o.Updates.CheckedAt) + ")"
 			}
@@ -624,7 +624,7 @@ func upAvailableOf(now time.Time, v service.UpdatesView) upAvailable {
 	return a
 }
 
-// oldestCheck is the oldest of the two checks' times: Ubuntu's list and the release check (only
+// oldestCheck is the oldest of the two checks' times: the OS's list and the release check (only
 // while it is on). Zero when neither has run.
 func oldestCheck(v service.UpdatesView) time.Time {
 	var oldest time.Time
@@ -643,11 +643,12 @@ func releaseCheckedAt(c service.CaravanaUpdate) time.Time {
 	return c.CheckedOKAt
 }
 
-// staleWords is the sentence of a list Ubuntu hasn't refreshed in two days, with the command in mono.
-func staleWords(now, checked time.Time) sentence {
+// staleWords is the sentence of a list the OS (osName, "Ubuntu" or "Debian") hasn't refreshed in two
+// days, with the command in mono.
+func staleWords(now time.Time, osName string, checked time.Time) sentence {
 	age := now.Sub(checked)
 	days := max(int(age/(24*time.Hour)), 2)
-	return sentence{plain("Ubuntu's list is " + plural(days, "day") + " old. Run "), mono("sudo apt update"), plain(" on the server to refresh it.")}
+	return sentence{plain(osName + "'s list is " + plural(days, "day") + " old. Run "), mono("sudo apt update"), plain(" on the server to refresh it.")}
 }
 
 // noteCodeNowrap is the longest code span of the release notes that is kept on one line ("--domain" never
@@ -740,18 +741,19 @@ func releaseCheck(v service.UpdatesView) *upCheck {
 	return &upCheck{What: "release", Label: "Check now"}
 }
 
-func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
+func osRow(now time.Time, v service.UpdatesView) upRow {
 	u := v.OS.Updates
-	row := upRow{Kind: "ubuntu", Mark: "idle", MarkWord: "update available", Name: "Ubuntu updates", Dim: u.Stale,
+	name := v.OS.Distro.Name()
+	row := upRow{Kind: "os", Mark: "idle", MarkWord: "update available", Name: name + " updates", Dim: u.Stale,
 		Change: upChange{{Text: plural(u.Total, "package") + " · " + strconv.Itoa(u.Security) + " security"}}}
 	if u.Security > 0 && !u.Stale {
 		row.Mark, row.MarkWord = "warning", "security updates"
 	}
 	if !u.CheckedAt.IsZero() {
-		row.Sub = upSub{Label: "checked by Ubuntu", When: whenAgo(now, u.CheckedAt)}
+		row.Sub = upSub{Label: "checked by " + name, When: whenAgo(now, u.CheckedAt)}
 	}
 	if u.Stale {
-		row.Notes = append(row.Notes, upNote{Text: staleWords(now, u.CheckedAt)})
+		row.Notes = append(row.Notes, upNote{Text: staleWords(now, name, u.CheckedAt)})
 	} else if hint := securityHint(now, v.OS); hint != nil {
 		row.Notes = append(row.Notes, upNote{Text: hint})
 	}
@@ -763,7 +765,7 @@ func ubuntuRow(now time.Time, v service.UpdatesView) upRow {
 	return row
 }
 
-// securityHint is the first line of the Ubuntu row's notes while the host's automatic updates are on
+// securityHint is the first line of the OS row's notes while the host's automatic updates are on
 // and security updates wait: it says only what is known. The counts don't say which origins
 // unattended-upgrades allows, so the page never claims that it will install these particular ones, nor
 // how many are left for the owner. Inside the service's 24-hour wait it says they usually install by
@@ -774,10 +776,10 @@ func securityHint(now time.Time, o service.OSUpdates) sentence {
 		return nil
 	}
 	if o.Updates.SecurityGraceOver(now) {
-		return sentence{plain("Still waiting after a day, although Ubuntu's automatic updates are on. Check "),
+		return sentence{plain("Still waiting after a day, although " + o.Distro.Name() + "'s automatic updates are on. Check "),
 			mono("/var/log/unattended-upgrades/"), plain(" on the server.")}
 	}
-	return plainS("Ubuntu's automatic updates are on, so security updates usually install by themselves overnight.")
+	return plainS(o.Distro.Name() + "'s automatic updates are on, so security updates usually install by themselves overnight.")
 }
 
 // whenAgo is a time in the short words of a dense column, with its exact UTC time on hover.
@@ -786,7 +788,7 @@ func whenAgo(now, t time.Time) when {
 	return when{Text: agoWords(now, t), Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}
 }
 
-// namesOf is the package-name part of the Ubuntu row: the running state, the names, the reason a
+// namesOf is the package-name part of the OS row: the running state, the names, the reason a
 // check failed (with the button to try again), the button, or nothing on a host that can't give names.
 func namesOf(now time.Time, v service.UpdatesView) *upNames {
 	u := v.OS.Updates
@@ -814,7 +816,7 @@ func namesOf(now time.Time, v service.UpdatesView) *upNames {
 func rebootRow(now time.Time, o service.OSUpdates) upRow {
 	r := o.Reboot
 	note := "Rebooting stops every app for about a minute; Nomad starts them again when the server is back."
-	if by := installedBy(r); by != "" {
+	if by := installedBy(r, o.Distro.Name()); by != "" {
 		note = by + " " + note
 	}
 	row := upRow{Kind: "reboot", Mark: "failed", MarkWord: "reboot needed", Name: "Reboot", Change: rebootChange(r),
@@ -837,16 +839,16 @@ func sinceWhen(now, t time.Time) when {
 	return when{Text: text, Exact: t.Format("2006-01-02 15:04:05 UTC"), ISO: t.Format(time.RFC3339)}
 }
 
-// installedBy is "Installed by Ubuntu's automatic updates." (or "Installed by hand."): the apt run that
+// installedBy is "Installed by Ubuntu's automatic updates." (osName is the distribution's name) (or "Installed by hand."): the apt run that
 // installed what the reboot is for, which the service matches against the marker's list as the history
 // does. The row's sub says when the reboot became needed, so the date isn't repeated here. "" when no
 // run is known.
-func installedBy(r service.RebootView) string {
+func installedBy(r service.RebootView, osName string) string {
 	if r.InstalledAt.IsZero() {
 		return ""
 	}
 	if r.InstalledBy == "unattended" {
-		return "Installed by Ubuntu's automatic updates."
+		return "Installed by " + osName + "'s automatic updates."
 	}
 	return "Installed by hand."
 }
@@ -920,7 +922,7 @@ const unreadable = "caravana can't read this setting."
 
 // upSettings are the two read-only settings of the host.
 func upSettings(o service.OSUpdates) []upSetting {
-	auto := upSetting{Label: "Ubuntu's automatic updates", Hint: upSettingHint, Value: unreadable}
+	auto := upSetting{Label: o.Distro.Name() + "'s automatic updates", Hint: upSettingHint, Value: unreadable}
 	reboot := upSetting{Label: "Automatic reboot", Hint: upSettingHint, Value: unreadable}
 	if !o.Readable {
 		return []upSetting{auto, reboot}

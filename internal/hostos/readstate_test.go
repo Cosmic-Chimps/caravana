@@ -79,7 +79,9 @@ func TestReadStateFixtures(t *testing.T) {
 			case !s.Readable || s.Distro != Distro{"debian", "12"}:
 				return "distro"
 			case s.Updates.Known:
-				return "Debian has no updates-available: not known"
+				return "Debian has no updates-available: not known from the files alone"
+			case ListsRefreshedAt(os.DirFS(filepath.Join("testdata", "debian-host"))).IsZero():
+				return "the update-success-stamp gives the time the lists were refreshed"
 			case s.Unattended.Enabled == nil || !*s.Unattended.Enabled || s.Unattended.AutoReboot != nil:
 				return "unattended: 20auto-upgrades alone says on, the other file is missing"
 			}

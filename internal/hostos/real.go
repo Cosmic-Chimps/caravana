@@ -87,6 +87,52 @@ func RunPro(ctx context.Context, home string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// AptTimeout is how long `apt list --upgradable` may run. It reads local
+// files, so a minute is for a starved host.
+const AptTimeout = 60 * time.Second
+
+// maxAptOutput is the most of apt's answer that is read: a few thousand
+// packages at about 100 bytes each fit many times over.
+const maxAptOutput = 8 << 20
+
+// Apt is the host's own apt command, which lists the waiting updates on a host
+// that has no updates-available file (Debian). It only reads: nothing is
+// installed or refreshed.
+type Apt struct{}
+
+// Run runs `apt list --upgradable` and returns what it wrote to standard
+// output, for ParseUpgradable. A host without apt gives ErrAptUnavailable. The
+// answer and the standard error (apt warns there that its command line is
+// unstable) are host data: they are never put in an error, so a caller may log
+// the error.
+func (Apt) Run(ctx context.Context) ([]byte, error) {
+	path, err := exec.LookPath("apt")
+	if err != nil {
+		return nil, ErrAptUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, AptTimeout)
+	defer cancel()
+
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, path, "list", "--upgradable")
+	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C.UTF-8"}
+	cmd.Stdout = &limitedWriter{w: &out, left: maxAptOutput}
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return nil, fmt.Errorf("apt list: %w", context.DeadlineExceeded)
+		case ctx.Err() != nil:
+			return nil, fmt.Errorf("apt list: %w", ctx.Err())
+		case errors.As(err, &exit):
+			return nil, fmt.Errorf("apt list exited with code %d", exit.ExitCode())
+		}
+		return nil, errors.New("apt list could not run")
+	}
+	return out.Bytes(), nil
+}
+
 // limitedWriter writes at most left bytes and then fails, so a program that
 // never stops writing is cut off.
 type limitedWriter struct {

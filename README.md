@@ -11,8 +11,8 @@ on one small VM. See [docs/vision.md](docs/vision.md) for where it's going.
 
 ## Install
 
-On a fresh Ubuntu 24.04 VM (amd64 or arm64, 2 GB of memory, ports 22, 80 and 443 open), with a
-domain pointing at it:
+On a fresh VM running Ubuntu 24.04 or 26.04 LTS, or Debian 12 or 13 (amd64 or arm64, 2 GB of
+memory, ports 22, 80 and 443 open), with a domain pointing at it:
 
 ```bash
 curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/latest/download/install.sh |

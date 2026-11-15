@@ -255,8 +255,8 @@ func TestOpsUpdatesPage(t *testing.T) {
 
 	// Available: three rows, ■ ◆ ○ in that order, with the contract's words.
 	avail := regionBetween(t, body, `id="available"`, `id="apply"`)
-	if got := rowNames(avail); strings.Join(got, " ") != "reboot ubuntu release" {
-		t.Errorf("rows = %v, want reboot ubuntu release", got)
+	if got := rowNames(avail); strings.Join(got, " ") != "reboot os release" {
+		t.Errorf("rows = %v, want reboot os release", got)
 	}
 	for _, want := range []string{
 		"3 updates",
@@ -283,7 +283,7 @@ func TestOpsUpdatesPage(t *testing.T) {
 	if !regexp.MustCompile(`Reboot needed since (\d\d:\d\d UTC|[A-Z][a-z]{2} \d+(, \d{4})?) kernel 6\.8\.0-147 → 6\.8\.0-149`).MatchString(text(avail)) {
 		t.Errorf("the reboot row's sub:\n%s", text(avail))
 	}
-	if rebootRow := regionBetween(t, avail, `data-up="reboot"`, `data-up="ubuntu"`); strings.Contains(rebootRow, "cv-clock") ||
+	if rebootRow := regionBetween(t, avail, `data-up="reboot"`, `data-up="os"`); strings.Contains(rebootRow, "cv-clock") ||
 		!regexp.MustCompile(`needed since <time datetime="[^"]+" title="\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC" data-ops-time>`).MatchString(rebootRow) {
 		t.Errorf("the reboot row's time:\n%s", rebootRow)
 	}
@@ -702,10 +702,11 @@ func TestUpdatesMarkOf(t *testing.T) {
 // own sentence (fg-3) or, after a sentence, a space.
 func TestUpAvailableMeta(t *testing.T) {
 	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	clean := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, CheckedAt: now.Add(-20 * time.Minute)}}
+	ubuntu := hostos.Distro{ID: "ubuntu", Version: "24.04"}
+	clean := service.OSUpdates{Readable: true, Distro: ubuntu, Updates: service.UpdateCounts{Known: true, CheckedAt: now.Add(-20 * time.Minute)}}
 	release := service.CaravanaUpdate{Current: "0.15.0", Latest: "0.16.0", URL: "https://x.test/r", Install: "curl"}
 	failed := service.CaravanaUpdate{CheckError: "GitHub didn't answer", CheckedOKAt: now.Add(-27 * time.Minute)}
-	waiting := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 3, Security: 1, CheckedAt: now.Add(-time.Hour)}}
+	waiting := service.OSUpdates{Readable: true, Distro: ubuntu, Updates: service.UpdateCounts{Known: true, Total: 3, Security: 1, CheckedAt: now.Add(-time.Hour)}}
 	rebooting := clean
 	rebooting.Reboot = service.RebootView{Required: true, Since: now.Add(-time.Hour)}
 	stale := clean
@@ -775,7 +776,7 @@ func TestSecurityHint(t *testing.T) {
 	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	on, off := true, false
 	osWith := func(auto *bool, security int, since time.Time) service.OSUpdates {
-		o := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 14, Security: security, SecuritySince: since}}
+		o := service.OSUpdates{Readable: true, Distro: hostos.Distro{ID: "ubuntu"}, Updates: service.UpdateCounts{Known: true, Total: 14, Security: security, SecuritySince: since}}
 		o.Unattended.Enabled = auto
 		return o
 	}
@@ -815,16 +816,39 @@ func TestSecurityHint(t *testing.T) {
 func TestUbuntuRowStartsWithTheSecurityHint(t *testing.T) {
 	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	on := true
-	o := service.OSUpdates{Readable: true, Updates: service.UpdateCounts{Known: true, Total: 14, Security: 9, CheckedAt: now.Add(-time.Hour), SecuritySince: now.Add(-time.Hour)}}
+	o := service.OSUpdates{Readable: true, Distro: hostos.Distro{ID: "ubuntu"}, Updates: service.UpdateCounts{Known: true, Total: 14, Security: 9, CheckedAt: now.Add(-time.Hour), SecuritySince: now.Add(-time.Hour)}}
 	o.Unattended.Enabled = &on
-	row := ubuntuRow(now, service.UpdatesView{OS: o})
+	row := osRow(now, service.UpdatesView{OS: o})
 	if len(row.Notes) == 0 || !strings.HasPrefix(row.Notes[0].Text.String(), "Ubuntu's automatic updates are on") {
 		t.Errorf("notes = %+v", row.Notes)
 	}
 	o.Updates.Stale = true
-	row = ubuntuRow(now, service.UpdatesView{OS: o})
+	row = osRow(now, service.UpdatesView{OS: o})
 	if len(row.Notes) != 1 || !strings.HasPrefix(row.Notes[0].Text.String(), "Ubuntu's list is") {
 		t.Errorf("a stale list's notes = %+v", row.Notes)
+	}
+}
+
+// A Debian host's words say Debian, not Ubuntu, in the row, its sub, its notes and the stale sentence.
+func TestOSRowNamesTheDistribution(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	on := true
+	o := service.OSUpdates{Readable: true, Distro: hostos.Distro{ID: "debian", Version: "12"},
+		Updates: service.UpdateCounts{Known: true, Total: 3, Security: 2, CheckedAt: now.Add(-time.Hour), SecuritySince: now.Add(-time.Hour)}}
+	o.Unattended.Enabled = &on
+	row := osRow(now, service.UpdatesView{OS: o})
+	if row.Kind != "os" || row.Name != "Debian updates" || row.Sub.Label != "checked by Debian" ||
+		len(row.Notes) == 0 || !strings.HasPrefix(row.Notes[0].Text.String(), "Debian's automatic updates are on") {
+		t.Errorf("row = %+v", row)
+	}
+	if got := staleWords(now, "Debian", now.Add(-72*time.Hour)).String(); !strings.HasPrefix(got, "Debian's list is 3 days old.") {
+		t.Errorf("stale sentence = %q", got)
+	}
+	if got := installedBy(service.RebootView{InstalledAt: now, InstalledBy: "unattended"}, "Debian"); got != "Installed by Debian's automatic updates." {
+		t.Errorf("installedBy = %q", got)
+	}
+	if got := upSettings(o)[0].Label; got != "Debian's automatic updates" {
+		t.Errorf("setting label = %q", got)
 	}
 }
 
@@ -834,7 +858,7 @@ func TestUbuntuRowStartsWithTheSecurityHint(t *testing.T) {
 func TestOpsUpdatesPageSentences(t *testing.T) {
 	e, _ := updEnv(t, updOpts{fixture: "ubuntu-kernel-reboot", pro: uiPro{ok: true}})
 	_, body := e.get(t, "/ops/updates")
-	row := regionBetween(t, body, `data-up="ubuntu"`, `id="apply"`)
+	row := regionBetween(t, body, `data-up="os"`, `id="apply"`)
 	if !strings.Contains(text(row), "Ubuntu's automatic updates are on, so security updates usually install by themselves overnight.") ||
 		strings.Contains(text(row), "the other") {
 		t.Errorf("the Ubuntu row:\n%s", text(row))
@@ -894,7 +918,7 @@ func TestInstalledBy(t *testing.T) {
 		{"by hand", service.RebootView{InstalledAt: at, InstalledBy: "hand"}, "Installed by hand."},
 		{"no run known", service.RebootView{}, ""},
 	} {
-		if got := installedBy(tc.r); got != tc.want {
+		if got := installedBy(tc.r, "Ubuntu"); got != tc.want {
 			t.Errorf("%s: installedBy = %q, want %q", tc.name, got, tc.want)
 		}
 	}
@@ -968,6 +992,7 @@ func TestUpSettings(t *testing.T) {
 		{"reboots at once", service.OSUpdates{Readable: true, Unattended: hostos.Unattended{AutoReboot: &yes, AutoRebootTime: "now"}},
 			unreadable, "On, right after an update that needs one."},
 	} {
+		tc.o.Distro = hostos.Distro{ID: "ubuntu", Version: "24.04"} // the first label names the distribution
 		got := upSettings(tc.o)
 		if len(got) != 2 || got[0].Value != tc.auto || got[1].Value != tc.reboot || got[0].Label != "Ubuntu's automatic updates" || got[1].Label != "Automatic reboot" {
 			t.Errorf("%s: %+v, want %q and %q", tc.name, got, tc.auto, tc.reboot)

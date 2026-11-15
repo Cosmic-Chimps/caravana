@@ -1367,6 +1367,24 @@ credential stored in Caravana. Operator doc: `docs/workload-identity.md`. No mig
   `workload-identity` of `../aspire-hosting-caravana` (not pushed). The end-to-end `bella spiffe agent` against a
   real Bella needs an https issuer Bella can reach, so it is the maintainer's check on a real host.
 
+Supported systems (CodeAlta task `rfhb`, 2026-11-14, on the worktree branch `alta/tropical-equinox-nf37`): the
+installer accepts Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, Debian 12 and Debian 13 (amd64 and arm64) and refuses
+anything else before changing anything, naming the four (`SUPPORTED_OS` in `install.sh`; `/etc/os-release` is
+read as text). The same packages serve every one (`iptables` and `iputils-ping` were added to the list: Debian's
+images come without them, the CNI plugins and ufw need the first and the agent's network check pings with the
+second), and the preflight refuses plainly when curl is missing for the public-IP lookup. Ubuntu 26.04 confines `wg` with an
+AppArmor profile that reads only `/etc/wireguard/**` (lab, observed: `wg setconf` of a file in `/etc/caravana-node`
+failed with "fopen: Permission denied"), so the agent's temporary WireGuard config is written there. The Updates page on a
+host without Ubuntu's `updates-available` file counts with `apt list --upgradable` (`hostos.Apt`, run by the
+sampler inside Caravana's sandbox when `hostos.AptStamp` changes: the apt lists, the dpkg status or apt's
+`update-success-stamp`, whose mtime is `checkedAt`), names the host's system in its words (`hostos.Distro.Name`:
+"Debian updates") and still says package names need Ubuntu's `pro`. `install-test.sh` takes `IMAGE=` (Lima's
+`ubuntu-24.04`, `ubuntu-26.04`, `debian-12`, `debian-13`), reads the VM's distro ID, waits for the counts to be
+known, writes and removes the reboot marker as root and refuses a fake Rocky 9 by name; `install-test-all.sh` runs the
+four, one after the other. All four passed on 2026-11-15 (about 15 minutes each; Debian's counts came through
+`apt list` inside the unit's sandbox, and its package names were refused plainly for want of `pro`). API 0.41.1
+(text only).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
@@ -1468,7 +1486,8 @@ gh workflow run release.yml -f version=0.6.0   # release: gathers changelog.d/, 
 git tag v0.6.0 && git push origin v0.6.0        # also releases: the run gathers the tag's notes, then commits the section and the deleted notes to main if main is still the tag
 tools/release.sh prepare 0.6.0     # what both run: changelog.d/*.md become "## 0.6.0 - <today>" and are deleted
 tools/release.sh commit 0.6.0      # then both commit CHANGELOG.md and the deletions (git add -A), so no note is gathered twice
-deploy/dev/install-test.sh         # the installer on a throwaway Lima VM: install, rerun, upgrade, rollback, uninstall (~10 min)
+deploy/dev/install-test.sh         # the installer on a throwaway Lima VM: install, rerun, upgrade, rollback, uninstall (~20 min; IMAGE=debian-12|debian-13|ubuntu-26.04)
+deploy/dev/install-test-all.sh     # the same on all four supported images, one after the other (before a release)
 deploy/vm/host.sh up               # build a dev release and install/upgrade it on the public VM (settings in deploy/vm/host.env)
 deploy/vm/host.sh prove            # the gate against the VM (~15 min), ends GATE PASSED/FAILED
 deploy/vm/host.sh admin status     # sudo caravana admin <cmd> on the VM

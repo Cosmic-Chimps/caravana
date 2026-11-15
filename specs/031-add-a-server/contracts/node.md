@@ -60,7 +60,7 @@ small struct the tests replace: a root folder for the paths above, a `Runner` (`
 (stdout []byte, err error)` for `ip`, `wg`, `systemctl`, `ping`, `df`, `docker`, `nomad`, `uname`), an
 `*http.Client` and a clock. No shell is ever invoked and no argument is built from the console's answer
 except validated keys and endpoints, passed to `wg` through the config text on a file descriptor path
-(`wg syncconf caravana-mesh <file>`, a root-only temp file removed afterwards), never on a command line.
+(`wg syncconf caravana-mesh <file>`, a root-only temp file under `/etc/wireguard`, the one folder Ubuntu 26.04's AppArmor profile lets `wg` read, removed afterwards), never on a command line.
 
 | Command | Does |
 | --- | --- |
@@ -232,7 +232,7 @@ interface that isn't `caravana0`, `caravana-mesh` or `nomad`.
    node token once; the installer writes `node.env` (`CARAVANA_URL=http://127.0.0.1:7070`).
 10. **Enable `caravana-node.timer`.** Traefik (its job now has the ingress constraint), the route check.
 
-**`--join`**: preflight (root, Ubuntu 24.04, the CPU, 2 GB, a versioned installer, no Nomad or Docker
+**`--join`**: preflight (root, a supported system (Ubuntu 24.04 or 26.04 LTS, Debian 12 or 13), the CPU, 2 GB, a versioned installer, no Nomad or Docker
 that isn't Caravana's, the values above; without `node.env`, `--join` and `--url` are required), record
 the options, the release files, packages, Nomad's binary, CNI and sysctl, the agent and units,
 `caravana-node node join …`, start Nomad, the firewall (22, `51820/udp`, `in on caravana-mesh`; not 80 or

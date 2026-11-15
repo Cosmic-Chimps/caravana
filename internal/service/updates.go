@@ -116,6 +116,15 @@ type ProRunner interface {
 	Run(ctx context.Context) ([]byte, error)
 }
 
+// AptRunner lists the waiting updates on a host that has no Ubuntu
+// updates-available file (Debian): hostos.Apt is the real one, tests give a
+// fake. Its output is data from the host: it is never logged, stored or put in
+// an error.
+type AptRunner interface {
+	// Run runs `apt list --upgradable` and returns its standard output.
+	Run(ctx context.Context) ([]byte, error)
+}
+
 // updatesState is what the checks keep between calls.
 type updatesState struct {
 	// releaseMu is held for the length of a release check, so two never run at
@@ -141,6 +150,11 @@ type packageNames struct {
 // SetProRunner sets what reads package names (hostos.Pro in production). Nil
 // means there is none: the check is unavailable. Call it before Start.
 func (s *Service) SetProRunner(p ProRunner) { s.pro = p }
+
+// SetAptRunner sets what lists the waiting updates where Ubuntu's file is
+// missing (hostos.Apt in production). Nil means apt is never asked, and the
+// counts of such a host stay unknown. Call it before Start.
+func (s *Service) SetAptRunner(a AptRunner) { s.apt = a }
 
 // SetReleaseURL sets the address the release check asks, in place of GitHub's:
 // tests and the lab give a fake server. Call it before Start.
@@ -312,7 +326,7 @@ type RebootView struct {
 	// RunningKernel is the node's kernel; InstalledKernel the newest installed.
 	RunningKernel, InstalledKernel string
 	// InstalledAt is when the newest apt run that installed a package the reboot marker names
-	// started, and InstalledBy says who ran it: "unattended" (Ubuntu's automatic updates) or "hand".
+	// started, and InstalledBy says who ran it: "unattended" (the OS's automatic updates) or "hand".
 	// Both are empty when no run in the history names one.
 	InstalledAt time.Time
 	InstalledBy string
@@ -352,7 +366,7 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 	node := s.hostNode()
 	state, _, read := s.osState()
 	if !read {
-		state = hostos.ReadState(s.hostRoot)
+		state = s.readOSNow()
 	}
 
 	var v UpdatesView
@@ -369,7 +383,7 @@ func (s *Service) Updates(ctx context.Context) (UpdatesView, error) {
 		}
 	}
 	s.sampler.mu.Unlock()
-	v.History = updateHistory(events, runs, node)
+	v.History = updateHistory(events, runs, node, state.Distro.Name())
 
 	u := &s.updates
 	u.mu.Lock()
@@ -509,7 +523,7 @@ func (s *Service) fillUpdater(ctx context.Context, c *CaravanaUpdate, rc store.R
 // updateHistory turns host events and finished update runs into Past updates' rows, newest first,
 // at most historyShown. A version change that an update run which went through explains (the same
 // version, within an hour) is left out: the run's own row tells it.
-func updateHistory(events []store.HostEvent, runs []store.UpdateRun, node *HostNode) []UpdateEvent {
+func updateHistory(events []store.HostEvent, runs []store.UpdateRun, node *HostNode, osName string) []UpdateEvent {
 	var out []UpdateEvent
 	for _, r := range runs {
 		if store.UpdateRunFinal(r.State) {
@@ -537,10 +551,10 @@ func updateHistory(events []store.HostEvent, runs []store.UpdateRun, node *HostN
 			if err := json.Unmarshal([]byte(e.Detail), &d); err != nil {
 				continue
 			}
-			row.Text = fmt.Sprintf("Ubuntu updates · %d %s", d.Packages, packagesWord(d.Packages))
+			row.Text = fmt.Sprintf("%s updates · %d %s", osName, d.Packages, packagesWord(d.Packages))
 			by := "by hand"
 			if d.By == "unattended" {
-				by = "by Ubuntu's automatic updates"
+				by = "by " + osName + "'s automatic updates"
 			}
 			// History is in the past tense: whether a reboot was needed then, not whether one is now.
 			row.Detail = by + " · no reboot needed"
@@ -711,7 +725,7 @@ func (s *Service) osNow() hostos.State {
 	if state, _, ok := s.osState(); ok {
 		return state
 	}
-	return hostos.ReadState(s.hostRoot)
+	return s.readOSNow()
 }
 
 // packagesCheckable is nil when Check package names can run here, else the

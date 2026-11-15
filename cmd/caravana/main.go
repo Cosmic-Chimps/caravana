@@ -150,6 +150,7 @@ func run(ctx context.Context, args []string, getenv func(string) string,
 	// Package names come from the host's own pro command, on demand; pro keeps its
 	// cache under HOME, which is the data directory (the service's own home isn't writable).
 	svc.SetProRunner(hostos.Pro{Home: cfg.DataDir})
+	svc.SetAptRunner(hostos.Apt{})
 	svc.SetCertResolver(cfg.Settings.CertResolver)
 	svc.SetACME(cfg.ACME, cfg.ACMEEmail)
 	if serviceHook != nil {

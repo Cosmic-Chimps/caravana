@@ -201,6 +201,13 @@ func TestSamplerSurvivesAnUnreadableHistory(t *testing.T) {
 	}
 }
 
+func TestOSPackagesWordsNameTheDistribution(t *testing.T) {
+	_, p := osPackagesWords(osPackagesDetail{Packages: 2, By: "unattended"}, "Debian")
+	if got, want := plainText(p), "OS packages updated by Debian's automatic updates: 2 packages."; got != want {
+		t.Errorf("%q, want %q", got, want)
+	}
+}
+
 func TestOSPackagesWords(t *testing.T) {
 	for _, tc := range []struct {
 		d      osPackagesDetail
@@ -213,7 +220,7 @@ func TestOSPackagesWords(t *testing.T) {
 		{osPackagesDetail{Packages: 14, By: "unattended", Reboot: true}, "OS packages updated by Ubuntu's automatic updates: 14 packages, a reboot is needed.", ActivityWarning},
 		{osPackagesDetail{By: "hand"}, "OS packages updated by hand.", ActivityIdle},
 	} {
-		status, p := osPackagesWords(tc.d)
+		status, p := osPackagesWords(tc.d, "Ubuntu")
 		if got := plainText(p); got != tc.want || status != tc.status {
 			t.Errorf("%+v: %q (%s), want %q (%s)", tc.d, got, status, tc.want, tc.status)
 		}

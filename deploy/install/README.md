@@ -1,13 +1,14 @@
 # Installing Caravana
 
-One command turns a fresh Ubuntu 24.04 VM into a Caravana host: Docker, Nomad with ACLs on,
+One command turns a fresh VM into a Caravana host: Docker, Nomad with ACLs on,
 Traefik with Let's Encrypt certificates, and Caravana under systemd. The same installer turns more
 VMs into servers of that host's cluster (see Adding a server).
 
 ## What you need
 
-- **A VM**: Ubuntu 24.04 LTS, amd64 or arm64, 2 GB of memory, a public IP address. A fresh one:
-  the installer refuses a machine that already runs Nomad or Docker.
+- **A VM**: Ubuntu 24.04 or 26.04 LTS, or Debian 12 or 13 (any other system is refused before anything
+  changes, naming these four); amd64 or arm64, 2 GB of memory, a public IP address. A fresh one: the
+  installer refuses a machine that already runs Nomad or Docker.
 - **Ports 22, 80 and 443** reachable from the internet. Open them in the provider's firewall if
   it has one.
 - **A domain** for the console, with a DNS record pointing at the VM, e.g.
@@ -95,7 +96,7 @@ journalctl -u caravana              # Caravana's log
 ## Adding a server
 
 In the console, Servers › Add a server makes a one-hour, single-use join token and shows the command
-to run on the new VM (Ubuntu 24.04, 2 GB, Docker and Nomad not installed yet):
+to run on the new VM (one of the same four systems, 2 GB, Docker and Nomad not installed yet):
 
 ```bash
 curl -fsSL https://github.com/Cosmic-Chimps/caravana/releases/download/vX.Y.Z/install.sh |

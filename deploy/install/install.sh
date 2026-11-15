@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Caravana's installer: turns a fresh Ubuntu 24.04 VM into a Caravana server, upgrades it when run
-# again, and takes it out again. The first server (--first, the default) runs everything: Docker,
+# Caravana's installer: turns a fresh VM (Ubuntu 24.04 or 26.04 LTS, Debian 12 or 13; amd64 or arm64)
+# into a Caravana server, upgrades it when run again, and takes it out again. The first server (--first, the default) runs everything: Docker,
 # Nomad with ACLs, the private network between servers, Traefik with Let's Encrypt, Caravana under
 # systemd. Another server (--join) runs Docker, Nomad and Caravana's agent, and joins the first one.
 # Each release publishes this file with its version set.
@@ -43,6 +43,8 @@ RELEASES=https://github.com/Cosmic-Chimps/caravana/releases/download
 # The same pins as the lab (deploy/dev/setup.sh); a test keeps them equal.
 NOMAD_VERSION=2.0.7
 CNI_VERSION=1.9.1
+# What the preflight accepts: the list the refusal names.
+SUPPORTED_OS="Ubuntu 24.04 LTS, Ubuntu 26.04 LTS, Debian 12 and Debian 13 (amd64 or arm64)"
 
 STATE=/var/lib/caravana-host # installer state, Nomad's bootstrap token, Traefik's certificates
 OPT=/opt/caravana            # one directory per installed version, and the "current" link
@@ -300,12 +302,15 @@ check_private_ranges() {
 preflight() {
   [ "$(id -u)" = 0 ] || refuse "run it as root (sudo bash ...)"
 
+  # The supported systems, and nothing else: each one is tested by deploy/dev/install-test.sh
+  # (deploy/dev/install-test-all.sh runs them all). The file is read as text, never sourced.
   local os_id="" os_version=""
-  # shellcheck source=/dev/null
-  [ -r /etc/os-release ] && os_id="$(. /etc/os-release && echo "$ID")" && os_version="$(. /etc/os-release && echo "$VERSION_ID")"
-  if [ "$os_id" != ubuntu ] || [ "$os_version" != 24.04 ]; then
-    refuse "this is ${os_id:-an unknown OS} ${os_version}; Caravana installs on Ubuntu 24.04 LTS"
-  fi
+  os_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null | head -1 | tr -d '"' | tr '[:upper:]' '[:lower:]')"
+  os_version="$(sed -n 's/^VERSION_ID=//p' /etc/os-release 2>/dev/null | head -1 | tr -d '"')"
+  case "$os_id $os_version" in
+  "ubuntu 24.04" | "ubuntu 26.04" | "debian 12" | "debian 13") ;;
+  *) refuse "this is ${os_id:-an unknown OS}${os_version:+ $os_version}; Caravana installs on $SUPPORTED_OS" ;;
+  esac
 
   arch="$(dpkg --print-architecture)"
   case "$arch" in amd64 | arm64) ;; *) refuse "this CPU is $arch; Caravana runs on amd64 and arm64" ;; esac
@@ -368,6 +373,9 @@ preflight_first() {
   # The public IP names this server to the others (--address) and the console's domain to Let's
   # Encrypt. With neither needing it, no lookup is made.
   if [ -z "$domain" ] || [ "$acme" != none ] || [ -z "$address" ]; then
+    # The lookup needs curl, which a Debian image may not have (the install itself adds it later).
+    command -v curl >/dev/null ||
+      refuse "curl isn't installed, and it is needed to find this machine's public IP address: run apt-get install -y curl first, or give --address (and --domain with --acme none) to go without it"
     public_ip="$(curl -fsS --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')" ||
       refuse "can't find this machine's public IP address (https://checkip.amazonaws.com); give --address (and --domain with --acme none) to go without it"
     valid_address "$public_ip" || refuse "https://checkip.amazonaws.com didn't answer an IP address"
@@ -426,12 +434,15 @@ fetch_release() {
 install_packages() {
   step "packages"
   export DEBIAN_FRONTEND=noninteractive
+  # The same package names on every supported system. Debian's images come without ufw and
+  # iptables (the CNI plugins and ufw need the latter) and may come without ping, which the
+  # agent's network check uses; on Ubuntu those are already there.
   local missing=()
-  for pkg in docker.io unzip curl ca-certificates ufw wireguard-tools; do
+  for pkg in docker.io unzip curl ca-certificates ufw iptables iputils-ping wireguard-tools; do
     dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
   if [ ${#missing[@]} -gt 0 ]; then
-    # needrestart's report on Ubuntu is noise here; the log keeps everything.
+    # needrestart's report (Ubuntu's images have it, Debian's don't) is noise here; the log keeps everything.
     if ! { apt-get update -qq && NEEDRESTART_SUSPEND=1 apt-get install -y -qq "${missing[@]}"; } >"$STATE/apt.log" 2>&1; then
       tail -20 "$STATE/apt.log" >&2
       fail "installing ${missing[*]} failed (the whole log: $STATE/apt.log)"

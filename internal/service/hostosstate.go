@@ -63,6 +63,9 @@ func (s *Service) noteOS(ctx context.Context) {
 	state := hostos.ReadState(s.hostRoot)
 	reboot := state.Reboot
 	now := s.clock.Now().UTC()
+	if state.Readable && !state.Updates.Known {
+		state.Updates = s.aptUpdates(ctx, now)
+	}
 	st.mu.Lock()
 	if !st.rebootRead || !sameReboot(st.reboot, reboot) {
 		st.reboot, st.rebootRead = reboot, true
@@ -113,6 +116,89 @@ func (s *Service) noteOS(ctx context.Context) {
 	if changed {
 		s.publish(Change{What: ChangeHost})
 	}
+}
+
+// osName is the host's distribution as the words say it ("Ubuntu", "Debian").
+func (s *Service) osName() string {
+	state, _, ok := s.osState()
+	if !ok {
+		state = s.readOSNow()
+	}
+	return state.Distro.Name()
+}
+
+// aptRetryAfter is how long a failed `apt list --upgradable` waits before it is tried
+// again when the host's files haven't changed.
+const aptRetryAfter = time.Hour
+
+// aptCache is the newest run of `apt list --upgradable`: what the host's apt files looked like
+// (stamp), what it said, when it ran and whether it failed. Guarded by samplerState.mu.
+type aptCache struct {
+	ran     bool
+	stamp   string
+	updates hostos.Updates
+	ranAt   time.Time
+	failed  bool
+}
+
+// aptUpdates gives the waiting-update counts of a host without Ubuntu's file. apt runs only when
+// the files it reads from have changed since the last run (a new `apt update` or a package
+// change), or a failed run is over an hour old, so a tick usually costs three file stats. A host
+// whose apt can't be run or read keeps Known false: the page says it can't tell, never "up to
+// date". The answer is data from the host and is not logged.
+func (s *Service) aptUpdates(ctx context.Context, now time.Time) hostos.Updates {
+	if s.apt == nil {
+		return hostos.Updates{}
+	}
+	st := &s.sampler
+	stamp := hostos.AptStamp(s.hostRoot)
+	st.mu.Lock()
+	c := st.apt
+	st.mu.Unlock()
+	if !c.ran || c.stamp != stamp || (c.failed && now.Sub(c.ranAt) > aptRetryAfter) {
+		out, err := s.apt.Run(ctx)
+		if err != nil && ctx.Err() != nil {
+			return s.cachedAptCounts() // cut short by shutdown or the tick's budget: not a failure of apt
+		}
+		c = aptCache{ran: true, stamp: stamp, ranAt: now, failed: err != nil}
+		if err != nil {
+			s.log.Warn("list the host's waiting updates with apt", "error", err)
+		} else {
+			c.updates = hostos.ParseUpgradable(out)
+		}
+		st.mu.Lock()
+		st.apt = c
+		st.mu.Unlock()
+	}
+	return s.cachedAptCounts()
+}
+
+// cachedAptCounts lays the newest apt answer out as Updates: not known when there is none or it
+// failed; CheckedAt is the host's last successful `apt update`, else when apt ran.
+func (s *Service) cachedAptCounts() hostos.Updates {
+	st := &s.sampler
+	st.mu.Lock()
+	c := st.apt
+	st.mu.Unlock()
+	if !c.ran || c.failed || !c.updates.Known {
+		return hostos.Updates{}
+	}
+	u := c.updates
+	if u.CheckedAt = hostos.ListsRefreshedAt(s.hostRoot); u.CheckedAt.IsZero() {
+		u.CheckedAt = c.ranAt
+	}
+	return u
+}
+
+// readOSNow reads the host's OS files fresh, for a reader that comes before the sampler's first
+// tick. It never runs apt: where Ubuntu's file is missing it lays over what a tick has already
+// learned from apt, if anything.
+func (s *Service) readOSNow() hostos.State {
+	state := hostos.ReadState(s.hostRoot)
+	if state.Readable && !state.Updates.Known {
+		state.Updates = s.cachedAptCounts()
+	}
+	return state
 }
 
 // sameOSState says two readings tell the Updates page the same thing.

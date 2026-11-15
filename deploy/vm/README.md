@@ -7,7 +7,7 @@ release built on your Mac. So the gate proves the same install users run.
 
 ## What you need
 
-- **A VM**: Ubuntu 24.04 LTS, arm64 or amd64, 2 GB RAM, reachable over SSH as root or a user with
+- **A VM**: Ubuntu 24.04 or 26.04 LTS, or Debian 12 or 13; arm64 or amd64, 2 GB RAM, reachable over SSH as root or a user with
   passwordless sudo, with your SSH key.
 - **Two DNS records** pointing at the VM's IP (or one wildcard):
   - the console, e.g. `caravana.example.com`

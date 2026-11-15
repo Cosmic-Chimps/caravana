@@ -35,6 +35,10 @@ const (
 	gossipKey = agentDir + "/gossip.key"
 	caKeyFile = agentDir + "/ca-key.pem"
 
+	// wireguardDir is where the temporary config `wg setconf` reads goes (up.go): the one place
+	// Ubuntu 26.04's AppArmor profile for wg lets it read a file from. The package owns it (root, 0700).
+	wireguardDir = "/etc/wireguard"
+
 	tlsDir    = "/etc/nomad.d/tls"
 	caCert    = tlsDir + "/ca.pem"
 	agentCert = tlsDir + "/agent.pem"

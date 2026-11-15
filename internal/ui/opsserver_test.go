@@ -2,11 +2,13 @@ package ui
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -40,6 +42,25 @@ func srvStub(id, group, status, desired string, cpu, mem, ceiling int) api.Alloc
 	return a
 }
 
+// ubuntuOverHostFixture is the hostos "host" fixture (apt history and a pending reboot, no os-release)
+// with the os-release of an Ubuntu 24.04 host, so the words name Ubuntu.
+func ubuntuOverHostFixture() fs.FS {
+	return overlayFS{
+		base:  hostos.Dir("../hostos/testdata/host"),
+		extra: fstest.MapFS{"etc/os-release": {Data: []byte("ID=ubuntu\nVERSION_ID=\"24.04\"\n")}},
+	}
+}
+
+// overlayFS reads a file of extra when it has one, else of base.
+type overlayFS struct{ base, extra fs.FS }
+
+func (o overlayFS) Open(name string) (fs.File, error) {
+	if f, err := o.extra.Open(name); err == nil {
+		return f, nil
+	}
+	return o.base.Open(name)
+}
+
 // srvEnv is the standard apps, with the node read by the sampler: x86 facts, the host's files from the
 // hostos fixture (a reboot is pending, Ubuntu's automatic updates ran), a Traefik job and these copies:
 // whoami's two (one near its memory limit), blog's worker starting, one being stopped, and a failed copy
@@ -52,7 +73,7 @@ func srvEnvStats(t *testing.T, edit func(*api.HostStats)) *consoleEnv {
 	t.Helper()
 	e := newConsoleEnvWith(t, func(svc *service.Service, n *deploytest.Nomad) {
 		svc.SetMetricsSampleGap(500 * time.Millisecond)
-		svc.SetHostRoot(hostos.Dir("../hostos/testdata/host"))
+		svc.SetHostRoot(ubuntuOverHostFixture())
 		svc.SetDockerRoot("/var/lib/docker") // the installer's CARAVANA_DOCKER_ROOT
 		n.SetNode("node-1", "lab", "ready", deploytest.LabNodeResources(), nil)
 		stats := deploytest.LabHostStats()

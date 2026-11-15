@@ -811,6 +811,7 @@ func TestCheckPackagesFailures(t *testing.T) {
 func TestUpdatesHistory(t *testing.T) {
 	ctx := context.Background()
 	l := newUpdatesLab(t)
+	l.svc.SetHostRoot(ubuntuHost()) // the OS rows name the distribution
 	l.svc.sampler.node = &HostNode{NodeFacts: deploy.NodeFacts{Kernel: "6.8.0-149-generic"}}
 	t0 := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
 	for i, e := range []store.HostEvent{

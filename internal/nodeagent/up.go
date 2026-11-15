@@ -80,18 +80,19 @@ func (a *Agent) ensureLink(ctx context.Context, name, kind string) error {
 }
 
 // wg gives the mesh interface its key and peers: `wg setconf` (all of it) or `wg syncconf` (what
-// differs). The config text, which holds the private key, goes to a root-only temporary file in the
-// agent's folder that is removed afterwards; only its path is an argument, so no key is ever on a
-// command line.
+// differs). The config text, which holds the private key, goes to a root-only temporary file under
+// /etc/wireguard that is removed afterwards; only its path is an argument, so no key is ever on a
+// command line. It is /etc/wireguard and not the agent's folder because Ubuntu 26.04 confines wg with
+// an AppArmor profile that lets it read files there only ("fopen: Permission denied" anywhere else).
 func (a *Agent) wg(ctx context.Context, sub, privateKey string, peers []mesh.Peer) error {
-	if err := a.ensureAgentDir(); err != nil {
+	if err := ensureDir(a.path(wireguardDir), 0o700); err != nil {
 		return err
 	}
 	suffix, err := randomHex(8)
 	if err != nil {
 		return err
 	}
-	path := a.path(agentDir + "/wg-" + suffix + ".conf")
+	path := a.path(wireguardDir + "/caravana-" + suffix + ".conf")
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("write the WireGuard config: %w", err)
