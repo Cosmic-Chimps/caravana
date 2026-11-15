@@ -5822,7 +5822,7 @@ components:
           description: |
             A five-field cron line in UTC, or `never` for no automatic backups (Back up now,
             pinning and restore still work, and `keep` applies to the backups taken by hand);
-            empty means `0 3 * * *`. Anything else is 400 `invalid_field` on
+            empty means `0 3 * * *`. Anything else is 422 `invalid_field` on
             `services[i].backup.schedule`. `never` is not accepted in `restore.schedule`.
         keep:
           type: integer
