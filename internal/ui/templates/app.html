@@ -199,7 +199,7 @@
         <input type="hidden" name="revision" value="{{$.Revision}}">
         <input type="hidden" name="service" value="{{$gap.Service}}">
         <input type="hidden" name="engine" value="sqlite">
-        <p>Backs up one SQLite database every day at 03:00 UTC and keeps 7, while the service keeps running. This deploys the app.</p>
+        <p>Backs up one SQLite database on the schedule below and keeps 7, while the service keeps running. This deploys the app.</p>
         <label class="cv-fld" for="sqlite-file-{{$gap.Service}}">
           <span class="cv-label">Database file</span>
           <input class="cv-field cv-field-mono" id="sqlite-file-{{$gap.Service}}" type="text" name="file" value="{{.}}" autocomplete="off" autocapitalize="off" spellcheck="false">

@@ -271,14 +271,14 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			gap := backupGap{Service: svc.Name, Label: svc.Name, Engine: engine}
 			if engine == app.BackupVolume {
 				gap.Label = svc.Name + " · " + mountsOf(svc)
-				gap.Confirm = sentence{plain("Backs up "), mono(mountsOf(svc)), plain(" every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app.")}
+				gap.Confirm = sentence{plain("Backs up "), mono(mountsOf(svc)), plain(" on the schedule below and keeps 7. The service stops for a few seconds each time. This deploys the app.")}
 				gap.Meta = "Volume"
 				if size, ok := serviceVolumeBytes(svc.Name, volumes); ok {
 					gap.Meta += " · " + humanBytes(size)
 				}
 				gap.SQLiteFile = svc.Volumes[0].Path + "/"
 			} else {
-				gap.Confirm = sentence{plain("Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app.")}
+				gap.Confirm = sentence{plain("Backs up the database on the schedule below and keeps 7. This deploys the app.")}
 				gap.Meta = "PostgreSQL · 0 copies kept"
 			}
 			tab.Gaps = append(tab.Gaps, gap)

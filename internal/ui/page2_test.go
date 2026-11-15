@@ -1306,8 +1306,8 @@ func TestBackUpDailyConfirmation(t *testing.T) {
 		build func() app.App
 		want  string
 	}{
-		{"volume", func() app.App { return kumaApp() }, "Backs up /app/data every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app."},
-		{"postgres", nil, "Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app."},
+		{"volume", func() app.App { return kumaApp() }, "Backs up /app/data on the schedule below and keeps 7. The service stops for a few seconds each time. This deploys the app."},
+		{"postgres", nil, "Backs up the database on the schedule below and keeps 7. This deploys the app."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := backupsEnv(t, true)
