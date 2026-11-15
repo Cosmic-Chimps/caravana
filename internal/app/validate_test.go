@@ -345,6 +345,30 @@ func TestValidate(t *testing.T) {
 			a.Services[1].Backup = &Backup{Engine: BackupVolume}
 		}, "services[1].volumes[0].name"},
 
+		// schedule: "never" (feature 039) is for every engine, and only for the backup itself.
+		{"postgres backup that never runs by itself", func(a *App, d *Deployment) {
+			a.Services[0].Env = []EnvVar{{Name: "POSTGRES_PASSWORD", Value: "pw"}}
+			a.Services[0].Backup = &Backup{Engine: BackupPostgres, Schedule: BackupScheduleNever, Keep: 3}
+		}, ""},
+		{"volume backup that never runs by itself", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: BackupScheduleNever, Keep: 3,
+				Restore: &RestoreSchedule{Schedule: "0 4 * * *", From: "golden"}}
+		}, ""},
+		{"sqlite backup that never runs by itself", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupSQLite, File: "/data/app.db", Schedule: BackupScheduleNever}
+		}, ""},
+		{"never in capitals is not never", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: "Never"}
+		}, "services[1].backup.schedule"},
+		{"restore schedule never", func(a *App, d *Deployment) {
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: BackupVolume, Schedule: BackupScheduleNever,
+				Restore: &RestoreSchedule{Schedule: BackupScheduleNever, From: "golden"}}
+		}, "services[1].backup.restore.schedule"},
+
 		// Restore schedules (feature 036) are checked for every engine.
 		{"valid volume backup with a restore schedule", func(a *App, d *Deployment) {
 			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
@@ -746,6 +770,45 @@ func TestSQLiteFile(t *testing.T) {
 				t.Errorf("SQLiteFile() = (%q, %q, %v), want (%q, %q, %v)", vol.Name, inside, ok, tc.wantVolume, tc.wantInside, tc.wantOK)
 			}
 		})
+	}
+}
+
+func TestBackupScheduleNeverWords(t *testing.T) {
+	tests := []struct {
+		schedule  string
+		automatic bool
+	}{
+		{"", true},
+		{"0 3 * * *", true},
+		{BackupScheduleNever, false},
+		{"Never", true}, // refused by validation, but not the word
+	}
+	for _, tc := range tests {
+		if got := (Backup{Schedule: tc.schedule}).Automatic(); got != tc.automatic {
+			t.Errorf("Backup{Schedule: %q}.Automatic() = %v, want %v", tc.schedule, got, tc.automatic)
+		}
+	}
+	if got := (Backup{}).ScheduleOrDefault(); got != DefaultBackupSchedule {
+		t.Errorf("an empty schedule is %q, want the default %q", got, DefaultBackupSchedule)
+	}
+	if got := (Backup{Schedule: BackupScheduleNever}).ScheduleOrDefault(); got != BackupScheduleNever {
+		t.Errorf("ScheduleOrDefault() = %q, want the stored word", got)
+	}
+
+	// A refused schedule says what else is allowed.
+	for _, engine := range []string{BackupVolume, BackupSQLite} {
+		for _, schedule := range []string{"daily", "99 * * * *"} {
+			a := validApp()
+			a.Services[1].Volumes = []Volume{{Name: "data", Path: "/data"}}
+			a.Services[1].Backup = &Backup{Engine: engine, Schedule: schedule}
+			if engine == BackupSQLite {
+				a.Services[1].Backup.File = "/data/app.db"
+			}
+			err := Validate(a, validDeployment())
+			if err == nil || !strings.Contains(err.Error(), `"never"`) {
+				t.Errorf("%s schedule %q: error %v does not mention %q", engine, schedule, err, "never")
+			}
+		}
 	}
 }
 

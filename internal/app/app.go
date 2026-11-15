@@ -219,8 +219,9 @@ type Backup struct {
 	// Only the sqlite engine takes it, and it is required there: it must lie
 	// inside one of the service's writable volumes.
 	File string `json:"file,omitempty"`
-	// Schedule is a five-field cron expression, in UTC. Empty means every day
-	// at 03:00 (DefaultBackupSchedule).
+	// Schedule is a five-field cron expression, in UTC, or BackupScheduleNever
+	// for no automatic backups (Back up now, pinning and restore still work).
+	// Empty means every day at 03:00 (DefaultBackupSchedule).
 	Schedule string `json:"schedule,omitempty"`
 	// Keep is how many backups stay in the destination, 1 to 100. Zero means
 	// DefaultBackupKeep.
@@ -249,13 +250,24 @@ const (
 	DefaultBackupKeep     = 7
 )
 
-// ScheduleOrDefault is the cron expression the backup runs on.
+// BackupScheduleNever is the Schedule that takes no automatic backups
+// (feature 039). It is an explicit word: an empty Schedule still means
+// DefaultBackupSchedule.
+const BackupScheduleNever = "never"
+
+// ScheduleOrDefault is the stored schedule word the backup runs on: a cron
+// expression, or BackupScheduleNever. It is not always a cron line, so anything
+// that turns it into a time must check Automatic first.
 func (b Backup) ScheduleOrDefault() string {
 	if b.Schedule == "" {
 		return DefaultBackupSchedule
 	}
 	return b.Schedule
 }
+
+// Automatic reports whether Caravana backs up on a schedule by itself, that is,
+// whether the schedule is a cron line and not BackupScheduleNever.
+func (b Backup) Automatic() bool { return b.Schedule != BackupScheduleNever }
 
 // KeepOrDefault is how many backups stay.
 func (b Backup) KeepOrDefault() int {

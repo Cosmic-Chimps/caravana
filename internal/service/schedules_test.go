@@ -315,6 +315,38 @@ func TestChangeSchedule(t *testing.T) {
 	waitFor(t, "the notices", func() bool { return got.count("whoami", ChangeSchedules) >= 6 })
 }
 
+// A backup with schedule "never" (feature 039) is a built-in schedule with no
+// next run and its own words, for every engine; cronwords never sees the word.
+func TestBuiltinScheduleNever(t *testing.T) {
+	ctx := context.Background()
+	l := newSchedLab(t)
+	l.clock.Set(time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC))
+	shop := app.App{ID: "shop", Name: "shop", Source: app.Source{Kind: app.SourceImage}, Services: []app.Service{
+		{Name: "db", Image: "postgres:17", Backup: &app.Backup{Engine: app.BackupPostgres, Schedule: app.BackupScheduleNever}},
+		{Name: "files", Image: "busybox:latest", Volumes: []app.Volume{{Name: "data", Path: "/data"}},
+			Backup: &app.Backup{Engine: app.BackupVolume, Schedule: app.BackupScheduleNever}},
+		{Name: "daily", Image: "busybox:latest", Volumes: []app.Volume{{Name: "d2", Path: "/d2"}},
+			Backup: &app.Backup{Engine: app.BackupVolume}},
+	}}
+	if _, err := l.store.SaveApp(ctx, shop, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"backup:shop:db", "backup:shop:files"} {
+		sc, err := l.svc.GetSchedule(ctx, id)
+		if err != nil {
+			t.Fatalf("GetSchedule(%s): %v", id, err)
+		}
+		if !sc.Builtin || sc.NextRunAt != nil || sc.Cron != app.BackupScheduleNever || sc.Words != NoAutomaticBackups {
+			t.Errorf("%s = builtin %v next %v cron %q words %q, want no next run and %q", id, sc.Builtin, sc.NextRunAt, sc.Cron, sc.Words, NoAutomaticBackups)
+		}
+	}
+	// A neighbour with a cron line still has its next run.
+	daily, err := l.svc.GetSchedule(ctx, "backup:shop:daily")
+	if err != nil || daily.NextRunAt == nil || daily.Words != "Every day at 03:00 UTC" {
+		t.Errorf("daily = %+v, %v", daily, err)
+	}
+}
+
 func TestListSchedules(t *testing.T) {
 	ctx := context.Background()
 	l := newSchedLab(t)

@@ -61,7 +61,8 @@ type VolumeView struct {
 	// Size is nil until the volume has been measured.
 	Size *VolumeSize
 	// BackedUp says the service that mounts the volume has a volume backup.
-	// Then Schedule is its cron expression (the default spelled out) and Keep
+	// Then Schedule is its cron expression (the default spelled out, or "never"
+	// for no automatic backups, feature 039) and Keep
 	// how many it keeps, and LastBackup is its newest run, nil until it ran.
 	BackedUp   bool
 	Schedule   string
