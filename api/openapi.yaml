@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.41.0
+  version: 0.42.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -5818,7 +5818,12 @@ components:
             `invalid_field` on `services[i].backup.file`.
         schedule:
           type: string
-          description: Five-field cron, in UTC. Leave it out for `0 3 * * *`.
+          examples: ["0 3 * * *", "never"]
+          description: |
+            A five-field cron line in UTC, or `never` for no automatic backups (Back up now,
+            pinning and restore still work, and `keep` applies to the backups taken by hand);
+            empty means `0 3 * * *`. Anything else is 400 `invalid_field` on
+            `services[i].backup.schedule`. `never` is not accepted in `restore.schedule`.
         keep:
           type: integer
           minimum: 1

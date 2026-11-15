@@ -65,11 +65,11 @@ schedule; a Postgres service with `never` registers no run on its own and backs 
 
 ## Tasks
 
-- [ ] T1 Model, validation and table tests (`internal/app`).
-- [ ] T2 Scheduler skip and built-in schedule (`internal/service`), tests.
-- [ ] T3 Postgres job spec for `never` (`internal/nomadjob`), golden test; lab check of register, no
+- [x] T1 Model, validation and table tests (`internal/app`).
+- [x] T2 Scheduler skip and built-in schedule (`internal/service`), tests.
+- [x] T3 Postgres job spec for `never` (`internal/nomadjob`), golden test; lab check of register, no
   self-launch and `PeriodicForce`.
-- [ ] T4 Attention and notifications ignore `never` (FR-006), test.
-- [ ] T5 Console label and form choice, tests; `tools/ui-css.sh build` if styles change.
-- [ ] T6 openapi 0.42.0 description, release note, CLAUDE.md.
+- [x] T4 Attention and notifications ignore `never` (FR-006), test.
+- [x] T5 Console label and form choice, tests; `tools/ui-css.sh build` if styles change.
+- [x] T6 openapi 0.42.0 description, release note, CLAUDE.md.
 - [ ] T7 CI checks: build, vet, staticcheck, gofmt, cross-compile, `go test -race -timeout 30m ./...`.

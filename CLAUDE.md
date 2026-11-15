@@ -1367,6 +1367,20 @@ credential stored in Caravana. Operator doc: `docs/workload-identity.md`. No mig
   `workload-identity` of `../aspire-hosting-caravana` (not pushed). The end-to-end `bella spiffe agent` against a
   real Bella needs an https issuer Bella can reach, so it is the maintainer's check on a real host.
 
+Feature 039 (`specs/039-backup-schedule-never`, the Umbral demo's nightly reset) is implemented on branch
+`039-backup-schedule-never`: `backup.schedule: "never"` takes no automatic backups, for every engine, and keeps Back
+up now, pinning, retention of the backups taken by hand and `restore: {schedule, from}`. `app.BackupScheduleNever` and
+`Backup.Automatic()`; an empty schedule still means `0 3 * * *`, and `ScheduleOrDefault` keeps returning the stored
+word, so anything that turns it into a time checks `Automatic()` first (the volume and sqlite scheduler, the built-in
+schedule's `NextRunAt` and words, `service.NoAutomaticBackups` for the console). `restore.schedule: "never"` is refused
+naming `…backup.restore.schedule`, and a bad schedule's message mentions `never`. A Postgres backup job stays periodic
+and enabled with the cron line `nomadjob.neverSpec` (`0 0 30 2 *`, a day no month has), because Back up now is
+`Jobs().PeriodicForce`, which Nomad refuses for a disabled periodic job; lab check on Nomad 2.0.7 (2026-11-15): the job
+registers, no child launches by itself in 90 s, and `PeriodicForce` starts a child that completes. No attention rule
+judges a missed scheduled backup, so nothing changed there (a test keeps it so). API 0.42.0, console words on the
+Backups tab, Configure and Schedules, and a Schedule select in the Backups tab's "no backup" forms. No migration, no
+module, no policy change.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
