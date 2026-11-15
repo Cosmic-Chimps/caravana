@@ -10,6 +10,174 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.21.0 - 2026-11-15
+
+### Added
+- **App templates.** New app has a fourth tab, **From a template**: a grid of known apps you can search
+  and filter by tag. Pick one, type its domain (and whatever else it asks for), and Caravana renders its
+  Compose file, makes the passwords it needs, and deploys it like any other app. The first six are Uptime
+  Kuma, Hollo (with its Postgres), PostgreSQL with Adminer, Adminer, Umbral and Codemagic Patch. The
+  passwords Caravana makes go to the app's secret store and are never shown, stored or logged. A
+  **Preview** button shows the app the answers would make, and nothing is created.
+- **Install without backups, when you choose it.** A template with a backup is refused until a backup
+  destination is set, as any deploy is. On a new installation the page says so, links to Settings ›
+  Backup storage and offers "Install without backups for now"; the deployment then warns once per service
+  that its backup is off and how to turn it on.
+- **The catalog lives in its own repository** (`Cosmic-Chimps/caravana-templates`) and each Caravana
+  release embeds a copy. Once a day Caravana asks the repository's latest release for a newer catalog
+  (`SHA256SUMS` first, `catalog.json` only if its sum changed, both checked, every template run through
+  Caravana's own checks). The request carries Caravana's User-Agent and nothing about your server. Turn it
+  off under the grid ("Stop checking for new templates") and Caravana makes no request about templates at
+  all.
+- **Apps remember their template.** An app installed from one names it (Configure shows "Template ·
+  Hollo 0.9.25-1") and its Deployments tab shows the template's notes after the install. It is a normal app
+  afterwards: edit its Compose file, promote it, export it, delete it.
+- `caravana template check <dir>` and `caravana template bundle [--version <v>] <dir> <outdir>` are the
+  catalog repository's gate and release step.
+- API 0.37.0: `listTemplates`, `getTemplate`, `getTemplateLogo`, `previewTemplate`, `installTemplate`
+  (`withoutBackups` in the body), `checkTemplates` and `putTemplateSettings`; `AppRecord.template` and
+  `AppSummary.template`; codes `template_not_found` and `template_unavailable`. Deploy tokens can't use
+  any of them. `caravana mcp` gains the read tools `list_templates` and `get_template` (there is no
+  install tool: it would carry secret answers through an agent).
+- `CARAVANA_TEMPLATES_URL` (`-templates-url`) points the catalog check somewhere else; it is for tests and
+  the lab.
+- **A backup that only runs when you ask.** A service's backup policy can now say `schedule: never`
+  (in the API, the Compose overlay and the Compose form), for every engine: Caravana takes no backup by
+  itself, and Back up now, pinning a backup, the backups you take by hand (kept as many as `keep`) and a
+  scheduled restore of a pinned backup all work as before. Nothing on the needs-you list or in the
+  notifications complains that no scheduled backup ran. The console says "No automatic backups (Back up
+  now only)" on the Backups tab, Configure and Schedules, and the Backups tab's "Back up" forms have a
+  Schedule choice. An empty schedule still means every day at 03:00 UTC, and `never` is refused as a
+  restore schedule.
+- API 0.42.0: `BackupPolicy.schedule` accepts `never`.
+- **Caravana installs on Ubuntu 26.04 LTS, Debian 12 and Debian 13**, besides Ubuntu 24.04 LTS, on amd64 and
+  arm64: the same installer and the same packages, for the first server and for one that joins. Any other
+  system is refused before anything changes, naming the four supported ones. Each of them is tested by
+  `deploy/dev/install-test.sh` (`IMAGE=debian-12`); `deploy/dev/install-test-all.sh` runs all four.
+- **Caravana has a logo.** The console now has a tab icon, so caravana's tabs are easy to find among
+  many, and the mark (four shapes on one path) shows above the wordmark on the sign-in page and message
+  pages and in the narrow top bar. It also takes the colors of the light or dark theme.
+- **Sign in with a passkey.** Settings › Sign-in lists the passkeys you have, adds one (after you
+  confirm it's you with your password or a passkey you already have, or by having just signed in),
+  renames and removes them. On the sign-in page, "Sign in with a passkey" asks for your fingerprint,
+  face or device PIN and signs you in without typing an email. A passkey belongs to the domain it was
+  made at, so it works only there: it is offered at the console's https domain and at `localhost`,
+  never at an IP address. Caravana keeps only the passkey's public key and a counter.
+- **Passkeys only.** Once a passkey exists for the console's domain, you can turn password sign-in
+  off. The password form then refuses without checking the password, and the last passkey of a domain
+  can't be removed while it is off. If the console's domain changes, the password works again at the
+  new domain until you add a passkey there, so a move never locks you out.
+- **On the host.** `caravana admin passkeys list` and `caravana admin passkeys remove --id <id>`.
+  `caravana admin reset-password` now also turns password sign-in back on (passkeys are kept), and
+  `caravana admin status` says how you sign in.
+- Failed passkey sign-ins count against the same per-address limit as wrong passwords (5 in 15
+  minutes).
+- API 0.36.0: `listPasskeys`, `updatePasskey`, `deletePasskey`, `getSignIn` and `putSignIn` under
+  `/v1/account/`. Adding a passkey and signing in with one are console routes only: a passkey is
+  bound to the console's own origin and to a person's device unlock, which an API client has neither.
+- **Registry credentials per path.** An entry in Settings › Registries may now name a host and a path,
+  like `ghcr.io/cosmic-chimps` and `ghcr.io/aerosens`, so two accounts that no single login can read
+  both work on one registry. An image uses the most specific entry whose path covers it by whole
+  segments (`ghcr.io/acme` covers `acme/shop`, never `acme-old/shop`). An entry with no path stays the
+  fallback for every other image on that host, and an image no entry covers is pulled without
+  credentials. Nothing is chosen per app: the image's own name says which entry applies, so Compose,
+  CI, MCP and the Aspire publisher need no change.
+- **Saving or removing an entry rewrites only the copies that use it.** Adding a prefix moves the
+  apps under it off the host's entry, and removing one moves them back (or, with no host entry, leaves
+  empty credentials, as before).
+- **Test checks the login only.** A registry doesn't say which images a login can read, so for an
+  entry with a path an accepted test says that the first deploy of an image under it shows that.
+- API 0.35.0: `putRegistry`, `deleteRegistry` and `testRegistry` take an optional `path` query next to
+  the host in the URL, and `Registry` has `path`.
+- **Pin a backup.** A backup can be pinned under a label such as `golden`, from "Pin…" on its row in
+  the Backups tab or with `PUT /v1/apps/{id}/backups/{backupId}/pin`. Retention never deletes a
+  pinned backup, neither its record nor its file in the destination, and only the unpinned ones count
+  against how many to keep ("7 backups, plus 1 pinned"). A label is on one backup of a service at a
+  time: pinning it again moves it. This holds for PostgreSQL, volume and SQLite backups.
+- **Restore a pinned backup on a schedule.** A service's backup policy may have
+  `restore: {schedule: "0 4 * * *", from: golden}`, or "Restore on a schedule…" on the Backups tab, or
+  the two fields of the Compose form. At each time (cron, UTC) Caravana restores the backup pinned
+  under that label, as the Restore button does, with no token: the clock is inside Caravana. It is
+  meant for a demo that starts the day from the same state. A time that comes while a backup or
+  restore is running is skipped, and one missed while Caravana was down runs once if it is less than
+  an hour late. A label with no backup pinned, or a restore that fails, is a failed restore on the
+  needs-you list and in the notifications. Restores now say who started them: you, or the schedule.
+- **A PostgreSQL restore is one transaction**, so a restore that fails partway leaves the database as
+  it was.
+- API 0.39.0: `pinBackup` and `unpinBackup`, `pin` and `pinnedAt` on a backup, `trigger`, `pin` and the
+  status `skipped` on a restore, and `restore` in a backup policy.
+- **Secrets from Bella Baxter.** A secret can name where its value lives instead of holding it:
+  `{"name": "DATABASE_URL", "from": {"provider": "bella-prod", "path": "DATABASE_URL"}}`, or "From a
+  provider" on the Variables page. At each deploy Caravana reads the value from Bella and puts it in the
+  service's Nomad Variable, as it does with a typed value, so the app never talks to Bella and a restart
+  never waits on it. The console shows where a value comes from, never the value.
+- **Settings › Secret providers.** Connect a Bella Baxter environment with its URL, project, environment,
+  an API key made for Caravana and the private key Bella showed with it, limit it to some projects or
+  environments, and Test it ("12 secrets readable"). The keys stay in Nomad Variables.
+- **Refresh secrets.** After a value changes in Bella, "Refresh secrets" on the Variables page (or
+  `POST /v1/apps/{id}/secrets/refresh`) reads every reference again and rolls the running version out
+  with the new values, same images; when nothing changed it says so and deploys nothing. An app's deploy
+  token may call it.
+- A deploy whose reference can't be read fails and names the secret and the provider: not in Bella (422
+  `secret_not_found`), Bella refusing the keys (422 `secret_provider_refused`) or Bella down (502
+  `secret_provider_unavailable`). Running copies keep the values they have.
+- API 0.40.0: `from` on a secret, the provider operations (`listSecretProviders`, `putSecretProvider`,
+  `deleteSecretProvider`, `testSecretProvider`), `refreshSecrets` and `secretsRefreshed` on a deployment.
+- **Workload identities.** A service may ask for up to 4 Nomad workload identities,
+  `identities: [{name: bella, audience: ["bella-spiffe/<environment-id>"], ttlSeconds: 3600}]`, through the
+  API, the Compose overlay or Aspire's publisher. Each copy finds a token the cluster signed in
+  `/secrets/nomad_<name>.jwt`, which Nomad renews at about half its lifetime; the app shows it to another
+  system (Bella Baxter's Nomad attestor, for one) instead of a stored password. Caravana never reads the
+  token. Configure shows a service's identities, read-only. A promotion keeps the identities of the
+  environment it promotes into. See `docs/workload-identity.md`.
+- **The cluster's issuer.** On a host with an `https` console address, every Nomad server signs identities
+  with that address as their issuer, and Caravana answers `/.well-known/openid-configuration` and
+  `/.well-known/jwks.json` there with Nomad's own documents, so a receiver can check a token. One issuer
+  covers every server of the cluster.
+- API 0.41.0: `identities` on a service and in the Compose overlay (schema `Identity`), and the two
+  discovery documents.
+
+### Changed
+- **Updates on a Debian server**: the Operator › Updates page counts the waiting updates with
+  `apt list --upgradable` (read inside Caravana's sandbox, never applied) on a host that has no
+  `updates-available` file, and names the server's system in its words ("Debian updates"). Package names on
+  demand still come from Ubuntu's `pro`, so a Debian server says it can't list them.
+- In the console, a registry row's Test and Remove post the entry in a form field
+  (`/settings/registries/test` and `/settings/registries/remove`) instead of putting the host in the
+  address; "used by" counts the apps each entry covers.
+- Redeploying an old version reads its provider references again now: it gets today's values from
+  Bella, not the ones it had.
+- **A backed-up Postgres service warns about a plain password.** When a service with a `postgres`
+  backup gets `POSTGRES_PASSWORD` from its environment instead of a secret, the deploy still works
+  and now warns on that field: a plain value shows in the app's definition, its Nomad job and
+  exports. Make it a secret to keep it out of all three.
+
+### Fixed
+- The API answered `"keep": 0` for a backup that left `keep` out, and `"port": 0` for a Compose overlay that
+  left its health port out, which broke the contract's minimums for clients that validate answers. A zero
+  is left out now.
+- **A down server's times on Operator › Overview** no longer add a date to a time from today. The
+  page compared the UTC time with the date in the server's local time zone, so in the hour after
+  local midnight east of UTC it said "Nov 12, 23:16 UTC" for a time from the same UTC day.
+- A SQLite backup or restore is no longer recorded as failed ("the size of the copy is unreadable") when
+  Nomad reports a step's end before its output arrives. Each step also writes its result to a file in the
+  copy, and Caravana reads that file when the output is missing.
+
+### Upgrade
+- Nothing to do. Migration 0028 adds the template columns and the catalog's one row; apps made before it
+  have no template.
+- Nothing to do: a new migration (0026) adds the passkeys table and two columns. Sessions that were
+  open before the upgrade have not confirmed anything yet, so adding a passkey from one asks you to
+  confirm it's you first.
+- Nothing to do: every existing entry is a host-only entry, with the same stored credentials and the
+  same Nomad Variable. A new migration (0025) adds the path column.
+- Apps with a PostgreSQL, volume or SQLite backup get the retention that spares pinned backups at
+  their next deploy. Redeploy them before pinning anything, or an old backup may still be deleted by
+  the previous retention. Nothing to rerun on the host.
+- After the update, each Nomad server restarts once, one at a time, to take the issuer; running apps keep
+  running. Nothing to rerun on the host.
+- Changing the console's domain later changes the issuer: tell every system that trusts your cluster.
+
 ## 0.20.0 - 2026-11-11
 
 ### Added
