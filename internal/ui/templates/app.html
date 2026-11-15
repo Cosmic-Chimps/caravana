@@ -182,7 +182,14 @@
         <input type="hidden" name="revision" value="{{$.Revision}}">
         <input type="hidden" name="service" value="{{.Service}}">
         <p>{{template "sentence" .Confirm}}</p>
-        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up daily and deploy</button></div>
+        <label class="cv-fld" for="schedule-{{.Service}}">
+          <span class="cv-label">Schedule</span>
+          <select class="cv-field cv-select" id="schedule-{{.Service}}" name="schedule">
+            <option value="">Every day at 03:00 UTC</option>
+            <option value="never">No automatic backups (Back up now only)</option>
+          </select>
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up and deploy</button></div>
       </form>
     </details>
     {{with .SQLiteFile}}
@@ -192,13 +199,20 @@
         <input type="hidden" name="revision" value="{{$.Revision}}">
         <input type="hidden" name="service" value="{{$gap.Service}}">
         <input type="hidden" name="engine" value="sqlite">
-        <p>Backs up one SQLite database every day at 03:00 UTC and keeps 7, while the service keeps running. This deploys the app.</p>
+        <p>Backs up one SQLite database on the schedule below and keeps 7, while the service keeps running. This deploys the app.</p>
         <label class="cv-fld" for="sqlite-file-{{$gap.Service}}">
           <span class="cv-label">Database file</span>
           <input class="cv-field cv-field-mono" id="sqlite-file-{{$gap.Service}}" type="text" name="file" value="{{.}}" autocomplete="off" autocapitalize="off" spellcheck="false">
           <span class="cv-data-muted cv-hint">Its path inside the service, on one of its volumes.</span>
         </label>
-        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up the file daily and deploy</button></div>
+        <label class="cv-fld" for="sqlite-schedule-{{$gap.Service}}">
+          <span class="cv-label">Schedule</span>
+          <select class="cv-field cv-select" id="sqlite-schedule-{{$gap.Service}}" name="schedule">
+            <option value="">Every day at 03:00 UTC</option>
+            <option value="never">No automatic backups (Back up now only)</option>
+          </select>
+        </label>
+        <div><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Back up the file and deploy</button></div>
       </form>
     </details>
     {{end}}

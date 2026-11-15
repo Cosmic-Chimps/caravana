@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/hashicorp/cronexpr"
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -27,6 +29,42 @@ func backedUpDB() app.Service {
 }
 
 const pinnedPostgres = "postgres@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+// A Postgres backup with schedule "never" (feature 039) stays a periodic,
+// enabled job, so PeriodicForce (Back up now) still works, with a cron line
+// that has no next time, so Nomad never starts a run by itself. The cron line
+// of every other policy is its own.
+func TestBackupJobPeriodicSpec(t *testing.T) {
+	tests := []struct {
+		name     string
+		schedule string
+		want     string
+	}{
+		{"never", app.BackupScheduleNever, neverSpec},
+		{"empty is the default", "", app.DefaultBackupSchedule},
+		{"a cron line", "*/15 * * * *", "*/15 * * * *"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := backedUpDB()
+			svc.Backup.Schedule = tc.schedule
+			p := BackupJob("shop", svc, pinnedPostgres, labSettings(), nil).Periodic
+			if p == nil || p.Enabled == nil || !*p.Enabled || len(p.Specs) != 1 || p.Specs[0] != tc.want ||
+				*p.SpecType != "cron" || !*p.ProhibitOverlap || *p.TimeZone != "UTC" {
+				t.Errorf("periodic = %+v, want an enabled cron %q in UTC", p, tc.want)
+			}
+		})
+	}
+
+	// The never spec really has no next time, in the library Nomad parses with.
+	expr, err := cronexpr.Parse(neverSpec)
+	if err != nil {
+		t.Fatalf("neverSpec %q doesn't parse: %v", neverSpec, err)
+	}
+	if next := expr.Next(time.Now().UTC()); !next.IsZero() {
+		t.Errorf("neverSpec has a next time, %v", next)
+	}
+}
 
 // TestBackupJobs compares the backup and restore jobs with their golden
 // files, and checks they hold no credential.

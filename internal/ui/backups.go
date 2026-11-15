@@ -271,14 +271,14 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			gap := backupGap{Service: svc.Name, Label: svc.Name, Engine: engine}
 			if engine == app.BackupVolume {
 				gap.Label = svc.Name + " · " + mountsOf(svc)
-				gap.Confirm = sentence{plain("Backs up "), mono(mountsOf(svc)), plain(" every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app.")}
+				gap.Confirm = sentence{plain("Backs up "), mono(mountsOf(svc)), plain(" on the schedule below and keeps 7. The service stops for a few seconds each time. This deploys the app.")}
 				gap.Meta = "Volume"
 				if size, ok := serviceVolumeBytes(svc.Name, volumes); ok {
 					gap.Meta += " · " + humanBytes(size)
 				}
 				gap.SQLiteFile = svc.Volumes[0].Path + "/"
 			} else {
-				gap.Confirm = sentence{plain("Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app.")}
+				gap.Confirm = sentence{plain("Backs up the database on the schedule below and keeps 7. This deploys the app.")}
 				gap.Meta = "PostgreSQL · 0 copies kept"
 			}
 			tab.Gaps = append(tab.Gaps, gap)
@@ -699,7 +699,11 @@ var weekdays = [...]string{"Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thur
 // day at 03:00 UTC" for "0 3 * * *", "Sundays at 04:00 UTC" for "0 4 * * 0",
 // "every 6 hours" for "0 */6 * * *", "every hour at :15" for "15 * * * *". Any
 // other expression is shown as it is, so nothing is ever described wrongly.
+// The word "never" (no automatic backups) is said as service.NoAutomaticBackups.
 func scheduleText(spec string) string {
+	if spec == app.BackupScheduleNever { // feature 039: not a cron line
+		return strings.ToLower(service.NoAutomaticBackups[:1]) + service.NoAutomaticBackups[1:]
+	}
 	f := strings.Fields(spec)
 	if len(f) == 5 && f[2] == "*" && f[3] == "*" {
 		minute, errMinute := strconv.Atoi(f[0])
@@ -788,6 +792,10 @@ func (s *server) setBackupPolicy(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 	policy := app.Backup{Engine: engine, Schedule: app.DefaultBackupSchedule, Keep: app.DefaultBackupKeep}
+	// "No automatic backups" (feature 039): Back up now and pinning only.
+	if r.PostForm.Get("schedule") == app.BackupScheduleNever {
+		policy.Schedule = app.BackupScheduleNever
+	}
 	// "Back up a SQLite file instead" (feature 029) names the engine and the
 	// file; the model checks the file, and a refusal is drawn as the notice.
 	if r.PostForm.Get("engine") == app.BackupSQLite {

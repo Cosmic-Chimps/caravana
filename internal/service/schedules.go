@@ -786,15 +786,24 @@ func (s *Service) builtinOf(ctx context.Context, id string) (store.AppRecord, ap
 	return store.AppRecord{}, app.Service{}, notFound
 }
 
+// NoAutomaticBackups is how a backup policy with schedule "never" (feature 039)
+// is said everywhere the console shows a backup's schedule.
+const NoAutomaticBackups = "No automatic backups (Back up now only)"
+
 // builtinSchedule is the schedule a service's backup policy is: its cron, its
 // next run (none while the app is stopped), and its runs from the backups.
 func (s *Service) builtinSchedule(ctx context.Context, rec store.AppRecord, svc app.Service) (Schedule, error) {
 	cron := svc.Backup.ScheduleOrDefault()
+	words := NoAutomaticBackups
+	if svc.Backup.Automatic() {
+		words = cronwords.Words(cron)
+	}
 	place := placeOf(rec)
 	sc := Schedule{ID: builtinID(rec.App.ID, svc.Name), App: rec.App.ID, Service: svc.Name, Name: svc.Name + "-backup",
-		Command: []string{}, Cron: cron, SkipIfRunning: true, Words: cronwords.Words(cron), Builtin: true,
+		Command: []string{}, Cron: cron, SkipIfRunning: true, Words: words, Builtin: true,
 		Project: place.Project, Environment: place.Environment, AppName: place.Name, Engine: svc.Backup.Engine}
-	if rec.StoppedAt == nil {
+	// schedule "never" (feature 039) is not a cron line: it has no next run.
+	if rec.StoppedAt == nil && svc.Backup.Automatic() {
 		if next := cronwords.Next(cron, s.clock.Now(), 1); len(next) == 1 {
 			sc.NextRunAt = &next[0]
 		}

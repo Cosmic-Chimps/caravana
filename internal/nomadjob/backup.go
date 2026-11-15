@@ -100,6 +100,14 @@ func withPullAuth(config map[string]any, image string, private map[string]bool) 
 	return config
 }
 
+// neverSpec is the cron line of a Postgres backup job whose policy has schedule
+// "never" (feature 039): the 30th of February, a day no month has, so Nomad
+// never launches a run by itself. The job stays periodic and enabled on
+// purpose: Back up now is Jobs().PeriodicForce, which Nomad refuses for a
+// disabled periodic job. Lab, 2026-11-15 (Nomad 2.0.7): Nomad registers this
+// spec, launches no child on its own, and PeriodicForce starts one.
+const neverSpec = "0 0 30 2 *"
+
 // BackupJob is the periodic job that backs up svc of appID, dumping with
 // image (the service's pinned image). private is as for Translate: when image
 // comes from one of those registries, the dump task pulls it with the
@@ -108,10 +116,14 @@ func BackupJob(appID string, svc app.Service, image string, s Settings, private 
 	id := BackupJobID(appID, svc.Name)
 	b := *svc.Backup
 	j := batchJob(id, appID, svc.Name)
+	spec := b.ScheduleOrDefault()
+	if !b.Automatic() {
+		spec = neverSpec
+	}
 	j.Periodic = &api.PeriodicConfig{
 		Enabled:         new(true),
 		SpecType:        new("cron"),
-		Specs:           []string{b.ScheduleOrDefault()},
+		Specs:           []string{spec},
 		ProhibitOverlap: new(true),
 		TimeZone:        new("UTC"),
 	}

@@ -182,6 +182,34 @@ func TestRunDueVolumeBackups(t *testing.T) {
 		}
 	})
 
+	t.Run("schedule never takes no backup by itself (feature 039)", func(t *testing.T) {
+		l := newVolumeLab(t)
+		never := kuma(false)
+		never.Services[0].Backup.Schedule = app.BackupScheduleNever
+		deployHealthy(t, l.env, never)
+		l.nomad.SetCopies("whoami", api.AllocationListStub{ID: labCopy, TaskGroup: "web", ClientStatus: "running", JobVersion: 1})
+		// Three days of 03:00 slots go by since the last backup, one of them a minute ago.
+		last := store.BackupRecord{AppID: "whoami", ID: "web-1", Service: "web", Engine: app.BackupVolume,
+			Status: store.BackupSucceeded, StartedAt: day(12, 3, 0).Add(5 * time.Second)}
+		if err := l.store.SaveBackup(ctx, last); err != nil {
+			t.Fatal(err)
+		}
+		l.clock.Set(day(15, 3, 1))
+		noted := map[string]string{}
+		l.svc.runDueVolumeBackups(ctx, noted)
+		l.svc.runDueVolumeBackups(ctx, noted)
+		time.Sleep(30 * time.Millisecond)
+		if rs := l.nomad.Restarts(); len(rs) != 0 {
+			t.Errorf("restarts = %+v, want none for schedule never", rs)
+		}
+		if backups, _ := l.store.ListBackups(ctx, "whoami", 0); len(backups) != 1 {
+			t.Errorf("backups = %+v, want only the old one", backups)
+		}
+		if len(noted) != 0 {
+			t.Errorf("noted = %v, want nothing said about a service that never backs up by itself", noted)
+		}
+	})
+
 	t.Run("a postgres service is left to its Nomad job", func(t *testing.T) {
 		e := newEnv(t)
 		setDestination(t, e)

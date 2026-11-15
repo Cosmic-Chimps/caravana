@@ -632,6 +632,33 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 		}
 	})
 
+	// Feature 039: "No automatic backups" stores schedule never, and the tab
+	// and Configure say it in words; the forms offer the choice without script.
+	t.Run("no automatic backups", func(t *testing.T) {
+		e := backupsEnv(t, true)
+		a := mk()
+		a.Services = a.Services[1:2]
+		e.seed(t, a, seedDeploy{ID: "g1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+		page := e.pageOf(t, "/apps/gaps/backups")
+		if n := strings.Count(page, `<option value="never">`); n != 2 {
+			t.Errorf("the page offers the choice %d times, want once in each form (daily and SQLite)", n)
+		}
+		f := formWith(t, page, "/apps/gaps/backups/policy")
+		resp, body := e.submit(t, f, url.Values{"schedule": {"never"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("a policy with no automatic backups = %d:\n%s", resp.StatusCode, text(body))
+		}
+		want := &app.Backup{Engine: app.BackupVolume, Schedule: app.BackupScheduleNever, Keep: 7}
+		if got := e.storedApp(t, "gaps").Services[0].Backup; !reflect.DeepEqual(got, want) {
+			t.Errorf("policy = %+v, want %+v", got, want)
+		}
+		for _, path := range []string{"/apps/gaps/backups", "/apps/gaps/configure"} {
+			if got := text(e.pageOf(t, path)); !strings.Contains(got, "o automatic backups (Back up now only)") || strings.Contains(got, "on never") {
+				t.Errorf("%s:\n%s", path, got)
+			}
+		}
+	})
+
 	t.Run("bad posts", func(t *testing.T) {
 		resp, _ := e.postForm(t, "/apps/gaps/backups/policy", url.Values{"service": {"db"}})
 		if resp.StatusCode != http.StatusBadRequest {
@@ -1279,8 +1306,8 @@ func TestBackUpDailyConfirmation(t *testing.T) {
 		build func() app.App
 		want  string
 	}{
-		{"volume", func() app.App { return kumaApp() }, "Backs up /app/data every day at 03:00 UTC and keeps 7. The service stops for a few seconds each time. This deploys the app."},
-		{"postgres", nil, "Backs up the database every day at 03:00 UTC and keeps 7. This deploys the app."},
+		{"volume", func() app.App { return kumaApp() }, "Backs up /app/data on the schedule below and keeps 7. The service stops for a few seconds each time. This deploys the app."},
+		{"postgres", nil, "Backs up the database on the schedule below and keeps 7. This deploys the app."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := backupsEnv(t, true)
@@ -1297,7 +1324,7 @@ func TestBackUpDailyConfirmation(t *testing.T) {
 			}
 			e.seed(t, a)
 			body := e.pageOf(t, "/apps/"+a.ID+"/backups")
-			if !strings.Contains(text(body), tc.want) || !strings.Contains(text(body), "Back up daily and deploy") || !strings.Contains(body, `cv-btn cv-btn-primary cv-btn-sm">Back up daily</summary>`) {
+			if !strings.Contains(text(body), tc.want) || !strings.Contains(text(body), "Back up and deploy") || !strings.Contains(body, `cv-btn cv-btn-primary cv-btn-sm">Back up daily</summary>`) {
 				t.Errorf("the confirmation:\n%s", text(body))
 			}
 			f := formWith(t, body, "/apps/"+a.ID+"/backups/policy")

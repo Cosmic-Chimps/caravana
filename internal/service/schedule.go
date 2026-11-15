@@ -114,6 +114,9 @@ func (s *Service) runDueVolumeBackups(ctx context.Context, noted map[string]stri
 			if !runsInCopy(svc) { // Postgres backups are Nomad's periodic jobs
 				continue
 			}
+			if !svc.Backup.Automatic() {
+				continue // schedule "never" (feature 039): only Back up now takes a backup
+			}
 			key := rec.App.ID + "/" + svc.Name
 			last, err := s.lastBackupStart(ctx, rec, svc)
 			if err != nil {

@@ -120,9 +120,9 @@ func validateBackup(field string, svc Service) error {
 	if b.Keep < 0 || b.Keep > 100 {
 		return NewFieldError(field+".keep", "must be between 1 and 100 (leave it out for %d), got %d", DefaultBackupKeep, b.Keep)
 	}
-	if b.Schedule != "" {
+	if b.Automatic() && b.Schedule != "" {
 		if fields := strings.Fields(b.Schedule); len(fields) != 5 || strings.ContainsFunc(b.Schedule, unicode.IsControl) {
-			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", b.Schedule, DefaultBackupSchedule)
+			return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q, or %q for no automatic backups", b.Schedule, DefaultBackupSchedule, BackupScheduleNever)
 		}
 	}
 	if err := validateRestoreSchedule(field, b.Restore); err != nil {
@@ -156,6 +156,9 @@ func validateRestoreSchedule(field string, r *RestoreSchedule) error {
 	if strings.TrimSpace(r.Schedule) == "" {
 		return NewFieldError(field+".schedule", "is required: a five-field cron expression in UTC, e.g. %q", "0 4 * * *")
 	}
+	if strings.TrimSpace(r.Schedule) == BackupScheduleNever {
+		return NewFieldError(field+".schedule", "can't be %q: a restore that never runs is a policy without restore, so leave restore out", BackupScheduleNever)
+	}
 	if len(strings.Fields(r.Schedule)) != 5 || strings.ContainsFunc(r.Schedule, unicode.IsControl) {
 		return NewFieldError(field+".schedule", "%q must be a five-field cron expression, e.g. %q", r.Schedule, "0 4 * * *")
 	}
@@ -188,10 +191,18 @@ func validateVolumeBackup(field string, svc Service) error {
 	if len(svc.Volumes) == 0 {
 		return NewFieldError(field+".engine", "%s", NoVolumeToBackUp)
 	}
-	if svc.Backup.Schedule != "" {
-		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
-			return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", svc.Backup.Schedule, err)
-		}
+	return validateBackupCron(field, svc.Backup)
+}
+
+// validateBackupCron checks that an automatic backup's schedule is a cron line
+// Caravana's own scheduler can read. "never" and an empty schedule need no
+// check.
+func validateBackupCron(field string, b *Backup) error {
+	if b.Schedule == "" || !b.Automatic() {
+		return nil
+	}
+	if _, err := cronexpr.Parse(b.Schedule); err != nil {
+		return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v (or use %q for no automatic backups)", b.Schedule, err, BackupScheduleNever)
 	}
 	return nil
 }
@@ -216,10 +227,8 @@ func validateSQLiteBackup(field string, svc Service) error {
 	if len(svc.Volumes) == 0 {
 		return NewFieldError(field+".engine", "the database file must be on a volume, and the service has none")
 	}
-	if svc.Backup.Schedule != "" {
-		if _, err := cronexpr.Parse(svc.Backup.Schedule); err != nil {
-			return NewFieldError(field+".schedule", "%q is not a valid cron expression: %v", svc.Backup.Schedule, err)
-		}
+	if err := validateBackupCron(field, svc.Backup); err != nil {
+		return err
 	}
 	file := svc.Backup.File
 	fileField := field + ".file"

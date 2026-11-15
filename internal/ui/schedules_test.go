@@ -410,6 +410,46 @@ func TestScheduleRunPage(t *testing.T) {
 	}
 }
 
+// Feature 039: a backup with schedule never is a built-in row that says so, with no next run, and
+// the Backups tab and Configure say the same words.
+func TestSchedulesBuiltinNever(t *testing.T) {
+	e := backupsEnv(t, true)
+	ctx := context.Background()
+	rec, err := e.Svc.GetApp(ctx, "duo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := rec.App
+	a.Services = append([]app.Service(nil), a.Services...)
+	b := *a.Services[0].Backup
+	b.Schedule = app.BackupScheduleNever
+	a.Services[0].Backup = &b
+	dep, err := e.Svc.Deploy(ctx, a, app.TriggerManual)
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	e.waitDeploy(t, dep.Deployment.ID)
+
+	row := rowOf(e.pageOf(t, "/schedules"), "backup:duo:web")
+	if row == "" {
+		t.Fatal("no built-in row")
+	}
+	for _, want := range []string{"web backup", "No automatic backups (Back up now only)"} {
+		if !strings.Contains(text(row), want) {
+			t.Errorf("the built-in row lacks %q:\n%s", want, text(row))
+		}
+	}
+	if strings.Contains(text(row), "On never") || strings.Contains(text(row), "Every day") {
+		t.Errorf("the row says a cron line:\n%s", text(row))
+	}
+	if !strings.Contains(row, `class="cv-snext-none">—<`) {
+		t.Errorf("the row has a next run:\n%s", row)
+	}
+	if got := text(e.pageOf(t, "/apps/duo/backups")); !strings.Contains(got, "No automatic backups (Back up now only)") || !strings.Contains(got, "Back up now") {
+		t.Errorf("the Backups tab:\n%s", got)
+	}
+}
+
 // A service's backup is a built-in row: its name, its engine's words, the Backups sentence, the
 // marks linking to the Backups tab, Change in Backups and none of Run now, Pause, Edit, Delete.
 func TestSchedulesBuiltin(t *testing.T) {

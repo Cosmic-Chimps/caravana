@@ -55,6 +55,30 @@ func run(id, service string, version uint64) Copy {
 	return Copy{ID: id, Service: service, Version: version, Status: deploy.CopyHealthy, StartedAt: tp(at(0))}
 }
 
+// A service whose backup has schedule "never" (feature 039) is never judged for
+// not backing up by itself: no item for a backup that was never taken or is a
+// month old, for any engine. A failed one taken by hand still is.
+func TestAttentionIgnoresNeverSchedules(t *testing.T) {
+	apps := []store.AppRecord{appRec("blog", at(0), "db", "files")}
+	for i := range apps[0].App.Services {
+		apps[0].App.Services[i].Backup.Schedule = app.BackupScheduleNever
+	}
+	latest := map[string]store.DeploymentRecord{"blog": dep("blog", "blog-ok", store.StatusHealthy, ver(1), at(1), "")}
+
+	month := attNow.AddDate(0, -1, 0)
+	old := []store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupSucceeded, StartedAt: month, FinishedAt: tp(month)}}
+	for name, backups := range map[string][]store.BackupRecord{"never backed up": nil, "a month old": old} {
+		if got := attentionOf(attNow, apps, latest, nil, nil, backups, nil, true, scheduleFacts{}, nil); len(got.Items) != 0 {
+			t.Errorf("%s: items = %+v, want none", name, got.Items)
+		}
+	}
+	failed := []store.BackupRecord{{AppID: "blog", Service: "db", Status: store.BackupFailed, Message: "boom", StartedAt: at(2), FinishedAt: tp(at(3))}}
+	got := attentionOf(attNow, apps, latest, nil, nil, failed, nil, true, scheduleFacts{}, nil)
+	if len(got.Items) != 1 || got.Items[0].Kind != AttentionBackupFailed {
+		t.Errorf("a failed backup by hand: items = %+v, want backup_failed", got.Items)
+	}
+}
+
 func TestAttentionOf(t *testing.T) {
 	errNomad := errors.New("nomad is down")
 	healthy := func(appID string) store.DeploymentRecord {
