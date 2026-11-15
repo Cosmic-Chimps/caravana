@@ -110,7 +110,7 @@ var composeSpecs = map[string]inputSpec{
 	"healthInterval": {Name: "healthInterval", Numeric: true, Label: "Check every (seconds)", Placeholder: "10"},
 	"healthTimeout":  {Name: "healthTimeout", Numeric: true, Label: "Check timeout (seconds)", Placeholder: "2"},
 	"healthPort":     {Name: "healthPort", Numeric: true, Label: "Check port", Hint: "The container port to check."},
-	"backupSchedule": {Name: "backupSchedule", Label: "Backup schedule (UTC)", Placeholder: "0 3 * * *", Hint: "A cron expression with five fields."},
+	"backupSchedule": {Name: "backupSchedule", Label: "Backup schedule (UTC)", Placeholder: "0 3 * * *", Hint: "A cron expression with five fields, or never for no automatic backups (Back up now only)."},
 	"backupKeep":     {Name: "backupKeep", Numeric: true, Label: "Backups to keep", Placeholder: "7"},
 	"backupRestoreSchedule": {Name: "backupRestoreSchedule", Label: "Restore on a schedule (UTC)", Placeholder: "0 4 * * *",
 		Hint: "A cron expression with five fields. Leave it and the label empty for none."},

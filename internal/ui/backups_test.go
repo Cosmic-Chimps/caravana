@@ -270,6 +270,7 @@ func TestScheduleText(t *testing.T) {
 		{"0 * * * 3", "on 0 * * * 3 (UTC)"},
 		{"0 25 * * *", "on 0 25 * * * (UTC)"},
 		{"", "on  (UTC)"},
+		{"never", "no automatic backups (Back up now only)"},
 	}
 	for _, tt := range tests {
 		if got := scheduleText(tt.spec); got != tt.want {

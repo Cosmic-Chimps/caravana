@@ -169,6 +169,18 @@ func TestComposeDraftOverlay(t *testing.T) {
 		t.Errorf("volume backup = %+v, want %+v", d.request().Services["web"].Backup, want)
 	}
 
+	// Feature 039: schedule never goes through as the word, for any engine.
+	post = overlayPost("x", []string{"web"}, map[string]string{
+		"svc.web.backupEngine": "volume", "svc.web.backupSchedule": "never", "svc.web.backupKeep": "3",
+	})
+	d, ok = parseComposeDraft(post)
+	if !ok {
+		t.Fatal("parse refused schedule never")
+	}
+	if want := (&app.Backup{Engine: "volume", Schedule: "never", Keep: 3}); !reflect.DeepEqual(d.request().Services["web"].Backup, want) {
+		t.Errorf("never backup = %+v, want %+v", d.request().Services["web"].Backup, want)
+	}
+
 	// Feature 029: the sqlite engine, with its file.
 	post = overlayPost("x", []string{"web"}, map[string]string{
 		"svc.web.backupEngine": "sqlite", "svc.web.backupFile": " /data/app.db ", "svc.web.backupKeep": "3",

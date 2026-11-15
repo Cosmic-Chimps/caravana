@@ -542,8 +542,12 @@ func servicePanels(a app.App) []defPanel {
 		}
 		rows = append(rows, defRow{Label: "Volumes", Values: volumes})
 		if b := svc.Backup; b != nil {
+			when := b.ScheduleOrDefault() + " (UTC)"
+			if !b.Automatic() {
+				when = scheduleText(b.ScheduleOrDefault())
+			}
 			rows = append(rows, defRow{Label: "Backup", Values: []string{
-				fmt.Sprintf("%s, %s (UTC), keeping the last %d", engineText(*b), b.ScheduleOrDefault(), b.KeepOrDefault())}})
+				fmt.Sprintf("%s, %s, keeping the last %d", engineText(*b), when, b.KeepOrDefault())}})
 		}
 		if text := stopTimeoutText(svc); text != "" {
 			rows = append(rows, defRow{Label: "Stop timeout", Values: []string{text}})

@@ -632,6 +632,33 @@ func TestBackupGapsAndPolicy(t *testing.T) {
 		}
 	})
 
+	// Feature 039: "No automatic backups" stores schedule never, and the tab
+	// and Configure say it in words; the forms offer the choice without script.
+	t.Run("no automatic backups", func(t *testing.T) {
+		e := backupsEnv(t, true)
+		a := mk()
+		a.Services = a.Services[1:2]
+		e.seed(t, a, seedDeploy{ID: "g1", Trigger: app.TriggerManual, Status: store.StatusHealthy, Version: 1})
+		page := e.pageOf(t, "/apps/gaps/backups")
+		if n := strings.Count(page, `<option value="never">`); n != 2 {
+			t.Errorf("the page offers the choice %d times, want once in each form (daily and SQLite)", n)
+		}
+		f := formWith(t, page, "/apps/gaps/backups/policy")
+		resp, body := e.submit(t, f, url.Values{"schedule": {"never"}})
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("a policy with no automatic backups = %d:\n%s", resp.StatusCode, text(body))
+		}
+		want := &app.Backup{Engine: app.BackupVolume, Schedule: app.BackupScheduleNever, Keep: 7}
+		if got := e.storedApp(t, "gaps").Services[0].Backup; !reflect.DeepEqual(got, want) {
+			t.Errorf("policy = %+v, want %+v", got, want)
+		}
+		for _, path := range []string{"/apps/gaps/backups", "/apps/gaps/configure"} {
+			if got := text(e.pageOf(t, path)); !strings.Contains(got, "o automatic backups (Back up now only)") || strings.Contains(got, "on never") {
+				t.Errorf("%s:\n%s", path, got)
+			}
+		}
+	})
+
 	t.Run("bad posts", func(t *testing.T) {
 		resp, _ := e.postForm(t, "/apps/gaps/backups/policy", url.Values{"service": {"db"}})
 		if resp.StatusCode != http.StatusBadRequest {
