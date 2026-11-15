@@ -1,6 +1,6 @@
 # Feature 039: a backup policy with no automatic backups (`schedule: "never"`)
 
-**Status**: implemented on branch `039-backup-schedule-never` | **Created**: 2026-11-15 | **Size**: small (one
+**Status**: implemented and reviewed on branch `039-backup-schedule-never` | **Created**: 2026-11-15 | **Size**: small (one
 spec file: spec, plan and tasks together)
 
 **Input**: request from the Umbral session for the public Umbral demo (Umbral task `28zs`), approved by the
@@ -72,4 +72,6 @@ schedule; a Postgres service with `never` registers no run on its own and backs 
 - [x] T4 Attention and notifications ignore `never` (FR-006), test.
 - [x] T5 Console label and form choice, tests; `tools/ui-css.sh build` if styles change.
 - [x] T6 openapi 0.42.0 description, release note, CLAUDE.md.
-- [ ] T7 CI checks: build, vet, staticcheck, gofmt, cross-compile, `go test -race -timeout 30m ./...`.
+- [x] T7 CI checks: build, vet, staticcheck, gofmt, cross-compile, release check, `go test -count=1 ./...` (28
+  packages, 2026-11-15). The race detector was left to CI: the machine's load (35–600) timed it out on
+  three packages in earlier runs with no failing test.
