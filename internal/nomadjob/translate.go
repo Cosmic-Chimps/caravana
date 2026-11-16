@@ -288,7 +288,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		// job's update block.
 		Update:        &api.UpdateStrategy{Canary: new(count)},
 		ShutdownDelay: new(shutdownDelay),
-		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports}},
+		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports, DNS: dnsConfig(svc)}},
 		// The service's own task is always the first.
 		Tasks: []*api.Task{task(a.ID, svc, image, s, private)},
 	}

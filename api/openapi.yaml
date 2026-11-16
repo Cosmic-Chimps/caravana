@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.43.0
+  version: 0.44.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -5551,6 +5551,8 @@ components:
             target's identities.
           items:
             $ref: "#/components/schemas/Identity"
+        dns:
+          $ref: "#/components/schemas/ServiceDNS"
         ports:
           type: array
           items:
@@ -5751,6 +5753,39 @@ components:
           description: The service's workload identities, with the meaning `Service.identities` has.
           items:
             $ref: "#/components/schemas/Identity"
+
+    ServiceDNS:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        The resolvers a service's copies use: Nomad writes them to the container's
+        `/etc/resolv.conf`. Leave `dns` out to keep the node's. At least one list must be set.
+        Compose's `dns`, `dns_search` and `dns_opt` set the three lists. A promotion takes the
+        source's.
+      properties:
+        servers:
+          type: array
+          maxItems: 3
+          description: |
+            Nameserver IP addresses (IPv4 or IPv6, no zone, no host names), at most 3 (the limit
+            of resolv.conf), each once, asked in this order.
+          items: {type: string}
+        searches:
+          type: array
+          maxItems: 6
+          description: |
+            Search domains, at most 6, each once: lowercase DNS names of 1 to 253 characters, in
+            labels of 1 to 63 letters, digits and `-` that neither start nor end with `-`, with no
+            trailing dot.
+          items: {type: string}
+        options:
+          type: array
+          maxItems: 8
+          description: |
+            Resolver options, at most 8, each once, matching `^[a-z][a-z0-9-]*(:[0-9]{1,4})?$`,
+            such as `ndots:2`, `edns0`, `timeout:3` or `rotate`.
+          items: {type: string}
 
     Identity:
       type: object
@@ -9505,7 +9540,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout]
+            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns]
 
     PromotionPreview:
       type: object

@@ -75,6 +75,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, entrypointCases()...)
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, identityCases()...)
+	cases = append(cases, dnsCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
 }
@@ -183,6 +184,34 @@ func identityCases() []goldenCase {
 		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
 	}}
 	return []goldenCase{{name: "identity", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// dnsCases is a service with its own resolvers, search domains and options,
+// beside a service with none.
+func dnsCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:  "api",
+				Image: "ghcr.io/acme/api:main",
+				DNS: &app.DNS{
+					Servers:  []string{"1.1.1.1", "2606:4700:4700::1111"},
+					Searches: []string{"corp.example.com"},
+					Options:  []string{"ndots:2", "edns0"},
+				},
+			},
+			{Name: "worker", Image: "ghcr.io/acme/worker:main", DNS: &app.DNS{Servers: []string{"10.0.0.2"}}},
+			{Name: "plain", Image: "ghcr.io/acme/plain:main"},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"api":    "ghcr.io/acme/api@sha256:" + strings.Repeat("d", 64),
+		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
+		"plain":  "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
+	}}
+	return []goldenCase{{name: "dns", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // stopTimeoutCases is a service that sets its stop timeout, on a service

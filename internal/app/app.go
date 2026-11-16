@@ -86,6 +86,9 @@ type Service struct {
 	// JWT per identity, written to /secrets/nomad_<name>.jwt in every copy and
 	// renewed by Nomad (spec 038). None by default.
 	Identities []Identity `json:"identities,omitempty"`
+	// DNS sets the resolvers, search domains and options in the resolv.conf
+	// of every copy. nil keeps the node's.
+	DNS *DNS `json:"dns,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's

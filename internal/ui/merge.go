@@ -15,7 +15,7 @@ import (
 // interval and timeout, and the resources. Everything else stays as stored:
 // the app's name and source, the service list and its order, environment
 // variables, domains (they have their own pages; the port they go to is the one
-// thing the form sets of them, for a service with several ports), command, args, entrypoint,
+// thing the form sets of them, for a service with several ports), command, args, entrypoint, dns,
 // secrets (names; the values live in the secret store), volumes, backup, the
 // other ports and the health check's port (FR-003). A service the form has no
 // section for is left alone.

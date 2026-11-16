@@ -48,7 +48,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health" and "volumes".
+	// "health", "volumes", "stopTimeout" and "dns".
 	Changed []string
 }
 
@@ -268,7 +268,7 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, entrypoint, command, arguments, ports,
-// health check, volume mounts and stop timeout, and the target's everything else (identities
+// health check, volume mounts, stop timeout and DNS, and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
 // only the source has is added whole, without domains. A service only the
 // target has is a *RefusalError. It is pure.
@@ -312,6 +312,9 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if t.StopTimeout != s.StopTimeout {
 			change.Changed = append(change.Changed, "stopTimeout")
 		}
+		if !sameDNS(t.DNS, s.DNS) {
+			change.Changed = append(change.Changed, "dns")
+		}
 		changes = append(changes, change)
 
 		t.Image, t.Command = s.Image, s.Command
@@ -319,6 +322,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.Args, t.Ports, t.Volumes = slices.Clone(s.Args), slices.Clone(s.Ports), slices.Clone(s.Volumes)
 		t.Health = cloneHealth(s.Health)
 		t.StopTimeout = s.StopTimeout
+		t.DNS = cloneDNS(s.DNS)
 		result.Services = append(result.Services, t)
 	}
 	for _, s := range source.Services {
@@ -338,6 +342,26 @@ func sameHealth(a, b *app.HealthCheck) bool {
 		return a == b
 	}
 	return *a == *b
+}
+
+// sameDNS reports whether two services' DNS settings are the same; none and
+// an empty one are the same.
+func sameDNS(a, b *app.DNS) bool {
+	var x, y app.DNS
+	if a != nil {
+		x = *a
+	}
+	if b != nil {
+		y = *b
+	}
+	return slices.Equal(x.Servers, y.Servers) && slices.Equal(x.Searches, y.Searches) && slices.Equal(x.Options, y.Options)
+}
+
+func cloneDNS(d *app.DNS) *app.DNS {
+	if d == nil {
+		return nil
+	}
+	return &app.DNS{Servers: slices.Clone(d.Servers), Searches: slices.Clone(d.Searches), Options: slices.Clone(d.Options)}
 }
 
 func cloneHealth(h *app.HealthCheck) *app.HealthCheck {

@@ -98,6 +98,9 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 	if sharesNames(a) {
 		tasks = append(tasks, namesTask(a, s))
 	}
-	j.TaskGroups = []*api.TaskGroup{batchGroup(svc.Name, tasks...)}
+	g := batchGroup(svc.Name, tasks...)
+	// A run resolves names like the service's copies do.
+	g.Networks[0].DNS = dnsConfig(svc)
+	j.TaskGroups = []*api.TaskGroup{g}
 	return j
 }

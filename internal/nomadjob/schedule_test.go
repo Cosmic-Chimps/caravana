@@ -271,3 +271,22 @@ func TestScheduleRunJobIdentities(t *testing.T) {
 		t.Errorf("run identities = %+v", got)
 	}
 }
+
+// TestScheduleRunJobDNS: a run's group gets the service's DNS settings, and a
+// service without any gets none.
+func TestScheduleRunJobDNS(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	if got := j.TaskGroups[0].Networks[0].DNS; got != nil {
+		t.Errorf("a service without dns: run has %+v, want none", got)
+	}
+
+	svc.DNS = &app.DNS{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2"}}
+	j = ScheduleRunJob(one, "r2", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	got := j.TaskGroups[0].Networks[0].DNS
+	want := &api.DNSConfig{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("run dns = %+v, want %+v", got, want)
+	}
+}

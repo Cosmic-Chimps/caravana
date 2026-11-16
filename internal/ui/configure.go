@@ -414,15 +414,36 @@ func exportOf(appID string, deployments []store.DeploymentRecord) exportView {
 	return exportView{Note: "Nothing to export yet: the app has no healthy deployment."}
 }
 
+// dnsRows are the service's DNS settings, read-only: the servers, and the
+// search domains and options when set. None when the service has no dns.
+func dnsRows(svc app.Service) []defRow {
+	if svc.DNS == nil || svc.DNS.Empty() {
+		return nil
+	}
+	var rows []defRow
+	if len(svc.DNS.Servers) > 0 {
+		rows = append(rows, defRow{Label: "DNS servers", Values: svc.DNS.Servers})
+	}
+	if len(svc.DNS.Searches) > 0 {
+		rows = append(rows, defRow{Label: "DNS search domains", Values: svc.DNS.Searches})
+	}
+	if len(svc.DNS.Options) > 0 {
+		rows = append(rows, defRow{Label: "DNS options", Values: svc.DNS.Options})
+	}
+	return rows
+}
+
 // alsoSet lists the facts of a service the form can't change and a save keeps,
 // for the grid's "Also set" panel: the entrypoint, the command and its
 // arguments, the volumes (mount → name), the backup, and the ports and health
-// check port the form has no input for. Nothing when none is set.
+// check port the form has no input for, and the DNS settings. Nothing when
+// none is set.
 func alsoSet(svc app.Service, s editService) []defRow {
 	var rows []defRow
 	if len(svc.Entrypoint) > 0 {
 		rows = append(rows, defRow{Label: "Entrypoint", Values: []string{strings.Join(svc.Entrypoint, " ")}})
 	}
+	rows = append(rows, dnsRows(svc)...)
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 	}
@@ -493,6 +514,7 @@ func servicePanels(a app.App) []defPanel {
 		if len(svc.Entrypoint) > 0 {
 			rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
 		}
+		rows = append(rows, dnsRows(svc)...)
 		if svc.Command != "" {
 			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 		}

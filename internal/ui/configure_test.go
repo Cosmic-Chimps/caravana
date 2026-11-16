@@ -6,6 +6,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -27,6 +28,7 @@ func shopApp() app.App {
 		ID: "shop", Name: "The Shop", Source: app.Source{Kind: app.SourceImage},
 		Services: []app.Service{
 			{Name: "web", Image: "ghcr.io/example/shop:2.1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
+				DNS:       &app.DNS{Servers: []string{"1.1.1.1", "10.0.0.2"}, Searches: []string{"corp.example.com"}},
 				Env:       []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug-value-x1"}, {Name: "API_KEY", Value: "s3cr3t-value-9f2"}},
 				Ports:     []app.Port{{Name: "http", ContainerPort: 8080}},
 				Domains:   []app.Domain{{Host: "shop.example.com", Port: "http"}},
@@ -130,7 +132,7 @@ func TestConfigureShowsTheStoredDefinition(t *testing.T) {
 	for _, want := range []string{"Copies & size", "Deploy", "Copies", "CPU MHz", "Memory MB", "Ceiling MB", "Image", "Container port",
 		"Health check GET", "Every s", "Timeout s", "Empty checks the TCP port.",
 		"New copies must pass this check before they take traffic; if they don't, the deploy is reverted.",
-		"Also set", "Entrypoint /entry.sh --strict", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
+		"Also set", "Entrypoint /entry.sh --strict", "DNS servers 1.1.1.1 10.0.0.2", "DNS search domains corp.example.com", "Command /bin/server", "Arguments --port 8080", "Edited through the API or a Compose file.",
 		"Domains shop.example.com → web :8080", "Manage domains", "Add domain",
 		"Variables & secrets", "2 variables · 0 secrets. Values of secrets are never shown here.", "Manage variables and secrets",
 		"Save web and deploy", "Save worker and deploy"} {
@@ -776,5 +778,52 @@ func TestConfigureNeedsASessionAndAnApp(t *testing.T) {
 	resp, body := e.get(t, "/apps/ghost/configure")
 	if resp.StatusCode != http.StatusNotFound || !strings.Contains(text(body), "There's no app called ghost.") {
 		t.Errorf("GET unknown app = %d:\n%s", resp.StatusCode, text(body))
+	}
+}
+
+// A service's DNS settings are shown read-only in both panels: the servers
+// always, the search domains and options only when set, and nothing without dns.
+func TestDNSRowsInBothPanels(t *testing.T) {
+	labels := func(rows []defRow) map[string][]string {
+		m := map[string][]string{}
+		for _, r := range rows {
+			if strings.HasPrefix(r.Label, "DNS") {
+				m[r.Label] = r.Values
+			}
+		}
+		return m
+	}
+	panelRows := func(svc app.Service) []defRow {
+		var rows []defRow
+		for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}) {
+			rows = append(rows, p.Rows...)
+		}
+		return rows
+	}
+
+	svc := app.Service{Name: "web", Image: "x:1"}
+	if got := labels(alsoSet(svc, newEditService(svc))); len(got) != 0 {
+		t.Errorf("alsoSet without dns has %v", got)
+	}
+	if got := labels(panelRows(svc)); len(got) != 0 {
+		t.Errorf("servicePanels without dns has %v", got)
+	}
+
+	svc.DNS = &app.DNS{Servers: []string{"1.1.1.1", "10.0.0.2"}}
+	want := map[string][]string{"DNS servers": {"1.1.1.1", "10.0.0.2"}}
+	if got := labels(alsoSet(svc, newEditService(svc))); !reflect.DeepEqual(got, want) {
+		t.Errorf("alsoSet = %v, want %v", got, want)
+	}
+	if got := labels(panelRows(svc)); !reflect.DeepEqual(got, want) {
+		t.Errorf("servicePanels = %v, want %v", got, want)
+	}
+
+	svc.DNS = &app.DNS{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2", "edns0"}}
+	want = map[string][]string{"DNS servers": {"1.1.1.1"}, "DNS search domains": {"corp.example"}, "DNS options": {"ndots:2", "edns0"}}
+	if got := labels(alsoSet(svc, newEditService(svc))); !reflect.DeepEqual(got, want) {
+		t.Errorf("alsoSet = %v, want %v", got, want)
+	}
+	if got := labels(panelRows(svc)); !reflect.DeepEqual(got, want) {
+		t.Errorf("servicePanels = %v, want %v", got, want)
 	}
 }

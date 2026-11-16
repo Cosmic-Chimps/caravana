@@ -1440,6 +1440,17 @@ fresh one, so a service with volumes can have a timed maintenance command.
   gate step lifts it with `gateTarget.SetScheduleLimit` while it runs; `scheduleLimit` is atomic for that. One earlier run saw
   an exit 3 read as 0 once (Docker's exec-inspect race, as for Run a command) and did not repeat.
 
+Service DNS (CodeAlta task `dn53`, worktree branch `alta/subtle-barque-48jk`): a service may set its resolvers,
+`app.Service.DNS *app.DNS{Servers, Searches, Options}` (`dns`, omitempty, so no revision moved; at most 3 IP-literal
+servers without a zone, 6 lowercase search domains, 8 options like `ndots:2`, no duplicates, an empty object refused;
+`app.CheckDNS` takes the three field paths so Compose names its own). `Translate` puts it on the group network's `dns`
+block (Nomad writes the copy's resolv.conf; no file mount), and so does `ScheduleRunJob`; the HCL export writes it
+(golden `dns`). Compose's `dns`, `dns_search` and `dns_opt` map to it (errors name `services.web.dns[0]`); the overlay
+has no `dns`. A promotion takes the source's (`dns` in `Changed`); Configure shows it read-only. The names sidecar's
+`/etc/hosts` still resolves the app's services beside it. API 0.44.0 (`ServiceDNS`). Gate step `service-dns`
+(`gate_dns_test.go`: a hostname server refused at `services.web.dns[0]`, the job's dns block, resolv.conf, names beside
+it, export) passed in the lab on 2026-11-16 (37 s).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

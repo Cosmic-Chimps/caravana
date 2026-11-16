@@ -34,6 +34,16 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 		// compose-go has already split the string form the way a shell would.
 		svc.Entrypoint = slices.Clone(sc.Entrypoint)
 	}
+	if len(sc.DNS) > 0 || len(sc.DNSSearch) > 0 || len(sc.DNSOpts) > 0 {
+		// compose-go has already made a list of the string form.
+		d := app.DNS{Servers: slices.Clone(sc.DNS), Searches: slices.Clone(sc.DNSSearch), Options: slices.Clone(sc.DNSOpts)}
+		// Checked here, not after translation, so the error names the
+		// attribute the user wrote.
+		if err := app.CheckDNS(d, field+".dns", field+".dns_search", field+".dns_opt"); err != nil {
+			return app.Service{}, nil, err
+		}
+		svc.DNS = &d
+	}
 	if len(sc.Command) > 0 {
 		svc.Command, svc.Args = sc.Command[0], slices.Clone(sc.Command[1:])
 	}

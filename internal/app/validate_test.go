@@ -196,6 +196,55 @@ func TestValidate(t *testing.T) {
 			}
 		}, "services[1].identities"},
 
+		// DNS.
+		{"valid dns", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{
+				Servers:  []string{"1.1.1.1", "2606:4700:4700::1111", "10.0.0.2"},
+				Searches: []string{"corp.example.com", "a", "xn--bcher-kva.example"},
+				Options:  []string{"ndots:2", "edns0", "timeout:3", "rotate", "single-request-reopen"},
+			}
+		}, ""},
+		{"valid dns, only options", func(a *App, d *Deployment) { a.Services[0].DNS = &DNS{Options: []string{"ndots:1"}} }, ""},
+		{"dns empty", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{} }, "services[1].dns"},
+		{"dns server a name", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Servers: []string{"1.1.1.1", "dns.example.com"}}
+		}, "services[1].dns.servers[1]"},
+		{"dns server with a zone", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Servers: []string{"fe80::1%eth0"}}
+		}, "services[1].dns.servers[0]"},
+		{"dns server empty", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Servers: []string{""}} }, "services[1].dns.servers[0]"},
+		{"dns server twice", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Servers: []string{"1.1.1.1", "1.1.1.1"}}
+		}, "services[1].dns.servers[1]"},
+		{"dns four servers", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Servers: []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"}}
+		}, "services[1].dns.servers"},
+		{"dns search uppercase", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Searches: []string{"Corp.example"}} }, "services[1].dns.searches[0]"},
+		{"dns search trailing dot", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Searches: []string{"corp.example."}} }, "services[1].dns.searches[0]"},
+		{"dns search label with a leading dash", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Searches: []string{"ok.example", "-bad.example"}}
+		}, "services[1].dns.searches[1]"},
+		{"dns search label with a trailing dash", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Searches: []string{"bad-.example"}} }, "services[1].dns.searches[0]"},
+		{"dns search empty label", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Searches: []string{"a..b"}} }, "services[1].dns.searches[0]"},
+		{"dns search label too long", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Searches: []string{strings.Repeat("a", 64) + ".example"}}
+		}, "services[1].dns.searches[0]"},
+		{"dns search name too long", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Searches: []string{strings.Repeat(strings.Repeat("a", 60)+".", 5) + "com"}}
+		}, "services[1].dns.searches[0]"},
+		{"dns search twice", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Searches: []string{"a.example", "a.example"}} }, "services[1].dns.searches[1]"},
+		{"dns seven searches", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Searches: []string{"a", "b", "c", "d", "e", "f", "g"}}
+		}, "services[1].dns.searches"},
+		{"dns option with a space", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Options: []string{"ndots: 2"}} }, "services[1].dns.options[0]"},
+		{"dns option starting with a digit", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Options: []string{"1ndots"}} }, "services[1].dns.options[0]"},
+		{"dns option with a long number", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Options: []string{"ndots:12345"}} }, "services[1].dns.options[0]"},
+		{"dns option uppercase", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Options: []string{"EDNS0"}} }, "services[1].dns.options[0]"},
+		{"dns option twice", func(a *App, d *Deployment) { a.Services[1].DNS = &DNS{Options: []string{"edns0", "edns0"}} }, "services[1].dns.options[1]"},
+		{"dns nine options", func(a *App, d *Deployment) {
+			a.Services[1].DNS = &DNS{Options: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}}
+		}, "services[1].dns.options"},
+
 		// Env.
 		{"env name empty", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "", Value: "x"}} }, "services[0].env[0].name"},
 		{"env name with =", func(a *App, d *Deployment) { a.Services[0].Env = []EnvVar{{Name: "A=B"}} }, "services[0].env[0].name"},

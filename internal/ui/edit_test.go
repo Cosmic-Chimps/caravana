@@ -34,6 +34,7 @@ func richApp() app.App {
 		Services: []app.Service{
 			{
 				Name: "web", Image: "ghcr.io/acme/shop:1", Entrypoint: []string{"/entry.sh", "--strict"}, Command: "/bin/server", Args: []string{"--port", "8080"},
+				DNS:         &app.DNS{Servers: []string{"1.1.1.1"}, Options: []string{"ndots:2"}},
 				Env:         []app.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}, {Name: "FEATURES", Value: "a=1,b=2"}},
 				Secrets:     []app.Secret{{Name: "API_KEY"}},
 				Volumes:     []app.Volume{{Name: "uploads", Path: "/uploads"}},

@@ -145,6 +145,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"console-v2-reads", false, g.consoleV2Reads},
 		{"secrets-render", false, g.secretsRender},
 		{"compose-app", false, g.composeAppStep},
+		{"service-dns", false, g.serviceDNSStep},
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
 		{"sqlite-backup-restore", false, g.sqliteBackupRestoreStep},

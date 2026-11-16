@@ -58,6 +58,19 @@ func (w *hclWriter) group(g *api.TaskGroup) {
 		for _, n := range g.Networks {
 			w.block("network", nil, func() {
 				w.optString("mode", &n.Mode)
+				if d := n.DNS; d != nil {
+					w.block("dns", nil, func() {
+						if len(d.Servers) > 0 {
+							w.attr("servers", quoteList(d.Servers))
+						}
+						if len(d.Searches) > 0 {
+							w.attr("searches", quoteList(d.Searches))
+						}
+						if len(d.Options) > 0 {
+							w.attr("options", quoteList(d.Options))
+						}
+					})
+				}
 				for _, p := range n.DynamicPorts {
 					w.block("port", []string{p.Label}, func() {
 						if p.To != 0 {

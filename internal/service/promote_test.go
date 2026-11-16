@@ -782,6 +782,39 @@ func withStagingEnv(a app.App, v string) app.App {
 	return a
 }
 
+// A promotion takes the source's DNS settings (they are part of how the
+// service runs, like its entrypoint), and says so when they differ.
+func TestPromotedTakesTheSourcesDNS(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].DNS = &app.DNS{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2"}}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Services[0].DNS, source.Services[0].DNS) {
+		t.Errorf("dns = %+v, want the source's %+v", got.Services[0].DNS, source.Services[0].DNS)
+	}
+	if got.Services[0].DNS == source.Services[0].DNS {
+		t.Error("the target shares the source's DNS pointer; it must be a copy")
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "dns") {
+		t.Errorf("changes = %+v, want dns listed", changes)
+	}
+
+	// The same settings change nothing; a source with none clears the target's.
+	target.Services[0].DNS = &app.DNS{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2"}}
+	_, changes, _, _ = promoted(target, source)
+	if slices.Contains(changes[0].Changed, "dns") {
+		t.Errorf("changes = %+v, the DNS is the same", changes)
+	}
+	source.Services[0].DNS = nil
+	got, changes, _, _ = promoted(target, source)
+	if got.Services[0].DNS != nil || !slices.Contains(changes[0].Changed, "dns") {
+		t.Errorf("dns = %+v, changes = %+v, want the target's cleared and dns listed", got.Services[0].DNS, changes)
+	}
+}
+
 // Spec 038: an identity's audience belongs to an environment, like a secret, so
 // a promotion keeps the target's identities and never takes the source's; a
 // service new to the target comes with its own.
