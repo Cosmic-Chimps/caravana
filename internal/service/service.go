@@ -77,13 +77,17 @@ type Service struct {
 	scheduleScanGap       time.Duration // between two passes of the schedules' clock
 	scheduleWatchGap      time.Duration // between two passes of the run watcher
 	scheduleStartDeadline time.Duration // how long a run's task may take to start
-	scheduleLimit         time.Duration // when positive, every run's stop-after (the lab's shortcut)
+	scheduleLimit         atomic.Int64  // when positive, every run's stop-after in nanoseconds (the lab's shortcut); atomic since the lab changes it while runs go
 	// runMu is held while a run is checked against the ones going and its
 	// row is written, so two starts can't both take the last place. It also
 	// guards starting and unpurged.
 	runMu    sync.Mutex
 	starting map[string]bool // runs startRun is registering; the watcher leaves them alone
 	unpurged map[string]bool // run jobs whose purge failed; the watcher tries again
+	// copyRuns holds the cancel function of each schedule run going in a running
+	// copy (feature 040, schedulecopy.go), guarded by runMu: stopping the run,
+	// the app or the schedule cancels its exec.
+	copyRuns map[string]context.CancelFunc
 
 	// Terminals (feature 020.6), see terminal.go.
 	termMu        sync.Mutex
@@ -198,6 +202,7 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		scheduleStartDeadline: defaultScheduleStartDeadline,
 		starting:              map[string]bool{},
 		unpurged:              map[string]bool{},
+		copyRuns:              map[string]context.CancelFunc{},
 
 		maxTerminals:  defaultMaxTerminals,
 		terminalIdle:  defaultTerminalIdle,
@@ -315,7 +320,7 @@ func (s *Service) SetScheduleStartDeadline(d time.Duration) {
 // schedule's own (300 s at the least), so the lab can see a run stopped at its
 // limit in seconds. Zero gives the schedules theirs back. Call it before Start.
 func (s *Service) SetScheduleLimitForTests(d time.Duration) {
-	s.scheduleLimit = max(d, 0)
+	s.scheduleLimit.Store(int64(max(d, 0)))
 }
 
 // Start resumes every deployment a previous run left unfinished (research

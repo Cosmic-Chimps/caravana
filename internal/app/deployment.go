@@ -9,6 +9,10 @@ const (
 	TriggerWebhook Trigger = "webhook"
 	// TriggerConsole is a deploy started from the web console.
 	TriggerConsole Trigger = "console"
+	// TriggerSchedule is what an action's record says when a schedule started
+	// it (feature 040: a schedule's run in a running copy). It is not a way to
+	// start a deployment: Deployment.Trigger is still one of the three above.
+	TriggerSchedule Trigger = "schedule"
 )
 
 // Deployment is one go-live event for an App. Image tags are resolved to

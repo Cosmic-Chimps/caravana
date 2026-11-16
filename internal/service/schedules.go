@@ -20,12 +20,14 @@ import (
 // traffic. This file is the schedules themselves: their checks, their reads
 // and the owner's changes. schedulerun.go starts and stops runs,
 // scheduleclock.go is the timer and schedulewatch.go follows each run to its
-// end and records it.
+// end and records it. A schedule with target "copy" (feature 040) runs its
+// command in the service's running copy instead, and keeps no output at all:
+// see schedulecopy.go.
 //
-// Every time is UTC. A run's output is kept with the run (the last 64 KiB of
-// each stream, secret values masked) and is only ever returned by
-// GetScheduleRunOutput: never in a Schedule, a ScheduleRun, an error, a log
-// line or a notice.
+// Every time is UTC. The output of a run in a fresh copy is kept with the run
+// (the last 64 KiB of each stream, secret values masked) and is only ever
+// returned by GetScheduleRunOutput: never in a Schedule, a ScheduleRun, an
+// error, a log line or a notice.
 
 // Errors the API maps to their own codes.
 var (
@@ -45,15 +47,26 @@ var (
 	ErrOutputNotKept = errors.New("this run's output isn't kept")
 )
 
-// The choices a schedule has (contracts/api.md).
+// The choices a schedule has (contracts/api.md). A schedule that runs in the
+// running copy (feature 040) has its own short limits and no memory choice.
 var (
-	stopAfterChoices = []int{300, 1800, 3600, 7200}
-	memoryChoices    = []int{256, 512, 1024, 2048}
+	stopAfterChoices     = []int{300, 1800, 3600, 7200}
+	copyStopAfterChoices = []int{60, 120, 300}
+	memoryChoices        = []int{256, 512, 1024, 2048}
+)
+
+// The targets of a schedule: where its command runs (feature 040).
+const (
+	// TargetFresh is a new copy made for each run, the schedule's original way.
+	TargetFresh = store.TargetFresh
+	// TargetCopy is the service's running copy, by Nomad's alloc exec.
+	TargetCopy = store.TargetCopy
 )
 
 const (
-	defaultStopAfterSeconds = 1800
-	maxScheduleNameLen      = 31
+	defaultStopAfterSeconds     = 1800
+	defaultCopyStopAfterSeconds = 60
+	maxScheduleNameLen          = 31
 	// maxOpenRuns is how many runs of one schedule may go at once when it
 	// allows overlap.
 	maxOpenRuns = 3
@@ -98,7 +111,8 @@ type NewSchedule struct {
 	Command []string `json:"command"`
 	// Cron is five fields, read as UTC.
 	Cron string `json:"cron"`
-	// StopAfterSeconds is 300, 1800, 3600 or 7200; 0 means 1800.
+	// StopAfterSeconds is 300, 1800, 3600 or 7200; 0 means 1800 (60, 120 or 300
+	// and 60 for a TargetCopy schedule).
 	StopAfterSeconds int `json:"stopAfterSeconds,omitempty"`
 	// MemoryMB is 256, 512, 1024 or 2048; 0 means the service's reservation
 	// rounded up to one of those.
@@ -106,6 +120,14 @@ type NewSchedule struct {
 	// SkipIfRunning skips a slot while a run is going; nil means true. False
 	// lets up to 3 runs go at once.
 	SkipIfRunning *bool `json:"skipIfRunning,omitempty"`
+	// Target is TargetFresh or TargetCopy; empty means TargetFresh. A copy
+	// schedule may use a service with volumes, takes 60, 120 or 300 as its
+	// StopAfterSeconds (0 means 60), has no MemoryMB and always skips a slot
+	// while its run goes.
+	Target string `json:"target,omitempty"`
+	// AllCopies runs a TargetCopy command in every healthy copy of the service,
+	// one after the other, instead of the oldest one. TargetFresh refuses it.
+	AllCopies bool `json:"allCopies,omitempty"`
 }
 
 // Schedule is a schedule as the API and the console show it: what was stored,
@@ -121,6 +143,11 @@ type Schedule struct {
 	StopAfterSeconds int      `json:"stopAfterSeconds"`
 	MemoryMB         int      `json:"memoryMB"`
 	SkipIfRunning    bool     `json:"skipIfRunning"`
+	// Target is where the command runs, TargetFresh or TargetCopy; AllCopies
+	// says a TargetCopy run goes in every healthy copy. MemoryMB is 0 for a
+	// TargetCopy schedule: it has the copy's own memory.
+	Target    string `json:"target"`
+	AllCopies bool   `json:"allCopies"`
 	// Words is the cron line in words, "Every day at 03:00 UTC".
 	Words    string     `json:"words"`
 	Paused   bool       `json:"paused"`
@@ -168,11 +195,17 @@ type ScheduleRun struct {
 	Command         []string `json:"command"`
 	DeploymentID    *string  `json:"deploymentId"`
 	JobVersion      *int     `json:"jobVersion"`
-	OutputKept      bool     `json:"outputKept"`
-	StdoutBytes     int      `json:"stdoutBytes"`
-	StderrBytes     int      `json:"stderrBytes"`
-	StdoutCut       bool     `json:"stdoutCut"`
-	StderrCut       bool     `json:"stderrCut"`
+	// Target is the target the run had, TargetFresh or TargetCopy. Copies are
+	// the IDs of the copies a TargetCopy run ran in (the run may have ended
+	// before it got to the later ones); [] for a TargetFresh run and for a
+	// skipped slot.
+	Target      string   `json:"target"`
+	Copies      []string `json:"copies"`
+	OutputKept  bool     `json:"outputKept"`
+	StdoutBytes int      `json:"stdoutBytes"`
+	StderrBytes int      `json:"stderrBytes"`
+	StdoutCut   bool     `json:"stdoutCut"`
+	StderrCut   bool     `json:"stderrCut"`
 }
 
 // ScheduleFilter narrows ListSchedules: an app ID, a project, or neither.
@@ -199,6 +232,8 @@ type checkedSchedule struct {
 	stopAfter     time.Duration
 	memoryMB      int
 	skipIfRunning bool
+	target        string
+	allCopies     bool
 }
 
 // checkSchedule applies a schedule's rules. An unknown app is
@@ -247,10 +282,25 @@ func (s *Service) checkSchedule(ctx context.Context, in NewSchedule) (checkedSch
 		return checkedSchedule{}, app.NewFieldError("service", "the app has no service %q", name)
 	}
 	svc := rec.App.Services[i]
-	if len(svc.Volumes) > 0 {
+	target := in.Target
+	if target == "" {
+		target = TargetFresh
+	}
+	if target != TargetFresh && target != TargetCopy {
+		return checkedSchedule{}, app.NewFieldError("target", "must be %q (a new copy) or %q (the running copy)", TargetFresh, TargetCopy)
+	}
+	// A fresh copy would be a second writer on the service's volumes; a command
+	// in the running copy is the way to work on a volume's data.
+	if target == TargetFresh && len(svc.Volumes) > 0 {
 		return checkedSchedule{}, app.NewFieldError("service", "the service mounts a volume; a schedule needs a service without volumes")
 	}
+	if in.AllCopies && target != TargetCopy {
+		return checkedSchedule{}, app.NewFieldError("allCopies", "applies only to a schedule that runs in the running copy")
+	}
 
+	if target == TargetCopy {
+		return s.checkCopySchedule(rec, name, in, cron)
+	}
 	stopAfter := in.StopAfterSeconds
 	if stopAfter == 0 {
 		stopAfter = defaultStopAfterSeconds
@@ -271,7 +321,29 @@ func (s *Service) checkSchedule(ctx context.Context, in NewSchedule) (checkedSch
 		skip = *in.SkipIfRunning
 	}
 	return checkedSchedule{app: rec, service: name, name: in.Name, command: slices.Clone(in.Command), cron: cron,
-		stopAfter: time.Duration(stopAfter) * time.Second, memoryMB: memory, skipIfRunning: skip}, nil
+		stopAfter: time.Duration(stopAfter) * time.Second, memoryMB: memory, skipIfRunning: skip, target: TargetFresh}, nil
+}
+
+// checkCopySchedule is checkSchedule's last part for a schedule that runs in
+// the running copy: its limit is 60, 120 or 300 seconds, it has no memory of
+// its own (the copy's is used) and it always skips a slot while its run goes,
+// so none of those can be asked for otherwise.
+func (s *Service) checkCopySchedule(rec store.AppRecord, service string, in NewSchedule, cron string) (checkedSchedule, error) {
+	stopAfter := in.StopAfterSeconds
+	if stopAfter == 0 {
+		stopAfter = defaultCopyStopAfterSeconds
+	}
+	if !slices.Contains(copyStopAfterChoices, stopAfter) {
+		return checkedSchedule{}, app.NewFieldError("stopAfterSeconds", "must be 60, 120 or 300 for a schedule that runs in the running copy")
+	}
+	if in.MemoryMB != 0 {
+		return checkedSchedule{}, app.NewFieldError("memoryMB", "doesn't apply to a schedule that runs in the running copy: it has the copy's own memory")
+	}
+	if in.SkipIfRunning != nil && !*in.SkipIfRunning {
+		return checkedSchedule{}, app.NewFieldError("skipIfRunning", "a schedule that runs in the running copy always skips a slot while its run goes")
+	}
+	return checkedSchedule{app: rec, service: service, name: in.Name, command: slices.Clone(in.Command), cron: cron,
+		stopAfter: time.Duration(stopAfter) * time.Second, skipIfRunning: true, target: TargetCopy, allCopies: in.AllCopies}, nil
 }
 
 // roundedMemory is a reservation rounded up to the nearest memory choice, the
@@ -303,7 +375,7 @@ func (s *Service) CreateSchedule(ctx context.Context, in NewSchedule) (Schedule,
 	now := s.clock.Now().UTC()
 	rec, err := s.store.InsertSchedule(ctx, store.ScheduleRecord{ID: id, AppID: c.app.App.ID, Service: c.service,
 		Name: c.name, Command: c.command, Cron: c.cron, StopAfter: c.stopAfter, MemoryMB: c.memoryMB,
-		SkipIfRunning: c.skipIfRunning, ArmedAt: now, CreatedAt: now})
+		SkipIfRunning: c.skipIfRunning, Target: c.target, AllCopies: c.allCopies, ArmedAt: now, CreatedAt: now})
 	if errors.Is(err, store.ErrAlreadyExists) {
 		return Schedule{}, fmt.Errorf("schedule %q of %q: %w", c.name, c.app.App.ID, ErrScheduleExists)
 	}
@@ -336,7 +408,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, id string, in NewSchedule)
 	}
 	rec, err := s.store.UpdateSchedule(ctx, store.ScheduleRecord{ID: id, AppID: old.AppID, Service: c.service,
 		Name: c.name, Command: c.command, Cron: c.cron, StopAfter: c.stopAfter, MemoryMB: c.memoryMB,
-		SkipIfRunning: c.skipIfRunning})
+		SkipIfRunning: c.skipIfRunning, Target: c.target, AllCopies: c.allCopies})
 	switch {
 	case errors.Is(err, store.ErrAlreadyExists):
 		return Schedule{}, fmt.Errorf("schedule %q of %q: %w", c.name, old.AppID, ErrScheduleExists)
@@ -360,8 +432,9 @@ func (s *Service) UpdateSchedule(ctx context.Context, id string, in NewSchedule)
 // DeleteSchedule removes a schedule and its runs. A run that is going is
 // ended first: its stop reason is written (schedule_removed) and its job is
 // erased with its variable, since no row is left for the watcher to settle
-// and purge it by. When Nomad can't do that the schedule stays, and the error
-// says why.
+// and purge it by (a run in a running copy has no job: its exec is
+// cancelled). When Nomad can't do that the schedule stays, and the error says
+// why.
 func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
 	rec, err := s.storedSchedule(ctx, id)
 	if err != nil {
@@ -375,6 +448,10 @@ func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
 	for _, r := range open {
 		if err := s.store.SetRunStopIntent(ctx, r.ID, stopScheduleRemoved, now); err != nil && !errors.Is(err, store.ErrInvalidTransition) {
 			return err
+		}
+		if r.Target == store.TargetCopy {
+			s.cancelCopyRun(r.ID) // no job to purge: the exec is cancelled
+			continue
 		}
 		if err := s.deployer.PurgeScheduleRun(ctx, runJobID(r)); err != nil {
 			return fmt.Errorf("stop run %s of schedule %q: %w", r.ID, rec.Name, err)
@@ -664,7 +741,8 @@ func (s *Service) scheduleOf(ctx context.Context, rec store.ScheduleRecord, a *s
 	place := placeOf(*a)
 	sc := Schedule{ID: rec.ID, App: rec.AppID, Service: rec.Service, Name: rec.Name, Command: rec.Command,
 		Cron: rec.Cron, StopAfterSeconds: int(rec.StopAfter / time.Second), MemoryMB: rec.MemoryMB,
-		SkipIfRunning: rec.SkipIfRunning, Words: cronwords.Words(rec.Cron), Paused: rec.PausedAt != nil,
+		SkipIfRunning: rec.SkipIfRunning, Target: rec.Target, AllCopies: rec.AllCopies,
+		Words: cronwords.Words(rec.Cron), Paused: rec.PausedAt != nil,
 		PausedAt: rec.PausedAt, Project: place.Project, Environment: place.Environment, AppName: place.Name,
 		ArmedAt: rec.ArmedAt}
 	if rec.PausedAt == nil {
@@ -719,7 +797,14 @@ func runOf(r store.ScheduleRunRecord) ScheduleRun {
 	out := ScheduleRun{ID: r.ID, ScheduleID: r.ScheduleID, Trigger: r.Trigger, SlotAt: r.SlotAt, Status: r.Status,
 		ExitCode: r.ExitCode, Error: r.Error, StartedAt: r.StartedAt, TaskStartedAt: r.TaskStartedAt,
 		FinishedAt: r.FinishedAt, Command: r.Command, JobVersion: r.JobVersion, OutputKept: r.OutputKept,
-		StdoutBytes: r.StdoutBytes, StderrBytes: r.StderrBytes, StdoutCut: r.StdoutCut, StderrCut: r.StderrCut}
+		StdoutBytes: r.StdoutBytes, StderrBytes: r.StderrBytes, StdoutCut: r.StdoutCut, StderrCut: r.StderrCut,
+		Target: r.Target, Copies: r.Copies}
+	if out.Target == "" {
+		out.Target = TargetFresh
+	}
+	if out.Copies == nil {
+		out.Copies = []string{} // the API says [], never null
+	}
 	if r.DeploymentID != "" {
 		out.DeploymentID = new(r.DeploymentID)
 	}
@@ -800,7 +885,7 @@ func (s *Service) builtinSchedule(ctx context.Context, rec store.AppRecord, svc 
 	}
 	place := placeOf(rec)
 	sc := Schedule{ID: builtinID(rec.App.ID, svc.Name), App: rec.App.ID, Service: svc.Name, Name: svc.Name + "-backup",
-		Command: []string{}, Cron: cron, SkipIfRunning: true, Words: words, Builtin: true,
+		Command: []string{}, Cron: cron, SkipIfRunning: true, Target: TargetFresh, Words: words, Builtin: true,
 		Project: place.Project, Environment: place.Environment, AppName: place.Name, Engine: svc.Backup.Engine}
 	// schedule "never" (feature 039) is not a cron line: it has no next run.
 	if rec.StoppedAt == nil && svc.Backup.Automatic() {
@@ -840,7 +925,7 @@ func (s *Service) backupRuns(ctx context.Context, rec store.AppRecord, svc app.S
 			continue
 		}
 		r := ScheduleRun{ID: b.ID, ScheduleID: id, Trigger: backupTrigger(b.Trigger), StartedAt: b.StartedAt,
-			FinishedAt: b.FinishedAt, Command: []string{}}
+			FinishedAt: b.FinishedAt, Command: []string{}, Target: TargetFresh, Copies: []string{}}
 		switch b.Status {
 		case store.BackupSucceeded:
 			r.Status = store.RunOK

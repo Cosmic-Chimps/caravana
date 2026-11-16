@@ -1399,6 +1399,47 @@ judges a missed scheduled backup, so nothing changed there (a test keeps it so).
 Backups tab, Configure and Schedules, and a Schedule select in the Backups tab's "no backup" forms. No migration, no
 module, no policy change.
 
+Feature 040 (`specs/040-schedule-in-copy`, CodeAlta task `5f39`, from the Umbral session) is implemented on the worktree
+branch `alta/kind-chinchilla-zkvg`: a schedule may run its command in the service's running copy (`target: copy`) instead of a
+fresh one, so a service with volumes can have a timed maintenance command.
+- Model: `schedules.target` (`fresh`, the default and 022 unchanged, or `copy`) and `all_copies`; a run keeps its own `target` and
+  `copies` (JSON array of copy IDs, `[]` for fresh), migration 0031. `fresh` still refuses a service with volumes; `copy` allows
+  one. Every refused combination is a field error: `allCopies` with `fresh`, a `stopAfterSeconds` outside 60/120/300 (0 means 60)
+  for `copy`, `memoryMB` other than 0, `skipIfRunning: false` (a copy schedule always skips a slot while its run goes).
+- A copy run (`service/schedulecopy.go`) picks the oldest healthy copy (`pickCopies`: Nomad's create time, then the ID; every
+  healthy copy with `allCopies`, one after the other, as one run row), writes the row ahead (`claimRun`, so 022's overlap, skip
+  streak and `schedule_failed` stay one rule) and runs the execs in a goroutine, off the clock's pass. It registers no Nomad job.
+  The run stays in `s.starting` (the watcher skips it) and has a cancel function in `s.copyRuns` (guarded by `runMu`): Stop, an
+  app stop and a schedule's removal write the stop intent first and then cancel the exec. The limit is one deadline for the whole
+  run (`runLimit`, so the lab's shortcut works). A copy run the watcher finds open that this process isn't running was left by a
+  process that ended: it is settled `failed` "lost while Caravana was restarting" (or by its stop reason), with no Nomad call.
+- Output is never kept (020.5's R2): the exec's streams are dropped as they come back, so `output_kept` stays 0, `stdout`/`stderr`
+  stay NULL, `GET …/output` is 404 `output_not_kept`, and no log line, error, notice or page holds them (a sentinel test searches
+  rows, the SQLite file, the log, the answers and the feed). Each copy gets an `app_actions` row `run` with trigger
+  `app.TriggerSchedule` ("schedule", "on a schedule" in the console and the feed; not a deployment trigger). Outcomes: exit 0
+  `ok`, "exit N" (with `allCopies` "exit N in copy 1a2b3c4d", the first failure; the others still run), the limit
+  `stopped_at_limit`, an exec Nomad can't start `could_not_start`, a vanished copy or Nomad down `failed` in `execFailure`'s words.
+- The clock: a copy schedule's slot while the app is stopped is a `skipped` row "the app is stopped" (`skipSlot`), where a fresh
+  schedule's slot waits as before; a slot with no healthy copy (`ErrNoRunningCopy`) or a deploy going waits like 022's, until it
+  is an hour old. `schedule_skipping` is never raised for a stopped app.
+- API 0.43.0: `target`, `allCopies`, `copies`, `schedule` as an action trigger, `runSchedule` can be 409 `no_running_copy`.
+  Console: New schedule has "Run in" (radios) and "In every copy"; Stop after is one select with 1, 2, 5 min and 30 min to 2 h (a
+  wrong choice for the target is a field error at it), the running copy's form doesn't send Memory or the skip box (the hints say
+  so), the list and detail say "in the running copy", and the run page says where it ran, the exit code, and "This run was in the
+  running copy: its output isn't kept." "Usual" (0) is the first Stop after choice and what a new form selects: 30 min for a
+  new copy, 1 min for the running copy.
+- Lab: the gate step `schedule-in-copy` (`gate_schedule_copy_test.go`: a busybox service with a volume; `purge` every minute
+  appends to a file on the volume, prints a sentinel on both streams that its command doesn't hold whole and exits 3, `slow`
+  sleeps 100 with a 120 s limit; the run is `target: copy`, in that copy, `failed` exit 3, `outputKept` false, the output read is
+  404 `output_not_kept`, the file grew, `schedule_failed` is on `/v1/attention`, `listAppActions` has a `run` with trigger
+  `schedule`, `slow`'s next slot is `skipped`, and after Stop app the next slot is `skipped` "the app is stopped"; the sentinel
+  is in no answer, log or data file) and the console step `console-schedule-in-copy` (`console_schedule_copy_test.go`: the form
+  with Run in = the running copy and the Usual limit, Run now, the run page). Both passed in the lab on 2026-11-16 (gate step
+  161–195 s over three runs, console step 27 s; run the console step with `-run
+  'TestConsoleLab/^console-(sign-in|schedule-in-copy)$'`). The lab stops every run at 40 s (`SetScheduleLimitForTests`), so the
+  gate step lifts it with `gateTarget.SetScheduleLimit` while it runs; `scheduleLimit` is atomic for that. One earlier run saw
+  an exit 3 read as 0 once (Docker's exec-inspect race, as for Run a command) and did not repeat.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

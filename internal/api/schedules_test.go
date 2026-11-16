@@ -411,7 +411,8 @@ func TestScheduleSchemasRefuse(t *testing.T) {
 	run := map[string]any{"id": "r", "scheduleId": "s", "trigger": "owner", "slotAt": nil, "status": "ok", "exitCode": 0,
 		"error": "", "startedAt": "2026-10-23T03:00:00Z", "taskStartedAt": nil, "finishedAt": "2026-10-23T03:00:05Z",
 		"durationSeconds": 5, "command": []any{"true"}, "deploymentId": nil, "jobVersion": nil, "outputKept": true,
-		"stdoutBytes": 3, "stderrBytes": 0, "stdoutCut": false, "stderrCut": false}
+		"stdoutBytes": 3, "stderrBytes": 0, "stdoutCut": false, "stderrCut": false,
+		"target": "fresh", "copies": []any{}}
 	if err := doc.Components.Schemas["ScheduleRun"].Value.VisitJSON(run); err != nil {
 		t.Fatalf("a good run is refused: %v", err)
 	}
@@ -419,6 +420,8 @@ func TestScheduleSchemasRefuse(t *testing.T) {
 		"with its output":     func(m map[string]any) { m["stdout"] = "hi" },
 		"a time not a string": func(m map[string]any) { m["finishedAt"] = 5 },
 		"an unknown status":   func(m map[string]any) { m["status"] = "succeeded" },
+		"an unknown target":   func(m map[string]any) { m["target"] = "both" },
+		"copies not a list":   func(m map[string]any) { m["copies"] = "c1" },
 	} {
 		bad := map[string]any{}
 		for k, v := range run {

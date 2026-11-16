@@ -41,7 +41,7 @@ func TestNewScheduleForm(t *testing.T) {
 		`<a href="/schedules/new?preset=15min" class="cv-schip">every 15 minutes</a>`, `href="/schedules/new?preset=daily"`,
 		`href="/schedules/new?preset=weekdays"`, `href="/schedules/new?preset=monthly"`,
 		`<p class="cv-setrow-hint" id="schedule-when-hint" data-local-hint="schedule-when">Times of day are UTC.</p>`,
-		`<option value="1800" selected>30 min</option>`, `<option value="256" selected>256 MB</option>`,
+		`<option value="0" selected>Usual (30 min; 1 min in the running copy)</option>`, `<option value="1800">30 min</option>`, `<option value="256" selected>256 MB</option>`,
 		`<input type="checkbox" name="skip" value="1" checked>`, `name="action" value="check"`, `name="action" value="create"`,
 		`<a href="/schedules" class="cv-btn cv-btn-secondary cv-btn-sm">Cancel</a>`,
 	} {
@@ -49,7 +49,7 @@ func TestNewScheduleForm(t *testing.T) {
 			t.Errorf("the form lacks %s", want)
 		}
 	}
-	for _, want := range []string{"New schedule", "Runs a command in a fresh copy of an app, then stops it.",
+	for _, want := range []string{"New schedule", "Runs a command on a timer: in a fresh copy of an app, which then stops, or in the copy that is running now.",
 		"Uses the live version's image and variables. Doesn't take traffic.", "no shell is implied", "sh -c '…'",
 		"Skip a run if the last one is still going", "Create schedule"} {
 		if !strings.Contains(text(body), want) {
@@ -73,9 +73,9 @@ func TestNewScheduleForm(t *testing.T) {
 		strings.Contains(body, "whoami › web") {
 		t.Errorf("?app=blog:\n%s", body)
 	}
-	// Every service of the app mounts a volume: the hint says a schedule can't run in it.
+	// Every service of the app mounts a volume: the hint says a schedule there runs only in the running copy.
 	e.seed(t, kumaApp(), seedDeploy{ID: "k1", Status: store.StatusHealthy, Version: 1})
-	if got := text(e.pageOf(t, "/schedules/new?app=kuma")); !strings.Contains(got, "Every service of this app mounts a volume, and a schedule needs a service without volumes.") {
+	if got := text(e.pageOf(t, "/schedules/new?app=kuma")); !strings.Contains(got, "Every service of this app mounts a volume, so a schedule there can run only in the running copy.") {
 		t.Errorf("the volumes hint:\n%s", got)
 	}
 }

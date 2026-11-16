@@ -222,6 +222,11 @@ func startLab(t *testing.T) labEnv {
 			HostRoot:  hostRoot,
 			Release:   release,
 			Bella:     bella,
+			SetScheduleLimit: func(d time.Duration) {
+				currentMu.Lock()
+				defer currentMu.Unlock()
+				current.SetScheduleLimitForTests(d)
+			},
 			SetTraefikMetricsURL: func(u string) {
 				currentMu.Lock()
 				defer currentMu.Unlock()

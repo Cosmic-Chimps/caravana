@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -17,7 +18,9 @@ import (
 //
 // A slot whose app can't have a run now (stopped, no live version, a deploy
 // going) waits: nothing is recorded and the next pass tries again, until the
-// slot is an hour old.
+// slot is an hour old. The same goes for a schedule that runs in the running
+// copy while its service has no healthy copy. Its slot while the app is
+// stopped is recorded as skipped instead (feature 040).
 
 // runScheduleClock starts due runs, every gap, until ctx ends. It does a pass
 // first.
@@ -72,13 +75,37 @@ func (s *Service) runDueSchedules(ctx context.Context, noted map[string]string) 
 			}
 			apps[sc.AppID] = rec
 		}
+		if sc.Target == store.TargetCopy && rec.StoppedAt != nil {
+			// The owner stopped the app and a command in its running copy has
+			// nowhere to run: the slot is recorded as skipped, not kept waiting,
+			// so the schedule's page says it was missed (feature 040).
+			row := store.ScheduleRunRecord{ID: "", ScheduleID: sc.ID, AppID: sc.AppID, Service: sc.Service,
+				Trigger: RunTriggerTimer, SlotAt: &slot, Command: sc.Command, Target: store.TargetCopy, StartedAt: now}
+			if row.ID, err = newID(""); err == nil {
+				err = s.skipSlot(ctx, sc, &row, "the app is stopped")
+			}
+			if err != nil {
+				s.noteOnce(noted, sc.ID, "failed:"+slot.String(), "a schedule's skipped slot wasn't recorded",
+					"schedule", sc.ID, "app", sc.AppID, "name", sc.Name, "slot", slot, "error", err)
+			}
+			continue
+		}
 		if blocked := s.runBlocker(ctx, rec, sc.Service); blocked != nil {
 			s.noteOnce(noted, sc.ID, "waits:"+slot.String()+blocked.Error(),
 				"a schedule's run waits; it is tried again until its slot is an hour old",
 				"schedule", sc.ID, "app", sc.AppID, "name", sc.Name, "slot", slot, "reason", blocked)
 			continue
 		}
-		if _, err := s.startRun(ctx, sc, RunTriggerTimer, &slot); err != nil {
+		_, err = s.startRun(ctx, sc, RunTriggerTimer, &slot)
+		if errors.Is(err, ErrNoRunningCopy) {
+			// A running copy is what a copy schedule runs in: like a deploy going,
+			// the slot waits for one (until it is an hour old).
+			s.noteOnce(noted, sc.ID, "waits:"+slot.String()+err.Error(),
+				"a schedule's run waits for a healthy copy; it is tried again until its slot is an hour old",
+				"schedule", sc.ID, "app", sc.AppID, "name", sc.Name, "slot", slot)
+			continue
+		}
+		if err != nil {
 			s.noteOnce(noted, sc.ID, "failed:"+slot.String(), "a schedule's run didn't start",
 				"schedule", sc.ID, "app", sc.AppID, "name", sc.Name, "slot", slot, "error", err)
 		}

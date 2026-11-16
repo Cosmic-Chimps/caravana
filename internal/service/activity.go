@@ -222,6 +222,8 @@ func triggerLead(trigger string) string {
 		return "through the API"
 	case app.TriggerWebhook:
 		return "by the webhook"
+	case app.TriggerSchedule:
+		return "on a schedule"
 	}
 	return "by " + trigger
 }

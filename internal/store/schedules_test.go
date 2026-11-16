@@ -26,7 +26,7 @@ func testSchedule(appID, id, name string) ScheduleRecord {
 		ID: id, AppID: appID, Service: "web", Name: name,
 		Command:   []string{"sh", "-c", "echo 'a b'"},
 		Cron:      "*/5 * * * *",
-		StopAfter: 30 * time.Minute, MemoryMB: 512, SkipIfRunning: true,
+		StopAfter: 30 * time.Minute, MemoryMB: 512, SkipIfRunning: true, Target: TargetFresh,
 		ArmedAt: time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC),
 	}
 }
@@ -155,7 +155,7 @@ func TestScheduleNamesAreUniquePerApp(t *testing.T) {
 func run(scheduleID, appID, id, status string, n int) ScheduleRunRecord {
 	at := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC).Add(time.Duration(n) * time.Second)
 	r := ScheduleRunRecord{
-		ID: id, ScheduleID: scheduleID, AppID: appID, Service: "web", Trigger: "timer",
+		ID: id, ScheduleID: scheduleID, AppID: appID, Service: "web", Trigger: "timer", Target: TargetFresh,
 		Command: []string{"echo", "hi"}, Status: status, StartedAt: at,
 	}
 	if status != RunStarting && status != RunRunning {
@@ -539,5 +539,77 @@ func TestDeleteAppDeletesSchedules(t *testing.T) {
 	}
 	if _, err := s.GetRun(ctx, "r1"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetRun = %v, want ErrNotFound", err)
+	}
+}
+
+// A schedule keeps its target and whether it runs in every copy; an empty
+// target is a fresh copy's, which is also what a schedule from before
+// migration 0031 reads as.
+func TestScheduleTargetRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	appID := scheduleFixture(t, s)
+
+	in := testSchedule(appID, "aaaaaaaaaaaa", "purge")
+	in.Target, in.AllCopies = TargetCopy, true
+	got, err := s.InsertSchedule(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Target != TargetCopy || !got.AllCopies {
+		t.Errorf("stored target %q all copies %v, want copy and true", got.Target, got.AllCopies)
+	}
+
+	edit := in
+	edit.Target, edit.AllCopies = TargetFresh, false
+	upd, err := s.UpdateSchedule(ctx, edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Target != TargetFresh || upd.AllCopies {
+		t.Errorf("after the edit: target %q all copies %v, want fresh and false", upd.Target, upd.AllCopies)
+	}
+
+	empty := testSchedule(appID, "bbbbbbbbbbbb", "plain")
+	empty.Target = ""
+	if got, err = s.InsertSchedule(ctx, empty); err != nil || got.Target != TargetFresh {
+		t.Errorf("an empty target stored as %q, %v; want fresh", got.Target, err)
+	}
+}
+
+// A run keeps the target it ran with and the copies it ran in.
+func TestScheduleRunCopiesRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	appID := scheduleFixture(t, s)
+	sc, err := s.InsertSchedule(ctx, testSchedule(appID, "aaaaaaaaaaaa", "purge"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	in := run(sc.ID, appID, "r00000000001", RunStarting, 1)
+	in.Target, in.Copies = TargetCopy, []string{"1a2b3c4d-0000", "5e6f7a8b-1111"}
+	if err := s.InsertRun(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(ctx, in.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, in) {
+		t.Errorf("round trip changed the run\n got: %+v\nwant: %+v", got, in)
+	}
+	list, err := s.OpenRuns(ctx, sc.ID)
+	if err != nil || len(list) != 1 || list[0].Target != TargetCopy || !reflect.DeepEqual(list[0].Copies, in.Copies) {
+		t.Errorf("OpenRuns = %+v, %v; want the copy run with its copies", list, err)
+	}
+
+	// A run with no copies (fresh, or a skipped slot) reads back with none.
+	plain := run(sc.ID, appID, "r00000000002", RunOK, 2)
+	if err := s.InsertRun(ctx, plain); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.GetRun(ctx, plain.ID); err != nil || got.Copies != nil || got.Target != TargetFresh {
+		t.Errorf("a fresh run = target %q copies %v, %v", got.Target, got.Copies, err)
 	}
 }

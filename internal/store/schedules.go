@@ -27,6 +27,14 @@ const (
 	RunCouldNotStart  = "could_not_start"
 )
 
+// The targets of a schedule (feature 040): where its command runs.
+const (
+	// TargetFresh runs the command in a new copy made for the run (feature 022).
+	TargetFresh = "fresh"
+	// TargetCopy runs it in the service's running copy, by Nomad's alloc exec.
+	TargetCopy = "copy"
+)
+
 // ScheduleRecord is one stored schedule.
 type ScheduleRecord struct {
 	ID, AppID, Service, Name string
@@ -36,6 +44,11 @@ type ScheduleRecord struct {
 	StopAfter     time.Duration
 	MemoryMB      int
 	SkipIfRunning bool
+	// Target is TargetFresh or TargetCopy; the store writes "" as TargetFresh.
+	Target string
+	// AllCopies makes a TargetCopy run go in every healthy copy of the service,
+	// one after the other, instead of the oldest one.
+	AllCopies bool
 	// PausedAt is nil when the schedule is not paused.
 	PausedAt *time.Time
 	// ArmedAt is the clock's base: when the schedule was created, resumed or
@@ -46,7 +59,15 @@ type ScheduleRecord struct {
 }
 
 const scheduleColumns = `id, app_id, service, name, command, cron, stop_after_s, memory_mb, skip_if_running,
-	paused_at, armed_at, created_at, updated_at`
+	paused_at, armed_at, created_at, updated_at, target, all_copies`
+
+// targetOrFresh is the stored target: an empty one is a fresh copy's.
+func targetOrFresh(target string) string {
+	if target == "" {
+		return TargetFresh
+	}
+	return target
+}
 
 // InsertSchedule stores a new schedule. The caller sets the ID; a zero
 // CreatedAt or ArmedAt is the store's clock. A name the app already uses (or
@@ -65,11 +86,11 @@ func (s *Store) InsertSchedule(ctx context.Context, r ScheduleRecord) (ScheduleR
 	r.UpdatedAt = r.CreatedAt
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO schedules (`+scheduleColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING`,
 		r.ID, r.AppID, r.Service, r.Name, string(command), r.Cron, int(r.StopAfter/time.Second), r.MemoryMB,
 		boolInt(r.SkipIfRunning), optionalTime(r.PausedAt), formatTime(r.ArmedAt),
-		formatTime(r.CreatedAt), formatTime(r.UpdatedAt))
+		formatTime(r.CreatedAt), formatTime(r.UpdatedAt), targetOrFresh(r.Target), boolInt(r.AllCopies))
 	if err != nil {
 		return ScheduleRecord{}, fmt.Errorf("insert schedule %q of %q: %w", r.Name, r.AppID, err)
 	}
@@ -82,10 +103,11 @@ func (s *Store) InsertSchedule(ctx context.Context, r ScheduleRecord) (ScheduleR
 }
 
 // UpdateSchedule rewrites what an owner can edit: name, service, command,
-// cron, stop-after, memory and the overlap rule. It leaves the pause and the
-// clock's base alone (SetSchedulePaused and ArmSchedule change those) and
-// sets UpdatedAt. An unknown ID is ErrNotFound; a name another schedule of the
-// app has is ErrAlreadyExists.
+// cron, stop-after, memory, the overlap rule, the target and whether it runs in
+// every copy. It leaves the pause and the clock's base alone
+// (SetSchedulePaused and ArmSchedule change those) and sets UpdatedAt. An
+// unknown ID is ErrNotFound; a name another schedule of the app has is
+// ErrAlreadyExists.
 func (s *Store) UpdateSchedule(ctx context.Context, r ScheduleRecord) (ScheduleRecord, error) {
 	command, err := json.Marshal(r.Command)
 	if err != nil {
@@ -93,10 +115,10 @@ func (s *Store) UpdateSchedule(ctx context.Context, r ScheduleRecord) (ScheduleR
 	}
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE schedules SET service = ?, name = ?, command = ?, cron = ?, stop_after_s = ?, memory_mb = ?,
-			skip_if_running = ?, updated_at = ?
+			skip_if_running = ?, target = ?, all_copies = ?, updated_at = ?
 		WHERE id = ?`,
 		r.Service, r.Name, string(command), r.Cron, int(r.StopAfter/time.Second), r.MemoryMB,
-		boolInt(r.SkipIfRunning), formatTime(s.now()), r.ID)
+		boolInt(r.SkipIfRunning), targetOrFresh(r.Target), boolInt(r.AllCopies), formatTime(s.now()), r.ID)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return ScheduleRecord{}, fmt.Errorf("schedule %q: %w", r.Name, ErrAlreadyExists)
@@ -203,11 +225,12 @@ func scanSchedule(row scanner) (ScheduleRecord, error) {
 		r                       ScheduleRecord
 		command                 string
 		stopAfter, skip         int
+		allCopies               int
 		paused                  sql.NullString
 		armed, created, updated string
 	)
 	if err := row.Scan(&r.ID, &r.AppID, &r.Service, &r.Name, &command, &r.Cron, &stopAfter, &r.MemoryMB, &skip,
-		&paused, &armed, &created, &updated); err != nil {
+		&paused, &armed, &created, &updated, &r.Target, &allCopies); err != nil {
 		return ScheduleRecord{}, err
 	}
 	if err := json.Unmarshal([]byte(command), &r.Command); err != nil {
@@ -215,6 +238,7 @@ func scanSchedule(row scanner) (ScheduleRecord, error) {
 	}
 	r.StopAfter = time.Duration(stopAfter) * time.Second
 	r.SkipIfRunning = skip == 1
+	r.AllCopies = allCopies == 1
 	var err error
 	if r.PausedAt, err = parseOptionalTime(paused); err != nil {
 		return ScheduleRecord{}, fmt.Errorf("schedule %q: %w", r.ID, err)
@@ -239,6 +263,12 @@ func scanSchedule(row scanner) (ScheduleRecord, error) {
 type ScheduleRunRecord struct {
 	ID, ScheduleID, AppID, Service string
 	Trigger                        string // "timer" or "owner"
+	// Target is the target the run ran with, TargetFresh or TargetCopy; the
+	// schedule may have changed since. "" is read as TargetFresh by InsertRun.
+	Target string
+	// Copies are the IDs of the copies a TargetCopy run ran, or is running, in;
+	// nil for a fresh run and for a copy slot that was skipped.
+	Copies []string
 	// SlotAt is the cron instant the run answers; nil for an owner run.
 	SlotAt  *time.Time
 	Command []string
@@ -289,7 +319,7 @@ type RunSettlement struct {
 // runColumns is the column order InsertRun writes.
 const runColumns = `id, schedule_id, app_id, service, trigger, slot_at, command, deployment_id, job_version, status,
 	exit_code, error, stop_reason, stop_requested_at, started_at, task_started_at, finished_at,
-	stdout_cut, stderr_cut, output_kept`
+	stdout_cut, stderr_cut, output_kept, target, copies`
 
 // runSelect is the column order scanRun reads: runColumns and the sizes of
 // the output; GetRun adds the output itself.
@@ -302,15 +332,23 @@ func (s *Store) InsertRun(ctx context.Context, r ScheduleRunRecord) error {
 	if err != nil {
 		return fmt.Errorf("insert run %q: %w", r.ID, err)
 	}
+	var copies any // NULL for a run with no copies
+	if len(r.Copies) > 0 {
+		list, err := json.Marshal(r.Copies)
+		if err != nil {
+			return fmt.Errorf("insert run %q: %w", r.ID, err)
+		}
+		copies = string(list)
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO schedule_runs (`+runColumns+`, stdout, stderr)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING`,
 		r.ID, r.ScheduleID, r.AppID, r.Service, r.Trigger, optionalTime(r.SlotAt), string(command),
 		optionalString(r.DeploymentID), optionalInt(r.JobVersion), r.Status, optionalInt(r.ExitCode),
 		optionalString(r.Error), optionalString(r.StopReason), optionalTime(r.StopRequestedAt),
 		formatTime(r.StartedAt), optionalTime(r.TaskStartedAt), optionalTime(r.FinishedAt),
-		boolInt(r.StdoutCut), boolInt(r.StderrCut), boolInt(r.OutputKept),
+		boolInt(r.StdoutCut), boolInt(r.StderrCut), boolInt(r.OutputKept), targetOrFresh(r.Target), copies,
 		optionalOutput(r.OutputKept, r.Stdout), optionalOutput(r.OutputKept, r.Stderr))
 	if err != nil {
 		return fmt.Errorf("insert run %q of schedule %q: %w", r.ID, r.ScheduleID, err)
@@ -519,7 +557,7 @@ func (s *Store) queryRuns(ctx context.Context, what, query string, args ...any) 
 func scanRun(row scanner, withOutput bool) (ScheduleRunRecord, error) {
 	var (
 		r                           ScheduleRunRecord
-		slot, command               sql.NullString
+		slot, command, copies       sql.NullString
 		deployment, errText, reason sql.NullString
 		stopAt, taskStart, finished sql.NullString
 		started                     string
@@ -529,7 +567,7 @@ func scanRun(row scanner, withOutput bool) (ScheduleRunRecord, error) {
 	)
 	dest := []any{&r.ID, &r.ScheduleID, &r.AppID, &r.Service, &r.Trigger, &slot, &command, &deployment, &version,
 		&r.Status, &exit, &errText, &reason, &stopAt, &started, &taskStart, &finished,
-		&stdoutCut, &stderrCut, &kept, &r.StdoutBytes, &r.StderrBytes}
+		&stdoutCut, &stderrCut, &kept, &r.Target, &copies, &r.StdoutBytes, &r.StderrBytes}
 	if withOutput {
 		dest = append(dest, &stdout, &stderr)
 	}
@@ -538,6 +576,11 @@ func scanRun(row scanner, withOutput bool) (ScheduleRunRecord, error) {
 	}
 	if err := json.Unmarshal([]byte(command.String), &r.Command); err != nil {
 		return ScheduleRunRecord{}, fmt.Errorf("run %q: bad stored command: %w", r.ID, err)
+	}
+	if copies.Valid {
+		if err := json.Unmarshal([]byte(copies.String), &r.Copies); err != nil {
+			return ScheduleRunRecord{}, fmt.Errorf("run %q: bad stored copies: %w", r.ID, err)
+		}
 	}
 	var err error
 	if r.SlotAt, err = parseOptionalTime(slot); err != nil {

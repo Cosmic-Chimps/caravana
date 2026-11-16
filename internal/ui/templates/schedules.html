@@ -16,7 +16,7 @@
 <header class="cv-sthead">
   <div class="cv-sthead-text">
     <h1 class="cv-headline">Schedules</h1>
-    <p class="cv-lede" data-local-lede>Commands that run on a timer in a fresh copy of an app, then stop. Times are UTC.</p>
+    <p class="cv-lede" data-local-lede>Commands that run on a timer, in a fresh copy of an app that then stops or in the copy that is running. Times are UTC.</p>
   </div>
   <a href="{{.NewHref}}" class="cv-btn cv-btn-primary cv-btn-sm">{{icon "plus" 14}}New schedule</a>
 </header>
@@ -55,7 +55,7 @@
       <span class="cv-smark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
       <span class="cv-swhat">
         <span class="cv-sname-line"><span class="cv-sname">{{.Name}}</span>{{with .Pill}}<span class="cv-pill cv-pill-{{.Kind}} cv-pill-sm"><span class="cv-mark cv-mark-{{.Kind}}" aria-hidden="true"></span>{{.Word}}</span>{{end}}</span>
-        <span class="cv-swhere" title="{{.Command}}">{{.App}}{{with .Service}} · {{.}}{{end}} · {{.Command}}</span>
+        <span class="cv-swhere" title="{{.Command}}">{{.App}}{{with .Service}} · {{.}}{{end}}{{with .Where}} · {{.}}{{end}} · {{.Command}}</span>
       </span>
       <span class="cv-sruns" data-label="Runs">
         <span class="cv-swords{{if .Paused}} cv-swords-paused{{end}}">{{template "sentence" .Words}}</span>
@@ -148,7 +148,7 @@
   <div class="cv-sthead-text">
     <h1 class="cv-headline"><span class="cv-inline-mono">{{.Name}}</span> · {{template "clock" .Title}}</h1>
     <p class="cv-lede">{{template "sentence" .Sentence}}</p>
-    <p class="cv-runmeta">started {{template "clock" .Started}}{{with .Took}} · took {{.}}{{end}} · <span class="text-fg-2">{{.Service}}</span> of <span class="text-fg-2">{{.App}}</span>{{with .Version}} · {{.}}{{end}}</p>
+    <p class="cv-runmeta">started {{template "clock" .Started}}{{with .Took}} · took {{.}}{{end}} · <span class="text-fg-2">{{.Service}}</span> of <span class="text-fg-2">{{.App}}</span>{{with .Version}} · {{.}}{{end}}{{if .InCopy}}{{with .Where}} · in <span class="text-fg-2">{{.}}</span>{{end}}{{with .Exit}} · {{.}}{{end}}{{end}}</p>
   </div>
 </header>
 {{if .Running}}<p class="cv-note">Still running: reload for more.</p>{{end}}
@@ -171,7 +171,7 @@
 <header class="cv-sthead">
   <div class="cv-sthead-text">
     <h1 class="cv-headline">{{template "sentence" .Title}}</h1>
-    <p class="cv-lede">Runs a command in a fresh copy of an app, then stops it.</p>
+    <p class="cv-lede">Runs a command on a timer: in a fresh copy of an app, which then stops, or in the copy that is running now.</p>
   </div>
 </header>
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -215,8 +215,24 @@
       {{template "field-error" .Service}}
       {{if .Pairs}}<p class="cv-hint">Pick the app above and its service here, or only a service: <span class="cv-inline-mono">app › service</span>.</p>{{end}}
       {{end}}
-      {{if .VolumesHint}}<p class="cv-hint">Every service of this app mounts a volume, and a schedule needs a service without volumes.</p>{{end}}
+      {{if .VolumesHint}}<p class="cv-hint">Every service of this app mounts a volume, so a schedule there can run only in the running copy.</p>{{end}}
       {{end}}
+    </div>
+  </div>
+
+  <div class="cv-setrow">
+    <div class="cv-setrow-text">
+      <span class="cv-setrow-label" id="schedule-target-label">Run in</span>
+      <p class="cv-setrow-hint" id="schedule-target-hint">A new copy is made for each run, from the live version, and stops after it. The running copy is the one serving now: the way to work on a service's volumes. Its output isn't kept.</p>
+    </div>
+    <div class="cv-setrow-ctl">
+      <fieldset class="cv-radios" aria-labelledby="schedule-target-label" aria-describedby="schedule-target-hint{{if .Target.Error}} schedule-target-error{{end}}"{{if .Target.Error}} aria-invalid="true"{{end}}>
+        <label class="cv-radio"><input type="radio" name="target" value="fresh"{{if ne .Target.Value "copy"}} checked{{end}}><span>A new copy</span></label>
+        <label class="cv-radio"><input type="radio" name="target" value="copy"{{if eq .Target.Value "copy"}} checked{{end}}><span>The running copy</span></label>
+      </fieldset>
+      <label class="cv-check"><input type="checkbox" name="allCopies" value="1"{{if .AllCopies}} checked{{end}}><span>In every copy</span></label>
+      <p class="cv-hint">With the running copy: runs in every healthy copy of the service, one after the other, instead of the oldest one.</p>
+      {{template "field-error" .Target}}
     </div>
   </div>
 
@@ -266,14 +282,17 @@
       <div class="cv-slimits">
         <label class="cv-fld" for="schedule-stop">
           <span class="cv-label">Stop after</span>
-          <select class="cv-field cv-select" id="schedule-stop" name="stopAfter">{{range .StopAfter}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+          <select class="cv-field cv-select" id="schedule-stop" name="stopAfter" aria-describedby="schedule-limits-hint{{if .StopField.Error}} schedule-stop-error{{end}}"{{if .StopField.Error}} aria-invalid="true"{{end}}{{if .StopField.Alert}} autofocus{{end}}>{{range .StopAfter}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
         </label>
         <label class="cv-fld" for="schedule-memory">
           <span class="cv-label">Memory</span>
           <select class="cv-field cv-select" id="schedule-memory" name="memory">{{range .Memory}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>
         </label>
       </div>
+      {{template "field-error" .StopField}}
+      <p class="cv-hint" id="schedule-limits-hint">Usual is 30 min for a new copy and 1 min for the running copy. 1, 2 and 5 min are for the running copy, 5 min to 2 h for a new copy. Memory is for a new copy only: the running copy has its own.</p>
       <label class="cv-check"><input type="checkbox" name="skip" value="1"{{if .Skip}} checked{{end}}><span>Skip a run if the last one is still going</span></label>
+      <p class="cv-hint">A run in the running copy always skips a slot while the last one is going.</p>
     </div>
   </div>
 

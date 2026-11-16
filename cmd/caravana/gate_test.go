@@ -66,6 +66,10 @@ type gateTarget struct {
 	// numbers (service.SetTraefikMetricsURL); only the lab sets it. The
 	// console-monitoring step points it at a closed port and back.
 	SetTraefikMetricsURL func(url string)
+	// SetScheduleLimit changes the lab's shortcut for every schedule run's stop-after
+	// (service.SetScheduleLimitForTests; 0 gives each schedule its own limit); only the lab sets
+	// it. The schedule-in-copy step needs a run longer than the shortcut for a while.
+	SetScheduleLimit func(d time.Duration)
 	// HostRoot is the directory the in-process Caravana reads as the host's root (apt's history, the
 	// reboot marker; CARAVANA_HOST_ROOT), which the console-ops steps write fixtures into; only the
 	// lab sets it. Empty means Caravana reads the machine it runs on.
@@ -155,6 +159,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"projects-promote", false, g.projectsPromoteStep},
 		{"app-actions", false, g.appActionsStep},
 		{"schedules", false, g.schedulesStep},
+		{"schedule-in-copy", false, g.scheduleInCopyStep},
 		{"domains", false, g.domainsStep},
 		{"logs", false, g.logsStep},
 		{"monitoring", false, g.monitoringStep},

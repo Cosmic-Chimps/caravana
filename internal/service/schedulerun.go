@@ -84,8 +84,12 @@ func overlapReason(sched store.ScheduleRecord, open int) string {
 // and returned without an error; if Nomad (or the secret store) couldn't be
 // reached it is settled could_not_start too, and the error is returned.
 // Without a live version it is ErrNoLiveDeployment and nothing is written:
-// callers check runBlocker first.
+// callers check runBlocker first. A schedule that runs in the running copy
+// goes to startCopyRun, which has no job to register.
 func (s *Service) startRun(ctx context.Context, sched store.ScheduleRecord, trigger string, slot *time.Time) (ScheduleRun, error) {
+	if sched.Target == store.TargetCopy {
+		return s.startCopyRun(ctx, sched, trigger, slot)
+	}
 	rec, err := s.store.GetApp(ctx, sched.AppID)
 	if err != nil {
 		return ScheduleRun{}, err
@@ -186,20 +190,26 @@ func (s *Service) claimRun(ctx context.Context, sched store.ScheduleRecord, run 
 			}
 			return false, fmt.Errorf("schedule %q: %w", sched.Name, ErrRunGoing)
 		}
-		run.Status, run.Error, run.FinishedAt = store.RunSkipped, reason, new(run.StartedAt)
-		run.DeploymentID, run.JobVersion = "", nil
-		if err := s.store.InsertRun(ctx, *run); err != nil {
-			return false, err
-		}
-		s.schedulesChanged(sched.AppID)
-		s.publish(Change{What: ChangeAttention}) // three skips in a row are an item
-		return true, nil
+		return true, s.skipSlot(ctx, sched, run, reason)
 	}
 	if err := s.store.InsertRun(ctx, *run); err != nil {
 		return false, err
 	}
 	s.starting[run.ID] = true
 	return false, nil
+}
+
+// skipSlot writes run as a skipped slot with its reason: no job, no copies, no
+// deployment. The caller holds runMu when it must not race another start.
+func (s *Service) skipSlot(ctx context.Context, sched store.ScheduleRecord, run *store.ScheduleRunRecord, reason string) error {
+	run.Status, run.Error, run.FinishedAt = store.RunSkipped, reason, new(run.StartedAt)
+	run.DeploymentID, run.JobVersion, run.Copies = "", nil, nil
+	if err := s.store.InsertRun(ctx, *run); err != nil {
+		return err
+	}
+	s.schedulesChanged(sched.AppID)
+	s.publish(Change{What: ChangeAttention}) // three skips in a row are an item
+	return nil
 }
 
 // couldNotStart settles a run that never got going as could_not_start with
@@ -220,7 +230,7 @@ func (s *Service) couldNotStart(ctx context.Context, run store.ScheduleRunRecord
 // settles the run when this couldn't.
 func (s *Service) settleRun(ctx context.Context, run store.ScheduleRunRecord, st store.RunSettlement) {
 	if err := s.store.SettleRun(ctx, run.ID, st); err != nil {
-		if !errors.Is(err, store.ErrInvalidTransition) {
+		if !errors.Is(err, store.ErrInvalidTransition) && !errors.Is(err, store.ErrNotFound) {
 			s.log.Error("record the end of a schedule's run", "run", run.ID, "status", st.Status, "error", err)
 		}
 		return
@@ -271,9 +281,13 @@ func (s *Service) StopScheduleRun(ctx context.Context, scheduleID, runID string)
 		}
 		return ScheduleRun{}, err
 	}
-	// A run whose job isn't registered yet (or is gone) has nothing to stop
-	// here: the watcher sees the intent and settles it.
-	if err := s.deployer.StopScheduleRun(ctx, runJobID(run)); err != nil && !errors.Is(err, deploy.ErrRunGone) {
+	if run.Target == store.TargetCopy {
+		// A run in a running copy has no job: its exec is cancelled, and its
+		// goroutine settles it by the reason written above.
+		s.cancelCopyRun(runID)
+	} else if err := s.deployer.StopScheduleRun(ctx, runJobID(run)); err != nil && !errors.Is(err, deploy.ErrRunGone) {
+		// A run whose job isn't registered yet (or is gone) has nothing to stop
+		// here: the watcher sees the intent and settles it.
 		return ScheduleRun{}, err
 	}
 	s.schedulesChanged(run.AppID)
@@ -299,6 +313,10 @@ func (s *Service) stopAppRuns(ctx context.Context, appID string) error {
 		}
 		if err := s.store.SetRunStopIntent(ctx, r.ID, stopAppStopped, now); err != nil && !errors.Is(err, store.ErrInvalidTransition) {
 			return err
+		}
+		if r.Target == store.TargetCopy {
+			s.cancelCopyRun(r.ID) // no job: the exec is cancelled
+			continue
 		}
 		// A job Nomad doesn't have is settled by the watcher; one it couldn't
 		// stop now is stopped again by the watcher, which sees the intent.

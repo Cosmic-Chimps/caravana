@@ -204,7 +204,7 @@ func TestSchedulesPage(t *testing.T) {
 	}
 	got := text(body)
 	for _, want := range []string{
-		"Schedules", "Commands that run on a timer in a fresh copy of an app, then stop. Times are UTC.", "New schedule",
+		"Schedules", "Commands that run on a timer, in a fresh copy of an app that then stops or in the copy that is running. Times are UTC.", "New schedule",
 		"5 schedules · 1 failing · next run", "Schedule Runs Next Last run Last 14 runs",
 		"Last 14 runs read oldest to newest.",
 	} {
@@ -726,7 +726,7 @@ func TestLocalTimeScript(t *testing.T) {
 	if !strings.Contains(string(versions), "localtime.js ours - - "+hex.EncodeToString(sum[:])) {
 		t.Error("tools/ui-vendor.versions doesn't list localtime.js with its sum")
 	}
-	if !strings.Contains(body, `<p class="cv-lede" data-local-lede>Commands that run on a timer in a fresh copy of an app, then stop. Times are UTC.</p>`) {
+	if !strings.Contains(body, `<p class="cv-lede" data-local-lede>Commands that run on a timer, in a fresh copy of an app that then stops or in the copy that is running. Times are UTC.</p>`) {
 		t.Error("the lede isn't marked for the script, or doesn't say UTC without it")
 	}
 }

@@ -32,17 +32,20 @@ var schedulePresets = []struct{ Key, Words string }{
 	{"monthly", "first of the month"},
 }
 
-// The Limits' choices (contracts/api.md).
+// The Limits' choices (contracts/api.md). Stop after is one select with every
+// choice: 1, 2 and 5 min are for the running copy and 5 min to 2 h for a new
+// one (a wrong choice for the target is a field error at the select). "Usual"
+// (0) is first and what a new form selects: the service gives each target its
+// own default (30 min for a new copy, 1 min for the running copy).
 var (
 	stopAfterChoices = []struct {
 		Seconds int
 		Label   string
-	}{{300, "5 min"}, {1800, "30 min"}, {3600, "1 h"}, {7200, "2 h"}}
+	}{{0, "Usual (30 min; 1 min in the running copy)"}, {60, "1 min"}, {120, "2 min"}, {300, "5 min"}, {1800, "30 min"}, {3600, "1 h"}, {7200, "2 h"}}
 	memoryChoices = []int{256, 512, 1024, 2048}
 )
 
 const (
-	defaultStopAfter = 1800
 	// maxScheduleName is the longest name a schedule may have.
 	maxScheduleName = 31
 	// pairSep joins an app and a service in the service select's values while
@@ -55,6 +58,10 @@ type scheduleInput struct {
 	Name, App, Service, Command, When string
 	StopAfter, Memory                 int
 	Skip                              bool
+	// Target is "fresh" (a new copy) or "copy" (the running copy); AllCopies
+	// runs a copy target in every healthy copy (feature 040).
+	Target    string
+	AllCopies bool
 }
 
 // schedForm is the form as the page draws it.
@@ -65,7 +72,11 @@ type schedForm struct {
 	// Name, App, Service, Command and When are the fields with what was typed
 	// and their errors.
 	Name, App, Service, Command, When formField
-	Apps                              []formOption
+	// Target holds "fresh" or "copy" and the error of the Run in choice (and of
+	// In every copy); StopField is the error of the Stop after select.
+	Target, StopField formField
+	AllCopies         bool
+	Apps              []formOption
 	// Fixed is "web of clock" in mono, drawn instead of the app and service
 	// selects when the schedule exists (Edit): it can't move to another app.
 	// Hidden inputs carry the two values; empty for a new schedule.
@@ -77,7 +88,8 @@ type schedForm struct {
 	Services     []formOption
 	ServiceShown bool
 	Pairs        bool
-	// VolumesHint says every service of the picked app mounts a volume.
+	// VolumesHint says every service of the picked app mounts a volume, which
+	// only the running copy can work on.
 	VolumesHint bool
 	Presets     []presetLink
 	Preview     *previewBox
@@ -121,7 +133,17 @@ func readScheduleInput(v url.Values) scheduleInput {
 		When: strings.TrimSpace(v.Get("when")), Skip: v.Get("skip") != "" || v.Get("skipChoice") == ""}
 	in.StopAfter, _ = strconv.Atoi(v.Get("stopAfter"))
 	in.Memory, _ = strconv.Atoi(v.Get("memory"))
+	in.Target, in.AllCopies = scheduleTargetOf(v.Get("target")), v.Get("allCopies") != ""
 	return in
+}
+
+// scheduleTargetOf is the target a form value names: "copy" or, for anything
+// else (a form that has no such field), "fresh".
+func scheduleTargetOf(v string) string {
+	if v == service.TargetCopy {
+		return service.TargetCopy
+	}
+	return service.TargetFresh
 }
 
 // presetWords is the words of the preset key names, or "".
@@ -227,7 +249,9 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 	f := schedForm{Action: "/schedules", Title: plainS("New schedule"), Submit: "Create schedule", Verb: "create", Skip: in.Skip,
 		Name: formField{ID: "schedule-name", Value: in.Name}, App: formField{ID: "schedule-app", Value: in.App},
 		Service: formField{ID: "schedule-service", Value: in.Service}, Command: formField{ID: "schedule-command", Value: in.Command},
-		When: formField{ID: "schedule-when", Value: in.When}}
+		When:   formField{ID: "schedule-when", Value: in.When},
+		Target: formField{ID: "schedule-target", Value: scheduleTargetOf(in.Target)}, StopField: formField{ID: "schedule-stop"},
+		AllCopies: in.AllCopies}
 
 	// One app with services to pick from: it is the app.
 	if in.App == "" && len(apps) == 1 {
@@ -258,6 +282,9 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 		if svcName == "" && usable >= 0 {
 			svcName = svcs[usable].Name
 		}
+		if svcName == "" {
+			svcName = svcs[0].Name // every service mounts a volume: the running copy can work on any
+		}
 		if len(svcs) > 1 {
 			f.ServiceShown = true
 			for _, svc := range svcs {
@@ -265,7 +292,9 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 				if len(svc.Volumes) > 0 {
 					label += " (mounts a volume)"
 				}
-				f.Services = append(f.Services, formOption{Value: svc.Name, Label: label, Selected: svc.Name == svcName, Disabled: len(svc.Volumes) > 0})
+				// A service with a volume is offered: the running copy can run on it,
+				// and a new copy is refused at this select.
+				f.Services = append(f.Services, formOption{Value: svc.Name, Label: label, Selected: svc.Name == svcName})
 			}
 		}
 		if i := slices.IndexFunc(svcs, func(svc app.Service) bool { return svc.Name == svcName }); i >= 0 {
@@ -278,17 +307,13 @@ func (s *server) buildScheduleForm(ctx context.Context, in scheduleInput, picked
 			for _, svc := range a.rec.App.Services {
 				v := a.rec.App.ID + pairSep + svc.Name
 				f.Services = append(f.Services, formOption{Value: v, Label: pl.appLabel(a.rec) + " › " + svc.Name, Selected: in.Service == v,
-					Disabled: a.stopped || len(svc.Volumes) > 0})
+					Disabled: a.stopped})
 			}
 		}
 	}
 
-	stop := in.StopAfter
-	if stop == 0 {
-		stop = defaultStopAfter
-	}
 	for _, c := range stopAfterChoices {
-		f.StopAfter = append(f.StopAfter, formOption{Value: strconv.Itoa(c.Seconds), Label: c.Label, Selected: c.Seconds == stop})
+		f.StopAfter = append(f.StopAfter, formOption{Value: strconv.Itoa(c.Seconds), Label: c.Label, Selected: c.Seconds == in.StopAfter})
 	}
 	mem := in.Memory
 	if mem == 0 {
@@ -360,7 +385,7 @@ func (s *server) showEditSchedule(w http.ResponseWriter, r *http.Request, sessio
 		return
 	}
 	in := scheduleInput{Name: sc.Name, App: sc.App, Service: sc.Service, Command: commandLine(sc.Command), When: sc.Cron,
-		StopAfter: sc.StopAfterSeconds, Memory: sc.MemoryMB, Skip: sc.SkipIfRunning}
+		StopAfter: sc.StopAfterSeconds, Memory: sc.MemoryMB, Skip: sc.SkipIfRunning, Target: sc.Target, AllCopies: sc.AllCopies}
 	if words := strings.TrimSuffix(sc.Words, " UTC"); !strings.HasPrefix(words, "On `") {
 		// The words read back as the same line: show those.
 		if cron, err := cronwords.Parse(words); err == nil && cron == sc.Cron {
@@ -538,7 +563,12 @@ func (s *server) submitSchedule(w http.ResponseWriter, r *http.Request, f schedF
 	}
 
 	ns := service.NewSchedule{App: appID, Service: svcName, Name: in.Name, Command: command, Cron: cron,
-		StopAfterSeconds: in.StopAfter, MemoryMB: in.Memory, SkipIfRunning: new(in.Skip)}
+		StopAfterSeconds: in.StopAfter, MemoryMB: in.Memory, SkipIfRunning: new(in.Skip), Target: in.Target, AllCopies: in.AllCopies}
+	if in.Target == service.TargetCopy {
+		// The running copy has its own memory and always skips a slot while its
+		// run goes; the form says so beside both, and doesn't send them.
+		ns.MemoryMB, ns.SkipIfRunning = 0, nil
+	}
 	var (
 		saved service.Schedule
 		err   error
@@ -567,7 +597,8 @@ func (s *server) submitSchedule(w http.ResponseWriter, r *http.Request, f schedF
 		s.scheduleNotFound(w, r)
 		return
 	case errors.As(err, &fe):
-		field := map[string]*formField{"app": &f.App, "name": &f.Name, "command": &f.Command, "cron": &f.When, "service": svcField}[fe.Field]
+		field := map[string]*formField{"app": &f.App, "name": &f.Name, "command": &f.Command, "cron": &f.When, "service": svcField,
+			"target": &f.Target, "allCopies": &f.Target, "stopAfterSeconds": &f.StopField}[fe.Field]
 		if field == nil {
 			f.Notice = plainS(upperFirst(fe.Message) + ".")
 		} else {

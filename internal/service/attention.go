@@ -699,7 +699,9 @@ func scheduleItems(apps map[string]store.AppRecord, facts scheduleFacts) []Atten
 	}
 	for _, sc := range facts.Schedules {
 		at, skipping := facts.Skipping[sc.ID]
-		if _, known := apps[sc.AppID]; !skipping || !known {
+		rec, known := apps[sc.AppID]
+		// The owner stopped a stopped app: its skipped slots are no problem.
+		if !skipping || !known || rec.StoppedAt != nil {
 			continue
 		}
 		items = append(items, AttentionItem{
@@ -803,7 +805,12 @@ func expiringSentence(now time.Time, host string, notAfter *time.Time) string {
 // stopped at its limit or that couldn't start has none worth telling, and the
 // code of a run stopped outside Caravana is the signal's, not the command's.
 func failedExitCode(r store.ScheduleRunRecord) *int {
-	if r.Status != store.RunFailed || r.ExitCode == nil || r.Error != fmt.Sprintf("exit %d", *r.ExitCode) {
+	if r.Status != store.RunFailed || r.ExitCode == nil {
+		return nil
+	}
+	// "exit 3", or "exit 3 in copy 1a2b3c4d" for a run in several copies.
+	code := fmt.Sprintf("exit %d", *r.ExitCode)
+	if r.Error != code && !strings.HasPrefix(r.Error, code+" in copy ") {
 		return nil
 	}
 	return r.ExitCode

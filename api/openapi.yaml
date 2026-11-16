@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.42.0
+  version: 0.43.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -3549,8 +3549,9 @@ paths:
         follow it with `getScheduleRun`. 409 `run_going` while a run is going and the schedule
         skips overlapping runs (`skipIfRunning`), or while 3 are going; `app_stopped` while the
         app is stopped; `no_live_deployment` when the app has no healthy version to run, or a
-        deploy of it is going. A run Nomad refuses is answered 202 too, already
-        `could_not_start`, with the reason in `error`.
+        deploy of it is going; `no_running_copy` when a `copy` schedule's service has no
+        healthy copy. A run Nomad refuses is answered 202 too, already `could_not_start`, with
+        the reason in `error`.
       tags: [schedules]
       responses:
         "202":
@@ -3729,7 +3730,8 @@ paths:
         (`[secret <NAME>]`). This is the only answer that holds a run's output: no schedule,
         run, needs-you item, notification or log line does, and it is sent with
         `Cache-Control: no-store`. 404 `output_not_kept` when there is none to give: the run
-        never ran, its output couldn't be read, or it is a backup's run.
+        never ran, its output couldn't be read, or it is a backup's run, or a run in the
+        running copy (`target` `copy`), whose output is never kept.
       tags: [schedules]
       parameters:
         - name: stream
@@ -6825,8 +6827,8 @@ components:
         service:
           type: string
           description: |
-            The service whose image, env and secrets a run uses; the app's first when absent. It
-            may not mount a volume.
+            The service whose image, env and secrets a run uses; the app's first when absent. With
+            `target` `fresh` it may not mount a volume; with `copy` it may.
         name:
           type: string
           maxLength: 31
@@ -6849,25 +6851,49 @@ components:
           examples: ["0 3 * * *"]
         stopAfterSeconds:
           type: integer
-          enum: [300, 1800, 3600, 7200]
-          default: 1800
-          description: A run still going after this long is stopped (`stopped_at_limit`).
+          enum: [60, 120, 300, 1800, 3600, 7200]
+          description: |
+            A run still going after this long is stopped (`stopped_at_limit`). For `target`
+            `fresh`: 300, 1800, 3600 or 7200, and 1800 when absent. For `copy`: 60, 120 or 300,
+            and 60 when absent. Another value for the target is `invalid_field` on this field.
         memoryMB:
           type: integer
-          enum: [256, 512, 1024, 2048]
-          description: The run's memory; when absent, the service's reservation rounded up to one of these.
+          enum: [0, 256, 512, 1024, 2048]
+          description: |
+            The run's memory for `target` `fresh`; when absent or 0, the service's reservation
+            rounded up to one of these. A `copy` run has the copy's own memory: 0 or absent, any
+            other value is `invalid_field` on this field.
         skipIfRunning:
           type: boolean
           default: true
           description: |
             True: a slot that comes while a run is going is skipped. False: runs may overlap, at
-            most 3 at once.
+            most 3 at once. A `copy` schedule always skips: false is `invalid_field` on this
+            field.
+        target:
+          type: string
+          enum: [fresh, copy]
+          default: fresh
+          description: |
+            Where the command runs. `fresh`: in a new copy made for each run, from the app's live
+            version. `copy`: in the service's running copy, with the same alloc exec that
+            `runCommand` uses (the program and its arguments, no shell unless the command is
+            `sh -c ...`, no terminal, no input). The output of a `copy` run is read and dropped:
+            it is never kept. A `copy` schedule may use a service with volumes.
+        allCopies:
+          type: boolean
+          default: false
+          description: |
+            `copy` only: run the command in every healthy copy of the service, one after the
+            other, oldest first, as one run. False: in the oldest healthy copy. True with `fresh`
+            is `invalid_field` on this field.
 
     Schedule:
       type: object
       additionalProperties: false
-      required: [id, app, service, name, command, cron, stopAfterSeconds, memoryMB, skipIfRunning, words,
-        paused, pausedAt, builtin, nextRunAt, lastRun, runningNow, usualSeconds, project, environment, appName]
+      required: [id, app, service, name, command, cron, stopAfterSeconds, memoryMB, skipIfRunning, target,
+        allCopies, words, paused, pausedAt, builtin, nextRunAt, lastRun, runningNow, usualSeconds, project,
+        environment, appName]
       description: |
         A schedule, with what is derived from its clock and its runs on every read. A built-in
         schedule (`builtin: true`) is a service's backup policy: its `command` is empty and its
@@ -6886,9 +6912,20 @@ components:
           type: array
           items: {type: string}
         cron: {type: string}
-        stopAfterSeconds: {type: integer, description: "300, 1800, 3600 or 7200; 0 for a built-in schedule."}
-        memoryMB: {type: integer, description: "256, 512, 1024 or 2048; 0 for a built-in schedule."}
+        stopAfterSeconds:
+          type: integer
+          description: "300, 1800, 3600 or 7200 (60, 120 or 300 for a `copy` schedule); 0 for a built-in schedule."
+        memoryMB:
+          type: integer
+          description: "256, 512, 1024 or 2048; 0 for a built-in schedule and for a `copy` schedule, which has the copy's own memory."
         skipIfRunning: {type: boolean}
+        target:
+          type: string
+          enum: [fresh, copy]
+          description: "Where the command runs, see `NewSchedule`. A built-in schedule is `fresh`."
+        allCopies:
+          type: boolean
+          description: "A `copy` schedule runs in every healthy copy of the service."
         words:
           type: string
           description: The cron line in words.
@@ -7144,10 +7181,11 @@ components:
       additionalProperties: false
       required: [id, scheduleId, trigger, slotAt, status, exitCode, error, startedAt, taskStartedAt, finishedAt,
         durationSeconds, command, deploymentId, jobVersion, outputKept, stdoutBytes, stderrBytes, stdoutCut,
-        stderrCut]
+        stderrCut, target, copies]
       description: |
         One run of a schedule, or one slot that was skipped. Never holds the output, which only
-        `getScheduleRunOutput` returns.
+        `getScheduleRunOutput` returns, and only for a run in a new copy: the output of a `copy`
+        run is never kept.
       properties:
         id: {type: string}
         scheduleId: {type: string}
@@ -7169,7 +7207,8 @@ components:
             0), `failed` (another exit code, out of memory, stopped outside Caravana, lost),
             `stopped_at_limit`, `stopped` (by the owner, by stopping the app, or by removing the
             schedule) or `could_not_start`. `skipped` is a slot that didn't run because a run
-            was going.
+            was going, or, for a `copy` schedule, because the app was stopped (`error` says
+            which).
         exitCode: {type: [integer, "null"]}
         error:
           type: string
@@ -7197,6 +7236,21 @@ components:
           type: boolean
           description: The start of stdout was dropped to keep its last 64 KiB.
         stderrCut: {type: boolean}
+        target:
+          type: string
+          enum: [fresh, copy]
+          description: |
+            The target the run had; the schedule may have been edited since. A `copy` run has no
+            Nomad job, `deploymentId` or `jobVersion`.
+        copies:
+          type: array
+          items: {type: string}
+          description: |
+            The IDs of the copies a `copy` run goes (or went) in, oldest first: one, or every
+            healthy copy with `allCopies`. A later copy may not have been reached when the run
+            ended early. `[]` for a `fresh` run and for a skipped slot. With `allCopies`, a failed
+            run's `error` names the first copy that failed (`exit 3 in copy 1a2b3c4d`); the
+            others still ran.
 
     ScheduleRunList:
       type: object
@@ -7489,8 +7543,10 @@ components:
           enum: [stop, start, restart, run, terminal]
         trigger:
           type: string
-          enum: [manual, console]
-          description: How it was asked for. `manual` is the API; `console` is the web console.
+          enum: [manual, console, schedule]
+          description: |
+            How it was asked for. `manual` is the API; `console` is the web console; `schedule`
+            is a schedule's run in the running copy (`run` only).
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -10130,7 +10186,7 @@ components:
         `schedule_not_found`: no such schedule (for a built-in one, the service has no backup
         policy). `run_not_found`: the schedule has no such run. `output_not_kept`
         (`getScheduleRunOutput`): the run never ran, its output couldn't be read, or it is a
-        backup's run.
+        backup's run or a run in the running copy.
       content:
         application/json:
           schema:
@@ -10149,7 +10205,8 @@ components:
         runs, or 3 are going. `run_not_running` (`stopScheduleRun`): the run has ended.
         `app_stopped` (`runSchedule`): the app is stopped; start it first.
         `no_live_deployment` (`runSchedule`): the app has no healthy version, or a deploy of it
-        is going. Nothing was changed.
+        is going. `no_running_copy` (`runSchedule`, `copy` schedule): the service has no healthy
+        copy. Nothing was changed.
       content:
         application/json:
           schema:
@@ -10158,8 +10215,10 @@ components:
       description: |
         `invalid_field`, `field` naming it: `app` (not defined yet, or another app than the
         schedule's), `name`, `command`, `cron` (not five fields, fires more than once a minute,
-        never fires), `service` (unknown, or it mounts a volume), `stopAfterSeconds`,
-        `memoryMB`, `limit` or `stream`. Nothing was changed.
+        never fires), `service` (unknown, or it mounts a volume while `target` is `fresh`),
+        `target`, `allCopies` (with `fresh`), `stopAfterSeconds` (not a choice of the target),
+        `memoryMB` (any value but 0 with `copy`), `skipIfRunning` (false with `copy`), `limit`
+        or `stream`. Nothing was changed.
       content:
         application/json:
           schema:

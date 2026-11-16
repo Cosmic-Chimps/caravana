@@ -98,14 +98,17 @@ type schedRow struct {
 	// App, Service and Command make the line under the name: "booking-api ·
 	// web · node scripts/sync-rates.js". Service is set only when the app has several.
 	App, Service, Command string
-	Words                 sentence // "Every 15 minutes", or "On `5 4 * * 1`"
-	Cron                  string
-	Paused                bool
-	Next                  *clockTime
-	NextText              string // "paused", "—": what stands where there is no next run
-	Last                  lastRunView
-	Strip                 []stripMark
-	Detail                schedDetail
+	// Where says a command runs in the running copy ("in the running copy",
+	// "in every running copy"); "" for one in a new copy, which is the usual.
+	Where    string
+	Words    sentence // "Every 15 minutes", or "On `5 4 * * 1`"
+	Cron     string
+	Paused   bool
+	Next     *clockTime
+	NextText string // "paused", "—": what stands where there is no next run
+	Last     lastRunView
+	Strip    []stripMark
+	Detail   schedDetail
 }
 
 // lastRunView is the Last run column: a run going ("started 14:00:02 UTC" over
@@ -189,6 +192,17 @@ func runMarkOf(status string) string {
 // needs-you list call a failed last run.
 func runFailed(status string) bool {
 	return status == store.RunFailed || status == store.RunStoppedAtLimit || status == store.RunCouldNotStart
+}
+
+// whereText says where a copy schedule's command runs; "" for a new copy's.
+func whereText(sc service.Schedule) string {
+	switch {
+	case sc.Target != service.TargetCopy:
+		return ""
+	case sc.AllCopies:
+		return "in every running copy"
+	}
+	return "in the running copy"
 }
 
 // runOpen says a run is going.
@@ -344,7 +358,12 @@ func runSentence(now time.Time, sc service.Schedule, r service.ScheduleRun) sent
 	case store.RunFailed:
 		switch {
 		case r.ExitCode != nil:
-			return plainS(fmt.Sprintf("Exited with code %d.", *r.ExitCode))
+			text := fmt.Sprintf("Exited with code %d", *r.ExitCode)
+			// A run in every copy names the first copy that failed.
+			if _, copyID, ok := strings.Cut(r.Error, " in copy "); ok {
+				text += " in copy " + copyID
+			}
+			return plainS(text + ".")
 		case sc.Builtin:
 			if c := causeOf(r.Error); c != "" {
 				return plainS("The backup failed. " + c)
@@ -544,7 +563,7 @@ func runBars(now time.Time, runs []service.ScheduleRun, stopAfter time.Duration)
 // the page opened it, not the owner (Run now is then the primary button).
 func scheduleRowOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, several bool, bucket, project string, open, byItself bool) schedRow {
 	row := schedRow{ID: sc.ID, Anchor: "schedule-" + sc.ID, Name: scheduleName(sc), Open: open, App: appText(sc),
-		Words: wordsOf(sc.Words), Cron: sc.Cron, Paused: sc.Paused}
+		Words: wordsOf(sc.Words), Cron: sc.Cron, Paused: sc.Paused, Where: whereText(sc)}
 	if several {
 		row.Service = sc.Service
 	}
@@ -647,6 +666,12 @@ func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bu
 	d.Usual = usual
 
 	runsIn := sentence{mono(sc.Service), plain(" of "), mono(appText(sc))}
+	memory := memoryText(sc.MemoryMB)
+	if sc.Target == service.TargetCopy {
+		// The fact is "runs in": the words after "in" are the copy's, then the service.
+		runsIn = append(sentence{plain(strings.TrimPrefix(whereText(sc), "in ") + " · ")}, runsIn...)
+		memory = "the copy's own"
+	}
 	// The project fact is the crumbs' words ("Shop / production"), and left out in Default's production.
 	var where []fact
 	if project != "" {
@@ -668,7 +693,7 @@ func detailOf(now time.Time, sc service.Schedule, runs []service.ScheduleRun, bu
 			{Key: "runs in", Value: runsIn},
 			{Key: "stops after", Value: plainS(durationText(time.Duration(sc.StopAfterSeconds) * time.Second))},
 			{Key: "if still running", Value: plainS(still)},
-			{Key: "memory", Value: plainS(memoryText(sc.MemoryMB))},
+			{Key: "memory", Value: plainS(memory)},
 		}, where...)
 		d.EditHref = "/schedules/" + url.PathEscape(sc.ID) + "/edit"
 		if i := slices.IndexFunc(runs, func(r service.ScheduleRun) bool { return runOpen(r.Status) }); i >= 0 {
@@ -920,7 +945,12 @@ type runView struct {
 	App      string
 	Version  string
 	Running  bool
-	Lines    []outLine
+	// InCopy says the run was in a running copy (feature 040): its output isn't
+	// kept. Where says in which copies, Exit the exit code; both only for such a run.
+	InCopy bool
+	Where  string
+	Exit   string
+	Lines  []outLine
 	// Cut is the line that says the start of the output was dropped; "" when nothing was.
 	Cut string
 	// Empty is what stands in the output's place: "No output.", or why there is none.
@@ -939,6 +969,23 @@ func outputLines(out []byte, stderr bool) []outLine {
 		lines = append(lines, outLine{Text: strings.TrimSuffix(l, "\r"), Stderr: stderr})
 	}
 	return lines
+}
+
+// copiesText names the copies a run in a running copy went in, by the first 8
+// characters of their IDs: "copy 1a2b3c4d", "copies 1a2b3c4d, 5e6f7a8b"; ""
+// for none (a skipped slot).
+func copiesText(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	short := make([]string, len(ids))
+	for i, id := range ids {
+		short[i] = id[:min(8, len(id))]
+	}
+	if len(short) == 1 {
+		return "copy " + short[0]
+	}
+	return "copies " + strings.Join(short, ", ")
 }
 
 // cutLine says which streams lost their start.
@@ -995,7 +1042,18 @@ func (s *server) showRun(w http.ResponseWriter, r *http.Request, session string)
 	if run.JobVersion != nil {
 		page.Version = fmt.Sprintf("v%d", *run.JobVersion)
 	}
+	if run.Target == service.TargetCopy {
+		page.InCopy = true
+		page.Where = copiesText(run.Copies)
+		if run.ExitCode != nil {
+			page.Exit = fmt.Sprintf("exit code %d", *run.ExitCode)
+		}
+	}
 	switch {
+	case page.InCopy && (run.Status == store.RunSkipped || run.Status == store.RunCouldNotStart):
+		page.Empty = "No output: the command didn't run."
+	case page.InCopy:
+		page.Empty = "This run was in the running copy: its output isn't kept."
 	case page.Running:
 		page.Empty = "The output is kept when the run ends."
 	case run.Status == store.RunSkipped || run.Status == store.RunCouldNotStart:

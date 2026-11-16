@@ -60,7 +60,14 @@ func (s *Service) followScheduleRuns(ctx context.Context) {
 		busy := s.starting[r.ID]
 		s.runMu.Unlock()
 		if busy {
-			continue // startRun is registering it
+			continue // startRun is registering it, or a goroutine is running it in its copy
+		}
+		if r.Target == store.TargetCopy {
+			// No goroutine of this process has it: the process that started it
+			// ended, and its exec went with it.
+			sched, _ := s.store.GetSchedule(ctx, r.ScheduleID)
+			s.settleOrphanCopyRun(ctx, r, sched)
+			continue
 		}
 		sched, ok := scheds[r.ScheduleID]
 		if !ok {
@@ -128,8 +135,8 @@ func (s *Service) followRun(ctx context.Context, r store.ScheduleRunRecord, sche
 // runLimit is how long a run of sched may go: the schedule's stop-after, or
 // the lab's shortcut when it is set.
 func (s *Service) runLimit(sched store.ScheduleRecord) time.Duration {
-	if s.scheduleLimit > 0 {
-		return s.scheduleLimit
+	if limit := time.Duration(s.scheduleLimit.Load()); limit > 0 {
+		return limit
 	}
 	return sched.StopAfter
 }
