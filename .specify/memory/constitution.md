@@ -1,5 +1,18 @@
 <!--
 Sync Impact Report
+- Version change: 1.1.2 → 1.2.0 (2026-11-16, MINOR: VI materially expanded for feature 041, published
+  ports, CodeAlta task dfn8)
+- Modified principles:
+  VI. Nomad-Native, No Lock-In (networking stays bridge mode with dynamic host ports on the private
+  interface, except a port the owner publishes: a static port on the host network `public`, declared
+  only by the servers that expose apps directly, never a reserved port, held by one app, open while
+  its copy runs through Nomad's port mapping and not through a firewall rule Caravana writes)
+- Added sections: none
+- Removed sections: none
+- Templates: ✅ no change (plan, spec and tasks templates read this file); ✅ CLAUDE.md links here
+- Deferred TODOs: none
+
+Earlier report (1.1.2):
 - Version change: 1.1.1 → 1.1.2 (2026-11-11, PATCH: wording only, decided by the maintainer in the
   secrets talk; closes QA issues #33, #30 and VII's part of #12)
 - Modified principles:
@@ -160,7 +173,12 @@ Rationale: the API has real clients from day one; the UI is one of them, not a s
   jobs as JSON. HCL is generated only by the "export jobspec" feature.
 - No Kubernetes, Docker Swarm or Consul code paths. Service discovery uses Nomad's native
   provider (`Provider: "nomad"`).
-- Networking is bridge mode with dynamic host ports (container ports via `To`). Traefik routing
+- Networking is bridge mode with dynamic host ports (container ports via `To`), on the private
+  interface. The one exception is a port the owner publishes: a static host port on the Nomad host
+  network `public`, which only the servers that expose apps directly declare. Such a port is
+  never SSH's, HTTP's, HTTPS's, Nomad's, WireGuard's or one of Caravana's own, and is held by one
+  app. It is open exactly while its copy runs (Nomad's port mapping), not through a firewall rule
+  Caravana writes. Traefik routing
   is configured only through service tags, except Caravana's own routes (the console domain and the
   webhook-only host), which are static routes in Traefik's configuration because Caravana runs
   under systemd, not as a Nomad service. The router `<app>-<service>` serves a service's
@@ -235,4 +253,4 @@ Rationale: the maintainer is learning Go; code must be easy to read, change and 
   section, or materially expands one; PATCH clarifies wording.
 - Reviews check compliance with this document; the plan's Constitution Check is the first gate.
 
-**Version**: 1.1.2 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-11
+**Version**: 1.2.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-16
