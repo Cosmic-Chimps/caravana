@@ -241,9 +241,9 @@ func TestCopyRun(t *testing.T) {
 		if l.nomad.Job(job(r.ID)) != nil {
 			t.Error("a copy run registered a Nomad job")
 		}
-		if l.goingCopyRuns() != 0 {
-			t.Error("a settled run still has a cancel function")
-		}
+		// The goroutine writes the settled row first and forgets the run in its deferred cleanup just after
+		// (so the watcher stays away until the row is settled): wait for it rather than check at once.
+		waitFor(t, "the settled run's cancel function to go", func() bool { return l.goingCopyRuns() == 0 })
 		acts := l.actions()
 		if len(acts) != 1 || acts[0].Action != store.ActionRun || acts[0].Trigger != string(app.TriggerSchedule) ||
 			acts[0].Program != "sh" || acts[0].CopyID != "c1" || acts[0].Service != "web" ||

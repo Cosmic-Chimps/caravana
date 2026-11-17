@@ -2,9 +2,11 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -498,40 +500,43 @@ func TestAutomaticCaravanaUpdatesRow(t *testing.T) {
 		t.Errorf("the controls:\n%s", row)
 	}
 
-	// Saving turns it on at 07:00 UTC; one Save for both settings, the same 303.
-	resp, _ := e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdate": {"1"}, "autoUpdateHour": {"7"}})
+	// Saving turns it on at an hour two after the current one, so the service's real clock is never inside it
+	// (inside the hour the next time is "now", not the hour). One Save for both settings, the same 303.
+	hour := (time.Now().UTC().Hour() + 2) % 24
+	hourValue, hourWords := strconv.Itoa(hour), fmt.Sprintf("%02d:00 UTC", hour)
+	resp, _ := e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdate": {"1"}, "autoUpdateHour": {hourValue}})
 	if resp.StatusCode != http.StatusSeeOther || location(t, resp) != "/ops/updates?saved=1#how" {
 		t.Fatalf("POST settings = %d to %q", resp.StatusCode, location(t, resp))
 	}
 	v, _ := e.Svc.Updates(context.Background())
-	if !v.Caravana.Auto.Enabled || v.Caravana.Auto.Hour != 7 || !v.Caravana.CheckEnabled {
+	if !v.Caravana.Auto.Enabled || v.Caravana.Auto.Hour != hour || !v.Caravana.CheckEnabled {
 		t.Fatalf("auto = %+v, check = %v", v.Caravana.Auto, v.Caravana.CheckEnabled)
 	}
 	_, body = e.get(t, "/ops/updates")
 	row = regionBetween(t, body, "Automatic caravana updates", `aria-labelledby="up-past-title"`)
-	if !strings.Contains(row, `<option value="7" selected>07:00 UTC</option>`) || !strings.Contains(row, `name="autoUpdate" value="1" form="up-settings" checked`) {
+	if !strings.Contains(row, `<option value="`+hourValue+`" selected>`+hourWords+`</option>`) || !strings.Contains(row, `name="autoUpdate" value="1" form="up-settings" checked`) {
 		t.Errorf("the saved row:\n%s", row)
 	}
-	if !regexp.MustCompile(`next: <time[^>]*>[A-Z][a-z]{2} \d+, 07:00 UTC</time>`).MatchString(row) {
+	if !regexp.MustCompile(`next: <time[^>]*>[A-Z][a-z]{2} \d+, ` + hourWords + `</time>`).MatchString(row) {
 		t.Errorf("the line under the row has no next time:\n%s", row)
 	}
 
 	// The form's marker: an unchecked box is off; a post without the marker leaves the setting alone; a
 	// bad hour is a 422 with a sentence and nothing is stored.
-	e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdateHour": {"7"}})
+	e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdateHour": {hourValue}})
 	if v, _ := e.Svc.Updates(context.Background()); v.Caravana.Auto.Enabled {
 		t.Error("an unchecked box didn't turn the setting off")
 	}
-	e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdate": {"1"}, "autoUpdateHour": {"7"}})
+	e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdate": {"1"}, "autoUpdateHour": {hourValue}})
 	e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}})
-	if v, _ := e.Svc.Updates(context.Background()); !v.Caravana.Auto.Enabled || v.Caravana.Auto.Hour != 7 {
+	if v, _ := e.Svc.Updates(context.Background()); !v.Caravana.Auto.Enabled || v.Caravana.Auto.Hour != hour {
 		t.Errorf("a post without the marker changed the automatic setting: %+v", v.Caravana.Auto)
 	}
 	resp, body = e.postForm(t, "/ops/updates/settings", url.Values{"checkEnabled": {"1"}, "autoForm": {"1"}, "autoUpdate": {"1"}, "autoUpdateHour": {"25"}})
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(text(body), "Choose an hour from 00:00 UTC to 23:00 UTC.") {
 		t.Errorf("POST hour 25 = %d:\n%s", resp.StatusCode, text(body))
 	}
-	if v, _ := e.Svc.Updates(context.Background()); v.Caravana.Auto.Hour != 7 {
+	if v, _ := e.Svc.Updates(context.Background()); v.Caravana.Auto.Hour != hour {
 		t.Errorf("a bad hour was stored: %+v", v.Caravana.Auto)
 	}
 
