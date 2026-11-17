@@ -119,6 +119,7 @@ func runConsole(t *testing.T, target gateTarget, email, password string) {
 		{"console-ops-server", c.consoleOpsServer},
 		{"console-ops-updates", c.consoleOpsUpdates},
 		{"console-servers", c.consoleServers},
+		{"console-placement", c.consolePlacement},
 		{"console-passkeys", c.passkeys},
 		{"console-appearance", c.appearance},
 		{"console-templates", c.consoleTemplates},

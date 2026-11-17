@@ -1498,6 +1498,59 @@ be published, a fixed TCP or UDP port on the first server's public address (a TU
 - Not in 041: port ranges (coturn's relay range needs one published port each), published ports on joined servers (a proxy per
   server, Phase 3), IPv6, a console editor, a firewall rule.
 
+Feature 042 (`specs/042-placement-and-drain`, CodeAlta task `jcfq`, worktree branch `alta/stout-canyon-xdrv`): server
+labels, placement rules per service, and moving work off a server. `plan.md` D1–D14 are the decisions; `research.md`
+R1–R4 the lab facts (dynamic node metadata reaches Nomad's servers 8–10 s after the client takes it; dotted meta keys
+work in constraints; `!=` passes on a node without the key; why Nomad's own `node drain` isn't used).
+- Labels: `servers.labels` (JSON, migration `0032_placement_drain.sql`) written to the node as dynamic metadata
+  `caravana.label.<name>` plus `caravana.server=<name>` on every managed node (`deploy.SetNodeLabels`, one write that also
+  unsets stale keys, then a wait of up to `Timing.LabelWait` 15 s for the server-side record; `ErrLabelsPending` isn't a
+  failure). `service/serverlabels.go` reconciles at start, when a server becomes ready and every 5 minutes
+  (`SetLabelReconcileGap`); `labelMu` serializes a save and the reconcile. `ServerView.Labels`, `LabelsApplied`.
+- Placement: `app.Service.Placement{Require map, Prefer []Preference{Label, Value, Weight}, Avoid []string}` (omitempty;
+  limits 8/8/16; label names `^[a-z][a-z0-9-]{0,31}$`, values `^[A-Za-z0-9._:/-]{1,64}$`; `app.CheckLabels` for a server's
+  16). `nomadjob.placementBlocks`: constraints (require sorted, then `${meta.caravana.server} != name` per avoid, sorted)
+  and affinities (prefer in order, weight 50 by default) on the group and on a schedule run's group; the HCL export
+  writes them (golden `placement`). `deploy.checkPlacement` in `Register`, only for apps with rules: `Jobs().Plan`, and a
+  group filtered by Caravana's constraints alone (no `DimensionExhausted`, no `NodesExhausted`) is `*PlacementError` →
+  409 `placement_impossible` on `services[i].placement.require.<label>` or `.avoid`; lack of room is still no refusal.
+  Nomad adds its own implied constraints to a job it reads back, so tests look only at `${meta.caravana.` ones. A
+  promotion takes the source's rules (`placement` in `Changed`); Copy to keeps them. The Compose overlay takes
+  `placement`.
+- Move work off (`service/servermove.go`): `MoveWorkOff(name, deadline)` (1 min–2 h, default 15 min) refuses a server
+  that isn't ready, one with a move going (`server_moving`) and a cluster with no other node that is ready and
+  eligible (`no_other_server`); then `SetNodeEligible(false)`, a `server_moves` row and a goroutine: each round lists the
+  node's copies (`AllCopies`), `classifyCopies` (pure) sorts them into movable and stays (volumes "its data is on this
+  server", a published port, `traefik` "the proxy runs here", helper jobs with `_` "a run that ends on its own", a
+  service whose rules allow no other server, anything else "not deployed by Caravana"), and each movable copy is moved
+  under its app's lock with `deploy.MoveCopy` (`Allocations().Stop`, Nomad's stop-and-reschedule) and
+  `WaitCopyMoved` (the replacement is the running copy whose `PreviousAllocation` is the old one, on another node,
+  checks passing; `copyWait` 5 min). End states `done`, `incomplete` (the deadline; needs-you `server_move_incomplete`
+  while the node is still ineligible), `cancelled`; a process shutdown leaves the row open and `resumeMoves` goes on
+  at start. `AcceptWork` cancels a move (waits for its row to settle) and makes the node eligible. The node stays
+  ineligible after `done`. `PreviewMoveOff` is the confirmation page's read.
+- Needs-you: `copies_unplaced` (a service with rules whose job has queued copies, from `Jobs().List` summaries,
+  `deploy.QueuedCopies`; not judged while Nomad can't be read) and `server_move_incomplete`.
+- API 0.46.0: `putServerLabels`, `drainServer` (202), `undrainServer`, `Server.labels/labelsApplied/move`,
+  `Service.placement`, the overlay's `placement`, codes `placement_impossible`, `server_moving`, `server_not_ready`,
+  `no_other_server`. The policy gains `node { policy = "write" }` (rerun the installer).
+- Console: the server page's Labels row (chips, one text input, `hx-preserve`), Move work off… with
+  `/ops/servers/{name}/move` (what moves, what stays and why, the one-copy note, a deadline select), the move panel
+  (first in the body, refreshed on `servers`), Accept work again; the list's labels; Configure's Placement panel per
+  service (sentences, and the form Require/Prefer/Never on posting to `/apps/{id}/services/{svc}/placement` as a
+  deploy with the page's revision; a kept-file app is read-only and the Compose form keeps the overlay's rules).
+  `docs/placement-and-drain.md`.
+- Lab: the gate step `placement` (the refusal naming the field and no job, avoid and prefer healthy with the blocks on
+  the group, export with no diff, the refusal over a running app leaves its version, the one-server refusals) passed
+  2026-11-17 (17 s, `-run 'TestLab/^(api-needs-token|placement)$'`); the console step `console-placement` (Configure's
+  form: an impossible rule drawn at Require, a preference saved and cleared). `deploy/dev/cluster-test.sh` gained steps
+  6b (labels on two, a required label places on two only, an impossible rule is 409 naming the field, prefer lands on
+  two, avoid keeps copies off three, removing the label makes a redeploy refused while the copies keep running) and 6c
+  (a two-copy app and a volume app pinned to two; drain two while `spread.test` is called every half second; the
+  movable copies leave, vol2 and req are listed as staying with their reasons, Accept work again).
+- Not in 042: node pools, other constraint operators, placement by resources, moving a volume, Nomad's own drain, a
+  scheduler settings page, labels from the installer.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

@@ -30,9 +30,9 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 3: Console (US3, US4)
 
-- [ ] T010 `internal/ui`: the server page's Labels row and form, the head's actions, the move panel, the
+- [x] T010 `internal/ui`: the server page's Labels row and form, the head's actions, the move panel, the
   confirmation page, Accept work again, the list's labels and words (D12); tests.
-- [ ] T011 `internal/ui`: Configure's Placement panel and form, `applyEdit` keeps placement, the Compose form
+- [x] T011 `internal/ui`: Configure's Placement panel and form, `applyEdit` keeps placement, the Compose form
   keeps the overlay's (D12); tests; `tools/ui-css.sh build` if needed.
 
 ## Phase 4: Proof and docs
@@ -40,7 +40,7 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 - [~] T012 Gate step `placement` (passed in the lab 2026-11-17, 17 s) (`cmd/caravana/gate_placement_test.go`, registered in `gate_test.go`) and the
   console step `console-placement` (`console_placement_test.go`), run in the lab.
 - [~] T013 `deploy/dev/cluster-test.sh` (written: steps 6b and 6c; not run yet) steps for labels, placement and the move (plan "Tests"); run it.
-- [ ] T014 `docs/placement-and-drain.md`, `docs/plan.md`, `CLAUDE.md`, `changelog.d/placement-and-drain.md` (D14).
+- [x] T014 `docs/placement-and-drain.md`, `docs/plan.md`, `CLAUDE.md`, `changelog.d/placement-and-drain.md` (D14).
 - [ ] T015 Every CI check: build, vet, staticcheck, `go test ./...` and `-race`, gofmt, the arm64
   cross-compile, `go mod tidy -diff`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`,
   `tools/release.sh check`, shellcheck.

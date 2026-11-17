@@ -51,7 +51,8 @@ A service may carry `placement` with three rules, through the API, the Compose o
 The rules become `constraint` and `affinity` blocks on the service's group in the Nomad job (the export writes them),
 and a schedule's runs of the service carry them too. A deploy whose rule no server satisfies is refused before anything
 is registered, with `409 placement_impossible` and the field (`services[0].placement.require.gpu`): the running
-copies keep running. Lack of room is not a refusal: Nomad places the copies when room frees up, as before, and the
+copies keep running. As with any deploy Nomad turns down, the definition is saved with the rule and the failed
+deployment is on the Deployments tab, so fix the rule or label a server and deploy again. Lack of room is not a refusal: Nomad places the copies when room frees up, as before, and the
 needs-you list says `copies can't be placed` while a service with rules has copies waiting.
 
 A promotion takes the source's rules (labels and server names belong to the cluster, not to an environment); Copy to
