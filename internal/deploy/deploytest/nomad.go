@@ -142,7 +142,8 @@ type Nomad struct {
 	checks       map[string]api.AllocCheckStatuses // by copy ID
 	checksStatus int                               // non-zero: every checks read answers it
 
-	host hostFake // the node and its stats (host.go)
+	host  hostFake      // the node and its stats (host.go)
+	place placementFake // node metadata, eligibility, copy moves and plans (placement.go)
 
 	jobInfos int // GET /v1/job/{id} requests answered
 
@@ -389,6 +390,14 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.listJobs(w, r.URL.Query().Get("prefix"))
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/evaluation/"):
 		n.evaluation(w, strings.TrimPrefix(r.URL.Path, "/v1/evaluation/"))
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && r.URL.Path == "/v1/client/metadata":
+		n.serveNodeMeta(w, r)
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/node/") && strings.HasSuffix(r.URL.Path, "/eligibility"):
+		n.serveEligibility(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/node/"), "/eligibility"))
+	case isAllocStop(r):
+		n.serveAllocStop(w, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/allocation/"), "/stop"))
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/job/") && strings.HasSuffix(r.URL.Path, "/plan"):
+		n.servePlan(w, r)
 	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasSuffix(r.URL.Path, "/periodic/force"):
 		id, _ := jobPath(r)
 		n.forcePeriodic(w, strings.TrimSuffix(id, "/periodic/force"))
@@ -899,6 +908,8 @@ func (n *Nomad) allocation(w http.ResponseWriter, id string) {
 				TaskStates:            s.TaskStates,
 				DeploymentStatus:      s.DeploymentStatus,
 				FollowupEvalID:        s.FollowupEvalID,
+				NextAllocation:        s.NextAllocation,
+				PreviousAllocation:    n.place.previous[s.ID],
 				PreemptedAllocations:  s.PreemptedAllocations,
 				PreemptedByAllocation: s.PreemptedByAllocation,
 				CreateIndex:           s.CreateIndex,
@@ -975,7 +986,7 @@ func (n *Nomad) listJobs(w http.ResponseWriter, prefix string) {
 			continue
 		}
 		j := n.jobs[id][len(n.jobs[id])-1]
-		stub := &api.JobListStub{ID: id, Name: id, Status: "running", Periodic: j.Periodic != nil}
+		stub := &api.JobListStub{ID: id, Name: id, Status: "running", Periodic: j.Periodic != nil, JobSummary: n.jobSummary(id)}
 		if j.ParentID != nil {
 			stub.ParentID = *j.ParentID
 		}

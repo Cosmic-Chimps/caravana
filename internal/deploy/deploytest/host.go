@@ -203,15 +203,9 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "node not found", http.StatusNotFound)
 	default:
 		id := strings.TrimPrefix(r.URL.Path, "/v1/node/")
-		if h.set && id == h.node.ID {
-			n.writeJSON(w, h.node)
+		if node := n.findNode(id); node != nil {
+			n.writeJSON(w, n.nodeRecord(node))
 			return
-		}
-		for _, x := range h.extra {
-			if x.ID == id {
-				n.writeJSON(w, x)
-				return
-			}
 		}
 		http.Error(w, "node not found", http.StatusNotFound)
 	}

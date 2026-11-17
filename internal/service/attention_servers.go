@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy"
@@ -14,6 +15,8 @@ import (
 //     Nomad's nodes could be read.
 //   - server_certificate_expiring: a joining or ready server whose Nomad certificate ends in under 14
 //     days (its agent renews it at 30 days, so it couldn't). From the store alone.
+//   - server_move_incomplete (feature 042): the server's newest move ended incomplete and the server
+//     still takes no new work. Judged with the nodes, like server_down.
 //
 // The key of both is kind|||<name>: the server's name is the subject (problemSubject).
 
@@ -31,12 +34,23 @@ func (s *Service) serverItems(ctx context.Context, now time.Time) (items []Atten
 	if nodesErr != nil {
 		s.log.Warn("can't read Nomad's nodes; the needs-you list leaves server_down out", "error", nodesErr)
 	}
-	return serverItemsOf(now, rows, nodes, nodesErr == nil), nodesErr == nil, nil
+	moves := map[int]store.ServerMove{}
+	for _, r := range rows {
+		m, err := s.store.NewestServerMove(ctx, r.Index)
+		switch {
+		case err == nil:
+			moves[r.Index] = m
+		case !errors.Is(err, store.ErrNotFound):
+			return nil, false, err
+		}
+	}
+	return serverItemsOf(now, rows, nodes, nodesErr == nil, moves), nodesErr == nil, nil
 }
 
 // serverItemsOf is the pure part. nomadOK is false when the nodes couldn't be read: nodes is then
-// ignored and no server is down.
-func serverItemsOf(now time.Time, rows []store.Server, nodes []deploy.Node, nomadOK bool) []AttentionItem {
+// ignored and no server is down, and no move is judged (it needs to know the server still takes no
+// new work). moves is each server's newest move, by index.
+func serverItemsOf(now time.Time, rows []store.Server, nodes []deploy.Node, nomadOK bool, moves map[int]store.ServerMove) []AttentionItem {
 	var items []AttentionItem
 	for _, r := range rows {
 		if r.State == store.ServerReady && nomadOK {
@@ -47,6 +61,14 @@ func serverItemsOf(now time.Time, rows []store.Server, nodes []deploy.Node, noma
 				}
 				it := AttentionItem{Kind: AttentionServerDown, Server: r.Name, Level: metrics.DiskFailed, When: when}
 				it.Detail = plainText(serverDownParts(it))
+				items = append(items, it)
+			}
+		}
+		if m, ok := moves[r.Index]; ok && nomadOK && m.State == store.MoveIncomplete && m.Left > 0 {
+			if node := nodeOf(nodes, r.Index); node != nil && !node.Down() && !node.Eligible {
+				it := AttentionItem{Kind: AttentionServerMoveIncomplete, Server: r.Name, Level: metrics.DiskWarning, Left: m.Left,
+					When: m.EndedAt, Detail: m.Error}
+				it.Detail = plainText(serverMoveParts(it))
 				items = append(items, it)
 			}
 		}
@@ -63,6 +85,12 @@ func serverItemsOf(now time.Time, rows []store.Server, nodes []deploy.Node, noma
 // serverDownParts is the item's one wording.
 func serverDownParts(it AttentionItem) []TextPart {
 	return parts(mono(it.Server), " is down. Its copies are being replaced on other servers; what has a volume there waits for it.")
+}
+
+// serverMoveParts is the item's one wording: "two: the move-off passed its deadline; 2 copies still
+// run there."
+func serverMoveParts(it AttentionItem) []TextPart {
+	return parts(mono(it.Server), ": the move-off passed its deadline; ", copyCount(it.Left), " "+verbFor(it.Left, "still runs", "still run")+" there.")
 }
 
 // serverCertParts is the item's one wording: "fsn-2's Nomad certificate ends Nov 29. Its agent

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.45.0
+  version: 0.46.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -679,6 +679,225 @@ paths:
           $ref: "#/components/responses/Internal"
         "502":
           description: "`nomad_unavailable`: Nomad couldn't be read, so it can't be told whether the server is running."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/servers/{name}/labels:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A managed server's name.
+        schema: {type: string}
+    put:
+      operationId: putServerLabels
+      summary: Replace a server's labels.
+      description: |
+        Replaces the server's labels with exactly these (an empty object clears them) and writes them to
+        its Nomad node as dynamic node metadata, `caravana.label.<name>`, beside `caravana.server` (the
+        server's name, which `placement.avoid` reads). The labels are stored first; then the call waits
+        until Nomad's servers show them on the node (at most 15 seconds, since the scheduler only sees
+        them then), so a deploy that follows plans against the new labels. A write the servers haven't
+        shown after that is no failure: the answer is 200 with `labelsApplied: false`, and Caravana
+        writes them again at its next pass. A server whose node is down keeps its labels for when it
+        comes back.
+
+        Writing node metadata needs the `node:write` capability in Caravana's Nomad policy: rerun the
+        installer after upgrading. Without it the call is a 502 `nomad_unavailable` that says so, and
+        the labels stay stored.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [labels]
+              properties:
+                labels:
+                  type: object
+                  maxProperties: 16
+                  description: |
+                    Label name to value. A name is a lowercase letter and up to 31 lowercase letters,
+                    digits and `-`; a value is 1 to 64 letters, digits and `. _ : / -`.
+                  additionalProperties: {type: string}
+      responses:
+        "200":
+          description: The server, with its new labels.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no managed server has that name (a Nomad node Caravana doesn't manage has no labels)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`server_not_ready`: the server hasn't joined yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `labels` or `labels.<name>`: a bad name or value, or more than 16 labels."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`nomad_unavailable`: Nomad refused the write (the token's policy needs `node:write`: run the installer again) or couldn't be reached. The labels are stored."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/servers/{name}/drain:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A managed server's name.
+        schema: {type: string}
+    post:
+      operationId: drainServer
+      summary: Move work off a server.
+      description: |
+        Makes the server stop taking new work (its Nomad node becomes ineligible) and moves its copies
+        to other servers, one at a time, with Nomad's "stop and reschedule": each copy is stopped and
+        the scheduler places its replacement on a server that accepts work; the next copy moves only
+        when the replacement runs and passes its checks. Answers 202 at once with the server; its `move`
+        says how it goes (`moving`, then `done` or `incomplete`), and the work goes on in the
+        background. The move ends when no copy that can move is left, or at the deadline.
+
+        Nothing ever moves Traefik, Caravana, a service with volumes or a published port, or a backup,
+        restore or schedule run: `move.stays` lists them with the reason, and a move ends `done` with
+        them still there. A service whose placement rules allow no other server stays too. A copy whose
+        app is busy (a deploy or a volume run holds it) is tried again until the deadline. A service with
+        one copy is unreachable while its replacement starts; a service with two or more keeps answering,
+        since the copies move one at a time. The server stays ineligible when the move ends: use
+        `undrainServer` to let it take work again. If Caravana restarts during a move, the move goes on
+        at start from the copies still there, with the same deadline.
+
+        Moving needs the `node:write` capability in Caravana's Nomad policy.
+      tags: [servers]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                deadlineSeconds:
+                  type: integer
+                  minimum: 60
+                  maximum: 7200
+                  description: How long the move may take before it ends `incomplete`. Absent or 0 is 900 (15 minutes).
+      responses:
+        "202":
+          description: The move started; the server's `move` is `moving`.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no managed server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `server_not_ready`: the server hasn't joined, or Nomad doesn't list its node or says it is
+            down. `server_moving`: a move is already going. `no_other_server`: no other server accepts
+            work, so there is nowhere to move to ("No other server accepts work: there is nowhere to move
+            to."). Nothing was changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          description: "`invalid_field`, `field` `deadlineSeconds`: not between 60 and 7200."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`nomad_unavailable`: Nomad refused to make the node ineligible (run the installer again for `node:write`) or couldn't be reached. Nothing was changed."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: undrainServer
+      summary: Let a server take work again.
+      description: |
+        Cancels the server's move if one is going (the copies already moved stay where they are, and the
+        move ends `cancelled`) and makes its node eligible again. For a server with no move going it only
+        makes the node eligible: after a move that ended, or for a server made ineligible outside
+        Caravana. Copies don't move back by themselves.
+      tags: [servers]
+      responses:
+        "200":
+          description: The server, accepting work.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Server"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no managed server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`server_not_ready`: the server hasn't joined, or Nomad doesn't list its node or says it is down."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          description: "`nomad_unavailable`: Nomad refused to make the node eligible (run the installer again for `node:write`) or couldn't be reached."
           content:
             application/json:
               schema:
@@ -2377,7 +2596,7 @@ paths:
         `environment_not_found`). A refusal anywhere else is a defect of the template, with
         its path in the file in `field`. 409 `app_exists`: the ID is taken. 409
         `domain_taken`: the host is another app's (`field` `inputs.<name>` when it came from an
-        input). `port_taken` or `no_public_network`: as for `deployApp`. 409 `template_unavailable`: the template is marked broken or needs a newer
+        input). `port_taken`, `no_public_network` or `placement_impossible`: as for `deployApp`. 409 `template_unavailable`: the template is marked broken or needs a newer
         Caravana. A service with a `backup` needs the backup destination to be set, as for any
         deploy: until it is, that is 400 `invalid_field` with `field` `services.<service>.backup`,
         unless the body says `withoutBackups: true`, which installs the template with its backups left
@@ -2420,7 +2639,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: "`app_exists`, `domain_taken`, `port_taken`, `no_public_network` or `template_unavailable`; `message` says why. Nothing was saved, except after `no_public_network`: the app is stored and its failed deployment recorded, as for `deployApp`."
+          description: "`app_exists`, `domain_taken`, `port_taken`, `no_public_network`, `placement_impossible` or `template_unavailable`; `message` says why. Nothing was saved, except after `no_public_network` and `placement_impossible`: the app is stored and its failed deployment recorded, as for `deployApp`."
           content:
             application/json:
               schema:
@@ -5553,6 +5772,8 @@ components:
             $ref: "#/components/schemas/Identity"
         dns:
           $ref: "#/components/schemas/ServiceDNS"
+        placement:
+          $ref: "#/components/schemas/Placement"
         ports:
           type: array
           items:
@@ -5778,6 +5999,8 @@ components:
           description: The service's workload identities, with the meaning `Service.identities` has.
           items:
             $ref: "#/components/schemas/Identity"
+        placement:
+          $ref: "#/components/schemas/Placement"
         publish:
           type: array
           description: |
@@ -5800,6 +6023,107 @@ components:
                 minimum: 1
                 maximum: 65535
                 description: "The host port. Absent means the same number as `port`."
+
+    Placement:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Where a service's copies may run (feature 042). Leave `placement` out to let the scheduler use
+        any server that accepts work. At least one of the three lists must be set; an empty object is
+        `invalid_field` on `services[i].placement`. The rules read the labels of the servers
+        (`putServerLabels`) and their names. A deploy with rules first asks Nomad to plan the job: when
+        no server that accepts work can satisfy a `require` or every one is in `avoid`, the answer is
+        `409 placement_impossible` naming the rule's field, and nothing is registered. A server that
+        is full is no refusal: the copies wait for room, as they do without rules. `avoid` is a test
+        against the server's name that Caravana writes on the nodes it manages, so it only keeps copies
+        off those; a Nomad node it doesn't manage is never avoided. A promotion takes the source's rules,
+        and Copy to keeps them. The rules also apply to the service's scheduled runs.
+      properties:
+        require:
+          type: object
+          maxProperties: 8
+          description: |
+            Labels a server must have, as label name to value: a copy runs only on a server that has
+            every one. A label name is a lowercase letter and up to 31 lowercase letters, digits and
+            `-`; a value is 1 to 64 letters, digits and `. _ : / -`. A bad one is `invalid_field` on
+            `services[i].placement.require` (the name) or `services[i].placement.require.<name>` (the value).
+          additionalProperties: {type: string}
+        prefer:
+          type: array
+          maxItems: 8
+          description: |
+            Labels the scheduler favours, in order: when several servers fit, copies go to the preferred
+            one while it has room. A label may be listed once.
+          items:
+            $ref: "#/components/schemas/Preference"
+        avoid:
+          type: array
+          maxItems: 16
+          description: |
+            Names of servers the service never runs on, each once. A name is a server's (a lowercase DNS
+            label that isn't one of the console's reserved words).
+          items: {type: string}
+
+    Preference:
+      type: object
+      additionalProperties: false
+      required: [label, value]
+      properties:
+        label:
+          type: string
+          description: A server label's name.
+        value:
+          type: string
+          description: The value that is preferred.
+        weight:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: How much it counts. Absent means 50.
+
+    ServerMove:
+      type: object
+      additionalProperties: false
+      description: |
+        One request to move work off a server (`drainServer`). A time is RFC 3339, or an empty string
+        for "not yet". The record holds counts, the apps' and services' names and Caravana's own
+        sentences, never anything an app wrote.
+      required: [id, state, startedAt, deadlineAt, endedAt, moved, left, stays, error]
+      properties:
+        id: {type: string, description: "`mv_` and 26 lowercase letters and digits."}
+        state:
+          type: string
+          enum: [moving, done, incomplete, cancelled]
+          description: |
+            `moving`: going now. `done`: no copy that can move is left on the server (what stays is in
+            `stays`). `incomplete`: the deadline passed with movable copies still there (`left`, and the
+            needs-you item `server_move_incomplete` while the server still takes no work). `cancelled`:
+            `undrainServer` ended it; the copies already moved stay where they are.
+        startedAt: {type: string}
+        deadlineAt: {type: string}
+        endedAt: {type: string, description: "Empty while it goes."}
+        moved: {type: integer, minimum: 0, description: "Copies that left the server."}
+        left: {type: integer, minimum: 0, description: "Movable copies still on the server (at the last round, or when it ended)."}
+        stays:
+          type: array
+          description: |
+            What a move never moves, one entry per app and service (or per job that isn't an app), with the
+            reason: "its data is on this server" (a service with volumes), "its port 3478 is on this
+            server's address" (a published port), "the proxy runs here" (Traefik), "a run that ends on its
+            own" (a backup, restore or schedule run), "not deployed by Caravana", "its placement rules
+            allow no other server".
+          items:
+            type: object
+            additionalProperties: false
+            required: [app, service, reason]
+            properties:
+              app: {type: string}
+              service: {type: string, description: "Empty for a job that isn't a service."}
+              reason: {type: string}
+        error:
+          type: string
+          description: One sentence in Caravana's words for an `incomplete` move; empty otherwise.
 
     ServiceDNS:
       type: object
@@ -8760,7 +9084,7 @@ components:
         `null` when it has none, never 0.
       required: [id, name, index, pool, state, managed, first, ingress, controlPlane, nomadServer, acceptsWork, address,
         privateAddress, createdAt, joinedAt, readyAt, seenAt, expiresAt, checks, agent, certificateExpiresAt, memory,
-        cpu, disks, copies, unreachable]
+        cpu, disks, copies, unreachable, labels, labelsApplied, move]
       properties:
         id:
           type: string
@@ -8854,6 +9178,23 @@ components:
           type: array
           items: {type: string}
           description: The names of the servers its last report couldn't reach.
+        labels:
+          type: object
+          additionalProperties: {type: string}
+          description: |
+            The owner's labels for the server (`putServerLabels`), name to value; `{}` for none and for a node
+            Caravana doesn't manage. A service's `placement` reads them.
+        labelsApplied:
+          type: boolean
+          description: |
+            The server's Nomad node holds its name and exactly these labels, as Nomad's servers show it now.
+            False while Nomad can't be read, the node is down or a write hasn't reached it yet; Caravana
+            writes them again at its next pass (every 5 minutes, and when the server becomes ready).
+        move:
+          oneOf:
+            - $ref: "#/components/schemas/ServerMove"
+            - type: "null"
+          description: The server's newest move of work off it; `null` when it never had one.
     Cluster:
       type: object
       additionalProperties: false
@@ -9028,7 +9369,8 @@ components:
           type: string
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
-            os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring]
+            os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
+            copies_unplaced, server_move_incomplete]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -9064,8 +9406,15 @@ components:
             `server_certificate_expiring`, a warning: a joining or ready server's Nomad certificate ends
             in under 14 days, so its agent couldn't renew it ("fsn-3's Nomad certificate ends Nov 29.
             Its agent couldn't renew it; run the installer on it again."), `expiresAt` says when. Both
-            are about a server, so they have `server` (its name) and no `appId`. Clients should accept
-            kinds they don't know.
+            are about a server, so they have `server` (its name) and no `appId`. `copies_unplaced`, a
+            failure (feature 042): a service with `placement` rules whose job Nomad has copies queued for,
+            wanted with no server to put them on (`queued` says how many; "blog/web: 2 copies can't be
+            placed: no server that accepts work matches its placement rules, or none has room."). It is
+            judged with the copy kinds (not while Nomad can't be read) and goes when the copies are placed
+            or the rules change. `server_move_incomplete`, a warning: the server's newest move of work off
+            it ended `incomplete` and the server still takes no new work (`left` says how many copies still
+            run there; "two: the move-off passed its deadline; 2 copies still run there."). It goes when
+            the server accepts work again (`undrainServer`). Clients should accept kinds they don't know.
         appId:
           type: string
           description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
@@ -9098,7 +9447,15 @@ components:
           description: For `domain_cert_expiring` and `server_certificate_expiring`, when the certificate ends.
         server:
           type: string
-          description: The server's name, for `server_down` and `server_certificate_expiring` (`getServer`), and for `disk_nearly_full` when the cluster has more than one server.
+          description: The server's name, for `server_down`, `server_certificate_expiring` and `server_move_incomplete` (`getServer`), and for `disk_nearly_full` when the cluster has more than one server.
+        queued:
+          type: integer
+          minimum: 1
+          description: For `copies_unplaced`, how many copies Nomad has queued.
+        left:
+          type: integer
+          minimum: 1
+          description: For `server_move_incomplete`, how many movable copies still run on the server.
         mount:
           type: string
           description: For `disk_nearly_full`, the filesystem's mount point, such as `/`.
@@ -9118,7 +9475,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring`, `warning`.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
@@ -9587,7 +9944,7 @@ components:
             target's now.
           items:
             type: string
-            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns]
+            enum: [entrypoint, command, args, ports, health, volumes, stopTimeout, dns, placement]
 
     PromotionPreview:
       type: object
@@ -9741,7 +10098,8 @@ components:
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
                 `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
                 `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
-                `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`.
+                `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`,
+                `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`.
               examples: [invalid_field]
             message:
               type: string
@@ -9996,8 +10354,8 @@ components:
         `definition_not_recorded`: it is from before Caravana saved what each deployment
         deployed. `no_live_deployment`: the source was never deployed.
         `promotion_removes_service` (`field` `services.<name>`): the target has a service the
-        source lacks, and promoting would delete it. `job_conflict`, `port_taken` and
-        `no_public_network`: as for `deployApp`.
+        source lacks, and promoting would delete it. `job_conflict`, `port_taken`, `no_public_network`
+        and `placement_impossible`: as for `deployApp`.
         `app_stopped`: the target is stopped (`stopApp`); start it first.
         Nothing was changed.
       content:
@@ -10162,7 +10520,11 @@ components:
         included; nothing was saved or recorded. Or `no_public_network` (`field` the first
         published port's): no ready server declares the host network that carries published
         ports, so the owner must rerun the installer on the first server; the deployment record
-        (see `Location`) is `failed`.
+        (see `Location`) is `failed`. Or `placement_impossible` (`field` the rule's:
+        `services[0].placement.require.gpu` for a label no server that accepts work has,
+        `services[0].placement.avoid` when every such server is avoided): Nomad's plan says no server
+        can run the service as its `placement` asks, so nothing was registered; the deployment record
+        is `failed`, and the running copies, if any, keep running.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"

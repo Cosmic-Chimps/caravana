@@ -86,6 +86,9 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/servers/joins/{id}", s.getServerJoin, false, false},
 		{http.MethodGet, "/v1/servers/{name}", s.getServer, false, false},
 		{http.MethodDelete, "/v1/servers/{name}", s.removeServer, false, false},
+		{http.MethodPut, "/v1/servers/{name}/labels", s.putServerLabels, false, false},
+		{http.MethodPost, "/v1/servers/{name}/drain", s.drainServer, false, false},
+		{http.MethodDelete, "/v1/servers/{name}/drain", s.undrainServer, false, false},
 		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
 		{http.MethodPost, "/v1/projects", s.createProject, false, false},
 		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
@@ -339,6 +342,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := portsError(err); e != nil {
+		return e
+	}
+	if e := placementError(err); e != nil {
 		return e
 	}
 	if e := updatesError(err); e != nil {

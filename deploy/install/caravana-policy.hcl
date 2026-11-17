@@ -1,8 +1,9 @@
 # ACL policy for Caravana's own Nomad token: register jobs (submit-job also covers purging one,
 # for Delete app), follow their deployments and read
 # their copies and output (read-logs, for the console's Logs tab and GET /v1/apps/{id}/logs), in
-# the default namespace. Not the management token: Caravana never needs to manage ACLs, nodes or
-# other namespaces, so a leaked caravana.env can't do more than deploy and read what it deployed.
+# the default namespace. Not the management token: Caravana never needs to manage ACLs or other
+# namespaces, and touches nodes only as the node rules below say, so a leaked caravana.env can't do
+# more than deploy, read what it deployed and place work.
 # The variables rule is the apps' secrets (feature 008): one variable per service under
 # nomad/jobs/<app>/, which only that service's tasks can read.
 # The host volume capabilities are the apps' volumes (feature 009): Caravana creates a dynamic host
@@ -18,9 +19,12 @@
 # the signed-in owner or an API token, with its output shown once and never kept. It lets Caravana's
 # token run commands in the apps' containers, which is the feature; it never opens a terminal.
 # node:read is Monitoring (feature 025): the host's memory, CPU and disks (Nodes().List, Info and
-# Stats) and each node's total resources, so the page can say how much room is left. It reads node
-# records and client stats only: no node:write (drain, eligibility), no agent:read (Nomad's
-# configuration and log stream).
+# Stats) and each node's total resources, so the page can say how much room is left.
+# node:write is placement and drain (feature 042): a server's labels written to its node as dynamic
+# metadata, its scheduling eligibility, which stops it taking new work while Caravana moves work off it.
+# Moving a copy is Nomad's allocation stop, which alloc-lifecycle already allows. Caravana never
+# drains a node with Nomad's own node drain and never reads agent:read (Nomad's configuration and
+# log stream).
 # install.sh applies it on every run, so running the installer again brings a host up to date.
 namespace "default" {
   capabilities = ["submit-job", "read-job", "list-jobs", "read-logs", "host-volume-create", "host-volume-delete", "alloc-lifecycle", "read-fs", "alloc-exec"]
@@ -38,7 +42,7 @@ namespace "default" {
 }
 
 node {
-  policy = "read"
+  policy = "write"
 }
 
 host_volume "*" {

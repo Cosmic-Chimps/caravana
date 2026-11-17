@@ -247,3 +247,54 @@ func TestRotateFirstServer(t *testing.T) {
 		t.Errorf("RotateFirstServer = %+v, %v", v, err)
 	}
 }
+
+func TestServerLabels(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	v, err := s.InsertServer(ctx, Server{ID: "a", Name: "one", State: ServerReady})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ServerByName(ctx, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Labels == nil || len(got.Labels) != 0 {
+		t.Errorf("a new server's labels = %#v, want an empty, non-nil map", got.Labels)
+	}
+	want := map[string]string{"ssd": "true", "region": "eu"}
+	if err := s.SetServerLabels(ctx, v.Index, want); err != nil {
+		t.Fatalf("SetServerLabels: %v", err)
+	}
+	got, _ = s.ServerByIndex(ctx, v.Index)
+	if len(got.Labels) != 2 || got.Labels["ssd"] != "true" || got.Labels["region"] != "eu" {
+		t.Errorf("labels = %#v, want %#v", got.Labels, want)
+	}
+	// The set is replaced, not merged, and the list sees it too.
+	if err := s.SetServerLabels(ctx, v.Index, map[string]string{"gpu": "a100"}); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := s.ListServers(ctx)
+	if len(list) != 1 || len(list[0].Labels) != 1 || list[0].Labels["gpu"] != "a100" {
+		t.Errorf("labels after a replace = %#v", list[0].Labels)
+	}
+	if err := s.SetServerLabels(ctx, v.Index, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ServerByIndex(ctx, v.Index)
+	if len(got.Labels) != 0 {
+		t.Errorf("labels after clearing = %#v", got.Labels)
+	}
+	if err := s.SetServerLabels(ctx, 99, want); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetServerLabels(99) = %v, want ErrNotFound", err)
+	}
+	// A server inserted with labels keeps them.
+	w, err := s.InsertServer(ctx, Server{ID: "b", Name: "two", State: ServerReady, Labels: want})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ServerByIndex(ctx, w.Index)
+	if got.Labels["ssd"] != "true" {
+		t.Errorf("inserted labels = %#v", got.Labels)
+	}
+}

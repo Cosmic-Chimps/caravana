@@ -76,7 +76,7 @@ check_monitoring_host() {
   grep -qx "CARAVANA_DOCKER_ROOT=$root" <<<"$env" ||
     die "the env file should say CARAVANA_DOCKER_ROOT=$root:\n$(grep -v NOMAD_TOKEN <<<"$env")"
   policy="$(vm sudo caravana-nomad acl policy info caravana | tr -d '\n')"
-  grep -Eq 'node \{ *policy = "read" *\}' <<<"$policy" || die "Caravana's Nomad policy has no node { policy = \"read\" }"
+  grep -Eq 'node \{ *policy = "write" *\}' <<<"$policy" || die "Caravana's Nomad policy has no node { policy = \"write\" }"
   spec="$(vm sudo caravana-nomad job inspect traefik)"
   grep -q -- '--metrics.prometheus=true' <<<"$spec" || die "Traefik's job doesn't turn on its metrics"
   grep -q -- '--metrics.prometheus.buckets=0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10' <<<"$spec" ||

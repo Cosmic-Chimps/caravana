@@ -898,3 +898,58 @@ func TestCopyAppCopiesIdentities(t *testing.T) {
 		}
 	})
 }
+
+// Spec 042: placement rules name labels and servers, which belong to the cluster and not to an environment,
+// so a promotion takes the source's (a service the source has and the target hasn't comes with its own).
+func TestPromotedTakesTheSourcesPlacement(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Placement = &app.Placement{Require: map[string]string{"ssd": "true"}, Avoid: []string{"three"}}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Services[0].Placement, source.Services[0].Placement) {
+		t.Errorf("placement = %+v, want the source's", got.Services[0].Placement)
+	}
+	if got.Services[0].Placement == source.Services[0].Placement {
+		t.Error("the target shares the source's placement pointer; it must be a copy")
+	}
+	got.Services[0].Placement.Require["ssd"] = "changed"
+	if source.Services[0].Placement.Require["ssd"] != "true" {
+		t.Error("the promoted service shares its require map with the source")
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "placement") {
+		t.Errorf("changes = %+v, want placement listed", changes)
+	}
+
+	// The same rules change nothing; a source with none clears the target's.
+	target.Services[0].Placement = &app.Placement{Require: map[string]string{"ssd": "true"}, Avoid: []string{"three"}}
+	_, changes, _, _ = promoted(target, source)
+	if slices.Contains(changes[0].Changed, "placement") {
+		t.Errorf("changes = %+v, the rules are the same", changes)
+	}
+	source.Services[0].Placement = nil
+	got, changes, _, _ = promoted(target, source)
+	if got.Services[0].Placement != nil || !slices.Contains(changes[0].Changed, "placement") {
+		t.Errorf("placement = %+v, changes = %+v, want the target's cleared and placement listed", got.Services[0].Placement, changes)
+	}
+}
+
+// Copy to keeps the rules: the copy runs where the original does.
+func TestCopyAppKeepsPlacement(t *testing.T) {
+	ctx := context.Background()
+	e := shopEnv(t)
+	setDestination(t, e)
+	prod := production()
+	prod.Services[0].Placement = &app.Placement{Require: map[string]string{"ssd": "true"}, Prefer: []app.Preference{{Label: "region", Value: "eu", Weight: 80}}}
+	deployHealthy(t, e, prod)
+
+	rec, _, err := e.svc.CopyApp(ctx, productionID, "staging")
+	if err != nil {
+		t.Fatalf("CopyApp() = %v", err)
+	}
+	if !reflect.DeepEqual(rec.App.Services[0].Placement, prod.Services[0].Placement) {
+		t.Errorf("the copy's placement = %+v, want %+v", rec.App.Services[0].Placement, prod.Services[0].Placement)
+	}
+}

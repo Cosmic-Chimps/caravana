@@ -74,6 +74,10 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 	if err != nil {
 		return Registered{}, err
 	}
+	// A placement rule no server fits is refused the same way (spec 042).
+	if err := d.checkPlacement(ctx, res.Job, a); err != nil {
+		return Registered{}, err
+	}
 	// After the ownership check, so a conflict creates nothing; before the
 	// job, so Nomad can place the copies on the node that has the volumes.
 	if err := d.ensureVolumes(ctx, a, public); err != nil {

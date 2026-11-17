@@ -485,7 +485,7 @@ func problemServerOf(key string) string {
 	switch AttentionKind(p[0]) {
 	case AttentionDiskNearlyFull:
 		return p[2]
-	case AttentionServerDown, AttentionServerCertExpiring:
+	case AttentionServerDown, AttentionServerCertExpiring, AttentionServerMoveIncomplete:
 		return p[3]
 	}
 	return ""

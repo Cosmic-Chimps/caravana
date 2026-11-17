@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
@@ -48,7 +49,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health", "volumes", "stopTimeout" and "dns".
+	// "health", "volumes", "stopTimeout", "dns" and "placement".
 	Changed []string
 }
 
@@ -268,7 +269,8 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // promoted builds the target as a promotion leaves it, from the target as
 // stored and the source as its newest deployment deployed it (research R4):
 // for each service both have, the source's image, entrypoint, command, arguments, ports,
-// health check, volume mounts, stop timeout and DNS, and the target's everything else (identities
+// health check, volume mounts, stop timeout, DNS and placement rules (they name servers and labels, which
+// belong to the cluster, not to an environment), and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
 // only the source has is added whole, without domains. A service only the
 // target has is a *RefusalError. Published ports are the exception to "the
@@ -318,6 +320,9 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !sameDNS(t.DNS, s.DNS) {
 			change.Changed = append(change.Changed, "dns")
 		}
+		if !samePlacement(t.Placement, s.Placement) {
+			change.Changed = append(change.Changed, "placement")
+		}
 		changes = append(changes, change)
 
 		t.Image, t.Command = s.Image, s.Command
@@ -327,6 +332,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.Health = cloneHealth(s.Health)
 		t.StopTimeout = s.StopTimeout
 		t.DNS = cloneDNS(s.DNS)
+		t.Placement = clonePlacement(s.Placement)
 		result.Services = append(result.Services, t)
 	}
 	for _, s := range source.Services {
@@ -383,6 +389,26 @@ func sameDNS(a, b *app.DNS) bool {
 		y = *b
 	}
 	return slices.Equal(x.Servers, y.Servers) && slices.Equal(x.Searches, y.Searches) && slices.Equal(x.Options, y.Options)
+}
+
+// samePlacement reports whether two services' placement rules are the same; none and an empty one are the
+// same.
+func samePlacement(a, b *app.Placement) bool {
+	var x, y app.Placement
+	if a != nil {
+		x = *a
+	}
+	if b != nil {
+		y = *b
+	}
+	return maps.Equal(x.Require, y.Require) && slices.Equal(x.Prefer, y.Prefer) && slices.Equal(x.Avoid, y.Avoid)
+}
+
+func clonePlacement(p *app.Placement) *app.Placement {
+	if p == nil {
+		return nil
+	}
+	return &app.Placement{Require: maps.Clone(p.Require), Prefer: slices.Clone(p.Prefer), Avoid: slices.Clone(p.Avoid)}
 }
 
 func cloneDNS(d *app.DNS) *app.DNS {

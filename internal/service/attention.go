@@ -44,6 +44,11 @@ const (
 	// under 14 days and its agent hasn't renewed it.
 	AttentionServerDown         AttentionKind = "server_down"
 	AttentionServerCertExpiring AttentionKind = "server_certificate_expiring"
+	// AttentionCopiesUnplaced: a service with placement rules has copies Nomad can't place (feature
+	// 042). AttentionServerMoveIncomplete: a move of work off a server passed its deadline with
+	// movable copies still there, and the server still takes no new work.
+	AttentionCopiesUnplaced       AttentionKind = "copies_unplaced"
+	AttentionServerMoveIncomplete AttentionKind = "server_move_incomplete"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -129,7 +134,10 @@ type AttentionItem struct {
 	// server_certificate_expiring, when its certificate ends. The items have no app; Detail is their
 	// sentence. A disk_nearly_full item has it too, when the cluster has more than one server.
 	Server string
-	When   time.Time
+	// Queued is how many copies of copies_unplaced Nomad has queued with no node to put them on; Left
+	// is how many movable copies server_move_incomplete says still run on the server (feature 042).
+	Queued, Left int
+	When         time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -219,6 +227,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 	}
 	out.ServersUnknown = !serversKnown
 	out.Items = append(out.Items, serverItems...)
+	placementItems, placementKnown := s.placementItems(ctx, apps, s.clock.Now().UTC())
+	if !placementKnown {
+		out.CopiesUnknown = true // copies_unplaced comes from Nomad's job summaries, like the copy kinds
+	}
+	out.Items = append(out.Items, placementItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

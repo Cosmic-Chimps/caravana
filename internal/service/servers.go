@@ -201,6 +201,13 @@ type ServerView struct {
 	Unreachable                                            []string // servers its last report couldn't reach
 	// NodeID is Nomad's ID for the server's node, "" when Nomad has none.
 	NodeID string
+	// Labels are the owner's labels for the server (feature 042); never nil. LabelsApplied says its
+	// Nomad node holds its name and exactly these labels now: false while Nomad can't be read, the node
+	// is down or the write hasn't reached it.
+	Labels        map[string]string
+	LabelsApplied bool
+	// Move is the server's newest move of work off it, nil when it never had one.
+	Move *MoveView
 }
 
 // ClusterView is the cluster as a whole.
@@ -342,7 +349,7 @@ func (s *Service) joinCommand(token, fallbackURL string) (command, note string) 
 // waitingView is the view of a row that hasn't joined.
 func waitingView(r store.Server) ServerView {
 	v := ServerView{ID: r.ID, Name: r.Name, Index: r.Index, Pool: r.Pool, State: store.ServerWaiting, Managed: true,
-		CreatedAt: r.CreatedAt, ExpiresAt: r.JoinExpires}
+		CreatedAt: r.CreatedAt, ExpiresAt: r.JoinExpires, Labels: r.Labels}
 	if addrs, err := mesh.Of(r.Index); err == nil {
 		v.PrivateAddress = addrs.Mesh.String()
 	}
@@ -699,6 +706,7 @@ func (s *Service) NodeSync(ctx context.Context, nodeToken string, report NodeRep
 			return NodeAnswer{}, fmt.Errorf("sync: %w", err)
 		}
 		state = store.ServerReady
+		s.reconcileLabelsSoon() // its name and labels go to its node
 	}
 	if err := s.reconcileRoles(ctx); err != nil {
 		return NodeAnswer{}, err
@@ -840,7 +848,7 @@ func (s *Service) serverViews(ctx context.Context) ([]ServerView, ClusterView, e
 			continue
 		}
 		v := ServerView{ID: n.ID, Name: n.Name, Pool: n.Pool, State: "ready", Managed: false, NodeID: n.ID,
-			AcceptsWork: n.Eligible && !n.Draining, Copies: copies[n.Name]}
+			AcceptsWork: n.Eligible && !n.Draining, Copies: copies[n.Name], Labels: map[string]string{}}
 		if n.Down() {
 			v.State, v.AcceptsWork = "down", false
 		}
@@ -889,6 +897,10 @@ func (s *Service) rowView(ctx context.Context, r store.Server, rows []store.Serv
 	}
 	if r.State == store.ServerReady && !nomadOK {
 		v.AcceptsWork = true // unknown; not judged
+	}
+	v.LabelsApplied = nomadOK && s.labelsApplied(ctx, r, node)
+	if m, err := s.store.NewestServerMove(ctx, r.Index); err == nil {
+		v.Move = moveViewOf(m)
 	}
 	in := checkInput{NomadKnown: nomadOK, Node: node, Others: othersOf(rows, r.Index, nodes, nomadOK)}
 	if hasReport {

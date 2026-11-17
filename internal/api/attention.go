@@ -36,7 +36,11 @@ type attentionItemJSON struct {
 	Level       string   `json:"level,omitempty"`
 	// server_down and server_certificate_expiring (feature 031): the server's name. The certificate
 	// kind's end is expiresAt above; the items have no appId.
-	Server string    `json:"server,omitempty"`
+	Server string `json:"server,omitempty"`
+	// copies_unplaced (feature 042): how many copies Nomad has queued; server_move_incomplete: how many
+	// movable copies still run on the server (named by server above).
+	Queued int       `json:"queued,omitzero"`
+	Left   int       `json:"left,omitzero"`
 	At     time.Time `json:"at"`
 	Detail string    `json:"detail,omitempty"`
 }
@@ -52,6 +56,12 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	}
 	if it.Kind == service.AttentionServerDown || it.Kind == service.AttentionServerCertExpiring {
 		out.Server, out.Level = it.Server, string(it.Level) // failed for a server that is down, else warning
+	}
+	if it.Kind == service.AttentionServerMoveIncomplete {
+		out.Server, out.Level, out.Left = it.Server, string(it.Level), it.Left
+	}
+	if it.Kind == service.AttentionCopiesUnplaced {
+		out.Queued = it.Queued
 	}
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning

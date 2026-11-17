@@ -87,6 +87,10 @@ type Timing struct {
 	// second, and one it doesn't (after an agent restart) never will, while
 	// "Back up now" waits for this inside a request the server cuts at 30 s.
 	RenderGap, RenderWait time.Duration
+	// LabelWait is how long SetNodeLabels waits for Nomad's servers to show a
+	// node's new metadata (feature 042). Default 15 s: they showed it after 8
+	// to 10 s in the lab.
+	LabelWait time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -107,6 +111,9 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.RenderWait == 0 {
 		t.RenderWait = 10 * time.Second
+	}
+	if t.LabelWait == 0 {
+		t.LabelWait = 15 * time.Second
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute

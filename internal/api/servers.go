@@ -41,6 +41,12 @@ func serversError(err error) *Error {
 		return &Error{Status: http.StatusConflict, Code: codeServerExists, Field: field, Message: "A server or a Nomad node already has that name."}
 	case errors.Is(err, service.ErrServerNotFound):
 		return &Error{Status: http.StatusNotFound, Code: codeServerNotFound, Message: err.Error()}
+	case errors.Is(err, service.ErrServerNotReady):
+		return &Error{Status: http.StatusConflict, Code: codeServerNotReady, Message: err.Error()}
+	case errors.Is(err, service.ErrServerMoving):
+		return &Error{Status: http.StatusConflict, Code: codeServerMoving, Message: err.Error()}
+	case errors.Is(err, service.ErrNoOtherServer):
+		return &Error{Status: http.StatusConflict, Code: codeNoOtherServer, Message: err.Error()}
 	case errors.Is(err, service.ErrServerRunning):
 		return &Error{Status: http.StatusConflict, Code: codeServerRunning, Message: err.Error()}
 	case errors.Is(err, service.ErrFirstServer):
@@ -135,6 +141,9 @@ type serverJSON struct {
 	Disks                *[]hostDiskJSON   `json:"disks"`
 	Copies               int               `json:"copies"`
 	Unreachable          []string          `json:"unreachable"`
+	Labels               map[string]string `json:"labels"`
+	LabelsApplied        bool              `json:"labelsApplied"`
+	Move                 *serverMoveJSON   `json:"move"`
 }
 
 func toServerJSON(v service.ServerView) serverJSON {
@@ -146,9 +155,13 @@ func toServerJSON(v service.ServerView) serverJSON {
 		SeenAt: timeText(v.SeenAt), ExpiresAt: timeText(v.ExpiresAt),
 		Checks: toServerChecksJSON(v.Checks), CertificateExpiresAt: timeText(v.CertificateExpiresAt),
 		Copies: v.Copies, Unreachable: v.Unreachable,
+		Labels: v.Labels, LabelsApplied: v.LabelsApplied, Move: toServerMoveJSON(v.Move),
 	}
 	if out.Unreachable == nil {
 		out.Unreachable = []string{}
+	}
+	if out.Labels == nil {
+		out.Labels = map[string]string{}
 	}
 	if v.Agent != nil {
 		out.Agent = &serverAgentJSON{Caravana: v.Agent.Caravana, Nomad: v.Agent.Nomad, Docker: v.Agent.Docker, Kernel: v.Agent.Kernel}

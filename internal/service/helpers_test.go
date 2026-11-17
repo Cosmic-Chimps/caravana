@@ -135,6 +135,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	// The updater: no pass after Start's first, which finds nothing. Tests of the watcher call
 	// updatePass or followUpdateRun.
 	svc.updater.gap = time.Hour
+	// Server labels: the reconcile at Start finds nothing yet; tests of it call reconcileNodeLabels.
+	svc.labelGap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

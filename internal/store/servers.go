@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -43,18 +44,26 @@ type Server struct {
 	SeenAt       time.Time
 	Report       string // the agent's last report, JSON
 	CertNotAfter time.Time
+	// Labels are the owner's labels for the server (feature 042), name to value; never nil.
+	Labels map[string]string
 }
 
 const serverColumns = `idx, id, name, pool, state, first, nomad_server, public_key, endpoint, join_hash, join_expires,
-	token_hash, created_at, joined_at, ready_at, seen_at, report, cert_not_after`
+	token_hash, created_at, joined_at, ready_at, seen_at, report, cert_not_after, labels`
 
 func scanServer(r interface{ Scan(...any) error }) (Server, error) {
 	var v Server
 	var first, nomad int
-	var joinExp, created, joined, ready, seen, cert string
+	var joinExp, created, joined, ready, seen, cert, labels string
 	if err := r.Scan(&v.Index, &v.ID, &v.Name, &v.Pool, &v.State, &first, &nomad, &v.PublicKey, &v.Endpoint,
-		&v.JoinHash, &joinExp, &v.TokenHash, &created, &joined, &ready, &seen, &v.Report, &cert); err != nil {
+		&v.JoinHash, &joinExp, &v.TokenHash, &created, &joined, &ready, &seen, &v.Report, &cert, &labels); err != nil {
 		return Server{}, err
+	}
+	if err := json.Unmarshal([]byte(labels), &v.Labels); err != nil {
+		return Server{}, fmt.Errorf("server %d labels: %w", v.Index, err)
+	}
+	if v.Labels == nil {
+		v.Labels = map[string]string{}
 	}
 	v.First, v.NomadServer = first == 1, nomad == 1
 	var err error
@@ -165,10 +174,14 @@ func (s *Store) InsertServer(ctx context.Context, v Server) (Server, error) {
 		return Server{}, fmt.Errorf("insert server: %w", ErrClusterFull)
 	}
 	v.Index = idx
-	_, err = tx.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	labels, err := encodeLabels(v.Labels)
+	if err != nil {
+		return Server{}, fmt.Errorf("insert server: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO servers (`+serverColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		v.Index, v.ID, v.Name, v.Pool, v.State, boolInt(v.First), boolInt(v.NomadServer), v.PublicKey, v.Endpoint,
 		v.JoinHash, zeroOrTime(v.JoinExpires), v.TokenHash, formatTime(v.CreatedAt), zeroOrTime(v.JoinedAt),
-		zeroOrTime(v.ReadyAt), zeroOrTime(v.SeenAt), v.Report, zeroOrTime(v.CertNotAfter))
+		zeroOrTime(v.ReadyAt), zeroOrTime(v.SeenAt), v.Report, zeroOrTime(v.CertNotAfter), labels)
 	if err != nil {
 		if isUnique(err) {
 			return Server{}, fmt.Errorf("insert server: %w", ErrAlreadyExists)
@@ -245,7 +258,31 @@ func (s *Store) RotateFirstServer(ctx context.Context, tokenHash, publicKey, end
 	return s.serverBy(ctx, "first", "first", 1)
 }
 
-// DeleteServer removes a server, so its node token stops working. An unknown one is ErrNotFound.
+// encodeLabels is a label set as the JSON object the column holds; nil is "{}".
+func encodeLabels(labels map[string]string) (string, error) {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	b, err := json.Marshal(labels) // sorted keys: the same set is the same text
+	if err != nil {
+		return "", fmt.Errorf("encode labels: %w", err)
+	}
+	return string(b), nil
+}
+
+// SetServerLabels replaces the server's labels with this set (nil clears them). An unknown
+// server is ErrNotFound. The caller has checked the names and values.
+func (s *Store) SetServerLabels(ctx context.Context, index int, labels map[string]string) error {
+	text, err := encodeLabels(labels)
+	if err != nil {
+		return fmt.Errorf("set server labels %d: %w", index, err)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE servers SET labels = ? WHERE idx = ?`, text, index)
+	return oneRow(res, err, "set server labels", index)
+}
+
+// DeleteServer removes a server, so its node token stops working. Its moves go with it (the
+// foreign key cascades). An unknown one is ErrNotFound.
 func (s *Store) DeleteServer(ctx context.Context, index int) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM servers WHERE idx = ?`, index)
 	return oneRow(res, err, "delete server", index)
@@ -278,6 +315,11 @@ func oneRow(res sql.Result, err error, what string, index int) error {
 // isUnique says err is SQLite refusing a duplicate value of a UNIQUE column or index.
 func isUnique(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// isForeignKey says err is SQLite refusing a row that names a row that isn't there.
+func isForeignKey(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
 
 // NewestHostOf returns the newest minute row of one Nomad node's host sample, or ErrNotFound when

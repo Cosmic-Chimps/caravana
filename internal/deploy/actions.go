@@ -271,7 +271,13 @@ func (d *Deployer) copyRestarted(ctx context.Context, copyID, task string, since
 	if !checked {
 		return true, nil
 	}
-	results, err := d.nomad.Allocations().Checks(copyID, q)
+	return d.checksPass(ctx, copyID)
+}
+
+// checksPass reports whether every service check of the copy passes (a copy with no checks
+// passes). A copy Nomad lost is ErrCopyNotFound.
+func (d *Deployer) checksPass(ctx context.Context, copyID string) (bool, error) {
+	results, err := d.nomad.Allocations().Checks(copyID, (&api.QueryOptions{}).WithContext(ctx))
 	if err != nil {
 		if statusOf(err) == http.StatusNotFound {
 			return false, fmt.Errorf("%w: %s", ErrCopyNotFound, copyID)

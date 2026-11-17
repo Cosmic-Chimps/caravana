@@ -121,6 +121,12 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionServerCertExpiring:
 		ev.Title = "Server certificate ending: " + it.Server
 		ev.Text, ev.Detail = it.Detail, ""
+	case AttentionServerMoveIncomplete:
+		ev.Title = "Move-off incomplete: " + it.Server
+		ev.Text, ev.Detail = it.Detail, ""
+	case AttentionCopiesUnplaced:
+		ev.Title = where + ": copies can't be placed"
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."
@@ -255,7 +261,7 @@ func problemPath(kind AttentionKind, appID, subject string) string {
 		return "/monitoring#host"
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates, AttentionCaravanaUpdateFailed:
 		return "/ops/updates"
-	case AttentionServerDown, AttentionServerCertExpiring:
+	case AttentionServerDown, AttentionServerCertExpiring, AttentionServerMoveIncomplete:
 		return "/ops/servers/" + url.PathEscape(subject)
 	case AttentionDomainDNSElsewhere, AttentionDomainCertExpiring:
 		return "/domains?open=" + url.QueryEscape(subject) + "#domain-" + subject
@@ -420,7 +426,8 @@ func problemSubject(it AttentionItem) string {
 // is.
 //
 // server_down (feature 031) comes from Nomad's node list and is judged only while Nomad's nodes could be
-// read.
+// read, and so is server_move_incomplete (feature 042). copies_unplaced (feature 042) comes from Nomad's job
+// summaries and is judged with the copy kinds.
 //
 // A disk problem is also not judged while its own server isn't (feature 031): DisksUnjudged names the
 // servers whose newest host sample is too old, "" being the one Caravana runs on.
@@ -453,13 +460,13 @@ var allJudged = judged{Copies: true, Disks: true, OS: true, Servers: true}
 // string).
 func notJudged[K ~string](kind K, j judged) bool {
 	switch AttentionKind(kind) {
-	case AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy:
+	case AttentionOutOfMemory, AttentionRestarting, AttentionUnhealthy, AttentionCopiesUnplaced:
 		return !j.Copies
 	case AttentionDiskNearlyFull:
 		return !j.Disks
 	case AttentionOSRebootRequired, AttentionOSSecurityUpdates:
 		return !j.OS
-	case AttentionServerDown:
+	case AttentionServerDown, AttentionServerMoveIncomplete:
 		return !j.Servers
 	}
 	return false

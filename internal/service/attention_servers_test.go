@@ -49,7 +49,7 @@ func TestServerItemsOf(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			var got []string
 			var detail string
-			for _, it := range serverItemsOf(now, c.rows, c.nodes, c.nomad) {
+			for _, it := range serverItemsOf(now, c.rows, c.nodes, c.nomad, nil) {
 				got = append(got, string(it.Kind)+"|"+it.Server)
 				detail = it.Detail
 				if key := problemKey(it); key != string(it.Kind)+"|||"+it.Server {

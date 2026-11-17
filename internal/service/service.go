@@ -144,6 +144,16 @@ type Service struct {
 	// issuerInFlight holds the Nomad servers handed a new issuer and when, so they take it one at a
 	// time (issuerFor). In memory: a restart forgets it. Guarded by serverMu.
 	issuerInFlight map[string]time.Time
+
+	// Placement and drain (feature 042), see serverlabels.go and servermove.go.
+	labelMu  sync.Mutex    // held while a server's labels are written to its node: a save and the reconcile never interleave
+	labelGap time.Duration // between two reconciles of every node's labels
+	// moveMu serializes the starts of moves, so two can't both pass "no move going"; moveRunsMu guards
+	// moveRuns, the moves whose goroutine is going.
+	moveMu     sync.Mutex
+	moveRunsMu sync.Mutex
+	moveRuns   map[string]*moveRun
+	move       moveTiming
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -229,6 +239,10 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		templateRand: crand.Reader,
 
 		updater: updaterState{gap: defaultUpdateWatchGap},
+
+		labelGap: defaultLabelReconcileGap,
+		moveRuns: map[string]*moveRun{},
+		move:     defaultMoveTiming(),
 	}
 }
 
@@ -343,6 +357,10 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resumeVolumeRuns(ctx); err != nil {
 		return err
 	}
+	// A move of work off a server that was going goes on from the copies still there.
+	if err := s.resumeMoves(ctx); err != nil {
+		return err
+	}
 	s.backupWatcher.Add(1)
 	go func() {
 		defer s.backupWatcher.Done()
@@ -420,6 +438,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.watchUpdates(ctx, updateGap)
+	}()
+	// Each server's node metadata is made to match its stored labels, at start and every few minutes
+	// (feature 042); it starts no watchers.
+	labelGap := s.labelGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runLabelReconcile(ctx, labelGap)
 	}()
 	return nil
 }
