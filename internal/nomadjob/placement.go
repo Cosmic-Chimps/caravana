@@ -41,13 +41,6 @@ func placementBlocks(svc app.Service) ([]*api.Constraint, []*api.Affinity) {
 	if p == nil {
 		return nil, nil
 	}
-	var constraints []*api.Constraint
-	for _, name := range slices.Sorted(maps.Keys(p.Require)) {
-		constraints = append(constraints, &api.Constraint{LTarget: LabelAttribute(name), RTarget: p.Require[name], Operand: "="})
-	}
-	for _, server := range slices.Sorted(slices.Values(p.Avoid)) {
-		constraints = append(constraints, &api.Constraint{LTarget: ServerAttribute, RTarget: server, Operand: "!="})
-	}
 	var affinities []*api.Affinity
 	for _, pref := range p.Prefer {
 		affinities = append(affinities, &api.Affinity{
@@ -57,5 +50,45 @@ func placementBlocks(svc app.Service) ([]*api.Constraint, []*api.Affinity) {
 			Weight:  new(int8(pref.WeightOrDefault())),
 		})
 	}
-	return constraints, affinities
+	return PlacementConstraints(svc), affinities
+}
+
+// PlacementConstraints is the service's placement as constraints alone: one
+// per required label, by name, then one "!=" per server to avoid, by name.
+// None for a service without placement. The deploy flow gives them to Nomad
+// when it creates the service's first volume, so the volume lands on a server
+// the service may run on (a volume never moves).
+func PlacementConstraints(svc app.Service) []*api.Constraint {
+	p := svc.Placement
+	if p == nil {
+		return nil
+	}
+	var constraints []*api.Constraint
+	for _, name := range slices.Sorted(maps.Keys(p.Require)) {
+		constraints = append(constraints, &api.Constraint{LTarget: LabelAttribute(name), RTarget: p.Require[name], Operand: "="})
+	}
+	for _, server := range slices.Sorted(slices.Values(p.Avoid)) {
+		constraints = append(constraints, &api.Constraint{LTarget: ServerAttribute, RTarget: server, Operand: "!="})
+	}
+	return constraints
+}
+
+// AllowedOn reports whether a node whose metadata is meta satisfies the
+// service's placement constraints: it has every required label with its value,
+// and the name it carries (ServerMetaKey) isn't avoided. A node without the
+// name passes the avoid rule, as Nomad's "!=" does. Preferences never forbid.
+func AllowedOn(svc app.Service, meta map[string]string) bool {
+	p := svc.Placement
+	if p == nil {
+		return true
+	}
+	for name, value := range p.Require {
+		if meta[LabelMetaKey(name)] != value {
+			return false
+		}
+	}
+	if server, ok := meta[ServerMetaKey]; ok && slices.Contains(p.Avoid, server) {
+		return false
+	}
+	return true
 }

@@ -82,6 +82,14 @@ func (d *Deployer) ensureVolumes(ctx context.Context, a app.App, public []string
 					Message: fmt.Sprintf("service %s publishes a port, but its volumes are on a server that offers no published ports; the volumes can't move, so publish the port from a service without them", svc.Name)}
 			}
 		}
+		// A volume that exists on a server the service's placement rules don't
+		// allow would leave the copy with nowhere to go (spec 042): refused
+		// naming the rules, since the volume never moves.
+		if node != "" && svc.Placement != nil && len(svc.Volumes) > 0 {
+			if err := d.volumeNodeAllowed(ctx, i, svc, node); err != nil {
+				return err
+			}
+		}
 		nodes[i] = node
 	}
 
@@ -95,7 +103,13 @@ func (d *Deployer) ensureVolumes(ctx context.Context, a app.App, public []string
 				ids = append(ids, stub.ID)
 				continue
 			}
-			vol, err := d.createVolume(ctx, name, node)
+			// Without a node, the service's placement rules choose one with
+			// the volume: Nomad picks a node that satisfies the constraints.
+			var constraints []*api.Constraint
+			if node == "" {
+				constraints = nomadjob.PlacementConstraints(svc)
+			}
+			vol, err := d.createVolume(ctx, name, node, constraints)
 			if err != nil {
 				return err
 			}
@@ -140,10 +154,26 @@ func existingNode(appID string, svc app.Service, have map[string]*api.HostVolume
 	return node, nil
 }
 
+// volumeNodeAllowed refuses, with the service's placement field, a volume node
+// that the service's rules don't allow (its metadata lacks a required label,
+// or carries an avoided server's name).
+func (d *Deployer) volumeNodeAllowed(ctx context.Context, i int, svc app.Service, nodeID string) error {
+	node, err := d.nodeInfo(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	if nomadjob.AllowedOn(svc, node.Meta) {
+		return nil
+	}
+	return &PlacementError{Field: fmt.Sprintf("services[%d].placement", i),
+		Message: fmt.Sprintf("service %s has its volumes on server %s, which its placement rules don't allow; a volume never moves, so change the rules or label that server", svc.Name, node.Name)}
+}
+
 // createVolume creates one dynamic host volume and returns what Nomad
 // answered. With a node the volume goes there; without one Nomad picks a node
-// of the "default" pool.
-func (d *Deployer) createVolume(ctx context.Context, name, nodeID string) (*api.HostVolume, error) {
+// of the "default" pool that satisfies the constraints (the service's
+// placement rules, spec 042; none for a service without any).
+func (d *Deployer) createVolume(ctx context.Context, name, nodeID string, constraints []*api.Constraint) (*api.HostVolume, error) {
 	vol := &api.HostVolume{
 		Namespace:  "default",
 		Name:       name,
@@ -158,6 +188,7 @@ func (d *Deployer) createVolume(ctx context.Context, name, nodeID string) (*api.
 		vol.NodeID = nodeID
 	} else {
 		vol.NodePool = "default"
+		vol.Constraints = constraints
 	}
 	resp, _, err := d.nomad.HostVolumes().Create(&api.HostVolumeCreateRequest{Volume: vol}, (&api.WriteOptions{}).WithContext(ctx))
 	if err != nil {

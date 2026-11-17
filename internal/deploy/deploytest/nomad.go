@@ -1222,8 +1222,10 @@ func (n *Nomad) HostVolumes() []string {
 }
 
 // VolumeCreate is one host volume create request as the fake received it.
+// Constraints is the request's constraints as text, "attribute operator value"
+// joined by "; " ("" for none), so a test compares requests with ==.
 type VolumeCreate struct {
-	Name, NodeID, NodePool string
+	Name, NodeID, NodePool, Constraints string
 }
 
 // SetVolumeNodes sets the nodes Nomad places a new volume on when the request
@@ -1298,7 +1300,13 @@ func (n *Nomad) hostVolume(w http.ResponseWriter, r *http.Request) {
 		n.index++
 		v := *req.Volume
 		v.ID = fmt.Sprintf("vol-%d", n.index)
-		n.volumeCreates = append(n.volumeCreates, VolumeCreate{Name: v.Name, NodeID: v.NodeID, NodePool: v.NodePool})
+		var constraints []string
+		for _, c := range v.Constraints {
+			if c != nil {
+				constraints = append(constraints, c.LTarget+" "+c.Operand+" "+c.RTarget)
+			}
+		}
+		n.volumeCreates = append(n.volumeCreates, VolumeCreate{Name: v.Name, NodeID: v.NodeID, NodePool: v.NodePool, Constraints: strings.Join(constraints, "; ")})
 		if v.NodeID == "" {
 			nodes := n.volumeNodes
 			if len(nodes) == 0 {

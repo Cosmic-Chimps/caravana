@@ -31,6 +31,18 @@ step checks that two labels are removed in one write.
 excluded. That text is what `deploy.checkPlacement` parses back into the field. Lack of memory shows as
 `DimensionExhausted`, not a constraint, and stays no refusal.
 
+## R5 A volume follows the rules, or the copy has nowhere to go (cluster test, 2026-11-17)
+
+The first cluster-test run of step 6c deployed a service with a volume and `require: {ssd: "true"}`: the
+volume was created on whichever node Nomad picked (not the labelled one), and the copy stayed queued between
+`${meta.caravana.label.ssd} = true: 2 nodes excluded` and `missing compatible host volumes: 1 nodes excluded`.
+The plan check didn't refuse it, rightly: the volume didn't exist yet when the job was planned, so the
+failure wasn't Caravana's constraints alone. Nomad's dynamic host volume create takes `Constraints` to pick
+the node when `NodeID` is empty, so `ensureVolumes` now sends the service's placement constraints
+(`nomadjob.PlacementConstraints`) with a new volume, and refuses on `services[i].placement` a volume that
+already exists on a node whose metadata the rules don't allow (`nomadjob.AllowedOn`), since a volume never
+moves.
+
 ## R4 Why not Nomad's own node drain (decision, no lab run)
 
 `nomad node drain` migrates every service allocation on the node, with no way to leave a job out except
