@@ -464,8 +464,9 @@ main() {
     [ "$(copies_json "$a" | jsonq 'len([c for c in d["copies"] if c["status"]=="healthy" and c["node"]=="two"])')" = 0 ] ||
       die "$a still has a copy on two after the move:\n$(copies_json "$a")"
   done
-  healthy_copies spread 3 || die "spread should have three healthy copies after the move:\n$(copies_json spread)"
-  healthy_copies dup 2 || die "dup should have two healthy copies after the move:\n$(copies_json dup)"
+  # The copies that didn't move can fail a check for a moment while the VMs are busy placing the others.
+  wait_for 120 "spread should have three healthy copies after the move" healthy_copies spread 3
+  wait_for 120 "dup should have two healthy copies after the move" healthy_copies dup 2
   [ "$(jsonq 'd["move"]["moved"]' <<<"$out")" -ge 2 ] || die "the move should have moved at least two copies:\n$out"
   grep -q '"app":"vol2","service":"main","reason":"its data is on this server"' <<<"$out" || die "vol2 should be listed as staying for its data:\n$out"
   grep -q '"app":"req","service":"web","reason":"its placement rules allow no other server"' <<<"$out" || die "req should be listed as staying for its rules:\n$out"

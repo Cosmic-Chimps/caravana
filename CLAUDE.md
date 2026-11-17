@@ -1547,7 +1547,12 @@ work in constraints; `!=` passes on a node without the key; why Nomad's own `nod
   6b (labels on two, a required label places on two only, an impossible rule is 409 naming the field, prefer lands on
   two, avoid keeps copies off three, removing the label makes a redeploy refused while the copies keep running) and 6c
   (a two-copy app and a volume app pinned to two; drain two while `spread.test` is called every half second; the
-  movable copies leave, vol2 and req are listed as staying with their reasons, Accept work again).
+  movable copies leave, vol2 and req are listed as staying with their reasons, Accept work again). It passed on
+  2026-11-17 (17 min; 0 calls failed during the move). Its first run found research R5: a new volume of a service
+  with rules was created on any node and the copy stayed queued, so `ensureVolumes` now creates it with the
+  service's placement constraints (Nomad picks a node that fits) and refuses on `services[i].placement` a volume
+  that already sits on a server the rules forbid (`nomadjob.PlacementConstraints`, `nomadjob.AllowedOn`). A copy
+  that didn't move can fail a check for a moment while the VMs place the others, so the step waits for health.
 - Not in 042: node pools, other constraint operators, placement by resources, moving a volume, Nomad's own drain, a
   scheduler settings page, labels from the installer.
 
