@@ -64,8 +64,8 @@ type srvPart struct {
 }
 
 // srvHead is the head: the name, the state in plain words, "reboot needed" when the host's files
-// ask for it, and the spec line. It has no actions: a shell on the host and moving work off are
-// not built (the contract says why).
+// ask for it, and the spec line. Its actions are Move work off and Accept work again (feature 042) and,
+// for a server that is down, Remove; a shell on the host is not built (the contract says why).
 type srvHead struct {
 	Name   string
 	State  *statusView // nil until the node is known
@@ -76,6 +76,11 @@ type srvHead struct {
 	// Remove is the address of the page that confirms the removal of a server that is down; empty for any
 	// other server, since a running one can't be removed.
 	Remove string
+	// MoveHref is the confirmation page of moving work off a ready server that accepts work; AcceptAction
+	// is the post that lets a ready server that doesn't accept work take it again (feature 042). Both are
+	// empty during a move: its panel has the Cancel.
+	MoveHref     string
+	AcceptAction string
 }
 
 // srvItem is one item of a " · " list (the spec line, the agent, the os, the cpu). It is drawn in a
@@ -98,6 +103,12 @@ func itemsOf(texts []string) []srvItem {
 // srvBody is everything under the head, one live region: the notice, the banners, the numbers
 // and the room line, and the two columns.
 type srvBody struct {
+	// Notice is a refusal of the post that drew the page (accept work, say): drawn first, gone at the next
+	// refresh.
+	Notice sentence
+	// Move is the panel of the server's newest move of work off it (feature 042), the first panel of
+	// the body while one goes and after it; nil draws none.
+	Move *srvMove
 	// NomadDown says Nomad couldn't be read: the notice is drawn, the numbers carry "as of", and
 	// Running here says it can't read Nomad.
 	NomadDown bool
@@ -222,6 +233,8 @@ type srvFact struct {
 	SecondNote string
 	Mark       string
 	Strong     bool
+	// Labels replaces the value with the labels row: the chips and the form (feature 042).
+	Labels *srvLabels
 }
 
 // ---- handlers ---------------------------------------------------------------------------------
@@ -231,9 +244,22 @@ func (s *server) showOpsServer(w http.ResponseWriter, r *http.Request, session s
 	s.drawOpsServer(w, r, r.PathValue("name"))
 }
 
+// srvExtras is what a refused post adds to the page it draws again: the labels typed with their
+// error, or a notice (accepting work refused).
+type srvExtras struct {
+	LabelsText  *string
+	LabelsError sentence
+	Notice      sentence
+}
+
 // drawOpsServer draws the page for name ("" for the page of a host not read yet).
 func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name string) {
-	data, err := s.loadOpsServer(r, name)
+	s.drawOpsServerWith(w, r, name, http.StatusOK, srvExtras{})
+}
+
+// drawOpsServerWith is drawOpsServer with the status of a refused post and what it adds.
+func (s *server) drawOpsServerWith(w http.ResponseWriter, r *http.Request, name string, status int, extra srvExtras) {
+	data, err := s.loadOpsServer(r, name, extra)
 	if err != nil {
 		s.serverError(w, r, "draw the server page", err)
 		return
@@ -254,7 +280,6 @@ func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name stri
 	if name != "" {
 		out.PartHref = "/parts/ops/servers/" + url.PathEscape(name)
 	}
-	status := http.StatusOK
 	if data.missing != nil {
 		out.Missing, status = data.missing, http.StatusNotFound
 		out.Title, out.LiveURL = "Server not found", ""
@@ -267,7 +292,7 @@ func (s *server) drawOpsServer(w http.ResponseWriter, r *http.Request, name stri
 
 // partOpsServerBody answers GET /parts/ops/servers/{name}: the body, and the head by id.
 func (s *server) partOpsServerBody(w http.ResponseWriter, r *http.Request, session string) {
-	data, err := s.loadOpsServer(r, r.PathValue("name"))
+	data, err := s.loadOpsServer(r, r.PathValue("name"), srvExtras{})
 	if err != nil {
 		s.log.Error("draw the server page", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -295,7 +320,7 @@ type srvData struct {
 // runs on, its own history, and builds the head and the body. A name no server has is a missing page;
 // before the node of the server Caravana runs on is known, that server's page is the sentence that says
 // so. A server that is still joining is the join's page.
-func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
+func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (srvData, error) {
 	ctx := r.Context()
 	local, err := s.svc.Host(ctx, "")
 	if err != nil {
@@ -371,6 +396,9 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 	coreMHz := coreMHzOf(host.CPU)
 	if isLocal {
 		d.head = srvHead{Name: n.Name, State: serverState(n.State), Reboot: host.Reboot != nil && host.Reboot.Required}
+		if managed && moving(view) {
+			d.head.State = &statusView{Kind: "rolling", Word: "moving work off"}
+		}
 		spec = nodeSpecItems(n)
 		if coreMHz == 0 && n.Cores > 0 && n.TotalMHz > 0 {
 			coreMHz = float64(n.TotalMHz) / float64(n.Cores)
@@ -391,6 +419,11 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		}
 	}
 	d.head.Spec = itemsOf(spec)
+	d.body.Notice = extra.Notice
+	if managed {
+		d.head.MoveHref, d.head.AcceptAction = moveActions(view)
+		d.body.Move = moveOf(now, view, pl)
+	}
 
 	d.body.Banners = append(d.body.Banners, s.hostItemsFor(now, att, d.head.Name, isLocal)...)
 	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
@@ -432,6 +465,9 @@ func (s *server) loadOpsServer(r *http.Request, name string) (srvData, error) {
 		if a := view.Agent; a != nil && hostos.ReleaseNewer(s.version, a.Caravana) {
 			d.body.AgentNote = "This server's agent is " + a.Caravana + "; the console is " + strings.TrimPrefix(s.version, "v") + ". Run the newer installer on it."
 		}
+	}
+	if managed {
+		d.body.Facts = withLabelsFact(d.body.Facts, labelsFormOf(view, extra.LabelsText, extra.LabelsError))
 	}
 	return d, nil
 }
@@ -1260,4 +1296,16 @@ func thousands(n int) string {
 		s = s[:i] + "," + s[i:]
 	}
 	return s
+}
+
+// withLabelsFact puts the Labels row after the address and joined facts (before the agent and the
+// operating system), or first when there are none.
+func withLabelsFact(facts []srvFact, l *srvLabels) []srvFact {
+	at := 0
+	for i, f := range facts {
+		if f.Key == "pool" || f.Key == "address" || f.Key == "private address" || f.Key == "joined" {
+			at = i + 1
+		}
+	}
+	return slices.Insert(facts, at, srvFact{Key: "labels", Labels: l})
 }

@@ -159,6 +159,9 @@ func (s *server) routeTable() []route {
 		// /ops/servers/joins/{id} and /ops/servers/{name}/remove: one pattern, see showServerSub.
 		{"GET", "/ops/servers/{kind}/{rest}", s.requireSession(s.showServerSub)},
 		{"POST", "/ops/servers/{name}/remove", s.protected(s.requireSession(s.removeServer))},
+		{"POST", "/ops/servers/{name}/labels", s.protected(s.requireSession(s.saveServerLabels))},
+		{"POST", "/ops/servers/{name}/move", s.protected(s.requireSession(s.moveServer))},
+		{"POST", "/ops/servers/{name}/accept", s.protected(s.requireSession(s.acceptWork))},
 		{"POST", "/ops/servers/joins/{id}/cancel", s.protected(s.requireSession(s.cancelServerJoin))},
 		{"GET", "/parts/ops/servers/joins/{id}", s.requirePart(s.partServerJoin)},
 		{"GET", "/parts/ops/servers/{name}", s.requirePart(s.partOpsServerBody)},
@@ -230,6 +233,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/backups/{backupId}/unpin", s.protected(s.requireSession(s.unpinBackup))},
 		{"POST", "/apps/{id}/backups/restore-schedule", s.protected(s.requireSession(s.setRestoreSchedule))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
+		{"POST", "/apps/{id}/services/{service}/placement", s.protected(s.requireSession(s.savePlacement))},
 		{"POST", "/apps/{id}/secrets/refresh", s.protected(s.requireSession(s.refreshSecrets))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/apps/{id}/stop", s.requireSession(s.showStop)},
@@ -368,7 +372,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver", "moveserver"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

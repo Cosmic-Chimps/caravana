@@ -58,6 +58,8 @@ type serverRow struct {
 	Spec   string
 	// Marks are the roles the server has, as small facts: console, ingress, scheduler.
 	Marks []string
+	// Labels are the owner's labels for the server, as "name=value" (feature 042).
+	Labels []string
 	// Unmanaged says Nomad has the node and Caravana doesn't manage it.
 	Unmanaged bool
 	State     statusView
@@ -262,6 +264,7 @@ func serverRowOf(now time.Time, sv service.ServerView, isLocal bool, arch string
 	if sv.NomadServer {
 		row.Marks = append(row.Marks, "scheduler")
 	}
+	row.Labels = labelChips(sv.Labels)
 	switch sv.State {
 	case "waiting":
 		row.Cell = "Waiting for the server to call in · the command works for " + minutesLeft(now, sv.ExpiresAt)
@@ -311,6 +314,9 @@ func serverRowState(sv service.ServerView) statusView {
 		if d.State == metrics.DiskWarning || d.State == metrics.DiskFailed {
 			return statusView{Kind: "warning", Word: "disk filling"}
 		}
+	}
+	if moving(sv) {
+		return statusView{Kind: "rolling", Word: "moving work off"}
 	}
 	if !sv.AcceptsWork {
 		return statusView{Kind: "idle", Word: "not taking work"}

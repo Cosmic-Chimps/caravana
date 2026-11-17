@@ -43,6 +43,8 @@ type defPanel struct {
 	Defaults []string
 	// Identities are the service's workload identities, read-only (spec 038).
 	Identities []identityView
+	// Placement is the service's placement, read-only: set in the Compose overlay (feature 042).
+	Placement *placementView
 }
 
 // defPanelOf makes a panel from its facts, folding those with no value into
@@ -309,6 +311,8 @@ type editServiceView struct {
 	// Identities are the service's workload identities, which the form can't
 	// change and a save keeps (spec 038).
 	Identities []identityView
+	// Placement is the service's Placement panel, with its own form (feature 042).
+	Placement placementView
 }
 
 // registryPrereq is the grid's "Needs a container registry" notice (the
@@ -1031,4 +1035,24 @@ func (s *server) publishHost(ctx context.Context, a app.App) string {
 		}
 	}
 	return ""
+}
+
+// addPlacement gives every service's panel its Placement: a form of its own for an app edited in the
+// console, the rules read-only for an app that keeps its Compose file. draft is what a refused post typed.
+func (s *server) addPlacement(r *http.Request, tab *configureTab, sum service.AppSummary, draft *placementPost) {
+	servers := s.serverNames(r)
+	stopped := sum.StoppedAt != nil
+	for _, svc := range sum.App.Services {
+		for i := range tab.Edit.Services {
+			if tab.Edit.Services[i].Name == svc.Name {
+				tab.Edit.Services[i].Placement = placementViewOf(sum.App.ID, sum.Revision, svc, servers, sum.Compose == nil, stopped, draft)
+			}
+		}
+		for i := range tab.Edit.Panels {
+			if tab.Edit.Panels[i].Title == svc.Name {
+				v := placementViewOf(sum.App.ID, sum.Revision, svc, servers, false, stopped, nil)
+				tab.Edit.Panels[i].Placement = &v
+			}
+		}
+	}
 }

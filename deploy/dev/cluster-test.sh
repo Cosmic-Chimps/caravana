@@ -10,6 +10,10 @@
 #    4  server 3 joins and, within 4 minutes, all three are Nomad servers
 #    5  copies spread over the servers, and services reach each other by name across them
 #    6  a service's volumes land on one server
+#   6b  labels and placement rules (spec 042): a required label places copies on the labelled server
+#       only, an impossible rule is refused naming the field, prefer and avoid are honoured
+#   6c  moving work off server 2 (spec 042): every movable copy leaves while an app is called
+#       every half second, what can't move is listed, and the server takes work again
 #    7  losing server 3, and getting it back by itself after a reboot
 #    8  losing server 1 (the leader, Caravana and Traefik), and getting it back
 #    9  a certificate renewal reloads Nomad without restarting it
@@ -392,6 +396,94 @@ main() {
   [ "$(jsonq 'len(set(v["server"] for v in d if v["mounted"]))' <<<"$out")" = 1 ] || die "vol's volumes should name one server:\n$out"
   [ "$(jsonq 'd[0]["server"]' <<<"$out")" = "$(copy_node vol main)" ] || die "vol's copy should run on its volumes' server:\n$out"
 
+  # ---- 6b. labels and placement (spec 042) -------------------------------------------------------
+  say "6b. two gets the labels ssd=true and region=eu, and Nomad's servers take them"
+  request PUT /v1/servers/two/labels '{"labels":{"ssd":"true","region":"eu"}}'
+  [ "$REQ_CODE" = 200 ] || die "PUT /v1/servers/two/labels answered $REQ_CODE: $REQ_BODY"
+  [ "$(jsonq 'd["labels"]["ssd"]' <<<"$REQ_BODY")" = true ] || die "the answer should carry the label:\n$REQ_BODY"
+  wait_for 60 "two's labels should reach Nomad's servers" srv_is two labelsApplied True
+  grep -q 'caravana.label.ssd' < <(nomad_on 1 node status -verbose "$(node_id_of two)") || die "two's Nomad node has no caravana.label.ssd metadata"
+  say "6b. a two-copy service requiring ssd=true runs on two only"
+  deploy req "$(placed_app 2 '{"require":{"ssd":"true"}}')"
+  wait_for 240 "req should have two healthy copies" healthy_copies req 2
+  [ "$(copies_json req | jsonq 'set(c["node"] for c in d["copies"] if c["status"]=="healthy")')" = "{'two'}" ] ||
+    die "req's copies should both be on two:\n$(copies_json req)"
+  say "6b. a service requiring gpu=true is refused naming the field, and no job is registered"
+  request POST /v1/apps/nogpu/deployments "$(placed_app 1 '{"require":{"gpu":"true"}}')"
+  { [ "$REQ_CODE" = 409 ] && grep -q '"code":"placement_impossible"' <<<"$REQ_BODY" &&
+    grep -q '"field":"services\[0\].placement.require.gpu"' <<<"$REQ_BODY"; } ||
+    die "an impossible rule should be 409 placement_impossible on services[0].placement.require.gpu, got $REQ_CODE: $REQ_BODY"
+  ! nomad_on 1 job status nogpu >/dev/null 2>&1 || die "a refused deploy registered the job nogpu"
+  say "6b. prefer lands a copy on two; avoid keeps three copies off three"
+  deploy pref "$(placed_app 1 '{"prefer":[{"label":"region","value":"eu","weight":90}]}')"
+  wait_for 240 "pref should have a healthy copy" healthy_copies pref 1
+  [ "$(copy_node pref web)" = two ] || die "pref's copy should be on two (the preferred server), not $(copy_node pref web)"
+  deploy avoid "$(placed_app 3 '{"avoid":["three"]}')"
+  wait_for 240 "avoid should have three healthy copies" healthy_copies avoid 3
+  [ "$(copies_json avoid | jsonq 'len([c for c in d["copies"] if c["status"]=="healthy" and c["node"]=="three"])')" = 0 ] ||
+    die "avoid has a copy on three:\n$(copies_json avoid)"
+  say "6b. taking ssd off two makes req's redeploy refused, and its copies keep running"
+  request PUT /v1/servers/two/labels '{"labels":{"region":"eu"}}'
+  [ "$REQ_CODE" = 200 ] || die "PUT /v1/servers/two/labels answered $REQ_CODE: $REQ_BODY"
+  wait_for 60 "two's labels should be region only" srv_is two labelsApplied True
+  ! grep -q 'caravana.label.ssd' < <(nomad_on 1 node status -verbose "$(node_id_of two)") || die "two's node still has caravana.label.ssd after the label was removed"
+  request POST /v1/apps/req/deployments "$(placed_app 2 '{"require":{"ssd":"true"}}')"
+  [ "$REQ_CODE" = 409 ] || die "req's redeploy without the label should be 409, got $REQ_CODE: $REQ_BODY"
+  healthy_copies req 2 || die "req's copies should keep running after the refused redeploy:\n$(copies_json req)"
+  request PUT /v1/servers/two/labels '{"labels":{"ssd":"true","region":"eu"}}'
+  wait_for 60 "two's labels should be back" srv_is two labelsApplied True
+  delete_app pref
+  delete_app avoid
+
+  # ---- 6c. move work off two (spec 042) ----------------------------------------------------------
+  say "6c. a two-copy app and a volume app pinned to two; then work is moved off two while spread is called"
+  deploy dup "$(placed_app 2 '')"
+  wait_for 240 "dup should have two healthy copies" healthy_copies dup 2
+  deploy vol2 '{"source":{"kind":"image"},"services":[{"name":"main","image":"busybox:1.37","command":"sleep","args":["3600"],
+    "volumes":[{"name":"a","path":"/a"}],"placement":{"require":{"ssd":"true"}},"resources":{"memoryMB":32,"memoryMaxMB":64}}]}'
+  wait_for 240 "vol2 should have a healthy copy" healthy_copies vol2 1
+  [ "$(copy_node vol2 main)" = two ] || die "vol2's copy should be on two, not $(copy_node vol2 main)"
+  vm 1 touch /tmp/watching-move
+  vm 1 bash "$WORK/watch.sh" spread.test /tmp/watching-move >"$WORK/move-fails" </dev/null &
+  watcher=$!
+  request POST /v1/servers/two/drain '{"deadlineSeconds":600}'
+  [ "$REQ_CODE" = 202 ] || die "POST /v1/servers/two/drain answered $REQ_CODE: $REQ_BODY"
+  [ "$(jsonq 'd["move"]["state"]' <<<"$REQ_BODY")" = moving ] || die "the move should be moving:\n$REQ_BODY"
+  [ "$(jsonq 'd["acceptsWork"]' <<<"$REQ_BODY")" = False ] || die "two should stop taking work at once:\n$REQ_BODY"
+  request POST /v1/servers/two/drain '{}'
+  { [ "$REQ_CODE" = 409 ] && grep -q '"code":"server_moving"' <<<"$REQ_BODY"; } || die "a second move should be 409 server_moving, got $REQ_CODE: $REQ_BODY"
+  wait_for 600 "the move off two should end done" move_state_is two "done"
+  vm 1 rm -f /tmp/watching-move
+  wait "$watcher" || true
+  local move_failed
+  move_failed="$(tail -1 "$WORK/move-fails")"
+  echo "    $move_failed calls to spread.test failed during the move"
+  [ "$move_failed" -le 10 ] || die "spread.test failed $move_failed times while work moved off two (at most 10 may):\n$(cat "$WORK/move-fails")"
+  out="$(api -fsS "https://$DOMAIN/v1/servers/two")"
+  for a in spread dup; do
+    [ "$(copies_json "$a" | jsonq 'len([c for c in d["copies"] if c["status"]=="healthy" and c["node"]=="two"])')" = 0 ] ||
+      die "$a still has a copy on two after the move:\n$(copies_json "$a")"
+  done
+  healthy_copies spread 3 || die "spread should have three healthy copies after the move:\n$(copies_json spread)"
+  healthy_copies dup 2 || die "dup should have two healthy copies after the move:\n$(copies_json dup)"
+  [ "$(jsonq 'd["move"]["moved"]' <<<"$out")" -ge 2 ] || die "the move should have moved at least two copies:\n$out"
+  grep -q '"app":"vol2","service":"main","reason":"its data is on this server"' <<<"$out" || die "vol2 should be listed as staying for its data:\n$out"
+  grep -q '"app":"req","service":"web","reason":"its placement rules allow no other server"' <<<"$out" || die "req should be listed as staying for its rules:\n$out"
+  healthy_copies vol2 1 || die "vol2 should still run on two:\n$(copies_json vol2)"
+  [ "$(jsonq 'd["acceptsWork"]' <<<"$out")" = False ] || die "two should still take no work after the move:\n$out"
+  say "6c. two accepts work again, and a redeploy spreads spread over three servers once more"
+  request DELETE /v1/servers/two/drain
+  [ "$REQ_CODE" = 200 ] || die "DELETE /v1/servers/two/drain answered $REQ_CODE: $REQ_BODY"
+  [ "$(jsonq 'd["acceptsWork"]' <<<"$REQ_BODY")" = True ] || die "two should take work again:\n$REQ_BODY"
+  delete_app dup
+  delete_app vol2
+  delete_app req
+  deploy spread '{"source":{"kind":"image"},"services":[{"name":"web","image":"traefik/whoami:latest","replicas":3,"env":[{"name":"ROUND","value":"2"}],
+    "ports":[{"name":"http","containerPort":80}],"domains":[{"host":"spread.test","port":"http"}],
+    "health":{"path":"/","interval":"5s","timeout":"2s"}}]}'
+  wait_for 240 "spread should have three healthy copies again" healthy_copies spread 3
+  wait_for 120 "spread's copies should be on three servers again" spread_on_three
+
   # ---- 7. lose server 3 --------------------------------------------------------------------------
   say "7. stop VM 3 for good while spread is called every half second for 120 seconds"
   # When the lost server is Nomad's leader, the new leader waits failover_heartbeat_ttl (1 minute, set
@@ -521,5 +613,18 @@ remove_two() {
   request DELETE /v1/servers/two
   [ "$REQ_CODE" = 204 ]
 }
+# node_id_of NAME: the Nomad node ID of the server with this name.
+node_id_of() { nomad_on 1 node status -t '{{range .}}{{.ID}} {{.Name}}{{"\n"}}{{end}}' | awk -v n="$1" '$2 == n {print $1}'; }
+# placed_app REPLICAS PLACEMENT_JSON: a whoami app with small reservations and these placement rules
+# ("" for none), for the placement and move steps (spec 042).
+placed_app() {
+  local placement=""
+  [ -z "$2" ] || placement=",\"placement\":$2"
+  printf '{"source":{"kind":"image"},"services":[{"name":"web","image":"traefik/whoami:latest","replicas":%s,"ports":[{"name":"http","containerPort":80}],"health":{"path":"/","interval":"5s","timeout":"2s"},"resources":{"memoryMB":32,"memoryMaxMB":64}%s}]}' "$1" "$placement"
+}
+# move_state_is NAME STATE: the server's newest move is in this state.
+move_state_is() { [ "$(api -fsS "https://$DOMAIN/v1/servers/$1" | jsonq 'd["move"]["state"]' 2>/dev/null)" = "$2" ]; }
+# spread_on_three: spread's healthy copies are on three different servers.
+spread_on_three() { [ "$(copies_json spread | jsonq 'len(set(c["node"] for c in d["copies"] if c["status"]=="healthy"))')" = 3 ]; }
 
 main "$@"

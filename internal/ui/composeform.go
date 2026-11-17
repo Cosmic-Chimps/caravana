@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"math"
 	"net/url"
 	"slices"
@@ -52,6 +53,12 @@ type composeDraft struct {
 	// as the overlay's publish list (spec 041). The form has no input for
 	// them, so request sends these. Nil for a new app, which has none.
 	keptPublish map[string][]compose.Publish
+
+	// keptPlacement is, for an app that exists, each service's placement rules
+	// as the app has them (feature 042). The form has no input for them (they
+	// are edited on Configure, or in the file's overlay), so request sends
+	// these. Nil for a new app, which has none.
+	keptPlacement map[string]*app.Placement
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -412,7 +419,10 @@ func (d composeDraft) request() compose.Request {
 		if d.keptPublish != nil {
 			ov.Publish = d.keptPublish[s.Name]
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 {
+		if d.keptPlacement != nil {
+			ov.Placement = d.keptPlacement[s.Name]
+		}
+		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil {
 			continue
 		}
 		if req.Services == nil {
@@ -642,4 +652,36 @@ func (d *composeDraft) keepPublish(rec store.AppRecord) {
 		}
 	}
 	d.sortServices()
+}
+
+// keepPlacement makes the draft carry the placement rules the stored app has
+// (feature 042): the form doesn't edit them, so a preview or a deploy from it
+// must not drop a rule (constitution IV). An app that keeps its file has them in
+// the file's overlay, exactly as written; any other app has them on its
+// services. A service the draft lacks gets its inputs, so its rules travel; one
+// the new file doesn't have is dropped with them, as its other settings are.
+func (d *composeDraft) keepPlacement(rec store.AppRecord) {
+	d.keptPlacement = map[string]*app.Placement{}
+	for _, svc := range rec.App.Services {
+		p := svc.Placement
+		if rec.Compose != nil {
+			p = rec.Compose.Services[svc.Name].Placement
+		}
+		if p == nil {
+			continue
+		}
+		d.keptPlacement[svc.Name] = clonePlacement(p)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// clonePlacement is a copy of p that shares no slice or map with it.
+func clonePlacement(p *app.Placement) *app.Placement {
+	if p == nil {
+		return nil
+	}
+	return &app.Placement{Require: maps.Clone(p.Require), Prefer: slices.Clone(p.Prefer), Avoid: slices.Clone(p.Avoid)}
 }

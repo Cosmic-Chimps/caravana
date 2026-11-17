@@ -1096,6 +1096,9 @@ type configureExtras struct {
 	// Define, when set, is the "Define the app" form to draw (what was typed,
 	// with its errors) for an app that has no definition yet.
 	Define *newAppForm
+	// Placement, when set, is what a refused placement post typed, with its
+	// messages (feature 042): the panel of that service is drawn from it.
+	Placement *placementPost
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -1186,6 +1189,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		v := notKeptComposeView(sum.AppRecord)
 		tab.ComposeForm = &v
 	}
+	s.addPlacement(r, tab, sum, extra.Placement) // after the read-only panels exist
 	if !sum.App.Defined() {
 		// Nothing to edit yet: the form that gives it a definition replaces the per-service one.
 		form := newForm()

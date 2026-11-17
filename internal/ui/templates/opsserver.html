@@ -8,7 +8,8 @@
 {{define "head"}}<script src="{{asset "js/ops.js"}}" defer></script>{{end}}
 
 {{/* srv-head: the back link to the list, the name, the state, "reboot needed" when staged, the spec line with the
-     server's roles, and, for a server that is down, the quiet link to remove it. A running server has no action. */}}
+     server's roles, and the actions: Move work off… for a server that takes work, Accept work again for a ready one
+     that doesn't, and, for a server that is down, the quiet link to remove it (feature 042). */}}
 {{define "srv-head"}}
 <a href="/ops/servers" class="cv-srvback">← Servers</a>
 <div class="cv-srvtitle">
@@ -16,7 +17,10 @@
   {{with .State}}{{template "status-pill" .}}{{end}}
   {{if .Reboot}}<a href="/ops/updates" class="cv-pill cv-pill-warning cv-srvreboot"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>reboot needed</a>{{end}}
   {{with .Spec}}<span class="cv-srvspec">{{template "srv-items" .}}</span>{{end}}
-  {{with .Remove}}<span class="cv-spacer"></span><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Remove server…</a>{{end}}
+  {{if or .Remove .MoveHref .AcceptAction}}<span class="cv-spacer"></span>{{end}}
+  {{with .MoveHref}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Move work off…</a>{{end}}
+  {{with .AcceptAction}}<form method="post" action="{{.}}" class="cv-srvaction"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Accept work again</button></form>{{end}}
+  {{with .Remove}}<a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Remove server…</a>{{end}}
 </div>
 {{end}}
 
@@ -54,8 +58,47 @@
 </div>
 {{end}}
 
+{{/* srv-labels: the Labels row of the facts panel (feature 042): the labels as chips and a form of one text input.
+     The form is kept across the body's refresh (hx-preserve), so what is being typed stays; the error and the note
+     are outside it. Takes a srvLabels. */}}
+{{define "srv-labels"}}
+<div class="cv-srvlabels">
+  {{if .Chips}}<ul class="cv-srvchips" aria-label="Labels">{{range .Chips}}<li class="cv-slrole">{{.}}</li>{{end}}</ul>{{else}}<span class="cv-srvafter">none</span>{{end}}
+  {{with .Error}}<span id="srv-labels-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+  <form id="srv-labels-form" method="post" action="{{.Action}}" class="cv-srvlabelsform" hx-preserve="true">
+    <label class="sr-only" for="srv-labels-input">Labels</label>
+    <input class="cv-field cv-field-mono" id="srv-labels-input" type="text" name="labels" value="{{.Text}}" placeholder="ssd=true, region=eu" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="srv-labels-error"{{end}}>
+    <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save</button>
+  </form>
+  {{with .Note}}<span class="cv-srvlabelsnote">{{template "sentence" .}}</span>{{end}}
+</div>
+{{end}}
+
+{{/* srv-move: the move panel, the first of the body while a move of work off the server goes and after it:
+     its one line, the deadline of a move that goes, what is left to say, what stays with its reason, and the
+     one button (Cancel while it goes, Accept work again after). Takes a srvMove. */}}
+{{define "srv-move"}}
+<section class="cv-panel cv-srvmove cv-srvmove-{{.State}}" aria-labelledby="srv-move-title">
+  <div class="cv-srvmovehead">
+    <span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span>
+    <h2 id="srv-move-title" class="cv-srvmovetitle">{{.Title}}{{with .Until}} · until {{template "clock" .}}{{end}}</h2>
+    <span class="cv-spacer"></span>
+    {{with .Cancel}}<form method="post" action="{{.}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Cancel moving work off this server">Cancel</button></form>{{end}}
+    {{with .Accept}}<form method="post" action="{{.}}"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Accept work again</button></form>{{end}}
+  </div>
+  {{with .Detail}}<p class="cv-srvmovedetail">{{template "sentence" .}}</p>{{end}}
+  {{if .Stays}}
+  <ul class="cv-srvstays" aria-label="Stays here">
+    {{range .Stays}}<li><span class="cv-srvstaywho">{{template "sentence" .Who}}</span> <span class="cv-srvstaywhy">{{.Reason}}</span></li>{{end}}
+  </ul>
+  {{end}}
+  {{with .Note}}<p class="cv-srvmovenote">{{.}}</p>{{end}}
+</section>
+{{end}}
+
 {{/* srv-body: everything under the head, the one live region. Takes a srvBody. */}}
 {{define "srv-body"}}
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
 {{if .Waiting}}
 <div class="cv-panel">
   <div class="cv-empty">
@@ -63,6 +106,7 @@
   </div>
 </div>
 {{else}}
+{{with .Move}}{{template "srv-move" .}}{{end}}
 {{if .NomadDown}}
 <div role="status" class="cv-notice">
   <span class="cv-mark cv-mark-warning" aria-hidden="true"></span>
@@ -131,7 +175,7 @@
         <dl class="cv-srvdl">
           {{range .Facts}}
           <dt>{{.Key}}</dt>
-          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Clock}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else if .When}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "time" .When}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
+          <dd{{if .Strong}} class="cv-srvstrong"{{end}}>{{if .Labels}}{{template "srv-labels" .Labels}}{{else if .Clock}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "clock" .Clock}}{{with .After}}&#8288;&nbsp;&#8288;<span class="cv-srvafter">({{.}})</span>{{end}}{{else if .Items}}{{template "srv-items" .Items}}{{else if .When}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{template "time" .When}}{{else}}{{with .Mark}}<span class="cv-mark cv-mark-{{.}}" aria-hidden="true"></span> {{end}}{{.Value}}{{with .Note}}<span class="cv-srvafter"> · {{.}}</span>{{end}}{{end}}{{if .Second}}<span class="cv-srvsecond">{{.Second}}{{with .SecondNote}}<span class="cv-srvafter"> · {{.}}</span>{{end}}</span>{{end}}</dd>
           {{end}}
         </dl>
         {{with .AgentNote}}<p class="cv-srvagentnote">{{.}}</p>{{end}}

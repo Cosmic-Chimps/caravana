@@ -141,8 +141,9 @@ var consoleParity = map[string]parity{
 	"POST /templates/settings":       {ops: []string{"putTemplateSettings"}},
 	"GET /templates/{name}/logo.svg": {ops: []string{"getTemplateLogo"}},
 	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
-	"POST /apps/{id}/secrets/remove":  {ops: []string{"deployApp"}},
-	"POST /apps/{id}/secrets/refresh": {ops: []string{"refreshSecrets"}}, // feature 037
+	"POST /apps/{id}/secrets/remove":               {ops: []string{"deployApp"}},
+	"POST /apps/{id}/services/{service}/placement": {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/secrets/refresh":              {ops: []string{"refreshSecrets"}}, // feature 037
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;
@@ -276,8 +277,11 @@ var consoleParity = map[string]parity{
 	"GET /ops/servers/new":                {ops: []string{"listServers", "getUpdates"}},
 	"POST /ops/servers":                   {ops: []string{"addServer"}},
 	"GET /ops/servers/{name}":             {ops: []string{"getServer", "getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},
-	"GET /ops/servers/{kind}/{rest}":      {ops: []string{"getServerJoin", "listServers", "getServer"}},
+	"GET /ops/servers/{kind}/{rest}":      {ops: []string{"getServerJoin", "listServers", "getServer", "listCopies", "listApps"}},
 	"POST /ops/servers/{name}/remove":     {ops: []string{"removeServer"}},
+	"POST /ops/servers/{name}/labels":     {ops: []string{"putServerLabels"}},
+	"POST /ops/servers/{name}/move":       {ops: []string{"drainServer"}},
+	"POST /ops/servers/{name}/accept":     {ops: []string{"undrainServer"}},
 	"POST /ops/servers/joins/{id}/cancel": {ops: []string{"removeServer"}},
 	"GET /parts/ops/servers/joins/{id}":   {ops: []string{"getServerJoin", "listServers"}},
 	"GET /parts/ops/servers/{name}":       {ops: []string{"getServer", "getHost", "listCopies", "listAttention", "listActivity", "listApps", "listProjects"}},

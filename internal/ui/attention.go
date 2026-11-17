@@ -140,6 +140,12 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	case service.AttentionServerCertExpiring:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open server", serverHref(it.Server)
+	case service.AttentionCopiesUnplaced:
+		// Copies Nomad can't place: the rules that cause it are on the service's Configure panel.
+		row.Action, row.Href = "Open placement", appHref+"/configure#placement-"+url.PathEscape(it.Service)
+	case service.AttentionServerMoveIncomplete:
+		row.Mark = "warning"
+		row.Action, row.Href = "Open server", serverHref(it.Server)
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"
@@ -207,6 +213,8 @@ func headlineWords(it service.AttentionItem) string {
 		return "has a certificate expiring"
 	case service.AttentionDiskNearlyFull:
 		return "is on a disk that is nearly full"
+	case service.AttentionCopiesUnplaced:
+		return "has copies that can't be placed"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

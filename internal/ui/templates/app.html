@@ -96,6 +96,49 @@
 <p class="cv-note">Set through the API, the Compose overlay or Aspire.</p>
 {{end}}
 
+{{/* placement: a service's Placement panel (feature 042): the rules as sentences and, for an app edited in the
+     console, a form with the three rules, posted with the page's revision (a deploy). An app that keeps its
+     Compose file shows the rules read-only. Takes a placementView. */}}
+{{define "placement"}}
+<h3 class="cv-label" id="{{.AnchorID}}-title">Placement</h3>
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<ul class="cv-plrules">{{range .Rules}}<li>{{template "sentence" .}}</li>{{end}}</ul>
+{{if .Editable}}
+<form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform cv-plform" aria-labelledby="{{.AnchorID}}-title">
+  <input type="hidden" name="revision" value="{{.Revision}}">
+  <fieldset class="cv-fieldset cv-plfields"{{if .Stopped}} disabled{{end}}>
+    <div class="cv-fld">
+      <label class="cv-fld" for="{{.Require.ID}}">
+        <span class="cv-label">Only on servers with</span>
+        <input class="cv-field cv-field-mono" id="{{.Require.ID}}" type="text" name="require" value="{{.Require.Value}}" placeholder="ssd=true, region=eu" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Require.Error}} aria-invalid="true" aria-describedby="{{.Require.ID}}-hint {{.Require.ID}}-error"{{else}} aria-describedby="{{.Require.ID}}-hint"{{end}}>
+      </label>
+      <span class="cv-hint" id="{{.Require.ID}}-hint">Labels from the Servers pages, separated by commas. A word with no = means =true.</span>
+      {{template "field-error" .Require}}
+    </div>
+    <div class="cv-fld">
+      <label class="cv-fld" for="{{.Prefer.ID}}">
+        <span class="cv-label">Prefers</span>
+        <input class="cv-field cv-field-mono" id="{{.Prefer.ID}}" type="text" name="prefer" value="{{.Prefer.Value}}" placeholder="ssd=true 80, region=eu" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Prefer.Error}} aria-invalid="true" aria-describedby="{{.Prefer.ID}}-hint {{.Prefer.ID}}-error"{{else}} aria-describedby="{{.Prefer.ID}}-hint"{{end}}>
+      </label>
+      <span class="cv-hint" id="{{.Prefer.ID}}-hint">The same, with a weight from 1 to 100 after a space if you want one (50 otherwise). Copies still run elsewhere when no preferred server has room.</span>
+      {{template "field-error" .Prefer}}
+    </div>
+    {{if .Avoid}}
+    <fieldset class="cv-fieldset cv-plavoid"{{if .AvoidError}} aria-describedby="{{.AnchorID}}-avoid-error"{{end}}>
+      <legend class="cv-label">Never on</legend>
+      {{range .Avoid}}<label class="cv-check" for="{{.ID}}"><input type="checkbox" id="{{.ID}}" name="avoid" value="{{.Name}}"{{if .Checked}} checked{{end}}><span><span class="cv-inline-mono">{{.Name}}</span>{{if .Gone}} <span class="cv-srvafter">(not a server any more)</span>{{end}}</span></label>
+      {{end}}
+      {{with .AvoidError}}<span id="{{$.AnchorID}}-avoid-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+    </fieldset>
+    {{end}}
+  </fieldset>
+  {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save placement</button><span class="cv-note">Saving deploys the app with these rules.</span></div>{{end}}
+</form>
+{{else}}
+<p class="cv-note">Set in the Compose overlay.</p>
+{{end}}
+{{end}}
+
 {{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
      (feature 019.5). Takes a defineView. The service is named like the app, so there is no name
      field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
@@ -746,6 +789,7 @@
       {{end}}
     </dl>
     {{if .Identities}}{{template "identities" .Identities}}{{end}}
+    {{with .Placement}}<div id="{{.AnchorID}}">{{template "placement" .}}</div>{{end}}
   </div>
   {{end}}
 </section>
@@ -838,6 +882,7 @@
     </fieldset>
     {{if not $.Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save {{if $.Edit.Many}}{{.Name}} {{end}}and deploy</button></div>{{end}}
   </form>
+  <div id="{{.Placement.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "placement" .Placement}}</div>
 </section>
 {{end}}
 {{end}}

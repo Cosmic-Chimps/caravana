@@ -28,6 +28,8 @@
     {{if .Unmanaged}}<span class="cv-slspec">Not set up for a cluster yet.</span>{{end}}
     {{if .Marks}}<span class="cv-slmarks">{{range .Marks}}<span class="cv-slrole">{{.}}</span>
     {{end}}</span>{{end}}
+    {{if .Labels}}<span class="cv-slmarks cv-sllabels" aria-label="Labels">{{range .Labels}}<span class="cv-slrole">{{.}}</span>
+    {{end}}</span>{{end}}
   </div>
   <div role="cell" class="cv-slstate">{{template "status-quiet" .State}}</div>
   {{if .Cell}}

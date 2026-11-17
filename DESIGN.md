@@ -1617,6 +1617,28 @@ the ones after it idle and fg-3. It asks for itself every 5 s only while a check
 refresh of the join's address. When all four pass, a rule, a sentence and the primary small button "Go to <name>".
 Removing a server is a confirmation page in the Stop page's shape; a server that runs is never offered it.
 
+**Labels, and moving work off a server (feature 042).** A server's labels are the same small chips (`cv-slrole`, so no
+colour and no mark: a label says what a server is) under its name in the list and in the Labels row of the server
+page's facts panel. The row holds the chips and one form of one text input ("ssd=true, region=eu", a word with no "="
+is "=true") with a small secondary Save; the form is kept across the body's refresh (`hx-preserve`) so what is being
+typed stays, and its error and the quiet note "Nomad hasn't taken them yet" sit outside it. The head's actions are small
+secondary buttons: **Move work off…** (a link to the confirmation page) for a server that takes work, **Accept work
+again** (a post) for a ready one that doesn't, and neither while a move goes. The state pill says `moving work off`
+(rolling) while one goes. The **move panel** is the body's first panel while a move goes and after it (an hour after it
+ended on a server that takes work again, then it is history): a 15px fg-1 line with the 8px mark ("Moving work off · 3
+of 5 moved · until 14:30 UTC", "Moved 5 copies in 2 minutes", warning "The move didn't finish · 3 of 5 moved", idle "The
+move was cancelled"), the one button at its right (Cancel while it goes, Accept work again after), what stays as mono
+names with their reasons in fg-3, and a 13px fg-3 note that the server takes no new work. The confirmation page is the
+removal page's shape: what moves, what stays and why, the note about a service with one copy, a deadline select (5, 15,
+30 or 60 minutes, 15 selected) and the primary button.
+
+**Placement on Configure.** Each service's Placement panel says its rules as sentences in fg-1, names in mono ("Only on
+servers with `ssd=true`", "Prefers `region=eu` (weight 80)", "Never on `three`", or "Any server that accepts work."),
+under the service's own form and posting by itself with the page's revision (a deploy). Its three inputs are Require and
+Prefer (mono text, hints in fg-3) and Never on (one checkbox per managed server, and a name that is no server any more
+stays listed and checked, with "(not a server any more)", so saving never drops it). An app that keeps its Compose file
+shows the sentences and "Set in the Compose overlay.", with no form.
+
 ### Live updates
 Regions that change (the apps table, copies, history, activity) refresh in place from the page's
 event stream; what is being typed, such as the deploy form, sits outside every live region. Motion is

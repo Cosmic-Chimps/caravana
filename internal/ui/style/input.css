@@ -2347,6 +2347,33 @@
   .cv-mnsec-spread { flex-wrap: nowrap; justify-content: space-between; }
   .cv-mnsec-spread .cv-mnsec-link { margin-left: 0; flex: none; white-space: nowrap; }
   .cv-srvagentnote { margin: 14px 0 0; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  /* Placement and drain (feature 042). The server page's Labels row: the chips (the list's role chip), the form of
+     one input and its Save under them; the quiet note says Nomad hasn't taken the labels yet. */
+  .cv-srvlabels { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+  .cv-srvchips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .cv-srvlabelsform { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+  .cv-srvlabelsform .cv-field { flex: 1 1 160px; min-width: 0; }
+  .cv-srvlabelsnote { font: 400 13px/1.4 var(--font-sans); color: var(--color-fg-3); text-wrap: pretty; }
+  .cv-srvaction { margin: 0; }
+  /* The list's labels sit under the roles, in the same small chips. */
+  .cv-sllabels { margin-top: 0; }
+  /* The move panel: the first panel of the body while work moves off the server and after it. */
+  .cv-srvmove { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+  .cv-srvmovehead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .cv-srvmovetitle { margin: 0; font: 500 15px/1.5 var(--font-sans); color: var(--color-fg-1); text-wrap: pretty; }
+  .cv-srvmovedetail { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-srvmovenote { margin: 0; font-size: 13px; line-height: 1.4; color: var(--color-fg-3); }
+  .cv-srvstays { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .cv-srvstays li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-srvstaywho { font-family: var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
+  .cv-srvstaywhy { color: var(--color-fg-3); }
+  .cv-srvmoveform { display: flex; flex-direction: column; gap: 16px; }
+  /* Configure's Placement panel: the rules as sentences, then the form of three rules. */
+  .cv-plpanel { margin-top: 16px; }
+  .cv-plrules { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }
+  .cv-plform { margin-top: 4px; }
+  .cv-plform .cv-fld { margin-bottom: 14px; }
+  .cv-plavoid { display: flex; flex-direction: column; gap: 6px; }
   /* The Overview's server panels (the handoff's NowScreen): a grid with a 13px gap, one column below 800px, two from 800,
      three from 1200. One server isn't in it: its panel is the section's full width. */
   .cv-nodegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; align-items: stretch; }

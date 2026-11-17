@@ -1,0 +1,52 @@
+{{/* The confirmation page of moving work off a server (/ops/servers/{name}/move, feature 042), in the removal
+     page's shape: what moves, what stays and why, the note about a service with one copy, the deadline, then
+     the one button and Cancel. A refusal takes the panel's and the button's place and says why, with only the
+     way back. Takes a moveServerPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Back to {{.Name}}</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1"><span class="cv-inline-mono text-fg-1">{{.Name}}</span> stops taking new work, then its copies move to other servers one at a time. Each copy is replaced and has to pass its health check before the next one moves.</p>
+    {{if .Moves}}
+    <h2 class="cv-label">What moves</h2>
+    <ul class="cv-srvstays" aria-label="What moves">
+      {{range .Moves}}<li><span class="cv-srvstaywho">{{template "sentence" .Who}}</span> <span class="cv-srvstaywhy">{{.Copies}}</span></li>{{end}}
+    </ul>
+    <p class="text-sm text-fg-3">A service with one copy is unreachable while its new copy starts on another server. A service with more keeps answering, since its copies move one at a time.</p>
+    {{else}}
+    <p class="text-base text-fg-1">Nothing here can move. The server will stop taking new work, and the move ends at once.</p>
+    {{end}}
+    {{if .Stays}}
+    <h2 class="cv-label">What stays</h2>
+    <ul class="cv-srvstays" aria-label="What stays">
+      {{range .Stays}}<li><span class="cv-srvstaywho">{{template "sentence" .Who}}</span> <span class="cv-srvstaywhy">{{.Reason}}</span></li>{{end}}
+    </ul>
+    {{end}}
+  </div>
+  <form method="post" action="/ops/servers/{{.Name}}/move" class="cv-srvmoveform">
+    <label class="cv-fld cv-field-narrow" for="move-deadline">
+      <span class="cv-label">Give up after</span>
+      <select class="cv-field cv-select" id="move-deadline" name="deadline"{{if .Error}} aria-invalid="true" aria-describedby="move-deadline-error"{{end}}>
+        {{range .Deadlines}}<option value="{{.Minutes}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <span class="cv-hint">What hasn't moved by then stays, and the server's page says which copies.</span>
+      {{with .Error}}<span id="move-deadline-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+    </label>
+    <div class="cv-actions">
+      <button type="submit" class="cv-btn cv-btn-primary">Move work off {{.Name}}</button>
+      <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{end}}
