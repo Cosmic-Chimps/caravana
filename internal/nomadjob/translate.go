@@ -306,6 +306,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		// spread, so its job doesn't change.
 		tg.Spreads = []*api.Spread{{Attribute: "${node.unique.id}", Weight: new(int8(100))}}
 	}
+	tg.Constraints, tg.Affinities = placementBlocks(svc)
 	if len(svc.Volumes) > 0 {
 		tg.Volumes = volumeRequests(a.ID, svc)
 	}

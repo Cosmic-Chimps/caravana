@@ -55,6 +55,27 @@ func (w *hclWriter) group(g *api.TaskGroup) {
 				}
 			})
 		}
+		for _, c := range g.Constraints {
+			w.block("constraint", nil, func() {
+				w.optString("attribute", &c.LTarget)
+				w.optString("value", &c.RTarget)
+				if c.Operand != "" && c.Operand != "=" {
+					w.attr("operator", quote(c.Operand))
+				}
+			})
+		}
+		for _, af := range g.Affinities {
+			w.block("affinity", nil, func() {
+				w.optString("attribute", &af.LTarget)
+				w.optString("value", &af.RTarget)
+				if af.Operand != "" && af.Operand != "=" {
+					w.attr("operator", quote(af.Operand))
+				}
+				if af.Weight != nil {
+					w.attr("weight", strconv.Itoa(int(*af.Weight)))
+				}
+			})
+		}
 		for _, n := range g.Networks {
 			w.block("network", nil, func() {
 				w.optString("mode", &n.Mode)

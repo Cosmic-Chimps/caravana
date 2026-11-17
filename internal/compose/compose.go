@@ -79,6 +79,9 @@ type Overlay struct {
 	// Identities are the Nomad workload identities the service asks for, as
 	// in app.Service (spec 038).
 	Identities []app.Identity `json:"identities,omitempty"`
+	// Placement says on which servers the service's copies may run, as in
+	// app.Service (spec 042).
+	Placement *app.Placement `json:"placement,omitempty"`
 	// Publish opens ports of the service on the server's address (spec 041).
 	// The file's own published numbers only warn: an entry here is how the
 	// owner publishes one.

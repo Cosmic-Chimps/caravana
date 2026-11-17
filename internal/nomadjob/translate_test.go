@@ -76,6 +76,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, identityCases()...)
 	cases = append(cases, dnsCases()...)
+	cases = append(cases, placementCases()...)
 	cases = append(cases, publishedCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
@@ -250,6 +251,36 @@ func dnsCases() []goldenCase {
 		"plain":  "ghcr.io/acme/plain@sha256:" + strings.Repeat("f", 64),
 	}}
 	return []goldenCase{{name: "dns", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// placementCases is a service of two copies with every kind of placement
+// rule, beside a service with none, which shows nothing else changes.
+func placementCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:     "web",
+				Image:    "ghcr.io/acme/web:main",
+				Replicas: new(2),
+				Ports:    []app.Port{{Name: "http", ContainerPort: 3000}},
+				Domains:  []app.Domain{{Host: "shop.example.com", Port: "http"}},
+				Health:   &app.HealthCheck{Path: "/"},
+				Placement: &app.Placement{
+					Require: map[string]string{"ssd": "true", "region": "eu"},
+					Prefer:  []app.Preference{{Label: "ssd", Value: "true", Weight: 80}, {Label: "disk", Value: "nvme"}},
+					Avoid:   []string{"three", "two"},
+				},
+			},
+			{Name: "worker", Image: "ghcr.io/acme/worker:main"},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"web":    "ghcr.io/acme/web@sha256:" + strings.Repeat("d", 64),
+		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
+	}}
+	return []goldenCase{{name: "placement", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // stopTimeoutCases is a service that sets its stop timeout, on a service

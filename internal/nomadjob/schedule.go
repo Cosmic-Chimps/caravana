@@ -101,6 +101,9 @@ func ScheduleRunJob(a app.App, runID string, svc app.Service, image string, comm
 	g := batchGroup(svc.Name, tasks...)
 	// A run resolves names like the service's copies do.
 	g.Networks[0].DNS = dnsConfig(svc)
+	// A run can't start on a server the service avoids, or lacks a label it
+	// requires.
+	g.Constraints, g.Affinities = placementBlocks(svc)
 	j.TaskGroups = []*api.TaskGroup{g}
 	return j
 }

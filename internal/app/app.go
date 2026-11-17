@@ -89,6 +89,10 @@ type Service struct {
 	// DNS sets the resolvers, search domains and options in the resolv.conf
 	// of every copy. nil keeps the node's.
 	DNS *DNS `json:"dns,omitempty"`
+	// Placement says on which servers the copies may run, by the labels and
+	// names of the servers (feature 042). nil means any server that takes
+	// work.
+	Placement *Placement `json:"placement,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's

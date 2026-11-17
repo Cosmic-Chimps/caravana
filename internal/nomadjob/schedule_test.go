@@ -291,6 +291,33 @@ func TestScheduleRunJobDNS(t *testing.T) {
 	}
 }
 
+// TestScheduleRunJobPlacement: a run's group carries the service's placement
+// blocks, so a run can't start on a server the service avoids, and a service
+// without placement gets none.
+func TestScheduleRunJobPlacement(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	if g := j.TaskGroups[0]; len(g.Constraints) != 0 || len(g.Affinities) != 0 {
+		t.Errorf("a service without placement: run has %v and %v, want none", g.Constraints, g.Affinities)
+	}
+
+	svc.Placement = &app.Placement{
+		Require: map[string]string{"ssd": "true"},
+		Prefer:  []app.Preference{{Label: "region", Value: "eu"}},
+		Avoid:   []string{"three"},
+	}
+	j = ScheduleRunJob(one, "r2", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	g := j.TaskGroups[0]
+	wantC, wantA := placementBlocks(svc)
+	if len(wantC) != 2 || len(wantA) != 1 {
+		t.Fatalf("placementBlocks gave %d constraints and %d affinities, want 2 and 1", len(wantC), len(wantA))
+	}
+	if !reflect.DeepEqual(g.Constraints, wantC) || !reflect.DeepEqual(g.Affinities, wantA) {
+		t.Errorf("run has constraints %+v, affinities %+v; want %+v, %+v", g.Constraints, g.Affinities, wantC, wantA)
+	}
+}
+
 // TestScheduleRunJobPublishedPorts: a run has no ports and no update block,
 // even for a service that publishes one (spec 041): the port belongs to the
 // service's own copy.

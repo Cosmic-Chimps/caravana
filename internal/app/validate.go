@@ -355,6 +355,9 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	if err := validateDNS(field, svc.DNS); err != nil {
 		return err
 	}
+	if err := validatePlacement(field, svc.Placement); err != nil {
+		return err
+	}
 	ports, err := validatePorts(field, svc.Ports)
 	if err != nil {
 		return err
