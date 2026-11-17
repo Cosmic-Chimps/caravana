@@ -107,6 +107,12 @@ func TestBrandOnPages(t *testing.T) {
 		t.Errorf("the top bar's link isn't the 20 px mark and the wordmark:\n%s", apps)
 	}
 
+	// The sidebar's brand block has the 24 px mark where the server's initial was, beside the host.
+	side := regexp.MustCompile(`(?s)<a href="/apps" class="cv-brand">\s*<span class="cv-brand-mark"><svg class="cv-logo-mark"[^>]*height="24"`)
+	if !side.MatchString(apps) {
+		t.Errorf("the sidebar's brand block doesn't start with the 24 px mark:\n%s", apps)
+	}
+
 	// Every page links the three icons with their content hash.
 	for _, link := range []string{
 		`<link rel="icon" href="/static/brand/favicon.ico?v=`,

@@ -404,7 +404,7 @@ in place never shifts its neighbors.
 ## Layout
 
 - **Shell:** a fixed left sidebar (248px, Unlit Panel, a Hairline at its edge) with the brand block
-  on top (the host's initial, the host and `caravana <version>`, a link to Home), a Workspace group
+  on top (the logo mark, the host and `caravana <version>`, a link to Home), a Workspace group
   (Home, Projects, Logs, Monitoring, Schedules), a Configure group (Domains), Settings in a block of
   its own and, at the foot, the account row: initials,
   "Account", the email in mono and a Sign out icon button. A sticky top bar (52px, Unlit Panel, a
@@ -623,11 +623,14 @@ and to the right. It has one ink and no color of its own: it is `currentColor`, 
 - **Where it appears:**
   - the sign-in page and plain message pages: 32px, above the wordmark, at the column's left edge, 14px apart;
   - the narrow top bar (under 900px): 20px, 8px before the wordmark, both in one link to Apps;
+  - the sidebar's brand block: 24px, centered in a 26px slot, 10px before the host's name, with no tile
+    behind it (the maintainer, 2026-11-17: the logo instead of the server's initial; the host's name
+    beside it still names the server);
   - the tab icon (`static/brand/favicon.svg`, with `favicon.ico` and the apple-touch icon): the one brand
     file with fixed colors, a light mark on a `#0d0e11` tile so it reads on any tab bar;
   - the README: fixed-color lockups in `docs/brand/` (a dark-ink one and a light-ink one, picked by the
     reader's theme).
-- **Where it doesn't:** the sidebar's brand tile, which shows the server's initial.
+- **Where it doesn't:** anywhere at status-mark size, by the rule below.
 
 **The Keep-the-Mark-Away-from-Status-Marks Rule.** The mark's pieces are the status shapes: a disc, a
 diamond, a square. It never appears at status-mark sizes (7 to 10px) or inside a list row, where one of its
@@ -643,8 +646,8 @@ another shape; don't set the wordmark in another typeface (IBM Plex Mono 600).
   name in Body. The current one sits on Raised Control with its text and icon in Readout White and a
   2px bar inside its left edge in Signal Blue (a bar, not a fill: the accent is kept for this and
   focus). Home is current on the Apps list, Projects on the Projects pages and on every page of an
-  app, Settings on Settings. The brand block above links to Home (a 26px mark with the host's
-  initial, the host in 14px sans, `caravana <version>` in mono); the account row below shows
+  app, Settings on Settings. The brand block above links to Home (the 24px logo mark, the host in
+  14px sans, `caravana <version>` in mono); the account row below shows
   initials in a 30px disc, "Account", the email in mono (cut with an ellipsis) and a Sign out
   icon button, which stays a POST form.
 - **Menu (under 900px):** a `<details>` whose summary is a small secondary button, opening a panel

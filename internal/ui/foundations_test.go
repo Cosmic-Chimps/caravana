@@ -222,9 +222,9 @@ func TestShellAndParts(t *testing.T) {
 
 	body := render(t, "")
 	for _, want := range []string{
-		// the sidebar: the brand block (the host's initial, the host, the version), the Workspace group
+		// the sidebar: the brand block (the logo mark, the host, the version), the Workspace group
 		// and Settings with the current one marked, the account row with its sign-out form
-		`class="cv-wordmark cv-top-brand"><svg class="cv-logo-mark"`, `</svg>caravana</a>`, `<span class="cv-brand-mark" aria-hidden="true">C</span>`,
+		`class="cv-wordmark cv-top-brand"><svg class="cv-logo-mark"`, `</svg>caravana</a>`, `<span class="cv-brand-mark"><svg class="cv-logo-mark"`,
 		`title="caravana.example.com">caravana.example.com</span>`, `title="Caravana's version">caravana v0.7.0</span>`,
 		`cv-nav-title">Workspace</span>`, `<a href="/apps" class="cv-nav-item">`, `<a href="/projects" class="cv-nav-item">`,
 		`<a href="/settings" class="cv-nav-item" aria-current="page">`,

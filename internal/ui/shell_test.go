@@ -353,12 +353,6 @@ func TestInitials(t *testing.T) {
 			t.Errorf("initialsOf(%q) = %q, want %q", email, got, want)
 		}
 	}
-	// A host that doesn't start with a letter (an IP) gets "C", for caravana.
-	for host, want := range map[string]string{"caravana.example.com": "C", "lacalabaza.xyz": "L", "127.0.0.1:7070": "C", "[::1]:7070": "C", "": "C"} {
-		if got := initialOf(host); got != want {
-			t.Errorf("initialOf(%q) = %q, want %q", host, got, want)
-		}
-	}
 }
 
 // /projects lists every project as a row that links to its page: the name, the

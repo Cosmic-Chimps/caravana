@@ -4,15 +4,13 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"unicode"
 )
 
 // shellView is what shell.html needs to draw the sidebar and the top bar
 // around a console page. The console's pages get one from shellPage; the
 // sign-in page and the plain messages have none and stand alone.
 type shellView struct {
-	Host     string  // shown in the sidebar's brand block
-	Initial  string  // the host's first letter, upper case, for the brand's mark
+	Host     string  // shown in the sidebar's brand block, beside the logo mark
 	Version  string  // Caravana's version, after "caravana"; "" for none
 	Email    string  // the admin, in the account row
 	Initials string  // the first two letters of the email's local part, upper case; "?" for none
@@ -99,7 +97,7 @@ func (s *server) shellPage(r *http.Request, title, active string, crumbs ...crum
 		crumbs[n-1].Href = ""
 	}
 	mode := s.modeOf(r)
-	d.Shell = &shellView{Host: host, Initial: initialOf(host), Version: s.versionLabel(), Email: email, Initials: initialsOf(email),
+	d.Shell = &shellView{Host: host, Version: s.versionLabel(), Email: email, Initials: initialsOf(email),
 		Active: activeIn(mode, active), Crumbs: crumbs, NewApp: s.newApp, Mode: mode}
 	if mode == "ops" {
 		d.Shell.UpdatesMark = s.updatesMark(r)
@@ -120,16 +118,6 @@ func activeIn(mode, active string) string {
 		return active
 	}
 	return navOpsOverview
-}
-
-// initialOf is the first letter of the host s, upper case, for the brand's
-// mark. A host that doesn't start with a letter (an IP address such as
-// 127.0.0.1) gets "C", for caravana, since a digit reads as a count.
-func initialOf(s string) string {
-	if r := []rune(s); len(r) > 0 && unicode.IsLetter(r[0]) {
-		return strings.ToUpper(string(r[0]))
-	}
-	return "C"
 }
 
 // initialsOf is the first two letters of an email's local part, upper case:
