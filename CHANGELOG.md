@@ -10,6 +10,49 @@ released sections only. `tools/release.sh unreleased` shows what the next releas
 Each section has the changes that matter to a user, in this order and only as needed: Added,
 Changed, Fixed, Security, then **Upgrade** when an upgrade needs more than rerunning the installer.
 
+## 0.22.0 - 2026-11-17
+
+### Added
+- **Published ports.** A service can publish a port: a fixed TCP or UDP port on your server's public address, for apps
+  that aren't HTTP (a TURN server, LiveKit, a game server, MQTT). Set `published` and `protocol` (`tcp`, `udp` or
+  `tcp+udp`) on a port through the API, or publish a port of a Compose file with the overlay's `publish` list (the
+  file's own `published` numbers still only warn). The port is open while the copy runs and closed when it stops or the
+  app is deleted; no firewall rule is written. Such a service runs one copy, and its deploys stop the old copy before
+  starting the new one. Reserved ports (22, 80, 443, Nomad's, Caravana's and the mesh's), a port another app publishes
+  (`409 port_taken`) and a health check or domain on a UDP-only port are refused naming the field. A promotion keeps
+  the target's numbers and Copy to leaves them out. Configure shows them read-only. API 0.45.0. See
+  `docs/published-ports.md`.
+- **A schedule that runs in the running copy.** A schedule can now say where its command runs:
+  `target: copy` runs it with Nomad's exec in the service's oldest healthy copy (or in every healthy
+  copy, one after the other, with `allCopies: true`) instead of in a fresh one. It works on a service
+  with volumes too, which a fresh copy still can't (two writers on one volume would be unsafe): a
+  cleanup command, a cache purge, a nightly reset of a demo. The limit is 1, 2 or 5 minutes (1 by
+  default), it has the copy's own memory and always skips a slot while its last run goes. Like Run a
+  command, it keeps **no output**: a run records its status, exit code, why it failed and the copies
+  it ran in, and each copy gets a `run` entry in the app's Recent actions "on a schedule". A failed
+  run is a needs-you item and a notification, as before. While the app is stopped a slot is recorded
+  as skipped ("the app is stopped"), and a slot with no healthy copy waits for one. In the console,
+  New schedule has "Run in: A new copy / The running copy" and "In every copy", and a run's page says
+  where it ran and that its output isn't kept.
+- API 0.43.0: `target` and `allCopies` on `NewSchedule` and `Schedule`, `target` and `copies` on
+  `ScheduleRun`, `schedule` as an app action's trigger, 404 `output_not_kept` for a run in the running
+  copy, and 409 `no_running_copy` from `runSchedule`.
+- **DNS servers, search domains and options per service.** A service can now set the resolvers its
+  copies use: up to 3 nameserver IP addresses, up to 6 search domains and up to 8 resolver options
+  such as `ndots:2`. Nomad writes them to the container's `resolv.conf`, and a schedule's fresh
+  copies get the same ones. Set them in the API (`dns` on a service) or in a Compose file with `dns`,
+  `dns_search` and `dns_opt`. Configure shows them read-only, and a promotion takes the source's. API 0.44.0.
+
+### Changed
+- A Compose file's `ports` and `expose` now accept UDP (`"3478:3478/udp"`, `3478/udp`); a UDP port was refused before.
+  The warning for a file's `published` port now says how to publish it.
+- **The sidebar shows Caravana's logo** where the server's initial was, beside the server's name and
+  Caravana's version. It follows the light and dark themes like the rest of the console.
+
+### Upgrade
+- Rerun the installer on the first server so its Nomad declares the host network that carries published ports (Nomad
+  restarts once). Until you do, a deploy that publishes a port is refused with `409 no_public_network`.
+
 ## 0.21.0 - 2026-11-15
 
 ### Added
