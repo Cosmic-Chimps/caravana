@@ -118,12 +118,17 @@ func TestSetServerLabels(t *testing.T) {
 		e := newClusterEnv(t)
 		e.addReadyServer(t, "two")
 		e.nomad.SetNodeStatusOf("node-2", "down")
+		// The periodic reconcile may have written the server's name while the node was still
+		// up: count the writes from here, once any pass in flight has ended (it holds labelMu).
+		e.svc.labelMu.Lock()
+		writes := e.nomad.NodeMetaWrites()
+		e.svc.labelMu.Unlock()
 		v, err := e.svc.SetServerLabels(ctx, "two", map[string]string{"ssd": "true"})
 		if err != nil {
 			t.Fatalf("SetServerLabels: %v", err)
 		}
-		if v.LabelsApplied || v.Labels["ssd"] != "true" || e.nomad.NodeMetaWrites() != 0 {
-			t.Errorf("view = %+v, writes %d", v, e.nomad.NodeMetaWrites())
+		if v.LabelsApplied || v.Labels["ssd"] != "true" || e.nomad.NodeMetaWrites() != writes {
+			t.Errorf("view = %+v, writes %d", v, e.nomad.NodeMetaWrites()-writes)
 		}
 		e.nomad.SetNodeStatusOf("node-2", "ready")
 		e.svc.reconcileNodeLabels(ctx)

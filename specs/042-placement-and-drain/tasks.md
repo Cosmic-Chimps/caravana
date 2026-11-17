@@ -41,6 +41,6 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
   console step `console-placement` (`console_placement_test.go`), run in the lab.
 - [x] T013 `deploy/dev/cluster-test.sh` (steps 6b and 6c; CLUSTER TEST PASSED 2026-11-17, 17 min, after research R5's volume fix) steps for labels, placement and the move (plan "Tests"); run it.
 - [x] T014 `docs/placement-and-drain.md`, `docs/plan.md`, `CLAUDE.md`, `changelog.d/placement-and-drain.md` (D14).
-- [ ] T015 Every CI check: build, vet, staticcheck, `go test ./...` and `-race`, gofmt, the arm64
+- [x] T015 Every CI check: build, vet, staticcheck, `go test ./...` and `-race`, gofmt, the arm64
   cross-compile, `go mod tidy -diff`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`,
   `tools/release.sh check`, shellcheck.
