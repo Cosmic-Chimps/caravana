@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.44.0
+  version: 0.45.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -2377,7 +2377,7 @@ paths:
         `environment_not_found`). A refusal anywhere else is a defect of the template, with
         its path in the file in `field`. 409 `app_exists`: the ID is taken. 409
         `domain_taken`: the host is another app's (`field` `inputs.<name>` when it came from an
-        input). 409 `template_unavailable`: the template is marked broken or needs a newer
+        input). `port_taken` or `no_public_network`: as for `deployApp`. 409 `template_unavailable`: the template is marked broken or needs a newer
         Caravana. A service with a `backup` needs the backup destination to be set, as for any
         deploy: until it is, that is 400 `invalid_field` with `field` `services.<service>.backup`,
         unless the body says `withoutBackups: true`, which installs the template with its backups left
@@ -2420,7 +2420,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: "`app_exists`, `domain_taken` or `template_unavailable`; `message` says why. Nothing was saved."
+          description: "`app_exists`, `domain_taken`, `port_taken`, `no_public_network` or `template_unavailable`; `message` says why. Nothing was saved, except after `no_public_network`: the app is stored and its failed deployment recorded, as for `deployApp`."
           content:
             application/json:
               schema:
@@ -5567,6 +5567,31 @@ components:
                 type: integer
                 minimum: 1
                 maximum: 65535
+              protocol:
+                type: string
+                enum: [tcp, udp, tcp+udp]
+                description: |
+                  What the app speaks on the port; empty or absent means `tcp`. Nomad maps both
+                  protocols for every port, so this only decides what a health check or a domain
+                  may use: both need a port that speaks TCP (`invalid_field` on the check's
+                  `port`, or on the domain's `port`, otherwise). Stored as sent.
+              published:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: |
+                  A fixed port on the public address of the server that runs the copy (the first
+                  server), mapped to `containerPort` for as long as the copy runs: the owner's
+                  TCP or UDP service for an app that isn't HTTP. Leave it out for a port that
+                  stays on the private interface. Refused with `invalid_field` naming this field
+                  for a reserved port (22, 80, 443, 4646, 4647, 4648, 7070, 7071, 8081, 51820)
+                  or one this app publishes twice; more than 16 published ports in a service is
+                  `invalid_field` on `ports`, and `replicas` above 1 on `replicas`: a service
+                  with a published port runs one copy, and its deploys stop the old copy before
+                  starting the new one (a short gap). A port another app publishes (stopped apps
+                  included) is `409 port_taken`; a cluster where no ready server declares the
+                  host network `public` is `409 no_public_network`. A promotion keeps the
+                  target's number for each port name, and Copy to leaves it out.
         domains:
           type: array
           items:
@@ -5753,6 +5778,28 @@ components:
           description: The service's workload identities, with the meaning `Service.identities` has.
           items:
             $ref: "#/components/schemas/Identity"
+        publish:
+          type: array
+          description: |
+            The ports of the service published on the server's address (see `Service.ports[].published`).
+            The Compose file's own `published` values are only warned about, since many files
+            carry them; an entry here is how the owner publishes one. Both protocols a file lists
+            for one container port become one port with `protocol: tcp+udp`.
+          items:
+            type: object
+            additionalProperties: false
+            required: [port]
+            properties:
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: "A container port of the service. A port the file doesn't have is `invalid_field` on `services.<service>.publish[k].port`."
+              published:
+                type: integer
+                minimum: 1
+                maximum: 65535
+                description: "The host port. Absent means the same number as `port`."
 
     ServiceDNS:
       type: object
@@ -9694,7 +9741,7 @@ components:
                 `promotion_removes_service`, `app_stopped`, `app_not_stopped`, `app_busy`,
                 `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
                 `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
-                `passkey_not_found`, `last_passkey`, `no_passkey`.
+                `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`.
               examples: [invalid_field]
             message:
               type: string
@@ -9949,7 +9996,8 @@ components:
         `definition_not_recorded`: it is from before Caravana saved what each deployment
         deployed. `no_live_deployment`: the source was never deployed.
         `promotion_removes_service` (`field` `services.<name>`): the target has a service the
-        source lacks, and promoting would delete it. `job_conflict`: as for `deployApp`.
+        source lacks, and promoting would delete it. `job_conflict`, `port_taken` and
+        `no_public_network`: as for `deployApp`.
         `app_stopped`: the target is stopped (`stopApp`); start it first.
         Nothing was changed.
       content:
@@ -10108,7 +10156,13 @@ components:
         recorded and there is no `Location`. Or `domain_taken` (`field` the domain's `host`,
         `services[0].domains[1].host`, or its path in the Compose file): the deploy adds a host
         another app has (as a domain, or as the pair its `wwwRedirect` redirects); the
-        `message` names that app. Nothing was saved or recorded.
+        `message` names that app. Nothing was saved or recorded. Or `port_taken` (`field`
+        the port's `published`, `services[0].ports[1].published`, or its path in the Compose
+        file's overlay): the deploy publishes a port another app publishes, a stopped app
+        included; nothing was saved or recorded. Or `no_public_network` (`field` the first
+        published port's): no ready server declares the host network that carries published
+        ports, so the owner must rerun the installer on the first server; the deployment record
+        (see `Location`) is `failed`.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"

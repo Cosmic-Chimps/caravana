@@ -88,10 +88,11 @@ func ValidateApp(a App) error {
 	}
 
 	names := map[string]bool{}
-	hosts := map[string]bool{}   // across the whole app: one host, one router
-	volumes := map[string]bool{} // across the whole app: one volume, one service
+	hosts := map[string]bool{}    // across the whole app: one host, one router
+	published := map[int]string{} // across the whole app: one published port, one claim
+	volumes := map[string]bool{}  // across the whole app: one volume, one service
 	for i, svc := range a.Services {
-		if err := validateService(a.ID, i, svc, names, hosts); err != nil {
+		if err := validateService(a.ID, i, svc, names, hosts, published); err != nil {
 			return err
 		}
 		if err := validateVolumes(fmt.Sprintf("services[%d]", i), svc, volumes); err != nil {
@@ -288,7 +289,7 @@ func validateVolumes(field string, svc Service, used map[string]bool) error {
 
 // validateService checks one service. names and hosts collect what earlier
 // services used, to catch duplicates.
-func validateService(appID string, i int, svc Service, names, hosts map[string]bool) error {
+func validateService(appID string, i int, svc Service, names, hosts map[string]bool, published map[int]string) error {
 	field := fmt.Sprintf("services[%d]", i)
 
 	if !labelRE.MatchString(svc.Name) {
@@ -358,7 +359,13 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	if err != nil {
 		return err
 	}
+	if err := validatePublished(field, svc, published); err != nil {
+		return err
+	}
 	if err := validateDomains(field, svc.Domains, ports, hosts); err != nil {
+		return err
+	}
+	if err := validateTCPUse(field, svc); err != nil {
 		return err
 	}
 	return validateHealth(field, svc, ports)
@@ -483,6 +490,9 @@ func validatePorts(field string, ports []Port) (map[string]bool, error) {
 			return nil, NewFieldError(f+".name", "port %q is declared twice", p.Name)
 		}
 		names[p.Name] = true
+		if !validProtocol(p.Protocol) {
+			return nil, NewFieldError(f+".protocol", "%q is not a protocol: use %q, %q or %q", p.Protocol, ProtocolTCP, ProtocolUDP, ProtocolTCPUDP)
+		}
 		if p.ContainerPort < 1 || p.ContainerPort > 65535 {
 			return nil, NewFieldError(f+".containerPort", "must be between 1 and 65535, got %d", p.ContainerPort)
 		}
@@ -594,6 +604,12 @@ func validateHealth(field string, svc Service, ports map[string]bool) error {
 	case h.Port == "" && len(svc.Domains) == 0 && len(svc.Ports) > 1:
 		return NewFieldError(f+".port", "is required: the service has several ports and no domains")
 	}
+	if !healthPortSpeaksTCP(svc) {
+		if h.Port != "" {
+			return NewFieldError(f+".port", "%q is a UDP port: the health check connects over TCP", h.Port)
+		}
+		return NewFieldError(f, "would check a UDP port: the health check connects over TCP, so name a TCP port in health.port")
+	}
 	if h.Interval < 0 {
 		return NewFieldError(f+".interval", "must not be negative")
 	}
@@ -601,6 +617,22 @@ func validateHealth(field string, svc Service, ports map[string]bool) error {
 		return NewFieldError(f+".timeout", "must not be negative")
 	}
 	return nil
+}
+
+// healthPortSpeaksTCP says whether the port the health check will use speaks
+// TCP. The port is the check's own, else the domains', else the service's only
+// port (the same rule as the translator's).
+func healthPortSpeaksTCP(svc Service) bool {
+	name := svc.Health.Port
+	if name == "" && len(svc.Domains) > 0 {
+		name = svc.Domains[0].Port
+	}
+	for _, p := range svc.Ports {
+		if p.Name == name || (name == "" && len(svc.Ports) == 1) {
+			return p.SpeaksTCP()
+		}
+	}
+	return true
 }
 
 func validateDeployment(a App, d Deployment) error {

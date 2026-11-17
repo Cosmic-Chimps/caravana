@@ -332,13 +332,13 @@ type staleDiff struct {
 
 // editViewOf joins the form with the stored app it edits: the facts a service
 // keeps come from the stored service of the same name.
-func editViewOf(stored app.App, form editForm, stale *staleView) editView {
+func editViewOf(stored app.App, form editForm, stale *staleView, host string) editView {
 	v := editView{Action: "/apps/" + stored.ID + "/configure", Form: form, Stale: stale, Many: len(form.Services) > 1}
 	for _, s := range form.Services {
 		sv := editServiceView{editService: s}
 		for _, svc := range stored.Services {
 			if svc.Name == s.Name {
-				sv.Also = alsoSet(svc, s)
+				sv.Also = alsoSet(svc, s, host)
 				sv.Identities = identitiesOf(svc)
 			}
 		}
@@ -433,17 +433,49 @@ func dnsRows(svc app.Service) []defRow {
 	return rows
 }
 
+// publishedRows are the service's published ports, read-only (spec 041): each
+// as "3478 · tcp+udp → container 3478", and where they are open. host is the
+// name of the server that runs the copy, "" when it isn't known. None when the
+// service publishes nothing. The console doesn't edit them: the API and the
+// Compose overlay do, and a save of the form keeps them.
+func publishedRows(svc app.Service, host string) []defRow {
+	var ports []string
+	for _, p := range svc.Ports {
+		if !p.IsPublished() {
+			continue
+		}
+		protocol := p.Protocol
+		if protocol == "" {
+			protocol = app.ProtocolTCP
+		}
+		ports = append(ports, fmt.Sprintf("%d · %s → container %d", p.Published, protocol, p.ContainerPort))
+	}
+	if len(ports) == 0 {
+		return nil
+	}
+	where := "this server"
+	if host != "" {
+		where = "server " + host
+	}
+	return []defRow{
+		{Label: "Published ports", Values: ports},
+		{Label: "Open on", Values: []string{"the address of " + where + ", while the copy runs"}},
+		{Label: "Set through", Values: []string{"the API or the Compose overlay"}},
+	}
+}
+
 // alsoSet lists the facts of a service the form can't change and a save keeps,
 // for the grid's "Also set" panel: the entrypoint, the command and its
 // arguments, the volumes (mount → name), the backup, and the ports and health
 // check port the form has no input for, and the DNS settings. Nothing when
 // none is set.
-func alsoSet(svc app.Service, s editService) []defRow {
+func alsoSet(svc app.Service, s editService, host string) []defRow {
 	var rows []defRow
 	if len(svc.Entrypoint) > 0 {
 		rows = append(rows, defRow{Label: "Entrypoint", Values: []string{strings.Join(svc.Entrypoint, " ")}})
 	}
 	rows = append(rows, dnsRows(svc)...)
+	rows = append(rows, publishedRows(svc, host)...)
 	if svc.Command != "" {
 		rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 	}
@@ -500,7 +532,7 @@ func stopTimeoutText(svc app.Service) string {
 // panel lists. Environment values are shown, as the
 // edit form shows them; secrets are not here (their names are in the Secrets
 // section, their values nowhere).
-func servicePanels(a app.App) []defPanel {
+func servicePanels(a app.App, host string) []defPanel {
 	var out []defPanel
 	for _, svc := range a.Services {
 		rows := []defRow{{Label: "Image", Values: []string{svc.Image}}}
@@ -515,6 +547,7 @@ func servicePanels(a app.App) []defPanel {
 			rows = append(rows, defRow{Label: "Entrypoint", Values: svc.Entrypoint})
 		}
 		rows = append(rows, dnsRows(svc)...)
+		rows = append(rows, publishedRows(svc, host)...)
 		if svc.Command != "" {
 			rows = append(rows, defRow{Label: "Command", Values: []string{svc.Command}})
 		}
@@ -974,4 +1007,28 @@ func registryPrereqFor(image string, have map[string]bool, deployError string) *
 		Reason: sentence{plain("The last deploy couldn't pull "), mono(image), plain(". If the image is private, add credentials for "), mono(ref.Registry), plain(" and deploy again.")},
 		Href:   registriesHref,
 	}
+}
+
+// publishHost is the name of the server that opens a's published ports: the
+// one that runs Traefik, the first. "" when a publishes nothing, or when the
+// installation has no managed servers (a host not yet rerun, the lab): the
+// page then says "this server".
+func (s *server) publishHost(ctx context.Context, a app.App) string {
+	publishes := false
+	for _, svc := range a.Services {
+		publishes = publishes || svc.Publishes()
+	}
+	if !publishes {
+		return ""
+	}
+	view, err := s.svc.ListServers(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, sv := range view.Servers {
+		if sv.Managed && sv.Ingress {
+			return sv.Name
+		}
+	}
+	return ""
 }

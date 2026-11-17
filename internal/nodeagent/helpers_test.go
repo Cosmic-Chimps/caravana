@@ -48,15 +48,18 @@ type fakeRunner struct {
 	pingFail map[string]bool
 	failOn   map[string]error // "systemctl restart" -> error
 	hostname string
-	inFlight int
-	maxPings int
+	// defaultRoute is what `ip -4 route show default` prints; empty means a host with no default route.
+	defaultRoute string
+	inFlight     int
+	maxPings     int
 	// nomadActive says the nomad unit runs; SIGTERM and a stop end it, unless nomadIgnoresTerm.
 	nomadActive      bool
 	nomadIgnoresTerm bool
 }
 
 func newRunner() *fakeRunner {
-	return &fakeRunner{links: map[string]bool{}, pingFail: map[string]bool{}, failOn: map[string]error{}, hostname: "Fsn-2.example.com"}
+	return &fakeRunner{links: map[string]bool{}, pingFail: map[string]bool{}, failOn: map[string]error{}, hostname: "Fsn-2.example.com",
+		defaultRoute: "default via 192.0.2.1 dev eth0 proto dhcp src 192.0.2.5 metric 100\n"}
 }
 
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -116,6 +119,8 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 			return nil, errors.New("Cannot find device")
 		}
 		delete(f.links, args[2])
+	case name == "ip" && len(args) == 4 && args[0] == "-4" && args[1] == "route":
+		return []byte(f.defaultRoute), nil
 	case name == "uname" && args[0] == "-n":
 		return []byte(f.hostname + "\n"), nil
 	case name == "uname" && args[0] == "-r":
@@ -139,6 +144,9 @@ func (f *fakeRunner) commands() []string {
 		switch c.name {
 		case "ping", "uname", "docker", "nomad", "df":
 			continue
+		}
+		if c.name == "ip" && len(c.args) > 0 && c.args[0] == "-4" {
+			continue // the default route's interface, asked before anything is changed
 		}
 		s := c.String()
 		if c.name == "wg" {

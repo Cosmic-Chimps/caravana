@@ -171,6 +171,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"templates", false, g.templatesStep},
 		{"secret-references", false, g.secretRefsStep},
 		{"workload-identity", false, g.workloadIdentityStep},
+		{"published-ports", false, g.publishedPortsStep},
 		{"ports-closed", true, g.portsClosed},
 	}
 	for _, s := range steps {

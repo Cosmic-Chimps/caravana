@@ -124,7 +124,7 @@ func TestRefused(t *testing.T) {
 		{"profiles", "services:\n  web:\n    image: x\n    profiles: [dev]\n", nil, "services.web.profiles", ""},
 		{"include", "include: [other.yaml]\nservices:\n  web:\n    image: x\n", nil, "include", ""},
 		{"user", "services:\n  web:\n    image: x\n    user: \"1000\"\n", nil, "services.web.user", ""},
-		{"udp port", "services:\n  web:\n    image: x\n    ports: [\"53:53/udp\"]\n", nil, "services.web.ports[0].protocol", "tcp"},
+		{"sctp port", "services:\n  web:\n    image: x\n    ports: [\"53:53/sctp\"]\n", nil, "services.web.ports[0].protocol", "tcp"},
 		{"env without a value", "services:\n  web:\n    image: x\n    environment: [DEBUG]\n", nil, "services.web.environment.DEBUG", "no value"},
 		{"unset variable", "services:\n  web:\n    image: x\n    environment:\n      HOST: ${API_HOST}\n", nil, "compose", `"API_HOST"`},
 		{"unknown key", "services:\n  web:\n    image: x\n    imagee: y\n", nil, "compose", "imagee"},

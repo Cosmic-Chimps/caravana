@@ -28,6 +28,27 @@ write_env() {
   )
 }
 
+# The VM is made with deploy/dev/nomad.hcl, but a lab that exists keeps the file it was made with.
+# Install the repo's when it differs and restart Nomad, so a change to it (the host network of
+# published ports, spec 041) needs no `lab.sh delete`. Running copies are reattached by Nomad.
+sync_nomad_config() {
+  if limactl shell --workdir / "$NAME" sudo cmp -s /etc/nomad.d/nomad.hcl "$DIR/nomad.hcl"; then
+    return 0
+  fi
+  echo "Updating /etc/nomad.d/nomad.hcl and restarting Nomad..."
+  limactl shell --workdir / "$NAME" sudo install -m 644 "$DIR/nomad.hcl" /etc/nomad.d/nomad.hcl
+  limactl shell --workdir / "$NAME" sudo systemctl restart nomad
+  local deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if vm_nomad status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Nomad didn't answer within 60 seconds after the restart" >&2
+  return 1
+}
+
 cmd_up() {
   if exists; then
     limactl start "$NAME"
@@ -35,6 +56,7 @@ cmd_up() {
     limactl start --name "$NAME" --tty=false "$DIR/lab.yaml"
   fi
   write_env
+  sync_nomad_config
 
   # Services may burst past their memory reservation up to their ceiling, as on an installed
   # host (deploy/install/install.sh).

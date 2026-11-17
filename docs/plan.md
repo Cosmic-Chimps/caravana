@@ -155,6 +155,10 @@ channels in Notifications (`NotifySettings` draws Email), 2-step sign-in for the
 app that keeps SQLite in its volume, like Umbral and Fhodor, is backed up without being stopped;
 "Backups for more than Postgres" below), and, done in 027, "Caravana X.Y.Z is available" with its release notes (step 1
 of "Updates from the console" below, on the Operator view's Updates page; the sidebar has shown the running version since 019.5).
+Also done outside the screens' numbering, in 041 (CodeAlta task `dfn8`): **published ports**, a service's fixed TCP or UDP
+port on the address of the first server for apps that aren't HTTP (a TURN server, LiveKit, a game, MQTT), as Nomad's
+static port on a host network `public` that the first server declares: one copy, stop then start, no firewall rule
+(`docs/published-ports.md`, API 0.45.0).
 
 Last in this phase: **the API becomes 1.0.** `api/openapi.yaml` changed in every feature so far
 (0.15 to 0.17 in two days). Before Phase 2.75 generates the Aspire client from it, one review pass
@@ -324,7 +328,7 @@ sense, even where the layout differs (007 and 014 record the differences).
 | `UpdatesScreen` | the notice and how to apply by hand, for one host (027) | applying updates, cluster-wide, in Phase 3 |
 
 Not drawn by the handoff and to ask for: templates ("Start from an example"), Stop as an action,
-a shell or "run a command" into a copy, exposing a TCP port, a light theme (done in 2.6, 028: the
+a shell or "run a command" into a copy, exposing a TCP port (done in 041), a light theme (done in 2.6, 028: the
 system's choice, or Settings › This browser › Appearance).
 
 ## Backlog (found while running real apps, not scheduled yet)
@@ -547,7 +551,7 @@ names the feature (Phase 2.6 is the handoff's Developer view, screen by screen).
 | 6 | Templates | About a hundred one-click apps, each a Compose file with a form | Compose plus an overlay already is a template. Start with "Start from an example" on New app, fed by `deploy/examples/` | none | 2.6 (New app, no screen). **Built: feature 035** (`specs/035-app-templates`, 2026-11-12): New app › From a template, a catalog in its own repository (`Cosmic-Chimps/caravana-templates`) embedded in each release and refreshed once a day, six templates (Uptime Kuma, Hollo, PostgreSQL with Adminer, Adminer, Umbral, Codemagic Patch), API 0.36.0, MCP read tools. |
 | 7 | More notification kinds | Email, Telegram, Teams, Gotify, Resend, Lark | Telegram is one HTTPS call with a bot token; email needs SMTP settings. Both are 018 channels | `SettingsScreen` | 2.6 (Notifications) |
 | 8 | A shell into a copy | "Open Terminal" per container | Nomad alloc exec over a websocket. A terminal needs scripted UI; the no-JavaScript first step is "Run a command" with captured output | none | Run a command: done in 2.6 (020.5). The terminal into a copy: done in 2.6 (020.6). A shell into a server: 3 |
-| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines for MySQL, MariaDB, Mongo and Redis ("Backups for more than Postgres" above; sqlite is done in 029), the internal address on the app page, and exposing a TCP port, which needs a ufw rule beside Traefik | partly | 3 (TCP ports) |
+| 9 | Databases as a kind | Postgres, MySQL, MariaDB, Mongo, Redis with generated credentials, an internal connection URL, an optional external port | A database stays a service. Missing: dump engines for MySQL, MariaDB, Mongo and Redis ("Backups for more than Postgres" above; sqlite is done in 029), the internal address on the app page, and exposing a TCP port (done in 041 on the first server, as Nomad's static port: no ufw rule, since the mapping bypasses the firewall's input rules) | partly | 3 (a proxy on every server) |
 | 10 | Preview deployments | A pull request gets its own deploy on a wildcard domain | An environment per pull request on top of 019 and 020 | `PreviewsScreen` | 4 |
 | 11 | Account security | 2FA, passkeys, a Sessions page, invitations, custom roles and an audit log (enterprise) | Teams are Phase 4. 2FA or a passkey for the one admin, a sessions list with "sign out everywhere" and an audit trail keyed by token name are cheap now | `LoginScreen`, `MembersScreen` | 2.6 (2-step for the admin), 4 (teams) |
 | 12 | Shared variables | Project-level env referenced as `${{project.VAR}}` | Variables shared by an environment would help the staging and production split from 019 | `VariablesScreen` | 4 (`VariablesScreen` grid) |

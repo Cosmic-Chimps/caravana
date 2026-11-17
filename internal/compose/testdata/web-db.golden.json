@@ -103,7 +103,7 @@
     },
     {
       "field": "services.web.ports[0]",
-      "message": "the host port isn't opened: other services reach port 3000 by this service's name, and the internet through the request's domains"
+      "message": "the host port isn't opened: other services reach port 3000 by this service's name, and the internet through the request's domains; to publish it on the server's address, add {\"port\": 3000} to the overlay's publish list"
     }
   ]
 }

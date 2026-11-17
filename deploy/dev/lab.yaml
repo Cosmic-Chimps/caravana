@@ -19,7 +19,8 @@ containerd:
   user: false
 
 provision:
-# Written before the scripts below run. Changing nomad.hcl needs `lab.sh delete` + `lab.sh up`.
+# Written before the scripts below run, when the VM is made. `lab.sh up` installs a changed nomad.hcl into
+# a VM that exists and restarts Nomad, so no `lab.sh delete` is needed.
 - mode: data
   path: /etc/nomad.d/nomad.hcl
   file: nomad.hcl

@@ -78,6 +78,15 @@ func (w *hclWriter) group(g *api.TaskGroup) {
 						}
 					})
 				}
+				for _, p := range n.ReservedPorts {
+					w.block("port", []string{p.Label}, func() {
+						w.attr("static", strconv.Itoa(p.Value))
+						if p.To != 0 {
+							w.attr("to", strconv.Itoa(p.To))
+						}
+						w.optString("host_network", &p.HostNetwork)
+					})
+				}
 			})
 		}
 		for _, name := range slices.Sorted(maps.Keys(g.Volumes)) {

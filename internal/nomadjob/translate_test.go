@@ -76,6 +76,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, stopTimeoutCases()...)
 	cases = append(cases, identityCases()...)
 	cases = append(cases, dnsCases()...)
+	cases = append(cases, publishedCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
 }
@@ -184,6 +185,43 @@ func identityCases() []goldenCase {
 		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
 	}}
 	return []goldenCase{{name: "identity", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// publishedCases is a service with a TCP+UDP port published beside a dynamic
+// TCP health port, and a second service with a domain, which keeps its canaries.
+func publishedCases() []goldenCase {
+	a := publishedApp()
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"turn": "ghcr.io/acme/turn@sha256:" + strings.Repeat("a", 64),
+		"web":  "ghcr.io/acme/web@sha256:" + strings.Repeat("b", 64),
+	}}
+	return []goldenCase{{name: "published", app: a, deployment: dep, settings: labSettings()}}
+}
+
+func publishedApp() app.App {
+	return app.App{
+		ID:     "calls",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:  "turn",
+				Image: "ghcr.io/acme/turn:1",
+				Ports: []app.Port{
+					{Name: "http", ContainerPort: 8080},
+					{Name: "turn", ContainerPort: 3478, Protocol: app.ProtocolTCPUDP, Published: 3478},
+					{Name: "relay", ContainerPort: 7882, Protocol: app.ProtocolUDP, Published: 7882},
+				},
+				Health: &app.HealthCheck{Port: "http", Path: "/healthz"},
+			},
+			{
+				Name:    "web",
+				Image:   "ghcr.io/acme/web:1",
+				Ports:   []app.Port{{Name: "http", ContainerPort: 3000}},
+				Domains: []app.Domain{{Host: "calls.example.com", Port: "http"}},
+				Health:  &app.HealthCheck{Path: "/"},
+			},
+		},
+	}
 }
 
 // dnsCases is a service with its own resolvers, search domains and options,
@@ -620,5 +658,39 @@ func TestTaskMemory(t *testing.T) {
 				t.Errorf("reserve %d, ceiling %d; want %d, %d", *r.MemoryMB, *r.MemoryMaxMB, tt.reserve, tt.ceiling)
 			}
 		})
+	}
+}
+
+// A group that publishes a port deploys stop-then-start, as a group with a
+// volume does, and a group beside it keeps its canaries (spec 041 D3).
+func TestPublishedPortsStopThenStart(t *testing.T) {
+	a := publishedApp()
+	res, err := Translate(a, app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"turn": "ghcr.io/acme/turn@sha256:" + strings.Repeat("a", 64),
+		"web":  "ghcr.io/acme/web@sha256:" + strings.Repeat("b", 64),
+	}}, labSettings(), nil)
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	turn, web := res.Job.TaskGroups[0], res.Job.TaskGroups[1]
+	if u := turn.Update; u == nil || u.Canary == nil || *u.Canary != 0 || u.AutoPromote == nil || *u.AutoPromote {
+		t.Errorf("turn update = %+v, want canary 0 and no auto-promote", u)
+	}
+	if u := web.Update; u == nil || u.Canary == nil || *u.Canary != 1 {
+		t.Errorf("web update = %+v, want one canary", u)
+	}
+	n := turn.Networks[0]
+	if len(n.DynamicPorts) != 1 || n.DynamicPorts[0].Label != "http" {
+		t.Errorf("dynamic ports = %+v, want only http", n.DynamicPorts)
+	}
+	want := []api.Port{
+		{Label: "turn", Value: 3478, To: 3478, HostNetwork: "public"},
+		{Label: "relay", Value: 7882, To: 7882, HostNetwork: "public"},
+	}
+	if !reflect.DeepEqual(n.ReservedPorts, want) {
+		t.Errorf("reserved ports = %+v, want %+v", n.ReservedPorts, want)
+	}
+	if len(web.Networks[0].ReservedPorts) != 0 {
+		t.Errorf("web reserves ports: %+v", web.Networks[0].ReservedPorts)
 	}
 }

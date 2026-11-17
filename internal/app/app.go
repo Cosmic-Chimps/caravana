@@ -354,13 +354,88 @@ func (a App) WithLowercaseHosts() App {
 	return a
 }
 
-// Port is a named container port. Nomad maps a dynamic host port to it.
+// Port is a named container port. Nomad maps a dynamic host port to it, or a
+// fixed one when the port is published.
 type Port struct {
 	// Name is the port label, e.g. "http": a lowercase letter, then lowercase
 	// letters, digits or underscores.
 	Name string `json:"name"`
 	// ContainerPort is the port inside the container, 1 to 65535.
 	ContainerPort int `json:"containerPort"`
+	// Protocol says what the app speaks on the port: "tcp", "udp" or
+	// "tcp+udp"; empty means tcp. Nomad maps both protocols for every port,
+	// so this decides only what a health check or a domain may use. It is
+	// stored as sent, never normalized.
+	Protocol string `json:"protocol,omitempty"`
+	// Published is a fixed port on the host's public address (spec 041),
+	// 1 to 65535, mapped to ContainerPort while the copy runs. 0 means not
+	// published: the port stays a dynamic one on the private interface.
+	Published int `json:"published,omitzero"`
+}
+
+// The values of Port.Protocol.
+const (
+	ProtocolTCP    = "tcp"
+	ProtocolUDP    = "udp"
+	ProtocolTCPUDP = "tcp+udp"
+)
+
+// SpeaksTCP reports whether the app speaks TCP on the port: a health check,
+// a domain or Traefik can only use such a port.
+func (p Port) SpeaksTCP() bool {
+	return p.Protocol == "" || p.Protocol == ProtocolTCP || p.Protocol == ProtocolTCPUDP
+}
+
+// IsPublished reports whether the port has a fixed host port.
+func (p Port) IsPublished() bool { return p.Published != 0 }
+
+// Publishes reports whether any of the service's ports is published.
+func (s Service) Publishes() bool {
+	for _, p := range s.Ports {
+		if p.IsPublished() {
+			return true
+		}
+	}
+	return false
+}
+
+// MaxPublishedPorts is how many ports one service may publish: each is one
+// Nomad reservation, and ranges are not offered.
+const MaxPublishedPorts = 16
+
+// ReservedPorts are the host ports a service may not publish, each held by
+// something on the server. Nomad would place the copy and the mapping would
+// shadow the real listener, so these fail at deploy time instead.
+var ReservedPorts = []int{
+	22,    // SSH
+	80,    // Traefik, HTTP
+	443,   // Traefik, HTTPS
+	4646,  // Nomad HTTP API
+	4647,  // Nomad RPC
+	4648,  // Nomad serf
+	7070,  // Caravana's console and API
+	7071,  // Caravana's webhook-only listener
+	8081,  // Traefik's metrics, read by Caravana
+	51820, // WireGuard between servers
+}
+
+// reservedPortUse says what holds a reserved port, for the refusal's message.
+func reservedPortUse(port int) string {
+	switch port {
+	case 22:
+		return "SSH"
+	case 80, 443:
+		return "Traefik serves web traffic there"
+	case 4646, 4647, 4648:
+		return "Nomad uses it"
+	case 7070, 7071:
+		return "Caravana uses it"
+	case 8081:
+		return "Traefik's metrics, read by Caravana"
+	case 51820:
+		return "WireGuard between servers"
+	}
+	return ""
 }
 
 // Domain is a public hostname routed over HTTPS to one port of a service.

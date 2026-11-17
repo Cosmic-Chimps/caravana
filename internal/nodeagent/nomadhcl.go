@@ -128,6 +128,16 @@ client {
     path      = "/var/lib/caravana-host/traefik"
     read_only = false
   }
+{{- if .PublicInterface}}
+
+  # Published ports (spec 041): a service's fixed port is a static port on this network, the IPv4
+  # address of the default-route interface. Only this server declares it, so published services run
+  # here. Nomad's port mapping opens the port while the copy runs and closes it when the copy stops.
+  host_network {{q .PublicNetwork}} {
+    interface = {{q .PublicInterface}}
+    cidr      = "0.0.0.0/0"
+  }
+{{- end}}
 {{- end}}
 }
 
@@ -163,6 +173,9 @@ type nomadData struct {
 	ClientServers string // HCL list of the other Nomad servers' RPC addresses, or ""
 	CPU           int
 	Issuer        string // the OIDC issuer; a Nomad server only (oidc_issuer is a server setting)
+	// PublicNetwork and PublicInterface declare the host network of published ports; the first
+	// server only (spec 041).
+	PublicNetwork, PublicInterface string
 }
 
 // RenderNomad is the text of /etc/nomad.d/nomad.hcl for this state. gossipKey is written only on a
@@ -196,6 +209,8 @@ func renderNomad(s State, gossipKey string) (string, error) {
 	}
 	if !s.First {
 		d.Subnet = addrs.Containers.String()
+	} else {
+		d.PublicNetwork, d.PublicInterface = mesh.PublicHostNetwork, s.PublicInterface
 	}
 	var others []int
 	for _, i := range s.Servers {

@@ -151,6 +151,42 @@ func TestExport(t *testing.T) {
 		}
 	})
 
+	t.Run("a published port names the host network", func(t *testing.T) {
+		a := app.App{
+			ID:     "calls",
+			Source: app.Source{Kind: app.SourceImage},
+			Services: []app.Service{{
+				Name:  "turn",
+				Image: "ghcr.io/acme/turn:1",
+				Ports: []app.Port{
+					{Name: "http", ContainerPort: 8080},
+					{Name: "turn", ContainerPort: 3478, Protocol: app.ProtocolTCPUDP, Published: 3478},
+				},
+				Health: &app.HealthCheck{Port: "http"},
+			}},
+		}
+		dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+			"turn": "ghcr.io/acme/turn@sha256:" + strings.Repeat("a", 64),
+		}}
+		got, err := d.Export(a, dep, deployed, nil)
+		if err != nil {
+			t.Fatalf("Export() = %v", err)
+		}
+		for _, want := range []string{
+			`# - A Nomad client with a host network "public"`,
+			"#   3478 (tcp+udp) -> service turn, port turn",
+			"static = 3478",
+			`host_network = "public"`,
+		} {
+			if !strings.Contains(string(got), want) {
+				t.Errorf("export lacks %q:\n%s", want, got)
+			}
+		}
+		if strings.Contains(string(got), "Nothing beyond") {
+			t.Errorf("header says nothing is needed:\n%s", got)
+		}
+	})
+
 	t.Run("a worker needs nothing more", func(t *testing.T) {
 		wk := caseNamed(t, "worker")
 		got, err := d.Export(wk.App, wk.Deployment, deployed, nil)

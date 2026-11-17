@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,6 +38,19 @@ const volumeMode = "0777"
 // one in the "default" pool), and the others follow it to the node Nomad
 // chose. Two services may end up on different servers.
 func (d *Deployer) EnsureVolumes(ctx context.Context, a app.App) error {
+	public, err := d.checkPublicNetwork(ctx, a)
+	if err != nil {
+		return err
+	}
+	return d.ensureVolumes(ctx, a, public)
+}
+
+// ensureVolumes is EnsureVolumes with the nodes that offer published ports
+// already read (nil when a publishes nothing). A service that publishes a port
+// has its volumes on one of them (spec 041, D6): a volume still to create goes
+// to the first, and a volume that exists elsewhere refuses the deploy on the
+// service's first published port.
+func (d *Deployer) ensureVolumes(ctx context.Context, a app.App, public []string) error {
 	haveAny := false
 	for _, svc := range a.Services {
 		if len(svc.Volumes) > 0 {
@@ -58,6 +72,15 @@ func (d *Deployer) EnsureVolumes(ctx context.Context, a app.App) error {
 		node, err := existingNode(a.ID, svc, have)
 		if err != nil {
 			return err
+		}
+		if svc.Publishes() && len(svc.Volumes) > 0 {
+			switch {
+			case node == "":
+				node = public[0]
+			case !slices.Contains(public, node):
+				return &PublicNetworkError{Field: firstPublishedOf(i, svc),
+					Message: fmt.Sprintf("service %s publishes a port, but its volumes are on a server that offers no published ports; the volumes can't move, so publish the port from a service without them", svc.Name)}
+			}
 		}
 		nodes[i] = node
 	}

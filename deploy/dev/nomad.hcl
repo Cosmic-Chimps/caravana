@@ -17,6 +17,14 @@ client {
   # ARM VMs often don't report a CPU clock speed, so Nomad sees 0 MHz and places nothing.
   # 2 cores x 2000 MHz. The installer (plan 012) must detect this case and set it the same way.
   cpu_total_compute = 4000
+
+  # Published ports (spec 041): a service's fixed port is a static port on this network, the IPv4
+  # address of the VM's default-route interface. An installed host declares the same network on its
+  # first server (deploy/install, `caravana node`).
+  host_network "public" {
+    interface = "eth0"
+    cidr      = "0.0.0.0/0"
+  }
 }
 
 acl {

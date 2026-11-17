@@ -271,7 +271,10 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 // health check, volume mounts, stop timeout and DNS, and the target's everything else (identities
 // included: an audience belongs to an environment, like a secret). A service
 // only the source has is added whole, without domains. A service only the
-// target has is a *RefusalError. It is pure.
+// target has is a *RefusalError. Published ports are the exception to "the
+// source's ports": a fixed port is an address, and addresses belong to an
+// environment, so each port keeps the target's published number by name (a port
+// the target doesn't have arrives unpublished). It is pure.
 func promoted(target, source app.App) (result app.App, changes []ServiceChange, added []string, err error) {
 	byName := map[string]app.Service{}
 	for _, svc := range source.Services {
@@ -300,7 +303,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !slices.Equal(t.Args, s.Args) {
 			change.Changed = append(change.Changed, "args")
 		}
-		if !slices.Equal(t.Ports, s.Ports) {
+		if !slices.Equal(unpublished(t.Ports), unpublished(s.Ports)) {
 			change.Changed = append(change.Changed, "ports")
 		}
 		if !sameHealth(t.Health, s.Health) {
@@ -319,7 +322,8 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 
 		t.Image, t.Command = s.Image, s.Command
 		t.Entrypoint = slices.Clone(s.Entrypoint)
-		t.Args, t.Ports, t.Volumes = slices.Clone(s.Args), slices.Clone(s.Ports), slices.Clone(s.Volumes)
+		t.Args, t.Volumes = slices.Clone(s.Args), slices.Clone(s.Volumes)
+		t.Ports = withPublishedOf(s.Ports, t.Ports)
 		t.Health = cloneHealth(s.Health)
 		t.StopTimeout = s.StopTimeout
 		t.DNS = cloneDNS(s.DNS)
@@ -332,9 +336,33 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		added = append(added, s.Name)
 		changes = append(changes, ServiceChange{Name: s.Name, ImageTo: s.Image})
 		s.Domains = nil
+		s.Ports = unpublished(s.Ports)
 		result.Services = append(result.Services, s)
 	}
 	return result, changes, added, nil
+}
+
+// unpublished is a copy of ports with every published number cleared.
+func unpublished(ports []app.Port) []app.Port {
+	out := slices.Clone(ports)
+	for i := range out {
+		out[i].Published = 0
+	}
+	return out
+}
+
+// withPublishedOf is a copy of ports whose published numbers are the ones the
+// port of the same name has in kept (0 when kept has none).
+func withPublishedOf(ports, kept []app.Port) []app.Port {
+	out := unpublished(ports)
+	for i, p := range out {
+		for _, k := range kept {
+			if k.Name == p.Name {
+				out[i].Published = k.Published
+			}
+		}
+	}
+	return out
 }
 
 func sameHealth(a, b *app.HealthCheck) bool {
@@ -397,12 +425,14 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 	a.ID = place.ID()
 	for i := range a.Services {
 		a.Services[i].Domains = nil
+		a.Services[i].Ports = unpublished(a.Services[i].Ports) // an address belongs to an environment
 	}
 	var file *compose.Request
 	if src.Compose != nil {
 		kept := src.Compose.WithoutSecretValues() // its own Services map
 		for name, overlay := range kept.Services {
 			overlay.Domains = nil
+			overlay.Publish = nil // an address belongs to an environment, as a domain does
 			kept.Services[name] = overlay
 		}
 		file = &kept

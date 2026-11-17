@@ -1156,7 +1156,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		Notice:       extra.Notice,
 		Copied:       copiedNotice(r, sum),
 		Stopped:      sum.StoppedAt != nil,
-		Edit:         editViewOf(sum.App, form, extra.Stale),
+		Edit:         editViewOf(sum.App, form, extra.Stale, s.publishHost(ctx, sum.App)),
 		Domains: domainsPanel{Rows: domainRowsOf(sum.App), Many: len(sum.App.Services) > 1, CanAdd: sum.StoppedAt == nil,
 			ManageHref: "/apps/" + id + "/domains", AddHref: "/apps/" + id + "/domains#add"},
 		Secrets:   secretsPanelOf(sum.App),
@@ -1179,7 +1179,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		}
 		tab.ComposeForm = &v
 		tab.Edit.ReadOnly = true
-		tab.Edit.Panels = servicePanels(sum.App)
+		tab.Edit.Panels = servicePanels(sum.App, s.publishHost(ctx, sum.App))
 	} else if sum.App.Source.Kind == app.SourceCompose {
 		// Made from Compose before the file was kept: ask for it once. The
 		// per-field form stays editable until the file is pasted (US2).

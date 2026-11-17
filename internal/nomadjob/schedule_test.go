@@ -290,3 +290,18 @@ func TestScheduleRunJobDNS(t *testing.T) {
 		t.Errorf("run dns = %+v, want %+v", got, want)
 	}
 }
+
+// TestScheduleRunJobPublishedPorts: a run has no ports and no update block,
+// even for a service that publishes one (spec 041): the port belongs to the
+// service's own copy.
+func TestScheduleRunJobPublishedPorts(t *testing.T) {
+	one := scheduleApp()
+	svc := one.Services[0]
+	svc.Ports = []app.Port{{Name: "turn", ContainerPort: 3478, Protocol: app.ProtocolTCPUDP, Published: 3478}}
+	svc.Health = &app.HealthCheck{}
+	j := ScheduleRunJob(one, "r1", svc, pinnedWorker, []string{"x"}, 256, labSettings(), nil)
+	n := j.TaskGroups[0].Networks[0]
+	if len(n.DynamicPorts) != 0 || len(n.ReservedPorts) != 0 {
+		t.Errorf("run network = %+v, want no ports", n)
+	}
+}

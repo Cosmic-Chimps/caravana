@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -604,6 +605,61 @@ func TestValidate(t *testing.T) {
 		{"container port zero", func(a *App, d *Deployment) { a.Services[0].Ports[0].ContainerPort = 0 }, "services[0].ports[0].containerPort"},
 		{"container port too high", func(a *App, d *Deployment) { a.Services[0].Ports[0].ContainerPort = 65536 }, "services[0].ports[0].containerPort"},
 
+		// Published ports (spec 041).
+		{"valid published tcp+udp port", func(a *App, d *Deployment) {
+			a.Services[1].Ports = []Port{{Name: "turn", ContainerPort: 3478, Protocol: ProtocolTCPUDP, Published: 3478}}
+			a.Services[1].Health = &HealthCheck{}
+		}, ""},
+		{"valid udp port beside a tcp health port", func(a *App, d *Deployment) {
+			a.Services[1].Ports = []Port{
+				{Name: "http", ContainerPort: 80},
+				{Name: "game", ContainerPort: 7777, Protocol: ProtocolUDP, Published: 7777},
+			}
+			a.Services[1].Health = &HealthCheck{Port: "http"}
+		}, ""},
+		{"protocol unknown", func(a *App, d *Deployment) { a.Services[0].Ports[0].Protocol = "sctp" }, "services[0].ports[0].protocol"},
+		{"protocol uppercase", func(a *App, d *Deployment) { a.Services[0].Ports[0].Protocol = "TCP" }, "services[0].ports[0].protocol"},
+		{"published negative", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = -1 }, "services[0].ports[0].published"},
+		{"published too high", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 65536 }, "services[0].ports[0].published"},
+		{"published ssh", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 22 }, "services[0].ports[0].published"},
+		{"published http", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 80 }, "services[0].ports[0].published"},
+		{"published https", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 443 }, "services[0].ports[0].published"},
+		{"published nomad rpc", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 4647 }, "services[0].ports[0].published"},
+		{"published caravana", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 7070 }, "services[0].ports[0].published"},
+		{"published wireguard", func(a *App, d *Deployment) { a.Services[0].Ports[0].Published = 51820 }, "services[0].ports[0].published"},
+		{"published twice in one service", func(a *App, d *Deployment) {
+			a.Services[0].Ports = append(a.Services[0].Ports, Port{Name: "alt", ContainerPort: 9000, Published: 3478})
+			a.Services[0].Ports[0].Published = 3478
+		}, "services[0].ports[1].published"},
+		{"published twice across services", func(a *App, d *Deployment) {
+			a.Services[0].Ports[0].Published = 3478
+			a.Services[1].Ports = []Port{{Name: "turn", ContainerPort: 3478, Published: 3478}}
+			a.Services[1].Health = &HealthCheck{}
+		}, "services[1].ports[0].published"},
+		{"too many published ports", func(a *App, d *Deployment) {
+			a.Services[0].Ports = nil
+			for i := 0; i <= MaxPublishedPorts; i++ {
+				a.Services[0].Ports = append(a.Services[0].Ports, Port{Name: fmt.Sprintf("p%d", i), ContainerPort: 20000 + i, Published: 20000 + i})
+			}
+			a.Services[0].Domains = nil
+			a.Services[0].Health = &HealthCheck{Port: "p0"}
+		}, "services[0].ports"},
+		{"published with replicas", func(a *App, d *Deployment) {
+			a.Services[0].Ports[0].Published = 3478
+			a.Services[0].Replicas = new(2)
+		}, "services[0].replicas"},
+		{"domain on a udp port", func(a *App, d *Deployment) {
+			a.Services[0].Ports[0].Protocol = ProtocolUDP
+		}, "services[0].domains[0].port"},
+		{"health on a named udp port", func(a *App, d *Deployment) {
+			a.Services[0].Ports = append(a.Services[0].Ports, Port{Name: "game", ContainerPort: 7777, Protocol: ProtocolUDP})
+			a.Services[0].Health.Port = "game"
+		}, "services[0].health.port"},
+		{"health on an implied udp port", func(a *App, d *Deployment) {
+			a.Services[1].Ports = []Port{{Name: "game", ContainerPort: 7777, Protocol: ProtocolUDP}}
+			a.Services[1].Health = &HealthCheck{}
+		}, "services[1].health"},
+
 		// Domain hosts.
 		{"host empty", func(a *App, d *Deployment) { a.Services[0].Domains[0].Host = "" }, "services[0].domains[0].host"},
 		{"host uppercase", func(a *App, d *Deployment) { a.Services[0].Domains[0].Host = "Shop.example.com" }, "services[0].domains[0].host"},
@@ -867,5 +923,49 @@ func TestIdentityTTLOrDefault(t *testing.T) {
 	}
 	if got := (Identity{TTLSeconds: 120}).TTLOrDefault(); got != 120 {
 		t.Errorf("TTL = %d, want 120", got)
+	}
+}
+
+// A port that isn't published, and has no protocol, marshals exactly as before
+// spec 041, so no stored app's revision moves.
+func TestPortWithoutPublishingJSONUnchanged(t *testing.T) {
+	b, err := json.Marshal(Port{Name: "http", ContainerPort: 8080})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `{"name":"http","containerPort":8080}`; got != want {
+		t.Errorf("json = %s, want %s", got, want)
+	}
+	b, err = json.Marshal(Port{Name: "turn", ContainerPort: 3478, Protocol: ProtocolTCPUDP, Published: 3478})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `{"name":"turn","containerPort":3478,"protocol":"tcp+udp","published":3478}`; got != want {
+		t.Errorf("json = %s, want %s", got, want)
+	}
+}
+
+func TestPortProtocol(t *testing.T) {
+	tests := []struct {
+		protocol string
+		tcp      bool
+	}{{"", true}, {ProtocolTCP, true}, {ProtocolUDP, false}, {ProtocolTCPUDP, true}}
+	for _, tc := range tests {
+		if got := (Port{Protocol: tc.protocol}).SpeaksTCP(); got != tc.tcp {
+			t.Errorf("SpeaksTCP(%q) = %v, want %v", tc.protocol, got, tc.tcp)
+		}
+	}
+	svc := Service{Ports: []Port{{Name: "a"}, {Name: "b", Published: 3478}}}
+	if !svc.Publishes() || (Service{Ports: []Port{{Name: "a"}}}).Publishes() {
+		t.Error("Publishes() is wrong")
+	}
+}
+
+// Every reserved port says what holds it, so no refusal reads "is reserved: ".
+func TestReservedPortsSayWhatUsesThem(t *testing.T) {
+	for _, p := range ReservedPorts {
+		if reservedPortUse(p) == "" {
+			t.Errorf("reserved port %d has no explanation", p)
+		}
 	}
 }

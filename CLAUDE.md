@@ -1451,6 +1451,53 @@ has no `dns`. A promotion takes the source's (`dns` in `Changed`); Configure sho
 (`gate_dns_test.go`: a hostname server refused at `services.web.dns[0]`, the job's dns block, resolv.conf, names beside
 it, export) passed in the lab on 2026-11-16 (37 s).
 
+Feature 041 (`specs/041-published-ports`, CodeAlta task `dfn8`, worktree branch `alta/swift-tiger-phd5`): a service's port may
+be published, a fixed TCP or UDP port on the first server's public address (a TURN server, LiveKit, a game, MQTT). Constitution
+1.2.0 amends VI for it. `plan.md` D1–D13 are the decisions; `research.md` R1 and R2 are the lab facts.
+- Model: `app.Port{Protocol, Published}` (`protocol` omitempty, `published` omitzero, so no revision moved; `""` means tcp,
+  stored as sent), `Port.SpeaksTCP`, `Service.Publishes`, `app.ReservedPorts` (22, 80, 443, 4646–4648, 7070, 7071, 8081, 51820),
+  `MaxPublishedPorts` 16 (`internal/app/published.go`). Refused naming the field: unknown protocol, number out of range or
+  reserved, a number published twice in the app, more than 16, `replicas` above 1, a domain or the health check (named or
+  implied) on a port that doesn't speak TCP. `mesh.PublicHostNetwork = "public"`.
+- Nomad (lab, observed, 2.0.7): Nomad maps **both** tcp and udp for every port, so `protocol` only says what the app speaks.
+  `Translate` puts a published port in the group network's `ReservedPorts` (`Value`, `To`, `HostNetwork: "public"`), the HCL
+  export writes `port "x" { static = N  to = M  host_network = "public" }` and its header names the network. A group that
+  publishes deploys stop-then-start like one with a volume (`stopThenStart`). The mapping lives exactly as long as the copy,
+  so Caravana writes **no firewall rule**: the mapping is a DNAT rule before ufw's input rules (research R2).
+- Flow: `service.checkPortsTaken` (next to `checkDomainsTaken`; every other stored app, stopped ones too, claims its numbers;
+  `PortTakenError` → 409 `port_taken` with the field), `deploy.checkPublicNetwork` in `Register` before `ensureVolumes` (the
+  ready, eligible nodes whose `Nodes().Info` has `HostNetworks["public"]`; none → `PublicNetworkError` → 409
+  `no_public_network` on the first published port, and the failed deployment is recorded like any `Register` failure, so
+  the app is stored and holds its number). A publishing service's new volumes go to a public node; volumes that exist
+  elsewhere refuse on the port's field. A promotion keeps the target's published number per port name (the source's
+  `Changed` ignores it) and a service new to the target arrives unpublished; Copy to clears every number and the kept
+  overlay's `publish`.
+- Compose: `ports` and `expose` take udp (`3478/udp`); a tcp and a udp entry for one container port make one `tcp+udp` port (tcp
+  stays `""`, so a file without udp makes the same app as before). The file's `published` only warns (the message now names the
+  overlay entry to add); `Overlay.Publish []Publish{Port, Published}` publishes (`published` 0 = the same number), an unknown
+  container port is `services.<svc>.publish[k].port` and a model refusal of the number is renamed to
+  `services.<svc>.publish[k].published` (`compose.PublishedInOverlay`, also for the 409s in `service.inFile`).
+- Console: Configure shows a service's published ports read-only (`publishedRows`: "Published ports", "Open on the address of
+  server <name>", "Set through the API or the Compose overlay"; `publishHost` reads the managed ingress server), a save keeps
+  them (`applyEdit` only touches `ContainerPort` of a single port), and the Compose form keeps the overlay's list
+  (`keepPublish`, like `keepIdentities`). No editor in the console.
+- Hosts: `nodeagent.State.PublicInterface` (`publicInterface`, omitempty, validated), set by `InitFirst` from `ip -4 route show
+  default` (the first line's `dev`; no route keeps what the state has), rendered inside the first server's `client {}` as
+  `host_network "public" { interface = ...; cidr = "0.0.0.0/0" }` (`first-public` and `client-public` goldens; the older goldens
+  are unchanged and a joined server never renders it). `install.sh` needs no change: its rerun runs `init-first` and restarts
+  Nomad once when the config changed. `deploy/dev/nomad.hcl` declares the same network on `eth0`, and `lab.sh up` installs a
+  changed `nomad.hcl` into an existing lab VM and restarts Nomad (no `delete`).
+- API 0.45.0: `Port.protocol`, `Port.published`, the overlay's `publish`, codes `port_taken` and `no_public_network` (409, with the
+  field). Deploy tokens may deploy them for their own app. `docs/published-ports.md`.
+- Tests: the gate step `published-ports` (`gate_published_test.go`: refusals, an `alpine/socat` echo on a `tcp+udp` port
+  published as 34478 deploying healthy with the static port on `public`, TCP and UDP answered from another copy at the address
+  Nomad recorded (and, on a real host, from the test process through the firewall), `port_taken` for a second app, the export
+  with no diff, and the port closed after the app is deleted) passed in the lab (36 s, run alone with
+  `-run 'TestLab/^(api-needs-token|published-ports)$'`). `install-test.sh` has `check_published_host` (not run in this session).
+  The lab VM must have the network: run `deploy/dev/lab.sh up` once from a branch that has the new `nomad.hcl`.
+- Not in 041: port ranges (coturn's relay range needs one published port each), published ports on joined servers (a proxy per
+  server, Phase 3), IPv6, a console editor, a firewall rule.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

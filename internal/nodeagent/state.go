@@ -36,7 +36,16 @@ type State struct {
 	// Issuer is the OIDC issuer last rendered into nomad.hcl, on a Nomad server (spec 038). A
 	// state.json written before it loads with none.
 	Issuer string `json:"issuer,omitempty"`
+	// PublicInterface is the interface of the first server's default route, which nomad.hcl names as
+	// the host network "public" (spec 041): a service's published ports open on its IPv4 address.
+	// Empty on a joined server, and on a host with no default route. A state.json written before it
+	// loads with none.
+	PublicInterface string `json:"publicInterface,omitempty"`
 }
+
+// interfaceRE is what an interface's name may be: Linux allows 15 characters, and the agent refuses
+// the rest so the name can be put in nomad.hcl without quoting tricks.
+var interfaceRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`)
 
 // Validate says a state read from disk is one this agent can act on.
 func (s State) Validate() error {
@@ -54,6 +63,9 @@ func (s State) Validate() error {
 	}
 	if _, ok := mesh.CleanIssuer(s.Issuer); !ok {
 		return errors.New("state.json: issuer isn't empty or an https:// address")
+	}
+	if s.PublicInterface != "" && !interfaceRE.MatchString(s.PublicInterface) {
+		return errors.New("state.json: publicInterface isn't an interface name")
 	}
 	return nil
 }

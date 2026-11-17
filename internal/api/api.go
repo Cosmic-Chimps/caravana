@@ -338,6 +338,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 	if e := domainError(err); e != nil {
 		return e
 	}
+	if e := portsError(err); e != nil {
+		return e
+	}
 	if e := updatesError(err); e != nil {
 		return e
 	}

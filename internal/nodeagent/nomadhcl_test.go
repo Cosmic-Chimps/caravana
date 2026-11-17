@@ -29,6 +29,8 @@ func renderCases() map[string]struct {
 		"server":             {State{Version: 1, Index: 3, Name: "fsn-2", Pool: "default", Role: RoleServer, Servers: []int{1, 2, 3}}, testGossip},
 		"first-issuer":       {State{Version: 1, Index: 1, Name: "hel-1", Pool: "default", First: true, Role: RoleServer, Servers: []int{1}, Issuer: testIssuer}, testGossip},
 		"server-issuer":      {State{Version: 1, Index: 3, Name: "fsn-2", Pool: "default", Role: RoleServer, Servers: []int{1, 2, 3}, Issuer: testIssuer}, testGossip},
+		"first-public":       {State{Version: 1, Index: 1, Name: "hel-1", Pool: "default", First: true, Role: RoleServer, Servers: []int{1}, PublicInterface: "ens3"}, testGossip},
+		"client-public":      {State{Version: 1, Index: 2, Name: "fsn-1", Pool: "default", Role: RoleClient, Servers: []int{1}, PublicInterface: "ens3"}, testGossip},
 		"client-cpu":         {State{Version: 1, Index: 2, Name: "fsn-1", Pool: "builders", Role: RoleClient, Servers: []int{1}, CPUTotalCompute: 4000}, testGossip},
 	}
 }

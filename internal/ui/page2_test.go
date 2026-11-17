@@ -1054,7 +1054,7 @@ func TestStoppedConfigureSaysItOnce(t *testing.T) {
 // "Also set": the health check's port only for a service with several ports; the key column doesn't wrap.
 func TestAlsoSetHealthPort(t *testing.T) {
 	svc := app.Service{Name: "web", Ports: []app.Port{{Name: "http", ContainerPort: 80}}, Command: "/run", Health: &app.HealthCheck{Port: "http"}}
-	for _, r := range alsoSet(svc, newEditService(svc)) {
+	for _, r := range alsoSet(svc, newEditService(svc), "") {
 		if r.Label == "Check port" {
 			t.Errorf("a one-port service shows the health check's port: %+v", r)
 		}
@@ -1062,7 +1062,7 @@ func TestAlsoSetHealthPort(t *testing.T) {
 	svc.Ports = append(svc.Ports, app.Port{Name: "metrics", ContainerPort: 9100})
 	svc.Health.Port = "metrics"
 	found := false
-	for _, r := range alsoSet(svc, newEditService(svc)) {
+	for _, r := range alsoSet(svc, newEditService(svc), "") {
 		found = found || r.Label == "Check port" && r.Values[0] == "metrics"
 	}
 	if !found {
@@ -1100,12 +1100,12 @@ func TestStopTimeoutRows(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := find(alsoSet(tt.svc, newEditService(tt.svc))); got != tt.want {
+			if got := find(alsoSet(tt.svc, newEditService(tt.svc), "")); got != tt.want {
 				t.Errorf("alsoSet: stop timeout = %q, want %q", got, tt.want)
 			}
 			a := app.App{ID: "shop", Services: []app.Service{tt.svc}}
 			var got string
-			for _, p := range servicePanels(a) {
+			for _, p := range servicePanels(a, "") {
 				for _, r := range p.Rows {
 					if r.Label == "Stop timeout" {
 						got = r.Values[0]

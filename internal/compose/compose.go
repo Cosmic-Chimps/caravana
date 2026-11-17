@@ -79,6 +79,18 @@ type Overlay struct {
 	// Identities are the Nomad workload identities the service asks for, as
 	// in app.Service (spec 038).
 	Identities []app.Identity `json:"identities,omitempty"`
+	// Publish opens ports of the service on the server's address (spec 041).
+	// The file's own published numbers only warn: an entry here is how the
+	// owner publishes one.
+	Publish []Publish `json:"publish,omitempty"`
+}
+
+// Publish publishes one container port of the service.
+type Publish struct {
+	// Port is the container port: one the file declares.
+	Port int `json:"port"`
+	// Published is the host port. Zero means the same number as Port.
+	Published int `json:"published,omitzero"`
 }
 
 // Domain routes Host to one container port of the service, with the options
@@ -156,7 +168,7 @@ func Translate(appID string, req Request) (app.App, []app.Warning, error) {
 	}
 
 	if err := app.ValidateApp(a); err != nil {
-		return app.App{}, nil, inFile(err, names)
+		return app.App{}, nil, PublishedInOverlay(inFile(err, names), a, req)
 	}
 	sort.SliceStable(warnings, func(i, j int) bool {
 		if warnings[i].Field != warnings[j].Field {
@@ -257,6 +269,35 @@ func inFile(err error, names []string) error {
 		return app.NewFieldError("services."+names[i]+rest, "%s", fe.Message)
 	}
 	return fe
+}
+
+// PublishedInOverlay renames an error about a port's published number to the
+// overlay entry that published it: "services.web.ports[1].published" becomes
+// "services.web.publish[0].published". Other errors are returned as they are.
+// The deploy flow uses it, after InFile, for what it refuses after translation.
+func PublishedInOverlay(err error, a app.App, req Request) error {
+	fe, ok := err.(*app.FieldError)
+	if !ok {
+		return err
+	}
+	for _, svc := range a.Services {
+		prefix := "services." + svc.Name + ".ports["
+		rest, found := strings.CutPrefix(fe.Field, prefix)
+		if !found {
+			continue
+		}
+		var j int
+		var tail string
+		if n, _ := fmt.Sscanf(rest, "%d]%s", &j, &tail); n != 2 || tail != ".published" || j < 0 || j >= len(svc.Ports) {
+			return err
+		}
+		for k, pub := range req.Services[svc.Name].Publish {
+			if pub.Port == svc.Ports[j].ContainerPort {
+				return app.NewFieldError(fmt.Sprintf("services.%s.publish[%d].published", svc.Name, k), "%s", fe.Message)
+			}
+		}
+	}
+	return err
 }
 
 func sortedKeys[V any](m map[string]V) []string {

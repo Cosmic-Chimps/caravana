@@ -72,6 +72,15 @@ func (a *Agent) InitFirst(ctx context.Context, o InitFirstOptions) error {
 		}
 	}
 
+	// The interface of the default route carries the published ports (spec 041). A host with no
+	// default route keeps what the state has: the next run asks again.
+	if iface := a.defaultRouteInterface(ctx); iface != "" && iface != st.PublicInterface {
+		st.PublicInterface = iface
+		if err := a.SaveState(st); err != nil {
+			return err
+		}
+	}
+
 	if err := a.ensureCA(); err != nil {
 		return err
 	}
@@ -239,4 +248,22 @@ func (a *Agent) leaveNomad(ctx context.Context) {
 		}
 	}
 	a.warn("caravana node leave: Nomad didn't exit within %s of being asked to leave; it is stopped now", leaveWait)
+}
+
+// defaultRouteInterface is the interface of the host's IPv4 default route, "" when there is none or
+// its name isn't one the agent accepts. `ip -4 route show default` prints lines like
+// "default via 192.0.2.1 dev eth0 proto dhcp metric 100": the first line's word after "dev".
+func (a *Agent) defaultRouteInterface(ctx context.Context) string {
+	out, err := a.run(ctx, "ip", "-4", "route", "show", "default")
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(out), "\n")
+	words := strings.Fields(line)
+	for i, w := range words {
+		if w == "dev" && i+1 < len(words) && interfaceRE.MatchString(words[i+1]) {
+			return words[i+1]
+		}
+	}
+	return ""
 }

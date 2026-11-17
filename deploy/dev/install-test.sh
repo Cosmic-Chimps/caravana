@@ -19,6 +19,9 @@
 # file or, without it, `apt list --upgradable` run inside Caravana's sandbox; the reboot marker written
 # as root; pro's package names on Ubuntu only.
 #
+# Feature 041's published port is checked from a container on the VM's own Docker bridge, whose traffic
+# passes the firewall as external traffic does.
+#
 # Let's Encrypt and the public ports need a real VM: deploy/vm/host.sh prove covers those.
 set -euo pipefail
 
@@ -290,6 +293,60 @@ check_issuer_host() {
   done
   [ "$(identity_claims 'd["iss"]')" = "https://$DOMAIN" ] || die "idapp's token after the restart should carry https://$DOMAIN"
   api -fsS -o /dev/null -X DELETE "https://$DOMAIN/v1/apps/idapp" || die "deleting idapp failed"
+}
+
+# pub_answer ADDRESS PORT: what a container on the host's Docker bridge gets from ADDRESS:PORT over
+# TCP, with a 3 second limit. Its traffic is forwarded through the host's firewall as external
+# traffic is (Nomad's port mapping is a DNAT rule), so this is the path from the internet that
+# deploy/vm/host.sh prove can only walk on a real host.
+pub_answer() {
+  vm sudo docker run --rm --network bridge busybox:1.37 sh -c "echo | nc -w 3 $1 $2" 2>/dev/null || true
+}
+
+# check_published_host: feature 041. The first server's Nomad declares the host network "public" on
+# the interface of its default route, the agent's state says which, a service with a published port
+# answers on that interface's address, and the port is closed again when the app is deleted.
+check_published_host() {
+  local iface addr end port=34567
+  vm sudo grep -q 'host_network "public"' /etc/nomad.d/nomad.hcl || die "nomad.hcl should declare the host network public"
+  iface="$(vm sudo cat /etc/caravana-node/state.json | jsonq 'd.get("publicInterface")')"
+  [ -n "$iface" ] && [ "$iface" != None ] || die "the agent's state should name the public interface"
+  vm sudo grep -q "interface = \"$iface\"" /etc/nomad.d/nomad.hcl || die "nomad.hcl should put the public network on $iface"
+  [ "$(vm sudo caravana-nomad node status -self -json | jsonq 'd["HostNetworks"]["public"]["Interface"]')" = "$iface" ] ||
+    die "Nomad's node should list the host network public on $iface"
+  addr="$(vm ip -4 -o addr show dev "$iface" | awk '{print $4}' | cut -d/ -f1 | head -1)"
+  [ -n "$addr" ] || die "no IPv4 address on $iface"
+
+  api -fsS -o /dev/null -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/pubapp/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "echo", "image": "busybox:1.37", "command": "sh",
+      "args": ["-c", "while true; do echo pong | nc -l -p 4000; done"],
+      "ports": [{"name": "echo", "containerPort": 4000, "protocol": "tcp+udp", "published": '"$port"'}],
+      "health": {"interval": "5s", "timeout": "2s"},
+      "resources": {"memoryMB": 16, "memoryMaxMB": 32}}]}' ||
+    die "deploying pubapp failed"
+  end=$((SECONDS + 180))
+  until [ "$(pub_answer "$addr" "$port")" = pong ]; do
+    [ "$SECONDS" -lt "$end" ] || die "pubapp didn't answer on $addr:$port within 3 minutes"
+    sleep 3
+  done
+
+  # The refusals name their field; none of them changes anything.
+  [ "$(api -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/pubapp2/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "echo", "image": "busybox:1.37", "ports": [{"name": "echo", "containerPort": 4000, "published": '"$port"'}],
+      "health": {}}]}')" = 409 ] || die "another app publishing $port should be refused with 409 port_taken"
+  [ "$(api -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/pubapp2/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "echo", "image": "busybox:1.37", "ports": [{"name": "echo", "containerPort": 4000, "published": 22}],
+      "health": {}}]}')" = 400 ] || die "publishing 22 should be refused with 400"
+
+  api -fsS -o /dev/null -X DELETE "https://$DOMAIN/v1/apps/pubapp" || die "deleting pubapp failed"
+  end=$((SECONDS + 60))
+  until [ -z "$(pub_answer "$addr" "$port")" ]; do
+    [ "$SECONDS" -lt "$end" ] || die "$addr:$port still answers a minute after the app was deleted"
+    sleep 3
+  done
 }
 
 # refuses LABEL EXPECTED ARGS...: the installer exits 2 and says EXPECTED.
@@ -748,6 +805,9 @@ PY
 
   say "the cluster's issuer, its discovery documents and an identity token (feature 038)"
   check_issuer_host
+
+  say "a published port: the public host network, an answer through the firewall, and closed again (feature 041)"
+  check_published_host
 
   say "upgrade to $v2 with whoami answering throughout"
   local flag="$WORK/watching" fails

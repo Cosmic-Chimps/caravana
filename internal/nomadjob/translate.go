@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 )
 
@@ -274,9 +275,15 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		count = *svc.Replicas
 	}
 
-	// Nomad picks a free host port and maps it to the container port.
-	var ports []api.Port
+	// Nomad picks a free host port and maps it to the container port. A
+	// published port is a fixed one on the host network "public", which only
+	// the first server declares (spec 041).
+	var ports, reserved []api.Port
 	for _, p := range svc.Ports {
+		if p.IsPublished() {
+			reserved = append(reserved, api.Port{Label: p.Name, Value: p.Published, To: p.ContainerPort, HostNetwork: mesh.PublicHostNetwork})
+			continue
+		}
 		ports = append(ports, api.Port{Label: p.Name, To: p.ContainerPort})
 	}
 
@@ -288,7 +295,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		// job's update block.
 		Update:        &api.UpdateStrategy{Canary: new(count)},
 		ShutdownDelay: new(shutdownDelay),
-		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports, DNS: dnsConfig(svc)}},
+		Networks:      []*api.NetworkResource{{Mode: "bridge", DynamicPorts: ports, ReservedPorts: reserved, DNS: dnsConfig(svc)}},
 		// The service's own task is always the first.
 		Tasks: []*api.Task{task(a.ID, svc, image, s, private)},
 	}
@@ -301,11 +308,8 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 	}
 	if len(svc.Volumes) > 0 {
 		tg.Volumes = volumeRequests(a.ID, svc)
-		// A canary can't be placed on a single-writer volume the old copy
-		// still holds, so these groups stop the old copy, then start the new
-		// one. Still health-checked and reverted like any other deploy. A
-		// group without canaries can't auto-promote (Nomad refuses the job),
-		// so this also turns off the job's AutoPromote for this group.
+	}
+	if stopThenStart(svc) {
 		tg.Update = &api.UpdateStrategy{Canary: new(0), AutoPromote: new(false)}
 	}
 	if reg := registration(a, svc, s); reg != nil {
@@ -324,6 +328,17 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		tg.Tasks = append(tg.Tasks, sqliteTask(svc, s), uploadTask(s))
 	}
 	return tg
+}
+
+// stopThenStart says the service's deploys stop the old copy, then start the
+// new one, instead of running both at once. A canary can't be placed on a
+// single-writer volume the old copy still holds, nor on a fixed port the old
+// copy still has on the server's address. Still health-checked and reverted
+// like any other deploy. A group without canaries can't auto-promote (Nomad
+// refuses the job), so the group's update block also turns off the job's
+// AutoPromote.
+func stopThenStart(svc app.Service) bool {
+	return len(svc.Volumes) > 0 || svc.Publishes()
 }
 
 // volumeRequests asks Nomad for each of a service's volumes, keyed by the

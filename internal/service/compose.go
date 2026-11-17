@@ -6,6 +6,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/compose"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -45,16 +46,38 @@ func (s *Service) deployComposeWarned(ctx context.Context, appID string, req com
 	warnings = append(warnings, extra...)
 	file := req.WithoutSecretValues()
 	res, err := s.saveAndDeploy(ctx, a, cond, trigger, made{file: &file, warnings: warnings}, nil)
-	return res, inFile(err, a)
+	return res, inFile(err, a, req)
 }
 
 // inFile is compose.InFile, which names a refused field by its path in the
-// file, for a DomainTakenError too.
-func inFile(err error, a app.App) error {
-	var taken *DomainTakenError
-	if errors.As(err, &taken) {
-		if fe, ok := compose.InFile(app.NewFieldError(taken.Field, ""), a).(*app.FieldError); ok {
-			return &DomainTakenError{Field: fe.Field, Host: taken.Host, App: taken.App}
+// file (and a published port's by its entry in the request's overlay), for a
+// DomainTakenError, a PortTakenError and a deploy.PublicNetworkError too.
+func inFile(err error, a app.App, req compose.Request) error {
+	rename := func(field string) (string, bool) {
+		fe, ok := compose.InFile(app.NewFieldError(field, ""), a).(*app.FieldError)
+		if !ok {
+			return "", false
+		}
+		if renamed, ok := compose.PublishedInOverlay(fe, a, req).(*app.FieldError); ok {
+			fe = renamed
+		}
+		return fe.Field, true
+	}
+	var domain *DomainTakenError
+	var port *PortTakenError
+	var network *deploy.PublicNetworkError
+	switch {
+	case errors.As(err, &domain):
+		if f, ok := rename(domain.Field); ok {
+			return &DomainTakenError{Field: f, Host: domain.Host, App: domain.App}
+		}
+	case errors.As(err, &port):
+		if f, ok := rename(port.Field); ok {
+			return &PortTakenError{Field: f, Port: port.Port, App: port.App}
+		}
+	case errors.As(err, &network):
+		if f, ok := rename(network.Field); ok {
+			return &deploy.PublicNetworkError{Field: f, Message: network.Message}
 		}
 	}
 	return compose.InFile(err, a)

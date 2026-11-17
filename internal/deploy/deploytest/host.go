@@ -241,6 +241,29 @@ func (n *Nomad) AddNode(id, name, status, appAddress string) {
 	n.host.extra = append(n.host.extra, node)
 }
 
+// SetPublicNetwork makes the node with this ID (the one SetNode made, or one AddNode made) declare
+// the host network "public" in its client configuration, as the first server's does (spec 041),
+// or stop declaring it when on is false.
+func (n *Nomad) SetPublicNetwork(id string, on bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	set := func(node *api.Node) {
+		if on {
+			node.HostNetworks = map[string]*api.HostNetworkInfo{"public": {Name: "public", Interface: "eth0", CIDR: "0.0.0.0/0"}}
+		} else {
+			node.HostNetworks = nil
+		}
+	}
+	if n.host.set && n.host.node.ID == id {
+		set(&n.host.node)
+	}
+	for _, x := range n.host.extra {
+		if x.ID == id {
+			set(x)
+		}
+	}
+}
+
 // SetNodeStatusOf changes the status of a node AddNode made ("ready", "down", "disconnected").
 func (n *Nomad) SetNodeStatusOf(id, status string) {
 	n.mu.Lock()

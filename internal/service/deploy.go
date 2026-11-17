@@ -144,6 +144,10 @@ func (s *Service) saveAndDeploy(ctx context.Context, a app.App, cond Condition, 
 	if err := s.checkDomainsTaken(ctx, a); err != nil {
 		return DeployResult{}, err
 	}
+	// A fixed port is one app's (spec 041): a deploy may not publish another app's.
+	if err := s.checkPortsTaken(ctx, a); err != nil {
+		return DeployResult{}, err
+	}
 	// A new app is placed by its ID (feature 019), so its project and
 	// environment must exist; an app that exists is not checked.
 	if err := s.checkPlace(ctx, a.ID); err != nil {

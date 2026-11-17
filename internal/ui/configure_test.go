@@ -795,14 +795,14 @@ func TestDNSRowsInBothPanels(t *testing.T) {
 	}
 	panelRows := func(svc app.Service) []defRow {
 		var rows []defRow
-		for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}) {
+		for _, p := range servicePanels(app.App{ID: "shop", Services: []app.Service{svc}}, "") {
 			rows = append(rows, p.Rows...)
 		}
 		return rows
 	}
 
 	svc := app.Service{Name: "web", Image: "x:1"}
-	if got := labels(alsoSet(svc, newEditService(svc))); len(got) != 0 {
+	if got := labels(alsoSet(svc, newEditService(svc), "")); len(got) != 0 {
 		t.Errorf("alsoSet without dns has %v", got)
 	}
 	if got := labels(panelRows(svc)); len(got) != 0 {
@@ -811,7 +811,7 @@ func TestDNSRowsInBothPanels(t *testing.T) {
 
 	svc.DNS = &app.DNS{Servers: []string{"1.1.1.1", "10.0.0.2"}}
 	want := map[string][]string{"DNS servers": {"1.1.1.1", "10.0.0.2"}}
-	if got := labels(alsoSet(svc, newEditService(svc))); !reflect.DeepEqual(got, want) {
+	if got := labels(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
 		t.Errorf("alsoSet = %v, want %v", got, want)
 	}
 	if got := labels(panelRows(svc)); !reflect.DeepEqual(got, want) {
@@ -820,7 +820,7 @@ func TestDNSRowsInBothPanels(t *testing.T) {
 
 	svc.DNS = &app.DNS{Servers: []string{"1.1.1.1"}, Searches: []string{"corp.example"}, Options: []string{"ndots:2", "edns0"}}
 	want = map[string][]string{"DNS servers": {"1.1.1.1"}, "DNS search domains": {"corp.example"}, "DNS options": {"ndots:2", "edns0"}}
-	if got := labels(alsoSet(svc, newEditService(svc))); !reflect.DeepEqual(got, want) {
+	if got := labels(alsoSet(svc, newEditService(svc), "")); !reflect.DeepEqual(got, want) {
 		t.Errorf("alsoSet = %v, want %v", got, want)
 	}
 	if got := labels(panelRows(svc)); !reflect.DeepEqual(got, want) {

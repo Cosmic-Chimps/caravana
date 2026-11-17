@@ -57,7 +57,7 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 		svc.Env = append(svc.Env, app.EnvVar{Name: name, Value: *v})
 	}
 
-	ports, err := servicePorts(field, sc, warn)
+	ports, err := servicePorts(field, sc, ov, warn)
 	if err != nil {
 		return app.Service{}, nil, err
 	}
@@ -124,36 +124,61 @@ func service(p *types.Project, sc types.ServiceConfig, ov Overlay) (app.Service,
 
 // servicePorts reads ports and expose. Each container port is listed once,
 // named after the Compose port's name when that is a valid label, else
-// "p<port>".
-func servicePorts(field string, sc types.ServiceConfig, warn func(string, string, ...any)) ([]app.Port, error) {
+// "p<port>". A TCP and a UDP entry for one container port make one port that
+// speaks both (spec 041). The file's published numbers are only warned about,
+// unless the overlay publishes that port.
+func servicePorts(field string, sc types.ServiceConfig, ov Overlay, warn func(string, string, ...any)) ([]app.Port, error) {
 	var ports []app.Port
-	seen := map[int]bool{}
-	add := func(target int, name string) {
-		if seen[target] {
+	index := map[int]int{} // container port → its place in ports
+	add := func(target int, name, protocol string) {
+		// TCP is the default, so it is left empty and a file without UDP
+		// makes the same app as before spec 041.
+		stored := protocol
+		if protocol == app.ProtocolTCP {
+			stored = ""
+		}
+		if i, ok := index[target]; ok {
+			if ports[i].Protocol != stored {
+				ports[i].Protocol = app.ProtocolTCPUDP
+			}
 			return
 		}
-		seen[target] = true
+		index[target] = len(ports)
 		if !portLabelRE.MatchString(name) {
 			name = "p" + strconv.Itoa(target)
 		}
-		ports = append(ports, app.Port{Name: name, ContainerPort: target})
+		ports = append(ports, app.Port{Name: name, ContainerPort: target, Protocol: stored})
+	}
+	published := map[int]bool{}
+	for _, pub := range ov.Publish {
+		published[pub.Port] = true
 	}
 	for i, pc := range sc.Ports {
 		f := fmt.Sprintf(".ports[%d]", i)
-		if pc.Protocol != "" && pc.Protocol != "tcp" {
-			return nil, app.NewFieldError(field+f+".protocol", "%q isn't supported; only tcp is", pc.Protocol)
+		protocol := pc.Protocol
+		if protocol == "" {
+			protocol = app.ProtocolTCP
 		}
-		if pc.Published != "" || pc.HostIP != "" || pc.Mode == "host" {
-			warn(f, "the host port isn't opened: other services reach port %d by this service's name, and the internet through the request's domains", pc.Target)
+		if protocol != app.ProtocolTCP && protocol != app.ProtocolUDP {
+			return nil, app.NewFieldError(field+f+".protocol", "%q isn't supported; only tcp and udp are", pc.Protocol)
 		}
-		add(int(pc.Target), pc.Name)
+		if (pc.Published != "" || pc.HostIP != "" || pc.Mode == "host") && !published[int(pc.Target)] {
+			warn(f, "the host port isn't opened: other services reach port %d by this service's name, and the internet through the request's domains; to publish it on the server's address, add {\"port\": %d} to the overlay's publish list", pc.Target, pc.Target)
+		}
+		add(int(pc.Target), pc.Name, protocol)
 	}
 	for i, e := range sc.Expose {
-		n, err := strconv.Atoi(strings.TrimSuffix(e, "/tcp"))
-		if err != nil || n < 1 || n > 65535 {
-			return nil, app.NewFieldError(fmt.Sprintf("%s.expose[%d]", field, i), "%q must be one TCP port", e)
+		number, protocol := e, app.ProtocolTCP
+		if n, ok := strings.CutSuffix(e, "/udp"); ok {
+			number, protocol = n, app.ProtocolUDP
+		} else if n, ok := strings.CutSuffix(e, "/tcp"); ok {
+			number = n
 		}
-		add(n, "")
+		n, err := strconv.Atoi(number)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, app.NewFieldError(fmt.Sprintf("%s.expose[%d]", field, i), "%q must be one TCP or UDP port, like 8080 or 3478/udp", e)
+		}
+		add(n, "", protocol)
 	}
 	return ports, nil
 }
@@ -189,6 +214,26 @@ func applyOverlay(field string, svc *app.Service, sc types.ServiceConfig, ov Ove
 		}
 		svc.Domains = append(svc.Domains, app.Domain{Host: d.Host, Port: name,
 			Path: d.Path, WWWRedirect: d.WWWRedirect, TeamOnly: d.TeamOnly})
+	}
+
+	for k, pub := range ov.Publish {
+		f := fmt.Sprintf("%s.publish[%d]", field, k)
+		var port *app.Port
+		for i := range svc.Ports {
+			if svc.Ports[i].ContainerPort == pub.Port {
+				port = &svc.Ports[i]
+			}
+		}
+		if port == nil {
+			return app.NewFieldError(f+".port", "the service has no port %d in the file", pub.Port)
+		}
+		if port.IsPublished() {
+			return app.NewFieldError(f+".port", "port %d is published twice", pub.Port)
+		}
+		port.Published = pub.Published
+		if port.Published == 0 {
+			port.Published = pub.Port
+		}
 	}
 
 	composeCheck := sc.HealthCheck != nil && !sc.HealthCheck.Disable &&

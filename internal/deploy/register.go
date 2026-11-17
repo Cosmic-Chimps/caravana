@@ -68,9 +68,15 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 		}
 	}
 
+	// A published port needs a server that can open it (spec 041): ask first,
+	// so a refusal creates nothing.
+	public, err := d.checkPublicNetwork(ctx, a)
+	if err != nil {
+		return Registered{}, err
+	}
 	// After the ownership check, so a conflict creates nothing; before the
 	// job, so Nomad can place the copies on the node that has the volumes.
-	if err := d.EnsureVolumes(ctx, a); err != nil {
+	if err := d.ensureVolumes(ctx, a, public); err != nil {
 		return Registered{}, err
 	}
 	// The caravana-volumes tasks read their variable before the service

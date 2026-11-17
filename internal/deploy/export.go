@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/registry"
 )
@@ -42,7 +43,7 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 
-	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups []string
+	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups, published []string
 	for _, svc := range a.Services {
 		if entry, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
 			host := registry.EntryHost(entry)
@@ -66,6 +67,11 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 						"  Traefik renders it from the Nomad Variable %s, item %s = team:<bcrypt hash>;\n"+
 						"  without it the router stays disabled. Create it before running the job.",
 					nomadjob.TeamAuthMiddleware(router), dom.Host, router, TraefikVariablePath, nomadjob.TeamAuthMiddleware(router)))
+			}
+		}
+		for _, p := range svc.Ports {
+			if p.IsPublished() {
+				published = append(published, fmt.Sprintf("  %d (%s) -> service %s, port %s", p.Published, protocolWords(p), svc.Name, p.Name))
 			}
 		}
 		for _, v := range svc.Volumes {
@@ -103,6 +109,12 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 			b.WriteString(r + "\n")
 		}
 	}
+	if len(published) > 0 {
+		fmt.Fprintf(&b, "- A Nomad client with a host network %q (its address is where these fixed ports open), for:\n", mesh.PublicHostNetwork)
+		for _, p := range published {
+			b.WriteString(p + "\n")
+		}
+	}
 	for _, t := range teamAuth {
 		b.WriteString(t + "\n")
 	}
@@ -121,13 +133,21 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	for _, p := range pulls {
 		b.WriteString(p + "\n")
 	}
-	if len(routes)+len(volumes)+len(secrets)+len(pulls) == 0 {
+	if len(routes)+len(volumes)+len(secrets)+len(pulls)+len(published) == 0 {
 		b.WriteString("- Nothing beyond a Nomad client with Docker.\n")
 	}
 	if len(backups) > 0 {
 		fmt.Fprintf(&b, "\nBackups run as separate Nomad jobs (%s), not part of this file.\n", strings.Join(backups, ", "))
 	}
 	return b.String()
+}
+
+// protocolWords words a port's protocol: tcp when it names none.
+func protocolWords(p app.Port) string {
+	if p.Protocol == "" {
+		return app.ProtocolTCP
+	}
+	return p.Protocol
 }
 
 // domainOptions words a domain's options for the header's routing list: " (path

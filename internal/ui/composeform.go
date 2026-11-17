@@ -47,6 +47,11 @@ type composeDraft struct {
 	// identities as the app has them (spec 038). The form has no input for
 	// them, so request sends these. Nil for a new app, which has none.
 	keptIdentities map[string][]app.Identity
+
+	// keptPublish is, for an app that exists, each service's published ports
+	// as the overlay's publish list (spec 041). The form has no input for
+	// them, so request sends these. Nil for a new app, which has none.
+	keptPublish map[string][]compose.Publish
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -404,7 +409,10 @@ func (d composeDraft) request() compose.Request {
 		if d.keptIdentities != nil {
 			ov.Identities = d.keptIdentities[s.Name]
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 {
+		if d.keptPublish != nil {
+			ov.Publish = d.keptPublish[s.Name]
+		}
+		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 {
 			continue
 		}
 		if req.Services == nil {
@@ -594,6 +602,41 @@ func (d *composeDraft) keepIdentities(rec store.AppRecord) {
 			continue
 		}
 		d.keptIdentities[svc.Name] = slices.Clone(identities)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// keepPublish makes the draft carry the published ports the stored app has
+// (spec 041): the form doesn't edit them, so a preview or a deploy from it
+// must not unpublish one (constitution IV). An app that keeps its file has
+// them in the file's overlay, exactly as written; any other app has them on its
+// ports. A service the draft lacks gets its inputs, so its ports travel; one
+// the new file doesn't have is dropped with them, as its other settings are.
+func (d *composeDraft) keepPublish(rec store.AppRecord) {
+	d.keptPublish = map[string][]compose.Publish{}
+	for _, svc := range rec.App.Services {
+		var publish []compose.Publish
+		if rec.Compose != nil {
+			publish = rec.Compose.Services[svc.Name].Publish
+		} else {
+			for _, p := range svc.Ports {
+				if !p.IsPublished() {
+					continue
+				}
+				entry := compose.Publish{Port: p.ContainerPort}
+				if p.Published != p.ContainerPort {
+					entry.Published = p.Published
+				}
+				publish = append(publish, entry)
+			}
+		}
+		if len(publish) == 0 {
+			continue
+		}
+		d.keptPublish[svc.Name] = slices.Clone(publish)
 		if _, ok := d.service(svc.Name); !ok {
 			d.Services = append(d.Services, newDraftService(svc.Name))
 		}
