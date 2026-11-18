@@ -299,8 +299,38 @@ check_private_ranges() {
     refuse "this host has $found, which is inside 10.97.0.0/16, 10.98.0.0/24 or 10.99.0.0/24: Caravana's servers use those between them. Change that network first"
 }
 
+# container_kind prints the kind of container this runs in (docker, lxc, openvz, podman, ...) and
+# succeeds, or prints nothing and fails on a VM or a physical server. Caravana owns the machine's
+# networking (its interfaces, the WireGuard mesh, the firewall, Nomad's bridges and cgroups), which a
+# container on someone else's platform (Virtuozzo/Jelastic nodes, LXC, a Docker container) doesn't give.
+container_kind() {
+  local kind=""
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    kind="$(systemd-detect-virt --container 2>/dev/null)" || kind=""
+    [ "$kind" = none ] && kind=""
+  fi
+  if [ -z "$kind" ]; then
+    if [ -f /.dockerenv ]; then
+      kind=docker
+    elif [ -f /run/.containerenv ]; then
+      kind=podman
+    elif [ -r /proc/1/environ ] && tr '\0' '\n' </proc/1/environ 2>/dev/null | grep -q '^container='; then
+      kind="$(tr '\0' '\n' </proc/1/environ | sed -n 's/^container=//p' | head -1)"
+    elif [ -d /proc/vz ] && [ ! -d /proc/bc ]; then
+      kind=openvz
+    fi
+  fi
+  [ -n "$kind" ] || return 1
+  echo "$kind"
+}
+
 preflight() {
   [ "$(id -u)" = 0 ] || refuse "run it as root (sudo bash ...)"
+
+  local container
+  if container="$(container_kind)"; then
+    refuse "this is a container ($container), not a VM: Caravana runs Docker and Nomad and makes network interfaces, a firewall and a private network, which a container doesn't allow. Install it on a VM or a physical server"
+  fi
 
   # The supported systems, and nothing else: each one is tested by deploy/dev/install-test.sh
   # (deploy/dev/install-test-all.sh runs them all). The file is read as text, never sourced.
