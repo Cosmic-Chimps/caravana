@@ -34,7 +34,7 @@ job "shop" {
       name = "shop-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.shop-web-951623a2.rule=Host(`shop.example.com`) && PathPrefix(`/api`)", "traefik.http.routers.shop-web-951623a2.entrypoints=websecure", "traefik.http.routers.shop-web-951623a2.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.shop-web-951623a2.rule=Host(`shop.example.com`) && PathPrefix(`/api`)", "traefik.http.routers.shop-web-951623a2.entrypoints=websecure", "traefik.http.routers.shop-web-951623a2.tls=true", "traefik.http.routers.shop-web-951623a2.middlewares=shop-web-retry", "traefik.http.middlewares.shop-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

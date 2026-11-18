@@ -379,7 +379,9 @@
               "traefik.enable=true",
               "traefik.http.routers.fhodor-web.rule=Host(`fhodor.example.com`)",
               "traefik.http.routers.fhodor-web.entrypoints=websecure",
-              "traefik.http.routers.fhodor-web.tls=true"
+              "traefik.http.routers.fhodor-web.tls=true",
+              "traefik.http.routers.fhodor-web.middlewares=fhodor-web-retry",
+              "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3"
             ],
             "CanaryTags": [
               "caravana.canary=true"

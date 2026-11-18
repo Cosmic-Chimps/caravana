@@ -16,7 +16,8 @@ import (
 // with the middlewares its options need. Every router here is only tags: no
 // secret is in them. The password of a Team-only domain lives in the Nomad
 // Variable nomad/jobs/traefik, which Traefik's file provider renders as the
-// middleware "<router>-auth@file".
+// middleware "<router>-auth@file". Every router of a service ends with the
+// service's retry middleware, RetryMiddleware.
 
 // DomainRouterName is the Traefik router of the domain host of a service:
 // "<app>-<service>-" and the first 8 hex digits of the SHA-256 of the host. A
@@ -36,6 +37,33 @@ func TeamAuthMiddleware(router string) string {
 	return router + "-auth"
 }
 
+// RetryMiddleware is the retry middleware of the service whose base router is
+// router: "<router>-retry". Every router of the service uses it, last.
+//
+// Nomad registers a copy's service before its task starts and its
+// registrations carry no health, so Traefik's Nomad provider routes to a copy
+// that a scale, a move or a reschedule placed (none of them hides it behind
+// canary tags, as a deploy does) up to a few seconds before it listens, and
+// each request it gets meanwhile is a 502 (lab, observed: the registration
+// came 0.7 to 2.6 s before the task's Started event). With the middleware, a
+// request whose connection to a copy fails goes to the next copy instead.
+// Traefik retries only when nothing of the request reached the copy (a refused
+// or failed dial), so a POST is never sent twice; any answer the copy gives,
+// 5xx included, goes to the visitor as it is.
+func RetryMiddleware(router string) string {
+	return router + "-retry"
+}
+
+// retryAttempts is how many copies a request may try: with no wait between
+// tries, Traefik's round robin gives each try the next copy, so a request
+// reaches a listening copy even when a step placed two new ones at once.
+const retryAttempts = 3
+
+// retryTags defines the retry middleware named mw.
+func retryTags(mw string) []string {
+	return []string{fmt.Sprintf("traefik.http.middlewares.%s.retry.attempts=%d", mw, retryAttempts)}
+}
+
 // routerTags builds the Traefik routers of a service, with TLS always on.
 // Without a certificate resolver, Traefik serves its default certificate (the
 // local lab); with one, it gets a real certificate. The base router (named
@@ -44,6 +72,7 @@ func TeamAuthMiddleware(router string) string {
 // not written at all: a router with an empty rule would never match.
 func routerTags(appID, service, router string, domains []app.Domain, s Settings) []string {
 	tags := []string{"traefik.enable=true"}
+	retry := RetryMiddleware(router)
 
 	var plain []string
 	for _, d := range domains {
@@ -53,14 +82,20 @@ func routerTags(appID, service, router string, domains []app.Domain, s Settings)
 	}
 	if len(plain) > 0 {
 		tags = append(tags, routerBase(router, strings.Join(plain, " || "), s)...)
+		tags = append(tags, routerMiddlewares(router, []string{retry}))
 	}
 
 	for _, d := range domains {
 		if d.HasOptions() {
-			tags = append(tags, optionRouterTags(DomainRouterName(appID, service, d.Host), d, s)...)
+			tags = append(tags, optionRouterTags(DomainRouterName(appID, service, d.Host), d, retry, s)...)
 		}
 	}
-	return tags
+	return append(tags, retryTags(retry)...)
+}
+
+// routerMiddlewares is the tag that puts middlewares, in order, on a router.
+func routerMiddlewares(router string, middlewares []string) string {
+	return "traefik.http.routers." + router + ".middlewares=" + strings.Join(middlewares, ",")
 }
 
 // routerBase is a router's rule, entrypoint and TLS tags.
@@ -85,7 +120,8 @@ func routerBase(router, rule string, s Settings) []string {
 //     both names, and a redirect middleware "<router>-www" sends the pair to
 //     this host;
 //   - Team only puts the file middleware "<router>-auth@file" in front of
-//     everything, so nothing is redirected before the password is asked.
+//     everything, so nothing is redirected before the password is asked;
+//   - the service's retry middleware, retry, always comes last.
 //
 // The redirect's regex writes dots as [.] and its replacement uses $1 and $2,
 // never ${1}: Nomad interpolates ${...} in tags. Traefik matches the regex
@@ -97,7 +133,7 @@ func routerBase(router, rule string, s Settings) []string {
 //
 // In the rule, && binds tighter than ||, so with a path the pair host is
 // routed on every path and redirected to the same path on this host.
-func optionRouterTags(router string, d app.Domain, s Settings) []string {
+func optionRouterTags(router string, d app.Domain, retry string, s Settings) []string {
 	rule := fmt.Sprintf("Host(`%s`)", d.Host)
 	if d.Path != "" {
 		rule += fmt.Sprintf(" && PathPrefix(`%s`)", d.Path)
@@ -118,9 +154,7 @@ func optionRouterTags(router string, d app.Domain, s Settings) []string {
 	if pair != "" {
 		middlewares = append(middlewares, router+"-www")
 	}
-	if len(middlewares) > 0 {
-		tags = append(tags, "traefik.http.routers."+router+".middlewares="+strings.Join(middlewares, ","))
-	}
+	tags = append(tags, routerMiddlewares(router, append(middlewares, retry)))
 	if pair != "" {
 		mw := "traefik.http.middlewares." + router + "-www.redirectregex."
 		tags = append(tags,

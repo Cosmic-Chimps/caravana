@@ -121,7 +121,9 @@
               "traefik.enable=true",
               "traefik.http.routers.shop-web.rule=Host(`shop.example.com`) || Host(`www.shop.example.com`)",
               "traefik.http.routers.shop-web.entrypoints=websecure",
-              "traefik.http.routers.shop-web.tls=true"
+              "traefik.http.routers.shop-web.tls=true",
+              "traefik.http.routers.shop-web.middlewares=shop-web-retry",
+              "traefik.http.middlewares.shop-web-retry.retry.attempts=3"
             ],
             "CanaryTags": [
               "caravana.canary=true"

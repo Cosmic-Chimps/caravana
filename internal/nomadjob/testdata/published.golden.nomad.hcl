@@ -116,7 +116,7 @@ job "calls" {
       name = "calls-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.calls-web.rule=Host(`calls.example.com`)", "traefik.http.routers.calls-web.entrypoints=websecure", "traefik.http.routers.calls-web.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.calls-web.rule=Host(`calls.example.com`)", "traefik.http.routers.calls-web.entrypoints=websecure", "traefik.http.routers.calls-web.tls=true", "traefik.http.routers.calls-web.middlewares=calls-web-retry", "traefik.http.middlewares.calls-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"
