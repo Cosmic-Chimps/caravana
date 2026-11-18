@@ -196,11 +196,11 @@ func TestListUpdateRunsAndTheAdditionsToGetUpdates(t *testing.T) {
 	for i, st := range []string{store.UpdateUpdated, store.UpdateRolledBack} {
 		id := strings.Repeat(string(rune('a'+i)), 32)
 		at := end.Add(time.Duration(i) * time.Minute)
-		if _, err := u.Store.InsertUpdateRun(ctx, store.UpdateRun{ID: id, Version: "0.16.5", FromVersion: "0.16.0", Trigger: store.UpdateByAutomatic, RequestedAt: at.Add(-time.Minute)}); err != nil {
-			t.Fatal(err)
-		}
-		if err := u.Store.SetUpdateRunState(ctx, id, st, at.Add(-50*time.Second), at, map[string]string{"updated": "", "rolled_back": "didn't answer"}[st],
-			filepath.Join(u.dir, "logs", id+".log")); err != nil {
+		// Stored already finished: a run stored as requested an hour ago is open until it is moved
+		// on, and the service's update watcher, running beside the test, settles it lost.
+		if _, err := u.Store.InsertUpdateRun(ctx, store.UpdateRun{ID: id, Version: "0.16.5", FromVersion: "0.16.0", Trigger: store.UpdateByAutomatic,
+			RequestedAt: at.Add(-time.Minute), StartedAt: at.Add(-50 * time.Second), FinishedAt: at, State: st,
+			Reason: map[string]string{"updated": "", "rolled_back": "didn't answer"}[st], Log: filepath.Join(u.dir, "logs", id+".log")}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -283,11 +283,10 @@ func TestAttentionHasTheFailedUpdate(t *testing.T) {
 	u := newUpdaterEnv(t, "0.16.0", true)
 	ctx := context.Background()
 	end := time.Now().UTC().Add(-time.Minute)
+	// Stored already finished, so the update watcher running beside the test never sees it open.
 	if _, err := u.Store.InsertUpdateRun(ctx, store.UpdateRun{ID: strings.Repeat("c", 32), Version: "0.17.0", FromVersion: "0.16.0",
-		Trigger: store.UpdateByConsole, RequestedAt: end.Add(-3 * time.Minute)}); err != nil {
-		t.Fatal(err)
-	}
-	if err := u.Store.SetUpdateRunState(ctx, strings.Repeat("c", 32), store.UpdateFailed, end.Add(-time.Minute), end, "The installer stopped with exit code 4.", ""); err != nil {
+		Trigger: store.UpdateByConsole, RequestedAt: end.Add(-3 * time.Minute), StartedAt: end.Add(-time.Minute), FinishedAt: end,
+		State: store.UpdateFailed, Reason: "The installer stopped with exit code 4."}); err != nil {
 		t.Fatal(err)
 	}
 	att := getJSON(t, u.testEnv, "/v1/attention", "Attention")
