@@ -34,6 +34,6 @@ Phases 1 to 3 are each one piece of work for a sub-agent, reviewed before the ne
 - [x] T010 Gate step `autoscale` (`cmd/caravana/gate_autoscale_test.go`, registered in `gate_test.go`), run in the
   lab.
 - [x] T011 `docs/autoscaling.md`, `docs/plan.md`, `CLAUDE.md`, `changelog.d/autoscaling.md` (D13).
-- [ ] T012 Every CI check: build, vet, staticcheck, `go test ./...` and `-race`, gofmt, the arm64
+- [x] T012 Every CI check: build, vet, staticcheck, `go test ./...` and `-race`, gofmt, the arm64
   cross-compile, `go mod tidy -diff`, `tools/ui-css.sh check`, `tools/ui-vendor.sh check`,
   `tools/release.sh check`, shellcheck.
