@@ -8,7 +8,8 @@ VMs into servers of that host's cluster (see Adding a server).
 
 - **A VM**: Ubuntu 24.04 or 26.04 LTS, or Debian 12 or 13 (any other system is refused before anything
   changes, naming these four); amd64 or arm64, 2 GB of memory, a public IP address. A fresh one: the
-  installer refuses a machine that already runs Nomad or Docker.
+  installer refuses a machine that already runs Nomad or Docker, and a container (a Docker or LXC
+  container, or a node of a container platform such as Virtuozzo's): it needs a VM or a physical server.
 - **Ports 22, 80 and 443** reachable from the internet. Open them in the provider's firewall if
   it has one.
 - **A domain** for the console, with a DNS record pointing at the VM, e.g.
