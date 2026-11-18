@@ -46,6 +46,11 @@ type editService struct {
 	// offers "Domains go to", a select of the ports by name.
 	ShowDomainPort bool
 	Ports          []app.Port
+	// Scaled says the service scales on its own (feature 043): its count is set by the Scaling
+	// panel, so the form has no Copies input and a save keeps the stored replicas. ScaleBounds is
+	// "1–3", for the words in its place.
+	Scaled      bool
+	ScaleBounds string
 
 	Image, Port, Copies                       formField
 	DomainPort                                formField
@@ -180,6 +185,9 @@ func newEditService(svc app.Service) editService {
 		// A port is per service: with several, and a domain to send there, the owner picks which.
 		ShowDomainPort: len(svc.Ports) > 1 && len(svc.Domains) > 0,
 		Ports:          svc.Ports,
+	}
+	if sc := svc.Scale; sc != nil {
+		s.Scaled, s.ScaleBounds = true, fmt.Sprintf("%d–%d", sc.Min, sc.Max)
 	}
 	for _, in := range s.fields() {
 		in.Field.ID = inputID(svc.Name, in.Name)
@@ -378,6 +386,7 @@ func (s *editService) parse(post url.Values) bool {
 	}
 
 	e := &s.Edit
+	stored := e.Replicas // formOf filled the edit from the stored service
 	*e = serviceEdit{}
 
 	s.Image.Value = text("image")
@@ -404,9 +413,13 @@ func (s *editService) parse(post url.Values) bool {
 		e.DomainPort = s.DomainPort.Value
 	}
 
-	s.Copies.Value = text("copies")
-	if n := whole(&s.Copies, 1, "Enter a whole number, 1 or more."); n > 0 {
-		e.Replicas = &n
+	if s.Scaled {
+		e.Replicas = stored // the Scaling panel owns the count
+	} else {
+		s.Copies.Value = text("copies")
+		if n := whole(&s.Copies, 1, "Enter a whole number, 1 or more."); n > 0 {
+			e.Replicas = &n
+		}
 	}
 
 	if s.ShowHealth {

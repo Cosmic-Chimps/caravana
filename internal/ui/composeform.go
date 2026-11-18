@@ -59,6 +59,11 @@ type composeDraft struct {
 	// are edited on Configure, or in the file's overlay), so request sends
 	// these. Nil for a new app, which has none.
 	keptPlacement map[string]*app.Placement
+
+	// keptScale is, for an app that exists, each scaled service's scaling rule
+	// (feature 043). The form has no input for it (it is edited on Configure,
+	// or in the file's overlay), so request sends these. Nil for a new app.
+	keptScale map[string]*app.Scale
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -422,7 +427,10 @@ func (d composeDraft) request() compose.Request {
 		if d.keptPlacement != nil {
 			ov.Placement = d.keptPlacement[s.Name]
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil {
+		if d.keptScale != nil {
+			ov.Scale = d.keptScale[s.Name]
+		}
+		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil && ov.Scale == nil {
 			continue
 		}
 		if req.Services == nil {
@@ -671,6 +679,29 @@ func (d *composeDraft) keepPlacement(rec store.AppRecord) {
 			continue
 		}
 		d.keptPlacement[svc.Name] = clonePlacement(p)
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// keepScale makes the draft carry the scaling rules the stored app has (feature
+// 043), as keepPlacement does for placement: an app that keeps its file has them
+// in the file's overlay, exactly as written; any other app has them on its
+// services. A deploy from the form must not drop a rule (constitution IV).
+func (d *composeDraft) keepScale(rec store.AppRecord) {
+	d.keptScale = map[string]*app.Scale{}
+	for _, svc := range rec.App.Services {
+		sc := svc.Scale
+		if rec.Compose != nil {
+			sc = rec.Compose.Services[svc.Name].Scale
+		}
+		if sc == nil {
+			continue
+		}
+		kept := *sc
+		d.keptScale[svc.Name] = &kept
 		if _, ok := d.service(svc.Name); !ok {
 			d.Services = append(d.Services, newDraftService(svc.Name))
 		}

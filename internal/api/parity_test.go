@@ -143,7 +143,9 @@ var consoleParity = map[string]parity{
 	// Removing one secret is a deploy of the app with its secrets listed, the others without a value (keep).
 	"POST /apps/{id}/secrets/remove":               {ops: []string{"deployApp"}},
 	"POST /apps/{id}/services/{service}/placement": {ops: []string{"getApp", "deployApp"}},
-	"POST /apps/{id}/secrets/refresh":              {ops: []string{"refreshSecrets"}}, // feature 037
+	// Scaling (feature 043): the form is a deploy with the service's scale; Stop scaling a deploy without it.
+	"POST /apps/{id}/services/{service}/scale": {ops: []string{"getApp", "deployApp"}},
+	"POST /apps/{id}/secrets/refresh":          {ops: []string{"refreshSecrets"}}, // feature 037
 	// Configure's own pages (feature 021). Variables & secrets: a variable is a change to the service's env, a
 	// secret a value with its name, and the .env editor replaces one service's env; every change is a deploy of
 	// the app on the revision getApp gave. Domains: adding or removing a host changes the service's domains;

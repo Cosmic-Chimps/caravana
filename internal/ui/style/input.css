@@ -1660,6 +1660,10 @@
   .cv-mnrow > *, .cv-mnthead > * { min-width: 0; }
   .cv-mnr { text-align: right; }
   .cv-mnname { display: flex; flex-direction: column; gap: 2px; }
+  .cv-mnscale-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding: 10px 18px; font-size: 13px; }
+  .cv-mnscale-row + .cv-mnscale-row { border-top: 1px solid var(--color-line-1); }
+  .cv-mnscale-why { min-width: 0; flex: 1 1 16rem; font-size: 14px; line-height: 1.4; color: var(--color-fg-2); overflow-wrap: anywhere; }
+  .cv-mnscale-when { margin-left: auto; font: 400 13px/1.4 var(--font-mono); color: var(--color-fg-2); }
   .cv-mnname-text { font: 500 14px/1.3 var(--font-mono); color: var(--color-fg-1); text-decoration: none; overflow-wrap: anywhere; }
   /* The row is one link to the app's Running tab: the name's link covers the row; the logs link rides above it. */
   a.cv-mnname-text::after { content: ""; position: absolute; inset: 0; }
@@ -2374,6 +2378,11 @@
   .cv-plform { margin-top: 4px; }
   .cv-plform .cv-fld { margin-bottom: 14px; }
   .cv-plavoid { display: flex; flex-direction: column; gap: 6px; }
+  /* Scaling's form opens under its button; its two selects and number inputs follow the placement form's rhythm. */
+  .cv-copies-scale { margin: 0; padding: 10px 16px 0; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .cv-scaledetails > summary { display: inline-flex; margin-top: 10px; cursor: pointer; list-style: none; }
+  .cv-scaledetails > summary::-webkit-details-marker { display: none; }
+  .cv-scaledetails[open] > summary { margin-bottom: 4px; }
   /* The Overview's server panels (the handoff's NowScreen): a grid with a 13px gap, one column below 800px, two from 800,
      three from 1200. One server isn't in it: its panel is the section's full width. */
   .cv-nodegrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 13px; align-items: stretch; }

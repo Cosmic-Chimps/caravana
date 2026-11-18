@@ -199,6 +199,9 @@ type actionRow struct {
 	Error    string // why it failed, in Caravana's words
 	Trigger  string // "from the console", "through the API"
 	When     when
+	// A scale step (feature 043) names its service and the counts it went between, "1 → 2", and
+	// says why under the row.
+	Service, Counts, Reason string
 }
 
 // actionsRegion is what the "actions" region draws: the newest actions, or
@@ -243,6 +246,14 @@ func actionRowOf(now time.Time, a store.ActionRecord) actionRow {
 		row.Label = "Restart"
 	case store.ActionRun:
 		row.Label = "Run"
+	case store.ActionScale:
+		row.Label, row.Service, row.Reason = "Scaled", a.Service, a.Reason
+		if a.FromCount != nil && a.ToCount != nil {
+			row.Counts = fmt.Sprintf("%d → %d", *a.FromCount, *a.ToCount)
+		}
+		if a.Status == store.ActionFailed {
+			row.Label, row.Reason = "Couldn't scale", ""
+		}
 	case store.ActionTerminal:
 		row.Label = "Terminal"
 		if a.FinishedAt != nil {

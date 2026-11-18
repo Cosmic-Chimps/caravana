@@ -177,6 +177,8 @@ type ServiceMetrics struct {
 	Level     metrics.Level
 	Copies    int
 	HasDomain bool
+	// ScaleMin and ScaleMax are the bounds of a scaled service (feature 043); 0 for a service that doesn't scale.
+	ScaleMin, ScaleMax int
 	// Requests (per second), Errors (percent) and P95 (ms) are over the last
 	// 10 minutes, as the issues' values are; nil without HTTP numbers. UsualP95 is the band's median now, nil while
 	// the baseline is being built.
@@ -218,6 +220,8 @@ type MetricsView struct {
 	Deploys  []MetricDeploy
 	Issues   []MetricIssue // the furthest past its rule first
 	Services []ServiceMetrics
+	// Scales are the newest scale steps of the place's apps, newest first (feature 043).
+	Scales   []ScaleStep
 	Baseline MetricsBaseline
 	// Sources is what the sampler's last tick could read.
 	Sources SamplerSources
@@ -388,6 +392,9 @@ func (s *Service) metricsOf(ctx context.Context, recs []store.AppRecord, project
 	})
 	sortServices(services, sortBy)
 	view.Services = services
+	if view.Scales, err = s.scaleSteps(ctx, recs, recentScaleSteps); err != nil {
+		return MetricsView{}, err
+	}
 	return view, nil
 }
 
@@ -797,6 +804,9 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	sv := ServiceMetrics{
 		AppID: id, AppName: r.rec.Place.Name, Service: r.svc.Name, State: ServiceHealthy,
 		HasDomain: len(r.svc.Domains) > 0, CPU: ch.cpu, Restarts: ch.restarts,
+	}
+	if sc := r.svc.Scale; sc != nil {
+		sv.ScaleMin, sv.ScaleMax = sc.Min, sc.Max
 	}
 	if stopped {
 		sv.State = ServiceStopped

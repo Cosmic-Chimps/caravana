@@ -139,6 +139,61 @@
 {{end}}
 {{end}}
 
+{{/* scale: a service's Scaling panel (feature 043): the rule as one sentence and, for an app edited in the
+     console, a form (Min, Max, Target, Cooldown, Starting count) posted with the page's revision (a deploy),
+     opened by "Scale on its own…" while the service doesn't scale. "Stop scaling" is a post of its own that
+     keeps the count the service has now. An app that keeps its Compose file shows the rule read-only.
+     Takes a scaleView. */}}
+{{define "scale"}}
+<h3 class="cv-label" id="{{.AnchorID}}-title">Scaling</h3>
+{{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+<p class="cv-plrules">{{template "sentence" .Rule}}</p>
+{{if .Blocked}}
+<p class="cv-note">{{template "sentence" .Blocked}}</p>
+{{else if .Editable}}
+<details class="cv-scaledetails"{{if .Open}} open{{end}}>
+  <summary class="cv-btn cv-btn-secondary cv-btn-sm">{{if .Scaled}}Change scaling{{else}}Scale on its own…{{end}}</summary>
+  <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform cv-plform" aria-labelledby="{{.AnchorID}}-title">
+    <input type="hidden" name="revision" value="{{.Revision}}">
+    <fieldset class="cv-fieldset cv-scfields"{{if .Stopped}} disabled{{end}}>
+      <div class="cv-fields4">
+        {{template "field" (.F "min")}}
+        {{template "field" (.F "max")}}
+        {{template "field" (.F "start")}}
+        <div class="cv-fld">
+          <label class="cv-fld" for="{{.CooldownID}}">
+            <span class="cv-label">Cooldown</span>
+            <select class="cv-field cv-select" id="{{.CooldownID}}" name="{{.CooldownName}}"{{if .CooldownError}} aria-invalid="true" aria-describedby="{{.CooldownID}}-error"{{end}}>
+              {{range .Cooldowns}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+            </select>
+          </label>
+          {{with .CooldownError}}<span id="{{$.CooldownID}}-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+        </div>
+      </div>
+      <div class="cv-fld">
+        <label class="cv-fld" for="{{.KindID}}">
+          <span class="cv-label">Keep each copy near</span>
+          <select class="cv-field cv-select" id="{{.KindID}}" name="{{.KindName}}">
+            {{range .Kinds}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+        </label>
+      </div>
+      {{template "field" (.F "value")}}
+    </fieldset>
+    {{if not .Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save scaling</button><span class="cv-note">Saving deploys the app with this rule.</span></div>{{end}}
+  </form>
+  {{if and .Scaled (not .Stopped)}}
+  <form method="post" action="{{.Action}}#{{.AnchorID}}" class="cv-svcform">
+    <input type="hidden" name="revision" value="{{.Revision}}">
+    <div class="cv-btnrow cv-saverow"><button type="submit" name="action" value="stop" class="cv-btn cv-btn-secondary cv-btn-sm">Stop scaling</button><span class="cv-note">Keeps the copies it runs now. A deploy follows.</span></div>
+  </form>
+  {{end}}
+</details>
+{{else}}
+<p class="cv-note">Set it in the Compose overlay.</p>
+{{end}}
+{{end}}
+
 {{/* define-form: the "Define the app" form of the Configure tab, for an app with no services yet
      (feature 019.5). Takes a defineView. The service is named like the app, so there is no name
      field. Posts to /apps/{id}/define with the revision the page was drawn from. */}}
@@ -541,15 +596,18 @@
     {{template "status-quiet" .Status}}
     <span class="cv-data text-fg-1">{{.Label}}</span>
     {{with .Program}}<span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}
+    {{with .Service}}<span class="cv-inline-mono text-fg-1">{{.}}</span>{{end}}
+    {{with .Counts}}<span class="cv-data text-fg-1">{{.}}</span>{{end}}
     {{if .Copy}}<span class="cv-data-muted" title="{{.CopyID}}">in copy {{.Copy}}</span>{{end}}
     {{with .Duration}}<span class="cv-data-muted">{{.}}</span>{{end}}
     <span class="cv-data-muted">{{.Trigger}}</span>
     <span class="cv-data-muted">{{template "time" .When}}</span>
   </div>
+  {{with .Reason}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
   {{with .Error}}<p class="cv-data-muted cv-detail">{{.}}</p>{{end}}
 </div>
 {{else}}
-<p class="px-4 py-4 text-sm text-fg-3">Nothing yet. Restarts, stops, starts, commands and terminals are listed here.</p>
+<p class="px-4 py-4 text-sm text-fg-3">Nothing yet. Restarts, stops, starts, commands, terminals and scale steps are listed here.</p>
 {{end}}
 {{end}}
 {{end}}
@@ -562,6 +620,8 @@
 {{else if .Notice}}
 <p class="px-4 py-4 text-sm text-fg-3">{{template "sentence" .Notice}}</p>
 {{else if .Rows}}
+{{range .Scaling}}<p class="cv-copies-scale"><span class="cv-data text-fg-1">{{.Service}}</span> <span class="cv-data-muted">{{.Words}}</span></p>
+{{end}}
 <div class="cv-copies" role="table" aria-label="Copies">
   <div class="cv-copies-head cv-label" role="row">
     <span role="columnheader" class="cv-k-id">Copy</span>
@@ -790,6 +850,7 @@
     </dl>
     {{if .Identities}}{{template "identities" .Identities}}{{end}}
     {{with .Placement}}<div id="{{.AnchorID}}">{{template "placement" .}}</div>{{end}}
+    {{with .Scale}}<div id="{{.AnchorID}}">{{template "scale" .}}</div>{{end}}
   </div>
   {{end}}
 </section>
@@ -819,7 +880,8 @@
         <div class="cv-panel cv-gpanel">
           <h3 class="cv-label">Copies &amp; size</h3>
           <div class="cv-fields4">
-            {{template "field" (.F "copies")}}
+            {{if .Scaled}}<div class="cv-fld"><span class="cv-label">Copies</span>
+              <span class="cv-data text-fg-1">Set by scaling, {{.ScaleBounds}}</span></div>{{else}}{{template "field" (.F "copies")}}{{end}}
             {{template "field" (.F "cpu")}}
             {{template "field" (.F "memory")}}
             {{template "field" (.F "memoryMax")}}
@@ -883,6 +945,7 @@
     {{if not $.Stopped}}<div class="cv-btnrow cv-saverow"><button type="submit" class="cv-btn cv-btn-primary cv-btn-sm">Save {{if $.Edit.Many}}{{.Name}} {{end}}and deploy</button></div>{{end}}
   </form>
   <div id="{{.Placement.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "placement" .Placement}}</div>
+  <div id="{{.Scale.AnchorID}}" class="cv-panel cv-gpanel cv-gpanel-tight cv-plpanel">{{template "scale" .Scale}}</div>
 </section>
 {{end}}
 {{end}}

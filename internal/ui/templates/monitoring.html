@@ -47,6 +47,7 @@
 </section>
 <div id="mon-bandnote" class="cv-mnslot">{{template "mon-bandnote-body" .}}</div>
 {{template "mon-table" .Table}}
+<div id="mon-scales">{{template "mon-scales-body" .Table}}</div>
 {{end}}
 
 {{/* mon-bandnote-body: the one line under the chart grid on the 7 d range. Takes a monRegion. */}}
@@ -84,6 +85,7 @@
 {{end}}
 <div hx-swap-oob="innerHTML:#mon-bandnote">{{template "mon-bandnote-body" .}}</div>
 <span hx-swap-oob="innerHTML:#mon-table-meta">{{template "mon-sentence" .Table.Meta}}</span>
+<div hx-swap-oob="innerHTML:#mon-scales">{{template "mon-scales-body" .Table}}</div>
 {{if .Replace}}<div hx-swap-oob="innerHTML:#mon-table-slot">{{template "mon-table-body" .Table}}</div>
 {{else}}{{range .Table.Rows}}<div hx-swap-oob="innerHTML:#{{.Anchor}}">{{template "mon-row-body" .}}</div>
 {{end}}{{end}}
@@ -189,6 +191,21 @@
       <div role="cell" class="cv-mnrestarts{{if .Restarts.Warn}} cv-mnwarntext{{end}}{{if .Restarts.None}} cv-mnnumber-none{{end}}" data-label="Restarts">{{.Restarts.Text}}</div>
       <div role="cell" class="cv-mnlogscell"><a href="{{.LogsHref}}" id="{{.Anchor}}-logs" class="cv-mnlogs" aria-label="{{.LogsName}}" title="{{.LogsName}}">{{icon "scroll-text" 15}}</a></div>
 {{end}}
+
+{{/* mon-scales-body: the Scaling list under the apps table (feature 043): the place's last steps, drawn only
+     when there is one. It is swapped on the metrics notice like the rows. Takes a monTable. */}}
+{{define "mon-scales-body"}}{{with .Scales}}
+<section class="cv-mnblock" aria-label="Scaling">
+  <div class="cv-mnsec"><h2 class="cv-label">Scaling</h2><span class="cv-mnsec-meta">The last steps Caravana took on its own.</span></div>
+  <div class="cv-panel cv-mnscales" role="list">
+    {{range .}}<div class="cv-mnscale-row" role="listitem">
+      <span class="cv-mnname-text">{{.Service}}</span>
+      <span class="cv-data text-fg-1">{{if .Failed}}couldn't scale {{end}}{{.Counts}}</span>
+      <span class="cv-mnscale-why">{{.Reason}}</span>
+      <span class="cv-mnscale-when">{{template "clock" .At}}</span>
+    </div>{{end}}
+  </div>
+</section>{{end}}{{end}}
 
 {{/* mon-host-section: "This host", a live region of its own (#host, drawn again from /parts/monitoring/host
      on the metrics notice). Takes a monView. */}}

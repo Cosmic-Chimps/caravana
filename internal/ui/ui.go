@@ -234,6 +234,7 @@ func (s *server) routeTable() []route {
 		{"POST", "/apps/{id}/backups/restore-schedule", s.protected(s.requireSession(s.setRestoreSchedule))},
 		{"POST", "/apps/{id}/secrets/remove", s.protected(s.requireSession(s.removeSecret))},
 		{"POST", "/apps/{id}/services/{service}/placement", s.protected(s.requireSession(s.savePlacement))},
+		{"POST", "/apps/{id}/services/{service}/scale", s.protected(s.requireSession(s.saveScale))},
 		{"POST", "/apps/{id}/secrets/refresh", s.protected(s.requireSession(s.refreshSecrets))},
 		{"POST", "/apps/{id}/delete", s.protected(s.requireSession(s.deleteApp))},
 		{"GET", "/apps/{id}/stop", s.requireSession(s.showStop)},

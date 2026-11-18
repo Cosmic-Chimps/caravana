@@ -25,7 +25,7 @@ Phases 1 to 3 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 3: Console (US3, US4)
 
-- [ ] T009 `internal/ui`: Configure's Scaling panel and form, `applyEdit` keeps scale, `keepScale` in the
+- [x] T009 `internal/ui`: Configure's Scaling panel and form, `applyEdit` keeps scale, `keepScale` in the
   Compose form, Recent actions words, Monitoring's copies cell and Scaling list, the Running tab's line (D12);
   tests; `tools/ui-css.sh build` if needed.
 
