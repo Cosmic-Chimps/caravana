@@ -95,6 +95,7 @@ func liveEnv(t *testing.T) (*env, *lockedBuffer) {
 func TestWatchLogsNoticeOnNewLine(t *testing.T) {
 	e, logs := liveEnv(t)
 	e.svc.SetLogWatchGaps(50*time.Millisecond, time.Hour)
+	connected(t, e) // the stream's own notices (its Resync) are not what this test counts
 	notices := collectNotices(t, e.svc)
 
 	done := e.svc.WatchLogs("", "")
@@ -205,6 +206,25 @@ func TestWatchLogsSharedAndRelisted(t *testing.T) {
 	waitStreams(t, e, 6)
 	again()
 	waitStreams(t, e, 0)
+}
+
+// A change of copies in Nomad's events lists the copies again at once, even with a relist gap of
+// an hour: the new copy is followed, the ended one let go.
+func TestWatchLogsRelistsOnACopiesEvent(t *testing.T) {
+	e, _ := liveEnv(t)
+	e.svc.SetLogWatchGaps(20*time.Millisecond, time.Hour)
+	connected(t, e)
+
+	done := e.svc.WatchLogs("", "")
+	defer done()
+	waitStreams(t, e, 6)
+
+	const newCopy = "e5a7c3b1-0000-4000-8000-000000000006"
+	e.nomad.SetCopies("docs",
+		copyStub(copyDocsWeb, "web", "running", readStart),
+		api.AllocationListStub{ID: newCopy, TaskGroup: "web", JobVersion: 3, ClientStatus: "running",
+			TaskStates: map[string]*api.TaskState{"web": {StartedAt: readNow}}})
+	waitStreams(t, e, 8)
 }
 
 // A place that doesn't exist has nothing to follow, and its pages leave cleanly.

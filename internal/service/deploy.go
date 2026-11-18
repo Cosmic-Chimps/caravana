@@ -498,7 +498,7 @@ func (s *Service) follow(ctx context.Context, appID, deploymentID string, versio
 		return
 	}
 
-	out, err := s.deployer.Watch(ctx, appID, *version)
+	out, err := s.awaitRollout(ctx, appID, *version)
 	if err != nil {
 		return // shutdown
 	}
@@ -513,6 +513,54 @@ func (s *Service) follow(ctx context.Context, appID, deploymentID string, versio
 		msg = "" // error holds why it didn't work; a healthy rollout has none
 	}
 	s.finish(appID, deploymentID, status, msg)
+}
+
+// defaultRolloutResync is the longest a rollout goes without being read: the
+// safety net under Nomad's events, which say at once when it moved.
+const defaultRolloutResync = 30 * time.Second
+
+// awaitRollout reads the rollout of version until it has ended, and returns how.
+// It reads again when Nomad's event stream says the app's rollout moved
+// (wakes), after rolloutResync at the latest, and never twice within
+// rolloutMinGap, so a stream that fires at once can't make it a busy loop. A
+// failed read is retried with backoff for as long as it takes: a lost
+// connection never ends a rollout. It returns an error only when ctx ends.
+func (s *Service) awaitRollout(ctx context.Context, appID string, version uint64) (deploy.Outcome, error) {
+	backoff := s.retryGap
+	for {
+		start := time.Now()
+		// The wake is taken before the read, so a change that lands while Nomad
+		// answers is not missed.
+		woken := s.wakes.channel(rolloutKey(appID))
+		out, done, err := s.deployer.RolloutOutcome(ctx, appID, version)
+		switch {
+		case ctx.Err() != nil:
+			return deploy.Outcome{}, ctx.Err()
+		case err != nil:
+			s.log.Warn("read the rollout; retrying", "app", appID, "job_version", version, "error", err)
+			sleepCtx(ctx, backoff)
+			if ctx.Err() != nil {
+				return deploy.Outcome{}, ctx.Err()
+			}
+			backoff = min(2*backoff, 30*time.Second)
+			continue
+		case done:
+			return out, nil
+		}
+		backoff = s.retryGap
+
+		timer := time.NewTimer(s.rolloutResync)
+		select {
+		case <-woken:
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+		timer.Stop()
+		sleepCtx(ctx, s.rolloutMinGap-time.Since(start))
+		if ctx.Err() != nil {
+			return deploy.Outcome{}, ctx.Err()
+		}
+	}
 }
 
 // findVersion asks Nomad for the job version carrying deploymentID until it

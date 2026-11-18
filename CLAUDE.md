@@ -267,8 +267,7 @@ secret). Other facts:
   `notification_deliveries`. Deleting an app deletes its `sent_problems` rows; deliveries stay as
   history, 20 per channel (pending rows are never pruned).
 - The notifier (`service/notifier.go`) checks `Service.Attention` every 30 s. The first check
-  comes one gap after start (a timer alone, since `Subscribe` would keep the copies watcher
-  running). The pure `diffProblems` compares the list with `sent_problems`: a new item is opened,
+  comes one gap after start (a timer alone). The pure `diffProblems` compares the list with `sent_problems`: a new item is opened,
   a present one is seen, an item gone for `resolveAfter` since its last sighting is resolved, a
   younger one is kept (so a flapping problem sends one "opened"), the copy kinds are neither
   opened nor resolved while Nomad can't be read, and an app that no longer exists is dropped
@@ -1555,6 +1554,29 @@ work in constraints; `!=` passes on a node without the key; why Nomad's own `nod
   that didn't move can fail a check for a moment while the VMs place the others, so the step waits for health.
 - Not in 042: node pools, other constraint operators, placement by resources, moving a volume, Nomad's own drain, a
   scheduler settings page, labels from the installer.
+
+Nomad's event stream (CodeAlta task `f6r6`, worktree branch `alta/balmy-bunting-7wtt`): one subscription replaces
+the fast polls. No API, page, migration, module or policy change (the token's `read-job` and `node` rules cover the
+topics).
+- `deploy.FollowEvents` reads the topics Job, Allocation, Deployment and Node, takes only job IDs out of the payloads
+  (`EventBatch{Copies, Deployments, Rollouts, Jobs, Nodes, Resync}`), coalesces what is queued, resumes from the last
+  index plus one, backs off after a failure, and renews each connection after `Timing.StreamLifetime` (10 min; the
+  client swallows Nomad's heartbeats, so a dead connection would go unseen). Any connect that isn't a renewal hands
+  out `Resync`. `Rollouts` leaves out Nomad's per-copy health updates (type `AllocationUpdated`) unless they carry
+  a final status. Nomad replays its buffer (100 events) on index 0 too (lab, observed).
+- `service/events.go` turns batches into notices (copies; deployments only for an app whose copies didn't change in
+  the same batch, since both regions refresh on either; servers) and wakes the watchers through `wakeHub`
+  (`wake.go`, the closed-channel broadcast; a waiter takes its channel before it reads). A Resync wakes everything
+  and publishes copies and deployments for every app. `deploy.WatchCopies` and the subscriber-driven watcher are gone;
+  `deploy.Watch` became `RolloutOutcome` (one plain read) and the loop is `Service.awaitRollout`.
+- Safety nets: a rollout is read at least every 30 s (`rolloutResync`), schedule runs every 30 s
+  (`scheduleWatchGap`, plus the earliest due time from `runDue`: a limit, a start deadline, a stop's grace), backups
+  every 2 min (`backupPoll`), a Logs place's copies every 30 s (and on a copies wake, at most once per 2 s). The lab
+  no longer shortens the run watcher.
+- Lab, 2026-11-18, through a counting proxy: 20 apps with a Postgres backup policy, one page open, 180 s idle went from
+  297 to 77 Nomad requests; three deploys with a page open from 435 to 221 (the stream adds about 80 KB per deploy of
+  allocation payloads). A killed copy reached the Running tab's stream 0.4 s after `docker kill`; a Nomad restart
+  logged the loss once, reconnected with a Resync 7 s later and the next deploy was followed normally.
 
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM

@@ -41,6 +41,13 @@ type env struct {
 // registry knows traefik/whoami:latest; the fake Nomad's rollouts succeed.
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvPrepared(t, nil)
+}
+
+// newEnvPrepared is newEnv with a step that sets the fake Nomad up before the
+// service starts: a stream it refuses, say, which the service finds at its start.
+func newEnvPrepared(t *testing.T, prepare func(*deploytest.Nomad)) *env {
+	t.Helper()
 	st, err := store.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -49,6 +56,9 @@ func newEnv(t *testing.T) *env {
 	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
 	e.registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.nomad.Succeed()
+	if prepare != nil {
+		prepare(e.nomad)
+	}
 	e.svc = startService(t, st, e.registry, e.nomad, e.secrets)
 	e.sources = newFakeSources()
 	e.svc.SetSecretSources(e.sources.factory)
@@ -112,8 +122,12 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	t.Helper()
 	svc := New(st, d, sec, log)
 	svc.retryGap = 5 * time.Millisecond
-	svc.watchIdle = 10 * time.Millisecond
 	svc.backupPoll = 10 * time.Millisecond
+	// Rollouts: read again at least every 20 ms and no more often than every
+	// millisecond, so a test doesn't depend on Nomad's events to see one end.
+	// Tests of the events set rolloutResync to an hour.
+	svc.rolloutResync = 20 * time.Millisecond
+	svc.rolloutMinGap = time.Millisecond
 	// Volume runs: short waits, and no scheduler pass after the first, which
 	// finds nothing yet. Tests of the scheduler call runDueVolumeBackups.
 	svc.clock = &fakeClock{t: time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC)}
@@ -146,6 +160,14 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 		cancel()
 		svc.Wait()
 	})
+	// Nomad's event stream announces itself with a Resync, which publishes a
+	// notice of every kind to each open page. Wait for it, so that no test's own
+	// subscription hears it. A Nomad that is down or refuses the stream fails to
+	// connect, which ends the wait too.
+	deadline := time.Now().Add(2 * time.Second)
+	for svc.resyncs.Load() == 0 && !svc.eventsLost.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	return svc
 }
 

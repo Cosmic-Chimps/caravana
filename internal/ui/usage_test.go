@@ -148,8 +148,14 @@ func TestLiveUsageEvents(t *testing.T) {
 	t.Run("with tab=running a usage event comes on every interval", func(t *testing.T) {
 		ls := openStream(t, e.URL, "/live/apps/whoami?tab=running", e.Cookie.Value)
 		ls.expect("sync")
-		for range 3 {
-			if got := ls.next(); got != "usage" {
+		// The copies the env just set up reach the page as Nomad's events do, so a few notices
+		// of Nomad's own may come first: what matters is that usage comes, at each interval.
+		for usage := 0; usage < 3; {
+			switch got := ls.next(); got {
+			case "usage":
+				usage++
+			case "copies", "app", "apps", "attention", "deployments", "servers":
+			default:
 				t.Fatalf("event = %q, want usage", got)
 			}
 		}

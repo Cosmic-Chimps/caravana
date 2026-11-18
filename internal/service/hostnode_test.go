@@ -254,13 +254,15 @@ func TestRecordVersion(t *testing.T) {
 	l.svc.SetVersion("0.1.0")
 	l.svc.recordVersion(ctx)
 	check("first start", v{"", "0.1.0"})
-	select {
-	case c := <-notices:
-		if c.What != ChangeHost {
-			t.Errorf("notice = %+v, want ChangeHost", c)
+	// Other notices may come first: the lab's own node setup reaches the page through
+	// Nomad's events. Only that a host notice follows the version event matters.
+	for heard := false; !heard; {
+		select {
+		case c := <-notices:
+			heard = c.What == ChangeHost
+		case <-time.After(time.Second):
+			t.Fatal("no ChangeHost notice after a version event")
 		}
-	case <-time.After(time.Second):
-		t.Error("no ChangeHost notice after a version event")
 	}
 
 	clock.Advance(time.Hour)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/nomad/api"
 
@@ -25,7 +24,24 @@ func registered(t *testing.T) (*Deployer, *deploytest.Nomad) {
 	return d, nomad
 }
 
-func TestWatch(t *testing.T) {
+// untilDone asks RolloutOutcome again, as the service does, until the rollout
+// has ended. The fake moves a script one state on at each deployments read.
+func untilDone(t *testing.T, d *Deployer, appID string, version uint64) Outcome {
+	t.Helper()
+	for range 20 {
+		out, done, err := d.RolloutOutcome(context.Background(), appID, version)
+		if err != nil {
+			t.Fatalf("RolloutOutcome() = %v", err)
+		}
+		if done {
+			return out
+		}
+	}
+	t.Fatal("the rollout never ended")
+	return Outcome{}
+}
+
+func TestRolloutOutcome(t *testing.T) {
 	running := state(api.DeploymentStatusRunning, "Deployment is running")
 	tests := []struct {
 		name   string
@@ -62,83 +78,55 @@ func TestWatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d, nomad := registered(t)
 			nomad.Script("whoami", 0, tc.states...)
-			got, err := d.Watch(context.Background(), "whoami", 0)
-			if err != nil || got != tc.want {
-				t.Errorf("Watch() = %+v, %v; want %+v", got, err, tc.want)
+			if got := untilDone(t, d, "whoami", 0); got != tc.want {
+				t.Errorf("RolloutOutcome() = %+v; want %+v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestWatchNoDeploymentYet(t *testing.T) {
+func TestRolloutOutcomeNoDeploymentYet(t *testing.T) {
 	d, nomad := registered(t)
-	// No script for version 0 yet: Watch must keep waiting, then see it.
-	done := make(chan Outcome, 1)
-	go func() {
-		out, _ := d.Watch(context.Background(), "whoami", 0)
-		done <- out
-	}()
-	time.Sleep(20 * time.Millisecond)
+	// No script for version 0 yet: the rollout is not over.
+	if out, done, err := d.RolloutOutcome(context.Background(), "whoami", 0); err != nil || done {
+		t.Fatalf("RolloutOutcome() = %+v, %v, %v; want not done", out, done, err)
+	}
 	nomad.Script("whoami", 0, state(api.DeploymentStatusSuccessful, "ok"))
-	select {
-	case out := <-done:
-		if out.Result != OutcomeHealthy {
-			t.Errorf("Watch() = %+v, want healthy", out)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Watch() did not return")
+	if out := untilDone(t, d, "whoami", 0); out.Result != OutcomeHealthy {
+		t.Errorf("RolloutOutcome() = %+v, want healthy", out)
 	}
 }
 
-func TestWatchNewerVersionWithoutOurs(t *testing.T) {
+func TestRolloutOutcomeNewerVersionWithoutOurs(t *testing.T) {
 	d, nomad := registered(t)
 	if _, err := d.Register(context.Background(), whoami(), deployment("d2"), ownsIDs("d1"), nil); err != nil {
 		t.Fatalf("Register(d2) = %v", err)
 	}
 	nomad.Script("whoami", 1, state(api.DeploymentStatusRunning, ""))
-	got, err := d.Watch(context.Background(), "whoami", 0)
-	if err != nil || got.Result != OutcomeSuperseded {
-		t.Errorf("Watch() = %+v, %v; want superseded", got, err)
+	if got := untilDone(t, d, "whoami", 0); got.Result != OutcomeSuperseded {
+		t.Errorf("RolloutOutcome() = %+v, want superseded", got)
 	}
 }
 
-func TestWatchSurvivesNomadDown(t *testing.T) {
+// A failed read is the caller's to retry: it is an error, not an outcome.
+func TestRolloutOutcomeNomadDown(t *testing.T) {
 	d, nomad := registered(t)
 	nomad.Script("whoami", 0, state(api.DeploymentStatusSuccessful, "ok"))
 	nomad.Down()
-	done := make(chan Outcome, 1)
-	go func() {
-		out, _ := d.Watch(context.Background(), "whoami", 0)
-		done <- out
-	}()
-	time.Sleep(30 * time.Millisecond)
-	select {
-	case out := <-done:
-		t.Fatalf("Watch() returned %+v while Nomad was down", out)
-	default:
+	if _, done, err := d.RolloutOutcome(context.Background(), "whoami", 0); err == nil || done {
+		t.Errorf("RolloutOutcome() = done %v, error %v; want an error", done, err)
 	}
 	nomad.Up()
-	select {
-	case out := <-done:
-		if out.Result != OutcomeHealthy {
-			t.Errorf("Watch() = %+v, want healthy", out)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Watch() did not return after Nomad came back")
+	if out := untilDone(t, d, "whoami", 0); out.Result != OutcomeHealthy {
+		t.Errorf("RolloutOutcome() = %+v, want healthy", out)
 	}
 }
 
-func TestWatchStopsWithContext(t *testing.T) {
-	d, nomad := registered(t)
-	nomad.Down()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	start := time.Now()
-	_, err := d.Watch(ctx, "whoami", 0)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("Watch() error = %v, want the context's", err)
-	}
-	if time.Since(start) > 2*time.Second {
-		t.Errorf("Watch() took %v to notice the context", time.Since(start))
+func TestRolloutOutcomeStopsWithContext(t *testing.T) {
+	d, _ := registered(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := d.RolloutOutcome(ctx, "whoami", 0); !errors.Is(err, context.Canceled) {
+		t.Errorf("RolloutOutcome() error = %v, want the context's", err)
 	}
 }

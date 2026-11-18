@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +12,7 @@ import (
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
+	"github.com/cosmic-chimps/caravana/internal/deploy"
 )
 
 // drain returns the notices waiting on ch, without blocking.
@@ -236,20 +240,31 @@ func TestDeployPublishesNotices(t *testing.T) {
 	})
 }
 
-// US1/R6: the copies watcher runs for subscribers only.
-func TestCopiesWatcher(t *testing.T) {
+// connected waits until Caravana follows Nomad's events: it makes a node event
+// until a notice comes through (a Resync's or the event's own, either one means
+// the stream is up and its first Resync has been handled).
+func connected(t *testing.T, e *env) {
+	t.Helper()
+	ch, done := e.svc.Subscribe("")
+	defer done()
+	got := collect(ch)
+	waitFor(t, "the event stream to be followed", func() bool {
+		e.nomad.SetNodeStaticMeta("probe", nil) // an unknown node: only the event matters
+		time.Sleep(5 * time.Millisecond)
+		return got.count("", ChangeServers) >= 1
+	})
+	time.Sleep(50 * time.Millisecond) // the notices of the probes still on their way come through now, not in the test's own subscription
+}
+
+// Nomad's events drive the copies notices: no subscriber starts a watcher any more.
+func TestCopiesEvents(t *testing.T) {
 	running := func(id string) api.AllocationListStub {
 		return api.AllocationListStub{ID: id, TaskGroup: "web", ClientStatus: "running"}
-	}
-	// firstAnswer waits for the watcher's starting point: changes made before
-	// it are part of it, not news.
-	firstAnswer := func(t *testing.T, e *env) {
-		t.Helper()
-		waitFor(t, "the watcher's first query", func() bool { return e.nomad.AllocationRequests() >= 1 })
 	}
 
 	t.Run("a subscriber hears copies changes", func(t *testing.T) {
 		e := newEnv(t)
+		connected(t, e)
 		oneApp, unsubscribeApp := e.svc.Subscribe("blog")
 		defer unsubscribeApp()
 		other, unsubscribeOther := e.svc.Subscribe("whoami")
@@ -257,7 +272,6 @@ func TestCopiesWatcher(t *testing.T) {
 		all, unsubscribeAll := e.svc.Subscribe("")
 		defer unsubscribeAll()
 		forApp, forOther, forAll := collect(oneApp), collect(other), collect(all)
-		firstAnswer(t, e)
 
 		e.nomad.SetCopies("blog", running("b1"))
 
@@ -272,57 +286,62 @@ func TestCopiesWatcher(t *testing.T) {
 		}
 	})
 
-	t.Run("it stops after the last subscriber leaves", func(t *testing.T) {
+	t.Run("no subscriber means no query over every allocation", func(t *testing.T) {
 		e := newEnv(t)
-		_, unsubscribeA := e.svc.Subscribe("blog")
-		_, unsubscribeB := e.svc.Subscribe("")
-		firstAnswer(t, e)
-
-		unsubscribeA()
-		time.Sleep(50 * time.Millisecond) // five times the idle delay
+		connected(t, e)
 		e.nomad.SetCopies("blog", running("b1"))
-		waitFor(t, "the watcher to ask again while one subscriber is left", func() bool {
-			return e.nomad.AllocationRequests() >= 2
-		})
-
-		unsubscribeB()
-		time.Sleep(100 * time.Millisecond) // the idle delay passes and the watcher stops
-		asked := e.nomad.AllocationRequests()
-		e.nomad.SetCopies("blog", running("b1"), running("b2"))
-		time.Sleep(100 * time.Millisecond)
-		if got := e.nomad.AllocationRequests(); got != asked {
-			t.Errorf("Nomad was asked %d more times after the watcher should have stopped", got-asked)
+		time.Sleep(50 * time.Millisecond)
+		if n := e.nomad.AllocationRequests(); n != 0 {
+			t.Errorf("Nomad was asked for every allocation %d times; the event stream replaces that", n)
 		}
 	})
 
-	t.Run("a subscriber who returns within the delay keeps the watcher", func(t *testing.T) {
+	t.Run("a deployment event is the history's progress notice", func(t *testing.T) {
 		e := newEnv(t)
-		e.svc.watchIdle = 200 * time.Millisecond
-		_, unsubscribe := e.svc.Subscribe("blog")
-		firstAnswer(t, e)
-		unsubscribe()
-
-		ch, unsubscribeAgain := e.svc.Subscribe("blog") // the reload
-		defer unsubscribeAgain()
+		connected(t, e)
+		ch, done := e.svc.Subscribe("blog")
+		defer done()
 		got := collect(ch)
-		time.Sleep(300 * time.Millisecond) // the first delay has passed
-		e.nomad.SetCopies("blog", running("b1"))
-		waitFor(t, "a copies notice from the same watcher", func() bool { return got.count("blog", ChangeCopies) >= 1 })
+		e.nomad.Script("blog", 0, api.Deployment{Status: api.DeploymentStatusRunning})
+		waitFor(t, "a deployments notice", func() bool { return got.count("blog", ChangeDeployments) >= 1 })
 	})
 
-	t.Run("it starts again for a later subscriber", func(t *testing.T) {
+	t.Run("a node event is a servers notice", func(t *testing.T) {
 		e := newEnv(t)
-		_, unsubscribe := e.svc.Subscribe("blog")
-		firstAnswer(t, e)
-		unsubscribe()
-		time.Sleep(100 * time.Millisecond)
-
-		before := e.nomad.AllocationRequests()
-		ch, unsubscribeAgain := e.svc.Subscribe("blog")
-		defer unsubscribeAgain()
+		connected(t, e)
+		ch, done := e.svc.Subscribe("")
+		defer done()
 		got := collect(ch)
-		waitFor(t, "the new watcher's first query", func() bool { return e.nomad.AllocationRequests() > before })
-		e.nomad.SetCopies("blog", running("b1"))
-		waitFor(t, "a copies notice", func() bool { return got.count("blog", ChangeCopies) >= 1 })
+		e.nomad.AddNode("n2", "two", "ready", "10.99.0.2")
+		waitFor(t, "a servers notice", func() bool { return got.count("", ChangeServers) >= 1 })
+	})
+
+	t.Run("a Resync refreshes every stored app's copies and deployments", func(t *testing.T) {
+		e := newEnv(t)
+		connected(t, e)
+		if _, err := e.svc.Deploy(context.Background(), whoami(), app.TriggerManual); err != nil {
+			t.Fatalf("Deploy: %v", err)
+		}
+		ch, done := e.svc.Subscribe("whoami")
+		defer done()
+		got := collect(ch)
+		e.svc.onEvents(deploy.EventBatch{Resync: true})
+		waitFor(t, "the notices a reload needs", func() bool {
+			return got.count("whoami", ChangeCopies) >= 1 && got.count("whoami", ChangeDeployments) >= 1
+		})
+	})
+
+	t.Run("a stream that was lost and comes back is logged once each way", func(t *testing.T) {
+		e := newEnv(t)
+		var logs syncBuffer
+		svc := New(e.store, newDeployer(t, e.registry, e.nomad), e.secrets, slog.New(slog.NewTextHandler(&logs, nil))) // not started: only the log is looked at
+		svc.eventsFailed(errors.New("down"))
+		svc.eventsFailed(errors.New("still down"))
+		svc.onEvents(deploy.EventBatch{Resync: true})
+		svc.onEvents(deploy.EventBatch{Resync: true}) // a second Resync is no news
+		out := logs.String()
+		if strings.Count(out, "lost Nomad's event stream") != 1 || strings.Count(out, "following Nomad's events again") != 1 {
+			t.Errorf("log = %q, want one line each way", out)
+		}
 	})
 }

@@ -204,6 +204,7 @@ func (n *Nomad) recordRestartEvents(stub *api.AllocationListStub, now time.Time)
 		}
 	}
 	n.wake()
+	n.emitAllocs(stub.JobID)
 }
 
 // AddHostVolume makes a ready host volume called name, as a deploy would, and

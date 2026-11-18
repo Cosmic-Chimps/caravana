@@ -44,12 +44,19 @@ type Service struct {
 	// backup scheduler and the notifier (and the sender, see sender.go).
 	backupWatcher sync.WaitGroup
 
-	changes   changeHub     // live notices for open pages, see changes.go
-	watchIdle time.Duration // how long the copies watcher outlives its last subscriber
+	changes changeHub // live notices for open pages, see changes.go
+
+	// Nomad's event stream (events.go) wakes the watchers; each also polls on its own,
+	// slowly, as a safety net. wakes holds what they wait on.
+	wakes         wakeHub
+	eventsLost    atomic.Bool   // the stream failed and hasn't connected again
+	resyncs       atomic.Int64  // how many times a connection of the stream has been handled; tests wait for the first
+	rolloutResync time.Duration // the longest a rollout goes without reading Nomad
+	rolloutMinGap time.Duration // the shortest time between two reads of a rollout
 
 	budget     time.Duration // for one deploy's registry and Nomad work
 	retryGap   time.Duration // between retries of a store write
-	backupPoll time.Duration // between two passes of the backup watcher
+	backupPoll time.Duration // the longest between two passes of the backup watcher (an event makes one sooner)
 
 	// Volume runs and their scheduler (feature 016), see volumebackup.go and
 	// schedule.go.
@@ -75,7 +82,7 @@ type Service struct {
 	// Schedules (feature 022), see schedules.go, schedulerun.go,
 	// scheduleclock.go and schedulewatch.go.
 	scheduleScanGap       time.Duration // between two passes of the schedules' clock
-	scheduleWatchGap      time.Duration // between two passes of the run watcher
+	scheduleWatchGap      time.Duration // the longest between two passes of the run watcher (an event or a due time makes one sooner)
 	scheduleStartDeadline time.Duration // how long a run's task may take to start
 	scheduleLimit         atomic.Int64  // when positive, every run's stop-after in nanoseconds (the lab's shortcut); atomic since the lab changes it while runs go
 	// runMu is held while a run is checked against the ones going and its
@@ -178,16 +185,17 @@ func (e *DeployError) Unwrap() error { return e.Err }
 // in production). Call Start before deploying.
 func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Logger) *Service {
 	return &Service{
-		store:      st,
-		deployer:   d,
-		secrets:    sec,
-		log:        log,
-		apps:       map[string]*appState{},
-		bg:         context.Background(),
-		watchIdle:  defaultWatchIdle,
-		budget:     25 * time.Second,
-		retryGap:   time.Second,
-		backupPoll: 15 * time.Second,
+		store:         st,
+		deployer:      d,
+		secrets:       sec,
+		log:           log,
+		apps:          map[string]*appState{},
+		bg:            context.Background(),
+		rolloutResync: defaultRolloutResync,
+		rolloutMinGap: time.Second,
+		budget:        25 * time.Second,
+		retryGap:      time.Second,
+		backupPoll:    2 * time.Minute,
 
 		clock:       realClock{},
 		scheduleGap: 30 * time.Second,
@@ -296,8 +304,10 @@ const (
 	// defaultScheduleScanGap is how often the clock looks for due slots: a
 	// run starts within this of its time (SC-002 asks for a minute).
 	defaultScheduleScanGap = 10 * time.Second
-	// defaultScheduleWatchGap is how often the watcher reads the runs going.
-	defaultScheduleWatchGap = 5 * time.Second
+	// defaultScheduleWatchGap is the safety gap of the run watcher: it reads the
+	// runs going when Nomad's events say one changed or one is due, and at least
+	// this often.
+	defaultScheduleWatchGap = 30 * time.Second
 	// defaultScheduleStartDeadline is how long a run's task may take to start
 	// (an image pull, a copy Nomad can't place) before the run is given up.
 	defaultScheduleStartDeadline = 5 * time.Minute
@@ -312,9 +322,10 @@ func (s *Service) SetScheduleScanGap(d time.Duration) {
 	}
 }
 
-// SetScheduleWatchGap sets how often the runs going are read (5 s by
-// default). Call it before Start; a value that isn't positive keeps the
-// default.
+// SetScheduleWatchGap sets the safety gap of the run watcher (30 s by default):
+// the longest it goes without reading the runs going. Nomad's events and a run's
+// due time make it read sooner. Call it before Start; a value that isn't
+// positive keeps the default.
 func (s *Service) SetScheduleWatchGap(d time.Duration) {
 	if d > 0 {
 		s.scheduleWatchGap = d
@@ -361,6 +372,12 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resumeMoves(ctx); err != nil {
 		return err
 	}
+	// Nomad's events, first: they wake the watchers below.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.followEvents(ctx)
+	}()
 	s.backupWatcher.Add(1)
 	go func() {
 		defer s.backupWatcher.Done()

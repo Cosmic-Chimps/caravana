@@ -35,6 +35,7 @@ type hostFake struct {
 func (n *Nomad) SetNode(id, name, status string, res api.NodeResources, reserved *api.NodeReservedResources) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	n.host.set = true
 	n.host.status = status
 	n.host.node = api.Node{ID: id, Name: name, Status: status, NodeResources: &res, ReservedResources: reserved}
@@ -46,6 +47,7 @@ func (n *Nomad) SetNode(id, name, status string, res api.NodeResources, reserved
 func (n *Nomad) SetNodeFacts(attrs map[string]string, pool string, events []*api.NodeEvent) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(n.host.node.ID)
 	n.host.node.Attributes = attrs
 	n.host.node.NodePool = pool
 	n.host.node.Events = events
@@ -56,6 +58,7 @@ func (n *Nomad) SetNodeFacts(attrs map[string]string, pool string, events []*api
 func (n *Nomad) SetNodeStatusAt(t time.Time) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(n.host.node.ID)
 	n.host.node.StatusUpdatedAt = t.Unix()
 }
 
@@ -64,6 +67,7 @@ func (n *Nomad) SetNodeStatusAt(t time.Time) {
 func (n *Nomad) SetNodeNetworks(nets []*api.NetworkResource) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(n.host.node.ID)
 	if n.host.node.NodeResources != nil {
 		n.host.node.NodeResources.Networks = nets
 	}
@@ -91,6 +95,7 @@ func Caravana0Networks(ip string) []*api.NetworkResource {
 func (n *Nomad) SetNodeScheduling(drain bool, eligibility string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(n.host.node.ID)
 	n.host.node.Drain = drain
 	n.host.node.SchedulingEligibility = eligibility
 	if drain {
@@ -218,6 +223,7 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 func (n *Nomad) AddNode(id, name, status, appAddress string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	res := &api.NodeResources{
 		Cpu:    api.NodeCpuResources{CpuShares: 4000, TotalCpuCores: 2},
 		Memory: api.NodeMemoryResources{MemoryMB: 4096},
@@ -241,6 +247,7 @@ func (n *Nomad) AddNode(id, name, status, appAddress string) {
 func (n *Nomad) SetPublicNetwork(id string, on bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	set := func(node *api.Node) {
 		if on {
 			node.HostNetworks = map[string]*api.HostNetworkInfo{"public": {Name: "public", Interface: "eth0", CIDR: "0.0.0.0/0"}}
@@ -262,6 +269,7 @@ func (n *Nomad) SetPublicNetwork(id string, on bool) {
 func (n *Nomad) SetNodeStatusOf(id, status string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	for _, x := range n.host.extra {
 		if x.ID == id {
 			x.Status = status
@@ -274,6 +282,7 @@ func (n *Nomad) SetNodeStatusOf(id, status string) {
 func (n *Nomad) SetNodeEligibilityOf(id, eligibility string, drain bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	for _, x := range n.host.extra {
 		if x.ID == id {
 			x.SchedulingEligibility, x.Drain = eligibility, drain
@@ -285,6 +294,7 @@ func (n *Nomad) SetNodeEligibilityOf(id, eligibility string, drain bool) {
 func (n *Nomad) RemoveNode(id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	n.host.extra = slices.DeleteFunc(n.host.extra, func(x *api.Node) bool { return x.ID == id })
 }
 

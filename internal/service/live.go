@@ -22,8 +22,10 @@ const ChangeLogs ChangeKind = "logs" // an app wrote output; never a line of it
 const (
 	// defaultLogNoticeGap is the most often a place sends a notice.
 	defaultLogNoticeGap = 2 * time.Second
-	// defaultLogRelistGap is how often the copies of a watched place are
-	// listed again, to follow the new ones and let go of the ended ones.
+	// defaultLogRelistGap is the longest a watched place goes without listing
+	// its copies again, to follow the new ones and let go of the ended ones. A
+	// change of copies in Nomad's events lists them sooner (never twice within a
+	// notice gap).
 	defaultLogRelistGap = 30 * time.Second
 )
 
@@ -120,7 +122,9 @@ func orGap(d, def time.Duration) time.Duration {
 }
 
 // followPlace follows every running copy of the place until ctx ends: both
-// streams of each, from now on, listing the copies again every relist.
+// streams of each, from now on. The copies are listed again when Nomad's events
+// say a copy changed (never twice within notice, so a burst is one listing) and
+// every relist at the latest.
 func (s *Service) followPlace(ctx context.Context, project, environment string, notice, relist time.Duration) {
 	n := &logNotice{s: s, gap: notice, dirty: map[string]bool{}}
 	defer n.stop()
@@ -142,15 +146,23 @@ func (s *Service) followPlace(ctx context.Context, project, environment string, 
 		f.reconcile(ctx, copies)
 	}
 
-	list()
-	t := time.NewTicker(relist)
-	defer t.Stop()
 	for {
+		// Taken before the listing, so a change that lands during it isn't lost.
+		woken := s.wakes.channel(copiesKey)
+		listed := time.Now()
+		list()
+		timer := time.NewTimer(relist)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-t.C:
-			list()
+		case <-timer.C:
+		case <-woken:
+			timer.Stop()
+			sleepCtx(ctx, notice-time.Since(listed))
+			if ctx.Err() != nil {
+				return
+			}
 		}
 	}
 }

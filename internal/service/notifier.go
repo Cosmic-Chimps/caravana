@@ -547,12 +547,11 @@ func diffProblems(prev []store.SentProblem, now []AttentionItem, j judged, apps 
 // runNotifier checks the needs-you list every gap until ctx ends (research R1).
 //
 // It is woken by a timer alone. The console's own refresh comes from the change
-// hub, but subscribing to it would keep the copies watcher (one blocking query
-// on every allocation in Nomad) running for as long as Caravana does, where it
-// now only runs while a page is open. A check every 30 seconds is well inside
-// "within a minute or two" (FR-003), and the first one waits a gap, so a
-// Caravana that starts before Nomad does doesn't look at a cluster that isn't
-// up yet.
+// hub, which Nomad's events feed, but a check on every event would make the
+// needs-you list (several Nomad reads) as busy as the cluster is. A check every
+// 30 seconds is well inside "within a minute or two" (FR-003), and the first one
+// waits a gap, so a Caravana that starts before Nomad does doesn't look at a
+// cluster that isn't up yet.
 func (s *Service) runNotifier(ctx context.Context, gap time.Duration) {
 	t := time.NewTicker(gap)
 	defer t.Stop()

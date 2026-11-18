@@ -330,8 +330,16 @@ func TestListApps(t *testing.T) {
 				t.Errorf("%s lost its last deployment", s.App.ID)
 			}
 		}
-		if lines := strings.Split(strings.TrimSpace(logs.String()), "\n"); len(lines) != 1 || lines[0] == "" {
-			t.Errorf("log has %d lines, want exactly 1 per call:\n%s", len(lines), logs.String())
+		// Only the lines about reading copies: the event stream's own warning that Nomad went away
+		// comes from a goroutine of its own, and is no part of what ListApps logs.
+		var lines []string
+		for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			if strings.Contains(line, "read copies") {
+				lines = append(lines, line)
+			}
+		}
+		if len(lines) != 1 {
+			t.Errorf("log has %d lines about copies, want exactly 1 per call:\n%s", len(lines), logs.String())
 		}
 	})
 }
