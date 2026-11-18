@@ -34,7 +34,7 @@ job "mix" {
       name = "mix-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.mix-web.rule=Host(`mix.example.com`)", "traefik.http.routers.mix-web.entrypoints=websecure", "traefik.http.routers.mix-web.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.mix-web.rule=Host(`mix.example.com`)", "traefik.http.routers.mix-web.entrypoints=websecure", "traefik.http.routers.mix-web.tls=true", "traefik.http.routers.mix-web.middlewares=mix-web-retry", "traefik.http.middlewares.mix-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

@@ -47,7 +47,7 @@ job "kuma" {
       name = "kuma-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.kuma-web.rule=Host(`kuma.example.com`)", "traefik.http.routers.kuma-web.entrypoints=websecure", "traefik.http.routers.kuma-web.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.kuma-web.rule=Host(`kuma.example.com`)", "traefik.http.routers.kuma-web.entrypoints=websecure", "traefik.http.routers.kuma-web.tls=true", "traefik.http.routers.kuma-web.middlewares=kuma-web-retry", "traefik.http.middlewares.kuma-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

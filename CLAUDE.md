@@ -1596,9 +1596,12 @@ facts. Operator doc: `docs/autoscaling.md`.
 - Lab: the gate step `autoscale` (`gate_autoscale_test.go`: a whoami service with `requestsPerCopy: 5`, ~25 requests a
   second, 1 → 3 in about 2 minutes with `scale_at_max`, a deploy at 3 keeps 3 with 3 canaries and the live version stays
   the deployment's, back to 1 about 2 minutes after the load stops, exactly four steps, the count never outside 1–3,
-  at most 2 % failed) passed three times on 2026-11-18 (301–328 s, `-run 'TestLab/^(api-needs-token|autoscale)$'`).
-  A scale-up can lose a few requests (0 to 31 of ~4000, 502s at the scale-up moments, research R5): a new copy
-  isn't a canary, so Traefik routes to it from its registration.
+  no call failed) passed on 2026-11-18 (301–328 s, `-run 'TestLab/^(api-needs-token|autoscale)$'`; 0 of 3623 calls
+  failed). Research R5 (task 6rn5, lab, verified): Nomad registers a copy 0.7–2.6 s before its task starts and a
+  scaled, moved or rescheduled copy has no canary tags, so Traefik routed to it early (0 to 31 502s of ~4000 before the
+  fix). Every router of a service now ends with `<app>-<service>-retry` (`nomadjob.RetryMiddleware`,
+  `retry.attempts=3`, in the service's tags): Traefik retries only a request that never reached the copy, on the next
+  copy. An app gets it at its next deploy.
 - Not in 043: scale to zero, steps over one, several targets or memory, scheduled scaling, services with volumes,
   Nomad's own autoscaler.
 

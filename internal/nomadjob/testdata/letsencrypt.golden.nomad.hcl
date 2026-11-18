@@ -38,7 +38,7 @@ job "whoami" {
       name = "whoami-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)", "traefik.http.routers.whoami-web.entrypoints=websecure", "traefik.http.routers.whoami-web.tls=true", "traefik.http.routers.whoami-web.tls.certresolver=letsencrypt"]
+      tags = ["traefik.enable=true", "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)", "traefik.http.routers.whoami-web.entrypoints=websecure", "traefik.http.routers.whoami-web.tls=true", "traefik.http.routers.whoami-web.tls.certresolver=letsencrypt", "traefik.http.routers.whoami-web.middlewares=whoami-web-retry", "traefik.http.middlewares.whoami-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

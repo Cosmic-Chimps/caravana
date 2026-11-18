@@ -34,7 +34,7 @@ job "blog" {
       name = "blog-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.blog-web.rule=Host(`blog.example.com`)", "traefik.http.routers.blog-web.entrypoints=websecure", "traefik.http.routers.blog-web.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.blog-web.rule=Host(`blog.example.com`)", "traefik.http.routers.blog-web.entrypoints=websecure", "traefik.http.routers.blog-web.tls=true", "traefik.http.routers.blog-web.middlewares=blog-web-retry", "traefik.http.middlewares.blog-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

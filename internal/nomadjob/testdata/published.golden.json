@@ -472,7 +472,9 @@
               "traefik.enable=true",
               "traefik.http.routers.calls-web.rule=Host(`calls.example.com`)",
               "traefik.http.routers.calls-web.entrypoints=websecure",
-              "traefik.http.routers.calls-web.tls=true"
+              "traefik.http.routers.calls-web.tls=true",
+              "traefik.http.routers.calls-web.middlewares=calls-web-retry",
+              "traefik.http.middlewares.calls-web-retry.retry.attempts=3"
             ],
             "CanaryTags": [
               "caravana.canary=true"

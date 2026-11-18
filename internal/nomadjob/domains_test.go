@@ -63,11 +63,11 @@ func tagsOf(t *testing.T, s Settings, domains ...app.Domain) []string {
 func TestRouterTagsOptions(t *testing.T) {
 	r := DomainRouterName("shop", "web", "example.com")
 
-	t.Run("every option on one domain: auth first, then the redirect", func(t *testing.T) {
+	t.Run("every option on one domain: auth first, then the redirect, then the retry", func(t *testing.T) {
 		tags := tagsOf(t, labSettings(), app.Domain{Host: "example.com", Port: "http", Path: "/app", WWWRedirect: true, TeamOnly: true})
 		for _, want := range []string{
 			"traefik.http.routers." + r + ".rule=Host(`example.com`) && PathPrefix(`/app`) || Host(`www.example.com`)",
-			"traefik.http.routers." + r + ".middlewares=" + r + "-auth@file," + r + "-www",
+			"traefik.http.routers." + r + ".middlewares=" + r + "-auth@file," + r + "-www,shop-web-retry",
 			"traefik.http.middlewares." + r + "-www.redirectregex.regex=^https://www[.]example[.]com(:[0-9]+)?/(.*)",
 			"traefik.http.middlewares." + r + "-www.redirectregex.replacement=https://example.com$1/$2",
 			"traefik.http.middlewares." + r + "-www.redirectregex.permanent=true",
@@ -92,12 +92,41 @@ func TestRouterTagsOptions(t *testing.T) {
 		}
 	})
 
-	t.Run("a path alone has no middlewares tag", func(t *testing.T) {
+	t.Run("a path alone has only the retry", func(t *testing.T) {
 		tags := tagsOf(t, labSettings(), app.Domain{Host: "example.com", Port: "http", Path: "/api"})
+		want := "traefik.http.routers." + r + ".middlewares=shop-web-retry"
+		if !slices.Contains(tags, want) {
+			t.Errorf("tags lack %q:\n%s", want, strings.Join(tags, "\n"))
+		}
 		for _, tag := range tags {
-			if strings.Contains(tag, "middlewares") {
+			if strings.Contains(tag, "middlewares") && tag != want && !strings.HasPrefix(tag, "traefik.http.middlewares.shop-web-retry.") {
 				t.Errorf("unexpected tag %q", tag)
 			}
+		}
+	})
+
+	t.Run("every router retries a failed connection on the next copy", func(t *testing.T) {
+		tags := tagsOf(t, labSettings(),
+			app.Domain{Host: "a.example.com", Port: "http"},
+			app.Domain{Host: "example.com", Port: "http", TeamOnly: true})
+		for _, want := range []string{
+			"traefik.http.routers.shop-web.middlewares=shop-web-retry",
+			"traefik.http.routers." + r + ".middlewares=" + r + "-auth@file,shop-web-retry",
+			"traefik.http.middlewares.shop-web-retry.retry.attempts=3",
+		} {
+			if !slices.Contains(tags, want) {
+				t.Errorf("tags lack %q:\n%s", want, strings.Join(tags, "\n"))
+			}
+		}
+		// Only attempts: no status list, no wait (the next try is the next
+		// copy) and no retry of a request that reached a copy.
+		for _, tag := range tags {
+			if strings.HasPrefix(tag, "traefik.http.middlewares.shop-web-retry.") && !strings.HasSuffix(tag, ".retry.attempts=3") {
+				t.Errorf("unexpected retry tag %q", tag)
+			}
+		}
+		if got := RetryMiddleware("shop-web"); got != "shop-web-retry" {
+			t.Errorf("RetryMiddleware() = %q", got)
 		}
 	})
 

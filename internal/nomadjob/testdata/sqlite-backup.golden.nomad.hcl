@@ -48,7 +48,7 @@ job "fhodor" {
       name = "fhodor-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.fhodor-web.rule=Host(`fhodor.example.com`)", "traefik.http.routers.fhodor-web.entrypoints=websecure", "traefik.http.routers.fhodor-web.tls=true"]
+      tags = ["traefik.enable=true", "traefik.http.routers.fhodor-web.rule=Host(`fhodor.example.com`)", "traefik.http.routers.fhodor-web.entrypoints=websecure", "traefik.http.routers.fhodor-web.tls=true", "traefik.http.routers.fhodor-web.middlewares=fhodor-web-retry", "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

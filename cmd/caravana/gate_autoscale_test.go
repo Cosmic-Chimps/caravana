@@ -197,8 +197,11 @@ func (g *gate) serviceStatus(t *testing.T, appID, service string) (wanted, healt
 //  4. the generator stops: the count goes 3, 2, 1 within 6 minutes, the same
 //     way, and the needs-you item is gone;
 //  5. throughout, the count never left 1 to 3 (sampled every 2 s), exactly
-//     four steps were made (none refused, none extra), and at most 2 % of the
-//     generator's calls failed.
+//     four steps were made (none refused, none extra), and none of the
+//     generator's calls failed: a scale's new copy is in Traefik before it
+//     listens, and the router's retry middleware sends those calls to a copy
+//     that does (task 6rn5; before it, 0 to 31 of about 4000 calls were 502s
+//     at the scale-ups).
 func (g *gate) autoscaleStep(t *testing.T) {
 	const id = "lab043"
 	host := g.extraHost(id)
@@ -395,7 +398,7 @@ func (g *gate) autoscaleStep(t *testing.T) {
 	if sent < 500 {
 		t.Errorf("the generator sent only %d calls", sent)
 	}
-	if failed*50 > sent {
-		t.Errorf("%d of %d calls failed (the first: %s), want at most 2 %%", failed, sent, load.firstFailure)
+	if failed != 0 {
+		t.Errorf("%d of %d calls failed (the first: %s), want none", failed, sent, load.firstFailure)
 	}
 }

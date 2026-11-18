@@ -115,7 +115,8 @@
               "traefik.http.routers.shop-web-86cf238f.rule=Host(`staging.example.com`)",
               "traefik.http.routers.shop-web-86cf238f.entrypoints=websecure",
               "traefik.http.routers.shop-web-86cf238f.tls=true",
-              "traefik.http.routers.shop-web-86cf238f.middlewares=shop-web-86cf238f-auth@file"
+              "traefik.http.routers.shop-web-86cf238f.middlewares=shop-web-86cf238f-auth@file,shop-web-retry",
+              "traefik.http.middlewares.shop-web-retry.retry.attempts=3"
             ],
             "CanaryTags": [
               "caravana.canary=true"

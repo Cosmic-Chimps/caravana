@@ -53,8 +53,8 @@ placed, or while the app is busy with a restart or a volume backup. With no numb
 unreachable) nothing changes either.
 
 A step is Nomad's own scale: removed copies leave the proxy before they stop. A new copy is not a canary, so the proxy
-sends it requests from the moment Nomad registers it; in the lab a scale-up lost a few requests (0 to 31 of about
-4000 per run, all 502s at the two scale-up moments) while the new copy started. Nomad records each step as a new version of the job; the console
+knows it from the moment Nomad registers it, which is before it listens; a request whose connection to it fails is
+sent to the next copy (every router of a service has a retry middleware), so a scale-up loses no request. Nomad records each step as a new version of the job; the console
 and the API show the copies as the version of the deployment they run, so the history only has deployments in it.
 
 ## What you see
