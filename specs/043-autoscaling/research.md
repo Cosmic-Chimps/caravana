@@ -39,3 +39,13 @@ its scale status: `submit-job` covers scaling. No policy change.
 A scale-up whose new copies fail their checks fails its Nomad deployment and, with `AutoRevert`, Nomad
 reverts to the last stable version (the count before the scale). Caravana reads the count from the job on the
 next tick and records nothing more; the failed step is visible as the copies' failures.
+
+## R5 · Requests during a scale-up (lab, observed, gate step `autoscale`)
+
+Three runs of the gate step under about 25 requests a second: 4047/31, 3824/0 and 3799/4 sent/failed, every
+failure a 502, and in the run that logged their times they fell at the two scale-up moments (1m02s and 2m03s
+after the load started). Scale-downs lost nothing (the group's shutdown delay takes the copy out of Traefik
+first). The likely cause, not yet verified: a scale's new copy has no canary tags, so Traefik's Nomad provider routes
+to it as soon as its service is registered, which may be before the container listens (Nomad's service
+registrations carry no health). Not fixed in
+043 (a router-wide change: a retry middleware or Traefik's own health check); proposed as a follow-up task.

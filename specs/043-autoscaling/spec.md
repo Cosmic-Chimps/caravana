@@ -21,8 +21,8 @@ with no autoscaler service to run (constitution I).
 
 The owner gives service `web` `scale: {min: 1, max: 3, target: {requestsPerCopy: 50}, cooldownSeconds: 300}`.
 Under load it goes 1 → 2 → 3 copies, one step at a time, with the cooldown between steps; when the load is
-gone it goes back to 1. Requests keep answering throughout (a new copy joins Traefik when its check passes; a
-removed copy leaves it before it stops).
+gone it goes back to 1. Requests keep answering throughout (a removed copy leaves Traefik before it stops; a new copy
+is routed to from its registration, so a scale-up can lose a few requests: research R5).
 
 **Independent test**: the lab's gate step `autoscale`: a whoami service with a domain, a load generator in the
 test process; the count reaches 3, then 1 after the load stops; every step is an app action `scale` with its

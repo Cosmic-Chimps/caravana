@@ -1556,6 +1556,52 @@ work in constraints; `!=` passes on a node without the key; why Nomad's own `nod
 - Not in 042: node pools, other constraint operators, placement by resources, moving a volume, Nomad's own drain, a
   scheduler settings page, labels from the installer.
 
+Feature 043 (`specs/043-autoscaling`, CodeAlta task `97ks`, worktree branch `alta/flowing-sequoia-942b`): a service
+adds and removes copies from Caravana's own metrics. `plan.md` D1–D13 are the decisions; `research.md` R1–R3 the lab
+facts. Operator doc: `docs/autoscaling.md`.
+- Model: `app.Service.Scale{Min, Max, Target{CPU | RequestsPerCopy | P95}, CooldownSeconds}` (`scale`, omitempty, so no
+  revision moved; 1–20 copies, cpu 10–200 % of the reservation, requests 1–100000 a second per copy, p95 10–60000 ms,
+  cooldown 60–3600 s, 0 = 300). `Replicas` is then the starting count and must lie in `min`–`max`. Refused naming the
+  field: a service with volumes or a published port (`services[i].scale`), a requests or p95 target without a domain
+  (`services[i].scale.target`). `Service.CountFor(current)` is the count a deploy registers. The Compose overlay takes
+  `scale`; a promotion keeps the target's own (a service new to the target arrives without a proxy-measured one, like
+  its domains); Copy to keeps it.
+- Nomad (lab, observed, research R1–R2): `Jobs().Scale` makes a **new job version** and a short Nomad deployment, and
+  updates the running copies **in place** to it; a register with `Count N, Canary N` keeps a scaled count blue/green.
+  `submit-job` covers scaling: no policy change.
+- The rule is pure, `metrics.DecideScale` (`internal/metrics/scale.go`): a count outside min–max goes to the bound;
+  inside the cooldown nothing; only rows since the last change count; up when the newest 3 rows with a value (at least
+  2) aggregate over the target; down when the newest 5 rows all have a value and the load on one copy fewer stays under
+  80 % of the target with no row over it (p95: under half the target); one step at a time. `OverTargetAtMax` is the
+  needs-you rule.
+- The pass (`service/autoscale.go`) runs after each `sampleTick` (its own 30 s budget): per app that isn't stopped,
+  `TryLock` the app's lock, skip a deployment pending or running and a Nomad deployment still going
+  (`deploy.ScaleState`), write `service_counts` from Nomad, then at most one step per app with `deploy.Scale`, recorded
+  as an app action `scale` (migration 0033 rebuilt `app_actions`: `from_count`, `to_count`, `reason`, `job_version`,
+  `base_version`; trigger `app.TriggerAutoscale`). A refused step is a failed action and the cooldown counts from it.
+  The reason is numbers only, worded by `scaleReason` from the samples × the sampler gap.
+- A deploy keeps the count: `Register` translates a copy of the app whose scaled services have `Replicas =
+  CountFor(the group's count now)` and returns `Registered.Counts`, which the service stores (`ReplaceServiceCounts`).
+- Versions: `Deployer.VersionAliases` (set to `store.ScaleVersions`) maps a scale's job version to the version of the
+  deployment it scaled in `Copies`, `AllCopies` and `LogCopies` (after `listed`), so the live version, the Running tab,
+  Restart and the API's `Copy.version` read as deployments. `statusOf` takes the stored counts: a scaled service wants
+  the count it has now.
+- Needs-you `scale_at_max` (`service/attention_scale.go`, a warning, key `scale_at_max|app|service|`).
+- API 0.47.0: `ServiceScale`, `ServiceScaleTarget`, the overlay's `scale`, the action `scale` with `fromCount`,
+  `toCount`, `reason`, trigger `autoscale`. No new route or code. Console: Configure's Scaling panel
+  (`internal/ui/scale.go`, `POST /apps/{id}/services/{svc}/scale` as a deploy on the page's revision, Stop scaling keeps
+  the current count as `replicas`, read-only for a kept Compose file, `keepScale`), the per-service form leaves a scaled
+  service's copies alone, Recent actions and the feed word the steps, Monitoring shows "2 copies (1–3)" and the place's
+  last steps, the Running tab says how a service scales.
+- Lab: the gate step `autoscale` (`gate_autoscale_test.go`: a whoami service with `requestsPerCopy: 5`, ~25 requests a
+  second, 1 → 3 in about 2 minutes with `scale_at_max`, a deploy at 3 keeps 3 with 3 canaries and the live version stays
+  the deployment's, back to 1 about 2 minutes after the load stops, exactly four steps, the count never outside 1–3,
+  at most 2 % failed) passed three times on 2026-11-18 (301–328 s, `-run 'TestLab/^(api-needs-token|autoscale)$'`).
+  A scale-up can lose a few requests (0 to 31 of ~4000, 502s at the scale-up moments, research R5): a new copy
+  isn't a canary, so Traefik routes to it from its registration.
+- Not in 043: scale to zero, steps over one, several targets or memory, scheduled scaling, services with volumes,
+  Nomad's own autoscaler.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at
