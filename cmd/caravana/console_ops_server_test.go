@@ -43,8 +43,9 @@ func labHostRoot(t *testing.T) string {
 
 // writeAptHistory writes two runs into the host root's apt history, a minute apart and ending just
 // now: Ubuntu's automatic updates upgrading three packages, one of which is libc6, and a person
-// installing htop. Also the reboot marker, naming libc6, as the real one does. It returns a function
-// that takes them away again, so that the steps after this one see a host with no history.
+// installing htop. Also the reboot marker, naming libc6, as the real one does, and Ubuntu's
+// os-release, since the sentences name the host's distribution from it. It returns a function that
+// takes them away again, so that the steps after this one see a host with no history.
 func writeAptHistory(t *testing.T, root string) (remove func()) {
 	t.Helper()
 	at := func(ago time.Duration) string { return time.Now().UTC().Add(-ago).Format("2006-01-02  15:04:05") }
@@ -58,11 +59,15 @@ func writeAptHistory(t *testing.T, root string) (remove func()) {
 		"Install: htop:amd64 (3.3.0-4build1)\n" +
 		"End-Date: " + at(2*time.Minute-5*time.Second) + "\n"
 	files := map[string]string{
+		"etc/os-release":           "NAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nID=ubuntu\nID_LIKE=debian\n",
 		"var/log/apt/history.log":  history,
 		"run/reboot-required":      "*** System restart required ***\n",
 		"run/reboot-required.pkgs": "libc6\n",
 	}
 	for name, body := range files {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

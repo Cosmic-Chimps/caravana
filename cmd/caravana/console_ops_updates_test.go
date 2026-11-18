@@ -202,7 +202,7 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 	// The banners' names are mono spans now (one source for the needs-you wording), so their order is read
 	// in the page's text, not its markup.
 	pageOrder(t, "the banners", words, rebootWords, updatesWords, "Available 3 updates")
-	pageOrder(t, "Available's rows", page, `data-up="reboot"`, `data-up="ubuntu"`, `data-up="release"`, `id="apply"`)
+	pageOrder(t, "Available's rows", page, `data-up="reboot"`, `data-up="os"`, `data-up="release"`, `id="apply"`)
 	pageOrder(t, "How to apply's steps", page, `id="up-cmd-os"`, `id="up-cmd-caravana"`, `id="up-cmd-reboot"`, `id="how"`)
 	for _, mark := range []string{"/ops/updates", "/ops"} {
 		_, p := c.get(t, mark)
@@ -295,7 +295,7 @@ func (c *console) consoleOpsUpdates(t *testing.T) {
 		return strings.Contains(pageText(p), "caravana can't read this server's pending updates (not Ubuntu or Debian).")
 	})
 	_, p = c.get(t, "/ops/updates")
-	if strings.Contains(p, `data-up="ubuntu"`) || strings.Contains(p, "Check package names") || !strings.Contains(p, `data-up="release"`) {
+	if strings.Contains(p, `data-up="os"`) || strings.Contains(p, "Check package names") || !strings.Contains(p, `data-up="release"`) {
 		t.Errorf("an unreadable host's page should have the release row and no OS rows:\n%.800s", pageText(p))
 	}
 }
