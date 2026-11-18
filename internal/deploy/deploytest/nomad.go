@@ -147,6 +147,10 @@ type Nomad struct {
 
 	jobInfos int // GET /v1/job/{id} requests answered
 
+	scales      []ScaleRequest // accepted scale requests (scale.go)
+	scaleStatus int            // non-zero: the next scale request answers it
+	scaleBody   string
+
 	// The deployments the allocation lists are read against (SetDeployment).
 	latest map[string]api.Deployment // by job ID: what GET /v1/job/{id}/deployment answers
 }
@@ -398,6 +402,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 		n.serveAllocStop(w, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/allocation/"), "/stop"))
 	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/job/") && strings.HasSuffix(r.URL.Path, "/plan"):
 		n.servePlan(w, r)
+	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasPrefix(r.URL.Path, "/v1/job/") && strings.HasSuffix(r.URL.Path, "/scale"):
+		n.scale(w, r)
 	case (r.Method == http.MethodPut || r.Method == http.MethodPost) && strings.HasSuffix(r.URL.Path, "/periodic/force"):
 		id, _ := jobPath(r)
 		n.forcePeriodic(w, strings.TrimSuffix(id, "/periodic/force"))

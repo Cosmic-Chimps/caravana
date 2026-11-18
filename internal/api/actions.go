@@ -54,12 +54,18 @@ type appActionJSON struct {
 	Error      string     `json:"error,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	// A scale step (feature 043): the counts it went between and why. The job
+	// versions that map it to a deployment are not part of the API.
+	FromCount *int   `json:"fromCount,omitempty"`
+	ToCount   *int   `json:"toCount,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 func toAppActionJSON(a store.ActionRecord) appActionJSON {
 	return appActionJSON{ID: a.ID, Action: a.Action, Trigger: a.Trigger, Status: a.Status, CopyID: a.CopyID,
 		Service: a.Service, Program: a.Program, ExitCode: a.ExitCode, Error: a.Error,
-		StartedAt: a.StartedAt, FinishedAt: a.FinishedAt}
+		StartedAt: a.StartedAt, FinishedAt: a.FinishedAt,
+		FromCount: a.FromCount, ToCount: a.ToCount, Reason: a.Reason}
 }
 
 // commandResultJSON is what runCommand answers (schema CommandResult).

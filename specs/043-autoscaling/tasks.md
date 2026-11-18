@@ -13,15 +13,15 @@ Phases 1 to 3 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 2: Store, deploy, service, API (US1, US2, US4, US5)
 
-- [ ] T005 `internal/store`: migration `0033_autoscaling.sql` (app_actions rebuilt, `service_counts`), the
+- [x] T005 `internal/store`: migration `0033_autoscaling.sql` (app_actions rebuilt, `service_counts`), the
   action fields, `LastScale`, `ScaleVersions`, `RecentScales`, `ServiceCounts`, `SetServiceCount`, `DeleteApp`
   (D6); tests.
-- [ ] T006 `internal/deploy` (+ `deploytest`): `Register` keeps the count (D4), `ScaleState`, `Scale` (D5), the
+- [x] T006 `internal/deploy` (+ `deploytest`): `Register` keeps the count (D4), `ScaleState`, `Scale` (D5), the
   `VersionAliases` hook in `Copies`/`AllCopies`/`LogCopies` (D7); the fake's scale endpoint; tests.
-- [ ] T007 `internal/service`: the counts after a deploy, `statusOf` with counts, the alias hook wired at start
+- [x] T007 `internal/service`: the counts after a deploy, `statusOf` with counts, the alias hook wired at start
   (D7), the autoscaler pass and reasons (D8), `scale_at_max` everywhere a kind is worded and notified (D9),
   activity words, promotion and copy (D10), export header (D10); tests.
-- [ ] T008 `internal/api` + `api/openapi.yaml` 0.47.0 (D11); parity and scope tests.
+- [x] T008 `internal/api` + `api/openapi.yaml` 0.47.0 (D11); parity and scope tests.
 
 ## Phase 3: Console (US3, US4)
 

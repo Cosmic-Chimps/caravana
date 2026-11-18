@@ -25,11 +25,22 @@ type Registered struct {
 	JobVersion *uint64
 	// Warnings are Nomad's register warnings, if any.
 	Warnings []app.Warning
+	// Counts is the count Register gave each scaled service (feature 043):
+	// the count it already had, kept within Min to Max, or its starting count.
+	// Unscaled services are not in it. The service stores them, so the app's
+	// status counts the copies the service has now.
+	Counts map[string]int
 }
 
 // Register translates the app and registers it as a new version of its Nomad
-// job (research R6). An existing job that isn't stopped must be Caravana's:
-// its deployment meta must be a deployment owns recognizes, or Register
+// job (research R6). A scaled service keeps the count its group has now
+// (feature 043): the job is made from a copy of the app whose scaled services
+// have Replicas set to Service.CountFor of that count, and the stored app keeps
+// its starting count. Every deploy path goes through here, so a deploy, a
+// redeploy, a rollback, a promotion and a webhook all keep the count.
+//
+// An existing job that isn't stopped must be Caravana's: its deployment meta
+// must be a deployment owns recognizes, or Register
 // fails with ErrJobConflict and registers nothing (R7). The write enforces
 // the job's modify index, so a change between the check and the write fails
 // too, instead of being overwritten.
@@ -39,11 +50,6 @@ type Registered struct {
 // and gets its pull-credentials variable written before the job is.
 func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 	owns func(ctx context.Context, deploymentID string) (bool, error), private map[string]bool) (Registered, error) {
-	res, err := nomadjob.Translate(a, dep, d.settings, private)
-	if err != nil {
-		return Registered{}, fmt.Errorf("translate %q: %w", a.ID, err)
-	}
-
 	var modifyIndex uint64 // 0 with EnforceIndex means "only if the job is new"
 	current, _, err := d.nomad.Jobs().Info(a.ID, (&api.QueryOptions{}).WithContext(ctx))
 	switch {
@@ -66,6 +72,13 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 		if current.JobModifyIndex != nil {
 			modifyIndex = *current.JobModifyIndex
 		}
+	}
+
+	// The job, with each scaled service at the count it runs now.
+	scaled, counts := withCurrentCounts(a, current)
+	res, err := nomadjob.Translate(scaled, dep, d.settings, private)
+	if err != nil {
+		return Registered{}, fmt.Errorf("translate %q: %w", a.ID, err)
 	}
 
 	// A published port needs a server that can open it (spec 041): ask first,
@@ -100,7 +113,7 @@ func (d *Deployer) Register(ctx context.Context, a app.App, dep app.Deployment,
 		return Registered{}, d.registerError(a.ID, err)
 	}
 
-	out := Registered{Warnings: res.Warnings}
+	out := Registered{Warnings: res.Warnings, Counts: counts}
 	if w := strings.TrimSpace(resp.Warnings); w != "" {
 		out.Warnings = append(out.Warnings, app.Warning{Message: "nomad: " + w})
 	}

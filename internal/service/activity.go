@@ -30,6 +30,7 @@ const (
 	ActivityStop     = "stop"
 	ActivityStart    = "start"
 	ActivityCommand  = "command"
+	ActivityScale    = "scale"
 	ActivityBackup   = "backup"
 	ActivityRestore  = "restore"
 	ActivitySchedule = "schedule"
@@ -224,6 +225,8 @@ func triggerLead(trigger string) string {
 		return "by the webhook"
 	case app.TriggerSchedule:
 		return "on a schedule"
+	case app.TriggerAutoscale:
+		return "on its own"
 	}
 	return "by " + trigger
 }
@@ -251,6 +254,9 @@ func actionWords(r store.ActivityRow, name []TextPart) (kind, status string, p [
 	case store.ActionStart:
 		status, p = state("was started", "is being started", "could not be started")
 		return ActivityStart, status, p
+	case store.ActionScale:
+		kind, status, p = scaleWords(r, name, how)
+		return kind, status, p
 	case store.ActionTerminal:
 		sh := mono(cmp.Or(r.Program, "a shell"))
 		if r.Program == "" {
@@ -275,6 +281,37 @@ func actionWords(r store.ActivityRow, name []TextPart) (kind, status string, p [
 		return ActivityCommand, ActivityWarning, parts(prog, " ran in ", name, " "+how+", exit "+strconv.Itoa(*r.ExitCode)+".")
 	}
 	return ActivityCommand, ActivityFailed, parts(prog, " didn't finish in ", name, " "+how+".")
+}
+
+// scaleDetail is the JSON the store gives a scale step's row: the counts it went
+// between and its reason.
+type scaleDetail struct {
+	From   *int   `json:"from"`
+	To     *int   `json:"to"`
+	Reason string `json:"reason"`
+}
+
+// scaleWords says a scale step: "Scaled web in shop 1 → 2 on its own: <reason>."
+// A refused one says why in Caravana's words.
+func scaleWords(r store.ActivityRow, name []TextPart, how string) (kind, status string, p []TextPart) {
+	var d scaleDetail
+	_ = json.Unmarshal([]byte(r.Detail), &d)
+	counts := ""
+	if d.From != nil && d.To != nil {
+		counts = fmt.Sprintf(" %d → %d", *d.From, *d.To)
+	}
+	svc := mono(cmp.Or(r.Service, "a service"))
+	if r.Service == "" {
+		svc = txt("a service")
+	}
+	if r.Status == store.ActionFailed {
+		return ActivityScale, ActivityWarning, parts("Couldn't scale ", svc, " in ", name, counts+": "+strings.TrimRight(cmp.Or(r.Error, "Nomad refused"), ". ")+".")
+	}
+	reason := ""
+	if d.Reason != "" {
+		reason = ": " + d.Reason
+	}
+	return ActivityScale, ActivityIdle, parts("Scaled ", svc, " in ", name, counts+" "+how+reason+".")
 }
 
 // runWords says the outcome of a backup or restore: "<app>'s backup of <service> finished."

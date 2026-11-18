@@ -231,6 +231,7 @@ type serviceRef struct{ app, service string }
 // sampleTick is one tick at now: read the sources, write the rows. The rows'
 // time is the whole gap that ended at now, which the counts cover.
 func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
+	parent := ctx // the autoscaler's pass has a budget of its own
 	ctx, cancel := context.WithTimeout(ctx, samplerBudget)
 	defer cancel()
 	st := &s.sampler
@@ -351,6 +352,8 @@ func (s *Service) sampleTick(ctx context.Context, now time.Time) error {
 	st.sources = SamplerSources{Traefik: r.traefikState, Nomad: nomad, At: now}
 	st.mu.Unlock()
 	s.publish(Change{What: ChangeMetrics})
+	// With the rows written, the scaled services are judged (feature 043).
+	s.autoscale(parent, now)
 	return nil
 }
 

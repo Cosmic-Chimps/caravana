@@ -95,6 +95,13 @@ func (t ScaleTarget) set() int {
 	return n
 }
 
+// NeedsDomain reports whether the target is measured at the proxy, which only
+// sees requests to a domain: requestsPerCopy and p95.
+func (t ScaleTarget) NeedsDomain() bool {
+	k := t.Kind()
+	return k == ScaleOnRequests || k == ScaleOnP95
+}
+
 // CountFor is the number of copies a deploy registers for the service.
 // current is the count the job runs now, or nil when there is no job to read
 // (a first deploy): a scaled service keeps its current count, or starts at
@@ -160,8 +167,8 @@ func validateScale(field string, svc Service) error {
 	if r := svc.Replicas; r != nil && (*r < s.Min || *r > s.Max) {
 		return NewFieldError(field+".replicas", "is %d, outside the scale's %d to %d: it is the starting count", *r, s.Min, s.Max)
 	}
-	if k := t.Kind(); (k == ScaleOnRequests || k == ScaleOnP95) && len(svc.Domains) == 0 {
-		return NewFieldError(field+".scale.target", "%s is measured at the proxy: give the service a domain, or scale on cpu", k)
+	if t.NeedsDomain() && len(svc.Domains) == 0 {
+		return NewFieldError(field+".scale.target", "%s is measured at the proxy: give the service a domain, or scale on cpu", t.Kind())
 	}
 	return nil
 }

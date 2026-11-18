@@ -343,9 +343,29 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		changes = append(changes, ServiceChange{Name: s.Name, ImageTo: s.Image})
 		s.Domains = nil
 		s.Ports = unpublished(s.Ports)
+		if s.Scale != nil && s.Scale.Target.NeedsDomain() {
+			// Requests and latency are measured at the proxy, which sees a domain
+			// and this service arrives with none: it arrives without the scale
+			// too, like it arrives without its domains (feature 043).
+			s.Scale = nil
+		}
 		result.Services = append(result.Services, s)
 	}
 	return result, changes, added, nil
+}
+
+// withoutDomainScales is a copy of a without the scale of any service that
+// measures it at the proxy. A copy has no domains, so its first deploy asks for
+// one ("give the service a domain, or scale on cpu"); the copy itself keeps the
+// scale and is not refused for it (feature 043).
+func withoutDomainScales(a app.App) app.App {
+	a.Services = slices.Clone(a.Services)
+	for i := range a.Services {
+		if sc := a.Services[i].Scale; sc != nil && sc.Target.NeedsDomain() {
+			a.Services[i].Scale = nil
+		}
+	}
+	return a
 }
 
 // unpublished is a copy of ports with every published number cleared.
@@ -467,7 +487,7 @@ func (s *Service) CopyApp(ctx context.Context, appID, to string) (store.AppRecor
 	// may have changed since the source was saved: refuse now, not at its first
 	// deploy. An app with no definition yet is only a name: nothing to check.
 	if a.Defined() {
-		if err := s.deployer.Validate(a); err != nil {
+		if err := s.deployer.Validate(withoutDomainScales(a)); err != nil {
 			return store.AppRecord{}, nil, err
 		}
 	}

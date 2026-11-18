@@ -412,6 +412,10 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		s.forgetTeamPasswords(ctx, shown)
 		return asResult(s.fail(rec, err))
 	}
+	// The counts the scaled services were registered with are what the app's
+	// status counts from now on (feature 043). A failed write is logged: the
+	// autoscaler reads the counts from Nomad on its next pass.
+	s.storeCounts(a.ID, reg.Counts)
 	// The hosts that are no longer Team only (or no longer this app's) lose
 	// their password now that Nomad has the job without their middleware.
 	if err := s.pruneTeamPasswords(ctx, &a); err != nil {

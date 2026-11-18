@@ -49,6 +49,9 @@ const (
 	// movable copies still there, and the server still takes no new work.
 	AttentionCopiesUnplaced       AttentionKind = "copies_unplaced"
 	AttentionServerMoveIncomplete AttentionKind = "server_move_incomplete"
+	// AttentionScaleAtMax: a scaled service runs its maximum and is still over its target (feature 043):
+	// a warning.
+	AttentionScaleAtMax AttentionKind = "scale_at_max"
 )
 
 // skippingAt is how many skipped slots in a row make a schedule an item: each
@@ -137,7 +140,9 @@ type AttentionItem struct {
 	// Queued is how many copies of copies_unplaced Nomad has queued with no node to put them on; Left
 	// is how many movable copies server_move_incomplete says still run on the server (feature 042).
 	Queued, Left int
-	When         time.Time
+	// Count is scale_at_max's service count, which is its maximum (feature 043).
+	Count int
+	When  time.Time
 	// Detail is the raw fact: Nomad's description, the deploy or backup error,
 	// or, for the schedule kinds, a sentence in Caravana's words. Never a
 	// run's output.
@@ -232,6 +237,11 @@ func (s *Service) Attention(ctx context.Context) (Attention, error) {
 		out.CopiesUnknown = true // copies_unplaced comes from Nomad's job summaries, like the copy kinds
 	}
 	out.Items = append(out.Items, placementItems...)
+	scaleItems, err := s.scaleItems(ctx, apps, s.clock.Now().UTC())
+	if err != nil {
+		return Attention{}, fmt.Errorf("attention: %w", err)
+	}
+	out.Items = append(out.Items, scaleItems...)
 	sortAttention(out.Items)
 	return out, nil
 }

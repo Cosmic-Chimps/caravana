@@ -23,6 +23,10 @@ const (
 	// record holds the shell asked for, its exit code and a fixed end reason,
 	// never what was typed or printed.
 	ActionTerminal = "terminal"
+	// ActionScale is a step of the autoscaler (feature 043): a service's count
+	// went from FromCount to ToCount, or Nomad refused. It is recorded
+	// finished, with the trigger "autoscale".
+	ActionScale = "scale"
 )
 
 // The statuses of an action. running is the only one that changes.
@@ -36,7 +40,7 @@ const (
 type ActionRecord struct {
 	ID      string // "act_" and 12 random hex digits
 	AppID   string
-	Action  string // ActionStop, ActionStart, ActionRestart, ActionRun or ActionTerminal
+	Action  string // ActionStop, ActionStart, ActionRestart, ActionRun, ActionTerminal or ActionScale
 	Trigger string // "console" or "manual", as deployments name them
 	Status  string
 	// CopyID and Service say where a run happened; empty for the others.
@@ -49,9 +53,18 @@ type ActionRecord struct {
 	Error      string
 	StartedAt  time.Time
 	FinishedAt *time.Time // nil while running
+
+	// A scale step (feature 043) says the count it went from and to, and why,
+	// in Caravana's words with numbers only. JobVersion is the Nomad job
+	// version the step made (nil when it failed or Nomad's answer couldn't be
+	// matched to one), BaseVersion the version of the deployment it scaled: a
+	// chain of scales all map to one deployment (ScaleVersions).
+	FromCount, ToCount      *int
+	Reason                  string
+	JobVersion, BaseVersion *uint64
 }
 
-const actionColumns = "id, app_id, action, trigger, status, copy_id, service, program, exit_code, error, started_at, finished_at"
+const actionColumns = "id, app_id, action, trigger, status, copy_id, service, program, exit_code, error, started_at, finished_at, from_count, to_count, reason, job_version, base_version"
 
 // SetAppStopped marks the app stopped at the given time, or not stopped (nil).
 // It does not touch the app's document, so the revision stays. An unknown ID
@@ -69,9 +82,10 @@ func (s *Store) SetAppStopped(ctx context.Context, appID string, at *time.Time) 
 // actions of apps it has.
 func (s *Store) InsertAction(ctx context.Context, a ActionRecord) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO app_actions (`+actionColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.AppID, a.Action, a.Trigger, a.Status, a.CopyID, a.Service, a.Program,
-		optionalInt(a.ExitCode), a.Error, formatTime(a.StartedAt), optionalTime(a.FinishedAt))
+		optionalInt(a.ExitCode), a.Error, formatTime(a.StartedAt), optionalTime(a.FinishedAt),
+		optionalInt(a.FromCount), optionalInt(a.ToCount), a.Reason, optionalVersion(a.JobVersion), optionalVersion(a.BaseVersion))
 	if err != nil {
 		return fmt.Errorf("insert action %q: %w", a.ID, err)
 	}
@@ -133,17 +147,30 @@ func (s *Store) FailRunningActions(ctx context.Context, msg string, at time.Time
 
 func scanAction(row scanner) (ActionRecord, error) {
 	var (
-		a        ActionRecord
-		exit     sql.NullInt64
-		started  string
-		finished sql.NullString
+		a                       ActionRecord
+		exit, from, to          sql.NullInt64
+		jobVersion, baseVersion sql.NullInt64
+		started                 string
+		finished                sql.NullString
 	)
 	if err := row.Scan(&a.ID, &a.AppID, &a.Action, &a.Trigger, &a.Status, &a.CopyID, &a.Service,
-		&a.Program, &exit, &a.Error, &started, &finished); err != nil {
+		&a.Program, &exit, &a.Error, &started, &finished, &from, &to, &a.Reason, &jobVersion, &baseVersion); err != nil {
 		return ActionRecord{}, err
 	}
 	if exit.Valid {
 		a.ExitCode = new(int(exit.Int64))
+	}
+	if from.Valid {
+		a.FromCount = new(int(from.Int64))
+	}
+	if to.Valid {
+		a.ToCount = new(int(to.Int64))
+	}
+	if jobVersion.Valid {
+		a.JobVersion = new(uint64(jobVersion.Int64))
+	}
+	if baseVersion.Valid {
+		a.BaseVersion = new(uint64(baseVersion.Int64))
 	}
 	var err error
 	if a.StartedAt, err = parseTime(started); err != nil {
@@ -161,4 +188,12 @@ func optionalInt(n *int) any {
 		return nil
 	}
 	return *n
+}
+
+// optionalVersion is a job version as stored: NULL for nil.
+func optionalVersion(v *uint64) any {
+	if v == nil {
+		return nil
+	}
+	return int64(*v)
 }

@@ -173,3 +173,13 @@ func TestScaleJSONUnchanged(t *testing.T) {
 		t.Errorf("json = %s, want %s", got, want)
 	}
 }
+
+// A scale step's trigger is an action's, never a deployment's.
+func TestAutoscaleIsNotADeploymentTrigger(t *testing.T) {
+	d := validDeployment()
+	d.Trigger = TriggerAutoscale
+	var fe *FieldError
+	if err := Validate(validApp(), d); !errors.As(err, &fe) || fe.Field != "deployment.trigger" {
+		t.Errorf("Validate with the autoscale trigger = %v, want a field error on deployment.trigger", err)
+	}
+}

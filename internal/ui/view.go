@@ -166,6 +166,8 @@ func triggerWords(t app.Trigger) string {
 		return "by the webhook"
 	case app.TriggerSchedule:
 		return "on a schedule"
+	case app.TriggerAutoscale:
+		return "on its own"
 	}
 	return "by " + string(t)
 }

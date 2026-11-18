@@ -19,7 +19,7 @@ import (
 // The tables an activity row can come from.
 const (
 	ActivityDeployment = "deployments"    // two rows per deployment: Phase "started", then "ended" once it is over
-	ActivityAction     = "app_actions"    // Label is the action: stop, start, restart, run or terminal
+	ActivityAction     = "app_actions"    // Label is the action: stop, start, restart, run, terminal or scale; a scale's Detail is JSON {from, to, reason}
 	ActivityBackup     = "backups"        // Label is the engine; At is its end, or its start while it runs
 	ActivityRestore    = "restores"       // likewise
 	ActivitySchedule   = "schedule_runs"  // only runs that failed or were stopped at their limit; Label is the schedule's name
@@ -48,6 +48,7 @@ var OpenedProblemKinds = []string{
 	"domain_dns_elsewhere", "domain_cert_expiring",
 	"os_reboot_required", "os_security_updates", "no_backup_destination",
 	"server_down", "server_certificate_expiring",
+	"scale_at_max",
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on
@@ -106,7 +107,7 @@ FROM (
   UNION ALL
   SELECT 'app_actions', id, '', started_at, app_id,
          service, status, trigger, action, program, exit_code, NULL,
-         error, ''
+         error, CASE WHEN action = 'scale' THEN json_object('from', from_count, 'to', to_count, 'reason', reason) ELSE '' END
   FROM app_actions WHERE (?2 = 0 OR action = 'restart') AND (?1 = '' OR started_at < ?1)
   UNION ALL
   SELECT 'backups', app_id || '/' || id, '', COALESCE(finished_at, started_at), app_id,

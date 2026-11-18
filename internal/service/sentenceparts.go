@@ -157,6 +157,8 @@ func ProblemParts(it AttentionItem, display func(string) string) []TextPart {
 		return serverMoveParts(it)
 	case AttentionCopiesUnplaced:
 		return copiesUnplacedParts(it, where)
+	case AttentionScaleAtMax:
+		return scaleAtMaxParts(it, where)
 	case AttentionDomainDNSElsewhere:
 		if it.AddressSeen == "" {
 			return parts(who, ": ", mono(it.Domain), " points at another host.")
@@ -189,7 +191,7 @@ var AttentionKinds = []AttentionKind{
 	AttentionDiskNearlyFull, AttentionOSRebootRequired, AttentionOSSecurityUpdates,
 	AttentionCaravanaUpdateFailed,
 	AttentionServerDown, AttentionServerCertExpiring,
-	AttentionCopiesUnplaced, AttentionServerMoveIncomplete,
+	AttentionCopiesUnplaced, AttentionServerMoveIncomplete, AttentionScaleAtMax,
 }
 
 // slashed is "/web" for a service name, "" for none.

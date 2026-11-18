@@ -54,6 +54,21 @@ func TestExport(t *testing.T) {
 		}
 	})
 
+	t.Run("a scaled service says its range, and exports its starting count", func(t *testing.T) {
+		w := apptest.Whoami()
+		w.App.Services[0].Scale = &app.Scale{Min: 1, Max: 3, Target: app.ScaleTarget{CPU: 70}}
+		got, err := d.Export(w.App, w.Deployment, deployed, nil)
+		if err != nil {
+			t.Fatalf("Export() = %v", err)
+		}
+		if want := "# web scales between 1 and 3 copies (Caravana's autoscaling); count is the starting count."; !strings.Contains(string(got), want) {
+			t.Errorf("header lacks %q:\n%s", want, got)
+		}
+		if !strings.Contains(string(got), "count = 2") { // whoami's replicas, the starting count
+			t.Errorf("export doesn't write the starting count:\n%s", got)
+		}
+	})
+
 	t.Run("volumes, secrets and backups are named, no secret value", func(t *testing.T) {
 		vol := caseNamed(t, "volumes")
 		vol.App.Services[1].Secrets = []app.Secret{{Name: "POSTGRES_PASSWORD", Value: new("hunter2-value")}}

@@ -119,6 +119,10 @@ type Service struct {
 	hostRoot   fs.FS         // the host's OS files the sampler reads (feature 027), see hostosstate.go
 	sampler    samplerState
 
+	// aliasFailing is true while reading the versions that scale steps made
+	// fails, so the failure is logged once (feature 043, see autoscale.go).
+	aliasFailing atomic.Bool
+
 	// Updates (feature 027 page 3), see updates.go.
 	releaseURL         string        // what the release check asks; tests give a fake server
 	releaseDownloadURL string        // where a release's install.sh is read from, for its pins
@@ -177,7 +181,7 @@ func (e *DeployError) Unwrap() error { return e.Err }
 // New returns a Service. sec holds the apps' secret values (deploy.Variables
 // in production). Call Start before deploying.
 func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Logger) *Service {
-	return &Service{
+	s := &Service{
 		store:      st,
 		deployer:   d,
 		secrets:    sec,
@@ -244,6 +248,12 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		moveRuns: map[string]*moveRun{},
 		move:     defaultMoveTiming(),
 	}
+	// Copies show the deployment's version where Nomad's is a scale step's
+	// (feature 043, see autoscale.go).
+	if d != nil {
+		d.VersionAliases = s.versionAliases
+	}
+	return s
 }
 
 // defaultResolveAfter is how long a problem must be gone from the needs-you

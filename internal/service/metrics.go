@@ -312,6 +312,10 @@ func (s *Service) metricsOf(ctx context.Context, recs []store.AppRecord, project
 	if err != nil {
 		return MetricsView{}, err
 	}
+	counts, err := s.store.ServiceCounts(ctx)
+	if err != nil {
+		return MetricsView{}, fmt.Errorf("read metrics: %w", err)
+	}
 	byJob, copiesErr := s.deployer.AllCopies(ctx)
 	if copiesErr != nil {
 		s.log.Warn("can't read copies from Nomad; the monitoring page leaves restarts out", "error", copiesErr)
@@ -363,7 +367,7 @@ func (s *Service) metricsOf(ctx context.Context, recs []store.AppRecord, project
 	exitsRead := false
 	var services []ServiceMetrics
 	for _, r := range rows {
-		sv, issues := s.judgeService(r, rng, from, now, baseline, latest, byJob, copiesErr == nil, details, deploys)
+		sv, issues := s.judgeService(r, rng, from, now, baseline, latest, byJob, counts, copiesErr == nil, details, deploys)
 		sv.HTTPShared = collisions[serviceRef{r.rec.App.ID, r.svc.Name}]
 		for _, is := range issues {
 			if (is.Kind == metrics.Memory || is.Kind == metrics.Restarting) && !exitsRead {
@@ -766,7 +770,7 @@ func sinceOf(k metrics.Kind, minute []metrics.Row, now time.Time, hist metrics.H
 
 // judgeService applies the five rules to one service and makes its table row.
 func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time, baseline MetricsBaseline,
-	latest map[string]store.DeploymentRecord, byJob map[string][]Copy, copiesKnown bool,
+	latest map[string]store.DeploymentRecord, byJob map[string][]Copy, counts map[string]map[string]int, copiesKnown bool,
 	details map[deployKey]MetricDeploy, deploys []metrics.Deploy) (ServiceMetrics, []MetricIssue) {
 
 	id := r.rec.App.ID
@@ -799,7 +803,7 @@ func (s *Service) judgeService(r svcRows, rng metrics.Range, from, now time.Time
 	} else if rolling {
 		sv.State = ServiceRollingOut
 	}
-	sv.Standing = standingOf(r.rec, r.svc.Name, newest, byJob[id], copiesKnown)
+	sv.Standing = standingOf(r.rec, counts[id], r.svc.Name, newest, byJob[id], copiesKnown)
 	if sv.HasDomain {
 		// The table's HTTP numbers are the last 10 minutes', the same window
 		// the issues and the chart heads read, so a row never disagrees with
@@ -907,12 +911,12 @@ var errCopiesUnknown = errors.New("copies unknown")
 // the app isn't running (or this service has no healthy copy) or its newest deploy failed, ○
 // when stopped, never deployed or not defined, ◐ while rolling out, ◆ when some copies are
 // short, ● otherwise. While Nomad can't be read nothing is claimed.
-func standingOf(rec store.AppRecord, svc string, latest *store.DeploymentRecord, copies []Copy, copiesKnown bool) ServiceStanding {
+func standingOf(rec store.AppRecord, counts map[string]int, svc string, latest *store.DeploymentRecord, copies []Copy, copiesKnown bool) ServiceStanding {
 	var nomadErr error
 	if !copiesKnown {
 		nomadErr = errCopiesUnknown
 	}
-	st := statusOfRecord(rec, latest, copies, nomadErr)
+	st := statusOfRecord(rec, counts, latest, copies, nomadErr)
 	deployFailed := latest != nil && (latest.Status == store.StatusFailed || latest.Status == store.StatusReverted)
 	switch st.State {
 	case StateStopped:
