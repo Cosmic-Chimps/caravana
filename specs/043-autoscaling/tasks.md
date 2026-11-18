@@ -5,11 +5,11 @@ Phases 1 to 3 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 1: Model, translator, rule, Compose (US1, US3)
 
-- [ ] T001 `internal/app/scale.go`: `Scale`, `ScaleTarget`, the limits, `Cooldown`, `Kind`, `Service.CountFor`;
+- [x] T001 `internal/app/scale.go`: `Scale`, `ScaleTarget`, the limits, `Cooldown`, `Kind`, `Service.CountFor`;
   `Service.Scale`; validation in `validate.go` (D1) with a table test of every field path; a revision test.
-- [ ] T002 `internal/nomadjob`: the spread for a scaled service (D2); golden `scale` JSON and HCL.
-- [ ] T003 `internal/metrics/scale.go`: `DecideScale`, `OverTargetAtMax` (D3) with the table tests.
-- [ ] T004 `internal/compose`: `OverlayService.scale` (D10) with a fixture and the renamed field errors.
+- [x] T002 `internal/nomadjob`: the spread for a scaled service (D2); golden `scale` JSON and HCL.
+- [x] T003 `internal/metrics/scale.go`: `DecideScale`, `OverTargetAtMax` (D3) with the table tests.
+- [x] T004 `internal/compose`: `OverlayService.scale` (D10) with a fixture and the renamed field errors.
 
 ## Phase 2: Store, deploy, service, API (US1, US2, US4, US5)
 

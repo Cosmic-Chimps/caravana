@@ -265,7 +265,7 @@ func applyOverlay(field string, svc *app.Service, sc types.ServiceConfig, ov Ove
 	}
 
 	svc.Secrets, svc.Backup, svc.Identities = ov.Secrets, ov.Backup, ov.Identities
-	svc.Placement = ov.Placement
+	svc.Placement, svc.Scale = ov.Placement, ov.Scale
 	return nil
 }
 

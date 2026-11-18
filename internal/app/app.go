@@ -99,8 +99,13 @@ type Service struct {
 	// domains must use the same port.
 	Domains []Domain `json:"domains,omitempty"`
 	// Replicas is how many copies run. nil means 1; a set value must be at
-	// least 1.
+	// least 1. With Scale it is only the starting count: a deploy registers
+	// the count the service has now (Service.CountFor).
 	Replicas *int `json:"replicas,omitempty"`
+	// Scale lets Caravana change the number of copies from the service's own
+	// metrics, between Scale.Min and Scale.Max (feature 043). nil keeps the
+	// count fixed at Replicas.
+	Scale *Scale `json:"scale,omitempty"`
 	// Resources are the CPU and memory the service reserves. Zero fields use
 	// the environment's defaults.
 	Resources Resources `json:"resources,omitzero"`
