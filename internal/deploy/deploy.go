@@ -91,6 +91,9 @@ type Timing struct {
 	// node's new metadata (feature 042). Default 15 s: they showed it after 8
 	// to 10 s in the lab.
 	LabelWait time.Duration
+	// StreamLifetime is how long one connection to Nomad's event stream lives
+	// before FollowEvents renews it. Default 10 minutes.
+	StreamLifetime time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -114,6 +117,9 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.LabelWait == 0 {
 		t.LabelWait = 15 * time.Second
+	}
+	if t.StreamLifetime == 0 {
+		t.StreamLifetime = 10 * time.Minute
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute

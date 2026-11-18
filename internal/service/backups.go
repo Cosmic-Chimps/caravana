@@ -413,19 +413,23 @@ func runRecord(appID, service string, r deploy.BackupRun) store.BackupRecord {
 	return rec
 }
 
-// watchBackups records what backup runs and restores did, every gap, until
-// ctx ends: Nomad forgets finished batch jobs after a few hours, Caravana
-// keeps them.
+// watchBackups records what backup runs and restores did until ctx ends: Nomad
+// forgets finished batch jobs after a few hours, Caravana keeps them. It makes a
+// pass when Nomad's events say a backup or restore job changed (backupsKey) and
+// at least every gap, as the safety net.
 func (s *Service) watchBackups(ctx context.Context, gap time.Duration) {
-	t := time.NewTicker(gap)
-	defer t.Stop()
 	for {
+		woken := s.wakes.channel(backupsKey) // before the pass, so a change during it isn't lost
 		s.recordBackups(ctx)
+		timer := time.NewTimer(gap)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-t.C:
+		case <-woken:
+		case <-timer.C:
 		}
+		timer.Stop()
 	}
 }
 

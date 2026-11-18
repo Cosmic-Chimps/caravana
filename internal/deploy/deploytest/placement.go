@@ -81,6 +81,7 @@ func (n *Nomad) SetNodeMetaDelay(d time.Duration) {
 func (n *Nomad) SetNodeMeta(id string, meta map[string]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	n.metaOf(id).visible, n.metaOf(id).next = maps.Clone(meta), nil
 }
 
@@ -88,6 +89,7 @@ func (n *Nomad) SetNodeMeta(id string, meta map[string]string) {
 func (n *Nomad) SetNodeStaticMeta(id string, meta map[string]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	n.emitNode(id)
 	if node := n.findNode(id); node != nil {
 		node.Meta = maps.Clone(meta)
 	}
@@ -299,6 +301,7 @@ func (n *Nomad) serveNodeMeta(w http.ResponseWriter, r *http.Request) {
 	} else {
 		m.next, m.at = next, time.Now().Add(n.place.metaDelay)
 	}
+	n.emitNode(req.NodeID)
 	n.writeJSON(w, api.NodeMetaResponse{Meta: n.nodeMetaLocked(req.NodeID), Dynamic: stringPointers(next)})
 }
 
@@ -343,6 +346,7 @@ func (n *Nomad) serveEligibility(w http.ResponseWriter, r *http.Request, id stri
 	}
 	node.SchedulingEligibility = req.Eligibility
 	n.place.eligibility = append(n.place.eligibility, EligibilityRequest{Node: id, Eligible: req.Eligibility == api.NodeSchedulingEligible})
+	n.emitNode(id)
 	n.writeJSON(w, api.NodeEligibilityUpdateResponse{})
 }
 
@@ -398,6 +402,7 @@ func (n *Nomad) serveAllocStop(w http.ResponseWriter, id string) {
 	}
 	n.allocs[old.JobID] = append(list, &repl)
 	n.wake()
+	n.emitAllocs(old.JobID)
 	if n.place.moveSet {
 		if d := n.place.startDelay; d > 0 {
 			time.AfterFunc(d, func() { n.startReplacement(repl.JobID, repl.ID) })
@@ -429,6 +434,7 @@ func (n *Nomad) runReplacement(jobID, id string) {
 		next.DeploymentStatus = &api.AllocDeploymentStatus{Healthy: new(true)}
 		list[i] = &next
 		n.wake()
+		n.emitAllocs(jobID)
 		return
 	}
 }

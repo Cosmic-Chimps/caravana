@@ -1,10 +1,6 @@
 package service
 
-import (
-	"context"
-	"sync"
-	"time"
-)
+import "sync"
 
 // ChangeKind says which part of the world a Change is about. Open pages use
 // it to refresh only the regions that show it.
@@ -44,20 +40,12 @@ type subscriber struct {
 	ch    chan Change
 }
 
-// defaultWatchIdle is how long the copies watcher keeps running after the
-// last subscriber leaves, so a page reload doesn't stop and restart it.
-const defaultWatchIdle = 30 * time.Second
-
-// changeHub fans notices out to subscribers and owns the lifecycle of the
-// copies watcher. The zero value is ready to use.
+// changeHub fans notices out to subscribers. The zero value is ready to use.
+// The notices themselves come from Nomad's event stream (events.go) and from
+// the service's own writes.
 type changeHub struct {
 	mu   sync.Mutex
 	subs map[*subscriber]struct{}
-
-	// stopWatcher is non-nil while the copies watcher runs. idle is non-nil
-	// while it waits to stop because the last subscriber left.
-	stopWatcher context.CancelFunc
-	idle        *time.Timer
 }
 
 // Subscribe returns a channel of notices for appID and a function that ends
@@ -71,14 +59,12 @@ type changeHub struct {
 // BoundedChannelFullMode.DropWrite.)
 func (s *Service) Subscribe(appID string) (<-chan Change, func()) {
 	sub := &subscriber{appID: appID, ch: make(chan Change, subscriberBuffer)}
-	bg := s.background() // before taking the hub's lock: the two locks are never held in the other order
 
 	s.changes.mu.Lock()
 	if s.changes.subs == nil {
 		s.changes.subs = map[*subscriber]struct{}{}
 	}
 	s.changes.subs[sub] = struct{}{}
-	s.ensureWatcher(bg)
 	s.changes.mu.Unlock()
 
 	var once sync.Once
@@ -86,7 +72,6 @@ func (s *Service) Subscribe(appID string) (<-chan Change, func()) {
 		once.Do(func() {
 			s.changes.mu.Lock()
 			delete(s.changes.subs, sub)
-			s.scheduleWatcherStop()
 			s.changes.mu.Unlock()
 			// publish holds the same lock while sending, and the subscriber
 			// is gone from the map by now, so nobody can send on a closed
@@ -130,51 +115,7 @@ func (s *Service) appChanged(appID string) {
 	s.publish(Change{What: ChangeApps})
 }
 
-// ensureWatcher makes sure the copies watcher is running and not about to
-// stop. The hub's lock must be held. The watcher follows every allocation in
-// Nomad with one blocking query (research R6), so it only runs while someone
-// is listening: the first subscriber starts it, and it stops watchIdle after
-// the last one leaves.
-func (s *Service) ensureWatcher(bg context.Context) {
-	h := &s.changes
-	if h.idle != nil {
-		h.idle.Stop()
-		h.idle = nil
-	}
-	if h.stopWatcher != nil {
-		return
-	}
-	ctx, cancel := context.WithCancel(bg)
-	h.stopWatcher = cancel
-	s.watchers.Add(1)
-	go func() {
-		defer s.watchers.Done()
-		s.deployer.WatchCopies(ctx, s.copiesChanged)
-	}()
-}
-
-// scheduleWatcherStop stops the watcher after watchIdle if nobody has
-// subscribed again by then. The hub's lock must be held.
-func (s *Service) scheduleWatcherStop() {
-	h := &s.changes
-	if len(h.subs) > 0 || h.stopWatcher == nil || h.idle != nil {
-		return
-	}
-	var timer *time.Timer
-	timer = time.AfterFunc(s.watchIdle, func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		if h.idle != timer || len(h.subs) > 0 {
-			return // someone came back, or a newer timer owns this
-		}
-		h.idle = nil
-		h.stopWatcher()
-		h.stopWatcher = nil
-	})
-	h.idle = timer
-}
-
-// copiesChanged turns the watcher's job IDs into notices: a job is an app,
+// copiesChanged turns the job IDs of changed copies into notices: a job is an app,
 // so each one's copies and header change, and the list of apps once.
 func (s *Service) copiesChanged(jobIDs []string) {
 	for _, id := range jobIDs {

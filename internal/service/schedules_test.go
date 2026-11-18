@@ -31,7 +31,14 @@ type schedLab struct {
 	logs  *syncBuffer
 }
 
-func newSchedLab(t *testing.T) *schedLab {
+// newSchedLab is a lab whose Nomad refuses the event stream, so the run watcher
+// passes only when a test calls follow (its safety gap is an hour): the tests that
+// move the fake clock by hand need nothing else to settle a run behind their back.
+func newSchedLab(t *testing.T) *schedLab { return newSchedLabEvents(t, false) }
+
+// newSchedLabEvents is newSchedLab with the event stream allowed when events is true,
+// for the test that has Nomad's events drive the run watcher.
+func newSchedLabEvents(t *testing.T, events bool) *schedLab {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(context.Background(), dir)
@@ -42,6 +49,9 @@ func newSchedLab(t *testing.T) *schedLab {
 	e := &env{store: st, registry: registrytest.New(t), nomad: deploytest.New(t), secrets: secretstest.New()}
 	e.registry.AddIndex("traefik/whoami", "latest", whoamiDigest)
 	e.nomad.Succeed()
+	if !events {
+		e.nomad.RefuseEventStream(403)
+	}
 	logs := &syncBuffer{}
 	log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e.svc = startServiceLogging(t, st, newDeployer(t, e.registry, e.nomad), e.secrets, log)

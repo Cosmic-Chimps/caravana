@@ -161,6 +161,9 @@ func TestSamplerTwoTicksGiveAMinute(t *testing.T) {
 	}
 	notices, stop := l.svc.Subscribe("")
 	defer stop()
+	// Nomad's events publish notices of their own as the fakes change, so the
+	// notices are collected as they come, not read from the buffer at the end.
+	heard := collect(notices)
 
 	cum1 := []int{0, 0, 0, 0, 5, 8, 10, 10, 10, 10, 10, 10}
 	l.traefik.Set(shopText(1e9, 10, 2, cum1))
@@ -246,13 +249,8 @@ func TestSamplerTwoTicksGiveAMinute(t *testing.T) {
 	}
 
 	// Each tick told the open pages, with no data in the notice.
-	var told int
-	for _, c := range drain(notices) {
-		if c.What == ChangeMetrics && c.AppID == "" {
-			told++
-		}
-	}
-	if told != 2 {
+	waitFor(t, "a metrics notice for each tick", func() bool { return heard.count("", ChangeMetrics) >= 2 })
+	if told := heard.count("", ChangeMetrics); told != 2 {
 		t.Errorf("metrics notices = %d, want 2", told)
 	}
 }

@@ -2,8 +2,8 @@ package deploy
 
 import (
 	"context"
+	"fmt"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/nomad/api"
 )
@@ -37,47 +37,18 @@ const (
 	descRollbackMarker = " - rolling back to job version "
 )
 
-// blockingWait is how long one blocking query may wait for a change.
-const blockingWait = 5 * time.Minute
-
-// Watch follows the Nomad deployment of jobVersion until it ends (research
-// R8). Failed Nomad calls are retried with backoff for as long as it takes:
-// a lost connection never ends a rollout. It returns an error only when ctx
-// ends.
-func (d *Deployer) Watch(ctx context.Context, appID string, jobVersion uint64) (Outcome, error) {
-	timing := d.Timing.withDefaults()
-	var waitIndex uint64
-	backoff := timing.BackoffStart
-
-	for {
-		start := time.Now()
-		q := (&api.QueryOptions{WaitIndex: waitIndex, WaitTime: blockingWait}).WithContext(ctx)
-		deployments, meta, err := d.nomad.Jobs().Deployments(appID, false, q)
-		if err != nil {
-			if !sleep(ctx, backoff) {
-				return Outcome{}, ctx.Err()
-			}
-			backoff = min(2*backoff, timing.BackoffMax)
-			continue
-		}
-		backoff = timing.BackoffStart
-		// Nomad's advice for blocking queries: if the index goes backwards,
-		// start again from 0.
-		if meta.LastIndex < waitIndex {
-			waitIndex = 0
-		} else {
-			waitIndex = meta.LastIndex
-		}
-
-		if out, done := outcomeOf(deployments, jobVersion); done {
-			return out, nil
-		}
-		// A minimum gap keeps a server that answers at once from turning
-		// this into a busy loop.
-		if !sleep(ctx, timing.PollGap-time.Since(start)) {
-			return Outcome{}, ctx.Err()
-		}
+// RolloutOutcome reads the Nomad deployment of jobVersion once and reports
+// how it ended, or false while it is still going (research R8). The service
+// asks again when Nomad's event stream says the rollout moved, and every so
+// often anyway, so this is one plain query and never waits.
+func (d *Deployer) RolloutOutcome(ctx context.Context, appID string, jobVersion uint64) (Outcome, bool, error) {
+	q := (&api.QueryOptions{}).WithContext(ctx)
+	deployments, _, err := d.nomad.Jobs().Deployments(appID, false, q)
+	if err != nil {
+		return Outcome{}, false, fmt.Errorf("read the rollouts of %q: %w", appID, err)
 	}
+	out, done := outcomeOf(deployments, jobVersion)
+	return out, done, nil
 }
 
 // outcomeOf finds the deployment for jobVersion and reports whether it has

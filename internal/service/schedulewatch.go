@@ -24,35 +24,55 @@ import (
 // now never will.
 const runStopGrace = 30 * time.Second
 
-// watchScheduleRuns follows the open runs, every gap, until ctx ends. It does
-// a pass first and then closes settled (when not nil), so the clock can wait
-// for the runs a previous process left to be settled before it counts the
-// ones going.
+// watchScheduleRuns follows the open runs until ctx ends. It does a pass first
+// and then closes settled (when not nil), so the clock can wait for the runs a
+// previous process left to be settled before it counts the ones going.
+//
+// A pass is made when Nomad's events say a run's job or copy changed (runsKey),
+// when the earliest moment a run needs a look with no event (a limit, a start
+// deadline, the grace of a stop) arrives, and at least every gap, as the safety
+// net. The wake is taken before the pass, so a change during it isn't lost.
 func (s *Service) watchScheduleRuns(ctx context.Context, gap time.Duration, settled chan<- struct{}) {
-	t := time.NewTicker(gap)
-	defer t.Stop()
 	for {
-		s.followScheduleRuns(ctx)
+		woken := s.wakes.channel(runsKey)
+		due := s.followScheduleRuns(ctx)
 		if settled != nil {
 			close(settled)
 			settled = nil
 		}
+		wait := gap
+		if !due.IsZero() {
+			wait = min(wait, max(due.Sub(s.clock.Now().UTC())+dueSlack, minDueWait))
+		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-t.C:
+		case <-woken:
+		case <-timer.C:
 		}
+		timer.Stop()
 	}
 }
 
+// dueSlack is added to a run's due time, so the pass lands just after it and
+// finds it due; minDueWait keeps a due time that is already past (a stop that
+// failed, say) from becoming a busy loop.
+const (
+	dueSlack   = 100 * time.Millisecond
+	minDueWait = time.Second
+)
+
 // followScheduleRuns is one pass of the watcher. Errors are logged; the next
-// pass tries again.
-func (s *Service) followScheduleRuns(ctx context.Context) {
+// pass tries again. It returns the earliest time a run needs a look without any
+// event (zero when none does).
+func (s *Service) followScheduleRuns(ctx context.Context) (due time.Time) {
 	s.retryPurges(ctx)
 	runs, err := s.store.AllOpenRuns(ctx)
 	if err != nil {
 		s.log.Warn("follow schedule runs: list open runs", "error", err)
-		return
+		return time.Time{}
 	}
 	scheds := map[string]store.ScheduleRecord{}
 	for _, r := range runs {
@@ -77,12 +97,17 @@ func (s *Service) followScheduleRuns(ctx context.Context) {
 			}
 			scheds[r.ScheduleID] = sched
 		}
-		s.followRun(ctx, r, sched)
+		if next := s.followRun(ctx, r, sched); !next.IsZero() && (due.IsZero() || next.Before(due)) {
+			due = next
+		}
 	}
+	return due
 }
 
-// followRun does what one open run's state in Nomad calls for.
-func (s *Service) followRun(ctx context.Context, r store.ScheduleRunRecord, sched store.ScheduleRecord) {
+// followRun does what one open run's state in Nomad calls for. It returns when
+// the run needs a look again with no event to say so (zero when it doesn't: it
+// was settled, or it waits for Nomad to move).
+func (s *Service) followRun(ctx context.Context, r store.ScheduleRunRecord, sched store.ScheduleRecord) time.Time {
 	jobID := runJobID(r)
 	st, err := s.deployer.ScheduleRunState(ctx, jobID, r.Service)
 	now := s.clock.Now().UTC()
@@ -92,10 +117,10 @@ func (s *Service) followRun(ctx context.Context, r store.ScheduleRunRecord, sche
 		// run again. Its variable may still be there.
 		s.settleRun(ctx, r, store.RunSettlement{Status: store.RunFailed, Error: "lost while Caravana was restarting", FinishedAt: now})
 		s.purgeRun(ctx, jobID)
-		return
+		return time.Time{}
 	case err != nil:
 		s.log.Warn("follow a schedule's run", "run", r.ID, "job", jobID, "error", err)
-		return
+		return time.Time{}
 	}
 	if r.Status == store.RunStarting {
 		// Registered by a process that ended before it could say so.
@@ -104,32 +129,56 @@ func (s *Service) followRun(ctx context.Context, r store.ScheduleRunRecord, sche
 		}
 	}
 
+	limit := s.runLimit(sched)
 	switch {
 	case st.Terminal:
 		s.endRun(ctx, r, sched, st, now)
+		return time.Time{}
 	case r.StopReason != "":
 		// Asked to stop. A run Nomad never placed won't be; one it did is
 		// stopped again if the first stop didn't reach it.
 		if st.AllocID == "" && r.StopRequestedAt != nil && now.Sub(*r.StopRequestedAt) > runStopGrace {
 			s.endRun(ctx, r, sched, st, now)
-			return
+			return time.Time{}
 		}
 		if st.DesiredStatus != "stop" {
 			s.stopRun(ctx, r, jobID)
+			return time.Time{}
 		}
 	case st.TaskStartedAt != nil:
-		if now.Sub(*st.TaskStartedAt) > s.runLimit(sched) {
+		if now.Sub(*st.TaskStartedAt) > limit {
 			if err := s.store.SetRunStopIntent(ctx, r.ID, stopLimit, now); err != nil {
 				s.log.Warn("record a run's stop at its limit", "run", r.ID, "error", err)
-				return
+				return time.Time{}
 			}
 			s.stopRun(ctx, r, jobID)
+			return time.Time{}
 		}
 	case now.Sub(r.StartedAt) > s.scheduleStartDeadline:
 		s.settleRun(ctx, r, store.RunSettlement{Status: store.RunCouldNotStart,
 			Error: "didn't start within " + durationWords(s.scheduleStartDeadline), FinishedAt: now})
 		s.purgeRun(ctx, jobID)
+		return time.Time{}
 	}
+	return runDue(r, st, limit, s.scheduleStartDeadline)
+}
+
+// runDue is the moment an open run that nothing has acted on needs a look,
+// whatever Nomad says by then: no event comes for a task that simply stays
+// running past its limit, for one that never starts, or for a stop Nomad never
+// acts on. Zero means it waits for Nomad to move (Nomad's events say when).
+func runDue(r store.ScheduleRunRecord, st deploy.RunState, limit, startDeadline time.Duration) time.Time {
+	switch {
+	case r.StopReason != "":
+		if st.AllocID == "" && r.StopRequestedAt != nil {
+			return r.StopRequestedAt.Add(runStopGrace)
+		}
+	case st.TaskStartedAt != nil:
+		return st.TaskStartedAt.Add(limit)
+	default:
+		return r.StartedAt.Add(startDeadline)
+	}
+	return time.Time{}
 }
 
 // runLimit is how long a run of sched may go: the schedule's stop-after, or

@@ -14,6 +14,11 @@
 // Deleting a job (DELETE /v1/job/{id}?purge=true) removes it with its rollouts
 // and allocations; Purged(jobID) says it was done.
 //
+// The event stream (events.go): GET /v1/event/stream sends an event for each
+// change of jobs, copies, rollouts and nodes the setters below make, so a
+// watcher that follows Nomad's events sees what a real one would. Down ends the
+// open streams.
+//
 // Task output ("logs") is scripted with WriteLog(copyID, stream, text). The
 // fake answers GET /v1/client/fs/logs/{id} the way a Nomad client does: a stream
 // of JSON frames, each carrying a chunk of the file and the offset after it,
@@ -142,6 +147,7 @@ type Nomad struct {
 	checks       map[string]api.AllocCheckStatuses // by copy ID
 	checksStatus int                               // non-zero: every checks read answers it
 
+	ev    eventFake     // the event stream's log (events.go)
 	host  hostFake      // the node and its stats (host.go)
 	place placementFake // node metadata, eligibility, copy moves and plans (placement.go)
 
@@ -208,6 +214,9 @@ func (n *Nomad) Script(jobID string, jobVersion uint64, states ...api.Deployment
 		n.scripts[jobID] = map[uint64][]api.Deployment{}
 	}
 	n.scripts[jobID][jobVersion] = states
+	if len(states) > 0 {
+		n.emitDeployment(jobID, jobVersion, states[0].Status)
+	}
 }
 
 // Default sets the rollout states for every registered version without a
@@ -216,6 +225,15 @@ func (n *Nomad) Default(states ...api.Deployment) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.defaultStates = states
+	if len(states) > 0 {
+		for _, id := range slices.Sorted(maps.Keys(n.jobs)) {
+			for _, j := range n.jobs[id] {
+				if _, scripted := n.scripts[id][*j.Version]; !scripted {
+					n.emitDeployment(id, *j.Version, states[0].Status)
+				}
+			}
+		}
+	}
 }
 
 // Succeed is the usual default: the rollout is running once, then successful.
@@ -287,6 +305,7 @@ func (n *Nomad) setDown(v bool) {
 	n.down = v
 	n.wake() // a blocking query that is waiting re-checks and drops its connection
 	n.wakeLogs()
+	n.wakeEvents() // the open event streams end
 }
 
 // Registrations counts successful register requests.
@@ -325,6 +344,7 @@ func (n *Nomad) store(job *api.Job) *api.Job {
 		j.Stop = new(false)
 	}
 	n.jobs[*j.ID] = append(versions, &j)
+	n.emitJob(*j.ID, "JobRegistered")
 	return &j
 }
 
@@ -348,6 +368,8 @@ func (n *Nomad) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isVars && varsStatus != 0:
 		http.Error(w, "Permission denied", varsStatus)
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/event/stream":
+		n.serveEvents(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/.well-known/"):
 		n.serveDiscovery(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/volume/host/") || r.URL.Path == "/v1/volumes":
@@ -452,6 +474,14 @@ func (n *Nomad) register(w http.ResponseWriter, r *http.Request) {
 	}
 	j := n.store(req.Job)
 	n.cancelOlder(*j.ID, *j.Version)
+	if states, ok := n.scripts[*j.ID][*j.Version]; ok || len(n.defaultStates) > 0 {
+		if !ok {
+			states = n.defaultStates
+		}
+		if len(states) > 0 {
+			n.emitDeployment(*j.ID, *j.Version, states[0].Status)
+		}
+	}
 	n.registrations++
 	n.writeJSON(w, api.JobRegisterResponse{
 		EvalID:         fmt.Sprintf("eval-%d", n.index),
@@ -497,6 +527,7 @@ func (n *Nomad) purge(w http.ResponseWriter, r *http.Request, id string) {
 		versions[len(versions)-1] = &stopped
 		n.stopCopies(id)
 		n.stops[id]++
+		n.emitJob(id, "JobDeregistered")
 		n.writeJSON(w, api.JobDeregisterResponse{EvalID: fmt.Sprintf("eval-%d", n.index), JobModifyIndex: n.index})
 		return
 	}
@@ -506,8 +537,10 @@ func (n *Nomad) purge(w http.ResponseWriter, r *http.Request, id string) {
 		delete(n.allocs, id)
 		n.allocIndex++
 		n.wake()
+		n.emitAllocs(id)
 	}
 	n.purged[id] = true
+	n.emitJob(id, "JobDeregistered")
 	n.writeJSON(w, api.JobDeregisterResponse{EvalID: fmt.Sprintf("eval-%d", n.index), JobModifyIndex: n.index})
 }
 
@@ -530,6 +563,7 @@ func (n *Nomad) stopCopies(jobID string) {
 		list[i] = &next
 	}
 	n.wake()
+	n.emitAllocs(jobID)
 }
 
 // killedRunStates is the task states of a batch job's copy that was still
@@ -621,6 +655,7 @@ func (n *Nomad) cancelOlder(jobID string, newest uint64) {
 			Status:            api.DeploymentStatusCancelled,
 			StatusDescription: "Cancelled due to newer version of job",
 		}}
+		n.emitDeployment(jobID, v, api.DeploymentStatusCancelled)
 	}
 }
 
@@ -648,6 +683,9 @@ func (n *Nomad) deployments(w http.ResponseWriter, id string) {
 		}
 		if len(states) > 1 {
 			n.scripts[id][v] = states[1:]
+			if next := states[1]; next.Status != d.Status || next.StatusDescription != d.StatusDescription {
+				n.emitDeployment(id, v, next.Status) // the next read sees a different state
+			}
 		} else {
 			n.scripts[id][v] = states
 		}
@@ -673,13 +711,17 @@ func (n *Nomad) SetDeployment(jobID string, jobVersion uint64, status string) {
 	n.latest[jobID] = api.Deployment{
 		ID: jobID + "-deployment-latest", JobID: jobID, JobVersion: jobVersion, Status: status,
 	}
+	n.emitDeployment(jobID, jobVersion, status)
 }
 
 // ClearDeployment removes what SetDeployment set for jobID.
 func (n *Nomad) ClearDeployment(jobID string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	delete(n.latest, jobID)
+	if d, ok := n.latest[jobID]; ok {
+		delete(n.latest, jobID)
+		n.emitDeployment(jobID, d.JobVersion, "")
+	}
 }
 
 func (n *Nomad) latestDeployment(w http.ResponseWriter, id string) {
@@ -794,6 +836,7 @@ func (n *Nomad) SetCopies(jobID string, allocs ...api.AllocationListStub) {
 	if changed {
 		n.allocIndex = next
 		n.wake()
+		n.emitAllocs(jobID)
 	}
 }
 
@@ -1022,6 +1065,7 @@ func (n *Nomad) forcePeriodic(w http.ResponseWriter, id string) {
 		TaskGroup: "backup", ClientStatus: "pending"}}
 	n.allocIndex++
 	n.wake()
+	n.emitAllocs(*child.ID)
 	n.evals = append(n.evals, *child.ID)
 	n.writeJSON(w, struct{ EvalID string }{fmt.Sprintf("eval-%d", len(n.evals)-1)})
 }
@@ -1080,6 +1124,8 @@ func (n *Nomad) FinishRun(jobID string, ok bool, failedTask, stdout, stderr stri
 		TaskGroup: *versions[len(versions)-1].TaskGroups[0].Name, ClientStatus: status, TaskStates: states}}
 	n.allocIndex++
 	n.wake()
+	n.emitJob(jobID, "JobRegistered") // the job is dead now
+	n.emitAllocs(jobID)
 	n.mu.Unlock()
 	// The fake keeps output per copy, not per task: enough for a reader that
 	// asks for one task's stdout or stderr.
@@ -1145,6 +1191,8 @@ func (n *Nomad) setRunCopy(jobID string, c runCopy) {
 		ClientStatus: c.status, DesiredStatus: desired, TaskStates: states,
 		CreateIndex: n.allocIndex, ModifyIndex: n.allocIndex}}
 	n.wake()
+	n.emitJob(jobID, "JobRegistered") // its status may have changed
+	n.emitAllocs(jobID)
 }
 
 // StartRun makes the run's copy running: its service task started.

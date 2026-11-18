@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -288,74 +286,6 @@ func TestAllCopies(t *testing.T) {
 	}
 }
 
-func TestChangedJobs(t *testing.T) {
-	mark := func(job string, i uint64) allocMark { return allocMark{jobID: job, modifyIndex: i} }
-	before := map[string]allocMark{"a": mark("blog", 1), "b": mark("blog", 1), "c": mark("whoami", 1)}
-
-	tests := []struct {
-		name  string
-		after map[string]allocMark
-		want  []string
-	}{
-		{"nothing changed", map[string]allocMark{"a": mark("blog", 1), "b": mark("blog", 1), "c": mark("whoami", 1)}, []string{}},
-		{"one changed", map[string]allocMark{"a": mark("blog", 1), "b": mark("blog", 1), "c": mark("whoami", 2)}, []string{"whoami"}},
-		{"added", map[string]allocMark{"a": mark("blog", 1), "b": mark("blog", 1), "c": mark("whoami", 1), "d": mark("shop", 3)}, []string{"shop"}},
-		{"removed", map[string]allocMark{"a": mark("blog", 1), "c": mark("whoami", 1)}, []string{"blog"}},
-		{"deduplicated and sorted", map[string]allocMark{"a": mark("blog", 2), "b": mark("blog", 2), "x": mark("api", 2)}, []string{"api", "blog", "whoami"}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := changedJobs(before, tc.after); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("changedJobs = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// reports collects what WatchCopies calls back with.
-type reports struct {
-	mu   sync.Mutex
-	list [][]string
-}
-
-func (r *reports) add(jobs []string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.list = append(r.list, jobs)
-}
-
-func (r *reports) snapshot() [][]string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([][]string(nil), r.list...)
-}
-
-// watchCopies starts WatchCopies and returns what it reports, a function that
-// waits for the watcher's first answer, and one that stops it.
-func watchCopies(t *testing.T, d *Deployer, requests func() int) (*reports, func()) {
-	t.Helper()
-	got := &reports{}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		d.WatchCopies(ctx, got.add)
-	}()
-	stop := func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("WatchCopies did not return after its context ended")
-		}
-	}
-	t.Cleanup(stop)
-	// The first answer is the starting point: changes made before it are not
-	// reported, so wait for it.
-	waitUntil(t, "the first answer", func() bool { return requests() >= 1 })
-	return got, stop
-}
-
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -365,122 +295,6 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-}
-
-func TestWatchCopies(t *testing.T) {
-	running := func(id string) api.AllocationListStub {
-		return api.AllocationListStub{ID: id, TaskGroup: "web", ClientStatus: "running"}
-	}
-	yes, no := true, false
-
-	t.Run("a new copy, a health change and a removed copy each report the job", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		nomad.SetCopies("blog", running("b1"))
-		got, _ := watchCopies(t, d, nomad.AllocationRequests)
-
-		waitReports := func(n int) [][]string {
-			waitUntil(t, "a report", func() bool { return len(got.snapshot()) >= n })
-			return got.snapshot()
-		}
-
-		nomad.SetCopies("blog", running("b1"), running("b2")) // added
-		if r := waitReports(1); !reflect.DeepEqual(r[0], []string{"blog"}) {
-			t.Fatalf("after adding a copy: %v", r)
-		}
-
-		h := running("b1")
-		h.DeploymentStatus = &api.AllocDeploymentStatus{Healthy: &yes}
-		nomad.SetCopies("blog", h, running("b2")) // changed
-		if r := waitReports(2); !reflect.DeepEqual(r[1], []string{"blog"}) {
-			t.Fatalf("after a health change: %v", r)
-		}
-		h.DeploymentStatus = &api.AllocDeploymentStatus{Healthy: &no}
-		nomad.SetCopies("blog", h, running("b2"))
-		waitReports(3)
-
-		nomad.SetCopies("blog", h) // removed b2
-		if r := waitReports(4); !reflect.DeepEqual(r[3], []string{"blog"}) {
-			t.Fatalf("after removing a copy: %v", r)
-		}
-	})
-
-	t.Run("several jobs at once are one sorted, distinct report", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		got, _ := watchCopies(t, d, nomad.AllocationRequests)
-		nomad.SetCopies("whoami", running("w1"))
-		nomad.SetCopies("blog", running("b1"), running("b2"))
-		waitUntil(t, "both jobs reported", func() bool {
-			seen := map[string]bool{}
-			for _, r := range got.snapshot() {
-				for _, j := range r {
-					seen[j] = true
-				}
-			}
-			return seen["blog"] && seen["whoami"]
-		})
-		for _, r := range got.snapshot() {
-			if !slices.IsSorted(r) || len(r) != len(distinct(r)) {
-				t.Errorf("report %v isn't sorted and distinct", r)
-			}
-		}
-	})
-
-	t.Run("the starting point is not a change", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		nomad.SetCopies("blog", running("b1"))
-		got, stop := watchCopies(t, d, nomad.AllocationRequests)
-		time.Sleep(50 * time.Millisecond)
-		stop()
-		if r := got.snapshot(); len(r) != 0 {
-			t.Errorf("reports = %v, want none for allocations that were already there", r)
-		}
-	})
-
-	t.Run("nothing changed, no call", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		nomad.SetCopies("blog", running("b1"))
-		got, stop := watchCopies(t, d, nomad.AllocationRequests)
-		nomad.SetCopies("blog", running("b1")) // the same again: Nomad's index doesn't move
-		nomad.SetCopies("other")               // nothing there to remove
-		time.Sleep(50 * time.Millisecond)
-		stop()
-		if r := got.snapshot(); len(r) != 0 {
-			t.Errorf("reports = %v, want none", r)
-		}
-	})
-
-	t.Run("Nomad down, then up, resumes", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		nomad.SetCopies("blog", running("b1"))
-		got, _ := watchCopies(t, d, nomad.AllocationRequests)
-
-		nomad.Down()
-		nomad.SetCopies("blog", running("b1"), running("b2")) // changes while it can't hear
-		time.Sleep(30 * time.Millisecond)
-		nomad.Up()
-
-		waitUntil(t, "a report after Nomad came back", func() bool { return len(got.snapshot()) >= 1 })
-		if r := got.snapshot(); !reflect.DeepEqual(r[0], []string{"blog"}) {
-			t.Errorf("reports = %v, want blog", r)
-		}
-		// And it keeps watching.
-		nomad.SetCopies("blog", running("b1"))
-		waitUntil(t, "a second report", func() bool { return len(got.snapshot()) >= 2 })
-	})
-
-	t.Run("cancelling the context returns, even while waiting on Nomad", func(t *testing.T) {
-		d, _, nomad := newTestDeployer(t)
-		_, stop := watchCopies(t, d, nomad.AllocationRequests)
-		stop() // fails the test if WatchCopies doesn't return within 5 s
-	})
-}
-
-func distinct(s []string) map[string]bool {
-	m := map[string]bool{}
-	for _, v := range s {
-		m[v] = true
-	}
-	return m
 }
 
 // plainCopyOf is copyOf with no rollout known: what the status rules say from the stub alone.
