@@ -39,8 +39,10 @@ type attentionItemJSON struct {
 	Server string `json:"server,omitempty"`
 	// copies_unplaced (feature 042): how many copies Nomad has queued; server_move_incomplete: how many
 	// movable copies still run on the server (named by server above).
-	Queued int       `json:"queued,omitzero"`
-	Left   int       `json:"left,omitzero"`
+	Queued int `json:"queued,omitzero"`
+	Left   int `json:"left,omitzero"`
+	// scale_at_max (feature 043): the service's count, which is its maximum.
+	Count  int       `json:"count,omitzero"`
 	At     time.Time `json:"at"`
 	Detail string    `json:"detail,omitempty"`
 }
@@ -62,6 +64,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	}
 	if it.Kind == service.AttentionCopiesUnplaced {
 		out.Queued = it.Queued
+	}
+	if it.Kind == service.AttentionScaleAtMax {
+		out.Count = it.Count
 	}
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning

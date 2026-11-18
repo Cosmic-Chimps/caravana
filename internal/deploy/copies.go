@@ -248,7 +248,10 @@ func (d *Deployer) Copies(ctx context.Context, jobID string) ([]Copy, error) {
 	}
 	active := rollouts{}
 	active.add(dep)
-	return listed(d.copiesOf(ctx, stubs, active)), nil
+	// Aliased after listed: which terminal copies to show is decided on
+	// Nomad's own versions, or a scale-down's stopped copies would show as
+	// copies of the live deployment.
+	return aliased(listed(d.copiesOf(ctx, stubs, active)), jobID, d.versionAliases(ctx)), nil
 }
 
 // AllCopies lists every job's copies, by job ID, in one request, for the Apps
@@ -271,8 +274,9 @@ func (d *Deployer) AllCopies(ctx context.Context) (map[string][]Copy, error) {
 	for i, s := range stubs {
 		byJob[s.JobID] = append(byJob[s.JobID], copies[i])
 	}
+	aliases := d.versionAliases(ctx)
 	for id, list := range byJob {
-		byJob[id] = listed(list)
+		byJob[id] = aliased(listed(list), id, aliases)
 	}
 	return byJob, nil
 }

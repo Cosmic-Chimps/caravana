@@ -77,6 +77,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, identityCases()...)
 	cases = append(cases, dnsCases()...)
 	cases = append(cases, placementCases()...)
+	cases = append(cases, scaleCases()...)
 	cases = append(cases, publishedCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)
@@ -281,6 +282,40 @@ func placementCases() []goldenCase {
 		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
 	}}
 	return []goldenCase{{name: "placement", app: shop, deployment: dep, settings: labSettings()}}
+}
+
+// scaleCases is a scaled service whose starting count is 2 (count and canary
+// 2, with the spread), a scaled service at one copy (it gets the spread too,
+// so the copies it adds later spread), and a service that doesn't scale (no
+// spread at one copy), feature 043.
+func scaleCases() []goldenCase {
+	shop := app.App{
+		ID:     "shop",
+		Source: app.Source{Kind: app.SourceImage},
+		Services: []app.Service{
+			{
+				Name:     "web",
+				Image:    "ghcr.io/acme/web:main",
+				Replicas: new(2),
+				Ports:    []app.Port{{Name: "http", ContainerPort: 3000}},
+				Domains:  []app.Domain{{Host: "shop.example.com", Port: "http"}},
+				Health:   &app.HealthCheck{Path: "/"},
+				Scale:    &app.Scale{Min: 1, Max: 3, Target: app.ScaleTarget{CPU: 70}},
+			},
+			{
+				Name:  "api",
+				Image: "ghcr.io/acme/api:main",
+				Scale: &app.Scale{Min: 1, Max: 2, Target: app.ScaleTarget{CPU: 80}, CooldownSeconds: 120},
+			},
+			{Name: "worker", Image: "ghcr.io/acme/worker:main"},
+		},
+	}
+	dep := app.Deployment{ID: "d1", Trigger: app.TriggerManual, Digests: map[string]string{
+		"web":    "ghcr.io/acme/web@sha256:" + strings.Repeat("d", 64),
+		"api":    "ghcr.io/acme/api@sha256:" + strings.Repeat("c", 64),
+		"worker": "ghcr.io/acme/worker@sha256:" + strings.Repeat("e", 64),
+	}}
+	return []goldenCase{{name: "scale", app: shop, deployment: dep, settings: labSettings()}}
 }
 
 // stopTimeoutCases is a service that sets its stop timeout, on a service

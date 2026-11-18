@@ -383,6 +383,7 @@ func (s *Store) DeleteApp(ctx context.Context, id string) error {
 		"DELETE FROM sent_problems WHERE app_id = ?",
 		"DELETE FROM problem_events WHERE app_id = ?",
 		"DELETE FROM app_actions WHERE app_id = ?",
+		"DELETE FROM service_counts WHERE app_id = ?",
 		"DELETE FROM schedule_runs WHERE app_id = ?",
 		"DELETE FROM schedules WHERE app_id = ?",
 		"DELETE FROM domain_checks WHERE app_id = ?",

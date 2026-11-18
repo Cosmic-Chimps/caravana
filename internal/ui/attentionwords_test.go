@@ -38,7 +38,7 @@ func itemFor(kind service.AttentionKind, elsewhere bool) service.AttentionItem {
 		InstalledKernel: "7.0.0-40-generic", RunningKernel: "7.0.0-38-generic", Packages: []string{"libc6", "linux-base"},
 		Updates: 14, Security: 9,
 		UpdateRunID: "3f6c0d2a9b7e41c58d0f2e6a1b9c7d40", UpdateVersion: "0.17.0", UpdateFrom: "0.16.0", UpdateState: store.UpdateRolledBack,
-		Server: "fsn-2"}
+		Server: "fsn-2", Count: 3}
 	if elsewhere {
 		it.AppID, it.Project, it.Environment = "shop--staging--web", "shop", "staging"
 		it.AppName = "web"

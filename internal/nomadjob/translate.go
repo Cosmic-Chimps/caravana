@@ -299,11 +299,13 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		// The service's own task is always the first.
 		Tasks: []*api.Task{task(a.ID, svc, image, s, private)},
 	}
-	if count > 1 {
+	if count > 1 || (svc.Scale != nil && svc.Scale.Max > 1) {
 		// Spread the copies over the cluster's servers. Without it Nomad
 		// bin-packs, and a redeploy can put every copy on the emptiest
-		// server (feature 031, research L8). A single copy has nothing to
-		// spread, so its job doesn't change.
+		// server (feature 031, research L8). A single copy of a service that
+		// never scales has nothing to spread, so its job doesn't change; a
+		// scaled service gets the spread at one copy too, so the copies it
+		// adds later are spread (feature 043).
 		tg.Spreads = []*api.Spread{{Attribute: "${node.unique.id}", Weight: new(int8(100))}}
 	}
 	tg.Constraints, tg.Affinities = placementBlocks(svc)

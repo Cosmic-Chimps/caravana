@@ -143,6 +143,10 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	case service.AttentionCopiesUnplaced:
 		// Copies Nomad can't place: the rules that cause it are on the service's Configure panel.
 		row.Action, row.Href = "Open placement", appHref+"/configure#placement-"+url.PathEscape(it.Service)
+	case service.AttentionScaleAtMax:
+		// A service at its maximum and still over its target: raise it on the service's Scaling panel.
+		row.Mark = "warning"
+		row.Action, row.Href = "Open scaling", appHref+"/configure#scale-"+url.PathEscape(it.Service)
 	case service.AttentionServerMoveIncomplete:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open server", serverHref(it.Server)
@@ -215,6 +219,8 @@ func headlineWords(it service.AttentionItem) string {
 		return "is on a disk that is nearly full"
 	case service.AttentionCopiesUnplaced:
 		return "has copies that can't be placed"
+	case service.AttentionScaleAtMax:
+		return "has a service at its maximum copies and still over its target"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

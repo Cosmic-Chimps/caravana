@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -254,6 +255,8 @@ type monTable struct {
 	Sorts []logsBarItem
 	Rows  []monRow
 	Empty string
+	// Scales are the place's last scale steps, newest first (feature 043); none draws nothing.
+	Scales []monScale
 	// Known names the rows the page was drawn with, in their order (rowsKey). The refresh carries
 	// it back and swaps the rows one by one while it still names the rows there are.
 	Known string
@@ -284,6 +287,16 @@ type monNum struct {
 	Warn  bool
 	Usual string
 	Title string
+}
+
+// monScale is one line of the Scaling list: a service, the counts it went between and why (or why it
+// couldn't), and when.
+type monScale struct {
+	Service string
+	Counts  string
+	Reason  string
+	Failed  bool
+	At      clockTime
 }
 
 // monRow is one service of the apps table.
@@ -768,7 +781,24 @@ func (b *monBuilder) table() monTable {
 		t.Rows = append(t.Rows, b.row(sv))
 	}
 	t.Known = rowsKey(t.Rows)
+	t.Scales = b.scales()
 	return t
+}
+
+// scales builds the Scaling list from the view's newest steps.
+func (b *monBuilder) scales() []monScale {
+	var out []monScale
+	for _, st := range b.view.Scales {
+		m := monScale{Service: b.serviceName(st.AppName, st.AppID, st.Service), Reason: st.Reason, Failed: st.Failed(), At: clockOf(b.now, st.StartedAt)}
+		if st.From != nil && st.To != nil {
+			m.Counts = fmt.Sprintf("%d → %d", *st.From, *st.To)
+		}
+		if m.Failed {
+			m.Reason = st.Error
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // row builds one service's row.
@@ -796,6 +826,9 @@ func (b *monBuilder) row(sv service.ServiceMetrics) monRow {
 		row.Mark, row.MarkWord = "warning", "unusual"
 	default:
 		row.Mark, row.MarkWord = "healthy", "healthy"
+	}
+	if sv.ScaleMax > 0 {
+		row.Copies = fmt.Sprintf("%s (%d–%d)", copyCount(sv.Copies), sv.ScaleMin, sv.ScaleMax)
 	}
 	if sv.State == service.ServiceStopped {
 		row.Copies = "stopped"

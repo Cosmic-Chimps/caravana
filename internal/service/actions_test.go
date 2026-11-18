@@ -744,12 +744,12 @@ func TestStatusAndAttentionOfAStoppedApp(t *testing.T) {
 		{ID: "c2", Service: "web", Version: 0, Status: deploy.CopyUnhealthy}}
 
 	for _, nomadErr := range []error{nil, errors.New("nomad down")} {
-		if got := statusOfRecord(rec, nil, ended, nomadErr).State; got != StateStopped {
+		if got := statusOfRecord(rec, nil, nil, ended, nomadErr).State; got != StateStopped {
 			t.Errorf("state with nomadErr %v = %s, want stopped", nomadErr, got)
 		}
 	}
 	rec.StoppedAt = nil
-	if got := statusOfRecord(rec, nil, ended, nil).State; got == StateStopped {
+	if got := statusOfRecord(rec, nil, nil, ended, nil).State; got == StateStopped {
 		t.Error("a running app is stopped")
 	}
 

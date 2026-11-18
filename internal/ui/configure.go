@@ -45,6 +45,8 @@ type defPanel struct {
 	Identities []identityView
 	// Placement is the service's placement, read-only: set in the Compose overlay (feature 042).
 	Placement *placementView
+	// Scale is the service's scaling, read-only: set in the Compose overlay (feature 043).
+	Scale *scaleView
 }
 
 // defPanelOf makes a panel from its facts, folding those with no value into
@@ -313,6 +315,8 @@ type editServiceView struct {
 	Identities []identityView
 	// Placement is the service's Placement panel, with its own form (feature 042).
 	Placement placementView
+	// Scale is the service's Scaling panel, with its own form (feature 043).
+	Scale scaleView
 }
 
 // registryPrereq is the grid's "Needs a container registry" notice (the
@@ -1052,6 +1056,25 @@ func (s *server) addPlacement(r *http.Request, tab *configureTab, sum service.Ap
 			if tab.Edit.Panels[i].Title == svc.Name {
 				v := placementViewOf(sum.App.ID, sum.Revision, svc, servers, false, stopped, nil)
 				tab.Edit.Panels[i].Placement = &v
+			}
+		}
+	}
+}
+
+// addScale gives every service's panel its Scaling: a form of its own for an app edited in the console,
+// the rule read-only for an app that keeps its Compose file. draft is what a refused post typed.
+func addScale(tab *configureTab, sum service.AppSummary, draft *scalePost) {
+	stopped := sum.StoppedAt != nil
+	for _, svc := range sum.App.Services {
+		for i := range tab.Edit.Services {
+			if tab.Edit.Services[i].Name == svc.Name {
+				tab.Edit.Services[i].Scale = scaleViewOf(sum.App.ID, sum.Revision, svc, sum.Compose == nil, stopped, draft)
+			}
+		}
+		for i := range tab.Edit.Panels {
+			if tab.Edit.Panels[i].Title == svc.Name {
+				v := scaleViewOf(sum.App.ID, sum.Revision, svc, false, stopped, nil)
+				tab.Edit.Panels[i].Scale = &v
 			}
 		}
 	}

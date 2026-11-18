@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.46.0
+  version: 0.47.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -5852,7 +5852,12 @@ components:
         replicas:
           type: integer
           minimum: 1
-          description: Leave it out for 1.
+          description: |
+            Leave it out for 1. With `scale` it is only the starting count (it must lie within
+            `scale.min` to `scale.max`, `invalid_field` on `replicas` otherwise; absent means
+            `scale.min`): every deploy runs the count the service has now.
+        scale:
+          $ref: "#/components/schemas/ServiceScale"
         resources:
           type: object
           additionalProperties: false
@@ -6001,6 +6006,8 @@ components:
             $ref: "#/components/schemas/Identity"
         placement:
           $ref: "#/components/schemas/Placement"
+        scale:
+          $ref: "#/components/schemas/ServiceScale"
         publish:
           type: array
           description: |
@@ -6124,6 +6131,61 @@ components:
         error:
           type: string
           description: One sentence in Caravana's words for an `incomplete` move; empty otherwise.
+
+    ServiceScale:
+      type: object
+      additionalProperties: false
+      required: [min, max, target]
+      description: |
+        Lets Caravana change how many copies the service runs, from its own metrics. After each
+        sampler tick it reads the service's last minutes and takes at most one step: one copy
+        more when the value has been above the target over the last 3 minutes, one fewer when
+        it would stay well under it (80 % of the target; half of it for `p95`) over the last 5,
+        never outside `min` to `max` and never inside the cooldown after a step or a deploy.
+        Every step is an app action `scale` with its reason. A deploy keeps the count the
+        service has now, within `min` to `max`, and its canaries follow it; `replicas` is only
+        the first deploy's starting count.
+
+        Refused with `invalid_field` naming the field: `scale.min` under 1, `scale.max` under
+        `min` or over 20, `scale.target` with no value or more than one, a value out of range,
+        `scale.cooldownSeconds` outside 60 to 3600, a service with volumes or a published port
+        (`scale`: it runs one copy), and a `requestsPerCopy` or `p95` target on a service with
+        no domain (`scale.target`: requests are measured at the proxy; scale on `cpu`). A
+        promotion keeps the target's own scale; `Copy to` keeps it, and the copy's first deploy
+        asks for the domain.
+      properties:
+        min: {type: integer, minimum: 1, maximum: 20}
+        max: {type: integer, minimum: 1, maximum: 20}
+        target:
+          $ref: "#/components/schemas/ServiceScaleTarget"
+        cooldownSeconds:
+          type: integer
+          minimum: 60
+          maximum: 3600
+          description: Seconds to wait after a step or a deploy before judging again. Absent means 300.
+
+    ServiceScaleTarget:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      description: The one value the copies are kept near. Exactly one property is set.
+      properties:
+        cpu:
+          type: integer
+          minimum: 10
+          maximum: 200
+          description: Percent of the CPU the copies reserve (`resources.cpuMHz`).
+        requestsPerCopy:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          description: Requests a second per copy, measured at the proxy, so the service needs a domain.
+        p95:
+          type: integer
+          minimum: 10
+          maximum: 60000
+          description: Milliseconds the slowest 5 % of requests may take, measured at the proxy, so the service needs a domain.
 
     ServiceDNS:
       type: object
@@ -7913,7 +7975,12 @@ components:
               service is short.
             - `not_running`: no copy is healthy. This is also the state of an app that wants no
               copies (one with no services yet).
-        wantedCopies: {type: integer, minimum: 0}
+        wantedCopies:
+          type: integer
+          minimum: 0
+          description: |
+            The sum of every service's wanted copies: its `replicas` (1 when absent), or for a
+            service with `scale` the count it has now.
         healthyCopies: {type: integer, minimum: 0}
         liveVersion:
           type: integer
@@ -7933,7 +8000,10 @@ components:
       required: [name, wantedCopies, healthyCopies]
       properties:
         name: {type: string}
-        wantedCopies: {type: integer, minimum: 0}
+        wantedCopies:
+          type: integer
+          minimum: 0
+          description: The service's `replicas` (1 when absent); for a service with `scale`, the count it has now.
         healthyCopies: {type: integer, minimum: 0, description: Healthy copies of the live version.}
 
     AppAction:
@@ -7946,13 +8016,14 @@ components:
         id: {type: string}
         action:
           type: string
-          enum: [stop, start, restart, run, terminal]
+          enum: [stop, start, restart, run, terminal, scale]
         trigger:
           type: string
-          enum: [manual, console, schedule]
+          enum: [manual, console, schedule, autoscale]
           description: |
             How it was asked for. `manual` is the API; `console` is the web console; `schedule`
-            is a schedule's run in the running copy (`run` only).
+            is a schedule's run in the running copy (`run` only); `autoscale` is a step of the
+            service's `scale` (`scale` only).
         status:
           type: string
           enum: [running, succeeded, failed]
@@ -7967,7 +8038,20 @@ components:
           description: "`run` and `terminal` only: the copy the command or shell ran in."
         service:
           type: string
-          description: "`run` and `terminal` only: the copy's service."
+          description: "`run`, `terminal` and `scale`: the service the action is about."
+        fromCount:
+          type: integer
+          minimum: 0
+          description: "`scale` only: the service's count before the step."
+        toCount:
+          type: integer
+          minimum: 0
+          description: "`scale` only: the count the step asked Nomad for. A `failed` step left the count as it was."
+        reason:
+          type: string
+          description: |
+            `scale` only: why, in one sentence of Caravana's words with numbers only, such as
+            `62 requests a second per copy over the last 3 minutes, target 50`.
         program:
           type: string
           description: |
@@ -8029,7 +8113,10 @@ components:
         version:
           type: integer
           minimum: 0
-          description: The job version the copy runs.
+          description: |
+            The version of the deployment the copy runs. Nomad makes a new job version for each
+            scale step and updates the running copies to it; those versions read as the
+            deployment they scaled, so a scale never looks like a deploy.
         status:
           type: string
           enum: [starting, healthy, unhealthy, stopped, failed]
@@ -9370,7 +9457,7 @@ components:
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
             os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
-            copies_unplaced, server_move_incomplete]
+            copies_unplaced, server_move_incomplete, scale_at_max]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -9414,7 +9501,12 @@ components:
             or the rules change. `server_move_incomplete`, a warning: the server's newest move of work off
             it ended `incomplete` and the server still takes no new work (`left` says how many copies still
             run there; "two: the move-off passed its deadline; 2 copies still run there."). It goes when
-            the server accepts work again (`undrainServer`). Clients should accept kinds they don't know.
+            the server accepts work again (`undrainServer`). `scale_at_max`, a warning (feature 043): a
+            service with `scale` runs its maximum (`count` says how many copies) and its value over the
+            last 10 minutes is still above its target ("blog/web: at its maximum of 3 copies and still
+            over its target. Raise the maximum, give it more CPU, or add a server."). It is read from
+            the stored counts and minute rows, and goes when the load drops, the maximum is raised or
+            the app stops. Clients should accept kinds they don't know.
         appId:
           type: string
           description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
@@ -9456,6 +9548,10 @@ components:
           type: integer
           minimum: 1
           description: For `server_move_incomplete`, how many movable copies still run on the server.
+        count:
+          type: integer
+          minimum: 1
+          description: For `scale_at_max`, the service's count, which is its `scale.max`.
         mount:
           type: string
           description: For `disk_nearly_full`, the filesystem's mount point, such as `/`.

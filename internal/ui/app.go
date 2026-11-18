@@ -501,6 +501,14 @@ type copiesRegion struct {
 	Notice          sentence
 	RefreshHref     string
 	Gone            sentence
+	// Scaling is one line per scaled service, above the table: "web 2 copies · scales 1–3" (feature 043).
+	Scaling []scaleLine
+}
+
+// scaleLine is the Running tab's line for a service that scales on its own.
+type scaleLine struct {
+	Service string
+	Words   string
 }
 
 // firstDeploy is the guidance of an app that was created and never deployed:
@@ -555,6 +563,26 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 		return copiesRegion{}, err
 	}
 
+	rec, recErr := s.svc.GetApp(ctx, appID)
+	if recErr != nil && !errors.Is(recErr, store.ErrNotFound) {
+		return copiesRegion{}, recErr
+	}
+	if recErr == nil {
+		counts, err := s.svc.ServiceCounts(ctx, appID)
+		if err != nil {
+			return copiesRegion{}, err
+		}
+		for _, svc := range rec.App.Services {
+			if sc := svc.Scale; sc != nil {
+				n, ok := counts[svc.Name]
+				if !ok {
+					n = svc.CountFor(nil)
+				}
+				region.Scaling = append(region.Scaling, scaleLine{Service: svc.Name, Words: fmt.Sprintf("%s · scales %d–%d", copyCount(n), sc.Min, sc.Max)})
+			}
+		}
+	}
+
 	now := s.now()
 	several := len(copies) > 0 && s.multiServer(ctx)
 	for _, c := range copies {
@@ -571,10 +599,6 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 		recs, err := s.svc.ListDeployments(ctx, appID, 1)
 		if err != nil {
 			return copiesRegion{}, err
-		}
-		rec, recErr := s.svc.GetApp(ctx, appID)
-		if recErr != nil && !errors.Is(recErr, store.ErrNotFound) {
-			return copiesRegion{}, recErr
 		}
 		switch {
 		case recErr == nil && rec.StoppedAt != nil:
@@ -1099,6 +1123,9 @@ type configureExtras struct {
 	// Placement, when set, is what a refused placement post typed, with its
 	// messages (feature 042): the panel of that service is drawn from it.
 	Placement *placementPost
+	// Scale, when set, is what a refused scaling post typed, with its messages
+	// (feature 043): the panel of that service is drawn from it.
+	Scale *scalePost
 }
 
 // configurePage draws the Configure tab with the given status. An unknown app
@@ -1190,6 +1217,7 @@ func (s *server) configurePage(w http.ResponseWriter, r *http.Request, status in
 		tab.ComposeForm = &v
 	}
 	s.addPlacement(r, tab, sum, extra.Placement) // after the read-only panels exist
+	addScale(tab, sum, extra.Scale)
 	if !sum.App.Defined() {
 		// Nothing to edit yet: the form that gives it a definition replaces the per-service one.
 		form := newForm()

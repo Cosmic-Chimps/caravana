@@ -59,7 +59,7 @@ func TestWantedCopies(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := wantedCopies(tc.app); got != tc.want {
+			if got := wantedCopies(tc.app, nil); got != tc.want {
 				t.Errorf("wantedCopies = %d, want %d", got, tc.want)
 			}
 		})
@@ -132,7 +132,7 @@ func TestStatusOf(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := statusOf(tc.app, tc.latest, tc.copies, tc.nomadErr)
+			got := statusOf(tc.app, nil, tc.latest, tc.copies, tc.nomadErr)
 			if got.State != tc.wantState || got.WantedCopies != tc.wantWanted || got.HealthyCopies != tc.wantHealth {
 				t.Errorf("status = %s wanted %d healthy %d; want %s wanted %d healthy %d",
 					got.State, got.WantedCopies, got.HealthyCopies, tc.wantState, tc.wantWanted, tc.wantHealth)
@@ -182,7 +182,7 @@ func TestStatusOfServices(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := statusOf(tc.app, latest(store.StatusHealthy), tc.copies, tc.nomadErr).Services
+			got := statusOf(tc.app, nil, latest(store.StatusHealthy), tc.copies, tc.nomadErr).Services
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Services = %+v, want %+v", got, tc.want)
 			}
@@ -198,13 +198,13 @@ func TestStatusOfReportedCopies(t *testing.T) {
 		copyOfVersion("web", 6, deploy.CopyHealthy), copyOfVersion("web", 7, deploy.CopyFailed),
 		copyOfVersion("web", 5, deploy.CopyStopped), {Service: "web", Version: 6, Status: deploy.CopyHealthy, Stopping: true},
 	}
-	if got := statusOf(appWith("a", 3), latest(store.StatusHealthy), copies, nil).ReportedCopies; got != 3 {
+	if got := statusOf(appWith("a", 3), nil, latest(store.StatusHealthy), copies, nil).ReportedCopies; got != 3 {
 		t.Errorf("ReportedCopies = %d, want 3 (starting, unhealthy, healthy; not failed, stopped or stopping)", got)
 	}
-	if got := statusOf(appWith("a", 1), latest(store.StatusHealthy), nil, nil).ReportedCopies; got != 0 {
+	if got := statusOf(appWith("a", 1), nil, latest(store.StatusHealthy), nil, nil).ReportedCopies; got != 0 {
 		t.Errorf("ReportedCopies without copies = %d, want 0", got)
 	}
-	if got := statusOf(appWith("a", 1), latest(store.StatusHealthy), copies, errors.New("down")).ReportedCopies; got != 0 {
+	if got := statusOf(appWith("a", 1), nil, latest(store.StatusHealthy), copies, errors.New("down")).ReportedCopies; got != 0 {
 		t.Errorf("ReportedCopies with Nomad unreadable = %d, want 0", got)
 	}
 }
@@ -962,4 +962,38 @@ func TestDeleteApp(t *testing.T) {
 			t.Error("the new app isn't in Nomad")
 		}
 	})
+}
+
+// A scaled service wants the count it has now, not its starting replicas:
+// scaled down from 3 to 1 it is healthy with one copy (feature 043).
+func TestStatusOfScaledService(t *testing.T) {
+	healthy := deploy.CopyHealthy
+	scaled := appWith("a", 3, 1)
+	scaled.Services[0].Scale = &app.Scale{Min: 1, Max: 4, Target: app.ScaleTarget{CPU: 70}}
+	one := []deploy.Copy{copyOfVersion("web", 7, healthy), copyOfVersion("worker", 7, healthy)}
+
+	tests := []struct {
+		name       string
+		counts     map[string]int
+		copies     []deploy.Copy
+		wantState  AppState
+		wantWanted int
+		wantWeb    int
+	}{
+		{"scaled down to 1: healthy", map[string]int{"web": 1}, one, StateHealthy, 2, 1},
+		{"no count stored: the starting count", nil, one, StateDegraded, 4, 3},
+		{"scaled up to 4 and short of copies", map[string]int{"web": 4}, one, StateDegraded, 5, 4},
+		{"scaled up to 2 and complete", map[string]int{"web": 2},
+			[]deploy.Copy{copyOfVersion("web", 7, healthy), copyOfVersion("web", 7, healthy), copyOfVersion("worker", 7, healthy)}, StateHealthy, 3, 2},
+		{"a count for an unscaled service is ignored", map[string]int{"worker": 5}, one, StateDegraded, 4, 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := statusOf(scaled, tc.counts, latest(store.StatusHealthy), tc.copies, nil)
+			if got.State != tc.wantState || got.WantedCopies != tc.wantWanted || got.Services[0].Wanted != tc.wantWeb {
+				t.Errorf("state %s wanted %d web %d; want %s, %d and %d",
+					got.State, got.WantedCopies, got.Services[0].Wanted, tc.wantState, tc.wantWanted, tc.wantWeb)
+			}
+		})
+	}
 }

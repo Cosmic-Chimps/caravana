@@ -244,12 +244,14 @@ func (d *Deployer) LogCopies(ctx context.Context, jobIDs []string) ([]Copy, erro
 	if err != nil {
 		return nil, d.callError("list copies", err)
 	}
+	aliases := d.versionAliases(ctx)
 	var copies []Copy
 	for _, s := range stubs {
 		if !slices.Contains(jobIDs, s.JobID) {
 			continue
 		}
 		c := copyOf(s, nil) // the logs don't use a copy's health
+		c.Version = aliasVersion(aliases, s.JobID, c.Version)
 		c.Gone = c.Terminal
 		copies = append(copies, c)
 	}

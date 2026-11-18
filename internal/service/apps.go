@@ -38,7 +38,7 @@ const (
 // Nomad together.
 type AppStatus struct {
 	State         AppState
-	WantedCopies  int     // the sum of each service's replicas (nil replicas = 1)
+	WantedCopies  int     // the sum of each service's copies: its replicas (nil = 1), or for a scaled service the count it has now
 	HealthyCopies int     // healthy copies of the live version; 0 when Nomad is unreadable
 	LiveVersion   *uint64 // the job version the healthy copies run; nil if none is healthy
 	NomadError    string  // why the state is unknown (also set while rolling out, if Nomad is unreadable)
@@ -68,26 +68,36 @@ type AppSummary struct {
 	LastDeployment *store.DeploymentRecord // nil if the app was never deployed
 }
 
-// wantedCopies is how many copies the stored app asks for.
-func wantedCopies(a app.App) int {
+// wantedCopies is how many copies the stored app asks for. counts is the
+// count each scaled service has now, by service name (feature 043); nil for an
+// app that has none.
+func wantedCopies(a app.App, counts map[string]int) int {
 	n := 0
 	for _, svc := range a.Services {
-		n += serviceCopies(svc)
+		n += serviceCopies(svc, counts)
 	}
 	return n
 }
 
-// serviceCopies is how many copies one service asks for (nil replicas = 1).
-func serviceCopies(svc app.Service) int {
-	if svc.Replicas == nil {
-		return 1
+// serviceCopies is how many copies one service asks for. An unscaled service
+// asks for its replicas (nil = 1). A scaled service asks for the count it has
+// now, which the autoscaler and every deploy keep in counts; until one is
+// stored it asks for its starting count. Replicas alone would call a service
+// scaled down to 1 of a starting 3 degraded.
+func serviceCopies(svc app.Service, counts map[string]int) int {
+	if svc.Scale != nil {
+		if n, ok := counts[svc.Name]; ok {
+			return n
+		}
+		return svc.CountFor(nil)
 	}
-	return *svc.Replicas
+	return svc.CountFor(nil)
 }
 
 // statusOf derives an app's status (data-model "App status"). It is pure: no
 // I/O, so the table test calls it directly. nomadErr is non-nil when copies
-// couldn't be read; copies is then ignored.
+// couldn't be read; copies is then ignored. counts is the count each scaled
+// service has now (see serviceCopies).
 //
 // Rules, in order: latest deployment pending or running is rolling_out;
 // unreadable Nomad is unknown; healthy >= wanted, with no service short of its
@@ -99,8 +109,8 @@ func serviceCopies(svc app.Service) int {
 // nothing for long). The live version is the newest version that has a
 // healthy copy, and only copies of that version count, so a healthy copy of
 // an old version never hides a broken new one.
-func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
-	st := AppStatus{WantedCopies: wantedCopies(a)}
+func statusOf(a app.App, counts map[string]int, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
+	st := AppStatus{WantedCopies: wantedCopies(a, counts)}
 	if nomadErr != nil {
 		st.NomadError = nomadErr.Error()
 		copies = nil
@@ -125,7 +135,7 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 	// The same count per service: healthy copies of the live version, as above.
 	anyShort := false
 	for _, svc := range a.Services {
-		ss := ServiceStatus{Name: svc.Name, Wanted: serviceCopies(svc)}
+		ss := ServiceStatus{Name: svc.Name, Wanted: serviceCopies(svc, counts)}
 		if st.LiveVersion != nil {
 			for _, c := range copies {
 				if c.Service == svc.Name && c.Status == deploy.CopyHealthy && !c.Stopping && c.Version == *st.LiveVersion {
@@ -155,8 +165,8 @@ func statusOf(a app.App, latest *store.DeploymentRecord, copies []deploy.Copy, n
 // statusOfRecord is statusOf for a stored app: a stopped app (feature 020.5) is
 // stopped whatever its copies or Nomad say, since stopping is the owner's
 // decision and the store knows it. The counts stay as statusOf made them.
-func statusOfRecord(rec store.AppRecord, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
-	st := statusOf(rec.App, latest, copies, nomadErr)
+func statusOfRecord(rec store.AppRecord, counts map[string]int, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
+	st := statusOf(rec.App, counts, latest, copies, nomadErr)
 	if rec.StoppedAt != nil {
 		st.State = StateStopped
 	}
@@ -198,6 +208,10 @@ func (s *Service) ListAppsIn(ctx context.Context, project, environment string) (
 	if nomadErr != nil {
 		s.log.Warn("can't read copies from Nomad; apps show as unknown", "error", nomadErr)
 	}
+	counts, err := s.store.ServiceCounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list apps: %w", err)
+	}
 
 	out := make([]AppSummary, 0, len(recs))
 	for _, rec := range recs {
@@ -206,7 +220,7 @@ func (s *Service) ListAppsIn(ctx context.Context, project, environment string) (
 			sum.LastDeployment = &d
 		}
 		// The job ID is the app ID (constitution II). A missing key is a nil slice.
-		sum.Status = statusOfRecord(rec, sum.LastDeployment, byJob[rec.App.ID], nomadErr)
+		sum.Status = statusOfRecord(rec, counts[rec.App.ID], sum.LastDeployment, byJob[rec.App.ID], nomadErr)
 		out = append(out, sum)
 	}
 	return out, nil
@@ -230,7 +244,11 @@ func (s *Service) AppSummary(ctx context.Context, id string) (AppSummary, error)
 	if nomadErr != nil {
 		s.log.Warn("can't read copies from Nomad; app shows as unknown", "app", id, "error", nomadErr)
 	}
-	sum.Status = statusOfRecord(rec, sum.LastDeployment, copies, nomadErr)
+	counts, err := s.store.ServiceCounts(ctx)
+	if err != nil {
+		return AppSummary{}, fmt.Errorf("app summary %q: %w", id, err)
+	}
+	sum.Status = statusOfRecord(rec, counts[id], sum.LastDeployment, copies, nomadErr)
 	return sum, nil
 }
 

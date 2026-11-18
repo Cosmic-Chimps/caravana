@@ -82,6 +82,10 @@ type Overlay struct {
 	// Placement says on which servers the service's copies may run, as in
 	// app.Service (spec 042).
 	Placement *app.Placement `json:"placement,omitempty"`
+	// Scale lets Caravana change how many copies the service runs from its
+	// own metrics, as in app.Service (spec 043). The file's replicas is then
+	// the starting count.
+	Scale *app.Scale `json:"scale,omitempty"`
 	// Publish opens ports of the service on the server's address (spec 041).
 	// The file's own published numbers only warn: an entry here is how the
 	// owner publishes one.

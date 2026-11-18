@@ -39,7 +39,9 @@ func applyEdit(stored app.App, f editForm) app.App {
 				svc.Domains[j].Port = e.DomainPort
 			}
 		}
-		svc.Replicas = e.Replicas
+		if !s.Scaled { // a scaled service's replicas is its starting count, which the Scaling panel sets
+			svc.Replicas = e.Replicas
+		}
 		if s.ShowHealth {
 			health := app.HealthCheck{}
 			if svc.Health != nil {

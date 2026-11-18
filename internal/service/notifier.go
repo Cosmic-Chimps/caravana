@@ -127,6 +127,9 @@ func problemEvent(it AttentionItem, base string, at time.Time) notify.Event {
 	case AttentionCopiesUnplaced:
 		ev.Title = where + ": copies can't be placed"
 		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
+	case AttentionScaleAtMax:
+		ev.Title = where + ": at its maximum and still over its target"
+		ev.Text, ev.Detail = it.Detail, "" // the sentence is the whole fact
 	default: // a kind added to the list and not yet worded here: still say something
 		ev.Title = fmt.Sprintf("%s: needs you (%s)", where, it.Kind)
 		ev.Text = ev.Title + "."

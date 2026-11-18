@@ -43,7 +43,7 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	fmt.Fprintf(&b, "Run it with: nomad job run %s.nomad.hcl\n", a.ID)
 	b.WriteString("\nWhat it needs from the cluster:\n")
 
-	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups, published []string
+	var routes, teamAuth, volumes, volumeVars, secrets, pulls, backups, published, scaled []string
 	for _, svc := range a.Services {
 		if entry, ok := nomadjob.PrivateRegistry(dep.Digests[svc.Name], private); ok {
 			host := registry.EntryHost(entry)
@@ -97,6 +97,10 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 		if svc.Backup != nil {
 			backups = append(backups, nomadjob.BackupJobID(a.ID, svc.Name))
 		}
+		if svc.Scale != nil {
+			scaled = append(scaled, fmt.Sprintf("%s scales between %d and %d copies (Caravana's autoscaling); count is the starting count.",
+				svc.Name, svc.Scale.Min, svc.Scale.Max))
+		}
 	}
 
 	if len(routes) > 0 {
@@ -138,6 +142,9 @@ func exportHeader(a app.App, dep app.Deployment, deployed time.Time, s nomadjob.
 	}
 	if len(backups) > 0 {
 		fmt.Fprintf(&b, "\nBackups run as separate Nomad jobs (%s), not part of this file.\n", strings.Join(backups, ", "))
+	}
+	if len(scaled) > 0 {
+		b.WriteString("\n" + strings.Join(scaled, "\n") + "\n")
 	}
 	return b.String()
 }

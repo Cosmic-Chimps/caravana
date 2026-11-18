@@ -13,6 +13,10 @@ const (
 	// it (feature 040: a schedule's run in a running copy). It is not a way to
 	// start a deployment: Deployment.Trigger is still one of the three above.
 	TriggerSchedule Trigger = "schedule"
+	// TriggerAutoscale is what an action's record says when Caravana's
+	// autoscaler made it (feature 043: a scale step). Like TriggerSchedule it
+	// is not a way to start a deployment.
+	TriggerAutoscale Trigger = "autoscale"
 )
 
 // Deployment is one go-live event for an App. Image tags are resolved to

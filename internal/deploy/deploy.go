@@ -139,6 +139,17 @@ type Deployer struct {
 
 	// Timing is read on every call; set it before the Deployer is used.
 	Timing Timing
+
+	// VersionAliases says which job versions were made by a scale step and
+	// which deployment's version each one scaled: app ID, then job version,
+	// to the deployment's version. Nomad makes a new job version for a scale
+	// (feature 043, research R1) and updates the running copies to it, so the
+	// copies' versions would read as if a deployment had happened; Copies,
+	// AllCopies and LogCopies show the deployment's instead, and so the live
+	// version, the Running tab and Restart all agree with the deployment
+	// history. nil leaves versions as Nomad has them, and so does an error
+	// (the caller logs it). Set it before the Deployer is used.
+	VersionAliases func(ctx context.Context) (map[string]map[uint64]uint64, error)
 }
 
 // clientConnTimeout is how long the Nomad client library tries a node's own
