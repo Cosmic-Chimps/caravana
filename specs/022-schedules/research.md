@@ -101,6 +101,14 @@ carries both.
   parent still carries digest, env, resources and (at rest) the secrets copy, so it has the same
   staleness problem as (a), plus a parent job that never dies and must be purged with its children
   (`DeleteAppJobs` already purges by prefix, `deploy/backups.go:335-355`).
+- Lab, observed (Nomad 2.0.7, 2026-11-18, task `cs9f`, which asked again whether (b) is worth it): two
+  dispatches of one parameterized job both had `nomad_job_id` = the parent's ID, both read
+  `nomad/jobs/<parent>`, and neither could read its own `nomad/jobs/<child ID>` nor
+  `nomad/jobs/<parent>/run-<id>`. So every run of a schedule would share one secrets copy: no per-run
+  copy readable only by that run is possible without ACL policies Caravana's token can't write. A
+  dispatch also saves no Nomad work: `Job.Dispatch` writes the child as a `JobRegisterRequest` with its
+  evaluation, the same Raft apply as a register (`nomad:nomad/job_endpoint.go`, `Dispatch`). Builds and
+  one-off commands in a fresh copy meet the same rule. (c) stays.
 
 **(c) One one-off batch job registered per run, Caravana's clock** (recommended).
 
