@@ -1677,8 +1677,9 @@ decisions (D15–D18 are the maintainer's changes of the same day); `research.md
   `GRYPE_DB_UPDATE_URL`). A registry scan writes the findings (`vulns.Template`) and the CycloneDX SBOM
   (`/cache/sbom/<hex>.cdx.json`) in one run; the daily rescan reads the SBOM (no pull, no credentials, D17); install
   runs `db update`. A private image's credentials are the job's own variable (`GRYPE_REGISTRY_AUTH_*`), purged with
-  the job. Lab, observed: the group's host network mode isn't enough, the container needs docker
-  `network_mode = "host"` to reach a loopback registry (R5).
+  the job. Scans run on Docker's bridge; only a registry scan of an image on a loopback registry gets the host's
+  network, and then on the group and in the docker config (`network_mode = "host"`): lab, observed, the group's mode
+  alone leaves the container on the bridge (R5).
 - `internal/vulns` (pure) parses the result: one severity scale (critical…info), a stable finding ID (16 hex of
   SHA-256 over check and digest), CVE, EPSS, KEV, a remediation sentence, the scanner's version and the database's
   date. `deploy/scan.go` starts, reads, classifies (fixed classes from Grype's stderr, never its text) and purges.

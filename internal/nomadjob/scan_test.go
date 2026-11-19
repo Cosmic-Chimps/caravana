@@ -14,11 +14,13 @@ import (
 )
 
 const (
-	scanPublicImage  = "traefik/whoami@sha256:1699d99cb4b9ba7d1d9a54ad9a3a9ed8e1a4ee0a0bb1d1d1c1e5a1b1d5e0f4d"
-	scanPrivateImage = "registry.example.com:5000/team/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	scanPublicImage   = "traefik/whoami@sha256:1699d99cb4b9ba7d1d9a54ad9a3a9ed8e1a4ee0a0bb1d1d1c1e5a1b1d5e0f4d"
+	scanPrivateImage  = "registry.example.com:5000/team/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	scanLoopbackImage = "127.0.0.1:5000/gate/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
-// scanCases are the four shapes of scan job.
+// scanCases are the shapes of scan job: the four sources, and a registry on
+// the node's loopback.
 func scanCases() []struct {
 	name string
 	job  *api.Job
@@ -33,6 +35,7 @@ func scanCases() []struct {
 		{"scan-private", ScanJob("r2", ScanSource{Image: scanPrivateImage}, ScanOptions{NodeID: "node-7", DatabaseURL: "https://mirror.example.com/grype/v6/latest.json"}, labSettings(), private)},
 		{"scan-sbom", ScanJob("r3", ScanSource{Image: scanPrivateImage, FromSBOM: true}, opt, labSettings(), private)},
 		{"scan-update", ScanJob("r4", ScanSource{}, ScanOptions{NodeID: "node-7", UpdateOnly: true}, labSettings(), private)},
+		{"scan-loopback", ScanJob("r5", ScanSource{Image: scanLoopbackImage}, opt, labSettings(), private)},
 	}
 }
 
@@ -92,17 +95,24 @@ func TestScanJobShape(t *testing.T) {
 			t.Errorf("%s: meta %v names an app: a scan belongs to an image", name, j.Meta)
 		}
 		g := j.TaskGroups[0]
-		if len(g.Networks) != 1 || g.Networks[0].Mode != "host" {
-			t.Errorf("%s: networks = %+v, want one in host mode", name, g.Networks)
+		// Only a registry scan of an image on the node's loopback gets the host's
+		// network, on the group and on the container; every other scan stays on
+		// Docker's bridge, like every other job.
+		wantMode, wantDocker := "bridge", any(nil)
+		if name == "scan-loopback" {
+			wantMode, wantDocker = "host", "host"
+		}
+		if len(g.Networks) != 1 || g.Networks[0].Mode != wantMode {
+			t.Errorf("%s: networks = %+v, want one in %s mode", name, g.Networks, wantMode)
+		}
+		if mode := g.Tasks[0].Config["network_mode"]; mode != wantDocker {
+			t.Errorf("%s: the task's network_mode = %v, want %v (the group's mode alone leaves Docker's bridge)", name, mode, wantDocker)
 		}
 		if *g.RestartPolicy.Attempts != 0 || *g.ReschedulePolicy.Attempts != 0 {
 			t.Errorf("%s: a scan must not be retried by Nomad", name)
 		}
 		if len(g.Constraints) != 1 || g.Constraints[0].LTarget != "${node.unique.id}" || g.Constraints[0].Operand != "=" || g.Constraints[0].RTarget != "node-7" {
 			t.Errorf("%s: constraints = %+v, want the node that holds the volume", name, g.Constraints)
-		}
-		if mode := g.Tasks[0].Config["network_mode"]; mode != "host" {
-			t.Errorf("%s: the task's network_mode = %v, want host (the group's mode alone leaves Docker's bridge)", name, mode)
 		}
 		if v := g.Volumes["cache"]; v == nil || v.Source != ScanVolume || v.Type != "host" || v.ReadOnly {
 			t.Errorf("%s: volume = %+v, want the writable host volume %s", name, v, ScanVolume)

@@ -139,7 +139,10 @@ database again (the volume goes with the removal), and they must not run at the 
 1. **The group's `network { mode = "host" }` doesn't put the container on the host network.** Docker still used its bridge, so the scan of
    an image on a registry at the node's loopback failed with Grype's "connection refused" (class "the image couldn't be read from its
    registry"). R3 had tested a public image only. `nomadjob.ScanJob` now also sets `network_mode = "host"` in the docker config (goldens and
-   a shape test updated). Reproduced by hand with the pinned Grype image: with `--network host` it scans the registry's image with the
+   a shape test updated). After the review of the same day, only a registry scan of an image on a loopback registry
+   gets the host's network (both settings); every other scan, the database update and SBOM rescans stay on Docker's
+   bridge, whose NAT reaches the database and remote registries, so the scanner can't reach the services listening
+   on the node's loopback (Traefik's metrics, Nomad's and Caravana's APIs). Reproduced by hand with the pinned Grype image: with `--network host` it scans the registry's image with the
    credentials; without, `dial tcp 127.0.0.1:15000: connect: connection refused` on https and http.
 2. **The add-on has no database date until its first scan.** The install's run is `grype db update`, which reports no date, and
    `fillScannerFacts` takes it from the newest successful scan run, so Operator › Security says "database of …" only once an image has

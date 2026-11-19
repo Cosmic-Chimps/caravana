@@ -35,8 +35,7 @@
               "db",
               "update"
             ],
-            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253",
-            "network_mode": "host"
+            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253"
           },
           "Constraints": null,
           "Affinities": null,
@@ -129,7 +128,7 @@
       "Migrate": null,
       "Networks": [
         {
-          "Mode": "host",
+          "Mode": "bridge",
           "Device": "",
           "CIDR": "",
           "IP": "",

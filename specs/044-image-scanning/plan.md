@@ -67,8 +67,11 @@ func ScanJob(runID string, src ScanSource, opt ScanOptions, s Settings, private 
 func SBOMPath(image string) string
 ```
 - Type batch, meta `caravana.scan` = runID, `caravana.image` = image, no `caravana.app`.
-- One group `scan`, `batchGroup` rules (no restart, no reschedule) but `Networks: [{Mode: "host"}]` (research R3) and
-  the host volume `ScanVolume` mounted at `/cache` (read-write); a constraint `${node.unique.id} = NodeID` (D16).
+- One group `scan`, `batchGroup` rules (no restart, no reschedule) on Docker's bridge like every other job, with the
+  host volume `ScanVolume` mounted at `/cache` (read-write) and a constraint `${node.unique.id} = NodeID` (D16). Only a
+  registry scan of an image whose registry is on the node's loopback (`registry.IsLoopback`) gets the host's network,
+  on the group and in the docker config (`network_mode = "host"`; research R5, and the review of 2026-11-19: on the
+  host's network the scanner could reach every service on loopback, so nothing else gets it).
 - Task `grype`, driver docker, `image` = the scanner. `args`:
   - registry scan: `["registry:" + image, "-o", "template=/" + ScanResultFile, "-t", "/local/scan.tmpl",
     "-o", "cyclonedx-json=" + SBOMPath(image)]` (Grype writes several outputs in one run; T013 checks it in the lab);
@@ -84,7 +87,7 @@ func SBOMPath(image string) string
   no value.
 - Resources: CPU 500 MHz, memory 512 MB, memory max 2048 MB (`ScanMemoryMB` exported for D7); log config 2 × 1 MB;
   kill timeout 10 s.
-- Goldens `scan`, `scan-private`, `scan-sbom` and `scan-update` (JSON) in `testdata/`.
+- Goldens `scan`, `scan-private`, `scan-sbom`, `scan-update` and `scan-loopback` (JSON) in `testdata/`.
 
 **D3 Result template and parser (`internal/vulns`, pure).** The template prints a header line `caravana-scan v1`,
 one tab-separated `m` line per match, and a trailer `db <built> <schema> <grype version>` (`.Descriptor.Version`).
