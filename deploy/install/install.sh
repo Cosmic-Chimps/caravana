@@ -314,8 +314,8 @@ container_kind() {
       kind=docker
     elif [ -f /run/.containerenv ]; then
       kind=podman
-    elif [ -r /proc/1/environ ] && tr '\0' '\n' </proc/1/environ 2>/dev/null | grep -q '^container='; then
-      kind="$(tr '\0' '\n' </proc/1/environ | sed -n 's/^container=//p' | head -1)"
+    elif [ -r /proc/1/environ ] && grep -q '^container=' < <(tr '\0' '\n' </proc/1/environ 2>/dev/null); then
+      kind="$(sed -n '/^container=/{s///p;q;}' < <(tr '\0' '\n' </proc/1/environ))"
     elif [ -d /proc/vz ] && [ ! -d /proc/bc ]; then
       kind=openvz
     fi
