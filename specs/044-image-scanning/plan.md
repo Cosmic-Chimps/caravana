@@ -133,8 +133,8 @@ A link that isn't `https://` is dropped. Duplicate (advisory, package, version) 
 - `EnsureScanVolume(ctx) (nodeID string, err error)`: create `ScanVolume` with the `mkdir` plugin when it isn't there
   (Nomad picks a node of the default pool), wait until ready, return its node; when it exists, return its node.
 - `DeleteScanVolume(ctx)`: delete it (retrying while a scan job holds it, as `DeleteVolumes` does); gone is done.
-- `StartScan(ctx, job)`: like `StartScheduleRun`: write the job's variable when its task has an auth block (the three
-  Grype items), register; a Nomad refusal is `*RunStartError`.
+- `StartScan(ctx, job, private)`: like `StartScheduleRun`: write the job's variable when a template of the job reads it
+  (a registry scan of a private image; the three Grype items from `nomadjob.ScanRegistryItems`), register; a Nomad refusal is `*RunStartError`.
 - `ScanState(ctx, jobID)`: `ScheduleRunState(ctx, jobID, nomadjob.ScanTask)`.
 - `ScanResult(ctx, allocID) (text string, found bool, err error)`: `readCopyFile` with a limit of
   `vulns.MaxResultBytes + 1` (the limit becomes a parameter).
@@ -158,7 +158,7 @@ other watchers; it does nothing while the add-on isn't `installed` (D15). `scan_
   minutes (then `StopScan` and `failed` "took longer than 20 minutes"); read the result; `vulns.Parse`; store (D6);
   purge; publish the live notice `scans`; wake waiters. A `daily` run from an SBOM that fails `ScanSBOMMissing` is
   queued again from the registry.
-- Outcomes and their fixed words: `ok`; `failed` with "the vulnerability database couldn't be downloaded", "the
+- Outcomes and their fixed words: `ok`; `failed` with "the vulnerability database couldn't be downloaded or loaded", "the
   vulnerability database is more than 5 days old", "the registry refused the credentials", "the image couldn't be
   read from its registry", "the scanner stopped without a result", "Nomad refused the scan", "took longer than 20
   minutes", "Caravana restarted during the scan", "the image scanner was removed"; `skipped` with D7's words.

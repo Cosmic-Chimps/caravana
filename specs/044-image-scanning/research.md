@@ -34,8 +34,12 @@ caravana-scan v1
 m	CVE-2022-37434	Critical	fixed	1.2.12-r2	zlib	1.2.11-r3	apk	https://security.alpinelinux.org/vuln/CVE-2022-37434
 m	CVE-2024-5535	Critical	unknown		libssl1.1	1.1.1k-r0	apk	https://nvd.nist.gov/vuln/detail/CVE-2024-5535
 m	CVE-2022-48174	Critical			busybox	1.33.1-r2	apk	https://nvd.nist.gov/vuln/detail/CVE-2022-48174
-db	2026-11-19T06:23:17Z	v6.1.10
+db	2026-11-19 06:23:17 +0000 UTC	v6.1.10	0.117.0
 ```
+
+(The first draft of this section showed the build time as RFC 3339; the template prints Go's own form, and
+`vulns.Parse` reads both. Since D3/D18 an `m` line also has the related IDs, the EPSS score and percentile and
+`kev`, and the trailer the scanner's version.)
 
 - Severity is one of `Critical`, `High`, `Medium`, `Low`, `Negligible`, `Unknown`.
 - The fix state is `fixed`, `not-fixed`, `wont-fix`, `unknown` or empty; only `fixed` with a version is fixable.
@@ -53,3 +57,33 @@ db	2026-11-19T06:23:17Z	v6.1.10
 - A batch group with `network { mode = "host" }` runs a docker task without any plugin setting: the task sees the
   node's network, so it reaches a registry the way the node's Docker does (a loopback registry included, which the
   gate's private-registry step uses).
+
+## R4 Phase 1 in the lab (Grype v0.117.0, 2026-11-19)
+
+- **Field names.** `.RelatedVulnerabilities[].ID`, `.Vulnerability.EPSS[].EPSS` and `.Percentile`,
+  `.Vulnerability.KnownExploited`, `.Descriptor.Version` all exist under those names. `alpine:3.14.0` has EPSS on
+  all 138 matches (CVE-2022-37434: 0.19243, percentile 0.97389) and no KEV; a log4shell image
+  (`ghcr.io/christophetd/log4shell-vulnerable-app`) gave 10 KEV findings. `Fix.State` and `Artifact.Type` are named
+  string types, which sprig's `replace` refuses, so the template passes fields through `printf "%s"` first; EPSS
+  numbers are printed as they are.
+- **Two outputs in one run.** `-o template=<file> -t <tmpl> -o cyclonedx-json=<file>` writes both and exits 0.
+- **SBOM rescans (D17).** `grype sbom:<the CycloneDX file the registry scan wrote>` gave a template output
+  byte-identical to the registry scan's (140 lines). D17 stands; only this OS-package image was compared, so the lab
+  step compares again (T013).
+- **`grype db update`** exits 0: on an empty cache it downloads and installs the database in 96 s, on a warm one it
+  says "No vulnerability database update available".
+- **Errors.** Grype logs warnings, then one `[000n] ERROR …` line with its causes indented below; only the text from
+  the first ERROR on is classified (`classifyScanFailure`, with the samples in its test):
+  - "failed to load vulnerability db: database does not exist" (after "unable to download listing"): database
+    download;
+  - "… the vulnerability database was built 10 hours ago (max allowed age is 1 hour)": database too old;
+  - "UNAUTHORIZED: authentication required" (Docker Hub), "DENIED: requested access to the resource is denied"
+    (ghcr.io), "401 Unauthorized: incorrect username or password": registry credentials;
+  - "failed to catalog: unable to open file …", "unable to decode sbom: sbom format not recognized": SBOM missing;
+  - "MANIFEST_UNKNOWN: manifest unknown", "connection refused": the image couldn't be read.
+  "failed to load vulnerability db" also covers a database that can't be loaded for another reason (a full disk), so
+  the console's words for that class are "the vulnerability database couldn't be downloaded or loaded".
+- **Registry authority.** `docker.io`, `index.docker.io` and `registry-1.docker.io` as
+  `GRYPE_REGISTRY_AUTH_AUTHORITY` all made Grype send the credentials to Docker Hub.
+- **Not yet seen** (T013): a scan as a Nomad job with host networking, the volume's ownership, whether Grype makes
+  `/cache/sbom/` itself, and a real private registry.

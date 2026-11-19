@@ -255,9 +255,18 @@ func (d *Deployer) RunningCopy(ctx context.Context, appID, service string) (copy
 // lines long.
 const maxFileRead = 1 << 20
 
-// readCopyFile reads a file of a copy's allocation directory. found is false
-// when the file isn't there yet. A copy Nomad doesn't have is ErrCopyNotFound.
+// readCopyFile reads a file of a copy's allocation directory: at most
+// maxFileRead bytes, which is all the files of a volume or SQLite run have.
+// found is false when the file isn't there yet. A copy Nomad doesn't have is
+// ErrCopyNotFound.
 func (d *Deployer) readCopyFile(ctx context.Context, copyID, path string) (text string, found bool, err error) {
+	return d.readCopyFileLimit(ctx, copyID, path, maxFileRead)
+}
+
+// readCopyFileLimit is readCopyFile for a file that may be longer: it reads at
+// most limit bytes, so a caller that wants to know a file is too long asks for
+// one byte more than it accepts.
+func (d *Deployer) readCopyFileLimit(ctx context.Context, copyID, path string, limit int64) (text string, found bool, err error) {
 	q := (&api.QueryOptions{}).WithContext(ctx)
 	alloc, _, err := d.nomad.Allocations().Info(copyID, q)
 	if err != nil {
@@ -274,7 +283,7 @@ func (d *Deployer) readCopyFile(ctx context.Context, copyID, path string) (text 
 		return "", false, d.capabilityError("read "+path+" of copy "+copyID, "read-fs", err)
 	}
 	defer r.Close()
-	b, err := io.ReadAll(io.LimitReader(r, maxFileRead))
+	b, err := io.ReadAll(io.LimitReader(r, limit))
 	if err != nil {
 		return "", false, d.callError("read "+path+" of copy "+copyID, err)
 	}

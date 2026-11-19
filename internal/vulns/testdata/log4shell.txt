@@ -1,0 +1,27 @@
+caravana-scan v1
+m	GHSA-jfh8-c2jp-5v3q	Critical	fixed	2.15.0	log4j-core	2.14.1	java-archive	https://github.com/advisories/GHSA-jfh8-c2jp-5v3q	CVE-2021-44228	0.99999	1	kev
+m	CVE-2025-24813	Critical	fixed	9.0.99,10.1.35,11.0.3	tomcat-embed-core	9.0.55	java-archive	https://nvd.nist.gov/vuln/detail/CVE-2025-24813		0.99942	0.99973	kev
+m	GHSA-7rjr-3q55-vv33	Critical	fixed	2.16.0	log4j-core	2.14.1	java-archive	https://github.com/advisories/GHSA-7rjr-3q55-vv33	CVE-2021-45046	0.99977	0.9998	kev
+m	GHSA-36p3-wjmg-h94x	Critical	fixed	5.3.18	spring-beans	5.3.13	java-archive	https://github.com/advisories/GHSA-36p3-wjmg-h94x	CVE-2022-22965	0.99638	0.99949	kev
+m	GHSA-36p3-wjmg-h94x	Critical	fixed	5.3.18	spring-webmvc	5.3.13	java-archive	https://github.com/advisories/GHSA-36p3-wjmg-h94x	CVE-2022-22965	0.99638	0.99949	kev
+m	GHSA-83qj-6fr2-vhqg	Critical	fixed	9.0.99	tomcat-embed-core	9.0.55	java-archive	https://github.com/advisories/GHSA-83qj-6fr2-vhqg	CVE-2025-24813	0.99942	0.99973	kev
+m	CVE-2020-15999	Critical	unknown		freetype	2.9.1-r1	apk	https://nvd.nist.gov/vuln/detail/CVE-2020-15999		0.63894	0.99238	kev
+m	CVE-2025-27363	High			freetype	2.9.1-r1	apk	https://nvd.nist.gov/vuln/detail/CVE-2025-27363		0.27775	0.98126	kev
+m	CVE-2023-44487	High	fixed	8.5.94,9.0.81,10.1.14,11.0.0-M12	tomcat-embed-core	9.0.55	java-archive	https://nvd.nist.gov/vuln/detail/CVE-2023-44487		0.99999	0.99998	kev
+m	GHSA-qppj-fm5r-hxr3	Medium	fixed	9.0.81	tomcat-embed-core	9.0.55	java-archive	https://github.com/advisories/GHSA-qppj-fm5r-hxr3	CVE-2023-44487	0.99999	0.99998	kev
+m	GHSA-p6xc-xr62-6r2g	High	fixed	2.17.0	log4j-core	2.14.1	java-archive	https://github.com/advisories/GHSA-p6xc-xr62-6r2g	CVE-2021-45105	0.99999	0.99991	
+m	GHSA-mjmj-j48q-9wg2	High	fixed	2.0	snakeyaml	1.29	java-archive	https://github.com/advisories/GHSA-mjmj-j48q-9wg2	CVE-2022-1471	0.99501	0.99945	
+m	GHSA-8489-44mv-ggj8	Medium	fixed	2.17.1	log4j-core	2.14.1	java-archive	https://github.com/advisories/GHSA-8489-44mv-ggj8	CVE-2021-44832	0.97906	0.99909	
+m	CVE-2025-6965	High	unknown		sqlite-libs	3.24.0-r0	apk	https://nvd.nist.gov/vuln/detail/CVE-2025-6965		0.73973	0.99488	
+m	CVE-2019-8457	Critical	fixed	3.25.3-r1	sqlite-libs	3.24.0-r0	apk	https://security.alpinelinux.org/vuln/CVE-2019-8457	CVE-2019-8457	0.45426	0.98816	
+m	GHSA-g5vr-rgqm-vf78	High	not-fixed		spring-webmvc	5.3.13	java-archive	https://github.com/advisories/GHSA-g5vr-rgqm-vf78	CVE-2024-38819	0.56463	0.99076	
+m	GHSA-wmwf-9ccg-fff5	High	fixed	9.0.109	tomcat-embed-core	9.0.55	java-archive	https://github.com/advisories/GHSA-wmwf-9ccg-fff5	CVE-2025-55752	0.54263	0.99031	
+m	CVE-2025-55752	High	fixed	9.0.109,10.1.45,11.0.11	tomcat-embed-core	9.0.55	java-archive	https://nvd.nist.gov/vuln/detail/CVE-2025-55752		0.54263	0.99031	
+m	CVE-2024-50379	Critical	fixed	9.0.98,10.1.34,11.0.2	tomcat-embed-core	9.0.55	java-archive	https://nvd.nist.gov/vuln/detail/CVE-2024-50379		0.42749	0.98739	
+m	CVE-2018-25032	High	unknown		zlib	1.2.11-r1	apk	https://nvd.nist.gov/vuln/detail/CVE-2018-25032		0.51733	0.9897	
+m	GHSA-hfrx-6qgj-fp6c	High	fixed	9.0.71	tomcat-embed-core	9.0.55	java-archive	https://github.com/advisories/GHSA-hfrx-6qgj-fp6c	CVE-2023-24998	0.48788	0.989	
+m	GHSA-5j33-cvvr-w245	High	fixed	9.0.98	tomcat-embed-core	9.0.55	java-archive	https://github.com/advisories/GHSA-5j33-cvvr-w245	CVE-2024-50379	0.42749	0.98739	
+m	GHSA-4wrc-f8pq-fpqp	Critical	fixed	6.0.0	spring-web	5.3.13	java-archive	https://github.com/advisories/GHSA-4wrc-f8pq-fpqp	CVE-2016-1000027	0.33179	0.98399	
+m	CVE-2018-1000517	Critical	unknown		busybox	1.28.4-r2	apk	https://nvd.nist.gov/vuln/detail/CVE-2018-1000517		0.32483	0.98367	
+m	CVE-2018-1000517	Critical	unknown		ssl_client	1.28.4-r2	apk	https://nvd.nist.gov/vuln/detail/CVE-2018-1000517		0.32483	0.98367	
+db	2026-11-19 06:23:17 +0000 UTC	v6.1.10	0.117.0

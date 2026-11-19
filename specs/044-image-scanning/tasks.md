@@ -5,14 +5,14 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 1: Pure pieces and the Nomad side (US1, US4)
 
-- [ ] T001 `internal/vulns`: `Severity`, `Finding`, `Result`, `Counts`, `Template`, `Parse` (D3, D18: stable IDs, one severity scale, CVE, EPSS, KEV, remediation, the scanner's version) with table tests
+- [x] T001 `internal/vulns`: `Severity`, `Finding`, `Result`, `Counts`, `Template`, `Parse` (D3, D18: stable IDs, one severity scale, CVE, EPSS, KEV, remediation, the scanner's version) with table tests
   (the research R2 lines, a missing trailer, tabs, a non-https link, duplicates, the cut at `MaxFindings`, sorting).
-- [ ] T002 `internal/nomadjob/scan.go`: `ScanJobID`, `ScanVolume`, `ScanResultFile`, `ScanTask`, `ScanMemoryMB`,
+- [x] T002 `internal/nomadjob/scan.go`: `ScanJobID`, `ScanVolume`, `ScanResultFile`, `ScanTask`, `ScanMemoryMB`,
   `ScanSource`, `ScanOptions`, `SBOMPath`, `ScanJob` (D2, D16, D17), `Settings.ScannerImage`, `DefaultScannerImage`,
   `DefaultScannerVersion` (D1); goldens `scan`, `scan-private`, `scan-sbom`, `scan-update`.
-- [ ] T003 `internal/config` + `cmd/caravana/main.go`: `CARAVANA_SCANNER_IMAGE` / `-scanner-image` (D1), checked
+- [x] T003 `internal/config` + `cmd/caravana/main.go`: `CARAVANA_SCANNER_IMAGE` / `-scanner-image` (D1), checked
   pinned; test.
-- [ ] T004 `internal/deploy/scan.go` (+ `deploytest`): `EnsureScanVolume`, `DeleteScanVolume`, `StartScan`,
+- [x] T004 `internal/deploy/scan.go` (+ `deploytest`): `EnsureScanVolume`, `DeleteScanVolume`, `StartScan`,
   `ScanState`, `ScanResult`, `ScanFailure`, `PurgeScan`, `StopScan` (D4); tests with the fake.
 
 ## Phase 2: Store and service (US1, US2, US3, US5, US6)

@@ -1,0 +1,183 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "_scan-r4",
+  "Name": "_scan-r4",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "scan",
+      "Count": 1,
+      "Constraints": [
+        {
+          "LTarget": "${node.unique.id}",
+          "RTarget": "node-7",
+          "Operand": "="
+        }
+      ],
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "grype",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "db",
+              "update"
+            ],
+            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "GRYPE_CHECK_FOR_APP_UPDATE": "false",
+            "GRYPE_DB_CACHE_DIR": "/cache/db",
+            "GRYPE_DB_MAX_ALLOWED_BUILT_AGE": "120h",
+            "GRYPE_DB_UPDATE_CHECK_MAX_FREQUENCY": "24h"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 500,
+            "Cores": null,
+            "MemoryMB": 512,
+            "MemoryMaxMB": 2048,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": 10000000000,
+          "LogConfig": {
+            "MaxFiles": 2,
+            "MaxFileSizeMB": 1,
+            "Enabled": null,
+            "Disabled": null
+          },
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": null,
+          "DispatchPayload": null,
+          "VolumeMounts": [
+            {
+              "Volume": "cache",
+              "Destination": "/cache",
+              "ReadOnly": false,
+              "PropagationMode": null,
+              "SELinuxLabel": null
+            }
+          ],
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": {
+        "cache": {
+          "Name": "cache",
+          "Type": "host",
+          "Source": "caravana-scanner",
+          "ReadOnly": false,
+          "Sticky": false,
+          "AccessMode": "single-node-single-writer",
+          "AttachmentMode": "file-system",
+          "MountOptions": null,
+          "PerAlloc": false
+        }
+      },
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "host",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.image": "",
+    "caravana.scan": "r4"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

@@ -108,18 +108,32 @@ func (d *Deployer) StartScheduleRun(ctx context.Context, job *api.Job, secrets m
 		items[runMarkerItem] = id
 	}
 
-	if err := d.writeVariable(ctx, path, items); err != nil {
-		if errors.Is(err, ErrNomadRejected) {
-			return &RunStartError{Reason: "Nomad refused the run's variables", Err: err}
+	return d.registerWithVariable(ctx, job, path, items)
+}
+
+// registerWithVariable writes the job's variable at path (none when items is nil) and
+// registers the job. A variable left behind by a registration that fails is
+// deleted again, since nothing would purge it. Nomad saying no is a
+// *RunStartError; a Nomad that couldn't be reached is ErrNomadUnavailable,
+// unwrapped.
+func (d *Deployer) registerWithVariable(ctx context.Context, job *api.Job, path string, items map[string]string) error {
+	id := *job.ID
+	if items != nil {
+		if err := d.writeVariable(ctx, path, items); err != nil {
+			if errors.Is(err, ErrNomadRejected) {
+				return &RunStartError{Reason: "Nomad refused the job's variables", Err: err}
+			}
+			return err
 		}
-		return err
 	}
 	if _, _, err := d.nomad.Jobs().Register(job, (&api.WriteOptions{}).WithContext(ctx)); err != nil {
 		// The job isn't there, so nothing will settle the run and purge it:
 		// don't leave the secrets in Nomad.
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = d.deleteVariable(cleanup, path)
+		if items != nil {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = d.deleteVariable(cleanup, path)
+		}
 		err = d.registerError(id, err)
 		if errors.Is(err, ErrNomadRejected) || errors.Is(err, ErrJobConflict) {
 			return &RunStartError{Reason: "Nomad refused the job", Err: err}
@@ -315,22 +329,22 @@ const runOutputBytes = 64 << 10
 // The output is returned and not logged: it can hold anything the command
 // printed, secrets included. The caller masks it before keeping it.
 func (d *Deployer) ScheduleRunOutput(ctx context.Context, allocID, task string) (stdout, stderr []byte, stdoutCut, stderrCut bool, err error) {
-	if stdout, stdoutCut, err = d.tail(ctx, allocID, task, LogStdout); err != nil {
+	if stdout, stdoutCut, err = d.tail(ctx, allocID, task, LogStdout, runOutputBytes); err != nil {
 		return nil, nil, false, false, err
 	}
-	if stderr, stderrCut, err = d.tail(ctx, allocID, task, LogStderr); err != nil {
+	if stderr, stderrCut, err = d.tail(ctx, allocID, task, LogStderr, runOutputBytes); err != nil {
 		return nil, nil, false, false, err
 	}
 	return stdout, stderr, stdoutCut, stderrCut, nil
 }
 
-// tail is the last runOutputBytes of one stream, and whether it was cut.
-func (d *Deployer) tail(ctx context.Context, allocID, task string, stream LogStream) ([]byte, bool, error) {
+// tail is the last n bytes of one stream, and whether it was cut.
+func (d *Deployer) tail(ctx context.Context, allocID, task string, stream LogStream, n int64) ([]byte, bool, error) {
 	lines := make(chan LogLine, 64)
 	errCh := make(chan error, 1)
 	var cut bool
 	go func() {
-		errCh <- d.readLogs(ctx, allocID, task, stream, runOutputBytes, false, lines, &cut)
+		errCh <- d.readLogs(ctx, allocID, task, stream, n, false, lines, &cut)
 		close(lines)
 	}()
 	var out bytes.Buffer

@@ -231,25 +231,33 @@ func (d *Deployer) DeleteVolumes(ctx context.Context, appID string) error {
 	if err != nil {
 		return err
 	}
-	timing := d.Timing.withDefaults()
 	for name, stub := range have {
-		deadline := time.Now().Add(timing.VolumeDeleteWait)
-		gap := timing.BackoffStart
-		for {
-			_, _, err := d.nomad.HostVolumes().Delete(&api.HostVolumeDeleteRequest{ID: stub.ID}, (&api.WriteOptions{}).WithContext(ctx))
-			if err == nil || statusOf(err) == http.StatusNotFound {
-				break
-			}
-			if !inUse(err) || time.Now().After(deadline) {
-				return d.volumeError("delete volume "+name, err)
-			}
-			if !sleep(ctx, gap) {
-				return d.volumeError("delete volume "+name, err)
-			}
-			gap = min(2*gap, timing.BackoffMax)
+		if err := d.deleteVolume(ctx, name, stub.ID); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// deleteVolume deletes one host volume, retrying while Nomad says a copy still
+// uses it (see DeleteVolumes). A volume already gone is deleted.
+func (d *Deployer) deleteVolume(ctx context.Context, name, id string) error {
+	timing := d.Timing.withDefaults()
+	deadline := time.Now().Add(timing.VolumeDeleteWait)
+	gap := timing.BackoffStart
+	for {
+		_, _, err := d.nomad.HostVolumes().Delete(&api.HostVolumeDeleteRequest{ID: id}, (&api.WriteOptions{}).WithContext(ctx))
+		if err == nil || statusOf(err) == http.StatusNotFound {
+			return nil
+		}
+		if !inUse(err) || time.Now().After(deadline) {
+			return d.volumeError("delete volume "+name, err)
+		}
+		if !sleep(ctx, gap) {
+			return d.volumeError("delete volume "+name, err)
+		}
+		gap = min(2*gap, timing.BackoffMax)
+	}
 }
 
 // HostVolumeInfo is what Nomad knows about one of an app's volumes.
