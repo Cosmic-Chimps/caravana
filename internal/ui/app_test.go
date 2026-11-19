@@ -222,7 +222,7 @@ func TestDeploymentsTabListsTheHistory(t *testing.T) {
 
 	t.Run("the region is polite live and refreshes on deployments and copies", func(t *testing.T) {
 		for _, want := range []string{
-			`hx-get="/parts/apps/blog/deployments"`, `hx-trigger="sse:deployments, sse:copies, sse:sync"`, `aria-live="polite"`,
+			`hx-get="/parts/apps/blog/deployments"`, `hx-trigger="sse:deployments, sse:copies, sse:scans, sse:sync"`, `aria-live="polite"`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the history region lacks %q", want)

@@ -412,7 +412,8 @@ func (s *server) tabKey(key string) string {
 func (s *server) liveApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	route := liveRoute{AppID: id,
-		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted}}
+		Kinds: []service.ChangeKind{service.ChangeApp, service.ChangeDeployments, service.ChangeCopies, service.ChangeActions, service.ChangeDeleted,
+			service.ChangeScans}}
 	switch {
 	case r.URL.Query().Get("watch") == "logs":
 		route.Kinds = append(route.Kinds, service.ChangeLogs)
@@ -729,6 +730,9 @@ type historyEntry struct {
 	// ComposeHref downloads the Compose file this deployment was made from
 	// (feature 015); "" when it wasn't made from one.
 	ComposeHref string
+	// Vulns is the one line of the image scanner's counts for the images it ran (feature 044): "1 critical ·
+	// 9 high"; "" when the scanner isn't installed or none of the images has a scan.
+	Vulns string
 }
 
 // historyRegion is what the "deployments" region draws: the history, newest
@@ -747,6 +751,10 @@ type historyRegion struct {
 type deploymentsTab struct {
 	Form    deployForm
 	History historyRegion
+	// Security is the Security panel (feature 044); ScanRefusal is why a Scan now was turned down, drawn above
+	// the panel, outside its live region.
+	Security    secPanel
+	ScanRefusal sentence
 }
 
 // errBadCursor is a ?before= that isn't a time.
@@ -802,8 +810,20 @@ func (s *server) loadHistory(r *http.Request, appID string) (historyRegion, erro
 		region.RefreshHref += "?before=" + url.QueryEscape(before.UTC().Format(time.RFC3339Nano))
 	}
 	now := s.now()
+	// The scans of every image the listed deployments ran, read once for the page (feature 044).
+	var refs []string
+	for _, rec := range recs {
+		for _, ref := range rec.Deployment.Digests {
+			refs = append(refs, ref)
+		}
+	}
+	scans, err := s.svc.ScansOf(ctx, refs)
+	if err != nil {
+		return historyRegion{}, err
+	}
 	for i, rec := range recs {
 		e := s.historyEntry(ctx, now, rec, facts[i])
+		e.Vulns = vulnLine(rec.Deployment.Digests, scans)
 		addVersionActions(&e, rec, current.App)
 		if e.Source != nil && e.Source.Refresh {
 			// "Refreshed secrets (v2's version)": the version that was live is the source's.
@@ -901,6 +921,15 @@ func (s *server) appNotFound(w http.ResponseWriter, r *http.Request, id string) 
 // refused, when set, is a refused redeploy of a past version, shown in its
 // entry.
 func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy) {
+	s.deploymentsPageWith(w, r, status, sum, form, refused, nil)
+}
+
+// deploymentsPageNotice draws the Deployments tab with the sentence of a Scan now that was turned down.
+func (s *server) deploymentsPageNotice(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, scanRefusal sentence) {
+	s.deploymentsPageWith(w, r, status, sum, deployFormOf(sum.App), nil, scanRefusal)
+}
+
+func (s *server) deploymentsPageWith(w http.ResponseWriter, r *http.Request, status int, sum service.AppSummary, form deployForm, refused *refusedRedeploy, scanRefusal sentence) {
 	id := sum.App.ID
 	if sum.StoppedAt != nil && len(form.Notice) == 0 {
 		// Said before anyone tries: a stopped app refuses every deploy, and the
@@ -937,8 +966,14 @@ func (s *server) deploymentsPage(w http.ResponseWriter, r *http.Request, status 
 		return
 	}
 	head.LiveURL = "/live/apps/" + id
+	panel, err := s.loadSecurityPanel(r.Context(), id)
+	if err != nil {
+		s.serverError(w, r, "read the security panel", err)
+		return
+	}
 	s.render(w, status, "app", appPage{pageData: head, appHeader: s.header(r.Context(), sum, "deployments"),
-		Deployments: &deploymentsTab{Form: form, History: history}, Installed: s.installedNoticeOf(r, sum.AppRecord)})
+		Deployments: &deploymentsTab{Form: form, History: history, Security: panel, ScanRefusal: scanRefusal},
+		Installed:   s.installedNoticeOf(r, sum.AppRecord)})
 }
 
 // showDeployments answers GET /apps/{id}/deployments.

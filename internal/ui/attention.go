@@ -156,7 +156,7 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 		if it.Level == metrics.DiskFailed {
 			row.Mark = "failed"
 		}
-		row.Action, row.Href = "Open findings", appHref+"/deployments"
+		row.Action, row.Href = "Open findings", appHref+"/deployments#security"
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"

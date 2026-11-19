@@ -40,6 +40,7 @@
   <div class="cv-nav-group">
     <span class="cv-label cv-nav-title">Platform</span>
     <a href="/ops/updates" class="cv-nav-item"{{if eq .Active "ops-updates"}} aria-current="page"{{end}}>{{icon "download"}}<span>Updates</span><span class="cv-nav-mark" id="nav-updates-mark">{{template "nav-updates-mark" .UpdatesMark}}</span></a>
+    <a href="/ops/security" class="cv-nav-item"{{if eq .Active "ops-security"}} aria-current="page"{{end}}>{{icon "shield"}}<span>Security</span></a>
   </div>
   {{else}}
   <div class="cv-nav-group">

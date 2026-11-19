@@ -1,0 +1,79 @@
+{{/* Image scanning (feature 044): the pieces Operator › Security and an app's Security panel share, and the
+     panel itself. A page draws only the parsed fields of a finding (advisory, severity, package, versions,
+     the https address, EPSS) and Caravana's own sentences; nothing here holds the scanner's text. Takes
+     the types of internal/ui/security.go. */}}
+
+{{/* sec-chips: the counts of a scan, each a word and a number (the tone is never the only signal). Takes a []secChip. */}}
+{{define "sec-chips"}}{{range .}}<span class="cv-sevchip cv-sevchip-{{.Tone}}"><span class="cv-sevn">{{.N}}</span> {{.Label}}</span>{{end}}{{end}}
+
+{{/* sec-image: an image as its repository and a short digest (the whole reference on hover). Takes a secImage. */}}
+{{define "sec-image"}}<span class="cv-inline-mono text-fg-1">{{.Repo}}</span><span class="cv-inline-mono text-fg-2" title="{{.Full}}">@{{.Short}}</span>{{end}}
+
+{{/* sec-finding-row: one finding of the All findings table. Takes a secFinding. */}}
+{{define "sec-finding-row"}}
+<tr>
+  <td class="cv-inline-mono">{{if .URL}}<a href="{{.URL}}" rel="noopener noreferrer" target="_blank">{{.Advisory}}</a>{{else}}{{.Advisory}}{{end}}{{if .KEV}} <span class="cv-sevchip cv-sevchip-critical">known exploited</span>{{end}}</td>
+  <td><span class="cv-sevchip cv-sevchip-{{.Tone}}">{{.Severity}}</span></td>
+  <td class="cv-inline-mono">{{.Package}}</td>
+  <td class="cv-inline-mono">{{.Version}}</td>
+  <td>{{.Type}}</td>
+  <td class="cv-inline-mono">{{with .FixedIn}}{{.}}{{else}}<span class="text-fg-2">none yet</span>{{end}}</td>
+  <td>{{with .EPSS}}{{.}}{{else}}<span class="text-fg-2">none</span>{{end}}</td>
+</tr>
+{{end}}
+
+{{/* security-region: the body of the Security panel on an app's Deployments tab, drawn inside a live
+     region and alone by /parts/apps/{id}/security. Takes a secPanel. */}}
+{{define "security-region"}}
+{{if not .Installed}}
+<div class="cv-secpanel">
+  {{if .Waiting}}<p class="text-base text-fg-1">The image scanner is being installed or removed. <a href="/ops/security">See Security</a>.</p>
+  {{else}}<p class="text-base text-fg-1">The image scanner isn't installed.</p>
+  <p class="text-sm text-fg-2">It checks the images your apps run against a database of known vulnerabilities. <a href="/ops/security">Open Security</a> to install it.</p>{{end}}
+</div>
+{{else if not .Services}}
+<div class="cv-secpanel"><p class="text-base text-fg-1">Nothing to scan yet.</p>
+  <p class="text-sm text-fg-2">The scanner reads the images of the live version. This app has none until a deployment is healthy.</p></div>
+{{else}}
+{{range .Services}}
+<div class="cv-secpanel cv-secsvc">
+  <div class="cv-sechead">
+    <span class="cv-inline-mono text-fg-1">{{.Name}}</span> {{template "sec-image" .Image}}
+  </div>
+  {{if .HasResult}}
+  <div class="cv-secchips">{{if .Clean}}<span class="cv-sevchip cv-sevchip-plain">no known vulnerabilities</span>{{else}}{{template "sec-chips" .Chips}}{{end}}</div>
+  <p class="cv-secmeta">scanned {{template "clock" .Scanned}}{{with .Database}} · database of {{.}}{{end}}{{if .Cut}} · more findings than are kept, so the counts are a lower bound{{end}}</p>
+  {{end}}
+  {{with .Status}}<p class="cv-secstatus" role="status">{{template "status-pill" .}}</p>{{end}}
+  {{if and .Status .Reason}}<p class="cv-secmeta">{{.Reason}}</p>{{end}}
+  {{if .Fixable}}
+  <h3 class="cv-label">Fixable</h3>
+  <ul class="cv-secfix">
+    {{range .Fixable}}
+    <li>
+      <span class="cv-inline-mono">{{if .URL}}<a href="{{.URL}}" rel="noopener noreferrer" target="_blank">{{.Advisory}}</a>{{else}}{{.Advisory}}{{end}}</span>
+      <span class="cv-sevchip cv-sevchip-{{.Tone}}">{{.Severity}}</span>{{if .KEV}} <span class="cv-sevchip cv-sevchip-critical">known exploited</span>{{end}}
+      <span class="cv-inline-mono text-fg-2">{{.Package}} {{.Version}} → {{.FixedIn}}</span>
+      <span class="cv-secmeta">{{.Remediation}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{if gt .FixableN (len .Fixable)}}<p class="cv-secmeta">{{.FixableN}} fixable in all; the rest are in the table below.</p>{{end}}
+  {{end}}
+  {{if .All}}
+  <details class="cv-secall">
+    <summary class="cv-btn cv-btn-secondary cv-btn-sm">All {{.AllN}} findings</summary>
+    <table class="cv-sectable">
+      <thead><tr><th scope="col">Advisory</th><th scope="col">Severity</th><th scope="col">Package</th><th scope="col">Version</th><th scope="col">Type</th><th scope="col">Fixed in</th><th scope="col">EPSS</th></tr></thead>
+      <tbody>{{range .All}}{{template "sec-finding-row" .}}{{end}}</tbody>
+    </table>
+    {{if gt .AllN (len .All)}}<p class="cv-secmeta">The first {{len .All}} of {{.AllN}} are shown. The API has them all.</p>{{end}}
+  </details>
+  {{end}}
+</div>
+{{end}}
+{{if .Action}}
+<form method="post" action="{{.Action}}" class="cv-secscan"><button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Scan now</button></form>
+{{end}}
+{{end}}
+{{end}}

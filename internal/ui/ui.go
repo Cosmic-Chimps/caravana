@@ -172,6 +172,13 @@ func (s *server) routeTable() []route {
 		{"POST", "/ops/updates/caravana", s.protected(s.requireSession(s.requestOpsUpdate))},
 		{"POST", "/ops/updates/check", s.protected(s.requireSession(s.checkOpsUpdates))},
 		{"POST", "/ops/updates/settings", s.protected(s.requireSession(s.saveOpsUpdateSettings))},
+		{"GET", "/ops/security", s.requireSession(s.showOpsSecurity)},
+		{"GET", "/parts/ops/security", s.requirePart(s.partOpsSecurity)},
+		{"POST", "/ops/security/install", s.protected(s.requireSession(s.installScanner))},
+		{"GET", "/ops/security/remove", s.requireSession(s.showSecurityRemove)},
+		{"POST", "/ops/security/remove", s.protected(s.requireSession(s.removeScanner))},
+		{"POST", "/ops/security/settings", s.protected(s.requireSession(s.saveSecuritySettings))},
+		{"POST", "/ops/security/scan", s.protected(s.requireSession(s.scanAllNow))},
 		{"GET", "/parts/ops/apps", s.requirePart(s.partOpsApps)},
 		{"GET", "/parts/ops/activity", s.requirePart(s.partOpsActivity)},
 		{"GET", "/monitoring", s.requireSession(s.showMonitoring)},
@@ -271,6 +278,8 @@ func (s *server) routeTable() []route {
 		{"GET", "/parts/apps/{id}/copies", s.requirePart(s.partCopies)},
 		{"GET", "/parts/apps/{id}/actions", s.requirePart(s.partActions)},
 		{"GET", "/parts/apps/{id}/deployments", s.requirePart(s.partDeployments)},
+		{"GET", "/parts/apps/{id}/security", s.requirePart(s.partSecurity)},
+		{"POST", "/apps/{id}/security/scan", s.protected(s.requireSession(s.scanApp))},
 		{"GET", "/live", s.liveApps},
 		{"GET", "/live/apps/{id}", s.liveApp},
 		{"GET", "/settings", s.requireSession(s.showSettings)},
@@ -373,7 +382,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "servers", "addserver", "removeserver", "moveserver"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which
@@ -390,6 +399,10 @@ func (s *server) parseTemplates(names ...string) (map[string]*template.Template,
 		// one the set keeps.
 		if name == "app" || name == "settings" {
 			files = append(files, "templates/domains.html")
+		}
+		// The image scanner's shared pieces (feature 044): an app's Security panel and the Operator page.
+		if name == "app" || name == "opssecurity" {
+			files = append(files, "templates/security.html")
 		}
 		// An app's Logs tab is the Logs page filtered to the app (feature 024): one template. app.html
 		// comes after it, so the app's "content", "head" and "page-class" are the ones the set keeps.

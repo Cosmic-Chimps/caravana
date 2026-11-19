@@ -293,6 +293,31 @@ func (s *Service) ImageScans(ctx context.Context) ([]ImageScanSummary, error) {
 	return out, nil
 }
 
+// ScansOf reads the stored scans of the given images in one query, for the
+// history's one-line counts. It is nil while the image scanner isn't installed,
+// and an image with no scan is missing from the map.
+func (s *Service) ScansOf(ctx context.Context, images []string) (map[string]store.ImageScan, error) {
+	installed, err := s.scannerInstalled(ctx)
+	if err != nil || !installed || len(images) == 0 {
+		return nil, err
+	}
+	all, err := s.store.ListImageScans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(images))
+	for _, image := range images {
+		want[image] = true
+	}
+	out := map[string]store.ImageScan{}
+	for _, scan := range all {
+		if want[scan.Image] {
+			out[scan.Image] = scan
+		}
+	}
+	return out, nil
+}
+
 // ScanRuns lists the newest scan runs, newest first, at most n (the newest 50
 // when n isn't positive).
 func (s *Service) ScanRuns(ctx context.Context, n int) ([]store.ScanRun, error) {

@@ -37,7 +37,7 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 4: Console (US1, US5, US6)
 
-- [ ] T011 `internal/ui`: Operator › Security with install and remove (D15), the Security panel and part, the history counts, Scan now, Operator › Security with the
+- [x] T011 `internal/ui`: Operator › Security with install and remove (D15), the Security panel and part, the history counts, Scan now, Operator › Security with the
   settings and the lists, the nav entry, the live notice (D13); tests (pages render, no secret, forms without
   JavaScript); `tools/ui-css.sh build`.
 
