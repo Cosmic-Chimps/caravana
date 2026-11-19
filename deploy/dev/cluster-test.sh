@@ -603,6 +603,7 @@ $(awk '$2 != 200' "$WORK/blip-calls")"
   { [ "$REQ_CODE" = 409 ] && grep -q '"code":"server_running"' <<<"$REQ_BODY"; } || die "removing a running server should be 409 server_running, got $REQ_CODE: $REQ_BODY"
   say "7. start VM 3 again: its interfaces and Nomad come back by themselves, and it is ready and a voter"
   limactl start cv-cluster-3 >/dev/null 2>&1
+  no_ordering_cycle 3
   wait_for 180 "three should be ready again" srv_is three state ready
   wait_for 60 "raft should have three voters again" voters_are 1 3
   # Past lost_after it is as before 031's task ctbb: the replacements stay, the copy on three doesn't.
@@ -625,6 +626,7 @@ $(awk '$2 != 200' "$WORK/blip-calls")"
   done
   say "8. start VM 1 again: the console answers through Traefik, spread answers, three voters"
   limactl start cv-cluster-1 >/dev/null 2>&1
+  no_ordering_cycle 1
   wait_for 180 "GET /v1/health should answer through Traefik" console_health
   wait_for 120 "spread should answer" app_answers spread.test
   wait_for 120 "raft should have three voters" voters_are 2 3
@@ -687,6 +689,13 @@ front_got_answer() {
   local id
   id="$(copies_json pair | jsonq "[c['id'] for c in d['copies'] if c['service']=='front' and c['status']=='healthy'][0]" 2>/dev/null)" || return 1
   grep -q 'Hostname:' < <(api -fsS "https://$DOMAIN/v1/apps/pair/logs?copy=$id&lines=50")
+}
+# no_ordering_cycle N: VM N's boot has no ordering cycle in its journal (task c6wd: caravana-mesh.service
+# once closed one with cloud-init, and systemd broke it by dropping a job, ssh.socket on some boots).
+no_ordering_cycle() {
+  local lines
+  lines="$(vm "$1" sudo journalctl -b -o cat | grep 'ordering cycle' || true)"
+  [ -z "$lines" ] || die "VM $1's boot has an ordering cycle:\n$lines"
 }
 # console_health: the console answers its health check through Traefik.
 console_health() { grep -q '"status":"ok"' < <(vm 1 curl -ksS --max-time 5 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/v1/health" 2>/dev/null); }
