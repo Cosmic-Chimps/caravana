@@ -112,8 +112,9 @@ func SBOMPath(image string) string {
 // which Caravana writes before it registers the job. The other shapes never
 // read a registry's credentials and get no variable.
 //
-//   - The group has host networking, so the task reaches the registry the way
-//     the node's Docker does (a registry on the node's loopback included).
+//   - The group and the container have host networking (the group's mode alone
+//     leaves Docker's bridge), so the task reaches the registry the way the
+//     node does (a registry on the node's loopback included).
 //     Grype reads the image from its registry itself; it needs no Docker
 //     daemon, which is why the task mounts nothing of the node's.
 //   - The database is cached in ScanVolume, mounted at /cache (the database in
@@ -172,6 +173,9 @@ func ScanJob(runID string, src ScanSource, opt ScanOptions, s Settings, private 
 		Config: map[string]any{
 			"image": s.scannerImage(),
 			"args":  args,
+			// The group's host network mode isn't enough: Docker still puts the container on its
+			// bridge, which can't reach a registry on the node's loopback (lab, 2026-11-19).
+			"network_mode": "host",
 		},
 		Env:       env,
 		Templates: templates,

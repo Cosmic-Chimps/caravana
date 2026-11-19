@@ -101,6 +101,9 @@ func TestScanJobShape(t *testing.T) {
 		if len(g.Constraints) != 1 || g.Constraints[0].LTarget != "${node.unique.id}" || g.Constraints[0].Operand != "=" || g.Constraints[0].RTarget != "node-7" {
 			t.Errorf("%s: constraints = %+v, want the node that holds the volume", name, g.Constraints)
 		}
+		if mode := g.Tasks[0].Config["network_mode"]; mode != "host" {
+			t.Errorf("%s: the task's network_mode = %v, want host (the group's mode alone leaves Docker's bridge)", name, mode)
+		}
 		if v := g.Volumes["cache"]; v == nil || v.Source != ScanVolume || v.Type != "host" || v.ReadOnly {
 			t.Errorf("%s: volume = %+v, want the writable host volume %s", name, v, ScanVolume)
 		}

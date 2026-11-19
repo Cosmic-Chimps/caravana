@@ -1661,6 +1661,49 @@ costs a rebuild of its copies. Operator doc: `docs/network-blips.md`.
   change: the runs that got that far stopped on the network (partial Nomad downloads), a stalled `limactl shell` and,
   in step 8, a boot ordering cycle between `caravana-mesh.service` and cloud-init that drops `ssh.socket` (task `c6wd`).
 
+Feature 044 (`specs/044-image-scanning`, CodeAlta task `z57f`, worktree branch `alta/gallant-helm-7qwv`): the image
+scanner, an add-on the owner installs, finds known vulnerabilities in the images apps run. `plan.md` D1–D18 are the
+decisions (D15–D18 are the maintainer's changes of the same day); `research.md` R1–R5 the lab facts. Operator doc:
+`docs/image-scanning.md`. Constitution 1.2.1 names its helpers.
+- Scanner: Grype v0.117.0 pinned by digest (`CARAVANA_SCANNER_IMAGE`, `nomadjob.DefaultScannerImage`), chosen over
+  Trivy for privacy and supply chain (R1: Trivy's telemetry is on by default, its March 2026 releases were
+  compromised). Its database is 3.5 GB on disk and a 204 MB download a day; a scan peaks at about 477 MB.
+- The add-on (D15): table `addons`, `service/addons.go`; until `PUT /v1/addons/image-scanner` nothing exists (no image,
+  volume, download, queue, gate or needs-you item). Remove stops the queue and a running scan, deletes the volume and
+  every result (`ForgetScans`, which also drops the kind's `sent_problems`, so no "resolved" is sent).
+- Jobs (`nomadjob/scan.go`, pure, goldens `scan*`): one batch job `_scan-<run>` per image (`_` so no app's ID or
+  prefix matches), constrained to the node of the host volume `caravana-scanner` (one database per installation,
+  D16), Grype's update check off, `GRYPE_DB_UPDATE_CHECK_MAX_FREQUENCY=24h`, an optional mirror (`databaseUrl` →
+  `GRYPE_DB_UPDATE_URL`). A registry scan writes the findings (`vulns.Template`) and the CycloneDX SBOM
+  (`/cache/sbom/<hex>.cdx.json`) in one run; the daily rescan reads the SBOM (no pull, no credentials, D17); install
+  runs `db update`. A private image's credentials are the job's own variable (`GRYPE_REGISTRY_AUTH_*`), purged with
+  the job. Lab, observed: the group's host network mode isn't enough, the container needs docker
+  `network_mode = "host"` to reach a loopback registry (R5).
+- `internal/vulns` (pure) parses the result: one severity scale (critical…info), a stable finding ID (16 hex of
+  SHA-256 over check and digest), CVE, EPSS, KEV, a remediation sentence, the scanner's version and the database's
+  date. `deploy/scan.go` starts, reads, classifies (fixed classes from Grype's stderr, never its text) and purges.
+- Service (`scanner.go`, `scanroom.go`, `scanreads.go`): one runner, one scan at a time, fed by healthy deploys
+  (`finish`), the daily pass (`daily_hour`, 04:00 UTC), the owner, the install and the gate; skipped when the
+  volume's server has under 512 MB unreserved memory or 4 GiB free disk; 20-minute limit; restart recovery; results
+  of digests no live deployment runs are pruned. Migration `0034_image_scans.sql` (`addons`, `image_scans`,
+  `image_findings` with `first_seen`/`last_seen`, `scan_runs`, `scan_settings`).
+- Gate (`gate.go`, D9): with `refuseFixableCritical` on, `deployWarned` scans each new image (waiting at most half the
+  deploy's remaining budget) and refuses a fixable critical with `*ImageVulnerableError` → 422 `image_vulnerable` on
+  `services[i].image`; a scan that can't be made is a warning.
+- Needs-you `image_vulnerable` (`attention_scan.go`): one item per app, service and package with a fixable finding at
+  or above `notifyLevel` (critical, or high), key `image_vulnerable|<app>|<service>|<package>`; `notify.Event` gains
+  package, versions, advisory, severity and image.
+- API 0.49.0: `/v1/addons[/{name}]`, `/v1/apps/{id}/scan`, `/v1/apps/{id}/deployments/{deploymentId}/scan`,
+  `/v1/scans` (list, request), `/v1/scans/runs`, `/v1/scans/settings`; codes `image_vulnerable`,
+  `scanner_not_installed`, `addon_busy`, `addon_not_found`; deploy tokens denied by the default deny. MCP read tool
+  `get_app_scan`. Console: Operator › Security (`/ops/security`: install, remove, settings, images, runs) and the
+  Deployments tab's Security panel plus a count line per history entry. No OCSF export (fields kept for one).
+- Lab: the gate step `image-scan` (install, zlib CVE-2022-37434 on `alpine:3.14.0`, items and notifications,
+  `alpine:3.14.10` resolves them, the daily SBOM rescan finds a dropped finding again via
+  `Service.DropFindingForTests`, a private image with a sentinel password, the gate's 422, removal; 283 s) and the
+  console step `console-security` (136 s) passed on 2026-11-19. Each installs and removes the add-on, so each
+  downloads the database (~2 min); the lab VM needs about 4 GB free disk for it.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

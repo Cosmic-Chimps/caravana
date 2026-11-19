@@ -525,6 +525,18 @@ func (s *Store) SaveScanResult(ctx context.Context, image string, r vulns.Result
 	return nil
 }
 
+// DeleteImageFinding deletes the stored findings of image for advisory and returns how many
+// there were. It is the lab's stand-in for "the advisory didn't exist yet" (the service's
+// DropFindingForTests); nothing else deletes one finding.
+func (s *Store) DeleteImageFinding(ctx context.Context, image, advisory string) (int, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM image_findings WHERE image = ? AND advisory = ?`, image, advisory)
+	if err != nil {
+		return 0, fmt.Errorf("delete finding %s of %q: %w", advisory, image, err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // RecordScanTry records a try that gave no result (status failed or skipped,
 // with Caravana's sentence): the findings of the newest successful scan stay.
 // An image never scanned gets a row with no result.

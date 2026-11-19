@@ -40,7 +40,8 @@
               "-o",
               "cyclonedx-json=/cache/sbom/1699d99cb4b9ba7d1d9a54ad9a3a9ed8e1a4ee0a0bb1d1d1c1e5a1b1d5e0f4d.cdx.json"
             ],
-            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253"
+            "image": "anchore/grype@sha256:ddf9e9f204049f3a4a0955ef70873cabab6a31432125ad4f20a490b54950a253",
+            "network_mode": "host"
           },
           "Constraints": null,
           "Affinities": null,

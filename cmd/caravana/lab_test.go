@@ -226,6 +226,16 @@ func startLab(t *testing.T) labEnv {
 				defer currentMu.Unlock()
 				current.SetScheduleLimitForTests(d)
 			},
+			RunDailyScans: func(ctx context.Context) error {
+				currentMu.Lock()
+				defer currentMu.Unlock()
+				return current.RunDailyScansForTests(ctx)
+			},
+			DropFinding: func(ctx context.Context, image, advisory string) (int, error) {
+				currentMu.Lock()
+				defer currentMu.Unlock()
+				return current.DropFindingForTests(ctx, image, advisory)
+			},
 			SetTraefikMetricsURL: func(u string) {
 				currentMu.Lock()
 				defer currentMu.Unlock()

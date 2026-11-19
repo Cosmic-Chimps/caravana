@@ -699,6 +699,15 @@ func (s *Service) RunDailyScansForTests(ctx context.Context) error {
 	return s.dailyPass(ctx, s.clock.Now().UTC())
 }
 
+// DropFindingForTests deletes the stored findings of image for one advisory and
+// returns how many it dropped. The lab uses it as the stand-in for "the advisory
+// didn't exist when the image was scanned": the next scan of the unchanged digest
+// finds it again, as a new finding. It is for the lab only; no route, page or
+// command calls it.
+func (s *Service) DropFindingForTests(ctx context.Context, image, advisory string) (int, error) {
+	return s.store.DeleteImageFinding(ctx, image, advisory)
+}
+
 // dailyPass queues a rescan of every image an app that isn't stopped runs
 // (an image with a kept SBOM is rescanned from it when the run starts), prunes
 // what no app runs and writes the day.

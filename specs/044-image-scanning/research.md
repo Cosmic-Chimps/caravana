@@ -54,9 +54,10 @@ db	2026-11-19 06:23:17 +0000 UTC	v6.1.10	0.117.0
 - A batch job named `_scan-probe` registers, runs and purges; its task reads the variable
   `nomad/jobs/_scan-probe` through a template with no policy line (a job reads its own path). App IDs never contain
   `_` and are never empty, so `_scan-…` can be no app's job and starts with no app's prefix `<app>_`.
-- A batch group with `network { mode = "host" }` runs a docker task without any plugin setting: the task sees the
-  node's network, so it reaches a registry the way the node's Docker does (a loopback registry included, which the
-  gate's private-registry step uses).
+- A batch group with `network { mode = "host" }` runs a docker task without any plugin setting, **but the container
+  stays on Docker's bridge** (R5, found by the lab step with a loopback registry; this probe's call to `127.0.0.1:4646`
+  printed nothing, which already said so). The task also needs `network_mode = "host"` in its docker config to see the
+  node's network and reach a registry the way the node's Docker does.
 
 ## R4 Phase 1 in the lab (Grype v0.117.0, 2026-11-19)
 
@@ -87,3 +88,67 @@ db	2026-11-19 06:23:17 +0000 UTC	v6.1.10	0.117.0
   `GRYPE_REGISTRY_AUTH_AUTHORITY` all made Grype send the credentials to Docker Hub.
 - **Not yet seen** (T013): a scan as a Nomad job with host networking, the volume's ownership, whether Grype makes
   `/cache/sbom/` itself, and a real private registry.
+
+## R5 The lab steps (2026-11-19)
+
+The gate step `image-scan` (`cmd/caravana/gate_image_scan_test.go`) and the console step `console-security`
+(`console_security_test.go`) pass in the lab (Lima VM, arm64, 2 GiB, Nomad 2.0.7, Grype 0.117.0). Run them alone with
+`CARAVANA_LAB=1 go test ./cmd/caravana -run 'TestLab/^(api-needs-token|image-scan)$' -v -count=1 -timeout 40m` (283 s) and
+`-run 'TestConsoleLab/^(console-sign-in|console-security)$'` (136 s). Both install and remove the add-on, so each downloads the
+database again (the volume goes with the removal), and they must not run at the same time.
+
+**Timings** (gate step, three passing-or-nearly runs agree to a few seconds):
+
+| | Time |
+| --- | --- |
+| Install (volume, 204 MB database, `db update`) | 1 m 42 s – 1 m 53 s |
+| Deploy of `alpine:3.14.0` to its first scan result (registry scan, database warm, SBOM written) | 24 – 31 s (includes the deploy's own rollout, about 15 s) |
+| Daily rescan from the kept SBOM | 7 – 8 s |
+| Deploy of `alpine:3.14.10` to its scan result | 23 – 29 s |
+| Deploy of an image from the password-protected registry to its scan result | 22 s |
+| Remove (volume and results) | 1 s with the database never refreshed; the volume holds 3.5 GB |
+
+**What the step shows** (everything in plan D2 to D18 that research R4 listed as "not yet seen"):
+
+- A scan as a Nomad job works: the volume `caravana-scanner` is mounted at `/cache`, Grype writes `/cache/db` and creates
+  `/cache/sbom/` itself, and the job writes the result file the service reads. The scan ran on the volume's node
+  (`lima-caravana-lab`).
+- **The SBOM rescan gives the same result as the registry scan** for `alpine:3.14.0`: after one finding was dropped from the store, the
+  daily run (`trigger daily`, `source sbom`, status ok) found it again, with the same stable ID and a later `first_seen`, and the
+  image's finding count was the same as the registry scan's. A kept SBOM is read for the image's rescan with no pull and no variable.
+- Findings of `alpine:3.14.0`: `CVE-2022-37434` in `zlib 1.2.11-r3`, critical, fixable, fixed in `1.2.12-r2`, an https advisory link,
+  a 16-hex ID, first and last seen, scanner `0.117.0`, the database's build date, SBOM kept. The same image also opens three more
+  items (`libssl1.1` and `libcrypto1.1` for CVE-2021-3711, `apk-tools` for CVE-2021-36159), one per package, so one scan gives four
+  `problem.opened`. All four were resolved (`problem.resolved`, "Resolved: <the item's sentence>") by a deploy of `alpine:3.14.10`.
+- **The zlib-fixed tag is `alpine:3.14.10`** (zlib 1.2.12-r3; 3.14.8 has the same). It has no fixable critical in zlib; other packages may
+  still have findings, which the step doesn't judge.
+- A resolved event carries the app, the service and "Resolved: <sentence>" (no package property); the step finds zlib in the title.
+- A private image in a registry with htpasswd (`127.0.0.1:15000`, plain HTTP): the scan succeeded with the credentials from the job's own
+  variable (`GRYPE_REGISTRY_AUTH_AUTHORITY=127.0.0.1:15000` is enough for Grype; no `GRYPE_REGISTRY_INSECURE_USE_HTTP` was needed for a
+  loopback address: go-containerregistry tries https, then http for loopback). The step polled Nomad every 300 ms during the scan and saw
+  the job, with no password in its definition, and the variable holding the password; both were purged when the scan ended. The password
+  is in no API answer, the server log, the data directory's files or the scan job.
+- The deploy check: with it on, `alpine:3.14.0` is 422 `image_vulnerable` on `services[0].image`, the message naming the worst fixable
+  critical, its fix and how many more ("web's image has CVE-2021-36159 (critical) in apk-tools 2.12.5-r1, fixed in 2.12.6-r0 and 3 more").
+  The cached scan (under 24 hours) was used.
+- Removal: the add-on lists as `available`, the host volume is gone, `/v1/scans` and `/v1/scans/runs` are empty, no `image_vulnerable`
+  item is left and no `problem.resolved` is sent for the items that went with it.
+
+**What the lab found** (one production fix, two facts):
+
+1. **The group's `network { mode = "host" }` doesn't put the container on the host network.** Docker still used its bridge, so the scan of
+   an image on a registry at the node's loopback failed with Grype's "connection refused" (class "the image couldn't be read from its
+   registry"). R3 had tested a public image only. `nomadjob.ScanJob` now also sets `network_mode = "host"` in the docker config (goldens and
+   a shape test updated). Reproduced by hand with the pinned Grype image: with `--network host` it scans the registry's image with the
+   credentials; without, `dial tcp 127.0.0.1:15000: connect: connection refused` on https and http.
+2. **The add-on has no database date until its first scan.** The install's run is `grype db update`, which reports no date, and
+   `fillScannerFacts` takes it from the newest successful scan run, so Operator › Security says "database of …" only once an image has
+   been scanned (an installation with no running app shows none). The step asserts the date after the first scan. Decided (review, 2026-11-19): kept as
+   it is. The install queues a scan of every image a running app uses, so the date shows within a minute on any installation that
+   runs apps; a second job with `grype db status` would cost another container start for a date nobody needs before the first scan.
+3. A Docker bug of the lab, not of Caravana: `/tmp` in the VM is a tmpfs, so a by-hand Grype with its cache in `/tmp` fails with "no space
+   left on device" (R2 had the memory side of this).
+
+**Stderr classes (D4)**: the one phrase seen this time is "oci-registry: failed to get image descriptor from registry … connection refused"
+(class image read); "failed to load vulnerability db: database does not exist" (after a write error on a full disk) was seen again from the
+hand-run (class database). The classes of R4 stand.

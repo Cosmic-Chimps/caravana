@@ -713,6 +713,47 @@ func TestDailyRescansFromTheKeptSBOMAndFallsBackToTheRegistry(t *testing.T) {
 	}
 }
 
+func TestDropFindingForTestsLetsTheDailyRescanFindItAgain(t *testing.T) {
+	e, _ := newScanEnv(t)
+	ctx := context.Background()
+	rec := deployApp(t, e, whoami())
+	image := rec.Deployment.Digests["web"]
+	playScans(t, e.nomad, everyScanOK(resultText(zlibLine)))
+	installScanner(t, e)
+	waitRun(t, e, image, 1)
+
+	before, err := e.store.ImageFindings(ctx, image)
+	if err != nil || len(before) == 0 {
+		t.Fatalf("findings after the first scan = %d (%v), want some", len(before), err)
+	}
+	advisory := before[0].Advisory
+	if n, err := e.svc.DropFindingForTests(ctx, image, advisory); err != nil || n != 1 {
+		t.Fatalf("DropFindingForTests = %d, %v, want 1", n, err)
+	}
+	if left, _ := e.store.ImageFindings(ctx, image); len(left) != len(before)-1 {
+		t.Fatalf("after the drop %d findings are left, want %d", len(left), len(before)-1)
+	}
+
+	e.svc.clock.(*fakeClock).Set(e.svc.clock.Now().Add(24 * time.Hour)) // the next day
+	if err := e.svc.RunDailyScansForTests(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitRun(t, e, image, 2)
+	after, _ := e.store.ImageFindings(ctx, image)
+	var back *store.StoredFinding
+	for i := range after {
+		if after[i].Advisory == advisory {
+			back = &after[i]
+		}
+	}
+	if back == nil {
+		t.Fatalf("the daily rescan didn't find %s again: %+v", advisory, after)
+	}
+	if !back.FirstSeen.After(before[0].FirstSeen) {
+		t.Errorf("the finding's first_seen = %v, want after the first scan's %v (it is new again)", back.FirstSeen, before[0].FirstSeen)
+	}
+}
+
 func TestPrivateRegistryCredentialsReachOnlyTheScanJobsVariable(t *testing.T) {
 	e, logs := newScanEnv(t)
 	ctx := context.Background()

@@ -310,6 +310,8 @@ paragraph, constitution 1.2.1 (II's list gains `_scan-<id>` and the volume `cara
 - `RemoveImageScanner(ctx)`: writes `removing`; empties the queue (queued runs `failed` "the image scanner was
   removed"), stops a running scan job (`StopScan`, then purge), `DeleteScanVolume`, `ForgetScans`, deletes the row
   (so it lists as `available`); a failure leaves `failed` with the reason and Remove can be tried again.
+- The add-on's database date comes from the newest successful scan (the install's `db update` reports none), so
+  it shows once the install's first scans end (research R5).
 - While not `installed`: the runner idles, `queueScan` refuses, the deploy hook (D8) and the daily pass do nothing,
   the gate is off whatever the setting says, `image_vulnerable` isn't derived, and nothing is pulled or downloaded.
 

@@ -43,9 +43,9 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 5: Lab, docs (all)
 
-- [ ] T012 `cmd/caravana`: the gate step `image-scan` (US0–US5: install, alpine:3.14.0 findings, the item and notifications,
+- [x] T012 `cmd/caravana`: the gate step `image-scan` (US0–US5: install, alpine:3.14.0 findings, the item and notifications,
   the fixed image resolves it, the daily rescan finds a dropped advisory again, a private image with a sentinel
   password, the gate's 422, remove) and the console step `console-security`.
-- [ ] T013 Lab run: check Grype's stderr phrases for D4's classes, the multi-output run and an SBOM rescan against the image scan (D17), EPSS/KEV fields, the volume's node, timings; record them in
+- [x] T013 Lab run: check Grype's stderr phrases for D4's classes, the multi-output run and an SBOM rescan against the image scan (D17), EPSS/KEV fields, the volume's node, timings; record them in
   `research.md` (R4).
-- [ ] T014 Docs (D14): `docs/image-scanning.md`, `changelog.d/image-scanning.md`, CLAUDE.md, constitution 1.2.1.
+- [x] T014 Docs (D14): `docs/image-scanning.md`, `changelog.d/image-scanning.md`, CLAUDE.md, constitution 1.2.1.
