@@ -96,6 +96,17 @@ type Event struct {
 	// server_certificate_expiring) when it opens; ExpiresAt is then, for the certificate, when it
 	// ends. Such an event has no app, project or environment.
 	Server string `json:"server,omitempty"`
+	// Package, PackageVersion, FixedIn, Advisory, Severity and Image are the facts of an
+	// image_vulnerable problem (feature 044) when it opens: the package and its installed version,
+	// the worst of its fixable advisories at or above the notify level (its ID, "critical" or "high"),
+	// the versions that fix it (one entry each; any of them does) and the image's digest. Names and
+	// versions from the scanner's database only.
+	Package        string   `json:"package,omitempty"`
+	PackageVersion string   `json:"packageVersion,omitempty"`
+	FixedIn        []string `json:"fixedIn,omitempty"`
+	Advisory       string   `json:"advisory,omitempty"`
+	Severity       string   `json:"severity,omitempty"`
+	Image          string   `json:"image,omitempty"`
 	// Release is the newer Caravana release of a caravana.release event.
 	Release *Release  `json:"release,omitempty"`
 	URL     string    `json:"url,omitempty"` // the console page about it, when its address is known; a caravana.release's is the release page

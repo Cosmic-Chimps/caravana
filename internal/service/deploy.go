@@ -370,6 +370,15 @@ func (s *Service) deployWarned(ctx context.Context, a app.App, trigger app.Trigg
 		return DeployResult{DeploymentRecord: rec}, nil
 	}
 
+	// The image scanner's gate (feature 044): an image with a fixable critical
+	// vulnerability fails the deploy before anything is replaced, and one that
+	// couldn't be checked is a warning.
+	gateWarnings, err := s.gateImages(ctx, a, digests)
+	if err != nil {
+		return asResult(s.fail(rec, err))
+	}
+	warnings = append(warnings, gateWarnings...)
+
 	// The secrets go live before Nomad gets the job, and only for the newest
 	// deploy (the check above): the new copies read them when they start.
 	// Running copies keep the env they started with.

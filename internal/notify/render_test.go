@@ -496,3 +496,46 @@ func TestRenderServerProblem(t *testing.T) {
 		t.Errorf("webhook body = %s", raw)
 	}
 }
+
+// An image_vulnerable problem says its sentence in every channel, and the webhook's JSON has the
+// package facts (and none of them on an event of another kind).
+func TestRenderImageVulnerable(t *testing.T) {
+	ev := Event{
+		Type: EventProblemOpened, Kind: "image_vulnerable", AppID: "blog", Service: "web",
+		Title:   "blog/web: zlib has CVE-2022-37434 (critical)",
+		Text:    "zlib 1.2.11-r3 in blog/web has CVE-2022-37434 (critical), fixed in 1.2.12-r2.",
+		Package: "zlib", PackageVersion: "1.2.11-r3", FixedIn: []string{"1.2.12-r2"}, Advisory: "CVE-2022-37434",
+		Severity: "critical", Image: "docker.io/library/alpine@sha256:abc", At: fixedNow,
+	}
+	for _, kind := range []string{KindSlack, KindDiscord, KindNtfy} {
+		req, err := Render(Channel{Kind: kind, Address: "https://hooks.example.com/x"}, ev, "ndl_1", fixedNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(raw), ev.Text) {
+			t.Errorf("%s message = %s, want the sentence", kind, raw)
+		}
+	}
+	req, err := Render(Channel{Kind: KindWebhook, Address: "https://hooks.example.com/x", Secret: "s"}, ev, "ndl_1", fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	fixed, _ := body["fixedIn"].([]any)
+	if body["package"] != "zlib" || body["packageVersion"] != "1.2.11-r3" || body["advisory"] != "CVE-2022-37434" ||
+		body["severity"] != "critical" || body["image"] != ev.Image || len(fixed) != 1 || fixed[0] != "1.2.12-r2" {
+		t.Errorf("webhook = %s", raw)
+	}
+	plain := Event{Type: EventProblemOpened, Kind: "backup_failed", Title: "t", Text: "x", At: fixedNow}
+	raw, _ = json.Marshal(plain)
+	for _, key := range []string{"package", "packageVersion", "fixedIn", "advisory", "severity", "image"} {
+		if strings.Contains(string(raw), `"`+key+`"`) {
+			t.Errorf("an event of another kind has %q: %s", key, raw)
+		}
+	}
+}

@@ -68,6 +68,9 @@ func toAttentionItemJSON(it service.AttentionItem) attentionItemJSON {
 	if it.Kind == service.AttentionScaleAtMax {
 		out.Count = it.Count
 	}
+	if it.Kind == service.AttentionImageVulnerable {
+		out.Level = string(it.Level) // failed when an advisory is critical, else warning; detail is the sentence
+	}
 	if it.Kind == service.AttentionCaravanaUpdateFailed {
 		out.Level = string(it.Level) // failed for a run that failed, else warning
 	}

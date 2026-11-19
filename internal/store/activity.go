@@ -49,6 +49,7 @@ var OpenedProblemKinds = []string{
 	"os_reboot_required", "os_security_updates", "no_backup_destination",
 	"server_down", "server_certificate_expiring",
 	"scale_at_max",
+	"image_vulnerable",
 }
 
 // ActivityRow is one row of the feed. Which fields are filled depends on

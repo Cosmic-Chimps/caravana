@@ -17,6 +17,11 @@ import (
 // owner's settings. It holds names, counts, versions and Caravana's own
 // sentences, never the scanner's output (constitution VII).
 
+// ProblemImageVulnerable is the needs-you kind of a fixable vulnerability in a live
+// image. The service package owns the kind (service.AttentionImageVulnerable, which
+// a test keeps equal); the store needs the word to forget the notifier's rows.
+const ProblemImageVulnerable = "image_vulnerable"
+
 // AddonImageScanner is the name of the image scanner add-on.
 const AddonImageScanner = "image-scanner"
 
@@ -704,7 +709,7 @@ func (s *Store) ForgetScans(ctx context.Context) error {
 		`DELETE FROM scan_runs`,
 		`UPDATE scan_settings SET last_daily = ''`,
 		// The needs-you items of this kind end with the scanner, without a "resolved".
-		`DELETE FROM sent_problems WHERE kind = 'image_vulnerable'`,
+		`DELETE FROM sent_problems WHERE kind = '` + ProblemImageVulnerable + `'`,
 	} {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("forget scans: %w", err)

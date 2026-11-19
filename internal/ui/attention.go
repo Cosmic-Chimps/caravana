@@ -150,6 +150,13 @@ func (s *server) attentionRowAgain(now time.Time, it service.AttentionItem, pl p
 	case service.AttentionServerMoveIncomplete:
 		row.Mark = "warning"
 		row.Action, row.Href = "Open server", serverHref(it.Server)
+	case service.AttentionImageVulnerable:
+		// A fixable vulnerability in the live image: the findings are on the app's Deployments tab.
+		row.Mark = "warning"
+		if it.Level == metrics.DiskFailed {
+			row.Mark = "failed"
+		}
+		row.Action, row.Href = "Open findings", appHref+"/deployments"
 	case service.AttentionCaravanaUpdateFailed:
 		// A rolled back, refused or lost update is a warning; one that failed is a failure.
 		row.Mark = "warning"
@@ -221,6 +228,8 @@ func headlineWords(it service.AttentionItem) string {
 		return "has copies that can't be placed"
 	case service.AttentionScaleAtMax:
 		return "has a service at its maximum copies and still over its target"
+	case service.AttentionImageVulnerable:
+		return "runs an image with a vulnerability that has a fix"
 	}
 	return fmt.Sprintf("needs you (%s)", it.Kind)
 }

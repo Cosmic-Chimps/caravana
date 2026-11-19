@@ -23,9 +23,9 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 - [x] T006 `internal/service/scanner.go`: the queue and runner (D5), room (D7), triggers (D8), prune (D10), one node and the database URL (D16), SBOM rescans (D17), settings,
   `RequestScan`, the read models for D12, the lab hooks; tests with the fakes (a fake result per image, a second
   scan finding a new advisory, failures, skipped for room, restart recovery).
-- [ ] T007 `internal/service`: the gate in `deployWarned` (D9) with tests (refused naming the field, warning when
+- [x] T007 `internal/service`: the gate in `deployWarned` (D9) with tests (refused naming the field, warning when
   the scan fails, cached result used).
-- [ ] T008 `internal/service` + `internal/notify`: `image_vulnerable` (D11) in attention, `ProblemParts`,
+- [x] T008 `internal/service` + `internal/notify`: `image_vulnerable` (D11) in attention, `ProblemParts`,
   `AttentionKinds`, the activity feed, the notifier's event fields; tests (`TestEveryKindSaysTheSameWordsEverywhere`
   passes).
 

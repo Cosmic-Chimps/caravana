@@ -6703,6 +6703,26 @@ components:
         freeBytes:
           type: integer
           description: "`problem.opened` of `disk_nearly_full`: what is left, in bytes."
+        package:
+          type: string
+          description: "`problem.opened` of `image_vulnerable` (feature 044): the package with the advisory, such as `zlib`."
+        packageVersion:
+          type: string
+          description: "`problem.opened` of `image_vulnerable`: the package's installed version."
+        fixedIn:
+          type: array
+          items: {type: string}
+          description: "`problem.opened` of `image_vulnerable`: the versions that fix the advisory; any one does."
+        advisory:
+          type: string
+          description: "`problem.opened` of `image_vulnerable`: the worst advisory of the package at or above the notify level that has a fix (its CVE ID when it has one)."
+        severity:
+          type: string
+          enum: [critical, high]
+          description: "`problem.opened` of `image_vulnerable`: that advisory's severity."
+        image:
+          type: string
+          description: "`problem.opened` of `image_vulnerable`: the image's digest (`repo@sha256:...`)."
         release:
           type: object
           additionalProperties: false
@@ -9511,7 +9531,7 @@ components:
           enum: [deploy_failed, out_of_memory, restarting, unhealthy, backup_failed, restore_failed, no_backup_destination,
             schedule_failed, schedule_skipping, domain_dns_elsewhere, domain_cert_expiring, disk_nearly_full,
             os_reboot_required, os_security_updates, caravana_update_failed, server_down, server_certificate_expiring,
-            copies_unplaced, server_move_incomplete, scale_at_max]
+            copies_unplaced, server_move_incomplete, scale_at_max, image_vulnerable]
           description: |
             What needs a person. `schedule_failed`: a schedule's latest run that ended, not
             counting skipped slots and runs stopped on purpose, failed (an exit code other than 0,
@@ -9560,7 +9580,12 @@ components:
             last 10 minutes is still above its target ("blog/web: at its maximum of 3 copies and still
             over its target. Raise the maximum, give it more CPU, or add a server."). It is read from
             the stored counts and minute rows, and goes when the load drops, the maximum is raised or
-            the app stops. Clients should accept kinds they don't know.
+            the app stops. `image_vulnerable` (feature 044), a warning, failed when an advisory is
+            critical: a service's live image has a package with an advisory at or above the notify
+            level that has a known fix, one item per package; `detail` is the sentence ("zlib 1.2.11-r3
+            in blog/web has CVE-2022-37434 (critical), fixed in 1.2.12-r2."). It exists only while the
+            image scanner is installed, and goes when a deploy brings an image without it or the app
+            stops. Clients should accept kinds they don't know.
         appId:
           type: string
           description: Absent for `no_backup_destination`, `disk_nearly_full`, `os_reboot_required`, `os_security_updates`, `caravana_update_failed`, `server_down` and `server_certificate_expiring`, which are about the installation, the host or a server.
@@ -9625,7 +9650,7 @@ components:
         level:
           type: string
           enum: [warning, failed]
-          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`.
+          description: For `disk_nearly_full`, `warning` from 85 % used and `failed` from 95 %. For `caravana_update_failed`, `failed` for a run that failed and `warning` for the other states. For `server_down`, `failed`; for `server_certificate_expiring` and `server_move_incomplete`, `warning`. For `image_vulnerable`, `failed` when an advisory is critical, else `warning`.
         scheduleId:
           type: string
           description: The schedule's ID (`getSchedule`), for the schedule kinds.
