@@ -23,6 +23,10 @@ const (
 	CopyUnhealthy CopyStatus = "unhealthy" // running but failing its checks
 	CopyStopped   CopyStatus = "stopped"   // finished or told to stop
 	CopyFailed    CopyStatus = "failed"    // crashed, or its node was lost
+	// CopyDisconnected is a copy whose node stopped answering and that Nomad keeps for it (client
+	// status "unknown") until the service's lost_after passes, then marks lost (failed). It
+	// probably still runs there, but nobody can say. Not terminal: it may come back untouched.
+	CopyDisconnected CopyStatus = "disconnected"
 )
 
 // Copy is one Nomad allocation as Caravana shows it. Nomad's types stay
@@ -78,6 +82,13 @@ type Copy struct {
 	Gone bool
 }
 
+// Reachable says something can be done in the copy: it hasn't ended, Nomad hasn't told it to stop,
+// and its server answers. A command, a terminal and a restart go through Nomad's client on the
+// copy's server, so a disconnected copy can't take any of them.
+func (c Copy) Reachable() bool {
+	return !c.Terminal && !c.Stopping && c.Status != CopyDisconnected
+}
+
 // copyOf maps one allocation to a Copy (research R8):
 //
 //	client pending                                        starting
@@ -88,6 +99,7 @@ type Copy struct {
 //	client running, health false                          unhealthy
 //	client complete                                       stopped
 //	client failed or lost                                 failed
+//	client unknown (its node is disconnected)             disconnected
 //
 // Nomad leaves a copy's DeploymentStatus nil until its health is decided, and the
 // list stub doesn't say which deployment it belongs to, so a nil status alone
@@ -95,8 +107,7 @@ type Copy struct {
 // active (the job versions with a deployment still going) tells them apart: nil
 // means none is known, and a nil status is then read as healthy.
 //
-// Any other client status (Nomad's "unknown", for a node that dropped out)
-// counts as unhealthy: the copy isn't known to be serving, but may come back.
+// Any other client status counts as unhealthy.
 func copyOf(a *api.AllocationListStub, active rollouts) Copy {
 	c := Copy{
 		ID:          a.ID,
@@ -128,6 +139,8 @@ func copyOf(a *api.AllocationListStub, active rollouts) Copy {
 		c.Status = CopyStopped
 	case api.AllocClientStatusFailed, api.AllocClientStatusLost:
 		c.Status = CopyFailed
+	case api.AllocClientStatusUnknown:
+		c.Status = CopyDisconnected
 	default:
 		c.Status = CopyUnhealthy
 	}

@@ -93,6 +93,10 @@ type Service struct {
 	// names of the servers (feature 042). nil means any server that takes
 	// work.
 	Placement *Placement `json:"placement,omitempty"`
+	// Disconnect says how long the copies are kept when their server stops
+	// answering, before they are called lost (see Disconnect). nil means
+	// DefaultLostAfter.
+	Disconnect *Disconnect `json:"disconnect,omitempty"`
 	// Ports are the container ports the service listens on.
 	Ports []Port `json:"ports,omitempty"`
 	// Domains are public hostnames routed over HTTPS. All of a service's

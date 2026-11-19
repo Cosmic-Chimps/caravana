@@ -788,7 +788,7 @@ func TestOpsServerNeverShowsCommandOutput(t *testing.T) {
 }
 
 // Running here puts problems first, and a crash loop is one even between its restarts (designer's
-// last look): failed, crash signal, starting, stopping, then running.
+// last look): failed, crash signal, starting, disconnected, stopping, then running.
 func TestRowRank(t *testing.T) {
 	for _, tc := range []struct {
 		phase    string
@@ -800,8 +800,9 @@ func TestRowRank(t *testing.T) {
 		{service.CopyPhaseRunning, true, 1},
 		{service.CopyPhaseStarting, true, 1},
 		{service.CopyPhaseStarting, false, 2},
-		{service.CopyPhaseStopping, false, 3},
-		{service.CopyPhaseRunning, false, 4},
+		{service.CopyPhaseDisconnected, false, 3},
+		{service.CopyPhaseStopping, false, 4},
+		{service.CopyPhaseRunning, false, 5},
 	} {
 		if got := rowRank(tc.phase, tc.crashing); got != tc.want {
 			t.Errorf("rowRank(%s, crashing %v) = %d, want %d", tc.phase, tc.crashing, got, tc.want)

@@ -75,7 +75,12 @@
         ],
         "Volumes": null,
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -123,7 +128,10 @@
               "traefik.http.routers.whoami-web.tls=true",
               "traefik.http.routers.whoami-web.tls.certresolver=letsencrypt",
               "traefik.http.routers.whoami-web.middlewares=whoami-web-retry",
-              "traefik.http.middlewares.whoami-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.whoami-web-retry.retry.attempts=3",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.path=/",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": [
               "caravana.canary=true"

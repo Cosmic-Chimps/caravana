@@ -543,7 +543,12 @@
           }
         },
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": false,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {

@@ -144,6 +144,10 @@ type serverJSON struct {
 	Labels               map[string]string `json:"labels"`
 	LabelsApplied        bool              `json:"labelsApplied"`
 	Move                 *serverMoveJSON   `json:"move"`
+	// DisconnectedSince and KeptCopies are there only while state is "disconnected".
+	// (omitzero: this API's encoder writes a zero number under omitempty.)
+	DisconnectedSince string `json:"disconnectedSince,omitzero"`
+	KeptCopies        int    `json:"keptCopies,omitzero"`
 }
 
 func toServerJSON(v service.ServerView) serverJSON {
@@ -156,6 +160,7 @@ func toServerJSON(v service.ServerView) serverJSON {
 		Checks: toServerChecksJSON(v.Checks), CertificateExpiresAt: timeText(v.CertificateExpiresAt),
 		Copies: v.Copies, Unreachable: v.Unreachable,
 		Labels: v.Labels, LabelsApplied: v.LabelsApplied, Move: toServerMoveJSON(v.Move),
+		DisconnectedSince: timeText(v.DisconnectedSince), KeptCopies: v.KeptCopies,
 	}
 	if out.Unreachable == nil {
 		out.Unreachable = []string{}

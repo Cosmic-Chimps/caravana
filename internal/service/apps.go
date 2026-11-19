@@ -43,7 +43,7 @@ type AppStatus struct {
 	LiveVersion   *uint64 // the job version the healthy copies run; nil if none is healthy
 	NomadError    string  // why the state is unknown (also set while rolling out, if Nomad is unreadable)
 	// ReportedCopies is how many copies Nomad reports that haven't ended (starting,
-	// healthy or failing their checks), whatever their version; 0 when Nomad is
+	// healthy, failing their checks, or disconnected with their server), whatever their version; 0 when Nomad is
 	// unreadable. It tells "none of them is healthy" from "there are none". Not in
 	// the API: a console sentence needs it.
 	ReportedCopies int
@@ -108,7 +108,11 @@ func serviceCopies(svc app.Service, counts map[string]int) int {
 // (a copy on its way out, after a Stop or while a Start replaces it, serves
 // nothing for long). The live version is the newest version that has a
 // healthy copy, and only copies of that version count, so a healthy copy of
-// an old version never hides a broken new one.
+// an old version never hides a broken new one. A disconnected copy (its server
+// stopped answering) isn't healthy: nobody can say it serves, so the app reads
+// degraded or not running while it is out of reach. That is a fact about the
+// app, not a problem to raise: the needs-you list says nothing about it until
+// Nomad gives up on the copy (see consideredCopy).
 func statusOf(a app.App, counts map[string]int, latest *store.DeploymentRecord, copies []deploy.Copy, nomadErr error) AppStatus {
 	st := AppStatus{WantedCopies: wantedCopies(a, counts)}
 	if nomadErr != nil {

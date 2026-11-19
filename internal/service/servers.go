@@ -183,8 +183,10 @@ type ServerView struct {
 	Name  string
 	Index int // 0 for a Nomad node Caravana doesn't manage
 	Pool  string
-	// State is "waiting", "joining", "ready" or "down" (a ready server whose Nomad node is down,
-	// disconnected or gone).
+	// State is "waiting", "joining", "ready", "disconnected" or "down". A ready server whose Nomad
+	// node stopped answering is "disconnected" while Nomad keeps its copies for it (the cut may be a
+	// blip, nothing has been given up: see nodeStateOf) and "down" once it has none to keep, or the
+	// node is down or gone.
 	State                                                  string
 	Managed                                                bool // false: a Nomad node with no row (the lab; a host not rerun)
 	First, Ingress, ControlPlane, NomadServer, AcceptsWork bool
@@ -201,6 +203,10 @@ type ServerView struct {
 	Unreachable                                            []string // servers its last report couldn't reach
 	// NodeID is Nomad's ID for the server's node, "" when Nomad has none.
 	NodeID string
+	// DisconnectedSince is when Nomad stopped hearing the server and KeptCopies how many copies it keeps
+	// for it, both set only while State is "disconnected".
+	DisconnectedSince time.Time
+	KeptCopies        int
 	// Labels are the owner's labels for the server (feature 042); never nil. LabelsApplied says its
 	// Nomad node holds its name and exactly these labels now: false while Nomad can't be read, the node
 	// is down or the write hasn't reached it.
@@ -850,12 +856,24 @@ func (s *Service) serverViews(ctx context.Context) ([]ServerView, ClusterView, e
 		v := ServerView{ID: n.ID, Name: n.Name, Pool: n.Pool, State: "ready", Managed: false, NodeID: n.ID,
 			AcceptsWork: n.Eligible && !n.Draining, Copies: copies[n.Name], Labels: map[string]string{}}
 		if n.Down() {
-			v.State, v.AcceptsWork = "down", false
+			v.AcceptsWork = false
+			v.State, v.DisconnectedSince, v.KeptCopies = nodeStateOf(&n)
 		}
 		s.fillNumbers(ctx, &v)
 		views = append(views, v)
 	}
 	return views, s.clusterView(ctx, rows, views, nodes, nomadOK), nil
+}
+
+// nodeStateOf is the state word of a ready server whose Nomad node is gone (nil) or lost
+// (Down()): "disconnected", with since when and how many copies Nomad keeps, while the node holds
+// its copies (deploy.Node.Holding), and "down" otherwise: the node is down, missing, or its copies
+// have been called lost. The one rule for the server list, a server's page and the needs-you item.
+func nodeStateOf(n *deploy.Node) (state string, since time.Time, kept int) {
+	if n != nil && n.Holding() {
+		return "disconnected", n.DisconnectedSince, n.KeptCopies
+	}
+	return "down", time.Time{}, 0
 }
 
 func nodeNameOf(nodes []deploy.Node, id string) string {
@@ -893,7 +911,7 @@ func (s *Service) rowView(ctx context.Context, r store.Server, rows []store.Serv
 		v.AcceptsWork = r.State == store.ServerReady && node.Eligible && !node.Draining && !node.Down()
 	}
 	if r.State == store.ServerReady && nomadOK && (node == nil || node.Down()) {
-		v.State = "down"
+		v.State, v.DisconnectedSince, v.KeptCopies = nodeStateOf(node)
 	}
 	if r.State == store.ServerReady && !nomadOK {
 		v.AcceptsWork = true // unknown; not judged

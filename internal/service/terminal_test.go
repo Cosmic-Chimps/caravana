@@ -227,8 +227,9 @@ func TestOpenTerminal(t *testing.T) {
 		}
 		l.nomad.SetCopies("whoami",
 			api.AllocationListStub{ID: "c1", TaskGroup: "web", ClientStatus: "complete", JobVersion: 0},
-			api.AllocationListStub{ID: "c2", TaskGroup: "web", ClientStatus: "running", DesiredStatus: "stop", JobVersion: 0})
-		for _, id := range []string{"c1", "c2"} {
+			api.AllocationListStub{ID: "c2", TaskGroup: "web", ClientStatus: "running", DesiredStatus: "stop", JobVersion: 0},
+			api.AllocationListStub{ID: "c3", TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run", JobVersion: 0})
+		for _, id := range []string{"c1", "c2", "c3"} {
 			if err := open("whoami", id, "auto", ok); !errors.Is(err, ErrCopyNotRunning) {
 				t.Errorf("copy %s = %v, want ErrCopyNotRunning", id, err)
 			}

@@ -24,6 +24,11 @@ job "api" {
     update {
       canary = 1
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "grpc" {

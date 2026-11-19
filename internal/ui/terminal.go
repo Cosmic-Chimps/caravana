@@ -90,7 +90,7 @@ func (s *server) showTerminal(w http.ResponseWriter, r *http.Request, session st
 			"The Running tab lists the copies the app has now.")
 		return
 	}
-	if c := copies[i]; c.Terminal || c.Stopping {
+	if c := copies[i]; !c.Reachable() {
 		s.message(w, r, http.StatusConflict, "Terminal", "That copy isn't running.",
 			"A terminal opens only into a copy that is running. The Running tab lists the copies the app has now.")
 		return

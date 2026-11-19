@@ -64,6 +64,12 @@ type composeDraft struct {
 	// (feature 043). The form has no input for it (it is edited on Configure,
 	// or in the file's overlay), so request sends these. Nil for a new app.
 	keptScale map[string]*app.Scale
+
+	// keptDisconnect is, for an app that exists, each service's disconnect
+	// policy (network blips). The form has no input for it (it is set in the
+	// file's overlay or through the API), so request sends these. Nil for a new
+	// app.
+	keptDisconnect map[string]*app.Disconnect
 }
 
 // draftService is the overlay inputs of one Compose service: what Compose has
@@ -430,7 +436,10 @@ func (d composeDraft) request() compose.Request {
 		if d.keptScale != nil {
 			ov.Scale = d.keptScale[s.Name]
 		}
-		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil && ov.Scale == nil {
+		if d.keptDisconnect != nil {
+			ov.Disconnect = d.keptDisconnect[s.Name]
+		}
+		if len(ov.Domains) == 0 && ov.Health == nil && len(ov.Secrets) == 0 && ov.Backup == nil && len(ov.Identities) == 0 && len(ov.Publish) == 0 && ov.Placement == nil && ov.Scale == nil && ov.Disconnect == nil {
 			continue
 		}
 		if req.Services == nil {
@@ -702,6 +711,29 @@ func (d *composeDraft) keepScale(rec store.AppRecord) {
 		}
 		kept := *sc
 		d.keptScale[svc.Name] = &kept
+		if _, ok := d.service(svc.Name); !ok {
+			d.Services = append(d.Services, newDraftService(svc.Name))
+		}
+	}
+	d.sortServices()
+}
+
+// keepDisconnect makes the draft carry the disconnect policies the stored app
+// has, as keepScale does for scaling: an app that keeps its file has them in the
+// file's overlay, exactly as written; any other app has them on its services. A
+// deploy from the form must not drop a policy (constitution IV).
+func (d *composeDraft) keepDisconnect(rec store.AppRecord) {
+	d.keptDisconnect = map[string]*app.Disconnect{}
+	for _, svc := range rec.App.Services {
+		dc := svc.Disconnect
+		if rec.Compose != nil {
+			dc = rec.Compose.Services[svc.Name].Disconnect
+		}
+		if dc == nil {
+			continue
+		}
+		kept := *dc
+		d.keptDisconnect[svc.Name] = &kept
 		if _, ok := d.service(svc.Name); !ok {
 			d.Services = append(d.Services, newDraftService(svc.Name))
 		}

@@ -78,6 +78,7 @@ func goldenCases() []goldenCase {
 	cases = append(cases, dnsCases()...)
 	cases = append(cases, placementCases()...)
 	cases = append(cases, scaleCases()...)
+	cases = append(cases, disconnectCases()...)
 	cases = append(cases, publishedCases()...)
 	cases = append(cases, domainCases()...)
 	return append(cases, privateRegistryCases()...)

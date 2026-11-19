@@ -20,6 +20,8 @@ const (
 	CopyPhaseStarting = "starting"
 	CopyPhaseStopping = "stopping"
 	CopyPhaseFailed   = "failed"
+	// CopyPhaseDisconnected is a copy whose server stopped answering and that Nomad keeps for it.
+	CopyPhaseDisconnected = "disconnected"
 )
 
 // HostCopy is one copy on the node, with the app it belongs to and what it uses now against what its
@@ -143,21 +145,25 @@ func copyPhase(c deploy.Copy) string {
 		return CopyPhaseStopping
 	case c.Status == deploy.CopyStarting:
 		return CopyPhaseStarting
+	case c.Status == deploy.CopyDisconnected:
+		return CopyPhaseDisconnected
 	}
 	return CopyPhaseRunning
 }
 
-// phaseRank orders the phases problems first: failed, starting, stopping, then running.
+// phaseRank orders the phases problems first: failed, starting, disconnected, stopping, then running.
 func phaseRank(phase string) int {
 	switch phase {
 	case CopyPhaseFailed:
 		return 0
 	case CopyPhaseStarting:
 		return 1
-	case CopyPhaseStopping:
+	case CopyPhaseDisconnected:
 		return 2
+	case CopyPhaseStopping:
+		return 3
 	}
-	return 3
+	return 4
 }
 
 // hostCopyUsage puts a copy's measurement and reservation together; nil when it has neither.

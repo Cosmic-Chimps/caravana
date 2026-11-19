@@ -86,6 +86,10 @@ type Overlay struct {
 	// own metrics, as in app.Service (spec 043). The file's replicas is then
 	// the starting count.
 	Scale *app.Scale `json:"scale,omitempty"`
+	// Disconnect says how long the service's copies are kept when their
+	// server stops answering, as in app.Service (network blips). nil means
+	// the default.
+	Disconnect *app.Disconnect `json:"disconnect,omitempty"`
 	// Publish opens ports of the service on the server's address (spec 041).
 	// The file's own published numbers only warn: an entry here is how the
 	// owner publishes one.

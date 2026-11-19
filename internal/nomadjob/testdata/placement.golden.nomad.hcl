@@ -56,6 +56,11 @@ job "shop" {
       value = "nvme"
       weight = 50
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -66,7 +71,7 @@ job "shop" {
       name = "shop-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.shop-web.rule=Host(`shop.example.com`)", "traefik.http.routers.shop-web.entrypoints=websecure", "traefik.http.routers.shop-web.tls=true", "traefik.http.routers.shop-web.middlewares=shop-web-retry", "traefik.http.middlewares.shop-web-retry.retry.attempts=3"]
+      tags = ["traefik.enable=true", "traefik.http.routers.shop-web.rule=Host(`shop.example.com`)", "traefik.http.routers.shop-web.entrypoints=websecure", "traefik.http.routers.shop-web.tls=true", "traefik.http.routers.shop-web.middlewares=shop-web-retry", "traefik.http.middlewares.shop-web-retry.retry.attempts=3", "traefik.http.services.shop-web.loadbalancer.healthcheck.path=/", "traefik.http.services.shop-web.loadbalancer.healthcheck.interval=10s", "traefik.http.services.shop-web.loadbalancer.healthcheck.timeout=2s"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"
@@ -128,6 +133,11 @@ job "shop" {
     shutdown_delay = "5s"
     update {
       canary = 1
+    }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
     }
     network {
       mode = "bridge"

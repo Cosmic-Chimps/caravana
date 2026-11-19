@@ -478,3 +478,26 @@ func TestRunningTabSaysWhatScales(t *testing.T) {
 		t.Errorf("the Running tab lacks %q:\n%s", want, text(body))
 	}
 }
+
+// The draft sends the disconnect policy it keeps, even for a service with no other overlay.
+func TestComposeDraftDisconnect(t *testing.T) {
+	d, ok := parseComposeDraft(url.Values{"compose": {shopCompose}, "svc.worker.overlay": {"1"}})
+	if !ok {
+		t.Fatal("the draft was refused")
+	}
+	kept := &app.Disconnect{LostAfterSeconds: 120}
+	d.keepDisconnect(store.AppRecord{App: app.App{Services: []app.Service{{Name: "worker", Disconnect: kept}}}})
+	got := d.request().Services["worker"].Disconnect
+	if !reflect.DeepEqual(got, kept) {
+		t.Errorf("an existing app's disconnect = %+v, want the kept one", got)
+	}
+	got.LostAfterSeconds = 999
+	if kept.LostAfterSeconds != 120 {
+		t.Error("the draft shares memory with the stored policy")
+	}
+	d.keepDisconnect(store.AppRecord{App: app.App{Services: []app.Service{{Name: "worker"}}},
+		Compose: &compose.Request{Services: map[string]compose.Overlay{"worker": {Disconnect: &app.Disconnect{LostAfterSeconds: 600}}}}})
+	if got := d.request().Services["worker"].Disconnect; got == nil || got.LostAfterSeconds != 600 {
+		t.Errorf("kept overlay disconnect = %+v", got)
+	}
+}

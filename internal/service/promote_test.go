@@ -936,6 +936,39 @@ func TestPromotedTakesTheSourcesPlacement(t *testing.T) {
 	}
 }
 
+// The disconnect policy is how a service survives a network blip, not a per-environment value: a
+// promotion takes the source's, and lists it only when it differs.
+func TestPromotedTakesTheSourcesDisconnect(t *testing.T) {
+	source, target := staging(), production()
+	source.Services[0].Disconnect = &app.Disconnect{LostAfterSeconds: 120}
+
+	got, changes, _, err := promoted(target, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Services[0].Disconnect, source.Services[0].Disconnect) {
+		t.Errorf("disconnect = %+v, want the source's", got.Services[0].Disconnect)
+	}
+	if got.Services[0].Disconnect == source.Services[0].Disconnect {
+		t.Error("the target shares the source's disconnect pointer; it must be a copy")
+	}
+	if len(changes) != 1 || !slices.Contains(changes[0].Changed, "disconnect") {
+		t.Errorf("changes = %+v, want disconnect listed", changes)
+	}
+
+	// The same policy changes nothing; a source with none clears the target's.
+	target.Services[0].Disconnect = &app.Disconnect{LostAfterSeconds: 120}
+	_, changes, _, _ = promoted(target, source)
+	if slices.Contains(changes[0].Changed, "disconnect") {
+		t.Errorf("changes = %+v, the policy is the same", changes)
+	}
+	source.Services[0].Disconnect = nil
+	got, changes, _, _ = promoted(target, source)
+	if got.Services[0].Disconnect != nil || !slices.Contains(changes[0].Changed, "disconnect") {
+		t.Errorf("disconnect = %+v, changes = %+v, want the target's cleared and disconnect listed", got.Services[0].Disconnect, changes)
+	}
+}
+
 // Copy to keeps the rules: the copy runs where the original does.
 func TestCopyAppKeepsPlacement(t *testing.T) {
 	ctx := context.Background()
@@ -951,5 +984,23 @@ func TestCopyAppKeepsPlacement(t *testing.T) {
 	}
 	if !reflect.DeepEqual(rec.App.Services[0].Placement, prod.Services[0].Placement) {
 		t.Errorf("the copy's placement = %+v, want %+v", rec.App.Services[0].Placement, prod.Services[0].Placement)
+	}
+}
+
+// Copy to keeps the disconnect policy too.
+func TestCopyAppKeepsDisconnect(t *testing.T) {
+	ctx := context.Background()
+	e := shopEnv(t)
+	setDestination(t, e)
+	prod := production()
+	prod.Services[0].Disconnect = &app.Disconnect{LostAfterSeconds: 120}
+	deployHealthy(t, e, prod)
+
+	rec, _, err := e.svc.CopyApp(ctx, productionID, "staging")
+	if err != nil {
+		t.Fatalf("CopyApp() = %v", err)
+	}
+	if !reflect.DeepEqual(rec.App.Services[0].Disconnect, prod.Services[0].Disconnect) {
+		t.Errorf("the copy's disconnect = %+v, want %+v", rec.App.Services[0].Disconnect, prod.Services[0].Disconnect)
 	}
 }

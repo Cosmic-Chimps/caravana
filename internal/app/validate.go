@@ -57,7 +57,7 @@ const (
 // The order is fixed, so the same input always reports the same error:
 //  1. id, name, source.kind, services (at least one)
 //  2. each service in order: name, image, replicas, resources, env, secrets,
-//     identities, dns, placement, scale, ports, domains, health, then volumes
+//     identities, dns, placement, scale, ports, domains, health, disconnect, then volumes
 //  3. deployment: id, trigger, a digest for each service in order, then any
 //     extra digest keys in sorted order
 //
@@ -374,7 +374,10 @@ func validateService(appID string, i int, svc Service, names, hosts map[string]b
 	if err := validateTCPUse(field, svc); err != nil {
 		return err
 	}
-	return validateHealth(field, svc, ports)
+	if err := validateHealth(field, svc, ports); err != nil {
+		return err
+	}
+	return validateDisconnect(field, svc)
 }
 
 // Limits of an entrypoint: generous for any real one, small enough that a

@@ -602,6 +602,9 @@ func fillNomad(m *store.MetricsSample, key deploy.ServiceKey, r *samplerReads) {
 		if c.Service != key.Group || c.Terminal {
 			continue
 		}
+		if c.Status == deploy.CopyDisconnected {
+			return // its server doesn't answer: the sum is a gap, not a smaller number that could look like idle
+		}
 		u, read := r.usage[c.ID]
 		if !read {
 			continue // not started: nothing to measure yet

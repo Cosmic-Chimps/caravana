@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.47.0
+  version: 0.48.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -5858,6 +5858,8 @@ components:
             `scale.min`): every deploy runs the count the service has now.
         scale:
           $ref: "#/components/schemas/ServiceScale"
+        disconnect:
+          $ref: "#/components/schemas/ServiceDisconnect"
         resources:
           type: object
           additionalProperties: false
@@ -6008,6 +6010,8 @@ components:
           $ref: "#/components/schemas/Placement"
         scale:
           $ref: "#/components/schemas/ServiceScale"
+        disconnect:
+          $ref: "#/components/schemas/ServiceDisconnect"
         publish:
           type: array
           description: |
@@ -6186,6 +6190,38 @@ components:
           minimum: 10
           maximum: 60000
           description: Milliseconds the slowest 5 % of requests may take, measured at the proxy, so the service needs a domain.
+
+    ServiceDisconnect:
+      type: object
+      additionalProperties: false
+      required: [lostAfterSeconds]
+      description: |
+        How long the service's copies are kept when their server stops answering. Without a
+        policy, Nomad calls a server down about 45 seconds after its last heartbeat, replaces its
+        copies at once and stops the old ones when it returns. Every service has one: the
+        default keeps the copies for 300 seconds, so a cut shorter than that costs nothing. A
+        service that can't start a copy elsewhere (it has a volume or a published port) gets no
+        replacement meanwhile and waits for its server; any other gets replacements, and when the
+        server returns the original copies stay and the replacements stop. A cut longer than
+        `lostAfterSeconds` behaves as it did before: the copies are lost and replaced.
+
+        A service with a domain whose copies the proxy can't check (no `health.path`, or the
+        health check on another port than the domains') has no policy and behaves as it did
+        before, because the proxy would keep sending traffic to the unreachable copy. For a
+        service with a domain and an HTTP check the proxy checks that path on every copy, which
+        takes an unreachable copy out of the load balancer within one `health.interval`.
+
+        Refused with `invalid_field` naming the field: an empty object or `lostAfterSeconds`
+        outside 60 to 86400 (`disconnect.lostAfterSeconds`; leave `disconnect` out for the
+        default), and a policy on a service with a domain the proxy can't check (`disconnect`:
+        give it an HTTP `health.path` on the domains' port). A promotion takes the source's
+        policy; `Copy to` keeps it.
+      properties:
+        lostAfterSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          description: Seconds the copies of an unreachable server are kept before they are called lost.
 
     ServiceDNS:
       type: object
@@ -8119,7 +8155,11 @@ components:
             deployment they scaled, so a scale never looks like a deploy.
         status:
           type: string
-          enum: [starting, healthy, unhealthy, stopped, failed]
+          enum: [starting, healthy, unhealthy, stopped, failed, disconnected]
+          description: |
+            `disconnected` is a copy whose server stopped answering and that Nomad keeps for it until the
+            service's `lostAfterSeconds` passes, then calls lost (`failed`). It probably still runs there, but
+            nobody can say; a command, a terminal or a restart can't reach it.
         restarts:
           type: integer
           minimum: 0
@@ -8646,7 +8686,7 @@ components:
         name: {type: string, description: "Nomad's node name; the installer sets it to the hostname."}
         state:
           type: string
-          enum: [ready, draining, ineligible, down, initializing]
+          enum: [ready, draining, ineligible, down, disconnected, initializing]
         pool: {type: string, description: "The node pool, `default` by default."}
         os:
           type: object
@@ -9187,8 +9227,14 @@ components:
         pool: {type: string}
         state:
           type: string
-          enum: [waiting, joining, ready, down]
-          description: "`down` is a server that was ready whose Nomad node is down, disconnected or gone."
+          enum: [waiting, joining, ready, disconnected, down]
+          description: |
+            `disconnected` is a server that was ready whose Nomad node stopped answering while Nomad keeps its
+            copies for it (`keptCopies`, since `disconnectedSince`): a cut that may be a blip, nothing is given
+            up yet. It takes no new work, and the needs-you list has no `server_down` item for it. After the
+            services' `lostAfterSeconds` Nomad calls those copies lost and the server is `down`.
+            `down` is a server that was ready whose Nomad node is down or gone, or disconnected with no copy
+            kept any more.
         managed:
           type: boolean
           description: "False for a Nomad node with no row: the dev lab's node, or a host not set up by the newer installer."
@@ -9257,6 +9303,14 @@ components:
               items:
                 $ref: "#/components/schemas/HostDisk"
             - type: "null"
+        disconnectedSince:
+          type: string
+          format: date-time
+          description: When Nomad stopped hearing the server. Present only while `state` is `disconnected`.
+        keptCopies:
+          type: integer
+          minimum: 1
+          description: How many copies Nomad keeps for the server until their `lostAfterSeconds` passes. Present only while `state` is `disconnected`.
         copies:
           type: integer
           minimum: 0

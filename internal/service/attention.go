@@ -564,8 +564,8 @@ func sortAttention(items []AttentionItem) {
 
 // copyItems turns one app's copies into items, per service (data-model
 // "Attention item"). Considered are the copies that haven't ended, and the
-// ones that failed within recentFailure: stopped copies never count, and
-// neither do copies of skip, the version a failed deployment registered (that
+// ones that failed within recentFailure: stopped and disconnected copies never
+// count (see consideredCopy), and neither do copies of skip, the version a failed deployment registered (that
 // deploy is the one problem). In a service:
 //
 //   - copies killed for memory are one out_of_memory item;
@@ -650,8 +650,14 @@ func copyCrashes(now time.Time, c Copy) int {
 }
 
 // consideredCopy says a copy counts for the crash rules: it hasn't ended, or
-// it failed within recentFailure. Stopped copies never count.
+// it failed within recentFailure. Stopped copies never count, and neither does a
+// disconnected one: its server stopped answering, so nobody knows how it is doing,
+// and the server's own item (server_down, once Nomad has given up on its copies)
+// speaks for it. Its restarts are old news and its health is unknown.
 func consideredCopy(now time.Time, c Copy) bool {
+	if c.Status == deploy.CopyDisconnected {
+		return false
+	}
 	failedRecently := c.Status == deploy.CopyFailed && c.FinishedAt != nil && now.Sub(*c.FinishedAt) <= recentFailure
 	return !c.Terminal || failedRecently
 }

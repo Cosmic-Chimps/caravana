@@ -157,7 +157,12 @@
         ],
         "Volumes": null,
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -204,7 +209,10 @@
               "traefik.http.routers.shop-web.entrypoints=websecure",
               "traefik.http.routers.shop-web.tls=true",
               "traefik.http.routers.shop-web.middlewares=shop-web-retry",
-              "traefik.http.middlewares.shop-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.shop-web-retry.retry.attempts=3",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.path=/",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": [
               "caravana.canary=true"
@@ -433,7 +441,12 @@
         ],
         "Volumes": null,
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -609,7 +622,12 @@
         "Spreads": null,
         "Volumes": null,
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {

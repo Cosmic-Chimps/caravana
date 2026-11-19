@@ -24,6 +24,11 @@
         "Update": { "Canary": 2 },
         "Spreads": [{ "Attribute": "${node.unique.id}", "Weight": 100 }],
         "ShutdownDelay": 5000000000,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "Networks": [
           {
             "Mode": "bridge",
@@ -41,7 +46,10 @@
               "traefik.http.routers.whoami-web.entrypoints=websecure",
               "traefik.http.routers.whoami-web.tls=true",
               "traefik.http.routers.whoami-web.middlewares=whoami-web-retry",
-              "traefik.http.middlewares.whoami-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.whoami-web-retry.retry.attempts=3",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.path=/",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.whoami-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": ["caravana.canary=true"],
             "Checks": [

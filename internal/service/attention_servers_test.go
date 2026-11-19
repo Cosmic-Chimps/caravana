@@ -34,7 +34,10 @@ func TestServerItemsOf(t *testing.T) {
 		{"a down node", []store.Server{ready(1, "hel-1", 0), ready(2, "fsn-2", 0)},
 			[]deploy.Node{up(1), {ID: "n2", Status: "down", AppAddress: "10.99.0.2"}}, true, []string{"server_down|fsn-2"},
 			"fsn-2 is down. Its copies are being replaced on other servers; what has a volume there waits for it."},
-		{"a disconnected node", []store.Server{ready(2, "fsn-2", 0)},
+		// Nomad keeps the copies of a disconnected node until their lost_after passes: a cut that may be a blip.
+		{"a disconnected node whose copies are kept is no item", []store.Server{ready(2, "fsn-2", 0)},
+			[]deploy.Node{{ID: "n2", Status: "disconnected", AppAddress: "10.99.0.2", KeptCopies: 2, DisconnectedSince: now.Add(-time.Minute)}}, true, nil, ""},
+		{"a disconnected node with no copy kept any more is down", []store.Server{ready(2, "fsn-2", 0)},
 			[]deploy.Node{{ID: "n2", Status: "disconnected", AppAddress: "10.99.0.2"}}, true, []string{"server_down|fsn-2"}, ""},
 		{"a node Nomad lost", []store.Server{ready(1, "hel-1", 0), ready(2, "fsn-2", 0)}, []deploy.Node{up(1)}, true, []string{"server_down|fsn-2"}, ""},
 		{"Nomad can't be read: nobody is down", []store.Server{ready(1, "hel-1", 0), ready(2, "fsn-2", 0)}, nil, false, nil, ""},

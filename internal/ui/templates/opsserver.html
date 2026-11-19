@@ -51,7 +51,7 @@
 <div class="cv-panel cv-dmbanner">
   <span class="cv-dmbanner-mark"><span class="cv-mark cv-mark-lg cv-mark-{{.Mark}}" aria-hidden="true"></span></span>
   <div class="cv-dmbanner-text">
-    <p class="cv-dmbanner-line">{{template "sentence" .Line}}</p>
+    <p class="cv-dmbanner-line">{{template "sentence" .Line}}{{with .Clock}} {{template "clock" .}}{{end}}{{template "sentence" .After}}</p>
     {{with .Explain}}<p class="cv-dmbanner-explain">{{template "sentence" .}}</p>{{end}}
   </div>
   {{if .Action}}<a href="{{.Href}}" class="cv-btn cv-btn-secondary cv-btn-sm">{{.Action}}</a>{{end}}

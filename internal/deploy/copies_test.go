@@ -11,6 +11,25 @@ import (
 )
 
 // A copy Nomad has told to stop may still say it is running; Stopping says so.
+func TestCopyReachable(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		c    Copy
+		want bool
+	}{
+		{"healthy", Copy{Status: CopyHealthy}, true},
+		{"starting", Copy{Status: CopyStarting}, true},
+		{"unhealthy", Copy{Status: CopyUnhealthy}, true},
+		{"disconnected", Copy{Status: CopyDisconnected}, false},
+		{"ended", Copy{Status: CopyStopped, Terminal: true}, false},
+		{"being stopped", Copy{Status: CopyHealthy, Stopping: true}, false},
+	} {
+		if got := tc.c.Reachable(); got != tc.want {
+			t.Errorf("%s: Reachable = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestCopyOfStopping(t *testing.T) {
 	for desired, want := range map[string]bool{"": false, "run": false, "stop": true, "evict": true} {
 		got := plainCopyOf(&api.AllocationListStub{ClientStatus: "running", DesiredStatus: desired})
@@ -41,7 +60,8 @@ func TestCopyOf(t *testing.T) {
 		{"complete", api.AllocationListStub{ClientStatus: "complete"}, CopyStopped, true},
 		{"failed", api.AllocationListStub{ClientStatus: "failed"}, CopyFailed, true},
 		{"lost", api.AllocationListStub{ClientStatus: "lost"}, CopyFailed, true},
-		{"unknown", api.AllocationListStub{ClientStatus: "unknown"}, CopyUnhealthy, false},
+		{"unknown", api.AllocationListStub{ClientStatus: "unknown"}, CopyDisconnected, false},
+		{"a status Nomad may add", api.AllocationListStub{ClientStatus: "weird"}, CopyUnhealthy, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

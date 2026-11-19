@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/nomad/api"
+
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
@@ -680,6 +682,76 @@ func TestListServers(t *testing.T) {
 	}
 	if _, err := e.svc.Server(ctx, "nobody"); !errors.Is(err, ErrServerNotFound) {
 		t.Errorf("Server(nobody) = %v", err)
+	}
+}
+
+// A server Nomad stopped hearing but keeps copies for is "disconnected", with since when and how many
+// copies, takes no work and is no needs-you item; once its copies are lost it is "down" and an item
+// (task ctbb).
+func TestADisconnectedServerIsNotDownWhileItsCopiesAreKept(t *testing.T) {
+	ctx := context.Background()
+	e := newClusterEnv(t)
+	_, two := e.join(t, "two", "")
+	e.nomad.AddNode("node-2", "two", "ready", "10.99.0.2")
+	e.nomad.AddNode("node-lab", "lab", "ready", "") // a node with no row
+	if _, err := e.svc.NodeSync(ctx, two.NodeToken, healthyReport(1)); err != nil {
+		t.Fatal(err)
+	}
+	since := time.Date(2026, 11, 18, 9, 30, 0, 0, time.UTC)
+	kept := func(id, node string) api.AllocationListStub {
+		return api.AllocationListStub{ID: id, NodeID: node, TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run"}
+	}
+	e.nomad.SetNodeStatusOf("node-2", "disconnected")
+	e.nomad.SetNodeStatusAtOf("node-2", since)
+	e.nomad.SetNodeStatusOf("node-lab", "disconnected")
+	e.nomad.SetCopies("blog", kept("b1", "node-2"), kept("b2", "node-2"))
+	e.nomad.SetCopies("lab-app", kept("l1", "node-lab"))
+
+	byName := func() map[string]ServerView {
+		view, err := e.svc.ListServers(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]ServerView{}
+		for _, s := range view.Servers {
+			m[s.Name] = s
+		}
+		return m
+	}
+	m := byName()
+	if v := m["two"]; v.State != "disconnected" || v.AcceptsWork || v.KeptCopies != 2 || !v.DisconnectedSince.Equal(since) {
+		t.Errorf("a disconnected server = %+v, want disconnected since %s with 2 copies kept, taking no work", v, since)
+	}
+	if v := m["lab"]; v.Managed || v.State != "disconnected" || v.KeptCopies != 1 {
+		t.Errorf("an unmanaged disconnected node = %+v", v)
+	}
+	if view, _ := e.svc.ListServers(ctx); view.Cluster.Ready != 1 {
+		t.Errorf("ready servers = %d, want only the first", view.Cluster.Ready)
+	}
+	att, err := e.svc.Attention(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range att.Items {
+		if it.Kind == AttentionServerDown {
+			t.Errorf("a disconnected server with its copies kept is a needs-you item: %+v", it)
+		}
+	}
+
+	// Past lost_after Nomad calls the copies lost, and the node stays "disconnected" in its own words.
+	lost := api.AllocationListStub{ID: "b1", NodeID: "node-2", TaskGroup: "web", ClientStatus: "lost", DesiredStatus: "stop"}
+	e.nomad.SetCopies("blog", lost)
+	m = byName()
+	if v := m["two"]; v.State != "down" || v.KeptCopies != 0 || !v.DisconnectedSince.IsZero() {
+		t.Errorf("a disconnected server with no copy kept = %+v, want down", v)
+	}
+	att, _ = e.svc.Attention(ctx)
+	found := false
+	for _, it := range att.Items {
+		found = found || (it.Kind == AttentionServerDown && it.Server == "two")
+	}
+	if !found {
+		t.Errorf("items = %+v, want server_down for two once its copies are lost", att.Items)
 	}
 }
 

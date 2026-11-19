@@ -191,7 +191,12 @@
           }
         },
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": false,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -238,7 +243,10 @@
               "traefik.http.routers.kuma-web.entrypoints=websecure",
               "traefik.http.routers.kuma-web.tls=true",
               "traefik.http.routers.kuma-web.middlewares=kuma-web-retry",
-              "traefik.http.middlewares.kuma-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.kuma-web-retry.retry.attempts=3",
+              "traefik.http.services.kuma-web.loadbalancer.healthcheck.path=/",
+              "traefik.http.services.kuma-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.kuma-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": [
               "caravana.canary=true"

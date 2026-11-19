@@ -91,7 +91,7 @@ func labelsFormOf(v service.ServerView, typed *string, problem sentence) *srvLab
 	if typed != nil {
 		l.Text = *typed
 	}
-	if !v.LabelsApplied && v.State != "down" {
+	if !v.LabelsApplied && v.State != "down" && v.State != "disconnected" {
 		l.Note = plainS("Nomad hasn't taken them yet. Caravana keeps trying, and a deploy that needs a label waits for it.")
 	}
 	return l

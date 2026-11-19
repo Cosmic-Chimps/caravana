@@ -97,6 +97,11 @@ job "shop" {
       canary = 0
       auto_promote = false
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = false
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "pg" {

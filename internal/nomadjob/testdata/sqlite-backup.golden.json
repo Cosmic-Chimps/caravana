@@ -334,7 +334,12 @@
           }
         },
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": false,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -381,7 +386,10 @@
               "traefik.http.routers.fhodor-web.entrypoints=websecure",
               "traefik.http.routers.fhodor-web.tls=true",
               "traefik.http.routers.fhodor-web.middlewares=fhodor-web-retry",
-              "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3",
+              "traefik.http.services.fhodor-web.loadbalancer.healthcheck.path=/",
+              "traefik.http.services.fhodor-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.fhodor-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": [
               "caravana.canary=true"

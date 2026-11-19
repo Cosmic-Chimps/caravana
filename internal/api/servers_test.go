@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/nomad/api"
+
 	"github.com/cosmic-chimps/caravana/internal/clusterca"
 	"github.com/cosmic-chimps/caravana/internal/mesh"
 	"github.com/cosmic-chimps/caravana/internal/nodeagent"
@@ -181,6 +183,44 @@ func TestServerReads(t *testing.T) {
 	for _, path := range []string{"/v1/servers/nobody", "/v1/servers/joins/nobody"} {
 		status, _, raw = call(t, http.MethodGet, e.URL+path, "", "")
 		wantError(t, "GET "+path, status, raw, http.StatusNotFound, codeServerNotFound, "")
+	}
+}
+
+// A server Nomad stopped hearing but keeps copies for is "disconnected", with since when and how many copies;
+// a plain server has neither field (task ctbb).
+func TestServerDisconnectedState(t *testing.T) {
+	e := newTestEnv(t, "")
+	withCluster(t, e)
+	e.Nomad.AddNode("node-lab", "lab", "disconnected", "") // a node with no row
+	since := time.Date(2026, 11, 18, 9, 30, 0, 0, time.UTC)
+	e.Nomad.SetNodeStatusAtOf("node-lab", since)
+	e.Nomad.SetCopies("blog",
+		api.AllocationListStub{ID: "b1", NodeID: "node-lab", TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run"},
+		api.AllocationListStub{ID: "b2", NodeID: "node-lab", TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run"})
+
+	status, _, raw := call(t, http.MethodGet, e.URL+"/v1/servers/lab", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getServer = %d %s", status, raw)
+	}
+	checkSchema(t, loadContract(t), raw, "Server")
+	got := decodeAs[map[string]any](t, raw)
+	if got["state"] != "disconnected" || got["acceptsWork"] != false || got["disconnectedSince"] != "2026-11-18T09:30:00Z" || got["keptCopies"] != float64(2) {
+		t.Errorf("a disconnected server = %v", got)
+	}
+
+	status, _, raw = call(t, http.MethodGet, e.URL+"/v1/servers/hel-1", "", "")
+	if status != http.StatusOK {
+		t.Fatalf("getServer = %d %s", status, raw)
+	}
+	checkSchema(t, loadContract(t), raw, "Server")
+	if m := decodeAs[map[string]any](t, raw); m["state"] != "ready" || m["disconnectedSince"] != nil || m["keptCopies"] != nil {
+		t.Errorf("a ready server has the disconnected fields: %v", m)
+	}
+
+	// And it is no needs-you item while Nomad keeps its copies.
+	status, _, raw = call(t, http.MethodGet, e.URL+"/v1/attention", "", "")
+	if status != http.StatusOK || strings.Contains(string(raw), `"server_down"`) {
+		t.Errorf("attention = %d %s, want no server_down item for a disconnected node", status, raw)
 	}
 }
 

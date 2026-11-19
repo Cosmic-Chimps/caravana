@@ -1627,6 +1627,40 @@ facts. Operator doc: `docs/autoscaling.md`.
 - Not in 043: scale to zero, steps over one, several targets or memory, scheduled scaling, services with volumes,
   Nomad's own autoscaler.
 
+Network blips (CodeAlta task `ctbb`, worktree branch `alta/breezy-cuckoo-wt94`): a server cut off for a minute no longer
+costs a rebuild of its copies. Operator doc: `docs/network-blips.md`.
+- Every app task group has Nomad's `disconnect` block (`nomadjob.disconnectStrategy`): `lost_after` is
+  `app.Service.Disconnect.LostAfterSeconds` (60–86400, default 300), `replace` is true unless the service has a volume
+  or a published port (`stopThenStart`), `reconcile = keep_original`. A service with a domain gets a Traefik health
+  check on its `health.path` (`healthCheckTags`), since Nomad keeps the registration of a copy it keeps and Traefik
+  would send traffic to it; a service with a domain the proxy can't check (TCP check, another port) gets no block and
+  refuses an explicit `disconnect`. Backup, restore and schedule run jobs have none.
+- Nomad (verified in its source): a node that misses its heartbeats is `disconnected`, not `down`, while it has a
+  copy whose `lost_after` hasn't expired; it stays `disconnected` until it reconnects, and the scheduler marks the
+  copies `lost` after `lost_after`. `deploy.Node` keeps `Down()` (down or disconnected: unreachable) and gains `KeptCopies`
+  (client status `unknown`, desired `run`), `DisconnectedSince` (the record's `StatusUpdatedAt`, read fresh, since
+  `nodeInfo` caches 10 minutes) and `Holding()`; they are read only for a disconnected stub, and a failed read leaves them
+  zero (the safe side: down).
+- A copy with client status `unknown` is the copy status `disconnected` (`deploy.CopyDisconnected`, not terminal;
+  `Copy.Reachable()` is false for it). It is no needs-you copy item and no crash (`consideredCopy`), is not healthy for
+  the app's status (degraded or not running, not a failure), is refused by Run a command, the terminal and Restart, is
+  skipped by a move, has no usage read and makes its service's CPU and memory samples a gap (so autoscaling waits), and
+  is a `disconnected` phase on a server page. Volume runs already took only healthy or unhealthy copies.
+- A server is `disconnected` (`ServerView.State`, `DisconnectedSince`, `KeptCopies`, via `nodeStateOf`) while its
+  node `Holding()`: no work accepted, not counted ready, and **no `server_down` item**. Once the copies are lost it is
+  `down` and the item opens as before. Remove stays allowed for both (it uses `Down()`).
+- API 0.48.0: `Server.state` `disconnected`, `disconnectedSince`, `keptCopies`, `Copy.status` and the host node's state
+  `disconnected`. Console: the servers list and page say "disconnected since <clock>, N copies kept running there" in the
+  warning colour (the banner takes a `Clock`), never "down".
+- Lab: `deploy/dev/cluster-test.sh` step 6d cuts server 3's mesh link for two minutes (the node is disconnected, its
+  copies kept, the stateless app keeps its count, no `server_down`, the volume app's task isn't restarted, at most 15
+  failed calls) and step 7 now waits `lost_after` before expecting down. Steps 1–7 passed on 2026-11-18: the blip cost 4
+  failed calls of ~230, losing server 3 for good 3 (031's run: 11). Each cut has a second short window when the
+  replacement registers: Traefik rebuilds the load balancer and counts the unreachable copy up until its next check
+  (2 calls at 75–80 s, both runs), so steps 6d and 7 allow 4 late failures. Steps 8–11 haven't run to the end with the
+  change: the runs that got that far stopped on the network (partial Nomad downloads), a stalled `limactl shell` and,
+  in step 8, a boot ordering cycle between `caravana-mesh.service` and cloud-init that drops `ssh.socket` (task `c6wd`).
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

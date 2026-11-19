@@ -76,6 +76,13 @@ func (w *hclWriter) group(g *api.TaskGroup) {
 				}
 			})
 		}
+		if d := g.Disconnect; d != nil {
+			w.block("disconnect", nil, func() {
+				w.optDuration("lost_after", d.LostAfter)
+				w.optBool("replace", d.Replace)
+				w.optString("reconcile", d.Reconcile)
+			})
+		}
 		for _, n := range g.Networks {
 			w.block("network", nil, func() {
 				w.optString("mode", &n.Mode)

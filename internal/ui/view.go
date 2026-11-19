@@ -261,7 +261,9 @@ func appStatusView(sum service.AppSummary) statusView {
 
 // copyStatusView is a copy's status as the Running table shows it. A copy that
 // fails its checks is a warning (it may still recover); one that crashed or
-// whose node was lost is a failure; one that ended on purpose is idle.
+// whose node was lost is a failure; one that ended on purpose is idle. A
+// disconnected copy (its server stopped answering, Nomad keeps it for a while) is
+// idle too: no one knows how it is, and the server says what happened.
 func copyStatusView(s deploy.CopyStatus) statusView {
 	switch s {
 	case deploy.CopyStarting:
@@ -272,6 +274,8 @@ func copyStatusView(s deploy.CopyStatus) statusView {
 		return statusView{"warning", "unhealthy"}
 	case deploy.CopyFailed:
 		return statusView{"failed", "failed"}
+	case deploy.CopyDisconnected:
+		return statusView{"idle", "disconnected"}
 	}
 	return statusView{"idle", "stopped"}
 }

@@ -57,8 +57,9 @@ func (d *Deployer) Reserved(r app.Resources) (cpuMHz, memoryMB, memoryMaxMB int)
 }
 
 // Usage reads the CPU and memory in use for each of the copies that is running
-// (research R6), keyed by copy ID. Copies that have ended or have not started
-// a task get no entry. It reads the service's own task, not the whole
+// (research R6), keyed by copy ID. Copies that have ended, have not started
+// a task or are disconnected (their server doesn't answer, so the call would only
+// wait for its timeout) get no entry. It reads the service's own task, not the whole
 // allocation, so the names sidecar doesn't count against the service.
 //
 // Nomad is asked once per copy, at most usageParallel at a time, each with its
@@ -77,7 +78,7 @@ func (d *Deployer) Usage(ctx context.Context, copies []Copy) map[string]CopyUsag
 		timeout = defaultUsageTimeout
 	}
 	for _, c := range copies {
-		if c.Terminal || c.StartedAt == nil {
+		if c.Terminal || c.StartedAt == nil || c.Status == CopyDisconnected {
 			continue
 		}
 		wg.Add(1)

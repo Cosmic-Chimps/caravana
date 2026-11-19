@@ -462,7 +462,7 @@ type copyEntry struct {
 	// passing its memory ceiling; the status column says so.
 	OutOfMemory bool
 	Usage       usageView
-	// Live says the copy hasn't ended, so a command can be run in it.
+	// Live says the copy hasn't ended and its server answers, so a command can be run in it.
 	Live bool
 	// Stopping says Nomad has told the copy to stop: a terminal can't be opened into it.
 	Stopping bool
@@ -614,7 +614,7 @@ func (s *server) loadCopies(r *http.Request, appID string) (copiesRegion, error)
 
 func copyEntryOf(now time.Time, c service.Copy) copyEntry {
 	e := copyEntry{ID: c.ID, Short: shortID(c.ID), Service: c.Service, Status: copyStatusView(c.Status),
-		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory, Live: !c.Terminal, Stopping: c.Stopping}
+		Version: versionLabel(&c.Version), Restarts: c.Restarts, OutOfMemory: c.OutOfMemory, Live: !c.Terminal && c.Status != deploy.CopyDisconnected, Stopping: c.Stopping}
 	switch {
 	case c.Terminal:
 		e.UpFor = "not running"

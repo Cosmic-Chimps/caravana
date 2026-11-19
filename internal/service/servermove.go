@@ -147,7 +147,9 @@ func classifyCopies(apps []store.AppRecord, byJob map[string][]deploy.Copy, node
 	}
 	for _, jobID := range slices.Sorted(maps.Keys(byJob)) {
 		for _, c := range byJob[jobID] {
-			if c.Node != node || c.Terminal || c.Stopping {
+			// A disconnected copy is out of reach: stopping it would only tell Nomad's servers, and
+			// the node isn't ready, so a move that reaches it is a cut that began meanwhile.
+			if c.Node != node || c.Terminal || c.Stopping || c.Status == deploy.CopyDisconnected {
 				continue
 			}
 			switch rec, isApp := recs[jobID]; {

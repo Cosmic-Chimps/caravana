@@ -5,6 +5,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/deploy/deploytest"
 )
@@ -50,6 +53,52 @@ func TestNodes(t *testing.T) {
 		got, _ = d.Nodes(ctx)
 		if len(got) != 2 || got[1].ID != "node-3" || got[1].Down() {
 			t.Errorf("after a change = %+v", got)
+		}
+	})
+
+	t.Run("a disconnected node says since when and how many copies Nomad keeps for it", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		since := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+		nomad.AddNode("node-2", "fsn-2", "ready", "10.99.0.2")
+		nomad.AddNode("node-3", "fsn-3", "disconnected", "10.99.0.3")
+		nomad.SetNodeStatusAtOf("node-3", since)
+		unknown := func(id, node string) api.AllocationListStub {
+			return api.AllocationListStub{ID: id, NodeID: node, TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run"}
+		}
+		nomad.SetCopies("a", unknown("a1", "node-3"), api.AllocationListStub{ID: "a2", NodeID: "node-2", ClientStatus: "running", DesiredStatus: "run"})
+		nomad.SetCopies("b", unknown("b1", "node-3"),
+			// the others on node-3 aren't kept: lost, told to stop, or still running
+			api.AllocationListStub{ID: "b2", NodeID: "node-3", ClientStatus: "lost", DesiredStatus: "stop"},
+			api.AllocationListStub{ID: "b3", NodeID: "node-3", ClientStatus: "unknown", DesiredStatus: "stop"},
+			api.AllocationListStub{ID: "b4", NodeID: "node-3", ClientStatus: "running", DesiredStatus: "run"})
+		got, err := d.Nodes(ctx)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("Nodes = %+v, %v", got, err)
+		}
+		if got[0].KeptCopies != 0 || !got[0].DisconnectedSince.IsZero() || got[0].Holding() {
+			t.Errorf("a ready node has no kept copies: %+v", got[0])
+		}
+		n3 := got[1]
+		if !n3.Down() || !n3.Holding() || n3.KeptCopies != 2 || !n3.DisconnectedSince.Equal(since) {
+			t.Errorf("node-3 = %+v, want disconnected, holding 2 copies since %s", n3, since)
+		}
+
+		// Past lost_after Nomad marks the copies lost: still "disconnected", no longer holding.
+		nomad.SetCopies("a", api.AllocationListStub{ID: "a1", NodeID: "node-3", TaskGroup: "web", ClientStatus: "lost", DesiredStatus: "stop"})
+		nomad.SetCopies("b")
+		got, _ = d.Nodes(ctx)
+		if n3 = got[1]; n3.Holding() || !n3.Down() || n3.KeptCopies != 0 || n3.Status != "disconnected" {
+			t.Errorf("after lost_after node-3 = %+v, want disconnected with nothing kept", n3)
+		}
+	})
+
+	t.Run("a plain down node asks for nothing more", func(t *testing.T) {
+		d, _, nomad := newTestDeployer(t)
+		nomad.AddNode("node-3", "fsn-3", "down", "10.99.0.3")
+		nomad.SetCopies("a", api.AllocationListStub{ID: "a1", NodeID: "node-3", ClientStatus: "unknown", DesiredStatus: "run"})
+		got, _ := d.Nodes(ctx)
+		if len(got) != 1 || got[0].Holding() || got[0].KeptCopies != 0 || !got[0].DisconnectedSince.IsZero() || !got[0].Down() {
+			t.Errorf("Nodes = %+v, want down, not holding", got)
 		}
 	})
 

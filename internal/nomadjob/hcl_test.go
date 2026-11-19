@@ -57,6 +57,7 @@ var hclCovers = []string{
 	"TaskGroups[].Networks[].ReservedPorts[].Label", "TaskGroups[].Networks[].ReservedPorts[].Value",
 	"TaskGroups[].Networks[].ReservedPorts[].To", "TaskGroups[].Networks[].ReservedPorts[].HostNetwork",
 	"TaskGroups[].Networks[].DNS.Servers", "TaskGroups[].Networks[].DNS.Searches", "TaskGroups[].Networks[].DNS.Options",
+	"TaskGroups[].Disconnect.LostAfter", "TaskGroups[].Disconnect.Replace", "TaskGroups[].Disconnect.Reconcile",
 	"TaskGroups[].Volumes{}.Name", "TaskGroups[].Volumes{}.Type", "TaskGroups[].Volumes{}.Source",
 	"TaskGroups[].Volumes{}.ReadOnly", "TaskGroups[].Volumes{}.AccessMode", "TaskGroups[].Volumes{}.AttachmentMode",
 	"TaskGroups[].Services[].Name", "TaskGroups[].Services[].PortLabel", "TaskGroups[].Services[].Provider",

@@ -14,7 +14,10 @@
 #       only, an impossible rule is refused naming the field, prefer and avoid are honoured
 #   6c  moving work off server 2 (spec 042): every movable copy leaves while an app is called
 #       every half second, what can't move is listed, and the server takes work again
-#    7  losing server 3, and getting it back by itself after a reboot
+#   6d  a two-minute cut of server 3's mesh link (task ctbb): its copies keep running, the app is
+#       served by the other servers meanwhile, and after the link is back one set of copies remains
+#       and the volume service on server 3 never restarted
+#    7  losing server 3 for longer than lost_after, and getting it back by itself after a reboot
 #    8  losing server 1 (the leader, Caravana and Traefik), and getting it back
 #    9  a certificate renewal reloads Nomad without restarting it
 #   10  removing a server that is down
@@ -132,6 +135,15 @@ while [ -e "$2" ]; do
   sleep 0.5
 done
 echo "$fails"
+EOF
+  cat >"$WORK/calls-until.sh" <<'EOF'
+#!/bin/bash
+# calls-until.sh HOST FLAG: call https://HOST/ every half second until FLAG is gone; print "<epoch> <status>" per call.
+while [ -e "$2" ]; do
+  code="$(curl -ksS --max-time 2 -o /dev/null -w '%{http_code}' --resolve "$1:443:127.0.0.1" "https://$1/" 2>/dev/null || true)"
+  echo "$(date +%s) ${code:-000}"
+  sleep 0.5
+done
 EOF
   cat >"$WORK/calls.sh" <<'EOF'
 #!/bin/bash
@@ -485,16 +497,83 @@ main() {
   wait_for 240 "spread should have three healthy copies again" healthy_copies spread 3
   wait_for 120 "spread's copies should be on three servers again" spread_on_three
 
+  # ---- 6d. a blip: server 3's mesh link is cut for two minutes (task ctbb) ------------------------
+  say "6d. three gets the label blip=yes, and a volume app requiring it runs on three"
+  request PUT /v1/servers/three/labels '{"labels":{"blip":"yes"}}'
+  [ "$REQ_CODE" = 200 ] || die "PUT /v1/servers/three/labels answered $REQ_CODE: $REQ_BODY"
+  wait_for 60 "three's label should reach Nomad's servers" srv_is three labelsApplied True
+  deploy vol3 '{"source":{"kind":"image"},"services":[{"name":"main","image":"busybox:1.37","command":"sleep","args":["3600"],
+    "volumes":[{"name":"a","path":"/a"}],"placement":{"require":{"blip":"yes"}},"resources":{"memoryMB":32,"memoryMaxMB":64}}]}'
+  wait_for 240 "vol3 should have a healthy copy" healthy_copies vol3 1
+  [ "$(copy_node vol3 main)" = three ] || die "vol3's copy should be on three, not $(copy_node vol3 main)"
+  local s3 v3 v3_task blip_at
+  s3="$(copies_json spread | jsonq "[c['id'] for c in d['copies'] if c['status']=='healthy' and c['node']=='three'][0]")"
+  v3="$(copies_json vol3 | jsonq "[c['id'] for c in d['copies'] if c['status']=='healthy'][0]")"
+  v3_task="$(task_started vol3 "$v3")"
+  [ -n "$s3" ] && [ -n "$v3" ] && [ -n "$v3_task" ] || die "can't find spread's and vol3's copies on three"
+  say "6d. cut three's mesh link (WireGuard's UDP port) while spread is called every half second"
+  # A Nomad server that was the leader is called disconnected about a minute later than one that
+  # wasn't (failover_heartbeat_ttl, research L14), so the cut lasts until the checks below are done,
+  # at least two minutes and well under lost_after (5 minutes).
+  vm 1 touch /tmp/watching-blip
+  vm 1 bash "$WORK/calls-until.sh" spread.test /tmp/watching-blip >"$WORK/blip-calls" </dev/null &
+  watcher=$!
+  sleep 3
+  blip_at="$(vm 1 date +%s)"
+  vm 3 sudo iptables -I INPUT -p udp --dport 51820 -j DROP
+  vm 3 sudo iptables -I OUTPUT -p udp --dport 51820 -j DROP
+  wait_for 180 "three should be disconnected, not down" srv_is three state disconnected
+  local out_blip
+  out_blip="$(api -fsS "https://$DOMAIN/v1/servers/three")"
+  [ -n "$(jsonq 'd.get("disconnectedSince") or ""' <<<"$out_blip")" ] || die "a disconnected server should say since when:
+$out_blip"
+  [ "$(jsonq 'd["keptCopies"]' <<<"$out_blip")" -ge 2 ] || die "three should keep at least spread's and vol3's copies:
+$out_blip"
+  ! grep -q '"kind":"server_down"' < <(api -fsS "https://$DOMAIN/v1/attention") || die "a disconnected server isn't a server_down item"
+  wait_for 120 "spread should have three healthy copies off three" healthy_copies spread 3
+  [ "$(copy_status spread "$s3")" = disconnected ] || die "spread's copy on three should be disconnected:
+$(copies_json spread)"
+  [ "$(copy_status vol3 "$v3")" = disconnected ] || die "vol3's copy should be disconnected:
+$(copies_json vol3)"
+  [ "$(copies_json vol3 | jsonq 'len([c for c in d["copies"] if c["id"]!="'"$v3"'" and c["status"] not in ("stopped","failed")])')" = 0 ] ||
+    die "vol3 can't start elsewhere, so it should have no other copy:
+$(copies_json vol3)"
+  while [ "$(($(vm 1 date +%s) - blip_at))" -lt 120 ]; do sleep 5; done
+  [ "$(($(vm 1 date +%s) - blip_at))" -lt 240 ] || die "the checks during the cut took too long: the copies would be lost"
+  say "6d. the link is back: three is ready, spread's original copy stays and its replacement stops"
+  vm 3 sudo iptables -D INPUT -p udp --dport 51820 -j DROP
+  vm 3 sudo iptables -D OUTPUT -p udp --dport 51820 -j DROP
+  wait_for 180 "three should be ready again" srv_is three state ready
+  wait_for 120 "spread should run exactly three copies, its original on three among them" running_copies_are spread 3 "$s3"
+  vm 1 rm -f /tmp/watching-blip
+  wait "$watcher" || true
+  wait_for 60 "vol3's copy should be running" running_copies_are vol3 1 "$v3"
+  [ "$(task_started vol3 "$v3")" = "$v3_task" ] || die "vol3's task restarted during the blip ($v3_task, now $(task_started vol3 "$v3"))"
+  local blip_failed blip_late
+  blip_failed="$(awk '$2 != 200' "$WORK/blip-calls" | wc -l | tr -d ' ')"
+  # Traefik's health check takes spread's copy on three out within one interval (5 s) plus its timeout.
+  # When the replacement is registered, Traefik rebuilds the service's load balancer and counts every
+  # copy up again until its next check, so one more short window of failures comes then (observed:
+  # 2 calls, 75 to 80 seconds after the cut).
+  blip_late="$(awk -v s="$blip_at" '$2 != 200 && $1 > s + 30' "$WORK/blip-calls" | wc -l | tr -d ' ')"
+  echo "    $blip_failed calls failed during the blip ($blip_late more than 30 seconds after the cut)"
+  [ "$blip_failed" -le 15 ] || die "$blip_failed calls failed during the blip (at most 15 may):
+$(awk '$2 != 200' "$WORK/blip-calls")"
+  [ "$blip_late" -le 4 ] || die "$blip_late calls failed more than 30 seconds after the cut:
+$(awk '$2 != 200' "$WORK/blip-calls")"
+  delete_app vol3
+  request PUT /v1/servers/three/labels '{"labels":{}}'
+
   # ---- 7. lose server 3 --------------------------------------------------------------------------
   say "7. stop VM 3 for good while spread is called every half second for 120 seconds"
-  # When the lost server is Nomad's leader, the new leader waits failover_heartbeat_ttl (1 minute, set
-  # by the agent; Nomad's default is 5) before it calls the node down, so its copy stays registered
-  # for about a minute longer (research L14). The bounds follow which case this run is.
-  # A server that isn't the leader is called down after its heartbeat's time plus heartbeat_grace (30
-  # seconds, research L18): up to about 50 seconds in which a third of the calls time out.
-  local stop_at was_leader=0 max_failed=25 quiet_after=75
+  # Traefik's health check takes the lost copy out within seconds. The node is called disconnected
+  # after its heartbeat's time plus heartbeat_grace (30 seconds, research L18), or a minute later
+  # when it was Nomad's leader (failover_heartbeat_ttl, research L14); a replacement starts then, and
+  # its registration puts the lost copy back in Traefik's rotation until its next check (see 6d), so
+  # a few calls may fail then too.
+  local stop_at was_leader=0 max_failed=20 quiet_after=40
   if [ "$(vm 1 curl -fsS http://127.0.0.1:4646/v1/status/leader | tr -d '"')" = "10.98.0.3:4647" ]; then
-    was_leader=1 max_failed=50 quiet_after=100
+    was_leader=1 max_failed=40 quiet_after=80
     echo "    (server 3 is Nomad's leader in this run)"
   fi
   vm 1 bash "$WORK/calls.sh" spread.test 120 >"$WORK/spread-calls" </dev/null &
@@ -508,11 +587,16 @@ main() {
   late="$(awk -v s="$stop_at" -v q="$quiet_after" '$2 != 200 && $1 > s + q' "$WORK/spread-calls" | wc -l | tr -d ' ')"
   echo "    $failed calls failed (leader lost: $was_leader)"
   [ "$failed" -le "$max_failed" ] || die "$failed calls failed after server 3 was lost (at most $max_failed may)"
-  [ "$late" = 0 ] || die "$late calls failed more than $quiet_after seconds after server 3 was lost"
-  healthy_copies spread 3 || die "spread should have three healthy copies again:\n$(copies_json spread)"
+  [ "$late" -le 4 ] || die "$late calls failed more than $quiet_after seconds after server 3 was lost (at most 4 may):\n$(awk '$2 != 200' "$WORK/spread-calls")"
+  wait_for 60 "spread should have three healthy copies again" healthy_copies spread 3
   [ "$(copies_json spread | jsonq 'len(set(c["node"] for c in d["copies"] if c["status"]=="healthy"))')" = 2 ] ||
     die "spread's three copies should be on two servers:\n$(copies_json spread)"
-  wait_for 120 "three should be down" srv_is three state down
+  local lost_copy
+  lost_copy="$(copies_json spread | jsonq "[c['id'] for c in d['copies'] if c['node']=='three' and c['status']=='disconnected'][0]")"
+  [ -n "$lost_copy" ] || die "spread's copy on three should be listed as disconnected:\n$(copies_json spread)"
+  ! grep -q '"kind":"server_down"' < <(api -fsS "https://$DOMAIN/v1/attention") || die "three isn't a server_down item while Nomad keeps its copies"
+  say "7. after lost_after (5 minutes) three's copies are lost, and three is down and a needs-you item"
+  wait_for 420 "three should be down" srv_is three state down
   out="$(api -fsS "https://$DOMAIN/v1/attention")"
   grep -q '"kind":"server_down"' <<<"$out" || die "GET /v1/attention should have a server_down item:\n$out"
   request DELETE /v1/servers/two
@@ -521,6 +605,8 @@ main() {
   limactl start cv-cluster-3 >/dev/null 2>&1
   wait_for 180 "three should be ready again" srv_is three state ready
   wait_for 60 "raft should have three voters again" voters_are 1 3
+  # Past lost_after it is as before 031's task ctbb: the replacements stay, the copy on three doesn't.
+  wait_for 120 "spread should run exactly three copies, none of them the lost one" running_copies_without spread 3 "$lost_copy"
   vm 3 systemctl is-active --quiet nomad || die "Nomad isn't running on VM 3 after its reboot"
   grep -q ' 10.98.0.3/32 ' < <(vm 3 ip -4 -o addr show dev caravana-mesh) || die "caravana-mesh isn't back on VM 3"
 
@@ -559,7 +645,8 @@ main() {
   # ---- 10. remove --------------------------------------------------------------------------------
   say "10. stop VM 3 for good, wait for down, remove it: the others drop its peer"
   limactl stop -f cv-cluster-3 >/dev/null 2>&1
-  wait_for 180 "three should be down" srv_is three state down
+  # Down once its copies are lost: lost_after (5 minutes) after Nomad called it disconnected.
+  wait_for 540 "three should be down" srv_is three state down
   request DELETE /v1/servers/three
   [ "$REQ_CODE" = 204 ] || die "removing a down server should be 204, got $REQ_CODE: $REQ_BODY"
   wait_for 90 "VMs 1 and 2 should have one peer each" one_peer_each
@@ -625,6 +712,26 @@ placed_app() {
 }
 # move_state_is NAME STATE: the server's newest move is in this state.
 move_state_is() { [ "$(api -fsS "https://$DOMAIN/v1/servers/$1" | jsonq 'd["move"]["state"]' 2>/dev/null)" = "$2" ]; }
+# copy_status APP ID: the status the console gives the app's copy ID.
+copy_status() { copies_json "$1" | jsonq "[c['status'] for c in d['copies'] if c['id']=='$2'][0]" 2>/dev/null; }
+# task_started APP ID: when the main task of the copy ID last started, and its restarts, as Nomad says.
+task_started() {
+  nomad_on 1 alloc status -json "$2" | jsonq '" ".join(t["StartedAt"] + "/" + str(t["Restarts"]) for n, t in sorted(d["TaskStates"].items()) if n == "main")'
+}
+# running_ids APP: the IDs of the app's copies Nomad wants running and that run, sorted.
+running_ids() { nomad_on 1 job allocs -t '{{range .}}{{if and (eq .DesiredStatus "run") (eq .ClientStatus "running")}}{{.ID}}{{"\n"}}{{end}}{{end}}' "$1" | sort; }
+# running_copies_are APP N ID: the app runs exactly N copies, ID among them.
+running_copies_are() {
+  local ids
+  ids="$(running_ids "$1")" || return 1
+  [ "$(grep -c . <<<"$ids")" = "$2" ] && grep -q "^$3" <<<"$ids"
+}
+# running_copies_without APP N ID: the app runs exactly N copies, ID not among them.
+running_copies_without() {
+  local ids
+  ids="$(running_ids "$1")" || return 1
+  [ "$(grep -c . <<<"$ids")" = "$2" ] && ! grep -q "^$3" <<<"$ids"
+}
 # spread_on_three: spread's healthy copies are on three different servers.
 spread_on_three() { [ "$(copies_json spread | jsonq 'len(set(c["node"] for c in d["copies"] if c["status"]=="healthy"))')" = 3 ]; }
 

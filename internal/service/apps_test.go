@@ -106,6 +106,13 @@ func TestStatusOf(t *testing.T) {
 		{"degraded: starting copies don't count", appWith("a", 3), latest(store.StatusHealthy),
 			[]deploy.Copy{copyOfVersion("web", 7, healthy), copyOfVersion("web", 7, deploy.CopyStarting), copyOfVersion("web", 7, deploy.CopyFailed)},
 			nil, StateDegraded, 3, 1, new(uint64(7))},
+		// Its server stopped answering: the copy isn't known to serve, and isn't a failure either.
+		{"degraded: a disconnected copy doesn't count", appWith("a", 2), latest(store.StatusHealthy),
+			[]deploy.Copy{copyOfVersion("web", 7, healthy), copyOfVersion("web", 7, deploy.CopyDisconnected)},
+			nil, StateDegraded, 2, 1, new(uint64(7))},
+		{"not running: only a disconnected copy", appWith("a", 1), latest(store.StatusHealthy),
+			[]deploy.Copy{copyOfVersion("web", 7, deploy.CopyDisconnected)},
+			nil, StateNotRunning, 1, 0, nil},
 		{"not running: no copies", appWith("a", 2), latest(store.StatusHealthy), nil,
 			nil, StateNotRunning, 2, 0, nil},
 		{"not running: never deployed", appWith("a", 1), nil, nil,

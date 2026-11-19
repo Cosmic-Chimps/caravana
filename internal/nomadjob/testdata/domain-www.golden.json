@@ -69,7 +69,12 @@
         "Spreads": null,
         "Volumes": null,
         "RestartPolicy": null,
-        "Disconnect": null,
+        "Disconnect": {
+          "LostAfter": 300000000000,
+          "StopOnClientAfter": null,
+          "Replace": true,
+          "Reconcile": "keep_original"
+        },
         "ReschedulePolicy": null,
         "EphemeralDisk": null,
         "Update": {
@@ -119,7 +124,10 @@
               "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.regex=^https://www[.]example[.]com(:[0-9]+)?/(.*)",
               "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.replacement=https://example.com$1/$2",
               "traefik.http.middlewares.shop-web-a379a6f6-www.redirectregex.permanent=true",
-              "traefik.http.middlewares.shop-web-retry.retry.attempts=3"
+              "traefik.http.middlewares.shop-web-retry.retry.attempts=3",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.path=/health",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.interval=10s",
+              "traefik.http.services.shop-web.loadbalancer.healthcheck.timeout=2s"
             ],
             "CanaryTags": [
               "caravana.canary=true"

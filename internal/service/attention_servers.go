@@ -11,8 +11,9 @@ import (
 )
 
 // The server kinds of the needs-you list (feature 031), derived on every read like the rest:
-//   - server_down: a ready server whose Nomad node is down, disconnected or gone. Judged only while
-//     Nomad's nodes could be read.
+//   - server_down: a ready server whose Nomad node is down or gone, or disconnected with none of its
+//     copies kept any more (the services' lost_after has passed). A disconnected server whose copies
+//     Nomad still keeps is no item: the cut may be a blip. Judged only while Nomad's nodes could be read.
 //   - server_certificate_expiring: a joining or ready server whose Nomad certificate ends in under 14
 //     days (its agent renews it at 30 days, so it couldn't). From the store alone.
 //   - server_move_incomplete (feature 042): the server's newest move ended incomplete and the server
@@ -48,13 +49,15 @@ func (s *Service) serverItems(ctx context.Context, now time.Time) (items []Atten
 }
 
 // serverItemsOf is the pure part. nomadOK is false when the nodes couldn't be read: nodes is then
-// ignored and no server is down, and no move is judged (it needs to know the server still takes no
+// ignored and no server is down (and one that is disconnected with its copies kept is not down yet), and no move is judged (it needs to know the server still takes no
 // new work). moves is each server's newest move, by index.
 func serverItemsOf(now time.Time, rows []store.Server, nodes []deploy.Node, nomadOK bool, moves map[int]store.ServerMove) []AttentionItem {
 	var items []AttentionItem
 	for _, r := range rows {
 		if r.State == store.ServerReady && nomadOK {
-			if node := nodeOf(nodes, r.Index); node == nil || node.Down() {
+			// A server whose copies Nomad still keeps (disconnected, inside the services' lost_after) is
+			// a cut that may be a blip, not a problem: the item comes when Nomad gives up on them.
+			if node := nodeOf(nodes, r.Index); node == nil || (node.Down() && !node.Holding()) {
 				when := r.SeenAt
 				if when.IsZero() {
 					when = now

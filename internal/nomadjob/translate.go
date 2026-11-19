@@ -309,6 +309,7 @@ func taskGroup(a app.App, svc app.Service, image string, s Settings, private map
 		tg.Spreads = []*api.Spread{{Attribute: "${node.unique.id}", Weight: new(int8(100))}}
 	}
 	tg.Constraints, tg.Affinities = placementBlocks(svc)
+	tg.Disconnect = disconnectStrategy(svc)
 	if len(svc.Volumes) > 0 {
 		tg.Volumes = volumeRequests(a.ID, svc)
 	}
@@ -386,7 +387,7 @@ func registration(a app.App, svc app.Service, s Settings) *api.Service {
 	}
 	if len(svc.Domains) > 0 {
 		reg.PortLabel = svc.Domains[0].Port
-		reg.Tags = routerTags(a.ID, svc.Name, name, svc.Domains, s)
+		reg.Tags = routerTags(a.ID, name, svc, s)
 		reg.CanaryTags = canaryTags
 	}
 	reg.Checks = []api.ServiceCheck{healthCheck(*svc.Health, checkPort, reg.PortLabel)}

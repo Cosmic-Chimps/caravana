@@ -25,6 +25,11 @@ job "kuma" {
       canary = 0
       auto_promote = false
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = false
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -47,7 +52,7 @@ job "kuma" {
       name = "kuma-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.kuma-web.rule=Host(`kuma.example.com`)", "traefik.http.routers.kuma-web.entrypoints=websecure", "traefik.http.routers.kuma-web.tls=true", "traefik.http.routers.kuma-web.middlewares=kuma-web-retry", "traefik.http.middlewares.kuma-web-retry.retry.attempts=3"]
+      tags = ["traefik.enable=true", "traefik.http.routers.kuma-web.rule=Host(`kuma.example.com`)", "traefik.http.routers.kuma-web.entrypoints=websecure", "traefik.http.routers.kuma-web.tls=true", "traefik.http.routers.kuma-web.middlewares=kuma-web-retry", "traefik.http.middlewares.kuma-web-retry.retry.attempts=3", "traefik.http.services.kuma-web.loadbalancer.healthcheck.path=/", "traefik.http.services.kuma-web.loadbalancer.healthcheck.interval=10s", "traefik.http.services.kuma-web.loadbalancer.healthcheck.timeout=2s"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

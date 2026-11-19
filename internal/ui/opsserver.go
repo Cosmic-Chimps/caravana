@@ -136,8 +136,12 @@ type srvReadOn struct {
 // srvBanner is a problem of the host as the contract draws it: the mark, the sentence, its
 // explanation when it has one and its one action (none for a node that is down).
 type srvBanner struct {
-	Mark    string
-	Line    sentence
+	Mark string
+	Line sentence
+	// Clock, when set, is a time that follows Line (a space between) and After ends the line: "fsn-3 disconnected
+	// since" 14:15 UTC · 16:15 local ", copies kept running there." A banner without a time leaves both empty.
+	Clock   *clockTime
+	After   sentence
 	Explain sentence
 	Action  string
 	Href    string
@@ -408,13 +412,16 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 		st := serverRowState(view)
 		d.head = srvHead{Name: view.Name, State: &st}
 		spec = serverSpecItems(view, "")
-		if view.State == "down" {
+		switch view.State {
+		case "down":
 			d.body.Banners = []srvBanner{downBanner(now, view)}
+		case "disconnected":
+			d.body.Banners = []srvBanner{disconnectedBanner(now, view)}
 		}
 	}
 	if managed {
 		spec = append(spec, serverRoleWords(view)...)
-		if view.State == "down" && !view.First {
+		if (view.State == "down" || view.State == "disconnected") && !view.First {
 			d.head.Remove = "/ops/servers/" + url.PathEscape(view.Name) + "/remove"
 		}
 	}
@@ -427,8 +434,8 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 
 	d.body.Banners = append(d.body.Banners, s.hostItemsFor(now, att, d.head.Name, isLocal)...)
 	d.body.Numbers = serverNumbers(now, host, d.body.NomadDown, coreMHz)
-	if !isLocal && view.State == "down" {
-		// A server that is down has old numbers: one line says when they were last read, in place of the panel.
+	if !isLocal && (view.State == "down" || view.State == "disconnected") {
+		// A server that is down, or disconnected, has old numbers: one line says when they were last read, in place of the panel.
 		d.body.Numbers = srvNumbers{Line: downNumbersLine(now, view.Name, host)}
 	}
 	// The room sentence is the cluster's: with one server it is under the numbers, with several it stays on the
@@ -439,6 +446,9 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 	d.body.Running = s.serverCopies(pl, sums, copies, copiesErr, d.body.NomadDown, coreMHz, s.crashesOf(now, att))
 	if !isLocal && view.State == "down" {
 		d.body.Running = srvRunning{Message: "Nothing runs here while the server is down."}
+	}
+	if !isLocal && view.State == "disconnected" {
+		d.body.Running = srvRunning{Message: "Nomad keeps " + copyCount(view.KeptCopies) + " for this server until it answers again. They probably still run, but nobody can say."}
 	}
 	gap := s.svc.MetricsSampleGap()
 	switch {
@@ -459,7 +469,7 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 	default:
 		d.body.Facts = remoteFacts(now, view)
 		d.body.Remote = true
-		if view.State != "down" {
+		if view.State != "down" && view.State != "disconnected" {
 			d.body.ReadOn = &srvReadOn{Name: cmp.Or(local.Server, "the server Caravana runs on")}
 		}
 		if a := view.Agent; a != nil && hostos.ReleaseNewer(s.version, a.Caravana) {
@@ -539,6 +549,21 @@ func downBanner(now time.Time, v service.ServerView) srvBanner {
 	return srvBanner{Mark: "failed", Line: line}
 }
 
+// disconnectedBanner is the banner of a server Nomad stopped hearing but keeps copies for: since when, and that
+// the copies are kept. It isn't a failure: the cut may be a blip, and the server is down, and an item, only if
+// the copies are lost (the services' lostAfterSeconds).
+func disconnectedBanner(now time.Time, v service.ServerView) srvBanner {
+	b := srvBanner{Mark: "warning", Line: sentence{mono(v.Name), plain(" disconnected")}}
+	if !v.DisconnectedSince.IsZero() {
+		b.Line = append(b.Line, plain(" since"))
+		c := clockOf(now, v.DisconnectedSince)
+		b.Clock = &c
+	}
+	b.After = sentence{plain(", " + copyCount(v.KeptCopies) + " kept running there.")}
+	b.Explain = sentence{plain("Nomad hasn't heard from it, but keeps its copies for the time each service allows. If it answers again they carry on untouched; if not, they are replaced and the server is called down.")}
+	return b
+}
+
 // hostItems are the banners of the open needs-you items about the server Caravana runs on: a disk
 // nearly full, and the OS's security updates and reboot (page 3's kinds). The row is the needs-you
 // list's own, so the page and the list say the same words and offer the same action.
@@ -606,6 +631,13 @@ func diskExplain(holds []string) sentence {
 
 // nodeBanners is the banner of a node Nomad has lost: it can do nothing about it, so no action.
 func (s *server) nodeBanners(now time.Time, n *service.HostNode) []srvBanner {
+	if n.State == "disconnected" {
+		line := "Nomad stopped hearing this server"
+		if lost := lostAt(n); !lost.IsZero() {
+			line += " " + agoFull(now, lost)
+		}
+		return []srvBanner{{Mark: "warning", Line: plainS(line + ". It keeps this server's copies for now.")}}
+	}
 	if n.State != "down" {
 		return nil
 	}
@@ -626,7 +658,8 @@ func lostAt(n *service.HostNode) time.Time {
 }
 
 // serverState is the node's state in the console's words: ready, draining, not taking new work
-// (ineligible), down (Nomad lost its heartbeat) and starting (initializing).
+// (ineligible), down (Nomad lost its heartbeat), disconnected (Nomad lost it but keeps its copies for now) and
+// starting (initializing).
 func serverState(state string) *statusView {
 	switch state {
 	case "ready":
@@ -637,6 +670,8 @@ func serverState(state string) *statusView {
 		return &statusView{Kind: "warning", Word: "not taking new work"}
 	case "down":
 		return &statusView{Kind: "failed", Word: "down"}
+	case "disconnected":
+		return &statusView{Kind: "warning", Word: "disconnected"}
 	case "initializing":
 		return &statusView{Kind: "rolling", Word: "starting"}
 	}
@@ -824,8 +859,8 @@ func (s *server) serverCopies(pl places, sums []service.AppSummary, copies []ser
 	return out
 }
 
-// rowRank is a copy's place in Running here: failed 0, a crash signal 1, starting 2, stopping 3,
-// running 4.
+// rowRank is a copy's place in Running here: failed 0, a crash signal 1, starting 2, disconnected 3,
+// stopping 4, running 5.
 func rowRank(phase string, crashing bool) int {
 	switch {
 	case phase == service.CopyPhaseFailed:
@@ -834,10 +869,12 @@ func rowRank(phase string, crashing bool) int {
 		return 1
 	case phase == service.CopyPhaseStarting:
 		return 2
-	case phase == service.CopyPhaseStopping:
+	case phase == service.CopyPhaseDisconnected:
 		return 3
+	case phase == service.CopyPhaseStopping:
+		return 4
 	}
-	return 4
+	return 5
 }
 
 // rowMark is the mark of a copy's chip: a failed copy is failed even though Nomad has told it to
@@ -914,6 +951,8 @@ func copyUp(now time.Time, c service.HostCopy) srvUp {
 			up.Text = "for " + startingText(now.Sub(*c.StartedAt))
 		}
 		return up
+	case service.CopyPhaseDisconnected:
+		return srvUp{Label: "Disconnected", Word: "disconnected", Text: "—"}
 	case service.CopyPhaseStopping:
 		up := srvUp{Label: "Stopping", Text: "—"}
 		if c.StartedAt != nil {
@@ -1147,11 +1186,14 @@ func remoteFacts(now time.Time, v service.ServerView) []srvFact {
 	}
 	if !v.SeenAt.IsZero() {
 		f := srvFact{Key: "last seen"}
-		if v.State == "down" {
+		if v.State == "down" || v.State == "disconnected" {
 			// A server that is down was last seen at a time, never "just now" beside "down since 18:12 UTC": the
 			// clock time, with the exact one in its title.
 			c := clockOf(now, v.SeenAt)
 			f.Clock, f.Mark, f.Strong = &c, "failed", true
+			if v.State == "disconnected" {
+				f.Mark = "warning"
+			}
 		} else {
 			w := whenOf(now, &v.SeenAt, "")
 			f.When = &w
@@ -1205,10 +1247,13 @@ func readAt(h service.HostView, gap time.Duration) time.Time {
 //   - a ready node whose newest reading is older than two sampler ticks: "last reading 5 minutes ago";
 //   - a ready node read lately: no row, since "2 s ago" on every page load says nothing.
 func lastSeenFact(now time.Time, n *service.HostNode, read time.Time, gap time.Duration) (srvFact, bool) {
-	if n.State == "down" {
+	if n.State == "down" || n.State == "disconnected" {
 		lost := lostAt(n)
 		if lost.IsZero() {
 			return srvFact{}, false
+		}
+		if n.State == "disconnected" {
+			return srvFact{Key: "last seen", Value: "disconnected " + agoFull(now, lost), Mark: "warning", Strong: true}, true
 		}
 		return srvFact{Key: "last seen", Value: "lost " + agoFull(now, lost), Mark: "failed", Strong: true}, true
 	}

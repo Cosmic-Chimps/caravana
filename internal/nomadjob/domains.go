@@ -64,13 +64,15 @@ func retryTags(mw string) []string {
 	return []string{fmt.Sprintf("traefik.http.middlewares.%s.retry.attempts=%d", mw, retryAttempts)}
 }
 
-// routerTags builds the Traefik routers of a service, with TLS always on.
+// routerTags builds the Traefik routers of a service, with TLS always on, and
+// its load balancer's health check (healthCheckTags).
 // Without a certificate resolver, Traefik serves its default certificate (the
 // local lab); with one, it gets a real certificate. The base router (named
 // router) takes every domain without options in one rule; each domain with
 // options has its own router. When every domain has options the base router is
 // not written at all: a router with an empty rule would never match.
-func routerTags(appID, service, router string, domains []app.Domain, s Settings) []string {
+func routerTags(appID, router string, svc app.Service, s Settings) []string {
+	domains := svc.Domains
 	tags := []string{"traefik.enable=true"}
 	retry := RetryMiddleware(router)
 
@@ -87,10 +89,11 @@ func routerTags(appID, service, router string, domains []app.Domain, s Settings)
 
 	for _, d := range domains {
 		if d.HasOptions() {
-			tags = append(tags, optionRouterTags(DomainRouterName(appID, service, d.Host), d, retry, s)...)
+			tags = append(tags, optionRouterTags(DomainRouterName(appID, svc.Name, d.Host), d, retry, s)...)
 		}
 	}
-	return append(tags, retryTags(retry)...)
+	tags = append(tags, retryTags(retry)...)
+	return append(tags, healthCheckTags(router, svc)...)
 }
 
 // routerMiddlewares is the tag that puts middlewares, in order, on a router.

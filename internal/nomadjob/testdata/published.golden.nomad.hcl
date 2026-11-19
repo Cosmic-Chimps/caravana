@@ -25,6 +25,11 @@ job "calls" {
       canary = 0
       auto_promote = false
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = false
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -106,6 +111,11 @@ job "calls" {
     update {
       canary = 1
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -116,7 +126,7 @@ job "calls" {
       name = "calls-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.calls-web.rule=Host(`calls.example.com`)", "traefik.http.routers.calls-web.entrypoints=websecure", "traefik.http.routers.calls-web.tls=true", "traefik.http.routers.calls-web.middlewares=calls-web-retry", "traefik.http.middlewares.calls-web-retry.retry.attempts=3"]
+      tags = ["traefik.enable=true", "traefik.http.routers.calls-web.rule=Host(`calls.example.com`)", "traefik.http.routers.calls-web.entrypoints=websecure", "traefik.http.routers.calls-web.tls=true", "traefik.http.routers.calls-web.middlewares=calls-web-retry", "traefik.http.middlewares.calls-web-retry.retry.attempts=3", "traefik.http.services.calls-web.loadbalancer.healthcheck.path=/", "traefik.http.services.calls-web.loadbalancer.healthcheck.interval=10s", "traefik.http.services.calls-web.loadbalancer.healthcheck.timeout=2s"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

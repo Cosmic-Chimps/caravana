@@ -102,14 +102,15 @@ func (s *server) drawRemoveServer(w http.ResponseWriter, r *http.Request, name s
 }
 
 // removeRefusal is why the service would refuse to remove v: the server Caravana runs on, one that
-// isn't managed, and one that runs. A server that is down, or never reached Nomad, is removable.
+// isn't managed, and one that runs. A server that is down or disconnected (the service allows both, as Nomad has
+// lost touch with it), or never reached Nomad, is removable.
 func removeRefusal(v service.ServerView) error {
 	switch {
 	case v.First:
 		return service.ErrFirstServer
 	case !v.Managed:
 		return errNotManaged
-	case v.State == "down", v.State == "waiting":
+	case v.State == "down", v.State == "disconnected", v.State == "waiting":
 		return nil
 	case v.State == "joining" && v.NodeID == "":
 		return nil

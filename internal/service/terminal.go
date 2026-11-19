@@ -273,7 +273,7 @@ func (s *Service) OpenTerminal(ctx context.Context, appID, copyID, shell string,
 		return nil, fmt.Errorf("app %q has no copy %q: %w", appID, copyID, store.ErrNotFound)
 	}
 	c := copies[i]
-	if c.Terminal || c.Stopping {
+	if !c.Reachable() {
 		return nil, fmt.Errorf("copy %q is %s: %w", copyID, c.Status, ErrCopyNotRunning)
 	}
 	id, err := newID("act_")

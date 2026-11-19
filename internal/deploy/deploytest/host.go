@@ -162,6 +162,8 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 		h.listReqs++
 	case r.URL.Path == "/v1/client/stats":
 		h.statReqs++
+	case strings.HasSuffix(r.URL.Path, "/allocations"):
+		// a node's allocations: not counted with Info
 	default:
 		h.infoReqs++
 	}
@@ -206,6 +208,8 @@ func (n *Nomad) serveNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "node not found", http.StatusNotFound)
+	case strings.HasPrefix(r.URL.Path, "/v1/node/") && strings.HasSuffix(r.URL.Path, "/allocations"):
+		n.serveNodeAllocations(w, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/node/"), "/allocations"))
 	default:
 		id := strings.TrimPrefix(r.URL.Path, "/v1/node/")
 		if node := n.findNode(id); node != nil {
@@ -273,6 +277,19 @@ func (n *Nomad) SetNodeStatusOf(id, status string) {
 	for _, x := range n.host.extra {
 		if x.ID == id {
 			x.Status = status
+		}
+	}
+}
+
+// SetNodeStatusAtOf sets when Nomad last changed the status of a node AddNode made (its
+// StatusUpdatedAt, at Nomad's one-second resolution).
+func (n *Nomad) SetNodeStatusAtOf(id string, t time.Time) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.emitNode(id)
+	for _, x := range n.host.extra {
+		if x.ID == id {
+			x.StatusUpdatedAt = t.Unix()
 		}
 	}
 }
@@ -390,4 +407,28 @@ func DeadAllocUsage(tasks ...string) api.AllocResourceUsage {
 		}}
 	}
 	return out
+}
+
+// serveNodeAllocations answers GET /v1/node/{id}/allocations: the copies SetCopies placed on the
+// node (by node ID, or by name when the stub names no ID), with the client and desired status
+// they were given. A test makes the copies of a disconnected node "unknown" with SetCopies.
+// n.mu must be held.
+func (n *Nomad) serveNodeAllocations(w http.ResponseWriter, id string) {
+	node := n.findNode(id)
+	if node == nil {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	out := []*api.Allocation{}
+	for _, list := range n.allocs {
+		for _, s := range list {
+			if s.NodeID == id || (s.NodeID == "" && s.NodeName == node.Name) {
+				out = append(out, &api.Allocation{
+					ID: s.ID, NodeID: id, NodeName: node.Name, JobID: s.JobID, TaskGroup: s.TaskGroup,
+					ClientStatus: s.ClientStatus, DesiredStatus: s.DesiredStatus,
+				})
+			}
+		}
+	}
+	n.writeJSON(w, out)
 }

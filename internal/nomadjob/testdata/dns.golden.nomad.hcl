@@ -24,6 +24,11 @@ job "shop" {
     update {
       canary = 1
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       dns {
@@ -50,6 +55,11 @@ job "shop" {
     update {
       canary = 1
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       dns {
@@ -73,6 +83,11 @@ job "shop" {
     shutdown_delay = "5s"
     update {
       canary = 1
+    }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
     }
     network {
       mode = "bridge"

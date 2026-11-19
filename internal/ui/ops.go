@@ -639,14 +639,14 @@ func withSampleCores(n *service.HostNode, h service.HostView) *service.HostNode 
 }
 
 // nodeMark is the mark kind of a node's state: ready, draining (rolling),
-// ineligible (warning), down (failed), anything else idle.
+// ineligible and disconnected (warning), down (failed), anything else idle.
 func nodeMark(state string) string {
 	switch state {
 	case "ready":
 		return "healthy"
 	case "draining":
 		return "rolling"
-	case "ineligible":
+	case "ineligible", "disconnected":
 		return "warning"
 	case "down":
 		return "failed"
@@ -773,10 +773,10 @@ func opsNodeOfServer(now time.Time, sv service.ServerView, h service.HostView, c
 	} else {
 		node.Spec = strings.Join(serverSpecItems(sv, ""), " · ")
 	}
-	if sv.State == "down" {
+	if sv.State == "down" || sv.State == "disconnected" {
 		// Its numbers are old: one line says when they were last read, never meters that look current.
 		node.Line = downNumbersLine(now, sv.Name, h)
-		return node // and a server that is down runs nothing
+		return node // and a server that is out of reach has nothing to count: its copies are kept, not known
 	}
 	node.Meters = opsMeters(h)
 	if copiesErr != nil {

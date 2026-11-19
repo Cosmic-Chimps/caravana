@@ -49,7 +49,7 @@ type ServiceChange struct {
 	ImageTo, DigestTo string
 	// Changed names the parts of the service's shape the promotion replaces
 	// with the source's and that differ: any of "entrypoint", "command", "args", "ports",
-	// "health", "volumes", "stopTimeout", "dns" and "placement".
+	// "health", "volumes", "stopTimeout", "dns", "placement" and "disconnect".
 	Changed []string
 }
 
@@ -323,6 +323,9 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		if !samePlacement(t.Placement, s.Placement) {
 			change.Changed = append(change.Changed, "placement")
 		}
+		if !sameDisconnect(t.Disconnect, s.Disconnect) {
+			change.Changed = append(change.Changed, "disconnect")
+		}
 		changes = append(changes, change)
 
 		t.Image, t.Command = s.Image, s.Command
@@ -333,6 +336,7 @@ func promoted(target, source app.App) (result app.App, changes []ServiceChange, 
 		t.StopTimeout = s.StopTimeout
 		t.DNS = cloneDNS(s.DNS)
 		t.Placement = clonePlacement(s.Placement)
+		t.Disconnect = cloneDisconnect(s.Disconnect)
 		result.Services = append(result.Services, t)
 	}
 	for _, s := range source.Services {
@@ -429,6 +433,27 @@ func clonePlacement(p *app.Placement) *app.Placement {
 		return nil
 	}
 	return &app.Placement{Require: maps.Clone(p.Require), Prefer: slices.Clone(p.Prefer), Avoid: slices.Clone(p.Avoid)}
+}
+
+// sameDisconnect reports whether two services keep their copies for the same
+// time on an unreachable server; none means the default.
+func sameDisconnect(a, b *app.Disconnect) bool {
+	var x, y app.Disconnect
+	if a != nil {
+		x = *a
+	}
+	if b != nil {
+		y = *b
+	}
+	return x == y
+}
+
+func cloneDisconnect(d *app.Disconnect) *app.Disconnect {
+	if d == nil {
+		return nil
+	}
+	c := *d
+	return &c
 }
 
 func cloneDNS(d *app.DNS) *app.DNS {

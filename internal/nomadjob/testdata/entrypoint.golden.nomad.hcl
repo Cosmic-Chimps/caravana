@@ -24,6 +24,11 @@ job "shop" {
     update {
       canary = 1
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "p6379" {
@@ -96,6 +101,11 @@ job "shop" {
     shutdown_delay = "5s"
     update {
       canary = 1
+    }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
     }
     network {
       mode = "bridge"

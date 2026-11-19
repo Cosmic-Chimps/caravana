@@ -70,7 +70,8 @@ type serverRow struct {
 	// screen reader.
 	Cancel, CancelLabel string
 	Copies              string
-	Down                bool
+	// Down says the server is out of reach (down, or disconnected): its meters are grey, its numbers old.
+	Down bool
 }
 
 // slMeter is one meter of a row: the server page's meter without its fill when the server is down.
@@ -223,8 +224,11 @@ func clusterSentence(v service.ServersView, joined int) *clusterLine {
 	c := v.Cluster
 	if c.NomadServers >= 3 {
 		for _, sv := range v.Servers {
-			if sv.NomadServer && sv.State == "down" {
+			switch {
+			case sv.NomadServer && sv.State == "down":
 				return &clusterLine{Mark: "warning", Text: "One of the three servers that run the scheduler is down. The cluster works, and can't lose another."}
+			case sv.NomadServer && sv.State == "disconnected":
+				return &clusterLine{Mark: "warning", Text: "One of the three servers that run the scheduler stopped answering. The cluster works, and can't lose another."}
 			}
 		}
 	}
@@ -247,7 +251,7 @@ func clusterSentence(v service.ServersView, joined int) *clusterLine {
 // serverRowOf builds one row. isLocal says it is the server Caravana runs on, which has the arch.
 func serverRowOf(now time.Time, sv service.ServerView, isLocal bool, arch string) serverRow {
 	row := serverRow{ID: "srv-row-" + sv.ID, Name: sv.Name, NoName: sv.Name == "", Unmanaged: !sv.Managed,
-		Href: serverHrefOf(sv), State: serverRowState(sv), Down: sv.State == "down"}
+		Href: serverHrefOf(sv), State: serverRowState(sv), Down: sv.State == "down" || sv.State == "disconnected"}
 	if row.NoName {
 		row.Name = "the machine's own name"
 	}
@@ -279,9 +283,12 @@ func serverRowOf(now time.Time, sv service.ServerView, isLocal bool, arch string
 		return row
 	}
 	row.Meters = serverMeters(sv, row.Down)
-	if row.Down {
+	switch {
+	case sv.State == "disconnected":
+		row.Copies = copyCount(sv.KeptCopies) + " kept"
+	case row.Down:
 		row.Copies = copyCount(0)
-	} else {
+	default:
 		row.Copies = copyCount(sv.Copies)
 	}
 	return row
@@ -295,7 +302,7 @@ func serverHrefOf(sv service.ServerView) string {
 	return "/ops/servers/" + url.PathEscape(sv.Name)
 }
 
-// serverRowState is the state pill of a row: down, disk filling, not taking work, ready, joining or
+// serverRowState is the state pill of a row: down, disconnected, disk filling, not taking work, ready, joining or
 // waiting.
 func serverRowState(sv service.ServerView) statusView {
 	switch {
@@ -305,6 +312,8 @@ func serverRowState(sv service.ServerView) statusView {
 		return statusView{Kind: "rolling", Word: "joining"}
 	case sv.State == "down":
 		return statusView{Kind: "failed", Word: "down"}
+	case sv.State == "disconnected":
+		return statusView{Kind: "warning", Word: "disconnected"}
 	}
 	if !sv.Managed {
 		// A node Nomad knows and Caravana doesn't manage: its state is Nomad's, but it isn't one of the cluster's.

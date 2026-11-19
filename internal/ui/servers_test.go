@@ -321,6 +321,10 @@ func TestClusterSentence(t *testing.T) {
 			Cluster: service.ClusterView{Ready: 2, NomadServers: 3},
 			Servers: []service.ServerView{ready("a", true), {Name: "b", State: "down", NomadServer: true}, ready("c", true)}}, 3,
 			"warning", "One of the three servers that run the scheduler is down. The cluster works, and can't lose another."},
+		{"a scheduler stopped answering", service.ServersView{
+			Cluster: service.ClusterView{Ready: 2, NomadServers: 3},
+			Servers: []service.ServerView{ready("a", true), {Name: "b", State: "disconnected", NomadServer: true}, ready("c", true)}}, 3,
+			"warning", "One of the three servers that run the scheduler stopped answering. The cluster works, and can't lose another."},
 		{"a joining server is not ready", service.ServersView{Cluster: service.ClusterView{Ready: 2}}, 3, "idle", "With one more server the cluster survives the loss of one."},
 	}
 	for _, tc := range tests {
@@ -432,6 +436,54 @@ func TestServersListDownUnmanagedAndNotTakingWork(t *testing.T) {
 	if r := rowOfServer(t, body, "lab"); !strings.Contains(text(r), "Not set up for a cluster yet.") || !strings.Contains(text(r), "not set up") ||
 		!strings.Contains(r, "cv-pill-idle cv-pill-quiet") || strings.Contains(text(r), " ready ") {
 		t.Errorf("the unmanaged node's row:\n%s", r)
+	}
+}
+
+// A server Nomad stopped hearing but keeps copies for is "disconnected" in the warning colour, never "down" and
+// never failed: its row says how many copies are kept, its numbers are grey, and it can be removed as a down one
+// can. Once the copies are lost it is down (task ctbb).
+func TestServersListAndPageOfADisconnectedServer(t *testing.T) {
+	e := threeServers(t)
+	e.Nomad.SetNodeStatusOf("node-2", "disconnected")
+	since := time.Now().Add(-90 * time.Second).UTC().Truncate(time.Second)
+	e.Nomad.SetNodeStatusAtOf("node-2", since)
+	kept := func(id string) api.AllocationListStub {
+		return api.AllocationListStub{ID: id, NodeID: "node-2", TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run"}
+	}
+	e.Nomad.SetCopies("blog", kept("b1"), kept("b2"))
+
+	_, body := e.get(t, "/ops/servers")
+	row := rowOfServer(t, body, "fsn-1")
+	if !strings.Contains(row, "cv-pill-warning cv-pill-quiet") || strings.Contains(row, "cv-pill-failed") || !strings.Contains(text(row), "disconnected") ||
+		!strings.Contains(text(row), "2 copies kept") || !strings.Contains(row, "cv-slmeter-grey") || strings.Contains(text(row), " down ") {
+		t.Errorf("the disconnected row:\n%s", row)
+	}
+
+	_, page := e.get(t, "/ops/servers/fsn-1")
+	words := text(page)
+	if !strings.Contains(words, "fsn-1 disconnected since") || !strings.Contains(words, "2 copies kept running there.") ||
+		!strings.Contains(page, `cv-pill cv-pill-warning"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span>disconnected`) ||
+		!strings.Contains(page, `<time class="cv-clock" datetime="`+since.Format(time.RFC3339)+`"`) ||
+		!strings.Contains(words, "Nomad keeps 2 copies for this server until it answers again.") ||
+		!strings.Contains(page, `href="/ops/servers/fsn-1/remove"`) {
+		t.Errorf("a disconnected server's page:\n%s", words)
+	}
+	for _, not := range []string{"fsn-1 is down", "Nothing runs here"} {
+		if strings.Contains(words, not) {
+			t.Errorf("a disconnected server's page says %q:\n%s", not, words)
+		}
+	}
+	// Not a needs-you item while Nomad keeps its copies.
+	_, home := e.get(t, "/")
+	if strings.Contains(text(home), "fsn-1 is down") {
+		t.Errorf("the home lists the disconnected server as down:\n%s", text(home))
+	}
+
+	// The copies are lost: down, as before.
+	e.Nomad.SetCopies("blog", api.AllocationListStub{ID: "b1", NodeID: "node-2", TaskGroup: "web", ClientStatus: "lost", DesiredStatus: "stop"})
+	_, body = e.get(t, "/ops/servers")
+	if row = rowOfServer(t, body, "fsn-1"); !strings.Contains(row, "cv-pill-failed cv-pill-quiet") || !strings.Contains(text(row), "0 copies") {
+		t.Errorf("the row after its copies are lost:\n%s", row)
 	}
 }
 

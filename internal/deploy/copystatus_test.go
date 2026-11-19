@@ -81,7 +81,7 @@ func TestCopyStatusInRollout(t *testing.T) {
 func TestCopyStatusIgnoresRolloutForOtherStates(t *testing.T) {
 	active := rollouts{{"blog", 3}: true}
 	for client, want := range map[string]CopyStatus{
-		"pending": CopyStarting, "complete": CopyStopped, "failed": CopyFailed, "lost": CopyFailed, "unknown": CopyUnhealthy,
+		"pending": CopyStarting, "complete": CopyStopped, "failed": CopyFailed, "lost": CopyFailed, "unknown": CopyDisconnected, "weird": CopyUnhealthy,
 	} {
 		got := copyOf(&api.AllocationListStub{JobID: "blog", JobVersion: 3, ClientStatus: client}, active)
 		if got.Status != want {

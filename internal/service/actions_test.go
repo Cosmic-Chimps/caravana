@@ -108,6 +108,7 @@ func TestRestartTargets(t *testing.T) {
 		{"the newest healthy version, not the failed newer one", []Copy{
 			c("new", 4, deploy.CopyFailed), c("a", 3, deploy.CopyHealthy), c("old", 2, deploy.CopyHealthy)}, "a"},
 		{"an unhealthy copy of the live version goes too", []Copy{c("a", 3, deploy.CopyHealthy), c("b", 3, deploy.CopyUnhealthy)}, "a,b"},
+		{"a disconnected copy is out of reach", []Copy{c("a", 3, deploy.CopyHealthy), c("b", 3, deploy.CopyDisconnected)}, "a"},
 		{"ended copies are skipped", []Copy{c("a", 3, deploy.CopyHealthy), c("b", 3, deploy.CopyStopped)}, "a"},
 		{"nothing healthy, nothing live", []Copy{c("a", 3, deploy.CopyStarting), c("b", 3, deploy.CopyUnhealthy)}, ""},
 		// After a Start, Nomad lists the copies it is replacing as running
@@ -342,6 +343,12 @@ func TestRunCommand(t *testing.T) {
 			api.AllocationListStub{ID: "c1", TaskGroup: "web", ClientStatus: "complete", JobVersion: 0})
 		if _, err := l.svc.RunCommand(ctx, "whoami", "c1", []string{"true"}, app.TriggerManual); !errors.Is(err, ErrCopyNotRunning) {
 			t.Errorf("an ended copy = %v, want ErrCopyNotRunning", err)
+		}
+		// A copy whose server stopped answering can't be reached.
+		l.nomad.SetCopies("whoami",
+			api.AllocationListStub{ID: "c1", TaskGroup: "web", ClientStatus: "unknown", DesiredStatus: "run", JobVersion: 0})
+		if _, err := l.svc.RunCommand(ctx, "whoami", "c1", []string{"true"}, app.TriggerManual); !errors.Is(err, ErrCopyNotRunning) {
+			t.Errorf("a disconnected copy = %v, want ErrCopyNotRunning", err)
 		}
 		if acts, _ := l.svc.ListActions(ctx, "whoami", 10); len(acts) != 0 {
 			t.Errorf("refused commands left records: %+v", acts)

@@ -25,6 +25,11 @@ job "fhodor" {
       canary = 0
       auto_promote = false
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = false
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -48,7 +53,7 @@ job "fhodor" {
       name = "fhodor-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.fhodor-web.rule=Host(`fhodor.example.com`)", "traefik.http.routers.fhodor-web.entrypoints=websecure", "traefik.http.routers.fhodor-web.tls=true", "traefik.http.routers.fhodor-web.middlewares=fhodor-web-retry", "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3"]
+      tags = ["traefik.enable=true", "traefik.http.routers.fhodor-web.rule=Host(`fhodor.example.com`)", "traefik.http.routers.fhodor-web.entrypoints=websecure", "traefik.http.routers.fhodor-web.tls=true", "traefik.http.routers.fhodor-web.middlewares=fhodor-web-retry", "traefik.http.middlewares.fhodor-web-retry.retry.attempts=3", "traefik.http.services.fhodor-web.loadbalancer.healthcheck.path=/", "traefik.http.services.fhodor-web.loadbalancer.healthcheck.interval=10s", "traefik.http.services.fhodor-web.loadbalancer.healthcheck.timeout=2s"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"

@@ -121,12 +121,15 @@ func privateAddress(r *api.NodeResources) string {
 	return ""
 }
 
-// nodeState is the one word for a node: Nomad's down and initializing win over
-// the rest, then a drain, then ineligibility.
+// nodeState is the one word for a node: Nomad's down, disconnected and initializing win over
+// the rest, then a drain, then ineligibility. Disconnected is its own word: Nomad stopped hearing the
+// node but keeps its copies (the disconnect block), so it is neither ready nor down.
 func nodeState(n *api.Node) string {
 	switch {
 	case n.Status == "down":
 		return "down"
+	case n.Status == "disconnected":
+		return "disconnected"
 	case n.Status == "initializing":
 		return "initializing"
 	case n.Drain || n.DrainStrategy != nil:

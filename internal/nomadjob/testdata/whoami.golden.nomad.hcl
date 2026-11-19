@@ -28,6 +28,11 @@ job "whoami" {
       attribute = "$${node.unique.id}"
       weight = 100
     }
+    disconnect {
+      lost_after = "5m0s"
+      replace = true
+      reconcile = "keep_original"
+    }
     network {
       mode = "bridge"
       port "http" {
@@ -38,7 +43,7 @@ job "whoami" {
       name = "whoami-web"
       port = "http"
       provider = "nomad"
-      tags = ["traefik.enable=true", "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)", "traefik.http.routers.whoami-web.entrypoints=websecure", "traefik.http.routers.whoami-web.tls=true", "traefik.http.routers.whoami-web.middlewares=whoami-web-retry", "traefik.http.middlewares.whoami-web-retry.retry.attempts=3"]
+      tags = ["traefik.enable=true", "traefik.http.routers.whoami-web.rule=Host(`whoami.localhost`)", "traefik.http.routers.whoami-web.entrypoints=websecure", "traefik.http.routers.whoami-web.tls=true", "traefik.http.routers.whoami-web.middlewares=whoami-web-retry", "traefik.http.middlewares.whoami-web-retry.retry.attempts=3", "traefik.http.services.whoami-web.loadbalancer.healthcheck.path=/", "traefik.http.services.whoami-web.loadbalancer.healthcheck.interval=10s", "traefik.http.services.whoami-web.loadbalancer.healthcheck.timeout=2s"]
       canary_tags = ["caravana.canary=true"]
       check {
         name = "health"
