@@ -33,7 +33,7 @@ func TestUpgradeTo0033(t *testing.T) {
 		t.Fatal("0032 accepted a scale action; the test would prove nothing")
 	}
 
-	if n, err := migrate(ctx, db, testMigrations(t)); err != nil || n != 1 {
+	if n, err := migrate(ctx, db, migrationsUpTo(t, 33)); err != nil || n != 1 {
 		t.Fatalf("migrate on = %d, %v; want 1", n, err)
 	}
 	s := &Store{db: db, nowFn: time.Now}

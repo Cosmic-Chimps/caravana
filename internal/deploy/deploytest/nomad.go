@@ -503,6 +503,22 @@ func (n *Nomad) JobInfoRequests() int {
 	return n.jobInfos
 }
 
+// JobIDs returns the IDs of the jobs registered now whose ID starts with
+// prefix, sorted: a test finds the helper jobs the service made (a scan, whose
+// ID has a random part) this way.
+func (n *Nomad) JobIDs(prefix string) []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	var out []string
+	for id := range n.jobs {
+		if strings.HasPrefix(id, prefix) {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Purged says whether jobID was deleted with purge=true. It stays true after
 // the job is gone, which is how a test knows the delete reached Nomad.
 func (n *Nomad) Purged(jobID string) bool {

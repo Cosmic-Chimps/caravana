@@ -17,10 +17,10 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 2: Store and service (US1, US2, US3, US5, US6)
 
-- [ ] T005 `internal/store`: migration `0034_image_scans.sql` and the functions (D6: add-ons, scans with first and
+- [x] T005 `internal/store`: migration `0034_image_scans.sql` and the functions (D6: add-ons, scans with first and
   last seen, runs, settings, `ForgetScans`); tests.
-- [ ] T005b `internal/service/addons.go`: the add-on, install and remove (D15); tests.
-- [ ] T006 `internal/service/scanner.go`: the queue and runner (D5), room (D7), triggers (D8), prune (D10), one node and the database URL (D16), SBOM rescans (D17), settings,
+- [x] T005b `internal/service/addons.go`: the add-on, install and remove (D15); tests.
+- [x] T006 `internal/service/scanner.go`: the queue and runner (D5), room (D7), triggers (D8), prune (D10), one node and the database URL (D16), SBOM rescans (D17), settings,
   `RequestScan`, the read models for D12, the lab hooks; tests with the fakes (a fake result per image, a second
   scan finding a new advisory, failures, skipped for room, restart recovery).
 - [ ] T007 `internal/service`: the gate in `deployWarned` (D9) with tests (refused naming the field, warning when

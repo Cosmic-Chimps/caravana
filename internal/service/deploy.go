@@ -603,6 +603,10 @@ func (s *Service) finish(appID, deploymentID string, status store.Status, msg st
 		// Only the write that ended the record tells the owner: a resumed
 		// deployment that was already final fails the write and says nothing.
 		s.notifyDeploy(rec)
+		// A new image is scanned once the deploy that brought it is healthy (feature 044).
+		if status == store.StatusHealthy {
+			s.scanAfterDeploy(rec)
+		}
 	}
 	s.settleSecrets(appID, deploymentID, status)
 }

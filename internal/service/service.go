@@ -165,6 +165,9 @@ type Service struct {
 	moveRunsMu sync.Mutex
 	moveRuns   map[string]*moveRun
 	move       moveTiming
+
+	// Image scanning (feature 044), see scanner.go and addons.go.
+	scan scanState
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -255,6 +258,8 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		labelGap: defaultLabelReconcileGap,
 		moveRuns: map[string]*moveRun{},
 		move:     defaultMoveTiming(),
+
+		scan: newScanState(),
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
 	// (feature 043, see autoscale.go).
@@ -382,6 +387,10 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resumeMoves(ctx); err != nil {
 		return err
 	}
+	// A scan or an install the last process left has nobody to finish it.
+	if err := s.recoverScans(ctx); err != nil {
+		return err
+	}
 	// Nomad's events, first: they wake the watchers below.
 	s.backupWatcher.Add(1)
 	go func() {
@@ -473,6 +482,13 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runLabelReconcile(ctx, labelGap)
+	}()
+	// The image scanner's queue (feature 044) runs one scan at a time; it idles
+	// while the add-on isn't installed.
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runScanner(ctx)
 	}()
 	return nil
 }

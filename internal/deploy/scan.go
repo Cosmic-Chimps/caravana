@@ -52,6 +52,27 @@ func (d *Deployer) EnsureScanVolume(ctx context.Context) (nodeID string, err err
 	return vol.NodeID, nil
 }
 
+// ScanVolumeNode returns the Nomad node that holds the scanner's database
+// volume, and false when the volume doesn't exist (yet). It creates nothing:
+// the service asks it to know where a scan will run before it starts one.
+func (d *Deployer) ScanVolumeNode(ctx context.Context) (nodeID string, found bool, err error) {
+	have, err := d.listVolumes(ctx, nomadjob.ScanVolume)
+	if err != nil {
+		return "", false, err
+	}
+	stub, ok := have[nomadjob.ScanVolume]
+	if !ok {
+		return "", false, nil
+	}
+	return stub.NodeID, true, nil
+}
+
+// ScanJob builds the job of scan run runID with this deployer's settings (the
+// scanner's image among them). See nomadjob.ScanJob.
+func (d *Deployer) ScanJob(runID string, src nomadjob.ScanSource, opt nomadjob.ScanOptions, private map[string]bool) *api.Job {
+	return nomadjob.ScanJob(runID, src, opt, d.settings, private)
+}
+
 // DeleteScanVolume deletes the scanner's database volume and the database in
 // it (it comes back with the next scan). Nomad refuses while a scan job still
 // holds the volume, which is retried as for an app's volumes. A volume that is
