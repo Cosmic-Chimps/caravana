@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.48.0
+  version: 0.49.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -3373,6 +3373,299 @@ paths:
         "502":
           $ref: "#/components/responses/BadGateway"
 
+  /v1/addons:
+    get:
+      operationId: listAddons
+      summary: List the add-ons Caravana knows, installed or not.
+      description: |
+        An add-on is something the owner installs and removes; until then it does nothing, costs
+        nothing and downloads nothing. Today there is one, `image-scanner`, which looks for known
+        vulnerabilities in the images the apps run (`getAppScan`). An add-on that isn't installed is
+        listed with state `available`, its `cost` and the version Caravana would install.
+      tags: [addons]
+      responses:
+        "200":
+          description: The add-ons.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Addon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/addons/{name}:
+    parameters:
+      - $ref: "#/components/parameters/AddonName"
+    put:
+      operationId: installAddon
+      summary: Install an add-on.
+      description: |
+        Answers 202 at once with the add-on `installing`; the install goes on in the background and
+        ends in `installed` or `failed` (with `reason`), which `listAddons` shows. For the image
+        scanner it downloads the vulnerability database (about 3.5 GB of disk on one server), then
+        scans every image the apps run. An add-on already installed is answered as it is, and a
+        failed one can be installed again. 404 `addon_not_found` for a name Caravana doesn't know;
+        409 `addon_busy` while it is installing or being removed. There is no request body.
+      tags: [addons]
+      responses:
+        "202":
+          description: The add-on, installing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Addon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/AddonNotFound"
+        "409":
+          $ref: "#/components/responses/AddonBusy"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      operationId: removeAddon
+      summary: Remove an add-on and everything it stored.
+      description: |
+        Answers 202 at once with the add-on `removing`; the removal goes on in the background. For
+        the image scanner it stops the scan going, deletes the database and every stored scan, and
+        the add-on lists as `available` again. One that isn't installed is answered as `available`.
+        A failed removal leaves the add-on `failed` and can be tried again. 404 `addon_not_found`;
+        409 `addon_busy`.
+      tags: [addons]
+      responses:
+        "202":
+          description: The add-on, removing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Addon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/AddonNotFound"
+        "409":
+          $ref: "#/components/responses/AddonBusy"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/scan:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+    get:
+      operationId: getAppScan
+      summary: Read the vulnerability scan of the images an app runs.
+      description: |
+        One entry per service of the app's live deployment (its newest healthy one): the image's
+        digest, the servers that run a copy now (the asset a finding belongs to is the digest;
+        these say where it runs), and the stored scan with its findings, or `null` before the
+        image's first scan. A finding's `id` is the same on every scan, so a reader can follow it.
+        While the image scanner isn't installed the answer is 200 with `installed: false` and no
+        services. An app with no healthy deployment has no services. The answer holds what the
+        scanner's database says (advisory, package, versions, link) and nothing the app wrote.
+      tags: [scans]
+      responses:
+        "200":
+          description: The app's scans.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppScan"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/apps/{id}/deployments/{deploymentId}/scan:
+    parameters:
+      - $ref: "#/components/parameters/AppID"
+      - name: deploymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: getDeploymentScan
+      summary: Read the vulnerability scan of the images one deployment ran.
+      description: |
+        As `getAppScan`, for the digests of that deployment. `servers` are given only when it is the
+        live deployment: the others' copies are gone or replaced, and the lists are empty.
+      tags: [scans]
+      responses:
+        "200":
+          description: The deployment's scans.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppScan"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: No such app, or no such deployment of this app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/scans:
+    get:
+      operationId: listImageScans
+      summary: List the images the installation runs, with their scan.
+      description: |
+        Every image an app's live deployment runs, in order of first use: who runs it (app, service
+        and servers) and the counts of its scan, without the findings (`getAppScan` has them). An
+        image never tried has `status: none`. Empty while the image scanner isn't installed.
+      tags: [scans]
+      responses:
+        "200":
+          description: The images.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImageScanSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      operationId: requestScan
+      summary: Scan the images an app runs, or every app's, now.
+      description: |
+        Queues a scan of each image the app's live deployment runs (body `{"app": "<id>"}`), or of
+        every app's when the body is left out or has no `app`. The scans run one at a time in the
+        background; `listScanRuns` and `getAppScan` show them. A run already queued or running for
+        an image is returned as it is, not queued twice. It reads the registry again, not a kept
+        SBOM. 409 `scanner_not_installed` while the add-on isn't installed; 409
+        `no_live_deployment` for an app with no healthy deployment; 404 for an app that doesn't
+        exist.
+      tags: [scans]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestScanRequest"
+      responses:
+        "202":
+          description: The runs queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanRunList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ScanConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/scans/runs:
+    get:
+      operationId: listScanRuns
+      summary: List the newest scan runs.
+      description: Newest first, at most 50. It is the queue and the history, with each run's reason when it failed or was skipped.
+      tags: [scans]
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanRunList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/scans/settings:
+    get:
+      operationId: getScanSettings
+      summary: Read the settings for image scanning.
+      tags: [scans]
+      responses:
+        "200":
+          description: The settings (their defaults before the owner saved any).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putScanSettings
+      summary: Change the settings for image scanning.
+      description: |
+        Every field is optional and a missing one keeps its value; the answer is the settings as
+        saved. A bad value is 400 `invalid_field` naming it. Turning the gate on
+        (`refuseFixableCritical`) while the image scanner isn't installed is 409
+        `scanner_not_installed`: the gate is offered only with the add-on.
+      tags: [scans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanSettingsRequest"
+      responses:
+        "200":
+          description: The settings as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/ScanConflict"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/notifications/channels:
     get:
       operationId: listNotificationChannels
@@ -5369,6 +5662,12 @@ paths:
 
 components:
   parameters:
+    AddonName:
+      name: name
+      in: path
+      required: true
+      description: The add-on's name. `image-scanner` is the only one; another name is 404 `addon_not_found`.
+      schema: {type: string}
     TemplateName:
       name: name
       in: path
@@ -7312,6 +7611,365 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SecretProvider"
+
+    Addon:
+      type: object
+      additionalProperties: false
+      required: [name, title, state, version, installedAt, reason, cost, server, databaseBuilt]
+      properties:
+        name:
+          type: string
+          description: The add-on's ID, such as `image-scanner`.
+          examples: [image-scanner]
+        title:
+          type: string
+          examples: [Image scanner]
+        state:
+          type: string
+          enum: [available, installing, installed, failed, removing]
+          description: |
+            `available`: not installed. `installing` and `removing` end in `installed` (or `failed`)
+            and `available`. `failed`: the last install or removal failed; `reason` says why, and
+            the call can be made again.
+        version:
+          type: string
+          description: The version of the add-on's software Caravana pins (for an add-on not installed, the one it would install).
+        installedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the install finished; null until installed.
+        reason:
+          type: string
+          description: Why a failed install or removal failed, in Caravana's words; empty otherwise.
+        cost:
+          $ref: "#/components/schemas/AddonCost"
+        server:
+          type: string
+          description: For an installed image scanner, the server that holds its database; empty until known.
+        databaseBuilt:
+          type: [string, "null"]
+          format: date-time
+          description: For an installed image scanner, when the newest database a scan used was built; null until a scan used one.
+
+    AddonCost:
+      type: object
+      additionalProperties: false
+      required: [diskBytes, downloadBytesPerDay]
+      properties:
+        diskBytes:
+          type: integer
+          format: int64
+          description: Disk the add-on keeps on one server.
+        downloadBytesPerDay:
+          type: integer
+          format: int64
+          description: What it downloads a day.
+
+    ScanCounts:
+      type: object
+      additionalProperties: false
+      required: [critical, high, medium, low, info, fixableCritical, fixableHigh, kev]
+      description: An image's findings by severity. `fixableCritical` and `fixableHigh` count the ones with a known fix; `kev` the ones being exploited now.
+      properties:
+        critical: {type: integer}
+        high: {type: integer}
+        medium: {type: integer}
+        low: {type: integer}
+        info: {type: integer}
+        fixableCritical: {type: integer}
+        fixableHigh: {type: integer}
+        kev: {type: integer}
+
+    ScanEPSS:
+      type: object
+      additionalProperties: false
+      required: [score, percentile]
+      properties:
+        score:
+          type: number
+          description: The probability, 0 to 1, that the advisory is exploited in the next 30 days.
+        percentile:
+          type: number
+          description: Where that score ranks among all advisories, 0 to 1.
+
+    ScanFinding:
+      type: object
+      additionalProperties: false
+      required: [id, advisory, cve, severity, package, version, type, fixState, fixedIn, fixable, url, epss, kev, remediation, firstSeen, lastSeen]
+      description: One advisory that hits one package of an image. Nothing an app wrote is in it.
+      properties:
+        id:
+          type: string
+          description: |
+            The check and the asset: the first 16 hex digits of the SHA-256 of
+            `grype|<advisory>|<package>|<version>|<type>|<image>`. The same on every scan of the
+            same digest, so a reader can follow a finding across scans.
+        advisory:
+          type: string
+          description: The scanner's ID for the advisory, such as `CVE-2022-37434`, `GHSA-…` or `ALPINE-…`.
+        cve:
+          type: string
+          description: The advisory when it is a CVE, else the first CVE it relates to, else empty.
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+          description: One scale; the scanner's `Negligible` and `Unknown` are `info`.
+        package: {type: string, examples: [zlib]}
+        version:
+          type: string
+          description: The installed version.
+          examples: [1.2.11-r3]
+        type:
+          type: string
+          description: The kind of package, such as `apk`, `deb` or `go-module`.
+        fixState:
+          type: string
+          description: The scanner's word for the fix, such as `fixed`, `not-fixed`, `wont-fix` or `unknown`; may be empty.
+        fixedIn:
+          type: array
+          items: {type: string}
+          description: The versions that fix it; empty unless `fixState` is `fixed`. Any one will do.
+        fixable:
+          type: boolean
+          description: A fixed version exists, so the owner can act on it.
+        url:
+          type: string
+          description: The advisory's page. Only an `https://` link is kept; may be empty.
+        epss:
+          oneOf:
+            - $ref: "#/components/schemas/ScanEPSS"
+            - type: "null"
+          description: The advisory's exploit-prediction score; null when the scanner gave none.
+        kev:
+          type: boolean
+          description: The advisory is in CISA's Known Exploited Vulnerabilities catalog.
+        remediation:
+          type: string
+          description: What to do about it, in a sentence.
+        firstSeen:
+          type: string
+          format: date-time
+          description: When a scan first saw this finding on this digest.
+        lastSeen:
+          type: string
+          format: date-time
+          description: When the newest scan that had it ended.
+
+    ImageScan:
+      type: object
+      additionalProperties: false
+      required: [image, status, reason, triedAt, scannedAt, dbBuilt, dbSchema, scanner, cut, sbomKept, counts, findings]
+      description: |
+        The stored scan of one image digest: the newest successful result and the newest try. A
+        failed or skipped try keeps the findings of the result before it.
+      properties:
+        image:
+          type: string
+          description: The image, pinned by digest (`repo@sha256:…`).
+        status:
+          type: string
+          enum: [ok, failed, skipped]
+          description: The newest try's outcome.
+        reason:
+          type: string
+          description: For `failed` and `skipped`, Caravana's sentence; empty for `ok`.
+        triedAt:
+          type: string
+          format: date-time
+        scannedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the newest successful scan ended; null when none did (then `findings` is empty).
+        dbBuilt:
+          type: [string, "null"]
+          format: date-time
+          description: When the vulnerability database that scan used was built.
+        dbSchema: {type: string}
+        scanner:
+          type: string
+          description: The scanner's version.
+        cut:
+          type: boolean
+          description: That scan had more findings than are kept (20,000).
+        sbomKept:
+          type: boolean
+          description: The scanner's volume has the image's software bill of materials, so a rescan needs no pull.
+        counts:
+          $ref: "#/components/schemas/ScanCounts"
+        findings:
+          type: array
+          description: Most severe first, the fixable ones before the others, the exploited ones first.
+          items:
+            $ref: "#/components/schemas/ScanFinding"
+
+    ScanRun:
+      type: object
+      additionalProperties: false
+      required: [id, image, trigger, source, status, reason, scanner, dbBuilt, createdAt, startedAt, endedAt]
+      description: One scan, a row of the queue and of the history.
+      properties:
+        id: {type: string}
+        image:
+          type: string
+          description: The digest scanned; empty for the install's database run.
+        trigger:
+          type: string
+          enum: [install, deploy, daily, owner, gate]
+        source:
+          type: string
+          enum: [registry, sbom, database]
+          description: Where the scanner read the image from; `database` is the install's run, which scans nothing.
+        status:
+          type: string
+          enum: [queued, running, ok, failed, skipped]
+        reason:
+          type: string
+          description: For `failed` and `skipped`, Caravana's sentence; empty otherwise.
+        scanner: {type: string}
+        dbBuilt:
+          type: [string, "null"]
+          format: date-time
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: [string, "null"], format: date-time}
+        endedAt: {type: [string, "null"], format: date-time}
+
+    ScanRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScanRun"
+
+    ServiceScan:
+      type: object
+      additionalProperties: false
+      required: [service, image, servers, scan, run]
+      properties:
+        service: {type: string}
+        image:
+          type: string
+          description: The digest the service runs.
+        servers:
+          type: array
+          items: {type: string}
+          description: The servers running a copy of the service now; empty when that isn't known.
+        scan:
+          oneOf:
+            - $ref: "#/components/schemas/ImageScan"
+            - type: "null"
+          description: The stored scan; null before the image's first.
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/ScanRun"
+            - type: "null"
+          description: The scan queued or running for the image; null when none is.
+
+    AppScan:
+      type: object
+      additionalProperties: false
+      required: [app, installed, services]
+      properties:
+        app: {type: string}
+        installed:
+          type: boolean
+          description: The image scanner is installed. When it isn't, `services` is empty.
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceScan"
+
+    ScanUse:
+      type: object
+      additionalProperties: false
+      required: [app, service, servers]
+      properties:
+        app: {type: string}
+        service: {type: string}
+        servers:
+          type: array
+          items: {type: string}
+
+    ImageScanSummary:
+      type: object
+      additionalProperties: false
+      required: [image, usedBy, counts, scannedAt, dbBuilt, scanner, status, reason, triedAt, run]
+      description: An image the installation runs, with who runs it and the counts of its scan.
+      properties:
+        image: {type: string}
+        usedBy:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScanUse"
+        counts:
+          $ref: "#/components/schemas/ScanCounts"
+        scannedAt: {type: [string, "null"], format: date-time}
+        dbBuilt: {type: [string, "null"], format: date-time}
+        scanner: {type: string}
+        status:
+          type: string
+          enum: [none, ok, failed, skipped]
+          description: The newest try's outcome; `none` for an image never tried.
+        reason: {type: string}
+        triedAt: {type: [string, "null"], format: date-time}
+        run:
+          oneOf:
+            - $ref: "#/components/schemas/ScanRun"
+            - type: "null"
+          description: The scan queued or running for the image; null when none is.
+
+    RequestScanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        app:
+          type: string
+          description: The app to scan. Leave it out to scan every app.
+
+    ScanSettings:
+      type: object
+      additionalProperties: false
+      required: [notifyLevel, refuseFixableCritical, dailyHour, databaseUrl]
+      properties:
+        notifyLevel:
+          type: string
+          enum: [critical, high]
+          description: The lowest severity that puts an `image_vulnerable` item on the needs-you list (only findings with a known fix do).
+        refuseFixableCritical:
+          type: boolean
+          description: |
+            The gate: a deploy of an image with a critical finding that has a fix fails with 422
+            `image_vulnerable` (`field` `services[i].image`). Offered only while the image scanner is
+            installed. An image with no result younger than a day is scanned first; one that can't be
+            scanned deploys with a warning.
+        dailyHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: The UTC hour the daily rescan starts at or after.
+        databaseUrl:
+          type: string
+          description: A mirror's `latest.json` for the vulnerability database (`https://`), or empty for the scanner's own.
+
+    ScanSettingsRequest:
+      type: object
+      additionalProperties: false
+      description: Every field is optional; a missing one keeps its value.
+      properties:
+        notifyLevel:
+          type: string
+          enum: [critical, high]
+        refuseFixableCritical:
+          type: boolean
+        dailyHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        databaseUrl:
+          type: string
+          description: "`https://` with a host and no user name or password, or empty."
 
     SecretsUnchanged:
       type: object
@@ -10274,7 +10932,8 @@ components:
                 `copy_not_running`, `token_scope`, `app_not_found`, `schedule_not_found`, `run_not_found`,
                 `output_not_kept`, `builtin_schedule`, `schedule_exists`, `run_going`, `run_not_running`, `log_rotated`, `download_busy`,
                 `passkey_not_found`, `last_passkey`, `no_passkey`, `port_taken`, `no_public_network`,
-                `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`.
+                `placement_impossible`, `server_moving`, `server_not_ready`, `no_other_server`,
+                `image_vulnerable`, `scanner_not_installed`, `addon_busy`, `addon_not_found`.
               examples: [invalid_field]
             message:
               type: string
@@ -10434,6 +11093,27 @@ components:
             $ref: "#/components/schemas/TokenInfo"
 
   responses:
+    AddonNotFound:
+      description: "`addon_not_found`: Caravana has no add-on with that name."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    AddonBusy:
+      description: "`addon_busy`: the add-on is installing or being removed; wait for it to finish."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ScanConflict:
+      description: |
+        `scanner_not_installed`: the image scanner isn't installed (the settings call names
+        `refuseFixableCritical`). `no_live_deployment`: the app has no healthy deployment to scan.
+        Nothing was queued or saved.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     TemplateNotFound:
       description: "`template_not_found`: the catalog in use has no template with that name (or no logo for it)."
       content:
@@ -10735,6 +11415,12 @@ components:
         refused Caravana's key, device key or environment, or its answer couldn't be
         decrypted). The message names the provider and the path, never a value or the
         provider's own text. The values the running copies have are untouched.
+
+        With the image scanner installed and the gate on (`putScanSettings`), also
+        `image_vulnerable` (`field` `services[i].image`): the image has a critical vulnerability
+        with a known fix. The message names the advisory, the package and the versions that fix it
+        ("web's image has CVE-2022-37434 (critical) in zlib 1.2.11-r3, fixed in 1.2.12-r2"), and the
+        deployment record (see `Location`) is `failed`. Deploy a rebuilt image, or turn the gate off.
       headers:
         Location:
           $ref: "#/components/headers/DeploymentLocation"

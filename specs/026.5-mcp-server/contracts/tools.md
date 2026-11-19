@@ -72,6 +72,7 @@ caravana mcp [--allow-actions]
 | `get_compose_file` | `app`, `deployment?` | `getCompose` / `getDeploymentCompose` |
 | `list_templates` | `q?`, `tag?` | `listTemplates` (feature 035) |
 | `get_template` | `name` | `getTemplate` (feature 035) |
+| `get_app_scan` | `app` | `getAppScan` (feature 044): the findings of the images the live deployment runs. No tool scans or changes the settings. |
 
 ## Action tools (`--allow-actions` only)
 

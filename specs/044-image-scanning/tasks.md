@@ -31,9 +31,9 @@ Phases 1 to 4 are each one piece of work for a sub-agent, reviewed before the ne
 
 ## Phase 3: API and MCP (US1–US5)
 
-- [ ] T009 `internal/api/scans.go`, `addons.go` + `api/openapi.yaml` 0.49.0 (D12): routes, schemas, `image_vulnerable` mapping,
+- [x] T009 `internal/api/scans.go`, `addons.go` + `api/openapi.yaml` 0.49.0 (D12): routes, schemas, `image_vulnerable` mapping,
   the attention kind and webhook properties; parity and scope tests.
-- [ ] T010 `internal/mcpserver`: `get_app_scan` (D12) with the contract test.
+- [x] T010 `internal/mcpserver`: `get_app_scan` (D12) with the contract test.
 
 ## Phase 4: Console (US1, US5, US6)
 

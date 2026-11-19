@@ -208,6 +208,16 @@ func (h *handler) addReadTools(srv *mcp.Server) {
 			return h.answer(ctx, call{op: opGetCompose, params: []string{"id", in.App}})
 		})
 
+	addTool(h, srv, read("get_app_scan",
+		"Returns the vulnerability scan of the images an app's live deployment runs: per service the image "+
+			"digest, the servers running it, and the findings (advisory, severity, package, installed and fixed "+
+			"versions, whether a fix exists, EPSS, whether it is known to be exploited, and what to do). "+
+			"`installed: false` means the owner hasn't installed the image scanner; a service with no `scan` "+
+			"hasn't been scanned yet. There is no tool to scan or to change the settings. API operation getAppScan."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in appInput) (string, error) {
+			return h.answer(ctx, call{op: opGetAppScan, params: []string{"id", in.App}})
+		})
+
 	addTool(h, srv, read("list_templates",
 		"Lists the app templates Caravana can install (a status page, a fediverse server, a database with its "+
 			"admin page...), with the catalog's version and whether each is available. `q` searches title, "+

@@ -90,6 +90,9 @@ var readCases = []toolCase{
 	{tool: "export_jobspec", args: map[string]any{"app": "web", "deployment": "d-1"},
 		routes: map[string]string{"GET /v1/apps/web/deployments/d-1/jobspec": `job "web" {}`},
 		want:   []wantRequest{{method: "GET", path: "/v1/apps/web/deployments/d-1/jobspec"}}, answer: `job "web" {}`},
+	{tool: "get_app_scan", args: map[string]any{"app": "web"},
+		routes: map[string]string{"GET /v1/apps/web/scan": `{"app":"web","installed":true,"services":[]}`},
+		want:   []wantRequest{{method: "GET", path: "/v1/apps/web/scan"}}, answer: `{"app":"web","installed":true,"services":[]}`},
 	{tool: "get_compose_file", args: map[string]any{"app": "web"},
 		routes: map[string]string{"GET /v1/apps/web/compose": `{"compose":"x"}`},
 		want:   []wantRequest{{method: "GET", path: "/v1/apps/web/compose"}}, answer: `{"compose":"x"}`},
@@ -291,7 +294,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 }
 
 var readToolNames = []string{
-	"export_jobspec", "get_app", "get_compose_file", "get_deployment", "get_logs", "get_needs_you",
+	"export_jobspec", "get_app", "get_app_scan", "get_compose_file", "get_deployment", "get_logs", "get_needs_you",
 	"get_project", "get_template", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
 	"list_deployments", "list_projects", "list_recent_deployments", "list_templates", "list_volumes",
 	"preview_promotion", "wait_for_deployment",

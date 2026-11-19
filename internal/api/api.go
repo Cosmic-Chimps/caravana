@@ -69,6 +69,14 @@ func (s *server) routes() []route {
 		{http.MethodGet, "/v1/metrics", s.getMetrics, false, false},
 		{http.MethodGet, "/v1/host", s.getHost, false, false},
 		{http.MethodGet, "/v1/activity", s.listActivity, false, false},
+		{http.MethodGet, "/v1/addons", s.listAddons, false, false},
+		{http.MethodPut, "/v1/addons/{name}", s.installAddon, false, false},
+		{http.MethodDelete, "/v1/addons/{name}", s.removeAddon, false, false},
+		{http.MethodGet, "/v1/scans", s.listImageScans, false, false},
+		{http.MethodPost, "/v1/scans", s.requestScan, false, false},
+		{http.MethodGet, "/v1/scans/runs", s.listScanRuns, false, false},
+		{http.MethodGet, "/v1/scans/settings", s.getScanSettings, false, false},
+		{http.MethodPut, "/v1/scans/settings", s.putScanSettings, false, false},
 		{http.MethodGet, "/v1/updates", s.getUpdates, false, false},
 		{http.MethodPut, "/v1/updates/settings", s.putUpdateSettings, false, false},
 		{http.MethodPost, "/v1/updates/check", s.checkUpdates, false, false},
@@ -170,6 +178,8 @@ func (s *server) routes() []route {
 		{http.MethodPost, "/v1/apps/{id}/deployments/{deploymentId}/redeploy", s.redeployDeployment, false, false},
 		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/jobspec", s.exportDeployment, false, false},
 		{http.MethodGet, "/v1/apps/{id}/jobspec", s.exportApp, false, false},
+		{http.MethodGet, "/v1/apps/{id}/scan", s.getAppScan, false, false},
+		{http.MethodGet, "/v1/apps/{id}/deployments/{deploymentId}/scan", s.getDeploymentScan, false, false},
 		{http.MethodPost, "/v1/apps/{id}/webhook", s.createWebhookToken, false, false},
 		{http.MethodGet, "/v1/apps/{id}/webhook", s.getWebhook, false, false},
 		{http.MethodDelete, "/v1/apps/{id}/webhook", s.deleteWebhookToken, false, false},
@@ -360,6 +370,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := secretProvidersError(err); e != nil {
+		return e
+	}
+	if e := scansError(err); e != nil {
 		return e
 	}
 	switch {
