@@ -235,3 +235,32 @@ Recorded here as the work finds them.
   `Service.LocalServerName()`, a new accessor over the sampler's directory); with no local name known yet it keeps the
   old "Open monitoring" link. `platform_test.go` and `opsserver_states_test.go` were updated. The `#space` anchor is
   Phase C's.
+
+**Phase B (API and MCP), 2026-11-20.**
+
+- **Router conflict.** `GET /v1/servers/{name}/space` and `GET /v1/servers/{name}/cleanups` conflict in Go's
+  `ServeMux` with 031's `GET /v1/servers/joins/{id}` (both match `/v1/servers/joins/space`, neither is more
+  specific, and registering them panics; the console met the same thing at `/ops/servers/joins/…`). The
+  routes table and `api/openapi.yaml` keep each operation at its contract path (so the contract test and the
+  scope walk are untouched); `handler` registers the two under one pattern, `GET /v1/servers/{name}/{sub}`
+  (`serverSubRoutes`, `serverSubPattern` in `api.go`), of which `joins/{id}` is the more specific, and
+  dispatches on the last segment. Any other sub-path answers the usual 404 `not_found`; `/v1/servers/joins/space`
+  still reaches `getServerJoin` (404 `server_not_found`). Tests: `TestServerSubroutesKeepTheirAnswers`.
+- **Extra fields beyond `contracts/api.md`**, all additive: `ServerSpace.orphanVolumesUnavailable` (Nomad couldn't
+  be read, so the empty list isn't an answer) and `SpaceImages.truncated` (the agent named only the largest 1000
+  images). `OrphanVolume.project` and `.environment` are the slugs of the app's place (`default`, `production`),
+  not display names, and are `""` when `app` is; `measuredAt` is `null` while `bytes` is. An orphan has no
+  `server` field (it is listed under its server's page); `VolumeDeletion.server` names the server that held it.
+- **Error fields.** `server_not_found` has no `field` (as 031's other server calls); `no_agent`,
+  `cleanup_running`, `volume_not_orphan`, `volume_in_use`, `deletion_running` and the two `*_not_found` codes carry
+  the service's field (`name`, or `id` for an unknown clean-up or deletion). `no_backup_destination` is the
+  existing code. `putCleanupSettings` requires both fields (a missing one is 400 `invalid_field`, not "off").
+  `deleteOrphanVolume` records trigger `manual`; the API has no console cookie to tell otherwise.
+- **`api/openapi.yaml` 0.50.0**: the eight operations (tag `servers`), schemas `ServerSpace`, `SpaceImages`,
+  `OrphanVolume`, `Cleanup`, `VolumeDeletion`, `CleanupSettings`, and for the node protocol `NodeSpace`
+  (`NodeReport.space`) and `NodeClean` (`NodeSyncAnswer.clean`), with the sync's body limit corrected to 4 MiB
+  (413 text too). The join and certificate calls keep 64 KiB.
+- **Test fake.** `spaceHost` (cleanup_agent_test.go) now answers `docker volume prune`, for the clean-up with
+  `dockerVolumes: true`.
+- **MCP.** `get_server_space` takes `server` (a server's name, the same lowercase-label rule as the agent's, with
+  its own `serverPattern`: the shared `namePattern` refuses a name with `--`, which a host name can make).

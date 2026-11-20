@@ -62,7 +62,7 @@ func (h *spaceHost) Run(ctx context.Context, name string, args ...string) ([]byt
 	case "image rm":
 		h.removed = append(h.removed, strings.Join(args[2:], " "))
 		return nil, nil
-	case "builder prune":
+	case "builder prune", "volume prune":
 		return nil, nil
 	}
 	return nil, fmt.Errorf("unexpected docker call %v", args)

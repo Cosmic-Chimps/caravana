@@ -36,11 +36,11 @@
 
 ## Phase B — API and MCP (US1–US3)
 
-- [ ] T008 [FR-011] `internal/api/space.go`: the eight operations and codes of `contracts/api.md`; the route
+- [x] T008 [FR-011] `internal/api/space.go`: the eight operations and codes of `contracts/api.md`; the route
   table; `api/openapi.yaml` 0.50.0 (schemas, operations, codes, `ActivityEntry` unchanged); tests per operation
   (answers, refusals, `no-store`), the scope walk unchanged (default deny), the parity test (console routes of
   Phase C map to these).
-- [ ] T009 [FR-011] `internal/mcpserver`: `get_server_space` read tool, contract test, `docs/mcp.md` line.
+- [x] T009 [FR-011] `internal/mcpserver`: `get_server_space` read tool, contract test, `docs/mcp.md` line.
 
 ## Phase C — console (US1, US2, US3)
 

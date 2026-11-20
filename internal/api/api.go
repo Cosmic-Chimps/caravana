@@ -89,6 +89,14 @@ func (s *server) routes() []route {
 		{http.MethodPut, "/v1/servers/{name}/labels", s.putServerLabels, false, false},
 		{http.MethodPost, "/v1/servers/{name}/drain", s.drainServer, false, false},
 		{http.MethodDelete, "/v1/servers/{name}/drain", s.undrainServer, false, false},
+		{http.MethodGet, "/v1/servers/{name}/space", s.getServerSpace, false, false},
+		{http.MethodGet, "/v1/servers/{name}/cleanups", s.listServerCleanups, false, false},
+		{http.MethodPost, "/v1/servers/{name}/cleanups", s.cleanServer, false, false},
+		{http.MethodGet, "/v1/servers/{name}/cleanups/{id}", s.getServerCleanup, false, false},
+		{http.MethodPost, "/v1/volumes/{name}/deletions", s.deleteOrphanVolume, false, false},
+		{http.MethodGet, "/v1/volumes/{name}/deletions/{id}", s.getVolumeDeletion, false, false},
+		{http.MethodGet, "/v1/cleanup/settings", s.getCleanupSettings, false, false},
+		{http.MethodPut, "/v1/cleanup/settings", s.putCleanupSettings, false, false},
 		{http.MethodGet, "/v1/projects", s.listProjects, false, false},
 		{http.MethodPost, "/v1/projects", s.createProject, false, false},
 		{http.MethodGet, "/v1/projects/{project}", s.getProject, false, false},
@@ -237,14 +245,41 @@ func NewWebhook(svc *service.Service, log *slog.Logger) http.Handler {
 // handler builds the HTTP handler for a route table.
 func (s *server) handler(routes []route) http.Handler {
 	mux := http.NewServeMux()
+	dispatched := map[string]http.HandlerFunc{} // by the last segment of GET /v1/servers/{name}/<sub>
 	for _, rt := range routes {
 		h := rt.handle
 		if !rt.public {
 			h = s.authenticate(rt)
 		}
+		if sub, ok := serverSubRoutes[rt.method+" "+rt.path]; ok {
+			dispatched[sub] = s.handle(h)
+			continue
+		}
 		mux.Handle(rt.method+" "+rt.path, s.handle(h))
 	}
+	if len(dispatched) > 0 {
+		mux.Handle("GET "+serverSubPattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if h, ok := dispatched[r.PathValue("sub")]; ok {
+				h(w, r)
+				return
+			}
+			writeError(w, &Error{Status: http.StatusNotFound, Code: codeNotFound, Message: "no such endpoint"})
+		}))
+	}
 	return s.jsonOnly(mux)
+}
+
+// serverSubPattern and serverSubRoutes: Go's router can't tell GET /v1/servers/joins/{id} (getServerJoin)
+// from GET /v1/servers/{name}/space or /cleanups, since both match /v1/servers/joins/space and neither is
+// more specific, so registering the pair panics. The routes table (and the contract) keep each operation
+// at its own path; handler registers these under the one pattern below, of which joins/{id} is the more
+// specific, and dispatches on the last segment. A request for a path that is neither answers the same 404
+// as any unknown path.
+const serverSubPattern = "/v1/servers/{name}/{sub}"
+
+var serverSubRoutes = map[string]string{
+	"GET /v1/servers/{name}/space":    "space",
+	"GET /v1/servers/{name}/cleanups": "cleanups",
 }
 
 // jsonOnly sits in front of the mux so the API never answers with a redirect
@@ -354,6 +389,9 @@ func (s *server) mapError(r *http.Request, err error) *Error {
 		return e
 	}
 	if e := serversError(err); e != nil {
+		return e
+	}
+	if e := spaceError(err); e != nil {
 		return e
 	}
 	if e := passkeysError(err); e != nil {

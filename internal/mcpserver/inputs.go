@@ -22,15 +22,18 @@ const (
 	refPattern   = `^[A-Za-z0-9-]{1,64}$`
 	imagePattern = `^[^\s]+$`
 	tagPattern   = `^[a-z0-9][a-z0-9 -]{0,23}$`
+	// serverPattern is a server's name: a lowercase DNS label, as the cluster's agent and console apply it.
+	serverPattern = `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
 )
 
 var (
-	appIDRE = regexp.MustCompile(appIDPattern)
-	nameRE  = regexp.MustCompile(namePattern)
-	svcRE   = regexp.MustCompile(svcPattern)
-	refRE   = regexp.MustCompile(refPattern)
-	imageRE = regexp.MustCompile(imagePattern)
-	tagRE   = regexp.MustCompile(tagPattern)
+	appIDRE  = regexp.MustCompile(appIDPattern)
+	nameRE   = regexp.MustCompile(namePattern)
+	svcRE    = regexp.MustCompile(svcPattern)
+	refRE    = regexp.MustCompile(refPattern)
+	imageRE  = regexp.MustCompile(imagePattern)
+	tagRE    = regexp.MustCompile(tagPattern)
+	serverRE = regexp.MustCompile(serverPattern)
 )
 
 // Limits and defaults of the numeric inputs.
@@ -91,6 +94,10 @@ type logsInput struct {
 type templatesInput struct {
 	Q   string `json:"q,omitempty" jsonschema:"keep the templates whose title, description or a tag contains this (any case)"`
 	Tag string `json:"tag,omitempty" jsonschema:"keep the templates with exactly this tag, like monitoring"`
+}
+
+type serverInput struct {
+	Server string `json:"server" jsonschema:"the server's name, like one"`
 }
 
 type templateInput struct {
@@ -170,6 +177,13 @@ func (in templatesInput) validate() error {
 
 func (in templateInput) validate() error { return checkName("name", in.Name) }
 
+func (in serverInput) validate() error {
+	if len(in.Server) > maxNameLength || !serverRE.MatchString(in.Server) {
+		return invalidInput("server must be a server's name (lowercase letters, digits and '-', at most %d characters)", maxNameLength)
+	}
+	return nil
+}
+
 func (in projectInput) validate() error { return checkName("project", in.Project) }
 func (in appInput) validate() error     { return checkApp(in.App) }
 
@@ -243,6 +257,7 @@ func firstError(errs ...error) error {
 var propertyRules = map[string]func(*jsonschema.Schema){
 	"app":     patternRule(appIDPattern, maxAppIDLength),
 	"project": patternRule(namePattern, maxNameLength),
+	"server":  patternRule(serverPattern, maxNameLength),
 	"name":    patternRule(namePattern, maxNameLength),
 	"tag":     patternRule(tagPattern, maxTagLength),
 	"q": func(s *jsonschema.Schema) {
