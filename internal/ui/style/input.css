@@ -2106,6 +2106,10 @@
   .cv-page-mon { gap: 18px; padding: 24px 16px 40px; }
 }
 
+@media (max-width: 639.98px) {
+  .cv-spacerow, .cv-spaceorphan { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* The server page: under 1200px of room the aside drops under the main column; under 640px the three
    numbers stack with the line on top instead of the left. */
 @container cvsrv (max-width: 1199.98px) {
@@ -2372,6 +2376,32 @@
   .cv-srvstaywho { font-family: var(--font-mono); color: var(--color-fg-1); overflow-wrap: anywhere; }
   .cv-srvstaywhy { color: var(--color-fg-3); }
   .cv-srvmoveform { display: flex; flex-direction: column; gap: 16px; }
+  .cv-deleteform .cv-fld { max-width: 28rem; }
+  /* The Space section of the server page (feature 045): what the server holds, the last clean-up, the volumes no app
+     declares and the setting. Same rhythm as the move panel: 12px between a label and its panel. */
+  .cv-srvspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .cv-spacepanel { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; }
+  .cv-spacerows { display: flex; flex-direction: column; }
+  .cv-spacerow { display: grid; grid-template-columns: minmax(10rem, 14rem) minmax(7rem, 10rem) minmax(0, 1fr); gap: 4px 16px; align-items: baseline; padding: 7px 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-spacerow + .cv-spacerow { border-top: 1px solid var(--color-line-1); }
+  .cv-spacelabel { color: var(--color-fg-1); }
+  .cv-spaceval { font-family: var(--font-mono); font-size: 13px; color: var(--color-fg-1); }
+  .cv-spacenote { color: var(--color-fg-3); font-size: 13px; }
+  .cv-spacewhy, .cv-spacerun { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); text-wrap: pretty; }
+  .cv-spacerun { color: var(--color-fg-1); }
+  .cv-spacesub { margin: 8px 0 0; }
+  .cv-spaceorphans { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+  .cv-spaceorphan { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 8px 0; font-size: 14px; line-height: 1.5; color: var(--color-fg-2); }
+  .cv-spaceorphan + .cv-spaceorphan { border-top: 1px solid var(--color-line-1); }
+  .cv-spacename { overflow-wrap: anywhere; }
+  .cv-spacefacts { color: var(--color-fg-3); }
+  .cv-spacemounted { font-size: 13px; color: var(--color-fg-3); }
+  .cv-spaceform { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin: 0; }
+  .cv-spacekeep { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--color-fg-2); }
+  .cv-spaceselect { width: auto; min-width: 4.5rem; }
+  /* Overview's server panel: one quiet line under the meters. */
+  .cv-node-reclaim { margin: 0; font: 400 13px/1.4 var(--font-sans); }
+  .cv-node-reclaim a { color: var(--color-fg-2); }
   /* Configure's Placement panel: the rules as sentences, then the form of three rules. */
   .cv-plpanel { margin-top: 16px; }
   .cv-plrules { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.5; color: var(--color-fg-1); }

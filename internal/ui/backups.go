@@ -176,6 +176,8 @@ type unmountedVolume struct {
 	Name, HostPath, Size string
 	// Where is "this host", or the name of the server when the cluster has several.
 	Where string
+	// DeleteHref is the page that deletes it (feature 045), empty when Nomad doesn't say which server holds it.
+	DeleteHref string
 }
 
 // restoreRow is one restore. Stopped is "stopped 4 s" for a volume restore
@@ -304,6 +306,9 @@ func backupsTabOf(now time.Time, sum service.AppSummary, backups []store.BackupR
 			u := unmountedVolume{Name: v.Name, HostPath: v.HostPath, Where: whereIs(tab.MultiServer, v.Server)}
 			if v.Size != nil {
 				u.Size = humanBytes(v.Size.Bytes)
+			}
+			if v.Server != "" {
+				u.DeleteHref = volumeDeleteHref(v.Server, v.NomadName)
 			}
 			tab.Unmounted = append(tab.Unmounted, u)
 		}

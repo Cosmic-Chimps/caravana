@@ -117,6 +117,8 @@ type srvBody struct {
 	Banners []srvBanner
 	Numbers srvNumbers
 	Room    *monRoom
+	// Space is the Space section (feature 045); nil for a server that isn't read (down, disconnected, unknown).
+	Space   *srvSpace
 	Running srvRunning
 	Facts   []srvFact
 	// AgentNote says the server's agent is older than the console.
@@ -478,6 +480,13 @@ func (s *server) loadOpsServer(r *http.Request, name string, extra srvExtras) (s
 	}
 	if managed {
 		d.body.Facts = withLabelsFact(d.body.Facts, labelsFormOf(view, extra.LabelsText, extra.LabelsError))
+	}
+	if found && view.State != "down" && view.State != "disconnected" {
+		sp, err := s.spaceOf(r, view.Name, r.URL.Query())
+		if err != nil && !errors.Is(err, service.ErrServerNotFound) {
+			return srvData{}, err
+		}
+		d.body.Space = sp
 	}
 	return d, nil
 }

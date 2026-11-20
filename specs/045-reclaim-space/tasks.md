@@ -44,12 +44,12 @@
 
 ## Phase C — console (US1, US2, US3)
 
-- [ ] T010 [FR-011] Server page Space section (D6): `internal/ui/opsspace.go`, the templates in
+- [x] T010 [FR-011] Server page Space section (D6): `internal/ui/opsspace.go`, the templates in
   `opsserver.html` and a part `/parts/ops/servers/{name}/space`, the clean-up page (`opsclean.html`), the delete
   page (`opsvolumedelete.html`), the settings form, Overview's line, the app Volumes panel's link; words in the
   console's style (`DESIGN.md`); `tools/ui-css.sh build`; tests (`opsspace_test.go`: the section with and without
   an agent, a wrong typed name, the refusals drawn, no script needed).
-- [ ] T011 [SC-002, SC-003] `cmd/caravana/console_space_test.go`, step `console-space` in `TestConsoleLab` (D7).
+- [x] T011 [SC-002, SC-003] `cmd/caravana/console_space_test.go`, step `console-space` in `TestConsoleLab` (D7).
 
 ## Phase D — back up first (US4) and Docker's volumes (US5)
 

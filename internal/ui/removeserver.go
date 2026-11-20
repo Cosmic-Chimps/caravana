@@ -27,7 +27,7 @@ type removeServerPage struct {
 // showServerSub answers GET /ops/servers/{kind}/{rest}. Two pages live under that shape and Go's router
 // can't tell /ops/servers/joins/{id} from /ops/servers/{name}/remove (both match
 // /ops/servers/joins/remove, and neither is the more specific), so one pattern takes them all and this
-// dispatches: ".../{name}/remove" and ".../{name}/move" are the confirmations, ".../joins/{id}" the join's page.
+// dispatches: ".../{name}/remove", ".../{name}/move" and ".../{name}/clean" are the confirmations, ".../joins/{id}" the join's page.
 func (s *server) showServerSub(w http.ResponseWriter, r *http.Request, session string) {
 	kind, rest := r.PathValue("kind"), r.PathValue("rest")
 	switch {
@@ -35,6 +35,8 @@ func (s *server) showServerSub(w http.ResponseWriter, r *http.Request, session s
 		s.drawRemoveServer(w, r, kind, nil)
 	case rest == "move":
 		s.showMoveServer(w, r, kind)
+	case rest == "clean":
+		s.showCleanServer(w, r, kind)
 	case kind == "joins":
 		r.SetPathValue("id", rest)
 		s.showServerJoin(w, r, session)

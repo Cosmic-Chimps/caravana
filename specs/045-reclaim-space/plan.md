@@ -264,3 +264,40 @@ Recorded here as the work finds them.
   `dockerVolumes: true`.
 - **MCP.** `get_server_space` takes `server` (a server's name, the same lowercase-label rule as the agent's, with
   its own `serverPattern`: the shared `namePattern` refuses a name with `--`, which a host name can make).
+
+**Phase C (console), 2026-11-20.**
+
+- **Router conflict, again.** `GET /parts/ops/servers/{name}/space` conflicts with 031's `GET /parts/ops/servers/joins/{id}`
+  (both match `/parts/ops/servers/joins/space`), as Phase B's API routes and 031's pages did. One pattern,
+  `GET /parts/ops/servers/{kind}/{rest}`, takes both and `partServerSub` dispatches (`joins` is the join's part, `space` the
+  section); the clean-up page joins `showServerSub` (`.../{name}/clean`). The parity table lists the new pattern in place of
+  `GET /parts/ops/servers/joins/{id}`. The delete page (`/ops/servers/{name}/volumes/{volume}/delete`, four segments) and
+  the posts don't conflict.
+- **The section is drawn inside the body.** `id="space"` is in `srv-body`, between the numbers (and the room line) and
+  Running here, from the same loader as the page, so a load and a refresh can't differ; the section also carries its own
+  `hx-get` of `/parts/ops/servers/{name}/space` on `sse:servers`, swapped as `outerHTML`. The body refreshes on that
+  notice too, so a clean-up's end reaches the page either way. The settings form has `hx-preserve` and an id, like the Labels
+  form. A server that is down or disconnected has no section (Docker can't be asked), and a Nomad node that isn't a server
+  row (the lab's) has one, with "—" and the agent sentence.
+- **Redirects carry `#space`.** The three posts answer 303 to `?cleaning=<id>#space`, `?deleted=<volume>#space` and
+  `?saved=1#space` (the contract has the query only), so the browser lands on the section. `?deleting=<id>` also carries
+  `volume=<name>`: `GetVolumeDeletion` is addressed by volume and ID. The notices are drawn only while true: `?cleaning` while
+  that clean-up is open, `?deleted` while the volume isn't listed (and Nomad could be read), `?deleting` while the deletion is
+  archiving or deleting, and `?saved` always.
+- **What the settings post says.** `POST /ops/cleanup/settings` takes `keep`, `automatic` and a hidden `server` (the server
+  page it came from, so the 303 goes back there; none goes to `/ops/servers`). A keep outside 1–10 is a 422 page, not a redirect.
+- **Overview's line and the Volumes panel.** The panel of each server of several has "Reclaimable 3.3 GB" (a link to `#space`)
+  when `ServerSpace` says there is something; a server that is down or disconnected has none. `service.VolumeView` gained
+  `NomadName` (`<app>_<volume>`, set by `Volumes`, not by the pure `volumeViews`) because the unmounted rows' `Name` is the
+  definition's short name and the delete page is addressed by Nomad's; a row links to `/ops/servers/<server>/volumes/<name>/delete`
+  when Nomad says which server holds it, and the note under the panel now ends "or you delete them".
+- **Sizes read in the console's units.** `humanBytes` uses 1024 (91,050,000 bytes is "87 MB", 2.3e9 is "2.1 GB"); the contract's
+  decimal examples are only examples.
+- **The back-up-first box** is drawn when the backup destination is set (`GetBackupDestination`), as D6 says, though
+  `DeleteOrphanVolume` still refuses `backUpFirst` until Phase D (T012): ticking it today answers 409 "No backup destination is
+  set…", which is the wrong words for a destination that is set. T012 replaces that refusal.
+- **A refused delete** maps: a wrong name 422 at the field (the page stays as it was), `volume_not_found` 404, not orphan, in
+  use, deletion running and no destination 409 on the page's place of the form, Nomad down 502, anything else the error page.
+  The delete page itself is a 404 for a volume that isn't among the server's orphans and 409 for one a copy mounts.
+- **Lab.** `console-space` (`console_space_test.go`) runs after `console-servers`; the lab's node has no agent, so it checks the
+  no-agent words and the refused clean-up, and the orphan flow; a real clean-up is `install-test.sh`'s (T015).

@@ -1,0 +1,45 @@
+{{/* The confirmation page of a clean-up (/ops/servers/{name}/clean, feature 045), in the move page's shape: what
+     will be removed, what is kept, the box for Docker's leftover volumes, the one button and Cancel. A refusal takes
+     the panel's and the button's place and says why, with only the way back. Takes a cleanServerPage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Back to {{.Name}}</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1">The agent on <span class="cv-inline-mono text-fg-1">{{.Name}}</span> removes the images no container uses and no recent deployment needs. Nothing that runs is touched, and an image that is removed is pulled again when something asks for it.</p>
+    <h2 class="cv-label">What is removed</h2>
+    {{if .Unused}}
+    <ul class="cv-srvstays" aria-label="Unused images">
+      {{range .Unused}}<li><span class="cv-srvstaywho">{{.Name}}</span> <span class="cv-srvstaywhy">{{.Size}}</span></li>{{end}}
+    </ul>
+    {{if .More}}<p class="text-sm text-fg-3">and {{.More}} more.</p>{{end}}
+    <p class="text-base text-fg-1">{{.Total}} in all.</p>
+    {{else}}
+    <p class="text-base text-fg-1">No unused images.</p>
+    {{end}}
+    {{with .Cache}}<p class="text-base text-fg-1">The build cache, {{.}}.</p>{{end}}
+    <h2 class="cv-label">What is kept</h2>
+    <p class="text-sm text-fg-3">The images of the last {{.Keep}} healthy deployments of each app, every deployment still under way, the images in each app's stored definition and Caravana's own helper images. So a rollback never waits on a download. The number is a setting under Space on the server's page.</p>
+  </div>
+  <form method="post" action="{{.Action}}" class="cv-srvmoveform">
+    {{if .Volumes}}
+    <label class="cv-check"><input type="checkbox" name="dockerVolumes" value="1"{{if .Checked}} checked{{end}}><span>Also remove Docker's leftover volumes ({{.Volumes}})</span></label>
+    <p class="cv-hint">Volumes of containers that are gone. The volumes of your apps are Nomad's, not Docker's, and are never touched here.</p>
+    {{end}}
+    <div class="cv-actions">
+      <button type="submit" class="cv-btn cv-btn-primary">Clean up {{.Name}}</button>
+      <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{end}}
