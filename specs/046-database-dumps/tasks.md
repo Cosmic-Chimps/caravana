@@ -31,5 +31,5 @@
 - [x] T009 Gate steps `mysql-backup-restore` and `mongodb-backup-restore` (plan "Lab") in
   `cmd/caravana/gate_dumps_test.go`, listed in `runGate` after `sqlite-backup-restore`; both pass in the lab run
   alone.
-- [ ] T010 Full checks: build, vet, staticcheck, `go test -race ./...`, gofmt, cross-compile, `tools/ui-css.sh
+- [x] T010 Full checks: build, vet, staticcheck, `go test -race ./...`, gofmt, cross-compile, `tools/ui-css.sh
   check`, `tools/release.sh check`.
