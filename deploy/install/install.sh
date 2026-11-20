@@ -824,6 +824,10 @@ run_traefik() {
     # entrypoint). An existing Traefik job doesn't have the two metrics arguments yet.
     grep -q 'metrics.prometheus' <<<"$spec" ||
       echo "  Traefik is restarted once for its request numbers (a few seconds without HTTP)"
+    # Feature 047: the Requests page reads Traefik's access log. An existing Traefik job doesn't
+    # write it yet.
+    grep -q 'accesslog' <<<"$spec" ||
+      echo "  Traefik is restarted once for its access log (a few seconds without HTTP)"
   fi
   local out
   out="$(nomad_cli job run -detach \

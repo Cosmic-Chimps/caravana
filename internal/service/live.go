@@ -44,16 +44,18 @@ type watchedPlace struct {
 }
 
 // SetLogWatchGaps sets how often a watched place sends a notice (2 seconds by
-// default) and how often its copies are listed again (30 seconds); tests shorten
-// them. Call it before WatchLogs. A value that isn't positive keeps the default.
+// default) and how often its copies are listed again (30 seconds), for the Logs
+// and the Requests pages alike; tests shorten them. Call it before WatchLogs. A value that isn't positive keeps the default.
 func (s *Service) SetLogWatchGaps(notice, relist time.Duration) {
-	s.logWatch.mu.Lock()
-	defer s.logWatch.mu.Unlock()
-	if notice > 0 {
-		s.logWatch.noticeGap = notice
-	}
-	if relist > 0 {
-		s.logWatch.relistGap = relist
+	for _, w := range []*logWatcher{&s.logWatch, &s.requestWatch} {
+		w.mu.Lock()
+		if notice > 0 {
+			w.noticeGap = notice
+		}
+		if relist > 0 {
+			w.relistGap = relist
+		}
+		w.mu.Unlock()
 	}
 }
 
@@ -68,6 +70,13 @@ func (s *Service) SetLogWatchGaps(notice, relist time.Duration) {
 // Following needs no place that exists: one that doesn't has no copies, and a
 // failure to list them is logged (the error, never a line) and tried again.
 func (s *Service) WatchLogs(project, environment string) (done func()) {
+	return s.watchPlace(&s.logWatch, project, environment, s.followPlace)
+}
+
+// watchPlace is WatchLogs' and WatchRequests' shared body: it counts the pages
+// of a place in w and runs follow for it while there is one.
+func (s *Service) watchPlace(w *logWatcher, project, environment string,
+	follow func(ctx context.Context, project, environment string, notice, relist time.Duration)) (done func()) {
 	if project == "" {
 		project = app.DefaultProject
 	}
@@ -76,7 +85,6 @@ func (s *Service) WatchLogs(project, environment string) (done func()) {
 	}
 	key := project + "/" + environment
 
-	w := &s.logWatch
 	w.mu.Lock()
 	if w.places == nil {
 		w.places = map[string]*watchedPlace{}
@@ -94,7 +102,7 @@ func (s *Service) WatchLogs(project, environment string) (done func()) {
 		s.watchers.Add(1)
 		go func() {
 			defer s.watchers.Done()
-			s.followPlace(ctx, project, environment, gaps[0], gaps[1])
+			follow(ctx, project, environment, gaps[0], gaps[1])
 		}()
 	}
 	p.pages++
@@ -126,7 +134,7 @@ func orGap(d, def time.Duration) time.Duration {
 // say a copy changed (never twice within notice, so a burst is one listing) and
 // every relist at the latest.
 func (s *Service) followPlace(ctx context.Context, project, environment string, notice, relist time.Duration) {
-	n := &logNotice{s: s, gap: notice, dirty: map[string]bool{}}
+	n := &logNotice{s: s, gap: notice, what: ChangeLogs, dirty: map[string]bool{}}
 	defer n.stop()
 	f := &logFollowers{s: s, notice: n, running: map[string]*logFollower{}}
 	defer f.stopAll()
@@ -241,12 +249,14 @@ func (f *logFollowers) stopAll() {
 	f.wg.Wait()
 }
 
-// logNotice turns "an app wrote something" into at most one notice per gap:
-// the first after a quiet gap goes at once, the rest wait for the gap to pass
-// and go together, one per app.
+// logNotice turns "an app wrote something" (or, for requests, "an app was
+// asked something") into at most one notice per gap: the first after a quiet
+// gap goes at once, the rest wait for the gap to pass and go together, one per
+// app.
 type logNotice struct {
-	s   *Service
-	gap time.Duration
+	s    *Service
+	gap  time.Duration
+	what ChangeKind // the notice sent: ChangeLogs, or ChangeRequests (requestslive.go)
 
 	mu      sync.Mutex
 	dirty   map[string]bool // app IDs that wrote since the last notice
@@ -302,7 +312,7 @@ func (n *logNotice) takeLocked() []string {
 
 func (n *logNotice) send(apps []string) {
 	for _, id := range apps {
-		n.s.publish(Change{AppID: id, What: ChangeLogs})
+		n.s.publish(Change{AppID: id, What: n.what})
 	}
 }
 

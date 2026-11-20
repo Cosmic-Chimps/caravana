@@ -105,14 +105,23 @@ func (n *Nomad) SetNodeScheduling(drain bool, eligibility string) {
 	}
 }
 
-// SetTraefikJob registers a job "traefik" whose one task runs image, as the
-// installer's Traefik job does.
-func (n *Nomad) SetTraefikJob(image string) {
+// SetTraefikJob registers a job "traefik" whose one task runs image with args, as
+// the installer's Traefik job does. With "--accesslog=true" among args it writes
+// the access log (feature 047).
+func (n *Nomad) SetTraefikJob(image string, args ...string) {
+	config := map[string]any{"image": image}
+	if len(args) > 0 {
+		list := make([]any, len(args))
+		for i, a := range args {
+			list[i] = a
+		}
+		config["args"] = list
+	}
 	n.AddForeignJob(&api.Job{
 		ID: new("traefik"), Name: new("traefik"),
 		TaskGroups: []*api.TaskGroup{{
 			Name:  new("traefik"),
-			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: map[string]any{"image": image}}},
+			Tasks: []*api.Task{{Name: "traefik", Driver: "docker", Config: config}},
 		}},
 	})
 }
