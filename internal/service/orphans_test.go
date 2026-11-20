@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/nomad/api"
+
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -206,7 +208,7 @@ func TestDeleteOrphanVolume(t *testing.T) {
 		}
 		e.nomad.ClaimHostVolume("shop_cache")
 		if _, err = e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole); !errors.Is(err, ErrNoBackupDestination) {
-			t.Errorf("back up first, not built yet = %v", err)
+			t.Errorf("back up first without a destination = %v", err)
 		}
 		e.svc.spaceMu.Lock()
 		e.svc.deleting["shop_cache"] = true
@@ -276,6 +278,182 @@ func TestDeleteOrphanVolume(t *testing.T) {
 		if n := len(records(t, e)); n != 0 {
 			t.Errorf("%d records for a listing that failed", n)
 		}
+	})
+}
+
+// archiveEnds answers as the archive task would for the job it was given: the object at the path and time the
+// job's env says, with the size.
+func archiveEnds(bytes string) func(job *api.Job) (string, string) {
+	return func(job *api.Job) (string, string) {
+		env := job.TaskGroups[0].Tasks[0].Env
+		return "caravana-archive: ok object=" + env["BACKUP_PATH"] + "/" + env["TS"] + "/" + env["VOLUME"] + ".tar.gz bytes=" + bytes + "\n", ""
+	}
+}
+
+// Back up first (feature 045 D4): the archive runs as a batch job, in a goroutine, and the volume is deleted
+// only once the archive is in the destination.
+func TestDeleteOrphanVolumeBackUpFirst(t *testing.T) {
+	ctx := context.Background()
+	const jobID = "shop_cache_archive"
+	newE := func(t *testing.T) *clusterEnv {
+		e := orphanEnv(t)
+		sp := emptySpace()
+		sp.Volumes = []NodeVolumeSize{{ID: volumeID(t, e, "shop_cache"), Bytes: 2_300_000_000}}
+		e.firstSync(t, spaceReportOf(sp))
+		setDestination(t, e.env)
+		return e
+	}
+	settled := func(t *testing.T, e *clusterEnv, id string) store.VolumeDeletion {
+		t.Helper()
+		var got store.VolumeDeletion
+		waitFor(t, "the deletion to settle", func() bool {
+			var err error
+			if got, err = e.svc.GetVolumeDeletion(ctx, "shop_cache", id); err != nil {
+				t.Fatal(err)
+			}
+			return got.Status == store.DeletionDone || got.Status == store.DeletionFailed
+		})
+		return got
+	}
+	slotFree := func(e *clusterEnv) bool {
+		e.svc.spaceMu.Lock()
+		defer e.svc.spaceMu.Unlock()
+		return !e.svc.deleting["shop_cache"]
+	}
+
+	t.Run("no destination, nothing recorded or held", func(t *testing.T) {
+		e := orphanEnv(t)
+		_, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if !errors.Is(err, ErrNoBackupDestination) || !slotFree(e) || e.nomad.Registrations() != 0 {
+			t.Errorf("err = %v, slot free %v, registrations %d", err, slotFree(e), e.nomad.Registrations())
+		}
+		if !slices.Contains(e.nomad.HostVolumes(), "shop_cache") {
+			t.Error("the volume is gone")
+		}
+	})
+
+	t.Run("archived, then deleted", func(t *testing.T) {
+		e := newE(t)
+		e.nomad.FinishOnRegister(jobID, true, "", archiveEnds("812345"))
+		d, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Status != store.DeletionArchiving || !d.BackUpFirst || d.ServerName != firstServerName || d.Bytes != 2_300_000_000 || d.AppID != "shop" {
+			t.Errorf("the answer = %+v, want the record, archiving", d)
+		}
+		got := settled(t, e, d.ID)
+		if got.Status != store.DeletionDone || got.Error != "" || got.FinishedAt.IsZero() || got.Bytes != 2_300_000_000 ||
+			!strings.HasPrefix(got.ArchiveObject, "backups/caravana/shop/volumes/") || !strings.HasSuffix(got.ArchiveObject, "/shop_cache.tar.gz") {
+			t.Errorf("record = %+v", got)
+		}
+		if slices.Contains(e.nomad.HostVolumes(), "shop_cache") {
+			t.Error("the volume is still there")
+		}
+		if !e.nomad.Purged(jobID) || e.nomad.Variable("nomad/jobs/"+jobID) != nil {
+			t.Error("the archive job or its variable is left")
+		}
+		waitFor(t, "the slot to be free", func() bool { return slotFree(e) })
+		entries, err := e.svc.Activity(ctx, ActivityQuery{Limit: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, en := range entries {
+			if strings.HasPrefix(en.ID, store.ActivityDeletion) {
+				found = true
+				if en.Status != ActivityHealthy || !strings.Contains(en.Sentence, "archived to backups/caravana/shop/volumes/") {
+					t.Errorf("entry = %+v", en)
+				}
+			}
+		}
+		if !found {
+			t.Error("the deletion isn't in the feed")
+		}
+	})
+
+	t.Run("an unmeasured volume takes the archive's size", func(t *testing.T) {
+		e := orphanEnv(t) // no report: the agent never measured it
+		setDestination(t, e.env)
+		e.nomad.FinishOnRegister(jobID, true, "", archiveEnds("812345"))
+		d, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := settled(t, e, d.ID); got.Status != store.DeletionDone || got.Bytes != 812345 {
+			t.Errorf("record = %+v", got)
+		}
+	})
+
+	t.Run("a failed archive leaves the volume", func(t *testing.T) {
+		e := newE(t)
+		e.nomad.FinishOnRegister(jobID, false, "archive", func(*api.Job) (string, string) {
+			return "caravana-archive: failed: the upload: AccessDenied: the secret key is wrong\n", ""
+		})
+		d, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := settled(t, e, d.ID)
+		if got.Status != store.DeletionFailed || got.ArchiveObject != "" ||
+			!strings.Contains(got.Error, "the upload: AccessDenied") || !strings.Contains(got.Error, "the volume was not deleted") {
+			t.Errorf("record = %+v", got)
+		}
+		if !slices.Contains(e.nomad.HostVolumes(), "shop_cache") {
+			t.Fatal("the volume was deleted although its archive failed")
+		}
+		if strings.Contains(got.Error, "SK-") || !e.nomad.Purged(jobID) {
+			t.Errorf("error %q, purged %v", got.Error, e.nomad.Purged(jobID))
+		}
+		waitFor(t, "the slot to be free", func() bool { return slotFree(e) })
+		// And the owner can try again.
+		e.nomad.FinishOnRegister(jobID, true, "", archiveEnds("9"))
+		d2, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := settled(t, e, d2.ID); got.Status != store.DeletionDone {
+			t.Errorf("second record = %+v", got)
+		}
+	})
+
+	t.Run("the delete fails after the archive", func(t *testing.T) {
+		e := newE(t)
+		e.nomad.FinishOnRegister(jobID, true, "", func(job *api.Job) (string, string) {
+			e.nomad.FailVolumes(500) // the archive ends; the delete that follows is refused
+			return archiveEnds("5")(job)
+		})
+		d, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := settled(t, e, d.ID)
+		e.nomad.FailVolumes(0)
+		if got.Status != store.DeletionFailed || got.ArchiveObject == "" || !strings.Contains(got.Error, "the archive was made at "+got.ArchiveObject) {
+			t.Errorf("record = %+v", got)
+		}
+		if !slices.Contains(e.nomad.HostVolumes(), "shop_cache") {
+			t.Error("the volume is gone")
+		}
+	})
+
+	t.Run("a second deletion while one archives", func(t *testing.T) {
+		e := newE(t) // the job never gets a copy: the archive waits
+		d, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", true, app.TriggerConsole)
+		if err != nil || d.Status != store.DeletionArchiving {
+			t.Fatalf("first = %+v, %v", d, err)
+		}
+		for _, backUp := range []bool{true, false} {
+			if _, err := e.svc.DeleteOrphanVolume(ctx, "shop_cache", "shop_cache", backUp, app.TriggerConsole); !errors.Is(err, ErrDeletionRunning) {
+				t.Errorf("a second deletion (backUp %v) = %v", backUp, err)
+			}
+		}
+		got, err := e.svc.GetVolumeDeletion(ctx, "shop_cache", d.ID)
+		if err != nil || got.Status != store.DeletionArchiving {
+			t.Errorf("record = %+v, %v", got, err)
+		}
+		// The test's cleanup ends the service: the archive stops and its job is removed, the record
+		// stays open for the next start to settle.
 	})
 }
 

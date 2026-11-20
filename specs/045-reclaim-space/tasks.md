@@ -53,11 +53,11 @@
 
 ## Phase D — back up first (US4) and Docker's volumes (US5)
 
-- [ ] T012 [US4] [FR-009] `internal/nomadjob/archive.go` `VolumeArchiveJob` + `ArchiveScript` with the golden
+- [x] T012 [US4] [FR-009] `internal/nomadjob/archive.go` `VolumeArchiveJob` + `ArchiveScript` with the golden
   `testdata/volume-archive.golden.json` and a script test under `sh` with a fake `rclone` (as 036 did);
   `internal/deploy/archive.go` `ArchiveVolume`; the service's archiving path in `DeleteOrphanVolume` (goroutine,
   settle, `OpenVolumeDeletions` failed at start); API 202 path; the console's box.
-- [ ] T013 [US5] [FR-006] `dockerVolumes` through the request, the console box, the daily run never sets it
+- [x] T013 [US5] [FR-006] `dockerVolumes` through the request, the console box, the daily run never sets it
   (test).
 
 ## Phase E — lab, docs, release note

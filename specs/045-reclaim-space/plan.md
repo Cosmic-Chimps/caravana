@@ -15,7 +15,13 @@ and isn't kept, and reports the outcome in its next sync. One clean-up per manag
 is typed, optionally archived to the backup destination first by a one-off batch job that mounts it. Migration
 **0035**, API **0.50.0**, the sync protocol gains one report block and one answer block (both optional, so an
 older agent or console still works), no new Go module, no runtime dependency, no policy change, constitution
-unchanged (the archive job is a helper job named here: `<volume>_archive`).
+unchanged (the archive job is a helper job named here: `<volume>_archive`). Other facts:
+- The archive job, `<app>_<volume>_archive` (the volume's own Nomad name plus `_archive`), is a one-off batch job
+  with one task, `archive`, on the backup image: it mounts the volume at `/data` read-only, streams `tar | rclone rcat`
+  to `<bucket>/<prefix>/<app>/volumes/<ts>/<volume>.tar.gz` (`…/volumes/<ts>/…` when the name doesn't read as an
+  app's) and prints `caravana-archive: ok object=… bytes=…` or `caravana-archive: failed: …`. The destination's keys
+  are only in the job's own Nomad Variable `nomad/jobs/<job>`; the job and the variable are removed when the archive
+  ends, whatever happened.
 
 ## Constitution Check
 
@@ -301,3 +307,58 @@ Recorded here as the work finds them.
   The delete page itself is a 404 for a volume that isn't among the server's orphans and 409 for one a copy mounts.
 - **Lab.** `console-space` (`console_space_test.go`) runs after `console-servers`; the lab's node has no agent, so it checks the
   no-agent words and the refused clean-up, and the orphan flow; a real clean-up is `install-test.sh`'s (T015).
+
+**Phase D (back up first, Docker's volumes), 2026-11-20.**
+
+- **`ArchiveVolume` takes the destination.** `deploy.ArchiveVolume(ctx, volume, appID, dest)` (the plan's signature
+  had no `dest`): the Deployer doesn't know the store, so `DeleteOrphanVolume` reads `backupDestination` (store row
+  plus the secret from its Nomad Variable) before anything is recorded and refuses `ErrNoBackupDestination` without
+  one. `destinationItems` was split: `destinationKeys` (the `RCLONE_CONFIG_DEST_*` credentials, which the archive's
+  variable holds) and `destinationBase` (`bucket/prefix`); `destinationItems` is those plus the backup jobs'
+  `BACKUP_PATH`, unchanged.
+- **The job holds the path and the time, the variable holds only keys.** `VolumeArchiveJob(volume, appID, backupPath, ts, s)`
+  sets `VOLUME`, `BACKUP_PATH` and `TS` as task env (none is a secret); the variable has no `BACKUP_PATH`, so the golden
+  has no key and the two can't disagree. `BACKUP_PATH` is `<bucket>/<prefix>/<app>/volumes`, with the bucket (D4 said
+  "`<app>/volumes`"), so the object path the script prints is complete, as a backup's is; Caravana checks the script's
+  object equals the one it asked for. Group volume request: `single-node-single-writer`, `file-system`, as D4; the
+  task mounts it read-only. Resources 100 MHz, 128 MB, ceiling 512 MB (rclone's chunk buffers; the ceiling needs
+  013's oversubscription).
+- **The script.** `ArchiveScript` is POSIX sh like `VolumeScript`, every `tar`/`rclone` call under `timeout` (1700 s for
+  the archive, 120 s for the size, 60 s to delete a partial object; Caravana's wait is 30 minutes, so the script ends
+  first). It doesn't leave out `.caravana-restore` (a backup does; an orphan's old files may be the only copy of
+  someone's data). On any failure it deletes the partial object (`rclone deletefile`, best effort) and prints the
+  failed line, at most 200 characters of a tool's words, and exits 1; `ARCHIVE_ROOT` (default `/data`) is for the
+  script test. The shared fake `rclone` of the script tests gained `deletefile`.
+- **Reading the outcome.** `nomadjob.ParseArchiveOutput` reads the last marker line of the task's stdout, also from a
+  copy that failed (a failed `batchOutcome` would only read stderr). A copy that never ran to its end falls back to
+  `batchOutcome`'s words, cut to 200 characters (`ErrArchiveFailed`). Only a job with **no copy at all** for
+  `Timing.ArchivePlaceWait` (5 minutes) is "the server that holds the volume isn't placing work"
+  (`ErrNomadUnavailable`); a copy that exists but hasn't started (an image being pulled) waits for
+  `Timing.ArchiveWait` (30 minutes), then "the archive didn't finish". A leftover archive job of the volume is
+  purged first, and the job and variable are removed in a deferred clean-up with a context of its own, so a shutdown
+  or a timeout leaves neither.
+- **The goroutine.** `DeleteOrphanVolume` with `backUpFirst` records the deletion `archiving` (with `back_up_first`
+  set; `bytes` is the volume's measured size), answers it (so the API says 202 and the console 303 with `?deleting=`)
+  and runs `archiveThenDelete` in a goroutine counted in `s.watchers`, under `s.background()`, holding the volume's
+  `s.deleting` slot until it ends. After the archive: `SetVolumeDeletionDeleting`, `DeleteHostVolume`, settle `done`.
+  A failed archive settles `failed` "<reason>; the volume was not deleted" and touches nothing; a delete that fails
+  after the archive settles `failed` "the archive was made at <object>, but the volume was not deleted: <why>" with the
+  object kept. A shutdown mid-archive leaves the record open (as a move does) and `failInterruptedDeletions` settles it
+  at the next start. The record's `bytes` is the volume's size when the agent measured it, the archive's (compressed)
+  size otherwise.
+- **A crash leaves the job.** If the process is killed (not shut down) mid-archive, its deferred clean-up never runs: the
+  archive job runs on to its end in Nomad and its variable (the destination's keys, readable only by that job's task)
+  stays until the next archive of the same volume overwrites it, or the app's `DeleteAppJobs` removes it. Nothing
+  sweeps it at start; `failInterruptedDeletions` only settles the record.
+- **Test fake.** `deploytest.FinishOnRegister(jobID, ok, failedTask, output)` ends a job the test can't register itself
+  as soon as it is registered, with an output function that sees the registered job (so a test answers with the object
+  the job's own env names). Without it the job has no copy: a node that isn't placing work.
+- **T013 (Docker's leftover volumes) was mostly built in Phase A–C**: the box, the form's `dockerVolumes`, the API body,
+  `RequestCleanup`, the hand-off, the agent's `docker volume prune -f` and `volumesRemoved`, and a daily run that never
+  sets it (`TestDailyCleanups` checks `DockerVolumes` is false). What had no test was the whole path through the real
+  agent: `spaceHost` of `cleanup_agent_test.go` now holds local volumes and counts prunes, and `TestServerCleanupOperations`
+  checks 3 leftovers read, a clean-up with `dockerVolumes: true` pruning once and answering `volumesRemoved: 3`, and a
+  clean-up that doesn't ask leaving the volumes (and pruning nothing). The console's page names "removed 154 Docker
+  volumes" (`TestCleanUpWithDockerVolumesShowsWhatWasRemoved`).
+- **Not run.** The archive on a real Nomad (does a batch job claim a dynamic host volume with an orphan's capability, does
+  the mount read-only work, does purging the job release the claim before the delete) is Phase E's gate step `space`.

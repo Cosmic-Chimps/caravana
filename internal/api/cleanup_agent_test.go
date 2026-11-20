@@ -24,6 +24,10 @@ type spaceHost struct {
 	mu      sync.Mutex
 	removed []string
 	dfCalls int
+	// volumes and activeVolumes are Docker's local volumes and how many a container uses; the leftovers
+	// are the difference. pruned counts the "docker volume prune -f" calls, which drop the leftovers.
+	volumes, activeVolumes int
+	pruned                 int
 }
 
 const (
@@ -57,15 +61,29 @@ func (h *spaceHost) Run(ctx context.Context, name string, args ...string) ([]byt
 			images = "5.0MB"
 		}
 		return []byte(`{"Type":"Images","TotalCount":"3","Active":"1","Size":"` + images + `","Reclaimable":"0B"}` + "\n" +
-			`{"Type":"Local Volumes","TotalCount":"0","Active":"0","Size":"0B","Reclaimable":"0B"}` + "\n" +
+			fmt.Sprintf(`{"Type":"Local Volumes","TotalCount":"%d","Active":"%d","Size":"0B","Reclaimable":"0B"}`, h.volumes, h.activeVolumes) + "\n" +
 			`{"Type":"Build Cache","TotalCount":"0","Active":"0","Size":"0B","Reclaimable":"0B"}` + "\n"), nil
 	case "image rm":
 		h.removed = append(h.removed, strings.Join(args[2:], " "))
 		return nil, nil
-	case "builder prune", "volume prune":
+	case "volume prune":
+		if strings.Join(args, " ") != "volume prune -f" {
+			return nil, fmt.Errorf("unexpected docker call %v", args)
+		}
+		h.pruned++
+		h.volumes = h.activeVolumes
+		return nil, nil
+	case "builder prune":
 		return nil, nil
 	}
 	return nil, fmt.Errorf("unexpected docker call %v", args)
+}
+
+// setVolumes changes Docker's local volumes while an agent is running.
+func (h *spaceHost) setVolumes(total, active int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.volumes, h.activeVolumes = total, active
 }
 
 // A clean-up end to end, with nothing in the middle: the real agent reports what Docker holds, the

@@ -154,6 +154,10 @@ type Nomad struct {
 
 	jobInfos int // GET /v1/job/{id} requests answered
 
+	// onRegister runs, in its own goroutine, for each registration of a job whose ID has an entry
+	// (FinishOnRegister).
+	onRegister map[string]func(job *api.Job)
+
 	scales      []ScaleRequest // accepted scale requests (scale.go)
 	scaleStatus int            // non-zero: the next scale request answers it
 	scaleBody   string
@@ -493,6 +497,9 @@ func (n *Nomad) register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	n.registrations++
+	if f := n.onRegister[*j.ID]; f != nil {
+		go f(j) // blocks on n.mu until this handler returns
+	}
 	n.writeJSON(w, api.JobRegisterResponse{
 		EvalID:         fmt.Sprintf("eval-%d", n.index),
 		JobModifyIndex: *j.JobModifyIndex,

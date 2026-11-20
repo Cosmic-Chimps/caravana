@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/nomad/api"
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/nodeagent"
@@ -52,7 +55,9 @@ type cleanupAnswer struct {
 	Status        string `json:"status"`
 	ImagesRemoved int    `json:"imagesRemoved"`
 	BytesFreed    int64  `json:"bytesFreed"`
-	Error         string `json:"error"`
+	// VolumesRemoved is how many of Docker's leftover volumes the agent pruned.
+	VolumesRemoved int    `json:"volumesRemoved"`
+	Error          string `json:"error"`
 }
 
 type deletionAnswer struct {
@@ -63,6 +68,9 @@ type deletionAnswer struct {
 	BackUpFirst bool    `json:"backUpFirst"`
 	Status      string  `json:"status"`
 	FinishedAt  *string `json:"finishedAt"`
+	// ArchiveObject is where the archive is, once there is one.
+	ArchiveObject string `json:"archiveObject"`
+	Error         string `json:"error"`
 }
 
 // withShop stores an app shop that declares the volume uploads, and gives Nomad the volumes of every kind
@@ -213,9 +221,18 @@ func TestServerCleanupOperations(t *testing.T) {
 	doc := loadContract(t)
 	agent, host, _ := spaceAgent(t, e, "fsn-e2e")
 	ctx := context.Background()
+	// Docker holds five local volumes and a container uses two: three are leftovers, which only a
+	// clean-up that asks for them removes (feature 045, US5).
+	host.setVolumes(5, 2)
+	if err := agent.Sync(ctx, nodeagent.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("the space read has the agent's inventory", func(t *testing.T) {
 		v := getSpace(t, e, "fsn-e2e")
+		if v.DockerVolumes == nil || v.DockerVolumes.Count != 3 {
+			t.Errorf("leftover volumes = %+v, want 3", v.DockerVolumes)
+		}
 		if v.Images == nil || v.Images.Count != 3 || v.Images.UnusedCount != 2 || v.Images.UnusedBytes != 400_000_000 || v.ImagesUnavailable != "" ||
 			v.DockerVolumes == nil || v.BuildCacheBytes == nil || v.ReclaimableBytes < 400_000_000 {
 			t.Errorf("space = %+v images %+v", v, v.Images)
@@ -312,8 +329,37 @@ func TestServerCleanupOperations(t *testing.T) {
 		if status != http.StatusOK || got.Status != "done" || got.ImagesRemoved != 2 || got.BytesFreed != 400_000_000 {
 			t.Errorf("settled = %d %+v", status, got)
 		}
+		// The request's dockerVolumes reached the agent, which pruned, and the count came back.
+		if host.pruned != 1 || got.VolumesRemoved != 3 || !got.DockerVolumes {
+			t.Errorf("prunes %d, volumesRemoved %d, dockerVolumes %v: want one prune, 3 removed", host.pruned, got.VolumesRemoved, got.DockerVolumes)
+		}
 		if v := getSpace(t, e, "fsn-e2e"); v.OpenCleanup != nil || v.LastCleanup == nil || v.LastCleanup.ID != c.ID {
 			t.Errorf("space open = %+v last = %+v", v.OpenCleanup, v.LastCleanup)
+		}
+	})
+
+	t.Run("a clean-up that doesn't ask leaves Docker's volumes", func(t *testing.T) {
+		host.setVolumes(4, 2) // two more leftovers appear
+		status, _, raw := call(t, http.MethodPost, e.URL+"/v1/servers/fsn-e2e/cleanups", "application/json", `{}`)
+		if status != http.StatusAccepted {
+			t.Fatalf("cleanServer = %d %s", status, raw)
+		}
+		second := decodeAs[cleanupAnswer](t, raw)
+		if second.DockerVolumes {
+			t.Error("a clean-up that didn't ask has dockerVolumes set")
+		}
+		for range 2 { // handed out and run, then reported
+			if err := agent.Sync(ctx, nodeagent.SyncOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, _, raw = call(t, http.MethodGet, e.URL+"/v1/servers/fsn-e2e/cleanups/"+second.ID, "", "")
+		got := decodeAs[cleanupAnswer](t, raw)
+		if got.Status != "done" || got.VolumesRemoved != 0 || host.pruned != 1 {
+			t.Errorf("settled = %+v, prunes %d: want done with no volume pruned", got, host.pruned)
+		}
+		if v := getSpace(t, e, "fsn-e2e"); v.DockerVolumes == nil || v.DockerVolumes.Count != 2 {
+			t.Errorf("leftover volumes after = %+v, want the 2 still there", v.DockerVolumes)
 		}
 	})
 }
@@ -404,6 +450,52 @@ func TestDeleteOrphanVolume(t *testing.T) {
 	t.Run("a second delete of the same volume is not found", func(t *testing.T) {
 		status, _, raw := del("shop_cache", `{"confirm": "shop_cache"}`)
 		wantError(t, "an already deleted volume", status, raw, http.StatusNotFound, codeVolumeNotFound, "name")
+	})
+
+	t.Run("back up first answers 202, then the volume is archived and deleted", func(t *testing.T) {
+		if status, _, raw := call(t, http.MethodPut, e.URL+"/v1/backups/destination", "application/json", destBody); status != http.StatusOK {
+			t.Fatalf("set the destination = %d %s", status, raw)
+		}
+		e.Nomad.FinishOnRegister("gone_data_archive", true, "", func(job *api.Job) (string, string) {
+			env := job.TaskGroups[0].Tasks[0].Env
+			return "caravana-archive: ok object=" + env["BACKUP_PATH"] + "/" + env["TS"] + "/" + env["VOLUME"] + ".tar.gz bytes=1234\n", ""
+		})
+		status, hdr, raw := del("gone_data", `{"confirm": "gone_data", "backUpFirst": true}`)
+		if status != http.StatusAccepted || hdr.Get("Cache-Control") != "no-store" {
+			t.Fatalf("deleteOrphanVolume with backUpFirst = %d (Cache-Control %q) %s", status, hdr.Get("Cache-Control"), raw)
+		}
+		checkSchema(t, doc, raw, "VolumeDeletion")
+		got := decodeAs[deletionAnswer](t, raw)
+		if got.Status != "archiving" || !got.BackUpFirst || got.Volume != "gone_data" || got.App != "gone" || got.FinishedAt != nil {
+			t.Errorf("answer = %+v, want the record, archiving", got)
+		}
+		if want := "/v1/volumes/gone_data/deletions/" + got.ID; hdr.Get("Location") != want {
+			t.Errorf("Location = %q, want %q", hdr.Get("Location"), want)
+		}
+
+		// The Location is the record: it settles by itself.
+		var read deletionAnswer
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			status, _, raw = call(t, http.MethodGet, e.URL+hdr.Get("Location"), "", "")
+			if status != http.StatusOK {
+				t.Fatalf("getVolumeDeletion = %d %s", status, raw)
+			}
+			if read = decodeAs[deletionAnswer](t, raw); read.Status == "done" || read.Status == "failed" {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the deletion never settled: %s", raw)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		checkSchema(t, doc, raw, "VolumeDeletion")
+		if read.Status != "done" || read.Error != "" || !strings.HasPrefix(read.ArchiveObject, "backups/gone/volumes/") || !strings.HasSuffix(read.ArchiveObject, "/gone_data.tar.gz") || read.FinishedAt == nil {
+			t.Errorf("settled = %+v", read)
+		}
+		if slices.Contains(e.Nomad.HostVolumes(), "gone_data") {
+			t.Error("the volume is still there")
+		}
 	})
 }
 

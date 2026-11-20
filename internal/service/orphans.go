@@ -167,8 +167,9 @@ func newDeletionID() string { return "vd_" + strings.ToLower(rand.Text()) }
 // owner confirms by typing its name (confirm, a field error on confirm when it differs). The volume must
 // exist (ErrVolumeNotFound), be an orphan (ErrVolumeNotOrphan) and be claimed by no copy (ErrVolumeInUse);
 // one deletion per volume at a time (ErrDeletionRunning). backUpFirst archives it to the backup destination
-// before deleting (ErrNoBackupDestination without one): not built yet, see the note below. The deletion is
-// recorded, for the feed, whether or not it works. trigger says who asked (console or manual).
+// before deleting (ErrNoBackupDestination without one): the answer is the record, archiving, and a goroutine
+// archives, deletes and settles it (archiveThenDelete). The deletion is recorded, for the feed, whether or
+// not it works. trigger says who asked (console or manual).
 func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, backUpFirst bool, trigger app.Trigger) (store.VolumeDeletion, error) {
 	if confirm != name {
 		return store.VolumeDeletion{}, app.NewFieldError("confirm", "type the volume's name, %s, to confirm", name)
@@ -200,11 +201,14 @@ func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, 
 	if len(detail.Allocations) > 0 {
 		return store.VolumeDeletion{}, &RefusalError{Field: "name", Err: ErrVolumeInUse}
 	}
+	var dest deploy.BackupDestination
 	if backUpFirst {
-		// Phase D (feature 045 tasks T012): the archive to the backup destination, as a Nomad batch job that
-		// mounts the volume, then the delete. Until it exists the request is refused, so a volume is never
-		// deleted without the copy the owner asked for.
-		return store.VolumeDeletion{}, ErrNoBackupDestination
+		var ok bool
+		if dest, ok, err = s.backupDestination(ctx); err != nil {
+			return store.VolumeDeletion{}, err
+		} else if !ok {
+			return store.VolumeDeletion{}, ErrNoBackupDestination
+		}
 	}
 
 	s.spaceMu.Lock()
@@ -214,19 +218,43 @@ func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, 
 	}
 	s.deleting[name] = true
 	s.spaceMu.Unlock()
-	defer func() {
+	handedOver := false
+	release := func() {
 		s.spaceMu.Lock()
 		delete(s.deleting, name)
 		s.spaceMu.Unlock()
+	}
+	defer func() {
+		if !handedOver {
+			release()
+		}
 	}()
 
+	status := store.DeletionDeleting
+	if backUpFirst {
+		status = store.DeletionArchiving
+	}
 	server, bytes := s.volumeFacts(ctx, stub)
 	d, err := s.store.CreateVolumeDeletion(ctx, store.VolumeDeletion{
 		ID: newDeletionID(), Volume: name, AppID: orphans[0].App, ServerName: server, Trigger: string(trigger),
-		RequestedAt: s.clock.Now().UTC(), Status: store.DeletionDeleting, Bytes: bytes,
+		RequestedAt: s.clock.Now().UTC(), Status: status, Bytes: bytes, BackUpFirst: backUpFirst,
 	})
 	if err != nil {
 		return store.VolumeDeletion{}, fmt.Errorf("delete volume %s: %w", name, err)
+	}
+	if backUpFirst {
+		// The archive can take many minutes: the record is the answer, and the goroutine holds the volume's
+		// slot in s.deleting until it ends. It runs under the process's context, so a shutdown stops it and
+		// leaves the record open for failInterruptedDeletions at the next start.
+		handedOver = true
+		s.watchers.Add(1)
+		go func() {
+			defer s.watchers.Done()
+			defer release()
+			s.archiveThenDelete(s.background(), d, stub, dest)
+		}()
+		s.publish(Change{What: ChangeServers})
+		return d, nil
 	}
 	err = s.deployer.DeleteHostVolume(ctx, stub.ID)
 	if errors.Is(err, deploy.ErrVolumeInUse) {
@@ -244,6 +272,52 @@ func (s *Service) DeleteOrphanVolume(ctx context.Context, name, confirm string, 
 		return store.VolumeDeletion{}, err
 	}
 	return s.store.GetVolumeDeletion(ctx, d.ID)
+}
+
+// archiveThenDelete archives the volume to dest, then deletes it, and settles the record d (archiving) as
+// done or failed. A failed archive leaves the volume as it was. A context that ends first (the process is
+// shutting down) leaves the record open: the next start settles it as failed.
+func (s *Service) archiveThenDelete(ctx context.Context, d store.VolumeDeletion, stub deploy.HostVolumeStub, dest deploy.BackupDestination) {
+	settle := func(status, reason string) {
+		// Not the archive's context: the record is settled even as the process stops.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := s.store.SettleVolumeDeletion(sctx, d.ID, status, s.clock.Now().UTC(), truncateBytes(reason, 300)); err != nil {
+			s.log.Warn("delete volume: settle the record", "volume", d.Volume, "error", err)
+		}
+		s.publish(Change{What: ChangeServers})
+	}
+	object, archiveBytes, err := s.deployer.ArchiveVolume(ctx, d.Volume, d.AppID, dest)
+	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		s.log.Warn("delete volume: the archive failed", "volume", d.Volume, "error", err)
+		settle(store.DeletionFailed, err.Error()+"; the volume was not deleted")
+		return
+	}
+	// The record keeps the volume's own size when the agent measured it; the archive's is the only size
+	// there is otherwise.
+	size := d.Bytes
+	if size == 0 {
+		size = archiveBytes
+	}
+	if err := s.store.SetVolumeDeletionDeleting(context.WithoutCancel(ctx), d.ID, object, size); err != nil {
+		s.log.Warn("delete volume: record the archive", "volume", d.Volume, "error", err)
+	}
+	s.publish(Change{What: ChangeServers})
+	err = s.deployer.DeleteHostVolume(ctx, stub.ID)
+	if err != nil && ctx.Err() != nil {
+		return
+	}
+	if errors.Is(err, deploy.ErrVolumeInUse) {
+		err = &RefusalError{Field: "name", Err: ErrVolumeInUse}
+	}
+	if err != nil {
+		settle(store.DeletionFailed, "the archive was made at "+object+", but the volume was not deleted: "+err.Error())
+		return
+	}
+	settle(store.DeletionDone, "")
 }
 
 // appDeclaring is the ID of the app whose definition declares the volume, "" when none does.

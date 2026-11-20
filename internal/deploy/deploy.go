@@ -94,6 +94,10 @@ type Timing struct {
 	// StreamLifetime is how long one connection to Nomad's event stream lives
 	// before FollowEvents renews it. Default 10 minutes.
 	StreamLifetime time.Duration
+	// ArchivePlaceWait is how long an archive job (feature 045) may have no copy
+	// before Caravana gives up: the server that holds the volume isn't placing
+	// work. ArchiveWait bounds the whole archive. Defaults 5 and 30 minutes.
+	ArchivePlaceWait, ArchiveWait time.Duration
 }
 
 func (t Timing) withDefaults() Timing {
@@ -120,6 +124,12 @@ func (t Timing) withDefaults() Timing {
 	}
 	if t.StreamLifetime == 0 {
 		t.StreamLifetime = 10 * time.Minute
+	}
+	if t.ArchivePlaceWait == 0 {
+		t.ArchivePlaceWait = 5 * time.Minute
+	}
+	if t.ArchiveWait == 0 {
+		t.ArchiveWait = 30 * time.Minute
 	}
 	if t.VolumeDeleteWait == 0 {
 		t.VolumeDeleteWait = time.Minute

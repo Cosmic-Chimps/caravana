@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/nomad/api"
+
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/service"
 	"github.com/cosmic-chimps/caravana/internal/store"
@@ -292,7 +294,7 @@ func TestDeleteVolumeRefusals(t *testing.T) {
 	}
 }
 
-// With a backup destination set, the page offers the box (what it does is feature 045's phase D).
+// With a backup destination set, the page offers the box.
 func TestDeleteVolumePageOffersBackUpFirstWithADestination(t *testing.T) {
 	e, _ := spaceCluster(t)
 	if _, err := e.Svc.SetBackupDestination(context.Background(), service.DestinationInput{Endpoint: "http://10.0.0.5:9000", Region: "r", Bucket: "backups", AccessKeyID: "AK", SecretAccessKey: new("sk")}); err != nil {
@@ -301,6 +303,97 @@ func TestDeleteVolumePageOffersBackUpFirstWithADestination(t *testing.T) {
 	_, page := e.get(t, "/ops/servers/fsn-1/volumes/shop_uploads/delete")
 	if !strings.Contains(page, `name="backUp"`) || !strings.Contains(text(page), "Back up first") || strings.Contains(text(page), "so nothing keeps a copy") {
 		t.Errorf("the page with a destination:\n%s", text(page))
+	}
+}
+
+// Docker's leftover volumes (feature 045, US5): the box on the clean-up page carries to the request, and
+// the count the agent reports comes back on the page as part of how it went.
+func TestCleanUpWithDockerVolumesShowsWhatWasRemoved(t *testing.T) {
+	e, token := spaceCluster(t)
+	_, page := e.get(t, "/ops/servers/fsn-1/clean")
+	if !strings.Contains(page, `name="dockerVolumes"`) || !strings.Contains(text(page), "Also remove Docker's leftover volumes") {
+		t.Fatalf("the clean-up page has no box for Docker's volumes:\n%s", text(page))
+	}
+	f := formWith(t, page, "/ops/servers/fsn-1/clean")
+	if resp, _ := e.submit(t, f, url.Values{"dockerVolumes": {"1"}}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST = %d", resp.StatusCode)
+	}
+	list, err := e.Svc.ServerCleanups(context.Background(), "fsn-1")
+	if err != nil || len(list) != 1 || !list[0].DockerVolumes {
+		t.Fatalf("cleanups = %+v, %v", list, err)
+	}
+	e.syncSpace(t, token, &service.NodeSpace{
+		Images:        []service.NodeImage{{ID: "sha256:a", Digests: []string{spaceInUse}, Tags: []string{"traefik:v3"}, Bytes: 200_000_000, InUse: true}},
+		DockerVolumes: service.NodeCount{},
+		LastClean: &service.NodeClean{ID: list[0].ID, StartedAt: "2026-10-15T04:00:40Z", FinishedAt: "2026-10-15T04:02:00Z",
+			ImagesRemoved: 2, BytesFreed: 1_146_000_000 + 91_050_000, VolumesRemoved: 154},
+	})
+	_, body := e.get(t, "/ops/servers/fsn-1")
+	if words := text(body); !strings.Contains(words, "removed 2 images") || !strings.Contains(words, "removed 154 Docker volumes") {
+		t.Errorf("the section after the clean-up:\n%s", words)
+	}
+}
+
+// Back up first: the post answers 303 at once with ?deleting=<id> (the archive goes on in the background), the
+// section says so while it is true, and the deletion settles by itself.
+func TestDeleteVolumeBackUpFirst(t *testing.T) {
+	e, _ := spaceCluster(t)
+	delURL := "/ops/servers/fsn-1/volumes/shop_uploads/delete"
+
+	// Ticked without a destination: refused on the page, and nothing is deleted.
+	resp, page := e.postForm(t, delURL, url.Values{"confirm": {"shop_uploads"}, "backUp": {"1"}})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(text(page), "No backup destination is set") {
+		t.Fatalf("back up first with no destination = %d:\n%s", resp.StatusCode, text(page))
+	}
+	if got := e.Nomad.HostVolumes(); len(got) != 1 {
+		t.Fatalf("volumes after the refusal: %v", got)
+	}
+
+	if _, err := e.Svc.SetBackupDestination(context.Background(), service.DestinationInput{Endpoint: "http://10.0.0.5:9000", Region: "r", Bucket: "backups", AccessKeyID: "AK", SecretAccessKey: new("sk")}); err != nil {
+		t.Fatal(err)
+	}
+	e.Nomad.FinishOnRegister("shop_uploads_archive", true, "", func(job *api.Job) (string, string) {
+		env := job.TaskGroups[0].Tasks[0].Env
+		return "caravana-archive: ok object=" + env["BACKUP_PATH"] + "/" + env["TS"] + "/" + env["VOLUME"] + ".tar.gz bytes=99\n", ""
+	})
+	resp, _ = e.postForm(t, delURL, url.Values{"confirm": {"shop_uploads"}, "backUp": {"1"}})
+	loc := location(t, resp)
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/ops/servers/fsn-1?deleting=vd_") ||
+		!strings.HasSuffix(loc, "&volume=shop_uploads#space") {
+		t.Fatalf("POST = %d to %q", resp.StatusCode, loc)
+	}
+	id := strings.TrimSuffix(strings.TrimPrefix(loc, "/ops/servers/fsn-1?deleting="), "&volume=shop_uploads#space")
+
+	var d store.VolumeDeletion
+	waitFor(t, "the archive and the delete to end", func() bool {
+		var err error
+		d, err = e.Svc.GetVolumeDeletion(context.Background(), "shop_uploads", id)
+		return err == nil && d.Status == store.DeletionDone
+	})
+	if !strings.HasPrefix(d.ArchiveObject, "backups/") || len(e.Nomad.HostVolumes()) != 0 {
+		t.Errorf("record %+v, volumes %v", d, e.Nomad.HostVolumes())
+	}
+	// The flash is drawn only while the deletion is still going: it is over now.
+	_, body := e.get(t, "/ops/servers/fsn-1?deleting="+id+"&volume=shop_uploads")
+	if strings.Contains(text(body), "Archiving shop_uploads") {
+		t.Error("an archive that is over is announced as going")
+	}
+}
+
+// While the archive goes, the section says so.
+func TestDeletingFlashWhileArchiving(t *testing.T) {
+	e, _ := spaceCluster(t)
+	if _, err := e.Svc.SetBackupDestination(context.Background(), service.DestinationInput{Endpoint: "http://10.0.0.5:9000", Region: "r", Bucket: "backups", AccessKeyID: "AK", SecretAccessKey: new("sk")}); err != nil {
+		t.Fatal(err)
+	}
+	// No FinishOnRegister: the archive job never gets a copy, so the deletion stays open until the test ends.
+	d, err := e.Svc.DeleteOrphanVolume(context.Background(), "shop_uploads", "shop_uploads", true, app.TriggerConsole)
+	if err != nil || d.Status != store.DeletionArchiving {
+		t.Fatalf("deletion = %+v, %v", d, err)
+	}
+	_, body := e.get(t, "/ops/servers/fsn-1?deleting="+d.ID+"&volume=shop_uploads")
+	if !strings.Contains(text(body), "Archiving shop_uploads to the backup destination, then deleting it.") {
+		t.Errorf("the page while archiving:\n%s", text(body))
 	}
 }
 
