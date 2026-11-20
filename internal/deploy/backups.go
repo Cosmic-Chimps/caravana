@@ -69,13 +69,9 @@ func (d *Deployer) SaveBackupSecret(ctx context.Context, secret string) error {
 	return d.writeVariable(ctx, destinationSecretPath, map[string]string{"secretAccessKey": secret})
 }
 
-// destinationItems are the variable items that point rclone at dest, for
-// the dumps of one service.
-func destinationItems(appID, service string, dest BackupDestination) map[string]string {
-	path := dest.Bucket
-	if p := strings.Trim(dest.Prefix, "/"); p != "" {
-		path += "/" + p
-	}
+// destinationKeys are the variable items that point rclone at dest: the
+// credentials and how to reach the bucket.
+func destinationKeys(dest BackupDestination) map[string]string {
 	return map[string]string{
 		"RCLONE_CONFIG_DEST_TYPE":              "s3",
 		"RCLONE_CONFIG_DEST_PROVIDER":          "Other",
@@ -88,8 +84,25 @@ func destinationItems(appID, service string, dest BackupDestination) map[string]
 		// create it, which a key limited to one bucket (Cloudflare R2's, say)
 		// may not do, and the upload fails.
 		"RCLONE_CONFIG_DEST_NO_CHECK_BUCKET": "true",
-		"BACKUP_PATH":                        path + "/" + appID + "/" + service,
 	}
+}
+
+// destinationBase is the bucket and the owner's prefix in it, "bucket/prefix":
+// where every path Caravana writes starts.
+func destinationBase(dest BackupDestination) string {
+	path := dest.Bucket
+	if p := strings.Trim(dest.Prefix, "/"); p != "" {
+		path += "/" + p
+	}
+	return path
+}
+
+// destinationItems are the variable items that point rclone at dest, for
+// the dumps of one service.
+func destinationItems(appID, service string, dest BackupDestination) map[string]string {
+	items := destinationKeys(dest)
+	items["BACKUP_PATH"] = destinationBase(dest) + "/" + appID + "/" + service
+	return items
 }
 
 // SyncBackups makes a's backup jobs match its definition: for every service

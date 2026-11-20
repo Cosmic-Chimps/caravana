@@ -162,8 +162,13 @@ func (s *server) routeTable() []route {
 		{"POST", "/ops/servers/{name}/labels", s.protected(s.requireSession(s.saveServerLabels))},
 		{"POST", "/ops/servers/{name}/move", s.protected(s.requireSession(s.moveServer))},
 		{"POST", "/ops/servers/{name}/accept", s.protected(s.requireSession(s.acceptWork))},
+		{"POST", "/ops/servers/{name}/clean", s.protected(s.requireSession(s.cleanServer))},
+		{"GET", "/ops/servers/{name}/volumes/{volume}/delete", s.requireSession(s.showDeleteVolume)},
+		{"POST", "/ops/servers/{name}/volumes/{volume}/delete", s.protected(s.requireSession(s.deleteVolume))},
+		{"POST", "/ops/cleanup/settings", s.protected(s.requireSession(s.saveCleanupSettings))},
 		{"POST", "/ops/servers/joins/{id}/cancel", s.protected(s.requireSession(s.cancelServerJoin))},
-		{"GET", "/parts/ops/servers/joins/{id}", s.requirePart(s.partServerJoin)},
+		// /parts/ops/servers/joins/{id} and /parts/ops/servers/{name}/space: one pattern, see partServerSub.
+		{"GET", "/parts/ops/servers/{kind}/{rest}", s.requirePart(s.partServerSub)},
 		{"GET", "/parts/ops/servers/{name}", s.requirePart(s.partOpsServerBody)},
 		{"GET", "/ops/updates", s.requireSession(s.showOpsUpdates)},
 		{"GET", "/parts/ops/updates", s.requirePart(s.partOpsUpdates)},
@@ -382,7 +387,7 @@ func (s *server) asset(name string) (string, error) {
 
 // pageNames are the pages with a template set of their own, each built from
 // the shared files plus templates/<name>.html.
-var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver"}
+var pageNames = []string{"login", "settings", "message", "apps", "app", "newapp", "template", "projects", "promote", "stop", "terminal", "schedules", "domains", "logs", "monitoring", "ops", "opsserver", "opsupdates", "opsupdatesconfirm", "opssecurity", "opssecurityremove", "servers", "addserver", "removeserver", "moveserver", "opsclean", "opsvolumedelete"}
 
 // parseTemplates builds one template set per page: the document (base), the
 // shell (sidebar and top bar), the shared parts, the Compose form (which

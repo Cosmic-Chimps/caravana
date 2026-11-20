@@ -107,6 +107,9 @@ type opsNode struct {
 	Chips  []opsChip
 	// More is how many copies past the first opsChipLimit aren't drawn.
 	More int
+	// Reclaimable is "1.5 GB" the server could free (feature 045), linking to ReclaimHref, the server page's
+	// Space section; empty when nothing is known or nothing can be freed.
+	Reclaimable, ReclaimHref string
 }
 
 // opsChip is one copy of the server panel: the app's name and the copy's short
@@ -755,7 +758,15 @@ func (s *server) opsPanels(ctx context.Context, now time.Time, list service.Serv
 		if copiesErr != nil && !errors.Is(copiesErr, deploy.ErrNomadUnavailable) {
 			s.log.Warn("can't read a server's copies for the Operator overview", "server", sv.Name, "error", copiesErr)
 		}
-		out = append(out, opsNodeOfServer(now, sv, host, copies, copiesErr, names, order))
+		node := opsNodeOfServer(now, sv, host, copies, copiesErr, names, order)
+		if sv.State != "down" && sv.State != "disconnected" {
+			if sp, err := s.svc.ServerSpace(ctx, sv.Name); err != nil {
+				s.log.Warn("can't read a server's space for the Operator overview", "server", sv.Name, "error", err)
+			} else if sp.ReclaimableBytes > 0 {
+				node.Reclaimable, node.ReclaimHref = humanBytes(sp.ReclaimableBytes), serverHref(sv.Name)+"#space"
+			}
+		}
+		out = append(out, node)
 	}
 	return out
 }

@@ -151,6 +151,8 @@ func startServiceLogging(t *testing.T, st *store.Store, d *deploy.Deployer, sec 
 	svc.updater.gap = time.Hour
 	// Server labels: the reconcile at Start finds nothing yet; tests of it call reconcileNodeLabels.
 	svc.labelGap = time.Hour
+	// Clean-ups: the pass at Start finds nothing; tests of it call cleanupPass.
+	svc.cleanupGap = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := svc.Start(ctx); err != nil {

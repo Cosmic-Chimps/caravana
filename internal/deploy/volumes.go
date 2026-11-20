@@ -328,3 +328,75 @@ func (d *Deployer) volumeError(action string, err error) error {
 	}
 	return d.callError(action, err)
 }
+
+// Orphan volumes (feature 045): a host volume no stored app declares is listed, read and deleted by its
+// ID, not by an app's prefix.
+
+var (
+	// ErrVolumeNotFound: Nomad has no host volume with that ID.
+	ErrVolumeNotFound = errors.New("no such volume")
+	// ErrVolumeInUse: Nomad refused to delete a host volume because a copy still claims it.
+	ErrVolumeInUse = errors.New("a copy still uses the volume")
+)
+
+// HostVolumeStub is one host volume of Nomad's list.
+type HostVolumeStub struct {
+	// ID is Nomad's ID for the volume, which is also the name of its directory on the node.
+	ID string
+	// Name is the name jobs mount it by: <app>_<volume>.
+	Name   string
+	NodeID string
+	State  string
+}
+
+// AllHostVolumes lists every dynamic host volume Nomad has, whatever app (or none) it belongs to.
+func (d *Deployer) AllHostVolumes(ctx context.Context) ([]HostVolumeStub, error) {
+	stubs, _, err := d.nomad.HostVolumes().List(&api.HostVolumeListRequest{}, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return nil, d.volumeError("list volumes", err)
+	}
+	out := make([]HostVolumeStub, 0, len(stubs))
+	for _, s := range stubs {
+		out = append(out, HostVolumeStub{ID: s.ID, Name: s.Name, NodeID: s.NodeID, State: string(s.State)})
+	}
+	return out, nil
+}
+
+// VolumeDetail is one host volume as Nomad answers a read of it.
+type VolumeDetail struct {
+	ID, Name, NodeID, HostPath string
+	// Allocations are the IDs of the copies that claim the volume now (the ones that haven't ended).
+	Allocations []string
+}
+
+// HostVolumeDetail reads one host volume by ID. One Nomad doesn't have is ErrVolumeNotFound.
+func (d *Deployer) HostVolumeDetail(ctx context.Context, id string) (VolumeDetail, error) {
+	v, _, err := d.nomad.HostVolumes().Get(id, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		if statusOf(err) == http.StatusNotFound {
+			return VolumeDetail{}, fmt.Errorf("volume %s: %w", id, ErrVolumeNotFound)
+		}
+		return VolumeDetail{}, d.volumeError("read volume "+id, err)
+	}
+	out := VolumeDetail{ID: v.ID, Name: v.Name, NodeID: v.NodeID, HostPath: v.HostPath}
+	for _, a := range v.Allocations {
+		if a != nil {
+			out.Allocations = append(out.Allocations, a.ID)
+		}
+	}
+	return out, nil
+}
+
+// DeleteHostVolume deletes one host volume by ID, and the data in it: Nomad removes the directory. A
+// volume a copy still claims is ErrVolumeInUse and nothing is deleted; one that is already gone counts as
+// deleted.
+func (d *Deployer) DeleteHostVolume(ctx context.Context, id string) error {
+	_, _, err := d.nomad.HostVolumes().Delete(&api.HostVolumeDeleteRequest{ID: id}, (&api.WriteOptions{}).WithContext(ctx))
+	switch {
+	case err == nil || statusOf(err) == http.StatusNotFound:
+		return nil
+	case inUse(err):
+		return fmt.Errorf("volume %s: %w", id, ErrVolumeInUse)
+	}
+	return d.volumeError("delete volume "+id, err)
+}

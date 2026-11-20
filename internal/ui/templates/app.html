@@ -476,8 +476,8 @@
 <section aria-labelledby="unmounted-title" class="cv-pgsec">
   <h2 id="unmounted-title" class="cv-label">Volumes no service mounts</h2>
   <div class="cv-panel cv-gpanel cv-gpanel-tight">
-    {{range .}}<p class="cv-data"><span class="text-fg-1">{{.Name}}</span>{{if .HostPath}} · {{.HostPath}} on {{.Where}}{{end}}{{with .Size}} · {{.}}{{end}}</p>{{end}}
-    <p class="cv-note">They stay until the app is deleted, or a service mounts them again.</p>
+    {{range .}}<p class="cv-data"><span class="text-fg-1">{{.Name}}</span>{{if .HostPath}} · {{.HostPath}} on {{.Where}}{{end}}{{with .Size}} · {{.}}{{end}}{{with .DeleteHref}} · <a href="{{.}}">Delete…</a>{{end}}</p>{{end}}
+    <p class="cv-note">They stay until the app is deleted, a service mounts them again, or you delete them.</p>
   </div>
 </section>
 {{end}}

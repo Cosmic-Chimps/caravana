@@ -347,8 +347,8 @@ type scriptRun struct {
 // fake timeout drops its first argument, the seconds, and runs the rest; it
 // logs the seconds, and can be told to run out instead. macOS has no timeout.
 //
-// The fake rclone knows what the script uses: rcat, lsf --dirs-only, purge,
-// size --json and copyto. "dest:<path>" is the file or directory <path> under
+// The fake rclone knows what the scripts use: rcat, lsf --dirs-only, purge,
+// size --json, copyto and deletefile. "dest:<path>" is the file or directory <path> under
 // $FAKE_BUCKET, which stands for the bucket. FAKE_SECRET makes it refuse a
 // run whose secret key isn't that; FAKE_FAIL_RCAT (a part of an object's name)
 // and FAKE_FAIL_CMD (a subcommand) make the named calls fail.
@@ -415,6 +415,8 @@ case "$cmd" in
     [ -f "$p" ] || { echo "object not found" >&2; exit 3; }
     n=$(wc -c < "$p" | tr -d ' ')
     echo "{\"count\":1,\"bytes\":$n,\"sizeless\":0}" ;;
+  deletefile)
+    rm -f "$(local_path "$1")" ;;
   copyto)
     case "$1" in
       dest:*) p=$(local_path "$1"); [ -f "$p" ] || { echo "object not found" >&2; exit 3; }; cp "$p" "$2" ;;

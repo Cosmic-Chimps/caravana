@@ -179,6 +179,7 @@ func runGate(t *testing.T, target gateTarget) {
 		{"workload-identity", false, g.workloadIdentityStep},
 		{"published-ports", false, g.publishedPortsStep},
 		{"placement", false, g.placementStep},
+		{"space", false, g.spaceStep},
 		{"autoscale", false, g.autoscaleStep},
 		{"image-scan", false, g.imageScanStep},
 		{"ports-closed", true, g.portsClosed},

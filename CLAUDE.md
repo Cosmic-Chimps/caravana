@@ -1717,6 +1717,66 @@ decisions (D15–D18 are the maintainer's changes of the same day); `research.md
   console step `console-security` (136 s) passed on 2026-11-19. Each installs and removes the add-on, so each
   downloads the database (~2 min); the lab VM needs about 4 GB free disk for it.
 
+Feature 045 (`specs/045-reclaim-space`, CodeAlta task `p535`, worktree branch `alta/sturdy-erebus-k2fw`): a server's page says
+what could go, unused images are removed every day, and a volume no app declares is deleted by typing its name. `plan.md` D1–D7
+are the decisions and its Deviations sections (phases A to E) the changes; operator doc: `docs/reclaim-space.md`. No policy
+change, no new module, constitution unchanged (the archive job is a helper job the plan names).
+- Why: Nomad's docker driver counts the images it pulled in memory only, so after a Nomad restart (which Caravana does on
+  purpose) old app images stay for good; Docker's anonymous volumes (a container is removed without `RemoveVolumes`) and an app's
+  dropped volumes stay too. Lab, observed 2026-11-20: 7 images of which 3 in use, 154 leftover Docker volumes (91 MB).
+- The agent (`internal/nodeagent/space.go`, `contracts/agent.md`): `Report.Space` (every image with its digests, tags, size and
+  whether a container uses it, at most 1000; Docker's unused volumes; the build cache; the size of each Nomad host volume
+  directory, measured with `du` at most every 15 minutes and kept in `state.json`; `lastClean`) and `Answer.Clean{id, keep,
+  dockerVolumes}`, validated like the rest of 031's answer (32 hex ID, at most 4096 `sha256:` digests; `maxAnswer` is 512 KiB and
+  the sync body 4 MiB). The console sends only an ID and the digests to KEEP, never a path, a container or an image to remove.
+  `clean` removes every image no container uses whose digests are all outside `keep` (`removable`, pure; no `--force`; the image
+  is checked with `image inspect` when `image rm` fails, since Docker 29 fails on the second name of an image the first name
+  already removed), prunes the build cache and, only when asked, Docker's volumes; the ID is written to `state.json` first, so a
+  crash never repeats a run. `caravana node space` prints the report.
+- The keep rule (`service/space.go`, `keepFrom`, pure): the digests of each app's newest N healthy deployments with a recorded
+  definition (N is `cleanup_settings.keep_deployments`, default 3, 1–10), every deployment pending or running, every stored app's
+  current definition (a stopped app starts without a pull) and the helper images, plus 044's scanner image while the image
+  scanner is installed (`keepDigests`; it runs only during a scan, so no task holds it); at most 4096 (`ErrKeepListTooLong`).
+- Clean-ups (`service/cleanups.go`, migration 0035: `cleanup_settings`, `image_cleanups`, `volume_deletions`): `RequestCleanup`
+  needs a managed server whose report is under 10 minutes old (`ErrNoAgent`) and no open one (`ErrCleanupRunning`, a partial
+  unique index); the sync answer carries `clean` until the report names its ID (`done` or `failed`); `cleanupPass` (every
+  minute) fails a `requested` one after 10 minutes and a `running` one after 30 (`lost`) and, once a day from 04:00 UTC while
+  `automatic` is on (the default; the hour isn't a setting), requests one per ready managed server that reports its images,
+  trigger `schedule`, never with Docker's volumes. The feed has "Cleaned up server one: removed 7 images, freed 1.2 GB".
+- Orphan volumes (`service/orphans.go`): a Nomad host volume no stored app's `nomadjob.VolumeName` equals and that isn't
+  Caravana's own (`nomadjob.OwnVolume`: 044's `caravana-scanner`, which only the add-on's Remove deletes) (`classifyOrphans`,
+  pure), listed under its server with the app (or "its app was deleted"), the size the agent measured (null until then), when
+  the app was last deployed with it and whether a copy mounts it. `DeleteOrphanVolume` checks the typed name (`*app.FieldError`
+  on `confirm`), `ErrVolumeNotFound`, `ErrVolumeNotOrphan`, `ErrVolumeInUse` (a reverted deploy leaves the live version
+  mounting it) and, with `backUpFirst`, the backup destination; then deletes through Nomad. With `backUpFirst` it answers 202
+  `archiving` and a goroutine runs `deploy.ArchiveVolume`: the one-off batch job `<volume>_archive` (`nomadjob/archive.go`, golden;
+  mounts the volume read-only, `tar | rclone rcat` to `<bucket>/<prefix>/<app>/volumes/<ts>/<volume>.tar.gz`, prints
+  `caravana-archive: ok object=… bytes=…`; the destination's keys only in the job's own Nomad Variable), and the volume is deleted
+  only after the object is there. The job and variable are removed whatever happened, and `failInterruptedDeletions` removes
+  what a killed process left. The deploy warning for a dropped volume names the server.
+- API 0.50.0: `getServerSpace`, `cleanServer` (202), `listServerCleanups`, `getServerCleanup`, `deleteOrphanVolume` (`POST
+  /v1/volumes/{name}/deletions`, 200 or 202), `getVolumeDeletion`, `getCleanupSettings`, `putCleanupSettings`, codes `no_agent`,
+  `cleanup_running`, `keep_list_too_long`, `volume_not_found`, `volume_not_orphan`, `volume_in_use`, `deletion_running`,
+  `cleanup_not_found`, `deletion_not_found`; deploy tokens are denied by the default deny; MCP has one read tool,
+  `get_server_space`. Go's `ServeMux` conflicts between `/v1/servers/{name}/space|cleanups` (and the console's
+  `/ops/servers/{name}/clean`, `/parts/ops/servers/{name}/space`) and 031's `joins/{id}` routes, so one pattern takes both and
+  dispatches (`serverSubRoutes`, `showServerSub`, `partServerSub`).
+- Console (`internal/ui/opsspace.go`): the server page's Space section (`id="space"`, its own part, refreshed on the `servers`
+  notice): a line per kind (each "—" with the reason without an agent), the reclaimable total, the last clean-up, Clean up now…
+  (`/ops/servers/{name}/clean`, the Docker-volumes box), the orphans with Delete… (`.../volumes/{volume}/delete`: the name typed,
+  Back up first when the destination is set) and the settings form (`POST /ops/cleanup/settings`); Overview's server panels
+  have "Reclaimable 1.5 GB"; the disk item links to `#space`. Forms work without JavaScript.
+- Lab: the gate step `space` (`gate_space_test.go`: the lab's node is unmanaged, so `managed: false`, no images, `no_agent`; an
+  app with two volumes, a broken deploy dropping one reverted at Nomad's 10 minute progress deadline so the orphan is `inUse` and
+  its deletion `volume_in_use`, the refusals, a delete with `backUpFirst` against the gate's bucket job whose object holds the
+  volume's file, the other volume's data intact, the feed, the settings) passed on 2026-11-20 (692 s); `console-space`
+  (`console_space_test.go`) passed (81 s). `deploy/dev/install-test.sh` `check_space_host` (four alpine versions, Nomad restarted,
+  Clean up now removes the first and keeps the three newest, Traefik's and whoami's images, a redeploy of the second version
+  pulls nothing) passed on 2026-11-20 on Ubuntu 24.04 (1501 s); its first run found the Docker 29 `image rm` bug above. A killed
+  gate run leaves `gate-space` and its volumes in the lab: `lab-nomad job stop -purge gate-space` and `volume delete`.
+- Not in 045: other disk users (logs, Nomad's own data, old backups on the host), an editor for the daily hour, a registry cache
+  prune, a clean-up without the agent.
+
 Product features go through Spec Kit (`/speckit-specify` → `/speckit-plan` → `/speckit-tasks`
 → `/speckit-implement`), one feature per git branch. Nomad runs in a Lima Linux VM
 (`deploy/dev/`), because Nomad bridge networking needs Linux. From the Mac, apps are at

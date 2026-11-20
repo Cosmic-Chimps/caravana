@@ -96,6 +96,61 @@
 </section>
 {{end}}
 
+{{/* srv-space: the Space section (feature 045): a row for each thing a server holds that could be reclaimed, the
+     last clean-up, the volumes no app declares with their Delete…, and the setting. It is drawn inside the body and
+     is also its own part (/parts/ops/servers/{name}/space), swapped on the servers notice; the settings form is kept
+     across the swap (hx-preserve) so what is being chosen stays. Takes a srvSpace. */}}
+{{define "srv-space"}}
+<section class="cv-srvspace" id="space" aria-labelledby="srv-space-title"{{with .PartHref}} hx-get="{{.}}" hx-trigger="sse:servers" hx-swap="outerHTML"{{end}}>
+  <div class="cv-mnsec">
+    <h2 class="cv-label" id="srv-space-title">Space{{with .Reclaimable}} · {{.}} reclaimable{{end}}</h2>
+    {{with .CleanHref}}<span class="cv-spacer"></span><a href="{{.}}" class="cv-btn cv-btn-secondary cv-btn-sm">Clean up now…</a>{{end}}
+  </div>
+  {{with .Flash}}<div role="status" class="cv-notice"><span class="cv-mark cv-mark-healthy" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
+  <div class="cv-panel cv-spacepanel">
+    <div class="cv-spacerows" role="table" aria-label="What this server holds">
+      {{range .Rows}}
+      <div class="cv-spacerow" role="row">
+        <span role="rowheader" class="cv-spacelabel">{{.Label}}</span>
+        <span role="cell" class="cv-spaceval{{if .None}} cv-srvval-none{{end}}">{{.Value}}</span>
+        <span role="cell" class="cv-spacenote">{{.Note}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{with .Why}}<p class="cv-spacewhy"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{template "sentence" .}}</span></p>{{end}}
+    {{with .Open}}<p class="cv-spacerun"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Lead}}{{with .Rest}} {{.}}{{end}}</span></p>{{end}}
+    {{with .Last}}<p class="cv-spacerun"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span>{{.Lead}} {{template "time" .When}}{{.Rest}}</span></p>{{end}}
+  </div>
+
+  {{if .Orphans}}
+  <h3 class="cv-label cv-spacesub" id="srv-orphans-title">Volumes no app declares</h3>
+  <div class="cv-panel cv-spacepanel">
+    <ul class="cv-spaceorphans" aria-labelledby="srv-orphans-title">
+      {{range .Orphans}}
+      <li class="cv-spaceorphan">
+        <span class="cv-inline-mono text-fg-1 cv-spacename">{{.Name}}</span>
+        <span class="cv-spacefacts">{{with .From}}{{template "sentence" .}} · {{end}}{{.Size}}{{with .Last}} · {{.}}{{end}}</span>
+        {{if .DeleteHref}}<a href="{{.DeleteHref}}" class="cv-btn cv-btn-secondary cv-btn-sm" aria-label="Delete the volume {{.Name}}">Delete…</a>{{else}}<span class="cv-spacemounted">mounted by a running copy</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    <p class="cv-note">Dropping a volume from an app's definition leaves its data on the server. Nothing deletes it for you.</p>
+  </div>
+  {{else if .OrphansUnread}}
+  <p class="cv-mnhostline cv-srvnote"><span class="cv-mark cv-mark-warning" aria-hidden="true"></span><span>Nomad can't be read right now, so the volumes no app declares aren't listed.</span></p>
+  {{end}}
+
+  <form id="srv-space-settings" method="post" action="{{.Settings.Action}}" class="cv-spaceform" hx-preserve="true">
+    <input type="hidden" name="server" value="{{.Settings.Server}}">
+    <label class="cv-spacekeep" for="srv-space-keep"><span>Keep the images of the last</span>
+      <select class="cv-field cv-select cv-spaceselect" id="srv-space-keep" name="keep">{{range .Settings.Keeps}}<option value="{{.N}}"{{if .Selected}} selected{{end}}>{{.N}}</option>{{end}}</select>
+      <span>deployments of each app</span></label>
+    <label class="cv-check"><input type="checkbox" name="automatic" value="1"{{if .Settings.Automatic}} checked{{end}}><span>Clean up every day at 04:00 UTC</span></label>
+    <button type="submit" class="cv-btn cv-btn-secondary cv-btn-sm">Save</button>
+  </form>
+</section>
+{{end}}
+
 {{/* srv-body: everything under the head, the one live region. Takes a srvBody. */}}
 {{define "srv-body"}}
 {{with .Notice}}<div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></div>{{end}}
@@ -131,6 +186,7 @@
 {{end}}
 {{end}}
 {{with .Room}}<p class="cv-mnroom{{if .Warn}} cv-mnroom-warn{{end}}" title="{{.Title}}">{{template "mon-sentence" .Text}}</p>{{end}}
+{{with .Space}}{{template "srv-space" .}}{{end}}
 
 <div class="cv-srvgrid">
   <section class="cv-srvmain" aria-labelledby="srv-running-title">

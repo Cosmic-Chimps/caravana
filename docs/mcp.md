@@ -73,6 +73,8 @@ still deploy that app). It can see:
   for one to end;
 - the copies, with their CPU and memory, and an app's recent output as it came;
 - volumes, backups and recent actions;
+- what a server's disk holds that could be given back (unused images, volumes no app declares), read only:
+  cleaning up and deleting a volume are done in the console or with the API;
 - the needs-you list, a promotion preview, the exported jobspec and the kept Compose file;
 - the app templates Caravana can install, and what one asks for (never a way to install one: that
   takes secret answers, so you do it in the console or with the API).

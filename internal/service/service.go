@@ -168,6 +168,12 @@ type Service struct {
 
 	// Image scanning (feature 044), see scanner.go and addons.go.
 	scan scanState
+
+	// Reclaiming space (feature 045), see cleanups.go and orphans.go.
+	cleanupGap time.Duration // between two passes of the clean-ups' clock
+	// spaceMu guards deleting, the volumes whose deletion is going: one at a time per volume.
+	spaceMu  sync.Mutex
+	deleting map[string]bool
 }
 
 // volumeTiming holds the waits of a volume run, so tests can shorten them.
@@ -259,7 +265,9 @@ func New(st *store.Store, d *deploy.Deployer, sec secrets.Provider, log *slog.Lo
 		moveRuns: map[string]*moveRun{},
 		move:     defaultMoveTiming(),
 
-		scan: newScanState(),
+		scan:       newScanState(),
+		cleanupGap: defaultCleanupGap,
+		deleting:   map[string]bool{},
 	}
 	// Copies show the deployment's version where Nomad's is a scale step's
 	// (feature 043, see autoscale.go).
@@ -383,6 +391,10 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.resumeVolumeRuns(ctx); err != nil {
 		return err
 	}
+	// A deletion of an orphan volume that was going has nobody left to finish it.
+	if err := s.failInterruptedDeletions(ctx); err != nil {
+		return err
+	}
 	// A move of work off a server that was going goes on from the copies still there.
 	if err := s.resumeMoves(ctx); err != nil {
 		return err
@@ -489,6 +501,14 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		defer s.backupWatcher.Done()
 		s.runScanner(ctx)
+	}()
+	// Clean-ups of a server's unused images (feature 045): the ones that never got going or never reported
+	// are given up, and the day's clean-up is requested; it starts no watchers.
+	cleanupGap := s.cleanupGap // read here: tests set the field after Start
+	s.backupWatcher.Add(1)
+	go func() {
+		defer s.backupWatcher.Done()
+		s.runCleanupPass(ctx, cleanupGap)
 	}()
 	return nil
 }

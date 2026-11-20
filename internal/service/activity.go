@@ -171,6 +171,14 @@ func (s *Service) activityEntry(ctx context.Context, r store.ActivityRow, displa
 		e.Kind = ActivityServer
 		e.AppID, e.AppName = "", ""
 		e.Status, e.Parts = updateRunWords(r)
+	case store.ActivityCleanup:
+		e.Kind = ActivityServer
+		e.AppID, e.AppName = "", ""
+		e.Status, e.Parts = cleanupWords(r)
+	case store.ActivityDeletion:
+		// Kept with its app, for the link (the app may be gone: then the name is its ID).
+		e.Kind = ActivityServer
+		e.Status, e.Parts = deletionWords(r, name)
 	default:
 		return ActivityEntry{}, false
 	}
@@ -430,6 +438,87 @@ func updateRunWords(r store.ActivityRow) (string, []TextPart) {
 	return ActivityWarning, parts("The update to caravana ", mono(to), " didn't finish"+reason())
 }
 
+// cleanupWords says a clean-up of a server's unused images that ended (feature 045). The row has the server's
+// name as its Service, the images removed as ExitCode, the bytes freed as Version and the volumes removed (as
+// text) as Detail.
+func cleanupWords(r store.ActivityRow) (string, []TextPart) {
+	server := mono(r.Service)
+	switch r.Status {
+	case store.CleanupDone:
+		removed, freed := 0, int64(0)
+		if r.ExitCode != nil {
+			removed = *r.ExitCode
+		}
+		if r.Version != nil {
+			freed = *r.Version
+		}
+		volumes, _ := strconv.Atoi(r.Detail)
+		var did []string
+		if removed > 0 {
+			did = append(did, plural(removed, "image"))
+		}
+		if volumes > 0 {
+			did = append(did, plural(volumes, "leftover volume"))
+		}
+		if len(did) == 0 {
+			return ActivityHealthy, parts("Cleaned up server ", server, ": nothing to remove.")
+		}
+		out := "removed " + strings.Join(did, " and ")
+		if freed > 0 {
+			out += ", freed " + humanSize(freed)
+		}
+		return ActivityHealthy, parts("Cleaned up server ", server, ": "+out+".")
+	case store.CleanupLost:
+		return ActivityFailed, parts("Cleaning up server ", server, " ended without word from the server.")
+	}
+	if x := strings.TrimRight(strings.TrimSpace(r.Error), "."); x != "" {
+		return ActivityFailed, parts("Cleaning up server ", server, " failed: "+x+".")
+	}
+	return ActivityFailed, parts("Cleaning up server ", server, " failed.")
+}
+
+// deletionWords says a deletion of an orphan volume that ended. The row has the volume as its Label, the app
+// the volume's name read as in AppID, the size measured as Version and the archive's object as Detail.
+func deletionWords(r store.ActivityRow, appParts []TextPart) (string, []TextPart) {
+	of := []any{}
+	if r.AppID != "" {
+		of = []any{" of ", appParts}
+	}
+	if r.Status == store.DeletionFailed {
+		reason := "."
+		if x := strings.TrimRight(strings.TrimSpace(r.Error), "."); x != "" {
+			reason = ": " + x + "."
+		}
+		return ActivityFailed, parts(append(append([]any{"Deleting the volume ", mono(r.Label)}, of...), " failed"+reason)...)
+	}
+	pieces := append([]any{"Deleted the volume ", mono(r.Label)}, of...)
+	if r.Version != nil && *r.Version > 0 {
+		pieces = append(pieces, " ("+humanSize(*r.Version)+")")
+	}
+	if r.Detail != "" {
+		pieces = append(pieces, ", archived to ", mono(r.Detail))
+	}
+	return ActivityHealthy, parts(append(pieces, ".")...)
+}
+
+// humanSize is a size as the console writes it ("312 MB", "1.5 GB"): units of 1024, a decimal under 10 of
+// a unit. It is the rule of the console's own humanBytes, which this package can't import.
+func humanSize(n int64) string {
+	if n < 1<<10 {
+		return strconv.FormatInt(n, 10) + " B"
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	v, i := float64(n)/(1<<10), 0
+	for v >= 1023.5 && i < len(units)-1 {
+		v /= 1 << 10
+		i++
+	}
+	if v < 9.95 {
+		return strings.TrimSuffix(strconv.FormatFloat(v, 'f', 1, 64), ".0") + " " + units[i]
+	}
+	return strconv.FormatFloat(v, 'f', 0, 64) + " " + units[i]
+}
+
 // nodeEventEntry puts one of the node's events from Nomad in Caravana's words.
 // The ID has the time to the nanosecond and the subsystem: Nomad gives events
 // no identity of their own.
@@ -508,6 +597,8 @@ func rowIsOfServer(r store.ActivityRow, name string, local bool) bool {
 		return local
 	case store.ActivityHost, store.ActivityUpdate:
 		return local
+	case store.ActivityCleanup, store.ActivityDeletion:
+		return r.Service == name // the row's Service is the server's name
 	}
 	return true
 }

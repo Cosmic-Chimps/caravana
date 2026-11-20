@@ -55,6 +55,10 @@ type fakeRunner struct {
 	// nomadActive says the nomad unit runs; SIGTERM and a stop end it, unless nomadIgnoresTerm.
 	nomadActive      bool
 	nomadIgnoresTerm bool
+	// docker, when set, answers every docker call but `docker info`'s (feature 045's inventory and clean-up);
+	// du answers `du -sk`. Both are called with the runner's lock held and must not call the runner.
+	docker func(args []string) ([]byte, error)
+	du     func(args []string) ([]byte, error)
 }
 
 func newRunner() *fakeRunner {
@@ -125,6 +129,10 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 		return []byte(f.hostname + "\n"), nil
 	case name == "uname" && args[0] == "-r":
 		return []byte("6.8.0-134-generic\n"), nil
+	case name == "docker" && f.docker != nil && firstWord(args) != "info":
+		return f.docker(args)
+	case name == "du" && f.du != nil:
+		return f.du(args)
 	case name == "docker":
 		return []byte("27.5.1\n"), nil
 	case name == "nomad":
@@ -142,7 +150,7 @@ func (f *fakeRunner) commands() []string {
 	var out []string
 	for _, c := range f.calls {
 		switch c.name {
-		case "ping", "uname", "docker", "nomad", "df":
+		case "ping", "uname", "docker", "nomad", "df", "du":
 			continue
 		}
 		if c.name == "ip" && len(c.args) > 0 && c.args[0] == "-4" {

@@ -1,0 +1,39 @@
+{{/* The page that deletes a volume no app declares (/ops/servers/{name}/volumes/{volume}/delete, feature 045): what
+     the volume is, that its data goes, the name to type and, when a backup destination is set, the box that
+     archives it first. A refusal takes the form's place. Takes a deleteVolumePage. */}}
+
+{{define "content"}}
+<section class="cv-main">
+  <header class="cv-pagehead">
+    <h1 class="cv-headline">{{template "sentence" .Headline}}</h1>
+  </header>
+
+  {{if .Refusal}}
+  <div role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .Refusal}}</span></div>
+  <div class="cv-actions">
+    <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Back to {{.Server}}</a>
+  </div>
+  {{else}}
+  <div class="cv-panel p-4 flex flex-col gap-3">
+    <p class="text-base text-fg-1"><span class="cv-inline-mono text-fg-1">{{.Volume}}</span> is on <span class="cv-inline-mono text-fg-1">{{.Server}}</span>, and no app declares it any more.</p>
+    {{with .Facts}}<p class="text-base text-fg-2">{{template "sentence" .}}</p>{{end}}
+    <p class="text-base text-fg-1">Deleting it removes its data from the server for good.{{if not .CanBackUp}} No backup destination is set, so nothing keeps a copy.{{end}}</p>
+  </div>
+  <form method="post" action="{{.Action}}" class="cv-srvmoveform cv-deleteform">
+    <label class="cv-fld" for="delete-confirm">
+      <span class="cv-label">Type <span class="cv-inline-mono text-fg-1">{{.Volume}}</span> to confirm</span>
+      <input class="cv-field cv-field-mono" id="delete-confirm" type="text" name="confirm" value="{{.Typed}}" autocomplete="off" autocapitalize="off" spellcheck="false"{{if .Error}} aria-invalid="true" aria-describedby="delete-confirm-error"{{end}}>
+      {{with .Error}}<span id="delete-confirm-error" role="alert" class="cv-error"><span class="cv-mark cv-mark-failed" aria-hidden="true"></span><span>{{template "sentence" .}}</span></span>{{end}}
+    </label>
+    {{if .CanBackUp}}
+    <label class="cv-check"><input type="checkbox" name="backUp" value="1"{{if .BackUp}} checked{{end}}><span>Back up first</span></label>
+    <p class="cv-hint">Archives the volume to the backup destination, then deletes it. If the archive fails, the volume stays.</p>
+    {{end}}
+    <div class="cv-actions">
+      <button type="submit" class="cv-btn cv-btn-danger">Delete volume</button>
+      <a href="{{.Back}}" class="cv-btn cv-btn-secondary">Cancel</a>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{end}}

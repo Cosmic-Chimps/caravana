@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Caravana API
-  version: 0.49.0
+  version: 0.50.0
   summary: Self-hosted PaaS on HashiCorp Nomad.
   description: |
     Every endpoint lives under `/v1`, except the two discovery documents of the cluster's issuer
@@ -903,6 +903,398 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /v1/servers/{name}/space:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A server's name (a Nomad node Caravana doesn't manage has one too).
+        schema: {type: string}
+    get:
+      operationId: getServerSpace
+      summary: Read what a server's disk holds that Caravana can give back.
+      description: |
+        From the server's agent's last report and Nomad: the images Docker holds and which of them a
+        clean-up would remove (`unusedCount`, `unusedBytes`), Docker's leftover volumes, the build cache,
+        and the orphan volumes, the Nomad host volumes on this server that no stored app declares.
+        `reclaimableBytes` adds what Clean up now and deleting the orphans would free (an orphan with no
+        measured size, or one a copy uses, adds nothing).
+
+        An image is unused when no container uses it and none of its digests is in Caravana's keep list:
+        the digests of each app's newest healthy deployments (`getCleanupSettings`, `keepDeployments`),
+        of every deployment under way, of every stored app's current definition, and of the helper
+        images. A server with no agent, or one that hasn't reported its images yet, has `images`,
+        `dockerVolumes` and `buildCacheBytes` `null` and `imagesUnavailable` says why (`no agent` or
+        `no inventory yet`; another text when the keep list is too long). A Nomad that can't be read
+        leaves `orphanVolumes` empty and `orphanVolumesUnavailable` true. Answers are `Cache-Control: no-store`.
+      tags: [servers]
+      responses:
+        "200":
+          description: The space of the server.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerSpace"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/servers/{name}/cleanups:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A managed server's name.
+        schema: {type: string}
+    post:
+      operationId: cleanServer
+      summary: Clean up a server's unused images.
+      description: |
+        Asks the server's agent to remove the images no container uses and no kept deployment needs
+        (see `getServerSpace`), and to prune the build cache. The clean-up is recorded as `requested`
+        and answered 202 at once; the agent picks it up at its next sync (within a minute), runs it, and
+        reports how it went in the sync after, which settles the record `done` or `failed`. The body may
+        be left out. With `dockerVolumes` true Docker's leftover volumes (no container uses them) are
+        pruned too; it is never done by the daily clean-up. A request the agent never picks up is
+        `failed` after 10 minutes, one it began and never reports `lost` after 30.
+
+        Refused with 409 `no_agent` (an unmanaged node, a server that hasn't joined, an agent from
+        before this feature, or one that hasn't reported lately: "Server X has no agent reporting its
+        images: run the installer on it."), 409 `cleanup_running` (one is already requested or running
+        for the server) and 409 `keep_list_too_long` (Caravana keeps more than 4096 images, so can't
+        name them all to the agent: lower `keepDeployments`). Answers are `Cache-Control: no-store`.
+      tags: [servers]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                dockerVolumes:
+                  type: boolean
+                  default: false
+                  description: Also prune Docker's local volumes that no container uses.
+      responses:
+        "202":
+          description: The clean-up is requested.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Location:
+              description: "`/v1/servers/{name}/cleanups/{id}`"
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cleanup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: "`server_not_found`."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "`no_agent`, `cleanup_running` or `keep_list_too_long`; `message` says why. Nothing was requested."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+    get:
+      operationId: listServerCleanups
+      summary: List a server's clean-ups.
+      description: "The newest 20, newest first, the daily ones (`schedule`) and the owner's. Answers are `Cache-Control: no-store`."
+      tags: [servers]
+      responses:
+        "200":
+          description: The clean-ups.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [cleanups]
+                properties:
+                  cleanups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Cleanup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found`: no managed server has that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/servers/{name}/cleanups/{id}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: A managed server's name.
+        schema: {type: string}
+      - name: id
+        in: path
+        required: true
+        description: The clean-up's ID, as `cleanServer` gave it.
+        schema: {type: string}
+    get:
+      operationId: getServerCleanup
+      summary: Read one clean-up of a server.
+      description: "Poll it after `cleanServer`: `requested`, `running`, then `done`, `failed` or `lost`. Answers are `Cache-Control: no-store`."
+      tags: [servers]
+      responses:
+        "200":
+          description: The clean-up.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cleanup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`server_not_found` (no managed server has that name) or `cleanup_not_found` (the server has no clean-up with that ID)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/volumes/{name}/deletions:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The Nomad host volume's name, `<app>_<volume>`, as `orphanVolumes` gives it.
+        schema: {type: string}
+    post:
+      operationId: deleteOrphanVolume
+      summary: Delete a volume no app declares, with its data.
+      description: |
+        Deletes the Nomad host volume and everything in it. Only a volume no stored app declares (an
+        orphan, listed by `getServerSpace`) can be deleted: one that an app's definition declares is 409
+        `volume_not_orphan` (`field` `name`: "App X declares the volume: delete it with the app, or drop
+        it from the definition first."), and one a copy still uses is 409 `volume_in_use`. `confirm`
+        must be the volume's name, typed again (400 `invalid_field` on `confirm`). A volume Nomad
+        doesn't have is 404 `volume_not_found`; a second deletion of the same volume while one goes is
+        409 `deletion_running`.
+
+        With `backUpFirst` the volume is archived to the backup destination first (409
+        `no_backup_destination` without one), and the volume is deleted only after the archive is
+        written: the answer is then 202 with the record `archiving` and a `Location` to poll
+        (`getVolumeDeletion`), and a failed archive leaves the volume untouched. Without it the volume
+        is deleted before the answer: 200 with the record `done`. A deletion Nomad refuses is a 502 with
+        Nomad's reason; the record, kept for the activity feed, says `failed`. Answers are
+        `Cache-Control: no-store`.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm]
+              properties:
+                confirm:
+                  type: string
+                  description: The volume's name, typed again.
+                backUpFirst:
+                  type: boolean
+                  default: false
+                  description: Archive the volume to the backup destination before deleting it.
+      responses:
+        "200":
+          description: The volume is deleted.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolumeDeletion"
+        "202":
+          description: The archive is being written; the volume is deleted when it is done.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Location:
+              description: "`/v1/volumes/{name}/deletions/{id}`"
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolumeDeletion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          description: "`volume_not_found`: Nomad has no host volume with that name."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            `volume_not_orphan`, `volume_in_use`, `no_backup_destination` or `deletion_running`;
+            `message` says why. Nothing was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/NomadUnavailable"
+
+  /v1/volumes/{name}/deletions/{id}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The volume's name.
+        schema: {type: string}
+      - name: id
+        in: path
+        required: true
+        description: The deletion's ID, as `deleteOrphanVolume` gave it.
+        schema: {type: string}
+    get:
+      operationId: getVolumeDeletion
+      summary: Read one deletion of a volume.
+      description: "Poll it while it is `archiving` or `deleting`. Answers are `Cache-Control: no-store`."
+      tags: [servers]
+      responses:
+        "200":
+          description: The deletion.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolumeDeletion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "404":
+          description: "`deletion_not_found`: the volume has no deletion with that ID."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /v1/cleanup/settings:
+    get:
+      operationId: getCleanupSettings
+      summary: Read the settings of the clean-up of unused images.
+      description: "Answers are `Cache-Control: no-store`."
+      tags: [servers]
+      responses:
+        "200":
+          description: The settings.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CleanupSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/TokenScope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    put:
+      operationId: putCleanupSettings
+      summary: Set the daily clean-up and how many deployments keep their images.
+      description: |
+        `automatic` turns the daily clean-up on or off: when on, every managed server whose agent
+        reports its images is cleaned up once a day from 04:00 UTC (Docker's leftover volumes are never
+        part of it). `keepDeployments` is how many of each app's newest healthy deployments keep their
+        images, so that a rollback never waits on a pull. Both fields are required. Answers the settings
+        as they are now, `Cache-Control: no-store`.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CleanupSettings"
+      responses:
+        "200":
+          description: The settings, changed.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CleanupSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /v1/join:
     post:
       operationId: joinServer
@@ -999,7 +1391,11 @@ paths:
         other server that is `joining` or `ready`), the Nomad servers, its role, and `renew` when its
         certificate ends in under 30 days. `gossipKey` is there only when `role` is `server`. With
         three ready servers the two oldest that joined are promoted to Nomad servers, one at a time.
-        Answers are `Cache-Control: no-store`, bodies at most 64 KiB.
+        The report also carries `space` (feature 045): the images Docker holds, with whether a container
+        uses each, Docker's leftover volumes, the build cache, and the size of each Nomad host volume
+        directory. While a clean-up (`cleanServer`) is requested or running for the server, the answer
+        carries `clean`: its ID and the digests to keep. Answers are `Cache-Control: no-store`; the body
+        of a sync is at most 4 MiB, since the report may name a thousand images.
       tags: [servers]
       security:
         - nodeBearer: []
@@ -1030,7 +1426,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "413":
-          description: "`body_too_large`: more than 64 KiB."
+          description: "`body_too_large`: more than 4 MiB."
           content:
             application/json:
               schema:
@@ -10113,6 +10509,239 @@ components:
             The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
             URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
             console has no https public URL. Nomad servers receive a new value one at a time.
+    ServerSpace:
+      type: object
+      additionalProperties: false
+      description: |
+        What a server's disk holds that Caravana can give back (feature 045). `images`, `dockerVolumes`
+        and `buildCacheBytes` are `null` when the server's agent hasn't reported its images
+        (`imagesUnavailable` says why; it is empty otherwise).
+      required: [server, managed, reclaimableBytes, images, imagesUnavailable, dockerVolumes, buildCacheBytes,
+        orphanVolumes, orphanVolumesUnavailable, lastCleanup, openCleanup, settings]
+      properties:
+        server: {type: string}
+        managed: {type: boolean, description: "False for a Nomad node Caravana doesn't manage: it has no agent."}
+        reclaimableBytes:
+          type: integer
+          minimum: 0
+          description: |
+            Unused images, Docker's leftover volumes, the build cache, and the orphan volumes that are
+            measured and not in use.
+        images:
+          oneOf:
+            - $ref: "#/components/schemas/SpaceImages"
+            - type: "null"
+        imagesUnavailable:
+          type: string
+          description: "`no agent`, `no inventory yet`, or the sentence saying the keep list is too long; empty when `images` is there."
+        dockerVolumes:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [count, bytes]
+              description: Docker's local volumes that no container uses.
+              properties:
+                count: {type: integer, minimum: 0}
+                bytes: {type: integer, minimum: 0}
+            - type: "null"
+        buildCacheBytes:
+          oneOf:
+            - {type: integer, minimum: 0}
+            - type: "null"
+        orphanVolumes:
+          type: array
+          description: The Nomad host volumes on this server that no stored app declares, by name.
+          items:
+            $ref: "#/components/schemas/OrphanVolume"
+        orphanVolumesUnavailable:
+          type: boolean
+          description: True when Nomad couldn't be read, so `orphanVolumes` is empty for want of an answer.
+        lastCleanup:
+          oneOf:
+            - $ref: "#/components/schemas/Cleanup"
+            - type: "null"
+          description: The newest clean-up that ended; `null` for none.
+        openCleanup:
+          oneOf:
+            - $ref: "#/components/schemas/Cleanup"
+            - type: "null"
+          description: The clean-up that is requested or running; `null` for none.
+        settings:
+          $ref: "#/components/schemas/CleanupSettings"
+    SpaceImages:
+      type: object
+      additionalProperties: false
+      required: [count, bytes, unusedCount, unusedBytes, truncated, measuredAt]
+      properties:
+        count: {type: integer, minimum: 0, description: "Images Docker holds."}
+        bytes: {type: integer, minimum: 0}
+        unusedCount: {type: integer, minimum: 0, description: "Images no container uses and no kept deployment needs: what a clean-up removes."}
+        unusedBytes: {type: integer, minimum: 0}
+        truncated: {type: boolean, description: "True when the agent named only the largest 1000 images of more."}
+        measuredAt: {type: string, format: date-time, description: "When the server's agent last reported."}
+    OrphanVolume:
+      type: object
+      additionalProperties: false
+      description: |
+        A Nomad host volume that no stored app declares. `app`, `project` and `environment` are empty
+        when the volume's name doesn't read as `<app>_<volume>` of an app ID; `appExists` false says the
+        app was deleted.
+      required: [name, id, app, project, environment, appExists, bytes, measuredAt, lastDeployedAt, inUse]
+      properties:
+        name: {type: string, description: "Nomad's name for it, `<app>_<volume>`; what `deleteOrphanVolume` takes."}
+        id: {type: string, description: "Nomad's ID, which is also its directory's name on the server."}
+        app: {type: string}
+        project: {type: string}
+        environment: {type: string}
+        appExists: {type: boolean}
+        bytes:
+          oneOf:
+            - {type: integer, minimum: 0}
+            - type: "null"
+          description: "Its size as the server's agent last measured it; `null` until measured."
+        measuredAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        lastDeployedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+          description: When the newest recorded deployment that declared the volume was made; `null` when unknown.
+        inUse: {type: boolean, description: "A copy claims the volume now, so it can't be deleted."}
+    Cleanup:
+      type: object
+      additionalProperties: false
+      description: |
+        One clean-up of a server's unused images. `requested`: waiting for the agent's next sync.
+        `running`: handed to the agent. `done`, or `failed` (`error` says why; some images may have been
+        removed), or `lost` (the agent began it and never reported).
+      required: [id, server, trigger, dockerVolumes, status, requestedAt, startedAt, finishedAt, imagesRemoved,
+        bytesFreed, volumesRemoved, error]
+      properties:
+        id: {type: string}
+        server: {type: string}
+        trigger: {type: string, enum: [owner, schedule]}
+        dockerVolumes: {type: boolean, description: "Docker's leftover volumes were part of it."}
+        status: {type: string, enum: [requested, running, done, failed, lost]}
+        requestedAt: {type: string, format: date-time}
+        startedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        finishedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        imagesRemoved: {type: integer, minimum: 0}
+        bytesFreed: {type: integer, minimum: 0}
+        volumesRemoved: {type: integer, minimum: 0, description: "Docker's volumes pruned."}
+        error: {type: string}
+    VolumeDeletion:
+      type: object
+      additionalProperties: false
+      required: [id, volume, app, server, backUpFirst, status, requestedAt, finishedAt, archiveObject, bytes, error]
+      properties:
+        id: {type: string}
+        volume: {type: string, description: "Nomad's name, `<app>_<volume>`."}
+        app: {type: string, description: "The app the name reads as; empty when it doesn't read as one. It may no longer exist."}
+        server: {type: string, description: "The server that held the volume; empty when unknown."}
+        backUpFirst: {type: boolean}
+        status: {type: string, enum: [archiving, deleting, done, failed]}
+        requestedAt: {type: string, format: date-time}
+        finishedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - type: "null"
+        archiveObject: {type: string, description: "Where the archive is in the backup destination; empty for none."}
+        bytes: {type: integer, minimum: 0, description: "The size last measured; 0 when unknown."}
+        error: {type: string}
+    CleanupSettings:
+      type: object
+      additionalProperties: false
+      required: [automatic, keepDeployments]
+      properties:
+        automatic: {type: boolean, description: "The daily clean-up of every managed server, from 04:00 UTC. On by default."}
+        keepDeployments:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: "How many of each app's newest healthy deployments keep their images. 3 by default."
+    NodeSpace:
+      type: object
+      additionalProperties: false
+      description: |
+        What the server's Docker and its Nomad volume directories hold (feature 045). Absent for an
+        agent older than the feature, and when Docker doesn't answer.
+      required: [images, imagesTruncated, dockerVolumes, buildCacheBytes, volumes]
+      properties:
+        images:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, digests, tags, bytes, inUse]
+            properties:
+              id: {type: string, maxLength: 300}
+              digests:
+                type: array
+                maxItems: 16
+                items: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+              tags:
+                type: array
+                maxItems: 16
+                items: {type: string, maxLength: 300}
+              bytes: {type: integer, minimum: 0}
+              inUse: {type: boolean, description: "A container, running or stopped, uses the image."}
+        imagesTruncated: {type: boolean}
+        dockerVolumes:
+          type: object
+          additionalProperties: false
+          required: [count, bytes]
+          properties:
+            count: {type: integer, minimum: 0}
+            bytes: {type: integer, minimum: 0}
+        buildCacheBytes: {type: integer, minimum: 0}
+        volumes:
+          type: array
+          maxItems: 4096
+          description: "The size of each Nomad host volume directory, by the directory's name (the volume's ID)."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, bytes]
+            properties:
+              id: {type: string, pattern: "^[A-Za-z0-9-]{1,64}$"}
+              bytes: {type: integer, minimum: 0}
+        volumesMeasuredAt: {type: string, format: date-time}
+        lastClean:
+          type: object
+          additionalProperties: false
+          description: The outcome of the last clean-up this agent ran. An empty `finishedAt` is one that began and never ended.
+          required: [id, startedAt, finishedAt, imagesRemoved, bytesFreed, volumesRemoved, error]
+          properties:
+            id: {type: string, pattern: "^[0-9a-f]{32}$|^$"}
+            startedAt: {type: string}
+            finishedAt: {type: string}
+            imagesRemoved: {type: integer, minimum: 0}
+            bytesFreed: {type: integer, minimum: 0}
+            volumesRemoved: {type: integer, minimum: 0}
+            error: {type: string, maxLength: 500}
+    NodeClean:
+      type: object
+      additionalProperties: false
+      description: |
+        The clean-up a server's agent is asked to run. It names the digests to keep and never an image to
+        remove: the agent removes only what no container uses and none of these names.
+      required: [id, keep, dockerVolumes]
+      properties:
+        id: {type: string, pattern: "^[0-9a-f]{32}$"}
+        keep:
+          type: array
+          maxItems: 4096
+          items: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+        dockerVolumes: {type: boolean}
     NodeReport:
       type: object
       additionalProperties: false
@@ -10135,6 +10764,8 @@ components:
         issuer:
           type: string
           description: The issuer the agent last rendered into Nomad's config; absent when it rendered none.
+        space:
+          $ref: "#/components/schemas/NodeSpace"
         reach:
           type: array
           description: One ping over the private network per peer.
@@ -10179,6 +10810,8 @@ components:
             The cluster's OIDC issuer for workload identity tokens (the console's `https://` public
             URL), for the agent to render as Nomad's `oidc_issuer` on a Nomad server. Absent when the
             console has no https public URL. Nomad servers receive a new value one at a time.
+        clean:
+          $ref: "#/components/schemas/NodeClean"
     AttentionItem:
       type: object
       additionalProperties: false

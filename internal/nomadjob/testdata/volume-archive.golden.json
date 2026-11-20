@@ -1,0 +1,194 @@
+{
+  "Region": null,
+  "Namespace": null,
+  "ID": "shop_uploads_archive",
+  "Name": "shop_uploads_archive",
+  "Type": "batch",
+  "Priority": null,
+  "AllAtOnce": null,
+  "Datacenters": [
+    "*"
+  ],
+  "NodePool": null,
+  "Constraints": null,
+  "Affinities": null,
+  "TaskGroups": [
+    {
+      "Name": "archive",
+      "Count": 1,
+      "Constraints": null,
+      "Affinities": null,
+      "Tasks": [
+        {
+          "Name": "archive",
+          "Driver": "docker",
+          "User": "",
+          "Lifecycle": null,
+          "Config": {
+            "args": [
+              "set -u\nwork=$(mktemp -d)\nroot=$(printenv ARCHIVE_ROOT || true)\n[ -n \"$root\" ] || root=/data\n\nfail() {\n  msg=$(printf '%s' \"$1\" | tr '\\n' ' ' | tr -d '\\r' | cut -c1-200)\n  echo \"caravana-archive: failed: $msg\"\n  rm -rf \"$work\"\n  exit 1\n}\n\n# step_failed \u003cwhat\u003e \u003cstderr file\u003e \u003cexit status\u003e says why a step failed, from\n# its last line of stderr, or that it ran out of time.\nstep_failed() {\n  line=$(tail -n 1 \"$2\" 2\u003e/dev/null | tr -d '\\r')\n  case \"$3\" in\n    124|143) msg=\"$1 timed out\" ;;\n    *) if [ -n \"$line\" ]; then msg=\"$1: $line\"; else msg=\"$1 failed (exit status $3)\"; fi ;;\n  esac\n  discard\n  fail \"$msg\"\n}\n\n# discard removes what the run uploaded, as well as it can.\ndiscard() {\n  timeout 60 rclone deletefile \"dest:$object\" \u003e /dev/null 2\u003e\u00261\n  return 0\n}\n\nfor name in BACKUP_PATH TS VOLUME; do\n  [ -n \"$(printenv \"$name\" || true)\" ] || fail \"the job has no $name\"\ndone\ncase \"$TS\" in *[!0-9]*) fail \"the job's timestamp is not a number\" ;; esac\n[ -d \"$root\" ] || fail \"the volume is not mounted\"\nobject=\"$BACKUP_PATH/$TS/$VOLUME.tar.gz\"\nlimit=1700\n\n{\n  timeout \"$limit\" tar -czf - -C \"$root\" . 2\u003e \"$work/tar.err\"\n  echo $? \u003e \"$work/tar.status\"\n} | timeout \"$limit\" rclone rcat \"dest:$object\" 2\u003e \"$work/rclone.err\"\nuploaded=$?\narchived=$(cat \"$work/tar.status\" 2\u003e/dev/null)\n# rclone's word comes first: when it dies, tar fails with a broken pipe.\n[ \"$uploaded\" -eq 0 ] || step_failed \"the upload\" \"$work/rclone.err\" \"$uploaded\"\n[ -n \"$archived\" ] || archived=1\n[ \"$archived\" = 0 ] || step_failed \"the archive\" \"$work/tar.err\" \"$archived\"\n\nout=$(timeout 120 rclone size --json \"dest:$object\" 2\u003e \"$work/rclone.err\")\nstatus=$?\n[ \"$status\" -eq 0 ] || step_failed \"reading the size of the archive\" \"$work/rclone.err\" \"$status\"\nbytes=$(printf '%s' \"$out\" | sed -n 's/.*\"bytes\": *\\([0-9][0-9]*\\).*/\\1/p')\n[ -n \"$bytes\" ] || step_failed \"reading the size of the archive\" /dev/null 1\n\nrm -rf \"$work\"\necho \"caravana-archive: ok object=$object bytes=$bytes\"\n"
+            ],
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "image": "rclone/rclone@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51"
+          },
+          "Constraints": null,
+          "Affinities": null,
+          "Env": {
+            "BACKUP_PATH": "bucket/backups/shop/volumes",
+            "TS": "1791386036",
+            "VOLUME": "shop_uploads"
+          },
+          "Services": null,
+          "Resources": {
+            "CPU": 100,
+            "Cores": null,
+            "MemoryMB": 128,
+            "MemoryMaxMB": 512,
+            "DiskMB": null,
+            "Networks": null,
+            "Devices": null,
+            "NUMA": null,
+            "SecretsMB": null,
+            "IOPS": null
+          },
+          "RestartPolicy": null,
+          "Meta": null,
+          "KillTimeout": null,
+          "LogConfig": null,
+          "Artifacts": null,
+          "Vault": null,
+          "Consul": null,
+          "Templates": [
+            {
+              "SourcePath": null,
+              "DestPath": "secrets/backup.env",
+              "EmbeddedTmpl": "{{ with nomadVar \"nomad/jobs/shop_uploads_archive\" }}{{ range .Tuples }}{{ .K }}={{ printf \"%s\" .V | toJSON }}\n{{ end }}{{ end }}",
+              "ChangeMode": "noop",
+              "ChangeScript": null,
+              "ChangeSignal": null,
+              "Once": null,
+              "Splay": null,
+              "Perms": null,
+              "Uid": null,
+              "Gid": null,
+              "LeftDelim": null,
+              "RightDelim": null,
+              "Envvars": true,
+              "VaultGrace": null,
+              "Wait": null,
+              "ErrMissingKey": null
+            }
+          ],
+          "DispatchPayload": null,
+          "VolumeMounts": [
+            {
+              "Volume": "data",
+              "Destination": "/data",
+              "ReadOnly": true,
+              "PropagationMode": null,
+              "SELinuxLabel": null
+            }
+          ],
+          "Leader": false,
+          "ShutdownDelay": 0,
+          "KillSignal": "",
+          "Kind": "",
+          "ScalingPolicies": null,
+          "Secrets": null,
+          "Identity": null,
+          "Identities": null,
+          "Actions": null,
+          "Schedule": null
+        }
+      ],
+      "Spreads": null,
+      "Volumes": {
+        "data": {
+          "Name": "data",
+          "Type": "host",
+          "Source": "shop_uploads",
+          "ReadOnly": false,
+          "Sticky": false,
+          "AccessMode": "single-node-single-writer",
+          "AttachmentMode": "file-system",
+          "MountOptions": null,
+          "PerAlloc": false
+        }
+      },
+      "RestartPolicy": {
+        "Interval": null,
+        "Attempts": 0,
+        "Delay": null,
+        "Mode": "fail",
+        "RenderTemplates": null
+      },
+      "Disconnect": null,
+      "ReschedulePolicy": {
+        "Attempts": 0,
+        "Interval": null,
+        "Delay": null,
+        "DelayFunction": null,
+        "MaxDelay": null,
+        "Unlimited": false
+      },
+      "EphemeralDisk": null,
+      "Update": null,
+      "Migrate": null,
+      "Networks": [
+        {
+          "Mode": "bridge",
+          "Device": "",
+          "CIDR": "",
+          "IP": "",
+          "DNS": null,
+          "ReservedPorts": null,
+          "DynamicPorts": null,
+          "Hostname": "",
+          "MBits": null,
+          "CNI": null
+        }
+      ],
+      "Meta": null,
+      "Services": null,
+      "ShutdownDelay": null,
+      "MaxRunDuration": null,
+      "StopAfterClientDisconnect": null,
+      "MaxClientDisconnect": null,
+      "Scaling": null,
+      "Consul": null,
+      "PreventRescheduleOnLost": null
+    }
+  ],
+  "Update": null,
+  "Multiregion": null,
+  "Spreads": null,
+  "Periodic": null,
+  "ParameterizedJob": null,
+  "Reschedule": null,
+  "Migrate": null,
+  "Meta": {
+    "caravana.app": "shop",
+    "caravana.volume": "shop_uploads"
+  },
+  "UI": null,
+  "Stop": null,
+  "ParentID": null,
+  "Dispatched": false,
+  "DispatchIdempotencyToken": null,
+  "Payload": null,
+  "ConsulNamespace": null,
+  "VaultNamespace": null,
+  "NomadTokenID": null,
+  "Status": null,
+  "StatusDescription": null,
+  "Stable": null,
+  "Version": null,
+  "SubmitTime": null,
+  "CreateIndex": null,
+  "ModifyIndex": null,
+  "JobModifyIndex": null,
+  "VersionTag": null
+}

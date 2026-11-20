@@ -8,6 +8,7 @@ import (
 
 	"github.com/cosmic-chimps/caravana/internal/app"
 	"github.com/cosmic-chimps/caravana/internal/deploy"
+	"github.com/cosmic-chimps/caravana/internal/nomadjob"
 	"github.com/cosmic-chimps/caravana/internal/store"
 )
 
@@ -49,6 +50,9 @@ type VolumeBackup struct {
 type VolumeView struct {
 	// Name is the volume's name in the app's definition.
 	Name string
+	// NomadName is the volume's name in Nomad, <app>_<volume>: what the page that deletes a volume no app
+	// declares is addressed by (feature 045).
+	NomadName string
 	// Mounted is false for a volume Nomad still has for the app that no service
 	// mounts: it stays until the app is deleted. Its Mounts are empty.
 	Mounted bool
@@ -101,6 +105,9 @@ func (s *Service) Volumes(ctx context.Context, appID string) ([]VolumeView, erro
 		return nil, err
 	}
 	views := volumeViews(rec.App, hostVols, sizes, backups)
+	for i := range views {
+		views[i].NomadName = nomadjob.VolumeName(appID, views[i].Name)
+	}
 	s.nameVolumeServers(ctx, views, hostVols)
 	return views, nil
 }

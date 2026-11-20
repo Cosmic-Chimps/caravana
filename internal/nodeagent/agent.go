@@ -57,7 +57,7 @@ type Runner interface {
 type Agent struct {
 	// Root is the folder every path is under: "/" on a server, a temporary folder in tests.
 	Root string
-	// Runner runs ip, wg, systemctl, ping, df, docker, nomad and uname.
+	// Runner runs ip, wg, systemctl, ping, df, du, docker, nomad and uname.
 	Runner Runner
 	// HTTP calls the console. It must not follow redirects.
 	HTTP *http.Client
@@ -215,6 +215,10 @@ const RunTimeout = 30 * time.Second
 
 // ExecRunner runs programs on this machine, with a timeout and no shell.
 type ExecRunner struct{ Timeout time.Duration }
+
+// WithTimeout is a runner like r with another time for one program: a clean-up's Docker commands and `du`
+// of a big volume take longer than an ordinary call (the longRunner of space.go).
+func (r ExecRunner) WithTimeout(d time.Duration) Runner { return ExecRunner{Timeout: d} }
 
 // Run implements Runner. The error holds the program's name and arguments and, except for wg, the
 // start of its standard error. wg's is left out: when it can't read a config it prints the line it

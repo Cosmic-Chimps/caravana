@@ -107,6 +107,9 @@ var readCases = []toolCase{
 	{tool: "list_templates", args: map[string]any{"q": "status page", "tag": "monitoring"},
 		routes: map[string]string{"GET /v1/templates": `{"catalog":{},"templates":[]}`},
 		want:   []wantRequest{{method: "GET", path: "/v1/templates", query: "q=status+page&tag=monitoring"}}, answer: `{"catalog":{},"templates":[]}`},
+	{tool: "get_server_space", args: map[string]any{"server": "one"},
+		routes: map[string]string{"GET /v1/servers/one/space": `{"server":"one","orphanVolumes":[]}`},
+		want:   []wantRequest{{method: "GET", path: "/v1/servers/one/space"}}, answer: `{"server":"one","orphanVolumes":[]}`},
 	{tool: "get_template", args: map[string]any{"name": "uptime-kuma"},
 		routes: map[string]string{"GET /v1/templates/uptime-kuma": `{"name":"uptime-kuma"}`},
 		want:   []wantRequest{{method: "GET", path: "/v1/templates/uptime-kuma"}}, answer: `{"name":"uptime-kuma"}`},
@@ -295,7 +298,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 var readToolNames = []string{
 	"export_jobspec", "get_app", "get_app_scan", "get_compose_file", "get_deployment", "get_logs", "get_needs_you",
-	"get_project", "get_template", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
+	"get_project", "get_server_space", "get_template", "get_version", "list_app_actions", "list_apps", "list_backups", "list_copies",
 	"list_deployments", "list_projects", "list_recent_deployments", "list_templates", "list_volumes",
 	"preview_promotion", "wait_for_deployment",
 }
@@ -415,6 +418,12 @@ func TestInvalidInputIsRefusedBeforeTheAPI(t *testing.T) {
 		{"image with a space", "deploy_image", map[string]any{"app": "web", "image": "nginx 1"}},
 		{"image empty", "deploy_image", map[string]any{"app": "web", "image": ""}},
 		{"service uppercase", "back_up_now", map[string]any{"app": "web", "service": "DB"}},
+		{"server with a slash", "get_server_space", map[string]any{"server": "one/cleanups"}},
+		{"server uppercase", "get_server_space", map[string]any{"server": "One"}},
+		{"server with a query", "get_server_space", map[string]any{"server": "one?x=1"}},
+		{"server with a dot", "get_server_space", map[string]any{"server": "one.example.com"}},
+		{"server too long", "get_server_space", map[string]any{"server": strings.Repeat("s", 64)}},
+		{"server missing", "get_server_space", map[string]any{}},
 		{"template with a slash", "get_template", map[string]any{"name": "a/b"}},
 		{"template uppercase", "get_template", map[string]any{"name": "Hollo"}},
 		{"template missing", "get_template", map[string]any{}},

@@ -234,6 +234,16 @@ func (h *handler) addReadTools(srv *mcp.Server) {
 			return h.answer(ctx, call{op: opListTemplates, query: q})
 		})
 
+	addTool(h, srv, read("get_server_space",
+		"Returns what a server's disk holds that Caravana could give back: the images no copy uses and no kept "+
+			"deployment needs, Docker's leftover volumes, the build cache, and the orphan volumes (Nomad volumes "+
+			"no app declares, with size and when their app last ran), the last clean-up and the settings. "+
+			"It only reads: cleaning up and deleting a volume are done in the console or with the API. "+
+			"API operation getServerSpace."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in serverInput) (string, error) {
+			return h.answer(ctx, call{op: opGetServerSpace, params: []string{"name", in.Server}})
+		})
+
 	addTool(h, srv, read("get_template",
 		"Returns one app template: what it asks for (inputs, and the secrets Caravana generates, by name and "+
 			"size only), its services with the Compose file and placeholders, and its notes. API operation getTemplate."),

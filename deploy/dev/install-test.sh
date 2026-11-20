@@ -23,6 +23,9 @@
 # Feature 041's published port is checked from a container on the VM's own Docker bridge, whose traffic
 # passes the firewall as external traffic does.
 #
+# Feature 045's clean-up is checked with four versions of an app: Nomad forgets the images it pulled when it
+# restarts, the agent reports them, and a clean-up removes the one the keep rule doesn't keep.
+#
 # Let's Encrypt and the public ports need a real VM: deploy/vm/host.sh prove covers those.
 set -euo pipefail
 
@@ -383,6 +386,130 @@ check_published_host() {
     [ "$SECONDS" -lt "$end" ] || die "$addr:$port still answers a minute after the app was deleted"
     sleep 3
   done
+}
+
+# space_deploy TAG: deploy spaceapp with alpine:TAG (a sleep, no port, 16 MB) and wait until the deployment is
+# healthy. Leaves the deployment's ID in SPACE_DEP and the digest its image is pinned to (sha256:...) in SPACE_DIGEST.
+SPACE_DEP="" SPACE_DIGEST=""
+space_deploy() {
+  local out end=$((SECONDS + 240)) status="" digests
+  out="$(api -fsS -X POST -H 'Content-Type: application/json' "https://$DOMAIN/v1/apps/spaceapp/deployments" -d '{
+    "source": {"kind": "image"},
+    "services": [{"name": "sleeper", "image": "alpine:'"$1"'", "command": "sleep", "args": ["1d"],
+      "resources": {"memoryMB": 16, "memoryMaxMB": 32}}]}')" || die "deploying spaceapp with alpine:$1 failed"
+  SPACE_DEP="$(jsonq 'd["id"]' <<<"$out")"
+  until [ "$status" = healthy ]; do
+    [ "$SECONDS" -lt "$end" ] || die "spaceapp's deployment of alpine:$1 should be healthy within 4 minutes, it is $status"
+    sleep 3
+    out="$(api -fsS "https://$DOMAIN/v1/apps/spaceapp/deployments/$SPACE_DEP")" || continue
+    status="$(jsonq 'd["status"]' <<<"$out")"
+    case "$status" in failed | reverted | superseded) die "spaceapp's deployment of alpine:$1 ended $status:\n$out" ;; esac
+  done
+  digests="$(jsonq 'd["digests"]["sleeper"]' <<<"$out")"
+  SPACE_DIGEST="sha256:${digests##*sha256:}"
+  [[ "$SPACE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "spaceapp's deployment has no pinned digest: $digests"
+}
+
+# docker_digests: the digests of every image the VM's Docker holds, one per line.
+docker_digests() { vm sudo docker image ls --digests --no-trunc --format '{{.Digest}}' | sort -u; }
+
+# wait_space SERVER EXPRESSION SECONDS: wait until the python EXPRESSION over GET /v1/servers/SERVER/space is
+# true (d is the answer; images is null until the agent has reported), and leave the answer in SPACE_READ.
+SPACE_READ=""
+wait_space() {
+  local server="$1" expr="$2" end=$((SECONDS + $3))
+  until SPACE_READ="$(api -fsS "https://$DOMAIN/v1/servers/$server/space")" && [ "$(jsonq "$expr" <<<"$SPACE_READ")" = True ]; do
+    [ "$SECONDS" -lt "$end" ] || die "GET /v1/servers/$server/space should satisfy $expr within $3 s:\n$SPACE_READ"
+    sleep 5
+  done
+}
+
+# check_space_host: feature 045, what a clean-up does on a host with the agent. Four versions of an app are
+# deployed one after the other (four different images), Nomad is restarted (which makes it forget the images
+# it pulled, so its own image clean-up never removes them: the leak this feature exists for), and all four are
+# on Docker. The agent reports them, the first one is unused by the keep rule (the digests of the app's three
+# newest healthy deployments), a clean-up removes it and leaves the three kept ones and Traefik's image, and
+# redeploying the second version needs no pull. The daily setting round-trips and the feed says what was done.
+check_space_host() {
+  local server out end id cleanup_id d1 d2 d3 d4 dep2 before after removed
+  server="$(api -fsS "https://$DOMAIN/v1/servers" | jsonq 'd["servers"][0]["name"]')"
+  [ -n "$server" ] || die "GET /v1/servers has no server name"
+  [ "$(jsonq 'd["automatic"]' < <(api -fsS "https://$DOMAIN/v1/cleanup/settings"))" = True ] ||
+    die "the daily clean-up should be on by default"
+  [ "$(jsonq 'd["keepDeployments"]' < <(api -fsS "https://$DOMAIN/v1/cleanup/settings"))" = 3 ] ||
+    die "the default should keep the last 3 deployments"
+
+  space_deploy 3.19; d1="$SPACE_DIGEST"
+  space_deploy 3.20; d2="$SPACE_DIGEST"; dep2="$SPACE_DEP"
+  space_deploy 3.21; d3="$SPACE_DIGEST"
+  space_deploy 3.22; d4="$SPACE_DIGEST"
+  [ "$(printf '%s\n' "$d1" "$d2" "$d3" "$d4" | sort -u | wc -l | tr -d ' ')" = 4 ] || die "the four versions should be four different images"
+
+  say "Nomad restarts, and the app still runs"
+  vm sudo systemctl restart nomad
+  end=$((SECONDS + 120))
+  until [ "$(vm sudo caravana-nomad node status -self -json 2>/dev/null | jsonq 'd["Status"]' 2>/dev/null)" = ready ]; do
+    [ "$SECONDS" -lt "$end" ] || die "Nomad isn't ready two minutes after its restart"
+    sleep 3
+  done
+  docker_digests >"$WORK/space-digests-all"
+  for id in "$d1" "$d2" "$d3" "$d4"; do
+    grep -qx "$id" "$WORK/space-digests-all" || die "Docker should hold the image $id of an alpine version:\n$(cat "$WORK/space-digests-all")"
+  done
+
+  say "the agent reports its images: the first version's is unused, the others are kept"
+  wait_space "$server" 'd["images"] is not None and d["images"]["unusedCount"] >= 1' 180
+  [ "$(jsonq 'd["managed"]' <<<"$SPACE_READ")" = True ] || die "the server should be managed:\n$SPACE_READ"
+  [ "$(jsonq 'd["images"]["unusedBytes"] > 0' <<<"$SPACE_READ")" = True ] || die "the unused images should have a size:\n$SPACE_READ"
+  [ "$(jsonq 'd["reclaimableBytes"] > 0' <<<"$SPACE_READ")" = True ] || die "something should be reclaimable:\n$SPACE_READ"
+
+  say "Clean up now: done within 3 minutes, the first version's image goes, the kept ones and Traefik's stay"
+  out="$(api -fsS -X POST -H 'Content-Type: application/json' -w '\n%{http_code}' "https://$DOMAIN/v1/servers/$server/cleanups" -d '{}')" ||
+    die "POST /v1/servers/$server/cleanups failed"
+  [ "${out##*$'\n'}" = 202 ] || die "Clean up now should answer 202:\n$out"
+  cleanup_id="$(jsonq 'd["id"]' <<<"${out%$'\n'*}")"
+  end=$((SECONDS + 180))
+  until out="$(api -fsS "https://$DOMAIN/v1/servers/$server/cleanups/$cleanup_id")" && [ "$(jsonq 'd["status"]' <<<"$out")" = "done" ]; do
+    [ "$(jsonq 'd["status"]' <<<"$out")" != failed ] || die "the clean-up failed:\n$out"
+    [ "$SECONDS" -lt "$end" ] || die "the clean-up should be done within 3 minutes (is caravana-node.timer running?):\n$out"
+    sleep 5
+  done
+  removed="$(jsonq 'd["imagesRemoved"]' <<<"$out")"
+  [ "$removed" -ge 1 ] || die "the clean-up should remove at least the first version's image:\n$out"
+  [ "$(jsonq 'd["bytesFreed"] > 0' <<<"$out")" = True ] || die "the clean-up should free some bytes:\n$out"
+  docker_digests >"$WORK/space-digests-after"
+  ! grep -qx "$d1" "$WORK/space-digests-after" || die "the first version's image $d1 is still on Docker after the clean-up"
+  for id in "$d2" "$d3" "$d4"; do
+    grep -qx "$id" "$WORK/space-digests-after" || die "the kept image $id was removed by the clean-up"
+  done
+  vm sudo docker image ls --format '{{.Repository}}' >"$WORK/space-repos"
+  grep -qx traefik "$WORK/space-repos" || die "Traefik's image was removed by the clean-up"
+  grep -qx traefik/whoami "$WORK/space-repos" || die "whoami's image was removed by the clean-up"
+  wait_space "$server" 'd["images"] is not None and d["images"]["unusedCount"] == 0' 120 # the next report has the new inventory
+  [ "$(jsonq 'd["lastCleanup"]["id"]' <<<"$SPACE_READ")" = "$cleanup_id" ] || die "the space read should name the clean-up as the last:\n$SPACE_READ"
+
+  say "redeploying the second version needs no pull"
+  before="$(vm sudo docker image ls --no-trunc --format '{{.ID}}' | sort)"
+  out="$(api -fsS -X POST "https://$DOMAIN/v1/apps/spaceapp/deployments/$dep2/redeploy")" || die "redeploying the second version failed"
+  SPACE_DEP="$(jsonq 'd["id"]' <<<"$out")"
+  end=$((SECONDS + 90))
+  until [ "$(jsonq 'd["status"]' < <(api -fsS "https://$DOMAIN/v1/apps/spaceapp/deployments/$SPACE_DEP"))" = healthy ]; do
+    [ "$SECONDS" -lt "$end" ] || die "the redeploy of the second version should be healthy within 90 s"
+    sleep 3
+  done
+  after="$(vm sudo docker image ls --no-trunc --format '{{.ID}}' | sort)"
+  [ "$before" = "$after" ] || die "the redeploy changed Docker's images (a pull?):\n--- before\n$before\n--- after\n$after"
+
+  say "the feed says what was done, and the setting round-trips"
+  out="$(api -fsS "https://$DOMAIN/v1/activity?limit=50")"
+  grep -q 'Cleaned up server ' <<<"$out" || die "GET /v1/activity should have 'Cleaned up server …':\n$out"
+  api -fsS -o /dev/null -X PUT -H 'Content-Type: application/json' "https://$DOMAIN/v1/cleanup/settings" -d '{"automatic":false,"keepDeployments":5}' ||
+    die "PUT /v1/cleanup/settings failed"
+  out="$(api -fsS "https://$DOMAIN/v1/cleanup/settings")"
+  [ "$(jsonq 'str(d["automatic"]) + str(d["keepDeployments"])' <<<"$out")" = False5 ] || die "the setting wasn't saved: $out"
+  api -fsS -o /dev/null -X PUT -H 'Content-Type: application/json' "https://$DOMAIN/v1/cleanup/settings" -d '{"automatic":true,"keepDeployments":3}' ||
+    die "putting the setting back failed"
+  api -fsS -o /dev/null -X DELETE "https://$DOMAIN/v1/apps/spaceapp" || die "deleting spaceapp failed"
 }
 
 # refuses LABEL EXPECTED ARGS...: the installer exits 2 and says EXPECTED.
@@ -850,6 +977,8 @@ PY
 
   say "a reboot: ssh, no ordering cycle, and the network, Nomad, the console and whoami come back (task c6wd)"
   check_reboot_host
+  say "unused images, the agent's inventory and a clean-up (feature 045)"
+  check_space_host
 
   say "upgrade to $v2 with whoami answering throughout"
   local flag="$WORK/watching" fails

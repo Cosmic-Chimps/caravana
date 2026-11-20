@@ -78,6 +78,7 @@
   {{with .Spec}}<p class="cv-node-spec">{{.}}</p>{{end}}
   {{with .Line}}<p class="cv-mnhostline"><span class="cv-mark cv-mark-idle" aria-hidden="true"></span><span>{{.}}</span></p>{{end}}
   {{if .Meters}}<div class="cv-node-meters">{{range .Meters}}{{template "mon-meter" .}}{{end}}</div>{{end}}
+  {{with .Reclaimable}}<p class="cv-node-reclaim"><a href="{{$.ReclaimHref}}">Reclaimable {{.}}</a></p>{{end}}
   {{if .Chips}}
   <div class="cv-node-chips">
     {{range .Chips}}<a href="{{.Href}}" id="{{.ID}}" class="cv-copychip cv-opschip{{with .State}} cv-copychip-{{.}}{{end}}{{if eq .Mark "failed"}} cv-copychip-failed{{end}}" title="{{.Title}}"><span class="cv-mark cv-mark-{{.Mark}}" aria-hidden="true"></span><span class="cv-copychip-name">{{.Name}}</span> <span class="cv-copychip-id">{{.Short}}</span><span class="sr-only"> ({{.Role}})</span></a>

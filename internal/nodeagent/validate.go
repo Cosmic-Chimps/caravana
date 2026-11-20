@@ -14,7 +14,8 @@ import (
 )
 
 // maxAnswer is the most of the console's answer that is read (contracts/node.md §5).
-const maxAnswer = 256 << 10
+// 512 KiB: a clean-up's list of digests to keep is up to 4096 of them, about 300 KiB (spec 045).
+const maxAnswer = 512 << 10
 
 // FieldError is the refusal of an answer: it names the field and says what was wrong in fixed words,
 // and never quotes a key, a token or a certificate.
@@ -56,6 +57,9 @@ type Answer struct {
 	// https:// and a host name. A console that predates it sends none. The answer is decoded without
 	// DisallowUnknownFields, so an agent older than this member ignores it.
 	Issuer string `json:"issuer"`
+	// Clean is a clean-up for this server to run (spec 045), present only while the console has one
+	// open for it. A console that predates it sends none.
+	Clean *CleanRequest `json:"clean"`
 }
 
 // Expect is what an answer is checked against.
@@ -163,7 +167,7 @@ const caReason = "must be one PEM certificate that is a CA and valid now"
 // value.
 func decode(body []byte) (*Answer, error) {
 	if len(body) > maxAnswer {
-		return nil, refuse("body", "is larger than 256 KiB")
+		return nil, refuse("body", "is larger than 512 KiB")
 	}
 	var ans Answer
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -227,10 +231,37 @@ func validateCommon(ans *Answer, ex Expect, own int) error {
 		return refuse("issuer", "must be empty, or https:// and a host name with an optional port")
 	}
 	ans.Issuer = issuer
+	if err := validateClean(ans.Clean); err != nil {
+		return err
+	}
 	if ans.Role == RoleServer {
 		raw, err := base64.StdEncoding.DecodeString(ans.GossipKey)
 		if err != nil || (len(raw) != 16 && len(raw) != 24 && len(raw) != 32) {
 			return refuse("gossipKey", "must be base64 of 16, 24 or 32 bytes on a Nomad server")
+		}
+	}
+	return nil
+}
+
+// maxKeep is the most digests a clean-up request may ask to keep.
+const maxKeep = 4096
+
+// validateClean checks a clean-up request (contracts/agent.md §2): an ID of 32 lowercase hex characters
+// and at most maxKeep digests of the form sha256:<64 hex>. Anything else refuses the whole answer; the
+// text of a bad digest is not quoted.
+func validateClean(c *CleanRequest) error {
+	if c == nil {
+		return nil
+	}
+	if !cleanIDRE.MatchString(c.ID) {
+		return refuse("clean.id", "must be 32 lowercase hex characters")
+	}
+	if len(c.Keep) > maxKeep {
+		return refuse("clean.keep", fmt.Sprintf("has more than %d entries", maxKeep))
+	}
+	for i, d := range c.Keep {
+		if !digestRE.MatchString(d) {
+			return refuse(fmt.Sprintf("clean.keep[%d]", i), "must be sha256: and 64 lowercase hex characters")
 		}
 	}
 	return nil

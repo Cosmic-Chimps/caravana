@@ -39,6 +39,14 @@ func (a *Agent) Sync(ctx context.Context, o SyncOptions) error {
 	if err != nil {
 		return err
 	}
+	// The volume directories are measured here, not in the report: the sizes are kept in state.json.
+	if measured, changed := a.measureVolumes(ctx, st, false); changed {
+		if err := a.SaveState(measured); err != nil {
+			a.warn("caravana node sync: the volume sizes weren't saved: %v", err)
+		} else {
+			st = measured
+		}
+	}
 	report := a.Report(ctx, st)
 	status, body, err := a.postJSON(ctx, env.URL, "/v1/node/sync", env.Token, report)
 	if err != nil {
@@ -99,7 +107,7 @@ func (a *Agent) ensureMeshKeyPublic() (private, public string, err error) {
 	return private, public, nil
 }
 
-// applySync does §6's three steps with a validated answer.
+// applySync does §6's three steps, and the clean-up of spec 045 as a fourth, with a validated answer.
 func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answer, caPEM []byte, renew bool) error {
 	priv, _, err := a.ensureMeshKeyPublic()
 	if err != nil {
@@ -161,11 +169,19 @@ func (a *Agent) applySync(ctx context.Context, env NodeEnv, st State, ans *Answe
 		return a.promote(ctx, env, st, ans.GossipKey, caPEM)
 	}
 
-	// 3. Renewal: asked for, wanted by the console, or due by the certificate's own date.
+	// 3. Renewal: asked for, wanted by the console, or due by the certificate's own date. A failed
+	// renewal is returned after step 4, which doesn't wait on it.
+	var renewErr error
 	if renew || ans.Renew || a.certificateEndsSoon() {
-		return a.renewCertificate(ctx, env, st, caPEM)
+		renewErr = a.renewCertificate(ctx, env, st, caPEM)
 	}
-	return nil
+
+	// 4. The clean-up the console handed over (spec 045): last, since it can take minutes. A sync that
+	// promoted this server returned above and runs it at the next one, the answer repeating until it has.
+	if err := a.applyClean(ctx, st, ans.Clean); err != nil {
+		return err
+	}
+	return renewErr
 }
 
 // renewBefore is how long before a certificate's end the agent renews it (contracts/node.md §6).

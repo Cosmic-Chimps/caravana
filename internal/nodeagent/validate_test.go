@@ -104,7 +104,7 @@ func TestParseSyncRules(t *testing.T) {
 }
 
 func TestParseSyncBody(t *testing.T) {
-	big := append([]byte(`{"name":"`), make([]byte, 300<<10)...)
+	big := append([]byte(`{"name":"`), make([]byte, 600<<10)...)
 	for _, body := range [][]byte{[]byte("not json"), []byte(`[]`), big} {
 		if _, err := ParseSync(body, Expect{State: syncState(), Now: t0}); err == nil {
 			t.Errorf("accepted %.20q", body)

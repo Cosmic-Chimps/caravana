@@ -245,7 +245,7 @@ func (s *Service) planPromotion(ctx context.Context, appID, to string) (promotio
 	}
 
 	// The warnings the deploy will record for this change (see saveAndDeploy).
-	warnings := unmountedVolumes(target.App, result)
+	warnings := unmountedVolumes(target.App, result, s.droppedVolumeServers(ctx, target.App, result))
 	if target.Compose != nil {
 		warnings = append(warnings, app.Warning{Message: droppedFileWarning})
 	}

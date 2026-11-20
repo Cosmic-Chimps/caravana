@@ -18,14 +18,16 @@ import (
 
 // The tables an activity row can come from.
 const (
-	ActivityDeployment = "deployments"    // two rows per deployment: Phase "started", then "ended" once it is over
-	ActivityAction     = "app_actions"    // Label is the action: stop, start, restart, run, terminal or scale; a scale's Detail is JSON {from, to, reason}
-	ActivityBackup     = "backups"        // Label is the engine; At is its end, or its start while it runs
-	ActivityRestore    = "restores"       // likewise
-	ActivitySchedule   = "schedule_runs"  // only runs that failed or were stopped at their limit; Label is the schedule's name
-	ActivityProblem    = "problem_events" // Label is the attention kind, Program the item's key (kind|app|service|subject), Status the change, Detail the sentence as JSON parts
-	ActivityHost       = "host_events"    // Label is the kind (boot, version, os_packages), Detail its JSON
-	ActivityUpdate     = "update_runs"    // a finished update of Caravana (feature 030): Status its state, Label the version, Program the version it left, Error the reason, Detail the token name
+	ActivityDeployment = "deployments"      // two rows per deployment: Phase "started", then "ended" once it is over
+	ActivityAction     = "app_actions"      // Label is the action: stop, start, restart, run, terminal or scale; a scale's Detail is JSON {from, to, reason}
+	ActivityBackup     = "backups"          // Label is the engine; At is its end, or its start while it runs
+	ActivityRestore    = "restores"         // likewise
+	ActivitySchedule   = "schedule_runs"    // only runs that failed or were stopped at their limit; Label is the schedule's name
+	ActivityProblem    = "problem_events"   // Label is the attention kind, Program the item's key (kind|app|service|subject), Status the change, Detail the sentence as JSON parts
+	ActivityHost       = "host_events"      // Label is the kind (boot, version, os_packages), Detail its JSON
+	ActivityCleanup    = "image_cleanups"   // a finished clean-up of a server's unused images (feature 045): Service the server's name, Status done/failed/lost, Trigger owner/schedule, ExitCode the images removed, Version the bytes freed, Detail the volumes removed as text
+	ActivityDeletion   = "volume_deletions" // a finished deletion of an orphan volume: AppID the app it read as, Service the server's name, Label the volume, Status done/failed, Version its bytes, Detail the archive object
+	ActivityUpdate     = "update_runs"      // a finished update of Caravana (feature 030): Status its state, Label the version, Program the version it left, Error the reason, Detail the token name
 )
 
 // ServerProblemKinds are the needs-you kinds about the server itself: the host
@@ -146,6 +148,17 @@ FROM (
          '', state, trigger, version, from_version, NULL, NULL,
          reason, token_name
   FROM update_runs WHERE state NOT IN ('requested', 'running') AND (?1 = '' OR COALESCE(finished_at, requested_at) < ?1)
+  UNION ALL
+  -- about a server, so the server-only feed keeps them
+  SELECT 'image_cleanups', id, '', COALESCE(finished_at, requested_at), '',
+         server_name, status, trigger, '', '', images_removed, bytes_freed,
+         error, CAST(volumes_removed AS TEXT)
+  FROM image_cleanups WHERE status IN ('done', 'failed', 'lost') AND (?1 = '' OR COALESCE(finished_at, requested_at) < ?1)
+  UNION ALL
+  SELECT 'volume_deletions', id, '', COALESCE(finished_at, requested_at), app_id,
+         server_name, status, trigger, volume, '', NULL, bytes,
+         error, archive_object
+  FROM volume_deletions WHERE status IN ('done', 'failed') AND (?1 = '' OR COALESCE(finished_at, requested_at) < ?1)
 ) u
 LEFT JOIN apps a ON a.id = u.app_id
 ORDER BY u.at DESC, u.source, u.row_id DESC, u.phase
