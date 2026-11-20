@@ -92,6 +92,27 @@ check_monitoring_host() {
   done
 }
 
+# check_requests_host: what feature 047 needs from the host. Traefik's job writes its access log as JSON
+# (with the fields the Requests page reads and no query string), and GET /v1/requests answers 200 with
+# accessLog true and, once the app has been called, a request of it. Needs TOKEN and the app whoami
+# answering, so it runs after "deploy whoami".
+check_requests_host() {
+  local spec body
+  spec="$(vm sudo caravana-nomad job inspect traefik)"
+  grep -q -- '--accesslog=true' <<<"$spec" || die "Traefik's job doesn't write its access log"
+  grep -q -- '--accesslog.format=json' <<<"$spec" || die "Traefik's access log isn't JSON"
+  grep -q -- '--accesslog.fields.headers.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the headers"
+  grep -q -- '--accesslog.fields.queryparameters.defaultmode=drop' <<<"$spec" || die "Traefik's access log doesn't drop the query string"
+  local end=$((SECONDS + 60))
+  until body="$(api -fsS "https://$DOMAIN/v1/requests?app=whoami" 2>/dev/null)" &&
+    grep -q '"accessLog":true' <<<"$body" && grep -q '"path":"/"' <<<"$body"; do
+    [ "$SECONDS" -lt "$end" ] ||
+      die "GET /v1/requests?app=whoami should say accessLog true and list a request of whoami within 60 s:\n$(api -sS "https://$DOMAIN/v1/requests?app=whoami" 2>&1 | head -c 1500)"
+    app_answers >/dev/null 2>&1 || true
+    sleep 2
+  done
+}
+
 # check_updates_host MODE: what feature 027's Updates page needs from the host, through the API: the unit's
 # sandbox (ProtectSystem=strict, ProtectHome, PrivateTmp) lets Caravana read the host's files, so
 # GET /v1/updates says os.readable with this image's distribution and, within the sampler's first ticks,
@@ -968,6 +989,9 @@ PY
     [ "$SECONDS" -lt "$end" ] || die "whoami didn't answer within 3 minutes"
     sleep 3
   done
+
+  say "the requests Traefik served are read from its access log (feature 047)"
+  check_requests_host
 
   say "the cluster's issuer, its discovery documents and an identity token (feature 038)"
   check_issuer_host

@@ -1851,8 +1851,17 @@ change, constitution unchanged.
   minute (`data-click-href`, `monitoring.js`), its hidden table's rows are the same links, and the apps table has a Requests link
   beside the Logs one.
 - Tests: sentinel tests in `service`, `api` and `ui` search every page, answer, error, log and the stored apps for
-  `s3cret-sentinel-047`. Phase C adds the lab steps: `TestConsoleLab` `console-requests` and the gate's `requests`, and
-  `install-test.sh`'s check of the `accesslog` argument; they are not run yet.
+  `s3cret-sentinel-047`.
+- Lab: `TestConsoleLab` has a step `console-requests` (`console_requests_test.go`: a busybox app with a domain and two CGI
+  scripts, the three requests through Traefik with `?token=<sentinel>`, the app's Requests tab, the 5xx chip and the path and
+  method filters, the workspace page, Logs around a row, Monitoring's link) and the gate a step `requests`
+  (`gate_requests_test.go`: `listRequests` with the gate's token, every filter, the 422 refusals naming their field, a deploy
+  token's 403, and the sentinel in no answer, log line or data file). Both passed in the lab on 2026-11-20 (32 s each, run
+  alone with `-run 'TestConsoleLab/^console-(sign-in|requests)$'` and `-run 'TestLab/^(api-needs-token|requests)$'`).
+  busybox's httpd answers a POST to a non-CGI path with 501, so the POST goes to a CGI script. Traefik's log keeps earlier
+  runs' requests, and an ID made again gets its old requests back, so each run uses an app ID of its own. `install-test.sh`'s
+  `check_requests_host` (the `accesslog` arguments in Traefik's job and one `GET /v1/requests`) is written and shellchecked,
+  not run.
 - Not in 047: long-term analytics, geo lookup of clients, storing the log, requests no app's router took, Traefik's
   `forwardedHeaders` trust list (behind a proxy the client is the proxy's address), a download, a per-copy attribution, reading the
   allocations before the last Traefik restart.

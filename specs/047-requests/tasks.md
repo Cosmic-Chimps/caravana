@@ -44,15 +44,30 @@ Plan: `plan.md` (D1–D13). Each phase is one commit; the lab steps run before t
 
 ## Phase C: the lab
 
-- [ ] C1 `TestConsoleLab` step `console-requests` (`cmd/caravana/console_requests_test.go`, listed after
-      `console-logs`): a busybox httpd app with a CGI script that answers 500 on `/cgi-bin/boom`; requests
-      through Traefik with `?token=s3cret-sentinel-047`, a POST, the 500; the app's Requests tab shows them
-      within 10 s with the path alone; the 5xx chip and a path prefix filter; "read from"; the sentinel in no
-      page, answer or log line; the workspace page and the Monitoring link.
-- [ ] C2 The gate step `requests` (`gate_requests_test.go`, after `logs`): the same through the API with the
-      gate's token, the refusals naming their fields, a deploy token's 403, and the sentinel search over
-      every answer, the log and the data directory.
-- [ ] C3 `deploy/dev/install-test.sh`: the `accesslog` argument in the running Traefik job after a rerun and
-      one request on `GET /v1/requests` (D12).
-- [ ] C4 Run the two lab steps (`-run 'TestConsoleLab/^console-(sign-in|requests)$'` and
-      `-run 'TestLab/^(api-needs-token|requests)$'`) and record the outcome here and in `CLAUDE.md`.
+- [x] C1 `TestConsoleLab` step `console-requests` (`cmd/caravana/console_requests_test.go`, listed after
+      `console-logs`): a busybox httpd app with a domain and two CGI scripts, `/cgi-bin/boom` (500) and
+      `/cgi-bin/things` (201); requests through Traefik with `?token=<sentinel>`, a POST and the 500; the app's
+      Requests tab shows them within 20 s with the path alone; the 5xx chip, a path prefix and a method
+      filter; "following Traefik" and the histogram summary; the sentinel in no page, answer or log line; the
+      workspace page, the row's link to Logs and the Monitoring link.
+- [x] C2 The gate step `requests` (`gate_requests_test.go`, after `logs`): the same through the API with the
+      gate's token, the filters, the refusals naming their fields (and the 404s), a deploy token's 403
+      `token_scope`, no token's 401, `no-store`, and the sentinel search over every answer, the log and the
+      data directory.
+- [x] C3 `deploy/dev/install-test.sh`: `check_requests_host` (the `accesslog` arguments in the running Traefik
+      job, the headers and query string dropped, and `GET /v1/requests?app=whoami` answering `"accessLog":true`
+      with a request of whoami), called after "deploy whoami". **Not run** (20 minutes on a VM); shellcheck
+      is clean.
+- [x] C4 Both lab steps run and pass (2026-11-20, lab VM with Nomad 2.0.7):
+      `TestConsoleLab/^console-(sign-in|requests)$` PASS, `console-requests` 31.9 s;
+      `TestLab/^(api-needs-token|requests)$` PASS, `requests` 32.8 s.
+      Deviations found by running them, none in the product:
+      - busybox's httpd answers a POST to anything that isn't a CGI script with 501 (checked in the lab), so
+        the steps POST to `/cgi-bin/things` (a CGI answering 201), not `/api/things`, and filter by
+        `path=/cgi-bin/t`.
+      - Traefik's log keeps the requests of earlier runs, and a request belongs to the app ID it names (also
+        an ID made again), so each run uses an app of its own (`cl047<hex>`, `gate047<hex>`) and its three
+        requests are the only ones counted; the first version of the console step failed on four boom rows
+        from the three runs before it.
+      - With one app listed, the services rail doesn't prefix the app name (by design, D10), so the rail check
+        reads `web <n>`.
