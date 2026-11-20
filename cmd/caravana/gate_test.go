@@ -155,6 +155,8 @@ func runGate(t *testing.T, target gateTarget) {
 		{"backup-restore", false, g.backupRestoreStep},
 		{"volume-backup-restore", false, g.volumeBackupRestoreStep},
 		{"sqlite-backup-restore", false, g.sqliteBackupRestoreStep},
+		{"mysql-backup-restore", false, g.mysqlBackupRestoreStep},
+		{"mongodb-backup-restore", false, g.mongodbBackupRestoreStep},
 		{"stop-timeout", false, g.stopTimeoutStep},
 		{"https-trusted", true, g.httpsTrusted},
 		{"http-redirects", true, g.httpRedirects},
